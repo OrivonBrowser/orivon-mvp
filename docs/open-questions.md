@@ -130,21 +130,48 @@ Decided, not open. Recorded so the reasoning is visible later rather than redisc
 
 ### Advertising priced by trustlessity level
 **Owner's decision.** Ad priority and price key to trustlessity level (`economical-strategy.md`):
-lower level ⇒ higher price and lower priority. The intent is a deliberate penalty on
-centralised entrants and a subsidy to decentralised ones — a tax on centralisation, not a
-sale of trust.
+lower level ⇒ higher price and lower priority. A deliberate penalty on centralised entrants and
+a subsidy to decentralised ones — a tax on centralisation, not a sale of trust.
 
-**Known structural tension, accepted:** revenue then scales with low scores, so an
-Orivon-operated score provider would profit when scores are low. Raised twice, reaffirmed
-twice; it is a business-model call and it is post-MVP and reversible.
+**Owner's reasoning, in full:**
+1. Orivon is ultimately a for-profit company. It is incentivised to grow the ecosystem toward
+   trustless solutions through sponsorship, but also to accept non-trustless sponsors when the
+   money is materially better — because that money funds further innovation for Web3. A
+   rational trade for the ecosystem's benefit, even if it sounds bad.
+2. A score provider is incentivised to score accurately, because being trusted is the entire
+   point of it. Trustlessness and security are what give the provider its value.
 
-**Mitigation available if it is ever wanted** (not a condition, just recorded): price ads
-using a *third-party* provider's attestations rather than Orivon's own, which removes the
-self-dealing while keeping the pricing model exactly as intended. `ADR-0006` makes this cheap,
-since attestations are portable signed statements over bundle hashes.
+**AI counter-position, recorded once and then dropped.** Point 2 is correct in isolation, but
+it does not address point 1 — the two are separate claims, and the difficulty is their
+intersection: Orivon scoring the entities that pay Orivon.
+
+The empirical record on reputation as discipline is specific: it holds when the scorer is *not*
+paid by the scored, and fails when it is, independent of intent.
+- Moody's and S&P rated CDOs AAA while paid by issuers; the "our reputation protects you"
+  argument was made explicitly and publicly, and failed. Both remain profitable.
+- Arthur Andersen and Enron: same structure, same outcome.
+- EasyList, not paid by advertisers, has held its reputation for two decades. Eyeo's
+  Acceptable Ads, which took payment for whitelisting, is distrusted in exactly the community
+  Orivon targets.
+
+The mechanism is not bad actors: reputation damage is slow and diffuse, revenue is immediate
+and concentrated, and that asymmetry compounds.
+
+On point 1 specifically, the objection is **timing, not principle**. Brave is the direct
+precedent — ads, BAT, profitable — and was badly damaged by the 2020 affiliate-link injection
+over small money, with precisely this audience. It survived because it already had millions of
+users. At 100 users reputation *is* the whole asset, with no product moat to absorb a hit. The
+strategy becomes survivable once there is something to lose that is not reputation.
+
+**Mitigation available at zero revenue cost** (recorded, not a condition): price ads from a
+*third-party* provider's attestations rather than Orivon's own. This removes the self-dealing
+while keeping the pricing model exactly as intended. `ADR-0006` makes it nearly free, since
+attestations are portable signed statements over bundle hashes.
 
 **Unaffected and independently sound:** charging for *faster evaluation*. `ADR-0006` shows
 attestation lag is real friction, so reducing it is a legitimate paid service.
+
+**Status: owner-decided, post-MVP, reversible. Not to be re-raised.**
 
 ---
 
