@@ -37,7 +37,7 @@ None of these block starting the week-0 spike.
 | **A6** | **Go / no-go on `planning/readiness.md`** | before any code |
 | A7 | Canonical **DDOC** expansion — recommendation: *Domain Data Ownership **Confirmation*** (`glossary.md`, B2) | before correcting public docs |
 | A8 | **`+Privacy`** attaches to L4 (published) or L5 (private)? (`glossary.md`) | before correcting public docs |
-| A9 | Three capability-API items: is `net.listen` grantable to unsigned apps · are grants keyed on origin or origin + manifest version · is `fs.quotaBytes` enforced or advisory | during build step 2; AI will propose defaults if not decided |
+| A9 | Three capability-API items. **Defaults now proposed** in `architecture/capability-api.md` — `net.listen` grantable to unsigned apps with a declared port range and no privileged ports · grants keyed on `(origin, capability)`, with bundle-hash changes handled by the separate pin-break prompt · `fs.quotaBytes` enforced via a running per-origin counter | **Build proceeds on these unless overruled.** Cheap to change before any third-party app exists |
 
 ---
 

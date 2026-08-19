@@ -140,11 +140,42 @@ Apps call `orivon.net.connect`. Underneath, that is:
 None of those transitions is visible to an app already written. That property — not Electron,
 not Wasmtime — is what keeps the path to a Chromium fork open.
 
-## Open questions before this leaves draft
-- Should `net.listen` be grantable to unsigned apps? It opens a port to the internet: high
-  blast radius, but not arbitrary code execution. Currently proposed as grantable with a
-  distinct, more serious prompt.
-- Does the grant ledger record grants per origin permanently, or per origin + manifest
-  version? Manifest-versioned grants are safer (a new manifest re-prompts) but noisier.
-- Is `fs.quotaBytes` enforced by the broker, or advisory? Enforcement is more work but a
-  torrent app can otherwise fill the disk.
+## Open items — AI-proposed defaults, awaiting owner confirmation
+
+These are `open-questions.md` A9. Each has a default below; unless overruled, the build
+proceeds on these. All three are decidable during build step 2 and cheap to change before any
+third-party app exists.
+
+### 1. Is `net.listen` grantable to unsigned apps? → **Yes, with constraints**
+Listening accepts arbitrary internet input into code the user did not vet. But it is not
+arbitrary code execution, and it is the same exposure as running any P2P client. Denying it
+would make P2P apps second-class in developer mode, which undercuts the permissionless value
+that put developer mode in `ADR-0002` in the first place.
+
+**Default:** grantable to unsigned apps, subject to:
+- a **declared port range** in the manifest — `"*"` is rejected for `listen`;
+- **privileged ports (<1024) denied outright**, at every tier;
+- a distinct, more serious prompt than `connect` — the user is opening a service, not making
+  an outbound call, and the wording should say so.
+
+### 2. Grants keyed per origin, or per origin + manifest version? → **Per (origin, capability)**
+Manifest-versioning every grant is noisier than it is safe, and it duplicates a check that
+already exists elsewhere. Two *different* events are being conflated:
+
+| Event | Response | Comes from |
+|---|---|---|
+| Bundle hash changes | **Security re-consent** — "this app's code changed" | `ADR-0005`, `ADR-0006` D2 (pinning) |
+| Manifest requests a capability not yet granted | **Capability prompt** for that capability only | this spec |
+
+A manifest that changes without requesting anything new therefore triggers the pin-break
+prompt but no capability re-prompt — which is the correct signal, and already required by the
+pinning model. Keying grants on `(origin, capability)` is simpler and loses nothing.
+
+### 3. Is `fs.quotaBytes` enforced or advisory? → **Enforced**
+Advisory means a buggy or hostile app fills the user's disk — threat **T11** in
+`security-model.md`, and a genuinely bad first-run experience for a torrent-first browser.
+
+**Default:** enforced, cheaply. Maintain a **running per-origin byte counter**, check it on
+write, and fail with a quota error when exceeded. Reconcile the counter against the directory
+on startup rather than walking the tree on every operation. This is a small amount of work
+and it is the difference between a disk-full bug and a disk-full incident.
