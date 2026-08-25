@@ -1,0 +1,32 @@
+name: CI
+
+# With no code reviewer, CI is the reviewer (build-plan.md SS Week 0).
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      # `npm ci` runs the postinstall guard, so Rule 8 is enforced here too.
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: No dependency requires a compiler (Rule 8)
+        run: npm run check:natives
+
+      - name: Build
+        run: npm run build

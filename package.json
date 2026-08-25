@@ -1,0 +1,31 @@
+{
+  "name": "orivon",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Orivon MVP - a browser that runs applications impossible in Chrome, under user-granted per-app capabilities",
+  "license": "UNLICENSED",
+  "main": "out/main/index.js",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "check:natives": "node scripts/check-no-native-modules.mjs",
+    "smoke": "electron-vite build && node spike/smoke-launch.mjs",
+    "postinstall": "node scripts/check-no-native-modules.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "@swc/core": "^1.13.0",
+    "@types/node": "^24.0.0",
+    "electron": "^44.0.0",
+    "electron-vite": "^5.0.0",
+    "typescript": "^7.0.2",
+    "vite": "~7.3.6",
+    "vitest": "^4.1.11"
+  }
+}
