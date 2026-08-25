@@ -40,8 +40,9 @@ interfaces to *read and write* Web1 (`OrivonBook/Web3 Potential.md`).
 WASM" or "programs on-fly". In the MVP this capability is delivered by the **broker**, not by
 WASM (`ADR-0002`).
 
-**Web3 Accounts** — the no-setup, per-origin identity. **Not** a wallet: no funds, no seed
-phrase shown, no send or receive.
+**Web3 Accounts** — the no-setup identity system: silent **per-origin app keys**, plus
+**named identities** (e.g. the Nostr identity) that are cross-origin by explicit consent
+(`capability-api.md`). **Not** a wallet: no funds, no seed phrase shown, no send or receive.
 
 **Web3 Green mark** — the site-facing incentive marking to adopt trustless technology; the
 inverse of the yellow "you are in Web2" badge.

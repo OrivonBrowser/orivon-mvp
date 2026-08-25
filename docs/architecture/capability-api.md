@@ -58,7 +58,9 @@ Served alongside the app's frontend assets and fetched before first run.
       "udp": { "bind": ["6881-6889"], "send": ["*:*"] }
     },
     "fs": { "quotaBytes": 53687091200 },
-    "id": { "curves": ["secp256k1"] }
+    "id": { "curves": ["secp256k1"] },
+    "protocols": ["magnet"]            // shell routes magnet: links to this app
+                                       // (first registrant is default; conflicts → user chooses)
   }
 }
 ```
@@ -92,10 +94,35 @@ orivon.fs.open(path, flags)          // => Promise<FileHandle>
 orivon.fs.mkdir / readdir / stat / rm / rename
 orivon.fs.userSelected(opts)         // => OS file picker; user's choice IS the consent
 
-// --- identity ---
-orivon.id.publicKey({ curve })       // => Promise<Uint8Array>   per-origin derived
+// --- identity: app keys (silent, per-origin) ---
+orivon.id.publicKey({ curve })       // => Promise<Uint8Array>   derived per origin, no prompt
 orivon.id.sign({ curve, payload })   // => Promise<Uint8Array>
+
+// --- identity: named identities (cross-origin BY CONSENT) ---
+orivon.id.requestIdentity({ kind })  // => Promise<IdentityHandle | null> — connect prompt
+// IdentityHandle.publicKey() / .sign(payload): the SAME identity on every site the user
+// connects it to; revocable per origin in settings
 ```
+
+### Two kinds of identity — correction found in validation
+
+The original v0 draft (and ADR-0002's rules) said `id` yields per-origin keys *only*, with no
+cross-origin linkage. **That cannot support Nostr**: an npub must be the *same* across every
+client site, or follows/posts/identity fragment per client — per-origin keys would issue a
+different Nostr identity to snort.social and noStrudel. The earlier claim that NIP-07 was the
+ideal consumer of per-origin identity was wrong. Recorded here rather than silently fixed.
+
+| | **App keys** | **Named identities** |
+|---|---|---|
+| Scope | one origin, silent | cross-origin **by design** |
+| Consent | none needed — cannot link users across apps | explicit connect prompt per site, revocable |
+| Backing | `derive(seed, "app", origin)` | `derive(seed, "identity", identityId)` |
+| Consumer | app-internal crypto | `window.nostr` (NIP-07), future wallet connect |
+
+`window.nostr` semantics: injected in ordinary tabs; first `getPublicKey()` per site triggers
+the connect prompt; after connecting, signing is silent for that site (per-event prompts would
+make Nostr unusable). Presence of `window.nostr` is fingerprintable — true of every NIP-07
+extension; the *data* is what sits behind consent (`security-model.md` T16).
 
 ### Deliberately **not** in v0
 - **`subprocess`** — no tier-3 app is in the MVP (Bisq is cut), so it buys nothing and costs
@@ -111,10 +138,25 @@ orivon.id.sign({ curve, payload })   // => Promise<Uint8Array>
 - `fs` is confined to the app's files directory. `..` traversal is rejected. Outside access
   exists only via `fs.userSelected`.
 - `net` requires manifest-declared patterns, surfaced verbatim in the grant prompt.
-- `id` returns per-origin **derived** keys. The seed is never exposed and raw export is not a
-  capability at any tier.
+- `id` app keys derive per origin silently; **named identities** are cross-origin only through
+  the explicit connect prompt. In both modes the seed is never exposed and raw key export is
+  not a capability at any tier.
 - The app's **code cache is read-only to the app** (ADR-0003). An app that could rewrite its
   own code would escape the manifest its grants were issued against.
+
+## How a URL becomes an app
+
+Previously unspecified anywhere — found in validation. A normal page stays a normal page. An
+origin becomes an app when the shell finds a manifest at:
+
+```
+https://<origin>/.well-known/orivon.json
+```
+
+On detection the omnibox offers **"Open as app"**; accepting runs the ADR-0005 flow (grant
+prompt → fetch → cache → pin). v0 supports the well-known path only; a `<link rel>`
+alternative can come later. Protocol routing (`"protocols": ["magnet"]`) is what lets a magnet
+link pasted in the omnibox reach the torrent app at all.
 
 ## Throughput — the open risk
 
@@ -126,6 +168,10 @@ port. Video is delivered to `<video>` via MediaSource.
 **This is unproven and is the subject of the week-1 spike in ADR-0005.** If throughput is
 inadequate, the fallback is running `webtorrent` privileged in the main process for the MVP,
 recorded as known debt.
+
+Media delivery: **prefer MediaSource over webtorrent's localhost HTTP server.** A localhost
+server is reachable by every local process and every other app (`security-model.md` T15); if
+one proves unavoidable, it binds 127.0.0.1 and requires a random per-session token in the URL.
 
 ## Why this survives the engine swap
 

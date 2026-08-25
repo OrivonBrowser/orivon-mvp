@@ -59,14 +59,21 @@ reinstated, and it is automatically decidable. **Action outstanding: correct the
 to reinstate that level and to mark which levels are automatic versus judged. The `+Privacy`
 placement (L4 publicly, L5 privately) still needs one canonical answer.
 
-### B4. Zero-setup auto-connecting accounts — partially resolved
+### B4. Zero-setup auto-connecting accounts — resolved, with a validation correction
 `La Piramide dei Pilastri` and `OrivonBook` both state that accounts are pre-installed with
-no setup and auto-connect to sites. **Design resolution adopted:** `orivon.id` issues
-**per-origin derived keys** — no cross-origin linkage, no funds, no raw key export
-(`capability-api.md`). A funds-bearing wallet is a separate, setup-requiring thing named
-differently in the UI. Nostr via NIP-07 is the first consumer and validates the model.
-**Still open:** the exact UI language distinguishing the two, so users never confuse a
-throwaway identity with a wallet.
+no setup and auto-connect to sites.
+
+**Correction found in the validation pass:** the first resolution ("per-origin keys only, no
+cross-origin linkage, NIP-07 as first consumer") was **internally contradictory** — a Nostr
+identity must be the *same* across every client site, or follows and posts fragment per
+client. Nobody caught this until the validation read.
+
+**Corrected model** (`capability-api.md`): silent **per-origin app keys** for apps, plus
+**named identities** that are cross-origin *by explicit consent* — a per-site connect prompt,
+revocable. NIP-07 rides the named-identity path, not the per-origin path. A funds-bearing
+wallet remains a separate, setup-requiring thing named differently in the UI.
+**Still open:** the exact UI language distinguishing throwaway keys / named identities /
+wallets.
 
 ---
 

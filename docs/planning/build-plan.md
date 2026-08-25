@@ -68,12 +68,16 @@ and changing it after the first grant is persisted orphans every app (`ADR-0003`
 **3. `orivon-node-shim`** — `net`, `dgram`, `fs` over `orivon.*`. Depends on the broker.
 Load-bearing for the flagship, not a developer nicety (`ADR-0005`).
 
-**4. App loader** — fetch manifest + assets from URL, cache, hash-pin, re-consent on change.
+**4. App loader** — discover the manifest at `/.well-known/orivon.json`
+(`capability-api.md`), fetch + cache assets, hash-pin, re-consent on change.
 Depends on broker storage. The pinning here is also what `ADR-0006` and the future attestation
 model rest on.
 
 **5. Torrent app** — `webtorrent` via the shim, streaming server, player UI, magnet input,
 file list, resume. Lift player components from MIT-licensed `webtorrent-desktop`.
+Prefer MediaSource over a localhost streaming server (`security-model.md` T15).
+Known limitations, stated in-product rather than hidden: swarm peers see the user's IP
+(no Tor in the MVP), and seeding behind NAT is reduced without port forwarding (no UPnP in v0).
 **End of this step = the clip exists. Begin distribution now, not at the end of the month.**
 
 **6. Trust indicator** — delivery ladder, connection ladder from the broker's per-app

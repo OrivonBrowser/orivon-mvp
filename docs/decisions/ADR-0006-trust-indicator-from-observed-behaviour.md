@@ -67,10 +67,17 @@ holds capability grants.
 
 | | |
 |---|---|
-| C1 | contacted arbitrary central servers during use |
+| C1 | traffic concentrated on a few stable hosts — *single-server pattern* |
 | C2 | contacted only hosts declared in its manifest |
-| C3 | contacted only P2P peers — **no central server involved at all** |
+| C3 | traffic dominated by many short-lived, symmetric connections to distinct hosts — *swarm pattern* |
 | +Privacy | all connections carried over Tor or a proxy *(post-MVP)* |
+
+**Honesty correction (validation pass):** an earlier draft of C3 read "contacted only P2P
+peers — no central server involved". That is not machine-decidable: a socket to
+`1.2.3.4:6881` does not announce whether the far end is a peer or a server. C1/C3 are
+therefore **pattern classifications**, labelled as heuristic in the UI, with the raw endpoint
+evidence one click away. The indicator states what was *observed* (N hosts, connection
+shapes), never a claim the broker cannot actually verify.
 
 **Operation** — a specific action the user takes.
 

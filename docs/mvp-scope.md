@@ -28,8 +28,8 @@ Plan for roughly **110–120 installs** to measure 100 active users.
 1. **The clip.** First run → paste a magnet link → video is playing in under 30 seconds, with
    no torrent client installed. This is simultaneously the product, the proof, and the
    distribution asset.
-2. **The identity.** Open any Nostr client on the web → already signed in, no extension
-   installed, no seed phrase, no setup.
+2. **The identity.** Open any Nostr client on the web → one connect prompt → signed in, and it
+   is the *same* identity in every client — no extension installed, no seed phrase, no setup.
 3. **The developer.** Write a JSON manifest and a frontend → load unpacked → an app with real
    network access, in an afternoon.
 
@@ -96,8 +96,9 @@ State these publicly. They prevent both scope creep and disappointed users.
   exists to prevent.
 - **No Chromium fork**, and no pretence that Electron is the final architecture.
 - **No mobile.**
-- **No sync**, and no Orivon-operated server for user data — the telemetry endpoint is the
-  only server that exists.
+- **No sync**, and no Orivon-operated server for user data. Infrastructure is limited to the
+  telemetry ingest endpoint plus static hosting of first-party app bundles (e.g. GitHub
+  Pages/Releases).
 - **Untrusted apps are not contained.** Developer mode is genuinely "at your own risk"; a
   Node broker cannot sandbox hostile code. This is what `orivon-runtime` later fixes.
 - **Bitcoin Core does not run in a tab.** That remains a long-term goal for the execution

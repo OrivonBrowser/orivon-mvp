@@ -42,12 +42,14 @@ arbitrary hosts) · identity seed and derived keys · other apps' data · attent
 | T6 | Compromised host silently swaps app code that already holds grants | Bundle hash pinned at install; any change re-prompts before running (`ADR-0005`, `ADR-0006` D2) |
 | T7 | App escapes its manifest by rewriting its own code | Code cache is **read-only to the app**; only the broker writes it (`ADR-0003`) |
 | T8 | Identity key exfiltration | Seed in `safeStorage`, never exposed; apps receive per-origin **derived** keys only; raw export is not a capability at any tier |
-| T9 | Cross-app identity correlation | Keys derived per origin, so two apps cannot link the same user |
+| T9 | Cross-app identity correlation | App keys derive per origin, so apps cannot link a user silently. **Named identities** (e.g. Nostr) are cross-origin *by explicit consent only* — the connect prompt is the boundary (`capability-api.md`) |
 | T10 | Hostile peer serves corrupt torrent data | Piece verification against the infohash — inherent to BitTorrent, not something Orivon adds |
 | T11 | Resource exhaustion (disk, sockets, bandwidth) | `fs.quotaBytes` enforcement, socket count limits, disk-usage UI (`ADR-0003`) |
 | T12 | App reaches localhost or the LAN to attack other services | **Manifest patterns must be checked against resolved addresses, not hostnames** — otherwise DNS rebinding defeats them. Private ranges denied unless explicitly declared |
 | T13 | Telemetry endpoint used to correlate users | Random install ID, IP discarded at ingest, no third party, minimal payload (`ADR-0004`) |
 | T14 | Electron CVEs | Track upstream releases. A browser is a high-value target; upgrading is maintenance, not optional |
+| T15 | An app-run localhost server (e.g. media streaming) is reachable by every local process and every other app | Prefer MediaSource — no server at all. If unavoidable: bind 127.0.0.1, require a random per-session token in the URL, and record the residual local exposure |
+| T16 | Any website probes `window.nostr` to fingerprint Orivon or read the user's pubkey | Presence is detectable — true of every NIP-07 extension. The pubkey and signing are gated behind a per-site connect prompt; no identity data leaks without consent |
 
 T12 is the one most likely to be got wrong: a naive `net` implementation that matches on the
 hostname string lets an app declare `example.com` and then have DNS resolve it to `127.0.0.1`.
