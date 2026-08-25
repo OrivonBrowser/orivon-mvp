@@ -24,6 +24,11 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - 2026-08-25: Two one-way doors decided — cached apps keep their real origin (ADR-0007), and capability handles are WHATWG streams underneath with Node shapes on top (A10 direction; full spec still to write).
 - 2026-08-25: Week-0 spike execution plan written, gate by gate, with the throwaway/kept code line drawn explicitly.
 - 2026-08-25: Live API check corrected four things the docs got wrong: webtorrent is 3.0.21 not 2.x, its `browser` field disables more than recorded, `createServer` has an Electron-specific `force` flag, and electron#34905 is still open — the last one added a new gate 0 to the spike.
+- 2026-08-25: **First code committed.** Scaffold running (electron-vite + TS + Vitest + CI), window opens, preload reaches the page, nothing leaks into it.
+- 2026-08-25: **Gate 0 PASS.** MessagePortMain measured at 1134 MB/s renderer→main and 313 MB/s main→renderer, byte-exact both ways — against the 1–5 MB/s 1080p needs. The data path the whole capability API rests on is sound.
+- 2026-08-25: electron#34905 confirmed, and worse than the issue says: transferable ArrayBuffers renderer→main are silently dropped, never arriving, with no error. Killed the "day 2 with transferables" fallback in the build plan; harmless, since copying is already 60–200x past requirement.
+- 2026-08-25: Native-module guard rewritten against build-plan's literal criterion — a naive `.node` check fails on Electron's own prebuilt deps, so it now fails on what needs a *compiler* instead.
+- 2026-08-25: Lost about an hour to `ELECTRON_RUN_AS_NODE=1` being set in the environment, which makes the Electron binary run as plain Node. It presented as a module-format error. Every gate now launches through a helper that strips it and asserts it is really Electron.
 
 ### In my head
 - 2026-08-25: Wants a Sunday ritual: paste-ready team message plus bullet cues for a spontaneous voice note recalling the week's thinking.
