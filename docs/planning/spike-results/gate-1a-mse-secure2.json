@@ -1,0 +1,40 @@
+{
+  "gate": "1a",
+  "question": "Does a renderer bundle fetch an ordinary (non-WebRTC) torrent over the shimmed net?",
+  "versions": {
+    "electron": "44.0.0",
+    "chrome": "152.0.7977.54"
+  },
+  "measuredAt": "2026-08-25T13:06:16+02:00",
+  "seeder": {
+    "infoHash": "4a4fdf809ef5bb99a68cfcb378233a27254fd9f3",
+    "tcpPort": 36025,
+    "sizeBytes": 33554432,
+    "config": "dht:false, tracker:false, lsd:false, utp:false - reachable only by explicit TCP address"
+  },
+  "netShim": {
+    "typeofConnect": "function",
+    "isFalse": false,
+    "hasSocket": true
+  },
+  "wires": [
+    {
+      "remoteAddress": "127.0.0.1",
+      "type": "tcpOutgoing",
+      "peerId": "2d5757303330"
+    }
+  ],
+  "nonWebrtcWireCount": 1,
+  "downloadedBytes": 163840,
+  "progress": 0.0048828125,
+  "elapsedMs": 480,
+  "timeline": [
+    "2ms infoHash, adding peer 127.0.0.1:36025",
+    "14ms WIRE connected: 127.0.0.1:36025 type=tcpOutgoing",
+    "64ms metadata",
+    "375ms metadata ready",
+    "479ms piece 0 VERIFIED"
+  ],
+  "verdict": "PASS",
+  "note": "No signalling channel existed, so a WebRTC peer was impossible. A verified piece proves TCP through the shim."
+}

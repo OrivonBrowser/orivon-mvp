@@ -5,6 +5,7 @@
   "description": "Spike-only. webtorrent lives HERE, not in the shell tree, mirroring build-plan.md's pre-built app asset design.",
   "dependencies": {
     "buffer": "^6.0.3",
+    "crypto-browserify": "^3.12.1",
     "events": "^3.3.0",
     "path-browserify": "^1.0.1",
     "process": "^0.11.10",

@@ -168,21 +168,36 @@ subtitle rendering, file-list UI. Its playback plumbing is stale (last release 2
 Electron 27 and webtorrent 1.9.7) and points at the localhost-server + VLC-handoff design that
 v0 rejects. Same status as `orivon-browser-v2`: **visual reference only.**
 
-Known limitations, stated in-product rather than hidden: **MP4/H.264 only in v0**;
-**no BitTorrent protocol encryption (MSE) — see below**; swarm peers see the user's IP (no Tor
-in the MVP); seeding behind NAT is reduced without port forwarding (no UPnP in v0); local peer
-discovery is unavailable (no multicast bind in the manifest grammar).
+Known limitations, stated in-product rather than hidden: **MP4/H.264 only in v0**; swarm peers
+see the user's IP (no Tor in the MVP); seeding behind NAT is reduced without port forwarding
+(no UPnP in v0); local peer discovery is unavailable (no multicast bind in the manifest
+grammar).
 
-> **New limitation found by gate 1a, 2026-08-25: protocol encryption is off.**
-> webtorrent defaults to `secure: 1` (PE with plaintext fallback, `index.js:99`), but
-> `bittorrent-protocol` browser-excludes `mse.js` because it needs Node's `crypto`. Making MSE
-> work in a renderer bundle requires **Diffie-Hellman, a synchronous SHA-1 and RC4**, none of
-> which WebCrypto provides in a usable form — so it is real work, not a shim. v0 therefore runs
-> `secure: 0`.
-> **Consequences to weigh, not yet decided:** peers configured to *require* encryption will
-> refuse the connection, reducing reachable swarm; and some ISPs throttle plaintext BitTorrent,
-> which affects the very throughput the flagship is judged on. Neither blocks v0, and neither
-> was known before the spike. Parked as a post-MVP item unless the clip shows throttling.
+> **Protocol encryption (MSE): available, and it should be ON. Resolved 2026-08-25 by gate 1a.**
+>
+> This entry first recorded MSE as a *limitation*, on the reasoning that it needs
+> Diffie-Hellman, a synchronous SHA-1 and RC4 which WebCrypto does not usefully provide. **That
+> was wrong, and the owner was right to challenge it.** Measured instead of assumed:
+> - `mse.js` already ships a **complete pure-JS RC4 fallback**, selected whenever
+>   `nativeRC4` is false. RC4 was never a problem.
+> - The only genuinely missing pieces were `createHash('sha1')` and `createDiffieHellman`,
+>   and **`crypto-browserify` supplies both**, in pure JS — so Rule 8 is unaffected.
+> - Aliasing `crypto` → `crypto-browserify` and restoring the real `mse.js` produced a
+>   **successful encrypted handshake at `secure: 2`** — RC4 required, *no plaintext fallback* —
+>   against a Node seeder using native crypto. A piece verified in 479 ms.
+>
+> **Cost:** the renderer bundle grows from 427 KB to 1.70 MB (95 KB → 336 KB gzipped).
+> Irrelevant against Electron's ~150–200 MB floor (`ADR-0005`), and it buys reachability with
+> peers that require encryption plus resistance to ISP shaping of plaintext BitTorrent.
+>
+> **Recommendation: ship `secure: 1`** (encrypt, fall back to plaintext) — maximum swarm
+> reach. `secure: 2` also works but refuses plaintext-only peers.
+>
+> **Honesty note for the UI:** MSE is *obfuscation, not privacy*. Its DH exchange is
+> unauthenticated and RC4 is broken; it exists to defeat traffic shaping, not eavesdroppers.
+> It must never be presented as making torrenting private — the IP-visibility limitation above
+> is the one that actually governs, and `ADR-0006` exists to prevent exactly this kind of
+> overclaim.
 
 **End of this step = the clip exists. Begin distribution now, not at the end of the month.**
 

@@ -21,7 +21,7 @@ globalThis.__gate1a = {
     hasSocket: typeof netShim?.Socket === 'function'
   }),
 
-  run: ({ magnetURI, peerAddr, timeoutMs = 60000 }) => new Promise((resolve) => {
+  run: ({ magnetURI, peerAddr, timeoutMs = 60000, secure = 0 }) => new Promise((resolve) => {
     const started = performance.now()
     const events = []
     const log = (m) => events.push(`${Math.round(performance.now() - started)}ms ${m}`)

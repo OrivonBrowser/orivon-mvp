@@ -64,7 +64,7 @@ try {
   stage('adding torrent and peer, waiting for a verified piece')
   result = await page.evaluate(
     (args) => globalThis.__gate1a.run(args),
-    { magnetURI: seedInfo.magnetURI, peerAddr: `127.0.0.1:${seedInfo.port}`, timeoutMs: 60000 }
+    { magnetURI: seedInfo.magnetURI, peerAddr: `127.0.0.1:${seedInfo.port}`, timeoutMs: 60000, secure: Number(process.env.ORIVON_SECURE ?? 0) }
   )
 
   const versions = await app.evaluate(() => ({

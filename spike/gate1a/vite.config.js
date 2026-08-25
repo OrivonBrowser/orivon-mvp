@@ -26,11 +26,23 @@ export default defineConfig({
       // to beat. This alias is what turns it back into BitTorrent.
       { find: /^net$/, replacement: resolve(here, 'shim/net.js') },
 
-      // bittorrent-protocol browser-excludes ./mse.js but still imports named
-      // bindings from it, which Rollup treats as a build error where
-      // browserify did not. Required for ANY Vite-built webtorrent bundle,
-      // unrelated to the net alias. See shim/mse-stub.js.
-      { find: /^\.\/mse\.js$/, replacement: resolve(here, 'shim/mse-stub.js') },
+      // MSE (BitTorrent protocol encryption).
+      //
+      // bittorrent-protocol browser-excludes ./mse.js because it needs Node's
+      // crypto, but still statically imports named bindings from it -- which
+      // Rollup treats as a build error where browserify did not.
+      //
+      // ORIVON_MSE=1 restores the REAL mse.js and supplies crypto via
+      // crypto-browserify (pure JS, so Rule 8 is unaffected). Otherwise a stub
+      // is used and the client must run secure: 0.
+      ...(process.env.ORIVON_MSE === '1'
+        ? [
+            { find: /^\.\/mse\.js$/, replacement: resolve(appModules, 'bittorrent-protocol/mse.js') },
+            { find: /^crypto$/, replacement: resolve(appModules, 'crypto-browserify/index.js') }
+          ]
+        : [
+            { find: /^\.\/mse\.js$/, replacement: resolve(here, 'shim/mse-stub.js') }
+          ]),
 
       // Pure-JS polyfills for the Node builtins webtorrent's dependency graph
       // still imports in a browser build. Vite externalizes these to an empty
