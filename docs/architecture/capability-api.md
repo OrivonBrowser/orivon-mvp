@@ -14,6 +14,23 @@
 1. **Mirror Node's API shapes.** Not because they are elegant, but because it makes
    `orivon-node-shim` mechanical and tier-2 porting cheap (see `app-compatibility.md`).
    Deviate only where the IPC boundary forces it.
+   **Corollary, found the hard way in the spike (`gate-1b.json`): mirror the *whole* surface a
+   dependency touches, not the obvious entry points.** `net.isIP` is not a socket operation and
+   is easy to omit, but `bittorrent-dht`'s RPC layer calls it before every send. Its absence
+   threw a `TypeError` that was caught nowhere in the dependency's own code, so the DHT bound
+   its socket and then sent nothing — no error, no warning, silently inert. A shim that mirrors
+   only the methods a design doc anticipated will pass every test written against that same
+   anticipation and still fail in production against a dependency's actual call graph. There is
+   no shortcut for this beyond reading (or running against) the real dependency source before
+   calling a shim complete.
+   **Related trap, same incident: a polyfilled `process.nextTick` changes error visibility.**
+   Node's `nextTick` surfaces an uncaught exception to the process; a naive
+   `queueMicrotask`-based polyfill does not route into the same handlers, so an exception
+   thrown from inside a `nextTick` callback vanishes instead of crashing loudly. This is exactly
+   backwards from what a security-relevant shim needs — a broker-side error should be *louder*
+   than Node's default, not quieter. The A10 handle contract's error taxonomy should require
+   every constructed-away Node timing primitive to be audited for this, not just implemented for
+   API shape.
 2. **Everything is async.** Node constructs sockets synchronously; across an IPC boundary we
    cannot. All entry points return Promises. The shim reconciles this by buffering.
 3. **Handles, not ambient authority.** `connect()` returns a handle; later operations

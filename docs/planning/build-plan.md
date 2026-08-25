@@ -3,6 +3,10 @@
 Dependency-ordered. One solo developer with AI assistance, one month.
 Scope is fixed by `mvp-scope.md`; decisions by `docs/decisions/`.
 
+**webtorrent is 3.0.21**, verified against live package metadata 2026-08-25 — not the 2.x
+this document originally assumed. See `week-0-spike-plan.md` §Verified facts for the full list
+of corrections found the same way.
+
 ## Week 0 — the gate
 
 **Nothing else starts until this resolves.**
@@ -156,6 +160,20 @@ forces hand-implemented seeking; a localhost socket is `security-model.md` T15. 
 `createServer({ controller })`, which is renderer-local and origin-scoped — gives seeking and
 track selection to Chromium for free and is **unreachable by other local processes**, which is
 strictly stronger than T15's token mitigation.
+
+**`createServer` takes a second parameter, confirmed 2026-08-25 and not documented anywhere
+else in this corpus:** `client.createServer(opts, force)`, where `force: 'browser' | 'node'`
+exists specifically for environments that run both Node and a browser context — Electron is
+named explicitly in webtorrent's own docs as the intended use case. Without it, webtorrent may
+select its Node implementation in the renderer and attempt to open a real listening socket
+rather than using the Service-Worker path. Call it as
+`client.createServer({ controller }, 'browser')`.
+
+Separately confirmed by the spike (`week-0-spike-plan.md` §Gate 3): Electron treats a `file://`
+origin loaded via `loadFile()` as a secure context, so service worker registration for this
+path does not need the fallback originally assumed — `navigator.serviceWorker.register(...)`
+succeeds without any extra scheme registration. The `protocol.handle()` custom-scheme path
+described above remains the documented fallback if that ever changes.
 
 **Format support in v0 is MP4/H.264 only** (owner decision). MSE cannot demux Matroska and
 neither can Chromium's `<video>`, so MKV has no path without a remuxer — deferred to
