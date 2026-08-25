@@ -1,0 +1,54 @@
+{
+  "gate": 4,
+  "question": "Is throughput through the shim adequate, measured against a native control?",
+  "measuredAt": "2026-08-25T15:33:33+02:00",
+  "fixture": {
+    "sizeMb": 256,
+    "sizeBytes": 268435456
+  },
+  "netShim": {
+    "typeofConnect": "function"
+  },
+  "control": {
+    "bytes": 268435456,
+    "durationSec": 1.343,
+    "mbps": 1599.6,
+    "mbPerSec": 199.9,
+    "peakRssMb": 206.1
+  },
+  "shimmed": {
+    "verdict": "PASS",
+    "bytes": 268435456,
+    "durationSec": 5.136,
+    "mbps": 418.2,
+    "mbPerSec": 52.3,
+    "memory": {
+      "usedJSHeapMb": 304
+    }
+  },
+  "subCriteria": {
+    "relativeThroughput": {
+      "control": 1599.6,
+      "shimmed": 418.2,
+      "ratio": 0.261,
+      "threshold": 0.6,
+      "pass": false
+    },
+    "absoluteThroughput": {
+      "mbps": 418.2,
+      "threshold": 25,
+      "pass": true
+    },
+    "concurrentSockets": {
+      "requested": 100,
+      "succeeded": 100,
+      "failed": 0,
+      "durationMs": 32,
+      "failures": [],
+      "threshold": 100,
+      "pass": true
+    }
+  },
+  "note": "Relative-throughput sub-criterion FAILED (below the 60% threshold), but the control it is measured against is same-process, zero-IPC, effectively RAM-speed download -- an extremely high bar. Gate 0 already measured the raw MessagePortMain path at 313-1134 MB/s, which rules out the IPC boundary as this gate's bottleneck. The gap is almost certainly protocol-level: webtorrent verifies every piece with a synchronous SHA-1 hash on the renderer's single JS thread, competing with the postMessage traffic itself. Against the PRODUCT requirement (1-5 MB/s for 1080p, per gate 0/capability-api.md), 52.3 MB/s shimmed is 10.5x the top of that range. The literal relative-ratio threshold does not reflect what the flagship actually needs.",
+  "verdict": "FAIL"
+}
