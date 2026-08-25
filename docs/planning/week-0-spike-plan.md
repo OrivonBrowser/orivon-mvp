@@ -25,6 +25,84 @@ keeps planning documents in `docs/planning/`, so it lives here instead.
 
 ---
 
+## STATE AS OF 2026-08-25 — read this before doing anything
+
+| | Status |
+|---|---|
+| Task 1 — scaffold + Rule 8 guard | **DONE**, committed, 18 tests green |
+| Gate 0 — `MessagePortMain` fidelity | **PASS** — 1134.8 MB/s up, 313.4 MB/s down, byte-exact |
+| Gate 1a — ordinary TCP peer | **PASS** — wire type `tcpOutgoing`, piece verified in 505 ms |
+| Gate 1b — DHT over shimmed `dgram` | **NEXT** |
+| Gate 2 — no native modules | Largely pre-answered, see below |
+| Gate 3 — video plays | Not started |
+| Gate 4 — throughput | Not started |
+
+### The known-good renderer recipe
+
+Gate 1a solved the bundling problem. **Reuse this exactly**; it is in
+`spike/gate1a/vite.config.js` and took six iterations to find.
+
+| Alias | Why |
+|---|---|
+| `net` → `shim/net.js` | **The load-bearing one.** `torrent.js:2104` refuses all TCP unless `typeof net.connect === 'function'` |
+| `./mse.js` → real `mse.js` + `crypto` → `crypto-browserify` | Restores protocol encryption. Set `ORIVON_MSE=1` |
+| `path` → `path-browserify` | **Genuinely called** at runtime |
+| `events`, `buffer`, `process` | Named imports from Vite's empty stub are build errors |
+| `webtorrent`, `streamx` → `spike/app/node_modules/...` | webtorrent is an app asset, never a shell dep |
+| `bittorrent-dht` → `shim/dht-disabled.js` | **Gate 1b replaces this with the real package** |
+
+Plus, all mandatory:
+- `base: './'` — Vite's default `/` resolves to the filesystem root under `file://`.
+- `shim/globals.js` imported **first** in the entry — a sandboxed renderer has no
+  `process`/`global`/`Buffer`, and dependencies read them at module-evaluation time.
+- A `package.json` in each gate directory, or Electron cannot find the app.
+- Launch **only** via `spike/launch.mjs`.
+
+### Traps that cost real time today
+
+1. **`ELECTRON_RUN_AS_NODE=1` is set in this environment.** It makes the Electron binary run as
+   plain Node — no windows, no `require('electron')`, no `MessagePortMain`. It presented as a
+   *module-format error*. `spike/launch.mjs` strips it and asserts `MessageChannelMain` exists;
+   never launch Electron any other way.
+2. **Rollup gives two browser-externalized modules the same generated identifier.** A missing
+   `path` polyfill surfaced as `ConnPool.join is not a function`. **When an error names a module
+   that makes no sense, read the built bundle**, not the source.
+3. **`MessagePortMain` fails by silence.** A dropped message never arrives and never errors, so
+   any reply-carrying protocol needs a timeout or it hangs forever.
+4. **Assertions must be able to fail.** A test that only exercises the path that already works
+   proves nothing — that error was made twice today, once on a security control.
+
+### What each remaining gate still needs
+
+**Gate 1b** — copy `spike/gate1a/` to `spike/gate1b/`; write `shim/dgram.js` (an `EventEmitter`,
+*not* a stream: `bind()`, `send(msg, port, host, cb)`, `'message'`/`'listening'`/`'error'`);
+add a `dgram` broker handler mirroring the TCP one in `spike/gate1a/main.cjs`; point
+`bittorrent-dht` at `spike/app/node_modules/bittorrent-dht/index.js` (pure JS, no natives).
+**PASS = `peer` events for a well-known infohash within 60 s with `tracker: false`.** A failure
+may be NAT rather than the shim — **re-run from a second network before calling it.**
+
+**Gate 1b follow-on** — the public-swarm re-test of gate 1a, deferred here on purpose: finding
+real TCP peers needs DHT, which is what 1b builds.
+
+**Gate 2** — mostly answered already. The shell tree is clean; the app tree has 8 offenders
+including `node-datachannel`, whose install script is
+`prebuild-install -r napi || (... npm run _prebuild)` — it **falls back to compiling with
+CMake**, which is exactly the Rule 8 threat. The gate-1a bundle contains **zero**
+`node-datachannel` references. What remains: run `npm install --omit=optional` versus a plain
+install on the shell tree and record any difference.
+
+**Gate 3** — try the service-worker path first, with the newly-found `force` parameter:
+`client.createServer({ controller }, 'browser')`. Fall back to `protocol.handle` with a
+registered privileged scheme (`standard`, `secure`, `supportFetchAPI`, `stream`) honouring
+`Range` with `206` + `Content-Range`. **PASS = plays end to end AND seeking to 75% starts there
+within 5 s.** Record time-to-first-frame; the clip depends on it.
+
+**Gate 4** — control (`webtorrent` natively in Node) versus shimmed, same fixture, same local
+seeder, measured **through the `contextBridge` closures**. Record every sub-criterion
+separately. **Transferables are unavailable (gate 0), so batching is the only day-2 lever.**
+
+---
+
 ## What this plan is not
 
 Tasks 2–7 build **throwaway code**. It is deleted when the spike resolves, and it is not held to

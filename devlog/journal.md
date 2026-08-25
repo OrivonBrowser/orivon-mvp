@@ -36,3 +36,11 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - 2026-08-25: Thinking about model cost discipline — wants to know when Opus is genuinely needed versus when Sonnet is enough.
 
 ### Non-repo
+- 2026-08-25: **Gate 1a PASS** — a renderer bundle fetched an ordinary non-WebRTC torrent (wire type `tcpOutgoing`, piece verified in 505ms). This was the risk four audits called the real one.
+- 2026-08-25: Six bundling problems to get there, only one anticipated. Worst was a missing `path` polyfill that reported itself as `ConnPool.join is not a function`, because Rollup gave two externalised modules the same identifier.
+- 2026-08-25: Owner pushed back on my claim that BitTorrent encryption couldn't work in the renderer. He was right — `mse.js` already ships a pure-JS RC4 fallback, and `crypto-browserify` covers the rest. Encrypted handshake verified at `secure: 2` (no plaintext fallback). Recommendation: ship `secure: 1`.
+- 2026-08-25: Switching to opusplan for the remaining gates now the bundling recipe is established.
+
+### In my head
+- 2026-08-25: Cost discipline — asked twice about when Opus is actually worth it versus Sonnet, and wants the expensive model spent on judgment, not on build-run-read-error loops.
+- 2026-08-25: Instinctively distrusted a "we can't do anything about it" answer and was right to. Worth remembering that the challenge, not the analysis, is what produced the correct result.
