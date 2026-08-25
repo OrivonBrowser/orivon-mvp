@@ -45,13 +45,27 @@ same webtorrent running natively. **Pass = shimmed ≥60% of control, ≥25 Mbps
 concurrent peer sockets, main-process CPU headroom intact and no UI frame drops, RSS stable
 over 10 minutes.** Record *which* sub-criterion fails — CPU-bound, latency-bound and
 architecturally-impossible have different fallbacks. Structure as day 1 naive → day 2 with
-transferable `ArrayBuffer`s and 64–256 KB batching; the likeliest true outcome is "passes, but
-only with transferables", and a binary day-1 gate would wrongly call it dead.
+64–256 KB batching.
 
-> **Known Electron bug to verify first:** [electron#34905](https://github.com/electron/electron/issues/34905)
-> — transferring a transferable **renderer → main** over `MessagePortMain` can lose the entire
-> payload. That is the exact mechanism `capability-api.md` specifies. Renderer↔renderer is
-> unaffected. Confirm behaviour on the current Electron before building on it.
+> **Corrected 2026-08-25 by gate 0.** This step used to say "day 2 with transferable
+> `ArrayBuffer`s and 64–256 KB batching", and called "passes, but only with transferables" the
+> likeliest outcome. **Transferables are not available on this path**, so batching is the only
+> day-2 lever. See gate 0 below — this does not endanger the gate, because copying already
+> exceeds the requirement by two orders of magnitude.
+
+**0. Does `MessagePortMain` carry bytes renderer → main at all?** *(added 2026-08-25, ~2 h)*
+Runs before any webtorrent work, because every later gate and the whole of
+`capability-api.md` §Throughput sits on this path.
+**RESOLVED — PASS**, measured on Electron 44.0.0 / Chromium 152, through the `contextBridge`
+closures rather than a raw port. Byte-exact in both directions at 64 KB / 256 KB / 1 MB;
+**1134.8 MB/s renderer → main** and **313.4 MB/s main → renderer**, against the 1–5 MB/s that
+1080p needs.
+**Finding:** [electron#34905](https://github.com/electron/electron/issues/34905) reproduces and
+is worse than reported — a transferable `ArrayBuffer` sent renderer → main **does not throw and
+never arrives**. Silent total loss at every size. Consequences are recorded in
+`capability-api.md` §Throughput; the practical rules are *never transfer on this path* and
+*every reply-carrying protocol over `MessagePortMain` needs a timeout, because this transport
+fails by silence.*
 
 - **Pass** → the torrent app is a genuine URL-delivered app; proceed as planned (`ADR-0005`).
 - **Fail** → run `webtorrent` in an Electron **`utilityProcess`**, *not* the main process. It

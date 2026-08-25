@@ -235,10 +235,38 @@ bundle fetches *ordinary* (non-WebRTC) torrents at all, and whether the tree is 
 modules — see `build-plan.md` §Week 0. Fallback if it fails: an Electron **`utilityProcess`**,
 not the main process.
 
-> **Verify first:** [electron#34905](https://github.com/electron/electron/issues/34905) — a
-> transferable sent **renderer → main** over `MessagePortMain` can lose its payload entirely.
-> That is this exact mechanism. Also: `MessagePortMain` has no documented backpressure, so the
-> shim must implement its own flow control or a fast swarm grows renderer memory without bound.
+### Measured, 2026-08-25 — spike gate 0 (`planning/spike-results/gate-0.json`)
+
+Electron 44.0.0 / Chromium 152, Linux x64, through the `contextBridge` closures rather than a
+raw port, so this is the path the product can actually ship.
+
+| | Result |
+|---|---|
+| Byte fidelity, renderer → main | **Exact** at 64 KB, 256 KB and 1 MB |
+| Byte fidelity, main → renderer | **Exact** at all three sizes |
+| Throughput, renderer → main | **1134.8 MB/s** |
+| Throughput, main → renderer | **313.4 MB/s** (the audit's ~310 MB/s estimate was right) |
+| **Transferable `ArrayBuffer`, renderer → main** | **UNAVAILABLE** |
+
+**[electron#34905](https://github.com/electron/electron/issues/34905) reproduces, and it is
+worse than "can lose its payload".** Passing an `ArrayBuffer` in the transfer list of
+`MessagePortMain.postMessage` renderer → main **does not throw and does not corrupt — the
+message never arrives at all.** Silent, total loss, at every size tested. The first spike run
+hung on it, because an un-timed reply promise waits forever.
+
+Two consequences, both settled rather than open:
+
+1. **Do not use transferables on this path**, and do not treat them as an optimisation held in
+   reserve. `build-plan.md` named "day 2 with transferable `ArrayBuffer`s" as the rescue if
+   gate 4's throughput failed; **that rescue does not exist.** It does not matter: structured
+   clone *copies*, and copying already runs 60–200x faster than the 1–5 MB/s that 1080p
+   streaming needs.
+2. **Any reply-carrying protocol over `MessagePortMain` needs a timeout**, because the failure
+   mode of this transport is silence, not an error.
+
+Still unmeasured and still true: **`MessagePortMain` has no documented backpressure**, so the
+shim must implement its own flow control or a fast swarm grows renderer memory without bound.
+That is what the A10 handle contract's WHATWG-streams decision exists to solve.
 
 **Media delivery, revised.** Not MSE, and not a localhost HTTP server. Serve pieces to
 `<video>` over a **range-capable custom scheme** (`protocol.handle()` returning a streaming

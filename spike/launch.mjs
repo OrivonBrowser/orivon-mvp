@@ -20,10 +20,12 @@ const POISON = ['ELECTRON_RUN_AS_NODE']
 
 /**
  * @param {object} [options]
+ * @param {string} [options.appPath] Directory of the app to run. Defaults to
+ *   the repo root (the real scaffold); each gate passes its own mini-app.
  * @param {string[]} [options.args] Extra argv for the Electron process.
  * @returns {Promise<import('playwright').ElectronApplication>}
  */
-export async function launchElectron ({ args = [] } = {}) {
+export async function launchElectron ({ appPath = '.', args = [] } = {}) {
   const env = { ...process.env }
   const stripped = []
   for (const key of POISON) {
@@ -36,7 +38,7 @@ export async function launchElectron ({ args = [] } = {}) {
     console.log(`[launch] stripped from env: ${stripped.join(', ')}`)
   }
 
-  const app = await electron.launch({ args: ['.', ...args], env })
+  const app = await electron.launch({ args: [appPath, ...args], env })
 
   // Assert we got Electron, not Node wearing its binary. If this throws, no
   // gate result from this run may be trusted.

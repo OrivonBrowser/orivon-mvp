@@ -1,0 +1,104 @@
+{
+  "gate": 0,
+  "question": "Does MessagePortMain carry bytes intact between a sandboxed renderer and main, and how fast?",
+  "versions": {
+    "electron": "44.0.0",
+    "chrome": "152.0.7977.54",
+    "node": "24.18.1"
+  },
+  "platform": "linux x64",
+  "measuredAt": "2026-08-25T12:16:06+02:00",
+  "criteria": {
+    "minMbPerSec": 50
+  },
+  "fidelityUp": [
+    {
+      "sizeBytes": 65536,
+      "ok": true,
+      "reason": null,
+      "length": 65536
+    },
+    {
+      "sizeBytes": 262144,
+      "ok": true,
+      "reason": null,
+      "length": 262144
+    },
+    {
+      "sizeBytes": 1048576,
+      "ok": true,
+      "reason": null,
+      "length": 1048576
+    }
+  ],
+  "fidelityDown": [
+    {
+      "sizeBytes": 65536,
+      "ok": true,
+      "reason": null,
+      "received": 65536,
+      "expected": 65536
+    },
+    {
+      "sizeBytes": 262144,
+      "ok": true,
+      "reason": null,
+      "received": 262144,
+      "expected": 262144
+    },
+    {
+      "sizeBytes": 1048576,
+      "ok": true,
+      "reason": null,
+      "received": 1048576,
+      "expected": 1048576
+    }
+  ],
+  "throughput": {
+    "chunkBytes": 262144,
+    "iterations": 400,
+    "rendererToMain": {
+      "bytesReceived": 104857600,
+      "bytesExpected": 104857600,
+      "complete": true,
+      "ms": 92,
+      "mbPerSec": 1134.8
+    },
+    "mainToRenderer": {
+      "bytesReceived": 104857600,
+      "bytesExpected": 104857600,
+      "complete": true,
+      "corruption": null,
+      "ms": 335,
+      "mbPerSec": 313.4
+    }
+  },
+  "transferableFinding": {
+    "note": "electron#34905. Recorded as a finding, not a gate.",
+    "results": [
+      {
+        "sizeBytes": 65536,
+        "ok": false,
+        "outcome": "dropped",
+        "reason": "no reply within 2000ms - message never arrived in main"
+      },
+      {
+        "sizeBytes": 262144,
+        "ok": false,
+        "outcome": "dropped",
+        "reason": "no reply within 2000ms - message never arrived in main"
+      },
+      {
+        "sizeBytes": 1048576,
+        "ok": false,
+        "outcome": "dropped",
+        "reason": "no reply within 2000ms - message never arrived in main"
+      }
+    ],
+    "available": false,
+    "outcomes": [
+      "dropped"
+    ]
+  },
+  "verdict": "PASS"
+}
