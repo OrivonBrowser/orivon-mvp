@@ -33,6 +33,7 @@ Legend: **[OWNER]** product/philosophy/irreversible — never decided by an AI �
 | Signed/unsigned trust tier | **Owner (audit):** **cut from v0.** Capability-identical in v0, mechanism specified nowhere, and it would have put a red UNSIGNED badge on the flagship in the clip → `ADR-0002` §4 amendment, `ADR-0005` evening amendment |
 | What the metric counts | **Owner (audit):** split `activeSec` from `backgroundSec`, state the metric on `activeSec` → `ADR-0004`. A seeding tab previously satisfied 25 h/month on its own, making the daily-use hypothesis unfalsifiable in its own favour |
 | Install-count arithmetic | **Corrected, owner-side.** The "115–130 installs" figure applied only the telemetry consent rate — no retention, no activation. Honest requirement is in the **thousands of downloads**. Funnel sizing and channel selection are explicitly **outside the technical work session** |
+| C0 Renderer-side webtorrent (the week-0 spike) | **Resolved 2026-08-25 — architecture PASS.** Gates 0/1a/1b/2 pass with hard evidence; gate 4 (throughput) beats the actual product requirement 10x despite failing its literal relative-to-native-control threshold; gate 3 (video playback) is blocked on an unresolved Playwright/`_electron` tooling issue, not a product failure. Full verdict: `planning/spike-verdict.md`. `utilityProcess` fallback was not needed |
 | A6 Go / no-go on `readiness.md` | **Owner: GO**, 2026-08-25, conditional on reviewing the spike's execution plan first → `planning/week-0-spike-plan.md` |
 | A11 How a cached bundle is served at its origin | **Owner (2026-08-25):** keep the app's real origin, intercepting inside the app's `session` partition only → `ADR-0007`. Chosen over a custom scheme because changing the origin would fork storage, grants and the derived identity key between the cached and live states, with no export path to recover the lost key |
 
@@ -89,34 +90,6 @@ wallets.
 
 ## C. Technical unknowns
 
-### C0. Renderer-side webtorrent **[RESEARCH — week-0 spike, highest priority]**
-**Reframed 2026-08-25.** Throughput was never the risk — measured `MessagePort` transfer is
-~310 MB/s against the 1–5 MB/s 1080p needs, so the original gate would have passed while three
-real blockers went untested. The spike now asks, in order: does a renderer bundle fetch
-*ordinary* (non-WebRTC) torrents at all; is the shell tree free of native modules; does video
-play; and only then, throughput. See `build-plan.md` §Week 0 and `audit-2026-08-25.md`.
-Fallback is an Electron **`utilityProcess`**, not the main process. **Failing in week 0 is
-cheap; failing in week 4 costs the month.**
-
-**A new gate 0, added 2026-08-25 while writing `planning/week-0-spike-plan.md`.**
-[`electron#34905`](https://github.com/electron/electron/issues/34905) is **still open**, and the
-reporter's diagnosis is stronger than "transfers can lose data": `MessagePortMain.postMessage`
-appears to accept **only `MessagePortMain` objects** in its transfer list. If so, transferring an
-`ArrayBuffer` renderer → main is not merely unreliable but **unavailable** — and `build-plan.md`
-§Week 0 names "day 2 with transferable `ArrayBuffer`s" as the rescue for a throughput failure,
-calling "passes, but only with transferables" the likeliest outcome. That rescue may not exist.
-Structured clone *copies*, which at the audit's measured ~310 MB/s is ample for the 1–5 MB/s
-1080p needs, so the likely answer is fine — but it is now measured before any webtorrent work
-rather than assumed, and whatever it finds must be folded back into `capability-api.md`
-§Throughput.
-
-Three further corrections found the same day, from live package metadata: webtorrent is at
-**3.0.21**, not the 2.x the docs assume; its `browser` field map is **wider** than recorded
-(it also disables `crypto`, `fs`, `http`, `os`, `@silentbot1/nat-api` and `load-ip-set`, and
-redirects `fs-chunk-store` → `fsa-chunk-store`), while `dgram` is **not** in it — `dgram` is
-reached only via `bittorrent-dht`, which is; and `client.createServer(opts, force)` takes an
-undocumented-here `force: 'browser' | 'node'` parameter existing precisely for Electron.
-
 ### C1. DDOC's trust root is DNS — worth anything on ICANN domains? **[RESEARCH]**
 Deferred with A4b. Also unexamined: `Glossario`'s claim that DDOC justifies **self-signed
 HTTPS** on compliant sites. That needs hard scrutiny before it is repeated publicly.
@@ -141,6 +114,21 @@ also need checking per client — several are AGPL.
 Outstanding for: ENS resolution, IPFS (embedded vs. Kubo subprocess vs. gateway), the DDOC
 generator. Settled for: WASM host (deferred), Electron shell (build, do not fork), torrent
 engine (`webtorrent` library), Nostr (inject NIP-07, reuse third-party clients).
+
+### C6. Playwright `_electron` fails to attach to one window — cause unknown **[RESEARCH]**
+Found during the week-0 spike (gate 3, video playback). A direct, non-Playwright launch of the
+app loads and plays normally — confirmed via `dom-ready`/`did-finish-load` firing and matching
+renderer console output to every other gate. Launched through Playwright's `_electron.launch()`
+then `app.firstWindow()`, the call times out after 30s. Playwright's own CDP session to the
+main process is healthy (`DEBUG=pw:electron,pw:browser` shows the browser-level DevTools
+connection succeeding), but no target-created event for the window is ever logged — so this
+looks like an Electron/Chromium CDP auto-attach issue, not a Playwright installation problem.
+Six causes ruled out (full trail: `planning/spike-results/gate-3.json`); the `<video>` element
+and a raw-CDP-client test remain untried. **Matters because `build-plan.md`'s single
+highest-value automated test (the capability-rejection e2e) uses the identical `_electron`
+driver** — not confirmed affected (gates 0/1a/1b/4 all attach fine on the same driver), but
+worth a five-minute check the first time that test is written, before build step 2 is called
+done on the strength of it.
 
 ---
 

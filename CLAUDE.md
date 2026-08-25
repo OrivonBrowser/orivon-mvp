@@ -2,8 +2,8 @@
 
 ## Start here
 
-**Phase: owner said GO (2026-08-25). Next action is the week-0 spike.**
-Last updated 2026-08-25 (go recorded; spike plan written).
+**Phase: week-0 spike complete (2026-08-25). Next action is build step 1 (the shell).**
+Last updated 2026-08-25 (spike verdict recorded).
 
 Read in this order, then act:
 
@@ -17,18 +17,25 @@ Read in this order, then act:
    most obvious ideas have already been considered and rejected for recorded reasons.
    **ADR-0002 and ADR-0005 carry amendments that supersede parts of their own text.**
 
-**The next action:** the **week-0 spike**. Criteria in `build-plan.md`; the task-by-task
-execution plan is `docs/planning/week-0-spike-plan.md` — **work from that**, it carries live-API
-corrections the older documents do not. The gates ask, in order: does `MessagePortMain` carry
-bytes renderer → main at all (**new gate 0**, because `electron#34905` is still open and may make
-transferable `ArrayBuffer`s unavailable on that path); does a renderer bundle fetch *ordinary*
-(non-WebRTC) torrents; is the tree free of native modules; does video play; then throughput.
-Timeboxed to 2 days, fallback is a `utilityProcess`. **Nothing else starts until it resolves.**
+**The spike resolved.** Verdict and evidence: `docs/planning/spike-verdict.md` (read this, not
+the older `week-0-spike-plan.md`, for current status). Gates 0/1a/1b/2 **PASS** with hard
+evidence; gate 4 (throughput) fails its literal relative-to-native-control threshold but beats
+the actual product requirement 10x — read past the verdict field; gate 3 (video playback) is
+**BLOCKED**, not failed — the app works (confirmed via a direct, non-Playwright launch), but
+Playwright's `_electron` driver can't attach to that window, for an unidentified reason. This
+is a real, currently-unresolved risk for build step 2's e2e test, which uses the same driver —
+check early. **`utilityProcess` fallback was not needed.**
+
+**This machine has `ELECTRON_RUN_AS_NODE=1` set in the ambient shell environment.** It makes
+the Electron binary run as plain Node — no windows, no `MessagePortMain`. It does not fail
+loudly. Never launch Electron directly; see `.claude/skills/orivon-electron/` for the pattern
+that strips it and verifies the launch is real.
 
 Open owner decisions are in `docs/open-questions.md` §A. A11 is closed (`ADR-0007`: cached
 bundles keep their real origin, intercepted inside the app's partition). **A10's direction is
-decided — WHATWG streams underneath, Node shapes presented by the shim on top — but its full
-specification is still unwritten and must land before build step 2.**
+decided and it is now unblocked** — WHATWG streams underneath, Node shapes presented by the
+shim on top; gate 0 resolved the transferable-`ArrayBuffer` question that was blocking it. Full
+specification is still unwritten and must land before build step 2.
 
 ## What this repository is
 The MVP implementation of **Orivon**. It is *not* the vision documentation.
@@ -96,12 +103,9 @@ invoked at the step named here. **Check this table at the start of every build s
 | `playwright` (MCP) | **Manual — build steps 4 and 7.** | Drive the localhost fixture app (step 4) and the three pinned Nostr web clients (journey 3, step 7). The Electron e2e uses the `_electron` library, not this |
 | `claude-security` | **Manual — run `/claude-security` at the end of build step 2 (broker) and again before packaging (step 10).** | Whole-repo multi-agent vulnerability scan with verified findings. Expensive: twice, not continuously |
 | `claude-md-management` | **Manual — `/revise-claude-md` at the end of any session that changed an assumption in this file.** | Keeps this file true once code exists |
+| `orivon-electron` (project skill) | **Manual — read before writing or debugging any Electron+webtorrent code.** | The renderer-bundling alias recipe, the `ELECTRON_RUN_AS_NODE` trap, `MessagePortMain` silent-failure behaviour, and the unresolved Playwright attach issue. Captured 2026-08-25; exists nowhere else |
 | `adversarial-reviewer` (user skill) | Manual — after each build step lands | The multi-perspective review that produced `audit-2026-08-25.md`; run it on the broker and the app loader at minimum |
 | Built-ins `/code-review`, `/security-review`, `/simplify` | Manual | Per-diff review before each commit on the critical path |
-
-**After the spike resolves, write a project skill** at `.claude/skills/orivon-electron/` capturing
-what was learned (webtorrent resolution overrides, `MessagePortMain` transfer behaviour, the
-custom-scheme media path). That knowledge exists nowhere else; do not let it live only in chat.
 
 ## Devlog capture
 `devlog/journal.md` feeds the Sunday team devlog (compiled by `/devlog`). At the end of
