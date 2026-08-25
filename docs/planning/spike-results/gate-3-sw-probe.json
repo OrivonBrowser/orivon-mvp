@@ -1,0 +1,9 @@
+{
+  "note": "Standalone probe run before building gate 3's full renderer, to decide between the service-worker createServer path and the more complex protocol.handle custom-scheme fallback.",
+  "isSecureContext": true,
+  "hasServiceWorkerContainer": true,
+  "registered": true,
+  "error": null,
+  "scope": "file:///home/jhon/Desktop/Develop/Claude/orivon-mvp/spike/gate3/dist/",
+  "conclusion": "Electron treats a file:// origin loaded via loadFile() as a secure context, so service worker registration succeeds without any extra scheme registration. The custom-scheme fallback in main.cjs (orivon-media, registered via protocol.registerSchemesAsPrivileged before app.whenReady) is left in place but unused by this gate."
+}

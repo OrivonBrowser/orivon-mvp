@@ -1,0 +1,95 @@
+{
+  "gate": 3,
+  "question": "Does MP4/H.264 play with seeking?",
+  "measuredAt": "2026-08-25T15:35:00+02:00",
+  "verdict": "BLOCKED",
+  "note": "STOPPED per the handoff plan's directive 3 (two focused attempts, then report) -- in practice, six distinct isolation tests were run, none of which found the root cause. Reporting per the plan's instructions rather than continuing to iterate.",
+  "versions": {
+    "electron": "44.0.0",
+    "playwright-core": "1.62.1",
+    "@playwright/test": "1.62.1"
+  },
+  "symptom": "electronApplication.firstWindow() times out after 30s with 'Timeout 30000ms exceeded while waiting for event \"window\"'. This happens even though the app itself is confirmed working correctly.",
+  "decisiveEvidence": {
+    "directLaunchWorks": {
+      "command": "env -u ELECTRON_RUN_AS_NODE xvfb-run -a ./node_modules/electron/dist/electron spike/gate3",
+      "observed": [
+        "[main] module loaded",
+        "[main] scheme registered",
+        "[main] whenReady fired",
+        "[main] createWindow start",
+        "[main] BrowserWindow constructed, id=1",
+        "[main] calling loadFile",
+        "[main] loadFile called (async)",
+        "[main] createWindow returned",
+        "[main] dom-ready",
+        "[main] did-finish-load",
+        "[renderer-console] 2: Electron Security Warning (Insecure Content-Security-Policy) ..."
+      ],
+      "conclusion": "The window, the renderer, and the bundled JS all load completely normally under a plain, non-Playwright launch. dom-ready and did-finish-load both fire immediately. The app itself has no bug that explains the hang."
+    },
+    "playwrightLaunchHangs": {
+      "command": "launchElectron({ appPath: 'spike/gate3' }) from spike/launch.mjs, then app.firstWindow()",
+      "observed": "launchElectron() itself resolves successfully (its own app.evaluate() check for MessageChannelMain passes). But NONE of dom-ready / did-finish-load / did-fail-load / render-process-gone / console-message / preload-error ever fire on the webContents, and firstWindow() times out.",
+      "conclusion": "The exact same main.cjs, preload.cjs, and built dist/ bundle that loads fine directly hangs specifically when launched through Playwright's _electron.launch(). This isolates the problem to the Playwright/Electron integration for this specific app, not to a bug in the app's own code."
+    }
+  },
+  "testsRun": [
+    {
+      "hypothesis": "protocol.registerSchemesAsPrivileged() (new in gate 3, not present in gates 0/1a/1b) breaks something at module-load time under Playwright specifically",
+      "test": "Removed the call entirely, rebuilt, re-ran the same Playwright launch",
+      "result": "Still hangs identically. Disconfirmed.",
+      "note": "Confirmed independently via the direct-launch trace above that the scheme registration does not block the RENDERER either -- dom-ready and did-finish-load both fire with it present."
+    },
+    {
+      "hypothesis": "The real mse.js + crypto-browserify path (gate 3 is the first gate to use it unconditionally rather than a stub) does something slow or hanging at module-evaluation time in the renderer bundle",
+      "test": "Reverted the ./mse.js alias to shim/mse-stub.js (the same stub gates 1a/1b used), rebuilt, re-ran",
+      "result": "Still hangs identically. Disconfirmed."
+    },
+    {
+      "hypothesis": "A stray Electron process from earlier manual debugging launches is holding a single-instance lock, blocking a fresh window from being createable/attachable",
+      "test": "ps aux | grep -i electron",
+      "result": "No stray processes found. Disconfirmed."
+    },
+    {
+      "hypothesis": "System resource starvation (CPU/memory) is slowing renderer startup past the 30s Playwright timeout",
+      "test": "Checked nproc (8), free -h (2.2GB free, 10GB in reclaimable cache), uptime load average (0.82-1.24 on 8 cores), ps aux --sort=-%cpu",
+      "result": "Plenty of headroom; nothing consuming significant CPU. Disconfirmed."
+    },
+    {
+      "hypothesis": "A preload script error is silently crashing preload.cjs before the main-world script can run, which would prevent any load-completion event",
+      "test": "Added a win.webContents.on('preload-error', ...) listener",
+      "result": "Never fires, under either launch method. Disconfirmed as the cause (though the hook is worth keeping)."
+    },
+    {
+      "hypothesis": "This is a general Electron problem, not specific to Playwright's automation layer",
+      "test": "Ran the identical, unmodified main.cjs (with full tracing) via a direct, non-Playwright launch",
+      "result": "Loads completely normally -- dom-ready and did-finish-load both fire. This is the decisive test: it proves the problem is in the Playwright/Electron integration specifically, not in gate 3's application code."
+    }
+  ],
+  "whatIsDifferentAboutGate3": {
+    "confirmedNotTheCause": ["protocol.registerSchemesAsPrivileged", "real mse.js/crypto-browserify vs the stub"],
+    "notYetTested": [
+      "The <video> element in index.html -- gate 3 is the first gate with any media element in the DOM. Untested because dom-ready itself never fires under Playwright, and dom-ready does not depend on video initialization, which makes this a lower-probability candidate, but it was not ruled out directly.",
+      "The extra contextBridge.exposeInMainWorld('__gate3Env', ...) call in preload.cjs, referencing globalThis.isSecureContext -- untested in isolation.",
+      "Whether Playwright's own internal script injection (which it uses to hook window creation, separate from this app's preload) is itself failing for a reason specific to this app's webPreferences combination or bundle size (gate 3's bundle is ~1.8MB unminified, larger than gate1b's ~1.55MB, though gate1b worked fine).",
+      "Whether the isolated app tree (spike/app/node_modules) picked up any change between gate 1b's successful runs and now -- no npm install ran in spike/app/ between then and gate 3, so this is unlikely but not directly re-verified."
+    ]
+  },
+  "playwrightDebugTrace": {
+    "command": "DEBUG=pw:electron,pw:browser xvfb-run -a node <driver>",
+    "observed": [
+      "<launching> .../electron -r .../playwright-core/lib/server/electron/loader.js --no-sandbox --inspect=0 --remote-debugging-port=0 spike/gate3",
+      "<launched> pid=...",
+      "Debugger listening on ws://127.0.0.1:.../...  (Node inspector, from -r loader.js)",
+      "<ws connecting> / <ws connected>  to the Node inspector",
+      "DevTools listening on ws://127.0.0.1:.../devtools/browser/...  (the real Electron/Chromium CDP endpoint)",
+      "<ws connecting> / <ws connected>  to the browser-level CDP endpoint",
+      "-- nothing else is logged for the next 30 seconds --",
+      "<kill> / <will force kill>  once the 30s firstWindow() timeout fires"
+    ],
+    "conclusion": "This is the most useful finding of the investigation, and it narrows the failure further than the earlier tests could. BOTH CDP connections succeed cleanly: the Node inspector (used for launchElectron()'s own app.evaluate() check, which does succeed) and the browser-level DevTools endpoint. Playwright's session to Electron's main process is fully healthy. But no target-created event for the renderer's window is ever logged, even though the direct-launch trace proves the window and its content load completely normally on the Electron/Chromium side. This points specifically at Electron/Chromium's CDP target auto-attach behavior for this window not reporting the new target to Playwright's browser-level CDP session -- not at a general connectivity or Playwright-installation problem, and not at anything in gate 3's own application code."
+  },
+  "recommendation": "The next diagnostic step is CDP target auto-attach specifically: check whether `Target.setAutoAttach`/`Target.setDiscoverTargets` is being sent and acknowledged on the browser-level CDP session (broaden the DEBUG filter to pw:protocol or similar to see raw CDP frames), or try driving gate 3 via a raw CDP client against the same --remote-debugging-port instead of Playwright's _electron wrapper, to see whether a manually-issued Target.setDiscoverTargets call surfaces the window that Playwright's own auto-attach is missing. If it does, the fix is likely a specific Electron flag or main-process API call this app is missing that gates 1a/1b happened not to need.",
+  "notInScope": "Per the handoff plan, further diagnosis of this specific failure is being handed back rather than iterated on further in this session."
+}
