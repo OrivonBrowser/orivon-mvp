@@ -29,18 +29,13 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - 2026-08-25: electron#34905 confirmed, and worse than the issue says: transferable ArrayBuffers renderer→main are silently dropped, never arriving, with no error. Killed the "day 2 with transferables" fallback in the build plan; harmless, since copying is already 60–200x past requirement.
 - 2026-08-25: Native-module guard rewritten against build-plan's literal criterion — a naive `.node` check fails on Electron's own prebuilt deps, so it now fails on what needs a *compiler* instead.
 - 2026-08-25: Lost about an hour to `ELECTRON_RUN_AS_NODE=1` being set in the environment, which makes the Electron binary run as plain Node. It presented as a module-format error. Every gate now launches through a helper that strips it and asserts it is really Electron.
+- 2026-08-25: **Gate 1a PASS** — a renderer bundle fetched an ordinary non-WebRTC torrent (wire type `tcpOutgoing`, piece verified in 505ms). This was the risk four audits called the real one.
+- 2026-08-25: Six bundling problems to get there, only one anticipated. Worst was a missing `path` polyfill that reported itself as `ConnPool.join is not a function`, because Rollup gave two externalised modules the same identifier.
+- 2026-08-25: **BitTorrent encryption works after all.** Owner challenged the claim that it couldn't run in the renderer; `mse.js` already ships a pure-JS RC4 fallback and `crypto-browserify` covers the rest. Encrypted handshake verified at `secure: 2` (no plaintext fallback). Recommendation: ship `secure: 1`.
+- 2026-08-25: Hardened the unattended Sunday devlog cron — writes scoped to `devlog/` only, after a first attempt that left a real escape to `$HOME`.
 
 ### In my head
 - 2026-08-25: Wants a Sunday ritual: paste-ready team message plus bullet cues for a spontaneous voice note recalling the week's thinking.
 - 2026-08-25: Keen to start building the browser; kept checking whether preparation was really finished. Accepted that the spike comes first once it was clear a spike failure would invalidate a week of shell work.
-- 2026-08-25: Thinking about model cost discipline — wants to know when Opus is genuinely needed versus when Sonnet is enough.
-
-### Non-repo
-- 2026-08-25: **Gate 1a PASS** — a renderer bundle fetched an ordinary non-WebRTC torrent (wire type `tcpOutgoing`, piece verified in 505ms). This was the risk four audits called the real one.
-- 2026-08-25: Six bundling problems to get there, only one anticipated. Worst was a missing `path` polyfill that reported itself as `ConnPool.join is not a function`, because Rollup gave two externalised modules the same identifier.
-- 2026-08-25: Owner pushed back on my claim that BitTorrent encryption couldn't work in the renderer. He was right — `mse.js` already ships a pure-JS RC4 fallback, and `crypto-browserify` covers the rest. Encrypted handshake verified at `secure: 2` (no plaintext fallback). Recommendation: ship `secure: 1`.
-- 2026-08-25: Switching to opusplan for the remaining gates now the bundling recipe is established.
-
-### In my head
-- 2026-08-25: Cost discipline — asked twice about when Opus is actually worth it versus Sonnet, and wants the expensive model spent on judgment, not on build-run-read-error loops.
-- 2026-08-25: Instinctively distrusted a "we can't do anything about it" answer and was right to. Worth remembering that the challenge, not the analysis, is what produced the correct result.
+- 2026-08-25: Cost discipline — asked twice about when Opus is genuinely needed versus Sonnet, and wants the expensive model spent on judgment rather than on build-run-read-error loops. Switched to opusplan once the bundling recipe was established.
+- 2026-08-25: Instinctively distrusted a "we can't do anything about it" answer and was right to. The challenge, not the analysis, is what produced the correct result.
