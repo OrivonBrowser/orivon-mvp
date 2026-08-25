@@ -1,0 +1,42 @@
+{
+  "gate": "1b",
+  "question": "Does a DHT lookup complete over the shimmed dgram?",
+  "versions": {
+    "electron": "44.0.0",
+    "chrome": "152.0.7977.54"
+  },
+  "measuredAt": "2026-08-25T14:47:57+02:00",
+  "localDht": {
+    "host": "127.0.0.1",
+    "port": 42852,
+    "infoHash": "193ac6e22ecb803940a3b7d8b3cf92179cabb537",
+    "announcedPeerPort": 6881,
+    "config": "bootstrap:false standalone node, announcing one infohash"
+  },
+  "dgramShim": {
+    "typeofCreateSocket": "function",
+    "isFalse": false,
+    "hasSocket": true
+  },
+  "peersFound": [
+    {
+      "host": "127.0.0.1",
+      "port": 6881
+    }
+  ],
+  "elapsedMs": 11,
+  "error": null,
+  "stack": null,
+  "timeline": [
+    "6ms listening, local address 0.0.0.0:58995",
+    "9ms node seen 127.0.0.1:42852",
+    "9ms dht ready (bootstrap answered over the shimmed dgram)",
+    "11ms PEER 127.0.0.1:6881 for 193ac6e22ecb"
+  ],
+  "publicDhtLeg": {
+    "attempted": false,
+    "reason": "Public DHT is unreachable from this environment. Verified: outbound UDP works (DNS query to 8.8.8.8 answered, 61 bytes) but router.bittorrent.com:6881 never replied within 8s. MUST be re-run on a normal network before the DHT story is considered fully proven."
+  },
+  "verdict": "PASS",
+  "note": "Real KRPC-over-UDP traffic (bencoded queries and responses) crossed the shimmed dgram, and a lookup returned the announced peer."
+}

@@ -40,6 +40,12 @@ export async function launchElectron ({ appPath = '.', args = [] } = {}) {
 
   const app = await electron.launch({ args: [appPath, ...args], env })
 
+  // Forward MAIN-process stdout/stderr. Without this, console output from the
+  // broker is swallowed -- Playwright captures the child's streams and does not
+  // relay them -- so a gate can look silent when the main side is talking.
+  app.process().stdout?.on('data', (d) => process.stderr.write(`[main] ${d}`))
+  app.process().stderr?.on('data', (d) => process.stderr.write(`[main] ${d}`))
+
   // Assert we got Electron, not Node wearing its binary. If this throws, no
   // gate result from this run may be trusted.
   const isReal = await app.evaluate(async ({ app: electronApp, MessageChannelMain }) => {
