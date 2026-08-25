@@ -33,6 +33,38 @@ It does not appear in the public `web3-score.md` — contradiction **B3** in
 (ADR-0002), so Orivon knows what an app *actually did*, not what it claims. No conventional
 browser can report this, because it never sees the app's real network behaviour.
 
+> ### Amendment, 2026-08-25 — the oracle was not complete, and the ladder was gameable
+>
+> Two independent audit findings each broke this ADR as originally written. The owner chose to
+> **fix the indicator properly (~2 days)** rather than cut or reduce it.
+>
+> **(1) `fetch` bypassed the broker entirely.** App renderers keep ordinary web capabilities,
+> so an app could reach any host via `fetch`, WebSocket or WebRTC with the broker seeing
+> nothing. An app doing all its networking to its own central server showed **zero** observed
+> connections and therefore scored as maximally *local*. The indicator did not merely fail to
+> detect the bad case — **it awarded that case the best grade.** Grep of the corpus confirmed no
+> mention of CSP, `connect-src` or request filtering anywhere.
+>
+> **Fix (required, not optional): the broker injects a CSP on each app's session partition** via
+> `onHeadersReceived`, limiting `connect-src` to the cached bundle plus manifest-declared hosts,
+> and blocking WebRTC. The app cannot relax it. Only then does the manifest genuinely bound an
+> app's network reach, and only then are C2, Site L3 and Site L4 statements the broker can
+> actually make (`security-model.md` T22).
+>
+> **(2) The connection ladder was cheaper to fake than to earn.** Any app holding
+> `tcp.connect *:*` — which the flagship needs, so the pattern is normalised — reaches the top
+> of the ladder by opening many short connections to many distinct hosts. An app exfiltrating
+> the user's `files/` directory does exactly that *as the exfiltration*, and would be
+> classified **"swarm pattern"**: the best available grade, earned by the attack itself.
+> Compounding it, the log was in memory, so the app controlled when observation stopped.
+>
+> **Fixes:** persist a rolling per-origin summary across restarts (one JSON file per origin);
+> add **bytes in / bytes out per endpoint** and surface the one signal that is expensive to fake
+> while actually exfiltrating — **volume sent to endpoints that sent little back**, since a real
+> swarm is roughly symmetric and exfiltration is not; and make the **raw counts the primary
+> display** (N hosts, X sent / Y received, longest-lived connection) with the pattern label
+> secondary and explicitly heuristic. The ladder table below reads as a grade; the UI must not.
+
 This splits the scoring problem in a way the existing docs do not:
 
 | | decidable by | in MVP? |
@@ -55,7 +87,7 @@ the dishonesty the indicator exists to prevent.
 | | | trust cost |
 |---|---|---|
 | D1 | fetched from a host on every load (an ordinary website) | continuous |
-| D2 | fetched once, cached and **pinned** to the publisher's key; same-key updates with unchanged capabilities apply silently, key change or new capability re-prompts (`ADR-0005` amendment) | **once** (TOFU, as in SSH) |
+| D2 | fetched once, cached and **hash-pinned** (TOFU on the bundle). Signing is cut from v0, so the pin *is* the mechanism; re-consent on hash change, on any capability-pattern widening, or on a version rollback (`capability-api.md`) | **once** (TOFU, as in SSH) |
 | D3 | content-addressed (infohash / CID) — the address *is* the proof | none |
 | D4 | content-addressed **and** name resolved trustlessly (ENS) | none — *deferred, needs resolution* |
 
@@ -102,11 +134,10 @@ Consequences, all of which are improvements over scoring a domain:
   `open-questions.md` A4a.
 - **Providers are subscribable feeds**, like apt repositories or filter lists. Several may
   attest the same hash, and disagreement between them is visible rather than hidden.
-- **On bundle change, two independent things happen:** the automatic layer verifies the
-  publisher signature — silent if same key and no new capabilities, re-consent otherwise
-  (`ADR-0005` amendment) — and the judged layer falls back to unassessed grey `?` because no
-  attestation matches the new hash. The app keeps working; it loses only its judged score
-  until re-attested.
+- **On bundle change, two independent things happen:** the automatic layer breaks its pin and
+  re-prompts, and the judged layer falls back to unassessed grey `?` because no attestation
+  matches the new hash. The app keeps working; it loses only its judged score until re-attested.
+  *(Signing is cut from v0, so this is hash-pinning alone — see `capability-api.md`.)*
 
 **Known friction:** this creates *lag* — every app update sits unassessed until re-attested,
 so fast-moving apps are grey much of the time. This is the genuine basis for the "pay for
@@ -140,9 +171,13 @@ No provider exists yet, so no judged level is ever displayed in month 1.
   live provider query, which leaks users to the provider.
 
 ## Consequences
-- **Cost rises from ~2 days to ~3–4 days.** Accepted: the data already exists inside the
-  broker, and the indicator is what ties the MVP to the Orivon brand rather than leaving it a
-  torrent client with tabs.
+- **Cost rises from ~2 days to ~3–4 days**, plus **~2 days** for the 2026-08-25 amendment
+  (partition CSP, persisted per-origin summaries, byte-asymmetry signal, evidence-first UI).
+  Accepted by the owner: the data already exists inside the broker, and the indicator is what
+  ties the MVP to the Orivon brand rather than leaving it a torrent client with tabs.
+  **Note the schedule consequence honestly:** `build-plan.md` §Risks names this feature as the
+  first thing to cut under pressure. It is now more expensive *and* still first-to-cut, and the
+  month was already oversubscribed before the amendment. That tension is unresolved.
 - The broker must keep a **per-app connection log** (in memory, summarised for display), and
   the app cache must be **hash-pinned with re-consent on change** — the latter already
   required by ADR-0005 for integrity.

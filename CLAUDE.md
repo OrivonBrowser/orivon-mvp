@@ -2,22 +2,31 @@
 
 ## Start here
 
-**Phase: preparation complete, awaiting owner go/no-go.**
-Last updated 2026-08-18.
+**Phase: preparation complete and audited, awaiting owner go/no-go.**
+Last updated 2026-08-25.
 
 Read in this order, then act:
 
-1. `docs/planning/readiness.md` — the gate. Says what is ready and what is not.
-2. `docs/mvp-scope.md` — what is in, what is out, what counts as failure.
-3. `docs/planning/build-plan.md` — dependency-ordered work.
-4. `docs/decisions/` — six ADRs. Read them before proposing anything architectural;
+1. `docs/planning/audit-2026-08-25.md` — **read this first.** Five independent audits of the
+   corpus. Records what was wrong, what was fixed, and what is still open. Several documents
+   below carry corrections that reverse earlier claims.
+2. `docs/planning/readiness.md` — the gate. Says what is ready and what is not.
+3. `docs/mvp-scope.md` — what is in, what is out, what counts as failure.
+4. `docs/planning/build-plan.md` — dependency-ordered work.
+5. `docs/decisions/` — six ADRs. Read them before proposing anything architectural;
    most obvious ideas have already been considered and rejected for recorded reasons.
+   **ADR-0002 and ADR-0005 carry amendments that supersede parts of their own text.**
 
-**The next action, once the owner says go:** the **week-0 spike** in `build-plan.md` —
-can `webtorrent` run in a renderer over shimmed `net`/`dgram` at usable throughput?
-Timeboxed to 2 days, with a documented fallback. **Nothing else starts until it resolves.**
+**The next action, once the owner says go:** the **week-0 spike** in `build-plan.md`.
+Its criteria were rewritten on 2026-08-25 — the old gate measured throughput, which four
+audits independently found was never the risk. It now asks, in order: does a renderer bundle
+fetch *ordinary* (non-WebRTC) torrents; is the tree free of native modules; does video play;
+then throughput. Timeboxed to 2 days, fallback is a `utilityProcess`.
+**Nothing else starts until it resolves.**
 
-Open owner decisions are listed in `docs/open-questions.md` §A. None block the spike.
+Open owner decisions are in `docs/open-questions.md` §A. None block the spike, but **A10
+(handle contracts) and A11 (ADR-0007, how cached bundles are served) must land before build
+step 2** — both are one-way doors.
 
 ## What this repository is
 The MVP implementation of **Orivon**. It is *not* the vision documentation.

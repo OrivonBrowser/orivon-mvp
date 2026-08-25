@@ -26,8 +26,13 @@ Legend: **[OWNER]** product/philosophy/irreversible — never decided by an AI �
 | A4a Advertising priced by trustlessity level | **Owner decision, accepted.** Ad priority and price are keyed to trustlessity level as in `economical-strategy.md`: lower level ⇒ higher price and lower priority, as a deliberate penalty on centralised entrants. See "Accepted tradeoffs" below |
 | Trust indicator scope | → `ADR-0006`. Full spectrum from observed behaviour + delivery provenance; ships the attestation hook, not a judge |
 | Flagship first-run grants | **Owner (validation pass):** the real grant prompt appears in the clip — the flagship holds zero silent privileges, and the prompt showcases the permission system on camera |
-| App-update re-consent friction | **Owner (validation pass):** publisher-key TOFU → `ADR-0005` amendment. Silent update on same key + unchanged capabilities; re-consent on key change or new capability |
+| App-update re-consent friction | **Owner (validation pass):** publisher-key TOFU → `ADR-0005`. **Superseded the same day by the audit** — signing was unspecified and unscheduled, and the amendment's central claim was false (a keyless compromised host serves a 302). Now: hash-pinning + pattern-subset check + version floor |
 | Telemetry EU posture | **Owner (validation pass):** first-run explicit choice, [Keep on]/[Turn off], no preselected default → `ADR-0004` amended. ~85–90% retention, defensible as consent under GDPR |
+| Video format in v0 | **Owner (audit):** MP4/H.264 only; state it in-product, shoot the clip on an MP4 torrent. MSE cannot demux Matroska and neither can Chromium's `<video>`, so MKV has no path without a remuxer — post-launch (`libav-wasm`) |
+| Trust indicator, given two independent breaks | **Owner (audit):** **fix it properly (~2 days)** rather than reduce or cut → `ADR-0006` amendment. Partition CSP so the manifest genuinely bounds network reach, persisted per-origin summaries, byte-asymmetry signal, evidence-first UI |
+| Signed/unsigned trust tier | **Owner (audit):** **cut from v0.** Capability-identical in v0, mechanism specified nowhere, and it would have put a red UNSIGNED badge on the flagship in the clip → `ADR-0002` §4 amendment, `ADR-0005` evening amendment |
+| What the metric counts | **Owner (audit):** split `activeSec` from `backgroundSec`, state the metric on `activeSec` → `ADR-0004`. A seeding tab previously satisfied 25 h/month on its own, making the daily-use hypothesis unfalsifiable in its own favour |
+| Install-count arithmetic | **Corrected, owner-side.** The "115–130 installs" figure applied only the telemetry consent rate — no retention, no activation. Honest requirement is in the **thousands of downloads**. Funnel sizing and channel selection are explicitly **outside the technical work session** |
 
 ---
 
@@ -38,6 +43,8 @@ None of these block starting the week-0 spike.
 | | Decision | Needed by |
 |---|---|---|
 | **A6** | **Go / no-go on `planning/readiness.md`** | before any code |
+| **A10** | **Handle contracts** — `TcpSocket`, `TcpServer`, `UdpSocket`, `FileHandle`, `IdentityHandle` are named in the v0 surface but never defined: no read/write shape, no event model, no backpressure, no close/half-close, no error taxonomy, no revocation semantics. **Half a day of spec work, and the highest-value remaining item** — it is the durable asset, and `ADR-0002`'s own argument is that this is the cheapest moment. Recommendation: WHATWG streams (not `MessagePort`, which has no WASM equivalent and breaks the Wasmtime leg), a closed Orivon error enum, and an explicit rule that **revoking a grant closes every handle derived from it** | before build step 2 |
+| **A11** | **ADR-0007: how a cached bundle is served at its manifest origin.** Unspecified anywhere. A custom scheme breaks the stated origin definition (and therefore the grant ledger, storage domain and derived key); intercepting `https://` in the app's partition preserves it but means serving cached bytes under a TLS origin never contacted. `ADR-0003` calls origin "the single most consequential detail in the storage model" | **before the first grant is persisted** |
 | A7 | Canonical **DDOC** expansion — recommendation: *Domain Data Ownership **Confirmation*** (`glossary.md`, B2) | before correcting public docs |
 | A8 | **`+Privacy`** attaches to L4 (published) or L5 (private)? (`glossary.md`) | before correcting public docs |
 | A9 | Three capability-API items. **Defaults now proposed** in `architecture/capability-api.md` — `net.listen` grantable to unsigned apps with a declared port range and no privileged ports · grants keyed on `(origin, capability)`, with bundle-hash changes handled by the separate pin-break prompt · `fs.quotaBytes` enforced via a running per-origin counter | **Build proceeds on these unless overruled.** Cheap to change before any third-party app exists |
@@ -82,11 +89,14 @@ wallets.
 
 ## C. Technical unknowns
 
-### C0. Renderer-side webtorrent throughput **[RESEARCH — week 1 spike, highest priority]**
-Can `webtorrent` run in a renderer over shimmed `net`/`dgram` at acceptable throughput, with
-`MessageChannelMain` ports for socket data? ADR-0005 depends on the answer. If it fails, the
-fallback is privileged main-process webtorrent for the MVP, recorded as debt. **Failing in
-week 1 is cheap; failing in week 4 is not.**
+### C0. Renderer-side webtorrent **[RESEARCH — week-0 spike, highest priority]**
+**Reframed 2026-08-25.** Throughput was never the risk — measured `MessagePort` transfer is
+~310 MB/s against the 1–5 MB/s 1080p needs, so the original gate would have passed while three
+real blockers went untested. The spike now asks, in order: does a renderer bundle fetch
+*ordinary* (non-WebRTC) torrents at all; is the shell tree free of native modules; does video
+play; and only then, throughput. See `build-plan.md` §Week 0 and `audit-2026-08-25.md`.
+Fallback is an Electron **`utilityProcess`**, not the main process. **Failing in week 0 is
+cheap; failing in week 4 costs the month.**
 
 ### C1. DDOC's trust root is DNS — worth anything on ICANN domains? **[RESEARCH]**
 Deferred with A4b. Also unexamined: `Glossario`'s claim that DDOC justifies **self-signed

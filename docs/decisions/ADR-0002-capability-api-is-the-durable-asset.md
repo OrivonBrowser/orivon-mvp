@@ -17,7 +17,7 @@ desktop applications already use**, so that porting an existing Electron app is 
 ```
 renderer (sandbox: true, contextIsolation: true, nodeIntegration: false)
       │   normal HTML / React frontend — unchanged from ordinary web development
-      │   preload-exposed API:  orivon.net.*  orivon.fs.*  orivon.hid.*  orivon.id.*
+      │   preload-exposed API:  orivon.net.*  orivon.fs.*  orivon.id.*
       ▼
 capability broker (main process) — enforces app manifest + user grants, Android-style
       ▼
@@ -26,6 +26,48 @@ implementation, swappable without touching apps:
       later    →  Wasmtime host functions  (containment for untrusted code, mobile)
       later    →  Chromium fork + Mojo
 ```
+
+## Amendments recorded 2026-08-25
+
+Per this repository's convention, corrections are written into the ADR rather than left only in
+downstream documents.
+
+**1. `orivon.hid.*` removed from the diagram.** `capability-api.md` excludes `hid` and
+`subprocess` from v0 entirely — for signed apps too, not merely unsigned ones.
+
+**2. The identity rule below was wrong, and is reversed.** This ADR stated that `orivon.id`
+yields **per-origin derived keys only, with no cross-origin linkage**. That cannot support
+Nostr: an npub must be identical across every client site, or follows and posts fragment per
+client. The corrected model — silent **per-origin app keys** plus **named identities** that are
+cross-origin by explicit per-site consent — lives in `capability-api.md`. The reversal was
+found in validation and is recorded here so a reader arriving via `readiness.md` is not handed
+a known-false rule.
+
+**3. The signed/unsigned trust tier is cut from v0** (owner decision). Its only stated
+capability difference was `subprocess` and `hid`, which v0 removes for *every* tier — so the
+tiers were already identical while still costing signature verification, key pinning, unsigned
+marking and a developer-mode flow. `ADR-0005`'s evening amendment records the full reasoning.
+**Consequence for this ADR: the "unsigned apps are marked in the tab and in every grant prompt"
+rule does not apply in month 1**, because every app is unsigned.
+
+**4. The "app backend" environment this ADR posits no longer exists — and `orivon-runtime`'s
+containment justification needs re-argument.** Contradiction B5 was resolved here by naming two
+environments, *frontend* (renderer) and *app backend* (broker-side, capability-gated), with
+`orivon-runtime` given the job of containing the latter. `ADR-0005` then concluded that
+URL-delivered app code cannot run in the main process, moving it to the renderer — after which
+**all app code is renderer JS and the broker is a pure syscall proxy.**
+
+Two consequences, stated rather than smoothed over:
+- The migration ladder is, as now designed, **Node → Mojo**. Wasmtime would be a *different app
+  model* (apps ship WASM modules), not a swap beneath a stable API.
+- The containment argument is probably wrong. Hostile app code already runs inside a V8
+  renderer sandbox; what makes it dangerous is **the grants it holds**, which is an
+  authorisation problem WASM does not solve. The likelier real fix is finer-grained, revocable
+  broker policy.
+
+`orivon-runtime`'s **mobile portability** justification is untouched. Its containment
+justification is now open, and `mvp-scope.md` states it publicly — so this matters beyond the
+repository.
 
 ## Context
 The public technical design (`orivon-runtime.mdx`, `orivon-core.mdx`,

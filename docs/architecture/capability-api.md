@@ -19,6 +19,11 @@
 3. **Handles, not ambient authority.** `connect()` returns a handle; later operations
    reference the handle. Capability is checked once, at acquisition. This avoids TOCTOU and
    avoids re-authorising on every call.
+   **Constraint added 2026-08-25 — a handle must never be transferable.** `MessagePort` is a
+   transferable object and `port.on('message')` carries *no sender identity*, so a transferred
+   port is a bearer capability: an app could hand a live socket to any origin and the broker
+   would see nothing. Handle tables are therefore **per-origin with an ownership check on every
+   operation**, and the raw port never leaves the isolated world (see Throughput).
 4. **Declare statically, grant dynamically.** The manifest declares what an app *may* ask
    for; the user grants what it *actually gets*. An app can never obtain a capability absent
    from its manifest, even with user consent.
@@ -32,7 +37,7 @@ ledger entry, and its derived identity key (ADR-0003, ADR-0005).
 - HTTPS-delivered apps use the **standard web origin** — scheme + host + port. Deliberately
   the web's definition, not a new one.
 - IPFS- and ENS-delivered apps will key on CID / ENS name. Deferred until trustless
-  resolution exists.
+  resolution exists
 
 > **This definition must be settled before the first grant is persisted.** Changing it later
 > invalidates every stored grant and orphans every app's data.
@@ -48,8 +53,8 @@ Served alongside the app's frontend assets and fetched before first run.
   "name": "Orivon Torrent",
   "version": "0.1.0",
   "entry": "index.html",
-  "publisherKey": "ed25519:…",       // pinned at install; updates must be signed by it
-                                     // (ADR-0005 amendment: publisher-key continuity)
+  // NOTE: "publisherKey" is CUT from v0 (owner decision 2026-08-25). See "Signing is not in
+  // v0" below. Every month-1 app is unsigned; integrity rests on hash-pinning alone.
 
   "capabilities": {
     "net": {
@@ -102,9 +107,19 @@ orivon.id.sign({ curve, payload })   // => Promise<Uint8Array>
 
 // --- identity: named identities (cross-origin BY CONSENT) ---
 orivon.id.requestIdentity({ kind })  // => Promise<IdentityHandle | null> — connect prompt
-// IdentityHandle.publicKey() / .sign(payload): the SAME identity on every site the user
-// connects it to; revocable per origin in settings
+// IdentityHandle.publicKey() : the SAME identity on every site the user connects it to
+// IdentityHandle.signEvent(obj): STRUCTURED, never raw bytes — the broker serialises and
+//   screens `kind`. Kinds 1/6/7 sign silently; 0, 3, 5, 22242 and any delegation PROMPT.
 ```
+
+> **No raw signing oracle for named identities** (audit, 2026-08-25). Signing arbitrary bytes
+> silently after one connect prompt would let a compromised client wipe the follow list
+> (kind 3), delete posts (kind 5), replace the profile (kind 0), or authenticate as the user to
+> relays (NIP-42, kind 22242) — and `ADR-0003` excludes export/backup, so the user cannot
+> rotate. `signEvent` is also what NIP-07 clients actually call.
+> Decrypt (`nip04`/`nip44`), if offered at all, is a **separate grant** from signing.
+> Derive a distinct secret per `(label, curve)` with length-prefixed HKDF: one scalar reused
+> across two schemes voids the security argument for both.
 
 ### Two kinds of identity — correction found in validation
 
@@ -136,6 +151,28 @@ extension; the *data* is what sits behind consent (`security-model.md` T16).
 > apps". This spec narrows further — they are absent from v0 entirely, for signed apps too.
 > Noted here rather than silently diverging from the ADR.
 
+### Signing is not in v0 — owner decision, 2026-08-25
+
+`ADR-0002` posits signed and unsigned trust tiers; `ADR-0005`'s amendment keyed silent updates
+on a publisher signature. **Both are cut for month 1.** Three reasons, from the audit:
+
+1. **The tiers were already capability-identical in v0.** Their only stated difference was
+   `subprocess` and `hid`, and this spec removes both for *every* tier. The distinction cost
+   real work and bought nothing.
+2. **Nothing specified or scheduled the mechanism** — no signature format, no covered bytes, no
+   detached-signature location, no key generation, no tooling, and no build step. As written,
+   `publisherKey` was a self-asserted string inside the very document it was meant to
+   authenticate, fetched from the host it was meant to defend against.
+3. **It would have sabotaged the clip.** With no signing pipeline the flagship is unsigned, and
+   `ADR-0002` mandates unsigned apps be marked in the tab *and in every grant prompt* — so the
+   distribution asset would show a red UNSIGNED badge beside "connect to any computer on the
+   internet."
+
+**What v0 actually ships:** hash-pinning (TOFU on the bundle) as the integrity mechanism, with
+**no UNSIGNED badge anywhere**, because "unsigned" is not a distinction when everything is.
+Signing returns when a second publisher exists — which is also when prompt fatigue, its stated
+justification, first becomes possible.
+
 ### Rules that apply to every app, signed included
 - `fs` is confined to the app's files directory. `..` traversal is rejected. Outside access
   exists only via `fs.userSelected`.
@@ -148,32 +185,73 @@ extension; the *data* is what sits behind consent (`security-model.md` T16).
 
 ## How a URL becomes an app
 
-Previously unspecified anywhere — found in validation. A normal page stays a normal page. An
-origin becomes an app when the shell finds a manifest at:
+A normal page stays a normal page. An origin becomes an app when a manifest is found at
+`https://<origin>/.well-known/orivon.json` and the user accepts, which runs the ADR-0005 flow
+(grant prompt → fetch → cache → pin).
 
-```
-https://<origin>/.well-known/orivon.json
-```
+> **Never probe automatically.** Three independent audits flagged this: an unsolicited request
+> to every origin the user visits is an active, attributable *"this visitor runs Orivon"*
+> signal, sent from a privacy-branded browser to an audience that reads its own traffic. That
+> is strictly worse than the `window.nostr` fingerprint accepted in T16, and it costs a request
+> per navigation.
+>
+> **v0 discovery is therefore:** (a) a `<link rel="orivon-manifest">` hint in HTML already
+> delivered — zero extra requests; or (b) explicit user action, "Open as app" from a menu.
+> The well-known path is fetched *only after* one of those, never speculatively.
 
-On detection the omnibox offers **"Open as app"**; accepting runs the ADR-0005 flow (grant
-prompt → fetch → cache → pin). v0 supports the well-known path only; a `<link rel>`
-alternative can come later. Protocol routing (`"protocols": ["magnet"]`) is what lets a magnet
-link pasted in the omnibox reach the torrent app at all.
+**The grant prompt must be origin-first.** Any origin can serve a manifest, and `name`/`id` are
+self-asserted, so a hostile site can present itself as "Orivon Torrent" with an identical
+prompt. Required layout: the **origin** is the largest, primary, non-app-controlled element;
+the app-supplied `name` is visibly subordinate and marked as claimed by the site; an `id`
+collision with an installed app is surfaced explicitly (`security-model.md` T18).
+
+**Hosting note:** `/.well-known/` is host-scoped, so serving first-party apps from
+`<account>.github.io` puts them on **one origin shared with every other repo on that account** —
+one grant set, one storage domain, one derived key. First-party apps need a dedicated hostname
+that serves nothing else.
+
+Protocol routing (`"protocols": ["magnet"]`) is what lets a magnet link reach the torrent app.
+It requires its own user prompt — manifest declaration alone never wins the default — and the
+URI is validated against a strict grammar before it touches any other code
+(`security-model.md` T23).
 
 ## Throughput — the open risk
 
 Per-message Electron IPC is too slow for torrent-rate data. Sockets therefore carry their
 data over a dedicated **`MessageChannelMain` port** per handle, rather than through the main
-IPC channel. Control operations (open, close, options) use normal IPC; bulk bytes use the
-port. Video is delivered to `<video>` via MediaSource.
+IPC channel. Control operations (open, close, options) use normal IPC; bulk bytes use the port.
 
-**This is unproven and is the subject of the week-1 spike in ADR-0005.** If throughput is
-inadequate, the fallback is running `webtorrent` privileged in the main process for the MVP,
-recorded as known debt.
+> **Security rule, not an optimisation detail: the raw port never crosses into the main
+> world.** The preload holds it in the isolated world and exposes only `contextBridge` closures
+> (`socket.write(buf)`, `socket.onData(cb)`). Transferring the port to the page — the obvious
+> move when optimising for throughput — hands a raw socket to anything the page can reach
+> (`security-model.md` T17). `contextIsolation: true` is what makes this free. **The spike must
+> measure throughput *through this wrapper*, or week 0 measures something the product cannot
+> ship.**
 
-Media delivery: **prefer MediaSource over webtorrent's localhost HTTP server.** A localhost
-server is reachable by every local process and every other app (`security-model.md` T15); if
-one proves unavoidable, it binds 127.0.0.1 and requires a random per-session token in the URL.
+**Throughput was never the real risk** (audit, 2026-08-25). Measured `MessagePort` transfer is
+~310 MB/s against the 1–5 MB/s 1080p needs. The genuine week-0 questions are whether a renderer
+bundle fetches *ordinary* (non-WebRTC) torrents at all, and whether the tree is free of native
+modules — see `build-plan.md` §Week 0. Fallback if it fails: an Electron **`utilityProcess`**,
+not the main process.
+
+> **Verify first:** [electron#34905](https://github.com/electron/electron/issues/34905) — a
+> transferable sent **renderer → main** over `MessagePortMain` can lose its payload entirely.
+> That is this exact mechanism. Also: `MessagePortMain` has no documented backpressure, so the
+> shim must implement its own flow control or a fast swarm grows renderer memory without bound.
+
+**Media delivery, revised.** Not MSE, and not a localhost HTTP server. Serve pieces to
+`<video>` over a **range-capable custom scheme** (`protocol.handle()` returning a streaming
+`Response`), or webtorrent's Service-Worker `createServer({ controller })` — both are
+renderer-local and origin-scoped, so **no other local process can reach them**, which is
+stronger than T15's token mitigation. Chromium then provides seeking and track selection for
+free. MSE was the *worse* option: it needs fMP4 the torrents do not contain, and it forces
+hand-implemented seeking.
+
+**v0 plays MP4/H.264 only.** MSE cannot demux Matroska and neither can Chromium's `<video>`, so
+MKV has no path at all without a remuxer — deferred post-launch (`libav-wasm`, pure-WASM).
+Stock Electron ships H.264/AAC, so nothing extra is needed; HEVC is hardware-decode-only and is
+out. The limitation is stated in-product, not hidden.
 
 ## Why this survives the engine swap
 
@@ -206,18 +284,27 @@ that put developer mode in `ADR-0002` in the first place.
 - a distinct, more serious prompt than `connect` — the user is opening a service, not making
   an outbound call, and the wording should say so.
 
-### 2. Grants keyed per origin, or per origin + manifest version? → **Per (origin, capability)**
-Manifest-versioning every grant is noisier than it is safe, and it duplicates a check that
-already exists elsewhere. Two *different* events are being conflated:
+### 2. Grants keyed per origin, or per origin + manifest version? → **Per (origin, capability, pattern set)**
+Manifest-versioning every grant is noisier than it is safe. Two *different* events are being
+conflated:
 
 | Event | Response | Comes from |
 |---|---|---|
 | Bundle hash changes | **Security re-consent** — "this app's code changed" | `ADR-0005`, `ADR-0006` D2 (pinning) |
 | Manifest requests a capability not yet granted | **Capability prompt** for that capability only | this spec |
 
-A manifest that changes without requesting anything new therefore triggers the pin-break
-prompt but no capability re-prompt — which is the correct signal, and already required by the
-pinning model. Keying grants on `(origin, capability)` is simpler and loses nothing.
+> **Corrected 2026-08-25.** The original default keyed grants on `(origin, capability)` alone,
+> where "capability" meant the *kind*. That has a hole: an update changing
+> `"connect": ["api.example.com:443"]` to `"connect": ["*:*"]` requests **no new capability
+> kind** and would have installed **silently**. The user granted "talk to one host"; the app
+> would hold "connect to any computer on the internet" — the exact grant journey 1 puts on
+> camera.
+>
+> **The re-consent trigger is a subset check over the granted pattern set**, not a kind
+> comparison: silent only if the new manifest's patterns are a subset of what was granted.
+> Additionally, record a per-origin **version floor** and reject any lower version, so a
+> validly-hash-pinned *older* bundle cannot be replayed indefinitely to suppress a fix
+> (`security-model.md` T19).
 
 ### 3. Is `fs.quotaBytes` enforced or advisory? → **Enforced**
 Advisory means a buggy or hostile app fills the user's disk — threat **T11** in

@@ -34,6 +34,19 @@ MIT-licensed Electron with a working player UI whose components can be lifted.
 **Bisq is tier 3** and is out of the MVP. Its UI is JavaFX, so nothing is reusable: it needs
 both a new frontend *and* a bundled JVM, for an app used episodically rather than daily.
 
+> **Correction, 2026-08-25.** The tier-2 examples above overstate what v0 reaches. Ledger Live,
+> Trezor Suite and Frame are **hardware-wallet applications requiring `hid`/USB**, which
+> `capability-api.md` excludes from v0 entirely — for every tier. MyCrypto is archived. Of the
+> originally listed cluster, **IPFS Desktop is the honest example.** The wallet cluster is
+> blocked on `hid`, which is a post-MVP capability.
+>
+> Also understated: `orivon-node-shim`'s real surface. Running `webtorrent` in a sandboxed
+> renderer needs `Buffer`, `stream`, `events`, `crypto`, `path`, `os` and `process` polyfills
+> alongside the capability-backed `net`/`dgram`/`fs` — plus an HTTP client for trackers and web
+> seeds, since a renderer's `fetch` is CORS-bound. The capability-backed part is the small part.
+> Overstating "swap one import" to developers is the same category of dishonesty the trust
+> indicator exists to prevent.
+
 ## The genericity test
 
 The torrent and Nostr apps must be built **using only the public capability API**, with no

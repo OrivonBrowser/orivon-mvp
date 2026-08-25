@@ -23,16 +23,43 @@ ever.
 cannot afford. An explicit choice retains an estimated 85–90% of installs and is defensible
 as consent, so it keeps nearly all the data with none of the gray zone.)*
 
-**The entire payload:**
+**The entire payload** (revised 2026-08-25 after the audit):
 ```jsonc
 {
   "installId": "…",      // random UUID generated locally at first run.
                          // NOT derived from hardware, MAC, hostname or any device property.
-  "country":   "IT",     // resolved from IP at ingest; the IP is then DISCARDED, never stored
+  "country":   "IT",     // SELF-DECLARED on the first-run screen. The endpoint needs
+                         // nothing from the IP, so no unverifiable promise is required.
   "version":   "0.1.0",
-  "sessions":  [ { "app": "torrent", "startedAt": "…", "durationSec": 1834 } ]
+  "period":    "2026-09",              // monthly aggregate, NOT a session timeline
+  "perApp": {
+    "torrent": { "activeSec": 90000,   // focused + interacting, within an idle timeout
+                 "backgroundSec": 412000 }   // running, idle, seeding
+  }
 }
 ```
+
+**Three changes, each reducing what is collected:**
+
+1. **`activeSec` is split from `backgroundSec`, and the metric is stated on `activeSec`**
+   (owner decision). The previous `durationSec` measured how long the app was *open* — and a
+   torrent client seeds in the background by design, so 25 h/month was satisfiable by a user
+   who pasted one magnet and walked away. The metric could not distinguish a daily driver from
+   an idle process, making the central hypothesis unfalsifiable in its own favour.
+2. **Monthly aggregate replaces the session array.** Per-session `startedAt` against a stable
+   ID, over months, is a daily activity pattern — waking hours, working hours, real timezone —
+   materially more identifying than `country`, and unnecessary: the metric needs a sum, not a
+   timeline. Send once per period at a randomised offset; do not queue-and-retry into a backlog
+   that reconstructs the timeline just removed.
+3. **`country` is self-declared.** It was the only reason the endpoint touched the IP at all,
+   and "the IP is discarded at ingest" was the single claim in the whole design that a user
+   could not verify locally — TLS terminates somewhere that sees the IP regardless. Asking
+   directly removes the unverifiable promise instead of asserting it harder.
+
+**Also required:** the client **ignores the response body entirely** — no server-driven config,
+no kill switch, no remote command channel. Otherwise the only server Orivon runs is one
+compromise away from controlling every install. And session accounting must checkpoint
+periodically, so a crash loses minutes rather than a whole session.
 
 **Never collected:** URLs, magnet links, infohashes, search queries, peer addresses, file
 names, Nostr pubkeys, IP addresses (beyond momentary use at ingest), or any device
@@ -88,9 +115,12 @@ The mitigation is **sequencing, not secrecy**: state it on the landing page and 
 story. The data collected is identical either way, so there is no cost to announcing.
 
 ## Consequences
-- With the explicit choice retaining an estimated **85–90%**, plan for roughly **115–130
-  installs** to measure 100 active users (pure opt-in would have needed 200–300). This still
-  materially eases the distribution problem.
+- The explicit choice retains an estimated **85–90%** of installs, against 30–60% for opt-in.
+  **The former "115–130 installs" consequence is withdrawn as wrong** — it applied the consent
+  rate and nothing else, with no retention and no activation. The honest requirement is in the
+  thousands of downloads; sizing it is owner-side work (`mvp-scope.md`).
+- **The metric resolves around month 3.** 25 h/month cannot be observed until ~30 days after
+  ship. The build month produces a shipped product, not a measured result.
 - Requires a small self-hosted ingest endpoint — the only server Orivon operates. It must not
   log IPs, and that should be verifiable from its published configuration.
 - The first-run disclosure view and the in-product "what has been sent" page are real, small

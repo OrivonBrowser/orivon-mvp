@@ -14,29 +14,59 @@ Everything else in Orivon's vision is downstream of that being true.
 
 ## Success metric
 
-**100 active users in EU/USA, where active = 25 hours/month.**
+**100 active users in EU/USA, where active = 25 hours/month of `activeSec`.**
 
-That is ~50 min/day, i.e. daily-driver usage. It cannot be reached by novelty; it requires
-the product to genuinely replace something the user does anyway. This metric, not the
-long-term vision, decides what is in scope.
+That is ~50 min/day of *actual use*, i.e. daily-driver usage. This metric, not the long-term
+vision, decides what is in scope.
+
+> **Corrected 2026-08-25 (owner decision).** Telemetry previously measured how long the app was
+> *open*. A torrent client seeds in the background — that is what it is for — so a user who
+> pasted one magnet and left the tab open would accumulate 24 h/day and cross 25 h/month on day
+> one, having used the product exactly once. The metric was satisfiable by the least engaged
+> possible user, which made the daily-use hypothesis unfalsifiable in the direction that
+> flatters it.
+>
+> `ADR-0004` now reports **`activeSec`** (window focused, user interacting within an idle
+> timeout) separately from **`backgroundSec`** (running, idle, seeding). The metric is stated
+> on `activeSec`. This makes the target genuinely harder, which is the point.
 
 Measured per `ADR-0004` (first-run explicit choice, self-hosted), retaining an estimated
-85–90%. Plan for roughly **115–130 installs** to measure 100 active users.
+85–90% of installs.
 
-## The three journeys that must work
+> **The former "115–130 installs" figure was wrong** and is withdrawn. It divided 100 by the
+> telemetry consent rate and applied no retention and no activation — assuming every install
+> becomes someone who uses the product 50 minutes a day. An honest chain (download → still
+> installed at day 7 → reaches 25 h/month) puts the requirement in the region of **thousands of
+> downloads, not hundreds.** Also worth stating plainly: 25 h/month cannot be observed until
+> ~30 days after ship, so **the metric resolves around month 3, not month 1.**
+>
+> Sizing the funnel and choosing channels is **owner-side work, outside this repository.**
+
+## The journeys that must work
 
 1. **The clip.** First run → paste a magnet link → the real grant prompt ("connect to any
    computer on the internet") → video playing in under 30 seconds, no torrent client
    installed. The prompt is in the clip **deliberately** (owner decision): the permission
    system is the differentiator, and the flagship holds zero silent privileges. This is
    simultaneously the product, the proof, and the distribution asset.
-2. **The identity.** Open any Nostr client on the web → one connect prompt → signed in, and it
+   *v0 plays MP4/H.264 only — use a known-good MP4 torrent, and state the format limitation
+   in-product rather than letting users discover it on their own magnets.*
+2. **The app from a URL.** Type a URL → the browser offers **"Open as app"** → grant prompt →
+   a running app with real network access, delivered from that URL and nowhere else.
+   **Added 2026-08-25.** The audit found that no journey demonstrated URL delivery — journey 1
+   runs a pre-cached app, journey 3 loads a local directory — even though URL delivery is the
+   thesis, and is why the shim moved into month 1, why the spike exists, and why the flagship
+   cannot take the cheap main-process path. Cheapest honest fix: serve the *same* torrent app
+   from a second origin. A static deploy, not a second app.
+3. **The identity.** Open any Nostr client on the web → one connect prompt → signed in, and it
    is the *same* identity in every client — no extension installed, no seed phrase, no setup.
-3. **The developer.** Write a JSON manifest and a frontend → load unpacked → an app with real
+   *Proves the identity model, but claims little about the thesis: `window.nostr` injection is
+   what nos2x and Alby already do in Chrome. It is a cheap sticky feature, not the proof.*
+4. **The developer.** Write a JSON manifest and a frontend → load unpacked → an app with real
    network access, in an afternoon.
 
-If all three work, the MVP has done its job. If journey 1 does not clip well, the plan fails
-regardless of the other two.
+If these work, the MVP has done its job. If journey 1 does not clip well, the plan fails
+regardless of the others.
 
 ---
 
@@ -112,16 +142,25 @@ The torrent and Nostr apps must be built **using only the public capability API*
 privileged shortcuts, no special-casing in the shell. They are the API's first consumers and
 its validation suite.
 
-Measurable claim: **app #3 costs dramatically less than app #1.** If it does not, the design
-failed and we learn it in week 2 rather than month 6.
+Measurable claim: **app #3 costs dramatically less than app #1.**
+
+> **Made evaluable, 2026-08-25.** The plan contained no app #3, and app #2 (Nostr) touches no
+> `net`, no `fs`, no manifest and no grant — so the comparison measured nothing. App #3 is now
+> the **e2e fixture app**, which is needed anyway: a minimal app served over HTTP with a real
+> manifest, built only against the public API, exercising `orivon.net` and `orivon.fs` through
+> the shim. It doubles as the developer-mode example for journey 4 and the docs.
+> **Record hours per build step from day 1** — "cost" needs a unit, and nobody reconstructs
+> their own hours afterwards.
 
 ## What would count as failure
 
 Worth agreeing in advance, so the result is interpretable either way:
 
-- The week-1 spike fails **and** the main-process fallback also underperforms → the
+- The week-0 spike fails **and** the `utilityProcess` fallback also underperforms → the
   capability model does not carry real workloads.
 - The clip is built and posted to the right communities and produces no organic traction →
   the daily-use hypothesis is wrong, and the flagship should change before anything else does.
+  *(Owner-side: this needs a named community list, a window and a number before it can fire.
+  As written it is unfalsifiable — any outcome supports "wrong community, try another".)*
 - App #3 costs as much as app #1 → the API is not generic; it is a torrent client with extra
   steps.

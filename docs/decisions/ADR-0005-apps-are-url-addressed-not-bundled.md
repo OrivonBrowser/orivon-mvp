@@ -96,18 +96,42 @@ item in the month.
   settled precisely before the first grant is ever persisted.
 - Offline first-run works only for pre-cached apps; everything else needs the network once.
 
-## Amendment (2026-08-25): publisher-key continuity for updates
-As originally written, *any* bundle change broke the pin and re-prompted — so every legitimate
+## Amendment (2026-08-25, morning): publisher-key continuity for updates — **SUPERSEDED**
+As originally written, *any* bundle change broke the pin and re-prompted, so every legitimate
 update would interrupt the user, and prompt fatigue trains users to click through the one
-prompt that matters. Owner accepted the SSH/Android-style refinement:
+prompt that matters. The accepted refinement pinned the **publisher's signing key** (TOFU on
+the key, not the hash), applied same-key updates silently, and re-consented on key change, new
+capability, or an unsigned bundle.
 
-- install pins the **publisher's signing key** (TOFU on the key, not the hash alone);
-- each version's bundle hash is still recorded — attestations (`ADR-0006`) stay per-hash;
-- an update signed by the same key requesting **no new capabilities** applies silently;
-- **re-consent triggers:** key change, a new capability request, or an unsigned bundle.
+## Amendment (2026-08-25, evening): signing is cut from v0 — supersedes the above
 
-A compromised host *without* the signing key can no longer push accepted code at all, which
-strengthens T6 relative to the original design.
+The multi-agent audit (`planning/audit-2026-08-25.md`) found the signing mechanism was
+**load-bearing in three ADRs and specified nowhere**: no signature format, no covered bytes, no
+detached-signature location, no key generation, no tooling, and no build step. As written,
+`publisherKey` was a self-asserted string inside the very document it was meant to
+authenticate, fetched from the host it was meant to defend against — a field, not TOFU.
+
+The claim above that *"a compromised host without the signing key can no longer push accepted
+code at all"* was also **false for a second reason**: such a host does not need to push code.
+It serves a **302** to an attacker origin, which then runs with the app's preload and grants
+(`security-model.md` T18); or it serves one unsigned `<script>` into a code-split chunk the
+pinned asset set never covered (T21). The signed bundle is never touched.
+
+**Owner decision: cut the signing tier from month 1.** There is exactly one publisher, so the
+amendment solved prompt fatigue that cannot yet occur.
+
+**What v0 ships instead:**
+- **Hash-pinning (TOFU on the bundle)** as the sole integrity mechanism.
+- Re-consent on hash change, on **capability-pattern widening** (a subset check, not a
+  kind comparison — `capability-api.md` open item 2), or on a **version rollback**.
+- Cached assets served at the app's own origin with a **fail-closed** rule: a same-origin
+  request whose path is not in the pinned set is denied, not fetched. Re-verify the cached tree
+  **at every load**, not only at fetch.
+- **No UNSIGNED badge anywhere**, since "unsigned" is not a distinction when everything is —
+  and a red badge on the flagship would have sabotaged the clip.
+
+Signing returns when a second publisher exists, which is also when its stated justification
+first applies.
 
 ## Reversibility
 - **Cost to reverse:** cheap. Nothing prevents bundling an app later if there is a reason.
