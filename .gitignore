@@ -28,3 +28,9 @@ Thumbs.db
 # Logs
 *.log
 npm-debug.log*
+
+# Spike-only build output and the isolated app tree (webtorrent is an app
+# asset, never a shell dependency - see build-plan.md Platform policy)
+spike/*/dist/
+spike/app/node_modules/
+spike/results/

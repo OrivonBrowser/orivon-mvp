@@ -1,0 +1,13 @@
+{
+  "name": "orivon-spike-app",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Spike-only. webtorrent lives HERE, not in the shell tree, mirroring build-plan.md's pre-built app asset design.",
+  "dependencies": {
+    "buffer": "^6.0.3",
+    "events": "^3.3.0",
+    "path-browserify": "^1.0.1",
+    "process": "^0.11.10",
+    "webtorrent": "3.0.21"
+  }
+}

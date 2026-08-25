@@ -168,10 +168,21 @@ subtitle rendering, file-list UI. Its playback plumbing is stale (last release 2
 Electron 27 and webtorrent 1.9.7) and points at the localhost-server + VLC-handoff design that
 v0 rejects. Same status as `orivon-browser-v2`: **visual reference only.**
 
-Known limitations, stated in-product rather than hidden: **MP4/H.264 only in v0**; swarm peers
-see the user's IP (no Tor in the MVP); seeding behind NAT is reduced without port forwarding
-(no UPnP in v0); local peer discovery is unavailable (no multicast bind in the manifest
-grammar).
+Known limitations, stated in-product rather than hidden: **MP4/H.264 only in v0**;
+**no BitTorrent protocol encryption (MSE) — see below**; swarm peers see the user's IP (no Tor
+in the MVP); seeding behind NAT is reduced without port forwarding (no UPnP in v0); local peer
+discovery is unavailable (no multicast bind in the manifest grammar).
+
+> **New limitation found by gate 1a, 2026-08-25: protocol encryption is off.**
+> webtorrent defaults to `secure: 1` (PE with plaintext fallback, `index.js:99`), but
+> `bittorrent-protocol` browser-excludes `mse.js` because it needs Node's `crypto`. Making MSE
+> work in a renderer bundle requires **Diffie-Hellman, a synchronous SHA-1 and RC4**, none of
+> which WebCrypto provides in a usable form — so it is real work, not a shim. v0 therefore runs
+> `secure: 0`.
+> **Consequences to weigh, not yet decided:** peers configured to *require* encryption will
+> refuse the connection, reducing reachable swarm; and some ISPs throttle plaintext BitTorrent,
+> which affects the very throughput the flagship is judged on. Neither blocks v0, and neither
+> was known before the spike. Parked as a post-MVP item unless the clip shows throttling.
 
 **End of this step = the clip exists. Begin distribution now, not at the end of the month.**
 
