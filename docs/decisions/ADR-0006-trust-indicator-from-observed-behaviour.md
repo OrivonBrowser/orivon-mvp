@@ -55,7 +55,7 @@ the dishonesty the indicator exists to prevent.
 | | | trust cost |
 |---|---|---|
 | D1 | fetched from a host on every load (an ordinary website) | continuous |
-| D2 | fetched once, cached and **pinned**; any change re-prompts | **once** (TOFU, as in SSH) |
+| D2 | fetched once, cached and **pinned** to the publisher's key; same-key updates with unchanged capabilities apply silently, key change or new capability re-prompts (`ADR-0005` amendment) | **once** (TOFU, as in SSH) |
 | D3 | content-addressed (infohash / CID) — the address *is* the proof | none |
 | D4 | content-addressed **and** name resolved trustlessly (ENS) | none — *deferred, needs resolution* |
 
@@ -102,10 +102,11 @@ Consequences, all of which are improvements over scoring a domain:
   `open-questions.md` A4a.
 - **Providers are subscribable feeds**, like apt repositories or filter lists. Several may
   attest the same hash, and disagreement between them is visible rather than hidden.
-- **On bundle change, two independent things happen:** the automatic layer breaks its pin and
-  re-prompts for consent (a security event), and the judged layer falls back to unassessed
-  grey `?` because no attestation matches the new hash. The app keeps working; it loses only
-  its judged score until re-attested.
+- **On bundle change, two independent things happen:** the automatic layer verifies the
+  publisher signature — silent if same key and no new capabilities, re-consent otherwise
+  (`ADR-0005` amendment) — and the judged layer falls back to unassessed grey `?` because no
+  attestation matches the new hash. The app keeps working; it loses only its judged score
+  until re-attested.
 
 **Known friction:** this creates *lag* — every app update sits unassessed until re-attested,
 so fast-moving apps are grey much of the time. This is the genuine basis for the "pay for

@@ -1,6 +1,7 @@
 # ADR-0004: Opt-out, self-hosted, inspectable telemetry
 
-- **Status:** accepted — **supersedes the opt-in version of this ADR, 2026-08-18**
+- **Status:** accepted — supersedes the opt-in version (2026-08-18); **amended 2026-08-25 to a
+  first-run explicit choice**, chosen by the owner for EU defensibility
 - **Date:** 2026-08-18
 - **Type:** product / security
 - **Decided by:** **owner** (values decision); payload, delivery and disclosure per AI recommendation
@@ -11,9 +12,16 @@
 > reads this later.
 
 ## Decision
-Orivon ships usage telemetry that is **on by default with prominent first-run disclosure and
-a one-click off switch**, **self-hosted**, **minimal**, and **inspectable in the product**.
-No third-party analytics service is used, ever.
+Orivon ships usage telemetry that is **self-hosted**, **minimal**, **inspectable in the
+product**, and enabled through a **first-run explicit choice**: the disclosure screen shows
+the literal payload with two equal buttons — **[Keep on] / [Turn off]** — and no preselected
+default. Nothing is sent before the user chooses. No third-party analytics service is used,
+ever.
+
+*(Amendment rationale, 2026-08-25: the metric targets EU users, and an install UUID is an
+"online identifier" under GDPR — pure opt-out sat in gray territory a privacy-branded browser
+cannot afford. An explicit choice retains an estimated 85–90% of installs and is defensible
+as consent, so it keeps nearly all the data with none of the gray zone.)*
 
 **The entire payload:**
 ```jsonc
@@ -80,8 +88,9 @@ The mitigation is **sequencing, not secrecy**: state it on the landing page and 
 story. The data collected is identical either way, so there is no cost to announcing.
 
 ## Consequences
-- Install target drops to roughly **110–120** to measure 100 active users (from 200–300 under
-  opt-in). This materially eases the distribution problem.
+- With the explicit choice retaining an estimated **85–90%**, plan for roughly **115–130
+  installs** to measure 100 active users (pure opt-in would have needed 200–300). This still
+  materially eases the distribution problem.
 - Requires a small self-hosted ingest endpoint — the only server Orivon operates. It must not
   log IPs, and that should be verifiable from its published configuration.
 - The first-run disclosure view and the in-product "what has been sent" page are real, small

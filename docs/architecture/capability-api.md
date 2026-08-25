@@ -48,6 +48,8 @@ Served alongside the app's frontend assets and fetched before first run.
   "name": "Orivon Torrent",
   "version": "0.1.0",
   "entry": "index.html",
+  "publisherKey": "ed25519:…",       // pinned at install; updates must be signed by it
+                                     // (ADR-0005 amendment: publisher-key continuity)
 
   "capabilities": {
     "net": {

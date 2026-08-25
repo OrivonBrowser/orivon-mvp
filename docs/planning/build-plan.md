@@ -69,7 +69,8 @@ and changing it after the first grant is persisted orphans every app (`ADR-0003`
 Load-bearing for the flagship, not a developer nicety (`ADR-0005`).
 
 **4. App loader** — discover the manifest at `/.well-known/orivon.json`
-(`capability-api.md`), fetch + cache assets, hash-pin, re-consent on change.
+(`capability-api.md`), fetch + cache assets, pin the publisher key and record per-version
+hashes; silent update on same key + unchanged capabilities (`ADR-0005` amendment).
 Depends on broker storage. The pinning here is also what `ADR-0006` and the future attestation
 model rest on.
 
@@ -87,8 +88,9 @@ connection log, operation scoring. Click-through shows the actual evidence, not 
 **7. Nostr** — inject `window.nostr` (NIP-07) backed by `orivon.id`. Verify against two or
 three real clients before trusting the ~1 day estimate (`open-questions.md` C4).
 
-**8. Telemetry** — collection, first-run disclosure view showing the literal JSON, in-product
-"what has been sent" page. The disclosure UI is not optional (`ADR-0004`).
+**8. Telemetry** — collection, first-run disclosure showing the literal JSON with equal
+[Keep on] / [Turn off] buttons and no preselected default, in-product "what has been sent"
+page. The disclosure UI is not optional (`ADR-0004`).
 
 **9. Developer mode** — unpacked loader, plainly-worded opt-in, unsigned marking, developer
 docs. This is journey 3.

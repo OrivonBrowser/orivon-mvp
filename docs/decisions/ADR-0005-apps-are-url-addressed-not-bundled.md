@@ -96,6 +96,19 @@ item in the month.
   settled precisely before the first grant is ever persisted.
 - Offline first-run works only for pre-cached apps; everything else needs the network once.
 
+## Amendment (2026-08-25): publisher-key continuity for updates
+As originally written, *any* bundle change broke the pin and re-prompted — so every legitimate
+update would interrupt the user, and prompt fatigue trains users to click through the one
+prompt that matters. Owner accepted the SSH/Android-style refinement:
+
+- install pins the **publisher's signing key** (TOFU on the key, not the hash alone);
+- each version's bundle hash is still recorded — attestations (`ADR-0006`) stay per-hash;
+- an update signed by the same key requesting **no new capabilities** applies silently;
+- **re-consent triggers:** key change, a new capability request, or an unsigned bundle.
+
+A compromised host *without* the signing key can no longer push accepted code at all, which
+strengthens T6 relative to the original design.
+
 ## Reversibility
 - **Cost to reverse:** cheap. Nothing prevents bundling an app later if there is a reason.
 - **What would make us revisit:** an app whose licence or size genuinely requires shipping

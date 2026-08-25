@@ -20,14 +20,16 @@ That is ~50 min/day, i.e. daily-driver usage. It cannot be reached by novelty; i
 the product to genuinely replace something the user does anyway. This metric, not the
 long-term vision, decides what is in scope.
 
-Measured per `ADR-0004` (opt-out, disclosed, self-hosted), which retains 85–95% of installs.
-Plan for roughly **110–120 installs** to measure 100 active users.
+Measured per `ADR-0004` (first-run explicit choice, self-hosted), retaining an estimated
+85–90%. Plan for roughly **115–130 installs** to measure 100 active users.
 
 ## The three journeys that must work
 
-1. **The clip.** First run → paste a magnet link → video is playing in under 30 seconds, with
-   no torrent client installed. This is simultaneously the product, the proof, and the
-   distribution asset.
+1. **The clip.** First run → paste a magnet link → the real grant prompt ("connect to any
+   computer on the internet") → video playing in under 30 seconds, no torrent client
+   installed. The prompt is in the clip **deliberately** (owner decision): the permission
+   system is the differentiator, and the flagship holds zero silent privileges. This is
+   simultaneously the product, the proof, and the distribution asset.
 2. **The identity.** Open any Nostr client on the web → one connect prompt → signed in, and it
    is the *same* identity in every client — no extension installed, no seed phrase, no setup.
 3. **The developer.** Write a JSON manifest and a frontend → load unpacked → an app with real
