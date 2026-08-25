@@ -1,0 +1,48 @@
+{
+  "_comment": [
+    "Permission settings for the UNATTENDED Sunday devlog cron run only.",
+    "Not used by interactive sessions.",
+    "",
+    "Why: the cron runs Claude with --permission-mode acceptEdits, so file",
+    "edits are auto-approved with nobody watching, and its inputs include git",
+    "commit messages. Today that is safe because there is one committer. It",
+    "stops being safe the moment outside contributions land, which is a stated",
+    "goal of build-plan.md -- a commit message is attacker-controlled text, and",
+    "it would be flowing into an agent that can write files unsupervised.",
+    "",
+    "The fix is blast radius, not detection: /devlog only ever writes",
+    "devlog/updates/*.md and edits devlog/journal.md, so everything else in the",
+    "repo is denied.",
+    "",
+    "SYNTAX WARNING, verified empirically 2026-08-25: a Write(path) rule is",
+    "SILENTLY IGNORED by file permission checks. Only Edit(path) rules apply,",
+    "and they cover every file-editing tool including Write. A deny list",
+    "written with Write(...) looks like a control and is not one.",
+    "",
+    "Do NOT add a catch-all like Edit(./*) -- also tested: it matches the",
+    "project directory itself and denies everything, including devlog, which",
+    "would silently break the Sunday draft.",
+    "",
+    "LIMITATION: this list is an enumeration, so a NEW top-level file or",
+    "directory is not covered until it is added here."
+  ],
+  "permissions": {
+    "deny": [
+      "Edit(./src/**)",
+      "Edit(./scripts/**)",
+      "Edit(./spike/**)",
+      "Edit(./docs/**)",
+      "Edit(./.github/**)",
+      "Edit(./.claude/**)",
+      "Edit(./out/**)",
+      "Edit(./node_modules/**)",
+      "Edit(./CLAUDE.md)",
+      "Edit(./package.json)",
+      "Edit(./package-lock.json)",
+      "Edit(./tsconfig.json)",
+      "Edit(./electron.vite.config.ts)",
+      "Edit(./vitest.config.ts)",
+      "Edit(./.gitignore)"
+    ]
+  }
+}
