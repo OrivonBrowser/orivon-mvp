@@ -1,0 +1,31 @@
+{
+  "gate": 2,
+  "question": "Is the shell dependency tree free of native modules requiring a compiler?",
+  "measuredAt": "2026-08-25T13:30:00+02:00",
+  "shellTree": {
+    "plainInstall": {
+      "checkNatives": { "ok": true, "offenders": 0 },
+      "prebuiltPackages": ["node_modules/@electron-internal", "node_modules/@rollup", "node_modules/@swc"],
+      "buildWorks": true
+    },
+    "omitOptionalInstall": {
+      "checkNatives": { "ok": true, "offenders": 0 },
+      "prebuiltPackages": ["node_modules/@electron-internal"],
+      "buildWorks": false,
+      "buildError": "MODULE_NOT_FOUND at node_modules/rollup/dist/native.js -- rollup's platform-specific native binary (@rollup/rollup-linux-x64-gnu) is an optional dependency, and --omit=optional skips it, which breaks the build entirely."
+    },
+    "note": "check:natives passes under BOTH install modes, because the guard correctly treats prebuilt binaries as fine rather than as Rule 8 violations (see commit 09393ee). But --omit=optional is NOT a safe install mode for this project: it silently produces a tree that cannot build. This is new information, not previously documented. Contributors and CI must use a plain `npm install`, never `--omit=optional` or `NODE_ENV=production npm install` (which implies the same optional-skip behaviour)."
+  },
+  "appTree": {
+    "checkNatives": { "ok": false, "offenders": 8 },
+    "expected": true,
+    "note": "webtorrent's dependency graph pulls node-datachannel, which is a HARD (non-optional) transitive dependency via @thaunknown/simple-peer -> webrtc-polyfill. Its install script is: 'prebuild-install -r napi || (npm install --ignore-scripts --production=false && npm run _prebuild)' -- it falls back to compiling with CMake via cmake-js when no prebuild matches the platform/ABI. This is exactly the Rule 8 threat, and it is confined to spike/app/ (never installed at the shell level) for precisely this reason."
+  },
+  "builtBundleCheck": {
+    "file": "spike/gate1a/dist/assets/index-BqCtW6if.js",
+    "nodeDatachannelReferences": 0,
+    "note": "The renderer bundle contains zero references to node-datachannel. @thaunknown/simple-peer and webrtc-polyfill are deliberately left unaliased in the Vite config, so they keep browser resolution and the renderer uses Chromium's native WebRTC instead of the Node native module. This is what makes it possible for webtorrent to ship as a pre-built app asset without dragging a compiled dependency into anything the shell or the renderer bundle needs."
+  },
+  "verdict": "PASS",
+  "note": "Shell tree requires no compiler under normal install. New finding: --omit=optional breaks the BUILD (not just Rule 8 compliance) by skipping rollup's required native binary -- documented as a contributor/CI constraint, not previously known."
+}
