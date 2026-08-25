@@ -14,8 +14,13 @@ echo "=== $(date -Is) devlog cron run ===" >> "$LOG"
 # commit messages -- attacker-controlled text once outside contributions land,
 # which build-plan.md actively wants. Three containments, in order of value:
 #
-#   1. --settings scopes file writes to devlog/ only. /devlog writes nothing
-#      else, so this costs nothing and collapses the blast radius.
+#   1. Edit/Write are granted ONLY for ./devlog/**, and --permission-mode
+#      acceptEdits is deliberately NOT used. This is an allow-list, not a
+#      deny-list, and the distinction is not academic: the first version of
+#      this fix used acceptEdits plus unscoped "Write,Edit", which auto-
+#      approved edits at ANY path. A test write to $HOME succeeded. Deny rules
+#      could not have caught that, because they enumerate repo paths and the
+#      escape was outside the repo entirely.
 #   2. No `git diff` / `git show`. The /devlog spec only uses `git log`, and
 #      diff/show would pull whole file contents -- the largest untrusted-text
 #      surface -- in for no benefit.
@@ -23,10 +28,12 @@ echo "=== $(date -Is) devlog cron run ===" >> "$LOG"
 #      this run. Without it, an injected instruction could reach a
 #      network-capable tool, and exfiltration is a worse outcome than a
 #      bad file write.
+#
+# Verified 2026-08-25 against the real repo: devlog/ writes succeed, src/ is
+# denied outright, $HOME and absolute paths into the repo are refused.
 "$CLAUDE_BIN" -p "/devlog" \
   --settings "$REPO/scripts/devlog-cron-settings.json" \
-  --permission-mode acceptEdits \
-  --allowedTools "Read,Write,Edit,Glob,Grep,Bash(git log:*),Bash(date:*),Bash(ls:*)" \
+  --allowedTools "Read,Glob,Grep,Edit(./devlog/**),Write(./devlog/**),Bash(git log:*),Bash(date:*),Bash(ls:*)" \
   --strict-mcp-config --mcp-config '{"mcpServers":{}}' \
   >> "$LOG" 2>&1
 status=$?
