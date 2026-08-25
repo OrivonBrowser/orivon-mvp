@@ -35,6 +35,11 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - 2026-08-25: **Gate 1b PASS** — DHT lookup over the shimmed `dgram`, peer found in 11ms with real KRPC traffic. Message-oriented transport works, not just streams.
 - 2026-08-25: Gate 1b's bug is the most instructive yet: `net.isIP` was missing from the shim, so the DHT sent nothing at all — and the `process.nextTick` polyfill swallowed the TypeError, turning a loud failure silent. Both lessons belong in the real shim.
 - 2026-08-25: Hardened the unattended Sunday devlog cron — writes scoped to `devlog/` only, after a first attempt that left a real escape to `$HOME`.
+- 2026-08-25: **Gate 2 PASS** — shell tree needs no compiler either way, but `npm install --omit=optional` turned out to break the build outright (skips a required Rollup binary). Contributors must use a plain install.
+- 2026-08-25: **Gate 4: 52 MB/s shimmed vs 190 MB/s native control** — fails the plan's literal 60%-of-control threshold, but that control is same-process/zero-IPC/RAM-speed. Against the real product need (1–5 MB/s for 1080p) it's 10.5x headroom. Concurrency: 100/100 sockets held up fine.
+- 2026-08-25: **Gate 3 (video playback) blocked, not failed** — the app itself loads and plays fine under a direct Electron launch, but Playwright can't attach to its window specifically. Six causes ruled out; handed back with full evidence rather than guessed at further.
+- 2026-08-25: Spike verdict written up and all corrections folded into the specs: webtorrent version, the `createServer` force param, and two shim-design lessons (mirror the whole surface a dependency touches; a `process.nextTick` polyfill can silently swallow errors) queued for the A10 handle contracts.
+- 2026-08-25: Wrote the `orivon-electron` project skill capturing everything from the spike that would otherwise only live in chat history.
 
 ### In my head
 - 2026-08-25: Wants a Sunday ritual: paste-ready team message plus bullet cues for a spontaneous voice note recalling the week's thinking.
