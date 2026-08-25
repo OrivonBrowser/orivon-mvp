@@ -1,0 +1,203 @@
+---
+name: "orivon-electron"
+description: Use when writing or debugging code that runs webtorrent (or anything with a similar Node-dependency graph) inside an Orivon Electron renderer, when building the real orivon-node-shim, when an Electron+Vite renderer build fails with a confusing module-resolution error, when a gate/test hangs with no error under Playwright's _electron driver, or when anything Electron-related behaves inexplicably in this repository's dev environment. Captures knowledge from the week-0 spike (2026-08-25) that exists nowhere else.
+---
+
+# Orivon + Electron: what the week-0 spike learned
+
+This knowledge came from building four passing gates and one blocked one
+(`docs/planning/spike-verdict.md`, `docs/planning/spike-results/*.json`). It is not written
+down anywhere else. Read this before repeating any of it from scratch.
+
+## First: check the environment for poison
+
+**This machine has `ELECTRON_RUN_AS_NODE=1` set in the ambient shell environment.** It makes
+the Electron binary run as plain Node — no windows, no `require('electron')`, no
+`MessagePortMain`. It does not fail loudly; it fails in ways that look like unrelated bugs (it
+once presented as a module-format error that had nothing to do with module formats, costing
+about an hour before being caught).
+
+**Never launch Electron directly.** Always go through `spike/launch.mjs`'s `launchElectron()`,
+which strips the variable and asserts `MessageChannelMain` exists before returning. If you are
+writing new Electron-launching code outside the spike, port this pattern — check
+`process.env.ELECTRON_RUN_AS_NODE` and strip it before spawning, or a "gate" (or later, a real
+test) can produce a confident, completely false result.
+
+```js
+const env = { ...process.env }
+delete env.ELECTRON_RUN_AS_NODE
+const app = await electron.launch({ args: [appPath], env })
+const isReal = await app.evaluate(({ app, MessageChannelMain }) =>
+  typeof app?.getVersion === 'function' && typeof MessageChannelMain === 'function')
+if (!isReal) throw new Error('not real Electron — refuse to trust any result from this run')
+```
+
+## The renderer bundling recipe
+
+webtorrent's `browser` field maps `net`, `bittorrent-dht`, `ut_pex`, `conn-pool`, `crypto`,
+`fs`, `http`, `os` and more to `false`, which makes it WebRTC-only — precisely the outcome
+`ADR-0001` reason 3 exists to defeat. Beating this needs a specific, non-obvious set of Vite
+aliases. This is the complete, verified list (`spike/gate1b/vite.config.js` is the reference
+implementation — it is the superset; `gate1a`'s config is missing several of these because it
+predates DHT/MSE work, do not copy it as "the full list").
+
+| Alias target | Replacement | Why |
+|---|---|---|
+| `net` | `shim/net.js` (project-specific) | **The load-bearing one.** webtorrent's `torrent.js` refuses all TCP unless `typeof net.connect === 'function'`. Must also export `isIP`/`isIPv4`/`isIPv6` — see "The isIP incident" below. |
+| `dgram` | `shim/dgram.js` (project-specific) | Only if DHT is needed. An `EventEmitter`, not a stream — `bind()`, `send(msg, port, host, cb)`, `'message'`/`'listening'`/`'error'` events. `address()` must be **synchronous**, so cache it from the `'listening'` broker message rather than round-tripping. |
+| `./mse.js` | real `bittorrent-protocol/mse.js` | Protocol encryption. **Use the real file, not a stub** — see "MSE actually works" below. |
+| `crypto` | `crypto-browserify` | Needed by both MSE and DHT node-ID hashing. Pure JS. |
+| `stream`, `string_decoder` | `stream-browserify`, its own polyfill | `crypto-browserify`'s `Hash` extends `cipher-base`, which extends `stream.Transform`. Skip these and the failure reads `Cannot read properties of undefined (reading 'call')` deep inside the hash constructor, naming neither `stream` nor `crypto`. |
+| `path` | `path-browserify` | Genuinely **called** at runtime (`webtorrent/index.js` uses `path.basename`). Skipping it produces the single most misleading error in this whole list — see below. |
+| `events`, `buffer`, `process`, `util` | their respective browser polyfills | Named imports from Vite's empty externalized-module stub are hard build errors, not warnings. |
+| `bittorrent-dht` | real package, or a disabled stub | Pure JS, no native deps. Stub it (export `Client: undefined`) when a gate doesn't need DHT — `torrent-discovery` checks `typeof DHT !== 'function'` and disables gracefully, exactly matching webtorrent's own browser-build behaviour. |
+| `webtorrent`, `streamx` | resolve into the isolated app tree | webtorrent is a pre-built **app asset**, never a shell dependency (Rule 8) — see "Why this isn't in package.json" below. |
+
+Also mandatory:
+- **`base: './'`** in the Vite config. The default `/` resolves to the filesystem root under
+  `file://`, giving a blank page with `ERR_FILE_NOT_FOUND`.
+- **A `globals.js` shim, imported FIRST**, before any other import in the renderer entry
+  point. A sandboxed renderer has no `process`/`global`/`Buffer`, and several dependencies read
+  them at *module-evaluation time*, not lazily — import order matters.
+- **A `package.json` in the app directory.** Electron cannot find the app without one, even for
+  a throwaway test harness.
+- **`sw.min.js` (for the Service-Worker media path) must be copied into `dist/` after every
+  build.** Vite does not include it automatically — it's fetched dynamically by
+  `navigator.serviceWorker.register()`, not referenced from HTML, so Vite's asset pipeline never
+  sees it. The real path is `node_modules/webtorrent/dist/sw.min.js` — note the `dist/`; a path
+  without it looks plausible and fails as a silent 404.
+
+## The `path` polyfill incident — when an error names the wrong thing entirely
+
+A missing `path` alias did not produce a "cannot find module 'path'" error. It produced:
+
+```
+ConnPool.join is not a function
+```
+
+Rollup externalizes an unresolved Node builtin to an empty object, and it does this for
+`conn-pool.js` (webtorrent's own module, correctly browser-excluded) as well as for `path`
+(which Vite doesn't know is needed). **Rollup gave both the same generated identifier**, so the
+error named `ConnPool` when the real problem was `path`. **When a Rollup/Vite build error names
+something that makes no sense given the code you wrote, `grep` the built bundle
+(`dist/assets/*.js`) around the line number in the stack trace** — do not trust the symbol name
+alone.
+
+## MSE actually works — do not assume otherwise
+
+The original assumption was that BitTorrent protocol encryption (MSE) can't run in a renderer,
+because it needs Diffie-Hellman, a synchronous SHA-1, and RC4 — none of which WebCrypto usefully
+provides. **This was wrong, and it took a direct challenge to catch:**
+
+- `bittorrent-protocol/mse.js` already ships a **complete pure-JS RC4 fallback**, selected
+  automatically whenever `crypto.createCipheriv('rc4', ...)` throws (which it does, on
+  `crypto-browserify`). RC4 was never actually the blocker — reading the `nativeRC4` detection
+  line and stopping there, without reading the fifteen lines under it, is what produced the
+  wrong conclusion the first time.
+- The only genuinely missing pieces are `createHash('sha1')` and `createDiffieHellman`, and
+  `crypto-browserify` supplies both, in pure JS.
+- Verified end to end: a full encrypted handshake at `secure: 2` (RC4 required, **no** plaintext
+  fallback) against a Node seeder using native crypto. A piece verified in 480 ms.
+
+**Ship `secure: 1`** (encrypt when possible, plaintext fallback) for maximum swarm reach. Cost
+is real but small: the renderer bundle grows from ~427 KB to ~1.7 MB (95 KB → 336 KB gzipped),
+irrelevant against Electron's ~150–200 MB floor.
+
+**UI honesty note:** MSE is obfuscation against ISP traffic shaping, not privacy against
+eavesdroppers. Its DH exchange is unauthenticated and RC4 is a broken cipher. Never present it
+as making torrenting private.
+
+## `MessagePortMain` fails by silence, not by error
+
+Confirmed by direct measurement (`gate-0.json`): passing an `ArrayBuffer` in the transfer list
+of `MessagePortMain.postMessage` **renderer → main** does not throw and does not corrupt the
+payload — **the message never arrives, at all**, for any size tested. This reproduces
+[electron#34905](https://github.com/electron/electron/issues/34905), and the real behaviour is
+worse than the issue as filed.
+
+**Consequences, both load-bearing:**
+- **Never design a reply-carrying protocol over `MessagePortMain` without a timeout.** The
+  first version of the gate-0 test hung indefinitely on exactly this — a reply promise with no
+  timeout, waiting for a message that had already been silently dropped.
+- **Do not reach for transferables as a throughput optimisation on this path.** They are not
+  available. Structured clone (which copies) is not a fallback for a rescue plan — it is the
+  *only* mechanism, and it is fast enough on its own: 313–1134 MB/s measured, against a
+  1–5 MB/s product requirement.
+
+## A shim must mirror the whole surface a dependency touches, not the obvious methods
+
+`bittorrent-dht`'s RPC layer calls `net.isIP(peer.host)` before every send, to decide whether to
+send directly or resolve via DNS first. The project's `net` shim implemented `connect`,
+`createServer`, and `Socket` — a complete-looking socket API — but not `isIP`. The result: the
+DHT bound its listening socket successfully, then **sent nothing, ever**, with no error and no
+warning.
+
+The reason it was silent compounds the lesson: the throw happened inside a `process.nextTick`
+callback, and this project's `globals.js` polyfills `nextTick` with `queueMicrotask`. **Node's
+real `nextTick` surfaces an uncaught exception to the process; `queueMicrotask` does not route
+into the same handlers.** A polyfill chosen for API-shape compatibility silently changed error
+visibility in exactly the wrong direction for code whose job is partly security-relevant.
+
+**When building the real `orivon-node-shim` (A10): audit every Node timing primitive
+(`nextTick`, `setImmediate`, microtask ordering) for this class of behavioural change, not just
+for call-signature compatibility.** A shim that type-checks and passes a synthetic test can
+still be a black hole for real dependency errors.
+
+## Why webtorrent isn't in the shell `package.json`
+
+`node-datachannel` (`@thaunknown/simple-peer → webrtc-polyfill → node-datachannel`) is a
+**hard, non-optional** transitive dependency of webtorrent. Its install script is:
+
+```
+prebuild-install -r napi || (npm install --ignore-scripts --production=false && npm run _prebuild)
+```
+
+It tries a prebuild and **falls back to compiling with CMake** when no prebuild matches the
+platform/ABI — exactly the Rule 8 threat (breaks `npm install` on a machine without a C++
+toolchain, i.e. most contributors on Windows/macOS). This is why webtorrent lives in an isolated
+`spike/app/` (soon: a real app-asset tree) with its own `package.json`, never installed at the
+shell level. The built renderer bundle contains zero `node-datachannel` references — confirmed
+by grepping `dist/assets/*.js` — because `@thaunknown/simple-peer`/`webrtc-polyfill` are
+deliberately left **unaliased**, so they keep browser resolution and the renderer uses
+Chromium's native WebRTC instead.
+
+`npm install --omit=optional` is **not a safe install mode** for the shell tree — it skips
+Rollup's platform-specific native binary (itself an optional dependency the build genuinely
+needs) and the build crashes with `MODULE_NOT_FOUND`. `check:natives` passes under either
+install mode (correctly — a missing prebuilt binary isn't a Rule 8 violation), so the guard
+alone will not catch this. Contributors and CI must use a plain `npm install`.
+
+## Known unsolved issue: Playwright can't always attach to a gate's window
+
+Gate 3 (video playback) is **blocked**, not failed, on this. The app itself is fine — confirmed
+by a direct, non-Playwright launch, where `dom-ready` and `did-finish-load` both fire
+immediately and the page behaves exactly as gates 0/1a/1b/4 do. But launched through
+Playwright's `_electron.launch()` + `firstWindow()`, the call times out after 30 seconds, even
+though `DEBUG=pw:electron,pw:browser` shows Playwright's own CDP session to the main process
+connecting cleanly — the browser-level DevTools WebSocket connects, but **no target-created
+event for the window is ever logged.**
+
+Six things were ruled out (full trail: `docs/planning/spike-results/gate-3.json`): a new
+`protocol.registerSchemesAsPrivileged()` call, the real `mse.js` vs. a stub, a stray Electron
+process holding a single-instance lock, system resource starvation, and a silent preload crash.
+**Not yet tested:** the `<video>` element itself (the one thing genuinely unique to that gate's
+DOM), and whether a raw CDP client can see the window that Playwright's own target auto-attach
+is missing.
+
+Gates 0, 1a, 1b and 4 all attach fine through the identical `launchElectron()` path — 4 was
+specifically probed standalone before its full test was built, to confirm the issue is narrow
+to gate 3's configuration rather than systemic. **If you hit an unexplained `firstWindow()`
+timeout on a new gate or test, check this first** rather than re-deriving the six ruled-out
+hypotheses from scratch.
+
+## Reference: files this knowledge came from
+
+- `docs/planning/spike-verdict.md` — the readable summary, start there.
+- `docs/planning/spike-results/gate-{0,1a,1b,2,3,4}.json` — raw measured evidence.
+- `docs/planning/week-0-spike-plan.md` and `spike-remaining-gates-plan.md` — the execution
+  plans, including the state table and traps list as they were understood mid-spike.
+- `docs/architecture/capability-api.md` §Design rules, §Throughput — where the durable lessons
+  (shim completeness, error visibility, transferables) are folded into the actual spec.
+- `spike/launch.mjs`, `spike/gate1b/vite.config.js`, `spike/gate1b/shim/*.js` — the reference
+  implementations. The `spike/` directory itself is throwaway and will be deleted once the
+  owner has reviewed the verdict; this skill and the docs above are what should outlive it.
