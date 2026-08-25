@@ -32,10 +32,13 @@ keeps planning documents in `docs/planning/`, so it lives here instead.
 | Task 1 — scaffold + Rule 8 guard | **DONE**, committed, 18 tests green |
 | Gate 0 — `MessagePortMain` fidelity | **PASS** — 1134.8 MB/s up, 313.4 MB/s down, byte-exact |
 | Gate 1a — ordinary TCP peer | **PASS** — wire type `tcpOutgoing`, piece verified in 505 ms |
-| Gate 1b — DHT over shimmed `dgram` | **NEXT** |
-| Gate 2 — no native modules | Largely pre-answered, see below |
+| Gate 1b — DHT over shimmed `dgram` | **PASS** — peer in 11 ms, 2 sends / 2 receives of real KRPC |
+| Gate 2 — no native modules | Largely pre-answered |
 | Gate 3 — video plays | Not started |
 | Gate 4 — throughput | Not started |
+
+> **The remaining work has its own execution plan:**
+> [`spike-remaining-gates-plan.md`](spike-remaining-gates-plan.md). Work from that.
 
 ### The known-good renderer recipe
 

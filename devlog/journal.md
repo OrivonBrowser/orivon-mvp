@@ -32,6 +32,8 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - 2026-08-25: **Gate 1a PASS** — a renderer bundle fetched an ordinary non-WebRTC torrent (wire type `tcpOutgoing`, piece verified in 505ms). This was the risk four audits called the real one.
 - 2026-08-25: Six bundling problems to get there, only one anticipated. Worst was a missing `path` polyfill that reported itself as `ConnPool.join is not a function`, because Rollup gave two externalised modules the same identifier.
 - 2026-08-25: **BitTorrent encryption works after all.** Owner challenged the claim that it couldn't run in the renderer; `mse.js` already ships a pure-JS RC4 fallback and `crypto-browserify` covers the rest. Encrypted handshake verified at `secure: 2` (no plaintext fallback). Recommendation: ship `secure: 1`.
+- 2026-08-25: **Gate 1b PASS** — DHT lookup over the shimmed `dgram`, peer found in 11ms with real KRPC traffic. Message-oriented transport works, not just streams.
+- 2026-08-25: Gate 1b's bug is the most instructive yet: `net.isIP` was missing from the shim, so the DHT sent nothing at all — and the `process.nextTick` polyfill swallowed the TypeError, turning a loud failure silent. Both lessons belong in the real shim.
 - 2026-08-25: Hardened the unattended Sunday devlog cron — writes scoped to `devlog/` only, after a first attempt that left a real escape to `$HOME`.
 
 ### In my head
