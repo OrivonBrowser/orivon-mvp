@@ -19,6 +19,11 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 ## Week of 2026-08-24
 
 ### Done / results
+- 2026-08-26: **The repo is public** — github.com/OrivonBrowser/orivon-mvp, Apache-2.0, full history, CI green on the first run. Branch protection on `main`: CI must pass, changes go through a PR.
+- 2026-08-26: `src/contracts/` written — the whole `orivon.*` surface as seven files of types, transcribed from capability-api.md and handle-contracts.md. It is the thing that lets sequentially-dependent build steps be worked on in parallel, and it is the fastest way for anyone to understand the product.
+- 2026-08-26: Parallel-work system in place: worktree-per-stream, an ownership map with no overlapping paths, a composition root where adding a subsystem is two appended lines instead of an edit, and `merge=union` on the append-only files (verified by actually merging two divergent appends, not assumed).
+- 2026-08-26: Repo made human-navigable — README, ARCHITECTURE, CONTRIBUTING, SECURITY, a docs index, setup/testing guides, and a README in every directory saying what it depends on and what it must never import. The map used to live only in CLAUDE.md, which is an agent file.
+- 2026-08-26: Transcribing the contracts surfaced two real gaps in the spec docs (A12: `orivon.fs` option bags unspecified; A13: capability-api.md contradicts itself on whether `app.manifest()` is async). Recorded, not invented around.
 - 2026-08-25: Set up the weekly devlog system (journal capture + /devlog compiler + Sunday cron draft).
 - 2026-08-25: **Owner gave the go.** Preparation phase closed (A6); the week-0 spike is next.
 - 2026-08-25: Two one-way doors decided — cached apps keep their real origin (ADR-0007), and capability handles are WHATWG streams underneath with Node shapes on top (A10 direction; full spec still to write).
@@ -46,6 +51,8 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - 2026-08-26: **Real bug hunt: `npm run dev` never showed a window.** Two dead ends before the root cause — a "wrong monitor" misdiagnosis (the display was actually correct; misread its reported dimensions), then a genuine regression trying to fix that misdiagnosis (forcing X11/XWayland segfaulted the GPU process). Root-caused only once the owner ran `npm run dev` directly with traced logging and shared the output: `ready-to-show` doesn't fire reliably when loading from electron-vite's dev server. The window existed the whole time; `show()` was just never called. Fixed with a short fallback timer. The owner's own observations (working during probes, not during "real" launches; a specific terminal paste showing exactly where it stopped) did more to solve this than any of the automated diagnostics.
 
 ### In my head
+- 2026-08-26: **Readability check works, and caught three things on its first run.** Owner read README and ARCHITECTURE cold: no roadmap, no explanation of the Web3 connection, and an architecture section that read as "this repo is becoming a Chromium fork" when it meant "the interface is built to outlive the shell". All three fixed; the check is now a standing rule at the end of every build step.
+- 2026-08-26: Standing policy set: the repo must be workable by a developer arriving alone with no AI, and the owner is the test for that — one artefact, one question, "where did you first get lost?"
 - 2026-08-25: Wants a Sunday ritual: paste-ready team message plus bullet cues for a spontaneous voice note recalling the week's thinking.
 - 2026-08-25: Keen to start building the browser; kept checking whether preparation was really finished. Accepted that the spike comes first once it was clear a spike failure would invalidate a week of shell work.
 - 2026-08-25: Cost discipline — asked twice about when Opus is genuinely needed versus Sonnet, and wants the expensive model spent on judgment rather than on build-run-read-error loops. Switched to opusplan once the bundling recipe was established.
