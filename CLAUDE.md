@@ -2,22 +2,35 @@
 
 ## Start here
 
-**Phase: build step 1 (the shell) complete (2026-08-26). Next action is build step 2 (the
-capability broker) — nothing else is unblocked ahead of it.**
-Last updated 2026-08-26 (build step 1 recorded).
+**Phase: build step 1 (the shell) complete. `src/contracts/` written and the parallel-work
+system in place (2026-08-26). Next action is build step 2 (the capability broker) — nothing
+blocks it.**
+Last updated 2026-08-26 (repo openness + parallel work recorded).
 
-Read in this order, then act:
+**The human documentation is the map. Read it first — this file adds only what is specific to
+working here as an agent.**
 
-1. `docs/planning/audit-2026-08-25.md` — **read this first.** Five independent audits of the
-   corpus. Records what was wrong, what was fixed, and what is still open. Several documents
-   below carry corrections that reverse earlier claims.
-2. `docs/planning/readiness.md` — the gate. Says what is ready and what is not.
-3. `docs/mvp-scope.md` — what is in, what is out, what counts as failure.
-4. `docs/planning/build-plan.md` — dependency-ordered work.
-5. `docs/decisions/` — eight ADRs. Read them before proposing anything architectural;
-   most obvious ideas have already been considered and rejected for recorded reasons.
-   **ADR-0002 and ADR-0005 carry amendments that supersede parts of their own text; ADR-0008
-   rescopes ADR-0002's Node-shape-mirroring rule to the shim, not the capability layer.**
+| | |
+|---|---|
+| `README.md` | What Orivon is, its status, its roadmap, how it relates to Web3 |
+| `ARCHITECTURE.md` | How the pieces fit, which are disposable, and the owner's design choices |
+| `docs/README.md` | **The documentation index** — three reading tracks and the sources-of-truth table |
+| `docs/development/parallel-work.md` | **Read before starting any build step** |
+| `src/contracts/` | The product surface in seven files. Faster than any prose |
+
+That index is deliberately *not* duplicated here. Two copies drift, and the human one is the
+one a contributor will actually find.
+
+Three things load-bearing enough to repeat:
+
+1. `docs/planning/audit-2026-08-25.md` records five independent audits, and **several documents
+   carry corrections reversing their own earlier claims.** Where a document says two things,
+   the correction block is the current one.
+2. `docs/decisions/` — eight ADRs. Read before proposing anything architectural; most obvious
+   ideas have already been considered and rejected for recorded reasons. **ADR-0002 and
+   ADR-0005 carry amendments superseding parts of their own text; ADR-0008 rescopes ADR-0002's
+   Node-shape-mirroring rule to the shim, not the capability layer.**
+3. `docs/mvp-scope.md` — **anything absent from the IN table is out by default.**
 
 **The spike resolved.** Verdict and evidence: `docs/planning/spike-verdict.md` (read this, not
 the older `week-0-spike-plan.md`, for current status). Gates 0/1a/1b/2 **PASS** with hard
@@ -64,28 +77,38 @@ Success metric: **100 active users in EU/USA, active = 25 h/month.** The metric,
 long-term vision, decides scope.
 
 ## Sources of truth
-| Question | Read |
-|---|---|
-| What is Orivon, long-term? | `/home/jhon/Desktop/Develop/orivon-docs/docs/` (canonical; deployed at docs.orivonstack.com). **Do not duplicate it here** — summarise and link |
-| What prior material exists, and where? | `docs/inventory.md` — everything is indexed; do not re-crawl the filesystem |
-| What is in the MVP? | `docs/mvp-scope.md` |
-| **What do apps program against?** | `docs/architecture/capability-api.md` — **the highest-care artefact here.** The Electron shell is disposable; this interface is not |
-| **What does a handle (`TcpSocket`, `TcpServer`, `UdpSocket`, `FileHandle`, `IdentityHandle`) actually do?** | `docs/architecture/handle-contracts.md` — read/write shape, backpressure, close/half-close, error taxonomy, revocation cascade. Same care level as `capability-api.md`, kept as a sibling document |
-| Why is something the way it is? | `docs/decisions/` (ADRs) |
-| How much does integrating app X cost? | `docs/architecture/app-compatibility.md` |
-| What are we defending against? | `docs/architecture/security-model.md` |
-| What is undecided or contradictory? | `docs/open-questions.md` |
-| What does a term mean? | `docs/glossary.md` |
+
+**In `docs/README.md`.** Not repeated here — see the note in §Start here.
+
+Two things that are agent-specific and belong in this file rather than that one:
+
+- **The long-term vision lives at `/home/jhon/Desktop/Develop/orivon-docs/docs/`** (canonical,
+  deployed at docs.orivonstack.com). **Do not duplicate it into this repository** — summarise
+  and link. This repo is deliberately narrower.
+- **`docs/inventory.md` indexes all prior material. Do not re-crawl the filesystem** looking
+  for it.
 
 `/home/jhon/git/orivon-browser-v2` is a **failed prior MVP**. Not a baseline, not a reference
 architecture. Its GUI may be used as *visual reference only*.
 
 ## The load-bearing idea
-The durable asset is the **capability API** (`orivon.*`), not the engine beneath it:
-Node broker now → Wasmtime later → Chromium/Mojo later, invisible to apps already written.
-That property — not Electron, not Wasmtime — is what keeps the Chromium path open.
-`orivon-runtime` is **deferred, not cancelled**; its jobs are containment for untrusted code
-and mobile portability, both post-MVP.
+
+The durable asset is the **capability API** (`orivon.*`), now written as types in
+`src/contracts/`. The Electron shell beneath it is knowingly disposable.
+
+The interface is designed so the implementation underneath could change — a WASM runtime, or
+IPC inside a browser engine — without any app already written having to change.
+
+> **State this carefully, and never as a roadmap.** The owner flagged the earlier wording
+> (readability check 1, 2026-08-26) for implying this repository is on its way to becoming a
+> browser-engine fork. It is not. A WASM runtime and an engine fork are **explicitly out of
+> scope** (`mvp-scope.md` §LATER), nobody is working on either, and nothing here depends on
+> them happening. The engine-independence is a *property of the design* that costs nothing
+> today — not a plan. `orivon-runtime` is deferred, not cancelled; its jobs are containment for
+> untrusted code and mobile portability, both post-MVP.
+
+**Practical consequence:** a shortcut in `src/main/` costs a refactor of code that was
+replaceable anyway. A shortcut in `src/contracts/` costs every app ever written for Orivon.
 
 ## Rules
 1. **Do not silently promote assumptions into architecture.** If a choice is load-bearing and
@@ -97,13 +120,53 @@ and mobile portability, both post-MVP.
 4. **Scope discipline.** The vision corpus is large, coherent and seductive, and the developer
    is solo — scope creep out of it is the single biggest risk. **Anything absent from the IN
    table in `mvp-scope.md` is out by default.**
-5. **No dead ends toward a future Chromium fork.** State, per component, whether it survives
-   that migration or is knowingly disposable.
+5. **Label every component disposable or durable.** Say, per component, whether it is tied to
+   Electron or would outlive it — `ARCHITECTURE.md` has the current table. This is about
+   spending care in the right place, **not** about a planned migration; see §The load-bearing
+   idea before writing anything that sounds like a roadmap.
 6. **Prefer mature components.** Per subsystem decide: build / library / fork / embed /
    interface. Do not reinvent without a written reason.
 7. **Don't over-document trivia**, and don't create abstractions for elegance alone.
 8. **Pure-JS dependencies only.** Native modules break run-from-source on Windows and macOS,
    which is a supported path (`build-plan.md`).
+
+## Two standing rules, both owner policies from 2026-08-26
+
+### Parallel work
+
+**Read `docs/development/parallel-work.md` before starting any build step.** Then:
+
+- Work in a **worktree** on `stream/<name>`, matching the ownership map.
+- **Stay inside your owned paths.** If a change needs a file another stream owns, that is a
+  signal — raise it, do not just edit it.
+- **Never modify `src/contracts/` in the same PR as an implementation.** A contracts change
+  touches every stream at once; it goes in its own PR and merges first.
+- **Append at the append points** (`src/main/subsystems.ts`, the preload input map) rather than
+  editing shared logic. Do not add logic to `subsystems.ts`.
+- **Never hand-merge `package-lock.json`.** Take either side whole, run `npm install`, commit
+  the result.
+
+### The readability check
+
+**At the end of every build step**, hand the owner **exactly one artefact** — the document a
+newcomer would hit at that point — and ask:
+
+> *Read this cold. Where is the first place you got lost, or had to guess?*
+
+**Not "is this good?"**, which reliably returns a useless answer. And only the *first* point:
+everything after it is unreliable, because the reader is already reconstructing from context.
+
+Record the date, artefact, confusion point and fix in `docs/development/readability-log.md`.
+**This does not lapse**, and it is a gate rather than a courtesy — the first round caught a
+missing roadmap, an unexplained Web3 relationship, and an `ARCHITECTURE.md` section that
+actively implied the wrong thing.
+
+Two lessons from that round, now binding on anything written here:
+
+- **State omissions as omissions, with reasons.** Both README findings were absences, not
+  errors — and the reader could not tell "deliberately out of scope" from "not thought about".
+- **Keep aspiration visibly separate from schedule.** A statement accurate about the design can
+  still be badly misleading about the plan.
 
 ## Tooling — what fires when (installed 2026-08-25, `.claude/settings.json`)
 
@@ -112,6 +175,8 @@ invoked at the step named here. **Check this table at the start of every build s
 
 | Tool | Fires | Use it for |
 |---|---|---|
+| `npm run check:contracts` | **CI, and on demand** | Fails if `src/contracts/` is incomplete or references anything outside itself. A sibling (`./errors.js`) is fine; `electron`, `node:*` or any package is not |
+| `npm run check:natives` | **Automatic on `postinstall`, and CI** | Rule 8. Fails if any dependency needs a compiler at install time |
 | `typescript-lsp` | Automatic on `.ts` edits | Type errors across main / preload / renderer. Trust its diagnostics over your own reading of a type |
 | `security-guidance` | Automatic: warns on edits, reviews the diff when you stop, reviews every `git commit` | Path traversal (T1/T10), SSRF / private-address (T12), secrets. Address or explicitly acknowledge every finding |
 | `hookify` rules in `.claude/hookify.*.local.md` | Automatic on edits and shell | Block native modules (Rule 8), insecure `webPreferences`, non-TypeScript sources (ADR-0002); warn on hardcoded storage paths (ADR-0003) and out-of-scope features (Rule 4). Add a rule with `/hookify` whenever the owner corrects the same thing twice |
