@@ -323,7 +323,8 @@ The fixture app is also **app #3** for the genericity test and the developer-mod
 **run-from-source on Windows and macOS included**, since that is now a supported path and it
 is the one most likely to break silently.
 
-They need writing up as an executable checklist (`docs/testing/release-checklist.md`) with a
+They need writing up as an executable checklist (`docs/development/release-checklist.md` —
+**written 2026-08-26**, for the items decidable before build steps 4/5/7 exist) with a
 precondition, a fixed input and a falsifiable assertion each — as prose in a scope document
 they cannot be run identically twice. Specifically: journey 1 needs a **named, pinned,
 well-seeded MP4 torrent**, not "a magnet link", or pass/fail tracks swarm health that day;
