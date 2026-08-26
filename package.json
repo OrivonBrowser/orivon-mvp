@@ -15,7 +15,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "check:natives": "node scripts/check-no-native-modules.mjs",
-    "smoke": "electron-vite build && node spike/smoke-launch.mjs",
+    "smoke": "electron-vite build && node scripts/smoke.mjs",
     "postinstall": "node scripts/check-no-native-modules.mjs"
   },
   "devDependencies": {
