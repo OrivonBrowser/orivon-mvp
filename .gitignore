@@ -34,3 +34,14 @@ npm-debug.log*
 spike/*/dist/
 spike/app/node_modules/
 spike/results/
+
+# Autonomous build loop (docs/planning/autonomous-loop-design.md)
+# State churns every cycle and is machine-owned, so it is not versioned.
+orchestration/state/
+orchestration/dashboard/.pid
+
+# Credentials never enter this repository -- it is public. The loop reads them
+# from ~/.config/orivon/notify.env (mode 600). scripts/check-no-secrets.mjs
+# enforces this. Example files are allowed and are meant to be committed.
+*.env
+!*.env.example

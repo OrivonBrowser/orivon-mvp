@@ -34,5 +34,11 @@ jobs:
       - name: Contracts are complete and reference only their own siblings
         run: npm run check:contracts
 
+      # This repository is public, and the autonomous build loop uses a real
+      # credential (kept in ~/.config/orivon/notify.env, outside the repo).
+      # A token pushed here is scraped within minutes and cannot be un-pushed.
+      - name: No credentials in tracked files
+        run: npm run check:secrets
+
       - name: Build
         run: npm run build

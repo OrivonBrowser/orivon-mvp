@@ -24,6 +24,7 @@
     "test": "vitest run",
     "check:natives": "node scripts/check-no-native-modules.mjs",
     "check:contracts": "node scripts/check-contracts-pure.mjs",
+    "check:secrets": "node scripts/check-no-secrets.mjs",
     "smoke": "electron-vite build && node scripts/smoke.mjs",
     "postinstall": "node scripts/check-no-native-modules.mjs"
   },

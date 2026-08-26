@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Blocks a commit that would put a credential into this PUBLIC repository.
+#
+# WHY A HOOK AND NOT JUST CI: CI runs after `git push`, which is after the
+# secret is already on GitHub and already scraped. By then the only correct
+# response is rotation, not deletion -- the value stays in the object store and
+# in every fork. This hook is the layer that runs while the mistake is still
+# cheap.
+#
+# This is one of three layers, and none of them is sufficient alone:
+#   1. this hook            -- before the commit exists (bypassable: --no-verify)
+#   2. CI `check:secrets`   -- before a merge (runs after push)
+#   3. branch protection    -- nothing reaches main without the owner
+#
+# Enable with:  git config core.hooksPath .githooks
+set -u
+repo="$(git rev-parse --show-toplevel)"
+node "$repo/scripts/check-no-secrets.mjs" || {
+  echo ""
+  echo "pre-commit: refusing to commit. Fix the finding above."
+  echo "If this is a false positive, add the file to EXEMPT in"
+  echo "scripts/check-no-secrets.mjs and say why in the commit message."
+  exit 1
+}

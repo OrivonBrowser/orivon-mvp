@@ -65,6 +65,7 @@ Background: [`.claude/skills/orivon-electron/SKILL.md`](../../.claude/skills/ori
 | `npm test` | Vitest, `environment: 'node'`. Unit tests only, no DOM |
 | `npm run check:natives` | **Rule 8.** Fails if any dependency needs a compiler. Also runs automatically on `postinstall` |
 | `npm run check:contracts` | Fails if `src/contracts/` is incomplete or references anything outside itself |
+| `npm run check:secrets` | Fails if a credential is in a git-tracked file. **This repo is public** — run `git config core.hooksPath .githooks` once, and it also runs before every commit |
 | `npm run smoke` | Builds, then drives the **real** shell with real clicks. Slow, and the only check that proves a window appears |
 
 Before opening a pull request:
