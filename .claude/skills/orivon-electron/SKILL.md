@@ -167,6 +167,39 @@ needs) and the build crashes with `MODULE_NOT_FOUND`. `check:natives` passes und
 install mode (correctly — a missing prebuilt binary isn't a Rule 8 violation), so the guard
 alone will not catch this. Contributors and CI must use a plain `npm install`.
 
+## `ready-to-show` does not fire reliably when loading from a dev server
+
+Build step 1 (2026-08-26): a `show: false` + `win.once('ready-to-show', () => win.show())`
+window (`src/main/window.ts`) **never appeared** under `npm run dev` — no error, no crash, a
+completely healthy process tree (main, GPU process, both renderers, confirmed repeatedly via
+`ps`). It worked fine every time under Playwright-launched diagnostics and under the production
+`loadFile()` path (`npm run smoke`). The difference: `npm run dev`'s chrome view loads via
+`chrome.webContents.loadURL(devServerUrl)` (electron-vite's Vite dev server), not a built file.
+
+**Root-caused only by adding `console.error` at every step of window creation and having a human
+run `npm run dev` directly and paste the actual output** — every automated diagnostic this
+session (querying `win.isVisible()`/`isFocused()`/`getBounds()` through Playwright) reported the
+window as fully correct, because those diagnostics never exercised the dev-server load path at
+all. The trace showed `chrome did-finish-load` firing normally, then **`ready-to-show` simply
+never firing** within several seconds — `show()` was never called, on an otherwise perfectly
+healthy window.
+
+**Fix: race `ready-to-show` against a short fallback timer** (`src/main/window.ts`'s `showOnce`),
+guarded so `show()` never runs twice if the event fires late, after the fallback already ran.
+Do not rely on `ready-to-show` alone for a window whose content may come from a dev server —
+only for the production `loadFile()` path is it proven prompt and reliable here.
+
+**Process lesson, worth repeating for the next hard-to-reproduce Electron bug:** two plausible-
+looking diagnoses were tried and both were dead ends before this one — a "wrong monitor"
+misdiagnosis (misreading a display's reported dimensions as an unusual portrait monitor when it
+was actually the user's real main screen) and, worse, a **regression** while chasing it (forcing
+`ozone-platform: x11` to make explicit window positioning work, which segfaulted the GPU process
+under XWayland on this machine). Both are recorded, not deleted, in the git history
+(`04d44bc`) — they are exactly the kind of trap this file exists to save the next session from
+re-discovering. The thing that actually worked was the least exotic tool available: ask the
+human running the real environment to paste what they actually see, before trusting any
+automated proxy for it again.
+
 ## Known unsolved issue: Playwright can't always attach to a gate's window
 
 Gate 3 (video playback) is **blocked**, not failed, on this. The app itself is fine — confirmed
@@ -201,3 +234,5 @@ hypotheses from scratch.
 - `spike/launch.mjs`, `spike/gate1b/vite.config.js`, `spike/gate1b/shim/*.js` — the reference
   implementations. The `spike/` directory itself is throwaway and will be deleted once the
   owner has reviewed the verdict; this skill and the docs above are what should outlive it.
+- `src/main/window.ts`'s `showOnce` — the `ready-to-show`-under-dev-server fix. Commit `04d44bc`
+  (build step 1) has the full incident, including the two dead ends ruled out first.
