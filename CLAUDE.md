@@ -161,12 +161,20 @@ Record the date, artefact, confusion point and fix in `docs/development/readabil
 missing roadmap, an unexplained Web3 relationship, and an `ARCHITECTURE.md` section that
 actively implied the wrong thing.
 
-Two lessons from that round, now binding on anything written here:
+Lessons from the first rounds, now binding on anything written here:
 
-- **State omissions as omissions, with reasons.** Both README findings were absences, not
+- **State omissions as omissions, with reasons.** Two README findings were absences, not
   errors — and the reader could not tell "deliberately out of scope" from "not thought about".
-- **Keep aspiration visibly separate from schedule.** A statement accurate about the design can
-  still be badly misleading about the plan.
+- **Never state an MVP scope boundary as a permanent property of Orivon, and never state a
+  long-term aspiration as a plan for this repository.** This was caught twice, in opposite
+  directions: `ARCHITECTURE.md` implied this repo was becoming a browser-engine fork (it is
+  not — that is out of scope), and `README.md` said "not a wallet, no DAO, there won't be one"
+  when **both are real long-term goals** with their own designs in the vision corpus
+  (`wallet-system.md`, `dao-plan.mdx`); only *this MVP* excludes them.
+
+  Every sentence about scope must make clear **which** thing it bounds — this month's build,
+  this repository, or the project. A reader cannot recover that from context and will believe
+  whichever the sentence implies. Both errors read as confident and precise; neither was.
 
 ## Tooling — what fires when (installed 2026-08-25, `.claude/settings.json`)
 
