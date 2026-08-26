@@ -71,19 +71,29 @@ Two things in this MVP demonstrate it:
   visit signs you in — no extension, no seed phrase, no setup. Internally these are called
   *Web3 Accounts*.
 
-**What Orivon is explicitly not:**
+**What is not in this MVP.** These are scope boundaries for *this month's build*, not
+statements about where Orivon is going — the difference matters, so it is spelled out:
 
-- **Not a wallet.** No funds, no seed phrase shown, no send or receive. A funds-bearing wallet
-  is a genuinely different security model, and it is not in this MVP.
-- **No token, no chain, no DAO, no governance.** There isn't one and there won't be one here.
-- **No ENS, no IPFS, no DDOC in v0.** These are real parts of the longer-term plan and all are
-  deferred — trustless name resolution in particular is substantial work and everything else
-  depends on it.
+- **No funds movement.** The identity system here is what the project calls a **Web3
+  Account**: keys, signing, and one identity across sites. It holds no funds, shows no seed
+  phrase, and cannot send or receive.
+  **The wallet is a long-term goal, not a rejected idea** — the design has three layers
+  (Accounts, Crypto, Address book), and this MVP ships only the first. The other two need a
+  meaningfully different security model and come later.
+- **No ENS, no IPFS, no DDOC yet.** All three are real parts of the plan. Trustless name
+  resolution in particular is substantial work, and much of the rest depends on it landing
+  first.
+- **No token, chain, DAO or governance *in the product*.** Orivon does have a
+  [DAO plan](https://github.com/OrivonBrowser/orivon-docs) — treasury, merit-tracked
+  contribution, the lot. It is **organisational rather than a browser feature**, so it lives
+  outside this repository entirely. You will not find it here, and its absence here says
+  nothing about whether it is happening.
 
 The longer framing, in the project's own words, is *Web4*: easy interfaces to **use** Web3, in
-the way Web2 gave easy interfaces to read and write Web1. That vision lives in
+the way Web2 gave easy interfaces to read and write Web1. That vision — including the wallet
+layers and the DAO — lives in
 [orivon-docs](https://github.com/OrivonBrowser/orivon-docs). **This repository is deliberately
-narrower than that** — it is one testable claim, not the whole idea.
+narrower than the vision**: it is one testable claim, tested first.
 
 ## Roadmap
 
@@ -104,15 +114,21 @@ Strictly dependency-ordered; each step needs the one before it.
 | 9 | **Developer mode** — load an unpacked app | |
 | 10 | **Packaging** — AppImage and deb | |
 
-**Deliberately deferred**, and listed so it is clear they are choices rather than oversights
-([`docs/mvp-scope.md`](docs/mvp-scope.md)): trustless name resolution (ENS and friends) · DDOC ·
-IPFS and Arweave as a second delivery path · an app store · a funds-bearing wallet · identity
-export and backup · `subprocess` and `hid` capabilities · signed Windows and macOS installers.
+**Deliberately deferred** — choices, not oversights, and every one of them is still on the
+long-term plan ([`docs/mvp-scope.md`](docs/mvp-scope.md)): trustless name resolution (ENS and
+friends) · DDOC · IPFS and Arweave as a second delivery path · an app store · **the wallet's
+Crypto and Address-book layers** · identity export and backup · `subprocess` and `hid`
+capabilities · signed Windows and macOS installers.
 
 **Longer term, and not scheduled:** a WebAssembly runtime for containing untrusted apps ·
 mobile · Tor and proxy chains · cross-device sync. A browser-engine fork is a hypothesis about
 where this could eventually go — **nobody is working on it, and nothing here depends on it
 happening.**
+
+*This roadmap covers the **product**. Orivon's organisational plans — the DAO, the treasury,
+contribution and token distribution — are real, and they live in
+[orivon-docs](https://github.com/OrivonBrowser/orivon-docs) rather than here, because they are
+not browser features.*
 
 ## The idea underneath
 
