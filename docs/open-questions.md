@@ -130,6 +130,18 @@ driver** — not confirmed affected (gates 0/1a/1b/4 all attach fine on the same
 worth a five-minute check the first time that test is written, before build step 2 is called
 done on the strength of it.
 
+**Narrowed 2026-08-26, build step 1.** A minimal `BaseWindow` with two `WebContentsView`s
+(one chrome-style view, one content view — the exact composition the shell now uses)
+attaches cleanly under `_electron`: `app.windows()` reports both with correct URLs, and
+`app.firstWindow()` resolves immediately with no timeout, in view-add order. **So the failure
+is not `BaseWindow`/multiple-`WebContentsView`s in general** — it is specific to something in
+gate 3's actual composition (video element, service worker, or the
+`protocol.registerSchemesAsPrivileged()` call, none of which this probe exercised). Practical
+consequence for the shell: `app.firstWindow()` is not reliable long-term (it depends on
+view-add order, which is an implementation detail, not a contract) — the shell's own smoke
+test matches windows by URL/title via `app.windows()` instead of relying on first-added
+ordering.
+
 ---
 
 ## BB. Public-docs corrections — and what is *not* one
