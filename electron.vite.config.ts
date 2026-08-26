@@ -15,7 +15,18 @@ export default defineConfig({
       // CommonJS by default, which is what a sandboxed preload requires --
       // it has no ESM context and loads electron via require. See the note
       // in src/main/index.ts.
-      rollupOptions: { input: resolve(root, 'src/preload/index.ts') }
+      //
+      // Two preloads, different privilege (build step 1, this session's
+      // plan): `app` is loaded by every ordinary tab and exposes only
+      // `orivon.version`; `shell` is loaded ONLY by the chrome view and
+      // exposes tab commands. Keys match the output filenames window.ts
+      // and tabs.ts reference (`../preload/app.js`, `../preload/shell.js`).
+      rollupOptions: {
+        input: {
+          app: resolve(root, 'src/preload/app.ts'),
+          shell: resolve(root, 'src/preload/shell.ts')
+        }
+      }
     }
   },
   renderer: {

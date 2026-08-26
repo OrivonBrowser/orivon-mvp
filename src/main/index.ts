@@ -1,5 +1,5 @@
-import { join } from 'node:path'
-import { app, BrowserWindow } from 'electron'
+import { app, BaseWindow } from 'electron'
+import { createShellWindow } from './window.js'
 
 // Main and preload are CommonJS; only the renderer is ESM. This is
 // electron-vite's default and it is kept deliberately, for one reason:
@@ -9,47 +9,25 @@ import { app, BrowserWindow } from 'electron'
 // two-format build for no gain.
 //
 // For the record, because it would otherwise be assumed: an ESM main process
-// works fine. `import { app, BrowserWindow } from 'electron'` was verified
-// against Electron 44 on 2026-08-25 and returns the real API. If a future
-// need for ESM in main appears, nothing here blocks it.
-
-// The webPreferences below are load-bearing, not boilerplate.
+// works fine. `import { app, ... } from 'electron'` was verified against
+// Electron 44 on 2026-08-25 and returns the real API. If a future need for
+// ESM in main appears, nothing here blocks it.
 //
-// `contextIsolation: true` is what makes capability-api.md's central rule
-// free: the preload holds a socket's raw MessagePort in the isolated world
-// and exposes only closures. Transferring that port to the page -- the
-// obvious move when optimising for throughput -- would hand a raw socket to
-// anything the page can reach (security-model.md T17).
+// BrowserWindow -> BaseWindow (build step 1, 2026-08-26): confirmed via
+// live docs that BrowserWindow supports only a single full-size web view,
+// while BaseWindow composes many (window-customization.md) -- required for
+// the shell's chrome view + tab views. The webPreferences load-bearing note
+// below now lives in window.ts and tabs.ts, next to where each view is
+// actually constructed; still true, still worth reading there.
 //
-// A hookify rule rejects edits that weaken these.
-function createWindow (): void {
-  const win = new BrowserWindow({
-    width: 1280,
-    height: 800,
-    show: false,
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      contextIsolation: true,
-      sandbox: true,
-      nodeIntegration: false,
-      webSecurity: true
-    }
-  })
-
-  win.once('ready-to-show', () => win.show())
-
-  const devServerUrl = process.env['ELECTRON_RENDERER_URL']
-  if (devServerUrl !== undefined) {
-    void win.loadURL(devServerUrl)
-  } else {
-    void win.loadFile(join(__dirname, '../renderer/index.html'))
-  }
-}
+// A hookify rule rejects edits that weaken contextIsolation/sandbox/
+// nodeIntegration/webSecurity anywhere in this tree (security-model.md T17
+// and the block-insecure-webpreferences rule).
 
 void app.whenReady().then(() => {
-  createWindow()
+  createShellWindow()
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    if (BaseWindow.getAllWindows().length === 0) createShellWindow()
   })
 })
 
