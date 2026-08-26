@@ -17,26 +17,59 @@ function install (reportError = vi.fn<GlobalsErrorReporter>()) {
 
 describe('installGlobals', () => {
   it('writes process, setImmediate and clearImmediate onto the target object, not globalThis', () => {
+    // Captured BEFORE the install, and compared by identity after. The
+    // earlier version of this test only checked that globalThis.process was
+    // not the same object as target.process -- which passes even if
+    // installGlobals clobbered globalThis with some OTHER object, and never
+    // looked at setImmediate/clearImmediate at all.
+    const ambient = globalThis as { process?: unknown, setImmediate?: unknown, clearImmediate?: unknown }
+    const before = { process: ambient.process, setImmediate: ambient.setImmediate, clearImmediate: ambient.clearImmediate }
+
     const { target } = install()
 
     expect(target.process).toBeDefined()
     expect(typeof target.setImmediate).toBe('function')
     expect(typeof target.clearImmediate).toBe('function')
 
-    // The real globalThis in this test process (Node, under vitest) is
-    // untouched -- no property here was ever assigned to it.
-    expect((globalThis as { process?: unknown }).process).not.toBe(target.process)
+    expect(ambient.process).toBe(before.process)
+    expect(ambient.setImmediate).toBe(before.setImmediate)
+    expect(ambient.clearImmediate).toBe(before.clearImmediate)
   })
 
   describe('process surface', () => {
     it('exposes platform as a string that can never collide with a real Node platform', () => {
       const { target } = install()
+      // toBeDefined() first: without it this test passes vacuously when
+      // process is undefined, because `undefined` is not in the list either.
+      expect(target.process).toBeDefined()
       // Not asserting the literal 'browser' value here -- asserting the
       // PROPERTY this value must hold: it must never equal any of Node's
       // own platform names, or an `=== 'win32'`-style check downstream
       // could fire on a wrong guess instead of safely falling through.
       const realPlatforms = ['aix', 'darwin', 'freebsd', 'linux', 'openbsd', 'sunos', 'win32', 'android', 'cygwin', 'netbsd', 'haiku']
       expect(realPlatforms).not.toContain(target.process?.platform)
+    })
+
+    // EVIDENCED AGAINST THE REAL CALL GRAPH, not against this file's
+    // anticipated surface (src/shim/README.md requirement 1). Grepping the
+    // spike's shipped bundles -- the ones that made gates 1a/1b actually
+    // pass -- finds `process.browser` read 4 times in gate1a and 6 in
+    // gate1b, and the npm `process` polyfill they bundled sets it to true:
+    //
+    //   bittorrent-tracker (Client AND Server):
+    //     if (!process.browser && !opts.port) throw new Error('Option `port` is required')
+    //   crypto-browserify checkNative():
+    //     if (global.process && !global.process.browser) return Promise.resolve(false)
+    //   crypto-browserify default encoding, and webtorrent's FILESYSTEM_CONCURRENCY.
+    //
+    // Omitting it does NOT fail loudly. It makes each of those quietly take
+    // the Node branch -- which is this file's own rule 2 ("louder, not
+    // quieter") violated by the shim that exists to enforce it.
+    it('sets browser true, so a dependency guarding on !process.browser takes the browser branch', () => {
+      const { target } = install()
+      // Strictly true, not merely truthy: debug's entry point compares with
+      // `process.browser === true`.
+      expect(target.process?.browser).toBe(true)
     })
 
     it('starts env empty rather than inheriting any ambient environment', () => {
@@ -185,6 +218,37 @@ describe('installGlobals', () => {
       await flushMacrotask()
       expect(callback).not.toHaveBeenCalled()
     })
+
+    // A TYPE-LEVEL regression test, enforced by `npm run typecheck` rather
+    // than at runtime: if ImmediateHandle ever goes back to being
+    // `ReturnType<typeof setTimeout>`, tsc resolves that to NodeJS.Timeout
+    // (this repo sets `"types": ["node"]` globally), `.unref` becomes a
+    // legal property access, and the @ts-expect-error below turns into an
+    // "unused directive" error that fails the build.
+    //
+    // Why that matters: in the sandboxed renderer this shim actually runs
+    // in, setTimeout returns a NUMBER, which has no .unref(). Typing the
+    // handle as NodeJS.Timeout lets `setImmediate(fn).unref()` compile
+    // clean and throw at runtime -- a silent-at-review, loud-at-3am bug of
+    // exactly the shape this file exists to prevent.
+    it('treats the immediate handle as opaque, exposing no Node Timeout methods', () => {
+      const { target } = install()
+      const handle = target.setImmediate?.(() => {})
+
+      // The assertion here is the DIRECTIVE, checked by `npm run typecheck`,
+      // not anything at runtime: under vitest this executes in Node, where
+      // setTimeout really does return a Timeout that has .unref(). The
+      // renderer -- where it is a bare number and .unref() throws -- is the
+      // host that matters, and no unit test in this process can stand in for
+      // it. Keeping the handle opaque in the TYPE is what closes that gap,
+      // so the type is what this test pins.
+      // @ts-expect-error the handle is opaque; .unref() is not part of its type
+      void handle?.unref
+
+      // What a caller may legitimately do with it: hand it straight back.
+      expect(handle).toBeDefined()
+      if (handle !== undefined) target.clearImmediate?.(handle)
+    })
   })
 
   describe('process.emitWarning', () => {
@@ -208,6 +272,52 @@ describe('installGlobals', () => {
 
       const [reported] = reportError.mock.calls[0] as [Error, string]
       expect(reported.name).toBe('DeprecationWarning')
+    })
+
+    // Node's documented signature has TWO forms:
+    //   emitWarning(warning[, type[, code]][, ctor])
+    //   emitWarning(warning[, options])            <- options: {type, code, detail}
+    // Only the first was handled. Passing the options form assigned the
+    // whole object to error.name, which stringifies to '[object Object]' --
+    // a warning that arrives unreadable rather than not at all, which is
+    // the quiet-failure mode this file is supposed to be free of.
+    it('accepts the options-object form and uses its type as the reported name', () => {
+      const { target, reportError } = install()
+
+      target.process?.emitWarning('old API', { type: 'DeprecationWarning' })
+
+      const [reported] = reportError.mock.calls[0] as [Error, string]
+      expect(reported.name).toBe('DeprecationWarning')
+      expect(reported.message).toBe('old API')
+    })
+
+    it('carries code and detail from the options object onto the reported error', () => {
+      const { target, reportError } = install()
+
+      target.process?.emitWarning('old API', { type: 'DeprecationWarning', code: 'DEP0001', detail: 'use the new one' })
+
+      const [reported] = reportError.mock.calls[0] as [Error & { code?: string, detail?: string }, string]
+      expect(reported.code).toBe('DEP0001')
+      expect(reported.detail).toBe('use the new one')
+    })
+
+    it('accepts the fully positional form, code included', () => {
+      const { target, reportError } = install()
+
+      target.process?.emitWarning('old API', 'DeprecationWarning', 'DEP0001')
+
+      const [reported] = reportError.mock.calls[0] as [Error & { code?: string }, string]
+      expect(reported.name).toBe('DeprecationWarning')
+      expect(reported.code).toBe('DEP0001')
+    })
+
+    it('defaults the name to Warning when the options object omits type', () => {
+      const { target, reportError } = install()
+
+      target.process?.emitWarning('no type given', { code: 'DEP0002' })
+
+      const [reported] = reportError.mock.calls[0] as [Error, string]
+      expect(reported.name).toBe('Warning')
     })
 
     it('passes an Error warning through unchanged, ignoring type', () => {
