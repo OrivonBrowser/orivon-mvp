@@ -54,6 +54,20 @@ const REEXPORT_PATTERN =
   /\bexport\b\s*(?:type\s*)?(?:\{[\s\S]{0,400}?\}|\*(?:\s+as\s+\w+)?)\s*from\s*['"`]/
 
 /**
+ * index.ts is the barrel: it exists to re-export, so a blanket ban would make
+ * it impossible to write. The exemption is narrow rather than a skip -- it may
+ * name a sibling in this same directory and nothing else, so the barrel cannot
+ * become the hole through which a dependency edge enters.
+ */
+const BARREL_FILE = 'index.ts'
+
+/** Every module specifier named in a `from` clause. */
+const SPECIFIER_PATTERN = /\bfrom\s*['"`]([^'"`]+)['"`]/g
+
+/** What the barrel may name: `./sibling.js`. */
+const SIBLING_SPECIFIER = /^\.\/[a-z0-9-]+\.js$/
+
+/**
  * @param {string} root Directory containing the src/contracts tree to check.
  * @returns {{ ok: boolean, offenders: string[], missing: string[] }}
  *   `offenders` reference a module; `missing` are absent required files. Both
@@ -82,7 +96,12 @@ export function checkContractsArePure (root) {
 
   const offenders = present
     .filter((name) => name.endsWith('.ts') && !name.endsWith('.test.ts'))
-    .filter((name) => referencesAModule(stripComments(readSafe(join(dir, name)))))
+    .filter((name) => {
+      const source = stripComments(readSafe(join(dir, name)))
+      return name === BARREL_FILE
+        ? referencesANonSibling(source)
+        : referencesAModule(source)
+    })
     .map((name) => relative(root, join(dir, name)).split(sep).join('/'))
     .sort()
 
@@ -93,6 +112,17 @@ export function checkContractsArePure (root) {
 function referencesAModule (source) {
   return IMPORT_PATTERNS.some((pattern) => pattern.test(source)) ||
     REEXPORT_PATTERN.test(source)
+}
+
+/**
+ * The barrel's rule: re-exporting a sibling is allowed, everything else is
+ * not. An `import` or `require` is still a violation here -- the exemption
+ * covers re-export only, because that is the only thing a barrel needs.
+ */
+function referencesANonSibling (source) {
+  if (IMPORT_PATTERNS.some((pattern) => pattern.test(source))) return true
+  const specifiers = [...source.matchAll(SPECIFIER_PATTERN)].map((match) => match[1])
+  return specifiers.some((specifier) => !SIBLING_SPECIFIER.test(specifier))
 }
 
 function readSafe (path) {
