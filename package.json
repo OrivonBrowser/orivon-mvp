@@ -26,8 +26,6 @@
     "check:contracts": "node scripts/check-contracts-pure.mjs",
     "check:secrets": "node scripts/check-no-secrets.mjs",
     "smoke": "electron-vite build && node scripts/smoke.mjs",
-    "panel": "node orchestration/dashboard/server.mjs",
-    "loop": "orchestration/loop.sh",
     "postinstall": "node scripts/check-no-native-modules.mjs"
   },
   "devDependencies": {
