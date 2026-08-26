@@ -49,6 +49,43 @@ None of these block starting the week-0 spike.
 | A7 | Canonical **DDOC** expansion — recommendation: *Domain Data Ownership **Confirmation*** (`glossary.md`, B2) | before correcting public docs |
 | A8 | **`+Privacy`** attaches to L4 (published) or L5 (private)? (`glossary.md`) | before correcting public docs |
 | A9 | Three capability-API items. **Defaults now proposed** in `architecture/capability-api.md` — `net.listen` grantable to unsigned apps with a declared port range and no privileged ports · grants keyed on `(origin, capability)`, with bundle-hash changes handled by the separate pin-break prompt · `fs.quotaBytes` enforced via a running per-origin counter | **Build proceeds on these unless overruled.** Cheap to change before any third-party app exists |
+| A12 | **`orivon.fs` option bags are unspecified.** `capability-api.md` names the entry points (`readFile(path, opts)`, `writeFile(path, data, opts)`, `mkdir / readdir / stat / rm / rename`) but never says what `opts` contains or what `readFile` returns | **Build step 2.** Provisional signatures are in `src/contracts/capability-api.ts` and marked as such |
+| A13 | **Are `app.manifest()` and `app.grants()` async?** `capability-api.md` §v0 surface writes them as `=> Manifest` and `=> Grant[]`, but design rule 2 in the same document says *"All entry points return Promises"* | **Build step 2.** Transcribed as Promises; see below |
+
+---
+
+### A12 — what `orivon.fs` actually takes and returns **[AI-REC]**
+
+Found while transcribing `capability-api.md` into `src/contracts/` (2026-08-26). The
+document specifies the *fs* entry points by name only. Everything else in the v0 surface has a
+full signature; these do not.
+
+**Provisional reading, implemented and marked provisional in the file:** the contract layer is
+byte-oriented — `readFile(path) => Promise<Uint8Array>`, `writeFile(path, data: Uint8Array)` —
+with no encoding option, because `ADR-0008` puts bytes and streams underneath and Node's shapes
+in `orivon-node-shim` one layer up. Encoding handling therefore belongs to the shim, alongside
+the file cursor it already owns (`handle-contracts.md` §FileHandle).
+
+**Why it is flagged rather than decided:** this is the `fs` half of the durable interface, and
+`ADR-0002` makes that the artefact the whole project is built to outlive. A guess promoted
+silently would be exactly the failure `CLAUDE.md` Rule 1 exists to prevent.
+
+### A13 — synchronous or async app introspection **[AI-REC]**
+
+A direct contradiction inside `capability-api.md`, found the same way. §Design rules 2 states
+that all entry points return Promises because sockets cannot be constructed synchronously
+across an IPC boundary. §v0 surface then writes `orivon.app.manifest() // => Manifest` and
+`orivon.app.grants() // => Grant[]` without one.
+
+**Both readings are defensible.** Design rule 2 is stated as binding. But
+`handle-contracts.md`'s own rule — *anything Node exposes synchronously is resolved before the
+acquisition promise settles and handed over already populated* — argues the other way: the
+manifest and the grant set are both known before the app's first line runs, so they could be
+plain values with no round trip.
+
+**Transcribed as Promises**, because design rule 2 is the more explicit statement and widening
+a Promise to a plain value later is a smaller break than the reverse. Cheap to change before any
+third-party app exists.
 
 ---
 

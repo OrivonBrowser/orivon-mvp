@@ -28,5 +28,11 @@ jobs:
       - name: No dependency requires a compiler (Rule 8)
         run: npm run check:natives
 
+      # src/contracts/ is what lets several streams work at once. If it grows a
+      # dependency edge, every stream inherits it. See
+      # docs/development/parallel-work.md.
+      - name: Contracts are complete and reference only their own siblings
+        run: npm run check:contracts
+
       - name: Build
         run: npm run build

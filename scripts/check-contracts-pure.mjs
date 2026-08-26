@@ -5,12 +5,15 @@
  * (docs/planning/repo-and-parallel-work-design.md, Part B). Two properties
  * make it safe for several streams to depend on it at once:
  *
- *   1. It imports NOTHING -- not electron, not node:*, not a third-party type,
- *      not even `import type`. An import is a dependency edge, and a
- *      dependency edge is a merge conflict waiting for two streams to reach it
- *      from different directions. ReadableStream, WritableStream and
- *      Uint8Array are ambient globals here, available via tsconfig.json's
- *      lib: ["ES2023", "DOM", "DOM.Iterable"] -- they need no import.
+ *   1. IT REFERENCES ONLY ITS OWN SIBLINGS. No electron, no node:*, no
+ *      third-party type, not even via `import type`. An external import is a
+ *      dependency edge, and a dependency edge is a merge conflict waiting for
+ *      two streams to reach it from different directions -- and worse, it
+ *      would tie the durable interface to the disposable engine underneath it
+ *      (ADR-0002). `./errors.js` from `./handles.js` is fine and necessary;
+ *      `electron` is not. ReadableStream, WritableStream and Uint8Array are
+ *      ambient globals here, available via tsconfig.json's
+ *      lib: ["ES2023", "DOM", "DOM.Iterable"] -- they need no import at all.
  *   2. Every required file exists, so a stream importing from ./index.js never
  *      finds a half-transcribed surface.
  *
@@ -34,37 +37,32 @@ export const REQUIRED_CONTRACT_FILES = [
 const CONTRACTS_DIR = join('src', 'contracts')
 
 /**
- * Deliberately several narrow patterns rather than one broad alternation. A
- * single regex with an unbounded `[\s\S]*?` between `export` and `from` spans
- * unrelated statements, so a file with an `export` near the top and the word
- * `from` in a string near the bottom reads as a re-export. These each match
- * one syntactic form and stop.
+ * Forms that name a module WITHOUT a `from` clause, so the specifier check
+ * below cannot see them. Each of these is a violation on its own, in any file.
+ *
+ *   `import 'x'`   side-effect import
+ *   `import("x")`  dynamic import
+ *   `require("x")` CommonJS
+ *
+ * A bare `import(` also catches the dynamic form used as an expression, which
+ * is how an external dependency would most plausibly sneak in.
  */
-const IMPORT_PATTERNS = [
-  /** `import 'x'`, `import("x")` -- side-effect and dynamic. */
+const UNSPECIFIED_REFERENCE_PATTERNS = [
   /\bimport\s*[('"`]/,
-  /** `import x from 'y'`, `import type { a } from 'y'`, `import * as x from 'y'`. */
-  /\bimport\b[\s\S]{0,200}?\bfrom\s*['"`]/,
-  /** `require('x')`. */
   /\brequire\s*\(/
 ]
 
-/** `export { a } from 'y'`, `export type { a } from 'y'`, `export * from 'y'`. */
-const REEXPORT_PATTERN =
-  /\bexport\b\s*(?:type\s*)?(?:\{[\s\S]{0,400}?\}|\*(?:\s+as\s+\w+)?)\s*from\s*['"`]/
-
-/**
- * index.ts is the barrel: it exists to re-export, so a blanket ban would make
- * it impossible to write. The exemption is narrow rather than a skip -- it may
- * name a sibling in this same directory and nothing else, so the barrel cannot
- * become the hole through which a dependency edge enters.
- */
-const BARREL_FILE = 'index.ts'
-
-/** Every module specifier named in a `from` clause. */
+/** Every module specifier named in a `from` clause, import or export alike. */
 const SPECIFIER_PATTERN = /\bfrom\s*['"`]([^'"`]+)['"`]/g
 
-/** What the barrel may name: `./sibling.js`. */
+/**
+ * What a contracts file may name: a sibling in this same directory.
+ *
+ * `./errors.js`, `./capability-api.js` -- yes. `electron`, `node:fs`,
+ * `../main/registry.js`, `./sub/thing.js` -- no. The `.js` extension is what
+ * moduleResolution: "bundler" and verbatimModuleSyntax expect for a relative
+ * TypeScript import.
+ */
 const SIBLING_SPECIFIER = /^\.\/[a-z0-9-]+\.js$/
 
 /**
@@ -96,31 +94,24 @@ export function checkContractsArePure (root) {
 
   const offenders = present
     .filter((name) => name.endsWith('.ts') && !name.endsWith('.test.ts'))
-    .filter((name) => {
-      const source = stripComments(readSafe(join(dir, name)))
-      return name === BARREL_FILE
-        ? referencesANonSibling(source)
-        : referencesAModule(source)
-    })
+    .filter((name) => referencesANonSibling(stripComments(readSafe(join(dir, name)))))
     .map((name) => relative(root, join(dir, name)).split(sep).join('/'))
     .sort()
 
   return { ok: offenders.length === 0 && missing.length === 0, offenders, missing }
 }
 
-/** True if the source imports, requires, or re-exports from anywhere. */
-function referencesAModule (source) {
-  return IMPORT_PATTERNS.some((pattern) => pattern.test(source)) ||
-    REEXPORT_PATTERN.test(source)
-}
-
 /**
- * The barrel's rule: re-exporting a sibling is allowed, everything else is
- * not. An `import` or `require` is still a violation here -- the exemption
- * covers re-export only, because that is the only thing a barrel needs.
+ * True if the source names anything other than a sibling of this directory.
+ *
+ * Applies uniformly to every file. An earlier version banned imports outright
+ * and carved out index.ts as a special case; that was the wrong rule, and it
+ * fell over the moment capability-api.ts legitimately needed TcpSocket from
+ * handles.ts. The property worth enforcing was never "no imports" -- it is
+ * "no edge leaving this directory".
  */
 function referencesANonSibling (source) {
-  if (IMPORT_PATTERNS.some((pattern) => pattern.test(source))) return true
+  if (UNSPECIFIED_REFERENCE_PATTERNS.some((pattern) => pattern.test(source))) return true
   const specifiers = [...source.matchAll(SPECIFIER_PATTERN)].map((match) => match[1])
   return specifiers.some((specifier) => !SIBLING_SPECIFIER.test(specifier))
 }
@@ -155,12 +146,14 @@ if (invokedDirectly) {
       for (const file of missing) console.error(`  ${file}`)
     }
     if (offenders.length > 0) {
-      console.error('\nsrc/contracts/ must reference no module. These do:\n')
+      console.error('\nsrc/contracts/ may reference only its own siblings. These do more:\n')
       for (const file of offenders) console.error(`  ${file}`)
       console.error(
-        '\nReadableStream, WritableStream and Uint8Array are ambient globals here;' +
-        '\nthey need no import. If a contract genuinely needs a type from elsewhere,' +
-        '\nthat is a design change -- raise it, do not add the import.'
+        '\nAllowed: ./errors.js, ./handles.js and the other files in this directory.' +
+        '\nNot allowed: electron, node:*, any package, any path outside this directory.' +
+        '\nReadableStream, WritableStream and Uint8Array are ambient globals and need' +
+        '\nno import at all. If a contract genuinely needs a type from elsewhere, that' +
+        '\nis a design change -- raise it, do not add the import.'
       )
     }
     console.error('\nSee docs/planning/repo-and-parallel-work-design.md, Part B.\n')
@@ -168,6 +161,7 @@ if (invokedDirectly) {
   }
 
   console.log(
-    `src/contracts/ is complete (${REQUIRED_CONTRACT_FILES.length} files) and imports nothing.`
+    `src/contracts/ is complete (${REQUIRED_CONTRACT_FILES.length} files) ` +
+    'and references nothing outside itself.'
   )
 }
