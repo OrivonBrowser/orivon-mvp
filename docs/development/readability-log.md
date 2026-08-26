@@ -34,6 +34,15 @@ Three reasons, in order of how much they matter:
 
 | Date | Artefact | First confusion point | Fix made |
 |---|---|---|---|
-| | | | |
+| 2026-08-26 | `README.md` | **No roadmap at all.** A reader could not tell what was built, what was next, or what had been deliberately left out | Added §Roadmap: the eleven build steps with their state, plus explicit "deferred" and "not scheduled" lists, so omissions read as decisions rather than gaps |
+| 2026-08-26 | `README.md` | **"I don't understand how it is related to Web3."** Nostr and P2P appeared with no explanation of why a browser is the right place for them | Added §How this relates to Web3, stating the actual argument — decentralised protocols get routed through centralised gateways *because the browser will not speak them* — plus an explicit "what Orivon is not" list: no wallet, no token, no chain, no DAO, ENS/IPFS/DDOC deferred |
+| 2026-08-26 | `ARCHITECTURE.md` | **Actively wrong message.** A "now / later / later still" table read as *this repository's roadmap to becoming a browser-engine fork*. It was meant to say what the interface is designed to outlive | Rewrote the opening as §What this repository is / §What is *not* disposable, saying plainly that this is an Electron app and is meant to be replaceable, that the engine swap is a design property and **not a schedule, not planned, and out of scope**. Retitled the directory table's column from "Survives a Chromium fork?" to "Tied to Electron?", which is the question actually being answered |
 
-*(Empty until the first check runs, at the end of the repo-and-parallel-work task.)*
+### What this round changed about how the docs are written
+
+Both README findings were **absences**, not errors — nothing was wrong, something was missing,
+and the reader could not tell the difference between "deliberately out of scope" and "not
+thought about". That is now a rule: **every omission a reader might notice is stated as an
+omission, with its reason.** The `ARCHITECTURE.md` finding was the opposite failure, and the
+more serious one: a diagram that was accurate about the design and misleading about the plan.
+Aspiration and schedule must be visibly separated.
