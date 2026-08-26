@@ -201,14 +201,16 @@ path validity.)
 
 ```
 [
+  { path: "/.well-known/orivon.json", content: '{"orivonApiVersion":0}' },
   { path: "/\u{10000}.js", content: "x" },   // U+10000, supplementary plane
-  { path: "/.js",    content: "y" }    // U+E000, BMP private-use area
+  { path: "/\u{E000}.js",  content: "y" }    // U+E000, BMP private-use area
 ]
 ```
-UTF-16 code-unit comparison would sort the U+10000 entry first (its leading surrogate is
-`0xD800`, less than `0xE000`). **Correct UTF-8 byte-order comparison sorts the U+E000 entry
-first** (its UTF-8 encoding starts `0xEE`; U+10000's starts `0xF0`).
-→ `sha256:2c9ece9eecb46a4275b491ff61a372ec6fce91b6b8403f8c2dd7a77248fe5901`
+UTF-16 code-unit comparison would sort the U+10000 entry before the U+E000 one (its leading
+surrogate is `0xD800`, less than `0xE000`). **Correct UTF-8 byte-order comparison sorts the
+U+E000 entry first** (its UTF-8 encoding starts `0xEE`; U+10000's starts `0xF0`) — so the full
+sorted order is manifest (`.` is `0x2e`), then U+E000, then U+10000.
+→ `sha256:2cb9aeca099886230482a7d8ea0fb3338aaf146466f301817c42f81306a8d53c`
 
 A reference implementation that sorts by UTF-16 code units instead of UTF-8 bytes will compute a
 **different** root for this vector. That mismatch is the entire point of including it.
