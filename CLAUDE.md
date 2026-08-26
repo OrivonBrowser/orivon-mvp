@@ -2,8 +2,9 @@
 
 ## Start here
 
-**Phase: week-0 spike complete (2026-08-25). Next action is build step 1 (the shell).**
-Last updated 2026-08-25 (spike verdict recorded).
+**Phase: A10 (handle contracts) closed (2026-08-26). Next action is build step 1 (the shell)
+or build step 2 (the broker) — A10 no longer blocks step 2.**
+Last updated 2026-08-26 (A10 recorded).
 
 Read in this order, then act:
 
@@ -13,9 +14,10 @@ Read in this order, then act:
 2. `docs/planning/readiness.md` — the gate. Says what is ready and what is not.
 3. `docs/mvp-scope.md` — what is in, what is out, what counts as failure.
 4. `docs/planning/build-plan.md` — dependency-ordered work.
-5. `docs/decisions/` — six ADRs. Read them before proposing anything architectural;
+5. `docs/decisions/` — eight ADRs. Read them before proposing anything architectural;
    most obvious ideas have already been considered and rejected for recorded reasons.
-   **ADR-0002 and ADR-0005 carry amendments that supersede parts of their own text.**
+   **ADR-0002 and ADR-0005 carry amendments that supersede parts of their own text; ADR-0008
+   rescopes ADR-0002's Node-shape-mirroring rule to the shim, not the capability layer.**
 
 **The spike resolved.** Verdict and evidence: `docs/planning/spike-verdict.md` (read this, not
 the older `week-0-spike-plan.md`, for current status). Gates 0/1a/1b/2 **PASS** with hard
@@ -32,10 +34,11 @@ loudly. Never launch Electron directly; see `.claude/skills/orivon-electron/` fo
 that strips it and verifies the launch is real.
 
 Open owner decisions are in `docs/open-questions.md` §A. A11 is closed (`ADR-0007`: cached
-bundles keep their real origin, intercepted inside the app's partition). **A10's direction is
-decided and it is now unblocked** — WHATWG streams underneath, Node shapes presented by the
-shim on top; gate 0 resolved the transferable-`ArrayBuffer` question that was blocking it. Full
-specification is still unwritten and must land before build step 2.
+bundles keep their real origin, intercepted inside the app's partition). **A10 is closed**
+(`docs/architecture/handle-contracts.md`, `ADR-0008`): WHATWG streams underneath, Node shapes
+presented by the shim on top, full specification written — the closed error enum, close/half-
+close semantics, a credit-window backpressure design, and the revocation cascade. Build step 2
+is unblocked.
 
 ## What this repository is
 The MVP implementation of **Orivon**. It is *not* the vision documentation.
@@ -54,6 +57,7 @@ long-term vision, decides scope.
 | What prior material exists, and where? | `docs/inventory.md` — everything is indexed; do not re-crawl the filesystem |
 | What is in the MVP? | `docs/mvp-scope.md` |
 | **What do apps program against?** | `docs/architecture/capability-api.md` — **the highest-care artefact here.** The Electron shell is disposable; this interface is not |
+| **What does a handle (`TcpSocket`, `TcpServer`, `UdpSocket`, `FileHandle`, `IdentityHandle`) actually do?** | `docs/architecture/handle-contracts.md` — read/write shape, backpressure, close/half-close, error taxonomy, revocation cascade. Same care level as `capability-api.md`, kept as a sibling document |
 | Why is something the way it is? | `docs/decisions/` (ADRs) |
 | How much does integrating app X cost? | `docs/architecture/app-compatibility.md` |
 | What are we defending against? | `docs/architecture/security-model.md` |

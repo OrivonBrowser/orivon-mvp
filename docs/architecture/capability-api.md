@@ -11,9 +11,16 @@
 
 ## Design rules
 
-1. **Mirror Node's API shapes.** Not because they are elegant, but because it makes
-   `orivon-node-shim` mechanical and tier-2 porting cheap (see `app-compatibility.md`).
-   Deviate only where the IPC boundary forces it.
+1. **Mirror Node's API shapes — at the shim, not underneath it.**
+   > **Rescoped 2026-08-25 by the A10 owner decision (`ADR-0008`), corrected here rather than
+   > smoothed over per CLAUDE.md Rule 3.** This rule originally read as applying to the
+   > capability layer itself. It does not: the durable interface each handle actually exposes
+   > is a WHATWG stream (`handle-contracts.md`), which is not a Node shape. The rule's
+   > *purpose* — making `orivon-node-shim` mechanical and tier-2 porting cheap
+   > (`app-compatibility.md`) — is still fully served, because the shim is exactly where the
+   > Node-shape reconstruction happens, one layer above the stream interface this document's
+   > handles present. Deviate only where the IPC boundary forces it, same as before; the
+   > deviation now starts one layer lower than originally written.
    **Corollary, found the hard way in the spike (`gate-1b.json`): mirror the *whole* surface a
    dependency touches, not the obvious entry points.** `net.isIP` is not a socket operation and
    is easy to omit, but `bittorrent-dht`'s RPC layer calls it before every send. Its absence
@@ -28,9 +35,8 @@
    `queueMicrotask`-based polyfill does not route into the same handlers, so an exception
    thrown from inside a `nextTick` callback vanishes instead of crashing loudly. This is exactly
    backwards from what a security-relevant shim needs — a broker-side error should be *louder*
-   than Node's default, not quieter. The A10 handle contract's error taxonomy should require
-   every constructed-away Node timing primitive to be audited for this, not just implemented for
-   API shape.
+   than Node's default, not quieter. **Both traps are now binding requirements, not just
+   anecdotes — see `handle-contracts.md` §What the shim must do.**
 2. **Everything is async.** Node constructs sockets synchronously; across an IPC boundary we
    cannot. All entry points return Promises. The shim reconciles this by buffering.
 3. **Handles, not ambient authority.** `connect()` returns a handle; later operations
@@ -98,6 +104,11 @@ indicator exists to prevent.
 
 ## v0 surface
 
+> **`TcpSocket`, `TcpServer`, `UdpSocket`, `FileHandle` and `IdentityHandle` are fully
+> specified in `handle-contracts.md`** — read/write shape, event model, backpressure,
+> close/half-close, error taxonomy, revocation. This document names them; that one defines
+> them.
+
 ```ts
 orivon.version                       // => 0
 
@@ -108,7 +119,7 @@ orivon.app.requestGrant(cap)         // => Promise<boolean>  (may prompt the use
 
 // --- net ---
 orivon.net.connect({ host, port })   // => Promise<TcpSocket>
-orivon.net.listen({ port })          // => Promise<TcpServer>   // emits 'connection'
+orivon.net.listen({ port })          // => Promise<TcpServer>   // .connections: ReadableStream<TcpSocket>
 orivon.net.udpBind({ port })         // => Promise<UdpSocket>
 
 // --- fs, rooted at the app's files directory ---
@@ -283,7 +294,10 @@ Two consequences, both settled rather than open:
 
 Still unmeasured and still true: **`MessagePortMain` has no documented backpressure**, so the
 shim must implement its own flow control or a fast swarm grows renderer memory without bound.
-That is what the A10 handle contract's WHATWG-streams decision exists to solve.
+**Answered 2026-08-26** — `handle-contracts.md` §TcpSocket "Backpressure — a credit window"
+specifies the mechanism: a byte-credit window on top of `ReadableStream`/`WritableStream`
+(`ADR-0008`), with the broker stopping the underlying OS socket read once credit is exhausted
+rather than buffering in the main process.
 
 **Media delivery, revised.** Not MSE, and not a localhost HTTP server. Serve pieces to
 `<video>` over a **range-capable custom scheme** (`protocol.handle()` returning a streaming

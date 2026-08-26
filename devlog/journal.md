@@ -40,9 +40,12 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - 2026-08-25: **Gate 3 (video playback) blocked, not failed** — the app itself loads and plays fine under a direct Electron launch, but Playwright can't attach to its window specifically. Six causes ruled out; handed back with full evidence rather than guessed at further.
 - 2026-08-25: Spike verdict written up and all corrections folded into the specs: webtorrent version, the `createServer` force param, and two shim-design lessons (mirror the whole surface a dependency touches; a `process.nextTick` polyfill can silently swallow errors) queued for the A10 handle contracts.
 - 2026-08-25: Wrote the `orivon-electron` project skill capturing everything from the spike that would otherwise only live in chat history.
+- 2026-08-26: Branch merged — `spike/week-0` fast-forwarded into `master`, 19 commits. `spike/`'s untracked `node_modules` (53 MB) reclaimed; the 266 KB of tracked spike source kept for now (the `ELECTRON_RUN_AS_NODE` launcher pattern and the gate-3 Playwright-attach repro still live nowhere else).
+- 2026-08-26: **A10 closed.** Full handle-contract spec written (`docs/architecture/handle-contracts.md`) plus `ADR-0008` recording the WHATWG-streams decision and rescoping `capability-api.md`'s Node-shape-mirroring rule to the shim layer. Build step 2 is unblocked. New owner call made while writing it: network errors carry the real reason for any address an app was permitted to attempt; a denial itself stays uniform so an app can't map the permission boundary by probing it.
 
 ### In my head
 - 2026-08-25: Wants a Sunday ritual: paste-ready team message plus bullet cues for a spontaneous voice note recalling the week's thinking.
 - 2026-08-25: Keen to start building the browser; kept checking whether preparation was really finished. Accepted that the spike comes first once it was clear a spike failure would invalidate a week of shell work.
 - 2026-08-25: Cost discipline — asked twice about when Opus is genuinely needed versus Sonnet, and wants the expensive model spent on judgment rather than on build-run-read-error loops. Switched to opusplan once the bundling recipe was established.
 - 2026-08-25: Instinctively distrusted a "we can't do anything about it" answer and was right to. The challenge, not the analysis, is what produced the correct result.
+- 2026-08-26: Pushed back hard on being asked to choose between "A10" and "build step 1" with no plain-language explanation of what either was — a standing correction now, not a one-off.
