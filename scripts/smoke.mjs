@@ -97,6 +97,40 @@ async function main () {
     await chrome.waitForTimeout(500)
     const afterForward = await activeTabInfo(chrome)
     check('forward button returned to fixture B', afterForward.title === 'fixture-b')
+
+    // Resize check -- verifies chrome + tab bounds actually track a window
+    // resize (win.on('resize') -> layoutChrome() + tabs.layout() in
+    // window.ts), via each view's OWN rendered viewport rather than reaching
+    // into main-process internals. CHROME_HEIGHT (118) must stay in sync
+    // with src/renderer/style.css's `html, body { height: 118px }`.
+    const CHROME_HEIGHT = 118
+    const targetWidth = 900
+    const targetHeight = 700
+    await app.evaluate(({ BaseWindow }, { w, h }) => {
+      BaseWindow.getAllWindows()[0].setContentBounds({ x: 0, y: 0, width: w, height: h })
+    }, { w: targetWidth, h: targetHeight })
+    await chrome.waitForTimeout(300)
+
+    const chromeViewport = await chrome.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }))
+    check(
+      `chrome view tracks resize (width ${chromeViewport.w} === ${targetWidth})`,
+      chromeViewport.w === targetWidth
+    )
+
+    const tabView = app.windows().find((w) => w !== chrome)
+    if (tabView === undefined) {
+      check('a tab view exists to check resize on', false)
+    } else {
+      const tabViewport = await tabView.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }))
+      check(
+        `tab view width tracks resize (${tabViewport.w} === ${targetWidth})`,
+        tabViewport.w === targetWidth
+      )
+      check(
+        `tab view height is window height minus CHROME_HEIGHT (${tabViewport.h} === ${targetHeight - CHROME_HEIGHT})`,
+        tabViewport.h === targetHeight - CHROME_HEIGHT
+      )
+    }
   } finally {
     await app.close()
     server.close()
