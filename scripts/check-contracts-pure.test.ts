@@ -89,6 +89,38 @@ describe('checkContractsArePure', () => {
     })
   })
 
+  describe('the index.ts barrel exemption', () => {
+    it.each([
+      ['a type re-export of a sibling', "export type { A } from './errors.js'\n"],
+      ['a value re-export of a sibling', "export { LIMITS } from './limits.js'\n"],
+      ['a star re-export of a sibling', "export * from './handles.js'\n"],
+      ['a hyphenated sibling', "export type { A } from './capability-api.js'\n"],
+      ['a multi-line sibling re-export', "export type {\n  A,\n  B\n} from './handles.js'\n"]
+    ])('allows %s', (_label, body) => {
+      expect(checkContractsArePure(complete({ 'index.ts': body })).ok).toBe(true)
+    })
+
+    it.each([
+      ['a package', "export type { App } from 'electron'\n"],
+      ['a node builtin', "export type { Buffer } from 'node:buffer'\n"],
+      ['a parent directory', "export type { A } from '../main/registry.js'\n"],
+      ['a nested path', "export type { A } from './sub/errors.js'\n"],
+      ['a plain import', "import 'electron'\nexport type A = string\n"],
+      ['a require call', "const x = require('electron')\nexport type A = string\n"]
+    ])('rejects %s', (_label, body) => {
+      const result = checkContractsArePure(complete({ 'index.ts': body }))
+      expect(result.ok).toBe(false)
+      expect(result.offenders).toEqual(['src/contracts/index.ts'])
+    })
+
+    it('does not leak the exemption to a non-barrel file', () => {
+      const root = complete({ 'handles.ts': "export type { A } from './errors.js'\n" })
+      const result = checkContractsArePure(root)
+      expect(result.ok).toBe(false)
+      expect(result.offenders).toEqual(['src/contracts/handles.ts'])
+    })
+  })
+
   describe('required files', () => {
     it('reports a missing required file', () => {
       const root = complete()
