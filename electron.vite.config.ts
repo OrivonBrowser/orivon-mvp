@@ -21,6 +21,10 @@ export default defineConfig({
       // `orivon.version`; `shell` is loaded ONLY by the chrome view and
       // exposes tab commands. Keys match the output filenames window.ts
       // and tabs.ts reference (`../preload/app.js`, `../preload/shell.js`).
+      //
+      // APPEND POINT. One line per entry, so a stream adding a preload adds
+      // one key and touches nothing else in this file.
+      // Ownership: docs/development/parallel-work.md.
       rollupOptions: {
         input: {
           app: resolve(root, 'src/preload/app.ts'),
@@ -46,6 +50,9 @@ export default defineConfig({
       // Deliberately NOT aliased: `@thaunknown/simple-peer` and
       // `webrtc-polyfill` keep browser resolution, so the renderer uses
       // Chromium's native WebRTC and node-datachannel never enters the tree.
+      //
+      // APPEND POINT, owned by the `shim` stream (build step 3). No other
+      // stream writes to this map. Ownership: docs/development/parallel-work.md.
       alias: {}
     }
   }

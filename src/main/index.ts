@@ -1,5 +1,7 @@
 import { app, BaseWindow } from 'electron'
 import { createShellWindow } from './window.js'
+import { runAfterReady, runBeforeReady, type SubsystemFailure } from './registry.js'
+import { subsystems } from './subsystems.js'
 
 // Main and preload are CommonJS; only the renderer is ESM. This is
 // electron-vite's default and it is kept deliberately, for one reason:
@@ -37,7 +39,23 @@ import { createShellWindow } from './window.js'
 // re-add this switch without a real reason and without first solving
 // the GPU crash it causes here.
 
-void app.whenReady().then(() => {
+// Subsystems register here rather than editing this file -- see registry.ts
+// and src/main/subsystems.ts. This is the only wiring code; adding a broker,
+// shim or telemetry subsystem touches subsystems.ts and nothing else.
+function report (failures: SubsystemFailure[]): void {
+  // Loud, never silent. A subsystem that failed to start may be a capability
+  // that is now enforcing nothing, and handle-contracts.md SSWhat the shim
+  // must do (rule 2) makes it binding that error visibility in
+  // security-relevant code is HIGHER than the default, not lower.
+  for (const { name, phase, error } of failures) {
+    console.error(`[orivon] subsystem "${name}" failed during ${phase}:`, error)
+  }
+}
+
+report(runBeforeReady(subsystems))
+
+void app.whenReady().then(async () => {
+  report(await runAfterReady(subsystems, { app }))
   createShellWindow()
   app.on('activate', () => {
     if (BaseWindow.getAllWindows().length === 0) createShellWindow()
