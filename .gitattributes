@@ -1,0 +1,26 @@
+# Merge behaviour for parallel work. See docs/development/parallel-work.md.
+
+# Append-only files: git keeps BOTH sides instead of stopping the merge, which
+# is what two streams appending a dated line each actually want.
+#
+# Correct ONLY where every change is an append and order does not matter.
+# NEVER extend this to source files -- union-merging code produces something
+# syntactically valid and semantically wrong, which is strictly worse than a
+# conflict you can see.
+devlog/journal.md   merge=union
+CHANGELOG.md        merge=union
+
+# Derived, not authored. package.json is the source of truth; on a conflict,
+# take either side wholesale and run `npm install` to regenerate. Marking it
+# -diff keeps it out of diffs and review noise, and is a standing reminder that
+# hand-editing it is the wrong move: a hand-merged lockfile can look correct
+# and install a different tree than either side intended.
+package-lock.json   -diff linguist-generated=true
+
+# Normalise line endings so a Windows contributor's checkout does not show
+# every file as modified. Windows and macOS are supported day one via
+# run-from-source (build-plan.md SSPlatform policy), so this is not theoretical.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary
