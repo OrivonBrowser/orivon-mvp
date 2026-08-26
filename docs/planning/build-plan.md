@@ -189,7 +189,9 @@ v0 rejects. Same status as `orivon-browser-v2`: **visual reference only.**
 Known limitations, stated in-product rather than hidden: **MP4/H.264 only in v0**; swarm peers
 see the user's IP (no Tor in the MVP); seeding behind NAT is reduced without port forwarding
 (no UPnP in v0); local peer discovery is unavailable (no multicast bind in the manifest
-grammar).
+grammar); **non-address input typed into the address bar is sent to DuckDuckGo** (owner
+decision, build step 1, 2026-08-26 — `mvp-scope.md` IN table) — search text leaves the
+machine, which a privacy-branded browser states rather than buries.
 
 > **Protocol encryption (MSE): available, and it should be ON. Resolved 2026-08-25 by gate 1a.**
 >

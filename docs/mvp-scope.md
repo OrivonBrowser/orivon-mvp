@@ -75,6 +75,7 @@ regardless of the others.
 | Item | Why it is essential |
 |---|---|
 | Shell — tabs, omnibox, back/forward | It has to be a browser, or the thesis is untested |
+| Address-bar search via DuckDuckGo | **Owner override, 2026-08-26** — added at build step 1, not in the original scope pass. Non-address input needs *some* resolution or the omnibox rejects plain text outright; DuckDuckGo chosen over a settings-based picker (no settings screen exists in month 1) and over addresses-only. Known limitation, stated in-product: search text leaves the machine (`build-plan.md` §5 known-limitations line) |
 | **Capability broker** — manifest, grants, per-origin enforcement | This *is* the product. `ADR-0002` |
 | **`orivon-node-shim`** | Load-bearing: without it the flagship cannot be a URL-delivered app. `ADR-0005` |
 | URL-addressed app fetch + cache + integrity check | The "apps are URLs" claim. `ADR-0005` |
