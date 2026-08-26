@@ -2,9 +2,9 @@
 
 ## Start here
 
-**Phase: A10 (handle contracts) closed (2026-08-26). Next action is build step 1 (the shell)
-or build step 2 (the broker) — A10 no longer blocks step 2.**
-Last updated 2026-08-26 (A10 recorded).
+**Phase: build step 1 (the shell) complete (2026-08-26). Next action is build step 2 (the
+capability broker) — nothing else is unblocked ahead of it.**
+Last updated 2026-08-26 (build step 1 recorded).
 
 Read in this order, then act:
 
@@ -28,10 +28,23 @@ Playwright's `_electron` driver can't attach to that window, for an unidentified
 is a real, currently-unresolved risk for build step 2's e2e test, which uses the same driver —
 check early. **`utilityProcess` fallback was not needed.**
 
+**Narrowed at build step 1 (2026-08-26):** a minimal `BaseWindow` with multiple
+`WebContentsView`s (the shell's actual composition) attaches to `_electron` cleanly — so the
+cause is specific to gate 3's video/service-worker setup, not `BaseWindow` in general. Practical
+consequence: once a window holds more than one view, match windows by URL via `app.windows()`,
+never `app.firstWindow()` (view-add order is an implementation detail, not a contract) —
+`open-questions.md` C6, `scripts/smoke.mjs` for the pattern in use.
+
 **This machine has `ELECTRON_RUN_AS_NODE=1` set in the ambient shell environment.** It makes
 the Electron binary run as plain Node — no windows, no `MessagePortMain`. It does not fail
 loudly. Never launch Electron directly; see `.claude/skills/orivon-electron/` for the pattern
 that strips it and verifies the launch is real.
+
+**Electron's `.d.ts` sometimes types an option/event on `BrowserWindow` only, even when it
+works identically on `BaseWindow`** (`ready-to-show`; the `titleBarStyle`/`titleBarOverlay`/
+`trafficLightPosition` family). context7's docs are silent on `BaseWindow` for these rather
+than wrong — confirmed both work via a throwaway probe app, 2026-08-26. When context7 doesn't
+confirm something specifically for `BaseWindow`, verify empirically before assuming either way.
 
 Open owner decisions are in `docs/open-questions.md` §A. A11 is closed (`ADR-0007`: cached
 bundles keep their real origin, intercepted inside the app's partition). **A10 is closed**
