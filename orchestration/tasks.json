@@ -1,0 +1,377 @@
+{
+  "_comment": [
+    "The task catalogue for the autonomous build loop.",
+    "",
+    "HUMAN-AUTHORED AND HUMAN-REVIEWABLE, deliberately -- not generated at",
+    "runtime. A wrong decomposition produces busywork that looks like progress,",
+    "and nobody notices until a week of cycles has gone into it.",
+    "",
+    "ORDER IS PRIORITY. The loop dispatches in array order, so this file is the",
+    "critical path from build-plan.md, written down.",
+    "",
+    "model: 'opus' for src/broker/** (owner decision L2 -- the security core",
+    "decides whether an app may open a socket or read a file). 'sonnet' for",
+    "everything else.",
+    "",
+    "paths: what the task may write. Two tasks with overlapping paths are never",
+    "dispatched in the same cycle, so these bound parallelism. Keep them tight.",
+    "",
+    "lowValue: true means 'useful, but never blocks anything'. This is the L3",
+    "fallback the loop reaches for BEFORE it will guess at an unanswered",
+    "question. It has to be genuinely useful work, or the loop drifts into",
+    "make-work whenever the owner is asleep.",
+    "",
+    "See orchestration/tasks.md for the prose version and the reasoning."
+  ],
+
+  "tasks": [
+    {
+      "id": "broker-01-origin",
+      "title": "Origin derivation: URL to origin, and senderFrame to origin",
+      "category": "broker",
+      "model": "opus",
+      "stream": "broker",
+      "paths": ["src/broker/policy/origin.ts", "src/broker/policy/origin.test.ts"],
+      "dependsOn": [],
+      "lowValue": false,
+      "definitionOfDone": "Two exported pure functions with a table test each. (i) URL to origin: default ports, trailing dots, case, punycode/IDN, userinfo stripped, file: and data: REJECTED. (ii) senderFrame to origin: a renderer-supplied origin field is IGNORED, and an unbound frame is rejected (security-model.md T3). Origin keys storage, partitions, grants and derived keys -- ADR-0003 says changing it after the first grant is persisted orphans every app, so this lands first."
+    },
+    {
+      "id": "broker-02-address",
+      "title": "isPrivateAddress: the blocked-range table",
+      "category": "broker",
+      "model": "opus",
+      "stream": "broker",
+      "paths": ["src/broker/policy/address.ts", "src/broker/policy/address.test.ts"],
+      "dependsOn": [],
+      "lowValue": false,
+      "definitionOfDone": "Table test covering 127/8, 10/8, 172.16/12, 192.168/16, 169.254/16, ::1, fc00::/7, IPv4-mapped ::ffff:127.0.0.1, and integer and octal literal forms. Pure, no DNS, no I/O."
+    },
+    {
+      "id": "broker-03-connect-check",
+      "title": "checkConnect against RESOLVED addresses, with an injected resolver",
+      "category": "broker",
+      "model": "opus",
+      "stream": "broker",
+      "paths": ["src/broker/policy/connect.ts", "src/broker/policy/connect.test.ts"],
+      "dependsOn": ["broker-02-address"],
+      "lowValue": false,
+      "definitionOfDone": "checkConnect(manifest, hostArg, resolveFn) with a STUB resolver. Asserts patterns are matched against what the host RESOLVES TO, never the hostname supplied. A correct glob matcher fed a hostname is fully defeated by DNS rebinding (T12) -- testing the matcher alone covers the harmless half of the threat. Returns the closed 'denied' error with NO platformCode."
+    },
+    {
+      "id": "broker-04-path-confine",
+      "title": "fs path confinement, including symlink escape",
+      "category": "broker",
+      "model": "opus",
+      "stream": "broker",
+      "paths": ["src/broker/policy/paths.ts", "src/broker/policy/paths.test.ts"],
+      "dependsOn": [],
+      "lowValue": false,
+      "definitionOfDone": "path.relative(root, resolved) must be non-empty, not start with '..', not be absolute -- PLUS realpath on the parent so a planted symlink cannot escape. A string-prefix check passes /apps/foo-evil against root /apps/foo, and path.resolve does not follow symlinks. Table: '..', absolute, symlink escape, NUL bytes, sibling-prefix, Windows separators, drive letters, UNC, reserved names, macOS case-insensitivity. Plus one fast-check property. This is also the flagship's happy path: a .torrent declares its own file paths, and ../../../.ssh/authorized_keys is a real BitTorrent CVE class."
+    },
+    {
+      "id": "broker-05-update-decision",
+      "title": "The update decision table",
+      "category": "broker",
+      "model": "opus",
+      "stream": "broker",
+      "paths": ["src/broker/policy/update.ts", "src/broker/policy/update.test.ts"],
+      "dependsOn": [],
+      "lowValue": false,
+      "definitionOfDone": "decideUpdate({pinnedHash, newHash, grantedPatterns, newPatterns, version, versionFloor}) returning 'silent' | 'reconsent' | 'capability-prompt' | 'reject'. ~8 rows. The re-consent trigger is a SUBSET CHECK over the granted pattern set, not a comparison of capability kinds: connect ['api.example.com:443'] widening to ['*:*'] requests no new KIND and must not install silently. Enforces the per-origin version floor (T19). Its failure mode is 'no prompt appeared', which no manual checklist catches."
+    },
+    {
+      "id": "broker-06-keys",
+      "title": "Key derivation, as frozen golden vectors",
+      "category": "broker",
+      "model": "opus",
+      "stream": "broker",
+      "paths": ["src/broker/policy/derive.ts", "src/broker/policy/derive.test.ts"],
+      "dependsOn": [],
+      "lowValue": false,
+      "definitionOfDone": "derive(seed, label, scope) with length-prefixed HKDF, a distinct secret per (label, curve). Test is HARDCODED seed/origin/curve to expected public-key hex for both the 'app' and 'identity' labels, asserting the two differ. NOT a determinism test -- same-input-same-output is near-tautological for a KDF. The real risk is the derivation changing between releases and silently orphaning every user's identity, and ADR-0003 excludes export so there is no recovery."
+    },
+    {
+      "id": "broker-07-handle-table",
+      "title": "Per-origin handle table with ownership checks and the revocation cascade",
+      "category": "broker",
+      "model": "opus",
+      "stream": "broker",
+      "paths": ["src/broker/handles.ts", "src/broker/handles.test.ts"],
+      "dependsOn": ["broker-01-origin"],
+      "lowValue": false,
+      "definitionOfDone": "Handle registry keyed by origin. EVERY operation re-checks ownership (T11c): a handle id from one origin is REJECTED, not ignored, when presented by another. Records the grant that authorised each handle; revoking a grant closes every handle in its set immediately and abruptly, rejecting pending promises with 'revoked'. Derived handles (a socket from a server's connections stream) inherit the parent's grant. fs.userSelected handles are the documented exception. Enforces the limits in src/contracts/limits.ts, rejecting past the in-flight cap rather than queueing."
+    },
+    {
+      "id": "broker-08-createbroker",
+      "title": "createBroker with injected dependencies",
+      "category": "broker",
+      "model": "opus",
+      "stream": "broker",
+      "paths": ["src/broker/index.ts", "src/broker/index.test.ts"],
+      "dependsOn": ["broker-03-connect-check", "broker-04-path-confine", "broker-07-handle-table"],
+      "lowValue": false,
+      "definitionOfDone": "createBroker({ dial, resolve, now, fs, keychain }) as build-plan.md week 0 requires, so every capability test runs against stubs. Wires the policy functions to the handle table. No Electron import in this file's dependency graph below src/broker/ -- policy stays pure."
+    },
+    {
+      "id": "broker-09-ipc",
+      "title": "Broker IPC surface and the app preload",
+      "category": "broker",
+      "model": "opus",
+      "stream": "broker",
+      "paths": ["src/broker/ipc.ts", "src/preload/app.ts"],
+      "dependsOn": ["broker-08-createbroker"],
+      "lowValue": false,
+      "definitionOfDone": "Exposes orivon.* to ordinary tabs through contextBridge closures ONLY. The raw MessagePortMain never crosses into the main world (T17). Every reply-carrying message has an explicit timeout -- gate 0 established this transport fails by silence. No transferables on the renderer-to-main path, ever. Registers itself in src/main/subsystems.ts as a two-line append."
+    },
+    {
+      "id": "broker-10-grant-ui",
+      "title": "The grant prompt, origin-first",
+      "category": "browser-ui",
+      "model": "sonnet",
+      "stream": "broker",
+      "paths": ["src/renderer/grant-prompt.ts", "src/renderer/grant-prompt.css"],
+      "dependsOn": ["broker-09-ipc"],
+      "lowValue": false,
+      "definitionOfDone": "The ORIGIN is the largest, primary, non-app-controlled element; the app-supplied name is visibly subordinate and marked as claimed by the site; an id collision with an installed app is surfaced (T18). tcp.connect ['*:*'] renders as 'connect to any computer on the internet' in plain words, not as a pattern string. listen gets a distinct, more serious prompt. This prompt appears in the launch clip on purpose -- the permission system IS the differentiator."
+    },
+
+    {
+      "id": "shim-01-net",
+      "title": "orivon-node-shim: net",
+      "category": "shim",
+      "model": "sonnet",
+      "stream": "shim",
+      "paths": ["src/shim/net.ts", "src/shim/net.test.ts"],
+      "dependsOn": ["broker-09-ipc"],
+      "lowValue": false,
+      "definitionOfDone": "Node's net API over orivon.net, presenting EventEmitter shapes on top of the WHATWG streams underneath. MUST include net.isIP -- bittorrent-dht's RPC layer calls it before every send, and its absence made the DHT bind successfully then send nothing, silently. Check against the REAL dependency source, not this description. Synchronous accessors are served from values captured at acquisition, never a cache an event fills later. Reference: spike/gate1b/shim/net.js."
+    },
+    {
+      "id": "shim-02-dgram",
+      "title": "orivon-node-shim: dgram",
+      "category": "shim",
+      "model": "sonnet",
+      "stream": "shim",
+      "paths": ["src/shim/dgram.ts", "src/shim/dgram.test.ts"],
+      "dependsOn": ["broker-09-ipc"],
+      "lowValue": false,
+      "definitionOfDone": "Node's dgram over orivon.net.udpBind. socket.address() is served from the value populated at acquisition -- the contract removes the cache that spike/gate1b/shim/dgram.js needed. Datagram loss is silent and increments droppedInbound, never an error."
+    },
+    {
+      "id": "shim-03-globals",
+      "title": "shim globals, with error visibility preserved",
+      "category": "shim",
+      "model": "sonnet",
+      "stream": "shim",
+      "paths": ["src/shim/globals.ts", "src/shim/globals.test.ts"],
+      "dependsOn": [],
+      "lowValue": false,
+      "definitionOfDone": "process.nextTick, setImmediate, Buffer as the renderer needs them. CRITICAL: a queueMicrotask-based nextTick SWALLOWS exceptions that real Node surfaces to the process. Any polyfilled timing primitive must route uncaught exceptions to a broker-visible log -- API-shape compatibility alone is not sufficient for anything touching error handling in security-relevant code."
+    },
+    {
+      "id": "shim-04-fs",
+      "title": "orivon-node-shim: fs, with the local cursor",
+      "category": "shim",
+      "model": "sonnet",
+      "stream": "shim",
+      "paths": ["src/shim/fs.ts", "src/shim/fs.test.ts"],
+      "dependsOn": ["broker-09-ipc"],
+      "lowValue": false,
+      "definitionOfDone": "Node's fs.promises shapes over orivon.fs. The shim OWNS the file cursor and always sends an explicit position underneath -- the contract has no implicit cursor because it is a race across an async boundary the moment two writes are in flight, which a torrent writer does routinely. Reconstructs Node Errors from platformCode so err.code === 'ENOENT' keeps working."
+    },
+
+    {
+      "id": "loader-01-manifest",
+      "title": "Manifest fetch, parse and validate",
+      "category": "loader",
+      "model": "sonnet",
+      "stream": "loader",
+      "paths": ["src/loader/manifest.ts", "src/loader/manifest.test.ts"],
+      "dependsOn": ["broker-08-createbroker"],
+      "lowValue": false,
+      "definitionOfDone": "Validates against the Manifest type in src/contracts. Rejects listen: ['*'] and privileged ports. NEVER probes an origin speculatively -- discovery is a <link rel='orivon-manifest'> hint in already-delivered HTML, or an explicit 'Open as app'. An unsolicited request to every origin visited is an attributable 'this visitor runs Orivon' signal."
+    },
+    {
+      "id": "loader-02-cache",
+      "title": "Asset cache with per-version hash pinning",
+      "category": "loader",
+      "model": "sonnet",
+      "stream": "loader",
+      "paths": ["src/loader/cache.ts", "src/loader/cache.test.ts"],
+      "dependsOn": ["loader-01-manifest"],
+      "lowValue": false,
+      "definitionOfDone": "Fetch, cache and pin per version. The cache is READ-ONLY to the app (ADR-0003) -- an app that could rewrite its own code escapes the manifest its grants were issued against. Cached bundles keep their real origin (ADR-0007), intercepted inside the app's partition."
+    },
+    {
+      "id": "loader-03-open-as-app",
+      "title": "'Open as app' flow in the shell",
+      "category": "browser-ui",
+      "model": "sonnet",
+      "stream": "loader",
+      "paths": ["src/renderer/open-as-app.ts"],
+      "dependsOn": ["loader-02-cache", "broker-10-grant-ui"],
+      "lowValue": false,
+      "definitionOfDone": "Journey 2: type a URL, the browser offers 'Open as app', grant prompt, running app. This is the journey that demonstrates URL delivery, which is the thesis -- journey 1 runs a pre-cached app and journey 4 loads a local directory."
+    },
+
+    {
+      "id": "fixture-01-app",
+      "title": "The fixture app (app #3) and the end-to-end test",
+      "category": "tests",
+      "model": "sonnet",
+      "stream": "fixture-app",
+      "paths": ["apps/fixture/**", "test/e2e.mjs"],
+      "dependsOn": ["shim-01-net", "loader-02-cache"],
+      "lowValue": false,
+      "definitionOfDone": "Fixture served over localhost HTTP with a real /.well-known/orivon.json, loaded via the app loader, grant accepted, require('net') THROUGH THE SHIM connects to a local echo server and moves bytes -- AND THEN the same app attempts a connection outside its manifest patterns and IS REJECTED. That last clause is the highest-value assertion in the plan: without it nothing fails if enforcement degrades to allow-all. Check the Playwright _electron driver can attach EARLY (open-questions.md C6, gate 3 is BLOCKED)."
+    },
+
+    {
+      "id": "telemetry-01-accounting",
+      "title": "Session accounting as a pure fold",
+      "category": "telemetry",
+      "model": "sonnet",
+      "stream": "telemetry",
+      "paths": ["src/telemetry/accounting.ts", "src/telemetry/accounting.test.ts"],
+      "dependsOn": [],
+      "lowValue": false,
+      "definitionOfDone": "A pure fold over an event stream: start/stop, suspend/resume, tab switch, ACTIVE vs BACKGROUND attribution, month rollover, abnormal termination with a periodic checkpoint so a crash loses minutes not a session. This is the number the project is judged on, and its likeliest bug biases it DOWNWARD -- making a succeeding product look like a failing one."
+    },
+    {
+      "id": "telemetry-02-disclosure",
+      "title": "First-run disclosure screen",
+      "category": "telemetry",
+      "model": "sonnet",
+      "stream": "telemetry",
+      "paths": ["src/telemetry/disclosure.ts", "src/renderer/disclosure.css"],
+      "dependsOn": ["telemetry-01-accounting"],
+      "lowValue": false,
+      "definitionOfDone": "Shows the LITERAL JSON that would be sent. Exactly two buttons of equal visual weight. NOTHING preselected. NOTHING transmitted before the choice. ADR-0004 makes this non-optional, and release-checklist.md item 1 verifies it by watching outbound traffic, not by reading the code."
+    },
+    {
+      "id": "telemetry-03-transport",
+      "title": "Collection and the 'what has been sent' page",
+      "category": "telemetry",
+      "model": "sonnet",
+      "stream": "telemetry",
+      "paths": ["src/telemetry/transport.ts", "src/telemetry/history.ts"],
+      "dependsOn": ["telemetry-02-disclosure"],
+      "lowValue": false,
+      "definitionOfDone": "Self-hosted endpoint, batched. An in-product page showing exactly what has been sent, inspectable by the user."
+    },
+
+    {
+      "id": "packaging-01-builder",
+      "title": "electron-builder for AppImage and deb",
+      "category": "packaging",
+      "model": "sonnet",
+      "stream": "packaging",
+      "paths": ["electron-builder.yml", "scripts/package.mjs"],
+      "dependsOn": [],
+      "lowValue": false,
+      "definitionOfDone": "deb is the PRIMARY artefact -- only an installed .desktop file with the right MimeType entries can become the default browser via xdg-settings, and the metric is measured in daily-driver hours. AppImage for trial and clip audiences, with a first-run 'install desktop entry' flow. Document the AppImage caveats: libfuse2 on Ubuntu 22.10+, the chrome-sandbox SUID error, build on the oldest LTS supported."
+    },
+    {
+      "id": "packaging-02-update-check",
+      "title": "Update check and notify (never auto-install)",
+      "category": "packaging",
+      "model": "sonnet",
+      "stream": "packaging",
+      "paths": ["src/main/update-check.ts", "src/main/update-check.test.ts"],
+      "dependsOn": [],
+      "lowValue": false,
+      "definitionOfDone": "Checks and NOTIFIES, linking to the release. Auto-install is cut by owner decision: unsigned electron-updater verifies a SHA-512 fetched from the same host serving the binary, which is a standing remote-code-execution channel and weaker than what ADR-0005 demands of third-party apps."
+    },
+
+    {
+      "id": "trust-01-indicator",
+      "title": "Trust indicator from the connection log",
+      "category": "trust",
+      "model": "sonnet",
+      "stream": "trust",
+      "paths": ["src/trust/**"],
+      "dependsOn": ["broker-09-ipc"],
+      "lowValue": false,
+      "definitionOfDone": "Delivery ladder, connection ladder from the broker's per-app connection log, operation scoring. Click-through shows the ACTUAL EVIDENCE, not a grade (ADR-0006). Must never present something as safer than it is."
+    },
+    {
+      "id": "nostr-01-nip07",
+      "title": "window.nostr (NIP-07) over orivon.id",
+      "category": "nostr",
+      "model": "sonnet",
+      "stream": "nostr",
+      "paths": ["src/nostr/**"],
+      "dependsOn": ["broker-09-ipc"],
+      "lowValue": false,
+      "definitionOfDone": "Injected in ordinary tabs. First getPublicKey() per site triggers the connect prompt; signing is silent for that site afterwards. Uses NAMED IDENTITIES (cross-origin by consent), not per-origin app keys -- an npub must be identical across every client. signEvent takes a structured object; kinds 1/6/7 sign silently, kinds 0/3/5/22242 and any delegation prompt every time."
+    },
+    {
+      "id": "devmode-01-unpacked",
+      "title": "Developer mode: load unpacked",
+      "category": "loader",
+      "model": "sonnet",
+      "stream": "loader",
+      "paths": ["src/loader/devmode.ts"],
+      "dependsOn": ["loader-02-cache"],
+      "lowValue": false,
+      "definitionOfDone": "Journey 4: a JSON manifest and a frontend, loaded from a local directory, with real network access, in an afternoon. Plainly-worded opt-in. No UNSIGNED badge -- signing is cut from v0, and 'unsigned' is not a distinction when everything is."
+    },
+
+    {
+      "id": "backlog-01-adr-index",
+      "title": "Cross-link the ADRs from the documents they govern",
+      "category": "docs",
+      "model": "sonnet",
+      "stream": "docs",
+      "paths": ["docs/decisions/**"],
+      "dependsOn": [],
+      "lowValue": true,
+      "definitionOfDone": "Each ADR gains a 'referenced by' list. Every amendment block is clearly marked as superseding. No content changes -- navigation only."
+    },
+    {
+      "id": "backlog-02-glossary",
+      "title": "Glossary coverage for terms used in src/contracts",
+      "category": "docs",
+      "model": "sonnet",
+      "stream": "docs",
+      "paths": ["docs/glossary.md"],
+      "dependsOn": [],
+      "lowValue": true,
+      "definitionOfDone": "Every term appearing in src/contracts/*.ts that a newcomer would not know is in the glossary: credit window, half-close, derived handle, revocation cascade, version floor, pattern set."
+    },
+    {
+      "id": "backlog-03-skill-gaps",
+      "title": "Fold this session's findings into the orivon-electron skill",
+      "category": "tooling",
+      "model": "sonnet",
+      "stream": "docs",
+      "paths": [".claude/skills/orivon-electron/SKILL.md"],
+      "dependsOn": [],
+      "lowValue": true,
+      "definitionOfDone": "Add what was learned and exists nowhere else: BaseWindow vs BrowserWindow typing gaps in Electron's .d.ts, the ready-to-show unreliability under the dev server, and matching windows by URL rather than firstWindow()."
+    },
+    {
+      "id": "backlog-04-contract-examples",
+      "title": "A worked example per handle type",
+      "category": "docs",
+      "model": "sonnet",
+      "stream": "docs",
+      "paths": ["docs/architecture/handle-examples.md"],
+      "dependsOn": [],
+      "lowValue": true,
+      "definitionOfDone": "One short, correct code sample per handle: TcpSocket with backpressure, TcpServer accepting, UdpSocket with loss, FileHandle positional writes, IdentityHandle signing. Compiles against src/contracts."
+    },
+    {
+      "id": "backlog-05-smoke-coverage",
+      "title": "Extend the shell smoke check",
+      "category": "tests",
+      "model": "sonnet",
+      "stream": "docs",
+      "paths": ["scripts/smoke.mjs"],
+      "dependsOn": [],
+      "lowValue": true,
+      "definitionOfDone": "Adds: back/forward across two tabs, closing the last tab, and an address-bar entry that is a search rather than a URL. Keeps printing the JSON result and failure list."
+    }
+  ]
+}
