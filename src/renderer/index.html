@@ -7,25 +7,42 @@
       content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'"
     />
     <title>Orivon</title>
-    <style>
-      body {
-        margin: 0;
-        display: grid;
-        place-items: center;
-        height: 100vh;
-        font: 14px/1.6 system-ui, sans-serif;
-        background: #14151a;
-        color: #e7e8ea;
-      }
-      code { color: #9aa0a6; }
-    </style>
+    <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
-    <main>
-      <h1>Orivon</h1>
-      <p>Scaffold running. Next: the week-0 spike.</p>
-      <p><code id="api-version"></code></p>
-    </main>
+    <!-- The whole body is the drag region by default (titlerow) -- every
+         interactive element inside marks itself no-drag explicitly (see
+         style.css). This is the chrome view ONLY: no page content ever
+         renders here (src/main/window.ts). -->
+    <div id="titlerow" class="titlerow"></div>
+
+    <div id="tabrow" class="tabrow" role="tablist"></div>
+
+    <div id="toolbar" class="toolbar">
+      <button id="back" class="navbtn" type="button" aria-label="Back" disabled>
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3 5 8l5 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <button id="forward" class="navbtn" type="button" aria-label="Forward" disabled>
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3l5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <button id="reload" class="navbtn" type="button" aria-label="Reload">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8a5 5 0 1 1 1.6 3.7M3 8V4M3 8h4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <form id="address-form" class="addressbar-form">
+        <input
+          id="address"
+          class="addressbar"
+          type="text"
+          autocomplete="off"
+          spellcheck="false"
+          aria-label="Address bar"
+        />
+      </form>
+      <button id="new-tab" class="navbtn" type="button" aria-label="New tab">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+
     <script type="module" src="./main.ts"></script>
   </body>
 </html>

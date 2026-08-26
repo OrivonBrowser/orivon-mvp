@@ -1,0 +1,190 @@
+/* Chrome view only (src/main/window.ts) -- concept 2 from the mockup
+   review, 2026-08-26 ("dense, filled-pill active tab"). Every pixel here
+   mirrors src/main/window.ts's CHROME_HEIGHT comment; change one, change
+   both. */
+
+:root {
+  --wbg: #ffffff;
+  --wchrome: #f1f3f4;
+  --wink: #202124;
+  --wink-dim: #5f6368;
+  --wborder: #d7dae0;
+  --waccent: #2f8a7d;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --wbg: #202124;
+    --wchrome: #292a2d;
+    --wink: #e8eaed;
+    --wink-dim: #9aa0a6;
+    --wborder: #3c4043;
+    --waccent: #55d0c1;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 118px; /* CHROME_HEIGHT, src/main/window.ts */
+  overflow: hidden;
+  background: var(--wchrome);
+  color: var(--wink);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 12.5px;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--waccent);
+  outline-offset: -2px;
+}
+
+/* -------- title row: drag-only, native window controls painted on top -------- */
+.titlerow {
+  height: 40px;
+  -webkit-app-region: drag;
+}
+
+/* -------- tab row -------- */
+.tabrow {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 7px 7px 6px;
+  background: var(--wchrome);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tabrow::-webkit-scrollbar { display: none; }
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 27px;
+  padding: 0 9px;
+  border-radius: 6px;
+  max-width: 168px;
+  min-width: 72px;
+  flex: 1 1 168px;
+  color: var(--wink-dim);
+  cursor: default;
+  user-select: none;
+}
+.tab:hover:not(.active) {
+  background: color-mix(in srgb, var(--wink) 6%, transparent);
+}
+.tab.active {
+  background: color-mix(in srgb, var(--waccent) 16%, var(--wbg));
+  color: var(--wink);
+}
+
+.tab .fav {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--wink-dim);
+  opacity: 0.5;
+}
+.tab.active .fav {
+  background: var(--waccent);
+  opacity: 1;
+}
+.tab.loading .fav {
+  background: var(--waccent);
+  opacity: 1;
+  animation: pulse 1s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tab.loading .fav { animation: none; }
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.tab .title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tab .close {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+}
+.tab:hover .close { opacity: 0.7; }
+.tab .close:hover {
+  background: color-mix(in srgb, var(--wink) 14%, transparent);
+  opacity: 1;
+}
+.tab .close svg { width: 9px; height: 9px; }
+
+/* -------- toolbar -------- */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 38px;
+  padding: 6px 8px;
+  background: var(--wbg);
+  border-bottom: 1px solid var(--wborder);
+}
+
+.navbtn {
+  width: 23px;
+  height: 23px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--wink-dim);
+  flex: none;
+}
+.navbtn svg { width: 14px; height: 14px; }
+.navbtn:disabled { opacity: 0.35; cursor: default; }
+.navbtn:not(:disabled):hover {
+  background: color-mix(in srgb, var(--wink) 8%, transparent);
+  color: var(--wink);
+}
+
+.addressbar-form {
+  flex: 1;
+  min-width: 0;
+}
+.addressbar {
+  width: 100%;
+  height: 26px;
+  border-radius: 6px;
+  background: var(--wchrome);
+  border: 1px solid transparent;
+  padding: 0 10px;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  color: var(--wink);
+}
+.addressbar::placeholder { color: var(--wink-dim); }
+.addressbar:focus {
+  background: var(--wbg);
+  border-color: var(--wborder);
+}

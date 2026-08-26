@@ -19,10 +19,14 @@ import { registerShellIpc } from './ipc.js'
 
 const STATE_CHANNEL = 'orivon-shell:state'
 
-// Placeholder, not yet tuned to a chosen visual concept (this session's
-// plan SS "Visual concepts before the chrome UI is built"). Revisit once
-// step 5b lands -- the mockups decide the real tab-strip/toolbar height.
-const CHROME_HEIGHT = 88
+// Owner picked concept 2 ("dense, filled-pill active tab") from the
+// mockups, 2026-08-26. Height is the sum of that concept's three rows,
+// mirrored exactly in src/renderer/style.css so the native chrome view
+// and the CSS agree on where the tab content starts:
+//   titlerow  40px (fixed, matches titleBarOverlay.height below)
+// + tabrow    7 + 27 + 6 = 40px (padding-top 7, tab height 27, padding-bottom 6)
+// + toolbar   6 + 26 + 6 = 38px (padding 6 top/bottom, address bar height 26)
+const CHROME_HEIGHT = 118
 
 export function createShellWindow (): BaseWindow {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize
@@ -72,6 +76,18 @@ export function createShellWindow (): BaseWindow {
 
   tabs.onStateChange((state) => {
     chrome.webContents.send(STATE_CHANNEL, state)
+  })
+
+  // Real race, found by end-to-end verification (2026-08-26): tabs.createTab()
+  // below pushes state before the chrome page has loaded far enough to
+  // register its ipcRenderer listener (shell.ts's contextBridge exposure
+  // runs, but main.ts's shell.onState() call hasn't executed yet), so the
+  // very first tab silently failed to render until some later event
+  // happened to trigger a second push. did-finish-load fires after the
+  // page's module script has run (main.ts registers onState before that),
+  // so this re-sync is guaranteed to land, not timing-dependent.
+  chrome.webContents.on('did-finish-load', () => {
+    chrome.webContents.send(STATE_CHANNEL, tabs.getState())
   })
 
   registerShellIpc(chrome.webContents, tabs)
