@@ -1,5 +1,13 @@
 # Dependencies
+#
+# BOTH forms, deliberately. `node_modules/` with a trailing slash matches
+# directories ONLY. A git worktree created for parallel work often has
+# node_modules as a SYMLINK to the main checkout, which that pattern does not
+# match -- so `git add -A` in a worktree would commit a machine-absolute
+# symlink into a public repository. Found 2026-08-26 by an agent working in
+# exactly such a worktree.
 node_modules/
+node_modules
 
 # Build output
 dist/
