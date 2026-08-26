@@ -24,6 +24,19 @@ import { createShellWindow } from './window.js'
 // nodeIntegration/webSecurity anywhere in this tree (security-model.md T17
 // and the block-insecure-webpreferences rule).
 
+// TRIED AND REVERTED 2026-08-26, same session: forcing
+// `ozone-platform: x11` was tried here on a since-corrected diagnosis (a
+// report of "no window ever appears" was first misread as the window
+// opening on the wrong monitor, chased partway down a Wayland-can't-
+// control-window-position path). It made things strictly worse: the GPU
+// process segfaulted under XWayland on this machine (`exit_code=139`)
+// and the window stopped rendering at all. Reverted immediately. The
+// real bug was never about display selection -- see window.ts's
+// `showOnce` comment for the actual root cause and fix
+// (`ready-to-show` unreliable when loading from the dev server). Do not
+// re-add this switch without a real reason and without first solving
+// the GPU crash it causes here.
+
 void app.whenReady().then(() => {
   createShellWindow()
   app.on('activate', () => {

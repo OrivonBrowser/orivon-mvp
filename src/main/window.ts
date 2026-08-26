@@ -29,11 +29,24 @@ const STATE_CHANNEL = 'orivon-shell:state'
 const CHROME_HEIGHT = 118
 
 export function createShellWindow (): BaseWindow {
-  const { width, height } = screen.getPrimaryDisplay().workAreaSize
+  // Centers on the OS's primary display -- no explicit x/y. A cursor-based
+  // "open on whichever display has the pointer" variant was tried here
+  // (2026-08-26) on a wrong diagnosis (a report of "no window appears" was
+  // misread as the window opening on the wrong monitor). It wasn't: the
+  // display this resolves to on that machine already *is* the user's real
+  // main monitor, confirmed by the user directly, and Wayland doesn't let
+  // an app control its own window position anyway (confirmed separately --
+  // an explicit requested x/y was silently discarded by the compositor).
+  // The actual bug was ready-to-show, below. Reverted to the simple form.
+  const { workArea } = screen.getPrimaryDisplay()
+  const winWidth = Math.min(1280, workArea.width)
+  const winHeight = Math.min(800, workArea.height)
 
   const win = new BaseWindow({
-    width: Math.min(1280, width),
-    height: Math.min(800, height),
+    x: workArea.x + Math.round((workArea.width - winWidth) / 2),
+    y: workArea.y + Math.round((workArea.height - winHeight) / 2),
+    width: winWidth,
+    height: winHeight,
     show: false,
     titleBarStyle: 'hidden',
     titleBarOverlay: {
@@ -102,11 +115,28 @@ export function createShellWindow (): BaseWindow {
 
   // Electron's type declarations only put 'ready-to-show' on BrowserWindow's
   // typed event union; BaseWindow's own doc doesn't enumerate it either.
-  // Verified empirically against this Electron version (2026-08-26) that it
-  // fires on BaseWindow all the same -- a type-declaration gap, not a
-  // runtime one. Narrow cast, not a cast of `win` to the wrong class.
+  // Verified empirically (2026-08-26) that it fires on BaseWindow all the
+  // same -- a type-declaration gap, not a runtime one. Narrow cast, not a
+  // cast of `win` to the wrong class.
+  //
+  // The real bug this session (root-caused 2026-08-26 with a user directly
+  // running `npm run dev` and sharing the traced output): 'ready-to-show'
+  // does not fire reliably -- or fires very late -- when the chrome view
+  // loads from electron-vite's dev server (`loadURL(devServerUrl)`) rather
+  // than the built file. A user report of "no window ever appears" traced
+  // to this exactly: the window existed the whole time, `show()` was just
+  // never called. A short fallback timer closes the gap; `shown` guards
+  // against calling `show()` twice if 'ready-to-show' fires late, after
+  // the fallback already ran.
+  let shown = false
+  function showOnce (): void {
+    if (shown) return
+    shown = true
+    win.show()
+  }
   ;(win as unknown as { once: (event: 'ready-to-show', cb: () => void) => void })
-    .once('ready-to-show', () => win.show())
+    .once('ready-to-show', showOnce)
+  setTimeout(showOnce, 1000)
 
   return win
 }
