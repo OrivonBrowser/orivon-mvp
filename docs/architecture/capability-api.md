@@ -95,6 +95,27 @@ Served alongside the app's frontend assets and fetched before first run.
 }
 ```
 
+### `version` — semver, ordering, and what an unparseable one costs
+
+`Manifest.version` is a **semver core plus optional prerelease**, build metadata stripped and
+ignored (per semver, `1.2.3+a` and `1.2.3+b` are the same version and neither is a rollback of the
+other). Two versions compare by release components in order (missing trailing components are
+zero, so `1.2` and `1.2.0` are equal), then by prerelease per semver §11.3–11.4 (a prerelease
+sorts below its release; numeric identifiers sort below alphanumeric ones).
+
+This is not a new rule — it transcribes what `src/broker/policy/update.ts`'s `compareVersions`
+already implements, because it backs a security control: `security-model.md` T19's per-origin
+**version floor**, which rejects any update below the highest version ever installed, so a
+validly-hash-pinned *older* bundle cannot be replayed to suppress a fix (`ADR-0009`).
+
+**A version string that does not parse as semver is treated as below the floor and rejected —
+fails closed.** "We cannot prove this is not a replayed older bundle" and "this is a replayed
+older bundle" must reach the same outcome, or the floor is bypassed by publishing a version string
+the parser cannot order. Consequently: **the app loader must reject a non-semver `version` at
+first install**, not only on update — a publisher who ships `"2026-08-26"` needs to find out
+immediately, not on their first update when every install is already stuck below an unreachable
+floor.
+
 **Honesty note on P2P apps.** The torrent app genuinely needs `tcp.connect: ["*:*"]` and
 `udp.send: ["*:*"]` — DHT and peer exchange reach arbitrary hosts. That is close to
 unrestricted network access, and the grant prompt must say so in plain words
@@ -349,7 +370,7 @@ conflated:
 
 | Event | Response | Comes from |
 |---|---|---|
-| Bundle hash changes | **Security re-consent** — "this app's code changed" | `ADR-0005`, `ADR-0006` D2 (pinning) |
+| Bundle hash changes | **Security re-consent** — "this app's code changed" | `ADR-0005`, `ADR-0006` D2 (pinning). The hash itself is `ADR-0009`/`bundle-hash.md` — it includes the manifest, so a manifest-only change also lands here |
 | Manifest requests a capability not yet granted | **Capability prompt** for that capability only | this spec |
 
 > **Corrected 2026-08-25.** The original default keyed grants on `(origin, capability)` alone,

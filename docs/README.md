@@ -23,7 +23,7 @@ defended against, and [`glossary.md`](glossary.md) when a term does not parse.
 
 ## Track 2 — To understand a decision
 
-[`decisions/`](decisions/) — eight ADRs. **Read them before proposing anything architectural;
+[`decisions/`](decisions/) — nine ADRs. **Read them before proposing anything architectural;
 most obvious ideas have already been considered and rejected for recorded reasons.**
 
 | | |
@@ -36,6 +36,7 @@ most obvious ideas have already been considered and rejected for recorded reason
 | [`ADR-0006`](decisions/ADR-0006-trust-indicator-from-observed-behaviour.md) | Trust indicator from observed behaviour, not a grade |
 | [`ADR-0007`](decisions/ADR-0007-cached-bundles-served-at-their-own-origin.md) | Cached bundles keep their real origin |
 | [`ADR-0008`](decisions/ADR-0008-handles-are-whatwg-streams.md) | Handles are WHATWG streams; Node shapes live in the shim |
+| [`ADR-0009`](decisions/ADR-0009-the-bundle-hash-is-an-app-s-content-identity.md) | The bundle hash construction: what makes an app's content identity, and how a change is noticed |
 
 > **Three of them carry amendments that supersede parts of their own text.** ADR-0002 and
 > ADR-0005 have inline amendments; ADR-0008 rescopes ADR-0002's mirror-Node's-shapes rule to
@@ -92,6 +93,7 @@ Concrete examples, so this is not abstract:
 | What is in the MVP? | [`mvp-scope.md`](mvp-scope.md) |
 | What do apps program against? | [`architecture/capability-api.md`](architecture/capability-api.md) |
 | What does a handle do? | [`architecture/handle-contracts.md`](architecture/handle-contracts.md) |
+| What identifies an app's content, and how is a change to it noticed? | [`architecture/bundle-hash.md`](architecture/bundle-hash.md), [`ADR-0009`](decisions/ADR-0009-the-bundle-hash-is-an-app-s-content-identity.md) |
 | Why is something the way it is? | [`decisions/`](decisions/) |
 | How much does integrating app X cost? | [`architecture/app-compatibility.md`](architecture/app-compatibility.md) |
 | What are we defending against? | [`architecture/security-model.md`](architecture/security-model.md) |
