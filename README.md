@@ -50,17 +50,87 @@ Full prerequisites and the one environment trap worth knowing about:
 | **Your data stays on your machine** | Per-origin isolation, local-first storage. There is no Orivon server holding user data, because there is no Orivon server |
 | **One identity, every site** | A Nostr identity that works across every client with no extension and no seed phrase to write down |
 
+## How this relates to Web3
+
+Directly, and not in the way you might expect.
+
+**The problem Orivon is aimed at:** decentralised protocols are hard to *use* because the
+browser refuses to speak them. A web page cannot open a BitTorrent connection, cannot join a
+DHT, cannot hold a signing key, cannot talk to a node over a raw socket. So every "Web3" app in
+a browser today routes through something centralised to compensate — an RPC provider, a
+gateway, a hosted indexer, a wallet extension. **The decentralised protocol is real; the path
+your browser takes to reach it usually isn't.**
+
+That is a browser limitation, not a protocol limitation. Orivon removes it: the page gets the
+capability, under a permission you granted, so a decentralised app can just be a web page.
+
+Two things in this MVP demonstrate it:
+
+- **BitTorrent in a tab.** Real peers, real DHT, no gateway, no seedbox, nothing in the middle.
+- **One identity across every site.** A Nostr key held by the browser, so any Nostr client you
+  visit signs you in — no extension, no seed phrase, no setup. Internally these are called
+  *Web3 Accounts*.
+
+**What Orivon is explicitly not:**
+
+- **Not a wallet.** No funds, no seed phrase shown, no send or receive. A funds-bearing wallet
+  is a genuinely different security model, and it is not in this MVP.
+- **No token, no chain, no DAO, no governance.** There isn't one and there won't be one here.
+- **No ENS, no IPFS, no DDOC in v0.** These are real parts of the longer-term plan and all are
+  deferred — trustless name resolution in particular is substantial work and everything else
+  depends on it.
+
+The longer framing, in the project's own words, is *Web4*: easy interfaces to **use** Web3, in
+the way Web2 gave easy interfaces to read and write Web1. That vision lives in
+[orivon-docs](https://github.com/OrivonBrowser/orivon-docs). **This repository is deliberately
+narrower than that** — it is one testable claim, not the whole idea.
+
+## Roadmap
+
+**In this MVP** — [`docs/planning/build-plan.md`](docs/planning/build-plan.md) has the detail.
+Strictly dependency-ordered; each step needs the one before it.
+
+| | Step | State |
+|---|---|---|
+| 0 | Feasibility spike — can a renderer really run a torrent client? | **done** — [verdict](docs/planning/spike-verdict.md) |
+| 1 | **Shell** — tabs, omnibox, back/forward, window chrome | **done** |
+| 2 | **Capability broker** — manifests, grants, per-origin enforcement | next |
+| 3 | **Node shim** — `net`, `dgram`, `fs` over `orivon.*` | |
+| 4 | **App loader** — manifest discovery, fetch, cache, hash-pinning | |
+| 5 | **Torrent app** — the flagship, and the demo clip | |
+| 6 | **Trust indicator** — what an app actually did, not a grade | |
+| 7 | **Nostr identity** — `window.nostr` across every client | |
+| 8 | **Telemetry** — with the first-run disclosure | |
+| 9 | **Developer mode** — load an unpacked app | |
+| 10 | **Packaging** — AppImage and deb | |
+
+**Deliberately deferred**, and listed so it is clear they are choices rather than oversights
+([`docs/mvp-scope.md`](docs/mvp-scope.md)): trustless name resolution (ENS and friends) · DDOC ·
+IPFS and Arweave as a second delivery path · an app store · a funds-bearing wallet · identity
+export and backup · `subprocess` and `hid` capabilities · signed Windows and macOS installers.
+
+**Longer term, and not scheduled:** a WebAssembly runtime for containing untrusted apps ·
+mobile · Tor and proxy chains · cross-device sync. A browser-engine fork is a hypothesis about
+where this could eventually go — **nobody is working on it, and nothing here depends on it
+happening.**
+
 ## The idea underneath
 
-The durable thing here is **the interface**, not the browser.
+**This repository is an Electron app, and it is meant to be replaceable.** The thing built to
+last is the *interface* apps are written against — seven files of TypeScript types in
+[`src/contracts/`](src/contracts/), with no implementation in them at all.
 
-Apps call `orivon.net.connect()`. Underneath, today, that's a Node socket in an Electron main
-process. Later it's a Wasmtime host function. Later still it's Mojo IPC inside a Chromium fork.
-**None of those transitions is visible to an app already written** — and that property, not any
-particular engine, is what keeps the path to a real browser open.
+An app calls `orivon.net.connect()`. Today that reaches a Node socket in an Electron main
+process. The interface is designed so it could reach something else entirely one day **without
+any app already written having to change a line**.
 
-That interface lives in [`src/contracts/`](src/contracts/): seven files, types only, no
-implementation. If you want to know what Orivon actually is, read those before anything else.
+That is a property engineered into the design, not a roadmap — nobody is building a browser
+engine, and nothing in this MVP depends on anyone ever doing so. It costs nothing extra now, and
+it means apps written this year aren't thrown away if the thing underneath them changes.
+
+If you want to know what Orivon actually is, read those seven files before anything else.
+[`ARCHITECTURE.md`](ARCHITECTURE.md) explains how they fit together, and which design choices
+were deliberate.
 
 ## Where to go next
 
