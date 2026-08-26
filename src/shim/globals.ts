@@ -68,12 +68,54 @@ export interface ShimProcess {
    */
   readonly version: string
 
+  /**
+   * Always true, and NOT optional -- a dependency that reads this must get
+   * an answer, never `undefined`.
+   *
+   * Found by grepping the spike's shipped bundles (the ones that made gates
+   * 1a/1b pass) rather than by anticipating a surface, per
+   * src/shim/README.md requirement 1: `process.browser` is read 4 times in
+   * gate1a's graph and 6 times in gate1b's, and the npm `process` polyfill
+   * those bundles carried sets it to true. The readers are
+   * `bittorrent-tracker` (`if (!process.browser && !opts.port) throw`, in
+   * both Client and Server), `crypto-browserify`'s `checkNative()` and
+   * default-encoding selection, and webtorrent's `FILESYSTEM_CONCURRENCY`.
+   *
+   * Leaving it off does not raise anything. It makes every one of those
+   * quietly take the Node branch -- installing a partial `process` turns a
+   * loud ReferenceError into a silent wrong answer, which is precisely the
+   * failure mode the rest of this file exists to prevent.
+   */
+  readonly browser: true
+
   readonly nextTick: <Args extends readonly unknown[]>(callback: (...args: Args) => void, ...args: Args) => void
-  readonly emitWarning: (warning: string | Error, type?: string) => void
+  readonly emitWarning: (warning: string | Error, typeOrOptions?: string | EmitWarningOptions, code?: string) => void
 }
 
-/** What setImmediate returns and clearImmediate consumes. */
-type ImmediateHandle = ReturnType<typeof setTimeout>
+/**
+ * The options-object form of process.emitWarning's second argument. Every
+ * field is `| undefined` on purpose: the callers are untyped JavaScript
+ * libraries, and under `exactOptionalPropertyTypes` a plain `type?: string`
+ * would reject the entirely ordinary `{ type: undefined }`.
+ */
+export interface EmitWarningOptions {
+  readonly type?: string | undefined
+  readonly code?: string | undefined
+  readonly detail?: string | undefined
+}
+
+/**
+ * What setImmediate returns and clearImmediate consumes, treated as opaque.
+ *
+ * Deliberately a union rather than `ReturnType<typeof setTimeout>`: this
+ * repo sets `"types": ["node"]` globally, so that alias resolves to
+ * NodeJS.Timeout -- an OBJECT with .ref()/.unref(). In the sandboxed
+ * renderer this shim actually runs in, setTimeout returns a NUMBER, which
+ * has neither. The alias therefore type-checks `setImmediate(fn).unref()`
+ * clean and throws at runtime. The union has no members in common, so the
+ * handle stays opaque and the mistake is caught at `npm run typecheck`.
+ */
+export type ImmediateHandle = ReturnType<typeof setTimeout> | number
 
 /**
  * The shape installGlobals writes onto. Every field is optional and
@@ -111,6 +153,18 @@ export function installGlobals (target: GlobalsTarget, options: InstallGlobalsOp
   // monitors. Relying on ambient behaviour is exactly the bug, whether that
   // behaviour happens to be fatal (Node) or quiet (renderer) -- the fix has
   // to be an explicit, environment-independent report either way.
+  //
+  // KNOWN, ACCEPTED DIFFERENCE FROM REAL NODE -- ordering. Node keeps a
+  // dedicated nextTick queue that is drained to exhaustion BEFORE any
+  // promise continuation runs. queueMicrotask puts these callbacks in the
+  // same microtask queue as promises, so nextTick and .then() callbacks
+  // interleave here in FIFO order where Node would run every nextTick
+  // first. Checked against the real graph before accepting it:
+  // `process-nextick-args`, the package most sensitive to this, branches on
+  // `!process.version` and takes its own fallback path under this shim (see
+  // `version` above), so nothing in the spike's graph depends on the
+  // stricter ordering. Revisit if a dependency ever does -- the fix is a
+  // real queue drained from one queueMicrotask, not a second polyfill.
   function nextTick<Args extends readonly unknown[]> (callback: (...args: Args) => void, ...args: Args): void {
     queueMicrotask(() => {
       try {
@@ -149,7 +203,14 @@ export function installGlobals (target: GlobalsTarget, options: InstallGlobalsOp
   // standard: Node's default for an unhandled 'warning' event is to print
   // it, not drop it, so an emitWarning that went nowhere would be a
   // regression by the same measure nextTick/setImmediate are held to above.
-  function emitWarning (warning: string | Error, type?: string): void {
+  // Covers BOTH of Node's documented shapes, not just the positional one:
+  //   emitWarning(warning[, type[, code]][, ctor])
+  //   emitWarning(warning[, options])              options: {type, code, detail}
+  // Handling only the first assigned the whole options object to
+  // `error.name`, which stringifies to '[object Object]' -- a warning that
+  // arrives unreadable rather than not at all. Same quiet-failure class as
+  // the swallowed exception above, so it gets the same treatment.
+  function emitWarning (warning: string | Error, typeOrOptions?: string | EmitWarningOptions, code?: string): void {
     // Matches real Node: an Error is emitted as-is (a `type` argument
     // alongside one is ignored); a string is wrapped and named, defaulting
     // to 'Warning' the same way Node's own unnamed warnings print as
@@ -158,8 +219,18 @@ export function installGlobals (target: GlobalsTarget, options: InstallGlobalsOp
       reportError(warning, 'warning')
       return
     }
-    const error = new Error(warning)
-    error.name = type ?? 'Warning'
+
+    const options: EmitWarningOptions = typeof typeOrOptions === 'string'
+      ? { type: typeOrOptions, code }
+      : typeOrOptions ?? {}
+
+    const error: Error & { code?: string, detail?: string } = new Error(warning)
+    error.name = options.type ?? 'Warning'
+    // Attached only when present, so a consumer can distinguish "no code"
+    // from "code explicitly undefined" -- Node does the same.
+    if (options.code !== undefined) error.code = options.code
+    if (options.detail !== undefined) error.detail = options.detail
+
     reportError(error, 'warning')
   }
 
@@ -167,6 +238,7 @@ export function installGlobals (target: GlobalsTarget, options: InstallGlobalsOp
     platform: 'browser',
     env: {},
     version: '',
+    browser: true,
     nextTick,
     emitWarning
   }
