@@ -55,10 +55,25 @@ Two more that are less philosophical and more immediate:
 package. It is the interface every part of the system agrees on, and tying it to the engine
 beneath it would defeat its entire purpose. Enforced by `npm run check:contracts`.
 
+## Enable the pre-commit hook, once
+
+```bash
+git config core.hooksPath .githooks
+```
+
+It blocks a commit that would put a credential into this repository. **This repo is public**,
+so a token that reaches a commit and gets pushed is scraped within minutes, and the only
+correct response is rotating it — deleting the line does not help, because the value stays in
+the object store and in every fork.
+
+The hook is one of three layers, and none is sufficient alone: the hook runs before the commit
+exists (and is bypassable with `--no-verify`), CI's `check:secrets` runs after push but before
+a merge, and branch protection means nothing reaches `main` without the owner.
+
 ## Before you open a pull request
 
 ```bash
-npm run typecheck && npm test && npm run check:natives && npm run check:contracts
+npm run typecheck && npm test && npm run check:natives && npm run check:contracts && npm run check:secrets
 npm run smoke     # only if you touched src/main/
 ```
 
