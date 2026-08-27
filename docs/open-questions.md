@@ -37,6 +37,7 @@ Legend: **[OWNER]** product/philosophy/irreversible — never decided by an AI �
 | A6 Go / no-go on `readiness.md` | **Owner: GO**, 2026-08-25, conditional on reviewing the spike's execution plan first → `planning/week-0-spike-plan.md` |
 | A11 How a cached bundle is served at its origin | **Owner (2026-08-25):** keep the app's real origin, intercepting inside the app's `session` partition only → `ADR-0007`. Chosen over a custom scheme because changing the origin would fork storage, grants and the derived identity key between the cached and live states, with no export path to recover the lost key |
 | A10 Handle contracts | **Resolved 2026-08-26.** Full specification written: `architecture/handle-contracts.md` (the five handle types, the closed error enum, close/half-close semantics, a credit-window backpressure design, the revocation cascade). Direction decision (WHATWG streams, owner, 2026-08-25) recorded as `ADR-0008`, which also rescopes `capability-api.md` design rule 1 to the shim rather than the capability layer. One further owner decision taken while writing it: error detail is real for any address an app was permitted to attempt; `denied` stays uniform across every reason for denial |
+| What bytes the bundle hash actually covers | **Resolved 2026-08-26.** `ADR-0005` and `ADR-0006` both made "the bundle hash" load-bearing without ever defining it — the same gap that had already been found and cut once for publisher signing. Full construction (flat, sorted, length-prefixed list hash; manifest included as a leaf; case/Unicode-colliding paths rejected at install) specified in `ADR-0009` and `architecture/bundle-hash.md`, with frozen test vectors from an independent reference implementation |
 
 ---
 
@@ -48,10 +49,14 @@ None of these block starting the week-0 spike.
 |---|---|---|
 | A7 | Canonical **DDOC** expansion — recommendation: *Domain Data Ownership **Confirmation*** (`glossary.md`, B2) | before correcting public docs |
 | A8 | **`+Privacy`** attaches to L4 (published) or L5 (private)? (`glossary.md`) | before correcting public docs |
-| A9 | Three capability-API items. **Defaults now proposed** in `architecture/capability-api.md` — `net.listen` grantable to unsigned apps with a declared port range and no privileged ports · grants keyed on `(origin, capability)`, with bundle-hash changes handled by the separate pin-break prompt · `fs.quotaBytes` enforced via a running per-origin counter | **Build proceeds on these unless overruled.** Cheap to change before any third-party app exists |
+| A9 | Three capability-API items. **Defaults now proposed** in `architecture/capability-api.md` — `net.listen` grantable to unsigned apps with a declared port range and no privileged ports · grants keyed on `(origin, capability, pattern set)`, a **subset check** over the pattern set (not a kind comparison), with bundle-hash changes handled by the separate re-consent prompt · `fs.quotaBytes` enforced via a running per-origin counter | **Build proceeds on these unless overruled.** Cheap to change before any third-party app exists |
 | A12 | **`orivon.fs` option bags are unspecified.** `capability-api.md` names the entry points (`readFile(path, opts)`, `writeFile(path, data, opts)`, `mkdir / readdir / stat / rm / rename`) but never says what `opts` contains or what `readFile` returns | **Build step 2.** Provisional signatures are in `src/contracts/capability-api.ts` and marked as such |
+| A14 | **RESOLVED 2026-08-26 (owner):** a trailing DNS dot is stripped, so `https://x.example.` and `https://x.example` are ONE origin. Deliberately deviates from `URL.origin`. Exactly one dot; a host still carrying an empty label is rejected | Implemented in `src/broker/policy/origin.ts` |
 | A13 | **Are `app.manifest()` and `app.grants()` async?** `capability-api.md` §v0 surface writes them as `=> Manifest` and `=> Grant[]`, but design rule 2 in the same document says *"All entry points return Promises"* | **Build step 2.** Transcribed as Promises; see below |
-| A16 | **Does a re-granted capability reuse its GrantId?** `manifest.ts` says a `Grant` is keyed on (origin, capability, pattern set) but never says whether the `id` is derived from that key or minted fresh per grant event. The handle table now tombstones revoked grant ids, so under the derived reading a permanent tombstone would make re-granting impossible | **Before the grant ledger is written.** `HandleTable.grantIssued()` clears the tombstone, so the table is correct either way; the ledger must call it. See below |
+| A15 | **The four bundle-hash caps are guesses, not decisions** — `MAX_PATH_BYTES` 1024, `MAX_ASSET_BYTES` 16 MiB, `MAX_BUNDLE_BYTES` 64 MiB, `MAX_BUNDLE_ENTRIES` 4096 (`src/broker/policy/bundle-hash.ts`, `architecture/bundle-hash.md` §Caps). They are labelled AI-recommendation in the source, but a cap decides which bundles are *refusable*, so two implementations disagreeing on one disagree about whether an app can exist at all | **Before the app loader ships (build step 4).** Needs one real frontend's shape to calibrate against; guessing again now would not be better than the current guess |
+| A16 | **What should closing the LAST tab do?** The shell currently leaves the window open with zero tabs. Chrome and Firefox instead open a fresh tab or close the window. Never actually decided | **Not blocking anything.** Decide before an outside user sees the shell; see below |
+| A17 | **RESOLVED 2026-08-27 (owner):** an `identityId` is **opaque and broker-generated** — never a user-typed name, never derived from one. The display name is stored beside the identity, not used to derive it. Found undefined during review of PR #5: it appeared exactly once in the whole repository, as one table cell | Recorded in `ADR-0010`, stated in `capability-api.md`, documented on `DeriveRequest.scope` |
+| A21 | **Does a re-granted capability reuse its GrantId?** `manifest.ts` says a `Grant` is keyed on (origin, capability, pattern set) but never says whether the `id` is derived from that key or minted fresh per grant event. The handle table now tombstones revoked grant ids, so under the derived reading a permanent tombstone would make re-granting impossible | **Before the grant ledger is written.** `HandleTable.grantIssued()` clears the tombstone, so the table is correct either way; the ledger must call it. See below |
 
 ---
 
@@ -87,6 +92,65 @@ plain values with no round trip.
 **Transcribed as Promises**, because design rule 2 is the more explicit statement and widening
 a Promise to a plain value later is a smaller break than the reverse. Cheap to change before any
 third-party app exists.
+
+---
+
+### A16 — what closing the last tab should do **[STILL OPEN]**
+
+Found while extending `scripts/smoke.mjs` (2026-08-27). Writing a check for "closing the last
+tab behaves sanely" required knowing what sane *is*, and nothing in this repository says.
+
+**What happens today.** `TabManager.closeTab()` (`src/main/tabs.ts`) removes the view, finds no
+fallback tab, sets `activeTabId: null` and emits. The `BaseWindow` stays open showing an empty
+tab strip, a disabled toolbar, and no content. Nothing crashes and nothing leaks — it is simply
+a state no other browser leaves you in. It was not chosen; it is what falling through the
+existing branch happens to produce.
+
+**The three plausible answers.**
+
+| | Behaviour | Who does this |
+|---|---|---|
+| 1 | Keep the window, open a fresh new tab | Chrome, Edge |
+| 2 | Close the window (and on the last window, quit) | Firefox, Safari, and `src/main/index.ts` already wires `window-all-closed -> app.quit()` |
+| 3 | Keep the window empty, as now | nobody |
+
+**Recommendation [AI-REC]:** option 1. It is the least surprising, it cannot strand a user, and
+it is a two-line change in `closeTab()`. Option 2 is also defensible and costs even less code,
+but "I closed a tab and the app quit" is a worse accident to have.
+
+**Why this is written down rather than just fixed.** Picking one is a product decision, and the
+smoke check now asserts the current outcome — so a silent change would look like a regression.
+The check is labelled to say so (`CURRENT BEHAVIOUR, pending A16 -- not a spec`) and asserts the
+resolution-independent properties separately: no crash, no orphaned view, and the shell still
+usable afterwards. **Whichever way A16 goes, change that one check — not the product — to
+match.**
+
+---
+
+### A21 -- grant id stability across a revoke and a re-grant **[AI-REC]**
+
+Found while fixing the revocation cascade in `src/broker/handles.ts` (review pass, 2026-08-27).
+
+The cascade used to be a one-shot sweep: `revoke()` closed the handles a grant had
+authorised and then forgot the grant entirely. An acquisition that passed the policy check
+*before* the revoke and produced its socket *after* it -- the ordinary connect path -- was then
+registered under a grant the user had just withdrawn, and since the permissions UI fires exactly
+one revoke, nothing ever swept again. The fix is a bounded per-origin set of revoked grant ids
+that `acquire`, `acquireDerived` and `run` refuse against.
+
+That fix has one dependency the repository does not yet decide. If the ledger later mints a
+**stable** `GrantId` derived from (origin, capability, pattern set), a permanent tombstone would
+mean a capability the user withdrew could never be granted again -- and the failure would look
+like "the grant prompt worked and the app still cannot connect", which nobody would trace back
+to the handle table. If it mints a **fresh** id per grant event, tombstones are harmless forever.
+
+**Resolved in the table, not in the ledger:** `HandleTable.grantIssued(origin, grantId)` clears
+the tombstone. It is correct under both readings, and it costs the grant ledger one call at the
+point where it records a grant. **Whoever writes the ledger must make that call**, and should
+record here which of the two id schemes was chosen.
+
+**Owner decision needed on:** nothing, unless the `grantIssued` call site is unwelcome. The
+question is recorded because the assumption is load-bearing and was previously implicit.
 
 ---
 
@@ -257,30 +321,3 @@ Dashboard widget grid · App store · Web3 search · Wallet Crypto/Address-book 
 `CapabilityDescriptor` · Mobile · DAO / tokenomics · Proxy chains and VPN mode · Client
 Profile separation · DDOC · Trustless resolution · `subprocess` and `hid` capabilities ·
 Identity export/backup · Cross-device sync.
-
----
-
-### A16 -- grant id stability across a revoke and a re-grant **[AI-REC]**
-
-Found while fixing the revocation cascade in `src/broker/handles.ts` (review pass, 2026-08-27).
-
-The cascade used to be a one-shot sweep: `revoke()` closed the handles a grant had
-authorised and then forgot the grant entirely. An acquisition that passed the policy check
-*before* the revoke and produced its socket *after* it -- the ordinary connect path -- was then
-registered under a grant the user had just withdrawn, and since the permissions UI fires exactly
-one revoke, nothing ever swept again. The fix is a bounded per-origin set of revoked grant ids
-that `acquire`, `acquireDerived` and `run` refuse against.
-
-That fix has one dependency the repository does not yet decide. If the ledger later mints a
-**stable** `GrantId` derived from (origin, capability, pattern set), a permanent tombstone would
-mean a capability the user withdrew could never be granted again -- and the failure would look
-like "the grant prompt worked and the app still cannot connect", which nobody would trace back
-to the handle table. If it mints a **fresh** id per grant event, tombstones are harmless forever.
-
-**Resolved in the table, not in the ledger:** `HandleTable.grantIssued(origin, grantId)` clears
-the tombstone. It is correct under both readings, and it costs the grant ledger one call at the
-point where it records a grant. **Whoever writes the ledger must make that call**, and should
-record here which of the two id schemes was chosen.
-
-**Owner decision needed on:** nothing, unless the `grantIssued` call site is unwelcome. The
-question is recorded because the assumption is load-bearing and was previously implicit.

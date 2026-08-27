@@ -41,6 +41,15 @@ export interface Manifest {
    * itself as "Orivon Torrent" with an otherwise identical prompt.
    */
   readonly name: string
+  /**
+   * Semver core plus optional prerelease; build metadata is stripped and
+   * ignored (capability-api.md SSversion). Backs the per-origin VERSION FLOOR
+   * (security-model.md T19): an update below the highest version ever
+   * installed is rejected, so a validly-hash-pinned older bundle cannot be
+   * replayed to suppress a fix. A version that does not parse as semver FAILS
+   * CLOSED -- treated as below the floor -- so the app loader must reject one
+   * at first install, not only on update.
+   */
   readonly version: string
   readonly entry: string
   readonly capabilities: Capabilities
