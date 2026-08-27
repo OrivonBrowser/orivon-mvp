@@ -59,6 +59,7 @@ None of these block starting the week-0 spike.
 | A18 | **`checkConnect` takes the manifest (what an app DECLARES) when the decision is about the grant (what the user ALLOWED).** Nothing in the signature carries the grant, so a caller passing a raw manifest silently gets the declared authority | **Build step 2, before the broker calls it.** Narrow the list at the call site, or change the parameter to `readonly Pattern[]`. See below |
 | A19 | **IDN hostnames are unhandled in connect patterns.** A Unicode host, its case variants and its punycode A-label are three different strings to the matcher, and an app deriving its host from `new URL(...)` gets the A-label | **Before any non-ASCII app origin exists.** Non-ASCII is now rejected outright rather than silently never matching. See below |
 | A20 | **`address.ts` exposes a classifier but no canonicaliser.** `connect.ts` needs an identity answer ("is this the same address"), not a range answer, and currently gets it from a local strict-subset validator | **Whenever `broker-02-address` is next touched.** See below |
+| A21 | **Does a re-granted capability reuse its GrantId?** `manifest.ts` says a `Grant` is keyed on (origin, capability, pattern set) but never says whether the `id` is derived from that key or minted fresh per grant event. The handle table now tombstones revoked grant ids, so under the derived reading a permanent tombstone would make re-granting impossible | **Before the grant ledger is written.** `HandleTable.grantIssued()` clears the tombstone, so the table is correct either way; the ledger must call it. See below |
 
 ---
 
@@ -213,6 +214,33 @@ be raised rather than made.
 
 **Needed by:** whoever next touches `broker-02-address`, and before the grant prompt is built in
 build step 4.
+
+---
+
+### A21 -- grant id stability across a revoke and a re-grant **[AI-REC]**
+
+Found while fixing the revocation cascade in `src/broker/handles.ts` (review pass, 2026-08-27).
+
+The cascade used to be a one-shot sweep: `revoke()` closed the handles a grant had
+authorised and then forgot the grant entirely. An acquisition that passed the policy check
+*before* the revoke and produced its socket *after* it -- the ordinary connect path -- was then
+registered under a grant the user had just withdrawn, and since the permissions UI fires exactly
+one revoke, nothing ever swept again. The fix is a bounded per-origin set of revoked grant ids
+that `acquire`, `acquireDerived` and `run` refuse against.
+
+That fix has one dependency the repository does not yet decide. If the ledger later mints a
+**stable** `GrantId` derived from (origin, capability, pattern set), a permanent tombstone would
+mean a capability the user withdrew could never be granted again -- and the failure would look
+like "the grant prompt worked and the app still cannot connect", which nobody would trace back
+to the handle table. If it mints a **fresh** id per grant event, tombstones are harmless forever.
+
+**Resolved in the table, not in the ledger:** `HandleTable.grantIssued(origin, grantId)` clears
+the tombstone. It is correct under both readings, and it costs the grant ledger one call at the
+point where it records a grant. **Whoever writes the ledger must make that call**, and should
+record here which of the two id schemes was chosen.
+
+**Owner decision needed on:** nothing, unless the `grantIssued` call site is unwelcome. The
+question is recorded because the assumption is load-bearing and was previously implicit.
 
 ---
 
