@@ -1,0 +1,58 @@
+{
+  "_warning": "FROZEN. DO NOT REGENERATE. If a row here fails, the KDF changed and the change is wrong. Read the header of derive.test.ts and ADR-0010 before touching this file.",
+  "_checkedBy": [
+    "src/broker/policy/derive.test.ts - asserts derive.ts (WebCrypto) reproduces every row",
+    "scripts/check-vectors.mjs - asserts an independent node:crypto implementation reproduces every row"
+  ],
+  "_seedNote": "Fixed, non-secret, and never used for anything real.",
+  "seed": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+  "vectors": [
+    {
+      "label": "app",
+      "scope": "https://app.example.com",
+      "curve": "P-256",
+      "scalar": "fb5b3a0adc63ab80be8fc22362bd0c800cd62aef87100e6a2514dde86235f6bd",
+      "publicKey": "04db0ffbd54e9fa575301ac46a3b7d254691eb51ea243ac780902722a69217738ede938c452d700548c7c70310ef070ff5b02403763e6b4207d79c62cc488d7089"
+    },
+    {
+      "label": "identity",
+      "scope": "primary",
+      "curve": "P-256",
+      "scalar": "36b2f27ebe1c02459fc966851814ac21aee1ec5aebaedff46e095c75ff231171",
+      "publicKey": "04da64e91baea08ec17ffcbbbbade2355cb8d95b9f65ae4cc7644475b733bf0db7120d160c9d53edb24ce510312cdc799d58ff62f4db8f527163e489fcd2060c0e"
+    },
+    {
+      "label": "app",
+      "scope": "https://app.example.com",
+      "curve": "secp256k1",
+      "scalar": "ddcad497c4b6f02955eb41c411b8ec4885db9c7c577b0894668107d67d50b818"
+    },
+    {
+      "label": "identity",
+      "scope": "primary",
+      "curve": "secp256k1",
+      "scalar": "562426285bfca61957cd6bb88e2ea1b442b67bed4a11eadc4d051b422e775d33"
+    },
+    {
+      "label": "app",
+      "scope": "https://other.example.com",
+      "curve": "secp256k1",
+      "scalar": "0c39056bfd335bc0a607a966e94542de76aab2b6a82ae07e8ef352e497eda932"
+    },
+    {
+      "_why": "ENCODING TRIPWIRE, added 2026-08-27. Rows 1-5 are all ASCII, where a string's UTF-8 byte length equals its JS code-unit length -- so they cannot tell the two apart. Mutating encodeField from bytes.length to value.length left all 18 original tests green while silently changing the key for every non-ASCII scope. These two rows close that hole: utf8Bytes(16) != codeUnits(10) here, and 12 != 6 below. Do not replace them with ASCII.",
+      "label": "identity",
+      "scope": "ünïcödé-🔑",
+      "curve": "P-256",
+      "scalar": "30e2f8a8d48e10f0d9b1f9fb1a430150b038d514d975e7c5a4bff48100cd31cd",
+      "publicKey": "045d118ccf9523777285c227700e600f9369e01ef0c799fb1572f8f71cac5929f061c7ec00fc0d94269456a1877ee86f614cb698e93ed56bd42c4a94eba74faa7c"
+    },
+    {
+      "_why": "The second encoding tripwire, with a different multi-byte mix (3-byte CJK rather than 2-byte Latin-1 plus a 4-byte astral pair), so a partially-wrong length calculation cannot pass both.",
+      "label": "identity",
+      "scope": "日本語-ID",
+      "curve": "secp256k1",
+      "scalar": "66165d38d01d26299905c9d0adc1ade858c92394cf7387035eaa28a3c587f342"
+    }
+  ]
+}
