@@ -29,6 +29,29 @@ seconds, and a test would be paying rent to tell you something you already know.
 Unit tests are **colocated** with what they test: `src/main/omnibox.test.ts` sits beside
 `src/main/omnibox.ts`.
 
+### What `npm run smoke` is, and what it is not
+
+It is the **shell's** regression check — a different thing from the unit tests below, held to a
+different bar. §The six security-critical areas argues for testing only where failure is
+*silent*; that argument governs the unit tests. `smoke.mjs` also asserts loud things (a window
+opens, the back button works), on purpose: it launches the real app either way, so the extra
+assertions are nearly free once the launch is paid for.
+
+Three properties it is required to keep:
+
+- **It reports, it does not just exit.** It prints a JSON result and a failure list. **Read
+  those, not the exit code alone.** A thrown error is recorded as a failed check rather than
+  replacing the output, and every click is bounded, so a broken run still tells you what broke.
+- **It is hermetic.** Every navigation resolves to `127.0.0.1`. The one external hostname it
+  types (`duckduckgo.com`, for the omnibox search branch) is blackholed at the resolver, so it
+  passes on an air-gapped machine and nothing leaves the box. Verified 2026-08-27 by running the
+  whole suite with `--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1`: 41/41.
+- **It waits for conditions, never for the clock.** Fixed sleeps make a slow machine report a
+  harness race as a product bug.
+
+It is **not** an end-to-end test of the capability stack — that is the separate one described in
+§The end-to-end test, and it does not exist yet.
+
 ---
 
 ## The six security-critical areas
