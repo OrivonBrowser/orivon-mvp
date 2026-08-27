@@ -1,8 +1,14 @@
 import { describe, expect, it } from 'vitest'
+import { MANIFEST_PATH, MAX_BUNDLE_ENTRIES } from './bundle-hash.js'
 import { fromBundleTree, isPinnedPath, parsePinRecord, type PinRecord } from './pin.js'
 
 const VALID_HASH = 'sha256:2ff5baaa794301118be4270755686fd1438501332ab3b1a199af90815ca4c4fd'
 const OTHER_HASH = 'sha256:d7cc8d092809e3f091d7f11a7dcccfceba519540a5f5730f80068b371b358e25'
+
+// Every pin record needs a leaf at the reserved manifest path, exactly as
+// every bundle does -- fromBundleTree and parsePinRecord both enforce it, so
+// a fixture without one tests nothing reachable.
+const MANIFEST_LEAF = { path: MANIFEST_PATH, leaf: OTHER_HASH }
 
 function validRaw (): Record<string, unknown> {
   return {
@@ -151,6 +157,36 @@ describe('parsePinRecord: never throws, denies by returning null', () => {
     ).toBeNull()
   })
 
+  // parsePinRecord must refuse every record bundleTree() could not have
+  // produced, or the two hold different lines and the more permissive one --
+  // the one reading untrusted bytes off disk -- decides what the cache
+  // reconstructs. Each of these was accepted before 2026-08-27.
+  it('a record bundleTree() could not have produced', () => {
+    const raw = validRaw()
+    // No leaf at the reserved manifest path.
+    expect(parsePinRecord({ ...raw, assets: [{ path: '/index.html', leaf: OTHER_HASH }] })).toBeNull()
+    // An empty asset set -- fail-closed either way, but fromBundleTree throws
+    // on it and these two must agree.
+    expect(parsePinRecord({ ...raw, assets: [] })).toBeNull()
+    // Paths that collide under the folding rule bundleTree applies.
+    expect(
+      parsePinRecord({
+        ...raw,
+        assets: [
+          { path: '/.well-known/orivon.json', leaf: OTHER_HASH },
+          { path: '/App.js', leaf: OTHER_HASH },
+          { path: '/app.js', leaf: OTHER_HASH }
+        ]
+      })
+    ).toBeNull()
+  })
+
+  it('more pinned assets than a bundle may contain', () => {
+    const assets = [{ path: '/.well-known/orivon.json', leaf: OTHER_HASH }]
+    for (let i = 0; i <= MAX_BUNDLE_ENTRIES; i += 1) assets.push({ path: `/f${i}.js`, leaf: OTHER_HASH })
+    expect(parsePinRecord({ ...validRaw(), assets })).toBeNull()
+  })
+
   it('pinnedAt that is not a finite number', () => {
     expect(parsePinRecord({ ...validRaw(), pinnedAt: 'yesterday' })).toBeNull()
     expect(parsePinRecord({ ...validRaw(), pinnedAt: Number.NaN })).toBeNull()
@@ -217,17 +253,17 @@ describe('isPinnedPath: fail-closed membership, exact match only', () => {
 
 describe('fromBundleTree: rejects a record that could not have come from bundleTree()', () => {
   it('an empty origin', () => {
-    expect(() => fromBundleTree('', VALID_HASH, [{ path: '/a', leaf: OTHER_HASH }], '0.1.0', 0)).toThrow()
+    expect(() => fromBundleTree('', VALID_HASH, [MANIFEST_LEAF, { path: '/a', leaf: OTHER_HASH }], '0.1.0', 0)).toThrow()
   })
 
   it('a non-canonical origin', () => {
     expect(() =>
-      fromBundleTree('https://x.example/path', VALID_HASH, [{ path: '/a', leaf: OTHER_HASH }], '0.1.0', 0)
+      fromBundleTree('https://x.example/path', VALID_HASH, [MANIFEST_LEAF, { path: '/a', leaf: OTHER_HASH }], '0.1.0', 0)
     ).toThrow()
   })
 
   it('a malformed bundle hash', () => {
-    expect(() => fromBundleTree('https://x.example', 'nope', [{ path: '/a', leaf: OTHER_HASH }], '0.1.0', 0)).toThrow()
+    expect(() => fromBundleTree('https://x.example', 'nope', [MANIFEST_LEAF, { path: '/a', leaf: OTHER_HASH }], '0.1.0', 0)).toThrow()
   })
 
   it('zero assets', () => {
@@ -235,12 +271,12 @@ describe('fromBundleTree: rejects a record that could not have come from bundleT
   })
 
   it('an empty version', () => {
-    expect(() => fromBundleTree('https://x.example', VALID_HASH, [{ path: '/a', leaf: OTHER_HASH }], '', 0)).toThrow()
+    expect(() => fromBundleTree('https://x.example', VALID_HASH, [MANIFEST_LEAF, { path: '/a', leaf: OTHER_HASH }], '', 0)).toThrow()
   })
 
   it('a non-finite pinnedAt', () => {
     expect(() =>
-      fromBundleTree('https://x.example', VALID_HASH, [{ path: '/a', leaf: OTHER_HASH }], '0.1.0', Number.NaN)
+      fromBundleTree('https://x.example', VALID_HASH, [MANIFEST_LEAF, { path: '/a', leaf: OTHER_HASH }], '0.1.0', Number.NaN)
     ).toThrow()
   })
 
@@ -249,13 +285,13 @@ describe('fromBundleTree: rejects a record that could not have come from bundleT
   // does, or the two ways of building a record disagree.
   it('an asset path bundleTree() could not have produced', () => {
     expect(() =>
-      fromBundleTree('https://x.example', VALID_HASH, [{ path: '/../escape.js', leaf: OTHER_HASH }], '0.1.0', 0)
+      fromBundleTree('https://x.example', VALID_HASH, [MANIFEST_LEAF, { path: '/../escape.js', leaf: OTHER_HASH }], '0.1.0', 0)
     ).toThrow()
   })
 
   it('a malformed leaf digest', () => {
     expect(() =>
-      fromBundleTree('https://x.example', VALID_HASH, [{ path: '/a', leaf: 'not-a-digest' }], '0.1.0', 0)
+      fromBundleTree('https://x.example', VALID_HASH, [MANIFEST_LEAF, { path: '/a', leaf: 'not-a-digest' }], '0.1.0', 0)
     ).toThrow()
   })
 
@@ -265,6 +301,7 @@ describe('fromBundleTree: rejects a record that could not have come from bundleT
         'https://x.example',
         VALID_HASH,
         [
+          MANIFEST_LEAF,
           { path: '/a', leaf: OTHER_HASH },
           { path: '/a', leaf: VALID_HASH }
         ],
@@ -274,11 +311,23 @@ describe('fromBundleTree: rejects a record that could not have come from bundleT
     ).toThrow()
   })
 
+  // `readonly` is a compile-time claim, not a runtime one. Validating the
+  // caller's array and then storing it BY REFERENCE means every check above
+  // can be undone after the record exists -- and the record is T21's
+  // allowlist. Found by adversarial review of the first round of these fixes.
+  it('copies the asset list rather than aliasing the caller-s array', () => {
+    const assets = [MANIFEST_LEAF, { path: '/a.js', leaf: OTHER_HASH }]
+    const record = fromBundleTree('https://x.example', VALID_HASH, assets, '0.1.0', 1)
+    assets.push({ path: '/../evil.js', leaf: 'not-even-a-digest' })
+    expect(record.assets).toHaveLength(2)
+    expect(isPinnedPath(record, '/../evil.js')).toBe(false)
+  })
+
   it('accepts a well-formed set and round-trips through parsePinRecord', () => {
     const built = fromBundleTree(
       'https://x.example',
       VALID_HASH,
-      [{ path: '/a', leaf: OTHER_HASH }],
+      [MANIFEST_LEAF, { path: '/a', leaf: OTHER_HASH }],
       '0.1.0',
       1_700_000_000_000
     )

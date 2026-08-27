@@ -291,6 +291,120 @@ describe('rejected before hashing', () => {
     }
   })
 
+  // ---------------------------------------------------------------------
+  // THE DECODED FORM IS WHAT THE FILESYSTEM SEES.
+  //
+  // Added 2026-08-27 after adversarial review of the first round of fixes,
+  // which decoded percent-escapes for COLLISION detection and then validated
+  // only the ENCODED form -- half an argument. If the decoded form is what
+  // aliases on disk (the entire reason collisionKey decodes), it is also what
+  // has to be safe. `/%00.js` and `/..%2F..%2Fevil.js` were accepted by the
+  // first round, hashed, and written into the pinned asset set that ADR-0009
+  // makes the code cache's layout map.
+  //
+  // Rejected on EVERY platform, not only the one where each bites, for the
+  // reason paths.ts gives for the same choice: a security boundary whose
+  // semantics vary by OS is one nobody can reason about.
+  // ---------------------------------------------------------------------
+  it('a path whose DECODED form carries a control character', async () => {
+    for (const path of ['/%00.js', '/a%00b.js', '/%01.js', '/a%0Ab.js', '/a%7Fb.js']) {
+      await expect(
+        bundleHash([manifestEntry(), { path, content: utf8('x') }]),
+        `should reject ${JSON.stringify(path)}`
+      ).rejects.toMatchObject({ code: 'invalid' })
+    }
+  })
+
+  it('a path whose DECODED form is a traversal', async () => {
+    for (const path of ['/..%2F..%2Fevil.js', '/%2E%2E/evil.js', '/a/%2e%2e/b.js', '/%2E/b.js']) {
+      await expect(
+        bundleHash([manifestEntry(), { path, content: utf8('x') }]),
+        `should reject ${JSON.stringify(path)}`
+      ).rejects.toMatchObject({ code: 'invalid' })
+    }
+  })
+
+  // '\' is a separator on Windows, a supported run-from-source target. This is
+  // the '%2F' row of the collision table one character over: '/a/b.js' and
+  // '/a%5Cb.js' are two leaves under one root and one file on disk, and which
+  // one wins is a write-order race.
+  it('a path whose DECODED form contains a backslash', async () => {
+    await expect(
+      bundleHash([manifestEntry(), { path: '/a%5Cb.js', content: utf8('x') }])
+    ).rejects.toMatchObject({ code: 'invalid' })
+  })
+
+  // '/a//b.js' is '/a/b.js' on every filesystem there is -- no platform caveat.
+  it('a path with an empty segment', async () => {
+    for (const path of ['/a//b.js', '//a.js', '/a/']) {
+      await expect(
+        bundleHash([manifestEntry(), { path, content: utf8('x') }]),
+        `should reject ${JSON.stringify(path)}`
+      ).rejects.toMatchObject({ code: 'invalid' })
+    }
+  })
+
+  // Win32 strips trailing dots and spaces from a final component, so all of
+  // '/a.js', '/a.js.' and '/a.js%20' name one file there. The first round
+  // caught '/a.js.' against '/a.js%2E' and missed it against '/a.js' -- a rule
+  // half-firing, which reads as covered and is not.
+  it('a path component with a trailing dot or space', async () => {
+    for (const path of ['/a.js.', '/a.js%20', '/a%20', '/dir./b.js', '/dir%20/b.js']) {
+      await expect(
+        bundleHash([manifestEntry(), { path, content: utf8('x') }]),
+        `should reject ${JSON.stringify(path)}`
+      ).rejects.toMatchObject({ code: 'invalid' })
+    }
+  })
+
+  // Same list paths.ts already refuses, for the same reason and on the same
+  // every-platform basis.
+  it('a Windows reserved device name', async () => {
+    for (const path of ['/CON', '/nul', '/COM1', '/AUX.txt', '/dir/PRN.js', '/LPT9']) {
+      await expect(
+        bundleHash([manifestEntry(), { path, content: utf8('x') }]),
+        `should reject ${JSON.stringify(path)}`
+      ).rejects.toMatchObject({ code: 'invalid' })
+    }
+  })
+
+  // ':' opens an NTFS alternate data stream: 'a.js:hidden' writes bytes that
+  // 'a.js' does not show. Legal in a URL path and vanishingly rare in a real
+  // asset name, so this rejects loudly at install rather than silently
+  // producing a pin whose cache write means something different on Windows.
+  it('a path whose DECODED form contains a colon or a pipe', async () => {
+    for (const path of ['/a.js:hidden', '/a%3Ahidden.js', '/a%7Cb.js']) {
+      await expect(
+        bundleHash([manifestEntry(), { path, content: utf8('x') }]),
+        `should reject ${JSON.stringify(path)}`
+      ).rejects.toMatchObject({ code: 'invalid' })
+    }
+  })
+
+  it('the bare root path, which names the cache directory rather than a file', async () => {
+    await expect(bundleHash([manifestEntry(), { path: '/', content: utf8('x') }])).rejects.toMatchObject({
+      code: 'invalid'
+    })
+  })
+
+  // Guard against over-correction: these are ordinary and must still hash.
+  it('accepts the ordinary asset paths a real frontend serves', async () => {
+    const entries: BundleEntry[] = [
+      manifestEntry(),
+      { path: '/index.html', content: utf8('1') },
+      { path: '/assets/index-CJ1a1Q2B.js', content: utf8('2') },
+      { path: '/fonts/Inter%20Regular.woff2', content: utf8('3') }, // a real space
+      { path: '/img/logo@2x.png', content: utf8('4') },
+      { path: '/img/icon-192x192.png', content: utf8('5') },
+      { path: '/_next/static/chunks/main-app.js', content: utf8('6') },
+      { path: '/a.b.c/d.e.f.js', content: utf8('7') },
+      { path: '/%C3%A4.js', content: utf8('8') }, // encoded non-ASCII
+      { path: '/CONFIG.js', content: utf8('9') }, // NOT the CON device
+      { path: '/prnt.js', content: utf8('10') } // NOT the PRN device
+    ]
+    await expect(bundleHash(entries)).resolves.toMatch(/^sha256:[0-9a-f]{64}$/)
+  })
+
   it('a bundle with more than MAX_BUNDLE_ENTRIES leaves', async () => {
     const entries: BundleEntry[] = [manifestEntry()]
     for (let i = 0; i <= MAX_BUNDLE_ENTRIES; i += 1) {

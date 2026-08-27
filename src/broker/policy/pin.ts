@@ -14,7 +14,13 @@
 // decision is itself the failure).
 
 import type { OrivonError, OrivonErrorCode } from '../../contracts/index.js'
-import { isValidCanonicalPath, type PathLeaf } from './bundle-hash.js'
+import {
+  collisionKey,
+  isValidCanonicalPath,
+  MANIFEST_PATH,
+  MAX_BUNDLE_ENTRIES,
+  type PathLeaf
+} from './bundle-hash.js'
 import { originFromUrl } from './origin.js'
 
 /**
@@ -112,13 +118,24 @@ export function parsePinRecord (raw: unknown): PinRecord | null {
   return { schema: 1, origin, bundleHash, assets, version, pinnedAt }
 }
 
+/**
+ * Every rule bundleTree() applies to an entry set, applied again to a record
+ * read off disk. The two MUST refuse the same things: if this one is the more
+ * permissive, then the untrusted-input path is the one that decides what the
+ * code cache reconstructs, which is backwards. Before 2026-08-27 this accepted
+ * an empty asset set, a set with no manifest leaf, colliding paths, and an
+ * unbounded number of them.
+ */
 function parseAssets (raw: object): readonly PinnedAsset[] | null {
   if (!Object.hasOwn(raw, 'assets')) return null
   const value = (raw as { assets: unknown }).assets
   if (!Array.isArray(value)) return null
+  if (value.length === 0 || value.length > MAX_BUNDLE_ENTRIES) return null
 
   const assets: PinnedAsset[] = []
   const seenPaths = new Set<string>()
+  const seenKeys = new Set<string>()
+  let hasManifest = false
   for (const entry of value) {
     if (typeof entry !== 'object' || entry === null) return null
     const path = ownString(entry, 'path')
@@ -132,11 +149,22 @@ function parseAssets (raw: object): readonly PinnedAsset[] | null {
     if (leaf === undefined || !BUNDLE_HASH_PATTERN.test(leaf)) return null
     // A pin record with a duplicated path is malformed -- it cannot have come
     // from bundleTree(), which rejects duplicate/colliding paths before
-    // producing a root at all.
+    // producing a root at all. Nor can one whose paths merely COLLIDE: the
+    // record is the code cache's layout map, so two paths naming one file
+    // here are two writes to one file there.
     if (seenPaths.has(path)) return null
+    const key = collisionKey(path)
+    if (seenKeys.has(key)) return null
     seenPaths.add(path)
+    seenKeys.add(key)
+    if (path === MANIFEST_PATH) hasManifest = true
     assets.push({ path, leaf })
   }
+
+  // bundleTree() cannot produce a root without one, so a record claiming
+  // otherwise did not come from a bundle this broker ever hashed.
+  if (!hasManifest) return null
+
   return assets
 }
 
@@ -195,7 +223,12 @@ export function fromBundleTree (
   // did NOT come from bundleTree(). Every property the name promises is
   // therefore checked here rather than assumed -- otherwise the two ways of
   // building a record (this and parsePinRecord) hold different lines.
+  if (assets.length > MAX_BUNDLE_ENTRIES) {
+    throw fail('invalid', `pin record exceeds MAX_BUNDLE_ENTRIES (${assets.length} > ${MAX_BUNDLE_ENTRIES})`)
+  }
+
   const seenPaths = new Set<string>()
+  const seenKeys = new Set<string>()
   for (const asset of assets) {
     if (!isValidCanonicalPath(asset.path)) {
       throw fail('invalid', `not a valid canonical path: ${JSON.stringify(asset.path.slice(0, 120))}`)
@@ -206,8 +239,24 @@ export function fromBundleTree (
     if (seenPaths.has(asset.path)) {
       throw fail('invalid', `duplicate pinned path: ${JSON.stringify(asset.path.slice(0, 120))}`)
     }
+    const key = collisionKey(asset.path)
+    if (seenKeys.has(key)) {
+      throw fail('invalid', `pinned paths collide under folding: ${JSON.stringify(asset.path.slice(0, 120))}`)
+    }
     seenPaths.add(asset.path)
+    seenKeys.add(key)
   }
 
-  return { schema: 1, origin, bundleHash, assets, version, pinnedAt }
+  // The last asymmetry closed: parsePinRecord rejects a record with no
+  // manifest leaf, so building one here would produce a record that cannot be
+  // read back. Every rule bundleTree() applies now holds on both paths.
+  if (!seenPaths.has(MANIFEST_PATH)) {
+    throw fail('invalid', `a pin record needs a leaf at the reserved manifest path ${MANIFEST_PATH}`)
+  }
+
+  // COPIED, NOT ALIASED. `readonly` is a compile-time claim; storing the
+  // caller's array by reference means every check above can be undone after
+  // this returns, and what it would be undone on is T21's allowlist.
+  // parsePinRecord already builds a fresh array; this path did not.
+  return { schema: 1, origin, bundleHash, assets: assets.map((a) => ({ ...a })), version, pinnedAt }
 }
