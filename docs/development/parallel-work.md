@@ -148,6 +148,38 @@ This is correct **only** where every change is an append and order does not matt
 never be extended to source files — union-merging code produces something syntactically valid
 and semantically wrong, which is strictly worse than a conflict you can see.
 
+### Open-question numbers — renumber yours, never main's
+
+`open-questions.md` is the one shared file every stream appends to, and its rows are
+**numbered**. Four streams branched from the same main, each read "A14 is the highest", and
+each filed its finding as A15. On 2026-08-27 that produced three separate claims to A15, three
+to A16 and two to A17, across four branches.
+
+**A number allocated on a branch is provisional until that branch merges.** So on a conflict:
+
+- **main's numbers win**, always. They are already merged, and other documents cite them —
+  `smoke.mjs` names A16 in an assertion label, `ADR-0010` and `capability-api.md` cite A17.
+  Renumbering a merged question silently breaks every one of those.
+- **Your branch's questions take the next free numbers**, above everything on main *and* above
+  anything claimed by a branch merging ahead of you.
+- **Never renumber to fill a gap.** Numbers are permanent identifiers, not an ordering. A4 and
+  A10 are already absent because they resolved.
+
+**Renumbering is not a table edit.** Grep the number before you finish — a question is cited
+from section headings further down the same file, from source comments, and from other
+documents. A renumber that stops at the table leaves code pointing at a stranger's question,
+which is worse than the collision, because it looks right. This happened for real:
+`origin.ts` cited `open-questions.md A16` for a rule about persisting loopback grants, and by
+the time it merged, A16 was "what should closing the last tab do".
+
+Cheapest prevention, if you are about to file one — take the next number above what **main**
+has, not above what your branch has:
+
+```bash
+git fetch origin
+git show origin/main:docs/open-questions.md | grep -oE '^\| A[0-9]+' | sort -V | tail -1
+```
+
 ### CI is the semantic check
 
 A textual merge can succeed while the result does not compile or does not pass. That is the
