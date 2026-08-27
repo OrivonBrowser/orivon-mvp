@@ -28,9 +28,15 @@ not the exit code alone.** That holds even when it breaks — a thrown error bec
 check rather than replacing the output, and every click is bounded, so a broken run still names
 what broke instead of dying with a bare stack trace.
 
-**`npm run smoke` needs no network.** Every navigation resolves to `127.0.0.1`, and the one
-external hostname it types (`duckduckgo.com`, exercising the omnibox's search branch) is
-blackholed at the resolver — so it passes air-gapped and nothing leaves the machine. If you are
-tempted to make it reach the real network, read the comment above that check first: the address
-bar shows the *requested* URL whether or not the load succeeded, so a network round trip adds no
-coverage there and hands a third party a veto over the build.
+**`npm run smoke` needs no network, and cannot use one.** It launches Electron with
+`--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1`: nothing but loopback resolves. So it
+passes air-gapped, nothing leaves the machine, and a change that made it depend on the network
+fails loudly here rather than quietly phoning out. If you are tempted to let it reach the real
+network, read the comment above the search check first: the address bar shows the *requested*
+URL whether or not the load succeeded, so a round trip adds no coverage there and hands a third
+party a veto over the build.
+
+**Before changing a check in `smoke.mjs`, read the three rules in its header.** They are short,
+each was learned by getting it wrong, and the second one — never wait for a condition the
+pre-action state already satisfies — silently turned two checks into no-ops that reported green
+while the regressions they existed to catch were present.

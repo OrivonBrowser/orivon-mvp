@@ -7,24 +7,56 @@
 // reliable here -- it depends on view-add order, an implementation detail,
 // not a contract. Windows are matched by URL via app.windows() instead.
 //
-// Per CLAUDE.md's traps list: never trust an exit code alone -- this script
-// prints a JSON result and a failure list; read them, not just the exit code.
-// That promise is load-bearing and used to be breakable: a click on a selector
-// that could not match blocked until Playwright gave up, the throw escaped
-// main(), and the run printed a bare stack trace with no results at all. Two
-// things stop that now -- every click goes through clickChecked() below, and
-// the whole body is wrapped so a throw becomes a failed check and the results
-// are still printed.
+// ---------------------------------------------------------------------------
+// THREE RULES THIS FILE IS HELD TO. Each was learned by getting it wrong.
+// ---------------------------------------------------------------------------
 //
-// HERMETIC BY CONSTRUCTION. Every navigation resolves to 127.0.0.1, and the
-// one non-local hostname this file types (duckduckgo.com) is blackholed at the
-// resolver. See the search section near the bottom for why that costs no
-// coverage. `npm run smoke` must pass on an air-gapped machine.
+// 1. IT REPORTS, IT DOES NOT JUST EXIT. Per CLAUDE.md's traps list: never
+//    trust an exit code alone -- this script prints a JSON result and a
+//    failure list; read them, not just the exit code. That used to be
+//    breakable: a click on a selector that could not match blocked until
+//    Playwright gave up, the throw escaped main(), and nothing printed at
+//    all. Now every interaction is bounded and error-trapped, the body is
+//    wrapped, AND the report is printed BEFORE teardown -- because app.close()
+//    can itself throw, most plausibly when the app has already died, which is
+//    exactly the case the last-tab checks exercise.
+//
+// 2. NEVER WAIT FOR A CONDITION THE PRE-ACTION STATE ALREADY SATISFIES.
+//    waitFor() returns the instant its predicate holds, so if it held before
+//    the action fired, the assertion is a no-op that reports green. This is
+//    subtle and it bit this file twice: "wait until the tab is at about:blank"
+//    after a hostile URL, when the tab was ALREADY at about:blank, and
+//    "wait until windows === tabs + 1" after closing a tab, when that was
+//    ALREADY true before the close. Both passed while the exact regression
+//    they existed to catch was present. Either establish an observable
+//    TRANSITION first (park the tab somewhere else), or settle and read once.
+//
+// 3. ABSENCE OF AN EVENT CANNOT BE POLLED FOR. A refusal is a navigation that
+//    must NOT happen. Polling cannot express that -- only waiting out the
+//    window in which it could have happened, then reading. That is the one
+//    place a fixed delay is the correct instrument rather than a lazy one;
+//    everywhere else, wait for the condition.
+//
+// HERMETIC BY CONSTRUCTION. The resolver is configured so that NOTHING but
+// 127.0.0.1 resolves -- not a per-host blackhole that a future edit could
+// step around. `npm run smoke` passes on an air-gapped machine, and a change
+// that made it depend on the network fails loudly here rather than quietly
+// phoning out.
 import { createServer } from 'node:http'
 import { launchElectron } from '../test/launch-electron.mjs'
 
-/** Where the omnibox sends non-address input (src/main/omnibox.ts). */
+/** Where the omnibox sends non-address input (src/main/omnibox.ts). Only used
+ * to build the expected URL -- the resolver rule below blackholes everything
+ * that is not loopback, so changing this cannot cause real egress. */
 const SEARCH_HOST = 'duckduckgo.com'
+
+/**
+ * Nothing resolves except loopback. Deliberately a whole-world blackhole
+ * rather than `MAP duckduckgo.com ~NOTFOUND`: the property being protected is
+ * "this run cannot reach the network", and a per-host rule only protects the
+ * one host someone thought of. Verified: the full suite passes under this.
+ */
+const HERMETIC_RESOLVER = '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1'
 
 /** Ceiling on waitFor(). Every state push in this shell lands in
  * milliseconds; this only bounds the broken case, where the caller's own
@@ -32,17 +64,25 @@ const SEARCH_HOST = 'duckduckgo.com'
 const WAIT_TIMEOUT_MS = 8_000
 const POLL_INTERVAL_MS = 50
 
+/**
+ * How long to wait before concluding a navigation did NOT happen (rule 3).
+ * Must comfortably exceed the time between `loadURL` being called and the
+ * navigation committing. A deferred pass-through of only 300ms was enough to
+ * slip past an earlier version of the deny-path checks.
+ */
+const ABSENCE_SETTLE_MS = 1_500
+
 function findChrome (app) {
   const win = app.windows().find((w) => w.url().endsWith('index.html'))
   if (win === undefined) throw new Error('chrome view not found in app.windows()')
   return win
 }
 
-/** The single tab view, as a Playwright page -- lets a check read the tab's
- * OWN location rather than trusting the toolbar's rendering of it (T25:
- * the address bar is a display layer and can lie independently). */
-function findTabView (app, chrome) {
-  return app.windows().find((w) => w !== chrome)
+/** Non-chrome views, as Playwright pages -- lets a check read a tab's OWN
+ * location rather than trusting the toolbar's rendering of it (T25: the
+ * address bar is a display layer and can lie independently). */
+function tabViews (app, chrome) {
+  return app.windows().filter((w) => w !== chrome)
 }
 
 async function startFixtureServer () {
@@ -62,26 +102,71 @@ async function startFixtureServer () {
   return { server, urlFor: (path) => `http://127.0.0.1:${port}${path}` }
 }
 
+const delay = (ms) => new Promise((r) => setTimeout(r, ms))
+
 /**
  * Polls until `predicate` is true, or the ceiling is hit. Returns the outcome
  * as a boolean so the caller's own check() reports it by name.
  *
- * This replaces the fixed sleeps this file used to carry. A sleep is wrong in
- * both directions: too short and the next step reads stale state and blames
- * the product for a harness race, too long and every run pays for the worst
- * machine. Polling is faster in the normal case and correct in the slow one.
+ * Read rule 2 in the header before using this. It is the right tool for "the
+ * app should reach state X", and the wrong tool for "the app should stay in
+ * state X" or "X should not happen".
  */
 async function waitFor (predicate, timeoutMs = WAIT_TIMEOUT_MS) {
   const deadline = Date.now() + timeoutMs
   for (;;) {
     if (await predicate() === true) return true
     if (Date.now() >= deadline) return false
-    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS))
+    await delay(POLL_INTERVAL_MS)
   }
 }
 
+/**
+ * page.evaluate(), retrying while the page's execution context is being torn
+ * down.
+ *
+ * A navigation commit destroys the old context, and a read that lands inside
+ * that window throws "Execution context was destroyed". That is a harness
+ * race, not a product fact, and it must never be reported as one -- before
+ * this existed it surfaced as the whole run dying with a stack trace, roughly
+ * one run in three. Only that specific class is retried; every other error
+ * still propagates.
+ */
+async function evaluateRetrying (page, fn, timeoutMs = WAIT_TIMEOUT_MS) {
+  const TRANSIENT = /Execution context was destroyed|frame was detached/i
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    try {
+      return await page.evaluate(fn)
+    } catch (e) {
+      if (Date.now() >= deadline || !TRANSIENT.test(String(e))) throw e
+      await delay(POLL_INTERVAL_MS)
+    }
+  }
+}
+
+/**
+ * The Playwright page for the tab view currently showing `url`.
+ *
+ * Identifies a tab by what it displays rather than by being "the only one".
+ * `find(w => w !== chrome)` is ambiguous the moment a second view exists --
+ * which happens if A16 resolves to an auto-opened replacement tab, or if a
+ * view leaks -- and reading the wrong window produces confidently-worded
+ * failures against the wrong target.
+ */
+function findViewShowing (app, chrome, url) {
+  return tabViews(app, chrome).find((w) => w.url() === url)
+}
+
+/** ONE read of a tab view's own location and title. Deliberately not a poll --
+ * a caller asserting an absence must settle first, then read once (rule 3). */
+async function readTabDocument (view) {
+  if (view === undefined) return undefined
+  return evaluateRetrying(view, () => ({ href: location.href, title: document.title }))
+}
+
 async function activeTabInfo (chrome) {
-  return chrome.evaluate(() => {
+  return evaluateRetrying(chrome, () => {
     const active = document.querySelector('.tab.active')
     return {
       // The tab strip's own id for the active tab (dataset['id'] in
@@ -103,7 +188,7 @@ async function activeTabInfo (chrome) {
 
 /** Tab ids currently rendered in the tab strip, in strip order. */
 async function tabIds (chrome) {
-  return chrome.evaluate(() =>
+  return evaluateRetrying(chrome, () =>
     Array.from(document.querySelectorAll('.tab')).map((el) => el.dataset.id)
   )
 }
@@ -117,8 +202,7 @@ async function tabIds (chrome) {
  * page-title-updated, the nav-button flags on whichever push lands last
  * (src/main/tabs.ts wires five separate emitState() triggers) -- so waiting
  * for one field and then reading another is a race that fails intermittently
- * and reads like a product bug. That is not hypothetical: an earlier draft of
- * this file did exactly that and a title assertion failed intermittently.
+ * and reads like a product bug.
  */
 async function waitForTab (chrome, expected) {
   let info
@@ -129,50 +213,6 @@ async function waitForTab (chrome, expected) {
   return { ok, info }
 }
 
-/**
- * page.evaluate(), retrying while the page's execution context is being torn
- * down.
- *
- * A navigation commit destroys the old context, and a read that lands inside
- * that window throws "Execution context was destroyed". That is a harness
- * race, not a product fact, and it must never be reported as one — before this
- * existed it surfaced as the whole run failing with a stack trace, roughly one
- * run in three. Only that specific class is retried; every other error still
- * propagates.
- */
-async function evaluateRetrying (page, fn, timeoutMs = WAIT_TIMEOUT_MS) {
-  const TRANSIENT = /Execution context was destroyed|frame was detached|Target closed|Target page.*closed/i
-  const deadline = Date.now() + timeoutMs
-  for (;;) {
-    try {
-      return await page.evaluate(fn)
-    } catch (e) {
-      if (Date.now() >= deadline || !TRANSIENT.test(String(e))) throw e
-      await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS))
-    }
-  }
-}
-
-/**
- * The tab's OWN location and title, waited until it settles on `expectedHref`.
- * Returns the last successful read either way, so a check that fails still has
- * a real value to report rather than a race to explain.
- */
-async function readTabDocument (app, chrome, expectedHref) {
-  let seen
-  await waitFor(async () => {
-    const view = findTabView(app, chrome)
-    if (view === undefined) return false
-    try {
-      seen = await evaluateRetrying(view, () => ({ href: location.href, title: document.title }))
-    } catch {
-      return false
-    }
-    return seen.href === expectedHref
-  })
-  return seen
-}
-
 /** Compact "wanted X, saw Y" for a failed check's detail field. */
 function mismatch (expected, info) {
   const seen = Object.fromEntries(Object.keys(expected).map((field) => [field, info?.[field]]))
@@ -180,18 +220,24 @@ function mismatch (expected, info) {
 }
 
 async function main () {
-  const result = { checks: [], leakChecks: [] }
+  const result = { checks: [], leakChecks: [], skipped: [] }
   const failures = []
   const check = (name, cond, detail) => {
     result.checks.push(detail === undefined ? { name, pass: cond } : { name, pass: cond, detail })
     if (!cond) failures.push(detail === undefined ? name : `${name} -- ${detail}`)
   }
+  /** Records that a whole group of checks did not run, so a consumer can tell
+   * a partial run from a full one instead of inferring it from a count. */
+  const skip = (section, reason) => {
+    result.skipped.push({ section, reason })
+    check(`section "${section}" could run`, false, reason)
+  }
 
   /**
    * A click that records a named failure instead of throwing when its selector
    * cannot match. Some selectors here are legitimately absent when something
-   * upstream regressed (an empty tab strip has no `.tab.active .close`), and
-   * that is exactly when this file's JSON result matters most.
+   * upstream regressed (an empty tab strip has no `.close` button), and that
+   * is exactly when this file's JSON result matters most.
    */
   const clickChecked = async (page, selector, name) => {
     try {
@@ -204,23 +250,30 @@ async function main () {
   }
 
   const { server, urlFor } = await startFixtureServer()
-  const app = await launchElectron({
-    appPath: '.',
-    // Blackhole the search host at the resolver. The search check near the
-    // bottom asserts the TARGET url, which Chromium commits whether or not the
-    // load succeeds -- so this costs no coverage and buys a run that cannot
-    // reach the network, cannot leak the query, and cannot be turned red by a
-    // captive portal. Read that section before removing this.
-    args: [`--host-resolver-rules=MAP ${SEARCH_HOST} ~NOTFOUND`]
-  })
+  const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
 
   try {
-    await new Promise((r) => setTimeout(r, 1000))
+    const bothWindows = await waitFor(() => app.windows().length === 2)
+    check(
+      'exactly two windows on launch (chrome + one default tab)',
+      bothWindows,
+      bothWindows ? undefined : `saw ${app.windows().length} window(s)`
+    )
 
-    check('exactly two windows on launch (chrome + one default tab)', app.windows().length === 2)
+    const chrome = findChrome(app)
 
-    const leakCheck = async (label) => {
-      for (const win of app.windows()) {
+    /** Asserts the leak checks covered every window, not just whichever
+     * happened to have attached -- otherwise a slow tab attach silently
+     * shrinks the only security-relevant coverage in this file to nothing,
+     * and still reports green. */
+    const leakCheck = async (label, expectedWindows) => {
+      const windows = app.windows()
+      check(
+        `leak checks cover all ${expectedWindows} windows (${label})`,
+        windows.length === expectedWindows,
+        windows.length === expectedWindows ? undefined : `saw ${windows.length}`
+      )
+      for (const win of windows) {
         const leak = await evaluateRetrying(win, () => ({
           url: location.href,
           leakedRequire: typeof globalThis.require,
@@ -231,16 +284,21 @@ async function main () {
         check(`no process leak in ${leak.url} (${label})`, leak.leakedProcess === 'undefined')
       }
     }
-    await leakCheck('on launch')
-
-    const chrome = findChrome(app)
+    await leakCheck('on launch', 2)
 
     /** Types into the address bar and presses Enter, then waits for the shell
-     * to report every field the caller is about to assert. */
+     * to report every field the caller is about to assert. The typing itself
+     * is error-trapped so a regression in `#address` is a named failure rather
+     * than an abort. */
     const navigateTo = async (input, expected) => {
-      await chrome.click('#address')
-      await chrome.fill('#address', input)
-      await chrome.press('#address', 'Enter')
+      try {
+        await chrome.click('#address')
+        await chrome.fill('#address', input)
+        await chrome.press('#address', 'Enter')
+      } catch (e) {
+        check(`address bar accepts typing (${input.slice(0, 40)})`, false, String(e).split('\n')[0])
+        return { ok: false, info: undefined }
+      }
       return waitForTab(chrome, expected)
     }
 
@@ -283,15 +341,15 @@ async function main () {
     }, { w: targetWidth, h: targetHeight })
 
     const resized = await waitFor(async () =>
-      (await chrome.evaluate(() => window.innerWidth)) === targetWidth
+      (await evaluateRetrying(chrome, () => window.innerWidth)) === targetWidth
     )
-    const chromeViewport = await chrome.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }))
+    const chromeViewport = await evaluateRetrying(chrome, () => ({ w: window.innerWidth, h: window.innerHeight }))
     check(
       `chrome view tracks resize (width ${chromeViewport.w} === ${targetWidth})`,
       resized && chromeViewport.w === targetWidth
     )
 
-    const tabView = findTabView(app, chrome)
+    const [tabView] = tabViews(app, chrome)
     if (tabView === undefined) {
       check('a tab view exists to check resize on', false)
     } else {
@@ -325,10 +383,7 @@ async function main () {
     check('opening a new tab makes two tabs', twoTabs)
 
     if (!twoTabs) {
-      // Everything below drives a two-tab strip. Running it anyway would spend
-      // the click ceiling on each selector in turn and report a cascade of
-      // failures that all restate this one.
-      check('the two-tab and last-tab-close checks could run', false, 'the tab strip never reached two tabs')
+      skip('two tabs + last-tab close', 'the tab strip never reached two tabs')
     } else {
       const [tab1Id, tab2Id] = await tabIds(chrome)
 
@@ -394,8 +449,8 @@ async function main () {
       )
 
       // Tabs created after launch go through the same createTab() path, but
-      // nothing had re-checked the privilege boundary on one. Cheap to redo.
-      await leakCheck('with a second tab open')
+      // nothing had re-checked the privilege boundary on one.
+      await leakCheck('with a second tab open', 3)
 
       // ---- Closing the last tab ------------------------------------------
       // OPEN QUESTION A16 (docs/open-questions.md): what closing the last tab
@@ -438,20 +493,33 @@ async function main () {
         mainProcessError
       )
 
-      // Stated as a RATIO, not a count: every open window must be accounted
-      // for by the tab strip (one chrome view + one view per tab). That is the
-      // actual no-orphan invariant, and unlike `length === 1` it holds however
-      // A16 resolves -- an auto-opened replacement tab is accounted for, a
-      // leaked WebContentsView is not.
-      check(
-        'closing the last tab leaves no stray/orphaned window behind',
-        await waitFor(async () => app.windows().length === (await tabIds(chrome)).length + 1)
-      )
-
+      // The strip settling is the observable consequence of the close, so it
+      // is established FIRST -- it is what makes the orphan read below a read
+      // of the post-close state rather than of the pre-close one.
       const emptyStrip = await waitFor(async () => (await tabIds(chrome)).length === 0)
       check(
         'closing the last tab clears the tab strip (CURRENT BEHAVIOUR, pending A16 -- not a spec)',
         emptyStrip
+      )
+
+      // Stated as a RATIO -- every open window accounted for by the tab strip
+      // (one chrome view + one view per tab) -- so it holds however A16
+      // resolves: an auto-opened replacement tab is accounted for, a leaked
+      // WebContentsView is not.
+      //
+      // Read ONCE after settling, never polled. `windows === tabs + 1` was
+      // ALREADY true before the close (2 windows, 1 tab), so a poll could
+      // return without ever observing the close -- and did: a leaked view plus
+      // a slightly slower repaint passed this check. Rule 2 in the header.
+      await delay(ABSENCE_SETTLE_MS)
+      const windowsNow = app.windows().length
+      const tabsNow = (await tabIds(chrome)).length
+      check(
+        'closing the last tab leaves no stray/orphaned window behind',
+        windowsNow === tabsNow + 1,
+        windowsNow === tabsNow + 1
+          ? undefined
+          : `${windowsNow} window(s) for ${tabsNow} tab(s), expected ${tabsNow + 1}`
       )
 
       const wantNoNav = { backDisabled: true, forwardDisabled: true }
@@ -466,13 +534,18 @@ async function main () {
       // relative to whatever is on screen, for the same reason as above.
       const tabsBeforeRecovery = (await tabIds(chrome)).length
       await clickChecked(chrome, '#new-tab', 'the new-tab button is clickable after the last tab closed')
-      check(
-        'the shell recovers: a new tab opens fine after the last one closed',
-        await waitFor(async () => (await tabIds(chrome)).length === tabsBeforeRecovery + 1)
-      )
+      const recovered = await waitFor(async () => (await tabIds(chrome)).length === tabsBeforeRecovery + 1)
+      check('the shell recovers: a new tab opens fine after the last one closed', recovered)
+
+      await delay(ABSENCE_SETTLE_MS)
+      const windowsAfter = app.windows().length
+      const tabsAfter = (await tabIds(chrome)).length
       check(
         'every window is still accounted for by the tab strip after recovering',
-        await waitFor(async () => app.windows().length === (await tabIds(chrome)).length + 1)
+        windowsAfter === tabsAfter + 1,
+        windowsAfter === tabsAfter + 1
+          ? undefined
+          : `${windowsAfter} window(s) for ${tabsAfter} tab(s), expected ${tabsAfter + 1}`
       )
     }
 
@@ -489,17 +562,13 @@ async function main () {
     // webContents.getURL(), and Chromium commits the REQUESTED url even when
     // it serves an error page instead. An earlier version of this check
     // claimed to exercise a real network round trip and forbade "mocking" it;
-    // that claim was simply false -- it passed identically with DNS
-    // blackholed, which is how the discrepancy was found.
-    //
-    // So the host is now blackholed on purpose (see the launch args above).
-    // Identical coverage, nothing leaves the machine, and a captive portal or
-    // a DuckDuckGo redirect can no longer turn this red for a reason that has
-    // nothing to do with Orivon. Making it a genuine round-trip test would
-    // mean asserting the LOADED PAGE, not the address bar -- that is a
-    // different check, and it would forfeit running offline and in CI.
+    // that claim was false -- it passed identically with DNS blackholed, which
+    // is how the discrepancy was found. Making it a genuine round-trip test
+    // would mean asserting the LOADED PAGE, and would forfeit running offline.
     const SEARCH_QUERY = 'orivon browser smoke check'
-    const expectedSearchUrl = `https://${SEARCH_HOST}/?q=${encodeURIComponent(SEARCH_QUERY).replace(/%20/g, '+')}`
+    // Built the same way production builds it (omnibox.ts), rather than
+    // re-implementing the encoding -- hand-rolled variants diverge on !'()*~
+    const expectedSearchUrl = `https://${SEARCH_HOST}/?${new URLSearchParams({ q: SEARCH_QUERY }).toString()}`
 
     const wantSearch = { address: expectedSearchUrl }
     const search = await navigateTo(SEARCH_QUERY, wantSearch)
@@ -511,55 +580,70 @@ async function main () {
       searchUrl = undefined
     }
 
-    checkTab(
-      'a plain-text address-bar entry resolves to a DuckDuckGo search, not a URL',
-      wantSearch,
-      search
-    )
+    checkTab('a plain-text address-bar entry resolves to a DuckDuckGo search, not a URL', wantSearch, search)
+    const q = searchUrl?.searchParams.get('q')
     check(
       'the DuckDuckGo query carries the exact typed text',
-      searchUrl?.searchParams.get('q') === SEARCH_QUERY,
-      searchUrl?.searchParams.get('q') === SEARCH_QUERY
-        ? undefined
-        : `q read ${JSON.stringify(searchUrl?.searchParams.get('q') ?? null)}`
+      q === SEARCH_QUERY,
+      q === SEARCH_QUERY ? undefined : `q read ${JSON.stringify(q ?? null)}`
     )
 
     // ---- Dangerous schemes typed into the address bar are refused --------
     // The address bar is chrome-privileged input: a scheme the shell will
     // navigate to here is a sandbox escape or a local-file disclosure one
     // keystroke away (src/main/omnibox.ts's own header; security-model.md
-    // T1/T10). parseOmniboxInput is unit tested as a pure function, but until
-    // now nothing exercised the WIRING -- renderer -> IPC ->
+    // T1/T10). parseOmniboxInput is unit tested as a pure function, but
+    // nothing exercised the WIRING -- renderer -> IPC ->
     // TabManager.resolveTarget -> loadURL. That gap is the dangerous one: a
-    // future change adding scheme pass-through in tabs.ts (T23's magnet:
-    // handling lands in exactly this code path) would keep every unit test
-    // green while re-opening the hole.
+    // change adding scheme pass-through in tabs.ts (T23's magnet: handling
+    // lands in exactly this code path) keeps every unit test green while
+    // re-opening the hole. Confirmed by mutation.
     //
-    // Rejected input falls back to NEW_TAB_URL, which renderToolbar renders as
-    // an empty address bar. Each case asserts BOTH the shell's view and the
-    // tab's own location, because a check that trusted the toolbar alone would
-    // be blind to T25 -- and, for javascript:, the toolbar and the location
-    // both stay put whether or not the script ran, so those cases assert that
-    // the payload did not execute.
+    // TWO THINGS MAKE THIS CHECK REAL, and both were absent from the first
+    // version, which passed while /etc/passwd rendered in the tab:
     //
-    // `about:` is deliberately absent: its rejection and its fallback are both
-    // about:blank, so the two are indistinguishable from outside the process.
-    // It is covered in src/main/omnibox.test.ts and nowhere else, on purpose.
+    //   1. The tab is PARKED on a real fixture page before each hostile input,
+    //      so the refusal is an observable TRANSITION (fixture -> about:blank)
+    //      rather than a state the tab was already in. Rule 2 in the header.
+    //   2. After the transition, it SETTLES and reads once, because a refusal
+    //      is the absence of a navigation and absence cannot be polled for.
+    //      A pass-through deferred by 300ms slipped past the version without
+    //      this. Rule 3 in the header.
+    //
+    // Each case asserts BOTH the shell's view and the tab's own location -- a
+    // check that trusted the toolbar alone would be blind to T25 -- and, where
+    // a payload could execute without moving `location`, that it did not.
     const HOSTILE_INPUTS = [
       { input: "javascript:document.title='PWNED-JS'", marker: 'PWNED-JS' },
       { input: 'data:text/html,<title>PWNED-DATA</title>', marker: 'PWNED-DATA' },
-      { input: 'file:///etc/passwd', marker: undefined }
+      { input: 'file:///etc/passwd', marker: undefined },
+      // about:blank would be indistinguishable from the fallback, but
+      // about:version is not: rejected it lands on about:blank, passed through
+      // it commits chrome://version.
+      { input: 'about:version', marker: undefined }
     ]
 
     for (const { input, marker } of HOSTILE_INPUTS) {
       const scheme = input.split(':')[0]
+
+      const parked = await navigateTo(urlFor('/a'), wantA)
+      checkTab(`the tab is parked on a real page before typing ${scheme}:`, wantA, parked)
+
+      // Grab the view WHILE it is identifiable by the parked URL. The page
+      // object stays valid across the navigation that follows, so the read
+      // below is guaranteed to be of the tab that was typed into.
+      const view = findViewShowing(app, chrome, urlFor('/a'))
+      check(`the parked tab view is identifiable before typing ${scheme}:`, view !== undefined)
+
       const refused = await navigateTo(input, { address: '' })
-      const seen = await readTabDocument(app, chrome, 'about:blank')
+      await delay(ABSENCE_SETTLE_MS)
+      const seen = await readTabDocument(view)
+      const landedSafe = refused.ok && seen?.href === 'about:blank'
 
       check(
         `the address bar refuses ${scheme}: and falls back to the new-tab page`,
-        refused.ok && seen?.href === 'about:blank',
-        refused.ok && seen?.href === 'about:blank'
+        landedSafe,
+        landedSafe
           ? undefined
           : `address bar read ${JSON.stringify(refused.info?.address)}, tab location ${JSON.stringify(seen?.href)}`
       )
@@ -576,18 +660,25 @@ async function main () {
     // throw is exactly when they are most useful, so it becomes a check rather
     // than replacing the output with a stack trace.
     check('the smoke script ran to completion without throwing', false, String(e?.stack ?? e))
-  } finally {
-    await app.close()
-    server.close()
   }
 
+  // REPORT BEFORE TEARDOWN. app.close() can throw -- most plausibly when the
+  // app has already died, which is the scenario the last-tab checks exercise
+  // -- and a throw there would discard everything collected above.
   console.log(JSON.stringify(result, null, 2))
-
   if (failures.length > 0) {
     console.error('\nSmoke check FAILED:')
     for (const f of failures) console.error(`  - ${f}`)
-    process.exit(1)
   }
+
+  try {
+    await app.close()
+  } catch (e) {
+    console.error('teardown: app.close() failed (results above still stand):', String(e).split('\n')[0])
+  }
+  server.close()
+
+  if (failures.length > 0) process.exit(1)
   console.log('\nSmoke check passed.')
 }
 

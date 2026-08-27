@@ -42,12 +42,18 @@ Three properties it is required to keep:
 - **It reports, it does not just exit.** It prints a JSON result and a failure list. **Read
   those, not the exit code alone.** A thrown error is recorded as a failed check rather than
   replacing the output, and every click is bounded, so a broken run still tells you what broke.
-- **It is hermetic.** Every navigation resolves to `127.0.0.1`. The one external hostname it
-  types (`duckduckgo.com`, for the omnibox search branch) is blackholed at the resolver, so it
-  passes on an air-gapped machine and nothing leaves the box. Verified 2026-08-27 by running the
-  whole suite with `--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1`: 41/41.
-- **It waits for conditions, never for the clock.** Fixed sleeps make a slow machine report a
-  harness race as a product bug.
+- **It is hermetic, structurally.** It launches Electron with
+  `--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1` — nothing but loopback resolves, so
+  it passes air-gapped and a change that made it depend on the network fails loudly instead of
+  quietly phoning out. Deliberately a whole-world blackhole rather than a per-host one: a
+  per-host rule only protects the host somebody thought of.
+- **It waits for conditions, never for the clock — except when asserting an absence.** Fixed
+  sleeps make a slow machine report a harness race as a product bug. But `waitFor` returns the
+  instant its predicate holds, so **it must never be pointed at a condition the pre-action state
+  already satisfies** — that is a no-op that reports green. Two checks were written that way and
+  both passed while the exact regression they existed to catch was present. Either establish an
+  observable *transition* first, or settle and read once. And a refusal — a navigation that must
+  *not* happen — cannot be polled for at all; only waited out.
 
 It is **not** an end-to-end test of the capability stack — that is the separate one described in
 §The end-to-end test, and it does not exist yet.
