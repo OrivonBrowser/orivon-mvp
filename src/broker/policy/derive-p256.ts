@@ -5,8 +5,9 @@
 // derive.ts; read that file's header before touching anything below.
 
 import { concat, SCALAR_BYTES } from './derive-encoding.js'
-import { derivePrivateScalar, fail, isSupportedCurve, subtleCrypto, viaWebCrypto } from './derive.js'
+import { derivePrivateScalar, isSupportedCurve, subtleCrypto, viaWebCrypto } from './derive.js'
 import type { DeriveRequest } from './derive.js'
+import { fail } from './errors.js'
 
 /**
  * The public key for a derived scalar, as an uncompressed SEC1 point

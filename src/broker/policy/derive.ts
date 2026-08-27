@@ -18,8 +18,8 @@
 // deliberately -- scripts/check-vectors.mjs text-greps this file by path for
 // it.
 
-import type { OrivonError, OrivonErrorCode } from '../../contracts/index.js'
 import { bigIntToScalarBytes, bytesToBigInt, encodeDeriveInfo } from './derive-encoding.js'
+import { fail } from './errors.js'
 
 /**
  * The two labels are different IN KIND, and conflating them is a recorded past
@@ -180,19 +180,6 @@ export function subtleCrypto (): SubtleCrypto {
     throw fail('internal', 'WebCrypto is unavailable (crypto.subtle is undefined)')
   }
   return subtle
-}
-
-/** Exported for ./derive-p256.ts, which needs the same OrivonError boundary. */
-export function fail (code: OrivonErrorCode, message: string): OrivonError {
-  // OrivonError is an interface, not a class, because src/contracts/ emits no
-  // runtime code (see contracts/errors.ts). The broker builds the concrete
-  // object; `code` is what consumers switch on.
-  //
-  // No `platformCode`: errors.ts describes it as the underlying engine's own
-  // detail (a Node errno, later a WASI code). Nothing underneath failed here --
-  // these are policy-layer rejections with no engine error to report -- and
-  // inventing one would make an app's fallback logic branch on fiction.
-  return Object.assign(new Error(message), { code })
 }
 
 /**

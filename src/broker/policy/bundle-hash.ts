@@ -24,9 +24,9 @@
 // collision key) and this file (the tree/root construction over a validated
 // entry set).
 
-import type { OrivonError, OrivonErrorCode } from '../../contracts/index.js'
 import { MANIFEST_PATH, MAX_BUNDLE_ENTRIES, collisionKey, describePath, isValidCanonicalPath } from './canonical-path.js'
 import type { PathLeaf } from './canonical-path.js'
+import { fail } from './errors.js'
 
 /**
  * One leaf: an asset's canonical path (see canonicalAssetPath) and its raw,
@@ -59,13 +59,6 @@ export const BUNDLE_HASH_VERSION = 'orivon-bundle-v1'
  */
 export const MAX_ASSET_BYTES = 16 * 1024 * 1024
 export const MAX_BUNDLE_BYTES = 64 * 1024 * 1024
-
-function fail (code: OrivonErrorCode, message: string): OrivonError {
-  // OrivonError is an interface, not a class -- src/contracts/ emits no
-  // runtime code (contracts/errors.ts). The broker builds the concrete
-  // object; callers only ever switch on `code`.
-  return Object.assign(new Error(message), { code })
-}
 
 /**
  * Ascending unsigned UTF-8 byte order. Deliberately NOT

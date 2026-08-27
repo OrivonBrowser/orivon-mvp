@@ -3,25 +3,13 @@
 // docs/development/code-guidelines.md). Frozen by the same golden vectors as
 // derive.ts -- see that file's header before touching anything below.
 
-import type { OrivonError, OrivonErrorCode } from '../../contracts/index.js'
+import { fail } from './errors.js'
 
 /** Shared because they are stateless; allocating one per field was pure waste. */
 const UTF8 = new TextEncoder()
 const UTF8_DECODER = new TextDecoder('utf-8', { fatal: false })
 
 export const SCALAR_BYTES = 32
-
-function fail (code: OrivonErrorCode, message: string): OrivonError {
-  // OrivonError is an interface, not a class, because src/contracts/ emits no
-  // runtime code (see contracts/errors.ts). The broker builds the concrete
-  // object; `code` is what consumers switch on.
-  //
-  // No `platformCode`: errors.ts describes it as the underlying engine's own
-  // detail (a Node errno, later a WASI code). Nothing underneath failed here --
-  // these are policy-layer rejections with no engine error to report -- and
-  // inventing one would make an app's fallback logic branch on fiction.
-  return Object.assign(new Error(message), { code })
-}
 
 /**
  * LENGTH PREFIXING IS NOT DECORATION. Concatenating the fields directly makes

@@ -13,7 +13,6 @@
 // Array.isArray check on every field, because a crash inside a security
 // decision is itself the failure).
 
-import type { OrivonError, OrivonErrorCode } from '../../contracts/index.js'
 import {
   collisionKey,
   isValidCanonicalPath,
@@ -21,6 +20,7 @@ import {
   MAX_BUNDLE_ENTRIES,
   type PathLeaf
 } from './canonical-path.js'
+import { fail } from './errors.js'
 import { originFromUrl } from './origin.js'
 
 /**
@@ -42,10 +42,6 @@ function isCanonicalOrigin (origin: string): boolean {
 export const PIN_SCHEMA_VERSION = 1
 
 const BUNDLE_HASH_PATTERN = /^sha256:[0-9a-f]{64}$/
-
-function fail (code: OrivonErrorCode, message: string): OrivonError {
-  return Object.assign(new Error(message), { code })
-}
 
 /** One entry in the pinned asset set. Same shape as bundle-hash.ts's PathLeaf. */
 export type PinnedAsset = PathLeaf
