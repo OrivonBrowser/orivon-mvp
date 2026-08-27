@@ -21,7 +21,8 @@
  * surface and no stream imports them.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs'
-import { join, relative, sep } from 'node:path'
+import { join } from 'node:path'
+import { isInvokedDirectly, relativeToRoot } from './cli.mjs'
 
 /** Files that must exist. Order is the reading order, not alphabetical. */
 export const REQUIRED_CONTRACT_FILES = [
@@ -95,7 +96,7 @@ export function checkContractsArePure (root) {
   const offenders = present
     .filter((name) => name.endsWith('.ts') && !name.endsWith('.test.ts'))
     .filter((name) => referencesANonSibling(stripComments(readSafe(join(dir, name)))))
-    .map((name) => relative(root, join(dir, name)).split(sep).join('/'))
+    .map((name) => relativeToRoot(root, join(dir, name)))
     .sort()
 
   return { ok: offenders.length === 0 && missing.length === 0, offenders, missing }
@@ -134,10 +135,7 @@ function stripComments (source) {
   return source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ')
 }
 
-const invokedDirectly = process.argv[1] !== undefined &&
-  import.meta.url === new URL(`file://${process.argv[1]}`).href
-
-if (invokedDirectly) {
+if (isInvokedDirectly(import.meta.url)) {
   const { ok, offenders, missing } = checkContractsArePure(process.cwd())
 
   if (!ok) {
