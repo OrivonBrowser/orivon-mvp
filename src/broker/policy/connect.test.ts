@@ -29,20 +29,45 @@ import type { Capabilities, Manifest, Pattern } from '../../contracts/index.js'
 // `*.example.com`, attaching a reason to the denial, and resolving twice. All
 // nine failed here, most of them loudly.
 //
-// ONE MUTATION SURVIVES, and it is recorded rather than hidden: deleting the
-// `classifyAddress(address) === 'unparseable'` guard in checkConnect changes
-// no result. Every branch beneath it already rejects an unparseable answer --
-// isPublicUnicast is false for anything it cannot parse (./address.ts), and
-// the literal branch compares strings, so a parseable pattern host can never
-// equal an unparseable address.
+// WHAT WAS ACTUALLY MEASURED, stated as such. Thirteen hand-written mutants
+// were run against this file and twelve failed. That is a fact about those
+// thirteen, and an earlier version of this comment generalised it into a claim
+// about the suite -- "one mutation survives" -- which was false.
 //
-// That is an argument, so it was checked rather than trusted: both versions
-// were run over a grid of 187,109 (pattern set x host x resolver answer x
-// port) combinations, weighted towards answers address.ts cannot parse, and
-// the two decision streams came back byte-identical. No input distinguishes
-// the guard, so no test here can. It is kept as defence in depth for the day
-// ./address.ts stops failing closed, and named here because claiming the suite
-// covers it would be the more comfortable lie.
+// A review on 2026-08-27 found FIVE more surviving mutants, every one of them
+// behaviour-changing, all in guards this file did not exercise:
+//
+//   1. host and port taken from DIFFERENT patterns  -> grants the cross
+//      product of a multi-pattern manifest. The worst of the five.
+//   2. the unbracketed-IPv6 reject in parsePattern  -> `::1:443` grants
+//      loopback.
+//   3. the `host.includes('*')` sub-glob reject     -> `*.example.com`
+//      approximated.
+//   4. the non-string answer guard                  -> a resolver answering
+//      [42] throws instead of denying.
+//   5. the MAX_HOST_LENGTH bound                    -> the row that tested it
+//      passed a resolver that answered [], so the emptiness guard denied
+//      first and the bound was never reached.
+//
+// All five are now covered, each named in the test that kills it. The lesson
+// is kept rather than tidied away: a table that reuses one fixed request
+// cannot test a guard whose failure mode is "parses into a valid pattern
+// pointing SOMEWHERE ELSE", because the fixed request does not match either
+// way. Rows 2 and 3 above read as coverage for two years and were not.
+//
+// NO MUTATION IS CURRENTLY KNOWN TO SURVIVE. The previous version of this file
+// predicted one -- deleting the canonicality guard on resolver answers -- on
+// the argument that every branch beneath it already rejected an unparseable
+// answer. That argument was true of the OLD guard, which asked only whether
+// ./address.ts could parse the string. The guard is now `isCanonicalLiteral`,
+// which is strictly narrower: `0x08080808` parses fine and is not canonical.
+// So the line is load-bearing after all, and deleting it fails three tests.
+//
+// Stated as a measurement, not a guarantee. Sixteen mutants have been written
+// and run against this file -- the original thirteen, the five a review found
+// on 2026-08-27, and one per guard added that day -- and all of them fail.
+// That is a claim about sixteen mutants and nothing more; the next reader to
+// think of a seventeenth should write it rather than trust this paragraph.
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -453,21 +478,42 @@ describe('absence means absence', () => {
 // 6. The denial tells the app nothing.
 // ---------------------------------------------------------------------------
 
-describe('the denial is uniform', () => {
-  it('carries a code and nothing else', async () => {
+describe('the denial is uniform where uniformity has to hold', () => {
+  // WHAT CHANGED, 2026-08-27. This block used to assert that every denial was
+  // one byte-identical object carrying nothing but a code. That property was
+  // real, but the comment justifying it also told the broker its denial log
+  // "has everything it needs -- classifyAddress names the range", and that was
+  // false: checkConnect owns the resolution, so the broker holds no addresses
+  // and would have to resolve a SECOND time to log anything, which the header
+  // forbids.
+  //
+  // So the reason moved into the result, marked local-log-only, mirroring
+  // ./paths.ts which faced the same question. The probe-resistance property is
+  // unchanged and still asserted -- it is a statement about what crosses IPC,
+  // and that is what `appFacing` models here.
+
+  /** What the broker is required to send an app: the code, and nothing else. */
+  function appFacing (decision: ConnectDecision): unknown {
+    if (decision.allowed) throw new Error('expected a denial')
+    return { code: decision.code }
+  }
+
+  it('carries a code, a local-log reason, and nothing an app could read', async () => {
     const decision = await checkConnect(
       manifestWith(['*:*']),
       'evil.example',
       443,
       resolverFor({ 'evil.example': ['127.0.0.1'] })
     )
-    expect(decision).toStrictEqual({ allowed: false, code: 'denied' })
-    expect(Object.keys(decision).sort()).toStrictEqual(['allowed', 'code'])
+    if (decision.allowed) throw new Error('expected a denial')
+    expect(decision.code).toBe('denied')
+    expect(decision.reason).toBe('no-pattern-match')
+    // Never a platformCode: contracts/errors.ts forbids one on 'denied'.
     expect('platformCode' in decision).toBe(false)
-    expect('reason' in decision).toBe(false)
+    expect(Object.keys(decision).sort()).toStrictEqual(['allowed', 'checked', 'code', 'reason'])
   })
 
-  it('is byte-identical whatever the reason was', async () => {
+  it('is byte-identical across every reason once flattened for the app', async () => {
     // The probe-resistance property, asserted rather than asserted-about: an
     // app that varies host, port and address class must not be able to tell
     // the results apart, or it maps the user's LAN without completing a single
@@ -484,8 +530,37 @@ describe('the denial is uniform', () => {
 
     for (const result of results) {
       expect(result.allowed).toBe(false)
-      expect(result).toStrictEqual(results[0])
+      expect(appFacing(result)).toStrictEqual({ code: 'denied' })
     }
+  })
+
+  it('every reason is one of the closed union, and they are distinguishable', async () => {
+    // The union has to be exhaustive for the broker's logging switch, and the
+    // reasons have to actually differ -- a union whose members all read
+    // 'no-pattern-match' would be the old design wearing a new type.
+    const seen = new Set<string>()
+    const cases: Array<[Manifest, string, number, Resolver]> = [
+      [manifestOf({}), PUBLIC_A, 443, noResolution],
+      [manifestWith(Array.from({ length: 300 }, (_, i) => `h${i}.example:443`)), PUBLIC_A, 443, noResolution],
+      [manifestWith(['*:*']), PUBLIC_A, 0, noResolution],
+      [manifestWith(['*:*']), '', 443, noResolution],
+      [manifestWith(['*:*']), '2130706433', 443, noResolution],
+      [manifestWith(['api.example.com:443']), 'other.example', 22, noResolution],
+      [manifestWith(['*:*']), 'empty.example', 443, resolverFor({ 'empty.example': [] })],
+      [manifestWith(['*:*']), 'many.example', 443, resolverFor({ 'many.example': Array.from({ length: 100 }, (_, i) => `93.184.0.${i}`) })],
+      [manifestWith(['*:*']), 'odd.example', 443, resolverFor({ 'odd.example': ['localhost'] })],
+      [manifestWith(['*:*']), 'priv.example', 443, resolverFor({ 'priv.example': ['127.0.0.1'] })]
+    ]
+    for (const [manifest, host, port, resolve] of cases) {
+      const decision = await checkConnect(manifest, host, port, resolve)
+      if (decision.allowed) throw new Error(`expected a denial for ${host}`)
+      seen.add(decision.reason)
+    }
+    expect([...seen].sort()).toStrictEqual([
+      'bad-answer', 'bad-host', 'bad-port', 'empty-resolution', 'no-pattern-match',
+      'no-pattern-possible', 'non-canonical-host', 'not-declared', 'too-many-answers',
+      'too-many-patterns'
+    ])
   })
 })
 
@@ -609,6 +684,34 @@ describe('patterns that authorise nothing', () => {
     expect(decision.allowed).toBe(false)
   })
 
+  it('MUTANT: the sub-glob reject is what denies it, not the host mismatch', async () => {
+    // The row above reuses this table's fixed request, which does not match
+    // `*.example.com` under ANY reading -- so deleting `host.includes('*')`
+    // left it passing. The request here is the literal pattern text, which is
+    // the one string a suffix-matcher and an exact-matcher disagree about.
+    const decision = await checkConnect(
+      manifestWith(['*.example.com:443']),
+      '*.example.com',
+      443,
+      resolverFor({ '*.example.com': [PUBLIC_A] })
+    )
+    expect(decision.allowed).toBe(false)
+  })
+
+  it('MUTANT: the unbracketed-IPv6 reject is what denies `::1:443`', async () => {
+    // Same defect as above. `::1:443` splits at the LAST colon into host `::1`
+    // and port `443`, and `::1` is a perfectly good address literal -- so
+    // deleting the `host.includes(':')` guard makes this pattern grant
+    // loopback. The old table never asked for `::1`, so it never noticed.
+    const decision = await checkConnect(
+      manifestWith(['::1:443']),
+      '::1',
+      443,
+      noResolution
+    )
+    expect(decision.allowed).toBe(false)
+  })
+
   it('an unreadable pattern does not poison a readable one beside it', async () => {
     const decision = await checkConnect(
       manifestWith(['*.example.com:443', '[::1:80', '*:*']),
@@ -646,11 +749,49 @@ describe('host handling', () => {
     { host: '   ', why: 'whitespace' },
     { host: 'a'.repeat(300) + '.example', why: 'past the DNS name limit' }
   ])('denies host $why', async ({ host }) => {
+    // The resolver ANSWERS, and answers publicly. The earlier version of this
+    // row passed `resolverFor({})`, which returns [] for an unknown name, so
+    // the emptiness guard denied first and MAX_HOST_LENGTH was never reached
+    // -- deleting the bound left this test passing. Found by review,
+    // 2026-08-27.
     const decision = await checkConnect(
       manifestWith(['*:*']),
       host,
       443,
-      resolverFor({})
+      async () => [PUBLIC_A]
+    )
+    expect(decision.allowed).toBe(false)
+  })
+
+  it('the host-length bound is what denies an over-long name, not the resolver', async () => {
+    const decision = await checkConnect(
+      manifestWith(['*:*']),
+      'a'.repeat(300) + '.example',
+      443,
+      async () => [PUBLIC_A]
+    )
+    if (decision.allowed) throw new Error('expected a denial')
+    expect(decision.reason).toBe('bad-host')
+  })
+
+  it.each([
+    { host: 'api.ex\u00e4mple.com', why: 'a Unicode label an app author would write' },
+    { host: 'api.ex\u212Aample.com', why: 'U+212A KELVIN SIGN -- toLowerCase folds it to k' }
+  ])('denies a non-ASCII host: $why', async ({ host }) => {
+    // Fails closed either way, but it used to fail closed SILENTLY and for the
+    // wrong reason -- ASCII-only case folding simply never matched. Now it is
+    // a deliberate reject with a reason the broker can log.
+    const decision = await checkConnect(manifestWith(['*:*']), host, 443, async () => [PUBLIC_A])
+    if (decision.allowed) throw new Error('expected a denial')
+    expect(decision.reason).toBe('bad-host')
+  })
+
+  it('denies a non-ASCII pattern rather than silently never matching it', async () => {
+    const decision = await checkConnect(
+      manifestWith(['api.ex\u00e4mple.com:443']),
+      'api.ex\u00e4mple.com',
+      443,
+      async () => [PUBLIC_A]
     )
     expect(decision.allowed).toBe(false)
   })
@@ -690,5 +831,319 @@ describe('host handling', () => {
       )
       expect(typeof decision.allowed).toBe('boolean')
     }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 11. The five mutants the suite missed until 2026-08-27, and the guards
+//     added with them. Each test names the wrong implementation it kills.
+// ---------------------------------------------------------------------------
+
+describe('host and port must come from the SAME pattern', () => {
+  it('MUTANT: denies the cross product of a two-pattern manifest', async () => {
+    // The wrong shape is `patterns.some(hostOk) && patterns.some(portOk)`. It
+    // reads identically, passed all 143 tests this suite had, and grants
+    // a.example:8080 -- a combination the user granted for neither host.
+    // The worst of the five, because a multi-pattern manifest is the normal
+    // case for any app that is not the flagship.
+    const decision = await checkConnect(
+      manifestWith(['a.example:443', 'b.example:8080']),
+      'a.example',
+      8080,
+      resolverFor({ 'a.example': [PUBLIC_A] })
+    )
+    expect(decision.allowed).toBe(false)
+  })
+
+  it('still allows each pattern on its own terms', async () => {
+    // The guard above must not cost the legitimate case: both halves of the
+    // same manifest still work at their own declared port.
+    const manifest = manifestWith(['a.example:443', 'b.example:8080'])
+    const resolve = resolverFor({ 'a.example': [PUBLIC_A], 'b.example': [PUBLIC_B] })
+    expect((await checkConnect(manifest, 'a.example', 443, resolve)).allowed).toBe(true)
+    expect((await checkConnect(manifest, 'b.example', 8080, resolve)).allowed).toBe(true)
+    expect((await checkConnect(manifest, 'b.example', 443, resolve)).allowed).toBe(false)
+  })
+
+  it('MUTANT: denies the cross product even when the pre-resolution gate passes', async () => {
+    // The row above is denied EARLY, by couldAnyPatternMatch, so on its own it
+    // cannot see the same-pattern rule at all -- the cross-product mutant
+    // survived it. This row gets past the gate: the literal pattern makes the
+    // gate say "possible" (a name may resolve to a literal, which is the
+    // nas.internal case), so the decision really is made by the loop below.
+    //
+    // The over-grant it describes is the sharp one: 8080 was granted for a
+    // LAN device only, and a.example is a public host the user granted port
+    // 443 for. Mixing them yields a public socket on a port nobody granted
+    // publicly.
+    const decision = await checkConnect(
+      manifestWith(['a.example:443', '192.168.1.50:8080']),
+      'a.example',
+      8080,
+      resolverFor({ 'a.example': [PUBLIC_A] })
+    )
+    expect(decision.allowed).toBe(false)
+  })
+
+  it('MUTANT: a port range from one pattern does not reach another pattern host', async () => {
+    const decision = await checkConnect(
+      manifestWith(['tracker.example:6881-6889', 'api.example:443']),
+      'api.example',
+      6885,
+      resolverFor({ 'api.example': [PUBLIC_A] })
+    )
+    expect(decision.allowed).toBe(false)
+  })
+})
+
+describe('a resolver answer that is not a string', () => {
+  it.each([
+    { answer: 42, why: 'a number -- and 42 has no .trim()' },
+    { answer: null, why: 'null' },
+    { answer: undefined, why: 'undefined' },
+    { answer: { toString: () => '93.184.216.34' }, why: 'an object that stringifies to a valid address' }
+  ])('MUTANT: denies rather than throwing on $why', async ({ answer }) => {
+    // Deleting the typeof guard turned this into `value.trim is not a
+    // function` -- a broker crash reachable from any origin whose nameserver
+    // an attacker controls. A throw here is not a denial; it is an outage.
+    const decision = await checkConnect(
+      manifestWith(['*:*']),
+      'odd.example',
+      443,
+      (async () => [answer]) as unknown as Resolver
+    )
+    expect(decision.allowed).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 12. Every address that leaves here is a canonical literal. This is the half
+//     of the T12 mitigation the file always claimed and did not have.
+// ---------------------------------------------------------------------------
+
+describe('the returned addresses are canonical literals', () => {
+  // net.isIP is deliberately NOT imported -- src/broker/policy/ may not touch
+  // node:net (./README.md). This is the same predicate, written out, and the
+  // point of the test is that a dialer using net.isIP will not re-resolve.
+  const CANONICAL_V4 = /^(0|[1-9][0-9]{0,2})(\.(0|[1-9][0-9]{0,2})){3}$/
+  function looksDialable (address: string): boolean {
+    // A zone id makes net.isIP return 0, and a scoped address is not
+    // internet-reachable anyway.
+    if (address.includes('%')) return false
+    if (address.includes(':')) {
+      // IPv6, optionally ending in an embedded dotted quad (`::ffff:8.8.8.8`,
+      // which net.isIP accepts as family 6 and which Node hands back for a
+      // dual-stack lookup). Lower case only: RFC 5952 presentation form.
+      const [head, ...rest] = address.split(':')
+      void head
+      const last = rest[rest.length - 1] ?? ''
+      if (last.includes('.') && !CANONICAL_V4.test(last)) return false
+      return /^[0-9a-f:.]+$/.test(address)
+    }
+    return CANONICAL_V4.test(address) && address.split('.').every((o) => Number(o) <= 255)
+  }
+
+  it.each([
+    { host: '2130706433', why: 'loopback as one decimal integer' },
+    { host: '0177.0.0.1', why: 'loopback with an octal octet' },
+    { host: '127.1', why: 'an inet_aton short form' },
+    { host: '0x7f.0.0.1', why: 'a hex octet' },
+    { host: '16843009', why: 'a PUBLIC address as an integer -- 1.1.1.1' },
+    { host: '0x08080808', why: 'a PUBLIC address in hex -- 8.8.8.8' }
+  ])('denies a non-canonical address argument: $host ($why)', async ({ host }) => {
+    // Verified before this guard existed: checkConnect returned the raw string,
+    // net.isIP rejected it, and net.connect performed a SECOND DNS lookup that
+    // landed on 127.0.0.1. The last two rows are public and would have been
+    // allowed -- so this is not only about private ranges.
+    const decision = await checkConnect(manifestWith(['*:*']), host, 443, noResolution)
+    if (decision.allowed) throw new Error(`expected a denial, got ${JSON.stringify(decision.addresses)}`)
+    expect(decision.reason).toBe('non-canonical-host')
+  })
+
+  it('a non-canonical address is NOT demoted to a hostname', async () => {
+    // The dangerous fallthrough: if `2130706433` stopped counting as an
+    // address it would be compared as a NAME against a `2130706433` pattern
+    // host and match, which is worse than the bug being fixed.
+    const decision = await checkConnect(
+      manifestWith(['2130706433:22']),
+      '2130706433',
+      22,
+      noResolution
+    )
+    expect(decision.allowed).toBe(false)
+  })
+
+  it.each([
+    '2130706433:22', '0177.0.0.1:22', '127.1:8080', '[::ffff:127.0.0.1]:22', '0x7f.0.0.1:22'
+  ])('a manifest cannot declare a private range obfuscated as %s', async (pattern) => {
+    // A literal declaration is the ONLY way a private range becomes reachable,
+    // and the whole justification is that the user was shown the literal and
+    // granted it. `2130706433:22` renders in a grant prompt as an opaque
+    // number, which defeats the consent step the rule depends on.
+    const decision = await checkConnect(manifestWith([pattern]), '127.0.0.1', 22, noResolution)
+    expect(decision.allowed).toBe(false)
+  })
+
+  it('the readable spelling of the same declaration still works', async () => {
+    // The point is legibility, not blocking loopback: an app that says what it
+    // means keeps working.
+    const decision = await checkConnect(manifestWith(['127.0.0.1:22']), '127.0.0.1', 22, noResolution)
+    expect(allowedAddresses(decision)).toStrictEqual(['127.0.0.1'])
+  })
+
+  it('denies a resolver answer in a non-canonical encoding', async () => {
+    // A real resolver returns canonical forms; this asserts the guarantee is
+    // local rather than inherited from that assumption.
+    const decision = await checkConnect(
+      manifestWith(['*:*']),
+      'odd.example',
+      443,
+      resolverFor({ 'odd.example': ['0x08080808'] })
+    )
+    if (decision.allowed) throw new Error('expected a denial')
+    expect(decision.reason).toBe('bad-answer')
+  })
+
+  it('denies an address carrying a zone id, which is never internet-reachable', async () => {
+    const decision = await checkConnect(
+      manifestWith(['*:*']),
+      'scoped.example',
+      443,
+      resolverFor({ 'scoped.example': ['2606:4700::1111%eth0'] })
+    )
+    expect(decision.allowed).toBe(false)
+  })
+
+  it('every address of every allow is dialable without a second lookup', async () => {
+    const allows = await Promise.all([
+      checkConnect(manifestWith(['*:*']), PUBLIC_A, 443, noResolution),
+      checkConnect(manifestWith(['*:*']), '[2606:4700::1111]', 443, noResolution),
+      checkConnect(manifestWith(['*:*']), 'many.example', 443,
+        resolverFor({ 'many.example': ['  93.184.216.34  ', '[2606:4700::1111]', '::ffff:8.8.8.8'] })),
+      checkConnect(manifestWith(['127.0.0.1:22']), '127.0.0.1', 22, noResolution)
+    ])
+    for (const decision of allows) {
+      for (const address of allowedAddresses(decision)) {
+        expect(looksDialable(address), `${address} would be re-resolved by a dialer`).toBe(true)
+      }
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 13. Nothing is resolved that could not possibly have been allowed.
+// ---------------------------------------------------------------------------
+
+describe('the pre-resolution gate', () => {
+  it('does not resolve when no declared port could match', async () => {
+    // Without this, a manifest declaring nothing but api.example.com:443 still
+    // makes the user's machine resolve any name the app names, at any port,
+    // for ever: unrestricted DNS reach that no manifest bounds and no grant
+    // authorises -- a covert channel and a de-anonymising one (T20).
+    const resolve = resolverFor({ 'printer.lan': ['192.168.1.9'] })
+    const decision = await checkConnect(manifestWith(['api.example.com:443']), 'printer.lan', 22, resolve)
+    expect(resolve.calls).toStrictEqual([])
+    if (decision.allowed) throw new Error('expected a denial')
+    expect(decision.reason).toBe('no-pattern-possible')
+  })
+
+  it('does not resolve a name no hostname pattern names', async () => {
+    const resolve = resolverFor({ 'gitlab.internal.corp': [PUBLIC_A] })
+    await checkConnect(manifestWith(['api.example.com:443']), 'gitlab.internal.corp', 443, resolve)
+    expect(resolve.calls).toStrictEqual([])
+  })
+
+  it('closes the name-existence oracle for requests that could never be allowed', async () => {
+    // The two outcomes an app can tell apart are "denied" and "the resolver
+    // threw". Before the gate, a manifest that could never authorise port 22
+    // still distinguished a name that exists from one that does not, which is
+    // exactly the LAN mapping the uniform denial exists to prevent.
+    const resolve: Resolver = async (host) => {
+      if (host === 'exists.lan') return ['192.168.1.7']
+      throw new Error('getaddrinfo ENOTFOUND')
+    }
+    const manifest = manifestWith(['api.example.com:443'])
+    const exists = await checkConnect(manifest, 'exists.lan', 22, resolve)
+    const absent = await checkConnect(manifest, 'absent.lan', 22, resolve)
+    expect(exists.allowed).toBe(false)
+    expect(absent.allowed).toBe(false)
+    // Same reason, and neither threw: indistinguishable to the app.
+    expect((exists as { reason: string }).reason).toBe((absent as { reason: string }).reason)
+  })
+
+  it('STILL resolves when a `*` pattern is declared, because it must', async () => {
+    // The gate answers "could this possibly be allowed", never "is it allowed".
+    // A `*` pattern makes it true for every name -- that is correct, and the
+    // real decision stays below, after the addresses are in hand.
+    const resolve = resolverFor({ 'anything.example': ['127.0.0.1'] })
+    const decision = await checkConnect(manifestWith(['*:*']), 'anything.example', 443, resolve)
+    expect(resolve.calls).toStrictEqual(['anything.example'])
+    expect(decision.allowed).toBe(false)
+  })
+
+  it('STILL resolves when an address-literal pattern is declared', async () => {
+    // nas.internal -> 192.168.1.50 is the legitimate case the literal branch
+    // exists for, and it cannot be ruled out from the name alone.
+    const resolve = resolverFor({ 'nas.internal': ['192.168.1.50'] })
+    const decision = await checkConnect(manifestWith(['192.168.1.50:5000']), 'nas.internal', 5000, resolve)
+    expect(resolve.calls).toStrictEqual(['nas.internal'])
+    expect(allowedAddresses(decision)).toStrictEqual(['192.168.1.50'])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 14. Counts are bounded, and the result is safe to hold.
+// ---------------------------------------------------------------------------
+
+describe('bounds and result hygiene', () => {
+  it('denies a manifest with more patterns than the bound', async () => {
+    // Item LENGTHS were bounded; item COUNTS were not, and the work is their
+    // product. Measured before the bound: 20000 patterns x 1000 answers took
+    // 13.9 SECONDS of synchronous CPU on the broker's UI thread (T11b).
+    const many = Array.from({ length: 257 }, (_, i) => `h${i}.example:443`)
+    const decision = await checkConnect(manifestOf({ net: { tcp: { connect: many } } }), PUBLIC_A, 443, noResolution)
+    if (decision.allowed) throw new Error('expected a denial')
+    expect(decision.reason).toBe('too-many-patterns')
+  })
+
+  it('denies a resolver answer set larger than the bound', async () => {
+    const many = Array.from({ length: 65 }, (_, i) => `93.184.0.${i}`)
+    const decision = await checkConnect(manifestWith(['*:*']), 'many.example', 443, async () => many)
+    if (decision.allowed) throw new Error('expected a denial')
+    expect(decision.reason).toBe('too-many-answers')
+  })
+
+  it('a realistic manifest and answer set stay well inside the bounds', async () => {
+    const decision = await checkConnect(
+      manifestWith(['*:6881-6889', 'tracker.example:443']),
+      'many.example',
+      6881,
+      resolverFor({ 'many.example': [PUBLIC_A, PUBLIC_B, PUBLIC_V6] })
+    )
+    expect(allowedAddresses(decision)).toStrictEqual([PUBLIC_A, PUBLIC_B, PUBLIC_V6])
+  })
+
+  it('deduplicates repeated answers, so the caller opens one socket each', async () => {
+    // The caller opens a socket per element against a documented cap
+    // (LIMITS.concurrentSockets). A resolver repeating an address should not
+    // spend three of them.
+    const decision = await checkConnect(
+      manifestWith(['*:*']),
+      'dup.example',
+      443,
+      resolverFor({ 'dup.example': [PUBLIC_A, PUBLIC_A, '  93.184.216.34  ', PUBLIC_B] })
+    )
+    expect(allowedAddresses(decision)).toStrictEqual([PUBLIC_A, PUBLIC_B])
+  })
+
+  it('the allow cannot be edited between the decision and the dial', async () => {
+    // The gap between deciding and dialling is the only place a validated set
+    // can be changed, and nothing downstream re-checks it.
+    const decision = await checkConnect(manifestWith(['*:*']), PUBLIC_A, 443, noResolution)
+    if (!decision.allowed) throw new Error('expected an allow')
+    expect(Object.isFrozen(decision)).toBe(true)
+    expect(Object.isFrozen(decision.addresses)).toBe(true)
+    expect(() => { (decision.addresses as string[]).push('127.0.0.1') }).toThrow()
+    expect(decision.addresses).toStrictEqual([PUBLIC_A])
   })
 })
