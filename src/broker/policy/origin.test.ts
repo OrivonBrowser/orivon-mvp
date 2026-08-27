@@ -200,6 +200,29 @@ describe('originFromUrl', () => {
       }
     )
   })
+
+  describe('the returned origin is bounded', () => {
+    // The origin becomes a session-partition name, a grant-ledger key and the
+    // input to the sha256 that names a storage directory (T13b). An unbounded
+    // one is a megabyte-long string threaded through all three. A real DNS
+    // name cannot exceed 253 characters, so nothing legitimate is refused.
+    it('a host longer than DNS permits is rejected, not returned', () => {
+      const host = `${'a'.repeat(63)}.`.repeat(4) + 'example'
+      expect(host.length).toBeGreaterThan(253)
+      expect(originFromUrl(`https://${host}/`)).toBeNull()
+    })
+
+    it('a host at the DNS limit is still accepted', () => {
+      // 49 labels of 4 chars ("abc.") = 196, plus "example" = 203 characters.
+      const host = 'abc.'.repeat(49) + 'example'
+      expect(host.length).toBeLessThanOrEqual(253)
+      expect(originFromUrl(`https://${host}/`)).toBe(`https://${host}`)
+    })
+
+    it('a megabyte of host is rejected without building a megabyte of key', () => {
+      expect(originFromUrl(`https://${'a'.repeat(1_000_000)}/`)).toBeNull()
+    })
+  })
 })
 
 describe('originFromSenderFrame', () => {
@@ -207,60 +230,155 @@ describe('originFromSenderFrame', () => {
   // can be influenced by the renderer, every other control in the project is
   // decoration: a compromised renderer names any origin it likes and inherits
   // that app's grants, files and identity key.
-  describe('renderer-supplied identity is never trusted', () => {
-    it('derives from url and IGNORES a conflicting origin field', () => {
-      // The single most important assertion in this file. If the
-      // implementation ever reads frame.origin, this returns the attacker's
-      // origin and the test fails.
+  //
+  // BOTH FIELDS ARE READ, and they must agree. Neither is sufficient alone,
+  // and each covers the other's blind spot:
+  //
+  //   - `url` alone cannot see an OPAQUE origin. A top-level document served
+  //     with `Content-Security-Policy: sandbox`, or a sandboxed iframe, keeps
+  //     its ordinary https URL while Chromium gives it no origin at all --
+  //     verified against real Electron 44, which reports
+  //     url 'http://127.0.0.1:PORT/sandboxed' with origin 'null'. T13b
+  //     requires opaque origins be rejected OUTRIGHT, and the URL does not
+  //     carry the fact.
+  //   - `origin` alone cannot see a borrowed origin. `blob:https://x.example/u`
+  //     serialises to the real `https://x.example`, and an about:blank child
+  //     frame inherits its parent's origin while its url is ''. Both are
+  //     origins T13b wants refused, and the origin field reports them as
+  //     perfectly ordinary.
+  //
+  // Note that NEITHER field is renderer-supplied: Electron computes both in
+  // the browser process (`WebFrameMain` -> `GetLastCommittedURL()` and the
+  // RFC 6454 serialisation of `GetLastCommittedOrigin()`). What T3 forbids
+  // trusting is an origin the renderer puts in the IPC PAYLOAD -- which this
+  // function cannot see and must never be handed.
+  describe('the url and the frame origin must agree', () => {
+    it('a frame whose origin disagrees with its url is denied', () => {
+      // Electron cannot produce this for an ordinary frame, so it means
+      // either an opaque/borrowed origin or an assumption of ours has broken.
+      // Both answers are denial.
       expect(
         originFromSenderFrame({
           url: 'https://real.example/app/index.html',
           origin: 'https://attacker.example'
         })
-      ).toBe('https://real.example')
+      ).toBeNull()
     })
 
-    it('a frame claiming a privileged origin gets its real one', () => {
-      expect(
-        originFromSenderFrame({
-          url: 'https://ad-iframe.example/tracker.html',
-          origin: 'https://torrent.orivon.app'
-        })
-      ).toBe('https://ad-iframe.example')
-    })
-
-    it('an origin field agreeing with url changes nothing -- it is still unread', () => {
+    it('an origin field agreeing with url yields that origin', () => {
       expect(
         originFromSenderFrame({ url: 'https://x.example:8443/p', origin: 'https://x.example:8443' })
       ).toBe('https://x.example:8443')
     })
 
-    it('works with no origin field at all, proving url is the sole source', () => {
-      expect(originFromSenderFrame({ url: 'https://x.example/p' })).toBe('https://x.example')
-    })
-
     it('normalises exactly as originFromUrl does -- one definition, not two', () => {
       // A second normalisation path here would be a second origin definition,
-      // and the two would drift.
-      expect(originFromSenderFrame({ url: 'https://USER:pw@X.Example.:443/P' })).toBe(
-        originFromUrl('https://x.example')
-      )
+      // and the two would drift. The origin field carries what Chromium would
+      // report for this url: lowercased, userinfo stripped, default port
+      // omitted, trailing dot KEPT.
+      expect(
+        originFromSenderFrame({ url: 'https://USER:pw@X.Example.:443/P', origin: 'https://x.example.' })
+      ).toBe(originFromUrl('https://x.example'))
+    })
+
+    it('a trailing-dot url still agrees with the browser origin that keeps the dot', () => {
+      // A14 (owner, 2026-08-26): we strip the root label, Chromium does not.
+      // The agreement check must compare CANONICAL origins, or every
+      // trailing-dot app is denied outright by our own deviation.
+      expect(
+        originFromSenderFrame({ url: 'https://x.example./p', origin: 'https://x.example.' })
+      ).toBe('https://x.example')
+    })
+  })
+
+  describe('opaque origins are rejected outright (T13b)', () => {
+    it("a sandboxed frame -- ordinary url, origin 'null' -- is denied", () => {
+      // THE assertion this file exists for. Verified against real Electron 44:
+      // a top-level document served with `CSP: sandbox allow-scripts` reports
+      // an unchanged http(s) url and the four-character origin 'null'.
+      // Deriving from the url alone hands it the embedding app's entire grant
+      // set -- tcp.connect ["*:*"], fs, and the identity key.
+      expect(
+        originFromSenderFrame({
+          url: 'https://torrent.orivon.app/widget.html',
+          origin: 'null'
+        })
+      ).toBeNull()
+    })
+
+    it('an empty origin string is denied', () => {
+      expect(
+        originFromSenderFrame({ url: 'https://x.example/p', origin: '' })
+      ).toBeNull()
+    })
+
+    it('a frame whose origin getter throws denies instead of crashing', () => {
+      const disposed: SenderFrameLike = {
+        url: 'https://x.example/p',
+        get origin (): string {
+          throw new Error('Render frame was disposed before WebFrameMain could be accessed')
+        }
+      }
+
+      expect(originFromSenderFrame(disposed)).toBeNull()
+    })
+
+    it('a non-string origin denies instead of being coerced', () => {
+      // The type is a claim about a value crossing from Electron at runtime.
+      expect(
+        originFromSenderFrame({ url: 'https://x.example/p', origin: 42 } as unknown as SenderFrameLike)
+      ).toBeNull()
+      expect(
+        originFromSenderFrame({ url: 'https://x.example/p', origin: null } as unknown as SenderFrameLike)
+      ).toBeNull()
+    })
+  })
+
+  describe('the origin field is never a FALLBACK for a missing url', () => {
+    // Guards a specific plausible edit: `url.length > 0 ? url : frame.origin`,
+    // added in good faith as defensive handling for an unbound frame. It
+    // reintroduces T3 wholesale, and before these rows the entire suite still
+    // passed with it in place.
+    it('an unbound frame carrying an attacker origin is denied, not promoted', () => {
+      expect(
+        originFromSenderFrame({ url: '', origin: 'https://attacker.example' })
+      ).toBeNull()
+    })
+
+    it('a frame with no url but a valid-looking origin is denied', () => {
+      expect(
+        originFromSenderFrame({ origin: 'https://torrent.orivon.app' } as SenderFrameLike)
+      ).toBeNull()
+    })
+
+    it('an about:blank frame does not fall back to its inherited origin', () => {
+      // The case that makes reading `origin` alone wrong: Electron reports the
+      // PARENT's origin here while the url stays about:blank.
+      expect(
+        originFromSenderFrame({ url: 'about:blank', origin: 'https://torrent.orivon.app' })
+      ).toBeNull()
     })
   })
 
   describe('unbound frames are rejected', () => {
+    // Each row carries the origin Chromium actually reports for that url, so a
+    // row proves the rejection rather than passing because a field is absent.
     it.each<[string, SenderFrameLike | null | undefined]>([
       ['null (event.senderFrame can be null)', null],
       ['undefined', undefined],
       ['no url property', {}],
-      ['never navigated -- url is empty', { url: '' }],
+      ['no origin property -- a frame that cannot state its own origin', { url: 'https://x.example/p' }],
+      ['never navigated -- url is empty', { url: '', origin: '' }],
       // about:blank and about:srcdoc INHERIT an origin on the web platform.
       // Inheriting a document origin is fine; inheriting a capability grant is
       // not, so they get no origin here (security-model.md T13b).
-      ['about:blank', { url: 'about:blank' }],
-      ['about:srcdoc', { url: 'about:srcdoc' }],
-      ['a data: frame', { url: 'data:text/html,<script>1</script>' }],
-      ['a file: frame', { url: 'file:///home/user/evil.html' }]
+      ['about:blank', { url: 'about:blank', origin: 'null' }],
+      ['about:srcdoc', { url: 'about:srcdoc', origin: 'null' }],
+      ['a data: frame', { url: 'data:text/html,<script>1</script>', origin: 'null' }],
+      ['a file: frame', { url: 'file:///home/user/evil.html', origin: 'file://' }],
+      // blob: is the case the origin field alone would wave through: Chromium
+      // reports the real origin for it.
+      ['a blob: frame', { url: 'blob:https://x.example/uuid', origin: 'https://x.example' }]
     ])('%s -> null', (_label, frame) => {
       expect(originFromSenderFrame(frame)).toBeNull()
     })

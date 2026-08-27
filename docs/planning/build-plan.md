@@ -145,10 +145,18 @@ and changing it after the first grant is persisted orphans every app (`ADR-0003`
 Load-bearing for the flagship, not a developer nicety (`ADR-0005`).
 
 **4. App loader** — discover the manifest at `/.well-known/orivon.json`
-(`capability-api.md`), fetch + cache assets, pin the publisher key and record per-version
-hashes; silent update on same key + unchanged capabilities (`ADR-0005` amendment).
-Depends on broker storage. The pinning here is also what `ADR-0006` and the future attestation
-model rest on.
+(`capability-api.md`), fetch + cache assets, compute and pin the **bundle hash**
+(`ADR-0009`, `bundle-hash.md`) and drive `decideUpdate()` (`src/broker/policy/update.ts`) on
+every re-fetch. Depends on broker storage. The pinning here is also what `ADR-0006` and the
+future attestation model rest on.
+
+> **Correction, 2026-08-26.** This item previously said *"pin the publisher key and record
+> per-version hashes; silent update on same key + unchanged capabilities (`ADR-0005`
+> amendment)"* — the publisher-key continuity amendment. `ADR-0005`'s **evening** amendment
+> (2026-08-25) superseded that morning amendment and cut publisher signing from v0 entirely:
+> there is no key to pin. What v0 ships is hash-pinning alone, now fully specified by `ADR-0009`
+> and `bundle-hash.md`. Left uncorrected, the next reader implements a mechanism the owner
+> already cut.
 
 **5. Torrent app** — `webtorrent` via the shim, player UI, magnet input, file list, resume.
 Ships as a pre-built app asset (see Platform policy).
