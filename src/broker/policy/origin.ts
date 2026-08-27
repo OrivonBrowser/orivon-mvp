@@ -111,7 +111,12 @@ function canonicalHost (hostname: string): string | null {
  * caller is responsible for:
  *   - Whether the origin may be PERSISTED. `http://127.0.0.1:8080` is
  *     shape-identical to `https://x.example`, and T13c forbids ever writing a
- *     grant for the former to disk (docs/open-questions.md A16).
+ *     grant for the former to disk: loopback, `file:` and plain-`http` origins
+ *     are session-scoped and re-prompted each launch
+ *     (docs/architecture/security-model.md T13c). Cited by document rather
+ *     than by open-question number on purpose: the number this line used to
+ *     carry pointed at an unrelated question for a week, because it was
+ *     guessed on a branch and the question was filed on another one.
  *   - Whether it is safe as a path segment. It is not: it contains `://`.
  *     Storage directories are `sha256(origin)` (T13b), never the string.
  */
