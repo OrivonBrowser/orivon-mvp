@@ -36,6 +36,7 @@ change belongs in their stream.
 |---|---|---|---|
 | `shell` | `src/main/{index,window,tabs,omnibox,ipc}.ts`, `src/renderer/`, `src/preload/shell.ts`, **`scripts/smoke.mjs`**, **`test/`** | 1 | **done**, maintenance only |
 | `contracts` | `src/contracts/` | — | **change-controlled**, see below |
+| `shared` | `src/shared/` | — | **change-controlled**, same rules as `contracts`. Empty by design; see its `README.md` |
 | `broker` | `src/broker/`, `src/broker/policy/`, `src/preload/app.ts` | 2 | critical path |
 | `shim` | `src/shim/`, the `renderer.resolve.alias` map in `electron.vite.config.ts` | 3 | |
 | `loader` | `src/loader/` | 4 | |
@@ -93,10 +94,10 @@ git worktree remove ../orivon-broker
 
 See the table. This is the rule that makes the others unnecessary most of the time.
 
-### 3. Contracts changes are their own pull request, merged first
+### 3. Contracts and shared changes are their own pull request, merged first
 
-A change to `src/contracts/` touches every stream at once, so it is the one place where
-coordination is genuinely required.
+A change to `src/contracts/` touches every stream at once, so it is where coordination is
+genuinely required.
 
 - A contracts change goes in **its own PR**, with no implementation in it.
 - It merges **before** any stream builds on it.
@@ -105,6 +106,12 @@ coordination is genuinely required.
 **Never modify `src/contracts/` in the same PR as an implementation.** If you find you need to,
 split the PR — the contract change is almost always the more consequential half and deserves to
 be reviewed alone.
+
+**[`src/shared/`](../../src/shared/) follows the same three rules**, for the same reason: one
+edit there can break every stream that imports it. It holds pure helpers needed on both sides of
+a trust boundary — added 2026-08-27, empty by design, and the bar for putting something in it is
+in [its `README.md`](../../src/shared/README.md). See
+[`code-guidelines.md`](code-guidelines.md) Rule 3 for why it exists.
 
 ### 4. Append at the append points; never edit them
 
