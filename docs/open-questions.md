@@ -37,6 +37,7 @@ Legend: **[OWNER]** product/philosophy/irreversible — never decided by an AI �
 | A6 Go / no-go on `readiness.md` | **Owner: GO**, 2026-08-25, conditional on reviewing the spike's execution plan first → `planning/week-0-spike-plan.md` |
 | A11 How a cached bundle is served at its origin | **Owner (2026-08-25):** keep the app's real origin, intercepting inside the app's `session` partition only → `ADR-0007`. Chosen over a custom scheme because changing the origin would fork storage, grants and the derived identity key between the cached and live states, with no export path to recover the lost key |
 | A10 Handle contracts | **Resolved 2026-08-26.** Full specification written: `architecture/handle-contracts.md` (the five handle types, the closed error enum, close/half-close semantics, a credit-window backpressure design, the revocation cascade). Direction decision (WHATWG streams, owner, 2026-08-25) recorded as `ADR-0008`, which also rescopes `capability-api.md` design rule 1 to the shim rather than the capability layer. One further owner decision taken while writing it: error detail is real for any address an app was permitted to attempt; `denied` stays uniform across every reason for denial |
+| What bytes the bundle hash actually covers | **Resolved 2026-08-26.** `ADR-0005` and `ADR-0006` both made "the bundle hash" load-bearing without ever defining it — the same gap that had already been found and cut once for publisher signing. Full construction (flat, sorted, length-prefixed list hash; manifest included as a leaf; case/Unicode-colliding paths rejected at install) specified in `ADR-0009` and `architecture/bundle-hash.md`, with frozen test vectors from an independent reference implementation |
 
 ---
 
@@ -48,12 +49,16 @@ None of these block starting the week-0 spike.
 |---|---|---|
 | A7 | Canonical **DDOC** expansion — recommendation: *Domain Data Ownership **Confirmation*** (`glossary.md`, B2) | before correcting public docs |
 | A8 | **`+Privacy`** attaches to L4 (published) or L5 (private)? (`glossary.md`) | before correcting public docs |
-| A9 | Three capability-API items. **Defaults now proposed** in `architecture/capability-api.md` — `net.listen` grantable to unsigned apps with a declared port range and no privileged ports · grants keyed on `(origin, capability)`, with bundle-hash changes handled by the separate pin-break prompt · `fs.quotaBytes` enforced via a running per-origin counter | **Build proceeds on these unless overruled.** Cheap to change before any third-party app exists |
+| A9 | Three capability-API items. **Defaults now proposed** in `architecture/capability-api.md` — `net.listen` grantable to unsigned apps with a declared port range and no privileged ports · grants keyed on `(origin, capability, pattern set)`, a **subset check** over the pattern set (not a kind comparison), with bundle-hash changes handled by the separate re-consent prompt · `fs.quotaBytes` enforced via a running per-origin counter | **Build proceeds on these unless overruled.** Cheap to change before any third-party app exists |
 | A12 | **`orivon.fs` option bags are unspecified.** `capability-api.md` names the entry points (`readFile(path, opts)`, `writeFile(path, data, opts)`, `mkdir / readdir / stat / rm / rename`) but never says what `opts` contains or what `readFile` returns | **Build step 2.** Provisional signatures are in `src/contracts/capability-api.ts` and marked as such |
+| A14 | **RESOLVED 2026-08-26 (owner):** a trailing DNS dot is stripped, so `https://x.example.` and `https://x.example` are ONE origin. Deliberately deviates from `URL.origin`. Exactly one dot; a host still carrying an empty label is rejected | Implemented in `src/broker/policy/origin.ts` |
 | A13 | **Are `app.manifest()` and `app.grants()` async?** `capability-api.md` §v0 surface writes them as `=> Manifest` and `=> Grant[]`, but design rule 2 in the same document says *"All entry points return Promises"* | **Build step 2.** Transcribed as Promises; see below |
-| A16 | **`checkConnect` takes the manifest (what an app DECLARES) when the decision is about the grant (what the user ALLOWED).** Nothing in the signature carries the grant, so a caller passing a raw manifest silently gets the declared authority | **Build step 2, before the broker calls it.** Narrow the list at the call site, or change the parameter to `readonly Pattern[]`. See below |
-| A17 | **IDN hostnames are unhandled in connect patterns.** A Unicode host, its case variants and its punycode A-label are three different strings to the matcher, and an app deriving its host from `new URL(...)` gets the A-label | **Before any non-ASCII app origin exists.** Non-ASCII is now rejected outright rather than silently never matching. See below |
-| A18 | **`address.ts` exposes a classifier but no canonicaliser.** `connect.ts` needs an identity answer ("is this the same address"), not a range answer, and currently gets it from a local strict-subset validator | **Whenever `broker-02-address` is next touched.** See below |
+| A15 | **The four bundle-hash caps are guesses, not decisions** — `MAX_PATH_BYTES` 1024, `MAX_ASSET_BYTES` 16 MiB, `MAX_BUNDLE_BYTES` 64 MiB, `MAX_BUNDLE_ENTRIES` 4096 (`src/broker/policy/bundle-hash.ts`, `architecture/bundle-hash.md` §Caps). They are labelled AI-recommendation in the source, but a cap decides which bundles are *refusable*, so two implementations disagreeing on one disagree about whether an app can exist at all | **Before the app loader ships (build step 4).** Needs one real frontend's shape to calibrate against; guessing again now would not be better than the current guess |
+| A16 | **What should closing the LAST tab do?** The shell currently leaves the window open with zero tabs. Chrome and Firefox instead open a fresh tab or close the window. Never actually decided | **Not blocking anything.** Decide before an outside user sees the shell; see below |
+| A17 | **RESOLVED 2026-08-27 (owner):** an `identityId` is **opaque and broker-generated** — never a user-typed name, never derived from one. The display name is stored beside the identity, not used to derive it. Found undefined during review of PR #5: it appeared exactly once in the whole repository, as one table cell | Recorded in `ADR-0010`, stated in `capability-api.md`, documented on `DeriveRequest.scope` |
+| A18 | **`checkConnect` takes the manifest (what an app DECLARES) when the decision is about the grant (what the user ALLOWED).** Nothing in the signature carries the grant, so a caller passing a raw manifest silently gets the declared authority | **Build step 2, before the broker calls it.** Narrow the list at the call site, or change the parameter to `readonly Pattern[]`. See below |
+| A19 | **IDN hostnames are unhandled in connect patterns.** A Unicode host, its case variants and its punycode A-label are three different strings to the matcher, and an app deriving its host from `new URL(...)` gets the A-label | **Before any non-ASCII app origin exists.** Non-ASCII is now rejected outright rather than silently never matching. See below |
+| A20 | **`address.ts` exposes a classifier but no canonicaliser.** `connect.ts` needs an identity answer ("is this the same address"), not a range answer, and currently gets it from a local strict-subset validator | **Whenever `broker-02-address` is next touched.** See below |
 
 ---
 
@@ -92,7 +97,38 @@ third-party app exists.
 
 ---
 
-### A16 -- `checkConnect` checks the declaration, not the grant **[AI-REC]**
+### A16 — what closing the last tab should do **[STILL OPEN]**
+
+Found while extending `scripts/smoke.mjs` (2026-08-27). Writing a check for "closing the last
+tab behaves sanely" required knowing what sane *is*, and nothing in this repository says.
+
+**What happens today.** `TabManager.closeTab()` (`src/main/tabs.ts`) removes the view, finds no
+fallback tab, sets `activeTabId: null` and emits. The `BaseWindow` stays open showing an empty
+tab strip, a disabled toolbar, and no content. Nothing crashes and nothing leaks — it is simply
+a state no other browser leaves you in. It was not chosen; it is what falling through the
+existing branch happens to produce.
+
+**The three plausible answers.**
+
+| | Behaviour | Who does this |
+|---|---|---|
+| 1 | Keep the window, open a fresh new tab | Chrome, Edge |
+| 2 | Close the window (and on the last window, quit) | Firefox, Safari, and `src/main/index.ts` already wires `window-all-closed -> app.quit()` |
+| 3 | Keep the window empty, as now | nobody |
+
+**Recommendation [AI-REC]:** option 1. It is the least surprising, it cannot strand a user, and
+it is a two-line change in `closeTab()`. Option 2 is also defensible and costs even less code,
+but "I closed a tab and the app quit" is a worse accident to have.
+
+**Why this is written down rather than just fixed.** Picking one is a product decision, and the
+smoke check now asserts the current outcome — so a silent change would look like a regression.
+The check is labelled to say so (`CURRENT BEHAVIOUR, pending A16 -- not a spec`) and asserts the
+resolution-independent properties separately: no crash, no orphaned view, and the shell still
+usable afterwards. **Whichever way A16 goes, change that one check — not the product — to
+match.**
+---
+
+### A18 -- `checkConnect` checks the declaration, not the grant **[AI-REC]**
 
 The manifest DECLARES what an app may ask for; the user GRANTS what it actually gets
 (`architecture/capability-api.md` A9 SS2), and the two sets differ -- a manifest may declare
@@ -122,7 +158,7 @@ manifest's `connect` list to the granted pattern set before calling.
 
 ---
 
-### A17 -- IDN hostnames in connect patterns **[AI-REC]**
+### A19 -- IDN hostnames in connect patterns **[AI-REC]**
 
 `connect.ts` folds ASCII case only, deliberately: `toLowerCase()` applies full Unicode folding, and
 U+212A KELVIN SIGN folds to `k`, so a comparison using it is wider than DNS's and can be steered.
@@ -147,7 +183,7 @@ non-ASCII origin.
 
 ---
 
-### A18 -- `address.ts` has no canonicaliser, and `connect.ts` needs one **[AI-REC]**
+### A20 -- `address.ts` has no canonicaliser, and `connect.ts` needs one **[AI-REC]**
 
 `classifyAddress` answers *"what range is this address in"*, and is deliberately permissive: it
 must understand `0177.0.0.1` and `2130706433` in order to BLOCK them. That is right on the deny

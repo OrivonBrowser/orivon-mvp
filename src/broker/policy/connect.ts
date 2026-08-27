@@ -48,7 +48,7 @@
 //   - run the grant subset check separately (capability-api.md A9 SS2).
 //
 // Still flagged rather than solved, and now filed as an open question rather
-// than left in this comment alone (docs/open-questions.md A16). Taking a
+// than left in this comment alone (docs/open-questions.md A18). Taking a
 // `readonly Pattern[]` of GRANTED patterns instead of a Manifest would make
 // the narrowing structural, the way ConnectAllowed makes "dial the literal"
 // structural. That is a signature change and it belongs in its own PR.
@@ -247,7 +247,7 @@ function normalizeHost (value: string): string {
  *
  * Making IDN genuinely work means normalising both sides to A-labels, which
  * needs UTS-46 -- a dependency or a hundred hand-written lines in a directory
- * that is meant to have neither. Recorded in docs/open-questions.md A17.
+ * that is meant to have neither. Recorded in docs/open-questions.md A19.
  * Found by review, 2026-08-27.
  */
 function isAsciiHost (value: string): boolean {
@@ -288,7 +288,7 @@ function isAsciiHost (value: string): boolean {
  * duplicate parser address.ts's own comments argue against. The architecturally
  * cleaner fix is a `canonicalAddress()` export from ./address.ts, which would
  * also let the grant prompt and the update subset-check compare canonical
- * forms -- filed as docs/open-questions.md A18, deliberately not done here
+ * forms -- filed as docs/open-questions.md A20, deliberately not done here
  * because address.ts belongs to another stream.
  * Found by review, 2026-08-27.
  */
