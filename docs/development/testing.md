@@ -39,14 +39,24 @@ that constraint is what makes these tests cheap enough to actually exist.
 
 ### 1. Capability checking at the call site
 
-`checkConnect(manifest, hostArg, resolveFn)` with an **injected stub resolver** — not just the
-pattern matcher in isolation.
+`checkConnect(manifest, hostArg, port, resolveFn)` with an **injected stub resolver** — not just
+the pattern matcher in isolation.
+
+> **Corrected 2026-08-27.** This said `checkConnect(manifest, hostArg, resolveFn)`, with no
+> `port`. A connect pattern is `host:port`, so the port is half the decision and the function
+> cannot make it without one — `stream/broker-03-connect-check` added the parameter and this
+> document is following, rather than the other way round. Recorded because that PR cited this
+> line as fixing the signature *while changing it*, which is the kind of drift
+> [`CLAUDE.md`](../../CLAUDE.md) rule 3 exists to catch.
+>
+> The manifest-versus-grant question in the same signature is **not** settled and is filed as
+> [`open-questions.md`](../open-questions.md) A16.
 
 *Why the distinction matters:* a perfectly correct glob matcher, fed a **hostname**, is still
 completely defeated by DNS rebinding (T12). Testing the matcher alone covers the harmless half
 of the threat. Patterns must be checked against **resolved addresses**.
 
-Plus an `isPrivateAddress` table covering `127/8`, `10/8`, `172.16/12`, `192.168/16`,
+Plus an `isPublicUnicast` table covering `127/8`, `10/8`, `172.16/12`, `192.168/16`,
 `169.254/16`, `::1`, `fc00::/7`, IPv4-mapped `::ffff:127.0.0.1`, and integer and octal literal
 forms.
 
