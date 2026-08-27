@@ -338,6 +338,71 @@ describe('publisher-controlled input cannot crash or bypass the check', () => {
   })
 })
 
+// ./connect.ts's portMatches rejects a leading zero or port 0 -- "a pattern
+// whose meaning depends on the reader is not a pattern" -- but this file's
+// port grammar used to accept both. That let a manifest declare
+// "api.example.com:0443", pass this subset check as equivalent to ":443", and
+// then be a pattern the runtime connect matcher could never honour. Aligned
+// 2026-08-27: an ambiguous port is unparseable here too, so it covers nothing
+// and prompts like any other malformed pattern (see "publisher-controlled
+// input cannot crash or bypass the check" above).
+describe('the port grammar rejects the same ambiguous ports connect.ts does', () => {
+  // Each row pairs a granted pattern against the numerically EQUIVALENT
+  // pattern under the old, looser grammar -- that equivalence is exactly what
+  // made the pattern ambiguous, and it is what a naive "does it deny a
+  // mismatched port" test would fail to exercise (a granted `:0` already
+  // denied a requested `:443` before this fix, just for the wrong reason: 0
+  // != 443 numerically, not because `:0` was unparseable).
+  it.each([
+    {
+      granted: 'api.example.com:0443',
+      requested: 'api.example.com:443',
+      why: 'a leading zero means different things to different parsers'
+    },
+    {
+      granted: 'api.example.com:0',
+      requested: 'api.example.com:0',
+      why: 'port 0 means "any free port" to bind, nothing to connect'
+    },
+    {
+      granted: 'api.example.com:01-99',
+      requested: 'api.example.com:1-99',
+      why: 'a leading zero in a range bound'
+    }
+  ])('a granted pattern of $granted does not cover its own numeric equivalent $requested ($why)', ({ granted, requested }) => {
+    expect(
+      decideUpdate(
+        update({
+          grantedPatterns: { 'tcp.connect': [granted] },
+          newPatterns: { 'tcp.connect': [requested] }
+        })
+      )
+    ).toBe('capability-prompt')
+  })
+
+  it('a requested pattern with a leading-zero port is not covered by the equivalent clean pattern', () => {
+    expect(
+      decideUpdate(
+        update({
+          grantedPatterns: { 'tcp.connect': ['api.example.com:443'] },
+          newPatterns: { 'tcp.connect': ['api.example.com:0443'] }
+        })
+      )
+    ).toBe('capability-prompt')
+  })
+
+  it('the "*" wildcard port is unaffected by the tightened grammar', () => {
+    expect(
+      decideUpdate(
+        update({
+          grantedPatterns: { 'tcp.connect': ['api.example.com:*'] },
+          newPatterns: { 'tcp.connect': ['api.example.com:443'] }
+        })
+      )
+    ).toBe('silent')
+  })
+})
+
 // Exported so the broker computes the new floor -- max(floor, version) -- with
 // this comparator rather than a second, divergent one written at that call
 // site. A floor that disagrees with the check enforcing it is not a floor.
