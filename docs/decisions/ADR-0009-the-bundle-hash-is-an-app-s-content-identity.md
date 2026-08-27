@@ -1,10 +1,14 @@
 # ADR-0009: The bundle hash is an app's content identity
 
-- **Status:** accepted
+- **Status:** accepted, **amended 2026-08-27** (see §Amendment)
 - **Date:** 2026-08-26
 - **Type:** architecture / security
 - **Decided by:** owner (manifest-as-leaf, scope, and the case-collision rule), AI recommendation
   for the byte-level construction
+
+> **Amendment 2026-08-27 supersedes parts of the text below.** Three owner decisions were taken
+> after review found the case-collision rule was not working. Read §Amendment at the foot of this
+> document before relying on §Reasoning.
 
 ## Decision
 An app's **bundle hash** is a single SHA-256 root computed over the manifest plus every frontend
@@ -158,3 +162,59 @@ enables is the strict-mode rule that gap needs, should DDOC ever return.
   new prefix, never repurposing `"sha256:"`); DDOC or trustless resolution landing, which would
   add a construction for those delivery paths without touching this one; a real score provider
   surfacing a construction defect the frozen vectors did not catch.
+
+## Amendment, 2026-08-27
+
+Review of the first implementation found that **the case/Unicode collision rule this ADR records
+as an owner decision was not actually firing**, and that a rule the specification required had
+never been implemented. Three decisions follow. All were taken *before any pin had been written
+to disk* — the one window in which this construction is not yet a one-way door.
+
+**1. The collision key percent-decodes first. (Correction, not a new rule.)**
+
+The decision recorded above — reject a bundle whose paths collide under case folding or Unicode
+normalisation — was implemented as "NFC-normalise, then lowercase" applied to the *canonical*
+path. But a canonical path is `new URL(...).pathname`, which is **always pure ASCII**: the parser
+percent-encodes every non-ASCII byte first. So NFC normalisation was a no-op on every input that
+can actually occur, and case folding reached only surviving ASCII. `/%C3%84.js` and `/%C3%A4.js`
+(`Ä` and `ä`) were accepted as unrelated, as were the NFC and NFD spellings of one filename, and
+— the case that matters — `/.well-known/orivon.json` alongside `/%2Ewell-known/orivon.json`.
+
+That last pair is a **second manifest** reaching the pinned asset set under a single root. Both
+decode to one filename in the code cache; whichever wins the write is the manifest whose
+capabilities are enforced, while the user consented to a root computed over the other. That is a
+widened manifest inheriting a judged identity under an unchanged hash — precisely the failure
+this ADR cites as the reason the manifest is a leaf at all, reintroduced through path spelling.
+
+The rule was never wrong; its implementation did not carry it out. `bundle-hash.md`'s collision
+key now specifies percent-decoding as the first step, with the worked pairs tabulated.
+
+**2. `Manifest.entry` is checked by the app loader, not by the hash. (Owner decision.)**
+
+The specification's rejection table required refusing a bundle with no leaf at the manifest's
+declared entry point; the implementation deliberately did not, since the check means JSON-parsing
+untrusted manifest bytes inside an otherwise pure byte-level function. Rather than leave the two
+disagreeing — in a document whose stated purpose is bug-for-bug reimplementation by third
+parties — the rule is **cut from the hash specification** and stated as an app-loader obligation
+(`build-plan.md` step 4), which parses the manifest regardless. An implementation of
+`bundle-hash.md` that omits it is conformant.
+
+**3. Vector V5 re-expressed; the vector table is now closed. (Owner decision.)**
+
+V5's inputs were raw supplementary-plane and private-use characters — paths no fetched asset can
+present, and which the canonical-form rule (now enforced) refuses. The vector was re-expressed in
+percent-encoded form and recomputed by the same independent reference implementation. V1–V4 did
+not move; V6 was added, freezing the per-leaf digest table that the pin record persists and that
+nothing previously held still.
+
+**This was a one-time exception and it has expired.** Build step 4 writes the first real pin;
+from that point no row in the table may be edited for any reason.
+
+**Consequence worth recording, because this ADR overstated it.** §Reasoning argues at length that
+sorting must compare UTF-8 bytes rather than UTF-16 code units. With canonical form enforced,
+every path is ASCII, and for ASCII the two orders are identical — so the divergence cannot be
+reached, no legal bundle distinguishes them, and V5 no longer demonstrates it. Verified by
+mutation: replacing the byte comparator with JavaScript's default sort passes the entire suite.
+The comparator is kept (it costs nothing and is correct for any future construction admitting raw
+paths), but it is **defence in depth, not a load-bearing rule**. The Unicode risk in this design
+lives in the collision key, which is where the actual bug was.
