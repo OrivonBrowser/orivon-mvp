@@ -179,7 +179,11 @@ export function isValidCanonicalPath (path: string): boolean {
   // untouched, so such a path is "canonical" by the check above -- but no
   // filename can be recovered from it, and collisionKey below must never be
   // handed a string that throws inside a security decision.
-  if (decodePercentEscapes(path) === null) return false
+  const decoded = decodePercentEscapes(path)
+  if (decoded === null) return false
+
+  // AND THE DECODED FORM MUST ITSELF BE SAFE. See isSafeDecodedPath.
+  if (!isSafeDecodedPath(decoded)) return false
 
   // Kept though the re-derivation check above already rejects both: this is
   // the rule stated by name in the spec, and a reader looking for it should
@@ -188,6 +192,60 @@ export function isValidCanonicalPath (path: string): boolean {
   if (segments.some((segment) => segment === '.' || segment === '..')) return false
 
   return true
+}
+
+/** `a.js.` and `a.js ` both name `a.js` on Win32, which strips both. */
+const TRAILING_DOT_OR_SPACE = /[. ]$/
+
+/**
+ * Reserved on Windows with or without an extension, and the same list
+ * paths.ts refuses for the same reason. `CON.txt` is the device, `CONFIG` is
+ * not, so the test is on the component up to its first dot.
+ */
+const WINDOWS_DEVICE = /^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i
+
+/** `\` separates on Windows; `:` opens an NTFS stream; `|` is not a filename. */
+const UNSAFE_DECODED_CHARS = /[\\:|]/
+
+/**
+ * Is the DECODED path safe to reconstruct as a file under the code cache?
+ *
+ * THE DECODED FORM IS WHAT THE FILESYSTEM SEES. That is the whole argument
+ * collisionKey rests on, and until 2026-08-27 this module made it in one
+ * place and not the other: it decoded to detect aliasing, then validated only
+ * the encoded string. So `/%00.js` and `/..%2F..%2Fevil.js` were canonical,
+ * hashed, and written into the pinned asset set -- which ADR-0009 makes the
+ * map the code cache is laid out from. A cache writer must percent-decode to
+ * recover a filename (otherwise `/fonts/Inter%20Regular.woff2` lands on disk
+ * with a literal `%20`), and decoding those two yields a NUL byte and a
+ * traversal out of the app's own cache directory.
+ *
+ * Every rule here is enforced ON EVERY PLATFORM, including ones where the
+ * specific hazard does not exist -- the same choice paths.ts makes, for the
+ * same reason: a security boundary with OS-dependent semantics is one nobody
+ * can reason about, and a bundle must have ONE identity everywhere or it has
+ * none.
+ *
+ * Deliberately NOT a general "safe filename" library. It rejects the classes
+ * that alias or escape; it does not try to enumerate every filesystem's
+ * quirks. Cost of a false positive is a loud rejection at install with a
+ * named reason, which is the failure direction this design chooses everywhere.
+ */
+function isSafeDecodedPath (decoded: string): boolean {
+  if (CONTROL_CHARS.test(decoded)) return false
+  if (UNSAFE_DECODED_CHARS.test(decoded)) return false
+
+  const segments = decoded.split('/')
+  // A canonical path starts with '/', so segments[0] is always ''. Every other
+  // segment must be a real, usable filename.
+  for (const segment of segments.slice(1)) {
+    if (segment.length === 0) return false // '//' or a trailing '/'
+    if (segment === '.' || segment === '..') return false
+    if (TRAILING_DOT_OR_SPACE.test(segment)) return false
+    if (WINDOWS_DEVICE.test(segment.split('.')[0]!)) return false
+  }
+
+  return segments.length > 1
 }
 
 /** Percent-decodes, or null if any escape is malformed. Never throws. */
@@ -233,7 +291,7 @@ function decodePercentEscapes (path: string): string | null {
  * Windows filesystems actually produce; not a formal guarantee for every
  * codepoint.
  */
-function collisionKey (path: string): string {
+export function collisionKey (path: string): string {
   return (decodePercentEscapes(path) ?? path).normalize('NFC').toLowerCase()
 }
 
