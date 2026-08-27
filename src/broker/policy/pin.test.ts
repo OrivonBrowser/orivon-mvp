@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MANIFEST_PATH, MAX_BUNDLE_ENTRIES } from './bundle-hash.js'
+import { MANIFEST_PATH, MAX_BUNDLE_ENTRIES } from './canonical-path.js'
 import { fromBundleTree, isPinnedPath, parsePinRecord, type PinRecord } from './pin.js'
 
 const VALID_HASH = 'sha256:2ff5baaa794301118be4270755686fd1438501332ab3b1a199af90815ca4c4fd'

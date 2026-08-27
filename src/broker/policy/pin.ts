@@ -20,7 +20,7 @@ import {
   MANIFEST_PATH,
   MAX_BUNDLE_ENTRIES,
   type PathLeaf
-} from './bundle-hash.js'
+} from './canonical-path.js'
 import { originFromUrl } from './origin.js'
 
 /**
