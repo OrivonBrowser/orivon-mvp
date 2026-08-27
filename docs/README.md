@@ -38,10 +38,12 @@ most obvious ideas have already been considered and rejected for recorded reason
 | [`ADR-0008`](decisions/ADR-0008-handles-are-whatwg-streams.md) | Handles are WHATWG streams; Node shapes live in the shim |
 | [`ADR-0009`](decisions/ADR-0009-the-bundle-hash-is-an-app-s-content-identity.md) | The bundle hash construction: what makes an app's content identity, and how a change is noticed |
 
-> **Three of them carry amendments that supersede parts of their own text.** ADR-0002 and
-> ADR-0005 have inline amendments; ADR-0008 rescopes ADR-0002's mirror-Node's-shapes rule to
+> **Four of them carry amendments that supersede parts of their own text.** ADR-0002, ADR-0005
+> and ADR-0009 have inline amendments; ADR-0008 rescopes ADR-0002's mirror-Node's-shapes rule to
 > the shim rather than the capability layer. Read the amendment blocks — they are not
-> decoration.
+> decoration. ADR-0009's is the sharpest example: its §Reasoning argues for a sort-order rule
+> that its amendment then shows cannot be reached, while the rule that *was* load-bearing had a
+> bug nobody caught until the code existed.
 
 ---
 

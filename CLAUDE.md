@@ -27,10 +27,11 @@ Three things load-bearing enough to repeat:
    carry corrections reversing their own earlier claims.** Where a document says two things,
    the correction block is the current one.
 2. `docs/decisions/` — nine ADRs. Read before proposing anything architectural; most obvious
-   ideas have already been considered and rejected for recorded reasons. **ADR-0002 and
-   ADR-0005 carry amendments superseding parts of their own text; ADR-0008 rescopes ADR-0002's
-   Node-shape-mirroring rule to the shim, not the capability layer; ADR-0009 fully specifies the
-   bundle hash that ADR-0005/ADR-0006 already relied on.**
+   ideas have already been considered and rejected for recorded reasons. **ADR-0002, ADR-0005
+   and ADR-0009 carry amendments superseding parts of their own text; ADR-0008 rescopes
+   ADR-0002's Node-shape-mirroring rule to the shim, not the capability layer; ADR-0009 fully
+   specifies the bundle hash that ADR-0005/ADR-0006 already relied on — read its 2026-08-27
+   amendment before its §Reasoning, which overstates the sort-order rule.**
 3. `docs/mvp-scope.md` — **anything absent from the IN table is out by default.**
 
 **The spike resolved.** Verdict and evidence: `docs/planning/spike-verdict.md` (read this, not
