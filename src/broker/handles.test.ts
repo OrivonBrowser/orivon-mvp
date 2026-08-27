@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { LIMITS } from '../contracts/index.js'
 import type { OrivonError } from '../contracts/index.js'
-import { HandleTable } from './handles.js'
+import { HandleTable, toWire } from './handles.js'
 import type { CloseReason } from './handles.js'
 
 // The handle table is the enforcement point for four of the failures in
@@ -113,10 +113,11 @@ describe('ownership is re-checked on every operation (T11c)', () => {
     const destroy = spyDestroy()
     const handle = t.acquire({ origin: APP, kind: 'tcpSocket', authorisedBy: { by: 'grant', grantId: TCP_GRANT }, destroy })
 
-    expect((await rejection(t.release(OTHER, handle.id))).code).toBe('denied')
+    // close() is idempotent without qualification (SSCommon shape), so this
+    // does not throw -- but it must not CLOSE anything either, which is the
+    // half that carries the security weight.
+    await expect(t.release(OTHER, handle.id)).resolves.toBeUndefined()
     expect(destroy).not.toHaveBeenCalled()
-    // Still usable by its owner, which is the half a "rejected" check that a
-    // silent no-op would also satisfy -- both halves matter.
     expect(t.lookup(APP, handle.id).id).toBe(handle.id)
   })
 
@@ -556,10 +557,10 @@ describe('per-origin limits (T11, T11b)', () => {
     expect(t.counts(APP).inFlight).toBe(0)
   })
 
-  it('bounds the total number of rows, including kinds the specification caps nowhere', () => {
+  it('bounds the kinds the specification caps nowhere', () => {
     const t = table()
     const open = (): unknown => t.acquire({ origin: APP, kind: 'identity', authorisedBy: { by: 'grant', grantId: 'grant-id' }, destroy: noop })
-    for (let i = 0; i < LIMITS.concurrentSockets + LIMITS.concurrentFileHandles; i += 1) {
+    for (let i = 0; i < LIMITS.concurrentFileHandles; i += 1) {
       open()
     }
 
@@ -581,7 +582,9 @@ describe('per-origin limits (T11, T11b)', () => {
     // The caller already has a connected socket by the time it registers it.
     // If a refused acquisition did not release it, hitting the cap in a loop
     // would leak an fd per attempt while the table still reported 512.
-    expect(destroy).toHaveBeenCalledWith('closed')
+    // 'failed', not 'closed': the handle never existed, so there is no wire
+    // effect owed to anyone -- only the descriptor needs freeing.
+    expect(destroy).toHaveBeenCalledWith('failed')
   })
 })
 
@@ -622,7 +625,7 @@ describe('the fs.userSelected exception', () => {
 
     // Session-scoped, not a standing grant of its own: it must not come back
     // after a restart, so the session teardown has to take it.
-    expect(picked).toHaveBeenCalledWith('revoked')
+    expect(picked).toHaveBeenCalledWith('sessionEnded')
     expect(thrown(() => t.lookup(APP, handle.id)).code).toBe('denied')
   })
 
@@ -634,7 +637,7 @@ describe('the fs.userSelected exception', () => {
 
     await t.dropOrigin(APP)
 
-    expect(destroy).toHaveBeenCalledWith('revoked')
+    expect(destroy).toHaveBeenCalledWith('sessionEnded')
     expect((await rejection(pending)).code).toBe('revoked')
     expect(t.counts(APP).handles).toBe(0)
   })
@@ -753,6 +756,429 @@ describe('broker faults during teardown', () => {
     await t.revoke(APP, TCP_GRANT)
 
     expect(second).toHaveBeenCalledWith('revoked')
+    expect(t.counts(APP).handles).toBe(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Added by the review pass (2026-08-27). Every block below was written from
+// handle-contracts.md rather than from handles.ts, because the first suite's
+// blind spot was that it tested each method in isolation and never tested the
+// ORDERING BETWEEN methods -- which is where all six review findings lived.
+// ---------------------------------------------------------------------------
+
+describe('a grant stays revoked (the cascade is not a one-shot sweep)', () => {
+  it('refuses an acquisition that lands after the revoke', () => {
+    const t = table()
+    void t.revoke(APP, TCP_GRANT)
+
+    // The connect passed the policy check BEFORE the revoke and its socket
+    // materialised after. Without a tombstone this registers a live handle
+    // under a withdrawn grant, and the UI fires exactly one revoke, so nothing
+    // ever sweeps again.
+    expect(thrown(() => acquireSocket(t)).code).toBe('revoked')
+  })
+
+  it('releases the resource of an acquisition it refused as revoked', () => {
+    const t = table()
+    void t.revoke(APP, TCP_GRANT)
+    const destroy = spyDestroy()
+
+    thrown(() => t.acquire({ origin: APP, kind: 'tcpSocket', authorisedBy: { by: 'grant', grantId: TCP_GRANT }, destroy }))
+
+    expect(destroy).toHaveBeenCalledWith('failed')
+  })
+
+  it('refuses a derived acquisition once the revoke has taken its parent', () => {
+    const t = table()
+    const server = t.acquire({ origin: APP, kind: 'tcpServer', authorisedBy: { by: 'grant', grantId: 'grant-tcp-listen' }, destroy: noop })
+    void t.revoke(APP, 'grant-tcp-listen')
+
+    // A connection accepted mid-flight, registering after the cascade swept.
+    // The answer is 'closed' rather than 'revoked' because the cascade reached
+    // the parent first and that is the honest reason -- the tombstone check in
+    // acquireDerived is the belt to this braces, for the case where a parent
+    // somehow outlives its grant.
+    expect(thrown(() => t.acquireDerived({ origin: APP, kind: 'tcpSocket', parentId: server.id, destroy: noop })).code).toBe('closed')
+  })
+
+  it('refuses an operation scoped to a revoked grant', async () => {
+    const t = table()
+    void t.revoke(APP, TCP_GRANT)
+
+    expect((await rejection(t.run(APP, { on: 'grant', grantId: TCP_GRANT }, never))).code).toBe('revoked')
+  })
+
+  it('leaves no live row behind when destroy re-enters acquire', async () => {
+    const t = table()
+    let orphanReleased: CloseReason | null = null
+    t.acquire({
+      origin: APP,
+      kind: 'tcpSocket',
+      authorisedBy: { by: 'grant', grantId: TCP_GRANT },
+      // destroy runs synchronously inside the cascade, before it finishes.
+      destroy: () => {
+        try {
+          t.acquire({ origin: APP, kind: 'tcpSocket', authorisedBy: { by: 'grant', grantId: TCP_GRANT }, destroy: (r) => { orphanReleased = r } })
+        } catch { /* refused by the tombstone, which is the point */ }
+      }
+    })
+
+    await t.revoke(APP, TCP_GRANT)
+
+    // What must NOT happen is a live row in no grant's set, which no later
+    // revoke could find. The tombstone refuses it, and the refusal still
+    // releases the descriptor the caller had already opened.
+    expect(t.counts(APP).handles).toBe(0)
+    expect(orphanReleased).toBe('failed')
+  })
+
+  it('does not orphan a row when the grant is re-issued mid-cascade', async () => {
+    const t = table()
+    let survivor: string | null = null
+    t.acquire({
+      origin: APP,
+      kind: 'tcpSocket',
+      authorisedBy: { by: 'grant', grantId: TCP_GRANT },
+      destroy: () => {
+        // The tombstone normally refuses this. Clearing it first is the one
+        // legitimate sequence that gets a live row into the set the cascade is
+        // still holding -- so it is what pins the guard on the bucket delete.
+        t.grantIssued(APP, TCP_GRANT)
+        survivor = t.acquire({ origin: APP, kind: 'tcpSocket', authorisedBy: { by: 'grant', grantId: TCP_GRANT }, destroy: noop }).id
+      }
+    })
+
+    await t.revoke(APP, TCP_GRANT)
+    expect(survivor).not.toBeNull()
+
+    // Deleting the grant's bucket wholesale would drop this row into no set at
+    // all, where not even a later revoke of the same grant could reach it.
+    await t.revoke(APP, TCP_GRANT)
+    expect(t.counts(APP).handles).toBe(0)
+  })
+
+  it('lets the user grant the capability again', () => {
+    const t = table()
+    void t.revoke(APP, TCP_GRANT)
+    expect(thrown(() => acquireSocket(t)).code).toBe('revoked')
+
+    // The broker calls this when the user grants the capability again. Without
+    // it, a grant ledger that mints a STABLE id per (origin, capability,
+    // patterns) could never re-grant anything the user had once withdrawn.
+    t.grantIssued(APP, TCP_GRANT)
+
+    expect(() => acquireSocket(t)).not.toThrow()
+  })
+
+  it('never blocks a picker-authorised handle, whatever was revoked', () => {
+    const t = table()
+    void t.revoke(APP, FS_GRANT)
+
+    // userSelected is authorised by the OS picker, not by any grant, so no
+    // tombstone can apply to it.
+    expect(() => t.acquire({ origin: APP, kind: 'file', authorisedBy: { by: 'userSelected' }, destroy: noop })).not.toThrow()
+  })
+
+  it('bounds how many revoked grant ids it remembers', () => {
+    const t = table()
+    for (let i = 0; i < 5000; i += 1) {
+      void t.revoke(APP, `grant-${String(i)}`)
+    }
+
+    // An unbounded tombstone set is the memory leak #remember exists to avoid.
+    expect(t.counts(APP).revokedGrants).toBeLessThanOrEqual(LIMITS.concurrentSockets + LIMITS.concurrentFileHandles)
+  })
+})
+
+describe('close() is idempotent without qualification (SSCommon shape)', () => {
+  it('stays a no-op past the recently-closed memory', async () => {
+    const t = table()
+    const handle = acquireSocket(t)
+    await t.release(APP, handle.id)
+
+    // Churn past CLOSED_ID_MEMORY. The torrent app does this in seconds, and
+    // the shim must present Node's socket.destroy(), which never throws.
+    for (let i = 0; i < LIMITS.concurrentSockets + LIMITS.concurrentFileHandles + 32; i += 1) {
+      const churn = acquireSocket(t)
+      await t.release(APP, churn.id)
+    }
+
+    await expect(t.release(APP, handle.id)).resolves.toBeUndefined()
+  })
+
+  it('still names a handle it closed recently enough to remember', async () => {
+    const t = table()
+    const handle = acquireSocket(t)
+    await t.release(APP, handle.id)
+    for (let i = 0; i < 100; i += 1) {
+      const churn = acquireSocket(t)
+      await t.release(APP, churn.id)
+    }
+
+    // Now that idempotence no longer depends on it, CLOSED_ID_MEMORY's only
+    // remaining job is diagnostic: telling an origin 'closed' rather than
+    // 'denied' about its own handle. Degrading to 'denied' past the bound is
+    // acceptable, but the bound has to be deep enough to be worth having --
+    // this fails if anyone shrinks it to a token value.
+    expect(thrown(() => t.lookup(APP, handle.id)).code).toBe('closed')
+  })
+
+  it('does not close, and does not throw, for an id another origin owns', async () => {
+    const t = table()
+    const destroy = spyDestroy()
+    const handle = t.acquire({ origin: APP, kind: 'tcpSocket', authorisedBy: { by: 'grant', grantId: TCP_GRANT }, destroy })
+
+    await expect(t.release(OTHER, handle.id)).resolves.toBeUndefined()
+
+    // Silence is not permission: the handle is untouched and still its owner's.
+    expect(destroy).not.toHaveBeenCalled()
+    expect(t.lookup(APP, handle.id).id).toBe(handle.id)
+  })
+})
+
+describe('a resource that dies on its own (SSTcpSocket close table)', () => {
+  it('rejects closed with the code the resource layer reports', async () => {
+    const t = table()
+    const handle = acquireSocket(t)
+
+    t.fail(APP, handle.id, 'reset', 'ECONNRESET')
+
+    const error = await rejection(handle.closed)
+    expect(error.code).toBe('reset')
+    expect(error.platformCode).toBe('ECONNRESET')
+  })
+
+  it('does not tell the destroy callback to touch the wire', async () => {
+    const t = table()
+    const destroy = spyDestroy()
+    const handle = t.acquire({ origin: APP, kind: 'tcpSocket', authorisedBy: { by: 'grant', grantId: TCP_GRANT }, destroy })
+
+    t.fail(APP, handle.id, 'reset')
+
+    // The peer already sent the RST. A FIN here would be a write to a dead fd.
+    expect(destroy).toHaveBeenCalledWith('failed')
+  })
+
+  it('rejects pending operations with the same code', async () => {
+    const t = table()
+    const handle = acquireSocket(t)
+    const pending = t.run(APP, { on: 'handle', handleId: handle.id }, never)
+
+    t.fail(APP, handle.id, 'reset')
+
+    expect((await rejection(pending)).code).toBe('reset')
+  })
+
+  it('cascades to sockets a failed server produced', async () => {
+    const t = table()
+    const acceptedDestroy = spyDestroy()
+    const server = t.acquire({ origin: APP, kind: 'tcpServer', authorisedBy: { by: 'grant', grantId: 'grant-tcp-listen' }, destroy: noop })
+    t.acquireDerived({ origin: APP, kind: 'tcpSocket', parentId: server.id, destroy: acceptedDestroy })
+
+    t.fail(APP, server.id, 'internal')
+
+    expect(acceptedDestroy).toHaveBeenCalledWith('failed')
+    expect(t.counts(APP).handles).toBe(0)
+  })
+
+  it('is ownership-checked like every other operation', () => {
+    const t = table()
+    const handle = acquireSocket(t)
+
+    expect(thrown(() => t.fail(OTHER, handle.id, 'reset')).code).toBe('denied')
+    expect(t.lookup(APP, handle.id).id).toBe(handle.id)
+  })
+})
+
+describe('revocation does not wait for a teardown it cannot bound', () => {
+  it('settles the revoke promise even when a destroy never completes', async () => {
+    const t = table()
+    t.acquire({ origin: APP, kind: 'tcpSocket', authorisedBy: { by: 'grant', grantId: TCP_GRANT }, destroy: never })
+
+    // The broker awaits this on the UI thread to update the permissions panel.
+    // MessagePortMain teardown's failure mode is silence, not an error, so a
+    // revoke that awaits it is T11b arriving through the door this module was
+    // built to close.
+    const outcome = await outcomeNow(t.revoke(APP, TCP_GRANT))
+
+    expect(outcome.state).toBe('resolved')
+  })
+})
+
+describe('session teardown', () => {
+  it('closes gracefully, not abruptly', async () => {
+    const t = table()
+    const destroy = spyDestroy()
+    t.acquire({ origin: APP, kind: 'file', authorisedBy: { by: 'userSelected' }, destroy })
+
+    await t.dropOrigin(APP)
+
+    // 'revoked' means RST with buffered data discarded. A user clicking a link
+    // away from the torrent app must not corrupt a half-written piece.
+    expect(destroy).toHaveBeenCalledWith('sessionEnded')
+  })
+
+  it('refuses a handle registered after the teardown began', async () => {
+    const t = table()
+    t.acquire({ origin: APP, kind: 'file', authorisedBy: { by: 'userSelected' }, destroy: never })
+
+    const dropping = t.dropOrigin(APP)
+    // An fs.userSelected picker resolving one tick late. SSFileHandle requires
+    // these not to survive the session.
+    const late = thrown(() => t.acquire({ origin: APP, kind: 'file', authorisedBy: { by: 'userSelected' }, destroy: noop }))
+
+    expect(late.code).toBe('revoked')
+    void dropping
+  })
+})
+
+describe('limits the first suite left unpinned', () => {
+  it('counts in-flight operations per origin, not globally (T11b)', async () => {
+    const t = table()
+    const mine = acquireSocket(t, APP)
+    const theirs = acquireSocket(t, OTHER)
+    for (let i = 0; i < LIMITS.inFlightOperations; i += 1) {
+      void t.run(APP, { on: 'handle', handleId: mine.id }, never).catch(() => {})
+    }
+
+    // A global counter here means one origin's 256 slow reads make EVERY other
+    // tab fail, and the failure is attributed to the victim.
+    await expect(t.run(OTHER, { on: 'handle', handleId: theirs.id }, async () => 'ok')).resolves.toBe('ok')
+  })
+
+  it('does not let identity handles consume the socket budget', () => {
+    const t = table()
+    const open = (): unknown => t.acquire({ origin: APP, kind: 'identity', authorisedBy: { by: 'grant', grantId: 'grant-id' }, destroy: noop })
+    for (let i = 0; i < LIMITS.concurrentFileHandles; i += 1) {
+      open()
+    }
+
+    // SSLimits caps nothing for IdentityHandle. A backstop on TOTAL rows lets
+    // the uncapped kind eat the capped kinds' budgets, which is the reverse of
+    // what a backstop is for.
+    expect(thrown(open).code).toBe('limit')
+    expect(() => acquireSocket(t)).not.toThrow()
+    expect(() => t.acquire({ origin: APP, kind: 'file', authorisedBy: { by: 'grant', grantId: FS_GRANT }, destroy: noop })).not.toThrow()
+  })
+
+  it('reports the file count it enforces against', () => {
+    const t = table()
+    t.acquire({ origin: APP, kind: 'file', authorisedBy: { by: 'grant', grantId: FS_GRANT }, destroy: noop })
+    t.acquire({ origin: APP, kind: 'file', authorisedBy: { by: 'userSelected' }, destroy: noop })
+
+    expect(t.counts(APP).files).toBe(2)
+  })
+
+  it('destroys the resource a refused DERIVED acquisition was handed', () => {
+    const t = table()
+    const server = t.acquire({ origin: APP, kind: 'tcpServer', authorisedBy: { by: 'grant', grantId: 'grant-tcp-listen' }, destroy: noop })
+    const destroy = spyDestroy()
+
+    thrown(() => t.acquireDerived({ origin: OTHER, kind: 'tcpSocket', parentId: server.id, destroy }))
+
+    // Connect repeatedly to a server whose grant was just withdrawn and every
+    // accepted-then-refused socket leaks an fd while the table reports room.
+    expect(destroy).toHaveBeenCalledWith('failed')
+  })
+
+  it('only derives the pair the specification describes', () => {
+    const t = table()
+    const picked = t.acquire({ origin: APP, kind: 'file', authorisedBy: { by: 'userSelected' }, destroy: noop })
+
+    // Inheriting `userSelected` onto a socket would put it in no grant's set,
+    // where no revoke could ever reach it.
+    expect(thrown(() => t.acquireDerived({ origin: APP, kind: 'tcpSocket', parentId: picked.id, destroy: noop })).code).toBe('internal')
+  })
+})
+
+describe('broker faults are always logged (SSErrors: internal is always logged)', () => {
+  it('attributes a failed teardown to an origin and a handle', async () => {
+    const faults: Array<{ origin: string, handleId: string | null }> = []
+    const t = new HandleTable({ onFault: (fault) => { faults.push({ origin: fault.origin, handleId: fault.handleId }) } })
+    const handle = t.acquire({
+      origin: APP, kind: 'tcpSocket', authorisedBy: { by: 'grant', grantId: TCP_GRANT },
+      destroy: () => { throw new Error('the socket was already gone') }
+    })
+
+    await t.release(APP, handle.id)
+
+    // "a socket the user revoked failed to close" is useless without whose.
+    expect(faults).toEqual([{ origin: APP, handleId: handle.id }])
+  })
+
+  it('logs an unkeyable origin rather than only throwing it at the app', () => {
+    const faults: unknown[] = []
+    const t = new HandleTable({ onFault: (fault) => { faults.push(fault.error) } })
+
+    // origin.ts documents a detached frame resolving to about:blank as an
+    // EXPECTED condition. The enum says 'internal' is always logged.
+    expect(thrown(() => t.acquire({ origin: 'about:blank', kind: 'tcpSocket', authorisedBy: { by: 'grant', grantId: TCP_GRANT }, destroy: noop })).code).toBe('internal')
+    expect(faults).toHaveLength(1)
+  })
+})
+
+describe('the table does not grow for origins that hold nothing', () => {
+  it('does not allocate an origin table for a denied operation', async () => {
+    const t = table()
+
+    for (let i = 0; i < 50; i += 1) {
+      await rejection(t.run(`https://sub${String(i)}.example`, { on: 'handle', handleId: 'deadbeef' }, never))
+    }
+
+    // lookup() documents this rule ("a read must not allocate one per origin
+    // that merely asked"); run() has to obey it too, or the rule is decorative.
+    expect(t.originCount()).toBe(0)
+  })
+
+  it('reclaims a grant bucket when its last handle closes', async () => {
+    const t = table()
+    for (let i = 0; i < 200; i += 1) {
+      const h = t.acquire({ origin: APP, kind: 'tcpSocket', authorisedBy: { by: 'grant', grantId: `g-${String(i)}` }, destroy: noop })
+      await t.release(APP, h.id)
+    }
+
+    expect(t.counts(APP).grants).toBe(0)
+  })
+})
+
+describe('what may cross to a renderer', () => {
+  it('projects a handle down to its id and nothing else', () => {
+    const t = table()
+    const handle = acquireSocket(t)
+
+    const wire = toWire(handle)
+
+    // `closed` is a Promise and is not structured-cloneable; `authorisedBy`
+    // carries a grant-ledger id the page has no use for. Spreading the entry
+    // into a ResponseEnvelope is the path of least resistance and the wrong
+    // one, so the right one is a function.
+    expect(Object.keys(wire)).toEqual(['id'])
+    expect(wire.id).toBe(handle.id)
+  })
+
+  it('finishes the cascade even when an abort listener throws', async () => {
+    const t = table()
+    const first = acquireSocket(t)
+    const secondDestroy = spyDestroy()
+    t.acquire({ origin: APP, kind: 'tcpSocket', authorisedBy: { by: 'grant', grantId: TCP_GRANT }, destroy: secondDestroy })
+
+    const pending = t.run(APP, { on: 'handle', handleId: first.id }, async (signal) => {
+      // Broker code. Node routes a throw from an abort listener to
+      // emitUncaughtException, which would abandon the rest of the sweep.
+      signal.addEventListener('abort', () => { throw new Error('listener blew up') })
+      return await never<string>()
+    })
+    await Promise.resolve()
+
+    await t.revoke(APP, TCP_GRANT)
+
+    // The throw reaches Node's uncaughtException handler, not this module -- an
+    // EventTarget dispatches out of band, so a try/catch around abort() would
+    // catch nothing. What must hold is that the sweep is not abandoned
+    // mid-cascade, leaving later handles live after a revoke.
+    expect((await rejection(pending)).code).toBe('revoked')
+    expect(secondDestroy).toHaveBeenCalledWith('revoked')
     expect(t.counts(APP).handles).toBe(0)
   })
 })
