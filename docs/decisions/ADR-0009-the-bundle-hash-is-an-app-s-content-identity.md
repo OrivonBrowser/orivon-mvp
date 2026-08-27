@@ -6,9 +6,11 @@
 - **Decided by:** owner (manifest-as-leaf, scope, and the case-collision rule), AI recommendation
   for the byte-level construction
 
-> **Amendment 2026-08-27 supersedes parts of the text below.** Three owner decisions were taken
-> after review found the case-collision rule was not working. Read §Amendment at the foot of this
-> document before relying on §Reasoning.
+> **Amendment 2026-08-27 supersedes parts of the text below.** Two rounds of review found that
+> the case-collision rule was not firing at all, and that path validation checked only the
+> encoded spelling and not the decoded one. Four decisions followed. **Read §Amendment at the
+> foot of this document before relying on §Decision or §Reasoning** — specifically, §Reasoning's
+> `Manifest.entry` rejection rule is withdrawn, and its sort-order argument is downgraded.
 
 ## Decision
 An app's **bundle hash** is a single SHA-256 root computed over the manifest plus every frontend
@@ -165,9 +167,10 @@ enables is the strict-mode rule that gap needs, should DDOC ever return.
 
 ## Amendment, 2026-08-27
 
-Review of the first implementation found that **the case/Unicode collision rule this ADR records
-as an owner decision was not actually firing**, and that a rule the specification required had
-never been implemented. Three decisions follow. All were taken *before any pin had been written
+Review of the first implementation, and then a second adversarial review of the fixes it
+prompted, found that **the case/Unicode collision rule this ADR records
+as an owner decision was not actually firing**, and that rules the specification required had
+never been implemented. Four decisions follow. All were taken *before any pin had been written
 to disk* — the one window in which this construction is not yet a one-way door.
 
 **1. The collision key percent-decodes first. (Correction, not a new rule.)**
@@ -209,6 +212,28 @@ nothing previously held still.
 
 **This was a one-time exception and it has expired.** Build step 4 writes the first real pin;
 from that point no row in the table may be edited for any reason.
+
+**4. The decoded path is validated too, not only the encoded one. (Correction, second round.)**
+
+Adversarial review of the fixes above found they had made half the argument. Decision 1 decodes
+percent-escapes to *detect* aliasing; the validator still checked only the encoded string. But
+the reason to decode at all is that the decoded form is what becomes a filename — so it is also
+the form that must be safe. `/%00.js` and `/..%2F..%2Fevil.js` were canonical, were hashed, and
+entered the pinned asset set that this ADR makes the code cache's layout map. Also missed:
+`%5C` as a Windows separator, empty path segments, Win32's trailing-dot/space stripping, and
+reserved device names.
+
+All are now rejected in the decoded form, **on every platform**, reusing `paths.ts`'s device
+list rather than a second one. A rule that fires only on Windows produces a bundle that hashes on
+Linux and is refused after download, which is the same has-no-single-identity failure as the
+collision case.
+
+The same review found the pin-record reader was more permissive than the bundle validator — it
+accepted an empty asset set, a missing manifest leaf, colliding paths and an unbounded count —
+and that the record constructor validated a caller's array and then stored it by reference, so
+its checks could be undone afterwards. Both closed. **The general rule, now written into
+`bundle-hash.md`: the module reading untrusted bytes off disk must never be the laxer of the
+two.**
 
 **Consequence worth recording, because this ADR overstated it.** §Reasoning argues at length that
 sorting must compare UTF-8 bytes rather than UTF-16 code units. With canonical form enforced,

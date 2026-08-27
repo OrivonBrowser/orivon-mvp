@@ -51,6 +51,13 @@ lets the fail-closed membership check (`security-model.md` T21) compare like for
 nonetheless *colliding* for storage purposes and cannot appear in the same bundle — see
 *Collision key*. Distinct-for-hashing and colliding-for-storage are different questions.)
 
+**A note for whoever builds the publishing tool.** These rules *reject*, they never repair, so a
+build step that percent-encodes more aggressively than the WHATWG URL Standard produces a bundle
+that is refused outright and can never be pinned. `new URL(...).pathname` leaves `@`, `~`, `(`,
+`)`, `,`, `=`, `+`, `$`, `&` and `'` **unencoded** — so `/img/logo@2x.png` is canonical and
+`/img/logo%402x.png` is not, even though a server would serve either. Derive asset paths by
+running the fetch URL through a URL parser, never by encoding a filename yourself.
+
 **Only `https:` and `http:` URLs yield a canonical path.** Every other scheme returns nothing.
 A `file:` URL parses perfectly well and has a `pathname` that reads exactly like an asset path —
 `file:///etc/passwd` gives `/etc/passwd` — and must never be able to produce one. App assets are
@@ -95,6 +102,35 @@ other spelling — `/a b.js` where the wire carries `/a%20b.js`, or a raw `ä` w
 denied. That fails closed, so it is not a serving bypass; the app simply does not work, on every
 platform, forever.
 
+### The decoded form must also be safe
+
+Every rule above tests the canonical path *as written*. **They must all be applied again to its
+percent-decoded form**, because that is the string a cache writer turns into a filename — it has
+to decode, or `/fonts/Inter%20Regular.woff2` lands on disk with a literal `%20` in its name.
+
+A canonical path is additionally rejected if its **decoded** form:
+
+- contains a NUL byte or any C0/C1 control character (`/%00.js`);
+- contains `\` (a separator on Windows), `:` (opens an NTFS alternate data stream), or `|`;
+- has any **empty** path segment (`/a//b.js` is `/a/b.js` on every filesystem there is);
+- has a `.` or `..` segment (`/..%2F..%2Fevil.js` decodes to a traversal out of the cache root);
+- has any segment ending in a **dot or a space** — Win32 strips both, so `/a.js.`, `/a.js%20`
+  and `/a.js` are one file there;
+- has any segment whose name before the first dot is a **Windows reserved device**: `CON`,
+  `PRN`, `AUX`, `NUL`, `COM1`–`COM9`, `LPT1`–`LPT9`, case-insensitively. (`CON.txt` is the
+  device; `CONFIG.js` is not.)
+- is exactly `/`, which names the cache directory rather than a file.
+
+> **This is the same argument as the collision key, and it was made in only one of the two
+> places.** The first implementation of these rules decoded in order to *detect aliasing* and then
+> validated only the encoded string — so `/%00.js` and `/..%2F..%2Fevil.js` were "canonical",
+> were hashed, and entered the pinned asset set. Corrected 2026-08-27, from the same review.
+
+**Enforced on every platform**, including ones where a given hazard does not exist. A bundle has
+one identity or it has none, and a rule that fires only on Windows produces a bundle that hashes
+on Linux and is refused after download. This mirrors the stance `src/broker/policy/paths.ts`
+takes for the app's own filesystem access, and uses the same device-name list.
+
 ### Collision key (the case/Unicode rule)
 
 For every canonical path, compute a **collision key**: **percent-decode**, then Unicode
@@ -134,10 +170,20 @@ Note that `/a%2Fb` and `/a/b` **still hash as distinct resources** (see *Canonic
 statements are true at once. They are distinct for hashing and colliding for storage, and a
 bundle may therefore contain either but not both.
 
-This is deliberate, not a compatibility shim: the on-disk cache on macOS (HFS+/APFS
-case-insensitivity, NFD normalisation) and Windows (case-insensitive filesystems) can hold only
-one of two colliding paths, so a bundle that "works" on Linux would silently reconstruct to a
-different pinned tree elsewhere. **The hash itself is never case-folded or Unicode-normalised** —
+**Known limits of `.toLowerCase()`, stated so they are not mistaken for coverage.** It is not the
+full Unicode Default Case Folding table. The two commonly-cited divergences — German `ß`/`SS` and
+the Turkish dotted/dotless `İ`/`i` — are *not* gaps here: NTFS's `$UpCase` table and the simple
+case folding APFS uses also leave those pairs distinct, so there is no filesystem on which they
+alias and nothing for the rule to catch. The Kelvin sign `U+212A` versus `K` **is** folded
+correctly. Separator- and escape-level aliasing is handled by the decoded-form rules below, not
+here.
+
+This is deliberate, not a compatibility shim: the on-disk cache on macOS (HFS+ normalised stored
+names to NFD; APFS stores names as given but compares them *normalisation-insensitively* — either
+way two spellings are one file) and Windows (case-insensitive filesystems) can hold only one of
+two colliding paths, so a bundle that "works" on Linux would silently reconstruct to a different
+pinned tree elsewhere. The normalisation *direction* is irrelevant to this rule, which only ever
+compares two paths to each other and never uses the key as a filename. **The hash itself is never case-folded or Unicode-normalised** —
 only the collision check is. `/App.js` and `/app.js`, when they do not collide with anything else
 in the same bundle, hash as the distinct resources they are.
 
@@ -327,6 +373,26 @@ expected to be revisited before the app loader ships:
 | `MAX_ASSET_BYTES` | 16 MiB | `crypto.subtle.digest` cannot stream, so each asset is briefly whole in memory |
 | `MAX_BUNDLE_BYTES` | 64 MiB | Aggregate of the above |
 | `MAX_BUNDLE_ENTRIES` | 4096 | The byte caps do not bound leaf *count*: 200k zero-byte entries pass both, and T21 re-hashes the whole cached tree at **every** load |
+
+## Reading a pin record back
+
+Out of scope for computing a hash, in scope for anyone implementing the whole mechanism, and the
+place a second implementation is most likely to go wrong.
+
+The pinned asset set is persisted and later **read back from disk as JSON**, and per
+`security-model.md` T24 the local filesystem is not a trusted store. **A parser reading a pin
+record must refuse everything the bundle validator refuses** — every path rule above, the
+collision rule, the leaf-count cap, the requirement of a leaf at `/.well-known/orivon.json`, and
+a non-empty asset set. If the reader is the more permissive of the two, then the untrusted input
+path is the one deciding what the code cache reconstructs, which inverts the whole design.
+
+Two further properties, learned the hard way here:
+
+- **The record must never throw.** A malformed pin file denies (nothing pinned, nothing runs from
+  cache); it does not crash. A crash inside a security decision is itself the failure.
+- **Copy the asset list; do not alias it.** A constructor that validates a caller's array and then
+  stores it by reference can have every check undone afterwards. In TypeScript, `readonly` is a
+  compile-time claim and buys nothing at runtime.
 
 ## What this document does not define
 
