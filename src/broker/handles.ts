@@ -69,10 +69,6 @@ import type {
   OriginCounts
 } from './handle-contracts.js'
 
-// Transitional: import these from ./handle-contracts.js directly in new code.
-export { toWire } from './handle-contracts.js'
-export type { CloseReason } from './handle-contracts.js'
-
 /** The per-origin handle table. One instance per browser session. */
 export class HandleTable {
   readonly #tables = new Map<string, OriginTable>()
