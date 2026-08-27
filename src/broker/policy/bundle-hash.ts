@@ -29,6 +29,9 @@ import { MANIFEST_PATH, MAX_BUNDLE_ENTRIES, collisionKey, describePath, isValidC
 import type { PathLeaf } from './canonical-path.js'
 import { fail } from './errors.js'
 
+/** Shared because it is stateless -- matches derive.ts's UTF8, same reason: allocating one per call was pure waste. */
+const UTF8 = new TextEncoder()
+
 /**
  * One leaf: an asset's canonical path (see canonicalAssetPath) and its raw,
  * unmodified fetched bytes. Includes the manifest -- it is a leaf like any
@@ -110,7 +113,7 @@ function toLowercaseHex (bytes: Uint8Array): string {
  * {path:"ab",content:"c"} hash identically.
  */
 async function leafDigest (entry: BundleEntry): Promise<Uint8Array> {
-  const pathBytes = new TextEncoder().encode(entry.path)
+  const pathBytes = UTF8.encode(entry.path)
   return digest(
     concat([
       Uint8Array.of(0x00),
@@ -192,11 +195,11 @@ export async function bundleTree (entries: readonly BundleEntry[]): Promise<Bund
   }
 
   const sorted = [...entries].sort((a, b) =>
-    compareUtf8Bytes(new TextEncoder().encode(a.path), new TextEncoder().encode(b.path))
+    compareUtf8Bytes(UTF8.encode(a.path), UTF8.encode(b.path))
   )
   const leaves = await Promise.all(sorted.map(leafDigest))
 
-  const versionBytes = new TextEncoder().encode(BUNDLE_HASH_VERSION)
+  const versionBytes = UTF8.encode(BUNDLE_HASH_VERSION)
   const countBytes = new Uint8Array(4)
   new DataView(countBytes.buffer).setUint32(0, leaves.length, false)
 
