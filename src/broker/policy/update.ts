@@ -20,6 +20,7 @@
 // itself against three deliberately-wrong implementations.
 
 import type { CapabilityKind, Pattern } from '../../contracts/index.js'
+import { isArray, ownProperty } from './own-property.js'
 
 /**
  * What the broker does with the update.
@@ -255,16 +256,19 @@ function widensAuthority (granted: PatternSet, requested: PatternSet): boolean {
 }
 
 /**
- * Own-property read with an array check. Both halves matter for input that
- * came from a publisher-controlled JSON document: a `__proto__` key would
- * otherwise resolve through the prototype chain to a non-array, and a
- * non-array value would throw on `.some(...)` -- a crash inside the function
- * whose job is to decide whether to prompt.
+ * Own-property read with an array check (./own-property.ts). Both halves
+ * matter for input that came from a publisher-controlled JSON document: a
+ * `__proto__` key would otherwise resolve through the prototype chain to a
+ * non-array, and a non-array value would throw on `.some(...)` -- a crash
+ * inside the function whose job is to decide whether to prompt.
+ *
+ * The cast trusts the element shape the same way the type PatternSet already
+ * does -- ownProperty's array guard confirms the value is AN array, not that
+ * every element is a well-formed Pattern; nothing here validated that before
+ * either.
  */
 function patternsFor (set: PatternSet, kind: CapabilityKind): readonly Pattern[] | undefined {
-  if (!Object.hasOwn(set, kind)) return undefined
-  const patterns = set[kind]
-  return Array.isArray(patterns) ? patterns : undefined
+  return ownProperty(set, kind, isArray) as readonly Pattern[] | undefined
 }
 
 // --- pattern coverage --------------------------------------------------------
