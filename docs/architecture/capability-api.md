@@ -185,6 +185,21 @@ ideal consumer of per-origin identity was wrong. Recorded here rather than silen
 | Backing | `derive(seed, "app", origin)` | `derive(seed, "identity", identityId)` |
 | Consumer | app-internal crypto | `window.nostr` (NIP-07), future wallet connect |
 
+**What `origin` and `identityId` are, precisely** (owner decision 2026-08-27, `ADR-0010`). Both
+are frozen into a key that the MVP cannot export, back up or migrate (`ADR-0003`), so two
+spellings of one of them are two different identities, permanently.
+
+- **`origin`** is the *canonical* origin, as produced by `originFromSenderFrame()` in
+  `src/broker/policy/origin.ts`. **Not** `URL.origin` — the two genuinely disagree, since A14
+  strips a trailing DNS dot and `URL.origin` does not. And **not** the bare `originFromUrl()`
+  underneath it: the frame variant denies when the committed URL and the frame's own origin
+  disagree, and skipping that gives a sandboxed opaque-origin document the embedder's grants and
+  identity key (T3, T13b).
+- **`identityId`** is **opaque and broker-generated, never a user-typed name and never derived
+  from one.** The user-visible label is stored beside the identity, not used to derive it —
+  otherwise renaming an identity, or merely changing its case, destroys the npub with nothing to
+  restore from.
+
 `window.nostr` semantics: injected in ordinary tabs; first `getPublicKey()` per site triggers
 the connect prompt; after connecting, signing is silent for that site (per-event prompts would
 make Nostr unusable). Presence of `window.nostr` is fingerprintable — true of every NIP-07
