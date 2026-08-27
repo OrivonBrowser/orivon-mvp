@@ -52,6 +52,7 @@ None of these block starting the week-0 spike.
 | A12 | **`orivon.fs` option bags are unspecified.** `capability-api.md` names the entry points (`readFile(path, opts)`, `writeFile(path, data, opts)`, `mkdir / readdir / stat / rm / rename`) but never says what `opts` contains or what `readFile` returns | **Build step 2.** Provisional signatures are in `src/contracts/capability-api.ts` and marked as such |
 | A14 | **RESOLVED 2026-08-26 (owner):** a trailing DNS dot is stripped, so `https://x.example.` and `https://x.example` are ONE origin. Deliberately deviates from `URL.origin`. Exactly one dot; a host still carrying an empty label is rejected | Implemented in `src/broker/policy/origin.ts` |
 | A13 | **Are `app.manifest()` and `app.grants()` async?** `capability-api.md` §v0 surface writes them as `=> Manifest` and `=> Grant[]`, but design rule 2 in the same document says *"All entry points return Promises"* | **Build step 2.** Transcribed as Promises; see below |
+| A16 | **What should closing the LAST tab do?** The shell currently leaves the window open with zero tabs. Chrome and Firefox instead open a fresh tab or close the window. Never actually decided | **Not blocking anything.** Decide before an outside user sees the shell; see below |
 | A17 | **RESOLVED 2026-08-27 (owner):** an `identityId` is **opaque and broker-generated** — never a user-typed name, never derived from one. The display name is stored beside the identity, not used to derive it. Found undefined during review of PR #5: it appeared exactly once in the whole repository, as one table cell | Recorded in `ADR-0010`, stated in `capability-api.md`, documented on `DeriveRequest.scope` |
 
 ---
@@ -88,6 +89,38 @@ plain values with no round trip.
 **Transcribed as Promises**, because design rule 2 is the more explicit statement and widening
 a Promise to a plain value later is a smaller break than the reverse. Cheap to change before any
 third-party app exists.
+
+---
+
+### A16 — what closing the last tab should do **[STILL OPEN]**
+
+Found while extending `scripts/smoke.mjs` (2026-08-27). Writing a check for "closing the last
+tab behaves sanely" required knowing what sane *is*, and nothing in this repository says.
+
+**What happens today.** `TabManager.closeTab()` (`src/main/tabs.ts`) removes the view, finds no
+fallback tab, sets `activeTabId: null` and emits. The `BaseWindow` stays open showing an empty
+tab strip, a disabled toolbar, and no content. Nothing crashes and nothing leaks — it is simply
+a state no other browser leaves you in. It was not chosen; it is what falling through the
+existing branch happens to produce.
+
+**The three plausible answers.**
+
+| | Behaviour | Who does this |
+|---|---|---|
+| 1 | Keep the window, open a fresh new tab | Chrome, Edge |
+| 2 | Close the window (and on the last window, quit) | Firefox, Safari, and `src/main/index.ts` already wires `window-all-closed -> app.quit()` |
+| 3 | Keep the window empty, as now | nobody |
+
+**Recommendation [AI-REC]:** option 1. It is the least surprising, it cannot strand a user, and
+it is a two-line change in `closeTab()`. Option 2 is also defensible and costs even less code,
+but "I closed a tab and the app quit" is a worse accident to have.
+
+**Why this is written down rather than just fixed.** Picking one is a product decision, and the
+smoke check now asserts the current outcome — so a silent change would look like a regression.
+The check is labelled to say so (`CURRENT BEHAVIOUR, pending A16 -- not a spec`) and asserts the
+resolution-independent properties separately: no crash, no orphaned view, and the shell still
+usable afterwards. **Whichever way A16 goes, change that one check — not the product — to
+match.**
 
 ---
 
