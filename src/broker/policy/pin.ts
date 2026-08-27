@@ -14,7 +14,7 @@
 // decision is itself the failure).
 
 import type { OrivonError, OrivonErrorCode } from '../../contracts/index.js'
-import type { PathLeaf } from './bundle-hash.js'
+import { isValidCanonicalPath, type PathLeaf } from './bundle-hash.js'
 
 /** The only schema version that exists. Bumped, never mutated in place -- see PinRecord. */
 export const PIN_SCHEMA_VERSION = 1
@@ -107,7 +107,12 @@ function parseAssets (raw: object): readonly PinnedAsset[] | null {
     if (typeof entry !== 'object' || entry === null) return null
     const path = ownString(entry, 'path')
     const leaf = ownString(entry, 'leaf')
-    if (path === undefined || path.length === 0) return null
+    // Held to bundle-hash.ts's definition, not merely "a non-empty string".
+    // A record that reaches here did not necessarily come from bundleTree():
+    // it came off disk. The pinned asset set is both T21's allowlist and the
+    // map the code cache is laid out from, so a traversal segment or a NUL
+    // byte surviving into it is a path the broker itself would then write.
+    if (path === undefined || !isValidCanonicalPath(path)) return null
     if (leaf === undefined || !BUNDLE_HASH_PATTERN.test(leaf)) return null
     // A pin record with a duplicated path is malformed -- it cannot have come
     // from bundleTree(), which rejects duplicate/colliding paths before
@@ -169,6 +174,24 @@ export function fromBundleTree (
   if (assets.length === 0) throw fail('invalid', 'a pin record needs at least one pinned asset')
   if (version.length === 0) throw fail('invalid', 'a pin record needs a non-empty version')
   if (!Number.isFinite(pinnedAt)) throw fail('invalid', 'pinnedAt must be a finite number')
+
+  // This constructor is exported, so it is reachable with an asset list that
+  // did NOT come from bundleTree(). Every property the name promises is
+  // therefore checked here rather than assumed -- otherwise the two ways of
+  // building a record (this and parsePinRecord) hold different lines.
+  const seenPaths = new Set<string>()
+  for (const asset of assets) {
+    if (!isValidCanonicalPath(asset.path)) {
+      throw fail('invalid', `not a valid canonical path: ${JSON.stringify(asset.path.slice(0, 120))}`)
+    }
+    if (!BUNDLE_HASH_PATTERN.test(asset.leaf)) {
+      throw fail('invalid', `not a leaf digest: ${JSON.stringify(asset.leaf.slice(0, 120))}`)
+    }
+    if (seenPaths.has(asset.path)) {
+      throw fail('invalid', `duplicate pinned path: ${JSON.stringify(asset.path.slice(0, 120))}`)
+    }
+    seenPaths.add(asset.path)
+  }
 
   return { schema: 1, origin, bundleHash, assets, version, pinnedAt }
 }

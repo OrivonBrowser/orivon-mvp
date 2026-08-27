@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   bundleHash,
+  bundleTree,
   canonicalAssetPath,
   MANIFEST_PATH,
   MAX_ASSET_BYTES,
   MAX_BUNDLE_BYTES,
+  MAX_BUNDLE_ENTRIES,
   type BundleEntry
 } from './bundle-hash.js'
 
@@ -71,18 +73,81 @@ describe('frozen golden vectors', () => {
     expect(hashA).not.toBe(hashB)
   })
 
-  it('V5: UTF-8 byte order vs UTF-16 code-unit order', async () => {
+  // REVISED 2026-08-27, before any pin was ever persisted -- see
+  // bundle-hash.md SSV5 and ADR-0009's amendment. The original V5 hashed RAW
+  // supplementary-plane and private-use characters in its paths. Those are not
+  // canonical paths, and bundleTree() now rejects them: new URL() always
+  // percent-encodes non-ASCII, so no fetched asset can ever present that form.
+  // Re-expressed here in the form a browser actually produces. Root recomputed
+  // by the same independent node:crypto reference implementation as the rest of
+  // this table, never by the implementation under test.
+  //
+  // Note what the re-expression costs: once every path is percent-encoded it is
+  // pure ASCII, so UTF-8 byte order and UTF-16 code-unit order CANNOT diverge.
+  // This vector no longer proves the sort rule -- nothing reachable can. See
+  // compareUtf8Bytes in ./bundle-hash.ts for why it is kept regardless.
+  it('V5: non-ASCII paths hash in their percent-encoded form', async () => {
     const entries: BundleEntry[] = [
       manifestEntry(),
-      { path: '/\u{10000}.js', content: utf8('x') }, // supplementary plane
-      { path: '/.js', content: utf8('y') } // BMP private-use area
+      { path: '/%F0%90%80%80.js', content: utf8('x') }, // U+10000, supplementary plane
+      { path: '/%EE%80%80.js', content: utf8('y') } // U+E000, BMP private-use area
     ]
     await expect(bundleHash(entries)).resolves.toBe(
-      'sha256:2cb9aeca099886230482a7d8ea0fb3338aaf146466f301817c42f81306a8d53c'
+      'sha256:9aebeec88db79ddc4244d8026f0f93aee26d8bcd686da283c77db35617467af9'
     )
+  })
+
+  // V6 freezes what V1-V5 do not: the PER-LEAF digests. pin.ts persists these
+  // as the pinned asset set, so they are as much a one-way door as the root --
+  // ADR-0009's reasoning applies to them verbatim, and until now nothing held
+  // them still. Same independent reference implementation.
+  it('V6: the per-path leaf table for V1, in sorted order', async () => {
+    const entries: BundleEntry[] = [
+      manifestEntry(),
+      { path: '/index.html', content: utf8('<!doctype html><title>a</title>') },
+      { path: '/app.js', content: utf8('console.log(1)') }
+    ]
+    await expect(bundleTree(entries)).resolves.toEqual({
+      root: 'sha256:2ff5baaa794301118be4270755686fd1438501332ab3b1a199af90815ca4c4fd',
+      assets: [
+        {
+          path: '/.well-known/orivon.json',
+          leaf: 'sha256:612c226ad5f32daa98f31de474342d9f6215339cc7f607b5052bbf57e0422872'
+        },
+        {
+          path: '/app.js',
+          leaf: 'sha256:fe2c01feec61bdeccff4b903bfca12c534a3c770d053bcdb6e7171ec60a41116'
+        },
+        {
+          path: '/index.html',
+          leaf: 'sha256:e64a531c45ee108a04ea6ba8d43eb74810b50142a6f68d6d37a4f73389cc6975'
+        }
+      ]
+    })
+  })
+
+  // The leaf digest bundle-hash.md publishes beside V3's root, which nothing
+  // held until V6 made the leaf table a frozen output.
+  it("V3's published leaf digest, and root-vs-leaf domain separation", async () => {
+    const tree = await bundleTree([manifestEntry('{}')])
+    expect(tree.assets).toEqual([
+      {
+        path: MANIFEST_PATH,
+        leaf: 'sha256:4c1f4a74edebb25f62e547b5741793f5f759fdadd631fac073557ef8e78e5deb'
+      }
+    ])
+    expect(tree.root).not.toBe(tree.assets[0]!.leaf)
   })
 })
 
+// A DELIBERATELY UNTESTED PROPERTY, recorded so nobody spends an afternoon
+// trying to cover it. Replacing compareUtf8Bytes with Array.prototype.sort's
+// default UTF-16 comparison passes this entire suite, and that is not a gap:
+// isValidCanonicalPath now requires canonical form, canonical paths are pure
+// ASCII, and for ASCII the two orders are IDENTICAL. No legal bundle can tell
+// them apart, so no vector can either -- V5's re-expression removed the last
+// input that could. See compareUtf8Bytes in ./bundle-hash.ts for why the
+// stricter comparator is kept anyway.
 describe('order independence', () => {
   it('is insensitive to input array order beyond the two frozen vectors', async () => {
     const a = manifestEntry()
@@ -117,14 +182,128 @@ describe('rejected before hashing', () => {
     ).rejects.toMatchObject({ code: 'invalid' })
   })
 
+  // ---------------------------------------------------------------------
+  // THE COLLISION RULE, TESTED IN THE FORM IT ACTUALLY ARRIVES IN.
+  //
+  // Every case below previously PASSED and should not have. The earlier
+  // version of this test fed RAW Unicode strings, which canonicalAssetPath()
+  // can never emit -- new URL() percent-encodes non-ASCII before anything here
+  // sees it. So the collision key was computed over pure-ASCII percent-escapes,
+  // where .normalize('NFC') is a no-op and .toLowerCase() folds nothing that
+  // matters, and the rule ADR-0009 records as an OWNER DECISION never fired.
+  //
+  // Each case is written as canonicalAssetPath() output, the only form a
+  // fetched asset can present.
+  // ---------------------------------------------------------------------
   it('two paths colliding under NFC/NFD normalisation', async () => {
-    // 'é' as a single codepoint (NFC) vs 'e' + combining acute accent (NFD).
-    const nfc = '/café.js'
-    const nfd = '/café.js'
-    expect(nfc).not.toBe(nfd) // distinct byte strings going in
+    // 'e' with acute: one codepoint (NFC) vs 'e' + combining accent (NFD).
+    const nfc = canonicalAssetPath('https://x.example/café.js')
+    const nfd = canonicalAssetPath('https://x.example/café.js')
+    expect(nfc).toBe('/caf%C3%A9.js')
+    expect(nfd).toBe('/cafe%CC%81.js')
     await expect(
-      bundleHash([manifestEntry(), { path: nfc, content: utf8('1') }, { path: nfd, content: utf8('2') }])
+      bundleHash([manifestEntry(), { path: nfc!, content: utf8('1') }, { path: nfd!, content: utf8('2') }])
     ).rejects.toMatchObject({ code: 'invalid' })
+  })
+
+  it('two NON-ASCII paths colliding under case folding', async () => {
+    const upper = canonicalAssetPath('https://x.example/Ä.js')
+    const lower = canonicalAssetPath('https://x.example/ä.js')
+    expect(upper).toBe('/%C3%84.js')
+    expect(lower).toBe('/%C3%A4.js')
+    await expect(
+      bundleHash([manifestEntry(), { path: upper!, content: utf8('1') }, { path: lower!, content: utf8('2') }])
+    ).rejects.toMatchObject({ code: 'invalid' })
+  })
+
+  // The sharpest case: a SECOND manifest smuggled in under a percent-escaped
+  // spelling of the reserved path. Both survive into the pinned asset set, both
+  // decode to one filename in the code cache, and whichever wins the write is
+  // the manifest whose capabilities are actually enforced -- under a root the
+  // user consented to for the other one. Precisely what ADR-0009 chose
+  // manifest-as-leaf to prevent.
+  it('a percent-escaped alias of the reserved manifest path', async () => {
+    await expect(
+      bundleHash([
+        manifestEntry(),
+        { path: '/%2Ewell-known/orivon.json', content: utf8('{"connect":["*:*"]}') }
+      ])
+    ).rejects.toMatchObject({ code: 'invalid' })
+  })
+
+  it('escape aliasing of an ordinary asset (/A.js vs /%41.js)', async () => {
+    await expect(
+      bundleHash([manifestEntry(), { path: '/A.js', content: utf8('1') }, { path: '/%41.js', content: utf8('2') }])
+    ).rejects.toMatchObject({ code: 'invalid' })
+  })
+
+  it('hex-case aliasing of one escape (/%C3%A4.js vs /%c3%a4.js)', async () => {
+    await expect(
+      bundleHash([
+        manifestEntry(),
+        { path: '/%C3%A4.js', content: utf8('1') },
+        { path: '/%c3%a4.js', content: utf8('2') }
+      ])
+    ).rejects.toMatchObject({ code: 'invalid' })
+  })
+
+  // An encoded separator and a real one land on the same file on disk, even
+  // though bundle-hash.md is explicit that they are DISTINCT canonical paths
+  // for hashing. Both statements are true: they hash apart, and they cannot
+  // coexist inside one bundle.
+  it('an encoded separator colliding with a real one (/a%2Fb vs /a/b)', async () => {
+    await expect(
+      bundleHash([manifestEntry(), { path: '/a%2Fb', content: utf8('1') }, { path: '/a/b', content: utf8('2') }])
+    ).rejects.toMatchObject({ code: 'invalid' })
+  })
+
+  // ---------------------------------------------------------------------
+  // THE CANONICAL-FORM RULE (bundle-hash.md rejection table item 5).
+  // Stated in the spec from the start and never implemented. Every path below
+  // was previously ACCEPTED and hashed into a pin no request could ever match.
+  // ---------------------------------------------------------------------
+  it('a path not already in canonical form is rejected, not repaired', async () => {
+    for (const path of [
+      '/a b.js', // real form is /a%20b.js
+      '/ä.js', // real form is /%C3%A4.js
+      '/%2e%2e/x.js', // URL normalisation collapses this to /x.js
+      '/x.js ', // trailing space
+      '/a b.js', // line separator, percent-encoded by new URL()
+      '/a?b.js', // '?' opens a query, so it cannot occur in a pathname
+      '/a#b.js' // '#' opens a fragment
+    ]) {
+      await expect(
+        bundleHash([manifestEntry(), { path, content: utf8('x') }]),
+        `should reject ${JSON.stringify(path)}`
+      ).rejects.toMatchObject({ code: 'invalid' })
+    }
+  })
+
+  it('a path whose percent-escapes cannot be decoded', async () => {
+    // Canonical as far as the URL parser is concerned -- it passes '%zz'
+    // through untouched -- but no filename can be recovered from it, and
+    // collisionKey must never be handed something that throws.
+    for (const path of ['/%zz.js', '/%e0%a4%a', '/%.js']) {
+      await expect(
+        bundleHash([manifestEntry(), { path, content: utf8('x') }]),
+        `should reject ${JSON.stringify(path)}`
+      ).rejects.toMatchObject({ code: 'invalid' })
+    }
+  })
+
+  it('a bundle with more than MAX_BUNDLE_ENTRIES leaves', async () => {
+    const entries: BundleEntry[] = [manifestEntry()]
+    for (let i = 0; i <= MAX_BUNDLE_ENTRIES; i += 1) {
+      entries.push({ path: `/f${i}`, content: new Uint8Array(0) })
+    }
+    await expect(bundleHash(entries)).rejects.toMatchObject({ code: 'invalid' })
+  })
+
+  it('bounds the rejection message rather than echoing a hostile path whole', async () => {
+    const huge = '/' + 'a'.repeat(3_000_000)
+    await expect(
+      bundleHash([manifestEntry(), { path: huge, content: utf8('x') }])
+    ).rejects.toSatisfy((error: Error) => error.message.length < 2048)
   })
 
   it('an exact duplicate path', async () => {
@@ -206,6 +385,23 @@ describe('canonicalAssetPath', () => {
 
   it('returns null for an unparseable URL', () => {
     expect(canonicalAssetPath('not a url')).toBeNull()
+  })
+
+  // A `file:` URL parses fine and has a pathname that reads exactly like an
+  // asset path -- `file:///etc/passwd` yields `/etc/passwd`. An app asset is
+  // fetched over https (ADR-0007) or, for the dev fixture, http on localhost;
+  // nothing else may produce a canonical path at all.
+  it('returns null for a scheme an asset cannot be fetched over', () => {
+    expect(canonicalAssetPath('file:///etc/passwd')).toBeNull()
+    expect(canonicalAssetPath('data:text/html,hi')).toBeNull()
+    expect(canonicalAssetPath('javascript:alert(1)')).toBeNull()
+    expect(canonicalAssetPath('orivon-app:///index.html')).toBeNull()
+    expect(canonicalAssetPath('ftp://x.example/a.js')).toBeNull()
+  })
+
+  it('accepts the two schemes an asset can be fetched over', () => {
+    expect(canonicalAssetPath('https://x.example/a.js')).toBe('/a.js')
+    expect(canonicalAssetPath('http://localhost:5173/a.js')).toBe('/a.js')
   })
 
   it('rejects an over-length path', () => {

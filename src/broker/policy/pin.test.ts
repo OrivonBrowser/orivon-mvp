@@ -84,6 +84,32 @@ describe('parsePinRecord: never throws, denies by returning null', () => {
     expect(parsePinRecord({ ...validRaw(), assets: [{ path: '', leaf: OTHER_HASH }] })).toBeNull()
   })
 
+  // A pin record is read back from disk, and pin.ts's own header says it must
+  // be treated with the same suspicion as any other externally-supplied
+  // document. Until 2026-08-27 `path` was checked for `typeof === 'string' &&
+  // length > 0` and nothing else, so bundle-hash.ts and pin.ts disagreed about
+  // what a pinned path is -- one rejecting traversal segments, NUL bytes and
+  // non-canonical spellings, the other accepting all of them. The record is
+  // also the map the code cache is laid out from (ADR-0009), so the more
+  // permissive of the two decides what actually gets written to disk.
+  it('an asset path that is not a valid canonical path', () => {
+    for (const path of [
+      '../../../../etc/passwd',
+      '/../escape.js',
+      '/a\u0000b.js',
+      'relative.js',
+      'C:\\Windows\\System32\\x.dll',
+      '/a b.js', // not canonical: real form is /a%20b.js
+      '/%zz.js', // undecodable escape
+      `/${'a'.repeat(2000)}.js` // over the path length cap
+    ]) {
+      expect(
+        parsePinRecord({ ...validRaw(), assets: [{ path, leaf: OTHER_HASH }] }),
+        `should refuse ${JSON.stringify(path)}`
+      ).toBeNull()
+    }
+  })
+
   it('duplicate asset paths', () => {
     expect(
       parsePinRecord({
@@ -180,6 +206,36 @@ describe('fromBundleTree: rejects a record that could not have come from bundleT
   it('a non-finite pinnedAt', () => {
     expect(() =>
       fromBundleTree('https://x.example', VALID_HASH, [{ path: '/a', leaf: OTHER_HASH }], '0.1.0', Number.NaN)
+    ).toThrow()
+  })
+
+  // The constructor is exported, so it is reachable with an asset list that
+  // did not come from bundleTree(). It must hold the same line parsePinRecord
+  // does, or the two ways of building a record disagree.
+  it('an asset path bundleTree() could not have produced', () => {
+    expect(() =>
+      fromBundleTree('https://x.example', VALID_HASH, [{ path: '/../escape.js', leaf: OTHER_HASH }], '0.1.0', 0)
+    ).toThrow()
+  })
+
+  it('a malformed leaf digest', () => {
+    expect(() =>
+      fromBundleTree('https://x.example', VALID_HASH, [{ path: '/a', leaf: 'not-a-digest' }], '0.1.0', 0)
+    ).toThrow()
+  })
+
+  it('duplicate asset paths', () => {
+    expect(() =>
+      fromBundleTree(
+        'https://x.example',
+        VALID_HASH,
+        [
+          { path: '/a', leaf: OTHER_HASH },
+          { path: '/a', leaf: VALID_HASH }
+        ],
+        '0.1.0',
+        0
+      )
     ).toThrow()
   })
 
