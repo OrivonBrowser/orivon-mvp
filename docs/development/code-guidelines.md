@@ -55,17 +55,25 @@ written, or a block explaining a function whose name already explains it.
 
 ### Where the codebase stands
 
-Comment lines as a share of the file, source only:
+**Cleaned up 2026-08-27**, on `stream/backlog-07-guidelines-cleanup`. An audit found that density
+alone was not the useful signal — the two densest files in the repo
+([`src/contracts/handles.ts`](../../src/contracts/handles.ts) at 75% and
+[`src/broker/policy/derive.ts`](../../src/broker/policy/derive.ts) at 60%) were both correctly
+dense: the first is `src/contracts/`'s own carve-out below, the second is nearly all load-bearing
+security reasoning. Two files were genuinely restating themselves:
 
-| File | Comment lines | Total | Share |
-|---|---|---|---|
-| [`src/contracts/handles.ts`](../../src/contracts/handles.ts) | 186 | 247 | 75% |
-| [`src/shim/globals.ts`](../../src/shim/globals.ts) | 153 | 247 | 62% |
-| [`src/telemetry/disclosure.ts`](../../src/telemetry/disclosure.ts) | 122 | 200 | 61% |
-| [`src/main/update-check.ts`](../../src/main/update-check.ts) | 191 | 467 | 41% |
+| File | Cut | Reason |
+|---|---|---|
+| [`src/telemetry/disclosure.ts`](../../src/telemetry/disclosure.ts) | 200 → 181 lines | The same fact ("undecided excludes itself at the type level") stated three separate times; four purely decorative section-banner rules |
+| [`src/main/update-check.ts`](../../src/main/update-check.ts) | 467 → 441 lines (before the Rule-2 split below) | A 14-line header table-of-contents duplicating the file's own section banners; "no download happens here" stated three times |
+| [`src/telemetry/accounting.ts`](../../src/telemetry/accounting.ts) | 309 → 298 lines | Three separate restatements of "this is pure"; a header overview overlapping three functions' own docs |
+| [`src/broker/policy/derive.ts`](../../src/broker/policy/derive.ts) | 499 → 498 lines | One meta-clause introducing a correction — the correction itself stayed; deleting it would let a future reader re-derive the mistake it exists to prevent |
 
-Density alone is not the violation — see the carve-out for `src/contracts/` below. These are
-the files to read first when the cleanup starts, not a list of confirmed faults.
+Left alone, checked rather than skipped: [`src/shim/globals.ts`](../../src/shim/globals.ts) (62%,
+nearly all load-bearing trap documentation), and
+[`src/contracts/manifest.ts`](../../src/contracts/manifest.ts) /
+[`src/contracts/ipc.ts`](../../src/contracts/ipc.ts) (both exempt below, and correctly dense even
+setting the exemption aside).
 
 ---
 
@@ -93,25 +101,53 @@ already states what it may import.
 
 ### Where the codebase stands
 
-**Nothing is over its limit today.** That is the good news and also the whole problem — four
-source files are close enough that the next ordinary change to any of them breaks the rule:
+**Nothing is over its limit**, as of two coordinated branches landing 2026-08-27:
+`stream/backlog-06-rule2-violations` (the files that had already broken the rule) and
+`stream/backlog-07-guidelines-cleanup` (the four that were close enough to break it on the next
+ordinary change). Both must merge for the table below to be accurate — check `git log` if you are
+reading this before they have.
 
-| File | Lines | Limit | Headroom |
+**The real violations, found after PRs #8 and #13 landed** (`backlog-06`):
+
+| File | Before | Split into | Largest part after |
 |---|---|---|---|
-| [`src/broker/policy/derive.ts`](../../src/broker/policy/derive.ts) | 499 | 500 | **1** |
-| [`src/broker/policy/bundle-hash.ts`](../../src/broker/policy/bundle-hash.ts) | 473 | 500 | 27 |
-| [`src/broker/policy/address.ts`](../../src/broker/policy/address.ts) | 468 | 500 | 32 |
-| [`src/main/update-check.ts`](../../src/main/update-check.ts) | 467 | 500 | 33 |
-| [`scripts/smoke.mjs`](../../scripts/smoke.mjs) | 688 | 800 | 112 |
-| [`src/broker/policy/bundle-hash.test.ts`](../../src/broker/policy/bundle-hash.test.ts) | 525 | 800 | 275 |
-| [`src/broker/policy/paths.test.ts`](../../src/broker/policy/paths.test.ts) | 500 | 800 | 300 |
-| [`src/broker/policy/derive.test.ts`](../../src/broker/policy/derive.test.ts) | 482 | 800 | 318 |
+| [`src/broker/handles.ts`](../../src/broker/handles.ts) | 1045 | `handle-contracts.ts`, `errors.ts`, `handle-store.ts`, `handles.ts` | 497 |
+| [`src/broker/policy/connect.ts`](../../src/broker/policy/connect.ts) | 622 | `canonical-host.ts`, `connect-patterns.ts`, `connect.ts` | 297 |
+| `src/broker/handles.test.ts` | 1212 | `handles.test-helpers.ts`, `handles.test.ts`, `handles-limits.test.ts` | 750 |
+| `src/broker/policy/connect.test.ts` | 1149 | `connect.test-helpers.ts`, `connect.test.ts`, `connect-patterns.test.ts` | 623 |
 
-The first four are the refactoring worklist. `derive.ts` at one line of headroom is effectively
-already over: it cannot absorb a bug fix without a split, and it is on the critical path.
+`handles.ts`'s split required a design decision, not just a mechanical move: the nine methods
+that acted on one origin's state became a real `OriginTable` **class** (`handle-store.ts`) rather
+than free functions taking a table parameter, so the ownership check that used to live in
+`#`-privacy did not quietly disappear. See that commit's message for the reasoning.
 
-Three of the four are in `src/broker/policy/`, which is a signal in itself — that directory is
-where the limit will keep biting, and it is the one to plan a split for rather than to shave.
+**The four that were about to break it** (`backlog-07`, this branch):
+
+| File | Before | Split into | Largest part after |
+|---|---|---|---|
+| [`src/broker/policy/derive.ts`](../../src/broker/policy/derive.ts) | 499 | `derive-encoding.ts`, `derive.ts`, `derive-p256.ts` | 267 |
+| [`src/broker/policy/bundle-hash.ts`](../../src/broker/policy/bundle-hash.ts) | 473 | `canonical-path.ts`, `bundle-hash.ts` | 253 |
+| [`src/broker/policy/address.ts`](../../src/broker/policy/address.ts) | 468 | `address-ranges.ts`, `address-parse.ts`, `address.ts` | 208 |
+| [`src/main/update-check.ts`](../../src/main/update-check.ts) | 467 | `github-release-version.ts`, `update-check.ts`, `update-check-runner.ts` | 213 |
+
+Two splits paid for themselves beyond the line count: `canonical-path.ts` let
+[`pin.ts`](../../src/broker/policy/pin.ts) drop a dependency on the hashing half of
+`bundle-hash.ts` it never used, and `github-release-version.ts`'s extraction is what surfaced
+that its semver grammar had quietly diverged from
+[`policy/update.ts`](../../src/broker/policy/update.ts)'s (see Rule 3 below).
+
+Two test files ([`bundle-hash.test.ts`](../../src/broker/policy/bundle-hash.test.ts),
+[`address.test.ts`](../../src/broker/policy/address.test.ts)) were also split or had their vector
+tables extracted (to `canonical-path.test.ts` and `address-vectors.ts`) even though neither was
+over the 800-line test limit — Rule 2 and test files below explains why that extraction is worth
+doing before a file is actually at risk, not after. Verifying these splits took more than a
+passing test count: several tests loop over path arrays inside one `it()`, where a dropped row is
+invisible to a count, and the extraction caught two real corrupted-Unicode mistakes in its own
+first pass — see that commit's message.
+
+`scripts/smoke.mjs` (688/800) and the vector-table test files this audit originally flagged
+(`paths.test.ts`, `derive.test.ts`) were never violations under the 800-line test limit; the
+original table above listed them for context, not as a worklist.
 
 ---
 
@@ -124,23 +160,43 @@ working inside one stream's paths — not knowing the helper already exists, wri
 one, and both being correct. Nobody notices, because nothing is broken. Then one gets a bug fix
 and the other does not.
 
-**This has already happened here, twice, in the same pair of files:**
+**This had already happened here, twice, in the same pair of files** — found 2026-08-27 and fixed
+on `stream/backlog-07-guidelines-cleanup`:
 
-| Helper | Copy A | Copy B |
-|---|---|---|
-| `concat(parts)` | [`derive.ts:256`](../../src/broker/policy/derive.ts#L256) | [`bundle-hash.ts:337`](../../src/broker/policy/bundle-hash.ts#L337) |
-| `encodeField(value)` | [`derive.ts:215`](../../src/broker/policy/derive.ts#L215) | [`bundle-hash.ts:324`](../../src/broker/policy/bundle-hash.ts#L324) |
+| Helper | Copy A | Copy B | Now lives in |
+|---|---|---|---|
+| `concat(parts)` | `derive.ts:256` | `bundle-hash.ts:337` | [`bytes.ts`](../../src/broker/policy/bytes.ts) |
+| `encodeField(value)` | `derive.ts:215` | `bundle-hash.ts:324` | [`bytes.ts`](../../src/broker/policy/bytes.ts)'s `frame()`, wrapped by `derive-encoding.ts` |
 
-The `concat` pair is byte-for-byte the same function. The `encodeField` pair implements the
+The `concat` pair was byte-for-byte the same function. The `encodeField` pair implemented the
 same length-prefix framing — a big-endian `uint32` byte count followed by the bytes — differing
-only in that one takes a string and validates it first. That framing is a **wire format**: if
-the two copies ever disagree, two subsystems disagree about an encoding that hashes and keys
-depend on.
+only in that one took a string and validated it first. That framing is a **wire format**: if the
+two copies had drifted, two subsystems would have disagreed about an encoding that hashes and
+keys depend on. Both frozen golden-vector tables (`derive.ts`'s and `bundle-hash.ts`'s) hash
+byte-identically after the consolidation — verified, not assumed.
 
-**Both copies sit in the same directory, owned by the same stream.** There was no boundary in
+**Both copies sat in the same directory, owned by the same stream.** There was no boundary in
 the way and nothing to raise with anyone — the first copy was simply never looked for. That is
 the ordinary case this rule is aimed at, and it is why the first line of defence is a `grep`
 rather than a process.
+
+**Six more turned up in the same audit, and all six were fixable inside their own directory —
+none needed `src/shared/`:**
+
+| Helper | Copies | Now lives in |
+|---|---|---|
+| `fail(code, message)` | 4 copies across `derive.ts`, `derive-encoding.ts`, `bundle-hash.ts`, `pin.ts` | [`policy/errors.ts`](../../src/broker/policy/errors.ts) |
+| Own-property read + type guard | `pin.ts`'s `ownString`/`ownNumber`/`ownFiniteNumber`, `update.ts`'s `patternsFor` | [`own-property.ts`](../../src/broker/policy/own-property.ts) |
+| Truncate-for-logging (`x.slice(0, 120)`) | 5 inline copies in `pin.ts` | `canonical-path.ts`'s `describePath`, already exported |
+| Windows reserved-device-name table | `paths.ts`, `canonical-path.ts` | [`windows-device-names.ts`](../../src/broker/policy/windows-device-names.ts) (table only — the two wrapper checks apply it with different case rules and stayed separate) |
+| `invokedDirectly` CLI guard + `rel()` | 3 copies across `check-no-native-modules.mjs`, `check-contracts-pure.mjs`, `check-no-secrets.mjs` | [`scripts/cli.mjs`](../../scripts/cli.mjs) |
+| IPC channel strings | `main/ipc.ts`, `main/window.ts`, `preload/shell.ts`, under 3 different constant names | [`main/channels.ts`](../../src/main/channels.ts) |
+
+**Two known duplicates were deliberately left alone**, not missed: a lowercase-hex encoder shared
+between `bundle-hash.ts` and `handles.ts`, and `MAX_HOST_LENGTH`/`MAX_PORT` shared between
+`origin.ts` and `connect.ts`. Both cross into files `backlog-06` (above) restructured wholesale;
+fixing them from this branch would have created a guaranteed structural merge conflict rather than
+a content one. Left for a follow-up once both branches have merged.
 
 Before writing a helper, search for it. `grep -rn "function <name>" src/` costs seconds. The
 same applies to near-misses: if the function you want is the one that exists plus one
@@ -241,21 +297,30 @@ Resolved by `src/shared/` — see §Where a shared helper lives.
 Recorded here because the cost is real and should be visible rather than discovered later:
 
 - There is no `eslint`, `prettier`, `biome` or `.editorconfig` in the repository, and the
-  conventions have **already split**. 115 function declarations are written
-  `function name (args)`; 14 are written `function name(args)` — and all 14 are in
-  [`derive.ts`](../../src/broker/policy/derive.ts) and
-  [`derive.test.ts`](../../src/broker/policy/derive.test.ts), nowhere else. One module's worth,
-  which is the shape of a convention set in a single session that then never spread. Nobody
-  chose it. It is what happens when a rule lives only in reviewers' heads — exactly where
-  Rules 1, 2 and 3 live today.
+  conventions **had already split once**: 14 function declarations in
+  [`derive.ts`](../../src/broker/policy/derive.ts) and `derive.test.ts` were written
+  `function name(args)` against 115 written `function name (args)` everywhere else — one
+  module's worth, the shape of a convention set in a single session that then never spread.
+  Nobody chose it. Normalised 2026-08-27 (whitespace-only, verified with `git diff -w`, before
+  those two files were split further) as part of `backlog-07`, but the mechanism that let it
+  happen — nothing enforces style — is unchanged, and a **second** such split is the signal the
+  deferral below has expired.
 - Rule 2 is trivially checkable, and `scripts/` already holds four guards of this exact kind
   (`check:natives`, `check:contracts`, `check:secrets`, `check:vectors`), so the pattern and the
   CI wiring exist. It is a short script whenever it is wanted.
 - Rule 1 is not mechanically checkable by anything, and never will be. It depends on review.
 
-Deferring is defensible while the codebase is small and one person is reading every diff. The
-thing to watch for is a **second** convention splitting the way the spacing did — that is the
-signal the deferral has expired.
+Deferring is defensible while the codebase is small and one person is reading every diff.
+
+**3. Two Rule-3 duplicates were found and deliberately left unfixed. Still open.**
+
+A lowercase-hex encoder ([`bundle-hash.ts`](../../src/broker/policy/bundle-hash.ts)'s
+`toLowercaseHex`, inlined again in `handles.ts`'s `newHandleId`) and the network-limit constants
+`MAX_HOST_LENGTH`/`MAX_PORT` (duplicated between `origin.ts` and `connect.ts`) both cross into a
+file `backlog-06` restructured wholesale in the same window this cleanup ran in. Editing either
+from `backlog-07` would have edited a file about to become three different files under a
+different branch, guaranteeing a structural merge conflict rather than the ordinary kind. Both
+are real Rule-3 violations and neither is fixed. Next up once both branches have merged.
 
 ---
 
