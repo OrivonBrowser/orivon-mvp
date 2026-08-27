@@ -69,8 +69,14 @@ for random segment arrays, the resolved path is always inside root.
 
 1. **URL → origin normalisation:** default ports, trailing dots, case, punycode/IDN, userinfo,
    and rejection of `file:` and `data:`.
-2. **`senderFrame` → origin:** asserting that a renderer-supplied origin field is **ignored**,
-   and that unbound frames are rejected (T3).
+2. **`senderFrame` → origin:** asserting that an origin field **in the IPC payload** is
+   ignored, that `url` and `frame.origin` must **agree** or the frame is denied, that an
+   **opaque** origin (`frame.origin === 'null'`, what a `CSP: sandbox` document reports) is
+   rejected outright, and that unbound frames are rejected (T3, T13b).
+
+   *The phrasing here used to be "a renderer-supplied origin field is ignored", which was read
+   as meaning `WebFrameMain.origin` — it is not renderer-supplied, and reading only `url`
+   opened a real hole. See `security-model.md`'s 2026-08-27 amendment.*
 
 ### 4. Key derivation as frozen golden vectors
 
