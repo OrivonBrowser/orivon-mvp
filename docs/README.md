@@ -23,8 +23,14 @@ defended against, and [`glossary.md`](glossary.md) when a term does not parse.
 
 ## Track 2 — To understand a decision
 
-[`decisions/`](decisions/) — eight ADRs. **Read them before proposing anything architectural;
-most obvious ideas have already been considered and rejected for recorded reasons.**
+[`decisions/`](decisions/) — the architecture decision records. **Read them before proposing
+anything architectural; most obvious ideas have already been considered and rejected for
+recorded reasons.**
+
+<!-- Deliberately no count here. It went stale every time an ADR landed, and it made a
+     one-line append into an edit that two streams could conflict on. -->
+
+
 
 | | |
 |---|---|
@@ -36,6 +42,7 @@ most obvious ideas have already been considered and rejected for recorded reason
 | [`ADR-0006`](decisions/ADR-0006-trust-indicator-from-observed-behaviour.md) | Trust indicator from observed behaviour, not a grade |
 | [`ADR-0007`](decisions/ADR-0007-cached-bundles-served-at-their-own-origin.md) | Cached bundles keep their real origin |
 | [`ADR-0008`](decisions/ADR-0008-handles-are-whatwg-streams.md) | Handles are WHATWG streams; Node shapes live in the shim |
+| [`ADR-0010`](decisions/ADR-0010-key-derivation-frozen-at-v1.md) | Key derivation is frozen at v1, versioned by its salt |
 
 > **Three of them carry amendments that supersede parts of their own text.** ADR-0002 and
 > ADR-0005 have inline amendments; ADR-0008 rescopes ADR-0002's mirror-Node's-shapes rule to
