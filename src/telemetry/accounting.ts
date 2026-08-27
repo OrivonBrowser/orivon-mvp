@@ -21,19 +21,13 @@
 // failure, overcounting makes a failure look like a success -- and both
 // directions are covered in accounting.test.ts.
 //
-// ARCHITECTURE: `applyEvent` is an incremental reducer, not a batch job
-// over a whole history. It always settles (accrues) elapsed time up to the
-// new event's timestamp BEFORE applying that event's own effect, against
-// whatever state existed a moment before. `fold` is just
-// `events.reduce(applyEvent, seed)` -- a convenience for tests and for
-// replaying a full log -- but the same reducer is meant to run one event at
-// a time in the real collector, with the caller persisting AccountingState
-// (I/O, deliberately outside this file) periodically. That periodic
-// persistence is what "abnormal termination" handling amounts to here: a
-// crash loses at most the time since the last processed event, and
-// `checkpoint` exists purely to give the caller a place to inject that
-// event during otherwise-silent stretches -- e.g. a torrent seeding for
-// hours with no focus change. See the "no checkpoint on crash" tests.
+// ARCHITECTURE: `applyEvent` is an incremental reducer meant to run one event
+// at a time in the real collector, with the caller persisting AccountingState
+// (I/O, deliberately outside this file) periodically -- so a crash loses at
+// most the time since the last processed event. `checkpoint` exists purely to
+// give the caller a place to inject that persistence during otherwise-silent
+// stretches -- e.g. a torrent seeding for hours with no focus change. See the
+// "no checkpoint on crash" tests.
 
 export type AppId = string
 
@@ -156,11 +150,11 @@ function withOpenSession (sessions: OpenSessions, app: AppId): OpenSessions {
 }
 
 /**
- * Decrements app's open-session count; only removes the key once it
- * reaches zero, so a second tab of the same app keeps it open when the
- * first one closes ('session-stop' fires once per tab, not once per app).
- * A stop with no matching start is a no-op, not an error -- telemetry must
- * never be the reason a real bug becomes a crash.
+ * Only removes the key once the count reaches zero, so a second tab of the
+ * same app keeps it open when the first one closes ('session-stop' fires
+ * once per tab, not once per app). A stop with no matching start is a
+ * no-op, not an error -- telemetry must never be the reason a real bug
+ * becomes a crash.
  */
 function withoutOpenSession (sessions: OpenSessions, app: AppId): OpenSessions {
   const count = sessions[app]
@@ -240,8 +234,7 @@ function settleTo (state: AccountingState, t: number, idleTimeoutMs: number): Ac
 }
 
 /**
- * Applies one event to `state`, returning the next state. Pure: same
- * inputs, same output, always.
+ * Applies one event to `state`, returning the next state.
  *
  * `idleTimeoutMs` defaults to DEFAULT_IDLE_TIMEOUT_MS; tests pass a small
  * value so scenarios do not need unrealistic event spacing to observe an
@@ -292,11 +285,7 @@ export function applyEvent (state: AccountingState, event: TelemetryEvent, idleT
   }
 }
 
-/**
- * `events.reduce(applyEvent, seed)` -- the pure fold over a stream of
- * events this module exists to provide. Equivalent to calling applyEvent
- * once per event as a real collector would; this is the shape tests use.
- */
+/** Equivalent to calling applyEvent once per event as a real collector would; this is the shape tests use. */
 export function fold (events: readonly TelemetryEvent[], seed: AccountingState = initialState, idleTimeoutMs: number = DEFAULT_IDLE_TIMEOUT_MS): AccountingState {
   return events.reduce((state, event) => applyEvent(state, event, idleTimeoutMs), seed)
 }

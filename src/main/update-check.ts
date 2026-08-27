@@ -12,20 +12,9 @@
 // and no install step, anywhere. The only network call it makes is a read of
 // GitHub's "latest release" metadata.
 //
-// STRUCTURE, innermost (pure) to outermost (real I/O):
-//   1. decideUpdateNotice  -- pure, no imports at all. Whether to check the
-//      network (throttling) and whether to notify, given inputs the caller
-//      already has. This is the piece build-plan.md SS Testing means by "the
-//      update decision table": unit tested with no network and no clock.
-//   2. checkForUpdate      -- async, but still free of Electron/fs/network
-//      imports. Composes decideUpdateNotice around an INJECTED fetch
-//      function, so it is exercised in tests with a stub and never touches a
-//      socket either.
-//   3. Everything below "Real wiring" -- persistence (node:fs/promises,
-//      sanctioned by ADR-0003 via app.getPath('userData')), the real GitHub
-//      fetch (Electron's net.fetch), and the native Notification. This is
-//      the disposable, untested-by-design shell, matching window.ts/ipc.ts/
-//      index.ts elsewhere in this directory, none of which have test files.
+// STRUCTURE, innermost (pure) to outermost (real I/O): SS1's decision table,
+// then SS2 composing it around an injected fetch, then SS3's real wiring --
+// each section banner below says what its own layer is and is not tested.
 //
 // WHY THE ELECTRON IMPORT BELOW IS `import type`, AND WHY REAL ELECTRON
 // VALUES (Notification/net/shell) ARE IMPORTED DYNAMICALLY INSIDE THE
@@ -93,14 +82,8 @@ function parseVersion (raw: string): ParsedVersion | null {
 }
 
 /**
- * Semver 2.0.0 precedence (https://semver.org/#spec-item-11): compare major,
- * minor, patch numerically; build metadata is never compared; a version
- * WITH a pre-release has LOWER precedence than the same major.minor.patch
- * with none; otherwise compare pre-release identifiers left to right
- * (numeric identifiers compare numerically and always sort below
- * alphanumeric ones, which compare lexically; fewer fields sorts lower when
- * every shared field is equal). Returns <0, 0 or >0 like Array#sort's
- * comparator.
+ * Semver 2.0.0 precedence (https://semver.org/#spec-item-11).
+ * Returns <0, 0 or >0 like Array#sort's comparator.
  */
 function compareVersions (a: ParsedVersion, b: ParsedVersion): number {
   if (a.major !== b.major) return a.major - b.major
@@ -235,10 +218,8 @@ export interface CheckForUpdateResult {
 }
 
 /**
- * Async, but still no Electron/fs/network import here -- `fetchLatestRelease`
- * is a parameter, so this is exercised in tests with a stub and genuinely
- * never touches a socket. Real wiring (below) supplies the GitHub-backed
- * implementation.
+ * `fetchLatestRelease` is a parameter, so this is exercised in tests with a
+ * stub. Real wiring (below) supplies the GitHub-backed implementation.
  */
 export async function checkForUpdate (input: CheckForUpdateInput): Promise<CheckForUpdateResult> {
   const base = {
@@ -272,10 +253,7 @@ export async function checkForUpdate (input: CheckForUpdateInput): Promise<Check
 
 // ---------------------------------------------------------------------------
 // 3. Real wiring: persistence, the GitHub fetch, and the notification.
-//    Untested by design (same as window.ts/ipc.ts/index.ts) -- everything
-//    with a decision to get right lives in the two pure/injected functions
-//    above, which ARE tested. See the file header for the dynamic-import
-//    rationale.
+//    Untested by design -- see the file header.
 // ---------------------------------------------------------------------------
 
 // package.json's repository field, spelled out as constants rather than
@@ -328,9 +306,7 @@ async function writeState (path: string, state: PersistedState): Promise<void> {
 
 /**
  * The one function in this module that touches the network, and it only
- * ever reads metadata. No download of a binary or update artefact happens
- * anywhere in this file -- see the file-header comment for why that is a
- * deliberate, owner-decided boundary, not an oversight.
+ * ever reads metadata -- see the file header.
  *
  * Uses Electron's net.fetch (Chromium's network stack, session-aware) rather
  * than Node's global fetch, per Electron's own guidance for main-process
@@ -402,8 +378,6 @@ async function notifyUpdateAvailable (release: ReleaseInfo): Promise<void> {
 }
 
 /**
- * The real end-to-end check: read persisted state, run checkForUpdate
- * against the real GitHub fetch, persist the result, and notify if due.
  * Exported for src/main/subsystems.ts to call directly if the two-line
  * append (see updateCheckSubsystem below) is not what the integrator wants.
  */

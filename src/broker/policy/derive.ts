@@ -382,10 +382,9 @@ export async function derivePrivateScalar (request: DeriveRequest): Promise<Uint
  * WebCrypto cannot produce a BIP-340 Schnorr signature either, so the point
  * multiplication costs nothing extra there and buys nothing extra here.
  *
- * To be precise about the constraint, because an earlier draft of this comment
- * overstated it: the project rule is CLAUDE.md Rule 8, "pure-JS dependencies
- * only" (no compiler at install time), and Rule 6, "do not reinvent without a
- * written reason". There is no blanket "add no dependency" rule, and a pure-JS
+ * The project rule is CLAUDE.md Rule 8, "pure-JS dependencies only" (no
+ * compiler at install time), and Rule 6, "do not reinvent without a written
+ * reason". There is no blanket "add no dependency" rule, and a pure-JS
  * audited curve library would satisfy both. The argument for staying on
  * WebCrypto here is engine-independence, not dependency count. Owner decision,
  * 2026-08-27; revisit it in the `nostr` stream (ADR-0010 SSRejected).
