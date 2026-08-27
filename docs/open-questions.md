@@ -52,6 +52,8 @@ None of these block starting the week-0 spike.
 | A12 | **`orivon.fs` option bags are unspecified.** `capability-api.md` names the entry points (`readFile(path, opts)`, `writeFile(path, data, opts)`, `mkdir / readdir / stat / rm / rename`) but never says what `opts` contains or what `readFile` returns | **Build step 2.** Provisional signatures are in `src/contracts/capability-api.ts` and marked as such |
 | A14 | **RESOLVED 2026-08-26 (owner):** a trailing DNS dot is stripped, so `https://x.example.` and `https://x.example` are ONE origin. Deliberately deviates from `URL.origin`. Exactly one dot; a host still carrying an empty label is rejected | Implemented in `src/broker/policy/origin.ts` |
 | A13 | **Are `app.manifest()` and `app.grants()` async?** `capability-api.md` §v0 surface writes them as `=> Manifest` and `=> Grant[]`, but design rule 2 in the same document says *"All entry points return Promises"* | **Build step 2.** Transcribed as Promises; see below |
+| A15 | **`src/broker/policy/paths.ts` assumes app root directory names are single-case hex.** True today (`sha256(canonical_origin)`, T13b) but the owner is reworking `broker-01-origin` to also check data hashes | **Before merging the reworked origin derivation.** See below |
+| A16 | **A derived origin does not carry whether it may be PERSISTED.** T13c forbids ever writing a grant for a loopback or plain-`http` origin to disk, but `originFromUrl` returns a plain string — `http://127.0.0.1:8080` is shape-identical to `https://x.example`, so every caller must remember to re-parse and check | **Build step 2**, when the code that persists grants exists. Owner decided 2026-08-27 to keep the return type a plain string for now rather than change a durable interface before its consumer exists. See below |
 
 ---
 
@@ -87,6 +89,73 @@ plain values with no round trip.
 **Transcribed as Promises**, because design rule 2 is the more explicit statement and widening
 a Promise to a plain value later is a smaller break than the reverse. Cheap to change before any
 third-party app exists.
+
+---
+
+### A15 — path confinement's case-sensitivity assumes single-case-hex root names **[AI-REC]**
+
+Found while checking whether `stream/broker-04-path-confine` (merged as `ae9a13d`) is safe to
+accept while `stream/broker-01-origin` is being reworked to also check data hashes, not just the
+URL. The two branches are structurally independent — disjoint files, `broker-04` is not stacked
+on `broker-01`, and `confinePath(root, requested, realpath)` takes `root` as a parameter, never
+derives it — so nothing in the merged commit is invalidated by the origin rework.
+
+One assumption in `paths.ts` is worth carrying forward, though. Its comparison between a
+canonicalised path and the root is deliberately **case-sensitive**, justified by a comment citing
+T13b: *"Cross-platform roots are sha256(origin) hex, single-case, so nothing legitimate
+collides."* That is true only as long as the root directory name stays lowercase hex. `sha256(...)`
+of anything is still lowercase hex, so folding a data hash into the string being hashed is fine —
+but if the reworked origin ever names a root some other way (e.g. a raw base58 CIDv0 or base64
+encoding, both mixed-case), the case-sensitive comparison in `confinePath` could reject legitimate
+paths as a spurious `symlink-escape` on case-insensitive filesystems (macOS, Windows).
+
+**Not a security hole either way** — the failure direction is fail-closed (an app breaks, the
+sandbox does not leak) — but worth a decision now rather than a confusing bug report later.
+
+**Needed by:** whoever finishes the `broker-01-origin` rework, before the root-naming scheme
+changes. Keep root names single-case (hex, or lowercase the encoding) — or `paths.ts`'s
+case-sensitivity comment and its case-sensitivity tests need to be revisited together.
+
+---
+
+### A16 — a derived origin does not say whether it may be persisted **[AI-REC]**
+
+Found while reviewing `stream/broker-01-origin` (2026-08-27). T13c forbids ever writing a
+grant for a loopback, `file:` or plain-`http` origin to disk — session-scoped only, re-prompt
+each launch. But `originFromUrl` returns a plain string, and `http://127.0.0.1:8080` has the
+same type and shape as `https://x.example`. The rule is therefore enforceable only by every
+caller remembering to re-parse the string and check, which is the shape of rule that gets
+followed four times and forgotten on the fifth.
+
+**Owner decision, 2026-08-27: keep the plain string for now.** The alternatives — returning
+`{ origin, persistable }`, or adding an `isPersistableOrigin()` helper — both change or extend
+a **durable** interface before the code that persists grants exists, and `ADR-0002` makes that
+interface the artefact the project is built to outlive. Deciding its shape against a real
+consumer at build step 2 is better than guessing now. `originFromUrl`'s doc comment states the
+gap explicitly so a caller meets it at the point of use.
+
+**Needed by:** build step 2, specifically whoever writes the grant ledger's persist path.
+
+### A14 addendum — an argument against the trailing-dot merge, recorded after the decision
+
+A14 (resolved by the owner 2026-08-26) strips the trailing DNS root label, so `https://x.example.`
+and `https://x.example` are one origin. **The decision stands, re-confirmed by the owner on
+2026-08-27.** This records an argument that surfaced during review afterwards, so that a future
+reader does not mistake it for something nobody considered.
+
+The reasoning behind A14 was that both spellings are the same DNS name, served by the same
+operator under the same certificate. The first half is always true; **the second is not
+guaranteed.** Browsers send `Host: x.example.` verbatim, and virtual-host matching is an exact
+string comparison — nginx's `server_name x.example;` does not match it. On a host configured
+that way the request falls through to the **default vhost**, which may serve different content
+under a different operator's control. Merged origins mean that content inherits the app's
+grants, storage domain and identity key.
+
+**Why the decision was kept anyway:** exploiting it also requires a certificate valid for the
+trailing-dot name, browsers generally strip the dot before certificate matching, and the
+alternative costs a real user-visible failure — one mistyped character silently produces a
+second, empty copy of the app that has to be re-granted everything. `ADR-0003` makes this
+unfixable after the first grant is persisted, so it is recorded here rather than left implicit.
 
 ---
 
