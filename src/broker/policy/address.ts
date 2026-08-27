@@ -63,9 +63,10 @@ export type AddressClass =
 const IPV4_MAX = 0xffffffff
 
 /**
- * Bounds pathological input before any regex sees it. The longest real IPv6
- * literal is 45 characters (`0:0:0:0:0:ffff:255.255.255.255`); the rest of the
- * budget is brackets and a zone id.
+ * Bounds pathological input before any regex sees it. The longest fully
+ * expanded IPv6 literal is 45 characters
+ * (`ffff:ffff:ffff:ffff:ffff:ffff:255.255.255.255`); the rest of the budget is
+ * brackets and a zone id, which on Linux is an interface name capped at 15.
  */
 const MAX_LENGTH = 64
 
@@ -81,9 +82,15 @@ function octets (a: number, b: number, c: number, d: number): number {
 }
 
 /**
- * Every IPv4 range that is not public unicast (RFC 6890's special-purpose
- * registry). Ordered so that where two rows overlap the more specific one
- * wins: 255.255.255.255 sits inside 240.0.0.0/4 and must read as broadcast.
+ * Every IPv4 range IANA marks globally unreachable, from RFC 6890's
+ * special-purpose registry. Ordered so that where two rows overlap the more
+ * specific one wins: 255.255.255.255 sits inside 240.0.0.0/4 and must read as
+ * broadcast.
+ *
+ * Not every special-purpose range is here, and that is correct rather than a
+ * gap: 192.31.196.0/24 (AS112-v4), 192.52.193.0/24 (AMT) and 192.175.48.0/24
+ * are special-purpose but globally ROUTED, so `public` is the right answer for
+ * them. The test is reachability, not whether a registry lists the prefix.
  */
 const IPV4_BLOCKED: readonly Ipv4Range[] = [
   { base: octets(255, 255, 255, 255), prefix: 32, cls: 'broadcast' }, // RFC 919 limited broadcast
@@ -112,10 +119,21 @@ interface Ipv6Range {
 }
 
 /**
- * IPv6 ranges that are not public unicast. Not exhaustive on its own, and does
- * not need to be: anything outside 2000::/3 is denied by default below, so
- * this table exists to give the common ranges a precise label rather than to
- * be the only thing standing between an app and ::1.
+ * IPv6 ranges that are not public unicast.
+ *
+ * TWO KINDS OF ROW, and the difference decides whether one can be deleted.
+ *
+ * Rows OUTSIDE 2000::/3 -- `::`, `::1`, `fc00::/7`, `fe80::/10`, `ff00::/8`,
+ * `100::/64`, `5f00::/16` -- are labelling only. The default-deny at the
+ * bottom of `classifyIpv6` already blocks them; these rows exist so the
+ * denial log says `loopback` rather than `reserved`.
+ *
+ * Rows INSIDE 2000::/3 -- Teredo, both ORCHIDs, RFC 5180 benchmarking,
+ * `2001:db8::/32` and `3fff::/20` -- ARE LOAD-BEARING. Global unicast is
+ * exactly 2000::/3, so nothing else stands between an app and these; delete a
+ * row and its range silently becomes reachable. Teredo is the one that
+ * matters most: it tunnels IPv4, so a Teredo address is a route to a v4
+ * destination this file never gets to classify.
  */
 const IPV6_BLOCKED: readonly Ipv6Range[] = [
   { words: [0, 0, 0, 0, 0, 0, 0, 0], prefix: 128, cls: 'unspecified' }, // ::
@@ -423,16 +441,28 @@ export function classifyAddress (addr: string): AddressClass {
 }
 
 /**
- * True if `addr` must NOT be reached under a `*` pattern: loopback, RFC 1918,
- * carrier-grade NAT, link-local (including the cloud metadata endpoint at
- * 169.254.169.254), unique local, multicast, broadcast, or any reserved or
- * unassigned range -- in any encoding.
+ * True only if `addr` is an ordinary public internet address -- the one thing
+ * a `*` pattern is allowed to reach.
  *
- * ALSO TRUE FOR ANYTHING IT CANNOT PARSE. The name says "private" because
- * that is what the manifest and the grant prompt call these ranges, but the
- * question it actually answers is "is this anything other than public
- * unicast", and an unparseable string is certainly not public unicast.
+ * FALSE for loopback, RFC 1918, carrier-grade NAT, link-local (including the
+ * cloud metadata endpoint at 169.254.169.254), unique local, multicast,
+ * broadcast, and every reserved or unassigned range, in any encoding -- AND
+ * for anything it cannot parse.
+ *
+ * PHRASED THIS WAY ON PURPOSE. The obvious inverse, `isPrivateAddress`, reads
+ * as an invitation to write the check as
+ *
+ *     if (isPrivateAddress(addr) && !manifestDeclaresPrivate) deny
+ *
+ * which fails OPEN on unparseable input for any app that declares private
+ * ranges -- and the flagship torrent app declares exactly that. Asking "is
+ * this a normal internet address" instead puts the unparseable case on the
+ * denying side of every natural call site, so the fail-closed property
+ * survives being used rather than only being documented.
+ *
+ * Still an ADDRESS, never a hostname: see `classifyAddress`. Resolve first,
+ * check every resolved address, connect to the literal that was checked.
  */
-export function isPrivateAddress (addr: string): boolean {
-  return classifyAddress(addr) !== 'public'
+export function isPublicUnicast (addr: string): boolean {
+  return classifyAddress(addr) === 'public'
 }
