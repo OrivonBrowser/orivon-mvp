@@ -333,6 +333,55 @@ interface IdentityHandle extends Handle {
 - Revocation is **idempotent** and safe to call against an origin holding zero live handles.
 - **Exception:** `fs.userSelected` handles are not in any grant's set — see §FileHandle.
 
+### Revocation is not a one-shot sweep
+
+**Amendment, AI-recommended, applied 2026-08-27.** Closing the handles a grant authorised is not
+sufficient on its own, because the sweep has an edge in time. An acquisition that passed the
+policy check *before* the revoke and whose socket completes *after* it registers a live handle
+under a grant the user has already withdrawn, and the permissions UI fires exactly one revoke, so
+nothing sweeps again. Cancelling the in-flight operation is not enough either: cancellation
+rejects the caller's promise and fires its `AbortSignal`, but cannot stop the work running to
+completion.
+
+**The broker therefore remembers which grants were revoked, per origin, and refuses to register
+anything against them.** The set is bounded, like every other memory in the table. A capability
+granted again after being withdrawn clears its entry — see `open-questions.md` A16 for the
+`GrantId`-stability question this depends on.
+
+### Revocation does not wait for teardown
+
+**Amendment, AI-recommended, applied 2026-08-27.** The revoke call settles as soon as the app has
+been told — that is, after the synchronous unlink and promise-rejection pass — and does *not* wait
+for the injected teardown callbacks to finish. The broker awaits it on the UI thread to update the
+permissions panel, and §What the shim must do rule 3 records that this transport's failure mode is
+silence rather than an error, so a revoke that waited would leave the permissions UI stuck
+mid-revoke with no timeout anywhere in the path. Teardown failures are reported out of band.
+
+### Session teardown is not revocation
+
+**Amendment, AI-recommended, applied 2026-08-27.** An app being closed, navigated away from, or
+restarted takes *all* its handles, including the `fs.userSelected` ones a grant revocation cannot
+reach — that is the other half of the §FileHandle exception, and what "does not survive a restart"
+means. But it is **graceful**: FIN rather than RST, buffered writes flushed rather than discarded.
+Nobody withdrew anything, and treating a user clicking a link away from the torrent app as a
+revocation would reset every peer connection and drop a half-written piece on the floor.
+
+Handles registered *after* a session teardown begins but before its teardowns complete are
+refused. Without that, a picker callback resolving one tick late simply built a fresh table for a
+dead origin, and the `fs.userSelected` handle it registered survived the session.
+
+### A handle can also die on its own
+
+**Amendment, AI-recommended, applied 2026-08-27.** Every path above is initiated by the app or by
+the user. §TcpSocket's close table also requires `closed` to reject with `reset` when the peer
+resets or aborts, which no app-initiated or user-initiated path can express — so the broker needs
+an entry point for "this resource died underneath us", carrying the real `platformCode`. Without
+it a peer RST is reported to the app as a clean, successful close, which is the *common* way a
+socket ends.
+
+The handle table does not itself model half-close. `closed` settles when the handle is released;
+deciding that both directions have reached a terminal state is the socket layer's job.
+
 ## §Limits (T11, T11b)
 
 Enforced per origin, with defaults chosen against gate 4's measured numbers (100 concurrent
@@ -340,12 +389,32 @@ sockets exercised cleanly) with headroom:
 
 | limit | default |
 |---|---|
-| concurrent open sockets (`TcpSocket` + `UdpSocket` + accepted connections) | 512 |
+| concurrent open sockets (`TcpSocket` + `TcpServer` + `UdpSocket` + accepted connections) | 512 |
 | concurrent open `FileHandle`s | 64 |
-| in-flight broker operations | 256 |
+| concurrent open `IdentityHandle`s | 64 |
+| in-flight broker operations, **per origin** | 256 |
 | per-socket read window (§TcpSocket backpressure `WINDOW`) | 1 MiB |
 
-Exceeding any of these yields `limit`. **Calls beyond the in-flight cap reject immediately —
+Exceeding any of these yields `limit`.
+
+**Two amendments, AI-recommended and applied in `src/broker/handles.ts` (2026-08-27), flagged
+rather than folded in silently:**
+
+1. **A `TcpServer`'s listening socket counts against the socket budget.** This table originally
+   read "`TcpSocket` + `UdpSocket` + accepted connections", which omits the listener. A listener
+   is an open fd like any other, manifest `listen` patterns are port *ranges* rather than single
+   ports, and leaving servers uncounted lets one origin hold unbounded listeners inside its
+   declared range. Counting it is strictly more conservative and costs a real app one slot in 512.
+2. **`IdentityHandle` gets its own budget**, equal to the file budget. It was previously capped by
+   nothing at all, and an unbounded row count is T11 whatever the row holds. It is a *per-kind*
+   budget rather than a cap on total rows: a total-row backstop was tried first and had the
+   failure mode backwards -- identity handles, free to acquire and capped by nothing, exhausted
+   the total and left the origin unable to open a single socket or file.
+
+**The in-flight cap is per origin, and this is load-bearing rather than incidental.** A single
+global counter would mean one origin holding 256 slow operations makes every *other* tab's
+`orivon.*` call fail with `limit` -- the T11b freeze arriving by a different route, and attributed
+to the victim. **Calls beyond the in-flight cap reject immediately —
 they do not queue.** An unbounded queue on the broker's UI thread is precisely how one
 misbehaving origin freezes every tab (T11b); a rejection the app must retry keeps the broker
 responsive to every other origin.
@@ -419,6 +488,12 @@ Testable assertions build steps 2 (broker) and 3 (shim) should drive as TDD targ
    a different origin.
 9. `orivon.fs.userSelected()` handles remain open across an `fs` grant revocation, and do not
    reopen after an app restart.
+10. A handle whose acquisition completes *after* its grant was revoked is refused, not registered.
+11. `close()` is idempotent for any handle id, including one closed long enough ago that the
+    broker no longer remembers it.
+12. A peer reset rejects `closed` with `reset` and the real `platformCode` — not a clean resolve.
+13. One origin holding the in-flight cap does not stop a different origin from operating.
+14. Session teardown closes handles gracefully (FIN, writes flushed), unlike a revocation.
 
 ## Reference
 

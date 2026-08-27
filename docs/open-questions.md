@@ -51,6 +51,7 @@ None of these block starting the week-0 spike.
 | A9 | Three capability-API items. **Defaults now proposed** in `architecture/capability-api.md` — `net.listen` grantable to unsigned apps with a declared port range and no privileged ports · grants keyed on `(origin, capability)`, with bundle-hash changes handled by the separate pin-break prompt · `fs.quotaBytes` enforced via a running per-origin counter | **Build proceeds on these unless overruled.** Cheap to change before any third-party app exists |
 | A12 | **`orivon.fs` option bags are unspecified.** `capability-api.md` names the entry points (`readFile(path, opts)`, `writeFile(path, data, opts)`, `mkdir / readdir / stat / rm / rename`) but never says what `opts` contains or what `readFile` returns | **Build step 2.** Provisional signatures are in `src/contracts/capability-api.ts` and marked as such |
 | A13 | **Are `app.manifest()` and `app.grants()` async?** `capability-api.md` §v0 surface writes them as `=> Manifest` and `=> Grant[]`, but design rule 2 in the same document says *"All entry points return Promises"* | **Build step 2.** Transcribed as Promises; see below |
+| A16 | **Does a re-granted capability reuse its GrantId?** `manifest.ts` says a `Grant` is keyed on (origin, capability, pattern set) but never says whether the `id` is derived from that key or minted fresh per grant event. The handle table now tombstones revoked grant ids, so under the derived reading a permanent tombstone would make re-granting impossible | **Before the grant ledger is written.** `HandleTable.grantIssued()` clears the tombstone, so the table is correct either way; the ledger must call it. See below |
 
 ---
 
@@ -256,3 +257,30 @@ Dashboard widget grid · App store · Web3 search · Wallet Crypto/Address-book 
 `CapabilityDescriptor` · Mobile · DAO / tokenomics · Proxy chains and VPN mode · Client
 Profile separation · DDOC · Trustless resolution · `subprocess` and `hid` capabilities ·
 Identity export/backup · Cross-device sync.
+
+---
+
+### A16 -- grant id stability across a revoke and a re-grant **[AI-REC]**
+
+Found while fixing the revocation cascade in `src/broker/handles.ts` (review pass, 2026-08-27).
+
+The cascade used to be a one-shot sweep: `revoke()` closed the handles a grant had
+authorised and then forgot the grant entirely. An acquisition that passed the policy check
+*before* the revoke and produced its socket *after* it -- the ordinary connect path -- was then
+registered under a grant the user had just withdrawn, and since the permissions UI fires exactly
+one revoke, nothing ever swept again. The fix is a bounded per-origin set of revoked grant ids
+that `acquire`, `acquireDerived` and `run` refuse against.
+
+That fix has one dependency the repository does not yet decide. If the ledger later mints a
+**stable** `GrantId` derived from (origin, capability, pattern set), a permanent tombstone would
+mean a capability the user withdrew could never be granted again -- and the failure would look
+like "the grant prompt worked and the app still cannot connect", which nobody would trace back
+to the handle table. If it mints a **fresh** id per grant event, tombstones are harmless forever.
+
+**Resolved in the table, not in the ledger:** `HandleTable.grantIssued(origin, grantId)` clears
+the tombstone. It is correct under both readings, and it costs the grant ledger one call at the
+point where it records a grant. **Whoever writes the ledger must make that call**, and should
+record here which of the two id schemes was chosen.
+
+**Owner decision needed on:** nothing, unless the `grantIssued` call site is unwelcome. The
+question is recorded because the assumption is load-bearing and was previously implicit.
