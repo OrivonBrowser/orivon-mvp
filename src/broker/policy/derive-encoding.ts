@@ -3,6 +3,7 @@
 // docs/development/code-guidelines.md). Frozen by the same golden vectors as
 // derive.ts -- see that file's header before touching anything below.
 
+import { concat, frame } from './bytes.js'
 import { fail } from './errors.js'
 
 /** Shared because they are stateless; allocating one per field was pure waste. */
@@ -15,11 +16,8 @@ export const SCALAR_BYTES = 32
  * LENGTH PREFIXING IS NOT DECORATION. Concatenating the fields directly makes
  * ("app", "abc") and ("ap", "pabc") produce the SAME info string and therefore
  * the same scalar -- one secret shared by two schemes, which voids the security
- * argument for both (capability-api.md, security-model.md T8b).
- *
- * Each field is a big-endian uint32 byte length followed by its UTF-8 bytes,
- * which makes the encoding injective: no two distinct field tuples share an
- * encoding.
+ * argument for both (capability-api.md, security-model.md T8b). See
+ * ./bytes.ts's frame() for the shared length-prefix construction.
  *
  * That injectivity holds only for WELL-FORMED strings, which is why the check
  * below exists. `TextEncoder` replaces every unpaired surrogate with U+FFFD, so
@@ -42,10 +40,7 @@ export function encodeField (value: string): Uint8Array<ArrayBuffer> {
   if (UTF8_DECODER.decode(bytes) !== value) {
     throw fail('invalid', 'field is not well-formed Unicode (unpaired surrogate)')
   }
-  const out = new Uint8Array(4 + bytes.length)
-  new DataView(out.buffer).setUint32(0, bytes.length, false)
-  out.set(bytes, 4)
-  return out
+  return frame(bytes)
 }
 
 /**
@@ -69,21 +64,6 @@ export function encodeDeriveInfo (
   curve: string
 ): Uint8Array<ArrayBuffer> {
   return concat([encodeField(label), encodeField(scope), encodeField(curve)])
-}
-
-// Returns Uint8Array<ArrayBuffer> rather than plain Uint8Array because
-// WebCrypto's BufferSource excludes SharedArrayBuffer-backed views. Everything
-// here is freshly allocated, so saying so costs nothing and saves a cast.
-export function concat (parts: readonly Uint8Array[]): Uint8Array<ArrayBuffer> {
-  let total = 0
-  for (const part of parts) total += part.length
-  const out = new Uint8Array(total)
-  let offset = 0
-  for (const part of parts) {
-    out.set(part, offset)
-    offset += part.length
-  }
-  return out
 }
 
 export function bytesToBigInt (bytes: Uint8Array): bigint {

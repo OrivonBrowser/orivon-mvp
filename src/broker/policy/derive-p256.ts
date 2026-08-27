@@ -4,7 +4,8 @@
 // secp256k1 is not served here. Frozen by the same golden vectors as
 // derive.ts; read that file's header before touching anything below.
 
-import { concat, SCALAR_BYTES } from './derive-encoding.js'
+import { concat } from './bytes.js'
+import { SCALAR_BYTES } from './derive-encoding.js'
 import { derivePrivateScalar, isSupportedCurve, subtleCrypto, viaWebCrypto } from './derive.js'
 import type { DeriveRequest } from './derive.js'
 import { fail } from './errors.js'

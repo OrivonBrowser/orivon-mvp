@@ -24,6 +24,7 @@
 // collision key) and this file (the tree/root construction over a validated
 // entry set).
 
+import { concat, frame } from './bytes.js'
 import { MANIFEST_PATH, MAX_BUNDLE_ENTRIES, collisionKey, describePath, isValidCanonicalPath } from './canonical-path.js'
 import type { PathLeaf } from './canonical-path.js'
 import { fail } from './errors.js'
@@ -86,28 +87,9 @@ function compareUtf8Bytes (a: Uint8Array, b: Uint8Array): number {
   return a.length - b.length
 }
 
-function encodeField (value: Uint8Array): Uint8Array<ArrayBuffer> {
-  const out = new Uint8Array(4 + value.length)
-  new DataView(out.buffer).setUint32(0, value.length, false)
-  out.set(value, 4)
-  return out
-}
-
 function encodeContentLength (byteLength: number): Uint8Array<ArrayBuffer> {
   const out = new Uint8Array(8)
   new DataView(out.buffer).setBigUint64(0, BigInt(byteLength), false)
-  return out
-}
-
-function concat (parts: readonly Uint8Array[]): Uint8Array<ArrayBuffer> {
-  let total = 0
-  for (const part of parts) total += part.length
-  const out = new Uint8Array(total)
-  let offset = 0
-  for (const part of parts) {
-    out.set(part, offset)
-    offset += part.length
-  }
   return out
 }
 
@@ -132,7 +114,7 @@ async function leafDigest (entry: BundleEntry): Promise<Uint8Array> {
   return digest(
     concat([
       Uint8Array.of(0x00),
-      encodeField(pathBytes),
+      frame(pathBytes),
       encodeContentLength(entry.content.length),
       entry.content
     ])
@@ -218,7 +200,7 @@ export async function bundleTree (entries: readonly BundleEntry[]): Promise<Bund
   const countBytes = new Uint8Array(4)
   new DataView(countBytes.buffer).setUint32(0, leaves.length, false)
 
-  const root = await digest(concat([Uint8Array.of(0x01), encodeField(versionBytes), countBytes, ...leaves]))
+  const root = await digest(concat([Uint8Array.of(0x01), frame(versionBytes), countBytes, ...leaves]))
 
   return {
     root: `sha256:${toLowercaseHex(root)}`,
