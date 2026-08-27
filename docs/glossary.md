@@ -68,7 +68,9 @@ Fetched and pinned with the bundle.
 **Origin** — the isolation key. Keys storage, session partition, grant ledger and derived
 identity key. Standard web origin for HTTPS-delivered apps (`ADR-0003`).
 
-**Bundle** — an app's manifest plus frontend assets, addressed by URL, cached locally, hash-pinned.
+**Bundle** — an app's manifest plus frontend assets, addressed by URL, cached locally,
+hash-pinned. The manifest is a hashed leaf, not served or pinned separately — a manifest change
+alone changes the bundle hash (`ADR-0009`, `architecture/bundle-hash.md`).
 
 **`orivon-node-shim`** — implements Node's `net`, `dgram` and `fs` over `orivon.*`, so existing
 Electron apps port mechanically. Load-bearing for the flagship (`ADR-0005`).
