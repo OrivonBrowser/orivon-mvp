@@ -23,6 +23,7 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { isInvokedDirectly } from './cli.mjs'
 
 /**
  * Each pattern matches a credential FORMAT that is issued, not typed by a
@@ -172,10 +173,7 @@ function readTextFile (path) {
   return buffer.toString('utf8')
 }
 
-const invokedDirectly = process.argv[1] !== undefined &&
-  import.meta.url === new URL(`file://${process.argv[1]}`).href
-
-if (invokedDirectly) {
+if (isInvokedDirectly(import.meta.url)) {
   const { ok, findings } = checkNoSecrets(process.cwd())
 
   if (!ok) {
