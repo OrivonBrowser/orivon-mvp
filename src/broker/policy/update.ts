@@ -91,11 +91,17 @@ export function decideUpdate (update: UpdateInput): UpdateDecision {
   // line is the reason this module exists.
   if (widensAuthority(update.grantedPatterns, update.newPatterns)) return 'capability-prompt'
 
-  // Deliberately checked AFTER the pattern check and not folded into it: the
-  // manifest is served separately from the bundle (/.well-known/orivon.json),
-  // so a host can widen the manifest while serving byte-identical code. That
-  // update must still prompt, and it would not if an unchanged hash short-
-  // circuited to 'silent'.
+  // Deliberately checked AFTER the pattern check and not folded into it.
+  //
+  // CORRECTED 2026-08-27. This previously read "the manifest is served
+  // separately from the bundle (/.well-known/orivon.json), so a host can widen
+  // the manifest while serving byte-identical code" -- true when written, false
+  // since ADR-0009: the manifest is a hashed LEAF, so a manifest-only change
+  // does move the bundle hash. The ordering is unaffected and stays for a
+  // stronger reason: a widened pattern set must produce 'capability-prompt',
+  // never the weaker 'reconsent', and folding the checks together would let
+  // whichever ran first decide. The severity order is the rule; the hash is
+  // not a short-circuit for it.
   if (!isSameBundle(update.pinnedHash, update.newHash)) return 'reconsent'
 
   return 'silent'
