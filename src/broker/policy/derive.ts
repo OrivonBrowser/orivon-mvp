@@ -127,7 +127,7 @@ const CURVE_ORDER: Readonly<Record<DeriveCurve, bigint>> = Object.freeze(
   })
 )
 
-function isSupportedCurve(curve: unknown): curve is DeriveCurve {
+function isSupportedCurve (curve: unknown): curve is DeriveCurve {
   // The `typeof` is not redundant. `Object.hasOwn` runs ToPropertyKey on its
   // argument, so ['P-256'], new String('P-256') and [['P-256']] all coerce to
   // the key 'P-256' and pass -- while still failing a `!== 'P-256'` reference
@@ -157,7 +157,7 @@ const SCALAR_BYTES = 32
  * 'internal' is right for all of them: by the time we call WebCrypto the input
  * is validated, so a failure here is a broker fault, not the app's doing.
  */
-async function viaWebCrypto<T>(what: string, run: () => Promise<T>): Promise<T> {
+async function viaWebCrypto <T>(what: string, run: () => Promise<T>): Promise<T> {
   try {
     return await run()
   } catch (cause) {
@@ -167,7 +167,7 @@ async function viaWebCrypto<T>(what: string, run: () => Promise<T>): Promise<T> 
 }
 
 /** Reads `crypto.subtle` with a legible failure if the host has no WebCrypto. */
-function subtleCrypto(): SubtleCrypto {
+function subtleCrypto (): SubtleCrypto {
   const subtle = globalThis.crypto?.subtle
   if (subtle === undefined) {
     // Reachable in a browser on plain http, where `crypto.subtle` is gated on a
@@ -178,7 +178,7 @@ function subtleCrypto(): SubtleCrypto {
   return subtle
 }
 
-function fail(code: OrivonErrorCode, message: string): OrivonError {
+function fail (code: OrivonErrorCode, message: string): OrivonError {
   // OrivonError is an interface, not a class, because src/contracts/ emits no
   // runtime code (see contracts/errors.ts). The broker builds the concrete
   // object; `code` is what consumers switch on.
@@ -212,7 +212,7 @@ function fail(code: OrivonErrorCode, message: string): OrivonError {
  * changes the derived key for any scope outside ASCII. The golden table carries
  * two deliberately multi-byte rows so that substitution cannot pass the suite.
  */
-function encodeField(value: string): Uint8Array<ArrayBuffer> {
+function encodeField (value: string): Uint8Array<ArrayBuffer> {
   const bytes = UTF8.encode(value)
   // Round-trip rather than String.prototype.isWellFormed(), which is ES2024
   // and outside this project's ES2023 lib. Decoding back and comparing is the
@@ -242,7 +242,7 @@ function encodeField(value: string): Uint8Array<ArrayBuffer> {
  * which is strictly stronger, since the whole reason for length prefixing is
  * that those sets are expected to grow.
  */
-export function encodeDeriveInfo(
+export function encodeDeriveInfo (
   label: string,
   scope: string,
   curve: string
@@ -253,7 +253,7 @@ export function encodeDeriveInfo(
 // Returns Uint8Array<ArrayBuffer> rather than plain Uint8Array because
 // WebCrypto's BufferSource excludes SharedArrayBuffer-backed views. Everything
 // here is freshly allocated, so saying so costs nothing and saves a cast.
-function concat(parts: readonly Uint8Array[]): Uint8Array<ArrayBuffer> {
+function concat (parts: readonly Uint8Array[]): Uint8Array<ArrayBuffer> {
   let total = 0
   for (const part of parts) total += part.length
   const out = new Uint8Array(total)
@@ -265,13 +265,13 @@ function concat(parts: readonly Uint8Array[]): Uint8Array<ArrayBuffer> {
   return out
 }
 
-function bytesToBigInt(bytes: Uint8Array): bigint {
+function bytesToBigInt (bytes: Uint8Array): bigint {
   let value = 0n
   for (const byte of bytes) value = (value << 8n) | BigInt(byte)
   return value
 }
 
-function bigIntToScalarBytes(value: bigint): Uint8Array<ArrayBuffer> {
+function bigIntToScalarBytes (value: bigint): Uint8Array<ArrayBuffer> {
   const out = new Uint8Array(SCALAR_BYTES)
   let rest = value
   // Fixed width, zero-padded on the left. A minimal-length encoding would make
@@ -296,7 +296,7 @@ function bigIntToScalarBytes(value: bigint): Uint8Array<ArrayBuffer> {
  * identity, derived from an all-zero seed, permanently and with no export path
  * to recover from. Three lines to make that a loud failure instead.
  */
-function isDegenerateSeed(seed: Uint8Array): boolean {
+function isDegenerateSeed (seed: Uint8Array): boolean {
   // Scans the whole buffer rather than returning on the first differing byte.
   // The early exit would be a data-dependent branch over the ROOT SECRET, and
   // although what it leaks is worthless (the length of a leading run of equal
@@ -324,7 +324,7 @@ function isDegenerateSeed(seed: Uint8Array): boolean {
  * the same hazard this file refuses in derivePublicKey. Do not attempt a
  * hand-written constant-time reduction to close it.
  */
-export async function derivePrivateScalar(request: DeriveRequest): Promise<Uint8Array> {
+export async function derivePrivateScalar (request: DeriveRequest): Promise<Uint8Array> {
   const { seed, label, scope, curve } = request
 
   if (seed.length < MIN_SEED_BYTES) {
@@ -394,7 +394,7 @@ export async function derivePrivateScalar(request: DeriveRequest): Promise<Uint8
  * is the part that must never change. The point is a deterministic function of
  * it, so the identity is pinned either way.
  */
-export async function derivePublicKey(
+export async function derivePublicKey (
   request: DeriveRequest & { readonly curve: 'P-256' }
 ): Promise<Uint8Array> {
   // Two different failures, two different codes. An unknown curve is the app's
@@ -486,7 +486,7 @@ export async function derivePublicKey(
  * declared lengths disagree with its contents, and the failure would surface as
  * an opaque WebCrypto DOMException rather than as the broker bug it is.
  */
-function pkcs8P256(scalar: Uint8Array): Uint8Array<ArrayBuffer> {
+function pkcs8P256 (scalar: Uint8Array): Uint8Array<ArrayBuffer> {
   if (scalar.length !== SCALAR_BYTES) {
     throw fail('internal', `PKCS#8 prefix assumes a ${SCALAR_BYTES}-byte scalar`)
   }

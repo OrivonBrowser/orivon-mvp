@@ -8,11 +8,11 @@ import {
 } from './derive.js'
 import table from './derive-vectors.json'
 
-function hex(bytes: Uint8Array): string {
+function hex (bytes: Uint8Array): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
 }
 
-function bytes(value: string): Uint8Array {
+function bytes (value: string): Uint8Array {
   const out = new Uint8Array(value.length / 2)
   for (let i = 0; i < out.length; i++) out[i] = Number.parseInt(value.slice(i * 2, i * 2 + 2), 16)
   return out
