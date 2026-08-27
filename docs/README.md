@@ -23,8 +23,13 @@ defended against, and [`glossary.md`](glossary.md) when a term does not parse.
 
 ## Track 2 — To understand a decision
 
-[`decisions/`](decisions/) — eight ADRs. **Read them before proposing anything architectural;
-most obvious ideas have already been considered and rejected for recorded reasons.**
+[`decisions/`](decisions/) — the architecture decision records. **Read them before proposing
+anything architectural; most obvious ideas have already been considered and rejected for
+recorded reasons.**
+
+<!-- Deliberately no count here. It went stale every time an ADR landed, and it made a
+     one-line append into an edit that two streams could conflict on. -->
+
 
 | | |
 |---|---|
@@ -36,11 +41,15 @@ most obvious ideas have already been considered and rejected for recorded reason
 | [`ADR-0006`](decisions/ADR-0006-trust-indicator-from-observed-behaviour.md) | Trust indicator from observed behaviour, not a grade |
 | [`ADR-0007`](decisions/ADR-0007-cached-bundles-served-at-their-own-origin.md) | Cached bundles keep their real origin |
 | [`ADR-0008`](decisions/ADR-0008-handles-are-whatwg-streams.md) | Handles are WHATWG streams; Node shapes live in the shim |
+| [`ADR-0009`](decisions/ADR-0009-the-bundle-hash-is-an-app-s-content-identity.md) | The bundle hash construction: what makes an app's content identity, and how a change is noticed |
+| [`ADR-0010`](decisions/ADR-0010-key-derivation-frozen-at-v1.md) | Key derivation is frozen at v1, versioned by its salt |
 
-> **Three of them carry amendments that supersede parts of their own text.** ADR-0002 and
-> ADR-0005 have inline amendments; ADR-0008 rescopes ADR-0002's mirror-Node's-shapes rule to
+> **Several carry amendments that supersede parts of their own text.** ADR-0002, ADR-0005
+> and ADR-0009 have inline amendments; ADR-0008 rescopes ADR-0002's mirror-Node's-shapes rule to
 > the shim rather than the capability layer. Read the amendment blocks — they are not
-> decoration.
+> decoration. ADR-0009's is the sharpest example: its §Reasoning argues for a sort-order rule
+> that its amendment then shows cannot be reached, while the rule that *was* load-bearing had a
+> bug nobody caught until the code existed.
 
 ---
 
@@ -92,6 +101,7 @@ Concrete examples, so this is not abstract:
 | What is in the MVP? | [`mvp-scope.md`](mvp-scope.md) |
 | What do apps program against? | [`architecture/capability-api.md`](architecture/capability-api.md) |
 | What does a handle do? | [`architecture/handle-contracts.md`](architecture/handle-contracts.md) |
+| What identifies an app's content, and how is a change to it noticed? | [`architecture/bundle-hash.md`](architecture/bundle-hash.md), [`ADR-0009`](decisions/ADR-0009-the-bundle-hash-is-an-app-s-content-identity.md) |
 | Why is something the way it is? | [`decisions/`](decisions/) |
 | How much does integrating app X cost? | [`architecture/app-compatibility.md`](architecture/app-compatibility.md) |
 | What are we defending against? | [`architecture/security-model.md`](architecture/security-model.md) |
