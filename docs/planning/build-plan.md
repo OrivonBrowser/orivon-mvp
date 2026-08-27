@@ -297,8 +297,9 @@ pure function against stubs, 30 min–3 h):
    BitTorrent CVE class, so T1 and T10 combine here.**
 3. **Origin derivation, split into two** — (i) URL → origin normalisation (default ports,
    trailing dots, case, punycode/IDN, userinfo, `file:`/`data:` rejection); (ii) **`senderFrame`
-   → origin**, asserting a renderer-supplied origin field is ignored and unbound frames are
-   rejected (`security-model.md` T3).
+   → origin**, asserting an origin field **in the IPC payload** is ignored, that `url` and
+   `frame.origin` must agree, that an opaque origin is rejected outright, and that unbound
+   frames are rejected (`security-model.md` T3 and its 2026-08-27 amendment, T13b).
 4. **Key derivation as frozen golden vectors**, not determinism — hardcode seed / origin / curve
    → expected public key hex, for both the `"app"` and `"identity"` labels, and assert the two
    labels differ. *Same-input-same-output is near-tautological for a KDF; the real risk is the

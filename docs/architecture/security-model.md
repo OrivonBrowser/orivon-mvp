@@ -38,7 +38,7 @@ arbitrary hosts) · identity seed and derived keys · other apps' data · attent
 |---|---|---|
 | T1 | Hostile app reads or writes outside its directory | `fs` rooted per origin; resolve then verify prefix; reject `..`. **Unit-tested** — a silent bug here is a full compromise |
 | T2 | Hostile app obtains a capability it never declared | Grants are checked against the *pinned* manifest, not a runtime-supplied one. Absence means denial; there is no default-allow |
-| T3 | Compromised renderer forges IPC to impersonate another app | The broker derives origin from **`event.senderFrame.origin`, captured synchronously at message receipt** — per *frame*, never per `WebContents`, and re-derived on every call. **Renderer-supplied identity is never trusted.** See the correction below |
+| T3 | Compromised renderer forges IPC to impersonate another app | The broker derives origin from **`event.senderFrame`, captured synchronously at message receipt** — per *frame*, never per `WebContents`, and re-derived on every call. It reads **both `url` and `origin`, and denies when they disagree** (see the T3/T13b note below). **An origin in the IPC *payload* is never trusted** — that is the renderer-supplied identity this threat is about. See the corrections below |
 | T4 | Ordinary website reaches `orivon.*` | **Two separate preload files**, chosen by the broker from the app registry and never from anything renderer-supplied. The ordinary-tab preload exposes `window.nostr` only and does not reference `orivon.*` at all. See the correction below |
 | T5 | Renderer escape into Node | `sandbox: true`, `contextIsolation: true`, `nodeIntegration: false`, no remote module. Non-negotiable |
 | T6 | Compromised host silently swaps app code that already holds grants | Bundle hash pinned at install; any change re-prompts before running (`ADR-0005`, `ADR-0006` D2) |
@@ -85,12 +85,43 @@ Three precision requirements, since the general statement permits a wrong implem
 Recorded rather than silently rewritten, because both were load-bearing claims.
 
 **T3 said "the broker derives origin from the `WebContents`."** A `WebContents` is a *tab*, not
-an origin, and Electron re-injects preloads on **every navigation** and into iframes by
-default. An app holding `tcp.connect *:*` could navigate itself to a hostile origin, which
-would then run with the Orivon preload while the grant ledger still resolved to the app. This
-also defeated `ADR-0005`'s publisher-key amendment outright: a compromised host does not need
-the signing key, it serves a redirect. Origin is now per-frame, captured synchronously (an
-async handler can resolve after the frame is detached or navigated).
+an origin, and Electron re-injects preloads on **every navigation**. An app holding
+`tcp.connect *:*` could navigate itself to a hostile origin, which would then run with the
+Orivon preload while the grant ledger still resolved to the app. This also defeated
+`ADR-0005`'s publisher-key amendment outright: a compromised host does not need the signing
+key, it serves a redirect. Origin is now per-frame, captured synchronously (an async handler
+can resolve after the frame is detached or navigated).
+
+> **Amended 2026-08-27, twice, while implementing `src/broker/policy/origin.ts`.**
+>
+> **This correction said preloads are re-injected "into iframes by default."** They are not.
+> Electron injects the preload into subframes only when `nodeIntegrationInSubFrames: true`,
+> which this project does not set and `.claude/hookify.electron-webprefs.local.md` blocks.
+> Verified against real Electron 44. The **navigation** half of the correction stands and is
+> the load-bearing half; the iframe half was wrong and is withdrawn.
+>
+> **T3 named `event.senderFrame.origin` as the source, and the first implementation read
+> `frame.url` instead, on the grounds that `.origin` is renderer-supplied.** Neither is
+> renderer-supplied — Electron computes both in the browser process, from
+> `GetLastCommittedURL()` and the RFC 6454 serialisation of `GetLastCommittedOrigin()`. A
+> renderer can set neither. The renderer-supplied identity T3 is actually about is an origin
+> field in the **IPC payload**.
+>
+> **Neither field is sufficient alone**, which is why the mitigation now reads *both*:
+>
+> - `url` alone cannot see an **opaque** origin. A top-level document served with
+>   `Content-Security-Policy: sandbox` keeps its ordinary `https:` URL while Chromium gives it
+>   no origin at all — measured: url `http://127.0.0.1:PORT/sandboxed`, origin `null`.
+>   Deriving from the URL alone hands it the embedding app's entire grant set, which is exactly
+>   what **T13b** forbids when it names sandboxed frames.
+> - `origin` alone cannot see a **borrowed** origin. `blob:https://x.example/u` serialises to
+>   the real `https://x.example`, and an `about:blank` child frame inherits its parent's origin
+>   while its url stays `about:blank`. T13b refuses both; the origin field reports both as
+>   ordinary.
+>
+> So: derive from `url`, require `origin` to agree, deny otherwise. Compare **after**
+> canonicalisation — A14 strips the trailing DNS root label and Chromium does not, so a raw
+> string comparison would deny every trailing-dot app by way of our own deviation.
 
 **T4 said "normal tabs get no preload and therefore no API."** That mitigation does not exist —
 `window.nostr` is injected into ordinary tabs by design (`capability-api.md`). The real
