@@ -56,6 +56,10 @@ None of these block starting the week-0 spike.
 | A15 | **The four bundle-hash caps are guesses, not decisions** — `MAX_PATH_BYTES` 1024, `MAX_ASSET_BYTES` 16 MiB, `MAX_BUNDLE_BYTES` 64 MiB, `MAX_BUNDLE_ENTRIES` 4096 (`src/broker/policy/bundle-hash.ts`, `architecture/bundle-hash.md` §Caps). They are labelled AI-recommendation in the source, but a cap decides which bundles are *refusable*, so two implementations disagreeing on one disagree about whether an app can exist at all | **Before the app loader ships (build step 4).** Needs one real frontend's shape to calibrate against; guessing again now would not be better than the current guess |
 | A16 | **What should closing the LAST tab do?** The shell currently leaves the window open with zero tabs. Chrome and Firefox instead open a fresh tab or close the window. Never actually decided | **Not blocking anything.** Decide before an outside user sees the shell; see below |
 | A17 | **RESOLVED 2026-08-27 (owner):** an `identityId` is **opaque and broker-generated** — never a user-typed name, never derived from one. The display name is stored beside the identity, not used to derive it. Found undefined during review of PR #5: it appeared exactly once in the whole repository, as one table cell | Recorded in `ADR-0010`, stated in `capability-api.md`, documented on `DeriveRequest.scope` |
+| A18 | **`checkConnect` takes the manifest (what an app DECLARES) when the decision is about the grant (what the user ALLOWED).** Nothing in the signature carries the grant, so a caller passing a raw manifest silently gets the declared authority | **Build step 2, before the broker calls it.** Narrow the list at the call site, or change the parameter to `readonly Pattern[]`. See below |
+| A19 | **IDN hostnames are unhandled in connect patterns.** A Unicode host, its case variants and its punycode A-label are three different strings to the matcher, and an app deriving its host from `new URL(...)` gets the A-label | **Before any non-ASCII app origin exists.** Non-ASCII is now rejected outright rather than silently never matching. See below |
+| A20 | **`address.ts` exposes a classifier but no canonicaliser.** `connect.ts` needs an identity answer ("is this the same address"), not a range answer, and currently gets it from a local strict-subset validator | **Whenever `broker-02-address` is next touched.** See below |
+| A21 | **Does a re-granted capability reuse its GrantId?** `manifest.ts` says a `Grant` is keyed on (origin, capability, pattern set) but never says whether the `id` is derived from that key or minted fresh per grant event. The handle table now tombstones revoked grant ids, so under the derived reading a permanent tombstone would make re-granting impossible | **Before the grant ledger is written.** `HandleTable.grantIssued()` clears the tombstone, so the table is correct either way; the ledger must call it. See below |
 | A22 | **`src/broker/policy/paths.ts` assumes app root directory names are single-case hex.** True today and specified — `security-model.md` T13b makes directory names `sha256(canonical_origin)`, and `ADR-0009` reconfirms the bundle hash does not rename them. The assumption is load-bearing for a case-SENSITIVE comparison and is asserted only in a source comment | **Build step 4 (the app loader)**, which writes the first root directory and is the first chance to get the naming wrong. See below |
 | A23 | **A derived origin does not carry whether it may be PERSISTED.** T13c forbids ever writing a grant for a loopback or plain-`http` origin to disk, but `originFromUrl` returns a plain string — `http://127.0.0.1:8080` is shape-identical to `https://x.example`, so every caller must remember to re-parse and check | **Build step 2**, when the code that persists grants exists. Owner decided 2026-08-27 to keep the return type a plain string for now rather than change a durable interface before its consumer exists. See below |
 
@@ -127,6 +131,118 @@ usable afterwards. **Whichever way A16 goes, change that one check — not the p
 match.**
 ---
 
+### A18 -- `checkConnect` checks the declaration, not the grant **[AI-REC]**
+
+The manifest DECLARES what an app may ask for; the user GRANTS what it actually gets
+(`architecture/capability-api.md` A9 SS2), and the two sets differ -- a manifest may declare
+`["*:*", "192.168.1.50:5000"]` while the user granted only the first.
+
+`checkConnect(manifest, hostArg, port, resolveFn)` reads `manifest.capabilities.net.tcp.connect`
+directly. Nothing in the signature carries the grant, so a broker that passes the manifest it
+fetched gets the DECLARED authority, silently. The failure mode is the one this whole subsystem
+exists to prevent: an app that declared `*:*` and was granted one host would hold `*:*`.
+
+It is documented at the top of `src/broker/policy/connect.ts` and it is not enforced there.
+That is the weaker of the two options the file itself argues for -- `ConnectAllowed` deliberately
+makes "dial the literal" structural rather than documented, and the input side should be held to
+the same standard.
+
+**AI recommendation:** change the parameter to `readonly Pattern[]` of GRANTED patterns. It forces
+the narrowing to happen at the call site, where it has to happen anyway; it deletes the untrusted-
+manifest-shape handling, since the caller will have parsed it; and it makes the `udp.send` reuse
+real, because `checkConnect` currently reads `net.tcp.connect` by name.
+
+**Not done in `stream/broker-03-connect-check`** because it is a signature change and
+`development/testing.md` SS1 specifies the signature. That document has now been corrected for the
+`port` parameter this stream added; a parameter change should go the same way -- docs first.
+
+**Needed by:** whoever wires the broker in build step 2. Until then, a caller MUST narrow the
+manifest's `connect` list to the granted pattern set before calling.
+
+---
+
+### A19 -- IDN hostnames in connect patterns **[AI-REC]**
+
+`connect.ts` folds ASCII case only, deliberately: `toLowerCase()` applies full Unicode folding, and
+U+212A KELVIN SIGN folds to `k`, so a comparison using it is wider than DNS's and can be steered.
+
+The consequence is that a non-ASCII host has three spellings that do not match each other: the
+Unicode form a human writes in a manifest, its case variants, and the punycode A-label that
+`new URL(...).hostname` returns -- which is what an app actually has in hand. A manifest host
+written with a Unicode letter therefore never matches the app that declared it.
+
+This failed CLOSED, so it was never a hole. It was a trap: the author saw an unexplained denial and
+there was no log line explaining it. As of `stream/broker-03-connect-check` a non-ASCII host or
+pattern is REJECTED outright, with a `bad-host` reason the broker can log -- the same argument the
+file already makes for `*.example.com`, that a deliberate reject is found in seconds and a silent
+non-match never is.
+
+**AI recommendation:** leave it rejected for the MVP. Making IDN work means normalising both sides
+to A-labels, which needs UTS-46 -- a dependency or roughly a hundred hand-written lines in a
+directory whose whole point is having neither (`src/broker/policy/README.md`). No MVP journey has a
+non-ASCII origin.
+
+**Needed by:** the first app served from a non-ASCII origin. Not before.
+
+---
+
+### A20 -- `address.ts` has no canonicaliser, and `connect.ts` needs one **[AI-REC]**
+
+`classifyAddress` answers *"what range is this address in"*, and is deliberately permissive: it
+must understand `0177.0.0.1` and `2130706433` in order to BLOCK them. That is right on the deny
+side.
+
+`connect.ts` also needs an IDENTITY answer on the ALLOW side -- *"will everything downstream read
+this string as the same address"* -- and the two come apart exactly where it hurts. `net.isIP`
+rejects `2130706433`, so `net.connect` treats it as a NAME and looks it up again: the rebinding
+window reopened one layer below the check that exists to close it. Verified end to end on
+2026-08-27, before the fix: a manifest declaring `2130706433:22` produced
+`addresses: ["2130706433"]`, and dialling it performed a fresh DNS lookup and reached 127.0.0.1.
+
+`connect.ts` now carries a local `isCanonicalLiteral` validator. It accepts a strict subset and
+never assigns meaning, so it can only narrow what `address.ts` already decided and a disagreement
+denies -- which is why it is not the duplicate parser `address.ts`'s own comments argue against.
+
+**AI recommendation:** export `canonicalAddress(addr): string | null` from `address.ts` and delete
+the local validator. One parser, no subset to keep in sync, and two other call sites want the same
+thing: the grant prompt should render the canonical form rather than whatever the manifest wrote
+(`2130706433:22` is `127.0.0.1:22` spelled to be unreadable), and the update subset-check in
+`policy/update.ts` compares pattern strings, so two spellings of one address currently read as two
+different grants.
+
+**Not done in `stream/broker-03-connect-check`** because `address.ts` belongs to
+`stream/broker-02-address` and a cross-stream edit is what `development/parallel-work.md` asks to
+be raised rather than made.
+
+**Needed by:** whoever next touches `broker-02-address`, and before the grant prompt is built in
+build step 4.
+
+---
+
+### A21 -- grant id stability across a revoke and a re-grant **[AI-REC]**
+
+Found while fixing the revocation cascade in `src/broker/handles.ts` (review pass, 2026-08-27).
+
+The cascade used to be a one-shot sweep: `revoke()` closed the handles a grant had
+authorised and then forgot the grant entirely. An acquisition that passed the policy check
+*before* the revoke and produced its socket *after* it -- the ordinary connect path -- was then
+registered under a grant the user had just withdrawn, and since the permissions UI fires exactly
+one revoke, nothing ever swept again. The fix is a bounded per-origin set of revoked grant ids
+that `acquire`, `acquireDerived` and `run` refuse against.
+
+That fix has one dependency the repository does not yet decide. If the ledger later mints a
+**stable** `GrantId` derived from (origin, capability, pattern set), a permanent tombstone would
+mean a capability the user withdrew could never be granted again -- and the failure would look
+like "the grant prompt worked and the app still cannot connect", which nobody would trace back
+to the handle table. If it mints a **fresh** id per grant event, tombstones are harmless forever.
+
+**Resolved in the table, not in the ledger:** `HandleTable.grantIssued(origin, grantId)` clears
+the tombstone. It is correct under both readings, and it costs the grant ledger one call at the
+point where it records a grant. **Whoever writes the ledger must make that call**, and should
+record here which of the two id schemes was chosen.
+
+**Owner decision needed on:** nothing, unless the `grantIssued` call site is unwelcome. The
+question is recorded because the assumption is load-bearing and was previously implicit.
 ### A22 — path confinement's case-sensitivity assumes single-case-hex root names **[AI-REC]**
 
 Found while checking whether `stream/broker-04-path-confine` (merged as `ae9a13d`) was safe to
