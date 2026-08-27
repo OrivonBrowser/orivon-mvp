@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import { COMMAND_CHANNEL, STATE_CHANNEL } from '../main/channels.js'
 import type { ShellCommand } from '../main/ipc.js'
 import type { ShellState } from '../main/tabs.js'
 
@@ -9,8 +10,6 @@ import type { ShellState } from '../main/tabs.js'
 // Closures only, matching preload/app.ts's rule -- no raw ipcRenderer
 // handle crosses the bridge, so the chrome page can never listen on a
 // channel this file didn't intend it to.
-const COMMAND_CHANNEL = 'orivon-shell:command'
-const STATE_CHANNEL = 'orivon-shell:state'
 
 function send (command: ShellCommand): void {
   void ipcRenderer.invoke(COMMAND_CHANNEL, command)
