@@ -1,11 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import {
-  derivePrivateScalar,
-  derivePublicKey,
-  encodeDeriveInfo,
-  type DeriveCurve,
-  type DeriveLabel
-} from './derive.js'
+import { derivePrivateScalar, type DeriveCurve, type DeriveLabel } from './derive.js'
+import { derivePublicKey } from './derive-p256.js'
+import { encodeDeriveInfo } from './derive-encoding.js'
 import table from './derive-vectors.json'
 
 function hex (bytes: Uint8Array): string {
