@@ -60,6 +60,8 @@ None of these block starting the week-0 spike.
 | A19 | **IDN hostnames are unhandled in connect patterns.** A Unicode host, its case variants and its punycode A-label are three different strings to the matcher, and an app deriving its host from `new URL(...)` gets the A-label | **Before any non-ASCII app origin exists.** Non-ASCII is now rejected outright rather than silently never matching. See below |
 | A20 | **`address.ts` exposes a classifier but no canonicaliser.** `connect.ts` needs an identity answer ("is this the same address"), not a range answer, and currently gets it from a local strict-subset validator | **Whenever `broker-02-address` is next touched.** See below |
 | A21 | **Does a re-granted capability reuse its GrantId?** `manifest.ts` says a `Grant` is keyed on (origin, capability, pattern set) but never says whether the `id` is derived from that key or minted fresh per grant event. The handle table now tombstones revoked grant ids, so under the derived reading a permanent tombstone would make re-granting impossible | **Before the grant ledger is written.** `HandleTable.grantIssued()` clears the tombstone, so the table is correct either way; the ledger must call it. See below |
+| A22 | **`src/broker/policy/paths.ts` assumes app root directory names are single-case hex.** True today and specified — `security-model.md` T13b makes directory names `sha256(canonical_origin)`, and `ADR-0009` reconfirms the bundle hash does not rename them. The assumption is load-bearing for a case-SENSITIVE comparison and is asserted only in a source comment | **Build step 4 (the app loader)**, which writes the first root directory and is the first chance to get the naming wrong. See below |
+| A23 | **A derived origin does not carry whether it may be PERSISTED.** T13c forbids ever writing a grant for a loopback or plain-`http` origin to disk, but `originFromUrl` returns a plain string — `http://127.0.0.1:8080` is shape-identical to `https://x.example`, so every caller must remember to re-parse and check | **Build step 2**, when the code that persists grants exists. Owner decided 2026-08-27 to keep the return type a plain string for now rather than change a durable interface before its consumer exists. See below |
 
 ---
 
@@ -241,6 +243,78 @@ record here which of the two id schemes was chosen.
 
 **Owner decision needed on:** nothing, unless the `grantIssued` call site is unwelcome. The
 question is recorded because the assumption is load-bearing and was previously implicit.
+### A22 — path confinement's case-sensitivity assumes single-case-hex root names **[AI-REC]**
+
+Found while checking whether `stream/broker-04-path-confine` (merged as `ae9a13d`) was safe to
+accept while `stream/broker-01-origin` was still being reworked. It was, and the rework has
+since merged (PR #1) **without changing how a root is named** — the two are structurally
+independent: disjoint files, `broker-04` is not stacked on `broker-01`, and
+`confinePath(root, requested, realpath)` takes `root` as a parameter, never derives it.
+
+The assumption is worth carrying forward anyway, because **nothing names a root directory yet**
+— no code in the repository computes one, so the first implementation is still ahead. The
+comparison in `paths.ts` between a canonicalised path and the root is deliberately
+**case-sensitive**, justified by a comment citing T13b: *"Cross-platform roots are sha256(origin)
+hex, single-case, so nothing legitimate collides."* That holds only as long as the root
+directory name stays lowercase hex. `sha256(...)` of anything is still lowercase hex, so folding
+a data hash into the string being hashed is fine — but a root named some other way (a raw
+base58 CIDv0, or base64, both mixed-case) would make `confinePath` reject legitimate paths as a
+spurious `symlink-escape` on case-insensitive filesystems (macOS and Windows, both supported
+run-from-source targets).
+
+**Not a security hole either way** — the failure direction is fail-closed (an app breaks, the
+sandbox does not leak) — but worth stating before the code exists rather than after a confusing
+bug report.
+
+**Already specified, and that is the point:** T13b says directory names ARE
+`sha256(canonical_origin)`, and `ADR-0009` reconfirms that the bundle hash does not rename them.
+So this is not an open decision so much as a **constraint that currently lives only in a source
+comment**, where the person implementing the app loader will not necessarily meet it.
+
+**Needed by:** build step 4 (the app loader), which writes the first root directory. Keep root
+names single-case (hex, or lowercase the encoding) — or `paths.ts`'s case-sensitivity comment
+and its case-sensitivity tests have to be revisited together.
+
+---
+
+### A23 — a derived origin does not say whether it may be persisted **[AI-REC]**
+
+Found while reviewing `stream/broker-01-origin` (2026-08-27). T13c forbids ever writing a
+grant for a loopback, `file:` or plain-`http` origin to disk — session-scoped only, re-prompt
+each launch. But `originFromUrl` returns a plain string, and `http://127.0.0.1:8080` has the
+same type and shape as `https://x.example`. The rule is therefore enforceable only by every
+caller remembering to re-parse the string and check, which is the shape of rule that gets
+followed four times and forgotten on the fifth.
+
+**Owner decision, 2026-08-27: keep the plain string for now.** The alternatives — returning
+`{ origin, persistable }`, or adding an `isPersistableOrigin()` helper — both change or extend
+a **durable** interface before the code that persists grants exists, and `ADR-0002` makes that
+interface the artefact the project is built to outlive. Deciding its shape against a real
+consumer at build step 2 is better than guessing now. `originFromUrl`'s doc comment states the
+gap explicitly so a caller meets it at the point of use.
+
+**Needed by:** build step 2, specifically whoever writes the grant ledger's persist path.
+
+### A14 addendum — an argument against the trailing-dot merge, recorded after the decision
+
+A14 (resolved by the owner 2026-08-26) strips the trailing DNS root label, so `https://x.example.`
+and `https://x.example` are one origin. **The decision stands, re-confirmed by the owner on
+2026-08-27.** This records an argument that surfaced during review afterwards, so that a future
+reader does not mistake it for something nobody considered.
+
+The reasoning behind A14 was that both spellings are the same DNS name, served by the same
+operator under the same certificate. The first half is always true; **the second is not
+guaranteed.** Browsers send `Host: x.example.` verbatim, and virtual-host matching is an exact
+string comparison — nginx's `server_name x.example;` does not match it. On a host configured
+that way the request falls through to the **default vhost**, which may serve different content
+under a different operator's control. Merged origins mean that content inherits the app's
+grants, storage domain and identity key.
+
+**Why the decision was kept anyway:** exploiting it also requires a certificate valid for the
+trailing-dot name, browsers generally strip the dot before certificate matching, and the
+alternative costs a real user-visible failure — one mistyped character silently produces a
+second, empty copy of the app that has to be re-granted everything. `ADR-0003` makes this
+unfixable after the first grant is persisted, so it is recorded here rather than left implicit.
 
 ---
 
