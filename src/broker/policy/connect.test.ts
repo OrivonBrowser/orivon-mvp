@@ -32,7 +32,7 @@ import type { Capabilities, Manifest, Pattern } from '../../contracts/index.js'
 // ONE MUTATION SURVIVES, and it is recorded rather than hidden: deleting the
 // `classifyAddress(address) === 'unparseable'` guard in checkConnect changes
 // no result. Every branch beneath it already rejects an unparseable answer --
-// isPrivateAddress is true for anything it cannot parse (./address.ts), and
+// isPublicUnicast is false for anything it cannot parse (./address.ts), and
 // the literal branch compares strings, so a parseable pattern host can never
 // equal an unparseable address.
 //
