@@ -34,6 +34,14 @@ jobs:
       - name: Contracts are complete and reference only their own siblings
         run: npm run check:contracts
 
+      # The unit tests prove derive.ts (WebCrypto) matches the frozen table.
+      # This proves an INDEPENDENT node:crypto implementation matches it too, so
+      # the table cannot quietly become a recording of one implementation's own
+      # bugs. Keys are not exportable in the MVP (ADR-0003), so a derivation
+      # change is unrecoverable -- see ADR-0010.
+      - name: Golden vectors match an independent implementation
+        run: npm run check:vectors
+
       # This repository is public, and the autonomous build loop uses a real
       # credential (kept in ~/.config/orivon/notify.env, outside the repo).
       # A token pushed here is scraped within minutes and cannot be un-pushed.
