@@ -48,7 +48,7 @@
 // mode flag on this one, because the two share a grammar and nothing else.
 
 import type { Manifest, OrivonErrorCode, Pattern } from '../../contracts/index.js'
-import { classifyAddress, isPrivateAddress } from './address.js'
+import { classifyAddress, isPublicUnicast } from './address.js'
 
 /**
  * Resolves a hostname to every address it currently answers with.
@@ -231,7 +231,7 @@ function hostMatches (spec: string, requested: string, address: string): boolean
   // flagship genuinely declares `*:*` and an app holding it must still not
   // reach the user's router, NAS or 169.254.169.254 (security-model.md T12,
   // capability-api.md).
-  if (spec === '*') return !isPrivateAddress(address)
+  if (spec === '*') return isPublicUnicast(address)
 
   const host = normalizeHost(spec)
 
@@ -263,7 +263,7 @@ function hostMatches (spec: string, requested: string, address: string): boolean
   // an oversight: "the name resolved there" is the whole of the rebinding
   // attack, so a name cannot be the evidence that the range was intended.
   // Reaching a LAN host requires declaring its address literally, above.
-  return host === requested && !isPrivateAddress(address)
+  return host === requested && isPublicUnicast(address)
 }
 
 function patternAuthorises (
@@ -335,7 +335,7 @@ export async function checkConnect (
     //
     // REDUNDANT TODAY, AND KEPT DELIBERATELY. Every branch below already
     // rejects an unparseable answer: `*` and the hostname branch go through
-    // isPrivateAddress, which is true for anything it cannot parse
+    // isPublicUnicast, which is false for anything it cannot parse
     // (./address.ts), and the literal branch compares strings, so a parseable
     // pattern host can only equal a parseable address. Removing this line
     // therefore breaks no test -- it is the one mutation ./connect.test.ts
