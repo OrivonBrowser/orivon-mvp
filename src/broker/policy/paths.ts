@@ -54,6 +54,7 @@
 import { posix, win32 } from 'node:path'
 import type { PlatformPath } from 'node:path'
 import type { OrivonErrorCode } from '../../contracts/errors.js'
+import { WINDOWS_DEVICE_NAME_PATTERN } from './windows-device-names.js'
 
 /**
  * Why every rejection is the SAME error code, whatever the reason.
@@ -114,11 +115,11 @@ const NUL = '\u0000'
  * extension (`CON.txt`) and for trailing dots or spaces (`CON.`, `CON `),
  * which Win32 strips before it looks the name up.
  *
- * Rejected on POSIX too, where these are ordinary filenames: a torrent that
- * writes `CON.txt` should fail identically on every platform rather than
- * work on Linux and hang a Windows user's download.
+ * The table itself is shared with canonical-path.ts (./windows-device-
+ * names.ts); this file uppercases its input first, so the RegExp built from
+ * it is case-sensitive rather than carrying an `/i` flag.
  */
-const WINDOWS_DEVICE = /^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/
+const WINDOWS_DEVICE = new RegExp(WINDOWS_DEVICE_NAME_PATTERN)
 
 /** A leading drive designator in any form: `C:\x`, `C:/x`, or drive-relative `C:x`. */
 const WINDOWS_DRIVE_PREFIX = /^[a-zA-Z]:/

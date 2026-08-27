@@ -7,6 +7,8 @@
 // record built from these functions, and a change here changes which paths an
 // already-pinned app is allowed to serve.
 
+import { WINDOWS_DEVICE_NAME_PATTERN } from './windows-device-names.js'
+
 /**
  * The reserved canonical path every bundle must carry exactly one leaf at.
  * Fetched before first run (capability-api.md SSManifest).
@@ -145,11 +147,13 @@ export function isValidCanonicalPath (path: string): boolean {
 const TRAILING_DOT_OR_SPACE = /[. ]$/
 
 /**
- * Reserved on Windows with or without an extension, and the same list
- * paths.ts refuses for the same reason. `CON.txt` is the device, `CONFIG` is
- * not, so the test is on the component up to its first dot.
+ * Reserved on Windows with or without an extension, and the same table
+ * paths.ts refuses for the same reason (./windows-device-names.ts). `CON.txt`
+ * is the device, `CONFIG` is not, so the test is on the component up to its
+ * first dot. Case-insensitive here because, unlike paths.ts, nothing upstream
+ * has already normalised case.
  */
-const WINDOWS_DEVICE = /^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i
+const WINDOWS_DEVICE = new RegExp(WINDOWS_DEVICE_NAME_PATTERN, 'i')
 
 /** `\` separates on Windows; `:` opens an NTFS stream; `|` is not a filename. */
 const UNSAFE_DECODED_CHARS = /[\\:|]/
