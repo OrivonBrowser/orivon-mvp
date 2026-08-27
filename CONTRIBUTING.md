@@ -83,17 +83,27 @@ alone.**
 All five run in CI on every push. **With no dedicated code reviewer, CI is the reviewer** — a
 red pull request does not merge, ever.
 
-## Pull request body
+## Pull request title and body
 
-Four things:
+**[`docs/development/pr-blueprint.md`](docs/development/pr-blueprint.md)** — the shape every
+pull request here follows, and why. You do not have to read it first:
+[`.github/pull_request_template.md`](.github/pull_request_template.md) is the same thing as a
+form, and GitHub opens it for you automatically.
 
-- **Goal** — what this is for, in one sentence.
-- **Paths touched** — and confirmation they're within your area.
-- **Contracts depended on** — which types from `src/contracts/`, and whether any changed.
-- **How it was verified** — the commands you ran and what they said.
+The title rule, because it is the one part no template can fill in for you: **imperative,
+present tense, no prefix, about 72 characters.** The test is whether someone who wasn't there
+could tell what changed without opening it. *"Check connect patterns against resolved addresses,
+never the hostname"* passes. *"broker-02-address: the blocked-address-range table"* does not —
+it names a noun rather than a change, and the prefix repeats what the label already says.
 
-The last one is not a formality. "Should work" and "tests pass" are different claims, and this
-project has already been bitten by the difference.
+Two things from the blueprint worth stating here, because both have already cost this project
+something:
+
+- **Say what the change means for a user, even when the answer is "nothing".** Most pull
+  requests here are internal, and `None — <why>, and here is when it will be visible` is the
+  expected answer. Inventing an impact is worse than not having one.
+- **"Should work" and "tests pass" are different claims.** Paste what the commands actually
+  said. This project has already been bitten by the difference.
 
 ## Working alongside others
 

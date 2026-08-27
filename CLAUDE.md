@@ -5,7 +5,8 @@
 **Phase: build step 1 (the shell) complete. `src/contracts/` written and the parallel-work
 system in place (2026-08-26). Next action is build step 2 (the capability broker) — nothing
 blocks it.**
-Last updated 2026-08-27 (code guidelines added as the third standing rule).
+Last updated 2026-08-27 (code guidelines and the PR blueprint added as the third and fourth
+standing rules).
 
 **The human documentation is the map. Read it first — this file adds only what is specific to
 working here as an agent.**
@@ -17,6 +18,7 @@ working here as an agent.**
 | `docs/README.md` | **The documentation index** — three reading tracks and the sources-of-truth table |
 | `docs/development/parallel-work.md` | **Read before starting any build step** |
 | `docs/development/code-guidelines.md` | **Read before writing any code** — comments, the 500-line limit, one implementation per idea |
+| `docs/development/pr-blueprint.md` | **Read before opening a PR** — the title rule, the seven sections, the labels |
 | `src/contracts/` | The product surface in seven files. Faster than any prose |
 
 That index is deliberately *not* duplicated here. Two copies drift, and the human one is the
@@ -134,10 +136,43 @@ replaceable anyway. A shortcut in `src/contracts/` costs every app ever written 
 8. **Pure-JS dependencies only.** Native modules break run-from-source on Windows and macOS,
    which is a supported path (`build-plan.md`).
 
-## Three standing rules, all owner policies
+## Four standing rules, all owner policies
 
-Parallel work and the readability check are from 2026-08-26; the code guidelines from
-2026-08-27.
+Parallel work and the readability check are from 2026-08-26; the code guidelines and the PR
+blueprint from 2026-08-27.
+
+### The PR blueprint
+
+**Read `docs/development/pr-blueprint.md` before opening a pull request.** GitHub pre-fills
+`.github/pull_request_template.md` for you, so in practice this is filling in a form that is
+already there — but the blueprint carries the reasoning and the anti-patterns, and it is the
+copy that wins if the two ever disagree.
+
+- **Title:** imperative, present tense, **no prefix**, about 72 characters. The stream is
+  carried by the label and the branch name; repeating it in the title wastes list-view
+  characters. Name a *change*, not a noun.
+- **Body:** seven sections — what changes for the user, goal, what it achieves, how it works,
+  stream/paths/merge order, decisions and open questions, how it was verified. Two optional:
+  risk and rollback, deliberately not done. A `type:chore` or one-line fix may keep only goal,
+  user impact and verification; anything on the critical path takes the full form.
+- **Labels:** one `stream:`, one `type:`, one `ux:`, plus `contracts-change` or
+  `needs-owner-decision` if they apply.
+
+Three failure modes worth naming, because an agent will hit all three:
+
+1. **Do not invent a user impact.** Most PRs here change nothing anyone experiences.
+   `None — <why>, and here is when it will be visible` is the expected answer and a respected
+   one. "Improves security" names a category, not an effect.
+2. **Every claim under *how it was verified* must be something you ran**, in this tree, on this
+   branch. Paste the actual numbers. If a check was skipped, say so and why — a silently omitted
+   check reads as a passed one.
+3. **`Decisions and open questions` is Rules 1 and 2 at PR level.** Label each entry owner's
+   decision / AI recommendation / still open, and list any `open-questions.md` A-numbers filed,
+   taken from **main's** highest rather than your branch's.
+
+Nothing enforces this mechanically, by owner's decision — same call as the code guidelines. The
+template does the work by being already in the box. Note it is bypassed entirely by
+`gh pr create --body`, which is exactly how an agent tends to open one.
 
 ### Code guidelines
 

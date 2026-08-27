@@ -61,7 +61,8 @@ recorded reasons.**
 | 2. [`development/parallel-work.md`](development/parallel-work.md) | Who owns which paths, and how several people work here at once |
 | 3. [`development/code-guidelines.md`](development/code-guidelines.md) | How code is written here: comment discipline, the 500-line file limit, one implementation per idea |
 | 4. [`development/testing.md`](development/testing.md) | What is tested, and why so little is |
-| 5. [`planning/build-plan.md`](planning/build-plan.md) | The dependency-ordered work, step by step |
+| 5. [`development/pr-blueprint.md`](development/pr-blueprint.md) | How a pull request is titled, described and labelled. **Read before opening one** |
+| 6. [`planning/build-plan.md`](planning/build-plan.md) | The dependency-ordered work, step by step |
 
 Also: [`development/release-checklist.md`](development/release-checklist.md) and
 [`development/readability-log.md`](development/readability-log.md).
@@ -107,6 +108,7 @@ Concrete examples, so this is not abstract:
 | How much does integrating app X cost? | [`architecture/app-compatibility.md`](architecture/app-compatibility.md) |
 | What are we defending against? | [`architecture/security-model.md`](architecture/security-model.md) |
 | What is undecided or contradictory? | [`open-questions.md`](open-questions.md) |
+| How do I write a pull request here? | [`development/pr-blueprint.md`](development/pr-blueprint.md) |
 | What does a term mean? | [`glossary.md`](glossary.md) |
 | What prior material exists, and where? | [`inventory.md`](inventory.md) |
 
@@ -118,5 +120,5 @@ Concrete examples, so this is not abstract:
 |---|---|
 | [`architecture/`](architecture/) | How it works, and what it defends against. The two contract documents are the highest-care artefacts in the repository |
 | [`decisions/`](decisions/) | ADRs. Monotonically numbered, never renumbered. Superseded ones are rewritten in place with the reversal recorded |
-| [`development/`](development/) | How to work here: setup, testing, parallel work, code guidelines, release checklist |
+| [`development/`](development/) | How to work here: setup, testing, parallel work, code guidelines, the PR blueprint, release checklist |
 | [`planning/`](planning/) | Scope, build plan, readiness, audits, the spike record, and design documents. **Historical as much as current** — read the dates |
