@@ -46,7 +46,7 @@ change belongs in their stream.
 | `nostr` | `src/nostr/` | 7 | second to cut |
 | `telemetry` | `src/telemetry/` | 8 | independent of the critical path |
 | `packaging` | `electron-builder` config, `scripts/` **except `smoke.mjs`** | 10 | independent of everything |
-| `docs` | `docs/`, root markdown | — | always available |
+| `docs` | `docs/`, root markdown, **`.github/`** | — | always available |
 
 Every directory above carries its own `README.md` stating what it depends on and **what it must
 never import**. Those are the real boundary; this table is the index.
@@ -56,6 +56,13 @@ never import**. Those are the real boundary; this table is the index.
 shell's own regression check — they exist to catch shell regressions, they change when the
 shell changes, and a packaging change never touches them. Corrected 2026-08-27, after
 `stream/backlog-05-smoke-coverage` edited `smoke.mjs` and the table said packaging owned it.
+
+**Why `docs` owns `.github/`.** It was in nobody's column until 2026-08-27, by oversight rather
+than design, and two changes had already landed there. Its contents are process and
+documentation infrastructure — the pull request template, the issue templates — and `docs` is
+the stream that is always available. **`ci.yml` is the awkward exception**: a change to it is far
+likelier to come from `packaging`, or from whichever stream adds the check it runs. Treated as a
+borrow rather than a split, on the same terms as a `backlog-NN` branch — name it in the PR.
 
 ### `backlog-NN` branches
 
@@ -214,11 +221,11 @@ With no dedicated code reviewer, **CI is the reviewer** — so a red PR does not
    npm run typecheck && npm test && npm run check:natives && npm run check:contracts
    npm run smoke     # only if you touched src/main/
    ```
-4. **Open the PR**, with a body stating four things:
-   - **Goal** — what this is for, in one sentence.
-   - **Paths touched** — and confirmation they are yours.
-   - **Contracts depended on** — which types from `src/contracts/`, and whether any changed.
-   - **How it was verified** — the commands you ran and what they said.
+4. **Open the PR**, titled and described per
+   [`pr-blueprint.md`](pr-blueprint.md). GitHub pre-fills the form, so in practice this is
+   filling in what is already there. Its `## Stream, paths and merge order` block is the part
+   this page cares about — the stream, the paths and whether the PR is independent or stacked on
+   another — and **its labels are how you see which streams are open at once**.
 5. **CI must be green.**
 6. **The owner merges.**
 
