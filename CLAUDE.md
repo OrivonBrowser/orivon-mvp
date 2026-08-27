@@ -5,7 +5,7 @@
 **Phase: build step 1 (the shell) complete. `src/contracts/` written and the parallel-work
 system in place (2026-08-26). Next action is build step 2 (the capability broker) — nothing
 blocks it.**
-Last updated 2026-08-26 (repo openness + parallel work recorded).
+Last updated 2026-08-27 (code guidelines added as the third standing rule).
 
 **The human documentation is the map. Read it first — this file adds only what is specific to
 working here as an agent.**
@@ -16,6 +16,7 @@ working here as an agent.**
 | `ARCHITECTURE.md` | How the pieces fit, which are disposable, and the owner's design choices |
 | `docs/README.md` | **The documentation index** — three reading tracks and the sources-of-truth table |
 | `docs/development/parallel-work.md` | **Read before starting any build step** |
+| `docs/development/code-guidelines.md` | **Read before writing any code** — comments, the 500-line limit, one implementation per idea |
 | `src/contracts/` | The product surface in seven files. Faster than any prose |
 
 That index is deliberately *not* duplicated here. Two copies drift, and the human one is the
@@ -128,11 +129,50 @@ replaceable anyway. A shortcut in `src/contracts/` costs every app ever written 
    idea before writing anything that sounds like a roadmap.
 6. **Prefer mature components.** Per subsystem decide: build / library / fork / embed /
    interface. Do not reinvent without a written reason.
-7. **Don't over-document trivia**, and don't create abstractions for elegance alone.
+7. **Don't over-document trivia**, and don't create abstractions for elegance alone. In code
+   specifically, this is Rule 1 of `docs/development/code-guidelines.md` — see §Code guidelines.
 8. **Pure-JS dependencies only.** Native modules break run-from-source on Windows and macOS,
    which is a supported path (`build-plan.md`).
 
-## Two standing rules, both owner policies from 2026-08-26
+## Three standing rules, all owner policies
+
+Parallel work and the readability check are from 2026-08-26; the code guidelines from
+2026-08-27.
+
+### Code guidelines
+
+**Read `docs/development/code-guidelines.md` before writing any code.** The three rules, in
+short — the document carries the reasoning, the carve-outs and the current violations:
+
+1. **Comments earn their place.** A comment explains *why*; the code already says *what*. If it
+   restates the line below it, delete it. Long comments are allowed where length is genuinely
+   what makes a section understandable — not by default. Plain language: the reader may be new
+   to the project or a model with a small context window. **Carve-out:** doc comments on
+   exported declarations in `src/contracts/` are exempt — they are the product's documentation.
+   Inline comments inside function bodies are not exempt anywhere.
+2. **500 lines for source, 800 for tests** (`*.test.ts`, `test/`, `scripts/smoke.mjs`). Split by
+   concern, never by line count — `foo-part2.ts` is worse than the long file. The limit exists so
+   a smaller model can hold a whole file and reason about it confidently. Nothing is over today,
+   but **`derive.ts` is at 499** and three more are within 35 lines.
+3. **One implementation per idea.** Before writing a helper, `grep -rn "function <name>" src/`.
+   Two `concat`s and two `encodeField`s already exist in `src/broker/policy/` — one pair is a
+   wire format duplicated across subsystems. Extract when the *reason* is shared, not when the
+   shape is (Rule 7 still applies).
+
+**`src/shared/` is where a helper needed on both sides of a trust boundary goes** — `src/broker/`
+and `src/shim/` may not import each other, and `check:contracts` rules out `src/contracts/`. It
+is **change-controlled like contracts** (own PR, merges first) and **imports nothing**. Empty by
+design; the bar is two callers across a boundary, and its `README.md` states it. Note it did
+*not* cause the existing duplicates — those are same-directory, same-stream, and a plain `grep`
+would have caught them.
+
+**Nothing enforces these mechanically, by owner's decision (rules first, enforcement later).**
+No linter or formatter exists, and the conventions have already split once: 115 declarations are
+`function name (args)`, 14 are `function name(args)` — all 14 in `derive.ts` and its test. A
+second split is the signal that the deferral has expired.
+
+Refactoring to the limits is a separate, owner-scheduled job. **Do not start it as a side effect
+of another task** — these rules bind new and changed code now.
 
 ### Parallel work
 
