@@ -15,6 +15,22 @@
 
 import type { OrivonError, OrivonErrorCode } from '../../contracts/index.js'
 import { isValidCanonicalPath, type PathLeaf } from './bundle-hash.js'
+import { originFromUrl } from './origin.js'
+
+/**
+ * Already-canonical or rejected, never repaired -- the same stance
+ * isValidCanonicalPath takes on paths, for the same reason. `origin` says
+ * which app a pin belongs to and is matched against Grant.origin; a pin
+ * spelled differently from the ledger's spelling of the same origin is a bug,
+ * and normalising it here would hide it rather than surface it.
+ *
+ * Uses origin.ts's definition rather than a second one, including its
+ * trailing-DNS-dot rule (open-questions A14). Two origin definitions in one
+ * broker is exactly how a grant ends up keyed to something a pin cannot find.
+ */
+function isCanonicalOrigin (origin: string): boolean {
+  return originFromUrl(origin) === origin
+}
 
 /** The only schema version that exists. Bumped, never mutated in place -- see PinRecord. */
 export const PIN_SCHEMA_VERSION = 1
@@ -79,7 +95,7 @@ export function parsePinRecord (raw: unknown): PinRecord | null {
   }
 
   const origin = ownString(raw, 'origin')
-  if (origin === undefined || origin.length === 0) return null
+  if (origin === undefined || !isCanonicalOrigin(origin)) return null
 
   const bundleHash = ownString(raw, 'bundleHash')
   if (bundleHash === undefined || !BUNDLE_HASH_PATTERN.test(bundleHash)) return null
@@ -169,7 +185,7 @@ export function fromBundleTree (
   version: string,
   pinnedAt: number
 ): PinRecord {
-  if (origin.length === 0) throw fail('invalid', 'a pin record needs a non-empty origin')
+  if (!isCanonicalOrigin(origin)) throw fail('invalid', `not a canonical origin: ${JSON.stringify(origin.slice(0, 120))}`)
   if (!BUNDLE_HASH_PATTERN.test(bundleHash)) throw fail('invalid', `not a bundle hash: ${bundleHash}`)
   if (assets.length === 0) throw fail('invalid', 'a pin record needs at least one pinned asset')
   if (version.length === 0) throw fail('invalid', 'a pin record needs a non-empty version')
