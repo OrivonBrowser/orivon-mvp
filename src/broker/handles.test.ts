@@ -1163,22 +1163,50 @@ describe('what may cross to a renderer', () => {
     const secondDestroy = spyDestroy()
     t.acquire({ origin: APP, kind: 'tcpSocket', authorisedBy: { by: 'grant', grantId: TCP_GRANT }, destroy: secondDestroy })
 
-    const pending = t.run(APP, { on: 'handle', handleId: first.id }, async (signal) => {
-      // Broker code. Node routes a throw from an abort listener to
-      // emitUncaughtException, which would abandon the rest of the sweep.
-      signal.addEventListener('abort', () => { throw new Error('listener blew up') })
-      return await never<string>()
-    })
-    await Promise.resolve()
+    // The throw below reaches Node's uncaughtException handler, not this
+    // module -- an EventTarget dispatches out of band, so a try/catch around
+    // abort() would catch nothing (handles.ts #cancel says so, and leaves it
+    // deliberately unguarded so the broker bug stays loud).
+    //
+    // Which makes it this test's exception to own. Left to escape, it is a
+    // real uncaught exception in the run: vitest reports it, `vitest run`
+    // exits 1 with every test still green, and CI goes red for a throw the
+    // suite asked for on purpose. Vitest's own listener has to come off for
+    // the duration, or it reports the error regardless of ours.
+    const captured: unknown[] = []
+    const vitestListeners = process.listeners('uncaughtException')
+    process.removeAllListeners('uncaughtException')
+    process.on('uncaughtException', (error) => { captured.push(error) })
 
-    await t.revoke(APP, TCP_GRANT)
+    try {
+      const pending = t.run(APP, { on: 'handle', handleId: first.id }, async (signal) => {
+        signal.addEventListener('abort', () => { throw new Error('listener blew up') })
+        return await never<string>()
+      })
+      await Promise.resolve()
 
-    // The throw reaches Node's uncaughtException handler, not this module -- an
-    // EventTarget dispatches out of band, so a try/catch around abort() would
-    // catch nothing. What must hold is that the sweep is not abandoned
-    // mid-cascade, leaving later handles live after a revoke.
-    expect((await rejection(pending)).code).toBe('revoked')
-    expect(secondDestroy).toHaveBeenCalledWith('revoked')
-    expect(t.counts(APP).handles).toBe(0)
+      await t.revoke(APP, TCP_GRANT)
+
+      // What must hold is that the sweep is not abandoned mid-cascade, leaving
+      // later handles live after a revoke.
+      expect((await rejection(pending)).code).toBe('revoked')
+      expect(secondDestroy).toHaveBeenCalledWith('revoked')
+      expect(t.counts(APP).handles).toBe(0)
+
+      // Node delivers this one on a MACROTASK -- not synchronously out of
+      // abort(), and not on a microtask either (measured, not assumed). So the
+      // capture window has to outlive a timer, or the listeners go back before
+      // the exception arrives and vitest catches it after all.
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    } finally {
+      process.removeAllListeners('uncaughtException')
+      for (const listener of vitestListeners) process.on('uncaughtException', listener)
+    }
+
+    // Asserted, not merely swallowed: exactly the one throw the test planted,
+    // arriving where #cancel's comment says it arrives. If a future change
+    // routes it somewhere else -- or swallows it -- this fails.
+    expect(captured).toHaveLength(1)
+    expect((captured[0] as Error).message).toBe('listener blew up')
   })
 })
