@@ -1,0 +1,176 @@
+# electron-builder configuration -- Linux only (deb + AppImage).
+#
+# Scope, deliberately: no `win:` / `mac:` blocks and no code-signing config of any kind.
+# Windows and macOS ship run-from-source instead of a signed installer, on purpose, to
+# avoid buying certificates (docs/planning/build-plan.md "Platform policy"). Signing is
+# not "left off for now" -- for this file it is simply out of scope.
+#
+# UNBUILT. This config has not been run through a real `electron-builder` invocation
+# (see docs/development/packaging.md -- that is deliberate, not an oversight: a real
+# build downloads hundreds of MB of Electron/7z binaries, which this task explicitly
+# does not do). It has been checked by eye against electron-builder's documented schema,
+# current as of a 2026-08-26 doc lookup rather than trained-in knowledge -- see the doc
+# for what that lookup changed versus what an older electron-builder version would have
+# needed (nested `asar`/`nativeModules`, the v27 generated Linux launcher script, and
+# app-update.yml suppression in particular). First real build is a follow-up task.
+
+appId: com.orivonstack.orivon
+# Reverse-DNS of orivonstack.com, the project's actual registered domain (already used
+# for docs.orivonstack.com and the OrivonStack forum -- docs/inventory.md). Not invented
+# for this file.
+productName: Orivon
+# Not "Orivon MVP" -- that qualifier belongs to this repo, not the product a user sees
+# installed on their machine (README.md's own title is just "Orivon").
+
+directories:
+  output: release
+  # Already gitignored (.gitignore "Electron / packaging" section) -- verified, not
+  # assumed, before writing this key.
+  # buildResources (icon source, etc.) is left at its default, `build/`. That directory
+  # does not exist in this repo yet -- no icon has been designed. Per electron-builder's
+  # documented behaviour this is not a hard failure: absent a custom icon it falls back
+  # to the stock Electron icon rather than refusing to build. Flagged here and in
+  # docs/development/packaging.md as a real, currently-open gap rather than worked
+  # around, because it is a binary asset this task has no file permission to create and
+  # no source to draw one from.
+
+# --- Contents of app.asar ----------------------------------------------------------
+# An allowlist, not a blocklist subtracted from `**/*`. This repo also contains spike/,
+# test/, scripts/, devlog/, .claude/, docs/, and root-level markdown alongside the
+# actual app -- a blocklist has to name every one of those, today and whenever a new
+# one is added later; an allowlist just never sees them. That is what this task asked
+# for ("does not accidentally ship spike/, docs/, orchestration remnants or test
+# files") and it is the stronger guarantee of the two approaches.
+files:
+  - out/**/*
+  - package.json
+# Nothing from node_modules is listed. package.json declares zero runtime
+# "dependencies" (only devDependencies, needed to build, not to run) -- webtorrent and
+# every app-side library are shipped as pre-built app assets fetched into `userData` at
+# runtime, never a shell dependency (build-plan.md "Platform policy" #1, ADR-0005). So
+# there is nothing under node_modules/ this packaged app needs at runtime, and omitting
+# it entirely is a second, independent guarantee against shipping the wrong thing --
+# not just the intended thing, but only the intended thing.
+
+asar: true
+# On by default in electron-builder; stated explicitly because it is a deliberate
+# choice here, not an unexamined default -- see docs/development/packaging.md for what
+# it does and does not buy.
+
+nativeModules:
+  npmRebuild: false
+  # There is nothing native to rebuild: Rule 8 (CLAUDE.md) and the `check:natives` gate
+  # forbid native modules in this tree entirely, enforced independently on every
+  # install and every commit. Leaving npmRebuild at its default `true` would spend real
+  # build time re-confirming a fact this repo already guarantees a different way, and
+  # would be one more place that guarantee could silently drift out of sync if it were
+  # ever loosened.
+
+publish: null
+# Explicitly disabled, not merely unconfigured. electron-builder auto-detects a GitHub
+# publish target from package.json's `repository` field (this repo has one, pointing at
+# github.com/OrivonBrowser/orivon-mvp), and per electron-builder's own PublishManager,
+# an explicit `null` here -- not just omitting the key -- is what guarantees no
+# `app-update.yml` is written into the packaged resources and no publish config is
+# resolved from any source. Auto-update is cut by owner decision (build-plan.md,
+# 2026-08-25): unsigned `electron-updater` on Linux verifies only a SHA-512 fetched from
+# the same host that serves the binary, which is a standing remote-code-execution
+# channel keyed to a GitHub token. v0 checks and notifies instead (a separate,
+# already-scoped build step) -- this key exists so that decision cannot be silently
+# undone by a future contributor passing `--publish` without reading either doc.
+
+# --- Cross-platform URL-scheme registration -----------------------------------------
+# `schemes: [http, https]`, not a custom `orivon://` scheme -- Orivon is applying to be
+# a BROWSER, not registering a deep-link handler for itself. This is the piece that
+# makes "set as default browser" reachable at all: `xdg-settings set
+# default-web-browser` (Linux) looks for an installed .desktop file whose MimeType=
+# line includes `x-scheme-handler/http` and `x-scheme-handler/https`, and this is the
+# documented, cross-platform electron-builder mechanism that populates it (it would
+# equally populate the Windows registry / macOS Info.plist equivalents, unused here
+# since only Linux targets are configured below).
+# This config key alone does not make Orivon a working browser at the OS level -- the
+# app itself must still call `app.setAsDefaultProtocolClient()` at runtime. That is
+# application code in src/main, out of scope for this file; see
+# docs/development/packaging.md.
+protocols:
+  name: Orivon URL Handler
+  schemes:
+    - http
+    - https
+
+linux:
+  target:
+    - deb
+    - AppImage
+  # deb listed first because it is the PRIMARY artefact, not an equal alternative to
+  # AppImage -- only an installed package can register a .desktop file where
+  # `xdg-settings` can find it, and the project's success metric is measured in
+  # daily-driver hours (docs/mvp-scope.md). A bare AppImage cannot self-integrate:
+  # electron-builder's own docs state plainly that since electron-builder 21, AppImages
+  # do not automatically create desktop files, associate file types, or register with
+  # the application menu. AppImage remains the trial / launch-clip artefact; the
+  # first-run "install desktop entry" flow that closes its integration gap is a
+  # separate, already-scoped piece of work -- this file only has to not make it
+  # impossible, which an allowlisted `files` and a correct `linux.desktop` block do not.
+
+  category: "Network;WebBrowser;"
+  # freedesktop.org Categories=. Two values, not one: WebBrowser is the specific
+  # category, and the freedesktop.org menu spec expects its required parent category
+  # (Network) to be present alongside it, not instead of it -- most desktop-menu
+  # implementations key off both.
+
+  mimeTypes:
+    - text/html
+  # Alongside `protocols.schemes` above, not a duplicate of it: `protocols` covers URL
+  # *schemes* (x-scheme-handler/*), text/html is a document MIME type rather than a
+  # scheme, so it has its own config surface. Together, electron-builder's documented
+  # behaviour is that they compose into one MimeType= line:
+  # `x-scheme-handler/http;x-scheme-handler/https;text/html;`. That composition is
+  # read from current docs, not observed against a real build -- verify the generated
+  # .desktop file's actual MimeType= line the first time this is really packaged (see
+  # docs/development/packaging.md).
+
+  synopsis: A browser that runs applications Chrome cannot
+  description: >-
+    Orivon reaches the network and filesystem under user-granted, per-app capabilities,
+    so that ordinary web frontends delivered from a URL can do what today requires a
+    native install. Pre-alpha; nothing is released yet.
+  # Reuses README.md's own tagline rather than writing new marketing copy for a second
+  # place it can drift out of sync.
+
+  vendor: OrivonStack
+  maintainer: Orivon <accauntacaso57@gmail.com>
+  # package.json has no "author" field, and this task may not add one (package.json is
+  # off limits here -- see the PR description). A .deb's control file requires a
+  # Maintainer entry, so it is supplied at this layer instead. The address reuses
+  # SECURITY.md's existing public fallback contact rather than introducing a new one.
+
+  executableName: orivon
+  # Linux binaries are lowercase by convention (`/usr/bin/orivon`, not `/usr/bin/Orivon`
+  # next to it); left unset, this defaults to `productName` verbatim. This is also the
+  # name baked into the v27 generated launcher script that every Linux target now
+  # execs into (electron-builder's own migration notes: Linux targets moved to a
+  # generated shell-script entry point in v27, and custom desktop/AppArmor/MIME
+  # overrides need to reference it, not the raw binary, if anyone adds one later).
+
+  desktop:
+    entry:
+      Name: Orivon
+      Comment: A browser that runs applications Chrome cannot
+      Type: Application
+      Terminal: false
+      StartupWMClass: orivon
+      # Matches executableName above so window-manager/taskbar matching keys off the
+      # same string window and launcher agree on. Unconfirmed against a real packaged
+      # launch's actual WM_CLASS -- src/main sets no explicit app name today (checked:
+      # no `app.setName`/`BrowserWindow` title override exists in src/main/*.ts as of
+      # this writing), so Electron's runtime default may not match this string until
+      # someone sets one. Worth a first-build check, not a blocker.
+
+deb:
+  packageCategory: web
+  # Debian's Section: field -- a different taxonomy from freedesktop Categories= above
+  # (apt/dpkg's own archive grouping, not the desktop menu's). "web" is the actual
+  # Debian section browsers ship under (e.g. Firefox, Chromium packages both use it),
+  # not a guess -- "net" would be the wrong adjacent category (network clients/tools
+  # generally, not browsers specifically).
