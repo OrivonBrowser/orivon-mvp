@@ -108,15 +108,17 @@ describe('parsePinRecord: never throws, denies by returning null', () => {
     expect(parsePinRecord({ ...validRaw(), assets: 'nope' })).toBeNull()
   })
 
+  // Each carries the manifest leaf so the subject of the test is the ONLY
+  // reason to reject -- see the note on the canonical-path case below.
   it('an asset entry missing path or leaf, or with a bad leaf shape', () => {
-    expect(parsePinRecord({ ...validRaw(), assets: [{ leaf: OTHER_HASH }] })).toBeNull()
-    expect(parsePinRecord({ ...validRaw(), assets: [{ path: '/a' }] })).toBeNull()
-    expect(parsePinRecord({ ...validRaw(), assets: [{ path: '/a', leaf: 'bad' }] })).toBeNull()
-    expect(parsePinRecord({ ...validRaw(), assets: ['/a'] })).toBeNull()
+    expect(parsePinRecord({ ...validRaw(), assets: [MANIFEST_LEAF, { leaf: OTHER_HASH }] })).toBeNull()
+    expect(parsePinRecord({ ...validRaw(), assets: [MANIFEST_LEAF, { path: '/a' }] })).toBeNull()
+    expect(parsePinRecord({ ...validRaw(), assets: [MANIFEST_LEAF, { path: '/a', leaf: 'bad' }] })).toBeNull()
+    expect(parsePinRecord({ ...validRaw(), assets: [MANIFEST_LEAF, '/a'] })).toBeNull()
   })
 
   it('an empty asset path', () => {
-    expect(parsePinRecord({ ...validRaw(), assets: [{ path: '', leaf: OTHER_HASH }] })).toBeNull()
+    expect(parsePinRecord({ ...validRaw(), assets: [MANIFEST_LEAF, { path: '', leaf: OTHER_HASH }] })).toBeNull()
   })
 
   // A pin record is read back from disk, and pin.ts's own header says it must
@@ -138,8 +140,12 @@ describe('parsePinRecord: never throws, denies by returning null', () => {
       '/%zz.js', // undecodable escape
       `/${'a'.repeat(2000)}.js` // over the path length cap
     ]) {
+      // The manifest leaf is present so the ONLY reason to reject is `path`.
+      // Without it this test passed vacuously once parseAssets started
+      // requiring a manifest leaf -- caught by mutation M6, which survived
+      // reverting this very check.
       expect(
-        parsePinRecord({ ...validRaw(), assets: [{ path, leaf: OTHER_HASH }] }),
+        parsePinRecord({ ...validRaw(), assets: [MANIFEST_LEAF, { path, leaf: OTHER_HASH }] }),
         `should refuse ${JSON.stringify(path)}`
       ).toBeNull()
     }
@@ -150,6 +156,7 @@ describe('parsePinRecord: never throws, denies by returning null', () => {
       parsePinRecord({
         ...validRaw(),
         assets: [
+          MANIFEST_LEAF,
           { path: '/a.js', leaf: OTHER_HASH },
           { path: '/a.js', leaf: VALID_HASH }
         ]
