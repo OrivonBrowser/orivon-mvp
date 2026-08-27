@@ -61,6 +61,35 @@ describe('parsePinRecord: never throws, denies by returning null', () => {
     expect(parsePinRecord({ ...validRaw(), origin: '' })).toBeNull()
   })
 
+  // `origin` is the field that says which app a pin belongs to, and it is
+  // matched against Grant.origin. Until origin.ts landed on main there was no
+  // canonical definition to hold it to and any non-empty string passed. Same
+  // stance as the asset paths: already-canonical or rejected, never repaired --
+  // a pin spelled differently from the grant ledger's spelling of the same
+  // origin is a bug, and silently normalising it here would hide it.
+  it('an origin that is not already a canonical origin', () => {
+    for (const origin of [
+      'not-an-origin',
+      'https://app.example.com/', // trailing slash
+      'https://app.example.com/path', // a path is not part of an origin
+      'https://x.example.', // trailing DNS dot: one origin, but spelled the other way (A14)
+      'HTTPS://app.example.com', // scheme case
+      'file:///etc/passwd',
+      'https://user:pw@app.example.com'
+    ]) {
+      expect(
+        parsePinRecord({ ...validRaw(), origin }),
+        `should refuse ${JSON.stringify(origin)}`
+      ).toBeNull()
+    }
+  })
+
+  it('the canonical origin forms that must be accepted', () => {
+    for (const origin of ['https://app.example.com', 'https://x.example:8443', 'http://localhost:5173']) {
+      expect(parsePinRecord({ ...validRaw(), origin })?.origin, origin).toBe(origin)
+    }
+  })
+
   it('a bundleHash that is not sha256:<64 lowercase hex>', () => {
     expect(parsePinRecord({ ...validRaw(), bundleHash: 'not-a-hash' })).toBeNull()
     expect(parsePinRecord({ ...validRaw(), bundleHash: VALID_HASH.toUpperCase() })).toBeNull()
@@ -189,6 +218,12 @@ describe('isPinnedPath: fail-closed membership, exact match only', () => {
 describe('fromBundleTree: rejects a record that could not have come from bundleTree()', () => {
   it('an empty origin', () => {
     expect(() => fromBundleTree('', VALID_HASH, [{ path: '/a', leaf: OTHER_HASH }], '0.1.0', 0)).toThrow()
+  })
+
+  it('a non-canonical origin', () => {
+    expect(() =>
+      fromBundleTree('https://x.example/path', VALID_HASH, [{ path: '/a', leaf: OTHER_HASH }], '0.1.0', 0)
+    ).toThrow()
   })
 
   it('a malformed bundle hash', () => {
