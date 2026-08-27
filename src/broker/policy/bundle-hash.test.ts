@@ -1,14 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import {
-  bundleHash,
-  bundleTree,
-  canonicalAssetPath,
-  MANIFEST_PATH,
-  MAX_ASSET_BYTES,
-  MAX_BUNDLE_BYTES,
-  MAX_BUNDLE_ENTRIES,
-  type BundleEntry
-} from './bundle-hash.js'
+import { bundleHash, bundleTree, MAX_ASSET_BYTES, MAX_BUNDLE_BYTES, type BundleEntry } from './bundle-hash.js'
+import { canonicalAssetPath, MANIFEST_PATH, MAX_BUNDLE_ENTRIES } from './canonical-path.js'
 
 function utf8 (text: string): Uint8Array {
   return new TextEncoder().encode(text)
