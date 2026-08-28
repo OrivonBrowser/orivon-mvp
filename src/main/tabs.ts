@@ -91,7 +91,16 @@ export class TabManager {
 
   constructor (
     private readonly contentView: View,
-    private readonly getTabBounds: () => Bounds
+    private readonly getTabBounds: () => Bounds,
+    /** Called at most once, when the last tab closes -- A16, owner
+     * decision 2026-08-28: closing the last tab closes the window
+     * (Firefox/Safari-shaped), not left open and empty (the prior,
+     * undecided default) or a fresh tab (Chrome/Edge-shaped, the doc's
+     * own superseded AI-REC). window.ts wires this to `win.close()`;
+     * TabManager itself never calls `app.quit()` -- src/main/index.ts's
+     * existing `window-all-closed` handler is already the correct,
+     * complete owner of whether the whole process then exits. */
+    private readonly onEmpty: () => void
   ) {
     this.preloadPath = join(import.meta.dirname, '../preload/app.js')
   }
@@ -210,6 +219,19 @@ export class TabManager {
         this.activateTab(fallback)
         return
       }
+    }
+
+    // A16, resolved: the last tab closing means there is nothing left to
+    // show -- close the window rather than leaving it open and empty.
+    // Reachable from exactly one call site: `record` is already deleted
+    // above, so a second forgetTab() for a since-removed id returns at
+    // the guard at the top of this method instead of reaching here --
+    // onEmpty cannot double-fire off the multiple emitState() sources
+    // (tab events, bookmark events) the way a `state.tabs.length === 0`
+    // check in window.ts's pushState would.
+    if (this.order.length === 0) {
+      this.onEmpty()
+      return
     }
     this.emitState()
   }

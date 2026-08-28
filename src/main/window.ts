@@ -13,10 +13,10 @@
 // docs only show these on BrowserWindow examples, and BaseWindow's own
 // constructor-options doc doesn't enumerate them, so this was checked
 // rather than assumed.
-import { app, BaseWindow, nativeTheme, WebContentsView, screen } from 'electron'
+import { app, BaseWindow, ipcMain, nativeTheme, WebContentsView, screen } from 'electron'
 import { join } from 'node:path'
 import { BookmarkStore } from './bookmarks.js'
-import { STATE_CHANNEL } from './channels.js'
+import { COMMAND_CHANNEL, STATE_CHANNEL } from './channels.js'
 import { TabManager, type Bounds } from './tabs.js'
 import { registerShellIpc } from './ipc.js'
 
@@ -118,7 +118,12 @@ export function createShellWindow (): BaseWindow {
     return { x: 0, y: CHROME_HEIGHT, width: bounds.width, height: bounds.height - CHROME_HEIGHT }
   }
 
-  const tabs = new TabManager(win.contentView, tabBounds)
+  // A16, resolved (owner decision, 2026-08-28): closing the last tab
+  // closes the window, rather than being left open and empty. No
+  // app.quit() here -- index.ts's window-all-closed handler already owns
+  // whether the whole process then exits (quits on non-darwin, stays
+  // resident on macOS per platform convention).
+  const tabs = new TabManager(win.contentView, tabBounds, () => { win.close() })
 
   // Bookmarks: owner override, 2026-08-28 (mvp-scope.md, ADR-0003) -- not
   // in the original scope pass, arrived bundled with the chrome restyle.
@@ -129,6 +134,14 @@ export function createShellWindow (): BaseWindow {
   const bookmarks = new BookmarkStore(join(app.getPath('userData'), 'bookmarks.json'))
 
   function pushState (): void {
+    // A16 makes this reachable routinely now, not just via an OS-level
+    // window close: closing the last tab calls win.close() above, which
+    // destroys `chrome` -- and bookmarks.onChange()/the pending
+    // bookmarks.load().then(pushState) below have no other guard against
+    // firing afterward. Sending on a destroyed WebContents throws, with
+    // no top-level handler anywhere in this app (same class of gap
+    // tabs.ts's own 'destroyed' handling exists for).
+    if (chrome.webContents.isDestroyed()) return
     chrome.webContents.send(STATE_CHANNEL, { ...tabs.getState(), bookmarks: bookmarks.getAll() })
   }
 
@@ -149,6 +162,13 @@ export function createShellWindow (): BaseWindow {
   chrome.webContents.on('did-finish-load', pushState)
 
   registerShellIpc(chrome.webContents, tabs, bookmarks)
+  // A16 makes createShellWindow() re-run routinely now (close the last
+  // tab, then reopen from the macOS dock via app.on('activate')), and
+  // ipcMain.handle throws if the same channel is registered twice with
+  // no matching removeHandler in between -- confirmed there is none
+  // anywhere in this codebase. Latent before A16 (only reachable by
+  // closing the OS window directly); routine after it.
+  win.on('closed', () => { ipcMain.removeHandler(COMMAND_CHANNEL) })
 
   // Found while verifying maximize/resize for this restyle (2026-08-28):
   // win.getContentBounds() read SYNCHRONOUSLY inside 'resize' returns the
