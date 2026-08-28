@@ -10,8 +10,8 @@
 // nothing else.
 
 import type { Pattern } from '../../contracts/index.js'
-import { classifyAddress, isPublicUnicast } from './address.js'
-import { MAX_PORT, isAsciiHost, isCanonicalLiteral, normalizeHost } from './canonical-host.js'
+import { canonicalAddress, classifyAddress, isPublicUnicast } from './address.js'
+import { MAX_PORT, isAsciiHost, normalizeHost } from './canonical-host.js'
 
 /** A host at the limit, a colon, and the widest port range. */
 const MAX_PATTERN_LENGTH = 300
@@ -115,14 +115,18 @@ export function hostMatches (spec: string, requested: string, address: string): 
     // as an opaque number, and the "the user was shown it and granted it"
     // justification above is worth exactly as much as the rendering is
     // legible. Rejecting here, rather than falling through to the hostname
-    // branch, is load-bearing -- see canonical-host.ts's isCanonicalLiteral.
-    if (!isCanonicalLiteral(host)) return false
+    // branch, is load-bearing. canonicalAddress NORMALISES rather than
+    // rejecting (docs/open-questions.md A20), so this compares the result to
+    // the input, not just checking it parsed -- exactly what the deleted
+    // `isCanonicalLiteral(host)` used to mean.
+    if (canonicalAddress(host) !== host) return false
 
-    // Compared as STRINGS, both sides canonical, because address.ts exposes
-    // no canonicaliser and re-implementing a parser here would put two
-    // different notions of "what an address is" in the same codebase -- the
-    // precise disagreement that lets the check and the connect point at
-    // different hosts. A mismatch DENIES, so the failure direction is safe.
+    // Compared as STRINGS, both sides already canonical (the check above, and
+    // ./connect.ts's own canonicalAddress(...) === address invariant on every
+    // resolved answer), so there is only one spelling of each to compare --
+    // never two different notions of "what an address is" that could point
+    // the check and the connect at different hosts. A mismatch DENIES, so the
+    // failure direction is safe.
     return host === address
   }
 
