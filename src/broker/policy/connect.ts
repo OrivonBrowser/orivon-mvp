@@ -26,14 +26,14 @@
 // has.
 //
 // EVERY ADDRESS THAT LEAVES HERE IS A CANONICAL LITERAL. `isCanonicalLiteral`
-// below is what makes the paragraph above true rather than merely intended --
-// see its own comment. Without it this function can hand the broker a string
-// like `2130706433`, which every stack agrees means 127.0.0.1 but which
-// `net.isIP` rejects, so `net.connect` treats it as a NAME and looks it up
-// again. That is the rebinding window reopened one layer below the check that
-// exists to close it, and whether it bites depends on which numeric parser the
-// dialer happens to use -- exactly the inherited guarantee ./address.ts warns
-// against. Found by review, 2026-08-27.
+// (./canonical-host.ts) is what makes the paragraph above true rather than
+// merely intended -- see its own comment. Without it this function can hand
+// the broker a string like `2130706433`, which every stack agrees means
+// 127.0.0.1 but which `net.isIP` rejects, so `net.connect` treats it as a NAME
+// and looks it up again. That is the rebinding window reopened one layer
+// below the check that exists to close it, and whether it bites depends on
+// which numeric parser the dialer happens to use -- exactly the inherited
+// guarantee ./address.ts warns against. Found by review, 2026-08-27.
 //
 // WHAT THIS FUNCTION DOES NOT CHECK -- read this before wiring it up.
 //
@@ -53,15 +53,21 @@
 // the narrowing structural, the way ConnectAllowed makes "dial the literal"
 // structural. That is a signature change and it belongs in its own PR.
 //
-// SCOPE. `tcp.connect` only. `udp.send` has the same pattern rules
-// (manifest.ts); it can reuse every helper here, though not `checkConnect`
-// itself, which reads `net.tcp.connect` by name. `tcp.listen` and `udp.bind`
-// are a DIFFERENT decision -- bare port ranges, `"*"` rejected, privileged
-// ports denied outright -- and get their own function rather than a mode flag
-// on this one, because the two share a grammar and nothing else.
+// SCOPE. `tcp.connect` only -- see ./connect-patterns.ts for the grammar this
+// shares with `udp.send`. `tcp.listen` and `udp.bind` are a DIFFERENT decision
+// (bare port ranges, `"*"` rejected, privileged ports denied outright) and get
+// their own function rather than a mode flag on this one, because the two
+// share a grammar and nothing else.
+//
+// Split into three files (docs/development/code-guidelines.md Rule 2):
+// ./canonical-host.ts (string-level validators, no imports), ./connect-
+// patterns.ts (the pattern grammar and matching), and this file (the result
+// contract and checkConnect's orchestration).
 
 import type { Manifest, OrivonErrorCode, Pattern } from '../../contracts/index.js'
-import { classifyAddress, isPublicUnicast } from './address.js'
+import { classifyAddress } from './address.js'
+import { MAX_HOST_LENGTH, isAsciiHost, isCanonicalLiteral, isValidPort, normalizeHost } from './canonical-host.js'
+import { couldAnyPatternMatch, parsePattern, patternAuthorises } from './connect-patterns.js'
 
 /**
  * Resolves a hostname to every address it currently answers with.
@@ -183,14 +189,6 @@ function deny (reason: ConnectDenialReason, checked?: readonly string[]): Connec
     : { allowed: false, code: 'denied', reason, checked }
 }
 
-const MAX_PORT = 65535
-
-/** RFC 1035's limit on a presentation-format domain name. */
-const MAX_HOST_LENGTH = 253
-
-/** A host at the limit, a colon, and the widest port range. */
-const MAX_PATTERN_LENGTH = 300
-
 /**
  * Bounds on the two lists whose length is chosen by somebody else.
  *
@@ -208,330 +206,6 @@ const MAX_PATTERN_LENGTH = 300
  */
 const MAX_PATTERNS = 256
 const MAX_ANSWERS = 64
-
-/**
- * Lower-cases ASCII letters only, strips URL brackets and one trailing root
- * dot, and trims.
- *
- * ASCII-only because that is precisely DNS's rule (RFC 4343) and because
- * `toLowerCase()` applies full Unicode case folding -- U+212A KELVIN SIGN
- * folds to `k`, among others. A comparison whose notion of equality is wider
- * than DNS's is a comparison that can be steered.
- *
- * The trailing dot is the DNS root label: `example.com.` and `example.com` are
- * the same name, and treating them as different names is one string away from
- * a bypass.
- */
-function normalizeHost (value: string): string {
-  let text = value.trim().replace(/[A-Z]/g, (c) => c.toLowerCase())
-  if (text.startsWith('[') && text.endsWith(']')) text = text.slice(1, -1)
-  if (text.length > 1 && text.endsWith('.')) text = text.slice(0, -1)
-  return text
-}
-
-/**
- * True only for a host made of characters DNS and this file both understand.
- *
- * NON-ASCII IS REJECTED, LOUDLY AND DELIBERATELY. `normalizeHost` folds only
- * ASCII case, for the good reason above, so `api.exÄmple.com` and
- * `api.exämple.com` compare unequal -- and an app that derives its host the
- * normal way, `new URL(...).hostname`, gets the punycode A-label
- * `api.xn--exmple-cua.com`, which matches neither. Three spellings of one
- * name, none of them matching a manifest a human wrote in Unicode.
- *
- * That failed CLOSED, so it was never a hole; it was a trap. The author got a
- * denial with no explanation and no log line. Rejecting the pattern outright
- * is the same argument this file already makes for `*.example.com`: an app
- * author finds a deliberate reject in seconds, and a user never finds a
- * silent non-match at all.
- *
- * Making IDN genuinely work means normalising both sides to A-labels, which
- * needs UTS-46 -- a dependency or a hundred hand-written lines in a directory
- * that is meant to have neither. Recorded in docs/open-questions.md A19.
- * Found by review, 2026-08-27.
- */
-function isAsciiHost (value: string): boolean {
-  return !/[^\x20-\x7e]/.test(value)
-}
-
-/**
- * True only for an address written the one way every stack agrees on: a
- * strict dotted quad, or an RFC 4291 IPv6 literal with no zone id.
- *
- * WHY THIS EXISTS, given ./address.ts already parses addresses. The two
- * answer different questions. `classifyAddress` asks "what range is this in",
- * and it is deliberately PERMISSIVE -- it must understand `0177.0.0.1` and
- * `2130706433` in order to BLOCK them, which is right on the deny side. This
- * file also needs an IDENTITY answer on the ALLOW side: is this string one
- * that everything downstream will read as the same address. Those come apart
- * exactly where it hurts.
- *
- *   - `checkConnect` returns addresses for the broker to dial. `net.isIP`
- *     rejects `2130706433`, so `net.connect` resolves it as a NAME. Verified
- *     end to end before this guard existed: a manifest declaring
- *     `2130706433:22` produced `addresses: ["2130706433"]`, and dialling it
- *     performed a fresh DNS lookup and landed on 127.0.0.1.
- *   - A manifest may declare a private range only by naming it literally,
- *     because the user is shown that literal and grants it. `2130706433:22`
- *     is 127.0.0.1:22 rendered as an opaque number, which defeats the consent
- *     step the rule depends on.
- *
- * A NON-CANONICAL ADDRESS IS REJECTED, NOT DEMOTED TO A HOSTNAME. That
- * distinction is the whole safety of this guard: falling through would let
- * `2130706433` be compared as a name against a `2130706433` pattern host and
- * pass, which is worse than the bug it replaces. Every call site below denies
- * on `classifyAddress(x) !== 'unparseable' && !isCanonicalLiteral(x)`.
- *
- * A VALIDATOR, NOT A SECOND PARSER. It accepts a strict subset and never
- * assigns meaning, so it can only ever narrow what address.ts already
- * decided; a disagreement denies. That is the difference between this and the
- * duplicate parser address.ts's own comments argue against. The architecturally
- * cleaner fix is a `canonicalAddress()` export from ./address.ts, which would
- * also let the grant prompt and the update subset-check compare canonical
- * forms -- filed as docs/open-questions.md A20, deliberately not done here
- * because address.ts belongs to another stream.
- * Found by review, 2026-08-27.
- */
-function isCanonicalLiteral (value: string): boolean {
-  if (value.includes(':')) {
-    // No zone id: `fe80::1%eth0` names a local interface, is never
-    // internet-reachable, and is not a thing a dialer should be handed.
-    if (value.includes('%')) return false
-    if (!/^[0-9a-f:.]+$/.test(value)) return false
-
-    const gap = value.indexOf('::')
-    if (gap !== value.lastIndexOf('::')) return false
-
-    const head = gap === -1 ? value : value.slice(0, gap)
-    const tail = gap === -1 ? '' : value.slice(gap + 2)
-    const headGroups = head.length > 0 ? head.split(':') : []
-    const tailGroups = tail.length > 0 ? tail.split(':') : []
-    const groups = [...headGroups, ...tailGroups]
-    if (groups.includes('')) return false
-
-    let words = 0
-    for (let i = 0; i < groups.length; i++) {
-      const group = groups[i] ?? ''
-      if (group.includes('.')) {
-        // A dotted quad is legal only as the very last group of the literal.
-        if (i !== groups.length - 1) return false
-        if (!isCanonicalIpv4(group)) return false
-        words += 2
-        continue
-      }
-      // Lower case only, and no leading zeros: RFC 5952's presentation form,
-      // which is what every resolver and `net.isIP` round-trip produces.
-      if (!/^(0|[1-9a-f][0-9a-f]{0,3})$/.test(group)) return false
-      words += 1
-    }
-
-    return gap === -1 ? words === 8 : words <= 7
-  }
-
-  return isCanonicalIpv4(value)
-}
-
-/** A strict dotted quad: four decimal octets, no leading zeros, no short forms. */
-function isCanonicalIpv4 (value: string): boolean {
-  const parts = value.split('.')
-  if (parts.length !== 4) return false
-  for (const part of parts) {
-    if (!/^(0|[1-9][0-9]{0,2})$/.test(part)) return false
-    if (Number.parseInt(part, 10) > 0xff) return false
-  }
-  return true
-}
-
-/** True only for a port an outbound connection can actually name. */
-function isValidPort (port: number): boolean {
-  return Number.isInteger(port) && port >= 1 && port <= MAX_PORT
-}
-
-interface ParsedPattern {
-  readonly host: string
-  readonly port: string
-}
-
-/**
- * Splits a `host:port` pattern. Returns null for anything it does not
- * recognise, and a null pattern matches nothing -- so an unreadable pattern
- * removes authority rather than granting it.
- *
- * IPv6 hosts must be BRACKETED (`[::1]:443`). Unbracketed, `::1:443` is
- * genuinely ambiguous -- it is also a valid address on its own -- and a parser
- * that guesses is a parser that can be made to guess wrong. Rejecting costs an
- * app author one pair of brackets; guessing costs the user a socket to
- * somewhere they did not agree to.
- */
-function parsePattern (pattern: Pattern): ParsedPattern | null {
-  if (typeof pattern !== 'string') return null
-
-  const text = pattern.trim()
-  if (text.length === 0 || text.length > MAX_PATTERN_LENGTH) return null
-  if (!isAsciiHost(text)) return null
-
-  if (text.startsWith('[')) {
-    const end = text.indexOf(']')
-    if (end === -1) return null
-    const rest = text.slice(end + 1)
-    if (!rest.startsWith(':')) return null
-    const host = text.slice(1, end)
-    const port = rest.slice(1)
-    return host.length > 0 && port.length > 0 ? { host, port } : null
-  }
-
-  const split = text.lastIndexOf(':')
-  if (split === -1) return null // a bare port range is a listen pattern, not a connect one
-  const host = text.slice(0, split)
-  const port = text.slice(split + 1)
-  if (host.length === 0 || port.length === 0) return null
-  if (host.includes(':')) return null // unbracketed IPv6
-
-  return { host, port }
-}
-
-/**
- * `*`, a single port, or an inclusive `lo-hi` range.
- *
- * NO PRIVILEGED-PORT RULE HERE, deliberately. Ports below 1024 are denied
- * outright for `listen` and `bind` (capability-api.md A9 SS1) because those
- * open a service; applying the same rule to `connect` would deny 80 and 443
- * and break every outbound connection an app makes. Two different decisions
- * that happen to mention the same number.
- */
-function portMatches (spec: string, port: number): boolean {
-  if (spec === '*') return true
-
-  // Leading zeros rejected: `0443` reads as octal in some parsers and decimal
-  // in others, and a pattern whose meaning depends on the reader is not a
-  // pattern. Port 0 is rejected by the `[1-9]` lead -- it means "any free
-  // port" to bind() and nothing at all to connect().
-  const parsed = /^([1-9][0-9]{0,4})(?:-([1-9][0-9]{0,4}))?$/.exec(spec)
-  if (parsed === null) return false
-
-  const loText = parsed[1]
-  if (loText === undefined) return false
-  const lo = Number.parseInt(loText, 10)
-  const hi = parsed[2] === undefined ? lo : Number.parseInt(parsed[2], 10)
-
-  if (lo > MAX_PORT || hi > MAX_PORT || lo > hi) return false
-  return port >= lo && port <= hi
-}
-
-/**
- * Decides whether one pattern's host part authorises `address`.
- *
- * `requested` is the normalised name the app asked for. It is a SECONDARY
- * bound, never the primary one: a hostname pattern additionally requires the
- * resolved address to be public unicast, so matching the name can only ever
- * narrow what `address` already permitted.
- */
-function hostMatches (spec: string, requested: string, address: string): boolean {
-  // `*` means PUBLIC UNICAST ONLY -- specified, not inferred, because the
-  // flagship genuinely declares `*:*` and an app holding it must still not
-  // reach the user's router, NAS or 169.254.169.254 (security-model.md T12,
-  // capability-api.md).
-  if (spec === '*') return isPublicUnicast(address)
-
-  const host = normalizeHost(spec)
-
-  if (classifyAddress(host) !== 'unparseable') {
-    // An address literal in the manifest is an EXPLICIT declaration of that
-    // address, and it is the only way a private range becomes reachable: the
-    // user was shown it and granted it. Compared against the resolved address,
-    // so `nas.internal` -> 192.168.1.50 is allowed under a `192.168.1.50:5000`
-    // declaration while `evil.example` -> 127.0.0.1 is not.
-    //
-    // It must be written CANONICALLY. `2130706433:22` is 127.0.0.1:22 spelled
-    // as an opaque number, and the "the user was shown it and granted it"
-    // justification above is worth exactly as much as the rendering is
-    // legible. Rejecting here, rather than falling through to the hostname
-    // branch, is load-bearing -- see isCanonicalLiteral.
-    if (!isCanonicalLiteral(host)) return false
-
-    // Compared as STRINGS, both sides canonical, because address.ts exposes
-    // no canonicaliser and re-implementing a parser here would put two
-    // different notions of "what an address is" in the same codebase -- the
-    // precise disagreement that lets the check and the connect point at
-    // different hosts. A mismatch DENIES, so the failure direction is safe.
-    return host === address
-  }
-
-  // Anything left is a hostname declaration.
-
-  // No sub-glob support: `*.example.com` matches nothing rather than being
-  // approximated. A wildcard that silently spans a registry boundary
-  // (`*.co.uk`) grants far more than its author read it as, and an app author
-  // finds a denial in seconds while a user never finds an over-grant at all.
-  if (host.includes('*')) return false
-
-  // A hostname NEVER authorises a private address, even its own. That is not
-  // an oversight: "the name resolved there" is the whole of the rebinding
-  // attack, so a name cannot be the evidence that the range was intended.
-  // Reaching a LAN host requires declaring its address literally, above.
-  return host === requested && isPublicUnicast(address)
-}
-
-/**
- * Host AND port must come from THE SAME pattern.
- *
- * The tempting wrong shape is `patterns.some(hostOk) && patterns.some(portOk)`,
- * which reads identically and grants the cross product: a manifest declaring
- * `["a.example:443", "b.example:8080"]` would authorise `a.example:8080`,
- * which the user granted for neither host. It passed the entire suite before
- * ./connect.test.ts grew a test for it. Found by review, 2026-08-27.
- */
-function patternAuthorises (
-  parsed: ParsedPattern | null,
-  requested: string,
-  address: string,
-  port: number
-): boolean {
-  if (parsed === null) return false
-  if (!portMatches(parsed.port, port)) return false
-  return hostMatches(parsed.host, requested, address)
-}
-
-/**
- * True if any declared pattern could authorise this host and port, whatever
- * the name turns out to resolve to. Uses only what is knowable WITHOUT an
- * address, so it can run before the lookup.
- *
- * WHY IT RUNS BEFORE THE RESOLVER. Without it, a manifest declaring nothing
- * but `["api.example.com:443"]` still causes the user's machine to resolve any
- * name the app names, at any port, indefinitely: unrestricted DNS reach that
- * no manifest bounds and no grant authorises, usable as a covert channel and
- * as a de-anonymising one (security-model.md T20). Worse, resolving first
- * makes the two failure paths distinguishable -- a name that does not exist
- * throws out of `resolveFn`, a name that does returns a denial -- which is a
- * clean existence oracle over arbitrary names, and precisely the LAN mapping
- * the uniform denial exists to prevent. Found by review, 2026-08-27.
- *
- * DELIBERATELY WEAK, and it must stay that way. It answers "could this
- * possibly be allowed", never "is this allowed": a `*` pattern or an
- * address-literal pattern makes it true for every name, because
- * `nas.internal -> 192.168.1.50` is a case the literal branch must still be
- * allowed to reach. Every real decision stays below, after the addresses are
- * in hand.
- */
-function couldAnyPatternMatch (
-  parsed: ReadonlyArray<ParsedPattern | null>,
-  requested: string,
-  port: number
-): boolean {
-  for (const pattern of parsed) {
-    if (pattern === null) continue
-    if (!portMatches(pattern.port, port)) continue
-    if (pattern.host === '*') return true
-
-    const host = normalizeHost(pattern.host)
-    // An address-literal pattern can be reached by a name that resolves to it,
-    // so it cannot be ruled out from the name alone.
-    if (classifyAddress(host) !== 'unparseable') return true
-    if (host === requested) return true
-  }
-  return false
-}
 
 /**
  * Decides whether `manifest` authorises an outbound TCP connection to
@@ -604,7 +278,8 @@ export async function checkConnect (
     // Every answer must be a CANONICAL address literal. The caller dials what
     // this function returns, so anything a dialer would resolve again is the
     // rebinding window reopened one layer down -- and `net.isIP` rejects far
-    // more strings than ./address.ts parses. See isCanonicalLiteral.
+    // more strings than ./address.ts parses. See canonical-host.ts's
+    // isCanonicalLiteral.
     if (!isCanonicalLiteral(address)) return deny('bad-answer', [...addresses, address])
 
     if (!parsed.some((pattern) => patternAuthorises(pattern, requested, address, port))) {

@@ -344,8 +344,15 @@ function parsePorts (text: string): PortRange | null {
   return { lo, hi }
 }
 
+// Leading zeros rejected: `0443` reads as octal in some parsers and decimal
+// in others, and a pattern whose meaning depends on the reader is not a
+// pattern. Port 0 is rejected by the `[1-9]` lead -- it means "any free port"
+// to bind() and nothing at all to connect(). Aligned with the identical
+// reasoning in ./connect.ts's portMatches (2026-08-27) -- the two grammars
+// had drifted, so a manifest could declare a port pattern this subset check
+// accepted but the runtime connect matcher could never honour.
 function parsePort (text: string): number | null {
-  if (!/^[0-9]{1,5}$/.test(text)) return null
+  if (!/^[1-9][0-9]{0,4}$/.test(text)) return null
   const value = Number(text)
   return value <= 65535 ? value : null
 }
