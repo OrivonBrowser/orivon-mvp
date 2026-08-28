@@ -54,7 +54,7 @@ None of these block starting the week-0 spike.
 | A14 | **RESOLVED 2026-08-26 (owner):** a trailing DNS dot is stripped, so `https://x.example.` and `https://x.example` are ONE origin. Deliberately deviates from `URL.origin`. Exactly one dot; a host still carrying an empty label is rejected | Implemented in `src/broker/policy/origin.ts` |
 | A13 | **Are `app.manifest()` and `app.grants()` async?** `capability-api.md` §v0 surface writes them as `=> Manifest` and `=> Grant[]`, but design rule 2 in the same document says *"All entry points return Promises"* | **Build step 2.** Transcribed as Promises; see below |
 | A15 | **The four bundle-hash caps are guesses, not decisions** — `MAX_PATH_BYTES` 1024, `MAX_ASSET_BYTES` 16 MiB, `MAX_BUNDLE_BYTES` 64 MiB, `MAX_BUNDLE_ENTRIES` 4096 (`src/broker/policy/bundle-hash.ts`, `architecture/bundle-hash.md` §Caps). They are labelled AI-recommendation in the source, but a cap decides which bundles are *refusable*, so two implementations disagreeing on one disagree about whether an app can exist at all | **Before the app loader ships (build step 4).** Needs one real frontend's shape to calibrate against; guessing again now would not be better than the current guess |
-| A16 | **What should closing the LAST tab do?** The shell currently leaves the window open with zero tabs. Chrome and Firefox instead open a fresh tab or close the window. Never actually decided | **Not blocking anything.** Decide before an outside user sees the shell; see below |
+| A16 | **RESOLVED 2026-08-28 (owner):** closing the last tab closes the window (option 2 below) — overrules this entry's own AI-REC, which favoured option 1. No `app.quit()` in `tabs.ts`/`window.ts`; `src/main/index.ts`'s existing `window-all-closed` handler already owns whether the whole process then exits | Implemented in `src/main/tabs.ts` (`TabManager`'s `onEmpty` callback) and `src/main/window.ts`. See below |
 | A17 | **RESOLVED 2026-08-27 (owner):** an `identityId` is **opaque and broker-generated** — never a user-typed name, never derived from one. The display name is stored beside the identity, not used to derive it. Found undefined during review of PR #5: it appeared exactly once in the whole repository, as one table cell | Recorded in `ADR-0010`, stated in `capability-api.md`, documented on `DeriveRequest.scope` |
 | A18 | **`checkConnect` takes the manifest (what an app DECLARES) when the decision is about the grant (what the user ALLOWED).** Nothing in the signature carries the grant, so a caller passing a raw manifest silently gets the declared authority | **Build step 2, before the broker calls it.** Narrow the list at the call site, or change the parameter to `readonly Pattern[]`. See below |
 | A19 | **IDN hostnames are unhandled in connect patterns.** A Unicode host, its case variants and its punycode A-label are three different strings to the matcher, and an app deriving its host from `new URL(...)` gets the A-label | **Before any non-ASCII app origin exists.** Non-ASCII is now rejected outright rather than silently never matching. See below |
@@ -104,7 +104,7 @@ third-party app exists.
 
 ---
 
-### A16 — what closing the last tab should do **[STILL OPEN]**
+### A16 — what closing the last tab should do **[RESOLVED]**
 
 Found while extending `scripts/smoke.mjs` (2026-08-27). Writing a check for "closing the last
 tab behaves sanely" required knowing what sane *is*, and nothing in this repository says.
@@ -123,16 +123,22 @@ existing branch happens to produce.
 | 2 | Close the window (and on the last window, quit) | Firefox, Safari, and `src/main/index.ts` already wires `window-all-closed -> app.quit()` |
 | 3 | Keep the window empty, as now | nobody |
 
-**Recommendation [AI-REC]:** option 1. It is the least surprising, it cannot strand a user, and
-it is a two-line change in `closeTab()`. Option 2 is also defensible and costs even less code,
-but "I closed a tab and the app quit" is a worse accident to have.
+**Recommendation [AI-REC] at the time this was filed:** option 1. It was the least surprising,
+it could not strand a user, and it was a two-line change in `closeTab()`.
 
-**Why this is written down rather than just fixed.** Picking one is a product decision, and the
-smoke check now asserts the current outcome — so a silent change would look like a regression.
-The check is labelled to say so (`CURRENT BEHAVIOUR, pending A16 -- not a spec`) and asserts the
-resolution-independent properties separately: no crash, no orphaned view, and the shell still
-usable afterwards. **Whichever way A16 goes, change that one check — not the product — to
-match.**
+**Resolved 2026-08-28, owner decision: option 2 instead.** The AI-REC above is superseded, not
+followed — closing the last tab closes the window (and, per `window-all-closed`'s existing
+non-darwin branch, quits). Chrome and Edge's option 1 leans on their own tab-restore/session
+continuity to make "the window never truly closes" feel safe; this shell has no such feature, so
+the same behaviour here would just be a window that never goes away for no visible reason.
+Firefox and Safari's option 2 matches the plain reading of "close the last tab" better once that
+crutch isn't available.
+
+**Why this was written down before being fixed.** Picking one was a product decision, and the
+smoke check asserted the pre-decision outcome — so a silent change would have looked like a
+regression. The check was labelled to say so (`CURRENT BEHAVIOUR, pending A16 -- not a spec`)
+and has now been rewritten to assert the resolution instead
+(`scripts/smoke.mjs`).
 ---
 
 ### A18 -- `checkConnect` checks the declaration, not the grant **[AI-REC]**
