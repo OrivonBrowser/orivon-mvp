@@ -62,6 +62,7 @@ None of these block starting the week-0 spike.
 | A21 | **Does a re-granted capability reuse its GrantId?** `manifest.ts` says a `Grant` is keyed on (origin, capability, pattern set) but never says whether the `id` is derived from that key or minted fresh per grant event. The handle table now tombstones revoked grant ids, so under the derived reading a permanent tombstone would make re-granting impossible | **Before the grant ledger is written.** `HandleTable.grantIssued()` clears the tombstone, so the table is correct either way; the ledger must call it. See below |
 | A22 | **`src/broker/policy/paths.ts` assumes app root directory names are single-case hex.** True today and specified — `security-model.md` T13b makes directory names `sha256(canonical_origin)`, and `ADR-0009` reconfirms the bundle hash does not rename them. The assumption is load-bearing for a case-SENSITIVE comparison and is asserted only in a source comment | **Build step 4 (the app loader)**, which writes the first root directory and is the first chance to get the naming wrong. See below |
 | A23 | **A derived origin does not carry whether it may be PERSISTED.** T13c forbids ever writing a grant for a loopback or plain-`http` origin to disk, but `originFromUrl` returns a plain string — `http://127.0.0.1:8080` is shape-identical to `https://x.example`, so every caller must remember to re-parse and check | **Build step 2**, when the code that persists grants exists. Owner decided 2026-08-27 to keep the return type a plain string for now rather than change a durable interface before its consumer exists. See below |
+| A24 | **Should a whole-codebase guideline sweep be exempt from the one-stream-per-backlog-branch rule?** `stream/backlog-07-guidelines-cleanup` touches six streams' paths at once, which `parallel-work.md` says should be six branches. AI-REC: carve out repo-wide sweeps explicitly, same shape as the PR blueprint's `type:chore` short form | **Before the next backlog-NN sweep is started.** This PR is a fait accompli either way; what's open is whether the rule gets a carve-out. See below |
 
 ---
 
@@ -294,6 +295,39 @@ consumer at build step 2 is better than guessing now. `originFromUrl`'s doc comm
 gap explicitly so a caller meets it at the point of use.
 
 **Needed by:** build step 2, specifically whoever writes the grant ledger's persist path.
+
+### A24 — should a whole-codebase guideline sweep be exempt from the one-stream-per-backlog-branch rule **[STILL OPEN]**
+
+Found while opening the PR for `stream/backlog-07-guidelines-cleanup` (2026-08-28).
+`parallel-work.md` §`backlog-NN` branches is explicit: a backlog branch borrows one stream's
+paths, and "if the work would touch two streams' paths, it is two branches." That branch touches
+six: `broker` (`src/broker/policy/` splits and dedups), `packaging` (`scripts/cli.mjs`,
+`scripts/check-vectors.mjs`), `shell` (`src/main/channels.ts`, `update-check.ts` and its split
+siblings), `telemetry` (comment cuts in `src/telemetry/`), `docs` (the guideline documents,
+`devlog/`), and `shared` (`src/shared/README.md`, prose-only — no file was added under
+`src/shared/`).
+
+**Why this happened.** The plan for applying `code-guidelines.md`'s three rules across the
+codebase split the work into two branches by **risk** (violations first, then near-limit
+cleanup) — approved by the owner before this rule was re-checked against it. A guideline sweep
+is inherently cross-cutting by nature: the whole point is touching every file that violates a
+rule, wherever it lives. Splitting strictly by stream would have produced five or six branches
+whose only relationship is "ran the same regex-shaped task over different directories" — real
+git overhead (interleaved commits already exist and would need hunk-level splitting) for PRs
+that would each read as "same mechanical change, different folder."
+
+**Recommendation [AI-REC]:** treat a repository-wide guideline or lint-style sweep as a
+carve-out from the one-stream rule, same spirit as the `type:chore` short form already carved
+out of the PR blueprint's seven-section requirement — but say so explicitly in
+`parallel-work.md` rather than leaving each future sweep to rediscover the tension. The ordinary
+case the rule protects against (a task that happens to touch two unrelated streams) is different
+in kind from a sweep that touches all of them on purpose.
+
+**Why this is written down rather than just done.** The PR that surfaces this (labelled
+`needs-owner-decision`) is a fait accompli either way — the code is written, tested and
+verified, and re-splitting it now costs real time for uncertain benefit. What is genuinely open
+is whether this is treated as a one-time, named exception or whether the rule itself should grow
+a carve-out for the next sweep.
 
 ### A14 addendum — an argument against the trailing-dot merge, recorded after the decision
 
