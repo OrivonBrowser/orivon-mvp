@@ -87,6 +87,7 @@ regardless of the others.
 | Telemetry + first-run disclosure + "what was sent" page | Without it the metric is unfalsifiable. The disclosure UI is not optional. `ADR-0004` |
 | Packaging — **Linux first** (AppImage + deb) | No code-signing cost, and the target audience skews Linux |
 | **Run-from-source on Windows and macOS** | `npm install && npm start` sidesteps SmartScreen and Gatekeeper without buying certificates, widens the audience, and self-selects contributors. Forces a pure-JS dependency policy |
+| **Bookmarks bar** — star a page, open it from the bar, unstar it | **Owner override, 2026-08-28** — not in the original scope pass; arrived bundled with a chrome restyle. Cheap (a JSON file and three IPC commands, `ADR-0003`), and a browser with no way to keep a page is not a plausible daily driver — `activeSec` is what the success metric actually measures |
 
 ## OUT — important but deferrable
 
