@@ -227,15 +227,20 @@ function main() {
     }
   }
 
-  // Independence tripwire: this file must not execute derive.ts. It catches a
-  // static or dynamic import of the module, which is the form someone would
-  // reach for by accident or convenience. It is NOT a sandbox -- createRequire,
-  // an odd path spelling or importing the built output all evade it, and are
-  // meant to be caught in review instead. Reading derive.ts as TEXT above is
-  // fine and deliberate: it checks a constant without running the code.
+  // Independence tripwire: this file must not execute any src/broker/policy/
+  // module. Widened 2026-08-27 from matching derive.ts by name to matching the
+  // whole directory: derive.ts is about to be split into derive.ts plus
+  // derive-encoding.ts/derive-p256.ts, and a name-specific regex would stop
+  // matching the moment encodeField lives in a sibling file -- silently
+  // reopening exactly the hole this check exists to close. It catches a
+  // static or dynamic import, which is the form someone would reach for by
+  // accident or convenience. It is NOT a sandbox -- createRequire, an odd path
+  // spelling or importing the built output all evade it, and are meant to be
+  // caught in review instead. Reading derive.ts as TEXT above is fine and
+  // deliberate: it checks a constant without running the code.
   const self = readFileSync(fileURLToPath(import.meta.url), 'utf8')
-  if (/(?:from|import\s*\()\s*['"][^'"]*policy\/derive\.(?:js|ts)['"]/.test(self)) {
-    failures.push('check-vectors.mjs imports derive.ts, so it is no longer an independent check')
+  if (/(?:from|import\s*\()\s*['"][^'"]*\/policy\/[^'"]*['"]/.test(self)) {
+    failures.push('check-vectors.mjs imports from src/broker/policy/, so it is no longer an independent check')
   }
 
   if (failures.length > 0) {

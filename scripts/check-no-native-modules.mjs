@@ -12,7 +12,8 @@
  * webtorrent ships as a pre-built app asset rather than a shell dependency.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs'
-import { join, relative, sep } from 'node:path'
+import { join } from 'node:path'
+import { isInvokedDirectly, relativeToRoot } from './cli.mjs'
 
 /**
  * What actually breaks run-from-source is a package that must COMPILE at
@@ -79,17 +80,17 @@ export function checkNoNativeModules (root) {
       if (entry.isSymbolicLink()) continue
 
       if (entry.isDirectory()) {
-        if (ARTEFACT_DIRS.has(entry.name)) offenders.push(rel(full))
+        if (ARTEFACT_DIRS.has(entry.name)) offenders.push(relativeToRoot(root, full))
         else walk(full)
         continue
       }
 
       if (ARTEFACT_FILES.has(entry.name)) {
-        offenders.push(rel(full))
+        offenders.push(relativeToRoot(root, full))
       } else if (entry.name === 'package.json') {
-        if (declaresBuildStep(full)) offenders.push(rel(full))
+        if (declaresBuildStep(full)) offenders.push(relativeToRoot(root, full))
       } else if (NATIVE_BINARY.test(entry.name)) {
-        prebuilt.push(rel(full))
+        prebuilt.push(relativeToRoot(root, full))
       }
     }
   }
@@ -111,15 +112,9 @@ export function checkNoNativeModules (root) {
     return false
   }
 
-  function rel (full) {
-    return relative(root, full).split(sep).join('/')
-  }
 }
 
-const invokedDirectly = process.argv[1] !== undefined &&
-  import.meta.url === new URL(`file://${process.argv[1]}`).href
-
-if (invokedDirectly) {
+if (isInvokedDirectly(import.meta.url)) {
   const { ok, offenders, prebuilt } = checkNoNativeModules(process.cwd())
 
   if (!ok) {

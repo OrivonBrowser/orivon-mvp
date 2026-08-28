@@ -22,9 +22,7 @@
 
 import type { AccountingState, AppId, Period, PeriodTotals } from './accounting.js'
 
-// ---------------------------------------------------------------------
 // The literal payload
-// ---------------------------------------------------------------------
 
 /**
  * The exact shape ADR-0004 commits to sending -- see its "entire payload"
@@ -90,9 +88,7 @@ function perAppForPeriod (state: AccountingState, period: Period): Readonly<Reco
 /**
  * Produces exactly the object the transport sends -- not a description of
  * it, not a summary. This is the function the disclosure screen renders
- * as literal JSON, and it derives entirely from accounting.ts's real
- * exported types: if the wire shape changes, it changes here, in type
- * signatures the compiler checks, not in a hand-maintained description.
+ * as literal JSON.
  */
 export function buildDisclosurePayload (state: AccountingState, meta: DisclosureMeta): TelemetryPayload {
   return {
@@ -104,9 +100,7 @@ export function buildDisclosurePayload (state: AccountingState, meta: Disclosure
   }
 }
 
-// ---------------------------------------------------------------------
 // The consent state: undecided is a real third value
-// ---------------------------------------------------------------------
 
 /** What a completed choice settles into. Deliberately excludes
  *  'undecided' at the type level, so nothing typed to return this can
@@ -122,28 +116,22 @@ export type DecidedConsentState = 'accepted' | 'declined'
  */
 export type ConsentState = 'undecided' | DecidedConsentState
 
-/**
- * What a fresh profile starts in. Exported as the one definition of
- * "fresh" so every call site (and every test) shares it, rather than
- * each writing the literal 'undecided' and risking one getting it wrong.
- */
+/** What a fresh profile starts in. Exported so every call site shares one definition of "fresh". */
 export const initialConsentState: ConsentState = 'undecided'
 
 /**
- * True only in the undecided state. The first-run screen is gated on
- * this one predicate rather than on a separately tracked "has this run
- * before" flag, so there is exactly one source of truth for whether it
- * may appear -- and once a choice lands in either decided state, this is
- * false for good, which is what keeps a revisited choice from
- * resurrecting the first-run screen (task requirement 5).
+ * The first-run screen is gated on this one predicate rather than on a
+ * separately tracked "has this run before" flag, so there is exactly one
+ * source of truth for whether it may appear -- and once a choice lands in
+ * either decided state, this is false for good, which is what keeps a
+ * revisited choice from resurrecting the first-run screen (task requirement
+ * 5).
  */
 export function shouldPresentDisclosure (state: ConsentState): boolean {
   return state === 'undecided'
 }
 
-// ---------------------------------------------------------------------
 // The two options: equal weight, no preference
-// ---------------------------------------------------------------------
 
 export type DisclosureChoiceId = 'keep-on' | 'turn-off'
 
@@ -176,24 +164,17 @@ export const DISCLOSURE_OPTIONS: readonly [DisclosureOption, DisclosureOption] =
  * same function serves both. That symmetry is what makes the choice
  * durable and revisitable (task requirement 5) rather than a one-shot
  * decision: a settings control calling this again later moves directly
- * between 'accepted' and 'declined' and, because the return type is
- * DecidedConsentState, can never land back on 'undecided' -- so the
- * first-run screen (shouldPresentDisclosure above) does not reappear.
- * Pure -- the caller persists the result; see the module comment.
+ * between 'accepted' and 'declined'. Pure -- the caller persists the result.
  */
 export function applyDisclosureChoice (option: DisclosureOption): DecidedConsentState {
   return option.resultingState
 }
 
-// ---------------------------------------------------------------------
 // The transmit guard
-// ---------------------------------------------------------------------
 
 /**
- * The one function the transport (a separate task) is required to
- * consult before sending anything. False for 'undecided' -- silence is
- * not consent -- and false for 'declined'; only an explicit 'accepted'
- * returns true.
+ * The one function the transport (a separate task) is required to consult
+ * before sending anything. Silence is not consent.
  */
 export function mayTransmit (state: ConsentState): boolean {
   return state === 'accepted'

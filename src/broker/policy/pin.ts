@@ -13,15 +13,17 @@
 // Array.isArray check on every field, because a crash inside a security
 // decision is itself the failure).
 
-import type { OrivonError, OrivonErrorCode } from '../../contracts/index.js'
 import {
   collisionKey,
+  describePath,
   isValidCanonicalPath,
   MANIFEST_PATH,
   MAX_BUNDLE_ENTRIES,
   type PathLeaf
-} from './bundle-hash.js'
+} from './canonical-path.js'
+import { fail } from './errors.js'
 import { originFromUrl } from './origin.js'
+import { isArray, isFiniteNumber, isString, ownProperty } from './own-property.js'
 
 /**
  * Already-canonical or rejected, never repaired -- the same stance
@@ -42,10 +44,6 @@ function isCanonicalOrigin (origin: string): boolean {
 export const PIN_SCHEMA_VERSION = 1
 
 const BUNDLE_HASH_PATTERN = /^sha256:[0-9a-f]{64}$/
-
-function fail (code: OrivonErrorCode, message: string): OrivonError {
-  return Object.assign(new Error(message), { code })
-}
 
 /** One entry in the pinned asset set. Same shape as bundle-hash.ts's PathLeaf. */
 export type PinnedAsset = PathLeaf
@@ -96,20 +94,18 @@ export interface PinRecord {
 export function parsePinRecord (raw: unknown): PinRecord | null {
   if (typeof raw !== 'object' || raw === null) return null
 
-  if (!ownNumber(raw, 'schema') || (raw as { schema: unknown }).schema !== PIN_SCHEMA_VERSION) {
-    return null
-  }
+  if (ownProperty(raw, 'schema', isFiniteNumber) !== PIN_SCHEMA_VERSION) return null
 
-  const origin = ownString(raw, 'origin')
+  const origin = ownProperty(raw, 'origin', isString)
   if (origin === undefined || !isCanonicalOrigin(origin)) return null
 
-  const bundleHash = ownString(raw, 'bundleHash')
+  const bundleHash = ownProperty(raw, 'bundleHash', isString)
   if (bundleHash === undefined || !BUNDLE_HASH_PATTERN.test(bundleHash)) return null
 
-  const version = ownString(raw, 'version')
+  const version = ownProperty(raw, 'version', isString)
   if (version === undefined || version.length === 0) return null
 
-  const pinnedAt = ownFiniteNumber(raw, 'pinnedAt')
+  const pinnedAt = ownProperty(raw, 'pinnedAt', isFiniteNumber)
   if (pinnedAt === undefined) return null
 
   const assets = parseAssets(raw)
@@ -127,9 +123,8 @@ export function parsePinRecord (raw: unknown): PinRecord | null {
  * unbounded number of them.
  */
 function parseAssets (raw: object): readonly PinnedAsset[] | null {
-  if (!Object.hasOwn(raw, 'assets')) return null
-  const value = (raw as { assets: unknown }).assets
-  if (!Array.isArray(value)) return null
+  const value = ownProperty(raw, 'assets', isArray)
+  if (value === undefined) return null
   if (value.length === 0 || value.length > MAX_BUNDLE_ENTRIES) return null
 
   const assets: PinnedAsset[] = []
@@ -138,8 +133,8 @@ function parseAssets (raw: object): readonly PinnedAsset[] | null {
   let hasManifest = false
   for (const entry of value) {
     if (typeof entry !== 'object' || entry === null) return null
-    const path = ownString(entry, 'path')
-    const leaf = ownString(entry, 'leaf')
+    const path = ownProperty(entry, 'path', isString)
+    const leaf = ownProperty(entry, 'leaf', isString)
     // Held to bundle-hash.ts's definition, not merely "a non-empty string".
     // A record that reaches here did not necessarily come from bundleTree():
     // it came off disk. The pinned asset set is both T21's allowlist and the
@@ -166,23 +161,6 @@ function parseAssets (raw: object): readonly PinnedAsset[] | null {
   if (!hasManifest) return null
 
   return assets
-}
-
-function ownString (value: object, key: string): string | undefined {
-  if (!Object.hasOwn(value, key)) return undefined
-  const v = (value as Record<string, unknown>)[key]
-  return typeof v === 'string' ? v : undefined
-}
-
-function ownNumber (value: object, key: string): boolean {
-  if (!Object.hasOwn(value, key)) return false
-  return typeof (value as Record<string, unknown>)[key] === 'number'
-}
-
-function ownFiniteNumber (value: object, key: string): number | undefined {
-  if (!Object.hasOwn(value, key)) return undefined
-  const v = (value as Record<string, unknown>)[key]
-  return typeof v === 'number' && Number.isFinite(v) ? v : undefined
 }
 
 /**
@@ -213,7 +191,7 @@ export function fromBundleTree (
   version: string,
   pinnedAt: number
 ): PinRecord {
-  if (!isCanonicalOrigin(origin)) throw fail('invalid', `not a canonical origin: ${JSON.stringify(origin.slice(0, 120))}`)
+  if (!isCanonicalOrigin(origin)) throw fail('invalid', `not a canonical origin: ${describePath(origin)}`)
   if (!BUNDLE_HASH_PATTERN.test(bundleHash)) throw fail('invalid', `not a bundle hash: ${bundleHash}`)
   if (assets.length === 0) throw fail('invalid', 'a pin record needs at least one pinned asset')
   if (version.length === 0) throw fail('invalid', 'a pin record needs a non-empty version')
@@ -231,17 +209,17 @@ export function fromBundleTree (
   const seenKeys = new Set<string>()
   for (const asset of assets) {
     if (!isValidCanonicalPath(asset.path)) {
-      throw fail('invalid', `not a valid canonical path: ${JSON.stringify(asset.path.slice(0, 120))}`)
+      throw fail('invalid', `not a valid canonical path: ${describePath(asset.path)}`)
     }
     if (!BUNDLE_HASH_PATTERN.test(asset.leaf)) {
-      throw fail('invalid', `not a leaf digest: ${JSON.stringify(asset.leaf.slice(0, 120))}`)
+      throw fail('invalid', `not a leaf digest: ${describePath(asset.leaf)}`)
     }
     if (seenPaths.has(asset.path)) {
-      throw fail('invalid', `duplicate pinned path: ${JSON.stringify(asset.path.slice(0, 120))}`)
+      throw fail('invalid', `duplicate pinned path: ${describePath(asset.path)}`)
     }
     const key = collisionKey(asset.path)
     if (seenKeys.has(key)) {
-      throw fail('invalid', `pinned paths collide under folding: ${JSON.stringify(asset.path.slice(0, 120))}`)
+      throw fail('invalid', `pinned paths collide under folding: ${describePath(asset.path)}`)
     }
     seenPaths.add(asset.path)
     seenKeys.add(key)
