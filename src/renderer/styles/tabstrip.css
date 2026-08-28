@@ -1,0 +1,131 @@
+/* Tab row -- shares the window's top row with the native window buttons
+   (see [data-platform] rules in ../style.css). Dimensions and colours
+   are quoted from orivon-browser-v2 (visual reference only, ADR-0002). */
+
+.tabrow {
+  height: 36px;
+  display: flex;
+  align-items: flex-end;
+  gap: 0;
+  padding: 4px 4px 0;
+  background: var(--wchrome);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.tabrow::-webkit-scrollbar { display: none; }
+
+.tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 12px;
+  margin: 0 1px 1px;
+  border-radius: 8px 8px 0 0;
+  flex: 1 1 0%;
+  min-width: 44px;
+  max-width: 240px;
+  color: var(--wink-dim);
+  cursor: default;
+  user-select: none;
+  overflow: hidden;
+}
+.tab:hover:not(.active) {
+  background: color-mix(in srgb, var(--wink) 6%, transparent);
+}
+.tab.active {
+  background: var(--wsurface);
+  color: var(--wink);
+  z-index: 1;
+}
+
+.tab .fav {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 8px;
+}
+.tab .fav svg { width: 14px; height: 14px; }
+
+/* Loading: a spinner ring, not the globe -- v0 has no real favicons
+   (src/renderer/README.md), so this is the one state worth animating.
+   30% of the current text colour stands in for the fixed light/dark
+   rgba values the reference hardcodes, so one rule covers both themes. */
+.tab .fav.loading {
+  border: 2px solid color-mix(in srgb, var(--wink) 30%, transparent);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tab .fav.loading { animation: none; }
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* A fresh, still-blank tab gets the product mark instead of a globe --
+   there is nothing to show a generic favicon for yet. */
+.tab .fav.newtab {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  background: var(--wmark);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 14px;
+  text-align: center;
+}
+
+.tab .title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-right: 16px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.tab .close {
+  position: absolute;
+  right: 6px;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+}
+.tab:hover .close,
+.tab.active .close { opacity: 1; }
+.tab .close:hover {
+  background: color-mix(in srgb, var(--wink) 14%, transparent);
+}
+.tab .close svg { width: 12px; height: 12px; }
+
+.newtabbtn {
+  align-self: flex-end;
+  width: 28px;
+  height: 28px;
+  margin: 0 4px 5px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  color: var(--wink-dim);
+}
+.newtabbtn svg { width: 16px; height: 16px; }
+.newtabbtn:hover {
+  color: var(--wink);
+  background: var(--whover-strong);
+}

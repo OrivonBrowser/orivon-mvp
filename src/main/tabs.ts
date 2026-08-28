@@ -11,6 +11,7 @@
 // do not exist until build step 4, and ordinary tabs must browse freely.
 import { WebContentsView, type View } from 'electron'
 import { join } from 'node:path'
+import type { Bookmark } from './bookmarks.js'
 import { parseOmniboxInput, sanitizeDirectUrl } from './omnibox.js'
 
 export interface TabState {
@@ -22,9 +23,17 @@ export interface TabState {
   loading: boolean
 }
 
-export interface ShellState {
+/** What TabManager itself knows. Bookmarks are a separate store
+ * (bookmarks.ts) that window.ts composes alongside this into the full
+ * ShellState pushed to the chrome view -- TabManager has no reason to
+ * know bookmarks exist. */
+export interface TabsSnapshot {
   tabs: TabState[]
   activeTabId: string | null
+}
+
+export interface ShellState extends TabsSnapshot {
+  bookmarks: Bookmark[]
 }
 
 export interface Bounds {
@@ -50,7 +59,7 @@ export class TabManager {
    * require touching the Map. */
   private readonly order: string[] = []
   private activeId: string | null = null
-  private readonly listeners = new Set<(state: ShellState) => void>()
+  private readonly listeners = new Set<(state: TabsSnapshot) => void>()
   private readonly preloadPath: string
 
   constructor (
@@ -60,11 +69,11 @@ export class TabManager {
     this.preloadPath = join(import.meta.dirname, '../preload/app.js')
   }
 
-  onStateChange (cb: (state: ShellState) => void): void {
+  onStateChange (cb: (state: TabsSnapshot) => void): void {
     this.listeners.add(cb)
   }
 
-  getState (): ShellState {
+  getState (): TabsSnapshot {
     return {
       tabs: this.order.map((id) => this.tabState(id)),
       activeTabId: this.activeId
