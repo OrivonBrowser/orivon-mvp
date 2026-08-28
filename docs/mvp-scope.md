@@ -88,6 +88,7 @@ regardless of the others.
 | Packaging — **Linux first** (AppImage + deb) | No code-signing cost, and the target audience skews Linux |
 | **Run-from-source on Windows and macOS** | `npm install && npm start` sidesteps SmartScreen and Gatekeeper without buying certificates, widens the audience, and self-selects contributors. Forces a pure-JS dependency policy |
 | **Bookmarks bar** — star a page, open it from the bar, unstar it | **Owner override, 2026-08-28** — not in the original scope pass; arrived bundled with a chrome restyle. Cheap (a JSON file and three IPC commands, `ADR-0003`), and a browser with no way to keep a page is not a plausible daily driver — `activeSec` is what the success metric actually measures |
+| Real tab favicons | **Owner override, 2026-08-28** — a fix-round follow-on to the chrome restyle. Known limitation, same shape as the DuckDuckGo search row above: fetching a visited site's favicon is main-process network egress to whatever host serves that icon (`src/main/favicon.ts`), capped and re-encoded to a `data:` URL specifically so the privileged chrome view itself never makes the request |
 
 ## OUT — important but deferrable
 
