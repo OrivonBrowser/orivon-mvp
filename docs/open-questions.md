@@ -63,6 +63,8 @@ None of these block starting the week-0 spike.
 | A22 | **`src/broker/policy/paths.ts` assumes app root directory names are single-case hex.** True today and specified — `security-model.md` T13b makes directory names `sha256(canonical_origin)`, and `ADR-0009` reconfirms the bundle hash does not rename them. The assumption is load-bearing for a case-SENSITIVE comparison and is asserted only in a source comment | **Build step 4 (the app loader)**, which writes the first root directory and is the first chance to get the naming wrong. See below |
 | A23 | **A derived origin does not carry whether it may be PERSISTED.** T13c forbids ever writing a grant for a loopback or plain-`http` origin to disk, but `originFromUrl` returns a plain string — `http://127.0.0.1:8080` is shape-identical to `https://x.example`, so every caller must remember to re-parse and check | **Build step 2**, when the code that persists grants exists. Owner decided 2026-08-27 to keep the return type a plain string for now rather than change a durable interface before its consumer exists. See below |
 | A24 | **Should a whole-codebase guideline sweep be exempt from the one-stream-per-backlog-branch rule?** `stream/backlog-07-guidelines-cleanup` touches six streams' paths at once, which `parallel-work.md` says should be six branches. AI-REC: carve out repo-wide sweeps explicitly, same shape as the PR blueprint's `type:chore` short form | **Before the next backlog-NN sweep is started.** This PR is a fait accompli either way; what's open is whether the rule gets a carve-out. See below |
+| A25 | **The docs' own example of an unparseable version parses.** `capability-api.md` and `update.ts` both cite `"2026-08-26"` as a version that cannot be ordered. It orders fine -- hyphens are legal semver prerelease identifiers | Before anyone relies on the example |
+| A26 | **Three port-range parsers now exist**: `connect-patterns.ts`, privately in `update.ts`, and `loader/manifest.ts`. None is legally reusable from the others as written | Rule 3; before a fourth |
 
 ---
 
@@ -555,3 +557,42 @@ Dashboard widget grid · App store · Web3 search · Wallet Crypto/Address-book 
 `CapabilityDescriptor` · Mobile · DAO / tokenomics · Proxy chains and VPN mode · Client
 Profile separation · DDOC · Trustless resolution · `subprocess` and `hid` capabilities ·
 Identity export/backup · Cross-device sync.
+
+### A25 -- the documented example of an unparseable version is parseable **[AI-REC]**
+
+Found while implementing `loader/manifest.ts` (2026-08-27) and verified directly against the
+real `compareVersions`/`parseVersion`.
+
+`architecture/capability-api.md` and `src/broker/policy/update.ts`'s own comment both offer
+`"2026-08-26"` as the example of a version string that cannot be ordered, and therefore fails
+closed at update time. **It parses.** Hyphens are legal in a semver prerelease identifier, so
+`2026-08-26` reads as major `2026` with prerelease `08-26` and orders against other versions
+without complaint.
+
+The *rule* is unaffected -- unorderable versions should still be rejected at first install, and
+`loader/manifest.ts` does that. Only the example is wrong.
+
+**AI recommendation:** replace the example in both places with something genuinely unorderable
+(`"v1.0"`, `"latest"`, `"1.0.0.0"`). A wrong example in a specification is worse than none: the
+next person writes a test asserting `2026-08-26` is rejected, watches it fail, and concludes the
+implementation is broken.
+
+**Needed by:** whoever next touches version handling. Not blocking.
+
+### A26 -- three port-range parsers **[AI-REC]**
+
+`connect-patterns.ts` exports one, `update.ts` keeps a private one, and `loader/manifest.ts`
+added a third (2026-08-27). Each was written because neither of the others was legally reusable
+from where it stood -- `policy/` may not import from `loader/`, and `update.ts`'s is private to
+a decision function that must not grow a dependency on pattern matching.
+
+This is the shape `CLAUDE.md` Rule 3 exists to catch, and the codebase has already done one
+dedupe pass for exactly this. The reasons are individually sound, which is how three of
+something appears without anyone deciding to have three.
+
+**AI recommendation:** move the port-range grammar into `src/shared/`, which exists precisely
+for a helper needed on both sides of a boundary, is change-controlled like contracts, imports
+nothing, and is currently empty. The audit that created it concluded nothing crossed that
+boundary yet. Something does now.
+
+**Needed by:** before a fourth appears. Not blocking.
