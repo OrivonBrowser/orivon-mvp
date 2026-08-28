@@ -42,48 +42,34 @@
 // step around. `npm run smoke` passes on an air-gapped machine, and a change
 // that made it depend on the network fails loudly here rather than quietly
 // phoning out.
+//
+// Launch config, waiting/polling and chrome-state readers live in
+// test/smoke-helpers.mjs (split out 2026-08-28, code-guidelines.md Rule 2,
+// when the chrome restyle's bookmark scenarios would have pushed this file
+// past its 800-line test ceiling) -- this file is scenarios, that one is
+// plumbing.
 import { createServer } from 'node:http'
 import { launchElectron } from '../test/launch-electron.mjs'
+import {
+  ABSENCE_SETTLE_MS,
+  bookmarkUrls,
+  delay,
+  evaluateRetrying,
+  findChrome,
+  findViewShowing,
+  HERMETIC_RESOLVER,
+  mismatch,
+  readTabDocument,
+  tabIds,
+  tabViews,
+  waitFor,
+  waitForTab
+} from '../test/smoke-helpers.mjs'
 
 /** Where the omnibox sends non-address input (src/main/omnibox.ts). Only used
- * to build the expected URL -- the resolver rule below blackholes everything
- * that is not loopback, so changing this cannot cause real egress. */
+ * to build the expected URL -- the resolver rule blackholes everything that
+ * is not loopback, so changing this cannot cause real egress. */
 const SEARCH_HOST = 'duckduckgo.com'
-
-/**
- * Nothing resolves except loopback. Deliberately a whole-world blackhole
- * rather than `MAP duckduckgo.com ~NOTFOUND`: the property being protected is
- * "this run cannot reach the network", and a per-host rule only protects the
- * one host someone thought of. Verified: the full suite passes under this.
- */
-const HERMETIC_RESOLVER = '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1'
-
-/** Ceiling on waitFor(). Every state push in this shell lands in
- * milliseconds; this only bounds the broken case, where the caller's own
- * check() then fails by name. */
-const WAIT_TIMEOUT_MS = 8_000
-const POLL_INTERVAL_MS = 50
-
-/**
- * How long to wait before concluding a navigation did NOT happen (rule 3).
- * Must comfortably exceed the time between `loadURL` being called and the
- * navigation committing. A deferred pass-through of only 300ms was enough to
- * slip past an earlier version of the deny-path checks.
- */
-const ABSENCE_SETTLE_MS = 1_500
-
-function findChrome (app) {
-  const win = app.windows().find((w) => w.url().endsWith('index.html'))
-  if (win === undefined) throw new Error('chrome view not found in app.windows()')
-  return win
-}
-
-/** Non-chrome views, as Playwright pages -- lets a check read a tab's OWN
- * location rather than trusting the toolbar's rendering of it (T25: the
- * address bar is a display layer and can lie independently). */
-function tabViews (app, chrome) {
-  return app.windows().filter((w) => w !== chrome)
-}
 
 async function startFixtureServer () {
   const pages = {
@@ -100,123 +86,6 @@ async function startFixtureServer () {
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
   const port = server.address().port
   return { server, urlFor: (path) => `http://127.0.0.1:${port}${path}` }
-}
-
-const delay = (ms) => new Promise((r) => setTimeout(r, ms))
-
-/**
- * Polls until `predicate` is true, or the ceiling is hit. Returns the outcome
- * as a boolean so the caller's own check() reports it by name.
- *
- * Read rule 2 in the header before using this. It is the right tool for "the
- * app should reach state X", and the wrong tool for "the app should stay in
- * state X" or "X should not happen".
- */
-async function waitFor (predicate, timeoutMs = WAIT_TIMEOUT_MS) {
-  const deadline = Date.now() + timeoutMs
-  for (;;) {
-    if (await predicate() === true) return true
-    if (Date.now() >= deadline) return false
-    await delay(POLL_INTERVAL_MS)
-  }
-}
-
-/**
- * page.evaluate(), retrying while the page's execution context is being torn
- * down.
- *
- * A navigation commit destroys the old context, and a read that lands inside
- * that window throws "Execution context was destroyed". That is a harness
- * race, not a product fact, and it must never be reported as one -- before
- * this existed it surfaced as the whole run dying with a stack trace, roughly
- * one run in three. Only that specific class is retried; every other error
- * still propagates.
- */
-async function evaluateRetrying (page, fn, timeoutMs = WAIT_TIMEOUT_MS) {
-  const TRANSIENT = /Execution context was destroyed|frame was detached/i
-  const deadline = Date.now() + timeoutMs
-  for (;;) {
-    try {
-      return await page.evaluate(fn)
-    } catch (e) {
-      if (Date.now() >= deadline || !TRANSIENT.test(String(e))) throw e
-      await delay(POLL_INTERVAL_MS)
-    }
-  }
-}
-
-/**
- * The Playwright page for the tab view currently showing `url`.
- *
- * Identifies a tab by what it displays rather than by being "the only one".
- * `find(w => w !== chrome)` is ambiguous the moment a second view exists --
- * which happens if A16 resolves to an auto-opened replacement tab, or if a
- * view leaks -- and reading the wrong window produces confidently-worded
- * failures against the wrong target.
- */
-function findViewShowing (app, chrome, url) {
-  return tabViews(app, chrome).find((w) => w.url() === url)
-}
-
-/** ONE read of a tab view's own location and title. Deliberately not a poll --
- * a caller asserting an absence must settle first, then read once (rule 3). */
-async function readTabDocument (view) {
-  if (view === undefined) return undefined
-  return evaluateRetrying(view, () => ({ href: location.href, title: document.title }))
-}
-
-async function activeTabInfo (chrome) {
-  return evaluateRetrying(chrome, () => {
-    const active = document.querySelector('.tab.active')
-    return {
-      // The tab strip's own id for the active tab (dataset['id'] in
-      // renderTabs(), src/renderer/main.ts) -- lets checks address tabs by
-      // identity instead of by ":not(.active)", which flips meaning the moment
-      // the active tab changes and re-resolves against a strip that
-      // replaceChildren()s on every state push.
-      activeId: active?.dataset.id,
-      title: active?.querySelector('.title')?.textContent,
-      backDisabled: document.querySelector('#back')?.disabled,
-      forwardDisabled: document.querySelector('#forward')?.disabled,
-      // The address bar's own displayed value (renderToolbar() in
-      // src/renderer/main.ts) -- what the checks below use to assert "which
-      // URL", as distinct from "which title".
-      address: document.querySelector('#address')?.value
-    }
-  })
-}
-
-/** Tab ids currently rendered in the tab strip, in strip order. */
-async function tabIds (chrome) {
-  return evaluateRetrying(chrome, () =>
-    Array.from(document.querySelectorAll('.tab')).map((el) => el.dataset.id)
-  )
-}
-
-/**
- * Waits until EVERY field of `expected` matches the shell's reported active
- * tab, and returns both the outcome and what was last seen.
- *
- * Wait for everything you are about to assert, in one predicate. The fields
- * arrive on different events -- the address on did-navigate, the title on
- * page-title-updated, the nav-button flags on whichever push lands last
- * (src/main/tabs.ts wires five separate emitState() triggers) -- so waiting
- * for one field and then reading another is a race that fails intermittently
- * and reads like a product bug.
- */
-async function waitForTab (chrome, expected) {
-  let info
-  const ok = await waitFor(async () => {
-    info = await activeTabInfo(chrome)
-    return Object.entries(expected).every(([field, value]) => info[field] === value)
-  })
-  return { ok, info }
-}
-
-/** Compact "wanted X, saw Y" for a failed check's detail field. */
-function mismatch (expected, info) {
-  const seen = Object.fromEntries(Object.keys(expected).map((field) => [field, info?.[field]]))
-  return `expected ${JSON.stringify(expected)}, saw ${JSON.stringify(seen)}`
 }
 
 async function main () {
@@ -331,9 +200,9 @@ async function main () {
     // Resize check -- verifies chrome + tab bounds actually track a window
     // resize (win.on('resize') -> layoutChrome() + tabs.layout() in
     // window.ts), via each view's OWN rendered viewport rather than reaching
-    // into main-process internals. CHROME_HEIGHT (118) must stay in sync
-    // with src/renderer/style.css's `html, body { height: 118px }`.
-    const CHROME_HEIGHT = 118
+    // into main-process internals. CHROME_HEIGHT (104) must stay in sync
+    // with src/renderer/style.css's `html, body { height: 104px }`.
+    const CHROME_HEIGHT = 104
     const targetWidth = 900
     const targetHeight = 700
     await app.evaluate(({ BaseWindow }, { w, h }) => {
@@ -655,6 +524,56 @@ async function main () {
         )
       }
     }
+
+    // ---- Bookmarks bar: star, appear, open, unstar ------------------------
+    // Owner override, 2026-08-28 (mvp-scope.md, ADR-0003) -- not in the
+    // original scope pass. Exercises the real path -- click -> IPC ->
+    // BookmarkStore -> pushed ShellState -> bookmarks-view.ts -- the same
+    // shape every other check in this file already holds tab commands to,
+    // rather than calling window.orivonShell.addBookmark() directly.
+    const parkedForBookmark = await navigateTo(urlFor('/a'), wantA)
+    checkTab('the tab is parked on fixture A before starring it', wantA, parkedForBookmark)
+
+    await clickChecked(chrome, '#bookmark-toggle', 'the bookmark toggle is clickable')
+    checkTab(
+      'starring the page marks the toggle as bookmarked',
+      { bookmarked: true },
+      await waitForTab(chrome, { bookmarked: true })
+    )
+
+    check(
+      'the starred page appears in the bookmarks bar',
+      await waitFor(async () => (await bookmarkUrls(chrome)).includes(urlFor('/a')))
+    )
+
+    // Navigate away, then open the bookmark from the bar -- proves its click
+    // handler drives a real navigation (openBookmark), not just a render of
+    // the stored title.
+    const wantB2 = { address: urlFor('/b'), title: 'fixture-b' }
+    checkTab('navigated away before opening the bookmark', wantB2, await navigateTo(urlFor('/b'), wantB2))
+
+    const bookmarkClicked = await clickChecked(
+      chrome,
+      `#bookmarks-list .bmitem[title="${urlFor('/a')}"]`,
+      'the bookmarked item is clickable'
+    )
+    checkTab(
+      'clicking the bookmark navigates the active tab to it',
+      wantA,
+      bookmarkClicked ? await waitForTab(chrome, wantA) : { ok: false, info: undefined }
+    )
+
+    await clickChecked(chrome, '#bookmark-toggle', 'the bookmark toggle is clickable to unstar')
+    checkTab(
+      'unstarring the page clears the toggle',
+      { bookmarked: false },
+      await waitForTab(chrome, { bookmarked: false })
+    )
+
+    check(
+      'unstarring removes the page from the bookmarks bar',
+      await waitFor(async () => !(await bookmarkUrls(chrome)).includes(urlFor('/a')))
+    )
   } catch (e) {
     // The header of this file promises a JSON result and a failure list. A
     // throw is exactly when they are most useful, so it becomes a check rather

@@ -1,0 +1,166 @@
+/* Toolbar row -- back/forward/reload, the bookmark toggle, the omnibox,
+   and the right-hand icon cluster. Dimensions and colours are quoted
+   from orivon-browser-v2 (visual reference only, ADR-0002). */
+
+.toolbar {
+  height: 40px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  background: var(--wchrome);
+}
+
+.navgroup {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+
+.navbtn {
+  width: 34px;
+  height: 34px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--wink-dim);
+  flex: none;
+}
+/* Deliberately larger than the icon cluster's 18px glyphs -- this is
+   what the reference actually ships, not a rendering bug introduced
+   here. */
+.navgroup .navbtn svg { width: 24px; height: 24px; }
+.navbtn:not(:disabled):hover {
+  color: var(--wink);
+}
+
+.bookmarkbtn {
+  margin: 0 8px 0 12px;
+}
+.bookmarkbtn svg { width: 18px; height: 18px; }
+.bookmarkbtn:not(:disabled):hover {
+  color: var(--wink);
+  background: var(--whover-strong);
+}
+/* The current page is bookmarked -- filled outline, accent tint. Not in
+   the static reference (v2's bookmark button has no on/off state); this
+   shell's bookmarks are real, so the toggle needs one. */
+.bookmarkbtn.active {
+  color: var(--waccent);
+}
+.bookmarkbtn.active svg { fill: currentColor; }
+
+.addressbar-form {
+  flex: 1;
+  min-width: 0;
+}
+
+.addressbar-pill {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding-left: 12px;
+  background: var(--wsurface);
+  border: 1px solid var(--wborder);
+  border-radius: 8px;
+  transition: border-color 150ms ease;
+}
+.addressbar-pill:focus-within {
+  border-color: color-mix(in srgb, var(--waccent) 50%, transparent);
+}
+
+.address-dot {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  border-radius: 50%;
+  margin-right: 8px;
+  background: var(--wink-off);
+  transition: background-color 500ms ease;
+}
+.address-dot.secure { background: var(--wok); }
+.address-dot.insecure { background: var(--winsecure); }
+
+.addressbar {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  padding: 0 12px 0 0;
+  font: inherit;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--wink);
+}
+.addressbar::placeholder { color: var(--wink-dim); }
+
+.addressbar-trailing {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 8px;
+  flex: none;
+}
+.pillbtn {
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  color: var(--wink-dim);
+}
+.pillbtn svg { width: 16px; height: 16px; }
+.pillbtn:not(:disabled):hover {
+  color: var(--wink);
+  background: var(--whover-soft);
+}
+.mark-badge {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--wmark);
+  color: #fff;
+  font-size: 8px;
+  font-weight: 700;
+  flex: none;
+}
+
+.toolbar-cluster {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  flex: none;
+}
+.sep {
+  width: 1px;
+  height: 20px;
+  margin-right: 4px;
+  background: var(--wborder);
+}
+.iconbtn {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--wink-dim);
+  flex: none;
+}
+.iconbtn svg { width: 18px; height: 18px; }
+.iconbtn:not(:disabled):hover {
+  color: var(--wink);
+  background: var(--whover-strong);
+}
+.statusdot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--wok);
+}
