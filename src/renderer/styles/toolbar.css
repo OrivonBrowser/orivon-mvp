@@ -89,7 +89,7 @@
   background: transparent;
   border: none;
   outline: none;
-  padding: 0 12px 0 0;
+  padding: 0 12px 0 4px;
   font: inherit;
   font-size: 13px;
   font-variant-numeric: tabular-nums;
@@ -156,6 +156,19 @@
 .iconbtn:not(:disabled):hover {
   color: var(--wink);
   background: var(--whover-strong);
+}
+/* Every .iconbtn (and .pillbtn below) in this codebase is a permanent
+   placeholder -- never toggled at runtime (main.ts never queries them) --
+   unlike #back/#forward/#reload, which are genuinely, contextually
+   disabled and keep the base dim-on-dim style. The global
+   button:disabled { opacity: 0.35 } left these unreadable, which read
+   as "broken" rather than "not built yet" (open-questions.md A25).
+   not-allowed on hover makes the inertness legible without reaching
+   for the title tooltip at all. */
+.iconbtn:disabled,
+.pillbtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 .statusdot {
   width: 8px;

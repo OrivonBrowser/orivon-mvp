@@ -145,6 +145,16 @@ export async function bookmarkUrls (chrome) {
   )
 }
 
+/** The active tab's favicon `<img src>`, or null if the slot is
+ * currently showing the SVG fallback (globe/spinner) or the new-tab
+ * badge instead -- src/renderer/main.ts's renderFavicon() only ever
+ * renders one of an <img>, an <svg>, or plain text at a time. */
+export async function activeTabFaviconSrc (chrome) {
+  return evaluateRetrying(chrome, () =>
+    document.querySelector('.tab.active .fav img')?.getAttribute('src') ?? null
+  )
+}
+
 /**
  * Waits until EVERY field of `expected` matches the shell's reported active
  * tab, and returns both the outcome and what was last seen.

@@ -23,6 +23,13 @@
 .bmicon:not(:disabled):hover {
   background: var(--whover-soft);
 }
+/* A permanent placeholder, same reasoning as .iconbtn/.pillbtn
+   (toolbar.css) -- the base button:disabled dim-on-dim read as broken
+   rather than "not built yet" (open-questions.md A25). */
+.bmicon:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
 
 .bmfolder {
   display: flex;
@@ -56,9 +63,10 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 2px 8px;
+  padding: 2px 6px 2px 8px;
   border-radius: 4px;
   color: var(--wink-dim);
+  cursor: default;
   flex: none;
   max-width: 160px;
 }
@@ -66,7 +74,7 @@
   background: var(--whover-soft);
   color: var(--wink);
 }
-.bmitem svg { width: 14px; height: 14px; flex: none; }
+.bmitem > svg { width: 14px; height: 14px; flex: none; }
 .bmitem span {
   font-size: 12px;
   font-weight: 500;
@@ -74,3 +82,23 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Remove button -- hover-reveal, same pattern as .tab .close
+   (tabstrip.css). Hidden until the item itself is hovered so the bar
+   doesn't look cluttered with X's at rest. */
+.bmitem .remove {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+}
+.bmitem:hover .remove { opacity: 0.7; }
+.bmitem .remove:hover {
+  background: color-mix(in srgb, var(--wink) 14%, transparent);
+  opacity: 1;
+}
+.bmitem .remove svg { width: 10px; height: 10px; }

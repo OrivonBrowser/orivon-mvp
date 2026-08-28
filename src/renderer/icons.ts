@@ -35,9 +35,10 @@ function path (d: string, strokeWidth: string): SVGPathElement {
   return el
 }
 
-/** The tab strip and bookmarks bar's generic favicon stand-in -- v0 does
- * not fetch real favicons (see src/renderer/README.md), so every entry
- * gets the same globe glyph lucide ships as `globe`. */
+/** Generic favicon stand-in -- used for bookmarks-bar items (which never
+ * carry a real favicon) and as the tab strip's fallback when a tab has
+ * no real favicon yet, or its favicon fails to load (main.ts). Real tab
+ * favicons themselves are fetched by src/main/favicon.ts. */
 export function globeIcon (): SVGSVGElement {
   const el = svg('0 0 24 24')
   el.append(

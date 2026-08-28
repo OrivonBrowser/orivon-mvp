@@ -50,6 +50,7 @@
   margin-right: 8px;
 }
 .tab .fav svg { width: 14px; height: 14px; }
+.tab .fav img { width: 14px; height: 14px; border-radius: 2px; object-fit: contain; }
 
 /* Loading: a spinner ring, not the globe -- v0 has no real favicons
    (src/renderer/README.md), so this is the one state worth animating.
