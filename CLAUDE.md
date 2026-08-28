@@ -6,7 +6,8 @@
 system in place (2026-08-26). Next action is build step 2 (the capability broker) — nothing
 blocks it.**
 Last updated 2026-08-27 (code guidelines and the PR blueprint added as the third and fourth
-standing rules).
+standing rules, then applied to the whole codebase the same day across two branches --
+`stream/backlog-06-rule2-violations` and `stream/backlog-07-guidelines-cleanup`).
 
 **The human documentation is the map. Read it first — this file adds only what is specific to
 working here as an agent.**
@@ -177,7 +178,7 @@ template does the work by being already in the box. Note it is bypassed entirely
 ### Code guidelines
 
 **Read `docs/development/code-guidelines.md` before writing any code.** The three rules, in
-short — the document carries the reasoning, the carve-outs and the current violations:
+short — the document carries the full reasoning and the worked examples:
 
 1. **Comments earn their place.** A comment explains *why*; the code already says *what*. If it
    restates the line below it, delete it. Long comments are allowed where length is genuinely
@@ -187,27 +188,31 @@ short — the document carries the reasoning, the carve-outs and the current vio
    Inline comments inside function bodies are not exempt anywhere.
 2. **500 lines for source, 800 for tests** (`*.test.ts`, `test/`, `scripts/smoke.mjs`). Split by
    concern, never by line count — `foo-part2.ts` is worse than the long file. The limit exists so
-   a smaller model can hold a whole file and reason about it confidently. Nothing is over today,
-   but **`derive.ts` is at 499** and three more are within 35 lines.
+   a smaller model can hold a whole file and reason about it confidently.
 3. **One implementation per idea.** Before writing a helper, `grep -rn "function <name>" src/`.
-   Two `concat`s and two `encodeField`s already exist in `src/broker/policy/` — one pair is a
-   wire format duplicated across subsystems. Extract when the *reason* is shared, not when the
-   shape is (Rule 7 still applies).
+   Extract when the *reason* is shared, not when the shape is (Rule 7 still applies).
 
-**`src/shared/` is where a helper needed on both sides of a trust boundary goes** — `src/broker/`
+**Applied to the whole codebase 2026-08-27**, across two branches: `stream/backlog-06-rule2-
+violations` (the two files that had already broken Rule 2 — `handles.ts` at 1045 lines,
+`connect.ts` at 622 — plus their test files) and `stream/backlog-07-guidelines-cleanup` (the four
+that were close enough to break it next, the comment cuts, and eight Rule-3 duplicates including
+the `concat`/`encodeField` pair this rule was written from). Every source file is now under 500
+lines and every test file under 800; `docs/development/code-guidelines.md` §Where the codebase
+stands has the full before/after per file. Two known duplicates (a hex encoder, the
+`MAX_HOST_LENGTH`/`MAX_PORT` constants) were found and deliberately left for a follow-up rather
+than fixed mid-refactor, because both cross into files the other branch was restructuring at the
+same time — see that document's Open Points §3.
+
+**`src/shared/` exists for a helper needed on both sides of a trust boundary** — `src/broker/`
 and `src/shim/` may not import each other, and `check:contracts` rules out `src/contracts/`. It
-is **change-controlled like contracts** (own PR, merges first) and **imports nothing**. Empty by
-design; the bar is two callers across a boundary, and its `README.md` states it. Note it did
-*not* cause the existing duplicates — those are same-directory, same-stream, and a plain `grep`
-would have caught them.
+is **change-controlled like contracts** (own PR, merges first) and **imports nothing**. Still
+empty: the audit above confirmed nothing in the current tree actually crosses that boundary.
 
 **Nothing enforces these mechanically, by owner's decision (rules first, enforcement later).**
-No linter or formatter exists, and the conventions have already split once: 115 declarations are
-`function name (args)`, 14 are `function name(args)` — all 14 in `derive.ts` and its test. A
-second split is the signal that the deferral has expired.
-
-Refactoring to the limits is a separate, owner-scheduled job. **Do not start it as a side effect
-of another task** — these rules bind new and changed code now.
+No linter or formatter exists. The one place conventions had already drifted — 14 declarations in
+`derive.ts` and its test written `function name(args)` against 115 elsewhere written
+`function name (args)` — was normalised as part of the 2026-08-27 refactor. A **second** such
+split is the signal the deferral has expired.
 
 ### Parallel work
 

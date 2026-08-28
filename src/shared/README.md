@@ -49,15 +49,11 @@ later. Extract when the *reason* is shared.
 
 ## Known candidates
 
-Not yet moved — the refactor is a separate, owner-scheduled job.
-
-| Helper | Current copies | Note |
-|---|---|---|
-| `concat(parts)` | [`derive.ts:256`](../broker/policy/derive.ts#L256), [`bundle-hash.ts:337`](../broker/policy/bundle-hash.ts#L337) | Byte-for-byte identical |
-| `encodeField(value)` | [`derive.ts:215`](../broker/policy/derive.ts#L215), [`bundle-hash.ts:324`](../broker/policy/bundle-hash.ts#L324) | Same `uint32`-BE length-prefix framing; one takes a string and validates it first |
-
-**Both pairs are inside `src/broker/policy/` — same directory, same stream.** They do not
-actually need this directory, and consolidating them within the broker is the simpler fix. They
-are listed because they are the concrete evidence that the duplication is real, and because
-`encodeField` is a **wire format**: two copies that drift mean two subsystems disagreeing about
-an encoding that hashes and derived keys depend on.
+**None currently.** The `concat`/`encodeField` pair that motivated this directory's own worked
+example turned out not to need it: both copies were inside `src/broker/policy/` — same
+directory, same stream — and were consolidated there instead, into
+[`policy/bytes.ts`](../broker/policy/bytes.ts) (2026-08-27, `stream/backlog-07-guidelines-
+cleanup`). A wider Rule-3 audit the same week found six more duplicates across the broker; every
+one of them was fixable inside its own directory. Confirmed, not assumed: nothing in the current
+tree crosses the `src/broker/` <-> `src/shim/` boundary this directory exists to serve. See
+[`code-guidelines.md`](../../docs/development/code-guidelines.md) Rule 3 for the full audit.

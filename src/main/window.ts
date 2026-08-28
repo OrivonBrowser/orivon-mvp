@@ -14,10 +14,9 @@
 // rather than assumed.
 import { BaseWindow, WebContentsView, screen } from 'electron'
 import { join } from 'node:path'
+import { STATE_CHANNEL } from './channels.js'
 import { TabManager, type Bounds } from './tabs.js'
 import { registerShellIpc } from './ipc.js'
-
-const STATE_CHANNEL = 'orivon-shell:state'
 
 // Owner picked concept 2 ("dense, filled-pill active tab") from the
 // mockups, 2026-08-26. Height is the sum of that concept's three rows,
