@@ -60,7 +60,11 @@ const addressInput = must(document.querySelector<HTMLInputElement>('#address'), 
 const addressDot = must(document.querySelector<HTMLSpanElement>('#address-dot'), '#address-dot missing')
 const bookmarksList = must(document.querySelector<HTMLDivElement>('#bookmarks-list'), '#bookmarks-list missing')
 
-const bookmarksView = createBookmarksView(bookmarksList, (url) => { shell.openBookmark(url) })
+const bookmarksView = createBookmarksView(
+  bookmarksList,
+  (url) => { shell.openBookmark(url) },
+  (url) => { shell.removeBookmark(url) }
+)
 
 /** True while the user is editing the address bar -- an incoming state
  * push must not clobber what they're typing. */
@@ -82,6 +86,18 @@ function renderFavicon (tab: TabState): HTMLSpanElement {
   } else if (tab.url === 'about:blank') {
     fav.classList.add('newtab')
     fav.textContent = 'O'
+  } else if (tab.favicon !== null) {
+    // Real favicon, fetched and re-encoded by main (src/main/favicon.ts)
+    // -- never the site's own https:// URL, so this <img> never makes a
+    // network request itself. Falls back to the generic globe on load
+    // failure (a corrupt cached data: URL, in practice).
+    const img = document.createElement('img')
+    img.alt = ''
+    img.decoding = 'async'
+    img.referrerPolicy = 'no-referrer'
+    img.addEventListener('error', () => { fav.replaceChildren(globeIcon()) }, { once: true })
+    img.src = tab.favicon
+    fav.append(img)
   } else {
     fav.append(globeIcon())
   }
@@ -98,7 +114,13 @@ function renderTabs (state: ShellState): void {
 
   for (const tab of state.tabs) {
     const el = document.createElement('div')
-    el.className = 'tab'
+    // BUG (found 2026-08-28, real regression): #tabrow is a drag region
+    // (index.html) and this element was missing `no-drag` -- every click
+    // on a tab was consumed by the OS as a window drag instead of
+    // reaching this listener, so the only clickable part of a tab was
+    // the close button. Confirmed against Electron's own docs: a
+    // draggable area "ignores all pointer events" unless excluded.
+    el.className = 'tab no-drag'
     el.classList.toggle('active', tab.id === state.activeTabId)
     el.setAttribute('role', 'tab')
     el.setAttribute('aria-selected', String(tab.id === state.activeTabId))
@@ -120,6 +142,17 @@ function renderTabs (state: ShellState): void {
 
     el.append(renderFavicon(tab), title, close)
     el.addEventListener('click', () => shell.activateTab(tab.id))
+    // Middle-click closes a tab, matching every other browser. Guarded on
+    // mousedown too: Windows arms Blink's middle-click autoscroll on
+    // mousedown, before 'auxclick' fires, so preventDefault() there alone
+    // is too late on that platform.
+    el.addEventListener('mousedown', (e) => { if (e.button === 1) e.preventDefault() })
+    el.addEventListener('auxclick', (e) => {
+      if (e.button === 1) {
+        e.preventDefault()
+        shell.closeTab(tab.id)
+      }
+    })
     // Tabs render before the ever-present #new-tab button, matching its
     // fixed position at the end of the strip (index.html).
     newTabBtn.before(el)

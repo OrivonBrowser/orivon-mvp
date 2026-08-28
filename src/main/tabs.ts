@@ -12,6 +12,7 @@
 import { WebContentsView, type View } from 'electron'
 import { join } from 'node:path'
 import type { Bookmark } from './bookmarks.js'
+import { fetchFaviconDataUrlCached, pickFaviconUrl, shouldClearFavicon } from './favicon.js'
 import { parseOmniboxInput, sanitizeDirectUrl } from './omnibox.js'
 
 export interface TabState {
@@ -21,6 +22,10 @@ export interface TabState {
   canGoBack: boolean
   canGoForward: boolean
   loading: boolean
+  /** A data: URL, or null (no real favicon yet -- the chrome renders a
+   * generic globe). Never the source https:// URL directly -- see
+   * favicon.ts's header for why the fetch happens in main. */
+  favicon: string | null
 }
 
 /** What TabManager itself knows. Bookmarks are a separate store
@@ -47,13 +52,35 @@ export interface Bounds {
  * omnibox's dangerous-scheme rejection does not apply here. */
 const NEW_TAB_URL = 'about:blank'
 
+/** Defensive, found 2026-08-28 while investigating a reported crash: an
+ * unbounded window.open() flood (an ad/popunder pattern, not
+ * hypothetical) would otherwise mint unlimited WebContentsViews -- each
+ * its own renderer process -- until the machine OOMs. Refusing beyond
+ * this ceiling is far cheaper than crashing the whole browser; no
+ * legitimate manual use opens anywhere near 100 tabs. */
+const MAX_TABS = 100
+
 let nextId = 1
 function makeTabId (): string {
   return `tab-${nextId++}`
 }
 
+interface TabRecord {
+  readonly view: WebContentsView
+  favicon: string | null
+  faviconOrigin: string | null
+  /** Guards a fetch that resolves after the tab already closed or
+   * navigated again -- only the record's own most recent request may
+   * write `favicon`. */
+  pendingFaviconUrl: string | null
+}
+
 export class TabManager {
-  private readonly views = new Map<string, WebContentsView>()
+  /** One record per tab -- replaces a bare `Map<string, WebContentsView>`
+   * (build step 1) so favicon state and the view share one lifetime.
+   * A second, parallel map would need closeTab() to remember deleting
+   * from both, which is exactly the leak class this avoids. */
+  private readonly tabs = new Map<string, TabRecord>()
   /** Tab strip order, separate from the Map's insertion-order guarantee so
    * reordering (not in this step's scope, but the seam matters) doesn't
    * require touching the Map. */
@@ -81,6 +108,14 @@ export class TabManager {
   }
 
   createTab (url?: string): string {
+    if (this.order.length >= MAX_TABS) {
+      // Refuse rather than crash -- see MAX_TABS above. Nothing reads
+      // this return value today (grep confirms every caller discards
+      // it), but the signature stays `string`, so hand back whatever is
+      // already current rather than inventing a sentinel.
+      return this.activeId ?? ''
+    }
+
     const id = makeTabId()
     const view = new WebContentsView({
       webPreferences: {
@@ -91,13 +126,36 @@ export class TabManager {
         webSecurity: true
       }
     })
+    const record: TabRecord = { view, favicon: null, faviconOrigin: null, pendingFaviconUrl: null }
 
     const wc = view.webContents
     wc.on('page-title-updated', () => this.emitState())
-    wc.on('did-navigate', () => this.emitState())
+    wc.on('did-navigate', (_event, navigatedUrl: string) => {
+      if (shouldClearFavicon(record.faviconOrigin, navigatedUrl)) {
+        record.favicon = null
+        record.faviconOrigin = null
+      }
+      this.emitState()
+    })
     wc.on('did-navigate-in-page', () => this.emitState())
     wc.on('did-start-loading', () => this.emitState())
     wc.on('did-stop-loading', () => this.emitState())
+    wc.on('page-favicon-updated', (_event, favicons: string[]) => {
+      void this.captureFavicon(id, record, favicons)
+    })
+    // A renderer crash or other unexpected teardown destroys the
+    // webContents without going through closeTab(). Without this, the
+    // id stays in `this.tabs`, and the NEXT emitState() -- fired by any
+    // OTHER tab's event -- calls .getURL() etc. on a destroyed native
+    // object and throws inside a main-process Electron callback. There
+    // is no top-level handler anywhere in this app (confirmed: no
+    // uncaughtException, no render-process-gone), so that throw exits
+    // the whole process -- matches the shape of electron/electron#19887.
+    // Cleaning the record out here, proactively, is what makes every
+    // `!isDestroyed()` guard below actually reachable rather than
+    // theatre: by the time anything else runs, a dead tab is already
+    // gone from `this.tabs`.
+    wc.on('destroyed', () => { this.forgetTab(id, false) })
 
     // T18: never let a tab open a real popup window -- route it to a new
     // tab in this same shell instead.
@@ -106,7 +164,7 @@ export class TabManager {
       return { action: 'deny' }
     })
 
-    this.views.set(id, view)
+    this.tabs.set(id, record)
     this.order.push(id)
 
     // `url` here is an ALREADY-A-URL argument (setWindowOpenHandler's
@@ -123,14 +181,24 @@ export class TabManager {
   }
 
   closeTab (id: string): void {
-    const view = this.views.get(id)
-    if (view === undefined) return
+    this.forgetTab(id, true)
+  }
+
+  /** Shared by closeTab() (user- or app-initiated) and the webContents
+   * 'destroyed' handler (unexpected teardown, e.g. a crash). `closeView`
+   * is false for the crash path: the webContents is already gone, and
+   * calling further methods on a destroyed object throws. */
+  private forgetTab (id: string, closeView: boolean): void {
+    const record = this.tabs.get(id)
+    if (record === undefined) return
 
     if (this.activeId === id) {
-      this.contentView.removeChildView(view)
+      this.contentView.removeChildView(record.view)
     }
-    view.webContents.close()
-    this.views.delete(id)
+    if (closeView && !record.view.webContents.isDestroyed()) {
+      record.view.webContents.close()
+    }
+    this.tabs.delete(id)
 
     const idx = this.order.indexOf(id)
     if (idx !== -1) this.order.splice(idx, 1)
@@ -147,17 +215,17 @@ export class TabManager {
   }
 
   activateTab (id: string): void {
-    const view = this.views.get(id)
-    if (view === undefined) return
+    const record = this.tabs.get(id)
+    if (record === undefined || record.view.webContents.isDestroyed()) return
 
     if (this.activeId !== null && this.activeId !== id) {
-      const previous = this.views.get(this.activeId)
-      if (previous !== undefined) this.contentView.removeChildView(previous)
+      const previous = this.tabs.get(this.activeId)
+      if (previous !== undefined) this.contentView.removeChildView(previous.view)
     }
 
     if (this.activeId !== id) {
-      this.contentView.addChildView(view)
-      view.setBounds(this.getTabBounds())
+      this.contentView.addChildView(record.view)
+      record.view.setBounds(this.getTabBounds())
     }
 
     this.activeId = id
@@ -167,29 +235,59 @@ export class TabManager {
   /** Re-applies the active tab's bounds -- called on window resize. */
   layout (): void {
     if (this.activeId === null) return
-    const view = this.views.get(this.activeId)
-    if (view !== undefined) view.setBounds(this.getTabBounds())
+    const record = this.tabs.get(this.activeId)
+    if (record !== undefined && !record.view.webContents.isDestroyed()) {
+      record.view.setBounds(this.getTabBounds())
+    }
   }
 
   navigate (id: string, rawInput: string): void {
-    const view = this.views.get(id)
-    if (view === undefined) return
+    const record = this.tabs.get(id)
+    if (record === undefined || record.view.webContents.isDestroyed()) return
     const target = this.resolveTarget(rawInput)
-    void view.webContents.loadURL(target)
+    void record.view.webContents.loadURL(target)
   }
 
   back (id: string): void {
-    const history = this.views.get(id)?.webContents.navigationHistory
+    const wc = this.liveWebContents(id)
+    const history = wc?.navigationHistory
     if (history?.canGoBack() === true) history.goBack()
   }
 
   forward (id: string): void {
-    const history = this.views.get(id)?.webContents.navigationHistory
+    const wc = this.liveWebContents(id)
+    const history = wc?.navigationHistory
     if (history?.canGoForward() === true) history.goForward()
   }
 
   reload (id: string): void {
-    this.views.get(id)?.webContents.reload()
+    this.liveWebContents(id)?.reload()
+  }
+
+  /** Fetches the favicon for `favicons[0]` (the first http(s) candidate)
+   * and stores it on `record`, unless the tab has since closed or moved
+   * on to a different favicon request. */
+  private async captureFavicon (id: string, record: TabRecord, favicons: string[]): Promise<void> {
+    const sourceUrl = pickFaviconUrl(favicons)
+    if (sourceUrl === null) return
+
+    record.pendingFaviconUrl = sourceUrl
+    const dataUrl = await fetchFaviconDataUrlCached(sourceUrl)
+
+    // The tab may have closed (removed from `this.tabs`) or navigated to
+    // a page with a different favicon (a newer request overwrote
+    // pendingFaviconUrl) while this fetch was in flight -- either way,
+    // this stale result must not win.
+    if (this.tabs.get(id) !== record || record.pendingFaviconUrl !== sourceUrl) return
+    if (dataUrl === null) return
+
+    record.favicon = dataUrl
+    try {
+      record.faviconOrigin = new URL(sourceUrl).origin
+    } catch {
+      record.faviconOrigin = null
+    }
+    this.emitState()
   }
 
   /** Rejected omnibox input (a dangerous scheme, or empty) never reaches
@@ -201,16 +299,26 @@ export class TabManager {
     return result.url
   }
 
+  /** A tab's webContents, or undefined if the tab is gone or its
+   * webContents has already been destroyed -- the common guard every
+   * read-only accessor below needs. */
+  private liveWebContents (id: string): Electron.WebContents | undefined {
+    const record = this.tabs.get(id)
+    if (record === undefined || record.view.webContents.isDestroyed()) return undefined
+    return record.view.webContents
+  }
+
   private tabState (id: string): TabState {
-    const view = this.views.get(id)
-    const wc = view?.webContents
+    const record = this.tabs.get(id)
+    const wc = this.liveWebContents(id)
     return {
       id,
       url: wc?.getURL() ?? '',
       title: wc?.getTitle() ?? '',
       canGoBack: wc?.navigationHistory.canGoBack() ?? false,
       canGoForward: wc?.navigationHistory.canGoForward() ?? false,
-      loading: wc?.isLoading() ?? false
+      loading: wc?.isLoading() ?? false,
+      favicon: record?.favicon ?? null
     }
   }
 

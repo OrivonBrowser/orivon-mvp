@@ -13,7 +13,7 @@ bar. Restyled 2026-08-28 to match `orivon-browser-v2`'s chrome — see **Visual 
 | `style.css` | Entry point — colour/size tokens, both themes, page-wide base rules, `@import`s the three below |
 | `styles/tabstrip.css`, `styles/toolbar.css`, `styles/bookmarks.css` | One row each |
 | `main.ts` | Renders `ShellState`, turns clicks/typing into `orivonShell.*` commands |
-| `icons.ts` | Icons built at runtime (a tab's favicon, its close button) — everything else is static markup |
+| `icons.ts` | Icons built at runtime (a tab's or bookmark's generic globe, a close/remove button) — everything else is static markup |
 | `bookmarks-view.ts` | Renders the bookmarks bar's dynamic list |
 
 **What it depends on.** `src/preload/shell.ts`'s exposed commands, over IPC.
@@ -55,6 +55,12 @@ exposed read-only from `preload/shell.ts` (available even under `sandbox: true`)
 (`docs/mvp-scope.md`, `ADR-0003`) — not in the original scope pass. `src/main/bookmarks.ts`
 holds the list and persists it; this directory only ever renders what it's sent and asks main
 to add/remove/open, the same pattern the tab strip already uses for tabs.
+
+**Tabs show real favicons.** Added 2026-08-28. This directory only ever receives a `data:` URL
+(or `null`) on `TabState.favicon` and renders it as an `<img>`, falling back to a generic globe
+on `null` or a load failure — it never fetches a favicon itself. `src/main/favicon.ts` does the
+actual fetching, capped and re-encoded to `data:`, specifically so this privileged view's CSP
+can stay `img-src 'self' data:` rather than opening it to arbitrary third-party hosts.
 
 **Icons.** Hand-drawn inline SVG, no icon font, no library, no framework — matching the rest of
 this codebase (Rule 8; `ADR-0002`, TypeScript only). Path data for the ones that visually match

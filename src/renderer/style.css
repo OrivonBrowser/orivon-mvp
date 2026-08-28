@@ -89,10 +89,20 @@ button:disabled {
   opacity: 0.35;
   cursor: default;
 }
+/* :not(.addressbar) -- found 2026-08-28: outline-offset: -2px draws
+   INSIDE the element's own border box, and on the omnibox input that
+   lands directly on the leftmost ~2px of the first typed character,
+   exactly while the user is typing (that's when :focus-visible
+   matches). It's also redundant there: .addressbar-pill:focus-within
+   (toolbar.css) already shows focus via the whole pill's border
+   colour. Every other focusable control keeps this ring. */
 button:focus-visible,
-input:focus-visible {
+input:focus-visible:not(.addressbar) {
   outline: 2px solid var(--waccent);
   outline-offset: -2px;
+}
+.addressbar:focus-visible {
+  outline: none;
 }
 
 /* Only the tab row drags -- every clickable element inside it carries

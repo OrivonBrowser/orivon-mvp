@@ -52,6 +52,7 @@ import { createServer } from 'node:http'
 import { launchElectron } from '../test/launch-electron.mjs'
 import {
   ABSENCE_SETTLE_MS,
+  activeTabFaviconSrc,
   bookmarkUrls,
   delay,
   evaluateRetrying,
@@ -71,14 +72,33 @@ import {
  * is not loopback, so changing this cannot cause real egress. */
 const SEARCH_HOST = 'duckduckgo.com'
 
+// A 1x1 transparent PNG -- real bytes, real content-type, so the favicon
+// scenario below exercises the actual fetch/cap/encode path
+// (src/main/favicon.ts) rather than a stub.
+const FAVICON_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+  'base64'
+)
+
+/**
+ * Two independent origins (two ports, both loopback) from one call each --
+ * called twice below so the favicon scenario can exercise a CROSS-origin
+ * navigation hermetically, not just same-origin persistence.
+ */
 async function startFixtureServer () {
   const pages = {
     '/a': '<title>fixture-a</title><body>fixture A</body>',
     '/b': '<title>fixture-b</title><body>fixture B</body>',
     '/c': '<title>fixture-c</title><body>fixture C</body>',
-    '/d': '<title>fixture-d</title><body>fixture D</body>'
+    '/d': '<title>fixture-d</title><body>fixture D</body>',
+    '/icon-page': '<title>fixture-icon</title><link rel="icon" href="/icon.png"><body>fixture icon page</body>'
   }
   const server = createServer((req, res) => {
+    if (req.url === '/icon.png') {
+      res.writeHead(200, { 'content-type': 'image/png' })
+      res.end(FAVICON_PNG)
+      return
+    }
     const body = pages[req.url] ?? '<title>fixture-404</title>'
     res.writeHead(200, { 'content-type': 'text/html' })
     res.end(body)
@@ -119,6 +139,9 @@ async function main () {
   }
 
   const { server, urlFor } = await startFixtureServer()
+  // A second, independent origin -- used only by the favicon scenario, to
+  // exercise a genuine cross-origin navigation hermetically.
+  const { server: server2, urlFor: urlFor2 } = await startFixtureServer()
   const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
 
   try {
@@ -574,6 +597,77 @@ async function main () {
       'unstarring removes the page from the bookmarks bar',
       await waitFor(async () => !(await bookmarkUrls(chrome)).includes(urlFor('/a')))
     )
+
+    // ---- Bookmarks bar: remove directly from the bar, not just the toolbar
+    // Chrome bugfix round, 2026-08-28: the toolbar toggle was the only way
+    // to unstar a page (only reachable by returning to that exact page).
+    // bookmarks-view.ts now renders a remove button per item -- covers the
+    // path the star/open/unstar scenario above never touched.
+    await clickChecked(chrome, '#bookmark-toggle', 'the bookmark toggle is clickable to re-star for the removal check')
+    check(
+      'the page is starred again, ready for the bar-side removal check',
+      await waitFor(async () => (await bookmarkUrls(chrome)).includes(urlFor('/a')))
+    )
+
+    const removeClicked = await clickChecked(
+      chrome,
+      `#bookmarks-list .bmitem[title="${urlFor('/a')}"] .remove`,
+      "the bookmarked item's remove button is clickable"
+    )
+    check(
+      'clicking the remove button removes it from the bar without visiting the page',
+      removeClicked && await waitFor(async () => !(await bookmarkUrls(chrome)).includes(urlFor('/a')))
+    )
+
+    // ---- Real favicons: fetched, rendered as data:, cleared on origin change
+    // Chrome bugfix round, 2026-08-28 (src/main/favicon.ts). Two independent
+    // hermetic origins (urlFor/urlFor2) so the cross-origin clear is a real
+    // transition, not a same-origin persistence that happens to look right.
+    const parkedNoFavicon = await navigateTo(urlFor('/a'), wantA)
+    checkTab('parked on a page with no declared favicon before the favicon check', wantA, parkedNoFavicon)
+    check(
+      'a page with no declared favicon shows the generic globe, not a fetched image',
+      await waitFor(async () => (await activeTabFaviconSrc(chrome)) === null)
+    )
+
+    const wantIcon1 = { address: urlFor('/icon-page'), title: 'fixture-icon' }
+    checkTab(
+      'navigated to a page that declares a real favicon',
+      wantIcon1,
+      await navigateTo(urlFor('/icon-page'), wantIcon1)
+    )
+    check(
+      "the real favicon renders as a data: URL, never the site's own http(s) URL",
+      await waitFor(async () => {
+        const src = await activeTabFaviconSrc(chrome)
+        return typeof src === 'string' && src.startsWith('data:image/')
+      })
+    )
+
+    const wantIcon2 = { address: urlFor2('/icon-page'), title: 'fixture-icon' }
+    checkTab(
+      'navigated to a SECOND, independent origin that also declares a favicon',
+      wantIcon2,
+      await navigateTo(urlFor2('/icon-page'), wantIcon2)
+    )
+    check(
+      'the favicon still renders correctly right after a cross-origin navigation',
+      await waitFor(async () => {
+        const src = await activeTabFaviconSrc(chrome)
+        return typeof src === 'string' && src.startsWith('data:image/')
+      })
+    )
+
+    const wantBackToNoFavicon = { address: urlFor('/a'), title: 'fixture-a' }
+    checkTab(
+      'navigated back to the original origin\'s no-favicon page',
+      wantBackToNoFavicon,
+      await navigateTo(urlFor('/a'), wantBackToNoFavicon)
+    )
+    check(
+      'the stale favicon is cleared on a cross-origin navigation, not carried over as a leftover <img>',
+      await waitFor(async () => (await activeTabFaviconSrc(chrome)) === null)
+    )
   } catch (e) {
     // The header of this file promises a JSON result and a failure list. A
     // throw is exactly when they are most useful, so it becomes a check rather
@@ -596,6 +690,7 @@ async function main () {
     console.error('teardown: app.close() failed (results above still stand):', String(e).split('\n')[0])
   }
   server.close()
+  server2.close()
 
   if (failures.length > 0) process.exit(1)
   console.log('\nSmoke check passed.')

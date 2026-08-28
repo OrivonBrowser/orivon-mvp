@@ -2,9 +2,14 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!-- img-src 'self' data: -- added 2026-08-28 for real tab favicons
+         (src/main/favicon.ts). Deliberately NOT https: -- favicons are
+         fetched and re-encoded to data: URLs in main, so this privileged
+         view still makes zero network requests of its own; see
+         favicon.ts's header for the full reasoning. -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
     />
     <title>Orivon</title>
     <link rel="stylesheet" href="./style.css" />
