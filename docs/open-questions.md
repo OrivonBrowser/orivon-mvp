@@ -63,6 +63,9 @@ None of these block starting the week-0 spike.
 | A22 | **`src/broker/policy/paths.ts` assumes app root directory names are single-case hex.** True today and specified — `security-model.md` T13b makes directory names `sha256(canonical_origin)`, and `ADR-0009` reconfirms the bundle hash does not rename them. The assumption is load-bearing for a case-SENSITIVE comparison and is asserted only in a source comment | **Build step 4 (the app loader)**, which writes the first root directory and is the first chance to get the naming wrong. See below |
 | A23 | **A derived origin does not carry whether it may be PERSISTED.** T13c forbids ever writing a grant for a loopback or plain-`http` origin to disk, but `originFromUrl` returns a plain string — `http://127.0.0.1:8080` is shape-identical to `https://x.example`, so every caller must remember to re-parse and check | **Build step 2**, when the code that persists grants exists. Owner decided 2026-08-27 to keep the return type a plain string for now rather than change a durable interface before its consumer exists. See below |
 | A24 | **Should a whole-codebase guideline sweep be exempt from the one-stream-per-backlog-branch rule?** `stream/backlog-07-guidelines-cleanup` touches six streams' paths at once, which `parallel-work.md` says should be six branches. AI-REC: carve out repo-wide sweeps explicitly, same shape as the PR blueprint's `type:chore` short form | **Before the next backlog-NN sweep is started.** This PR is a fait accompli either way; what's open is whether the rule gets a carve-out. See below |
+| A25 | **Should the new inert toolbar icons (extensions, sidebar, identity, star, shield, hamburger) ship at all before they do anything?** Added with the chrome restyle to match the reference screenshot exactly. AI-REC: ship disabled with an honest `title` tooltip on each, revisit at that build step's readability check | **Before the chrome-restyle PR opens.** Owner override already covers drawing them; this is only about whether "disabled + honest tooltip" is the right mitigation. See below |
+| A26 | **Should the bookmarks bar hide itself when there are no bookmarks?** Chrome shows the bar only on the new-tab page; this shell shows it unconditionally, which is simpler but always spends 28px on an empty row for a fresh profile | **Not blocking the restyle.** v0 always shows it. See below |
+| A27 | **The tab strip's native-controls inset is a hardcoded approximation, not a measured value.** `env(titlebar-area-*)` and `navigator.windowControlsOverlay` both report empty/`false` for this shell's `BaseWindow` + `WebContentsView` chrome — confirmed by a throwaway probe app, 2026-08-28, contradicting every context7 example, which is `BrowserWindow`-only. The restyle reserves a fixed 138px (Windows/Linux, right) or 78px (macOS, left) instead | **Revisit if Electron ever wires window-controls-overlay geometry through `BaseWindow`, or once real hardware on all three platforms confirms the approximation holds.** See below |
 
 ---
 
@@ -349,6 +352,72 @@ trailing-dot name, browsers generally strip the dot before certificate matching,
 alternative costs a real user-visible failure — one mistyped character silently produces a
 second, empty copy of the app that has to be re-granted everything. `ADR-0003` makes this
 unfixable after the first grant is persisted, so it is recorded here rather than left implicit.
+
+---
+
+### A25 — should the new inert toolbar icons ship before they do anything **[AI-REC]**
+
+Found while planning the chrome restyle (2026-08-28). The owner asked for a full visual match
+to a reference screenshot, including icons for features that don't exist yet in this repository
+and, in one case (a wallet-shaped glyph), a feature that is a stated MVP non-goal
+(`mvp-scope.md` §Explicit non-goals — "Not a wallet"). The glyph is relabelled `identity` rather
+than `wallet` in code and in its tooltip, since Nostr identity *is* in scope and the shape is
+generic; nothing about the icon itself implies funds.
+
+**Recommendation [AI-REC]:** every inert icon ships `disabled`, with a `title` naming what it
+is and stating plainly that it is not in v0 (`"Extensions — not in v0"`), rather than either
+omitting it (breaking the visual match the owner asked for) or drawing it silently clickable
+(which answers a click with nothing, which is worse than an honest disabled state). Revisit
+at this build step's readability check — if a newcomer reads the toolbar as promising features
+that don't exist, that is exactly the class of finding that check is for.
+
+**Needed by:** before the chrome-restyle PR opens.
+
+---
+
+### A26 — should the bookmarks bar hide itself when empty **[STILL OPEN]**
+
+Found while planning the chrome restyle (2026-08-28). Chrome only shows its bookmarks bar on
+the new-tab page by default; everywhere else, and for a user with zero bookmarks, it stays
+hidden. This shell's v0 always shows the row, which is simpler to implement and reason about
+but spends 28px of vertical space on an empty row for a fresh profile's very first launch.
+
+Not decided either way. v0 ships with it always visible; whether to hide it when the bookmark
+list is empty is left for whoever next touches `src/renderer/bookmarks-view.ts`.
+
+**Needed by:** not blocking anything.
+
+---
+
+### A27 — the tab strip's native-controls inset is an unmeasured approximation **[RESEARCH]**
+
+Found while implementing the chrome restyle (2026-08-28). Merging the tab strip into the
+window's title row means the tab strip must leave room for Electron's native window buttons
+(`titleBarOverlay` on Windows/Linux; the macOS traffic lights). The documented way to learn
+their exact geometry is `env(titlebar-area-x/y/width/height)` in CSS, or
+`navigator.windowControlsOverlay.getTitlebarAreaRect()` in JS — but **every example in
+Electron's own docs and test fixtures constructs a `BrowserWindow`**, and this shell is a
+`BaseWindow` holding `WebContentsView`s, which has no single "main" webContents for the
+Window Controls Overlay feature to attach to.
+
+A throwaway probe app (`BaseWindow` + `titleBarOverlay` + a `WebContentsView` reading both
+APIs from inside the page) confirmed empirically, rather than assumed: `env(titlebar-area-*)`
+resolves to `0px` for every axis, and `navigator.windowControlsOverlay.visible` is `false` with
+an all-zero rect. Neither API is populated for this window shape, on this Electron version
+(44.0.0).
+
+**Consequence:** the restyle reserves a fixed inset instead of a measured one — 138px on the
+right for Windows/Linux (three native caption buttons at Windows 11's own 46px width, the same
+figure the prior prototype hardcoded for its own custom buttons) and 78px on the left for
+macOS (the `trafficLightPosition` offset plus the traffic-light cluster's width). If the real
+native control area is ever narrower or wider than these numbers on some platform or desktop
+environment, the result is a cosmetic gap or a very slightly crowded tab, not a functional
+break — no interactive element ends up under a native button, because 138px and 78px are
+deliberately generous.
+
+**Needed by:** revisit if a future Electron version wires Window Controls Overlay geometry
+through `BaseWindow`, or once real hardware on all three platforms has actually confirmed the
+approximation holds. Nobody has verified this outside Linux/X11, where the probe above ran.
 
 ---
 
