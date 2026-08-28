@@ -344,101 +344,9 @@ async function main () {
       // nothing had re-checked the privilege boundary on one.
       await leakCheck('with a second tab open', 3)
 
-      // ---- Closing the last tab ------------------------------------------
-      // OPEN QUESTION A16 (docs/open-questions.md): what closing the last tab
-      // SHOULD do is not decided. TabManager.closeTab() currently leaves the
-      // BaseWindow open with zero tabs and activeTabId: null; Chrome and
-      // Firefox instead open a fresh tab or close the window. So the checks
-      // below are split deliberately:
-      //
-      //   - Properties that hold under ANY resolution of A16 are asserted as
-      //     requirements: no crash, no orphaned view, and the shell still
-      //     usable afterwards.
-      //   - The zero-tabs outcome itself is recorded as CURRENT BEHAVIOUR
-      //     pending A16, not as a specification. If A16 resolves the other
-      //     way, change that check -- not the product.
-      //
-      // Close the other tab first, addressed by id, so the next close is
-      // unambiguously "the last tab" rather than "one of several".
-      await clickChecked(chrome, `[data-id="${tab1Id}"] .close`, "tab 1's close button is clickable")
-      check(
-        'one tab remains after closing the other',
-        await waitFor(async () => (await tabIds(chrome)).length === 1)
-      )
-      check(
-        'exactly two windows remain (chrome + the one surviving tab)',
-        await waitFor(() => app.windows().length === 2)
-      )
-
-      // Now close it -- the actual last tab.
-      await clickChecked(chrome, `[data-id="${tab2Id}"] .close`, "the last tab's close button is clickable")
-
-      let mainProcessError
-      try {
-        await app.evaluate(({ app: electronApp }) => electronApp.getVersion())
-      } catch (e) {
-        mainProcessError = String(e).split('\n')[0]
-      }
-      check(
-        'closing the last tab does not crash the app (main process still responds)',
-        mainProcessError === undefined,
-        mainProcessError
-      )
-
-      // The strip settling is the observable consequence of the close, so it
-      // is established FIRST -- it is what makes the orphan read below a read
-      // of the post-close state rather than of the pre-close one.
-      const emptyStrip = await waitFor(async () => (await tabIds(chrome)).length === 0)
-      check(
-        'closing the last tab clears the tab strip (CURRENT BEHAVIOUR, pending A16 -- not a spec)',
-        emptyStrip
-      )
-
-      // Stated as a RATIO -- every open window accounted for by the tab strip
-      // (one chrome view + one view per tab) -- so it holds however A16
-      // resolves: an auto-opened replacement tab is accounted for, a leaked
-      // WebContentsView is not.
-      //
-      // Read ONCE after settling, never polled. `windows === tabs + 1` was
-      // ALREADY true before the close (2 windows, 1 tab), so a poll could
-      // return without ever observing the close -- and did: a leaked view plus
-      // a slightly slower repaint passed this check. Rule 2 in the header.
-      await delay(ABSENCE_SETTLE_MS)
-      const windowsNow = app.windows().length
-      const tabsNow = (await tabIds(chrome)).length
-      check(
-        'closing the last tab leaves no stray/orphaned window behind',
-        windowsNow === tabsNow + 1,
-        windowsNow === tabsNow + 1
-          ? undefined
-          : `${windowsNow} window(s) for ${tabsNow} tab(s), expected ${tabsNow + 1}`
-      )
-
-      const wantNoNav = { backDisabled: true, forwardDisabled: true }
-      checkTab(
-        'back/forward are disabled with nothing to navigate',
-        wantNoNav,
-        await waitForTab(chrome, wantNoNav)
-      )
-
-      // The part that holds under any resolution of A16: whatever the shell
-      // shows after the last tab closes, it must not be a dead end. Counted
-      // relative to whatever is on screen, for the same reason as above.
-      const tabsBeforeRecovery = (await tabIds(chrome)).length
-      await clickChecked(chrome, '#new-tab', 'the new-tab button is clickable after the last tab closed')
-      const recovered = await waitFor(async () => (await tabIds(chrome)).length === tabsBeforeRecovery + 1)
-      check('the shell recovers: a new tab opens fine after the last one closed', recovered)
-
-      await delay(ABSENCE_SETTLE_MS)
-      const windowsAfter = app.windows().length
-      const tabsAfter = (await tabIds(chrome)).length
-      check(
-        'every window is still accounted for by the tab strip after recovering',
-        windowsAfter === tabsAfter + 1,
-        windowsAfter === tabsAfter + 1
-          ? undefined
-          : `${windowsAfter} window(s) for ${tabsAfter} tab(s), expected ${tabsAfter + 1}`
-      )
+      // Both tabs are left open here -- the close-everything check
+      // (A16, resolved) runs LAST in this file, once nothing after it
+      // needs `app`/`chrome` alive. See that section's own header for why.
     }
 
     // ---- Address-bar text that is not a URL resolves to a search ---------
@@ -667,6 +575,30 @@ async function main () {
     check(
       'the stale favicon is cleared on a cross-origin navigation, not carried over as a leftover <img>',
       await waitFor(async () => (await activeTabFaviconSrc(chrome)) === null)
+    )
+
+    // ---- A16, resolved: closing the last tab closes the window -----------
+    // Owner decision, 2026-08-28 (docs/open-questions.md A16) -- overrules
+    // this file's own prior "CURRENT BEHAVIOUR, pending A16, not a spec"
+    // framing; that framing is gone, this is now a specification.
+    //
+    // MUST RUN LAST. On this platform (non-darwin), the window closing
+    // fires index.ts's window-all-closed -> app.quit(), so nothing after
+    // this point can use `chrome` or `app` again -- there is no window
+    // left to read state from, and the process itself may already be
+    // exiting.
+    const finalTabIds = await tabIds(chrome)
+    check('at least one tab is open going into the close-everything check', finalTabIds.length > 0)
+
+    for (const id of finalTabIds) {
+      await clickChecked(chrome, `[data-id="${id}"] .close`, `tab ${id}'s close button is clickable`)
+    }
+
+    const windowClosed = await waitFor(() => app.windows().length === 0)
+    check(
+      'closing the last tab closes the window (A16)',
+      windowClosed,
+      windowClosed ? undefined : `${app.windows().length} window(s) remain`
     )
   } catch (e) {
     // The header of this file promises a JSON result and a failure list. A
