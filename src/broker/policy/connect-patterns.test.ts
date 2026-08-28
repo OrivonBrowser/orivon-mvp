@@ -9,7 +9,7 @@ import { PUBLIC_A, PUBLIC_B, allowedAddresses, manifestWith, noResolution, resol
 //
 // Same discipline as ./connect.test.ts: every case goes through checkConnect
 // with a stub resolver. The split makes a direct import of parsePattern,
-// isCanonicalLiteral etc. newly possible -- do not take it. A matcher can be
+// canonicalAddress etc. newly possible -- do not take it. A matcher can be
 // flawless and the check still fully defeated, so testing the matcher alone
 // proves nothing about the check.
 //
@@ -46,10 +46,13 @@ import { PUBLIC_A, PUBLIC_B, allowedAddresses, manifestWith, noResolution, resol
 // predicted one -- deleting the canonicality guard on resolver answers -- on
 // the argument that every branch beneath it already rejected an unparseable
 // answer. That argument was true of the OLD guard, which asked only whether
-// ./address.ts could parse the string. The guard is now `isCanonicalLiteral`
-// (./canonical-host.ts), which is strictly narrower: `0x08080808` parses fine
-// and is not canonical. So the line is load-bearing after all, and deleting it
-// fails tests in "the returned addresses are canonical literals".
+// ./address.ts could parse the string. The guard compares against
+// `canonicalAddress` (./address.ts, docs/open-questions.md A20) instead,
+// which is strictly narrower than "parses": `0x08080808` parses fine and
+// canonicalises to `8.8.8.8`, which is not the string that arrived. So the
+// line is load-bearing after all, and deleting it (or loosening it to
+// `canonicalAddress(x) !== null`) fails tests in "the returned addresses are
+// canonical literals".
 //
 // Stated as a measurement, not a guarantee, and the count for BOTH this file
 // and ./connect.test.ts (they were one file until this split): sixteen mutants
