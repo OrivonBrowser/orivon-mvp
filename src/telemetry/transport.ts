@@ -24,15 +24,19 @@
 // stages a period's payload, attemptSend sends at most one queued payload
 // per call, gated by consent and by backoff.
 //
-// WHY A QUEUE AT ALL, GIVEN ADR-0004 warns against "queue-and-retry into a
-// backlog that reconstructs the timeline just removed": that warning is
-// about resurrecting PER-SESSION granularity -- the design this ADR
-// replaced. A short queue of already-aggregated monthly payloads is not
-// that: it is bounded (MAX_QUEUE_SIZE) and every entry is already the
-// coarse, already-approved shape. The cap exists so a device offline for
-// months does not grow that backlog without limit; see enqueue for
-// exactly how it is bounded. The size is a judgment call, not sourced
-// from any document -- flagged rather than silently picked.
+// WHY MAX_QUEUE_SIZE IS 1: ADR-0004 says "send once per period at a
+// randomised offset; do not queue-and-retry into a backlog that
+// reconstructs the timeline just removed." An earlier version of this
+// module read "backlog" as being about per-session granularity only and
+// kept three periods queued on that reading -- a unilateral
+// reinterpretation of an accepted ADR, whose own Reversibility section
+// requires a new ADR for any addition. The owner decided (PR #24,
+// 2026-09-01) to drop the cap to one period instead of writing that ADR:
+// holding at most the single most-recent period's payload cannot be
+// called a backlog under any reading of the sentence above, so no
+// reinterpretation is needed. Cost: a device offline across a month
+// boundary loses the older of the two periods once it reconnects, rather
+// than sending both. A caller may still override the cap; see enqueue.
 
 import { mayTransmit, type ConsentState, type TelemetryPayload } from './disclosure.js'
 import { keepNewest, type HistoryEntry } from './history.js'
@@ -86,14 +90,15 @@ export const initialTransportState: TransportState = {
 
 /**
  * How many periods' worth of unsent payload the queue holds before the
- * oldest is dropped. No document sizes this figure (flagged -- AI
- * judgment call, the same status as accounting.ts's
- * DEFAULT_IDLE_TIMEOUT_MS): three is enough to ride out a multi-month
- * offline stretch without retrying forever, while staying far short of
- * anything that could be called a reconstructed timeline. A caller may
- * override it; see enqueue.
+ * oldest is dropped. Set to 1 by owner decision (PR #24, 2026-09-01; see
+ * the file header) rather than left as an AI-judgment figure like
+ * accounting.ts's DEFAULT_IDLE_TIMEOUT_MS: the module previously kept
+ * three periods queued on a reinterpretation of ADR-0004's backlog ban,
+ * and one period needs no such reading -- there is nothing left that
+ * could be called a backlog. A caller may still override it; see
+ * enqueue.
  */
-export const MAX_QUEUE_SIZE = 3
+export const MAX_QUEUE_SIZE = 1
 
 export const BASE_BACKOFF_MS = 30_000 // 30s
 export const MAX_BACKOFF_MS = 6 * 60 * 60 * 1000 // 6h
