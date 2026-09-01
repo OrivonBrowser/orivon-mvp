@@ -53,17 +53,31 @@ const TIMEOUT_MS = {
   fs: 15_000
 } as const
 
-interface OrivonErrorLike extends Error {
+// A PLAIN OBJECT, never `new Error(...)` -- confirmed empirically via a real
+// Electron launch (scripts/smoke.mjs), not assumed: contextBridge's promise-
+// rejection marshaling only preserves `.message` on a value that IS an
+// `Error` instance, silently discarding every custom property (`.code`,
+// `.platformCode`) and even overwriting `.name` back to the generic
+// `'Error'`. A value that is NOT `instanceof Error` crosses the same bridge
+// through the ordinary structured-clone path instead -- the one that
+// already carries `SocketDescriptor`-shaped results and plain arrays
+// (`orivon.app.grants()`'s `[]`) over intact. contracts/errors.ts's own
+// header explains why this is contract-legal, not a workaround: OrivonError
+// is declared as an interface, deliberately not a class, precisely because
+// "every consumer only needs its shape" -- and TypeScript's structural
+// `Error` (name, message, stack?) does not require `instanceof Error` at
+// runtime, only these fields.
+interface OrivonErrorLike {
+  readonly name: string
+  readonly message: string
   readonly code: OrivonErrorCode
   readonly platformCode?: string
 }
 
 function toOrivonError (code: OrivonErrorCode, message: string, platformCode?: string): OrivonErrorLike {
-  const error = new Error(message) as OrivonErrorLike & { code: OrivonErrorCode, platformCode?: string }
-  error.name = 'OrivonError'
-  error.code = code
-  if (platformCode !== undefined) error.platformCode = platformCode
-  return error
+  return platformCode === undefined
+    ? { name: 'OrivonError', message, code }
+    : { name: 'OrivonError', message, code, platformCode }
 }
 
 /**
