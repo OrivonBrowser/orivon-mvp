@@ -52,20 +52,27 @@ None of these block starting the week-0 spike.
 | A9 | Three capability-API items. **Defaults now proposed** in `architecture/capability-api.md` — `net.listen` grantable to unsigned apps with a declared port range and no privileged ports · grants keyed on `(origin, capability, pattern set)`, a **subset check** over the pattern set (not a kind comparison), with bundle-hash changes handled by the separate re-consent prompt · `fs.quotaBytes` enforced via a running per-origin counter | **Build proceeds on these unless overruled.** Cheap to change before any third-party app exists |
 | A12 | **`orivon.fs` option bags are unspecified.** `capability-api.md` names the entry points (`readFile(path, opts)`, `writeFile(path, data, opts)`, `mkdir / readdir / stat / rm / rename`) but never says what `opts` contains or what `readFile` returns | **Build step 2.** Provisional signatures are in `src/contracts/capability-api.ts` and marked as such |
 | A14 | **RESOLVED 2026-08-26 (owner):** a trailing DNS dot is stripped, so `https://x.example.` and `https://x.example` are ONE origin. Deliberately deviates from `URL.origin`. Exactly one dot; a host still carrying an empty label is rejected | Implemented in `src/broker/policy/origin.ts` |
-| A13 | **Are `app.manifest()` and `app.grants()` async?** `capability-api.md` §v0 surface writes them as `=> Manifest` and `=> Grant[]`, but design rule 2 in the same document says *"All entry points return Promises"* | **Build step 2.** Transcribed as Promises; see below |
+| A13 | **RESOLVED 2026-08-27 (owner): Promises**, per design rule 2. Widening a Promise to a plain value later is a smaller break than the reverse. Original question: `capability-api.md` §v0 surface writes them as `=> Manifest` and `=> Grant[]`, but design rule 2 in the same document says *"All entry points return Promises"* | **Build step 2.** Transcribed as Promises; see below |
 | A15 | **The four bundle-hash caps are guesses, not decisions** — `MAX_PATH_BYTES` 1024, `MAX_ASSET_BYTES` 16 MiB, `MAX_BUNDLE_BYTES` 64 MiB, `MAX_BUNDLE_ENTRIES` 4096 (`src/broker/policy/bundle-hash.ts`, `architecture/bundle-hash.md` §Caps). They are labelled AI-recommendation in the source, but a cap decides which bundles are *refusable*, so two implementations disagreeing on one disagree about whether an app can exist at all | **Before the app loader ships (build step 4).** Needs one real frontend's shape to calibrate against; guessing again now would not be better than the current guess |
 | A16 | **RESOLVED 2026-08-28 (owner):** closing the last tab closes the window (option 2 below) — overrules this entry's own AI-REC, which favoured option 1. No `app.quit()` in `tabs.ts`/`window.ts`; `src/main/index.ts`'s existing `window-all-closed` handler already owns whether the whole process then exits | Implemented in `src/main/tabs.ts` (`TabManager`'s `onEmpty` callback) and `src/main/window.ts`. See below |
 | A17 | **RESOLVED 2026-08-27 (owner):** an `identityId` is **opaque and broker-generated** — never a user-typed name, never derived from one. The display name is stored beside the identity, not used to derive it. Found undefined during review of PR #5: it appeared exactly once in the whole repository, as one table cell | Recorded in `ADR-0010`, stated in `capability-api.md`, documented on `DeriveRequest.scope` |
-| A18 | **`checkConnect` takes the manifest (what an app DECLARES) when the decision is about the grant (what the user ALLOWED).** Nothing in the signature carries the grant, so a caller passing a raw manifest silently gets the declared authority | **Build step 2, before the broker calls it.** Narrow the list at the call site, or change the parameter to `readonly Pattern[]`. See below |
+| A18 | **RESOLVED 2026-08-27 (owner): pass the GRANTED pattern list, not the manifest.** Original question: Nothing in the signature carries the grant, so a caller passing a raw manifest silently gets the declared authority | **Build step 2, before the broker calls it.** Narrow the list at the call site, or change the parameter to `readonly Pattern[]`. See below |
 | A19 | **IDN hostnames are unhandled in connect patterns.** A Unicode host, its case variants and its punycode A-label are three different strings to the matcher, and an app deriving its host from `new URL(...)` gets the A-label | **Before any non-ASCII app origin exists.** Non-ASCII is now rejected outright rather than silently never matching. See below |
-| A20 | **`address.ts` exposes a classifier but no canonicaliser.** `connect.ts` needs an identity answer ("is this the same address"), not a range answer, and currently gets it from a local strict-subset validator | **Whenever `broker-02-address` is next touched.** See below |
+| A20 | **PARTIALLY RESOLVED, `stream/a20-canonical-address`.** `canonicalAddress` now lives in `address.ts` and `connect.ts`/`connect-patterns.ts` use it. Still open: the grant prompt (build step 4) and `policy/update.ts`'s pattern comparison don't use it yet | **Whoever builds either.** See below |
 | A21 | **Does a re-granted capability reuse its GrantId?** `manifest.ts` says a `Grant` is keyed on (origin, capability, pattern set) but never says whether the `id` is derived from that key or minted fresh per grant event. The handle table now tombstones revoked grant ids, so under the derived reading a permanent tombstone would make re-granting impossible | **Before the grant ledger is written.** `HandleTable.grantIssued()` clears the tombstone, so the table is correct either way; the ledger must call it. See below |
 | A22 | **`src/broker/policy/paths.ts` assumes app root directory names are single-case hex.** True today and specified — `security-model.md` T13b makes directory names `sha256(canonical_origin)`, and `ADR-0009` reconfirms the bundle hash does not rename them. The assumption is load-bearing for a case-SENSITIVE comparison and is asserted only in a source comment | **Build step 4 (the app loader)**, which writes the first root directory and is the first chance to get the naming wrong. See below |
 | A23 | **A derived origin does not carry whether it may be PERSISTED.** T13c forbids ever writing a grant for a loopback or plain-`http` origin to disk, but `originFromUrl` returns a plain string — `http://127.0.0.1:8080` is shape-identical to `https://x.example`, so every caller must remember to re-parse and check | **Build step 2**, when the code that persists grants exists. Owner decided 2026-08-27 to keep the return type a plain string for now rather than change a durable interface before its consumer exists. See below |
 | A24 | **Should a whole-codebase guideline sweep be exempt from the one-stream-per-backlog-branch rule?** `stream/backlog-07-guidelines-cleanup` touches six streams' paths at once, which `parallel-work.md` says should be six branches. AI-REC: carve out repo-wide sweeps explicitly, same shape as the PR blueprint's `type:chore` short form | **Before the next backlog-NN sweep is started.** This PR is a fait accompli either way; what's open is whether the rule gets a carve-out. See below |
-| A25 | **Should the new inert toolbar icons (extensions, sidebar, identity, star, shield, hamburger) ship at all before they do anything?** Added with the chrome restyle to match the reference screenshot exactly. AI-REC: ship disabled with an honest `title` tooltip on each, revisit at that build step's readability check | **Before the chrome-restyle PR opens.** Owner override already covers drawing them; this is only about whether "disabled + honest tooltip" is the right mitigation. See below |
-| A26 | **Should the bookmarks bar hide itself when there are no bookmarks?** Chrome shows the bar only on the new-tab page; this shell shows it unconditionally, which is simpler but always spends 28px on an empty row for a fresh profile | **Not blocking the restyle.** v0 always shows it. See below |
-| A27 | **The tab strip's native-controls inset is a hardcoded approximation, not a measured value.** `env(titlebar-area-*)` and `navigator.windowControlsOverlay` both report empty/`false` for this shell's `BaseWindow` + `WebContentsView` chrome — confirmed by a throwaway probe app, 2026-08-28, contradicting every context7 example, which is `BrowserWindow`-only. The restyle reserves a fixed 138px (Windows/Linux, right) or 78px (macOS, left) instead | **Revisit if Electron ever wires window-controls-overlay geometry through `BaseWindow`, or once real hardware on all three platforms confirms the approximation holds.** See below |
+| A25 | **The docs' own example of an unparseable version parses.** `capability-api.md` and `update.ts` both cite `"2026-08-26"` as a version that cannot be ordered. It orders fine -- hyphens are legal semver prerelease identifiers | Before anyone relies on the example |
+| A26 | **Three port-range parsers now exist**: `connect-patterns.ts`, privately in `update.ts`, and `loader/manifest.ts`. None is legally reusable from the others as written | Rule 3; before a fourth |
+| A27 | **`update.ts`'s wildcard host match and `connect-patterns.ts`'s pattern matcher disagree about what a leading `*.` means.** `update.ts`'s `hostCovers` treats `*.example.com` as a real suffix wildcard for its re-consent check; `connect-patterns.ts` treats the identical syntax as matching nothing. A manifest can declare, validate and be granted a `connect` pattern that can then never actually connect | **Before the grant prompt is built (build step 4)**, the first point a user sees a pattern spelled two different ways. See below |
+| A28 | **`confinePath` takes a synchronous `realpath`, so every confined `fs` call blocks the broker's main thread.** `policy/paths.ts` declares the parameter synchronous; any broker that calls it performs blocking `stat`/`lstat` syscalls inline with otherwise-async `readFile`/`writeFile` | **Before `orivon.fs` is wired to a renderer (build step 2's IPC task).** See below |
+| A29 | **`quotaBytes` promises reconciliation against the directory on startup, and nothing implements that half.** `contracts/manifest.ts` documents a running per-origin byte counter that reconciles on startup rather than walking the tree every operation; no storage layer or `BrokerFs` member does the reconciling, so the counter resets on every restart | **Before packaging (build step 10)**, when a real user's disk is at stake. See below |
+| A30 | **`CLAUDE.md` states as fact that three `BaseWindow` options are `BrowserWindow`-only; they are not.** `titleBarStyle`, `titleBarOverlay` and `trafficLightPosition` are all declared on `BaseWindowConstructorOptions` in electron 44.0.0's own `.d.ts` — only `ready-to-show` is genuinely `BrowserWindow`-only | **`/revise-claude-md`'s job; this A-number is the durable record if that pass does not run first.** See below |
+| A31 | **May a non-`backlog-NN` stream branch edit a `docs`-owned file it must keep in step with its own signature change?** The borrow mechanism in `parallel-work.md`'s ownership map is written for `backlog-NN` branches only, but a signature-changing stream branch has already needed the same thing | **Before the next signature change lands. Not blocking.** See below |
+| A32 | **Should the new inert toolbar icons (extensions, sidebar, identity, star, shield, hamburger) ship at all before they do anything?** Added with the chrome restyle to match the reference screenshot exactly. AI-REC: ship disabled with an honest `title` tooltip on each, revisit at that build step's readability check | **Before the chrome-restyle PR opens.** Owner override already covers drawing them; this is only about whether "disabled + honest tooltip" is the right mitigation. See below |
+| A33 | **Should the bookmarks bar hide itself when there are no bookmarks?** Chrome shows the bar only on the new-tab page; this shell shows it unconditionally, which is simpler but always spends 28px on an empty row for a fresh profile | **Not blocking the restyle.** v0 always shows it. See below |
+| A34 | **The tab strip's native-controls inset is a hardcoded approximation, not a measured value.** `env(titlebar-area-*)` and `navigator.windowControlsOverlay` both report empty/`false` for this shell's `BaseWindow` + `WebContentsView` chrome — confirmed by a throwaway probe app, 2026-08-28, contradicting every context7 example, which is `BrowserWindow`-only. The restyle reserves a fixed 138px (Windows/Linux, right) or 78px (macOS, left) instead | **Revisit if Electron ever wires window-controls-overlay geometry through `BaseWindow`, or once real hardware on all three platforms confirms the approximation holds.** See below |
 
 ---
 
@@ -141,7 +148,13 @@ and has now been rewritten to assert the resolution instead
 (`scripts/smoke.mjs`).
 ---
 
-### A18 -- `checkConnect` checks the declaration, not the grant **[AI-REC]**
+### A18 -- `checkConnect` checks the declaration, not the grant **[RESOLVED 2026-08-27, owner]**
+
+> **Owner decision: pass the GRANTED pattern list, not the manifest.** The narrowing then has
+> nowhere else to happen, so the mistake becomes impossible rather than merely documented --
+> the same standard `ConnectAllowed` already holds the output side to. It also makes the
+> `udp.send` reuse real, since the function currently reads `net.tcp.connect` by name.
+> Implemented on `stream/a18-grant-not-manifest`.
 
 The manifest DECLARES what an app may ask for; the user GRANTS what it actually gets
 (`architecture/capability-api.md` A9 SS2), and the two sets differ -- a manifest may declare
@@ -226,6 +239,42 @@ be raised rather than made.
 
 **Needed by:** whoever next touches `broker-02-address`, and before the grant prompt is built in
 build step 4.
+
+**PARTIALLY RESOLVED on `stream/a20-canonical-address` (2026-08-28).** `canonicalAddress(addr):
+string | null` is exported from `address.ts`, built from the same `address-parse.ts` parsers
+`classifyAddress` uses; the local validator (`isCanonicalLiteral`, then living in
+`canonical-host.ts`) is deleted, and both of its call sites -- `connect.ts` and
+`connect-patterns.ts`'s `hostMatches` -- now compare `canonicalAddress(x) === x` instead, which is
+exactly what `isCanonicalLiteral(x)` used to mean. `checkConnect`'s behaviour is unchanged: still
+verified by the full existing suite (587 tests across `address.test.ts`, `connect.test.ts`,
+`connect-patterns.test.ts`) passing unmodified before a single new test was added, plus four
+deliberately-introduced mutants (accept a non-canonical literal at either of `connect.ts`'s two
+gates simultaneously; have `canonicalAddress` echo its input instead of normalising; corrupt
+`formatIpv4`'s byte order so it silently names a different address) all caught.
+
+**The reject-vs-normalise call, made:** `canonicalAddress` NORMALISES -- `canonicalAddress('2130706433') === '127.0.0.1'`, not
+`null`. An echo-only validator would give the still-open call sites below nothing to work with.
+`connect.ts` keeps today's stricter "declare it legibly or the connection is refused" behaviour on
+top of that by comparing the result to the input, so this is additive, not a loosening.
+
+**One surviving mutant, found and judged equivalent rather than fixed.** Weakening
+`hostMatches`'s pattern-literal check from `canonicalAddress(host) !== host` to
+`canonicalAddress(host) === null` passes the full suite unmodified. Proof it cannot be observed
+through `checkConnect`: `address` reaching `hostMatches` is always already canonical (`connect.ts`
+enforces `canonicalAddress(address) === address` before calling it on every path), and
+`canonicalAddress` is idempotent on a canonical string, so `host === address` can only be true
+when `host` is itself already canonical -- making the earlier check redundant for correctness
+given that invariant, provably rather than just untested. Not fixed, because
+`connect.test.ts`/`connect-patterns.test.ts`'s own header rules out unit-testing `hostMatches`
+directly ("do not take it"), and the check itself is pre-existing (a faithful port of
+`isCanonicalLiteral`'s equivalent shape, not something this stream introduced) and stays for
+defence in depth and for `udp.send`, which the file's header notes may reuse it later without
+`connect.ts`'s invariant necessarily holding.
+
+**Still open -- the two call sites named above are unchanged by this PR, deliberately:** the grant
+prompt does not exist before build step 4, and editing `policy/update.ts` from this stream would
+be the same cross-stream edit this entry already flagged once. Whoever builds either should read
+this entry first; `canonicalAddress` is ready for both.
 
 ---
 
@@ -338,6 +387,136 @@ verified, and re-splitting it now costs real time for uncertain benefit. What is
 is whether this is treated as a one-time, named exception or whether the rule itself should grow
 a carve-out for the next sweep.
 
+### A27 — `*.` means two different things depending which file reads it **[AI-REC]**
+
+Pre-existing on `main`. Found from three independent angles during the broker/loader review
+pass (2026-09-01) — an altitude read of `update.ts` against `connect-patterns.ts`, and a
+cross-file check run twice more from different starting points — all converging on the same
+file pair.
+
+`src/broker/policy/update.ts`'s `hostCovers` treats a leading `*.` as a **real** suffix
+wildcard for the app-update re-consent check — `*.example.com` genuinely matches
+`api.example.com`, with a documented registry-boundary argument for why that is safe there.
+`src/broker/policy/connect-patterns.ts` treats the identical syntax as matching **nothing**, and
+says so directly in its own comment: *"No sub-glob support: `*.example.com` matches nothing
+rather than being approximated."*
+
+**Concrete failing scenario.** A developer writes a manifest with
+`connect: ["*.api.example.com:443"]`, modelling it on the wildcard syntax `update.ts` treats as
+real. `parseManifest` accepts it, the grant prompt renders it, and the user approves it — and the
+capability then authorises nothing, because `connect-patterns.ts` denies every host that pattern
+could name. Verified directly: `parseManifest('*.example.com:443')` succeeds, and
+`connect-patterns.ts` has no host that pattern allows.
+
+The failure direction is safe — an app that trips this is over-refused, never under-refused —
+so this is a trap rather than a hole, the same distinction `canonical-host.ts` already draws for
+its own wildcard case.
+
+**AI recommendation:** decide what `*.` means, once, and make both files agree. The safer
+reading is "no sub-globs" — the one `connect-patterns.ts` already argues for — in which case
+`hostCovers`'s wildcard branch is the one that should narrow, to exact match plus a bare `*`.
+
+**Needed by:** before the grant prompt is built (build step 4), the first point a user sees a
+pattern that means two different things depending which file is asked.
+
+### A28 — path confinement's synchronous `realpath` blocks the broker on every confined `fs` call **[AI-REC]**
+
+Pre-existing on `main` (`src/broker/policy/paths.ts`'s `realpath` parameter is declared
+synchronous). Found during a review pass over the broker's efficiency, corroborated
+independently by an altitude pass and a line-scan pass over the same file.
+
+`confinePath`'s algorithm can walk several blocking `stat`/`lstat` syscalls per call, and its
+`realpath` parameter is declared **synchronous**. Any broker that uses it therefore performs
+blocking syscalls on the main thread inside functions (`readFile`/`writeFile`) that are
+otherwise async.
+
+**Concrete failing scenario.** One origin whose confinement root sits on a slow or
+network-backed filesystem hard-blocks — not merely queues — every other origin's pending `net`
+and `fs` calls. That is `security-model.md`'s named threat T11b (*"a loop of
+`orivon.fs.stat()` hangs the whole browser"*), reached by a mechanism the in-flight cap cannot
+bound: the cap limits the *number* of concurrent operations, not the cost of any one of them.
+
+**AI recommendation:** give `confinePath` an async `realpath` parameter
+(`(p: string) => Promise<string>`) and make `confinePath` itself async, so callers can `await
+fs.promises.realpath`. Not a fix to make in passing — `policy/paths.ts` sits outside the paths
+this defect was found from, and reaching into it from an unrelated stream is exactly the kind of
+cross-stream edit `parallel-work.md` asks to be raised rather than made.
+
+**Needed by:** before `orivon.fs` is wired to a renderer, in build step 2's IPC task.
+
+### A29 — `quotaBytes`'s startup-reconciliation promise has no owner **[AI-REC]**
+
+Pre-existing on `main` (`src/contracts/manifest.ts:102-111`). Found during a broker review
+pass's check for behaviour the contract promises but nothing implements, corroborated twice.
+
+`src/contracts/manifest.ts:102-111` documents the quota contract as maintaining *"a running
+per-origin byte counter, checks it on write, and yields `'limit'` when exceeded, reconciling
+against the directory on startup rather than walking the tree on every operation."* The
+in-memory counter and on-write check exist, closing the unbounded-write hole this contract is
+written to prevent. **The startup-reconciliation half does not:** it needs a persisted counter
+and a way to size the confinement directory, and nothing currently owns either.
+
+**Concrete failing scenario.** An app writes up to its quota, the user quits, and reopens the
+app. Because the counter is in-memory only, it resets to zero on restart — the quota bounds a
+session, not the disk, and the app can keep writing past its declared limit simply by
+restarting.
+
+**AI recommendation:** decide whether the counter is persisted by the broker (a new `BrokerFs`
+member plus a startup hook) or by the storage layer build step 4 introduces, and record the
+choice. `src/contracts/` itself should not change to soften the promise — the gap is in the
+implementation, not the contract.
+
+**Needed by:** before packaging (build step 10), which is when a real user's disk is at stake.
+
+### A30 — `CLAUDE.md`'s `BaseWindow` titleBar claim is false against electron 44 **[AI-REC]**
+
+Pre-existing on `main`. Found while reviewing a PR that was about to copy the same claim into
+the `orivon-electron` project skill; verified independently against
+`node_modules/electron/electron.d.ts` at electron 44.0.0 and against context7's live docs.
+
+`CLAUDE.md` §Start here says Electron's `.d.ts` *"sometimes types an option/event on
+`BrowserWindow` only, even when it works identically on `BaseWindow`"*, and names four
+examples: `ready-to-show` and the `titleBarStyle`/`titleBarOverlay`/`trafficLightPosition`
+family. **Only the first is true.** `ready-to-show` is genuinely declared on `BrowserWindow`
+alone (`electron.d.ts:4704-4708`). The other three are declared directly on
+`BaseWindowConstructorOptions` (`titleBarOverlay` at `:4039`, `titleBarStyle` at `:4043`,
+`trafficLightPosition` at `:4049`), and `setTitleBarOverlay(...)` is a method on the
+`BaseWindow` class itself (`:3569`).
+
+**Concrete failing scenario.** `CLAUDE.md` is the first file every agent working here reads. An
+agent that trusts this sentence will distrust the `.d.ts` for the titleBar family in a case
+where the `.d.ts` is right — either chasing external verification it does not need, or avoiding
+options that already work on `BaseWindow`, on the strength of a claim this repository made about
+its own dependency.
+
+**AI recommendation:** correct the sentence to keep only the `ready-to-show` example of the
+`.d.ts` gap, and either drop the titleBar family from it or state separately that those three
+are confirmed present on `BaseWindow`. The primary fix route is `/revise-claude-md`, which
+`CLAUDE.md`'s own tooling table already assigns this job to — this entry is the durable record
+in case that pass does not run before the claim is copied somewhere else.
+
+**Needed by:** the next document or skill that would otherwise repeat the claim.
+
+### A31 — extending the docs-borrow carve-out beyond `backlog-NN` branches **[AI-REC]**
+
+A process question, extending A24's theme. Raised while reviewing a stream branch that changed
+a function signature already documented in two `docs`-owned files.
+
+`parallel-work.md`'s ownership map gives `docs/` to the `docs` stream, and its borrow mechanism
+— letting a branch touch a path it does not own when leaving it stale would be worse — is
+written for `backlog-NN` branches only. A stream branch changing `checkConnect`'s signature
+needed to edit `docs/development/testing.md` and `docs/planning/build-plan.md`, because both
+document that exact signature and both already carried two prior "Corrected" notes for the same
+line. Leaving them stale after a third change would have been the worse outcome the borrow
+mechanism exists to avoid.
+
+**AI recommendation:** extend the borrow carve-out from `backlog-NN` branches to any branch
+editing a document that specifies an interface the branch itself owns and is changing, on the
+same terms — name it in the PR body. Same shape as A24's proposed carve-out for repo-wide
+sweeps, and this is the second time the ownership map has needed one.
+
+**Needed by:** before the next signature change lands. Not blocking anything today.
+
 ### A14 addendum — an argument against the trailing-dot merge, recorded after the decision
 
 A14 (resolved by the owner 2026-08-26) strips the trailing DNS root label, so `https://x.example.`
@@ -361,7 +540,7 @@ unfixable after the first grant is persisted, so it is recorded here rather than
 
 ---
 
-### A25 — should the new inert toolbar icons ship before they do anything **[AI-REC]**
+### A32 — should the new inert toolbar icons ship before they do anything **[AI-REC]**
 
 Found while planning the chrome restyle (2026-08-28). The owner asked for a full visual match
 to a reference screenshot, including icons for features that don't exist yet in this repository
@@ -381,7 +560,7 @@ that don't exist, that is exactly the class of finding that check is for.
 
 ---
 
-### A26 — should the bookmarks bar hide itself when empty **[STILL OPEN]**
+### A33 — should the bookmarks bar hide itself when empty **[STILL OPEN]**
 
 Found while planning the chrome restyle (2026-08-28). Chrome only shows its bookmarks bar on
 the new-tab page by default; everywhere else, and for a user with zero bookmarks, it stays
@@ -395,7 +574,7 @@ list is empty is left for whoever next touches `src/renderer/bookmarks-view.ts`.
 
 ---
 
-### A27 — the tab strip's native-controls inset is an unmeasured approximation **[RESEARCH]**
+### A34 — the tab strip's native-controls inset is an unmeasured approximation **[RESEARCH]**
 
 Found while implementing the chrome restyle (2026-08-28). Merging the tab strip into the
 window's title row means the tab strip must leave room for Electron's native window buttons
@@ -594,3 +773,42 @@ Dashboard widget grid · App store · Web3 search · Wallet Crypto/Address-book 
 `CapabilityDescriptor` · Mobile · DAO / tokenomics · Proxy chains and VPN mode · Client
 Profile separation · DDOC · Trustless resolution · `subprocess` and `hid` capabilities ·
 Identity export/backup · Cross-device sync.
+
+### A25 -- the documented example of an unparseable version is parseable **[AI-REC]**
+
+Found while implementing `loader/manifest.ts` (2026-08-27) and verified directly against the
+real `compareVersions`/`parseVersion`.
+
+`architecture/capability-api.md` and `src/broker/policy/update.ts`'s own comment both offer
+`"2026-08-26"` as the example of a version string that cannot be ordered, and therefore fails
+closed at update time. **It parses.** Hyphens are legal in a semver prerelease identifier, so
+`2026-08-26` reads as major `2026` with prerelease `08-26` and orders against other versions
+without complaint.
+
+The *rule* is unaffected -- unorderable versions should still be rejected at first install, and
+`loader/manifest.ts` does that. Only the example is wrong.
+
+**AI recommendation:** replace the example in both places with something genuinely unorderable
+(`"v1.0"`, `"latest"`, `"1.0.0.0"`). A wrong example in a specification is worse than none: the
+next person writes a test asserting `2026-08-26` is rejected, watches it fail, and concludes the
+implementation is broken.
+
+**Needed by:** whoever next touches version handling. Not blocking.
+
+### A26 -- three port-range parsers **[AI-REC]**
+
+`connect-patterns.ts` exports one, `update.ts` keeps a private one, and `loader/manifest.ts`
+added a third (2026-08-27). Each was written because neither of the others was legally reusable
+from where it stood -- `policy/` may not import from `loader/`, and `update.ts`'s is private to
+a decision function that must not grow a dependency on pattern matching.
+
+This is the shape `CLAUDE.md` Rule 3 exists to catch, and the codebase has already done one
+dedupe pass for exactly this. The reasons are individually sound, which is how three of
+something appears without anyone deciding to have three.
+
+**AI recommendation:** move the port-range grammar into `src/shared/`, which exists precisely
+for a helper needed on both sides of a boundary, is change-controlled like contracts, imports
+nothing, and is currently empty. The audit that created it concluded nothing crossed that
+boundary yet. Something does now.
+
+**Needed by:** before a fourth appears. Not blocking.

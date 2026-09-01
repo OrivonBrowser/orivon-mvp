@@ -1,24 +1,15 @@
 // Shared fixtures for connect.test.ts and connect-patterns.test.ts (split out
 // of one file that exceeded docs/development/code-guidelines.md's 800-line
 // test limit). Not *.test.ts, so vitest does not collect it as its own suite.
+//
+// manifestOf/manifestWith lived here until A18 (docs/open-questions.md):
+// checkConnect took a whole Manifest and both helpers existed only to build
+// one around a single `net.tcp.connect` array. Now that checkConnect takes
+// that array directly (readonly Pattern[], the GRANTED patterns, not the
+// manifest's declared ones), a pattern list is just a plain array literal at
+// the call site and the wrapper added nothing.
 
-import type { Capabilities, Manifest, Pattern } from '../../contracts/index.js'
 import type { ConnectDecision, Resolver } from './connect.js'
-
-export function manifestOf (capabilities: Capabilities): Manifest {
-  return {
-    orivonApiVersion: 0,
-    id: 'app.orivon.test',
-    name: 'Test App',
-    version: '0.1.0',
-    entry: 'index.html',
-    capabilities
-  }
-}
-
-export function manifestWith (connect: readonly Pattern[]): Manifest {
-  return manifestOf({ net: { tcp: { connect } } })
-}
 
 export interface StubResolver {
   (host: string): Promise<readonly string[]>
