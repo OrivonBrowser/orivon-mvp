@@ -2,12 +2,17 @@
 
 ## Start here
 
-**Phase: build step 1 (the shell) complete. `src/contracts/` written and the parallel-work
-system in place (2026-08-26). Next action is build step 2 (the capability broker) — nothing
-blocks it.**
-Last updated 2026-08-27 (code guidelines and the PR blueprint added as the third and fourth
-standing rules, then applied to the whole codebase the same day across two branches --
-`stream/backlog-06-rule2-violations` and `stream/backlog-07-guidelines-cleanup`).
+**Phase: build step 2 (the capability broker) underway.** `checkConnect` now takes the
+granted pattern list, not the manifest (A18); `src/broker/index.ts` assembles `createBroker`
+against the grant ledger; `src/loader/manifest.ts` validates untrusted app manifests. All
+merged 2026-09-01, after a review pass found and fixed four real defects in the broker
+assembly (an unmapped I/O-error contract, a superseded grant that stayed live and
+unrevocable, an fs-capability DoS gap against T11b, an unenforced disk quota).
+**Still open** (not verified this session, per `build-plan.md`'s own sequencing):
+`dial`/`resolve`/`fs` remain injected dependencies, not real Node I/O, and nothing wires
+the broker to the shell's IPC layer yet.
+Last updated 2026-09-01 (8-PR review/fix/merge pass; five newly-found pre-existing defects
+filed as A27-A31, `docs/open-questions.md`).
 
 **The human documentation is the map. Read it first — this file adds only what is specific to
 working here as an agent.**
@@ -60,10 +65,13 @@ loudly. Never launch Electron directly; see `.claude/skills/orivon-electron/` fo
 that strips it and verifies the launch is real.
 
 **Electron's `.d.ts` sometimes types an option/event on `BrowserWindow` only, even when it
-works identically on `BaseWindow`** (`ready-to-show`; the `titleBarStyle`/`titleBarOverlay`/
-`trafficLightPosition` family). context7's docs are silent on `BaseWindow` for these rather
-than wrong — confirmed both work via a throwaway probe app, 2026-08-26. When context7 doesn't
-confirm something specifically for `BaseWindow`, verify empirically before assuming either way.
+works identically on `BaseWindow`** — confirmed for `ready-to-show` only (2026-08-26 probe
+app). **Corrected 2026-09-01 (A30):** the earlier claim that `titleBarStyle`/`titleBarOverlay`/
+`trafficLightPosition` are the same case was wrong — all three are declared on
+`BaseWindowConstructorOptions` in electron 44.0.0's own `.d.ts`. context7 was silent on this
+rather than wrong, and that silence got over-generalized into a false "family" claim. **Check
+`node_modules/electron/electron.d.ts` directly first** — context7 is a second check, not a
+substitute.
 
 Open owner decisions are in `docs/open-questions.md` §A. A11 is closed (`ADR-0007`: cached
 bundles keep their real origin, intercepted inside the app's partition). **A10 is closed**
@@ -175,6 +183,10 @@ Nothing enforces this mechanically, by owner's decision — same call as the cod
 template does the work by being already in the box. Note it is bypassed entirely by
 `gh pr create --body`, which is exactly how an agent tends to open one.
 
+**`gh pr edit`/`gh pr create` fail here with a GraphQL "Projects (classic)" error**, unrelated
+to auth or content. Use `gh api -X PATCH repos/OrivonBrowser/orivon-mvp/pulls/<n> -F body=@file`
+instead (`-F` reads `@file`'s contents; `-f` would send the literal string `@file`).
+
 ### Code guidelines
 
 **Read `docs/development/code-guidelines.md` before writing any code.** The three rules, in
@@ -227,6 +239,10 @@ split is the signal the deferral has expired.
   editing shared logic. Do not add logic to `subsystems.ts`.
 - **Never hand-merge `package-lock.json`.** Take either side whole, run `npm install`, commit
   the result.
+- **A new worktree needs `node_modules` symlinked manually**:
+  `ln -s <repo>/node_modules <worktree>/node_modules`.
+- **Branch protection is `strict`.** Merging PR N+1 always needs a fresh `main`-merge into its
+  branch first, even if N+1 touches none of N's files — expect this on every sequential merge.
 
 ### The readability check
 
