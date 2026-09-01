@@ -75,6 +75,7 @@ None of these block starting the week-0 spike.
 | A34 | **The tab strip's native-controls inset is a hardcoded approximation, not a measured value.** `env(titlebar-area-*)` and `navigator.windowControlsOverlay` both report empty/`false` for this shell's `BaseWindow` + `WebContentsView` chrome — confirmed by a throwaway probe app, 2026-08-28, contradicting every context7 example, which is `BrowserWindow`-only. The restyle reserves a fixed 138px (Windows/Linux, right) or 78px (macOS, left) instead | **Revisit if Electron ever wires window-controls-overlay geometry through `BaseWindow`, or once real hardware on all three platforms confirms the approximation holds.** See below |
 | A35 | **`ResponseEnvelope` carries no `handleId`, though `OrivonError` declares one.** `contracts/errors.ts` specifies `platformCode` and `handleId` as optional fields an error may carry; `contracts/ipc.ts`'s `ResponseEnvelope`'s failure branch forwards `code`/`platformCode`/`message` but not `handleId`. A `'closed'` error naming which handle closed loses that identifier the moment it crosses IPC | **Before a `'closed'` error needs to name its handle over IPC** — not reachable yet (build step 2's control channel wires no method that can throw `'closed'`), but a contracts gap, so its own PR per `parallel-work.md` rule 3. See below |
 | A36 | **`build-plan.md` places grant prompts in build step 2; `A20` and `A27` both say build step 4.** `build-plan.md`'s own Sequence section lists "grant prompts" under step 2 ("Capability broker"), but `A20`'s and `A27`'s "Needed by" columns both independently say "before the grant prompt is built (build step 4)" | **Before the grant prompt is scheduled.** One of the two documents is wrong; the owner should pick which. See below |
+| A37 | **The write direction of the byte pump (an app writing bytes out over `TcpSocket.writable`) has no wire message anywhere.** `contracts/ipc.ts` specifies `DataMessage`/`CreditMessage`/`StreamEndMessage` in full for the READ direction only; `handle-contracts.md`'s Backpressure section, `capability-api.md`'s Throughput section and `ADR-0008` all describe the write side only as an outcome ("`write()` resolves only once the broker has accepted the bytes"), never as a protocol | **Before the preload-side byte-pump PR** (readable/writable streams built over the port) **can implement `writable`.** See below |
 
 ---
 
@@ -665,6 +666,46 @@ not done".
 
 **Needed by:** before the grant prompt is scheduled into a specific build step's PR list — the
 owner should say which document is wrong.
+
+### A37 — the byte pump's write direction has no wire protocol anywhere **[STILL OPEN]**
+
+Found while implementing the byte pump's broker side (build step 2, 2026-09-01) — specifically
+while designing `src/broker/port-pump.ts`, which relays the READ direction only.
+
+`contracts/ipc.ts` specifies exactly three messages for a socket's dedicated
+`MessageChannelMain` port: `DataMessage` (broker -> renderer, bytes arriving), `CreditMessage`
+(renderer -> broker, bytes consumed) and `StreamEndMessage` (broker -> renderer, once, at a
+terminal state). All three exist to make the READ side's credit window work, and
+`handle-contracts.md`'s "Backpressure — a credit window" section — the one place this whole
+mechanism is specified in detail — describes the read side exhaustively and the write side in
+exactly one sentence, an outcome rather than a protocol: *"`writable`'s `write()` resolves only
+once the broker has accepted the bytes into the OS socket send buffer, so an app that `await`s
+each write receives genuine write-side backpressure too."* Checked, not assumed:
+`capability-api.md`'s Throughput section and `ADR-0008` were both re-read looking for a
+write-side message shape; neither adds one beyond restating that same sentence.
+
+**Concretely missing:** how the renderer sends outbound bytes to the broker over the port (does
+it reuse `DataMessage`'s shape in the opposite direction, since the type carries no direction
+field? a distinct `WriteMessage`?), and how the broker signals "accepted into the OS socket send
+buffer" back to the renderer so its `writable.write()` promise resolves at the right moment (no
+message type exists for this at all — not even an outcome-only one like `StreamEndMessage`).
+
+**Not resolved in this PR**, on purpose, after discussion with the owner: `src/broker/port-
+pump.ts` implements the read direction only and says so in its own header, rather than
+inventing a write protocol from inside a `broker`-owned PR. Any wire message this needs is a
+`src/contracts/` change, which `parallel-work.md` and this file's own convention both require to
+merge first, alone, in its own PR — not decided implicitly by whichever stream happens to write
+the preload-side pump.
+
+**AI recommendation, for whoever writes that contracts PR:** the simplest consistent extension
+is a `WriteMessage { kind: 'write', handleId, chunk }` (renderer -> broker, mirroring
+`DataMessage`'s shape exactly) plus a `WriteAckMessage { kind: 'write-ack', handleId, bytesWritten
+}` (broker -> renderer, sent once the OS socket's write callback fires) that the renderer's
+`WritableStream`'s `write()` implementation awaits before resolving. Not implemented or vetted
+against real backpressure behaviour — a recommendation to start from, not a decision.
+
+**Needed by:** before the preload-side byte-pump PR (readable/writable WHATWG streams built over
+the port in the isolated world) can implement `writable` at all.
 
 ---
 
