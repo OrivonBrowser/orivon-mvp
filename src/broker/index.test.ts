@@ -208,6 +208,31 @@ describe('a handle is registered under the caller\'s own origin, never another\'
   })
 })
 
+describe('the returned TcpSocket keeps its broker-assigned identity, whatever dial() returns (MINOR, defensive)', () => {
+  it('does not let a same-named field from dial()\'s result override id, closed or close', async () => {
+    // DialedSocket's own type (Omit<TcpSocket, keyof Handle>) forbids a
+    // conforming implementation from carrying id/closed/close -- the cast
+    // simulates a FUTURE dial() whose result happens to carry them anyway,
+    // which is exactly the hazard pr-31.md's fix removes: no live bug
+    // today, but nothing stops it from becoming one silently.
+    const foreignClose = vi.fn()
+    const dial: Dial = async () => ({
+      ...okSocket(),
+      id: 'not-a-real-handle-id',
+      close: foreignClose
+    } as unknown as DialedSocket)
+    const broker = createBroker(baseDeps({ dial }))
+    broker.registerApp(APP, manifestWith({ net: { tcp: { connect: ['93.184.216.34:443'] } } }))
+    await broker.grant(APP, 'tcp.connect', ['93.184.216.34:443'])
+
+    const socket = await broker.net.connect(APP, { host: '93.184.216.34', port: 443 })
+
+    expect(socket.id).not.toBe('not-a-real-handle-id')
+    await socket.close()
+    expect(foreignClose).not.toHaveBeenCalled()
+  })
+})
+
 describe('a denial never carries detail it should not (errors.ts on \'denied\')', () => {
   it('a tcp.connect denial has no platformCode, whatever the reason', async () => {
     const broker = createBroker(baseDeps())
