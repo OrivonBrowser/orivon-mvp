@@ -1,13 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { checkConnect, type ConnectDecision, type Resolver } from './connect.js'
-import type { Manifest } from '../../contracts/index.js'
+import type { Pattern } from '../../contracts/index.js'
 import {
   PUBLIC_A,
   PUBLIC_B,
   PUBLIC_V6,
   allowedAddresses,
-  manifestOf,
-  manifestWith,
   noResolution,
   resolverFor
 } from './connect.test-helpers.js'
@@ -55,8 +53,8 @@ import {
 // ---------------------------------------------------------------------------
 
 describe('the resolved address decides, not the name', () => {
-  // Every row is a manifest that DECLARES the host being asked for, and a
-  // grant the user really gave. A hostname matcher allows all of them.
+  // Every row is a granted pattern list authorising the host being asked
+  // for. A hostname matcher allows all of them.
   const REBOUND: ReadonlyArray<{ readonly to: string, readonly why: string }> = [
     { to: '127.0.0.1', why: 'loopback, the textbook rebind' },
     { to: '127.255.255.255', why: '127/8 is wider than 127.0.0.1' },
@@ -76,7 +74,7 @@ describe('the resolved address decides, not the name', () => {
 
   it.each(REBOUND)('denies evil.example when it resolves to $to ($why)', async ({ to }) => {
     const decision = await checkConnect(
-      manifestWith(['evil.example:443']),
+      ['evil.example:443'],
       'evil.example',
       443,
       resolverFor({ 'evil.example': [to] })
@@ -86,7 +84,7 @@ describe('the resolved address decides, not the name', () => {
 
   it.each(REBOUND)('denies $to under `*:*` too ($why)', async ({ to }) => {
     const decision = await checkConnect(
-      manifestWith(['*:*']),
+      ['*:*'],
       'evil.example',
       443,
       resolverFor({ 'evil.example': [to] })
@@ -96,7 +94,7 @@ describe('the resolved address decides, not the name', () => {
 
   it('allows the same declaration when it resolves somewhere public', async () => {
     const decision = await checkConnect(
-      manifestWith(['api.example.com:443']),
+      ['api.example.com:443'],
       'api.example.com',
       443,
       resolverFor({ 'api.example.com': [PUBLIC_A] })
@@ -104,9 +102,9 @@ describe('the resolved address decides, not the name', () => {
     expect(allowedAddresses(decision)).toStrictEqual([PUBLIC_A])
   })
 
-  it('denies a host the manifest never declared, however public it resolves', async () => {
+  it('denies a host that was never granted, however public it resolves', async () => {
     const decision = await checkConnect(
-      manifestWith(['api.example.com:443']),
+      ['api.example.com:443'],
       'other.example',
       443,
       resolverFor({ 'other.example': [PUBLIC_A] })
@@ -120,7 +118,7 @@ describe('the resolved address decides, not the name', () => {
     // name has to match too, so this is denied -- the user granted "talk to
     // api.example.com", not "talk to whatever is at that IP today".
     const decision = await checkConnect(
-      manifestWith(['api.example.com:443']),
+      ['api.example.com:443'],
       PUBLIC_A,
       443,
       noResolution
@@ -144,7 +142,7 @@ describe('every resolved address must pass', () => {
 
   it.each(MIXED)('denies the whole connection: $why', async ({ answers }) => {
     const decision = await checkConnect(
-      manifestWith(['*:*']),
+      ['*:*'],
       'many.example',
       443,
       resolverFor({ 'many.example': answers })
@@ -154,7 +152,7 @@ describe('every resolved address must pass', () => {
 
   it('allows only when every answer is public', async () => {
     const decision = await checkConnect(
-      manifestWith(['*:*']),
+      ['*:*'],
       'many.example',
       443,
       resolverFor({ 'many.example': [PUBLIC_A, PUBLIC_B, PUBLIC_V6] })
@@ -166,7 +164,7 @@ describe('every resolved address must pass', () => {
     // `[].every(ok)` is true. A check written that way allows precisely the
     // host whose nameserver returned an empty answer.
     const decision = await checkConnect(
-      manifestWith(['*:*']),
+      ['*:*'],
       'empty.example',
       443,
       resolverFor({ 'empty.example': [] })
@@ -182,7 +180,7 @@ describe('every resolved address must pass', () => {
     { answer: '127.0.0.1:8080', why: 'an address with a port glued on' }
   ])('denies when the resolver answers $answer ($why)', async ({ answer }) => {
     const decision = await checkConnect(
-      manifestWith(['*:*']),
+      ['*:*'],
       'odd.example',
       443,
       resolverFor({ 'odd.example': [answer] })
@@ -202,7 +200,7 @@ describe('`*` means public unicast only', () => {
     '::1', 'fc00::1', 'fd00::1', 'fe80::1', 'ff02::1', '::ffff:192.168.1.1'
   ])('denies %s', async (address) => {
     const decision = await checkConnect(
-      manifestWith(['*:*']),
+      ['*:*'],
       address,
       443,
       noResolution
@@ -214,7 +212,7 @@ describe('`*` means public unicast only', () => {
     'allows %s',
     async (address) => {
       const decision = await checkConnect(
-        manifestWith(['*:*']),
+        ['*:*'],
         address,
         443,
         noResolution
@@ -229,7 +227,7 @@ describe('a private address needs an explicit literal declaration', () => {
     // The legitimate case the deny-by-default must not destroy: the manifest
     // named the address, the grant prompt showed it, the user agreed.
     const decision = await checkConnect(
-      manifestWith(['192.168.1.50:5000']),
+      ['192.168.1.50:5000'],
       'nas.internal',
       5000,
       resolverFor({ 'nas.internal': ['192.168.1.50'] })
@@ -239,7 +237,7 @@ describe('a private address needs an explicit literal declaration', () => {
 
   it('allows a declared loopback address, dialled directly', async () => {
     const decision = await checkConnect(
-      manifestWith(['127.0.0.1:8080']),
+      ['127.0.0.1:8080'],
       '127.0.0.1',
       8080,
       noResolution
@@ -249,7 +247,7 @@ describe('a private address needs an explicit literal declaration', () => {
 
   it('allows a declared IPv6 loopback in bracket form', async () => {
     const decision = await checkConnect(
-      manifestWith(['[::1]:8080']),
+      ['[::1]:8080'],
       '[::1]',
       8080,
       noResolution
@@ -259,7 +257,7 @@ describe('a private address needs an explicit literal declaration', () => {
 
   it('denies the neighbour of a declared private address', async () => {
     const decision = await checkConnect(
-      manifestWith(['192.168.1.50:5000']),
+      ['192.168.1.50:5000'],
       'nas.internal',
       5000,
       resolverFor({ 'nas.internal': ['192.168.1.51'] })
@@ -272,7 +270,7 @@ describe('a private address needs an explicit literal declaration', () => {
     // where it resolves, so allow it" -- is the rebinding attack restated. A
     // name is never evidence that a range was intended; only the address is.
     const decision = await checkConnect(
-      manifestWith(['nas.internal:5000']),
+      ['nas.internal:5000'],
       'nas.internal',
       5000,
       resolverFor({ 'nas.internal': ['192.168.1.50'] })
@@ -282,7 +280,7 @@ describe('a private address needs an explicit literal declaration', () => {
 
   it('a declared private address does not widen `*`', async () => {
     const decision = await checkConnect(
-      manifestWith(['*:*', '192.168.1.50:5000']),
+      ['*:*', '192.168.1.50:5000'],
       'other.internal',
       5000,
       resolverFor({ 'other.internal': ['192.168.1.99'] })
@@ -292,44 +290,90 @@ describe('a private address needs an explicit literal declaration', () => {
 })
 
 // ---------------------------------------------------------------------------
+// 4. A18 (docs/open-questions.md): checkConnect enforces exactly the list it
+// was given, never a wider one that happened to exist somewhere upstream.
+// ---------------------------------------------------------------------------
+
+describe('checkConnect enforces the GRANTED list, not a wider declared one', () => {
+  it('denies a pattern the manifest declared but the user did not grant', async () => {
+    // The manifest DECLARES two patterns; the grant prompt showed both and the
+    // user approved only the first one (capability-api.md A9 SS2). The broker
+    // is required to narrow the manifest's declared connect list down to what
+    // was actually granted before calling checkConnect -- that narrowing has
+    // nowhere else to happen now that this function takes the list directly
+    // rather than a whole Manifest it could read `net.tcp.connect` out of.
+    const declared = ['*:*', '192.168.1.50:5000']
+    const granted = declared.filter((pattern) => pattern !== '192.168.1.50:5000')
+
+    const decision = await checkConnect(granted, '192.168.1.50', 5000, noResolution)
+    expect(decision.allowed).toBe(false)
+
+    // THE MUTATION THIS TEST EXISTS TO CATCH: passing the wider DECLARED list
+    // instead of the narrowed GRANTED one -- the exact mistake A18 records,
+    // and the one the old `checkConnect(manifest, ...)` signature made easy,
+    // because a caller could pass the manifest it fetched and get this list
+    // by accident. `192.168.1.50:5000` is a legitimate literal pattern (see
+    // "a private address needs an explicit literal declaration" above), so
+    // under the declared set the SAME request is allowed. The denial above
+    // is not a property of the host or port; it depends entirely on which
+    // array reached this function -- which is the whole point of the change.
+    const declaredResult = await checkConnect(declared, '192.168.1.50', 5000, noResolution)
+    expect(declaredResult.allowed).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
 // 5. Declaration absent means denied, never default-allow.
 // ---------------------------------------------------------------------------
 
 describe('absence means absence', () => {
-  it.each([
-    { capabilities: {}, why: 'no capabilities at all' },
-    { capabilities: { net: {} }, why: 'net declared, tcp not' },
-    { capabilities: { net: { tcp: {} } }, why: 'tcp declared, connect not' },
-    { capabilities: { net: { tcp: { connect: [] } } }, why: 'connect declared empty' },
-    { capabilities: { net: { tcp: { listen: ['6881-6889'] } } }, why: 'listen does not imply connect' },
-    { capabilities: { net: { udp: { send: ['*:*'] } } }, why: 'udp.send does not imply tcp.connect' },
-    { capabilities: { fs: { quotaBytes: 1 } }, why: 'an unrelated capability' }
-  ])('denies with $why', async ({ capabilities }) => {
-    const decision = await checkConnect(manifestOf(capabilities), PUBLIC_A, 443, noResolution)
+  // BEFORE A18 (docs/open-questions.md), this block exercised checkConnect's
+  // own reading of a whole Manifest -- seven capability shapes ("net declared,
+  // tcp not", "udp.send does not imply tcp.connect", and so on) that all
+  // reduced to one thing as far as this function is concerned: no `tcp.connect`
+  // patterns. checkConnect no longer reads a Manifest at all -- it takes the
+  // already-narrowed GRANTED pattern list directly (readonly Pattern[]) -- so
+  // every one of those seven shapes now IS the same input, an empty array.
+  // The shape questions (does the manifest declare `net.tcp`? does `listen`
+  // imply `connect`?) belong to whatever builds that array from the manifest
+  // and the grant store, which is not written yet (build step 2, the broker).
+  it('denies an empty pattern list, never default-allows it', async () => {
+    const decision = await checkConnect([], PUBLIC_A, 443, noResolution)
+    if (decision.allowed) throw new Error('expected a denial')
+    expect(decision.reason).toBe('not-declared')
+  })
+
+  it('does not throw on a pattern list containing junk elements', async () => {
+    // The MANIFEST-shape defensiveness this test used to cover (JSON fetched
+    // off the network, so untrusted shape as well as untrusted content) moved
+    // to the caller along with the parsing -- that is the point of A18. What
+    // is still this function's job is not throwing on a per-element junk
+    // pattern, and parsePattern already guards that (`typeof pattern !==
+    // 'string'` -> null -> matches nothing). This is the regression test for
+    // that path, run through checkConnect rather than parsePattern alone, per
+    // this suite's own discipline.
+    const junk = [undefined, null, 42, {}, ['a']] as unknown as Pattern[]
+    const decision = await checkConnect(junk, PUBLIC_A, 443, noResolution)
     expect(decision.allowed).toBe(false)
   })
 
-  it('denies when the manifest is structurally junk', async () => {
-    // The manifest is JSON fetched off the network, so its SHAPE is untrusted
-    // too. A throw here would be a broker crash reachable from any origin.
-    const junk = [
-      undefined,
-      null,
-      {},
-      { capabilities: null },
-      { capabilities: { net: { tcp: { connect: 'not-an-array' } } } },
-      { capabilities: { net: { tcp: { connect: [null, 42, {}] } } } }
-    ]
-
-    for (const manifest of junk) {
-      const decision = await checkConnect(
-        manifest as unknown as Manifest,
-        PUBLIC_A,
-        443,
-        noResolution
-      )
-      expect(decision.allowed).toBe(false)
-    }
+  it.each([
+    { label: 'a bare string', value: 'example.com:443' },
+    { label: 'null', value: null },
+    { label: 'undefined', value: undefined },
+    { label: 'a plain object', value: { length: 2 } },
+    { label: 'a whole Manifest (the pre-A18 argument)', value: { capabilities: { net: { tcp: { connect: ['*:*'] } } } } }
+  ])('denies rather than throws when patterns itself is not an array ($label)', async ({ value }) => {
+    // A18 moved shape-defensiveness for the LIST to the caller, but the
+    // caller is GrantLedger's rehydration of a persisted grant store --
+    // untrusted JSON shape, the same category of input the deleted guard
+    // existed for (docs/open-questions.md A18 resolution). checkConnect's own
+    // doc comment still promises "never throws on its own account", so a
+    // non-array here must deny, not throw TypeError out of `.length` or
+    // `.map`.
+    const decision = await checkConnect(value as unknown as Pattern[], PUBLIC_A, 443, noResolution)
+    if (decision.allowed) throw new Error('expected a denial')
+    expect(decision.reason).toBe('not-declared')
   })
 })
 
@@ -359,7 +403,7 @@ describe('the denial is uniform where uniformity has to hold', () => {
 
   it('carries a code, a local-log reason, and nothing an app could read', async () => {
     const decision = await checkConnect(
-      manifestWith(['*:*']),
+      ['*:*'],
       'evil.example',
       443,
       resolverFor({ 'evil.example': ['127.0.0.1'] })
@@ -378,13 +422,13 @@ describe('the denial is uniform where uniformity has to hold', () => {
     // the results apart, or it maps the user's LAN without completing a single
     // connection (../../contracts/errors.ts).
     const results = await Promise.all([
-      checkConnect(manifestWith(['*:*']), 'a.example', 443, resolverFor({ 'a.example': ['127.0.0.1'] })),
-      checkConnect(manifestWith(['*:*']), 'b.example', 443, resolverFor({ 'b.example': ['192.168.1.1'] })),
-      checkConnect(manifestWith(['*:443']), PUBLIC_A, 8080, noResolution),
-      checkConnect(manifestWith(['api.example.com:443']), 'other.example', 443, resolverFor({ 'other.example': [PUBLIC_A] })),
-      checkConnect(manifestOf({}), PUBLIC_A, 443, noResolution),
-      checkConnect(manifestWith(['*:*']), PUBLIC_A, 0, noResolution),
-      checkConnect(manifestWith(['*:*']), 'empty.example', 443, resolverFor({ 'empty.example': [] }))
+      checkConnect(['*:*'], 'a.example', 443, resolverFor({ 'a.example': ['127.0.0.1'] })),
+      checkConnect(['*:*'], 'b.example', 443, resolverFor({ 'b.example': ['192.168.1.1'] })),
+      checkConnect(['*:443'], PUBLIC_A, 8080, noResolution),
+      checkConnect(['api.example.com:443'], 'other.example', 443, resolverFor({ 'other.example': [PUBLIC_A] })),
+      checkConnect([], PUBLIC_A, 443, noResolution),
+      checkConnect(['*:*'], PUBLIC_A, 0, noResolution),
+      checkConnect(['*:*'], 'empty.example', 443, resolverFor({ 'empty.example': [] }))
     ])
 
     for (const result of results) {
@@ -398,20 +442,20 @@ describe('the denial is uniform where uniformity has to hold', () => {
     // reasons have to actually differ -- a union whose members all read
     // 'no-pattern-match' would be the old design wearing a new type.
     const seen = new Set<string>()
-    const cases: Array<[Manifest, string, number, Resolver]> = [
-      [manifestOf({}), PUBLIC_A, 443, noResolution],
-      [manifestWith(Array.from({ length: 300 }, (_, i) => `h${i}.example:443`)), PUBLIC_A, 443, noResolution],
-      [manifestWith(['*:*']), PUBLIC_A, 0, noResolution],
-      [manifestWith(['*:*']), '', 443, noResolution],
-      [manifestWith(['*:*']), '2130706433', 443, noResolution],
-      [manifestWith(['api.example.com:443']), 'other.example', 22, noResolution],
-      [manifestWith(['*:*']), 'empty.example', 443, resolverFor({ 'empty.example': [] })],
-      [manifestWith(['*:*']), 'many.example', 443, resolverFor({ 'many.example': Array.from({ length: 100 }, (_, i) => `93.184.0.${i}`) })],
-      [manifestWith(['*:*']), 'odd.example', 443, resolverFor({ 'odd.example': ['localhost'] })],
-      [manifestWith(['*:*']), 'priv.example', 443, resolverFor({ 'priv.example': ['127.0.0.1'] })]
+    const cases: Array<[readonly Pattern[], string, number, Resolver]> = [
+      [[], PUBLIC_A, 443, noResolution],
+      [Array.from({ length: 300 }, (_, i) => `h${i}.example:443`), PUBLIC_A, 443, noResolution],
+      [['*:*'], PUBLIC_A, 0, noResolution],
+      [['*:*'], '', 443, noResolution],
+      [['*:*'], '2130706433', 443, noResolution],
+      [['api.example.com:443'], 'other.example', 22, noResolution],
+      [['*:*'], 'empty.example', 443, resolverFor({ 'empty.example': [] })],
+      [['*:*'], 'many.example', 443, resolverFor({ 'many.example': Array.from({ length: 100 }, (_, i) => `93.184.0.${i}`) })],
+      [['*:*'], 'odd.example', 443, resolverFor({ 'odd.example': ['localhost'] })],
+      [['*:*'], 'priv.example', 443, resolverFor({ 'priv.example': ['127.0.0.1'] })]
     ]
-    for (const [manifest, host, port, resolve] of cases) {
-      const decision = await checkConnect(manifest, host, port, resolve)
+    for (const [patterns, host, port, resolve] of cases) {
+      const decision = await checkConnect(patterns, host, port, resolve)
       if (decision.allowed) throw new Error(`expected a denial for ${host}`)
       seen.add(decision.reason)
     }
@@ -430,7 +474,7 @@ describe('the denial is uniform where uniformity has to hold', () => {
 describe('the allow result carries the validated literals', () => {
   it('returns every address, so the caller never names the host again', async () => {
     const decision = await checkConnect(
-      manifestWith(['*:*']),
+      ['*:*'],
       'many.example',
       443,
       resolverFor({ 'many.example': [PUBLIC_A, PUBLIC_B] })
@@ -440,7 +484,7 @@ describe('the allow result carries the validated literals', () => {
 
   it('returns them normalised and never returns the hostname', async () => {
     const decision = await checkConnect(
-      manifestWith(['*:*']),
+      ['*:*'],
       'many.example',
       443,
       resolverFor({ 'many.example': ['  93.184.216.34  ', '[2606:4700::1111]', '2606:4700::2222'] })
@@ -460,7 +504,7 @@ describe('resolution', () => {
     // and the app chooses how many patterns there are.
     const resolve = resolverFor({ 'many.example': [PUBLIC_A, PUBLIC_B, PUBLIC_V6] })
     await checkConnect(
-      manifestWith(['a.example:443', 'b.example:443', '*:*', '10.0.0.1:22']),
+      ['a.example:443', 'b.example:443', '*:*', '10.0.0.1:22'],
       'many.example',
       443,
       resolve
@@ -471,7 +515,7 @@ describe('resolution', () => {
   it('resolves the normalised name, so the name checked is the name looked up', async () => {
     const resolve = resolverFor({ 'api.example.com': [PUBLIC_A] })
     const decision = await checkConnect(
-      manifestWith(['api.example.com:443']),
+      ['api.example.com:443'],
       '  API.Example.COM.  ',
       443,
       resolve
@@ -482,7 +526,7 @@ describe('resolution', () => {
 
   it('does not resolve an address literal', async () => {
     const resolve = resolverFor({})
-    const decision = await checkConnect(manifestWith(['*:*']), PUBLIC_A, 443, resolve)
+    const decision = await checkConnect(['*:*'], PUBLIC_A, 443, resolve)
     expect(decision.allowed).toBe(true)
     expect(resolve.calls).toStrictEqual([])
   })
@@ -493,13 +537,13 @@ describe('resolution', () => {
     // that honest Node retry logic branches on.
     const failing: Resolver = async () => { throw new Error('ENOTFOUND') }
     await expect(
-      checkConnect(manifestWith(['*:*']), 'gone.example', 443, failing)
+      checkConnect(['*:*'], 'gone.example', 443, failing)
     ).rejects.toThrow('ENOTFOUND')
   })
 
-  it('does not resolve at all when the capability was never declared', async () => {
+  it('does not resolve at all when nothing was granted', async () => {
     const resolve = resolverFor({ 'api.example.com': [PUBLIC_A] })
-    await checkConnect(manifestOf({}), 'api.example.com', 443, resolve)
+    await checkConnect([], 'api.example.com', 443, resolve)
     expect(resolve.calls).toStrictEqual([])
   })
 })
@@ -515,7 +559,7 @@ describe('the pre-resolution gate', () => {
     // for ever: unrestricted DNS reach that no manifest bounds and no grant
     // authorises -- a covert channel and a de-anonymising one (T20).
     const resolve = resolverFor({ 'printer.lan': ['192.168.1.9'] })
-    const decision = await checkConnect(manifestWith(['api.example.com:443']), 'printer.lan', 22, resolve)
+    const decision = await checkConnect(['api.example.com:443'], 'printer.lan', 22, resolve)
     expect(resolve.calls).toStrictEqual([])
     if (decision.allowed) throw new Error('expected a denial')
     expect(decision.reason).toBe('no-pattern-possible')
@@ -523,7 +567,7 @@ describe('the pre-resolution gate', () => {
 
   it('does not resolve a name no hostname pattern names', async () => {
     const resolve = resolverFor({ 'gitlab.internal.corp': [PUBLIC_A] })
-    await checkConnect(manifestWith(['api.example.com:443']), 'gitlab.internal.corp', 443, resolve)
+    await checkConnect(['api.example.com:443'], 'gitlab.internal.corp', 443, resolve)
     expect(resolve.calls).toStrictEqual([])
   })
 
@@ -536,9 +580,9 @@ describe('the pre-resolution gate', () => {
       if (host === 'exists.lan') return ['192.168.1.7']
       throw new Error('getaddrinfo ENOTFOUND')
     }
-    const manifest = manifestWith(['api.example.com:443'])
-    const exists = await checkConnect(manifest, 'exists.lan', 22, resolve)
-    const absent = await checkConnect(manifest, 'absent.lan', 22, resolve)
+    const patterns = ['api.example.com:443']
+    const exists = await checkConnect(patterns, 'exists.lan', 22, resolve)
+    const absent = await checkConnect(patterns, 'absent.lan', 22, resolve)
     expect(exists.allowed).toBe(false)
     expect(absent.allowed).toBe(false)
     // Same reason, and neither threw: indistinguishable to the app.
@@ -550,7 +594,7 @@ describe('the pre-resolution gate', () => {
     // A `*` pattern makes it true for every name -- that is correct, and the
     // real decision stays below, after the addresses are in hand.
     const resolve = resolverFor({ 'anything.example': ['127.0.0.1'] })
-    const decision = await checkConnect(manifestWith(['*:*']), 'anything.example', 443, resolve)
+    const decision = await checkConnect(['*:*'], 'anything.example', 443, resolve)
     expect(resolve.calls).toStrictEqual(['anything.example'])
     expect(decision.allowed).toBe(false)
   })
@@ -559,7 +603,7 @@ describe('the pre-resolution gate', () => {
     // nas.internal -> 192.168.1.50 is the legitimate case the literal branch
     // exists for, and it cannot be ruled out from the name alone.
     const resolve = resolverFor({ 'nas.internal': ['192.168.1.50'] })
-    const decision = await checkConnect(manifestWith(['192.168.1.50:5000']), 'nas.internal', 5000, resolve)
+    const decision = await checkConnect(['192.168.1.50:5000'], 'nas.internal', 5000, resolve)
     expect(resolve.calls).toStrictEqual(['nas.internal'])
     expect(allowedAddresses(decision)).toStrictEqual(['192.168.1.50'])
   })
@@ -570,26 +614,26 @@ describe('the pre-resolution gate', () => {
 // ---------------------------------------------------------------------------
 
 describe('bounds and result hygiene', () => {
-  it('denies a manifest with more patterns than the bound', async () => {
+  it('denies a granted list with more patterns than the bound', async () => {
     // Item LENGTHS were bounded; item COUNTS were not, and the work is their
     // product. Measured before the bound: 20000 patterns x 1000 answers took
     // 13.9 SECONDS of synchronous CPU on the broker's UI thread (T11b).
     const many = Array.from({ length: 257 }, (_, i) => `h${i}.example:443`)
-    const decision = await checkConnect(manifestOf({ net: { tcp: { connect: many } } }), PUBLIC_A, 443, noResolution)
+    const decision = await checkConnect(many, PUBLIC_A, 443, noResolution)
     if (decision.allowed) throw new Error('expected a denial')
     expect(decision.reason).toBe('too-many-patterns')
   })
 
   it('denies a resolver answer set larger than the bound', async () => {
     const many = Array.from({ length: 65 }, (_, i) => `93.184.0.${i}`)
-    const decision = await checkConnect(manifestWith(['*:*']), 'many.example', 443, async () => many)
+    const decision = await checkConnect(['*:*'], 'many.example', 443, async () => many)
     if (decision.allowed) throw new Error('expected a denial')
     expect(decision.reason).toBe('too-many-answers')
   })
 
   it('a realistic manifest and answer set stay well inside the bounds', async () => {
     const decision = await checkConnect(
-      manifestWith(['*:6881-6889', 'tracker.example:443']),
+      ['*:6881-6889', 'tracker.example:443'],
       'many.example',
       6881,
       resolverFor({ 'many.example': [PUBLIC_A, PUBLIC_B, PUBLIC_V6] })
@@ -602,7 +646,7 @@ describe('bounds and result hygiene', () => {
     // (LIMITS.concurrentSockets). A resolver repeating an address should not
     // spend three of them.
     const decision = await checkConnect(
-      manifestWith(['*:*']),
+      ['*:*'],
       'dup.example',
       443,
       resolverFor({ 'dup.example': [PUBLIC_A, PUBLIC_A, '  93.184.216.34  ', PUBLIC_B] })
@@ -613,7 +657,7 @@ describe('bounds and result hygiene', () => {
   it('the allow cannot be edited between the decision and the dial', async () => {
     // The gap between deciding and dialling is the only place a validated set
     // can be changed, and nothing downstream re-checks it.
-    const decision = await checkConnect(manifestWith(['*:*']), PUBLIC_A, 443, noResolution)
+    const decision = await checkConnect(['*:*'], PUBLIC_A, 443, noResolution)
     if (!decision.allowed) throw new Error('expected an allow')
     expect(Object.isFrozen(decision)).toBe(true)
     expect(Object.isFrozen(decision.addresses)).toBe(true)
