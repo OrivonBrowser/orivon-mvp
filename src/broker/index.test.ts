@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { rejection } from './handles.test-helpers.js'
+import { outcomeNow, rejection } from './handles.test-helpers.js'
 import { createBroker } from './index.js'
 import type { CreateBrokerOptions, Dial, DialedSocket } from './index.js'
 import type { Capabilities, Manifest } from '../contracts/index.js'
@@ -107,7 +107,7 @@ describe('the grant ledger is consulted, never the manifest (open-questions.md A
     const broker = createBroker(baseDeps({ resolve: stubResolve({ 'evil.example': ['93.184.216.34'] }) }))
     // The flagship's own shape: declares "*:*", but the user granted one host.
     broker.registerApp(APP, manifestWith({ net: { tcp: { connect: ['*:*'] } } }))
-    broker.grant(APP, 'tcp.connect', ['api.example.com:443'])
+    await broker.grant(APP, 'tcp.connect', ['api.example.com:443'])
 
     const error = await rejection(broker.net.connect(APP, { host: 'evil.example', port: 443 }))
 
@@ -127,7 +127,7 @@ describe('the grant ledger is consulted, never the manifest (open-questions.md A
   it('allows a connection that is within the granted pattern, narrower than the declared one', async () => {
     const broker = createBroker(baseDeps({ resolve: stubResolve({ 'api.example.com': ['93.184.216.34'] }) }))
     broker.registerApp(APP, manifestWith({ net: { tcp: { connect: ['*:*'] } } }))
-    broker.grant(APP, 'tcp.connect', ['api.example.com:443'])
+    await broker.grant(APP, 'tcp.connect', ['api.example.com:443'])
 
     const socket = await broker.net.connect(APP, { host: 'api.example.com', port: 443 })
 
@@ -146,7 +146,7 @@ describe('resolve is actually consulted -- comparing the hostname alone is T12',
     }
     const broker = createBroker(baseDeps({ resolve, dial }))
     broker.registerApp(APP, manifestWith({ net: { tcp: { connect: ['api.example.com:443'] } } }))
-    broker.grant(APP, 'tcp.connect', ['api.example.com:443'])
+    await broker.grant(APP, 'tcp.connect', ['api.example.com:443'])
 
     await broker.net.connect(APP, { host: 'api.example.com', port: 443 })
 
@@ -161,7 +161,7 @@ describe('resolve is actually consulted -- comparing the hostname alone is T12',
     const dial = vi.fn(async () => okSocket())
     const broker = createBroker(baseDeps({ resolve, dial }))
     broker.registerApp(APP, manifestWith({ net: { tcp: { connect: ['rebind.example:80'] } } }))
-    broker.grant(APP, 'tcp.connect', ['rebind.example:80'])
+    await broker.grant(APP, 'tcp.connect', ['rebind.example:80'])
 
     const error = await rejection(broker.net.connect(APP, { host: 'rebind.example', port: 80 }))
 
@@ -175,7 +175,7 @@ describe('a handle is registered under the caller\'s own origin, never another\'
   it('is closed by that origin\'s own revoke', async () => {
     const broker = createBroker(baseDeps())
     broker.registerApp(APP, manifestWith({ net: { tcp: { connect: ['93.184.216.34:443'] } } }))
-    const g = broker.grant(APP, 'tcp.connect', ['93.184.216.34:443'])
+    const g = await broker.grant(APP, 'tcp.connect', ['93.184.216.34:443'])
 
     const socket = await broker.net.connect(APP, { host: '93.184.216.34', port: 443 })
     await broker.revoke(APP, g.id)
@@ -187,9 +187,9 @@ describe('a handle is registered under the caller\'s own origin, never another\'
   it('is left open when an unrelated origin\'s grant of the same capability is revoked', async () => {
     const broker = createBroker(baseDeps())
     broker.registerApp(APP, manifestWith({ net: { tcp: { connect: ['93.184.216.34:443'] } } }))
-    broker.grant(APP, 'tcp.connect', ['93.184.216.34:443'])
+    await broker.grant(APP, 'tcp.connect', ['93.184.216.34:443'])
     broker.registerApp(OTHER, manifestWith({ net: { tcp: { connect: ['93.184.216.34:443'] } } }))
-    const otherGrant = broker.grant(OTHER, 'tcp.connect', ['93.184.216.34:443'])
+    const otherGrant = await broker.grant(OTHER, 'tcp.connect', ['93.184.216.34:443'])
 
     const socket = await broker.net.connect(APP, { host: '93.184.216.34', port: 443 })
     await broker.revoke(OTHER, otherGrant.id)
@@ -221,7 +221,7 @@ describe('a denial never carries detail it should not (errors.ts on \'denied\')'
   it('an fs denial has no platformCode, whatever the reason', async () => {
     const broker = createBroker(baseDeps())
     broker.registerApp(APP, manifestWith({}))
-    broker.grant(APP, 'fs', [])
+    await broker.grant(APP, 'fs', [])
 
     const error = await rejection(broker.fs.readFile(APP, '../../etc/passwd'))
     expect(error.code).toBe('denied')
@@ -261,7 +261,7 @@ describe('orivon.app.manifest() and orivon.app.grants() (open-questions.md A13)'
   it('grants() reflects what was actually granted, narrower than the declared manifest', async () => {
     const broker = createBroker(baseDeps())
     broker.registerApp(APP, manifestWith({ net: { tcp: { connect: ['*:*'] } } }))
-    const g = broker.grant(APP, 'tcp.connect', ['api.example.com:443'])
+    const g = await broker.grant(APP, 'tcp.connect', ['api.example.com:443'])
 
     await expect(broker.app.grants(APP)).resolves.toEqual([g])
   })
@@ -269,7 +269,7 @@ describe('orivon.app.manifest() and orivon.app.grants() (open-questions.md A13)'
   it('re-registering a manifest leaves existing grants untouched', async () => {
     const broker = createBroker(baseDeps())
     broker.registerApp(APP, manifestWith({}))
-    const g = broker.grant(APP, 'tcp.connect', ['a.example:443'])
+    const g = await broker.grant(APP, 'tcp.connect', ['a.example:443'])
 
     broker.registerApp(APP, manifestWith({})) // e.g. a page reload
 
@@ -293,7 +293,7 @@ describe('orivon.fs reads and writes, confined via policy/paths.ts (T1/T10)', ()
     const files = new Map<string, Uint8Array>()
     const broker = createBroker(baseDeps({ fs: stubFs({ root: '/apps/app', files }) }))
     broker.registerApp(APP, manifestWith({ fs: {} }))
-    broker.grant(APP, 'fs', [])
+    await broker.grant(APP, 'fs', [])
 
     await broker.fs.writeFile(APP, 'notes.txt', new TextEncoder().encode('hi'))
     expect(files.get('/apps/app/notes.txt')).toEqual(new TextEncoder().encode('hi'))
@@ -303,7 +303,7 @@ describe('orivon.fs reads and writes, confined via policy/paths.ts (T1/T10)', ()
   it('denies a traversal attempt outside the app root', async () => {
     const broker = createBroker(baseDeps())
     broker.registerApp(APP, manifestWith({ fs: {} }))
-    broker.grant(APP, 'fs', [])
+    await broker.grant(APP, 'fs', [])
 
     const error = await rejection(broker.fs.readFile(APP, '../../etc/passwd'))
     expect(error.code).toBe('denied')
@@ -312,7 +312,7 @@ describe('orivon.fs reads and writes, confined via policy/paths.ts (T1/T10)', ()
   it('revoking the fs grant denies subsequent reads and writes', async () => {
     const broker = createBroker(baseDeps())
     broker.registerApp(APP, manifestWith({ fs: {} }))
-    const g = broker.grant(APP, 'fs', [])
+    const g = await broker.grant(APP, 'fs', [])
     await broker.revoke(APP, g.id)
 
     const error = await rejection(broker.fs.readFile(APP, 'a.txt'))
@@ -324,7 +324,7 @@ describe('revocation delegates to the handle table\'s cascade (handle-contracts.
   it('closes an open socket the moment its grant is revoked, before the app finishes anything', async () => {
     const broker = createBroker(baseDeps())
     broker.registerApp(APP, manifestWith({ net: { tcp: { connect: ['93.184.216.34:443'] } } }))
-    const g = broker.grant(APP, 'tcp.connect', ['93.184.216.34:443'])
+    const g = await broker.grant(APP, 'tcp.connect', ['93.184.216.34:443'])
     const socket = await broker.net.connect(APP, { host: '93.184.216.34', port: 443 })
 
     await broker.revoke(APP, g.id)
@@ -340,7 +340,7 @@ describe('revocation delegates to the handle table\'s cascade (handle-contracts.
     const dial: Dial = async () => await dialed
     const broker = createBroker(baseDeps({ dial }))
     broker.registerApp(APP, manifestWith({ net: { tcp: { connect: ['93.184.216.34:443'] } } }))
-    const g = broker.grant(APP, 'tcp.connect', ['93.184.216.34:443'])
+    const g = await broker.grant(APP, 'tcp.connect', ['93.184.216.34:443'])
 
     const pending = broker.net.connect(APP, { host: '93.184.216.34', port: 443 })
     // Let checkConnect (a literal address, no real DNS) run to completion and
@@ -372,11 +372,70 @@ describe('grant() replaces, under a fresh id (open-questions.md A21)', () => {
     const broker = createBroker(baseDeps())
     broker.registerApp(APP, manifestWith({}))
 
-    const first = broker.grant(APP, 'tcp.connect', ['a.example:443'])
-    const second = broker.grant(APP, 'tcp.connect', ['b.example:443'])
+    const first = await broker.grant(APP, 'tcp.connect', ['a.example:443'])
+    const second = await broker.grant(APP, 'tcp.connect', ['b.example:443'])
 
     expect(second.id).not.toBe(first.id)
     await expect(broker.app.grants(APP)).resolves.toEqual([second])
+  })
+})
+
+describe('a superseded grant is revoked, not just dropped from the ledger (CRITICAL)', () => {
+  it('closes a handle already authorised by the replaced grant the moment the new grant lands', async () => {
+    const resolve = stubResolve({ 'example.com': ['93.184.216.34'] })
+    const broker = createBroker(baseDeps({ resolve }))
+    broker.registerApp(APP, manifestWith({ net: { tcp: { connect: ['*:*'] } } }))
+    const g1 = await broker.grant(APP, 'tcp.connect', ['example.com:443'])
+    const socket = await broker.net.connect(APP, { host: 'example.com', port: 443 })
+
+    // g2 replaces g1 in the ledger. Before the fix, g1's socket stays open
+    // forever: app.grants() drops g1 instantly and there is no code path
+    // back to its id from anywhere -- not the app, not the permission UI.
+    const g2 = await broker.grant(APP, 'tcp.connect', ['other.example:443'])
+    expect(g2.id).not.toBe(g1.id)
+
+    // outcomeNow, not rejection: an unfixed broker never settles this
+    // promise at all, and this must fail fast rather than hang the suite.
+    const outcome = await outcomeNow(socket.closed)
+    expect(outcome.state).toBe('rejected')
+    if (outcome.state === 'rejected') expect(outcome.error.code).toBe('revoked')
+
+    await expect(broker.app.grants(APP)).resolves.toEqual([g2])
+  })
+
+  it('destroys a socket dialled after its grant was superseded mid-flight, and never registers it under the stale id', async () => {
+    // Mirrors the explicit-revoke() race test above, but the trigger is a
+    // supersession instead. Reproduces the race pr-31.md documents:
+    // connect() captures `current` once, before two await points, and a
+    // grant() landing in between must still close what gets dialled late.
+    let resolveDial!: (socket: DialedSocket) => void
+    const dialed = new Promise<DialedSocket>((resolve) => { resolveDial = resolve })
+    const destroySpy = vi.fn()
+    const dial: Dial = async () => await dialed
+    const broker = createBroker(baseDeps({ dial }))
+    broker.registerApp(APP, manifestWith({ net: { tcp: { connect: ['93.184.216.34:443'] } } }))
+    await broker.grant(APP, 'tcp.connect', ['93.184.216.34:443'])
+
+    const pending = broker.net.connect(APP, { host: '93.184.216.34', port: 443 })
+    // Let checkConnect (a literal address, no real DNS) run to completion and
+    // reach `dial`, which is now stuck awaiting `dialed`.
+    await nextTick()
+
+    await broker.grant(APP, 'tcp.connect', ['other.example:443'])
+
+    // outcomeNow, not rejection: an unfixed broker leaves `pending` sitting
+    // there until `dial` eventually resolves (below), which would hang this
+    // test for its full timeout instead of failing cleanly.
+    const outcome = await outcomeNow(pending)
+    expect(outcome.state).toBe('rejected')
+    if (outcome.state === 'rejected') expect(outcome.error.code).toBe('revoked')
+
+    // The dial "completes" only now -- late, after the superseding grant landed.
+    resolveDial(okSocket({ destroy: destroySpy }))
+    await nextTick()
+
+    expect(destroySpy).toHaveBeenCalledWith('revoked')
+    expect(destroySpy).not.toHaveBeenCalledWith('failed')
   })
 })
 
@@ -384,7 +443,7 @@ describe('origin canonicalisation (policy/origin.ts)', () => {
   it('treats an explicit default port the same as no port at all', async () => {
     const broker = createBroker(baseDeps())
     broker.registerApp(`${APP}:443`, manifestWith({ net: { tcp: { connect: ['93.184.216.34:443'] } } }))
-    broker.grant(APP, 'tcp.connect', ['93.184.216.34:443'])
+    await broker.grant(APP, 'tcp.connect', ['93.184.216.34:443'])
 
     const socket = await broker.net.connect(`${APP}:443`, { host: '93.184.216.34', port: 443 })
     await socket.close()
