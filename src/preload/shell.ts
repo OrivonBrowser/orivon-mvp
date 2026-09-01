@@ -23,6 +23,9 @@ contextBridge.exposeInMainWorld('orivonShell', {
   back: (id: string) => { send({ type: 'back', id }) },
   forward: (id: string) => { send({ type: 'forward', id }) },
   reload: (id: string) => { send({ type: 'reload', id }) },
+  addBookmark: (url: string, title: string) => { send({ type: 'addBookmark', url, title }) },
+  removeBookmark: (url: string) => { send({ type: 'removeBookmark', url }) },
+  openBookmark: (url: string) => { send({ type: 'openBookmark', url }) },
 
   /** Subscribes to shell state pushes from main. Returns an unsubscribe
    * function; the listener is a closure, not the raw ipcRenderer, so the
@@ -31,5 +34,13 @@ contextBridge.exposeInMainWorld('orivonShell', {
     const handler = (_event: Electron.IpcRendererEvent, state: ShellState): void => listener(state)
     ipcRenderer.on(STATE_CHANNEL, handler)
     return () => ipcRenderer.removeListener(STATE_CHANNEL, handler)
-  }
+  },
+
+  /** A read-only value, not a command -- lets the chrome view reserve
+   * space for Electron's native window buttons without a round trip.
+   * Available even under sandbox: true (process.md SS Sandbox). Needed
+   * because env(titlebar-area-*) and navigator.windowControlsOverlay
+   * both report empty/false for this shell's BaseWindow + WebContentsView
+   * composition -- confirmed empirically, open-questions.md A34. */
+  platform: process.platform
 })

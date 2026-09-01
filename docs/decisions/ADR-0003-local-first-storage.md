@@ -10,7 +10,7 @@ All application data is stored **on the user's machine**. Orivon operates **no s
 application data**, in the MVP or after it. Each app receives an isolated storage domain
 keyed by its origin, and identity secrets live outside every app's reach.
 
-Four storage tiers, deliberately distinct:
+Five storage tiers, deliberately distinct:
 
 | Tier | What | Where | Who can read it |
 |---|---|---|---|
@@ -18,6 +18,7 @@ Four storage tiers, deliberately distinct:
 | **App files** | app-managed data — torrent payloads, caches, resume state | `<userData>/apps/<origin>/files/` | that app, via `orivon.fs` |
 | **App web storage** | localStorage, IndexedDB, cookies, cache | a dedicated Electron `session` partition per origin | that app's renderer only |
 | **Browser secrets** | identity seed, grant ledger, settings | `<userData>/`, encrypted via Electron `safeStorage` (OS keychain) | **no app, ever** |
+| **Browser state** | ordinary shell state that is neither secret nor app-owned — bookmarks are the first thing in this tier | `<userData>/bookmarks.json`, plain JSON, no `safeStorage` | the shell only, never an app. **Added 2026-08-28** — the four original tiers had no row for this, and bookmarks were the first thing to fall into the gap. Not encrypted: a bookmark list is not a secret, and encrypting it would buy nothing while making the file harder to inspect or hand-edit |
 
 ## Context
 The owner asked directly whether data for apps opened by URL is stored locally or remotely.

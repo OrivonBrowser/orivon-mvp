@@ -23,15 +23,17 @@
 // the only layer that has both the manifest and the grant ledger in hand to
 // do it.
 //
-// One file. GrantLedger (the per-origin state -- manifest and grants, kept
-// apart on purpose) and createBroker (the dependency shape and the five
-// capability entry points that consult it) together stay under
-// docs/development/code-guidelines.md's 500-line limit, so there is no seam
-// to split on yet (Rule 2: split by concern, never pre-emptively).
+// GrantLedger (the per-origin state -- manifest and grants, kept apart on
+// purpose) split out to ./grant-ledger.ts once this file crossed
+// docs/development/code-guidelines.md's 500-line limit (Rule 2: split by
+// concern -- this was the seam the file's own header had already earmarked).
+// This file keeps the dependency shape and the five capability entry points
+// that consult that ledger.
 
 import { HandleTable } from './handles.js'
 import type { DestroyResource } from './handle-contracts.js'
 import { fail } from './errors.js'
+import { GrantLedger } from './grant-ledger.js'
 import { checkConnect } from './policy/connect.js'
 import type { Resolver } from './policy/connect.js'
 import { CONFINEMENT_ERROR_CODE, confinePath } from './policy/paths.js'
@@ -42,6 +44,8 @@ import type {
   GrantId,
   Handle,
   Manifest,
+  OrivonError,
+  OrivonErrorCode,
   Pattern,
   TcpSocket
 } from '../contracts/index.js'
@@ -149,8 +153,13 @@ export interface Broker {
    * Registers -- or replaces -- an origin's manifest. Called once per app
    * session, before any capability call for that origin. Existing grants are
    * left untouched (GrantLedger, below).
+   *
+   * `async` for the same reason `grant` is: `canonical()` throws
+   * synchronously on a malformed origin, and every other Broker method
+   * already rejects rather than throwing. A caller wrapping the whole
+   * surface in one uniform `.catch()` must not have to special-case this one.
    */
-  registerApp(origin: string, manifest: Manifest): void
+  registerApp(origin: string, manifest: Manifest): Promise<void>
   /**
    * Records a capability the user actually granted. The broker never grants
    * on its own initiative; this is the permission-prompt UI's seam, never an
@@ -158,8 +167,15 @@ export interface Broker {
    * freshly minted GrantId (open-questions.md A21 -- `HandleTable.grantIssued`
    * is called either way, so a future GrantId-reuse decision costs nothing
    * here).
+   *
+   * A replaced grant is revoked in the handle table SYNCHRONOUSLY inside this
+   * call, before it returns -- not lazily, not on the next operation. Without
+   * that, a capability the user just replaced stays live, permanently
+   * unrevocable (nothing keeps its old GrantId once app.grants() drops it),
+   * and invisible to every future caller. `async` here is that revoke, not a
+   * cosmetic change -- see GrantLedger.grant's own doc.
    */
-  grant(origin: string, capability: CapabilityKind, patterns: readonly Pattern[]): Grant
+  grant(origin: string, capability: CapabilityKind, patterns: readonly Pattern[]): Promise<Grant>
   /**
    * Withdraws one grant. Delegates the cascade to the handle table --
    * (handle-contracts.md SSRevocation) -- rather than reimplementing it: every
@@ -170,111 +186,75 @@ export interface Broker {
 }
 
 /**
- * 128 bits from the platform CSPRNG, as hex -- the same construction
- * handle-store.ts's private `newHandleId()` uses, for the same reason
- * (unguessability is defence in depth; the boundary is the per-origin
- * lookup, not the id's secrecy).
- *
- * NOT DEDUPLICATED with that function, or with policy/bundle-hash.ts's
- * private `toLowercaseHex`. Both live in files this task may not touch --
- * policy/ is off limits by the task brief, and handle-store.ts is not one of
- * the two files it may create -- so reusing either would need an edit outside
- * this PR's scope. code-guidelines.md Rule 3's open point 3 already tracks
- * one such pair as a deliberate, left-for-a-follow-up duplicate; this is the
- * same shape of trade-off, not a new kind of one. Flagged in the PR body as
- * an AI recommendation, not a silent shortcut.
+ * Node's errno convention: an `Error` with a `.code` string, thrown by
+ * `deps.resolve`, `deps.dial` and `deps.fs.*`. Not an `instanceof` check --
+ * the injected implementations are test stubs as often as real Node calls,
+ * and both shapes throw a plain object with this one property in common.
  */
-function newGrantId (): GrantId {
-  const bytes = new Uint8Array(16)
-  crypto.getRandomValues(bytes)
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+function errnoOf (error: unknown): string | undefined {
+  if (typeof error !== 'object' || error === null) return undefined
+  const code = (error as { code?: unknown }).code
+  return typeof code === 'string' ? code : undefined
 }
 
-interface OriginRecord {
-  manifest: Manifest | undefined
-  /**
-   * At most one LIVE grant per capability kind. Granting again replaces it --
-   * see `createBroker`'s `grant()` on why the replacement mints a fresh
-   * GrantId rather than reusing the old one (open-questions.md A21).
-   */
-  readonly grants: Map<CapabilityKind, Grant>
+/** Every value OrivonErrorCode actually has -- see contracts/errors.ts. Used to recognise an error this broker already produced, not one still raw from an injected dependency. */
+const ORIVON_ERROR_CODES: ReadonlySet<OrivonErrorCode> = new Set<OrivonErrorCode>([
+  'denied', 'revoked', 'unreachable', 'timeout', 'reset', 'closed', 'limit', 'invalid', 'notFound', 'exists', 'internal'
+])
+
+function isOrivonError (error: unknown): error is OrivonError {
+  return error instanceof Error && error.name === 'OrivonError' &&
+    ORIVON_ERROR_CODES.has((error as { code?: OrivonErrorCode }).code as OrivonErrorCode)
+}
+
+/** Node errno -> OrivonErrorCode. Anything not listed here fails closed as 'internal'. */
+const ERRNO_TO_CODE: Readonly<Record<string, OrivonErrorCode>> = {
+  ENOENT: 'notFound',
+  EEXIST: 'exists',
+  ECONNREFUSED: 'unreachable',
+  EHOSTUNREACH: 'unreachable',
+  ENETUNREACH: 'unreachable',
+  ENOTFOUND: 'unreachable',
+  EAI_AGAIN: 'unreachable',
+  ETIMEDOUT: 'timeout',
+  ECONNRESET: 'reset',
+  EPIPE: 'reset',
+  EMFILE: 'limit',
+  ENFILE: 'limit',
+  ENOSPC: 'limit',
+  EDQUOT: 'limit',
+  EACCES: 'denied',
+  EPERM: 'denied'
 }
 
 /**
- * The grant ledger: what each origin has declared (its manifest) and what it
- * has actually been granted, kept apart on purpose -- see the file header.
+ * Maps a raw rejection from an injected dependency -- `deps.resolve`,
+ * `deps.dial`, `deps.fs.readFile`, `deps.fs.writeFile` -- onto the closed
+ * OrivonErrorCode enum. Before this fix none of the four was wrapped: an app
+ * switching exhaustively on `err.code`, exactly as contracts/errors.ts's own
+ * doc says it may, would see a raw Node errno such as 'ENOENT' -- a value
+ * that same doc calls a bug to receive.
  *
- * DOES NOT ENFORCE that a grant is a subset of what the manifest declares.
- * That check belongs to whoever ISSUES the grant (the permission-prompt UI, a
- * later build step) and to policy/update.ts's re-consent decision. This class
- * only remembers what it is told, the same way HandleTable trusts the
- * ownership its caller asserts rather than re-deriving it.
+ * An error this broker already threw (via `fail`, e.g. 'denied' from a
+ * failed policy check) passes through unchanged -- mapping it a second time
+ * would be a no-op at best and a lie at worst if two enum members ever
+ * collided as strings.
  *
- * BROKER-INTERNAL, the same way OriginTable (./handle-store.ts) is private to
- * HandleTable. Nothing outside `createBroker` should hold a bare
- * GrantLedger; `canonical()` below is the boundary that normalises an origin
- * before this class ever sees one.
+ * WRITES A FRESH MESSAGE, NEVER FORWARDS THE ORIGINAL. A raw fs error
+ * message carries the confined absolute path (e.g. "ENOENT: ... open
+ * '/apps/<sha256>/missing.txt'") -- handing that to the app tells it exactly
+ * where its own confinement root sits (security-model.md T13b), the first
+ * thing anything attacking policy/paths.ts wants to know. Only the errno
+ * itself survives, as `platformCode` -- and errors.ts's own BrokerError
+ * constructor already strips that for 'denied', so it does not need
+ * repeating here.
  */
-class GrantLedger {
-  readonly #origins = new Map<string, OriginRecord>()
-
-  #record (origin: string): OriginRecord {
-    const existing = this.#origins.get(origin)
-    if (existing !== undefined) return existing
-    const created: OriginRecord = { manifest: undefined, grants: new Map() }
-    this.#origins.set(origin, created)
-    return created
-  }
-
-  /**
-   * Registers -- or replaces -- an origin's manifest. Existing grants are
-   * left untouched: a page reload re-declares the same manifest and must not
-   * silently revoke what the user already granted it.
-   */
-  registerApp (origin: string, manifest: Manifest): void {
-    this.#record(origin).manifest = manifest
-  }
-
-  manifestFor (origin: string): Manifest | undefined {
-    return this.#origins.get(origin)?.manifest
-  }
-
-  /** What was ACTUALLY granted. Empty for an origin the ledger has no record of. */
-  grantsFor (origin: string): readonly Grant[] {
-    const record = this.#origins.get(origin)
-    return record === undefined ? [] : Array.from(record.grants.values())
-  }
-
-  /** The live grant for one capability kind, or undefined if none was ever issued or it was revoked. */
-  currentGrant (origin: string, capability: CapabilityKind): Grant | undefined {
-    return this.#origins.get(origin)?.grants.get(capability)
-  }
-
-  /** Records a capability as granted, replacing any earlier grant of the same kind. */
-  grant (origin: string, capability: CapabilityKind, patterns: readonly Pattern[], grantedAt: number): Grant {
-    const record: Grant = { id: newGrantId(), origin, capability, patterns, grantedAt }
-    this.#record(origin).grants.set(capability, record)
-    return record
-  }
-
-  /**
-   * Removes one grant, by id, from whichever capability slot holds it.
-   *
-   * A NO-OP, never a throw, for an origin or id the ledger does not hold --
-   * revoking twice, or revoking an id that already lapsed, must behave the
-   * same as HandleTable.release's idempotence, not surface a distinguishable
-   * error an app-adjacent caller could probe with.
-   */
-  revoke (origin: string, grantId: GrantId): void {
-    const record = this.#origins.get(origin)
-    if (record === undefined) return
-    for (const [capability, grant] of record.grants) {
-      if (grant.id === grantId) {
-        record.grants.delete(capability)
-        return
-      }
-    }
-  }
+function mapIoError (error: unknown, kind: 'net' | 'fs'): OrivonError {
+  if (isOrivonError(error)) return error
+  const errno = errnoOf(error)
+  const code = errno === undefined ? 'internal' : (ERRNO_TO_CODE[errno] ?? 'internal')
+  const message = kind === 'net' ? 'the network operation failed' : 'the filesystem operation failed'
+  return fail(code, message, undefined, errno)
 }
 
 export function createBroker (deps: CreateBrokerOptions): Broker {
@@ -306,15 +286,23 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
    *
    * `fs` carries no patterns (manifest.ts's FsCapability), so the capability
    * check here is presence-only: does this origin hold ANY live `fs` grant.
+   * Returns the `Grant` itself, not only the confined path -- the caller
+   * needs its id to scope the actual I/O under `handleTable.run`, the same
+   * way `connect` already scopes under `current.id`.
+   *
+   * Synchronous, and stays that way: `confinePath`'s `realpath` parameter is
+   * `policy/paths.ts`'s, declared synchronous, and that file is out of this
+   * PR's scope to change (filed as A28 -- an origin on a slow filesystem can
+   * still block other origins' pending calls through this exact function;
+   * making `realpath` async is the fix, not this one).
    */
-  function confineForOrigin (key: string, path: string): string {
-    if (ledger.currentGrant(key, 'fs') === undefined) {
-      throw fail('denied', 'fs is not granted to this origin')
-    }
+  function confineForOrigin (key: string, path: string): { resolved: string, grant: Grant } {
+    const grant = ledger.currentGrant(key, 'fs')
+    if (grant === undefined) throw fail('denied', 'fs is not granted to this origin')
     const root = deps.fs.rootFor(key)
     const confined = confinePath(root, path, deps.fs.realpathSync)
     if (!confined.ok) throw fail(CONFINEMENT_ERROR_CODE, "the path is outside this app's files directory")
-    return confined.resolved
+    return { resolved: confined.resolved, grant }
   }
 
   async function connect (origin: string, opts: { host: string, port: number }): Promise<TcpSocket> {
@@ -330,10 +318,27 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     if (current === undefined) throw fail('denied', 'tcp.connect is not granted to this origin')
 
     return await handleTable.run(key, { on: 'grant', grantId: current.id }, async (signal) => {
-      const decision = await checkConnect(current.patterns, opts.host, opts.port, deps.resolve)
-      if (!decision.allowed) throw fail('denied', 'the connection was not authorised')
-
-      const dialed = await deps.dial(decision.addresses, opts.port, signal)
+      // `checkConnect` calls `deps.resolve` internally and does not catch
+      // its rejection (policy/connect.ts is pure and out of this PR's
+      // scope), so a raw DNS failure reaches here unmapped. `deps.dial`
+      // rejects raw too. Both need mapIoError; nothing else in this
+      // callback throws anything but an OrivonError already, and mapIoError
+      // passes those through unchanged.
+      let decision: Awaited<ReturnType<typeof checkConnect>>
+      let dialed: DialedSocket
+      try {
+        decision = await checkConnect(current.patterns, opts.host, opts.port, deps.resolve)
+        if (!decision.allowed) throw fail('denied', 'the connection was not authorised')
+        // Checked here too, not only after `dial` resolves below: without
+        // this, a grant revoked while resolve was still pending would still
+        // reach `deps.dial`, and correctness would depend entirely on the
+        // INJECTED dial implementation independently honouring an
+        // already-aborted signal rather than on the broker itself.
+        if (signal.aborted) throw fail('revoked', 'the grant authorising this connection was withdrawn')
+        dialed = await deps.dial(decision.addresses, opts.port, signal)
+      } catch (error) {
+        throw mapIoError(error, 'net')
+      }
 
       if (signal.aborted) {
         // The grant was withdrawn while `dial` was in flight. `acquire`
@@ -357,23 +362,83 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
         destroy
       })
 
+      // Spread FIRST, then the broker-assigned fields -- not the other way
+      // round. `socketFields` came from `dialed`, and DialedSocket's own
+      // type forbids it carrying id/closed/close today, but a future dial()
+      // whose result happens to carry same-named fields must not be able to
+      // silently override the broker's own handle identity and close
+      // behaviour by landing later in the spread.
       return {
+        ...socketFields,
         id: entry.id,
         closed: entry.closed,
-        close: async (): Promise<void> => { await handleTable.release(key, entry.id) },
-        ...socketFields
+        close: async (): Promise<void> => { await handleTable.release(key, entry.id) }
       }
+    })
+  }
+
+  /**
+   * `fs.readFile` and `fs.writeFile` share this shape: confine the path (see
+   * `confineForOrigin`), then run the actual I/O under the same per-origin
+   * in-flight budget `connect` uses (`{ on: 'grant' }` -- handle-contracts.ts
+   * on that scope: "without it those calls would escape the in-flight cap
+   * entirely, which is the cap that keeps the broker responsive"). Before
+   * this, `fs` called `deps.fs.*` directly and was subject to no cap at all
+   * -- T11b by name, and a second, distinct T11b path through the confined
+   * path leaving no room for cancellation either.
+   *
+   * `signal.aborted` is checked on both sides of the raw call: before, in
+   * case the grant was already gone by the time a slot freed up; after,
+   * because revoking mid-write must not let the app receive confirmation for
+   * an operation performed after its grant was withdrawn -- the write can
+   * already be on disk by then, but the app is never told it succeeded.
+   */
+  async function runFsIo<T> (key: string, grant: Grant, io: () => Promise<T>): Promise<T> {
+    return await handleTable.run(key, { on: 'grant', grantId: grant.id }, async (signal) => {
+      if (signal.aborted) throw fail('revoked', 'the grant authorising this fs operation was withdrawn')
+      let result: T
+      try {
+        result = await io()
+      } catch (error) {
+        throw mapIoError(error, 'fs')
+      }
+      if (signal.aborted) throw fail('revoked', 'the grant authorising this fs operation was withdrawn')
+      return result
     })
   }
 
   async function readFile (origin: string, path: string): Promise<Uint8Array> {
     const key = canonical(origin)
-    return await deps.fs.readFile(confineForOrigin(key, path))
+    const { resolved, grant } = confineForOrigin(key, path)
+    return await runFsIo(key, grant, async () => await deps.fs.readFile(resolved))
+  }
+
+  /**
+   * manifest.ts's FsCapability.quotaBytes: "ENFORCED, not advisory ... The
+   * broker maintains a running per-origin byte counter, checks it on write,
+   * and yields 'limit' when exceeded." Checked BEFORE the I/O runs, not
+   * after, so a write that would blow the quota never reaches
+   * `deps.fs.writeFile` at all. Undeclared quota (the common case today --
+   * nothing in the corpus sets one yet) means unlimited, matching
+   * `quotaBytes?: number` being optional.
+   *
+   * Session-lifetime only -- see GrantLedger's own note on why "reconciling
+   * against the directory on startup" is filed (A29) rather than done here.
+   */
+  function checkFsQuota (key: string, bytes: number): void {
+    const quotaBytes = ledger.manifestFor(key)?.capabilities.fs?.quotaBytes
+    if (quotaBytes === undefined) return
+    if (ledger.fsBytesWritten(key) + bytes > quotaBytes) {
+      throw fail('limit', "this write would exceed the app's declared storage quota")
+    }
   }
 
   async function writeFile (origin: string, path: string, data: Uint8Array): Promise<void> {
     const key = canonical(origin)
-    await deps.fs.writeFile(confineForOrigin(key, path), data)
+    const { resolved, grant } = confineForOrigin(key, path)
+    checkFsQuota(key, data.length)
+    await runFsIo(key, grant, async () => { await deps.fs.writeFile(resolved, data) })
+    ledger.addFsBytesWritten(key, data.length)
   }
 
   async function manifest (origin: string): Promise<Manifest> {
@@ -390,18 +455,23 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     return ledger.grantsFor(canonical(origin))
   }
 
-  function registerApp (origin: string, appManifest: Manifest): void {
+  async function registerApp (origin: string, appManifest: Manifest): Promise<void> {
     ledger.registerApp(canonical(origin), appManifest)
   }
 
-  function grant (origin: string, capability: CapabilityKind, patterns: readonly Pattern[]): Grant {
+  async function grant (origin: string, capability: CapabilityKind, patterns: readonly Pattern[]): Promise<Grant> {
     const key = canonical(origin)
-    const record = ledger.grant(key, capability, patterns, deps.now())
+    const { record, replaced } = ledger.grant(key, capability, patterns, deps.now())
     // Clears a stale revoked-tombstone under THIS id. A freshly minted id
     // makes this a no-op today, but the handle table is correct either way,
     // and open-questions.md A21 says the ledger must call it regardless of
     // how GrantId reuse across a revoke-then-re-grant is eventually decided.
     handleTable.grantIssued(key, record.id)
+    // The ledger has already dropped `replaced` (GrantLedger.grant's Map.set
+    // above), so this is the only remaining place anything still knows its
+    // id. Revoking it here, before returning, is what stops a superseded
+    // grant staying live forever -- see the interface doc on `grant`.
+    if (replaced !== undefined) await handleTable.revoke(key, replaced.id)
     return record
   }
 

@@ -1,0 +1,104 @@
+/* Bookmarks bar -- owner override, 2026-08-28 (mvp-scope.md, ADR-0003),
+   not in the original scope pass. Structure and static items (the apps
+   grid, "Other Bookmarks") match orivon-browser-v2 (visual reference
+   only, ADR-0002); the actual bookmark list is this shell's own, since
+   v2's bar was static decoration with no data model. */
+
+.bookmarksbar {
+  height: 28px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  gap: 12px;
+  background: var(--wbookmarks);
+}
+
+.bmicon {
+  padding: 2px 4px;
+  border-radius: 4px;
+  display: flex;
+  color: var(--wink-dim);
+}
+.bmicon svg { width: 16px; height: 16px; }
+.bmicon:not(:disabled):hover {
+  background: var(--whover-soft);
+}
+/* A permanent placeholder, same reasoning as .iconbtn/.pillbtn
+   (toolbar.css) -- the base button:disabled dim-on-dim read as broken
+   rather than "not built yet" (open-questions.md A32). */
+.bmicon:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.bmfolder {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  color: var(--wink-dim);
+  cursor: default;
+  flex: none;
+}
+.bmfolder svg { width: 16px; height: 16px; }
+.bmfolder span {
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.bmlist {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.bmlist::-webkit-scrollbar { display: none; }
+
+.bmitem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px 2px 8px;
+  border-radius: 4px;
+  color: var(--wink-dim);
+  cursor: default;
+  flex: none;
+  max-width: 160px;
+}
+.bmitem:hover {
+  background: var(--whover-soft);
+  color: var(--wink);
+}
+.bmitem > svg { width: 14px; height: 14px; flex: none; }
+.bmitem span {
+  font-size: 12px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Remove button -- hover-reveal, same pattern as .tab .close
+   (tabstrip.css). Hidden until the item itself is hovered so the bar
+   doesn't look cluttered with X's at rest. */
+.bmitem .remove {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+}
+.bmitem:hover .remove { opacity: 0.7; }
+.bmitem .remove:hover {
+  background: color-mix(in srgb, var(--wink) 14%, transparent);
+  opacity: 1;
+}
+.bmitem .remove svg { width: 10px; height: 10px; }
