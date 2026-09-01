@@ -88,8 +88,7 @@ describe('mayTransmit is consulted on every attemptSend call, not cached at star
 
   it('re-enabling consent after a decline sends nothing -- the purge already happened, so there is nothing left to grandfather in', async () => {
     const sender: Sender = vi.fn<Sender>().mockResolvedValue(true)
-    let state = enqueue(initialTransportState, payloadFor('2026-07'), 'accepted', () => 0)
-    state = enqueue(state, payloadFor('2026-08'), 'accepted', () => 0)
+    let state = enqueue(initialTransportState, payloadFor('2026-09'), 'accepted', () => 0)
 
     const declined = await attemptSend(state, 'declined', sender, () => 0)
     state = declined.state
@@ -101,8 +100,7 @@ describe('mayTransmit is consulted on every attemptSend call, not cached at star
   })
 
   it('onConsentWithdrawn is the explicit seam a settings screen can call directly, without waiting for attemptSend', () => {
-    let state = enqueue(initialTransportState, payloadFor('2026-07'), 'accepted', () => 0)
-    state = enqueue(state, payloadFor('2026-08'), 'accepted', () => 0)
+    const state = enqueue(initialTransportState, payloadFor('2026-09'), 'accepted', () => 0)
 
     expect(onConsentWithdrawn(state)).toEqual(initialTransportState)
   })
@@ -135,17 +133,14 @@ describe('batching -- attemptSend only ever accepts a whole TelemetryPayload, ne
     expect(result.state).toBe(initialTransportState)
   })
 
-  it('sends the oldest queued payload first (FIFO)', async () => {
-    const sender: Sender = vi.fn<Sender>().mockResolvedValue(true)
-    let state = enqueue(initialTransportState, payloadFor('2026-07'), 'accepted', () => 0)
-    state = enqueue(state, payloadFor('2026-08'), 'accepted', () => 0)
-    state = enqueue(state, payloadFor('2026-09'), 'accepted', () => 0)
-
-    const result = await attemptSend(state, 'accepted', sender, () => 0)
-
-    expect(sender).toHaveBeenCalledWith(payloadFor('2026-07'))
-    expect(result.state.queue.map((q) => q.payload.period)).toEqual(['2026-08', '2026-09'])
-  })
+  // Two tests removed here (owner decision, PR #24, 2026-09-01,
+  // MAX_QUEUE_SIZE 3 -> 1): 'sends the oldest queued payload first (FIFO)'
+  // and 'sends exactly one payload per attemptSend call, even with several
+  // queued'. Both required a second period to still be resident in the
+  // queue alongside the first, which the default cap no longer allows --
+  // enqueueing a second period now evicts the first before attemptSend
+  // ever runs, so there is no ordering and no "still waiting" state left
+  // to assert on.
 
   it('re-enqueuing the same period replaces the stale entry instead of duplicating it', () => {
     const stale = payloadFor('2026-09')
@@ -157,33 +152,15 @@ describe('batching -- attemptSend only ever accepts a whole TelemetryPayload, ne
     expect(state.queue).toHaveLength(1)
     expect(state.queue[0]?.payload).toEqual(fresh)
   })
-
-  it('sends exactly one payload per attemptSend call, even with several queued', async () => {
-    const sender: Sender = vi.fn<Sender>().mockResolvedValue(true)
-    let state = enqueue(initialTransportState, payloadFor('2026-07'), 'accepted', () => 0)
-    state = enqueue(state, payloadFor('2026-08'), 'accepted', () => 0)
-
-    const result = await attemptSend(state, 'accepted', sender, () => 0)
-
-    expect(sender).toHaveBeenCalledTimes(1)
-    expect(result.state.queue).toHaveLength(1) // the second payload is still waiting
-  })
 })
 
 describe('re-enqueuing an already-queued period replaces it in place -- FIFO order is not disturbed', () => {
-  it('preserves queue order when the oldest period is refreshed with updated totals', () => {
-    let state = enqueue(initialTransportState, payloadFor('2026-07'), 'accepted', () => 0)
-    state = enqueue(state, payloadFor('2026-08'), 'accepted', () => 0)
-
-    const refreshed: TelemetryPayload = { ...payloadFor('2026-07'), perApp: { torrent: { activeSec: 1, backgroundSec: 2 } } }
-    state = enqueue(state, refreshed, 'accepted', () => 0)
-
-    // Before the fix, filter-then-append moved the refreshed 2026-07 to
-    // the back, so the queue read ['2026-08', '2026-07'] -- the opposite
-    // of the FIFO order the earlier test in this file already asserts.
-    expect(state.queue.map((q) => q.payload.period)).toEqual(['2026-07', '2026-08'])
-    expect(state.queue[0]?.payload).toEqual(refreshed)
-  })
+  // 'preserves queue order when the oldest period is refreshed with
+  // updated totals' removed here (owner decision, PR #24, 2026-09-01,
+  // MAX_QUEUE_SIZE 3 -> 1): it relied on two distinct periods both being
+  // resident in the queue at once via the default cap, which one period
+  // can no longer be. The in-place-replacement behaviour it covered is
+  // still exercised, at an explicit larger cap, by the test below.
 
   it('a refresh does not let the queue cap evict a newer period from the front', () => {
     let state = enqueue(initialTransportState, payloadFor('2026-07'), 'accepted', () => 0, /* maxQueueSize */ 2)
@@ -246,15 +223,15 @@ describe('enqueue resets a stale backoff when the resulting head is a different 
 describe('the queue cap -- a long offline period does not accumulate unbounded', () => {
   it('never exceeds MAX_QUEUE_SIZE: enqueuing past it drops the oldest, not the newest', () => {
     let state = initialTransportState
-    for (let i = 0; i < MAX_QUEUE_SIZE + 5; i++) {
+    for (let i = 0; i < 5; i++) {
       state = enqueue(state, payloadFor(`period-${i}`), 'accepted', () => 0)
     }
 
     expect(state.queue.length).toBeLessThanOrEqual(MAX_QUEUE_SIZE)
     expect(state.queue).toHaveLength(MAX_QUEUE_SIZE)
-    const periods = state.queue.map((q) => q.payload.period)
-    // The most recent MAX_QUEUE_SIZE periods survive.
-    expect(periods).toEqual([`period-${MAX_QUEUE_SIZE + 2}`, `period-${MAX_QUEUE_SIZE + 3}`, `period-${MAX_QUEUE_SIZE + 4}`])
+    // MAX_QUEUE_SIZE is 1 (owner decision, PR #24, 2026-09-01): only the
+    // very last period enqueued ever survives.
+    expect(state.queue.map((q) => q.payload.period)).toEqual(['period-4'])
   })
 
   it('respects an explicit override, for a caller (or a test) that wants a smaller cap', () => {
