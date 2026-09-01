@@ -3,11 +3,13 @@
 //
 // SCOPE, from ./connect.ts's own header: `tcp.connect` only, but `udp.send`
 // has the same pattern rules (../../contracts/manifest.ts) and can reuse
-// every function here -- though not `checkConnect` itself, which reads
-// `net.tcp.connect` by name. `tcp.listen` and `udp.bind` are a DIFFERENT
-// decision (bare port ranges, `"*"` rejected, privileged ports denied
-// outright) and get their own function, because the two share a grammar and
-// nothing else.
+// every function here -- including `checkConnect` itself now that it takes
+// the granted pattern list directly rather than reading `net.tcp.connect` by
+// name off a Manifest (docs/open-questions.md A18). Not wired up for
+// `udp.send` here; that is new scope. `tcp.listen` and `udp.bind` are a
+// DIFFERENT decision (bare port ranges, `"*"` rejected, privileged ports
+// denied outright) and get their own function, because the two share a
+// grammar and nothing else.
 
 import type { Pattern } from '../../contracts/index.js'
 import { canonicalAddress, classifyAddress, isPublicUnicast } from './address.js'
