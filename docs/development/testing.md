@@ -68,8 +68,9 @@ that constraint is what makes these tests cheap enough to actually exist.
 
 ### 1. Capability checking at the call site
 
-`checkConnect(manifest, hostArg, port, resolveFn)` with an **injected stub resolver** — not just
-the pattern matcher in isolation.
+`checkConnect(patterns, hostArg, port, resolveFn)` with an **injected stub resolver** — not just
+the pattern matcher in isolation. `patterns` is the **GRANTED** `readonly Pattern[]`, not a
+`Manifest` — see the second correction below.
 
 > **Corrected 2026-08-27.** This said `checkConnect(manifest, hostArg, resolveFn)`, with no
 > `port`. A connect pattern is `host:port`, so the port is half the decision and the function
@@ -80,6 +81,12 @@ the pattern matcher in isolation.
 >
 > The manifest-versus-grant question in the same signature is **not** settled and is filed as
 > [`open-questions.md`](../open-questions.md) A18.
+>
+> **Corrected again, 2026-08-27, the same day.** A18 is now resolved (owner decision) and
+> implemented on `stream/a18-grant-not-manifest`: the first parameter changed from a whole
+> `Manifest` to `readonly Pattern[]` — the patterns the user actually **granted**, already
+> narrowed by the caller, not the wider set the manifest merely **declared**. The
+> manifest-versus-grant question the correction above pointed at is no longer open.
 
 *Why the distinction matters:* a perfectly correct glob matcher, fed a **hostname**, is still
 completely defeated by DNS rebinding (T12). Testing the matcher alone covers the harmless half
