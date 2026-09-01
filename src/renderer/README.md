@@ -45,7 +45,7 @@ assert against. **If you change one, change all three**, and re-run `npm run smo
 ```
 tab strip     36px   shares the row with Electron's native window buttons (titleBarOverlay /
                      macOS traffic lights) — reserved space for them is an approximation, not
-                     a measurement; see open-questions.md A27
+                     a measurement; see open-questions.md A34
 toolbar       40px
 bookmarks bar 28px
                      ────
@@ -54,7 +54,7 @@ bookmarks bar 28px
 
 **Reserving space for native window buttons.** `env(titlebar-area-*)` and
 `navigator.windowControlsOverlay` both report empty/`false` for this shell's `BaseWindow` +
-`WebContentsView` composition — confirmed empirically, not assumed (`open-questions.md` A27).
+`WebContentsView` composition — confirmed empirically, not assumed (`open-questions.md` A34).
 `style.css`'s `[data-platform]` rules reserve a fixed inset instead, driven by `process.platform`
 exposed read-only from `preload/shell.ts` (available even under `sandbox: true`) and written to
 `document.documentElement.dataset.platform` at the top of `main.ts`, before first paint.
@@ -75,7 +75,7 @@ this codebase (Rule 8; `ADR-0002`, TypeScript only). Path data for the ones that
 `orivon-browser-v2` is hand-ported from lucide's icon set (ISC licence) onto lucide's own
 default attributes, credited in `icons.ts`. A control with no v0 behaviour yet (extensions, the
 sidebar, the identity/card slot, favorites, shields, the menu) ships `disabled` with an honest
-`title` rather than being omitted or left silently clickable — `open-questions.md` A25.
+`title` rather than being omitted or left silently clickable — `open-questions.md` A32.
 
 **Visual reference only, never code:** the prior prototype at
 `/home/jhon/git/orivon-browser-v2` and `webtorrent-desktop`. Both are
