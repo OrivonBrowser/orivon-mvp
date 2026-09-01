@@ -362,11 +362,17 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
         destroy
       })
 
+      // Spread FIRST, then the broker-assigned fields -- not the other way
+      // round. `socketFields` came from `dialed`, and DialedSocket's own
+      // type forbids it carrying id/closed/close today, but a future dial()
+      // whose result happens to carry same-named fields must not be able to
+      // silently override the broker's own handle identity and close
+      // behaviour by landing later in the spread.
       return {
+        ...socketFields,
         id: entry.id,
         closed: entry.closed,
-        close: async (): Promise<void> => { await handleTable.release(key, entry.id) },
-        ...socketFields
+        close: async (): Promise<void> => { await handleTable.release(key, entry.id) }
       }
     })
   }
