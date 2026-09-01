@@ -153,8 +153,13 @@ export interface Broker {
    * Registers -- or replaces -- an origin's manifest. Called once per app
    * session, before any capability call for that origin. Existing grants are
    * left untouched (GrantLedger, below).
+   *
+   * `async` for the same reason `grant` is: `canonical()` throws
+   * synchronously on a malformed origin, and every other Broker method
+   * already rejects rather than throwing. A caller wrapping the whole
+   * surface in one uniform `.catch()` must not have to special-case this one.
    */
-  registerApp(origin: string, manifest: Manifest): void
+  registerApp(origin: string, manifest: Manifest): Promise<void>
   /**
    * Records a capability the user actually granted. The broker never grants
    * on its own initiative; this is the permission-prompt UI's seam, never an
@@ -444,7 +449,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     return ledger.grantsFor(canonical(origin))
   }
 
-  function registerApp (origin: string, appManifest: Manifest): void {
+  async function registerApp (origin: string, appManifest: Manifest): Promise<void> {
     ledger.registerApp(canonical(origin), appManifest)
   }
 
