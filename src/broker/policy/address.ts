@@ -37,7 +37,17 @@
 //
 // Split into three files (Rule 2, docs/development/code-guidelines.md):
 // ./address-ranges.ts (the RFC 6890/4291 tables), ./address-parse.ts (the
-// literal parsers), and this file (classification and the public API).
+// literal parsers), and this file (classification, canonicalisation, and the
+// public API).
+//
+// TWO PUBLIC ANSWERS SHARE THIS FILE ON PURPOSE. `classifyAddress` answers
+// "what range is this in" for the DENY side and stays permissive -- it has to
+// recognise `2130706433` in order to block it. `canonicalAddress`, below,
+// answers a different question for the ALLOW side: "will everything
+// downstream read this string as the same address" (docs/open-questions.md
+// A20). Both are built from the same ./address-parse.ts parsers, so they
+// cannot disagree about what an address IS -- only about how it should be
+// spelled.
 
 import { type AddressClass, IPV4_BLOCKED, IPV4_MAX, IPV6_BLOCKED, MAX_LENGTH } from './address-ranges.js'
 import { parseIpv4, parseIpv6 } from './address-parse.js'
@@ -176,6 +186,126 @@ export function classifyAddress (addr: string): AddressClass {
 
   const value = parseIpv4(text)
   return value === null ? 'unparseable' : classifyIpv4(value)
+}
+
+/** The strict dotted-quad spelling of a packed IPv4 address: four decimal octets, no leading zeros. */
+function formatIpv4 (value: number): string {
+  return `${(value >>> 24) & 0xff}.${(value >>> 16) & 0xff}.${(value >>> 8) & 0xff}.${value & 0xff}`
+}
+
+/**
+ * The RFC 5952 canonical spelling of a parsed IPv6 literal: lower-case hex,
+ * no leading zeros, the LONGEST run of consecutive zero words compressed to
+ * `::` (leftmost on a tie, RFC 5952 SS4.2), and a run of exactly one word
+ * never compressed -- `:0:` is exactly as long as `::`, so compressing it
+ * buys nothing and RFC 5952 forbids it.
+ *
+ * ONE DELIBERATE EXCEPTION. An IPv4-mapped address (`::ffff:0:0/96`) is
+ * spelled with the embedded dotted quad -- `::ffff:127.0.0.1`, never
+ * `::ffff:7f00:1` -- because RFC 5952 SS5 recommends exactly that form, and
+ * it is the one a human (and the grant prompt this function's caller
+ * ultimately feeds, docs/open-questions.md A20) can actually read. Scoped
+ * narrowly to that one prefix: 6to4 and NAT64 also carry a v4 address (see
+ * `embeddedIpv4` above) but RFC 5952 does not recommend dotted-quad for
+ * either, and inventing a convention nobody else in the stack shares is how a
+ * second "canonical" spelling of one address ends up existing again -- the
+ * exact bug `canonicalAddress` exists to retire.
+ */
+function formatIpv6 (bytes: Uint8Array): string {
+  if (allZero(bytes, 0, 10) && bytes[10] === 0xff && bytes[11] === 0xff) {
+    return `::ffff:${formatIpv4(readUint32(bytes, 12))}`
+  }
+
+  const words: number[] = []
+  for (let i = 0; i < 8; i++) {
+    words.push((((bytes[i * 2] ?? 0) << 8) | (bytes[(i * 2) + 1] ?? 0)) >>> 0)
+  }
+
+  // The longest run of zero words, leftmost on a tie: `runLen > bestLen` is
+  // strict, so a later run of equal length never displaces an earlier one.
+  let bestStart = -1
+  let bestLen = 0
+  let runStart = -1
+  let runLen = 0
+  for (let i = 0; i < 8; i++) {
+    if (words[i] === 0) {
+      if (runStart === -1) runStart = i
+      runLen++
+      if (runLen > bestLen) { bestLen = runLen; bestStart = runStart }
+    } else {
+      runStart = -1
+      runLen = 0
+    }
+  }
+
+  const hex = words.map((word) => word.toString(16))
+  if (bestLen < 2) return hex.join(':')
+
+  const head = hex.slice(0, bestStart)
+  const tail = hex.slice(bestStart + bestLen)
+  return `${head.join(':')}::${tail.join(':')}`
+}
+
+/**
+ * The single spelling everything downstream will read as the same address --
+ * NORMALISED, not merely validated. `canonicalAddress('2130706433')`,
+ * `canonicalAddress('0177.0.0.1')` and `canonicalAddress('127.0.0.1')` all
+ * return `'127.0.0.1'`; asking which spelling was "the real" address is the
+ * wrong question; they were always the same one.
+ *
+ * WHY THIS EXISTS ALONGSIDE classifyAddress. See this file's header. In
+ * short: `connect.ts` needs an IDENTITY answer that `classifyAddress`'s
+ * permissiveness cannot give it. `net.isIP` rejects `2130706433`, so
+ * `net.connect` treats it as a NAME and looks it up again -- the rebinding
+ * window this whole directory exists to close, reopened one layer below the
+ * check (docs/open-questions.md A20, found by review 2026-08-27).
+ *
+ * BUILT FROM THE SAME PARSERS classifyAddress uses (./address-parse.ts), not
+ * a second grammar. The stopgap this replaces, `isCanonicalLiteral`
+ * (formerly ./canonical-host.ts), hand-rolled its own strict-subset regex
+ * grammar next to this file's, kept in sync only by a human noticing both
+ * when one changed -- precisely the failure Rule 3
+ * (docs/development/code-guidelines.md) names. Parsing once and formatting
+ * the result means there is only one opinion in this codebase about what an
+ * address is.
+ *
+ * REJECT vs NORMALISE was the open call (docs/open-questions.md A20): this
+ * function normalises, because an echo-only validator would give the grant
+ * prompt and `policy/update.ts`'s pattern comparison nothing to work with --
+ * `2130706433:22` needs to RENDER, and COMPARE, as `127.0.0.1:22`, not
+ * disappear into a denial. A caller that instead wants connect.ts's own
+ * "declare it legibly or the connection is refused" policy gets it for free
+ * by comparing the result to the input -- `canonicalAddress(x) === x` is
+ * exactly what `isCanonicalLiteral(x)` used to mean, and every call site in
+ * ./connect.ts and ./connect-patterns.ts is written that way.
+ *
+ * Null for anything classifyAddress calls 'unparseable' -- same parsers, so
+ * the two can never disagree about what counts as an address -- AND for a
+ * literal carrying a zone id (`fe80::1%eth0`). That second null is a
+ * deliberate DIVERGENCE from classifyAddress, not an oversight:
+ * classifyAddress strips the zone and classifies anyway, because failing
+ * closed on the deny side is free, but this function feeds the allow side,
+ * and dropping the zone would hand back a spelling of a DIFFERENT, unscoped
+ * address -- there is no canonical form to return, only a wrong answer.
+ */
+export function canonicalAddress (addr: string): string | null {
+  if (typeof addr !== 'string') return null
+
+  let text = addr.trim()
+  if (text.length === 0 || text.length > MAX_LENGTH) return null
+
+  // Mirrors classifyAddress's own bracket-handling (see its comment) so the
+  // two never disagree about what counts as an address, only about spelling.
+  if (text.startsWith('[') && text.endsWith(']')) text = text.slice(1, -1)
+
+  if (text.includes(':')) {
+    if (text.includes('%')) return null
+    const bytes = parseIpv6(text)
+    return bytes === null ? null : formatIpv6(bytes)
+  }
+
+  const value = parseIpv4(text)
+  return value === null ? null : formatIpv4(value)
 }
 
 /**

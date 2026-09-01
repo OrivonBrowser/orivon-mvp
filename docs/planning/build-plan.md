@@ -279,13 +279,14 @@ Deliberately minimal, concentrated where silent failure is plausible and costly.
 **Unit tests — security-critical logic only** (revised 2026-08-25 after the QA audit; each is a
 pure function against stubs, 30 min–3 h):
 
-1. **Capability checking at the call site**, not just the matcher — `checkConnect(manifest,
+1. **Capability checking at the call site**, not just the matcher — `checkConnect(patterns,
    hostArg, port, resolveFn)` with an injected stub resolver, plus an `isPublicUnicast` table
    covering 127/8, 10/8, 172.16/12, 192.168/16, 169.254/16, `::1`, `fc00::/7`, IPv4-mapped
    `::ffff:127.0.0.1`, and integer/octal literal forms. *A correct glob matcher fed a hostname
    is still fully defeated by rebinding — the original test covered the harmless half of T12.*
-   *(Signature and predicate name corrected 2026-08-27 to match the built code; see
-   [`testing.md`](../development/testing.md) §1.)*
+   *(Signature and predicate name corrected 2026-08-27 to match the built code; `patterns` is the
+   GRANTED `readonly Pattern[]`, not a `Manifest` — corrected again the same day, A18 resolved;
+   see [`testing.md`](../development/testing.md) §1.)*
 2. **`fs` path-traversal rejection** — `path.relative(root, resolved)` must be non-empty, not
    start with `..`, and not be absolute; **plus `realpath` the parent** so a planted symlink
    cannot escape. *A string-prefix check passes `/apps/foo-evil` against root `/apps/foo`, and
