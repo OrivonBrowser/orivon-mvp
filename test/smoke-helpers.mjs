@@ -31,8 +31,17 @@ const POLL_INTERVAL_MS = 50
  */
 export const ABSENCE_SETTLE_MS = 1_500
 
+/** BUG (found 2026-08-28, real regression): `.endsWith('index.html')` was
+ * unique before the new-tab dashboard existed -- no tab could ever end
+ * in `index.html`. The dashboard's own URL (`.../newtab/index.html`)
+ * ALSO passes that check, so this could match either window depending
+ * on commit-order timing, silently driving the whole rest of the script
+ * against the wrong page (every subsequent action degrades to a full
+ * per-step timeout instead of throwing, compounding into several
+ * minutes of total silence). Matched against the FULL renderer path so
+ * the dashboard's nested one can never qualify. */
 export function findChrome (app) {
-  const win = app.windows().find((w) => w.url().endsWith('index.html'))
+  const win = app.windows().find((w) => w.url().endsWith('/renderer/index.html'))
   if (win === undefined) throw new Error('chrome view not found in app.windows()')
   return win
 }
@@ -73,13 +82,29 @@ export async function waitFor (predicate, timeoutMs = WAIT_TIMEOUT_MS) {
  * this existed it surfaced as the whole run dying with a stack trace, roughly
  * one run in three. Only that specific class is retried; every other error
  * still propagates.
+ *
+ * BUG (found 2026-08-28): `page.evaluate()` itself has NO timeout in this
+ * Playwright version (confirmed against the installed source -- it passes
+ * `kNoTimeout` internally). The `timeoutMs` deadline here was only ever
+ * consulted inside the `catch` block, so a call that never settles at all
+ * (an execution-context race that doesn't resolve either way, rather than
+ * throwing) was never bounded by it -- silently contradicting this file's
+ * own "it reports, it does not just exit" rule (scripts/smoke.mjs's
+ * header). Racing the evaluate itself against the deadline is what
+ * actually enforces it.
  */
 export async function evaluateRetrying (page, fn, timeoutMs = WAIT_TIMEOUT_MS) {
   const TRANSIENT = /Execution context was destroyed|frame was detached/i
   const deadline = Date.now() + timeoutMs
   for (;;) {
+    const remaining = Math.max(0, deadline - Date.now())
     try {
-      return await page.evaluate(fn)
+      return await Promise.race([
+        page.evaluate(fn),
+        delay(remaining).then(() => {
+          throw new Error(`evaluateRetrying: page.evaluate() did not settle within ${timeoutMs}ms`)
+        })
+      ])
     } catch (e) {
       if (Date.now() >= deadline || !TRANSIENT.test(String(e))) throw e
       await delay(POLL_INTERVAL_MS)

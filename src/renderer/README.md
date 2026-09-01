@@ -1,22 +1,30 @@
 # `src/renderer/` — the browser chrome UI
 
-**What lives here.** Three rows, rendered in a dedicated `WebContentsView` above the active
-tab: the tab strip (sharing its row with Electron's native window buttons), the toolbar
-(navigation, the bookmark toggle, the omnibox, a right-hand icon cluster), and the bookmarks
-bar. Restyled 2026-08-28 to match `orivon-browser-v2`'s chrome — see **Visual reference** below.
+**What lives here.** Two entries, both plain vanilla-TS pages, no framework. The main one is the
+chrome view: three rows, rendered in a dedicated `WebContentsView` above the active tab — the
+tab strip (sharing its row with Electron's native window buttons), the toolbar (navigation, the
+bookmark toggle, the omnibox, a right-hand icon cluster), and the bookmarks bar. Restyled
+2026-08-28 to match `orivon-browser-v2`'s chrome — see **Visual reference** below. The second,
+[`newtab/`](newtab/) (added the same day), is the new-tab dashboard — ordinary tab content
+loaded into a fresh tab's own `WebContentsView`, not part of the chrome view at all; see
+`src/main/tabs.ts`'s `createTab()`.
 
 **Files.**
 
 | File | What |
 |---|---|
-| `index.html` | The DOM: three rows, and every icon that never changes as static inline SVG |
+| `index.html` | The chrome view's DOM: three rows, and every icon that never changes as static inline SVG |
 | `style.css` | Entry point — colour/size tokens, both themes, page-wide base rules, `@import`s the three below |
 | `styles/tabstrip.css`, `styles/toolbar.css`, `styles/bookmarks.css` | One row each |
 | `main.ts` | Renders `ShellState`, turns clicks/typing into `orivonShell.*` commands |
-| `icons.ts` | Icons built at runtime (a tab's or bookmark's generic globe, a close/remove button) — everything else is static markup |
+| `icons.ts` | Icons built at runtime (a tab's or bookmark's generic globe, a close/remove button) — everything else is static markup; also imported by `newtab/main.ts` for its bookmark tiles |
 | `bookmarks-view.ts` | Renders the bookmarks bar's dynamic list |
+| `newtab/index.html`, `newtab/main.ts`, `newtab/style.css` | The dashboard: a search box, then a grid of app-shortcut and bookmark tiles — its own small entry, separate from the chrome view |
 
-**What it depends on.** `src/preload/shell.ts`'s exposed commands, over IPC.
+**What it depends on.** `src/preload/shell.ts`'s exposed commands, over IPC, for the chrome
+view; `newtab/main.ts` depends on `src/preload/newtab.ts`'s exposed commands the same way, and
+degrades to plain unprivileged markup (no `window.orivonNewTab`) rather than throwing when
+loaded outside a genuinely fresh tab — see that file's own header comment.
 
 **What it must never import.** `electron`, `node:*`, or anything under
 [`src/main/`](../main/). This is a sandboxed renderer with `nodeIntegration: false`; there is
@@ -26,7 +34,7 @@ push and are erased at build time by `verbatimModuleSyntax`.)
 
 **Owner stream.** `shell` — build step 1, **done, maintenance only**.
 
-**This is the only ESM tree in the repository.** Main and both preloads are CommonJS; see
+**This is the only ESM tree in the repository.** Main and all three preloads are CommonJS; see
 [`src/main/README.md`](../main/README.md).
 
 **Layout constant, kept in three places on purpose.** `CHROME_HEIGHT` in
