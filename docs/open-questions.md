@@ -66,13 +66,15 @@ None of these block starting the week-0 spike.
 | A25 | **The docs' own example of an unparseable version parses.** `capability-api.md` and `update.ts` both cite `"2026-08-26"` as a version that cannot be ordered. It orders fine -- hyphens are legal semver prerelease identifiers | Before anyone relies on the example |
 | A26 | **Three port-range parsers now exist**: `connect-patterns.ts`, privately in `update.ts`, and `loader/manifest.ts`. None is legally reusable from the others as written | Rule 3; before a fourth |
 | A27 | **`update.ts`'s wildcard host match and `connect-patterns.ts`'s pattern matcher disagree about what a leading `*.` means.** `update.ts`'s `hostCovers` treats `*.example.com` as a real suffix wildcard for its re-consent check; `connect-patterns.ts` treats the identical syntax as matching nothing. A manifest can declare, validate and be granted a `connect` pattern that can then never actually connect | **Before the grant prompt is built (build step 4)**, the first point a user sees a pattern spelled two different ways. See below |
-| A28 | **`confinePath` takes a synchronous `realpath`, so every confined `fs` call blocks the broker's main thread.** `policy/paths.ts` declares the parameter synchronous; any broker that calls it performs blocking `stat`/`lstat` syscalls inline with otherwise-async `readFile`/`writeFile` | **Before `orivon.fs` is wired to a renderer (build step 2's IPC task).** See below |
+| A28 | **`confinePath` takes a synchronous `realpath`, so every confined `fs` call blocks the broker's main thread.** `policy/paths.ts` declares the parameter synchronous; any broker that calls it performs blocking `stat`/`lstat` syscalls inline with otherwise-async `readFile`/`writeFile` | **Trigger re-dated 2026-09-01 (owner's decision).** `orivon.fs` is now wired to a renderer with `confinePath` still synchronous — see below for why that trigger fired a step early. Now needed **before any origin holds a real `fs` grant.** |
 | A29 | **`quotaBytes` promises reconciliation against the directory on startup, and nothing implements that half.** `contracts/manifest.ts` documents a running per-origin byte counter that reconciles on startup rather than walking the tree every operation; no storage layer or `BrokerFs` member does the reconciling, so the counter resets on every restart | **Before packaging (build step 10)**, when a real user's disk is at stake. See below |
 | A30 | **`CLAUDE.md` states as fact that three `BaseWindow` options are `BrowserWindow`-only; they are not.** `titleBarStyle`, `titleBarOverlay` and `trafficLightPosition` are all declared on `BaseWindowConstructorOptions` in electron 44.0.0's own `.d.ts` — only `ready-to-show` is genuinely `BrowserWindow`-only | **`/revise-claude-md`'s job; this A-number is the durable record if that pass does not run first.** See below |
 | A31 | **May a non-`backlog-NN` stream branch edit a `docs`-owned file it must keep in step with its own signature change?** The borrow mechanism in `parallel-work.md`'s ownership map is written for `backlog-NN` branches only, but a signature-changing stream branch has already needed the same thing | **Before the next signature change lands. Not blocking.** See below |
 | A32 | **Should the new inert toolbar icons (extensions, sidebar, identity, star, shield, hamburger) ship at all before they do anything?** Added with the chrome restyle to match the reference screenshot exactly. AI-REC: ship disabled with an honest `title` tooltip on each, revisit at that build step's readability check | **Before the chrome-restyle PR opens.** Owner override already covers drawing them; this is only about whether "disabled + honest tooltip" is the right mitigation. See below |
 | A33 | **Should the bookmarks bar hide itself when there are no bookmarks?** Chrome shows the bar only on the new-tab page; this shell shows it unconditionally, which is simpler but always spends 28px on an empty row for a fresh profile | **Not blocking the restyle.** v0 always shows it. See below |
 | A34 | **The tab strip's native-controls inset is a hardcoded approximation, not a measured value.** `env(titlebar-area-*)` and `navigator.windowControlsOverlay` both report empty/`false` for this shell's `BaseWindow` + `WebContentsView` chrome — confirmed by a throwaway probe app, 2026-08-28, contradicting every context7 example, which is `BrowserWindow`-only. The restyle reserves a fixed 138px (Windows/Linux, right) or 78px (macOS, left) instead | **Revisit if Electron ever wires window-controls-overlay geometry through `BaseWindow`, or once real hardware on all three platforms confirms the approximation holds.** See below |
+| A35 | **`ResponseEnvelope` carries no `handleId`, though `OrivonError` declares one.** `contracts/errors.ts` specifies `platformCode` and `handleId` as optional fields an error may carry; `contracts/ipc.ts`'s `ResponseEnvelope`'s failure branch forwards `code`/`platformCode`/`message` but not `handleId`. A `'closed'` error naming which handle closed loses that identifier the moment it crosses IPC | **Before a `'closed'` error needs to name its handle over IPC** — not reachable yet (build step 2's control channel wires no method that can throw `'closed'`), but a contracts gap, so its own PR per `parallel-work.md` rule 3. See below |
+| A36 | **`build-plan.md` places grant prompts in build step 2; `A20` and `A27` both say build step 4.** `build-plan.md`'s own Sequence section lists "grant prompts" under step 2 ("Capability broker"), but `A20`'s and `A27`'s "Needed by" columns both independently say "before the grant prompt is built (build step 4)" | **Before the grant prompt is scheduled.** One of the two documents is wrong; the owner should pick which. See below |
 
 ---
 
@@ -442,7 +444,18 @@ fs.promises.realpath`. Not a fix to make in passing — `policy/paths.ts` sits o
 this defect was found from, and reaching into it from an unrelated stream is exactly the kind of
 cross-stream edit `parallel-work.md` asks to be raised rather than made.
 
-**Needed by:** before `orivon.fs` is wired to a renderer, in build step 2's IPC task.
+**Needed by, re-dated 2026-09-01 (owner's decision, filed alongside A35):** the original trigger
+— "before `orivon.fs` is wired to a renderer" — turns out to have been a proxy for the real one,
+and it fired one step early. `confinePath` has exactly one caller in the whole tree
+(`confineForOrigin`, `src/broker/index.ts:303`), and that call sits **behind** a grant check
+(`:300`: `if (grant === undefined) throw fail('denied', ...)`). Nothing anywhere calls
+`broker.grant()` yet, so every `orivon.fs` call today is refused before `confinePath` ever runs
+— the blocking `realpath` this entry describes is real but currently **unreachable**.
+`orivon.fs.readFile`/`writeFile` were wired to a renderer in `src/broker/ipc.ts` (build step 2's
+IPC task) on this date regardless, a decision the owner made explicitly rather than blocking on
+this fix, since it changes nothing reachable yet. The AI recommendation above is unchanged —
+this only corrects when it actually starts to matter: **before any origin holds a real `fs`
+grant**, i.e. before the permission-prompt work lands.
 
 ### A29 — `quotaBytes`'s startup-reconciliation promise has no owner **[AI-REC]**
 
@@ -603,6 +616,55 @@ deliberately generous.
 **Needed by:** revisit if a future Electron version wires Window Controls Overlay geometry
 through `BaseWindow`, or once real hardware on all three platforms has actually confirmed the
 approximation holds. Nobody has verified this outside Linux/X11, where the probe above ran.
+
+### A35 — `ResponseEnvelope` has no `handleId`, though `OrivonError` declares one **[AI-REC]**
+
+Found while wiring `src/broker/ipc.ts`'s control channel (build step 2's IPC task, 2026-09-01).
+
+`contracts/errors.ts`'s `OrivonError` declares an optional `handleId`, and `src/broker/
+handle-store.ts` populates it — a `'closed'` error is meant to be able to say *which* handle
+closed. `contracts/ipc.ts`'s `ResponseEnvelope`'s failure branch carries `code`, `platformCode`
+and `message`, but not `handleId`. Any control method that throws `'closed'` loses that field
+the instant it crosses `ipcMain.handle`/`ipcRenderer.invoke`, silently — nothing here rejects a
+response for omitting a field its own type never declared.
+
+Not reachable today: none of the four control methods `ipc.ts` wires (`app.manifest`,
+`app.grants`, `fs.readFile`, `fs.writeFile`) can throw `'closed'`. It becomes reachable the
+moment a wired method can reference a live handle — the byte-pump task's `net.connect`/
+`net.close`, most obviously.
+
+**AI recommendation:** add `handleId?: string` to `ResponseEnvelope`'s failure branch, mirroring
+`OrivonError` exactly. A `contracts/` change — its own PR, merges first, per `CLAUDE.md`
+§Parallel work and this file's own convention for contracts gaps.
+
+**Needed by:** before any control method that can throw `'closed'` is wired — likely the
+byte-pump task.
+
+### A36 — `build-plan.md` schedules grant prompts a build step earlier than `A20`/`A27` do **[STILL OPEN]**
+
+Found while wiring `src/broker/ipc.ts`'s control channel (build step 2's IPC task, 2026-09-01),
+while checking whether this PR was expected to include a grant-prompt driver.
+
+`build-plan.md`'s own `## Sequence` section lists *"grant prompts"* as part of step 2, alongside
+manifest parsing, the grant model, per-origin enforcement and session partitions. But `A20`'s
+and `A27`'s "Needed by" columns both say, independently and using the same words, *"before the
+grant prompt is built (build step 4)"* — and both reasons are substantive: `A27` is about a
+pattern-matching disagreement a user would see spelled two ways at the prompt, and `A20` is
+about a canonicalisation helper the prompt has not adopted yet. Neither entry could have been
+written against a step-2 prompt, since step 4 (the app loader) is what produces the manifest a
+prompt has anything to show.
+
+**This is not resolved by ignoring `build-plan.md`'s wording**, since the wording is itself an
+open contradiction, not obviously a typo — `build-plan.md`'s step-2 sequence text may predate
+`A20`/`A27`, or the step-4 dependency may itself be a later-discovered constraint that should
+have moved the line in `build-plan.md` and did not.
+
+**Not resolved in this PR.** `src/broker/ipc.ts` wires no grant-prompt driver and no
+`app.requestGrant` method — deliberately, per its own file header and this PR's "Deliberately
+not done".
+
+**Needed by:** before the grant prompt is scheduled into a specific build step's PR list — the
+owner should say which document is wrong.
 
 ---
 
