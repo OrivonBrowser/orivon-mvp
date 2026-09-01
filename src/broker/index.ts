@@ -44,6 +44,8 @@ import type {
   GrantId,
   Handle,
   Manifest,
+  OrivonError,
+  OrivonErrorCode,
   Pattern,
   TcpSocket
 } from '../contracts/index.js'
@@ -178,6 +180,78 @@ export interface Broker {
   revoke(origin: string, grantId: GrantId): Promise<void>
 }
 
+/**
+ * Node's errno convention: an `Error` with a `.code` string, thrown by
+ * `deps.resolve`, `deps.dial` and `deps.fs.*`. Not an `instanceof` check --
+ * the injected implementations are test stubs as often as real Node calls,
+ * and both shapes throw a plain object with this one property in common.
+ */
+function errnoOf (error: unknown): string | undefined {
+  if (typeof error !== 'object' || error === null) return undefined
+  const code = (error as { code?: unknown }).code
+  return typeof code === 'string' ? code : undefined
+}
+
+/** Every value OrivonErrorCode actually has -- see contracts/errors.ts. Used to recognise an error this broker already produced, not one still raw from an injected dependency. */
+const ORIVON_ERROR_CODES: ReadonlySet<OrivonErrorCode> = new Set<OrivonErrorCode>([
+  'denied', 'revoked', 'unreachable', 'timeout', 'reset', 'closed', 'limit', 'invalid', 'notFound', 'exists', 'internal'
+])
+
+function isOrivonError (error: unknown): error is OrivonError {
+  return error instanceof Error && error.name === 'OrivonError' &&
+    ORIVON_ERROR_CODES.has((error as { code?: OrivonErrorCode }).code as OrivonErrorCode)
+}
+
+/** Node errno -> OrivonErrorCode. Anything not listed here fails closed as 'internal'. */
+const ERRNO_TO_CODE: Readonly<Record<string, OrivonErrorCode>> = {
+  ENOENT: 'notFound',
+  EEXIST: 'exists',
+  ECONNREFUSED: 'unreachable',
+  EHOSTUNREACH: 'unreachable',
+  ENETUNREACH: 'unreachable',
+  ENOTFOUND: 'unreachable',
+  EAI_AGAIN: 'unreachable',
+  ETIMEDOUT: 'timeout',
+  ECONNRESET: 'reset',
+  EPIPE: 'reset',
+  EMFILE: 'limit',
+  ENFILE: 'limit',
+  ENOSPC: 'limit',
+  EDQUOT: 'limit',
+  EACCES: 'denied',
+  EPERM: 'denied'
+}
+
+/**
+ * Maps a raw rejection from an injected dependency -- `deps.resolve`,
+ * `deps.dial`, `deps.fs.readFile`, `deps.fs.writeFile` -- onto the closed
+ * OrivonErrorCode enum. Before this fix none of the four was wrapped: an app
+ * switching exhaustively on `err.code`, exactly as contracts/errors.ts's own
+ * doc says it may, would see a raw Node errno such as 'ENOENT' -- a value
+ * that same doc calls a bug to receive.
+ *
+ * An error this broker already threw (via `fail`, e.g. 'denied' from a
+ * failed policy check) passes through unchanged -- mapping it a second time
+ * would be a no-op at best and a lie at worst if two enum members ever
+ * collided as strings.
+ *
+ * WRITES A FRESH MESSAGE, NEVER FORWARDS THE ORIGINAL. A raw fs error
+ * message carries the confined absolute path (e.g. "ENOENT: ... open
+ * '/apps/<sha256>/missing.txt'") -- handing that to the app tells it exactly
+ * where its own confinement root sits (security-model.md T13b), the first
+ * thing anything attacking policy/paths.ts wants to know. Only the errno
+ * itself survives, as `platformCode` -- and errors.ts's own BrokerError
+ * constructor already strips that for 'denied', so it does not need
+ * repeating here.
+ */
+function mapIoError (error: unknown, kind: 'net' | 'fs'): OrivonError {
+  if (isOrivonError(error)) return error
+  const errno = errnoOf(error)
+  const code = errno === undefined ? 'internal' : (ERRNO_TO_CODE[errno] ?? 'internal')
+  const message = kind === 'net' ? 'the network operation failed' : 'the filesystem operation failed'
+  return fail(code, message, undefined, errno)
+}
+
 export function createBroker (deps: CreateBrokerOptions): Broker {
   const handleTable = new HandleTable()
   const ledger = new GrantLedger()
@@ -239,10 +313,21 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     if (current === undefined) throw fail('denied', 'tcp.connect is not granted to this origin')
 
     return await handleTable.run(key, { on: 'grant', grantId: current.id }, async (signal) => {
-      const decision = await checkConnect(current.patterns, opts.host, opts.port, deps.resolve)
-      if (!decision.allowed) throw fail('denied', 'the connection was not authorised')
-
-      const dialed = await deps.dial(decision.addresses, opts.port, signal)
+      // `checkConnect` calls `deps.resolve` internally and does not catch
+      // its rejection (policy/connect.ts is pure and out of this PR's
+      // scope), so a raw DNS failure reaches here unmapped. `deps.dial`
+      // rejects raw too. Both need mapIoError; nothing else in this
+      // callback throws anything but an OrivonError already, and mapIoError
+      // passes those through unchanged.
+      let decision: Awaited<ReturnType<typeof checkConnect>>
+      let dialed: DialedSocket
+      try {
+        decision = await checkConnect(current.patterns, opts.host, opts.port, deps.resolve)
+        if (!decision.allowed) throw fail('denied', 'the connection was not authorised')
+        dialed = await deps.dial(decision.addresses, opts.port, signal)
+      } catch (error) {
+        throw mapIoError(error, 'net')
+      }
 
       if (signal.aborted) {
         // The grant was withdrawn while `dial` was in flight. `acquire`
@@ -294,7 +379,12 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
   async function runFsIo<T> (key: string, grant: Grant, io: () => Promise<T>): Promise<T> {
     return await handleTable.run(key, { on: 'grant', grantId: grant.id }, async (signal) => {
       if (signal.aborted) throw fail('revoked', 'the grant authorising this fs operation was withdrawn')
-      const result = await io()
+      let result: T
+      try {
+        result = await io()
+      } catch (error) {
+        throw mapIoError(error, 'fs')
+      }
       if (signal.aborted) throw fail('revoked', 'the grant authorising this fs operation was withdrawn')
       return result
     })
