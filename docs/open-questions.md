@@ -54,7 +54,7 @@ None of these block starting the week-0 spike.
 | A14 | **RESOLVED 2026-08-26 (owner):** a trailing DNS dot is stripped, so `https://x.example.` and `https://x.example` are ONE origin. Deliberately deviates from `URL.origin`. Exactly one dot; a host still carrying an empty label is rejected | Implemented in `src/broker/policy/origin.ts` |
 | A13 | **RESOLVED 2026-08-27 (owner): Promises**, per design rule 2. Widening a Promise to a plain value later is a smaller break than the reverse. Original question: `capability-api.md` §v0 surface writes them as `=> Manifest` and `=> Grant[]`, but design rule 2 in the same document says *"All entry points return Promises"* | **Build step 2.** Transcribed as Promises; see below |
 | A15 | **The four bundle-hash caps are guesses, not decisions** — `MAX_PATH_BYTES` 1024, `MAX_ASSET_BYTES` 16 MiB, `MAX_BUNDLE_BYTES` 64 MiB, `MAX_BUNDLE_ENTRIES` 4096 (`src/broker/policy/bundle-hash.ts`, `architecture/bundle-hash.md` §Caps). They are labelled AI-recommendation in the source, but a cap decides which bundles are *refusable*, so two implementations disagreeing on one disagree about whether an app can exist at all | **Before the app loader ships (build step 4).** Needs one real frontend's shape to calibrate against; guessing again now would not be better than the current guess |
-| A16 | **What should closing the LAST tab do?** The shell currently leaves the window open with zero tabs. Chrome and Firefox instead open a fresh tab or close the window. Never actually decided | **Not blocking anything.** Decide before an outside user sees the shell; see below |
+| A16 | **RESOLVED 2026-08-28 (owner):** closing the last tab closes the window (option 2 below) — overrules this entry's own AI-REC, which favoured option 1. No `app.quit()` in `tabs.ts`/`window.ts`; `src/main/index.ts`'s existing `window-all-closed` handler already owns whether the whole process then exits | Implemented in `src/main/tabs.ts` (`TabManager`'s `onEmpty` callback) and `src/main/window.ts`. See below |
 | A17 | **RESOLVED 2026-08-27 (owner):** an `identityId` is **opaque and broker-generated** — never a user-typed name, never derived from one. The display name is stored beside the identity, not used to derive it. Found undefined during review of PR #5: it appeared exactly once in the whole repository, as one table cell | Recorded in `ADR-0010`, stated in `capability-api.md`, documented on `DeriveRequest.scope` |
 | A18 | **RESOLVED 2026-08-27 (owner): pass the GRANTED pattern list, not the manifest.** Original question: Nothing in the signature carries the grant, so a caller passing a raw manifest silently gets the declared authority | **Build step 2, before the broker calls it.** Narrow the list at the call site, or change the parameter to `readonly Pattern[]`. See below |
 | A19 | **IDN hostnames are unhandled in connect patterns.** A Unicode host, its case variants and its punycode A-label are three different strings to the matcher, and an app deriving its host from `new URL(...)` gets the A-label | **Before any non-ASCII app origin exists.** Non-ASCII is now rejected outright rather than silently never matching. See below |
@@ -70,6 +70,9 @@ None of these block starting the week-0 spike.
 | A29 | **`quotaBytes` promises reconciliation against the directory on startup, and nothing implements that half.** `contracts/manifest.ts` documents a running per-origin byte counter that reconciles on startup rather than walking the tree every operation; no storage layer or `BrokerFs` member does the reconciling, so the counter resets on every restart | **Before packaging (build step 10)**, when a real user's disk is at stake. See below |
 | A30 | **`CLAUDE.md` states as fact that three `BaseWindow` options are `BrowserWindow`-only; they are not.** `titleBarStyle`, `titleBarOverlay` and `trafficLightPosition` are all declared on `BaseWindowConstructorOptions` in electron 44.0.0's own `.d.ts` — only `ready-to-show` is genuinely `BrowserWindow`-only | **`/revise-claude-md`'s job; this A-number is the durable record if that pass does not run first.** See below |
 | A31 | **May a non-`backlog-NN` stream branch edit a `docs`-owned file it must keep in step with its own signature change?** The borrow mechanism in `parallel-work.md`'s ownership map is written for `backlog-NN` branches only, but a signature-changing stream branch has already needed the same thing | **Before the next signature change lands. Not blocking.** See below |
+| A32 | **Should the new inert toolbar icons (extensions, sidebar, identity, star, shield, hamburger) ship at all before they do anything?** Added with the chrome restyle to match the reference screenshot exactly. AI-REC: ship disabled with an honest `title` tooltip on each, revisit at that build step's readability check | **Before the chrome-restyle PR opens.** Owner override already covers drawing them; this is only about whether "disabled + honest tooltip" is the right mitigation. See below |
+| A33 | **Should the bookmarks bar hide itself when there are no bookmarks?** Chrome shows the bar only on the new-tab page; this shell shows it unconditionally, which is simpler but always spends 28px on an empty row for a fresh profile | **Not blocking the restyle.** v0 always shows it. See below |
+| A34 | **The tab strip's native-controls inset is a hardcoded approximation, not a measured value.** `env(titlebar-area-*)` and `navigator.windowControlsOverlay` both report empty/`false` for this shell's `BaseWindow` + `WebContentsView` chrome — confirmed by a throwaway probe app, 2026-08-28, contradicting every context7 example, which is `BrowserWindow`-only. The restyle reserves a fixed 138px (Windows/Linux, right) or 78px (macOS, left) instead | **Revisit if Electron ever wires window-controls-overlay geometry through `BaseWindow`, or once real hardware on all three platforms confirms the approximation holds.** See below |
 
 ---
 
@@ -108,7 +111,7 @@ third-party app exists.
 
 ---
 
-### A16 — what closing the last tab should do **[STILL OPEN]**
+### A16 — what closing the last tab should do **[RESOLVED]**
 
 Found while extending `scripts/smoke.mjs` (2026-08-27). Writing a check for "closing the last
 tab behaves sanely" required knowing what sane *is*, and nothing in this repository says.
@@ -127,16 +130,22 @@ existing branch happens to produce.
 | 2 | Close the window (and on the last window, quit) | Firefox, Safari, and `src/main/index.ts` already wires `window-all-closed -> app.quit()` |
 | 3 | Keep the window empty, as now | nobody |
 
-**Recommendation [AI-REC]:** option 1. It is the least surprising, it cannot strand a user, and
-it is a two-line change in `closeTab()`. Option 2 is also defensible and costs even less code,
-but "I closed a tab and the app quit" is a worse accident to have.
+**Recommendation [AI-REC] at the time this was filed:** option 1. It was the least surprising,
+it could not strand a user, and it was a two-line change in `closeTab()`.
 
-**Why this is written down rather than just fixed.** Picking one is a product decision, and the
-smoke check now asserts the current outcome — so a silent change would look like a regression.
-The check is labelled to say so (`CURRENT BEHAVIOUR, pending A16 -- not a spec`) and asserts the
-resolution-independent properties separately: no crash, no orphaned view, and the shell still
-usable afterwards. **Whichever way A16 goes, change that one check — not the product — to
-match.**
+**Resolved 2026-08-28, owner decision: option 2 instead.** The AI-REC above is superseded, not
+followed — closing the last tab closes the window (and, per `window-all-closed`'s existing
+non-darwin branch, quits). Chrome and Edge's option 1 leans on their own tab-restore/session
+continuity to make "the window never truly closes" feel safe; this shell has no such feature, so
+the same behaviour here would just be a window that never goes away for no visible reason.
+Firefox and Safari's option 2 matches the plain reading of "close the last tab" better once that
+crutch isn't available.
+
+**Why this was written down before being fixed.** Picking one was a product decision, and the
+smoke check asserted the pre-decision outcome — so a silent change would have looked like a
+regression. The check was labelled to say so (`CURRENT BEHAVIOUR, pending A16 -- not a spec`)
+and has now been rewritten to assert the resolution instead
+(`scripts/smoke.mjs`).
 ---
 
 ### A18 -- `checkConnect` checks the declaration, not the grant **[RESOLVED 2026-08-27, owner]**
@@ -528,6 +537,72 @@ trailing-dot name, browsers generally strip the dot before certificate matching,
 alternative costs a real user-visible failure — one mistyped character silently produces a
 second, empty copy of the app that has to be re-granted everything. `ADR-0003` makes this
 unfixable after the first grant is persisted, so it is recorded here rather than left implicit.
+
+---
+
+### A32 — should the new inert toolbar icons ship before they do anything **[AI-REC]**
+
+Found while planning the chrome restyle (2026-08-28). The owner asked for a full visual match
+to a reference screenshot, including icons for features that don't exist yet in this repository
+and, in one case (a wallet-shaped glyph), a feature that is a stated MVP non-goal
+(`mvp-scope.md` §Explicit non-goals — "Not a wallet"). The glyph is relabelled `identity` rather
+than `wallet` in code and in its tooltip, since Nostr identity *is* in scope and the shape is
+generic; nothing about the icon itself implies funds.
+
+**Recommendation [AI-REC]:** every inert icon ships `disabled`, with a `title` naming what it
+is and stating plainly that it is not in v0 (`"Extensions — not in v0"`), rather than either
+omitting it (breaking the visual match the owner asked for) or drawing it silently clickable
+(which answers a click with nothing, which is worse than an honest disabled state). Revisit
+at this build step's readability check — if a newcomer reads the toolbar as promising features
+that don't exist, that is exactly the class of finding that check is for.
+
+**Needed by:** before the chrome-restyle PR opens.
+
+---
+
+### A33 — should the bookmarks bar hide itself when empty **[STILL OPEN]**
+
+Found while planning the chrome restyle (2026-08-28). Chrome only shows its bookmarks bar on
+the new-tab page by default; everywhere else, and for a user with zero bookmarks, it stays
+hidden. This shell's v0 always shows the row, which is simpler to implement and reason about
+but spends 28px of vertical space on an empty row for a fresh profile's very first launch.
+
+Not decided either way. v0 ships with it always visible; whether to hide it when the bookmark
+list is empty is left for whoever next touches `src/renderer/bookmarks-view.ts`.
+
+**Needed by:** not blocking anything.
+
+---
+
+### A34 — the tab strip's native-controls inset is an unmeasured approximation **[RESEARCH]**
+
+Found while implementing the chrome restyle (2026-08-28). Merging the tab strip into the
+window's title row means the tab strip must leave room for Electron's native window buttons
+(`titleBarOverlay` on Windows/Linux; the macOS traffic lights). The documented way to learn
+their exact geometry is `env(titlebar-area-x/y/width/height)` in CSS, or
+`navigator.windowControlsOverlay.getTitlebarAreaRect()` in JS — but **every example in
+Electron's own docs and test fixtures constructs a `BrowserWindow`**, and this shell is a
+`BaseWindow` holding `WebContentsView`s, which has no single "main" webContents for the
+Window Controls Overlay feature to attach to.
+
+A throwaway probe app (`BaseWindow` + `titleBarOverlay` + a `WebContentsView` reading both
+APIs from inside the page) confirmed empirically, rather than assumed: `env(titlebar-area-*)`
+resolves to `0px` for every axis, and `navigator.windowControlsOverlay.visible` is `false` with
+an all-zero rect. Neither API is populated for this window shape, on this Electron version
+(44.0.0).
+
+**Consequence:** the restyle reserves a fixed inset instead of a measured one — 138px on the
+right for Windows/Linux (three native caption buttons at Windows 11's own 46px width, the same
+figure the prior prototype hardcoded for its own custom buttons) and 78px on the left for
+macOS (the `trafficLightPosition` offset plus the traffic-light cluster's width). If the real
+native control area is ever narrower or wider than these numbers on some platform or desktop
+environment, the result is a cosmetic gap or a very slightly crowded tab, not a functional
+break — no interactive element ends up under a native button, because 138px and 78px are
+deliberately generous.
+
+**Needed by:** revisit if a future Electron version wires Window Controls Overlay geometry
+through `BaseWindow`, or once real hardware on all three platforms has actually confirmed the
+approximation holds. Nobody has verified this outside Linux/X11, where the probe above ran.
 
 ---
 
