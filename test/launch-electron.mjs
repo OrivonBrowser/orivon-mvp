@@ -23,8 +23,8 @@ import { _electron as electron } from 'playwright'
 const POISON = ['ELECTRON_RUN_AS_NODE']
 
 /**
- * Ceiling on any single Playwright action (click, fill, press) started through
- * an app launched here.
+ * Ceiling on any single Playwright ACTION (click, fill, press) started
+ * through an app launched here.
  *
  * WHY IT IS SET AT ALL. Every action in this repo targets a local Electron
  * window and lands in milliseconds; nothing legitimately waits seconds. But an
@@ -33,6 +33,15 @@ const POISON = ['ELECTRON_RUN_AS_NODE']
  * the outcome `scripts/smoke.mjs` exists to rule out (its header, and
  * `scripts/README.md`: read the result, not the exit code). Ten seconds is far
  * above any real action here and far below "a human gave up and hit Ctrl-C".
+ *
+ * DOES NOT COVER `page.evaluate()` -- found 2026-08-28. This context option
+ * only applies to Playwright's own action methods; `evaluate()` has no
+ * timeout in this Playwright version regardless of this setting (confirmed
+ * against the installed source: it passes `kNoTimeout` internally). Every
+ * call site in this repo goes through `test/smoke-helpers.mjs`'s
+ * `evaluateRetrying()`, which races the evaluate against its own deadline
+ * explicitly for exactly this reason -- do not assume this constant covers
+ * it.
  */
 const DEFAULT_ACTION_TIMEOUT_MS = 10_000
 

@@ -15,8 +15,10 @@
 // rather than assumed.
 import { app, BaseWindow, ipcMain, nativeTheme, WebContentsView, screen } from 'electron'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { BookmarkStore } from './bookmarks.js'
-import { COMMAND_CHANNEL, STATE_CHANNEL } from './channels.js'
+import { COMMAND_CHANNEL, NEWTAB_COMMAND_CHANNEL, STATE_CHANNEL } from './channels.js'
+import { registerNewTabIpc } from './newtab-ipc.js'
 import { TabManager, type Bounds } from './tabs.js'
 import { registerShellIpc } from './ipc.js'
 
@@ -108,6 +110,17 @@ export function createShellWindow (): BaseWindow {
     void chrome.webContents.loadFile(join(import.meta.dirname, '../renderer/index.html'))
   }
 
+  // The dashboard's own resolved URL -- a genuinely fresh tab loads this
+  // (src/main/tabs.ts's createTab()). Mirrors the branch immediately
+  // above: electron-vite's dev server serves every renderer entry off
+  // the SAME origin at a nested path (confirmed by reading its installed
+  // source, since this is the second entry added to a config that
+  // previously only had one); the built path matches
+  // electron.vite.config.ts's `newtab` entry.
+  const dashboardUrl = devServerUrl !== undefined
+    ? `${devServerUrl}/newtab/`
+    : pathToFileURL(join(import.meta.dirname, '../renderer/newtab/index.html')).href
+
   function layoutChrome (): void {
     const bounds = win.getContentBounds()
     chrome.setBounds({ x: 0, y: 0, width: bounds.width, height: CHROME_HEIGHT })
@@ -123,7 +136,7 @@ export function createShellWindow (): BaseWindow {
   // app.quit() here -- index.ts's window-all-closed handler already owns
   // whether the whole process then exits (quits on non-darwin, stays
   // resident on macOS per platform convention).
-  const tabs = new TabManager(win.contentView, tabBounds, () => { win.close() })
+  const tabs = new TabManager(win.contentView, tabBounds, () => { win.close() }, dashboardUrl)
 
   // Bookmarks: owner override, 2026-08-28 (mvp-scope.md, ADR-0003) -- not
   // in the original scope pass, arrived bundled with the chrome restyle.
@@ -162,13 +175,18 @@ export function createShellWindow (): BaseWindow {
   chrome.webContents.on('did-finish-load', pushState)
 
   registerShellIpc(chrome.webContents, tabs, bookmarks)
+  registerNewTabIpc(dashboardUrl, tabs, bookmarks)
   // A16 makes createShellWindow() re-run routinely now (close the last
   // tab, then reopen from the macOS dock via app.on('activate')), and
   // ipcMain.handle throws if the same channel is registered twice with
   // no matching removeHandler in between -- confirmed there is none
   // anywhere in this codebase. Latent before A16 (only reachable by
-  // closing the OS window directly); routine after it.
-  win.on('closed', () => { ipcMain.removeHandler(COMMAND_CHANNEL) })
+  // closing the OS window directly); routine after it. Both channels
+  // registered above need the same cleanup.
+  win.on('closed', () => {
+    ipcMain.removeHandler(COMMAND_CHANNEL)
+    ipcMain.removeHandler(NEWTAB_COMMAND_CHANNEL)
+  })
 
   // Found while verifying maximize/resize for this restyle (2026-08-28):
   // win.getContentBounds() read SYNCHRONOUSLY inside 'resize' returns the

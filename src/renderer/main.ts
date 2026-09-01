@@ -83,7 +83,7 @@ function renderFavicon (tab: TabState): HTMLSpanElement {
   fav.className = 'fav'
   if (tab.loading) {
     fav.classList.add('loading')
-  } else if (tab.url === 'about:blank') {
+  } else if (tab.isNewTab) {
     fav.classList.add('newtab')
     fav.textContent = 'O'
   } else if (tab.favicon !== null) {
@@ -165,11 +165,15 @@ function renderToolbar (state: ShellState): void {
   forwardBtn.disabled = active === undefined || !active.canGoForward
 
   if (!addressFocused) {
-    addressInput.value = active === undefined || active.url === 'about:blank' ? '' : active.url
+    addressInput.value = active === undefined || active.isNewTab ? '' : active.url
   }
 
   addressDot.classList.remove('secure', 'insecure')
-  if (active !== undefined) {
+  // Skip isNewTab: in dev mode the dashboard's own URL is a plain
+  // http://localhost:... address (electron-vite's dev server), which
+  // would otherwise flag Orivon's own page "insecure" -- wrong for an
+  // internal page, not a real signal about anything the user visited.
+  if (active !== undefined && !active.isNewTab) {
     if (active.url.startsWith('https://')) addressDot.classList.add('secure')
     else if (active.url.startsWith('http://')) addressDot.classList.add('insecure')
   }
@@ -205,7 +209,7 @@ reloadBtn.addEventListener('click', () => {
 
 bookmarkToggle.addEventListener('click', () => {
   const active = activeTab(currentState)
-  if (active === undefined || active.url === 'about:blank') return
+  if (active === undefined || active.isNewTab) return
   if (isBookmarked(currentState.bookmarks, active.url)) {
     shell.removeBookmark(active.url)
   } else {

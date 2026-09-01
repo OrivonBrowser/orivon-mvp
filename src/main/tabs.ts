@@ -26,6 +26,24 @@ export interface TabState {
    * generic globe). Never the source https:// URL directly -- see
    * favicon.ts's header for why the fetch happens in main. */
   favicon: string | null
+  /** True for the dashboard (a fresh tab's real content, src/renderer/
+   * newtab/) or the literal about:blank fallback (a rejected navigation
+   * lands here, never the dashboard -- see resolveTarget()) -- both mean
+   * "nothing the user meaningfully typed or navigated to yet". The
+   * chrome renderer uses this to blank the address bar, skip the
+   * secure/insecure dot, and guard the bookmark toggle, replacing what
+   * were literal `tab.url === 'about:blank'` checks before the
+   * dashboard existed.
+   *
+   * NOT simply `url === dashboardUrl` -- found 2026-08-28: in dev mode
+   * `dashboardUrl` is a plain http://localhost:PORT/... address, which
+   * `sanitizeDirectUrl` does not reject, so an ordinary page could steer
+   * an UNRELATED tab's URL to match it (window.open(), or a same-page
+   * redirect) and get "new tab" treatment on content that was never the
+   * dashboard. Gated on TabRecord.isDashboardTab too -- set once, at
+   * creation, from createTab()'s own decision, never from a URL a page
+   * can influence. */
+  isNewTab: boolean
 }
 
 /** What TabManager itself knows. Bookmarks are a separate store
@@ -48,9 +66,16 @@ export interface Bounds {
   height: number
 }
 
-/** Loaded for a fresh tab with no URL given -- never user input, so the
- * omnibox's dangerous-scheme rejection does not apply here. */
-const NEW_TAB_URL = 'about:blank'
+/** The safe fallback for a REJECTED navigation (a dangerous typed scheme,
+ * a bad window.open() URL, empty input) -- never the dashboard. Keeping
+ * these landings on a plain, privilege-free page rather than the
+ * dashboard matters structurally, not just cosmetically: an EXISTING
+ * tab keeps whatever preload it was created with (preload is fixed at
+ * WebContentsView creation, see createTab()), so a tab created with the
+ * ordinary app.js preload that later lands here via a rejected
+ * navigate() call must never show a page that expects the dashboard's
+ * own preload to exist. */
+const BLANK_URL = 'about:blank'
 
 /** Defensive, found 2026-08-28 while investigating a reported crash: an
  * unbounded window.open() flood (an ad/popunder pattern, not
@@ -73,6 +98,14 @@ interface TabRecord {
    * navigated again -- only the record's own most recent request may
    * write `favicon`. */
   pendingFaviconUrl: string | null
+  /** Set once, at creation, from createTab()'s own `isDashboard` decision
+   * -- never re-derived from a URL afterward. See TabState.isNewTab's
+   * own doc comment for why this matters: `this.dashboardUrl` is a
+   * plain http:// address in dev mode, which an ordinary page's
+   * window.open() (or a same-page redirect) COULD steer an unrelated,
+   * non-dashboard tab's `wc.getURL()` to match -- this flag is what
+   * stops that from also granting it "new tab" treatment. */
+  readonly isDashboardTab: boolean
 }
 
 export class TabManager {
@@ -88,6 +121,7 @@ export class TabManager {
   private activeId: string | null = null
   private readonly listeners = new Set<(state: TabsSnapshot) => void>()
   private readonly preloadPath: string
+  private readonly newTabPreloadPath: string
 
   constructor (
     private readonly contentView: View,
@@ -100,9 +134,17 @@ export class TabManager {
      * TabManager itself never calls `app.quit()` -- src/main/index.ts's
      * existing `window-all-closed` handler is already the correct,
      * complete owner of whether the whole process then exits. */
-    private readonly onEmpty: () => void
+    private readonly onEmpty: () => void,
+    /** The dashboard's own resolved URL (dev server or built file,
+     * decided once by window.ts the same way it resolves the chrome
+     * view's own URL) -- a genuinely fresh tab (createTab() with no
+     * `url` argument) loads this, with the dashboard's own preload
+     * below. Never reachable via a rejected navigation -- see
+     * BLANK_URL and resolveTarget(). */
+    private readonly dashboardUrl: string
   ) {
     this.preloadPath = join(import.meta.dirname, '../preload/app.js')
+    this.newTabPreloadPath = join(import.meta.dirname, '../preload/newtab.js')
   }
 
   onStateChange (cb: (state: TabsSnapshot) => void): void {
@@ -125,17 +167,41 @@ export class TabManager {
       return this.activeId ?? ''
     }
 
+    // Computed BEFORE the view exists: preload is fixed at
+    // WebContentsView creation and can never change for this tab
+    // afterward, so the dashboard-or-not decision has to be made here,
+    // not after loadURL(). `url === undefined` -- a genuinely fresh tab,
+    // never a caller-supplied value -- is the ONLY thing that selects
+    // the dashboard preload. A page cannot trigger this by supplying the
+    // dashboard's own URL as a window.open() target: that still goes
+    // through sanitizeDirectUrl below and gets the ORDINARY preload
+    // regardless of what URL it resolves to.
+    const isDashboard = url === undefined
+    const target = isDashboard ? this.dashboardUrl : (sanitizeDirectUrl(url) ?? BLANK_URL)
+
     const id = makeTabId()
     const view = new WebContentsView({
       webPreferences: {
-        preload: this.preloadPath,
+        preload: isDashboard ? this.newTabPreloadPath : this.preloadPath,
+        // Tells the dashboard's own preload (src/preload/newtab.ts) what
+        // its expected URL is, so it can verify `location.href` matches
+        // before exposing anything -- necessary because a dashboard tab
+        // is an ordinary, navigable tab (unlike the chrome view), and
+        // preload cannot be un-set if the user later navigates away.
+        ...(isDashboard ? { additionalArguments: [`--orivon-newtab-url=${this.dashboardUrl}`] } : {}),
         contextIsolation: true,
         sandbox: true,
         nodeIntegration: false,
         webSecurity: true
       }
     })
-    const record: TabRecord = { view, favicon: null, faviconOrigin: null, pendingFaviconUrl: null }
+    const record: TabRecord = {
+      view,
+      favicon: null,
+      faviconOrigin: null,
+      pendingFaviconUrl: null,
+      isDashboardTab: isDashboard
+    }
 
     const wc = view.webContents
     wc.on('page-title-updated', () => this.emitState())
@@ -176,13 +242,6 @@ export class TabManager {
     this.tabs.set(id, record)
     this.order.push(id)
 
-    // `url` here is an ALREADY-A-URL argument (setWindowOpenHandler's
-    // details.url, "open link in new tab") -- never typed address-bar
-    // text, so it goes through sanitizeDirectUrl (reject dangerous
-    // schemes and non-absolute garbage), not parseOmniboxInput's
-    // search-fallback logic. Rejected/undefined both fall back to the
-    // new-tab page, same as a rejected `navigate()` call.
-    const target = url !== undefined ? (sanitizeDirectUrl(url) ?? NEW_TAB_URL) : NEW_TAB_URL
     void wc.loadURL(target)
 
     this.activateTab(id)
@@ -313,12 +372,25 @@ export class TabManager {
   }
 
   /** Rejected omnibox input (a dangerous scheme, or empty) never reaches
-   * `loadURL` -- it falls back to the new-tab page rather than silently
-   * doing nothing, so a bad paste has a visible, safe result. */
+   * `loadURL` -- it falls back to a plain blank page rather than
+   * silently doing nothing, so a bad paste has a visible, safe result.
+   * Never the dashboard -- see BLANK_URL's own comment for why. */
   private resolveTarget (rawInput: string): string {
     const result = parseOmniboxInput(rawInput)
-    if (result.kind === 'reject') return NEW_TAB_URL
+    if (result.kind === 'reject') return BLANK_URL
     return result.url
+  }
+
+  /** Resolves an IPC event's own sender back to a tab id -- used by the
+   * dashboard's `navigate` command (newtab-ipc.ts), which must act on
+   * the CALLING tab, never a tab id the page could simply claim. Linear
+   * scan is fine here: bounded by MAX_TABS, and called once per
+   * dashboard interaction, not per frame. */
+  findTabIdByWebContents (wc: Electron.WebContents): string | null {
+    for (const [id, record] of this.tabs) {
+      if (record.view.webContents === wc) return id
+    }
+    return null
   }
 
   /** A tab's webContents, or undefined if the tab is gone or its
@@ -333,14 +405,16 @@ export class TabManager {
   private tabState (id: string): TabState {
     const record = this.tabs.get(id)
     const wc = this.liveWebContents(id)
+    const url = wc?.getURL() ?? ''
     return {
       id,
-      url: wc?.getURL() ?? '',
+      url,
       title: wc?.getTitle() ?? '',
       canGoBack: wc?.navigationHistory.canGoBack() ?? false,
       canGoForward: wc?.navigationHistory.canGoForward() ?? false,
       loading: wc?.isLoading() ?? false,
-      favicon: record?.favicon ?? null
+      favicon: record?.favicon ?? null,
+      isNewTab: url === BLANK_URL || (record?.isDashboardTab === true && url === this.dashboardUrl)
     }
   }
 

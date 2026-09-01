@@ -178,6 +178,80 @@ async function main () {
     }
     await leakCheck('on launch', 2)
 
+    // ---- New-tab dashboard: real content, and the privilege boundary ------
+    // Owner override, 2026-08-28 -- replaces about:blank for a fresh tab
+    // (src/main/tabs.ts's createTab()). The one existing tab at this point
+    // in the run IS the dashboard; the very next section below navigates it
+    // away, so this has to run first.
+    const [dashboardView] = tabViews(app, chrome)
+    check('the one tab open at launch is identifiable', dashboardView !== undefined)
+
+    if (dashboardView !== undefined) {
+      check(
+        "the fresh tab's own URL is the dashboard, not about:blank",
+        dashboardView.url().endsWith('/newtab/index.html'),
+        `saw ${dashboardView.url()}`
+      )
+
+      const dashboardShell = await evaluateRetrying(dashboardView, () => ({
+        hasGetBookmarks: typeof window.orivonNewTab?.getBookmarks,
+        hasNavigate: typeof window.orivonNewTab?.navigate
+      }))
+      check(
+        "the dashboard's own preload exposes orivonNewTab (getBookmarks, navigate)",
+        dashboardShell.hasGetBookmarks === 'function' && dashboardShell.hasNavigate === 'function',
+        JSON.stringify(dashboardShell)
+      )
+
+      const tiles = await evaluateRetrying(dashboardView, () =>
+        Array.from(document.querySelectorAll('.tile')).map((el) => ({
+          label: el.querySelector('.tile-label')?.textContent,
+          disabled: el.disabled
+        }))
+      )
+      check(
+        'the Torrent and Nostr app tiles are present and disabled -- neither is built yet',
+        tiles.some((t) => t.label === 'Torrent' && t.disabled) &&
+          tiles.some((t) => t.label === 'Nostr' && t.disabled),
+        JSON.stringify(tiles)
+      )
+
+      // Real UI interaction on the dashboard's OWN page, not a direct
+      // orivonNewTab.navigate() call -- exercises the exact path a user
+      // takes (typing into #search-input), through the same
+      // omnibox-parsing tabs.navigate() already gives the chrome's own
+      // address bar.
+      await dashboardView.click('#search-input')
+      await dashboardView.fill('#search-input', urlFor('/a'))
+      await dashboardView.press('#search-input', 'Enter')
+      const dashboardNavigated = await waitFor(async () => {
+        const info = await evaluateRetrying(chrome, () => ({
+          address: document.querySelector('#address')?.value
+        }))
+        return info.address === urlFor('/a')
+      })
+      check(
+        "the dashboard's search box navigates the tab away from the dashboard",
+        dashboardNavigated
+      )
+
+      // Privilege boundary: once this SAME tab has left the dashboard, its
+      // preload's own location check (src/preload/newtab.ts) must no
+      // longer expose the privileged API -- confirms the check re-verifies
+      // on every load, not just once at tab creation.
+      const afterNavigate = await evaluateRetrying(dashboardView, () => ({
+        hasOrivonNewTab: typeof window.orivonNewTab,
+        hasOrdinaryOrivon: typeof window.orivon
+      }))
+      check(
+        'orivonNewTab is no longer exposed once the tab has left the dashboard',
+        afterNavigate.hasOrivonNewTab === 'undefined' && afterNavigate.hasOrdinaryOrivon === 'object',
+        JSON.stringify(afterNavigate)
+      )
+    } else {
+      skip('new-tab dashboard', 'no tab view was open at launch to test')
+    }
+
     /** Types into the address bar and presses Enter, then waits for the shell
      * to report every field the caller is about to assert. The typing itself
      * is error-trapped so a regression in `#address` is a named failure rather
@@ -516,6 +590,46 @@ async function main () {
       'the page is starred again, ready for the bar-side removal check',
       await waitFor(async () => (await bookmarkUrls(chrome)).includes(urlFor('/a')))
     )
+
+    // ---- The dashboard's own bookmark round-trip --------------------------
+    // Proves the FULL IPC path this file's dashboard scenario above never
+    // touched (getBookmarks over NEWTAB_COMMAND_CHANNEL), not just that the
+    // toolbar's own bookmark bar shows it -- a fresh tab is a SEPARATE
+    // WebContentsView with its own preload load, not a rendering of the
+    // chrome's already-fetched list.
+    const newTabOpened = await clickChecked(chrome, '#new-tab', 'the new-tab button is clickable for the dashboard bookmark check')
+    const freshDashboard = newTabOpened && await waitFor(async () => {
+      const views = tabViews(app, chrome)
+      return views.some((v) => v.url().endsWith('/newtab/index.html'))
+    })
+    check('a fresh new tab opens showing the dashboard again', freshDashboard)
+
+    if (freshDashboard) {
+      const [freshView] = tabViews(app, chrome).filter((v) => v.url().endsWith('/newtab/index.html'))
+      // The bookmark's stored title is 'fixture-a' (the real page title
+      // captured when it was starred, per bookmarkToggle's addBookmark
+      // call in src/renderer/main.ts) -- not the URL, since the title
+      // was non-empty at the time.
+      const tileLabels = await waitFor(async () =>
+        (await evaluateRetrying(freshView, () =>
+          Array.from(document.querySelectorAll('#bookmarks-grid .tile-label')).map((el) => el.textContent)
+        )).includes('fixture-a')
+      )
+      check(
+        "the starred bookmark appears as a real tile on a FRESH dashboard tab's own IPC round-trip",
+        tileLabels
+      )
+
+      await clickChecked(freshView, '#bookmarks-grid .tile', 'a bookmark tile on the fresh dashboard is clickable')
+      const freshTileNavigated = await waitFor(async () => {
+        const info = await evaluateRetrying(chrome, () => ({ address: document.querySelector('#address')?.value }))
+        return info.address === urlFor('/a')
+      })
+      check('clicking the dashboard bookmark tile navigates that tab to it', freshTileNavigated)
+      // The extra tab this scenario opened is left open deliberately --
+      // the close-everything check at the end of this file (A16) closes
+      // whatever tabs exist at that point, however many there are.
+    }
 
     const removeClicked = await clickChecked(
       chrome,
