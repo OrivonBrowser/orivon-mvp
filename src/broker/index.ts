@@ -320,15 +320,23 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
    *
    * `fs` carries no patterns (manifest.ts's FsCapability), so the capability
    * check here is presence-only: does this origin hold ANY live `fs` grant.
+   * Returns the `Grant` itself, not only the confined path -- the caller
+   * needs its id to scope the actual I/O under `handleTable.run`, the same
+   * way `connect` already scopes under `current.id`.
+   *
+   * Synchronous, and stays that way: `confinePath`'s `realpath` parameter is
+   * `policy/paths.ts`'s, declared synchronous, and that file is out of this
+   * PR's scope to change (filed as A28 -- an origin on a slow filesystem can
+   * still block other origins' pending calls through this exact function;
+   * making `realpath` async is the fix, not this one).
    */
-  function confineForOrigin (key: string, path: string): string {
-    if (ledger.currentGrant(key, 'fs') === undefined) {
-      throw fail('denied', 'fs is not granted to this origin')
-    }
+  function confineForOrigin (key: string, path: string): { resolved: string, grant: Grant } {
+    const grant = ledger.currentGrant(key, 'fs')
+    if (grant === undefined) throw fail('denied', 'fs is not granted to this origin')
     const root = deps.fs.rootFor(key)
     const confined = confinePath(root, path, deps.fs.realpathSync)
     if (!confined.ok) throw fail(CONFINEMENT_ERROR_CODE, "the path is outside this app's files directory")
-    return confined.resolved
+    return { resolved: confined.resolved, grant }
   }
 
   async function connect (origin: string, opts: { host: string, port: number }): Promise<TcpSocket> {
@@ -380,14 +388,41 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     })
   }
 
+  /**
+   * `fs.readFile` and `fs.writeFile` share this shape: confine the path (see
+   * `confineForOrigin`), then run the actual I/O under the same per-origin
+   * in-flight budget `connect` uses (`{ on: 'grant' }` -- handle-contracts.ts
+   * on that scope: "without it those calls would escape the in-flight cap
+   * entirely, which is the cap that keeps the broker responsive"). Before
+   * this, `fs` called `deps.fs.*` directly and was subject to no cap at all
+   * -- T11b by name, and a second, distinct T11b path through the confined
+   * path leaving no room for cancellation either.
+   *
+   * `signal.aborted` is checked on both sides of the raw call: before, in
+   * case the grant was already gone by the time a slot freed up; after,
+   * because revoking mid-write must not let the app receive confirmation for
+   * an operation performed after its grant was withdrawn -- the write can
+   * already be on disk by then, but the app is never told it succeeded.
+   */
+  async function runFsIo<T> (key: string, grant: Grant, io: () => Promise<T>): Promise<T> {
+    return await handleTable.run(key, { on: 'grant', grantId: grant.id }, async (signal) => {
+      if (signal.aborted) throw fail('revoked', 'the grant authorising this fs operation was withdrawn')
+      const result = await io()
+      if (signal.aborted) throw fail('revoked', 'the grant authorising this fs operation was withdrawn')
+      return result
+    })
+  }
+
   async function readFile (origin: string, path: string): Promise<Uint8Array> {
     const key = canonical(origin)
-    return await deps.fs.readFile(confineForOrigin(key, path))
+    const { resolved, grant } = confineForOrigin(key, path)
+    return await runFsIo(key, grant, async () => await deps.fs.readFile(resolved))
   }
 
   async function writeFile (origin: string, path: string, data: Uint8Array): Promise<void> {
     const key = canonical(origin)
-    await deps.fs.writeFile(confineForOrigin(key, path), data)
+    const { resolved, grant } = confineForOrigin(key, path)
+    await runFsIo(key, grant, async () => { await deps.fs.writeFile(resolved, data) })
   }
 
   async function manifest (origin: string): Promise<Manifest> {
