@@ -14,6 +14,7 @@
 // Electron's own warning that a WebFrameMain reference can go stale after
 // an await.
 import { ipcMain, type IpcMainInvokeEvent, type WebContents } from 'electron'
+import type { BookmarkStore } from './bookmarks.js'
 import { COMMAND_CHANNEL } from './channels.js'
 import type { TabManager } from './tabs.js'
 
@@ -25,13 +26,16 @@ export type ShellCommand =
   | { type: 'back'; id: string }
   | { type: 'forward'; id: string }
   | { type: 'reload'; id: string }
+  | { type: 'addBookmark'; url: string; title: string }
+  | { type: 'removeBookmark'; url: string }
+  | { type: 'openBookmark'; url: string }
 
 function isFromChrome (event: IpcMainInvokeEvent, chromeWebContents: WebContents): boolean {
   return event.senderFrame !== null &&
     event.senderFrame === chromeWebContents.mainFrame
 }
 
-export function registerShellIpc (chromeWebContents: WebContents, tabs: TabManager): void {
+export function registerShellIpc (chromeWebContents: WebContents, tabs: TabManager, bookmarks: BookmarkStore): void {
   ipcMain.handle(COMMAND_CHANNEL, (event: IpcMainInvokeEvent, command: ShellCommand) => {
     if (!isFromChrome(event, chromeWebContents)) {
       // Not the chrome view's top frame -- refuse silently rather than
@@ -61,6 +65,27 @@ export function registerShellIpc (chromeWebContents: WebContents, tabs: TabManag
       case 'reload':
         tabs.reload(command.id)
         return
+      case 'addBookmark':
+        bookmarks.add({ url: command.url, title: command.title })
+        return
+      case 'removeBookmark':
+        bookmarks.remove(command.url)
+        return
+      case 'openBookmark': {
+        // Open in the active tab, like typing the URL into the address
+        // bar -- navigate() already runs it through the same omnibox
+        // parsing, and a bookmark URL is always absolute http(s), so it
+        // resolves to `kind: 'url'` unchanged, never a search fallback.
+        // No active tab (the last one just closed) creates a fresh one
+        // instead of silently doing nothing.
+        const { activeTabId } = tabs.getState()
+        if (activeTabId === null) {
+          tabs.createTab(command.url)
+        } else {
+          tabs.navigate(activeTabId, command.url)
+        }
+        return
+      }
     }
   })
 }

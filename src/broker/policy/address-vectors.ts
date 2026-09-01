@@ -205,6 +205,87 @@ export const PUBLIC: readonly Row[] = [
 // table does not know, and neither earns the benefit of the doubt.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// canonicalAddress: the single spelling, not just a classification
+// (docs/open-questions.md A20). The same address can appear in the tables
+// above AND here with a different assertion -- classifyAddress cares only
+// what range it names, canonicalAddress cares what it is spelled as.
+// ---------------------------------------------------------------------------
+
+export interface CanonicalRow {
+  readonly addr: string
+  /** null means canonicalAddress refuses the input outright -- see address.ts. */
+  readonly canonical: string | null
+  readonly why: string
+}
+
+export const CANONICAL_FORMS: readonly CanonicalRow[] = [
+  // Already canonical: round-trips to itself.
+  { addr: '127.0.0.1', canonical: '127.0.0.1', why: 'ordinary dotted quad' },
+  { addr: '0.0.0.0', canonical: '0.0.0.0', why: 'the all-zero address' },
+  { addr: '255.255.255.255', canonical: '255.255.255.255', why: 'the all-one address' },
+  { addr: '::1', canonical: '::1', why: 'IPv6 loopback, already compressed' },
+  { addr: '::', canonical: '::', why: 'the unspecified address, already compressed' },
+  { addr: '2606:4700::1111', canonical: '2606:4700::1111', why: 'an ordinary public IPv6 address' },
+  {
+    addr: '::ffff:127.0.0.1',
+    canonical: '::ffff:127.0.0.1',
+    why: 'IPv4-mapped, already in the RFC 5952 SS5 dotted-quad form'
+  },
+
+  // The task's own non-canonical spellings (docs/open-questions.md A20):
+  // NORMALISE, do not reject -- decided so the grant prompt and
+  // policy/update.ts's pattern comparison have a value to work with, rather
+  // than a denial with nothing to render or compare.
+  { addr: '0177.0.0.1', canonical: '127.0.0.1', why: 'octal first octet' },
+  { addr: '2130706433', canonical: '127.0.0.1', why: 'loopback as one decimal integer' },
+  { addr: '0x7f.0.0.1', canonical: '127.0.0.1', why: 'hex first octet' },
+  { addr: '127.1', canonical: '127.0.0.1', why: 'inet_aton short form' },
+  {
+    addr: '::ffff:7f00:1',
+    canonical: '::ffff:127.0.0.1',
+    why: 'IPv4-mapped loopback, hex groups instead of the recommended dotted quad'
+  },
+
+  // Further normalisation the same design implies, beyond the task's list.
+  { addr: '  127.0.0.1  ', canonical: '127.0.0.1', why: 'surrounding whitespace' },
+  { addr: '[::1]', canonical: '::1', why: 'the bracketed URL host form' },
+  { addr: '::FFFF:7F00:0001', canonical: '::ffff:127.0.0.1', why: 'uppercase, and hex groups' },
+  { addr: '0:0:0:0:0:ffff:127.0.0.1', canonical: '::ffff:127.0.0.1', why: 'IPv4-mapped, fully uncompressed' },
+  { addr: '10.1', canonical: '10.0.0.1', why: 'a PRIVATE address in inet_aton short form' },
+  { addr: '0x08080808', canonical: '8.8.8.8', why: 'a PUBLIC address in hex -- normalisation is not only about blocked ranges' },
+
+  // RFC 5952 SS4.2's compression rule has a tie-break (leftmost run wins) and
+  // a floor (a single zero word is never compressed) that nothing above
+  // exercises.
+  {
+    addr: '1:0:0:2:0:0:0:3',
+    canonical: '1:0:0:2::3',
+    why: 'the longer run (3 words) compresses, not the shorter (2 words)'
+  },
+  {
+    addr: '1:0:0:2:0:0:3:4',
+    canonical: '1::2:0:0:3:4',
+    why: 'a tie between two 2-word runs: the LEFTMOST one compresses'
+  },
+  {
+    addr: '1:0:2:3:4:5:6:7',
+    canonical: '1:0:2:3:4:5:6:7',
+    why: 'a single zero word is never compressed -- ":0:" is exactly as long as "::"'
+  },
+
+  // Not addresses at all, or addresses this function specifically refuses to
+  // normalise rather than getting a spelling wrong -- both return null.
+  { addr: 'not an address', canonical: null, why: 'unparseable, agrees with classifyAddress' },
+  { addr: '', canonical: null, why: 'empty' },
+  {
+    addr: '::1%1',
+    canonical: null,
+    why: 'a zone id -- classifyAddress accepts it (see IPV6_RANGES above), canonicalAddress deliberately does not'
+  },
+  { addr: 'fe80::1%eth0', canonical: null, why: 'a named zone id, same deliberate refusal' }
+]
+
 export const MALFORMED: readonly string[] = [
   '',
   '   ',

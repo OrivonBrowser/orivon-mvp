@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { classifyAddress, isPublicUnicast } from './address.js'
-import { IPV4_ENCODINGS, IPV4_RANGES, IPV6_EMBEDDED_V4, IPV6_RANGES, MALFORMED, PUBLIC, type Row } from './address-vectors.js'
+import { canonicalAddress, classifyAddress, isPublicUnicast } from './address.js'
+import {
+  CANONICAL_FORMS,
+  IPV4_ENCODINGS,
+  IPV4_RANGES,
+  IPV6_EMBEDDED_V4,
+  IPV6_RANGES,
+  MALFORMED,
+  PUBLIC,
+  type Row
+} from './address-vectors.js'
 
 // The table IS the test. security-model.md T12 fails SILENTLY -- a missed
 // encoding returns "public" for an address that reaches localhost, nothing
@@ -22,6 +31,14 @@ const BLOCKED_TABLES: readonly Row[] = [
   ...IPV6_EMBEDDED_V4,
   ...PUBLIC
 ]
+
+// canonicalAddress deliberately refuses a zone-scoped literal even though
+// classifyAddress accepts one (address.ts explains why); excluded here so the
+// "canonicalises to something whenever classifyAddress can name a class"
+// property below states the direction it actually holds in, rather than
+// failing on the two rows (IPV6_RANGES's '::1%1' and 'fe80::1%eth0') that are
+// the documented exception.
+const CANONICALISABLE: readonly Row[] = BLOCKED_TABLES.filter((row) => !row.addr.includes('%'))
 
 describe('classifyAddress', () => {
   describe('IPv4 ranges and their edges', () => {
@@ -92,6 +109,87 @@ describe('classifyAddress', () => {
     it('a megabyte of digits short-circuits instead of parsing', () => {
       expect(classifyAddress('1'.repeat(1_000_000))).toBe('unparseable')
     })
+  })
+})
+
+describe('canonicalAddress', () => {
+  // The table IS the test here too -- see this file's own header. Every row
+  // pins EXACTLY what canonicalAddress returns, not just whether it accepted
+  // the input: a normaliser that returns SOME non-null string for
+  // '2130706433' but the wrong one is a worse bug than one that rejects it,
+  // because a caller (the grant prompt, docs/open-questions.md A20) renders
+  // whatever comes back as though it were true.
+  it.each(CANONICAL_FORMS)('$addr -> $canonical ($why)', ({ addr, canonical }) => {
+    expect(canonicalAddress(addr)).toBe(canonical)
+  })
+
+  it.each(MALFORMED)('%j is refused, same as classifyAddress', (addr) => {
+    expect(canonicalAddress(addr)).toBeNull()
+    expect(classifyAddress(addr)).toBe('unparseable')
+  })
+
+  // The property this function exists to guarantee (docs/open-questions.md
+  // A20): it must never accept something classifyAddress cannot classify --
+  // that would be two parsers disagreeing about what an address IS, the
+  // exact failure this file's header describes. The reverse (refusing
+  // something classifyAddress accepts) is fine and happens on purpose for a
+  // zone-scoped literal, which is why CANONICALISABLE excludes those two
+  // rows rather than this test special-casing them.
+  it.each(CANONICALISABLE)(
+    '$addr: canonicalises to something whenever classifyAddress can name a class ($why)',
+    ({ addr }) => {
+      expect(canonicalAddress(addr)).not.toBeNull()
+    }
+  )
+
+  // Idempotent, and classification-preserving: canonicalising twice is the
+  // same as once, and the result must classify EXACTLY as the original did.
+  // A formatter bug that quietly moves a byte -- swaps two octets, shifts by
+  // the wrong amount -- would still pass the exact-string table above for
+  // every row whose canonical spelling happens not to touch that byte, but
+  // fails this for every row that does, because it would classify as a
+  // DIFFERENT address than the one that was parsed.
+  it.each(CANONICALISABLE)(
+    '$addr: canonical form is idempotent and classifies the same ($why)',
+    ({ addr, cls }) => {
+      const once = canonicalAddress(addr)
+      expect(once).not.toBeNull()
+      const canonical = once as string
+      expect(canonicalAddress(canonical)).toBe(canonical)
+      expect(classifyAddress(canonical)).toBe(cls)
+    }
+  )
+
+  // Cheap insurance for shapes nobody wrote a row for, mirroring
+  // isPublicUnicast's fuzz test below. A non-null result must never invent a
+  // class classifyAddress disagrees with, and must always round-trip.
+  it('never throws on generated junk, and a result never disagrees with classifyAddress', () => {
+    const alphabet = '0123456789abcdefxX.:%[]/-+ \tg\u{ff11}'
+    let seed = 0x6d2b79f5
+
+    const next = (): number => {
+      seed = (Math.imul(seed, 2654435761) + 12345) | 0
+      return seed >>> 1
+    }
+
+    let canonicalCount = 0
+    for (let i = 0; i < 2000; i++) {
+      let junk = ''
+      const length = next() % 24
+      for (let j = 0; j < length; j++) junk += alphabet[next() % alphabet.length] ?? ''
+
+      expect(() => canonicalAddress(junk)).not.toThrow()
+      const canonical = canonicalAddress(junk)
+      if (canonical === null) continue
+
+      canonicalCount++
+      expect(classifyAddress(canonical)).toBe(classifyAddress(junk))
+      expect(canonicalAddress(canonical)).toBe(canonical)
+    }
+
+    // Guards the assertions above from becoming vacuous: if a future change
+    // made everything unparseable, the loop would still pass.
+    expect(canonicalCount).toBeGreaterThan(0)
   })
 })
 
