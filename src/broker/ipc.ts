@@ -58,7 +58,7 @@ import type { PortRegistry } from './port-registry.js'
 import { originFromSenderFrame } from './policy/origin.js'
 import type { SenderFrameLike } from './policy/origin.js'
 import { fail, isOrivonErrorLike } from './errors.js'
-import type { DataMessage, OrivonError, OrivonErrorCode, RequestEnvelope, ResponseEnvelope, StreamEndMessage } from '../contracts/index.js'
+import type { DataMessage, OrivonErrorCode, RequestEnvelope, ResponseEnvelope, StreamEndMessage } from '../contracts/index.js'
 import { LIMITS } from '../contracts/index.js'
 
 export { CONTROL_CHANNEL, PORT_CHANNEL }
