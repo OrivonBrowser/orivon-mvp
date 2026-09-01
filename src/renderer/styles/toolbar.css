@@ -162,7 +162,7 @@
    unlike #back/#forward/#reload, which are genuinely, contextually
    disabled and keep the base dim-on-dim style. The global
    button:disabled { opacity: 0.35 } left these unreadable, which read
-   as "broken" rather than "not built yet" (open-questions.md A25).
+   as "broken" rather than "not built yet" (open-questions.md A32).
    not-allowed on hover makes the inertness legible without reaching
    for the title tooltip at all. */
 .iconbtn:disabled,

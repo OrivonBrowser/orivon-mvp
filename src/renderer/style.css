@@ -82,7 +82,7 @@ button {
   cursor: pointer;
 }
 /* Covers every disabled control in one place -- the nav buttons, the
-   inert toolbar icons (open-questions.md A25), the inert bookmarks-bar
+   inert toolbar icons (open-questions.md A32), the inert bookmarks-bar
    apps button -- rather than repeating the same two lines per row's
    stylesheet. */
 button:disabled {
@@ -117,7 +117,7 @@ input:focus-visible:not(.addressbar) {
    approximation, not a measurement: env(titlebar-area-*) and
    navigator.windowControlsOverlay both report empty/false for this
    shell's BaseWindow + WebContentsView chrome, confirmed empirically
-   (open-questions.md A27). main.ts sets [data-platform] from
+   (open-questions.md A34). main.ts sets [data-platform] from
    process.platform, exposed read-only over the chrome preload. */
 [data-platform="darwin"] .tabrow { padding-left: 78px; }
 [data-platform="win32"] .tabrow,

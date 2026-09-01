@@ -25,7 +25,7 @@
 }
 /* A permanent placeholder, same reasoning as .iconbtn/.pillbtn
    (toolbar.css) -- the base button:disabled dim-on-dim read as broken
-   rather than "not built yet" (open-questions.md A25). */
+   rather than "not built yet" (open-questions.md A32). */
 .bmicon:disabled {
   opacity: 0.55;
   cursor: not-allowed;

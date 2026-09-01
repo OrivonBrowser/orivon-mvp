@@ -41,6 +41,6 @@ contextBridge.exposeInMainWorld('orivonShell', {
    * Available even under sandbox: true (process.md SS Sandbox). Needed
    * because env(titlebar-area-*) and navigator.windowControlsOverlay
    * both report empty/false for this shell's BaseWindow + WebContentsView
-   * composition -- confirmed empirically, open-questions.md A27. */
+   * composition -- confirmed empirically, open-questions.md A34. */
   platform: process.platform
 })
