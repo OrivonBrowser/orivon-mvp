@@ -67,15 +67,21 @@ Also mandatory:
   sees it. The real path is `node_modules/webtorrent/dist/sw.min.js` — note the `dist/`; a path
   without it looks plausible and fails as a silent 404.
 
-## `file://` counts as a secure context — the service-worker media path needs no fallback
+## `file://` counts as a secure context — `serviceWorker.register()` needs no fallback
 
 The week-0 plan assumed `navigator.serviceWorker.register()` would need a fallback for the media
 path, because service workers are ordinarily gated to secure contexts (`https:` or `localhost`)
-and a packaged app serves its files over `file://`. **That assumption was wrong, and confirmed
-empirically rather than left standing** (gate 3, 2026-08-25): Electron treats a `file://` origin
-loaded via `loadFile()` as a secure context, and `navigator.serviceWorker.register()` succeeds
-with no flag and no workaround needed. Don't build the fallback path speculatively —
-`docs/planning/spike-verdict.md` (its Gate 3 section) has the evidence.
+and a packaged app serves its files over `file://`. **That assumption was wrong for
+registration, and confirmed empirically rather than left standing** (gate 3, 2026-08-25):
+Electron treats a `file://` origin loaded via `loadFile()` as a secure context, and
+`navigator.serviceWorker.register()` succeeds with no flag and no workaround needed. Don't build
+a registration fallback speculatively — `docs/planning/spike-verdict.md` (its Gate 3 section)
+has the evidence.
+
+**What this does not prove:** gate 3 itself is **BLOCKED**, not passed — `register()` succeeding
+is confirmed, but the end-to-end media path through the `<video>` element is still unproven,
+because Playwright can't attach to that gate's window (see the known-unsolved-issue section
+below) and the element itself is explicitly "not yet tested" in `spike-verdict.md`.
 
 ## The `path` polyfill incident — when an error names the wrong thing entirely
 
@@ -177,25 +183,31 @@ needs) and the build crashes with `MODULE_NOT_FOUND`. `check:natives` passes und
 install mode (correctly — a missing prebuilt binary isn't a Rule 8 violation), so the guard
 alone will not catch this. Contributors and CI must use a plain `npm install`.
 
-## Electron's `.d.ts` types some options as `BrowserWindow`-only, even when they work identically on `BaseWindow`
+## `ready-to-show` is typed on `BrowserWindow` only, but fires identically on `BaseWindow`
 
-Symptom: TypeScript's own types — and context7's docs — show `titleBarStyle`, `titleBarOverlay`
-and `trafficLightPosition` only as `BrowserWindow` constructor options, and `ready-to-show` only
-on `BrowserWindow`'s typed event union. Nothing in either source suggests they exist on
-`BaseWindow` at all.
+Symptom: TypeScript's own types — and context7's docs — show `ready-to-show` only on
+`BrowserWindow`'s typed event union (`electron.d.ts:4704-4708`, electron 44.0.0). Nothing in
+either source suggests it exists on `BaseWindow` at all.
 
-Cause: this is a **typing/documentation gap, not a runtime one**. All four work identically on
-`BaseWindow` — confirmed empirically (`src/main/window.ts`, 2026-08-26): the constructor accepts
-all three options, `win.setTitleBarOverlay()` exists and works, and `ready-to-show` fires (see
-the next section for the one real caveat, which is about *when* it fires, not *whether* it
-exists).
+Cause: this is a **typing/documentation gap, not a runtime one**. `ready-to-show` fires
+identically on `BaseWindow` — confirmed empirically (`src/main/window.ts`, 2026-08-26; see the
+next section for the one real caveat, which is about *when* it fires, not *whether* it exists).
+
+**Corrected 2026-09-01:** an earlier version of this section made the same claim for
+`titleBarStyle`, `titleBarOverlay` and `trafficLightPosition`. That was false — checked directly
+against `node_modules/electron/electron.d.ts` (v44.0.0): all three are declared inside
+`BaseWindowConstructorOptions` itself (`titleBarOverlay` at line 4039, `titleBarStyle` at line
+4043, `trafficLightPosition` at line 4049), and `setTitleBarOverlay(...)` is a method on the
+`BaseWindow` class (line 3569). Only `ready-to-show` is actually `BrowserWindow`-only. The
+mistaken belief is itself the lesson below: check the `.d.ts` before assuming a gap, in either
+direction.
 
 **Fix: when context7 — or the `.d.ts` itself — is silent about `BaseWindow` for something
 documented only on `BrowserWindow`, treat the silence as "unconfirmed", not "no".** Verify
-empirically (a throwaway probe app is enough) before assuming either way. Subscribing to
-`ready-to-show` needs a narrow cast past the typed event union — cast the method, not the whole
-object, so a genuine `BaseWindow`/`BrowserWindow` mismatch would still be caught by the
-type-checker:
+empirically (a throwaway probe app is enough, or a direct grep of `electron.d.ts`) before
+assuming either way. Subscribing to `ready-to-show` needs a narrow cast past the typed event
+union — cast the method, not the whole object, so a genuine `BaseWindow`/`BrowserWindow`
+mismatch would still be caught by the type-checker:
 
 ```ts
 ;(win as unknown as { once: (event: 'ready-to-show', cb: () => void) => void })
@@ -242,12 +254,21 @@ listener works fine for an ordinary drag-resize, but a **`maximize()`-triggered*
 the chrome and tab views at their pre-maximize width — no error, no crash, just a visibly wrong
 layout the moment the window is maximized.
 
-Cause, confirmed empirically under this X11 window manager: `'resize'` fires immediately on
+Cause: the stale read was measured here, on this X11 window manager; whether the staleness is
+specific to this window manager or general to Electron/Chromium's resize dispatch was not
+isolated. What **was** confirmed directly against `node_modules/electron/electron.d.ts`
+(v44.0.0, lines 2373-2398, on the `BaseWindow` class): `'resize'` fires immediately on
 `maximize()`, but a *synchronous* read of `win.getContentBounds()` inside that same handler
 returns the bounds from **before** the resize, not after. `queueMicrotask` does not fix it — it
 observes the same stale value. Only deferring to the next **macrotask** (`setImmediate`) sees the
-settled bounds. Electron's `'resized'` event, which exists specifically to sidestep this class of
-bug, **does not fire on this window manager at all** — do not rely on it here.
+settled bounds.
+
+Electron's `'resized'` event, which exists specifically to sidestep this class of bug, is
+declared `@platform darwin,win32` in the `.d.ts` — **it does not exist on Linux at all, on any
+window manager**, so it was never an option here regardless of which part of the cause above
+turns out to be WM-specific. `mvp-scope.md` puts Linux (AppImage + deb) first in the packaging
+IN table, so the `setImmediate` deferral below is the fix on the primary target, not a
+workaround for one desktop.
 
 Fix (`src/main/window.ts`, commit `18b2e12`):
 
@@ -266,21 +287,18 @@ drag continues, so one tick of latency per frame is not observable. Only a singl
 
 ## Match windows by URL via `app.windows()`, never `app.firstWindow()`
 
-Once a `BaseWindow` holds more than one `WebContentsView` — the shell's actual composition —
-`app.firstWindow()`'s result depends on view-add order, which is an implementation detail, not a
-contract. Narrowed at build step 1, 2026-08-26 (`docs/open-questions.md` C6): a minimal
-`BaseWindow` with two `WebContentsView`s attaches cleanly under `_electron`, `app.windows()`
-reports both with correct URLs, and `app.firstWindow()` does resolve — reliably, but on a promise
-the code never actually made.
+Already stated in full in `CLAUDE.md` §Start here, with the underlying research in
+`docs/open-questions.md` C6 — read those; this is only the pointer. Once a `BaseWindow` holds
+more than one `WebContentsView` (the shell's actual composition), match windows by URL via
+`app.windows()`, never `app.firstWindow()`: view-add order is an implementation detail, not a
+contract.
 
-`scripts/smoke.mjs` matches windows by URL instead of relying on add order:
+`scripts/smoke.mjs` has the pattern in use:
 
 ```js
 const win = app.windows().find((w) => w.url().endsWith('index.html'))
 if (win === undefined) throw new Error('chrome view not found in app.windows()')
 ```
-
-Do the same in any new Playwright-driven test against this shell.
 
 ## Known unsolved issue: Playwright can't always attach to a gate's window
 
@@ -334,7 +352,7 @@ is only the pointer:
   owner has reviewed the verdict; this skill and the docs above are what should outlive it.
 - `src/main/window.ts`'s `showOnce` — the `ready-to-show`-under-dev-server fix. Commit `04d44bc`
   (build step 1) has the full incident, including the two dead ends ruled out first.
-- Commit `18b2e12` (`stream/backlog-09-chrome-restyle`, not yet merged as of this writing) has
-  the full `getContentBounds()`/`setImmediate` incident. Present in the repository's history
-  either way — `git show 18b2e12` works from any branch — even before that stream lands on
-  `main`.
+- Commit `18b2e12` has the full `getContentBounds()`/`setImmediate` incident. It exists only on
+  `stream/backlog-09-chrome-restyle`, a local branch not yet merged and not pushed to any remote
+  as of this writing — `git show 18b2e12` fails for anyone who has not fetched that branch. The
+  code block above is the whole fix, so nothing is lost if that branch never lands.
