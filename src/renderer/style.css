@@ -1,40 +1,76 @@
-/* Chrome view only (src/main/window.ts) -- concept 2 from the mockup
-   review, 2026-08-26 ("dense, filled-pill active tab"). Every pixel here
-   mirrors src/main/window.ts's CHROME_HEIGHT comment; change one, change
-   both. */
+/* Chrome view only (src/main/window.ts). Restyled 2026-08-28 to match
+   orivon-browser-v2's chrome exactly (visual reference only, ADR-0002;
+   src/renderer/README.md) -- its numbers are quoted below, not guessed.
+   This file holds tokens and page-wide base rules; the three rows each
+   have their own file under styles/, split by concern per
+   code-guidelines.md Rule 2 rather than left to grow into one file.
+
+   The 104px total mirrors src/main/window.ts's CHROME_HEIGHT comment --
+   change one, change both, then re-run `npm run smoke`. */
+
+@import './styles/tabstrip.css';
+@import './styles/toolbar.css';
+@import './styles/bookmarks.css';
 
 :root {
-  --wbg: #ffffff;
-  --wchrome: #f1f3f4;
-  --wink: #202124;
-  --wink-dim: #5f6368;
-  --wborder: #d7dae0;
-  --waccent: #2f8a7d;
+  /* Light is DERIVED, not measured -- orivon-browser-v2's light theme is
+     only wired in its tab strip; toolbar, omnibox and bookmarks bar are
+     hardcoded dark there. These follow the same relationships the dark
+     ramp uses (active surface lighter than chrome, bookmarks bar one
+     step darker than chrome) rather than copying values that don't
+     exist in the reference. */
+  --wchrome: #e4e4eb;
+  --wbookmarks: color-mix(in srgb, var(--wchrome) 92%, black);
+  --wsurface: #f2f2f7;
+  --wborder: color-mix(in srgb, var(--wchrome) 85%, black);
+  --wink: rgba(0, 0, 0, 0.90);
+  --wink-dim: rgba(0, 0, 0, 0.50);
+  --wink-off: rgba(0, 0, 0, 0.35);
+  --whover-strong: rgba(0, 0, 0, 0.08);
+  --whover-soft: rgba(0, 0, 0, 0.05);
+  /* Theme-invariant in the reference -- same value both modes. */
+  --waccent: #4f46e5;
+  --wmark: #ff6900;
+  --wok: #00c950;
   color-scheme: light dark;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --wbg: #202124;
-    --wchrome: #292a2d;
-    --wink: #e8eaed;
-    --wink-dim: #9aa0a6;
-    --wborder: #3c4043;
-    --waccent: #55d0c1;
+    /* Measured from orivon-browser-v2 (dossier, 2026-08-28) --
+       --wchrome: tab strip + toolbar background
+       --wbookmarks: bookmarks bar, one step darker than --wchrome
+       --wsurface: active tab + omnibox pill background
+       --wborder: omnibox border, separator, hover backgrounds' base */
+    --wchrome: #1e1f24;
+    --wbookmarks: #1a1b20;
+    --wsurface: #2b2c31;
+    --wborder: #3b3c42;
+    --wink: #e6e7e8;
+    --wink-dim: #9a9ba5;
+    --wink-off: #6b7280;
+    --whover-strong: rgba(255, 255, 255, 0.08);
+    --whover-soft: rgba(255, 255, 255, 0.05);
   }
 }
+
+/* The omnibox leading dot's plain-http colour (toolbar.css's
+   .address-dot.insecure). Theme-invariant in the reference, same as
+   --waccent/--wmark/--wok above, so it isn't in the light/dark table. */
+:root { --winsecure: #f97316; }
 
 * { box-sizing: border-box; }
 
 html, body {
   margin: 0;
   padding: 0;
-  height: 118px; /* CHROME_HEIGHT, src/main/window.ts */
+  height: 104px; /* CHROME_HEIGHT, src/main/window.ts: 36 (tabs) + 40 (toolbar) + 28 (bookmarks) */
   overflow: hidden;
   background: var(--wchrome);
   color: var(--wink);
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   font-size: 12.5px;
+  user-select: none;
 }
 
 button {
@@ -45,146 +81,44 @@ button {
   padding: 0;
   cursor: pointer;
 }
+/* Covers every disabled control in one place -- the nav buttons, the
+   inert toolbar icons (open-questions.md A32), the inert bookmarks-bar
+   apps button -- rather than repeating the same two lines per row's
+   stylesheet. */
+button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+/* :not(.addressbar) -- found 2026-08-28: outline-offset: -2px draws
+   INSIDE the element's own border box, and on the omnibox input that
+   lands directly on the leftmost ~2px of the first typed character,
+   exactly while the user is typing (that's when :focus-visible
+   matches). It's also redundant there: .addressbar-pill:focus-within
+   (toolbar.css) already shows focus via the whole pill's border
+   colour. Every other focusable control keeps this ring. */
 button:focus-visible,
-input:focus-visible {
+input:focus-visible:not(.addressbar) {
   outline: 2px solid var(--waccent);
   outline-offset: -2px;
 }
-
-/* -------- title row: drag-only, native window controls painted on top -------- */
-.titlerow {
-  height: 40px;
-  -webkit-app-region: drag;
+.addressbar:focus-visible {
+  outline: none;
 }
 
-/* -------- tab row -------- */
-.tabrow {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  padding: 7px 7px 6px;
-  background: var(--wchrome);
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.tabrow::-webkit-scrollbar { display: none; }
+/* Only the tab row drags -- every clickable element inside it carries
+   .no-drag explicitly (index.html). Electron's native window buttons
+   (titleBarOverlay / macOS traffic lights) sit on top of this
+   compositor-side and stay clickable regardless. */
+.drag { -webkit-app-region: drag; }
+.no-drag { -webkit-app-region: no-drag; }
 
-.tab {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  height: 27px;
-  padding: 0 9px;
-  border-radius: 6px;
-  max-width: 168px;
-  min-width: 72px;
-  flex: 1 1 168px;
-  color: var(--wink-dim);
-  cursor: default;
-  user-select: none;
-}
-.tab:hover:not(.active) {
-  background: color-mix(in srgb, var(--wink) 6%, transparent);
-}
-.tab.active {
-  background: color-mix(in srgb, var(--waccent) 16%, var(--wbg));
-  color: var(--wink);
-}
-
-.tab .fav {
-  width: 8px;
-  height: 8px;
-  flex: none;
-  border-radius: 50%;
-  background: var(--wink-dim);
-  opacity: 0.5;
-}
-.tab.active .fav {
-  background: var(--waccent);
-  opacity: 1;
-}
-.tab.loading .fav {
-  background: var(--waccent);
-  opacity: 1;
-  animation: pulse 1s ease-in-out infinite;
-}
-@media (prefers-reduced-motion: reduce) {
-  .tab.loading .fav { animation: none; }
-}
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.35; }
-}
-
-.tab .title {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tab .close {
-  width: 16px;
-  height: 16px;
-  border-radius: 4px;
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0;
-}
-.tab:hover .close { opacity: 0.7; }
-.tab .close:hover {
-  background: color-mix(in srgb, var(--wink) 14%, transparent);
-  opacity: 1;
-}
-.tab .close svg { width: 9px; height: 9px; }
-
-/* -------- toolbar -------- */
-.toolbar {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  height: 38px;
-  padding: 6px 8px;
-  background: var(--wbg);
-  border-bottom: 1px solid var(--wborder);
-}
-
-.navbtn {
-  width: 23px;
-  height: 23px;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--wink-dim);
-  flex: none;
-}
-.navbtn svg { width: 14px; height: 14px; }
-.navbtn:disabled { opacity: 0.35; cursor: default; }
-.navbtn:not(:disabled):hover {
-  background: color-mix(in srgb, var(--wink) 8%, transparent);
-  color: var(--wink);
-}
-
-.addressbar-form {
-  flex: 1;
-  min-width: 0;
-}
-.addressbar {
-  width: 100%;
-  height: 26px;
-  border-radius: 6px;
-  background: var(--wchrome);
-  border: 1px solid transparent;
-  padding: 0 10px;
-  font: inherit;
-  font-variant-numeric: tabular-nums;
-  color: var(--wink);
-}
-.addressbar::placeholder { color: var(--wink-dim); }
-.addressbar:focus {
-  background: var(--wbg);
-  border-color: var(--wborder);
-}
+/* Reserved space so the tab strip's own content -- tabs, the + button --
+   never renders underneath Electron's native window buttons. An
+   approximation, not a measurement: env(titlebar-area-*) and
+   navigator.windowControlsOverlay both report empty/false for this
+   shell's BaseWindow + WebContentsView chrome, confirmed empirically
+   (open-questions.md A34). main.ts sets [data-platform] from
+   process.platform, exposed read-only over the chrome preload. */
+[data-platform="darwin"] .tabrow { padding-left: 78px; }
+[data-platform="win32"] .tabrow,
+[data-platform="linux"] .tabrow { padding-right: 138px; }
