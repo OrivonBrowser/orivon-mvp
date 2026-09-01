@@ -738,3 +738,26 @@ describe('origin canonicalisation (policy/origin.ts)', () => {
   })
 })
 
+describe('registerApp rejects like every other Broker method, rather than throwing synchronously (MINOR)', () => {
+  it('does not throw synchronously for a malformed origin; it returns a rejecting promise', async () => {
+    // connect/readFile/writeFile/manifest/grants/revoke/grant all reject.
+    // Before this fix, registerApp was the one method a caller wrapping the
+    // whole Broker surface in a uniform .catch() would still see an
+    // uncaught synchronous exception from.
+    const broker = createBroker(baseDeps())
+
+    let thrown: unknown
+    let result: unknown
+    try {
+      result = broker.registerApp('not a url', manifestWith({}))
+    } catch (error) {
+      thrown = error
+    }
+
+    expect(thrown).toBeUndefined()
+    expect(result).toBeInstanceOf(Promise)
+    const error = await rejection(result as Promise<unknown>)
+    expect(error.code).toBe('internal')
+  })
+})
+
