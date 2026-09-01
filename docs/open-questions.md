@@ -63,6 +63,11 @@ None of these block starting the week-0 spike.
 | A22 | **`src/broker/policy/paths.ts` assumes app root directory names are single-case hex.** True today and specified — `security-model.md` T13b makes directory names `sha256(canonical_origin)`, and `ADR-0009` reconfirms the bundle hash does not rename them. The assumption is load-bearing for a case-SENSITIVE comparison and is asserted only in a source comment | **Build step 4 (the app loader)**, which writes the first root directory and is the first chance to get the naming wrong. See below |
 | A23 | **A derived origin does not carry whether it may be PERSISTED.** T13c forbids ever writing a grant for a loopback or plain-`http` origin to disk, but `originFromUrl` returns a plain string — `http://127.0.0.1:8080` is shape-identical to `https://x.example`, so every caller must remember to re-parse and check | **Build step 2**, when the code that persists grants exists. Owner decided 2026-08-27 to keep the return type a plain string for now rather than change a durable interface before its consumer exists. See below |
 | A24 | **Should a whole-codebase guideline sweep be exempt from the one-stream-per-backlog-branch rule?** `stream/backlog-07-guidelines-cleanup` touches six streams' paths at once, which `parallel-work.md` says should be six branches. AI-REC: carve out repo-wide sweeps explicitly, same shape as the PR blueprint's `type:chore` short form | **Before the next backlog-NN sweep is started.** This PR is a fait accompli either way; what's open is whether the rule gets a carve-out. See below |
+| A27 | **`update.ts`'s wildcard host match and `connect-patterns.ts`'s pattern matcher disagree about what a leading `*.` means.** `update.ts`'s `hostCovers` treats `*.example.com` as a real suffix wildcard for its re-consent check; `connect-patterns.ts` treats the identical syntax as matching nothing. A manifest can declare, validate and be granted a `connect` pattern that can then never actually connect | **Before the grant prompt is built (build step 4)**, the first point a user sees a pattern spelled two different ways. See below |
+| A28 | **`confinePath` takes a synchronous `realpath`, so every confined `fs` call blocks the broker's main thread.** `policy/paths.ts` declares the parameter synchronous; any broker that calls it performs blocking `stat`/`lstat` syscalls inline with otherwise-async `readFile`/`writeFile` | **Before `orivon.fs` is wired to a renderer (build step 2's IPC task).** See below |
+| A29 | **`quotaBytes` promises reconciliation against the directory on startup, and nothing implements that half.** `contracts/manifest.ts` documents a running per-origin byte counter that reconciles on startup rather than walking the tree every operation; no storage layer or `BrokerFs` member does the reconciling, so the counter resets on every restart | **Before packaging (build step 10)**, when a real user's disk is at stake. See below |
+| A30 | **`CLAUDE.md` states as fact that three `BaseWindow` options are `BrowserWindow`-only; they are not.** `titleBarStyle`, `titleBarOverlay` and `trafficLightPosition` are all declared on `BaseWindowConstructorOptions` in electron 44.0.0's own `.d.ts` — only `ready-to-show` is genuinely `BrowserWindow`-only | **`/revise-claude-md`'s job; this A-number is the durable record if that pass does not run first.** See below |
+| A31 | **May a non-`backlog-NN` stream branch edit a `docs`-owned file it must keep in step with its own signature change?** The borrow mechanism in `parallel-work.md`'s ownership map is written for `backlog-NN` branches only, but a signature-changing stream branch has already needed the same thing | **Before the next signature change lands. Not blocking.** See below |
 
 ---
 
@@ -334,6 +339,136 @@ in kind from a sweep that touches all of them on purpose.
 verified, and re-splitting it now costs real time for uncertain benefit. What is genuinely open
 is whether this is treated as a one-time, named exception or whether the rule itself should grow
 a carve-out for the next sweep.
+
+### A27 — `*.` means two different things depending which file reads it **[AI-REC]**
+
+Pre-existing on `main`. Found from three independent angles during the broker/loader review
+pass (2026-09-01) — an altitude read of `update.ts` against `connect-patterns.ts`, and a
+cross-file check run twice more from different starting points — all converging on the same
+file pair.
+
+`src/broker/policy/update.ts`'s `hostCovers` treats a leading `*.` as a **real** suffix
+wildcard for the app-update re-consent check — `*.example.com` genuinely matches
+`api.example.com`, with a documented registry-boundary argument for why that is safe there.
+`src/broker/policy/connect-patterns.ts` treats the identical syntax as matching **nothing**, and
+says so directly in its own comment: *"No sub-glob support: `*.example.com` matches nothing
+rather than being approximated."*
+
+**Concrete failing scenario.** A developer writes a manifest with
+`connect: ["*.api.example.com:443"]`, modelling it on the wildcard syntax `update.ts` treats as
+real. `parseManifest` accepts it, the grant prompt renders it, and the user approves it — and the
+capability then authorises nothing, because `connect-patterns.ts` denies every host that pattern
+could name. Verified directly: `parseManifest('*.example.com:443')` succeeds, and
+`connect-patterns.ts` has no host that pattern allows.
+
+The failure direction is safe — an app that trips this is over-refused, never under-refused —
+so this is a trap rather than a hole, the same distinction `canonical-host.ts` already draws for
+its own wildcard case.
+
+**AI recommendation:** decide what `*.` means, once, and make both files agree. The safer
+reading is "no sub-globs" — the one `connect-patterns.ts` already argues for — in which case
+`hostCovers`'s wildcard branch is the one that should narrow, to exact match plus a bare `*`.
+
+**Needed by:** before the grant prompt is built (build step 4), the first point a user sees a
+pattern that means two different things depending which file is asked.
+
+### A28 — path confinement's synchronous `realpath` blocks the broker on every confined `fs` call **[AI-REC]**
+
+Pre-existing on `main` (`src/broker/policy/paths.ts`'s `realpath` parameter is declared
+synchronous). Found during a review pass over the broker's efficiency, corroborated
+independently by an altitude pass and a line-scan pass over the same file.
+
+`confinePath`'s algorithm can walk several blocking `stat`/`lstat` syscalls per call, and its
+`realpath` parameter is declared **synchronous**. Any broker that uses it therefore performs
+blocking syscalls on the main thread inside functions (`readFile`/`writeFile`) that are
+otherwise async.
+
+**Concrete failing scenario.** One origin whose confinement root sits on a slow or
+network-backed filesystem hard-blocks — not merely queues — every other origin's pending `net`
+and `fs` calls. That is `security-model.md`'s named threat T11b (*"a loop of
+`orivon.fs.stat()` hangs the whole browser"*), reached by a mechanism the in-flight cap cannot
+bound: the cap limits the *number* of concurrent operations, not the cost of any one of them.
+
+**AI recommendation:** give `confinePath` an async `realpath` parameter
+(`(p: string) => Promise<string>`) and make `confinePath` itself async, so callers can `await
+fs.promises.realpath`. Not a fix to make in passing — `policy/paths.ts` sits outside the paths
+this defect was found from, and reaching into it from an unrelated stream is exactly the kind of
+cross-stream edit `parallel-work.md` asks to be raised rather than made.
+
+**Needed by:** before `orivon.fs` is wired to a renderer, in build step 2's IPC task.
+
+### A29 — `quotaBytes`'s startup-reconciliation promise has no owner **[AI-REC]**
+
+Pre-existing on `main` (`src/contracts/manifest.ts:102-111`). Found during a broker review
+pass's check for behaviour the contract promises but nothing implements, corroborated twice.
+
+`src/contracts/manifest.ts:102-111` documents the quota contract as maintaining *"a running
+per-origin byte counter, checks it on write, and yields `'limit'` when exceeded, reconciling
+against the directory on startup rather than walking the tree on every operation."* The
+in-memory counter and on-write check exist, closing the unbounded-write hole this contract is
+written to prevent. **The startup-reconciliation half does not:** it needs a persisted counter
+and a way to size the confinement directory, and nothing currently owns either.
+
+**Concrete failing scenario.** An app writes up to its quota, the user quits, and reopens the
+app. Because the counter is in-memory only, it resets to zero on restart — the quota bounds a
+session, not the disk, and the app can keep writing past its declared limit simply by
+restarting.
+
+**AI recommendation:** decide whether the counter is persisted by the broker (a new `BrokerFs`
+member plus a startup hook) or by the storage layer build step 4 introduces, and record the
+choice. `src/contracts/` itself should not change to soften the promise — the gap is in the
+implementation, not the contract.
+
+**Needed by:** before packaging (build step 10), which is when a real user's disk is at stake.
+
+### A30 — `CLAUDE.md`'s `BaseWindow` titleBar claim is false against electron 44 **[AI-REC]**
+
+Pre-existing on `main`. Found while reviewing a PR that was about to copy the same claim into
+the `orivon-electron` project skill; verified independently against
+`node_modules/electron/electron.d.ts` at electron 44.0.0 and against context7's live docs.
+
+`CLAUDE.md` §Start here says Electron's `.d.ts` *"sometimes types an option/event on
+`BrowserWindow` only, even when it works identically on `BaseWindow`"*, and names four
+examples: `ready-to-show` and the `titleBarStyle`/`titleBarOverlay`/`trafficLightPosition`
+family. **Only the first is true.** `ready-to-show` is genuinely declared on `BrowserWindow`
+alone (`electron.d.ts:4704-4708`). The other three are declared directly on
+`BaseWindowConstructorOptions` (`titleBarOverlay` at `:4039`, `titleBarStyle` at `:4043`,
+`trafficLightPosition` at `:4049`), and `setTitleBarOverlay(...)` is a method on the
+`BaseWindow` class itself (`:3569`).
+
+**Concrete failing scenario.** `CLAUDE.md` is the first file every agent working here reads. An
+agent that trusts this sentence will distrust the `.d.ts` for the titleBar family in a case
+where the `.d.ts` is right — either chasing external verification it does not need, or avoiding
+options that already work on `BaseWindow`, on the strength of a claim this repository made about
+its own dependency.
+
+**AI recommendation:** correct the sentence to keep only the `ready-to-show` example of the
+`.d.ts` gap, and either drop the titleBar family from it or state separately that those three
+are confirmed present on `BaseWindow`. The primary fix route is `/revise-claude-md`, which
+`CLAUDE.md`'s own tooling table already assigns this job to — this entry is the durable record
+in case that pass does not run before the claim is copied somewhere else.
+
+**Needed by:** the next document or skill that would otherwise repeat the claim.
+
+### A31 — extending the docs-borrow carve-out beyond `backlog-NN` branches **[AI-REC]**
+
+A process question, extending A24's theme. Raised while reviewing a stream branch that changed
+a function signature already documented in two `docs`-owned files.
+
+`parallel-work.md`'s ownership map gives `docs/` to the `docs` stream, and its borrow mechanism
+— letting a branch touch a path it does not own when leaving it stale would be worse — is
+written for `backlog-NN` branches only. A stream branch changing `checkConnect`'s signature
+needed to edit `docs/development/testing.md` and `docs/planning/build-plan.md`, because both
+document that exact signature and both already carried two prior "Corrected" notes for the same
+line. Leaving them stale after a third change would have been the worse outcome the borrow
+mechanism exists to avoid.
+
+**AI recommendation:** extend the borrow carve-out from `backlog-NN` branches to any branch
+editing a document that specifies an interface the branch itself owns and is changing, on the
+same terms — name it in the PR body. Same shape as A24's proposed carve-out for repo-wide
+sweeps, and this is the second time the ownership map has needed one.
+
+**Needed by:** before the next signature change lands. Not blocking anything today.
 
 ### A14 addendum — an argument against the trailing-dot merge, recorded after the decision
 
