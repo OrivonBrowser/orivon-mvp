@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
-import { outcomeNow, rejection } from './handles.test-helpers.js'
+import { never, outcomeNow, rejection } from './handles.test-helpers.js'
 import { createBroker } from './index.js'
 import type { CreateBrokerOptions, Dial, DialedSocket } from './index.js'
 import type { Capabilities, Manifest } from '../contracts/index.js'
+import { LIMITS } from '../contracts/index.js'
 
 // This is the assembly step build-plan.md's "Structural decision, day 1"
 // exists for: everything under ./policy/ is a decision function, and this
@@ -317,6 +318,84 @@ describe('orivon.fs reads and writes, confined via policy/paths.ts (T1/T10)', ()
 
     const error = await rejection(broker.fs.readFile(APP, 'a.txt'))
     expect(error.code).toBe('denied')
+  })
+})
+
+describe('fs reads and writes share the per-origin in-flight cap (CRITICAL, T11b)', () => {
+  /** Both I/O methods stall forever -- for proving the shared budget and abort-signal cancellation, never their result. */
+  function stallingFs (): CreateBrokerOptions['fs'] {
+    return {
+      rootFor: () => '/apps/app',
+      realpathSync: (p) => p,
+      readFile: async () => await never<Uint8Array>(),
+      writeFile: async () => { await never<void>() }
+    }
+  }
+
+  it('rejects a read past LIMITS.inFlightOperations immediately, without queueing', async () => {
+    const broker = createBroker(baseDeps({ fs: stallingFs() }))
+    broker.registerApp(APP, manifestWith({ fs: {} }))
+    await broker.grant(APP, 'fs', [])
+
+    for (let i = 0; i < LIMITS.inFlightOperations; i += 1) {
+      void broker.fs.readFile(APP, `f${String(i)}.txt`).catch(() => {})
+    }
+
+    // Before this fix, fs.readFile called deps.fs.readFile directly --
+    // outside handleTable.run -- so LIMITS.inFlightOperations (256) simply
+    // did not apply to it at all: a loop of reads could hang the whole
+    // broker, which is security-model.md's own named threat T11b.
+    const outcome = await outcomeNow(broker.fs.readFile(APP, 'one-too-many.txt'))
+    expect(outcome.state).toBe('rejected')
+    expect(outcome.state === 'rejected' ? outcome.error.code : null).toBe('limit')
+  })
+
+  it('revoking the fs grant mid-read makes the pending call reject with revoked', async () => {
+    const broker = createBroker(baseDeps({ fs: stallingFs() }))
+    broker.registerApp(APP, manifestWith({ fs: {} }))
+    const g = await broker.grant(APP, 'fs', [])
+
+    const pending = broker.fs.readFile(APP, 'a.txt')
+    await broker.revoke(APP, g.id)
+
+    // outcomeNow, not rejection: an unfixed broker calls deps.fs.readFile
+    // directly, outside handleTable.run, so revoke() has nothing to cancel
+    // and this promise would otherwise hang until the stalling stub's
+    // never-settling read is garbage collected -- i.e. the whole test.
+    const outcome = await outcomeNow(pending)
+    expect(outcome.state).toBe('rejected')
+    expect(outcome.state === 'rejected' ? outcome.error.code : null).toBe('revoked')
+  })
+
+  it('revoking the fs grant mid-write rejects the call, even though the write itself later completes', async () => {
+    // The write reaching disk cannot be undone, but the app must never be
+    // told it succeeded for a grant it no longer holds -- pr-31.md's
+    // aggravating factor (b): "the write silently completes and the app
+    // receives confirmation for an operation performed after its grant was
+    // withdrawn."
+    let resolveWrite!: () => void
+    const writeGate = new Promise<void>((resolve) => { resolveWrite = resolve })
+    const written: Array<{ path: string, data: Uint8Array }> = []
+    const fs: CreateBrokerOptions['fs'] = {
+      rootFor: () => '/apps/app',
+      realpathSync: (p) => p,
+      readFile: async () => await never<Uint8Array>(),
+      writeFile: async (path, data) => {
+        written.push({ path, data })
+        await writeGate
+      }
+    }
+    const broker = createBroker(baseDeps({ fs }))
+    broker.registerApp(APP, manifestWith({ fs: {} }))
+    const g = await broker.grant(APP, 'fs', [])
+
+    const pending = broker.fs.writeFile(APP, 'a.txt', new Uint8Array([1]))
+    await broker.revoke(APP, g.id)
+    resolveWrite()
+
+    const error = await rejection(pending)
+    expect(error.code).toBe('revoked')
+    expect(written).toEqual([{ path: '/apps/app/a.txt', data: new Uint8Array([1]) }])
   })
 })
 
