@@ -239,6 +239,17 @@ export async function checkConnect (
   port: number,
   resolveFn: Resolver
 ): Promise<ConnectDecision> {
+  // Runtime shape guard, kept for the same reason hostArg and answer each get
+  // one below: the type signature is a compile-time promise, not a runtime
+  // one. `patterns` is GrantLedger's rehydration of a persisted grant store
+  // (build step 2) -- untrusted JSON shape -- and this function's own doc
+  // comment promises it never throws on its own account. Restored 2026-08-27
+  // after review found A18's signature change had dropped it: passing
+  // anything other than an array (a bare string, null, undefined, or even a
+  // whole Manifest -- the pre-A18 argument) used to deny and started
+  // throwing TypeError out of `.length` or `.map` instead.
+  if (!Array.isArray(patterns)) return deny('not-declared')
+
   // An empty list denies, whether nothing was ever declared or the user
   // granted none of what was declared -- absence means absence, never
   // default-allow (capability-api.md design rules 4 and 5). Which of those
