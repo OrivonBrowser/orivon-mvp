@@ -110,7 +110,7 @@ describe('integration with transport.ts -- "if a send fails, it is not history"'
 
   it('a failed attemptSend produces no history entry', async () => {
     const failing: Sender = vi.fn<Sender>().mockResolvedValue(false)
-    const transport = enqueue(initialTransportState, payloadFor('2026-09'), fixedClock)
+    const transport = enqueue(initialTransportState, payloadFor('2026-09'), 'accepted', fixedClock)
 
     const result = await attemptSend(transport, 'accepted', failing, fixedClock)
 
@@ -121,7 +121,7 @@ describe('integration with transport.ts -- "if a send fails, it is not history"'
 
   it('a refused attemptSend (consent not accepted) produces no history entry either', async () => {
     const neverCalled: Sender = vi.fn<Sender>()
-    const transport = enqueue(initialTransportState, payloadFor('2026-09'), fixedClock)
+    const transport = enqueue(initialTransportState, payloadFor('2026-09'), 'accepted', fixedClock)
 
     const result = await attemptSend(transport, 'declined', neverCalled, fixedClock)
 
@@ -131,7 +131,7 @@ describe('integration with transport.ts -- "if a send fails, it is not history"'
 
   it('a successful attemptSend produces exactly one history entry, matching what was sent', async () => {
     const succeeding: Sender = vi.fn<Sender>().mockResolvedValue(true)
-    const transport = enqueue(initialTransportState, payloadFor('2026-09'), fixedClock)
+    const transport = enqueue(initialTransportState, payloadFor('2026-09'), 'accepted', fixedClock)
 
     const result = await attemptSend(transport, 'accepted', succeeding, fixedClock)
 
@@ -146,7 +146,7 @@ describe('integration with transport.ts -- "if a send fails, it is not history"'
       .mockResolvedValueOnce(false)
       .mockResolvedValueOnce(true)
 
-    let transport = enqueue(initialTransportState, payloadFor('2026-08'), fixedClock)
+    let transport = enqueue(initialTransportState, payloadFor('2026-08'), 'accepted', fixedClock)
     let history = initialHistoryState
 
     const first = await attemptSend(transport, 'accepted', sender, fixedClock)

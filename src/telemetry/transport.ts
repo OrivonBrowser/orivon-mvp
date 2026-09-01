@@ -35,7 +35,6 @@
 // from any document -- flagged rather than silently picked.
 
 import { mayTransmit, type ConsentState, type TelemetryPayload } from './disclosure.js'
-import type { Period } from './accounting.js'
 import { keepNewest, type HistoryEntry } from './history.js'
 
 /** Reads the current time. Injected so this module never calls Date.now()
@@ -70,12 +69,19 @@ export interface TransportState {
   /** Backoff gate: attemptSend refuses to call the sender again before
    *  this instant. `undefined` means no backoff is in effect. */
   readonly nextAttemptAtMs: number | undefined
+  /** Set the instant attemptSend starts awaiting the sender for the
+   *  current head, cleared the instant it resolves either way.
+   *  `undefined` means nothing is currently being sent. See
+   *  IN_FLIGHT_STALE_AFTER_MS for why a value this old is ignored rather
+   *  than trusted forever. */
+  readonly inFlightSince: number | undefined
 }
 
 export const initialTransportState: TransportState = {
   queue: [],
   failureCount: 0,
-  nextAttemptAtMs: undefined
+  nextAttemptAtMs: undefined,
+  inFlightSince: undefined
 }
 
 /**
@@ -93,6 +99,17 @@ export const BASE_BACKOFF_MS = 30_000 // 30s
 export const MAX_BACKOFF_MS = 6 * 60 * 60 * 1000 // 6h
 
 /**
+ * How long an inFlightSince marker is trusted before attemptSend treats it
+ * as stale and proceeds anyway. No document sizes this figure either
+ * (flagged -- AI judgment call): it exists purely so a process that
+ * crashes mid-send, with the marker already persisted, does not wedge the
+ * queue forever on restart. Five minutes is generously longer than any
+ * real send should take, while still being short next to BASE_BACKOFF_MS
+ * and MAX_BACKOFF_MS.
+ */
+export const IN_FLIGHT_STALE_AFTER_MS = 5 * 60 * 1000 // 5m
+
+/**
  * Doubling backoff, capped, so a down endpoint is not hammered and a
  * temporary blip does not wait so long that it misses the rest of the
  * send window ADR-0004 describes ("a randomised offset" within the
@@ -104,24 +121,59 @@ export function computeBackoffMs (failureCount: number): number {
   return Math.min(delay, MAX_BACKOFF_MS)
 }
 
-function withoutPeriod (queue: readonly QueuedPayload[], period: Period): readonly QueuedPayload[] {
-  return queue.filter((entry) => entry.payload.period !== period)
+/**
+ * Replaces the entry for `payload`'s period IN PLACE when one is already
+ * queued, appending only when the period is new. Replacing in place (not
+ * filter-then-append) is what keeps FIFO order stable across a refresh --
+ * accounting keeps accruing through the month, so a later enqueue for a
+ * period already queued carries more complete totals, and that update
+ * must not shove the entry to the back of the queue just because it was
+ * touched again.
+ */
+function upsert (queue: readonly QueuedPayload[], payload: TelemetryPayload, enqueuedAtMs: number): readonly QueuedPayload[] {
+  const index = queue.findIndex((entry) => entry.payload.period === payload.period)
+  if (index === -1) return [...queue, { payload, enqueuedAtMs }]
+  const next = [...queue]
+  next[index] = { payload, enqueuedAtMs }
+  return next
 }
 
 /**
- * Stages `payload` to be sent, replacing any not-yet-sent entry for the
- * same period -- accounting keeps accruing through the month, so a later
- * enqueue for a period already queued carries more complete totals, and
- * the stale entry must not linger and get sent instead of the fresh one
- * -- then applies the cap: once the queue is over `maxQueueSize`, the
- * OLDEST entries are dropped first, keeping the most recent periods, the
- * ones a returning-online user would most want reflected.
+ * Stages `payload` to be sent. Refuses outright unless `consentState` is
+ * 'accepted': payloads are monthly aggregates built from accounting.ts at
+ * send time, not an append-only event log, so a user who accepts partway
+ * through a period still gets the whole period's totals on the next call
+ * -- there is nothing to lose by never staging anything before a choice is
+ * made, and it is what keeps a decline (or an undecided visit) from ever
+ * having a backlog to purge in the first place.
+ *
+ * Updates an already-queued period in place (see upsert) rather than
+ * filter-and-append, then applies the cap: once the queue is over
+ * `maxQueueSize`, the OLDEST entries are dropped first, keeping the most
+ * recent periods, the ones a returning-online user would most want
+ * reflected.
+ *
+ * If the resulting head is a different payload than the one currently at
+ * the head of `state.queue` -- a fresh period landing in an empty queue,
+ * or the cap evicting the old head outright -- failureCount and
+ * nextAttemptAtMs are reset. TransportState's own doc comment says
+ * failureCount means "failures on the item currently at the head of the
+ * queue"; carrying a stale backoff over onto an unrelated payload would
+ * gate its very first attempt behind a delay it never earned.
  */
-export function enqueue (state: TransportState, payload: TelemetryPayload, clock: Clock, maxQueueSize: number = MAX_QUEUE_SIZE): TransportState {
+export function enqueue (state: TransportState, payload: TelemetryPayload, consentState: ConsentState, clock: Clock, maxQueueSize: number = MAX_QUEUE_SIZE): TransportState {
+  if (consentState !== 'accepted') return state
+
   const now = clock()
-  const deduped = withoutPeriod(state.queue, payload.period)
-  const queue = keepNewest([...deduped, { payload, enqueuedAtMs: now }], maxQueueSize)
-  return { ...state, queue }
+  const queue = keepNewest(upsert(state.queue, payload, now), maxQueueSize)
+  const headChanged = state.queue[0]?.payload.period !== queue[0]?.payload.period
+
+  return {
+    queue,
+    failureCount: headChanged ? 0 : state.failureCount,
+    nextAttemptAtMs: headChanged ? undefined : state.nextAttemptAtMs,
+    inFlightSince: headChanged ? undefined : state.inFlightSince
+  }
 }
 
 /**
@@ -139,6 +191,20 @@ export interface SendResult {
 }
 
 /**
+ * Discards the backlog outright. This is the explicit seam a
+ * settings-screen consent toggle can call the moment the user withdraws --
+ * attemptSend also calls this internally on 'declined' (see below), so the
+ * purge happens even if no UI ever calls this directly, but a named export
+ * means the wiring does not have to rely on "the next attemptSend happens
+ * to purge it". Not "clear the queue and leave the rest of state alone":
+ * failureCount and nextAttemptAtMs were earned by a payload that no
+ * longer exists, so this is a full reset, not just an empty queue.
+ */
+export function onConsentWithdrawn (state: TransportState): TransportState {
+  return initialTransportState
+}
+
+/**
  * Sends at most one payload -- the head of the queue -- per call. Never
  * throws and never rejects: every path, including a Sender that throws,
  * resolves to a SendResult, which is what "never block the app" means at
@@ -150,10 +216,20 @@ export interface SendResult {
  * before the queue or the backoff gate are even consulted -- so a decline
  * is honoured before this function does anything else, and there is no
  * path (e.g. "the backoff gate has already opened") that could send one
- * more payload after a decline lands.
+ * more payload after a decline lands. A decline does more than refuse --
+ * it purges (onConsentWithdrawn), because a queue that merely goes quiet
+ * while declined and drains the moment consent is re-enabled would send a
+ * backlog of activity staged while telemetry was supposedly off. An
+ * 'undecided' caller, by contrast, leaves state untouched: enqueue (below)
+ * already refuses to stage anything before a choice is made, so there is
+ * nothing to purge in that case.
  */
 export async function attemptSend (state: TransportState, consentState: ConsentState, sender: Sender, clock: Clock): Promise<SendResult> {
-  if (!mayTransmit(consentState)) return { state, sent: undefined }
+  if (!mayTransmit(consentState)) {
+    return consentState === 'declined'
+      ? { state: onConsentWithdrawn(state), sent: undefined }
+      : { state, sent: undefined }
+  }
 
   const head = state.queue[0]
   if (head === undefined) return { state, sent: undefined }
@@ -163,23 +239,58 @@ export async function attemptSend (state: TransportState, consentState: ConsentS
     return { state, sent: undefined } // still backing off; do not call the sender yet
   }
 
+  if (state.inFlightSince !== undefined && now - state.inFlightSince < IN_FLIGHT_STALE_AFTER_MS) {
+    return { state, sent: undefined } // another attemptSend on this same state is already sending the head
+  }
+
+  // Marked IN PLACE on the object the caller passed in, before the only
+  // await below -- a deliberate exception to this module's "always return
+  // a new object, never mutate the input" style. Two attemptSend calls
+  // given the very same state object (a timer tick and a
+  // send-on-consent-change trigger overlapping, say) each run to their
+  // first await before either one resumes, so only a synchronous write to
+  // something they both hold a reference to can stop the second one from
+  // also passing the guard above and calling the sender a second time.
+  // Returning a new object at the very end -- this function's usual
+  // pattern -- would be invisible to that second call until it was too
+  // late.
+  //
+  // The `finally` below undoes this same mutation on this same object
+  // once the send settles, on top of the ordinary returned-object cleanup
+  // further down. Without it, a caller that (legitimately, sequentially --
+  // no overlap at all) reuses this exact state object for a second, later
+  // call would find the marker permanently stuck, because only the
+  // returned object would ever have been cleared.
+  markInFlight(state, now)
+
   let ok: boolean
   try {
     ok = await sender(head.payload)
   } catch {
     ok = false // a thrown error is a failed attempt, not a crash -- see Sender's doc comment
+  } finally {
+    markInFlight(state, undefined)
   }
 
   if (ok) {
     return {
-      state: { queue: state.queue.slice(1), failureCount: 0, nextAttemptAtMs: undefined },
+      state: { queue: state.queue.slice(1), failureCount: 0, nextAttemptAtMs: undefined, inFlightSince: undefined },
       sent: { payload: head.payload, sentAtMs: now }
     }
   }
 
   const failureCount = state.failureCount + 1
   return {
-    state: { ...state, failureCount, nextAttemptAtMs: now + computeBackoffMs(failureCount) },
+    state: { ...state, failureCount, nextAttemptAtMs: now + computeBackoffMs(failureCount), inFlightSince: undefined },
     sent: undefined
   }
+}
+
+/** The one deliberate mutation in this module -- see attemptSend's comment
+ *  at its call site for why it has to be one. TransportState's field is
+ *  `readonly` for every other caller; this cast is the single, narrow
+ *  exception. Called with `undefined` to revert the mutation once the
+ *  send this marker was guarding has settled. */
+function markInFlight (state: TransportState, value: number | undefined): void {
+  (state as { inFlightSince: number | undefined }).inFlightSince = value
 }
