@@ -89,6 +89,7 @@ regardless of the others.
 | **Run-from-source on Windows and macOS** | `npm install && npm start` sidesteps SmartScreen and Gatekeeper without buying certificates, widens the audience, and self-selects contributors. Forces a pure-JS dependency policy |
 | **Bookmarks bar** — star a page, open it from the bar, unstar it | **Owner override, 2026-08-28** — not in the original scope pass; arrived bundled with a chrome restyle. Cheap (a JSON file and three IPC commands, `ADR-0003`), and a browser with no way to keep a page is not a plausible daily driver — `activeSec` is what the success metric actually measures |
 | Real tab favicons | **Owner override, 2026-08-28** — a fix-round follow-on to the chrome restyle. Known limitation, same shape as the DuckDuckGo search row above: fetching a visited site's favicon is main-process network egress to whatever host serves that icon (`src/main/favicon.ts`), capped and re-encoded to a `data:` URL specifically so the privileged chrome view itself never makes the request |
+| **New-tab dashboard** — a search box, every bookmark as a tile, and inert Torrent/Nostr shortcut tiles | **Owner override, 2026-08-28** — replaces `about:blank`. Styled as a grid to match the long-term vision's layout (`orivon-docs`'s `dashboard-app.md`), but populated with only what is real today: no Wallet, Network or App-Store tiles, and no pluggable widget system underneath it — that platform is the OUT row below, deliberately not pulled forward. The Torrent and Nostr tiles are honest placeholders (`disabled`, with a tooltip naming the build step each arrives in), the same pattern already shipped for the toolbar's own not-yet-built icons |
 
 ## OUT — important but deferrable
 
@@ -101,7 +102,7 @@ Real parts of Orivon, deliberately not in month 1.
 | Trustless resolution (ENS and friends) | Real work; also a **prerequisite for DDOC and site-level scores** |
 | IPFS / Arweave data gathering | Second delivery path; HTTPS suffices to prove the model |
 | App store | Needs apps first. Developer mode covers month 1 |
-| Dashboard widget grid | Pure surface area; zero contribution to the metric |
+| Dashboard **widget/extension platform** — installed apps placing their own widgets, an App Store, Wallet and Network widgets | Pure surface area; zero contribution to the metric. (The new-tab page itself — a grid with real bookmarks and two inert app shortcuts — shipped 2026-08-28 as an IN-table item above; this row is the pluggable platform underneath it, not the page) |
 | Funds-bearing wallet | Different security model entirely from per-origin identity |
 | `subprocess` and `hid` capabilities | No MVP app needs them, and they are the largest attack surface |
 | Identity export / backup | First thing to add once identity has value to users |
