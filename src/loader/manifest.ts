@@ -17,22 +17,20 @@
 // permission boundary into a probe target). This is not a security boundary,
 // so precision is the goal, not uniformity: every reason names the exact
 // field and exactly what was wrong with it.
+//
+// The `capabilities` sub-tree (net/fs/id/protocols and the pattern grammars
+// they are built from) lives in ./manifest-capabilities.ts -- split out so
+// this file stays under the 500-line limit (code-guidelines.md Rule 2) once
+// the PR-29 review's five findings were fixed. Several helpers below
+// (reject, describeValue, isRecord, isAny, extraKey, optionalStringArray,
+// UNSAFE_TEXT_CHARS) are exported for that file's use, not for any consumer
+// outside this directory.
 
-import type {
-  Capabilities,
-  FsCapability,
-  IdCapability,
-  Manifest,
-  NetCapability,
-  Pattern,
-  TcpCapability,
-  UdpCapability
-} from '../contracts/index.js'
+import type { Manifest } from '../contracts/index.js'
 import { isValidCanonicalPath } from '../broker/policy/canonical-path.js'
-import { MAX_PORT } from '../broker/policy/canonical-host.js'
-import { parsePattern as parseConnectPattern } from '../broker/policy/connect-patterns.js'
 import { ownProperty } from '../broker/policy/own-property.js'
 import { compareVersions } from '../broker/policy/update.js'
+import { readCapabilities } from './manifest-capabilities.js'
 
 export interface ManifestOk {
   readonly ok: true
@@ -51,6 +49,11 @@ export type ManifestResult = ManifestOk | ManifestRejected
  * Parses and validates a manifest. `input` may be the raw JSON text fetched
  * from /.well-known/orivon.json, or an already-parsed value -- both untrusted
  * either way.
+ *
+ * THE BYTE BOUND ONLY COVERS THE STRING PATH (a known gap, not fixed here --
+ * see this PR's body under "Decisions and open questions"). A caller that
+ * parses JSON itself and passes the resulting object owns the size bound on
+ * that path; nothing in this codebase does that yet.
  */
 export function parseManifest (input: unknown): ManifestResult {
   try {
@@ -67,34 +70,35 @@ export function parseManifest (input: unknown): ManifestResult {
 // AI-chosen, not specified anywhere in the spec -- flagged rather than
 // silently assumed (CLAUDE.md Rule 1). Generous for any real manifest;
 // bounded so "absurd size" rejects before any of these fields are used for
-// real work. MAX_PATTERNS matches connect.ts's own (private) MAX_PATTERNS by
-// deliberate coincidence, not a shared constant: that one bounds patterns
-// checked per connect() call, this one bounds patterns a manifest may declare.
+// real work.
 const MAX_MANIFEST_BYTES = 64 * 1024
 const MAX_ID_LENGTH = 255
 const MAX_NAME_LENGTH = 200
 const MAX_VERSION_LENGTH = 256
 const MAX_ENTRY_LENGTH = 1024
-const MAX_SCHEME_LENGTH = 32
-const MAX_CURVE_LENGTH = 64
-const MAX_PATTERNS = 256
-const MAX_PROTOCOLS = 32
-const MAX_CURVES = 8
-
-/** capability-api.md A9 SS1: privileged ports denied outright, at every tier. */
-const MIN_UNPRIVILEGED_PORT = 1024
 
 const MANIFEST_KEYS = ['orivonApiVersion', 'id', 'name', 'version', 'entry', 'capabilities']
-const CAPABILITIES_KEYS = ['net', 'fs', 'id', 'protocols']
-const NET_KEYS = ['tcp', 'udp']
-const TCP_KEYS = ['connect', 'listen']
-const UDP_KEYS = ['bind', 'send']
-const FS_KEYS = ['quotaBytes']
-const ID_CAPABILITY_KEYS = ['curves']
 
-const CONTROL_CHARS = /[\x00-\x1f\x7f-\x9f]/
-const SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*$/
-const PORT_RANGE_PATTERN = /^([1-9][0-9]{0,4})(?:-([1-9][0-9]{0,4}))?$/
+// C0/C1 controls, bidi overrides and isolates (U+202A-U+202E, U+2066-U+2069),
+// zero-width characters (U+200B-U+200D, U+2060-U+2064, U+FEFF) and the
+// line/paragraph separators (U+2028/U+2029). Not just "control characters"
+// any more -- renamed accordingly. A bidi override in `name` renders in the
+// grant prompt as a different string than it compares as (T25's RLO
+// filename-spoof trick); a zero-width character in `id` renders identically
+// to another id while comparing unequal, defeating the T18 collision check.
+// Exported for manifest-capabilities.ts's curve-name check.
+export const UNSAFE_TEXT_CHARS = /[\x00-\x1f\x7f-\x9f\u200b-\u200f\u2028\u2029\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/
+
+/**
+ * A high surrogate not followed by its low half, or a low surrogate not
+ * preceded by its high half -- minor finding 8. An unpaired surrogate
+ * encodes inconsistently across storage and display, a risk for the T18
+ * collision-surfacing requirement this file's `id` checks already exist for
+ * (finding 1): two ids that are "the same" at one layer and not at another.
+ * `id` only, not `name` -- name is free-form display text where an unpaired
+ * surrogate is merely a rendering glitch, not an identity collision risk.
+ */
+const UNPAIRED_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/
 
 // --- internal control flow ------------------------------------------------
 //
@@ -104,16 +108,17 @@ const PORT_RANGE_PATTERN = /^([1-9][0-9]{0,4})(?:-([1-9][0-9]{0,4}))?$/
 
 class ManifestInvalid extends Error {}
 
-function reject (reason: string): never {
+/** Exported so manifest-capabilities.ts's checks unwind through the same try/catch. */
+export function reject (reason: string): never {
   throw new ManifestInvalid(reason)
 }
 
-function isRecord (value: unknown): value is Record<string, unknown> {
+export function isRecord (value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 /** A guard that always succeeds, so ownProperty (own-property.ts) can do a RAW read: undefined means "absent", never "present but rejected by a guard" -- JSON has no undefined value to collide with that. */
-function isAny (_value: unknown): _value is unknown {
+export function isAny (_value: unknown): _value is unknown {
   return true
 }
 
@@ -128,7 +133,7 @@ function isAny (_value: unknown): _value is unknown {
  * prototype slot, so Object.keys reports it like any other name and it is
  * rejected below for the mundane reason that it is not a recognised field.
  */
-function extraKey (value: Record<string, unknown>, allowed: readonly string[]): string | null {
+export function extraKey (value: Record<string, unknown>, allowed: readonly string[]): string | null {
   for (const key of Object.keys(value)) {
     if (!allowed.includes(key)) return key
   }
@@ -136,12 +141,17 @@ function extraKey (value: Record<string, unknown>, allowed: readonly string[]): 
 }
 
 /** Renders an untrusted value for an error message without recursing into it. */
-function describeValue (value: unknown): string {
+export function describeValue (value: unknown): string {
   if (typeof value === 'string') {
     const shown = value.length > 100 ? `${value.slice(0, 100)}...(${value.length} chars)` : value
     return JSON.stringify(shown)
   }
   if (value === undefined) return 'undefined'
+  // JSON.stringify(NaN) and JSON.stringify(Infinity) both return the STRING
+  // "null" -- checked before the general number/boolean/null branch below,
+  // or a rejection reason for "must be a finite number" would tell the
+  // developer the value was null when it was NaN or Infinity (finding 5).
+  if (typeof value === 'number' && !Number.isFinite(value)) return String(value)
   if (value === null || typeof value === 'number' || typeof value === 'boolean') return JSON.stringify(value)
   if (Array.isArray(value)) return `an array of length ${value.length}`
   if (typeof value === 'object') return 'an object'
@@ -178,8 +188,10 @@ function requireString (value: Record<string, unknown>, field: string, min: numb
  * of "nothing declared" (omit the field / declare `[]`) is exactly the kind
  * of ambiguity canonical-path.ts and canonical-host.ts refuse elsewhere in
  * this codebase, and it is cheap to refuse here too.
+ *
+ * Exported for manifest-capabilities.ts's readTcp/readUdp/readCapabilities.
  */
-function optionalStringArray (
+export function optionalStringArray (
   value: Record<string, unknown>,
   path: string,
   key: string,
@@ -203,83 +215,6 @@ function optionalStringArray (
   return items
 }
 
-// --- pattern grammars ------------------------------------------------------
-
-/**
- * Bare `lo-hi` or a single port, MAX_PORT-bounded, no leading zeros, no `"*"`.
- * `"*"` is handled by the caller with its own message -- it is a distinct
- * rejection reason (A9 SS1), not a parse failure.
- *
- * A THIRD implementation of this exact grammar, alongside the regex inside
- * connect-patterns.ts's exported `portMatches` and update.ts's PRIVATE
- * `parsePorts`/`parsePort`. Neither is reusable here without a signature
- * change this file cannot legally make (update.ts's version deliberately
- * accepts `"*"`, because it represents an ALREADY-GRANTED pattern set for a
- * coverage check -- the opposite of what a fresh manifest declaration must
- * accept -- and neither exposes the `{lo, hi}` shape this rejection message
- * needs). Flagged rather than silently duplicated -- see the PR description.
- */
-function parsePortRange (spec: string): { readonly lo: number, readonly hi: number } | null {
-  const match = PORT_RANGE_PATTERN.exec(spec)
-  if (match === null) return null
-  const loText = match[1]
-  if (loText === undefined) return null
-  const lo = Number.parseInt(loText, 10)
-  const hi = match[2] === undefined ? lo : Number.parseInt(match[2], 10)
-  if (lo > MAX_PORT || hi > MAX_PORT || lo > hi) return null
-  return { lo, hi }
-}
-
-/** `tcp.listen` / `udp.bind`: capability-api.md A9 SS1 -- declared range required, no privileged ports. */
-function validatePortRangePattern (pattern: string, field: string): void {
-  if (pattern === '*') {
-    reject(`${field}: "*" is rejected -- a declared port range is required (capability-api.md A9 SS1)`)
-  }
-  const range = parsePortRange(pattern)
-  if (range === null) reject(`${field} is not a valid port or port range: ${describeValue(pattern)}`)
-  if (range.lo < MIN_UNPRIVILEGED_PORT) {
-    reject(
-      `${field}: privileged ports below ${MIN_UNPRIVILEGED_PORT} are denied at every tier ` +
-      `(capability-api.md A9 SS1) -- lowest requested port is ${range.lo}`
-    )
-  }
-}
-
-/**
- * `tcp.connect` / `udp.send`: host:port, `"*:*"` explicitly allowed
- * (capability-api.md).
- *
- * connect-patterns.ts's parsePattern only SPLITS the string -- it does not
- * check that the port half is a real port or range, because at connect time
- * an unreadable port spec just matches nothing (fail closed) rather than
- * needing to be rejected up front. A manifest-time check can and should be
- * pickier: reusing parsePortRange (above) here, rather than accepting
- * anything parsePattern's split tolerates, is a STRICTER subset of what the
- * runtime already treats as valid, so it cannot reject a pattern the runtime
- * would otherwise honour.
- */
-function validateConnectPattern (pattern: string, field: string): void {
-  const parsed = parseConnectPattern(pattern)
-  if (parsed === null) {
-    reject(`${field} is not a valid host:port pattern: ${describeValue(pattern)}`)
-  }
-  if (parsed.port !== '*' && parsePortRange(parsed.port) === null) {
-    reject(`${field} has a malformed port: ${describeValue(pattern)}`)
-  }
-}
-
-function validateSchemeName (scheme: string, field: string): void {
-  if (scheme.length > MAX_SCHEME_LENGTH) reject(`${field} exceeds ${MAX_SCHEME_LENGTH} characters`)
-  if (!SCHEME_PATTERN.test(scheme)) reject(`${field} is not a valid URI scheme (RFC 3986): ${describeValue(scheme)}`)
-}
-
-function validateCurveName (curve: string, field: string): void {
-  if (curve.length === 0 || curve.length > MAX_CURVE_LENGTH) {
-    reject(`${field} must be 1-${MAX_CURVE_LENGTH} characters`)
-  }
-  if (CONTROL_CHARS.test(curve)) reject(`${field} contains control characters`)
-}
-
 /**
  * `entry` (e.g. `"index.html"`) is relative to the app root, never a
  * canonical `/`-rooted path -- so it is validated by PREFIXING one and
@@ -292,6 +227,28 @@ function validateCurveName (curve: string, field: string): void {
  * is explicitly NOT this file's job: ADR-0009's amendment assigns that check
  * to the app loader's fetch step, which needs the fetched asset tree this
  * file never sees (see this file's header and the PR description).
+ *
+ * PERCENT-ENCODED FIRST (finding 3). isValidCanonicalPath is built to check
+ * `URL.pathname` output, which is ALWAYS already percent-encoded -- but a
+ * manifest author writes a plain filename. Feeding the raw text straight in
+ * made `isValidCanonicalPath`'s own re-derivation check ("does re-deriving
+ * this path from itself change it") fire on nothing more than an ordinary
+ * space or accented character, rejecting `"my app.html"` with a message that
+ * told the author their filename was dangerous rather than that it needed
+ * encoding.
+ *
+ * encodeEntrySegment below is NOT `new URL('/' + entry, BASE).pathname` on
+ * the whole string -- that was tried and rejected, because the URL parser
+ * ALSO resolves dot-segments as part of building a pathname: it silently
+ * turns `"../../../etc/passwd"` into `"/etc/passwd"`, which then reads as a
+ * perfectly ordinary canonical path and passes, defeating the traversal
+ * check entirely rather than tripping it. Encoding PER SEGMENT (split on the
+ * real `/` characters already in `entry`, a `.`/`..` segment passed through
+ * UNTOUCHED) keeps every dot-segment literally present, so
+ * isValidCanonicalPath's own re-derivation and decode-and-recheck logic
+ * still catches `..`, encoded traversal (`"..%2Fevil.html"`, which decodes
+ * to a literal `..` segment) and Windows-reserved names exactly as before --
+ * verified against all three in this file's test suite, not assumed.
  */
 function validateEntry (entry: string): void {
   if (entry.startsWith('/')) {
@@ -300,9 +257,27 @@ function validateEntry (entry: string): void {
   if (isAbsoluteUrl(entry)) {
     reject(`entry must not be an absolute URL or use a URL scheme: ${describeValue(entry)}`)
   }
-  if (!isValidCanonicalPath('/' + entry)) {
+  const canonical = '/' + entry.split('/').map(encodeEntrySegment).join('/')
+  if (!isValidCanonicalPath(canonical)) {
     reject(`entry is not a safe relative path: ${describeValue(entry)}`)
   }
+}
+
+/**
+ * Percent-encodes one path segment the way `URL.pathname` would encode it in
+ * isolation -- but never joined through a base, so there is no adjacent `/`
+ * for a `.` or `..` segment to resolve against. A literal `.` or `..`
+ * segment is returned untouched rather than risk it disappearing into a
+ * dot-segment resolution this function must never perform (see
+ * validateEntry's comment). `encodeURIComponent` is not used here because it
+ * ALSO escapes `%`, which would double-encode a percent-escape the author
+ * already wrote on purpose (`"..%2Fevil.html"` would become
+ * `"..%252Fevil.html"`, silently changing what the string decodes to and
+ * hiding the traversal attempt from isValidCanonicalPath's decode step).
+ */
+function encodeEntrySegment (segment: string): string {
+  if (segment === '.' || segment === '..') return segment
+  return new URL('https://canonicalisation.invalid/' + segment).pathname.slice(1)
 }
 
 /** True if `text` parses as a URL on its own -- i.e. it names a scheme, not a bundle-relative path. */
@@ -313,108 +288,6 @@ function isAbsoluteUrl (text: string): boolean {
   } catch {
     return false
   }
-}
-
-// --- capability shapes -------------------------------------------------------
-
-function readTcp (raw: unknown, path: string): TcpCapability {
-  if (!isRecord(raw)) reject(`${path} must be an object, got ${describeValue(raw)}`)
-  const extra = extraKey(raw, TCP_KEYS)
-  if (extra !== null) reject(`${path} has an unrecognised field: ${describeValue(extra)}`)
-
-  const connect = optionalStringArray(raw, path, 'connect', MAX_PATTERNS, (pattern, i) => {
-    validateConnectPattern(pattern, `${path}.connect[${i}]`)
-  })
-  const listen = optionalStringArray(raw, path, 'listen', MAX_PATTERNS, (pattern, i) => {
-    validatePortRangePattern(pattern, `${path}.listen[${i}]`)
-  })
-
-  const result: { connect?: readonly Pattern[], listen?: readonly Pattern[] } = {}
-  if (connect !== undefined) result.connect = connect
-  if (listen !== undefined) result.listen = listen
-  return result
-}
-
-function readUdp (raw: unknown, path: string): UdpCapability {
-  if (!isRecord(raw)) reject(`${path} must be an object, got ${describeValue(raw)}`)
-  const extra = extraKey(raw, UDP_KEYS)
-  if (extra !== null) reject(`${path} has an unrecognised field: ${describeValue(extra)}`)
-
-  const bind = optionalStringArray(raw, path, 'bind', MAX_PATTERNS, (pattern, i) => {
-    validatePortRangePattern(pattern, `${path}.bind[${i}]`)
-  })
-  const send = optionalStringArray(raw, path, 'send', MAX_PATTERNS, (pattern, i) => {
-    validateConnectPattern(pattern, `${path}.send[${i}]`)
-  })
-
-  const result: { bind?: readonly Pattern[], send?: readonly Pattern[] } = {}
-  if (bind !== undefined) result.bind = bind
-  if (send !== undefined) result.send = send
-  return result
-}
-
-function readNet (raw: unknown, path: string): NetCapability {
-  if (!isRecord(raw)) reject(`${path} must be an object, got ${describeValue(raw)}`)
-  const extra = extraKey(raw, NET_KEYS)
-  if (extra !== null) reject(`${path} has an unrecognised field: ${describeValue(extra)}`)
-
-  const tcpRaw = ownProperty(raw, 'tcp', isAny)
-  const udpRaw = ownProperty(raw, 'udp', isAny)
-
-  const result: { tcp?: TcpCapability, udp?: UdpCapability } = {}
-  if (tcpRaw !== undefined) result.tcp = readTcp(tcpRaw, `${path}.tcp`)
-  if (udpRaw !== undefined) result.udp = readUdp(udpRaw, `${path}.udp`)
-  return result
-}
-
-function readFs (raw: unknown, path: string): FsCapability {
-  if (!isRecord(raw)) reject(`${path} must be an object, got ${describeValue(raw)}`)
-  const extra = extraKey(raw, FS_KEYS)
-  if (extra !== null) reject(`${path} has an unrecognised field: ${describeValue(extra)}`)
-
-  const quotaRaw = ownProperty(raw, 'quotaBytes', isAny)
-  if (quotaRaw === undefined) return {}
-  if (typeof quotaRaw !== 'number' || !Number.isFinite(quotaRaw)) {
-    reject(`${path}.quotaBytes must be a finite number, got ${describeValue(quotaRaw)}`)
-  }
-  if (!Number.isInteger(quotaRaw)) reject(`${path}.quotaBytes must be an integer, got ${quotaRaw}`)
-  if (quotaRaw <= 0) reject(`${path}.quotaBytes must be positive, got ${quotaRaw}`)
-  if (!Number.isSafeInteger(quotaRaw)) reject(`${path}.quotaBytes exceeds Number.MAX_SAFE_INTEGER`)
-  return { quotaBytes: quotaRaw }
-}
-
-function readIdCapability (raw: unknown, path: string): IdCapability {
-  if (!isRecord(raw)) reject(`${path} must be an object, got ${describeValue(raw)}`)
-  const extra = extraKey(raw, ID_CAPABILITY_KEYS)
-  if (extra !== null) reject(`${path} has an unrecognised field: ${describeValue(extra)}`)
-
-  // `curve` is a free-form string by design (derive-p256.ts: "the contract
-  // types curve as a free-form string" -- an unsupported curve is a runtime
-  // 'invalid', not a manifest-shape error), so only hygiene is checked here.
-  const curves = optionalStringArray(raw, path, 'curves', MAX_CURVES, (curve, i) => {
-    validateCurveName(curve, `${path}.curves[${i}]`)
-  })
-  return curves === undefined ? {} : { curves }
-}
-
-function readCapabilities (raw: unknown, path: string): Capabilities {
-  if (!isRecord(raw)) reject(`${path} must be an object, got ${describeValue(raw)}`)
-  const extra = extraKey(raw, CAPABILITIES_KEYS)
-  if (extra !== null) reject(`${path} has an unrecognised field: ${describeValue(extra)}`)
-
-  const netRaw = ownProperty(raw, 'net', isAny)
-  const fsRaw = ownProperty(raw, 'fs', isAny)
-  const idRaw = ownProperty(raw, 'id', isAny)
-  const protocols = optionalStringArray(raw, path, 'protocols', MAX_PROTOCOLS, (scheme, i) => {
-    validateSchemeName(scheme, `${path}.protocols[${i}]`)
-  })
-
-  const result: { net?: NetCapability, fs?: FsCapability, id?: IdCapability, protocols?: readonly string[] } = {}
-  if (netRaw !== undefined) result.net = readNet(netRaw, `${path}.net`)
-  if (fsRaw !== undefined) result.fs = readFs(fsRaw, `${path}.fs`)
-  if (idRaw !== undefined) result.id = readIdCapability(idRaw, `${path}.id`)
-  if (protocols !== undefined) result.protocols = protocols
-  return result
 }
 
 // --- top level ---------------------------------------------------------------
@@ -430,12 +303,26 @@ function readManifest (value: unknown): Manifest {
   }
 
   const id = requireString(value, 'id', 1, MAX_ID_LENGTH)
-  if (CONTROL_CHARS.test(id)) reject('id contains control characters')
+  if (UNSAFE_TEXT_CHARS.test(id)) reject('id contains an unsafe character (a control code, bidi override or zero-width character)')
+  if (id.trim().length === 0) reject('id must contain a non-whitespace character')
+  if (UNPAIRED_SURROGATE.test(id)) reject(`id contains an unpaired UTF-16 surrogate: ${describeValue(id)}`)
 
   const name = requireString(value, 'name', 1, MAX_NAME_LENGTH)
-  if (CONTROL_CHARS.test(name)) reject('name contains control characters')
+  if (UNSAFE_TEXT_CHARS.test(name)) reject('name contains an unsafe character (a control code, bidi override or zero-width character)')
+  if (name.trim().length === 0) reject('name must contain a non-whitespace character')
 
   const version = requireString(value, 'version', 1, MAX_VERSION_LENGTH)
+  // Finding 4: previously only compareVersions(version, version) === null was
+  // checked. update.ts's OWN parseVersion trims before parsing, so
+  // "1.2.3\n" and "1.2.3" compare EQUAL despite being different strings --
+  // two spellings of one version, exactly the ambiguity this file refuses
+  // for every other field. Checked here, before the orderability check,
+  // rather than folded into it, because "\n" alone still parses as orderable
+  // semver (it is trimmed away) and would never trip that check at all.
+  if (UNSAFE_TEXT_CHARS.test(version)) {
+    reject('version contains an unsafe character (a control code, bidi override or zero-width character)')
+  }
+  if (version.trim() !== version) reject(`version has leading or trailing whitespace: ${describeValue(version)}`)
   // capability-api.md SSversion / update.ts's isAtOrAboveFloor: a version that
   // does not parse as orderable semver fails closed on every future update
   // anyway, stuck below a floor it can never reach -- so the publisher must
