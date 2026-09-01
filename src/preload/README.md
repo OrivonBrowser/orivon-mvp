@@ -1,24 +1,30 @@
 # `src/preload/` — the privilege boundary
 
 **What lives here.** Three preload scripts at three different privilege levels (a third,
-`newtab.ts`, added 2026-08-28 for the new-tab dashboard). This is the narrowest and most
-security-critical surface in the repository.
+`newtab.ts`, added 2026-08-28 for the new-tab dashboard), plus `orivon-surface.ts` — not a
+preload entry itself, but the `orivon.*` exposure both `app.ts` and `newtab.ts`'s fallback
+branch share (build step 2's IPC task; §The rule that governs this directory still applies to
+it). This is the narrowest and most security-critical surface in the repository.
 
 **What it depends on.** `electron` (via `require` — these are CommonJS),
 [`src/contracts/`](../contracts/) for types.
 
-**What it must never import.** [`src/main/`](../main/) or [`src/broker/`](../broker/). A
-preload runs in the renderer process; importing main-process code would either fail or, worse,
-appear to work.
+**What it must never import.** [`src/broker/`](../broker/) — a preload runs in the renderer
+process, and importing broker LOGIC there would either fail or, worse, appear to work. **One
+documented exception to "never import `src/main/`":** [`../main/channels.ts`](../main/channels.ts)
+is a zero-dependency leaf of plain string constants, safe in either process, and the one
+neutral place a channel name shared across this trust boundary can live — `shell.ts` and
+`newtab.ts` already relied on this before `orivon-surface.ts` did too. Nothing else under
+`src/main/` is fair game.
 
-**Owner stream.** `app.ts` belongs to `broker` (build step 2); `shell.ts` and `newtab.ts` belong
-to `shell` (build step 1, done).
+**Owner stream.** `app.ts` and `orivon-surface.ts` belong to `broker` (build step 2); `shell.ts`
+and `newtab.ts` belong to `shell` (build step 1, done).
 
 | File | Loaded by | Exposes |
 |---|---|---|
-| `app.ts` | **every ordinary tab** | `orivon.version` today; the full `orivon.*` surface from build step 2 |
+| `app.ts` | **every ordinary tab** | `orivon-surface.ts`'s `exposeOrivon()`: `orivon.version`, `orivon.app.manifest`/`grants`, `orivon.fs.readFile`/`writeFile`. `net.connect` is not wired yet — its own file header says why |
 | `shell.ts` | **only** the chrome view | Tab commands |
-| `newtab.ts` | **only** a genuinely fresh tab (`src/main/tabs.ts`'s `createTab()`, no `url` argument) | Read-only bookmark access, navigate-this-tab-only — but only after checking `location.href` against its own expected URL first, since (unlike the chrome view) a dashboard tab is ordinary and navigable; falls back to `app.ts`'s own unprivileged surface otherwise |
+| `newtab.ts` | **only** a genuinely fresh tab (`src/main/tabs.ts`'s `createTab()`, no `url` argument) | Read-only bookmark access, navigate-this-tab-only — but only after checking `location.href` against its own expected URL first, since (unlike the chrome view) a dashboard tab is ordinary and navigable; falls back to the SAME `exposeOrivon()` `app.ts` uses otherwise, not a second copy |
 
 **Preload builds are isolated per entry (`electron.vite.config.ts`'s `isolatedEntries: true`).**
 Found 2026-08-28: the moment a second preload (`newtab.ts`) shared a local import with `shell.ts`

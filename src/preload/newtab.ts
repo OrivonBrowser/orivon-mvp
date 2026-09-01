@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { Bookmark } from '../main/bookmarks.js'
 import { NEWTAB_COMMAND_CHANNEL } from '../main/channels.js'
 import type { NewTabCommand } from '../main/newtab-ipc.js'
+import { exposeOrivon } from './orivon-surface.js'
 
 // Loaded ONLY for a genuinely fresh tab (src/main/tabs.ts's createTab(),
 // `url === undefined`) -- the dashboard's own page (src/renderer/newtab/).
@@ -15,9 +16,10 @@ import type { NewTabCommand } from '../main/newtab-ipc.js'
 // since the URL differs between dev and a built app and isn't a
 // compile-time constant this file could just hardcode -- BEFORE
 // exposing anything privileged. If this script runs again for whatever
-// page the user navigated to instead, it exposes nothing beyond the
-// same `{ version: 0 }` every ordinary tab already gets from
-// preload/app.ts.
+// page the user navigated to instead, it exposes nothing beyond
+// ./orivon-surface.ts's exposeOrivon() -- the SAME orivon.* surface
+// preload/app.ts gives every ordinary tab, not a second, easily-
+// forgotten copy of it.
 //
 // This is one of TWO independent checks, not the only one:
 // src/main/newtab-ipc.ts re-verifies the SAME thing, from the
@@ -44,5 +46,5 @@ if (expectedUrl !== undefined && location.href === expectedUrl) {
     navigate: (input: string): void => { send({ type: 'navigate', input }) }
   })
 } else {
-  contextBridge.exposeInMainWorld('orivon', { version: 0 })
+  exposeOrivon()
 }
