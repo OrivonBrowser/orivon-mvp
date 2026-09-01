@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { checkConnect, type Resolver } from './connect.js'
-import { PUBLIC_A, PUBLIC_B, allowedAddresses, manifestWith, noResolution, resolverFor } from './connect.test-helpers.js'
+import { PUBLIC_A, PUBLIC_B, allowedAddresses, noResolution, resolverFor } from './connect.test-helpers.js'
 
 // The grammar/validator half of checkConnect's suite (split out of one file
 // that exceeded docs/development/code-guidelines.md's 800-line test limit --
@@ -67,7 +67,7 @@ import { PUBLIC_A, PUBLIC_B, allowedAddresses, manifestWith, noResolution, resol
 // ---------------------------------------------------------------------------
 
 describe('ports', () => {
-  const range = manifestWith(['*:6881-6889'])
+  const range = ['*:6881-6889']
 
   it.each([
     { port: 6880, allowed: false, why: 'one below the range' },
@@ -81,7 +81,7 @@ describe('ports', () => {
   })
 
   it('a single declared port matches only itself', async () => {
-    const one = manifestWith(['api.example.com:443'])
+    const one = ['api.example.com:443']
     const resolve = resolverFor({ 'api.example.com': [PUBLIC_A] })
     expect((await checkConnect(one, 'api.example.com', 443, resolve)).allowed).toBe(true)
     expect((await checkConnect(one, 'api.example.com', 4433, resolve)).allowed).toBe(false)
@@ -94,7 +94,7 @@ describe('ports', () => {
       // Ports below 1024 are denied outright for listen/bind (capability-api.md
       // A9 SS1). Copying that rule to connect would deny 80 and 443 and break
       // every outbound connection an app makes.
-      const decision = await checkConnect(manifestWith(['*:*']), PUBLIC_A, port, noResolution)
+      const decision = await checkConnect(['*:*'], PUBLIC_A, port, noResolution)
       expect(decision.allowed).toBe(true)
     }
   )
@@ -107,7 +107,7 @@ describe('ports', () => {
     { port: Number.NaN, why: 'NaN' },
     { port: Number.POSITIVE_INFINITY, why: 'Infinity' }
   ])('denies port $port even under `*:*` ($why)', async ({ port }) => {
-    const decision = await checkConnect(manifestWith(['*:*']), PUBLIC_A, port, noResolution)
+    const decision = await checkConnect(['*:*'], PUBLIC_A, port, noResolution)
     expect(decision.allowed).toBe(false)
   })
 
@@ -124,7 +124,7 @@ describe('ports', () => {
     { pattern: '*:4 43', why: 'whitespace in the middle of the number' },
     { pattern: '*:1-2-3', why: 'two hyphens' }
   ])('a pattern with port spec $pattern authorises nothing ($why)', async ({ pattern }) => {
-    const decision = await checkConnect(manifestWith([pattern]), PUBLIC_A, 443, noResolution)
+    const decision = await checkConnect([pattern], PUBLIC_A, 443, noResolution)
     expect(decision.allowed).toBe(false)
   })
 
@@ -132,7 +132,7 @@ describe('ports', () => {
     // Lenient only at the edges, and harmlessly: `  *:*  ` declares exactly
     // what `*:*` declares, so trimming cannot widen a grant. Whitespace
     // anywhere else is rejected by the row above.
-    const decision = await checkConnect(manifestWith(['  *:443  ']), PUBLIC_A, 443, noResolution)
+    const decision = await checkConnect(['  *:443  '], PUBLIC_A, 443, noResolution)
     expect(decision.allowed).toBe(true)
   })
 })
@@ -159,7 +159,7 @@ describe('patterns that authorise nothing', () => {
     { pattern: 'x'.repeat(400) + ':443', why: 'past the length bound' }
   ])('$pattern -> denied ($why)', async ({ pattern }) => {
     const resolve = resolverFor({ 'api.example.com': [PUBLIC_A] })
-    const decision = await checkConnect(manifestWith([pattern]), 'api.example.com', 443, resolve)
+    const decision = await checkConnect([pattern], 'api.example.com', 443, resolve)
     expect(decision.allowed).toBe(false)
   })
 
@@ -168,7 +168,7 @@ describe('patterns that authorise nothing', () => {
     // sibling reading, `*.co.uk`, spans a registry boundary. Denying costs the
     // app author seconds; an over-grant the user never sees costs more.
     const decision = await checkConnect(
-      manifestWith(['*.example.com:443']),
+      ['*.example.com:443'],
       'api.example.com',
       443,
       resolverFor({ 'api.example.com': [PUBLIC_A] })
@@ -182,7 +182,7 @@ describe('patterns that authorise nothing', () => {
     // left it passing. The request here is the literal pattern text, which is
     // the one string a suffix-matcher and an exact-matcher disagree about.
     const decision = await checkConnect(
-      manifestWith(['*.example.com:443']),
+      ['*.example.com:443'],
       '*.example.com',
       443,
       resolverFor({ '*.example.com': [PUBLIC_A] })
@@ -196,7 +196,7 @@ describe('patterns that authorise nothing', () => {
     // deleting the `host.includes(':')` guard makes this pattern grant
     // loopback. The old table never asked for `::1`, so it never noticed.
     const decision = await checkConnect(
-      manifestWith(['::1:443']),
+      ['::1:443'],
       '::1',
       443,
       noResolution
@@ -206,7 +206,7 @@ describe('patterns that authorise nothing', () => {
 
   it('an unreadable pattern does not poison a readable one beside it', async () => {
     const decision = await checkConnect(
-      manifestWith(['*.example.com:443', '[::1:80', '*:*']),
+      ['*.example.com:443', '[::1:80', '*:*'],
       'api.example.com',
       443,
       resolverFor({ 'api.example.com': [PUBLIC_A] })
@@ -228,7 +228,7 @@ describe('host handling', () => {
     { pattern: 'api.example.com:443', host: '  api.example.com  ', why: 'surrounding whitespace' }
   ])('$why matches', async ({ pattern, host }) => {
     const decision = await checkConnect(
-      manifestWith([pattern]),
+      [pattern],
       host,
       443,
       resolverFor({ 'api.example.com': [PUBLIC_A] })
@@ -247,7 +247,7 @@ describe('host handling', () => {
     // -- deleting the bound left this test passing. Found by review,
     // 2026-08-27.
     const decision = await checkConnect(
-      manifestWith(['*:*']),
+      ['*:*'],
       host,
       443,
       async () => [PUBLIC_A]
@@ -257,7 +257,7 @@ describe('host handling', () => {
 
   it('the host-length bound is what denies an over-long name, not the resolver', async () => {
     const decision = await checkConnect(
-      manifestWith(['*:*']),
+      ['*:*'],
       'a'.repeat(300) + '.example',
       443,
       async () => [PUBLIC_A]
@@ -273,14 +273,14 @@ describe('host handling', () => {
     // Fails closed either way, but it used to fail closed SILENTLY and for the
     // wrong reason -- ASCII-only case folding simply never matched. Now it is
     // a deliberate reject with a reason the broker can log.
-    const decision = await checkConnect(manifestWith(['*:*']), host, 443, async () => [PUBLIC_A])
+    const decision = await checkConnect(['*:*'], host, 443, async () => [PUBLIC_A])
     if (decision.allowed) throw new Error('expected a denial')
     expect(decision.reason).toBe('bad-host')
   })
 
   it('denies a non-ASCII pattern rather than silently never matching it', async () => {
     const decision = await checkConnect(
-      manifestWith(['api.exämple.com:443']),
+      ['api.exämple.com:443'],
       'api.exämple.com',
       443,
       async () => [PUBLIC_A]
@@ -291,7 +291,7 @@ describe('host handling', () => {
   it('denies a non-string host without throwing', async () => {
     for (const host of [undefined, null, 42, {}, ['a']]) {
       const decision = await checkConnect(
-        manifestWith(['*:*']),
+        ['*:*'],
         host as unknown as string,
         443,
         resolverFor({})
@@ -316,7 +316,7 @@ describe('host handling', () => {
       for (let j = 0; j < length; j++) junk += alphabet[next() % alphabet.length] ?? ''
 
       const decision = await checkConnect(
-        manifestWith([junk, '*:*']),
+        [junk, '*:*'],
         junk,
         (next() % 70000) - 2,
         resolverFor({ [junk]: [PUBLIC_A] })
@@ -339,7 +339,7 @@ describe('host and port must come from the SAME pattern', () => {
     // The worst of the five, because a multi-pattern manifest is the normal
     // case for any app that is not the flagship.
     const decision = await checkConnect(
-      manifestWith(['a.example:443', 'b.example:8080']),
+      ['a.example:443', 'b.example:8080'],
       'a.example',
       8080,
       resolverFor({ 'a.example': [PUBLIC_A] })
@@ -349,12 +349,12 @@ describe('host and port must come from the SAME pattern', () => {
 
   it('still allows each pattern on its own terms', async () => {
     // The guard above must not cost the legitimate case: both halves of the
-    // same manifest still work at their own declared port.
-    const manifest = manifestWith(['a.example:443', 'b.example:8080'])
+    // same granted list still work at their own declared port.
+    const patterns = ['a.example:443', 'b.example:8080']
     const resolve = resolverFor({ 'a.example': [PUBLIC_A], 'b.example': [PUBLIC_B] })
-    expect((await checkConnect(manifest, 'a.example', 443, resolve)).allowed).toBe(true)
-    expect((await checkConnect(manifest, 'b.example', 8080, resolve)).allowed).toBe(true)
-    expect((await checkConnect(manifest, 'b.example', 443, resolve)).allowed).toBe(false)
+    expect((await checkConnect(patterns, 'a.example', 443, resolve)).allowed).toBe(true)
+    expect((await checkConnect(patterns, 'b.example', 8080, resolve)).allowed).toBe(true)
+    expect((await checkConnect(patterns, 'b.example', 443, resolve)).allowed).toBe(false)
   })
 
   it('MUTANT: denies the cross product even when the pre-resolution gate passes', async () => {
@@ -369,7 +369,7 @@ describe('host and port must come from the SAME pattern', () => {
     // 443 for. Mixing them yields a public socket on a port nobody granted
     // publicly.
     const decision = await checkConnect(
-      manifestWith(['a.example:443', '192.168.1.50:8080']),
+      ['a.example:443', '192.168.1.50:8080'],
       'a.example',
       8080,
       resolverFor({ 'a.example': [PUBLIC_A] })
@@ -379,7 +379,7 @@ describe('host and port must come from the SAME pattern', () => {
 
   it('MUTANT: a port range from one pattern does not reach another pattern host', async () => {
     const decision = await checkConnect(
-      manifestWith(['tracker.example:6881-6889', 'api.example:443']),
+      ['tracker.example:6881-6889', 'api.example:443'],
       'api.example',
       6885,
       resolverFor({ 'api.example': [PUBLIC_A] })
@@ -399,7 +399,7 @@ describe('a resolver answer that is not a string', () => {
     // function` -- a broker crash reachable from any origin whose nameserver
     // an attacker controls. A throw here is not a denial; it is an outage.
     const decision = await checkConnect(
-      manifestWith(['*:*']),
+      ['*:*'],
       'odd.example',
       443,
       (async () => [answer]) as unknown as Resolver
@@ -447,7 +447,7 @@ describe('the returned addresses are canonical literals', () => {
     // net.isIP rejected it, and net.connect performed a SECOND DNS lookup that
     // landed on 127.0.0.1. The last two rows are public and would have been
     // allowed -- so this is not only about private ranges.
-    const decision = await checkConnect(manifestWith(['*:*']), host, 443, noResolution)
+    const decision = await checkConnect(['*:*'], host, 443, noResolution)
     if (decision.allowed) throw new Error(`expected a denial, got ${JSON.stringify(decision.addresses)}`)
     expect(decision.reason).toBe('non-canonical-host')
   })
@@ -457,7 +457,7 @@ describe('the returned addresses are canonical literals', () => {
     // address it would be compared as a NAME against a `2130706433` pattern
     // host and match, which is worse than the bug being fixed.
     const decision = await checkConnect(
-      manifestWith(['2130706433:22']),
+      ['2130706433:22'],
       '2130706433',
       22,
       noResolution
@@ -472,14 +472,14 @@ describe('the returned addresses are canonical literals', () => {
     // and the whole justification is that the user was shown the literal and
     // granted it. `2130706433:22` renders in a grant prompt as an opaque
     // number, which defeats the consent step the rule depends on.
-    const decision = await checkConnect(manifestWith([pattern]), '127.0.0.1', 22, noResolution)
+    const decision = await checkConnect([pattern], '127.0.0.1', 22, noResolution)
     expect(decision.allowed).toBe(false)
   })
 
   it('the readable spelling of the same declaration still works', async () => {
     // The point is legibility, not blocking loopback: an app that says what it
     // means keeps working.
-    const decision = await checkConnect(manifestWith(['127.0.0.1:22']), '127.0.0.1', 22, noResolution)
+    const decision = await checkConnect(['127.0.0.1:22'], '127.0.0.1', 22, noResolution)
     expect(allowedAddresses(decision)).toStrictEqual(['127.0.0.1'])
   })
 
@@ -487,7 +487,7 @@ describe('the returned addresses are canonical literals', () => {
     // A real resolver returns canonical forms; this asserts the guarantee is
     // local rather than inherited from that assumption.
     const decision = await checkConnect(
-      manifestWith(['*:*']),
+      ['*:*'],
       'odd.example',
       443,
       resolverFor({ 'odd.example': ['0x08080808'] })
@@ -498,7 +498,7 @@ describe('the returned addresses are canonical literals', () => {
 
   it('denies an address carrying a zone id, which is never internet-reachable', async () => {
     const decision = await checkConnect(
-      manifestWith(['*:*']),
+      ['*:*'],
       'scoped.example',
       443,
       resolverFor({ 'scoped.example': ['2606:4700::1111%eth0'] })
@@ -508,11 +508,11 @@ describe('the returned addresses are canonical literals', () => {
 
   it('every address of every allow is dialable without a second lookup', async () => {
     const allows = await Promise.all([
-      checkConnect(manifestWith(['*:*']), PUBLIC_A, 443, noResolution),
-      checkConnect(manifestWith(['*:*']), '[2606:4700::1111]', 443, noResolution),
-      checkConnect(manifestWith(['*:*']), 'many.example', 443,
+      checkConnect(['*:*'], PUBLIC_A, 443, noResolution),
+      checkConnect(['*:*'], '[2606:4700::1111]', 443, noResolution),
+      checkConnect(['*:*'], 'many.example', 443,
         resolverFor({ 'many.example': ['  93.184.216.34  ', '[2606:4700::1111]', '::ffff:8.8.8.8'] })),
-      checkConnect(manifestWith(['127.0.0.1:22']), '127.0.0.1', 22, noResolution)
+      checkConnect(['127.0.0.1:22'], '127.0.0.1', 22, noResolution)
     ])
     for (const decision of allows) {
       for (const address of allowedAddresses(decision)) {
