@@ -1,9 +1,5 @@
-import { createHash } from 'node:crypto'
-import { mkdtemp, readFile as fsReadFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { handleControlRequest, nodeFs, registerBrokerIpc } from './ipc.js'
+import { handleControlRequest, registerBrokerIpc } from './ipc.js'
 import type { ControlEvent, IpcMainLike } from './ipc.js'
 import type { Broker } from './index.js'
 import type { Grant, Manifest, OrivonError, TcpSocket } from '../contracts/index.js'
@@ -285,38 +281,7 @@ describe('registerBrokerIpc', () => {
   })
 })
 
-describe('nodeFs (the real filesystem adapter)', () => {
-  async function tempRoot (): Promise<string> {
-    return await mkdtemp(join(tmpdir(), 'orivon-ipc-test-'))
-  }
-
-  it('rootFor is sha256(origin), never the origin string (T13b)', async () => {
-    const userData = await tempRoot()
-    const fs = nodeFs(userData)
-
-    const expectedHash = createHash('sha256').update(OTHER, 'utf8').digest('hex')
-    expect(fs.rootFor(OTHER)).toBe(join(userData, 'apps', expectedHash, 'files'))
-    expect(fs.rootFor(OTHER)).not.toContain(OTHER)
-  })
-
-  it('writeFile then readFile round-trips, creating parent directories', async () => {
-    const userData = await tempRoot()
-    const fs = nodeFs(userData)
-    const path = join(fs.rootFor(APP), 'nested', 'dir', 'file.bin')
-    const data = new Uint8Array([1, 2, 3, 4])
-
-    await fs.writeFile(path, data)
-    const readBack = await fs.readFile(path)
-
-    expect(readBack).toEqual(data)
-    // Confirms writeFile actually touched disk, not just this adapter's view of it.
-    expect(await fsReadFile(path)).toEqual(Buffer.from(data))
-  })
-
-  it('readFile of a missing file rejects with notFound, not a raw ENOENT', async () => {
-    const userData = await tempRoot()
-    const fs = nodeFs(userData)
-
-    await expect(fs.readFile(join(fs.rootFor(APP), 'missing.txt'))).rejects.toMatchObject({ code: 'notFound' })
-  })
-})
+// nodeFs/resolveHost/dialTcp moved to ./node-adapters.ts and their tests
+// with them (docs/development/code-guidelines.md Rule 2 -- this file's own
+// net.connect/net.close wiring pushed it over budget). See
+// node-adapters.test.ts.
