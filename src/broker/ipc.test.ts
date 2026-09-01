@@ -15,9 +15,13 @@ import type { RequestEnvelope, ResponseEnvelope } from '../contracts/ipc.js'
 // not as whatever the broker or Node happened to throw. Every test below was
 // checked against a broken implementation while writing it (see the PR
 // body): the origin check skipped in favour of trusting payload.origin, the
-// timeout wrapper removed, a denial forwarding its platformCode, and
-// net.connect's response carrying the raw socket. Each was watched to fail
-// before being fixed back.
+// timeout wrapper removed, and a denial forwarding its platformCode. Each
+// was watched to fail before being fixed back.
+//
+// net.connect is intentionally NOT wired here even though stubBroker below
+// implements it (Broker's own interface requires it) -- see ipc.ts's file
+// header for why: no close() reaches the app yet, so returning any
+// descriptor would leak a handle-table slot per call.
 
 const APP = 'https://app.example'
 const OTHER = 'https://other.example'
@@ -91,23 +95,6 @@ function stubBroker (
   }
 }
 
-function fakeTcpSocket (overrides: Partial<TcpSocket> = {}): TcpSocket {
-  return {
-    id: 'handle-1',
-    closed: new Promise(() => {}),
-    close: async () => {},
-    readable: new ReadableStream(),
-    writable: new WritableStream(),
-    remoteAddress: '93.184.216.34',
-    remotePort: 443,
-    localAddress: '10.0.0.5',
-    localPort: 54321,
-    setNoDelay: async () => {},
-    setKeepAlive: async () => {},
-    ...overrides
-  }
-}
-
 describe('origin derivation (DoD rule 1 -- never the payload)', () => {
   it('denies with no authenticated origin when senderFrame is null', async () => {
     const calls: BrokerCall[] = []
@@ -139,7 +126,7 @@ describe('origin derivation (DoD rule 1 -- never the payload)', () => {
   })
 })
 
-describe('the five wired control operations', () => {
+describe('the four wired control operations', () => {
   it('app.manifest calls broker.app.manifest with the derived origin', async () => {
     const calls: BrokerCall[] = []
     const manifest: Manifest = { orivonApiVersion: 0, id: 'org.orivon.test', name: 'Test', version: '1.0.0', entry: '/index.html', capabilities: {} }
@@ -160,35 +147,6 @@ describe('the five wired control operations', () => {
 
     expect(response).toEqual({ id: 'req-1', ok: true, result: grants })
     expect(calls).toEqual([{ method: 'app.grants', origin: APP, args: undefined }])
-  })
-
-  it('net.connect passes { host, port } through and returns a plain descriptor', async () => {
-    const calls: BrokerCall[] = []
-    const broker = stubBroker(calls, { connect: async () => fakeTcpSocket() })
-
-    const response = await handleControlRequest(broker, frameFor(APP), envelope('net.connect', { host: 'x.example', port: 443 }))
-
-    expect(response).toEqual({
-      id: 'req-1',
-      ok: true,
-      result: { id: 'handle-1', remoteAddress: '93.184.216.34', remotePort: 443, localAddress: '10.0.0.5', localPort: 54321 }
-    })
-    expect(calls).toEqual([{ method: 'net.connect', origin: APP, args: { host: 'x.example', port: 443 } }])
-  })
-
-  // MUTATION TEST: the broker's TcpSocket carries readable/writable/close/
-  // closed -- the raw handle -- and none of it may reach the response.
-  // ../broker/README.md's own rule, checked at the one seam where it would
-  // actually leak.
-  it('net.connect never forwards the socket streams, close, or closed', async () => {
-    const calls: BrokerCall[] = []
-    const broker = stubBroker(calls, { connect: async () => fakeTcpSocket() })
-
-    const response = await handleControlRequest(broker, frameFor(APP), envelope('net.connect', { host: 'x.example', port: 443 }))
-
-    expect(response.ok).toBe(true)
-    const result = response.ok ? response.result as Record<string, unknown> : {}
-    expect(Object.keys(result).sort()).toEqual(['id', 'localAddress', 'localPort', 'remoteAddress', 'remotePort'])
   })
 
   it('fs.readFile passes path through and returns the bytes', async () => {
@@ -216,9 +174,6 @@ describe('the five wired control operations', () => {
 
 describe('defensive payload validation (a compromised renderer can bypass contextBridge entirely)', () => {
   it.each<[string, unknown]>([
-    ['net.connect', {}],
-    ['net.connect', { host: 'x.example' }],
-    ['net.connect', { host: 123, port: 443 }],
     ['fs.readFile', {}],
     ['fs.readFile', { path: 42 }],
     ['fs.writeFile', { path: '/a' }],
