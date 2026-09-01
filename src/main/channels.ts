@@ -11,3 +11,10 @@ export const COMMAND_CHANNEL = 'orivon-shell:command'
 
 /** Main -> chrome view: pushed tab state. See ./window.ts. */
 export const STATE_CHANNEL = 'orivon-shell:state'
+
+/** New-tab dashboard -> main: fetch bookmarks, or navigate the calling
+ * tab. A separate channel from COMMAND_CHANNEL on purpose -- more than
+ * one dashboard tab can exist at once, so its sender check (per call,
+ * against the frame's own URL) is a different shape than the chrome
+ * view's single-webContents identity check. See ./newtab-ipc.ts. */
+export const NEWTAB_COMMAND_CHANNEL = 'orivon-newtab:command'

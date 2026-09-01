@@ -42,57 +42,63 @@
 // step around. `npm run smoke` passes on an air-gapped machine, and a change
 // that made it depend on the network fails loudly here rather than quietly
 // phoning out.
+//
+// Launch config, waiting/polling and chrome-state readers live in
+// test/smoke-helpers.mjs (split out 2026-08-28, code-guidelines.md Rule 2,
+// when the chrome restyle's bookmark scenarios would have pushed this file
+// past its 800-line test ceiling) -- this file is scenarios, that one is
+// plumbing.
 import { createServer } from 'node:http'
 import { launchElectron } from '../test/launch-electron.mjs'
+import {
+  ABSENCE_SETTLE_MS,
+  activeTabFaviconSrc,
+  bookmarkUrls,
+  delay,
+  evaluateRetrying,
+  findChrome,
+  findViewShowing,
+  HERMETIC_RESOLVER,
+  mismatch,
+  readTabDocument,
+  tabIds,
+  tabViews,
+  waitFor,
+  waitForTab
+} from '../test/smoke-helpers.mjs'
 
 /** Where the omnibox sends non-address input (src/main/omnibox.ts). Only used
- * to build the expected URL -- the resolver rule below blackholes everything
- * that is not loopback, so changing this cannot cause real egress. */
+ * to build the expected URL -- the resolver rule blackholes everything that
+ * is not loopback, so changing this cannot cause real egress. */
 const SEARCH_HOST = 'duckduckgo.com'
 
-/**
- * Nothing resolves except loopback. Deliberately a whole-world blackhole
- * rather than `MAP duckduckgo.com ~NOTFOUND`: the property being protected is
- * "this run cannot reach the network", and a per-host rule only protects the
- * one host someone thought of. Verified: the full suite passes under this.
- */
-const HERMETIC_RESOLVER = '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1'
-
-/** Ceiling on waitFor(). Every state push in this shell lands in
- * milliseconds; this only bounds the broken case, where the caller's own
- * check() then fails by name. */
-const WAIT_TIMEOUT_MS = 8_000
-const POLL_INTERVAL_MS = 50
+// A 1x1 transparent PNG -- real bytes, real content-type, so the favicon
+// scenario below exercises the actual fetch/cap/encode path
+// (src/main/favicon.ts) rather than a stub.
+const FAVICON_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+  'base64'
+)
 
 /**
- * How long to wait before concluding a navigation did NOT happen (rule 3).
- * Must comfortably exceed the time between `loadURL` being called and the
- * navigation committing. A deferred pass-through of only 300ms was enough to
- * slip past an earlier version of the deny-path checks.
+ * Two independent origins (two ports, both loopback) from one call each --
+ * called twice below so the favicon scenario can exercise a CROSS-origin
+ * navigation hermetically, not just same-origin persistence.
  */
-const ABSENCE_SETTLE_MS = 1_500
-
-function findChrome (app) {
-  const win = app.windows().find((w) => w.url().endsWith('index.html'))
-  if (win === undefined) throw new Error('chrome view not found in app.windows()')
-  return win
-}
-
-/** Non-chrome views, as Playwright pages -- lets a check read a tab's OWN
- * location rather than trusting the toolbar's rendering of it (T25: the
- * address bar is a display layer and can lie independently). */
-function tabViews (app, chrome) {
-  return app.windows().filter((w) => w !== chrome)
-}
-
 async function startFixtureServer () {
   const pages = {
     '/a': '<title>fixture-a</title><body>fixture A</body>',
     '/b': '<title>fixture-b</title><body>fixture B</body>',
     '/c': '<title>fixture-c</title><body>fixture C</body>',
-    '/d': '<title>fixture-d</title><body>fixture D</body>'
+    '/d': '<title>fixture-d</title><body>fixture D</body>',
+    '/icon-page': '<title>fixture-icon</title><link rel="icon" href="/icon.png"><body>fixture icon page</body>'
   }
   const server = createServer((req, res) => {
+    if (req.url === '/icon.png') {
+      res.writeHead(200, { 'content-type': 'image/png' })
+      res.end(FAVICON_PNG)
+      return
+    }
     const body = pages[req.url] ?? '<title>fixture-404</title>'
     res.writeHead(200, { 'content-type': 'text/html' })
     res.end(body)
@@ -100,123 +106,6 @@ async function startFixtureServer () {
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
   const port = server.address().port
   return { server, urlFor: (path) => `http://127.0.0.1:${port}${path}` }
-}
-
-const delay = (ms) => new Promise((r) => setTimeout(r, ms))
-
-/**
- * Polls until `predicate` is true, or the ceiling is hit. Returns the outcome
- * as a boolean so the caller's own check() reports it by name.
- *
- * Read rule 2 in the header before using this. It is the right tool for "the
- * app should reach state X", and the wrong tool for "the app should stay in
- * state X" or "X should not happen".
- */
-async function waitFor (predicate, timeoutMs = WAIT_TIMEOUT_MS) {
-  const deadline = Date.now() + timeoutMs
-  for (;;) {
-    if (await predicate() === true) return true
-    if (Date.now() >= deadline) return false
-    await delay(POLL_INTERVAL_MS)
-  }
-}
-
-/**
- * page.evaluate(), retrying while the page's execution context is being torn
- * down.
- *
- * A navigation commit destroys the old context, and a read that lands inside
- * that window throws "Execution context was destroyed". That is a harness
- * race, not a product fact, and it must never be reported as one -- before
- * this existed it surfaced as the whole run dying with a stack trace, roughly
- * one run in three. Only that specific class is retried; every other error
- * still propagates.
- */
-async function evaluateRetrying (page, fn, timeoutMs = WAIT_TIMEOUT_MS) {
-  const TRANSIENT = /Execution context was destroyed|frame was detached/i
-  const deadline = Date.now() + timeoutMs
-  for (;;) {
-    try {
-      return await page.evaluate(fn)
-    } catch (e) {
-      if (Date.now() >= deadline || !TRANSIENT.test(String(e))) throw e
-      await delay(POLL_INTERVAL_MS)
-    }
-  }
-}
-
-/**
- * The Playwright page for the tab view currently showing `url`.
- *
- * Identifies a tab by what it displays rather than by being "the only one".
- * `find(w => w !== chrome)` is ambiguous the moment a second view exists --
- * which happens if A16 resolves to an auto-opened replacement tab, or if a
- * view leaks -- and reading the wrong window produces confidently-worded
- * failures against the wrong target.
- */
-function findViewShowing (app, chrome, url) {
-  return tabViews(app, chrome).find((w) => w.url() === url)
-}
-
-/** ONE read of a tab view's own location and title. Deliberately not a poll --
- * a caller asserting an absence must settle first, then read once (rule 3). */
-async function readTabDocument (view) {
-  if (view === undefined) return undefined
-  return evaluateRetrying(view, () => ({ href: location.href, title: document.title }))
-}
-
-async function activeTabInfo (chrome) {
-  return evaluateRetrying(chrome, () => {
-    const active = document.querySelector('.tab.active')
-    return {
-      // The tab strip's own id for the active tab (dataset['id'] in
-      // renderTabs(), src/renderer/main.ts) -- lets checks address tabs by
-      // identity instead of by ":not(.active)", which flips meaning the moment
-      // the active tab changes and re-resolves against a strip that
-      // replaceChildren()s on every state push.
-      activeId: active?.dataset.id,
-      title: active?.querySelector('.title')?.textContent,
-      backDisabled: document.querySelector('#back')?.disabled,
-      forwardDisabled: document.querySelector('#forward')?.disabled,
-      // The address bar's own displayed value (renderToolbar() in
-      // src/renderer/main.ts) -- what the checks below use to assert "which
-      // URL", as distinct from "which title".
-      address: document.querySelector('#address')?.value
-    }
-  })
-}
-
-/** Tab ids currently rendered in the tab strip, in strip order. */
-async function tabIds (chrome) {
-  return evaluateRetrying(chrome, () =>
-    Array.from(document.querySelectorAll('.tab')).map((el) => el.dataset.id)
-  )
-}
-
-/**
- * Waits until EVERY field of `expected` matches the shell's reported active
- * tab, and returns both the outcome and what was last seen.
- *
- * Wait for everything you are about to assert, in one predicate. The fields
- * arrive on different events -- the address on did-navigate, the title on
- * page-title-updated, the nav-button flags on whichever push lands last
- * (src/main/tabs.ts wires five separate emitState() triggers) -- so waiting
- * for one field and then reading another is a race that fails intermittently
- * and reads like a product bug.
- */
-async function waitForTab (chrome, expected) {
-  let info
-  const ok = await waitFor(async () => {
-    info = await activeTabInfo(chrome)
-    return Object.entries(expected).every(([field, value]) => info[field] === value)
-  })
-  return { ok, info }
-}
-
-/** Compact "wanted X, saw Y" for a failed check's detail field. */
-function mismatch (expected, info) {
-  const seen = Object.fromEntries(Object.keys(expected).map((field) => [field, info?.[field]]))
-  return `expected ${JSON.stringify(expected)}, saw ${JSON.stringify(seen)}`
 }
 
 async function main () {
@@ -250,6 +139,9 @@ async function main () {
   }
 
   const { server, urlFor } = await startFixtureServer()
+  // A second, independent origin -- used only by the favicon scenario, to
+  // exercise a genuine cross-origin navigation hermetically.
+  const { server: server2, urlFor: urlFor2 } = await startFixtureServer()
   const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
 
   try {
@@ -285,6 +177,80 @@ async function main () {
       }
     }
     await leakCheck('on launch', 2)
+
+    // ---- New-tab dashboard: real content, and the privilege boundary ------
+    // Owner override, 2026-08-28 -- replaces about:blank for a fresh tab
+    // (src/main/tabs.ts's createTab()). The one existing tab at this point
+    // in the run IS the dashboard; the very next section below navigates it
+    // away, so this has to run first.
+    const [dashboardView] = tabViews(app, chrome)
+    check('the one tab open at launch is identifiable', dashboardView !== undefined)
+
+    if (dashboardView !== undefined) {
+      check(
+        "the fresh tab's own URL is the dashboard, not about:blank",
+        dashboardView.url().endsWith('/newtab/index.html'),
+        `saw ${dashboardView.url()}`
+      )
+
+      const dashboardShell = await evaluateRetrying(dashboardView, () => ({
+        hasGetBookmarks: typeof window.orivonNewTab?.getBookmarks,
+        hasNavigate: typeof window.orivonNewTab?.navigate
+      }))
+      check(
+        "the dashboard's own preload exposes orivonNewTab (getBookmarks, navigate)",
+        dashboardShell.hasGetBookmarks === 'function' && dashboardShell.hasNavigate === 'function',
+        JSON.stringify(dashboardShell)
+      )
+
+      const tiles = await evaluateRetrying(dashboardView, () =>
+        Array.from(document.querySelectorAll('.tile')).map((el) => ({
+          label: el.querySelector('.tile-label')?.textContent,
+          disabled: el.disabled
+        }))
+      )
+      check(
+        'the Torrent and Nostr app tiles are present and disabled -- neither is built yet',
+        tiles.some((t) => t.label === 'Torrent' && t.disabled) &&
+          tiles.some((t) => t.label === 'Nostr' && t.disabled),
+        JSON.stringify(tiles)
+      )
+
+      // Real UI interaction on the dashboard's OWN page, not a direct
+      // orivonNewTab.navigate() call -- exercises the exact path a user
+      // takes (typing into #search-input), through the same
+      // omnibox-parsing tabs.navigate() already gives the chrome's own
+      // address bar.
+      await dashboardView.click('#search-input')
+      await dashboardView.fill('#search-input', urlFor('/a'))
+      await dashboardView.press('#search-input', 'Enter')
+      const dashboardNavigated = await waitFor(async () => {
+        const info = await evaluateRetrying(chrome, () => ({
+          address: document.querySelector('#address')?.value
+        }))
+        return info.address === urlFor('/a')
+      })
+      check(
+        "the dashboard's search box navigates the tab away from the dashboard",
+        dashboardNavigated
+      )
+
+      // Privilege boundary: once this SAME tab has left the dashboard, its
+      // preload's own location check (src/preload/newtab.ts) must no
+      // longer expose the privileged API -- confirms the check re-verifies
+      // on every load, not just once at tab creation.
+      const afterNavigate = await evaluateRetrying(dashboardView, () => ({
+        hasOrivonNewTab: typeof window.orivonNewTab,
+        hasOrdinaryOrivon: typeof window.orivon
+      }))
+      check(
+        'orivonNewTab is no longer exposed once the tab has left the dashboard',
+        afterNavigate.hasOrivonNewTab === 'undefined' && afterNavigate.hasOrdinaryOrivon === 'object',
+        JSON.stringify(afterNavigate)
+      )
+    } else {
+      skip('new-tab dashboard', 'no tab view was open at launch to test')
+    }
 
     /** Types into the address bar and presses Enter, then waits for the shell
      * to report every field the caller is about to assert. The typing itself
@@ -331,9 +297,9 @@ async function main () {
     // Resize check -- verifies chrome + tab bounds actually track a window
     // resize (win.on('resize') -> layoutChrome() + tabs.layout() in
     // window.ts), via each view's OWN rendered viewport rather than reaching
-    // into main-process internals. CHROME_HEIGHT (118) must stay in sync
-    // with src/renderer/style.css's `html, body { height: 118px }`.
-    const CHROME_HEIGHT = 118
+    // into main-process internals. CHROME_HEIGHT (104) must stay in sync
+    // with src/renderer/style.css's `html, body { height: 104px }`.
+    const CHROME_HEIGHT = 104
     const targetWidth = 900
     const targetHeight = 700
     await app.evaluate(({ BaseWindow }, { w, h }) => {
@@ -452,101 +418,9 @@ async function main () {
       // nothing had re-checked the privilege boundary on one.
       await leakCheck('with a second tab open', 3)
 
-      // ---- Closing the last tab ------------------------------------------
-      // OPEN QUESTION A16 (docs/open-questions.md): what closing the last tab
-      // SHOULD do is not decided. TabManager.closeTab() currently leaves the
-      // BaseWindow open with zero tabs and activeTabId: null; Chrome and
-      // Firefox instead open a fresh tab or close the window. So the checks
-      // below are split deliberately:
-      //
-      //   - Properties that hold under ANY resolution of A16 are asserted as
-      //     requirements: no crash, no orphaned view, and the shell still
-      //     usable afterwards.
-      //   - The zero-tabs outcome itself is recorded as CURRENT BEHAVIOUR
-      //     pending A16, not as a specification. If A16 resolves the other
-      //     way, change that check -- not the product.
-      //
-      // Close the other tab first, addressed by id, so the next close is
-      // unambiguously "the last tab" rather than "one of several".
-      await clickChecked(chrome, `[data-id="${tab1Id}"] .close`, "tab 1's close button is clickable")
-      check(
-        'one tab remains after closing the other',
-        await waitFor(async () => (await tabIds(chrome)).length === 1)
-      )
-      check(
-        'exactly two windows remain (chrome + the one surviving tab)',
-        await waitFor(() => app.windows().length === 2)
-      )
-
-      // Now close it -- the actual last tab.
-      await clickChecked(chrome, `[data-id="${tab2Id}"] .close`, "the last tab's close button is clickable")
-
-      let mainProcessError
-      try {
-        await app.evaluate(({ app: electronApp }) => electronApp.getVersion())
-      } catch (e) {
-        mainProcessError = String(e).split('\n')[0]
-      }
-      check(
-        'closing the last tab does not crash the app (main process still responds)',
-        mainProcessError === undefined,
-        mainProcessError
-      )
-
-      // The strip settling is the observable consequence of the close, so it
-      // is established FIRST -- it is what makes the orphan read below a read
-      // of the post-close state rather than of the pre-close one.
-      const emptyStrip = await waitFor(async () => (await tabIds(chrome)).length === 0)
-      check(
-        'closing the last tab clears the tab strip (CURRENT BEHAVIOUR, pending A16 -- not a spec)',
-        emptyStrip
-      )
-
-      // Stated as a RATIO -- every open window accounted for by the tab strip
-      // (one chrome view + one view per tab) -- so it holds however A16
-      // resolves: an auto-opened replacement tab is accounted for, a leaked
-      // WebContentsView is not.
-      //
-      // Read ONCE after settling, never polled. `windows === tabs + 1` was
-      // ALREADY true before the close (2 windows, 1 tab), so a poll could
-      // return without ever observing the close -- and did: a leaked view plus
-      // a slightly slower repaint passed this check. Rule 2 in the header.
-      await delay(ABSENCE_SETTLE_MS)
-      const windowsNow = app.windows().length
-      const tabsNow = (await tabIds(chrome)).length
-      check(
-        'closing the last tab leaves no stray/orphaned window behind',
-        windowsNow === tabsNow + 1,
-        windowsNow === tabsNow + 1
-          ? undefined
-          : `${windowsNow} window(s) for ${tabsNow} tab(s), expected ${tabsNow + 1}`
-      )
-
-      const wantNoNav = { backDisabled: true, forwardDisabled: true }
-      checkTab(
-        'back/forward are disabled with nothing to navigate',
-        wantNoNav,
-        await waitForTab(chrome, wantNoNav)
-      )
-
-      // The part that holds under any resolution of A16: whatever the shell
-      // shows after the last tab closes, it must not be a dead end. Counted
-      // relative to whatever is on screen, for the same reason as above.
-      const tabsBeforeRecovery = (await tabIds(chrome)).length
-      await clickChecked(chrome, '#new-tab', 'the new-tab button is clickable after the last tab closed')
-      const recovered = await waitFor(async () => (await tabIds(chrome)).length === tabsBeforeRecovery + 1)
-      check('the shell recovers: a new tab opens fine after the last one closed', recovered)
-
-      await delay(ABSENCE_SETTLE_MS)
-      const windowsAfter = app.windows().length
-      const tabsAfter = (await tabIds(chrome)).length
-      check(
-        'every window is still accounted for by the tab strip after recovering',
-        windowsAfter === tabsAfter + 1,
-        windowsAfter === tabsAfter + 1
-          ? undefined
-          : `${windowsAfter} window(s) for ${tabsAfter} tab(s), expected ${tabsAfter + 1}`
-      )
+      // Both tabs are left open here -- the close-everything check
+      // (A16, resolved) runs LAST in this file, once nothing after it
+      // needs `app`/`chrome` alive. See that section's own header for why.
     }
 
     // ---- Address-bar text that is not a URL resolves to a search ---------
@@ -655,6 +529,191 @@ async function main () {
         )
       }
     }
+
+    // ---- Bookmarks bar: star, appear, open, unstar ------------------------
+    // Owner override, 2026-08-28 (mvp-scope.md, ADR-0003) -- not in the
+    // original scope pass. Exercises the real path -- click -> IPC ->
+    // BookmarkStore -> pushed ShellState -> bookmarks-view.ts -- the same
+    // shape every other check in this file already holds tab commands to,
+    // rather than calling window.orivonShell.addBookmark() directly.
+    const parkedForBookmark = await navigateTo(urlFor('/a'), wantA)
+    checkTab('the tab is parked on fixture A before starring it', wantA, parkedForBookmark)
+
+    await clickChecked(chrome, '#bookmark-toggle', 'the bookmark toggle is clickable')
+    checkTab(
+      'starring the page marks the toggle as bookmarked',
+      { bookmarked: true },
+      await waitForTab(chrome, { bookmarked: true })
+    )
+
+    check(
+      'the starred page appears in the bookmarks bar',
+      await waitFor(async () => (await bookmarkUrls(chrome)).includes(urlFor('/a')))
+    )
+
+    // Navigate away, then open the bookmark from the bar -- proves its click
+    // handler drives a real navigation (openBookmark), not just a render of
+    // the stored title.
+    const wantB2 = { address: urlFor('/b'), title: 'fixture-b' }
+    checkTab('navigated away before opening the bookmark', wantB2, await navigateTo(urlFor('/b'), wantB2))
+
+    const bookmarkClicked = await clickChecked(
+      chrome,
+      `#bookmarks-list .bmitem[title="${urlFor('/a')}"]`,
+      'the bookmarked item is clickable'
+    )
+    checkTab(
+      'clicking the bookmark navigates the active tab to it',
+      wantA,
+      bookmarkClicked ? await waitForTab(chrome, wantA) : { ok: false, info: undefined }
+    )
+
+    await clickChecked(chrome, '#bookmark-toggle', 'the bookmark toggle is clickable to unstar')
+    checkTab(
+      'unstarring the page clears the toggle',
+      { bookmarked: false },
+      await waitForTab(chrome, { bookmarked: false })
+    )
+
+    check(
+      'unstarring removes the page from the bookmarks bar',
+      await waitFor(async () => !(await bookmarkUrls(chrome)).includes(urlFor('/a')))
+    )
+
+    // ---- Bookmarks bar: remove directly from the bar, not just the toolbar
+    // Chrome bugfix round, 2026-08-28: the toolbar toggle was the only way
+    // to unstar a page (only reachable by returning to that exact page).
+    // bookmarks-view.ts now renders a remove button per item -- covers the
+    // path the star/open/unstar scenario above never touched.
+    await clickChecked(chrome, '#bookmark-toggle', 'the bookmark toggle is clickable to re-star for the removal check')
+    check(
+      'the page is starred again, ready for the bar-side removal check',
+      await waitFor(async () => (await bookmarkUrls(chrome)).includes(urlFor('/a')))
+    )
+
+    // ---- The dashboard's own bookmark round-trip --------------------------
+    // Proves the FULL IPC path this file's dashboard scenario above never
+    // touched (getBookmarks over NEWTAB_COMMAND_CHANNEL), not just that the
+    // toolbar's own bookmark bar shows it -- a fresh tab is a SEPARATE
+    // WebContentsView with its own preload load, not a rendering of the
+    // chrome's already-fetched list.
+    const newTabOpened = await clickChecked(chrome, '#new-tab', 'the new-tab button is clickable for the dashboard bookmark check')
+    const freshDashboard = newTabOpened && await waitFor(async () => {
+      const views = tabViews(app, chrome)
+      return views.some((v) => v.url().endsWith('/newtab/index.html'))
+    })
+    check('a fresh new tab opens showing the dashboard again', freshDashboard)
+
+    if (freshDashboard) {
+      const [freshView] = tabViews(app, chrome).filter((v) => v.url().endsWith('/newtab/index.html'))
+      // The bookmark's stored title is 'fixture-a' (the real page title
+      // captured when it was starred, per bookmarkToggle's addBookmark
+      // call in src/renderer/main.ts) -- not the URL, since the title
+      // was non-empty at the time.
+      const tileLabels = await waitFor(async () =>
+        (await evaluateRetrying(freshView, () =>
+          Array.from(document.querySelectorAll('#bookmarks-grid .tile-label')).map((el) => el.textContent)
+        )).includes('fixture-a')
+      )
+      check(
+        "the starred bookmark appears as a real tile on a FRESH dashboard tab's own IPC round-trip",
+        tileLabels
+      )
+
+      await clickChecked(freshView, '#bookmarks-grid .tile', 'a bookmark tile on the fresh dashboard is clickable')
+      const freshTileNavigated = await waitFor(async () => {
+        const info = await evaluateRetrying(chrome, () => ({ address: document.querySelector('#address')?.value }))
+        return info.address === urlFor('/a')
+      })
+      check('clicking the dashboard bookmark tile navigates that tab to it', freshTileNavigated)
+      // The extra tab this scenario opened is left open deliberately --
+      // the close-everything check at the end of this file (A16) closes
+      // whatever tabs exist at that point, however many there are.
+    }
+
+    const removeClicked = await clickChecked(
+      chrome,
+      `#bookmarks-list .bmitem[title="${urlFor('/a')}"] .remove`,
+      "the bookmarked item's remove button is clickable"
+    )
+    check(
+      'clicking the remove button removes it from the bar without visiting the page',
+      removeClicked && await waitFor(async () => !(await bookmarkUrls(chrome)).includes(urlFor('/a')))
+    )
+
+    // ---- Real favicons: fetched, rendered as data:, cleared on origin change
+    // Chrome bugfix round, 2026-08-28 (src/main/favicon.ts). Two independent
+    // hermetic origins (urlFor/urlFor2) so the cross-origin clear is a real
+    // transition, not a same-origin persistence that happens to look right.
+    const parkedNoFavicon = await navigateTo(urlFor('/a'), wantA)
+    checkTab('parked on a page with no declared favicon before the favicon check', wantA, parkedNoFavicon)
+    check(
+      'a page with no declared favicon shows the generic globe, not a fetched image',
+      await waitFor(async () => (await activeTabFaviconSrc(chrome)) === null)
+    )
+
+    const wantIcon1 = { address: urlFor('/icon-page'), title: 'fixture-icon' }
+    checkTab(
+      'navigated to a page that declares a real favicon',
+      wantIcon1,
+      await navigateTo(urlFor('/icon-page'), wantIcon1)
+    )
+    check(
+      "the real favicon renders as a data: URL, never the site's own http(s) URL",
+      await waitFor(async () => {
+        const src = await activeTabFaviconSrc(chrome)
+        return typeof src === 'string' && src.startsWith('data:image/')
+      })
+    )
+
+    const wantIcon2 = { address: urlFor2('/icon-page'), title: 'fixture-icon' }
+    checkTab(
+      'navigated to a SECOND, independent origin that also declares a favicon',
+      wantIcon2,
+      await navigateTo(urlFor2('/icon-page'), wantIcon2)
+    )
+    check(
+      'the favicon still renders correctly right after a cross-origin navigation',
+      await waitFor(async () => {
+        const src = await activeTabFaviconSrc(chrome)
+        return typeof src === 'string' && src.startsWith('data:image/')
+      })
+    )
+
+    const wantBackToNoFavicon = { address: urlFor('/a'), title: 'fixture-a' }
+    checkTab(
+      'navigated back to the original origin\'s no-favicon page',
+      wantBackToNoFavicon,
+      await navigateTo(urlFor('/a'), wantBackToNoFavicon)
+    )
+    check(
+      'the stale favicon is cleared on a cross-origin navigation, not carried over as a leftover <img>',
+      await waitFor(async () => (await activeTabFaviconSrc(chrome)) === null)
+    )
+
+    // ---- A16, resolved: closing the last tab closes the window -----------
+    // Owner decision, 2026-08-28 (docs/open-questions.md A16) -- overrules
+    // this file's own prior "CURRENT BEHAVIOUR, pending A16, not a spec"
+    // framing; that framing is gone, this is now a specification.
+    //
+    // MUST RUN LAST. On this platform (non-darwin), the window closing
+    // fires index.ts's window-all-closed -> app.quit(), so nothing after
+    // this point can use `chrome` or `app` again -- there is no window
+    // left to read state from, and the process itself may already be
+    // exiting.
+    const finalTabIds = await tabIds(chrome)
+    check('at least one tab is open going into the close-everything check', finalTabIds.length > 0)
+
+    for (const id of finalTabIds) {
+      await clickChecked(chrome, `[data-id="${id}"] .close`, `tab ${id}'s close button is clickable`)
+    }
+
+    const windowClosed = await waitFor(() => app.windows().length === 0)
+    check(
+      'closing the last tab closes the window (A16)',
+      windowClosed,
+      windowClosed ? undefined : `${app.windows().length} window(s) remain`
+    )
   } catch (e) {
     // The header of this file promises a JSON result and a failure list. A
     // throw is exactly when they are most useful, so it becomes a check rather
@@ -677,6 +736,7 @@ async function main () {
     console.error('teardown: app.close() failed (results above still stand):', String(e).split('\n')[0])
   }
   server.close()
+  server2.close()
 
   if (failures.length > 0) process.exit(1)
   console.log('\nSmoke check passed.')
