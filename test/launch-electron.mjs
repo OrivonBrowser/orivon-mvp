@@ -18,6 +18,9 @@
 // the load-bearing bit that must survive spike/ being deleted. See
 // .claude/skills/orivon-electron/SKILL.md for the full incident writeup.
 import { _electron as electron } from 'playwright'
+import { mkdtemp } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 /** Environment variables that silently change what the binary IS. */
 const POISON = ['ELECTRON_RUN_AS_NODE']
@@ -52,7 +55,9 @@ const DEFAULT_ACTION_TIMEOUT_MS = 10_000
  * @param {string[]} [options.args] Extra argv for the Electron process.
  * @param {number} [options.defaultTimeoutMs] Ceiling on any single Playwright
  *   action. See DEFAULT_ACTION_TIMEOUT_MS — raise it deliberately or not at all.
- * @returns {Promise<import('playwright').ElectronApplication>}
+ * @returns {Promise<import('playwright').ElectronApplication>} Launched
+ *   against a fresh, unique --user-data-dir -- never this machine's real
+ *   `orivon` profile. See the userDataDir comment below.
  */
 export async function launchElectron ({
   appPath = '.',
@@ -71,7 +76,23 @@ export async function launchElectron ({
     console.log(`[launch] stripped from env: ${stripped.join(', ')}`)
   }
 
-  const app = await electron.launch({ args: [appPath, ...args], env })
+  // BUG (found 2026-09-01, real regression): with no --user-data-dir, Electron
+  // defaults to this machine's actual `orivon` profile directory
+  // (app.getPath('userData'), ~/.config/orivon on Linux) -- the SAME one a
+  // real `npm run dev` writes to. HERMETIC_RESOLVER (scripts/smoke.mjs)
+  // blackholes the network, but nothing blackholed disk state: a leftover
+  // bookmarks.json from an earlier manual run silently added a second tile
+  // to the dashboard's bookmarks grid, which `page.click('#bookmarks-grid
+  // .tile')` (a plain CSS selector, not a strict Locator) clicked instead of
+  // the fixture the test just starred -- confirmed by reading that file's
+  // actual contents on this machine. A fresh, unique directory per launch is
+  // what "hermetic by construction" (this file's own header, and
+  // smoke.mjs's) already promised for the network; it never covered disk.
+  const userDataDir = await mkdtemp(join(tmpdir(), 'orivon-test-'))
+  const app = await electron.launch({
+    args: [appPath, `--user-data-dir=${userDataDir}`, ...args],
+    env
+  })
 
   // Applies to every page this app produces, including tab views created
   // later. Without it a click on a selector that cannot match blocks instead
