@@ -25,15 +25,21 @@
 // and a security check nobody can afford to test is a security check nobody
 // has.
 //
-// EVERY ADDRESS THAT LEAVES HERE IS A CANONICAL LITERAL. `isCanonicalLiteral`
-// (./canonical-host.ts) is what makes the paragraph above true rather than
-// merely intended -- see its own comment. Without it this function can hand
-// the broker a string like `2130706433`, which every stack agrees means
+// EVERY ADDRESS THAT LEAVES HERE IS A CANONICAL LITERAL. `canonicalAddress`
+// (./address.ts) is what makes the paragraph above true rather than merely
+// intended -- see its own comment. Without it this function can hand the
+// broker a string like `2130706433`, which every stack agrees means
 // 127.0.0.1 but which `net.isIP` rejects, so `net.connect` treats it as a NAME
 // and looks it up again. That is the rebinding window reopened one layer
 // below the check that exists to close it, and whether it bites depends on
 // which numeric parser the dialer happens to use -- exactly the inherited
 // guarantee ./address.ts warns against. Found by review, 2026-08-27.
+//
+// `canonicalAddress` NORMALISES -- it hands back `127.0.0.1` for
+// `2130706433`, not null (docs/open-questions.md A20). This file does not
+// want that leniency: an app or a resolver that spells an address any way
+// other than canonically is denied outright rather than corrected, so every
+// check below reads `canonicalAddress(x) === x`, never just `!== null`.
 //
 // WHAT THIS FUNCTION TAKES -- read this before wiring it up.
 //
@@ -75,8 +81,8 @@
 // contract and checkConnect's orchestration).
 
 import type { OrivonErrorCode, Pattern } from '../../contracts/index.js'
-import { classifyAddress } from './address.js'
-import { MAX_HOST_LENGTH, isAsciiHost, isCanonicalLiteral, isValidPort, normalizeHost } from './canonical-host.js'
+import { canonicalAddress, classifyAddress } from './address.js'
+import { MAX_HOST_LENGTH, isAsciiHost, isValidPort, normalizeHost } from './canonical-host.js'
 import { couldAnyPatternMatch, parsePattern, patternAuthorises } from './connect-patterns.js'
 
 /**
@@ -114,9 +120,9 @@ export interface ConnectAllowed {
    * is enforced by the shape of the return value rather than by a comment
    * somebody has to remember to read.
    *
-   * Every element satisfies `isCanonicalLiteral`, so `net.isIP` accepts it
-   * and no dialer will re-resolve it. Deduplicated, and never longer than
-   * MAX_ANSWERS.
+   * Every element equals its own `canonicalAddress(...)`, so `net.isIP`
+   * accepts it and no dialer will re-resolve it. Deduplicated, and never
+   * longer than MAX_ANSWERS.
    */
   readonly addresses: readonly string[]
 }
@@ -274,13 +280,22 @@ export async function checkConnect (
   // there is nothing to resolve -- and not calling out means not depending on
   // how a resolver treats a literal. It is still checked identically below;
   // the shortcut skips the lookup, never the policy.
-  const literalClass = classifyAddress(requested)
-  const isLiteral = literalClass !== 'unparseable'
+  //
+  // classifyAddress, not canonicalAddress, decides isLiteral: classifyAddress
+  // still recognises a zone-scoped literal (`fe80::1%eth0`) as an address --
+  // permissive on purpose, so it can be denied as one -- while
+  // canonicalAddress returns null for it (see address.ts). Deciding isLiteral
+  // from canonicalAddress instead would make that null fall through to the
+  // resolver, demoting a recognised, malformed address to a hostname lookup:
+  // exactly the fallthrough the next line exists to rule out.
+  const isLiteral = classifyAddress(requested) !== 'unparseable'
   // An address this file will not hand onward is one it will not accept as an
   // argument either. Denying rather than falling through to the resolver
   // matters: `2130706433` is a perfectly good DNS label, so treating it as a
-  // name would send it to the nameserver.
-  if (isLiteral && !isCanonicalLiteral(requested)) return deny('non-canonical-host')
+  // name would send it to the nameserver. canonicalAddress NORMALISES
+  // (docs/open-questions.md A20), so the check is equality with the input,
+  // not merely "did it parse" -- see this file's header.
+  if (isLiteral && canonicalAddress(requested) !== requested) return deny('non-canonical-host')
 
   if (!couldAnyPatternMatch(parsed, requested, port)) return deny('no-pattern-possible')
 
@@ -298,12 +313,14 @@ export async function checkConnect (
 
     const address = normalizeHost(answer)
 
-    // Every answer must be a CANONICAL address literal. The caller dials what
-    // this function returns, so anything a dialer would resolve again is the
-    // rebinding window reopened one layer down -- and `net.isIP` rejects far
-    // more strings than ./address.ts parses. See canonical-host.ts's
-    // isCanonicalLiteral.
-    if (!isCanonicalLiteral(address)) return deny('bad-answer', [...addresses, address])
+    // Every answer must be a CANONICAL address literal, spelled exactly the
+    // way canonicalAddress would spell it -- not merely something it can
+    // parse. The caller dials what this function returns, so anything a
+    // dialer would resolve again is the rebinding window reopened one layer
+    // down, and a real resolver always answers in canonical form: this
+    // asserts the guarantee is enforced here rather than only inherited from
+    // that assumption. See address.ts's canonicalAddress.
+    if (canonicalAddress(address) !== address) return deny('bad-answer', [...addresses, address])
 
     if (!parsed.some((pattern) => patternAuthorises(pattern, requested, address, port))) {
       return deny('no-pattern-match', [...addresses, address])

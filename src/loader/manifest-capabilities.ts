@@ -20,8 +20,8 @@ import type {
   TcpCapability,
   UdpCapability
 } from '../contracts/index.js'
-import { classifyAddress } from '../broker/policy/address.js'
-import { MAX_HOST_LENGTH, MAX_PORT, isAsciiHost, isCanonicalLiteral, normalizeHost } from '../broker/policy/canonical-host.js'
+import { canonicalAddress, classifyAddress } from '../broker/policy/address.js'
+import { MAX_HOST_LENGTH, MAX_PORT, isAsciiHost, normalizeHost } from '../broker/policy/canonical-host.js'
 import { parsePattern as parseConnectPattern } from '../broker/policy/connect-patterns.js'
 import { ownProperty } from '../broker/policy/own-property.js'
 import { UNSAFE_TEXT_CHARS, describeValue, extraKey, isAny, isRecord, optionalStringArray, reject } from './manifest.js'
@@ -153,12 +153,13 @@ function validateConnectPattern (pattern: string, field: string): void {
  *     the same "write it exactly as it compares" rule canonical-host.ts
  *     states for its own callers.
  *   - an empty label (`"nonexistent..host"`): never a real hostname.
- *   - an address-shaped string that is not `isCanonicalLiteral` (decimal,
- *     octal or hex-encoded IPv4 -- `"2130706433"`, `"0x7f000001"`,
+ *   - an address-shaped string that is not already its own `canonicalAddress`
+ *     (decimal, octal or hex-encoded IPv4 -- `"2130706433"`, `"0x7f000001"`,
  *     `"017700000001"`): `hostMatches` takes the address-literal branch for
  *     any string `classifyAddress` recognises, and that branch denies
  *     anything that is not canonical rather than falling through to a
- *     hostname comparison -- see canonical-host.ts's `isCanonicalLiteral`.
+ *     hostname comparison -- see address.ts's `canonicalAddress`
+ *     (docs/open-questions.md A20).
  */
 function validateConnectHost (host: string, pattern: string, field: string): void {
   if (host === '*') {
@@ -186,7 +187,7 @@ function validateConnectHost (host: string, pattern: string, field: string): voi
   if (host.split('.').some((label) => label.length === 0)) {
     reject(`${field} host has an empty label: ${describeValue(host)}`)
   }
-  if (classifyAddress(host) !== 'unparseable' && !isCanonicalLiteral(host)) {
+  if (classifyAddress(host) !== 'unparseable' && canonicalAddress(host) !== host) {
     reject(`${field} host is address-shaped but not written canonically, so it matches nothing at connect time: ${describeValue(host)}`)
   }
 }
