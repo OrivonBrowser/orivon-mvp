@@ -25,48 +25,64 @@
 // and a security check nobody can afford to test is a security check nobody
 // has.
 //
-// EVERY ADDRESS THAT LEAVES HERE IS A CANONICAL LITERAL. `isCanonicalLiteral`
-// (./canonical-host.ts) is what makes the paragraph above true rather than
-// merely intended -- see its own comment. Without it this function can hand
-// the broker a string like `2130706433`, which every stack agrees means
+// EVERY ADDRESS THAT LEAVES HERE IS A CANONICAL LITERAL. `canonicalAddress`
+// (./address.ts) is what makes the paragraph above true rather than merely
+// intended -- see its own comment. Without it this function can hand the
+// broker a string like `2130706433`, which every stack agrees means
 // 127.0.0.1 but which `net.isIP` rejects, so `net.connect` treats it as a NAME
 // and looks it up again. That is the rebinding window reopened one layer
 // below the check that exists to close it, and whether it bites depends on
 // which numeric parser the dialer happens to use -- exactly the inherited
 // guarantee ./address.ts warns against. Found by review, 2026-08-27.
 //
-// WHAT THIS FUNCTION DOES NOT CHECK -- read this before wiring it up.
+// `canonicalAddress` NORMALISES -- it hands back `127.0.0.1` for
+// `2130706433`, not null (docs/open-questions.md A20). This file does not
+// want that leniency: an app or a resolver that spells an address any way
+// other than canonically is denied outright rather than corrected, so every
+// check below reads `canonicalAddress(x) === x`, never just `!== null`.
 //
-// It checks the MANIFEST's declaration. The manifest DECLARES, the user GRANTS
-// (../../contracts/manifest.ts), and the two sets are not the same: a manifest
-// may declare `["*:*", "192.168.1.50:5000"]` while the user granted only the
-// first. Nothing in this signature carries the grant, so before trusting an
-// allow the broker must either
+// WHAT THIS FUNCTION TAKES -- read this before wiring it up.
 //
-//   - pass a manifest whose `connect` list has already been narrowed to the
-//     granted pattern set, or
-//   - run the grant subset check separately (capability-api.md A9 SS2).
+// The GRANTED patterns, not the manifest. The manifest DECLARES what an app
+// may ask for, the user GRANTS what it actually gets
+// (../../contracts/manifest.ts), and the two sets are not the same: a
+// manifest may declare `["*:*", "192.168.1.50:5000"]` while the user granted
+// only the first. This function used to take the whole Manifest and read
+// `capabilities.net.tcp.connect` out of it, which meant a caller that passed
+// the manifest it fetched handed over the DECLARED authority, silently -- the
+// exact failure this subsystem exists to prevent. Resolved 2026-08-27, owner
+// decision (docs/open-questions.md A18): the first parameter is the already-
+// narrowed `readonly Pattern[]` of what was actually granted. The narrowing
+// now has nowhere else to happen, so passing the wrong set is a type error at
+// the call site rather than a silent over-grant -- the same standard
+// ConnectAllowed already holds the output side to, of making "dial the
+// literal you checked" structural rather than documented.
 //
-// Still flagged rather than solved, and now filed as an open question rather
-// than left in this comment alone (docs/open-questions.md A18). Taking a
-// `readonly Pattern[]` of GRANTED patterns instead of a Manifest would make
-// the narrowing structural, the way ConnectAllowed makes "dial the literal"
-// structural. That is a signature change and it belongs in its own PR.
+// The caller (the broker, once it exists) still owns reading the manifest's
+// declaration, running the grant-subset check (capability-api.md A9 SS2), and
+// handing this function only the result. This function no longer parses a
+// Manifest at all, so it has nothing to say about whether a declaration is
+// well-formed -- that shape-defensiveness moved with the parsing to the
+// caller.
 //
 // SCOPE. `tcp.connect` only -- see ./connect-patterns.ts for the grammar this
 // shares with `udp.send`. `tcp.listen` and `udp.bind` are a DIFFERENT decision
 // (bare port ranges, `"*"` rejected, privileged ports denied outright) and get
 // their own function rather than a mode flag on this one, because the two
-// share a grammar and nothing else.
+// share a grammar and nothing else. Taking a plain pattern list rather than a
+// Manifest is what makes the `udp.send` reuse real: this function no longer
+// reads `net.tcp.connect` by name, so a caller can hand it `net.udp.send`'s
+// granted patterns just as well -- not wired up here, since that is new
+// scope, not part of this signature change.
 //
 // Split into three files (docs/development/code-guidelines.md Rule 2):
 // ./canonical-host.ts (string-level validators, no imports), ./connect-
 // patterns.ts (the pattern grammar and matching), and this file (the result
 // contract and checkConnect's orchestration).
 
-import type { Manifest, OrivonErrorCode, Pattern } from '../../contracts/index.js'
-import { classifyAddress } from './address.js'
-import { MAX_HOST_LENGTH, isAsciiHost, isCanonicalLiteral, isValidPort, normalizeHost } from './canonical-host.js'
+import type { OrivonErrorCode, Pattern } from '../../contracts/index.js'
+import { canonicalAddress, classifyAddress } from './address.js'
+import { MAX_HOST_LENGTH, isAsciiHost, isValidPort, normalizeHost } from './canonical-host.js'
 import { couldAnyPatternMatch, parsePattern, patternAuthorises } from './connect-patterns.js'
 
 /**
@@ -86,9 +102,9 @@ import { couldAnyPatternMatch, parsePattern, patternAuthorises } from './connect
  * THE PRICE OF THAT, AND WHY THE GATE BELOW EXISTS. Two outcomes an app can
  * tell apart is an oracle: "name exists" and "name does not exist" are
  * distinguishable whatever this function returns. `couldAnyPatternMatch`
- * denies BEFORE resolving whenever no declared pattern could authorise the
+ * denies BEFORE resolving whenever no granted pattern could authorise the
  * request however it resolved, so the oracle is reachable only for requests
- * the manifest genuinely could have allowed. Found by review, 2026-08-27.
+ * the grant genuinely could have allowed. Found by review, 2026-08-27.
  */
 export type Resolver = (host: string) => Promise<readonly string[]>
 
@@ -104,9 +120,9 @@ export interface ConnectAllowed {
    * is enforced by the shape of the return value rather than by a comment
    * somebody has to remember to read.
    *
-   * Every element satisfies `isCanonicalLiteral`, so `net.isIP` accepts it
-   * and no dialer will re-resolve it. Deduplicated, and never longer than
-   * MAX_ANSWERS.
+   * Every element equals its own `canonicalAddress(...)`, so `net.isIP`
+   * accepts it and no dialer will re-resolve it. Deduplicated, and never
+   * longer than MAX_ANSWERS.
    */
   readonly addresses: readonly string[]
 }
@@ -137,7 +153,7 @@ export interface ConnectAllowed {
  * told about it. Same reasoning as OrivonErrorCode, one layer down.
  */
 export type ConnectDenialReason =
-  /** No `tcp.connect` list, or an empty one. Absence means absence. */
+  /** No granted patterns, or an empty list. Absence means absence. */
   | 'not-declared'
   /** More patterns than MAX_PATTERNS. Fail closed rather than scan them. */
   | 'too-many-patterns'
@@ -147,7 +163,7 @@ export type ConnectDenialReason =
   | 'bad-host'
   /** `hostArg` was an address, but written in a non-canonical encoding. */
   | 'non-canonical-host'
-  /** No declared pattern could authorise this host and port however it resolved. */
+  /** No granted pattern could authorise this host and port however it resolved. */
   | 'no-pattern-possible'
   /** The resolver returned nothing. `[].every(ok)` is true; this is not. */
   | 'empty-resolution'
@@ -197,7 +213,8 @@ function deny (reason: ConnectDenialReason, checked?: readonly string[]): Connec
  * 1000 answers took 13.9 SECONDS of synchronous CPU in one checkConnect call,
  * on the broker's UI thread -- security-model.md T11b by name, and LIMITS'
  * in-flight cap bounds the number of operations rather than the cost of one.
- * Pattern count is manifest-controlled; answer count is DNS-controlled.
+ * Pattern count is grant-controlled (bounded by what the manifest declared
+ * and the user then granted); answer count is DNS-controlled.
  *
  * Both are far above anything real: the flagship declares one pattern, and a
  * round-robin CDN answers with a handful of addresses. Exceeding either
@@ -208,8 +225,10 @@ const MAX_PATTERNS = 256
 const MAX_ANSWERS = 64
 
 /**
- * Decides whether `manifest` authorises an outbound TCP connection to
- * `hostArg`:`port`, resolving through the injected `resolveFn`.
+ * Decides whether `patterns` -- the GRANTED pattern list, not the manifest's
+ * declared one (see the file header, and docs/open-questions.md A18) --
+ * authorises an outbound TCP connection to `hostArg`:`port`, resolving
+ * through the injected `resolveFn`.
  *
  * Resolves once, requires EVERY returned address to pass, and returns the
  * validated canonical literals for the caller to dial. One bad answer denies
@@ -221,17 +240,27 @@ const MAX_ANSWERS = 64
  * see the note on Resolver.
  */
 export async function checkConnect (
-  manifest: Manifest,
+  patterns: readonly Pattern[],
   hostArg: string,
   port: number,
   resolveFn: Resolver
 ): Promise<ConnectDecision> {
-  // The manifest arrives as JSON off the network, so it is untrusted shape as
-  // well as untrusted content -- hence the optional chaining on fields the
-  // type says are required. Absence means absence, never default-allow
-  // (capability-api.md design rules 4 and 5).
-  const declared = manifest?.capabilities?.net?.tcp?.connect
-  const patterns: readonly Pattern[] = Array.isArray(declared) ? declared : []
+  // Runtime shape guard, kept for the same reason hostArg and answer each get
+  // one below: the type signature is a compile-time promise, not a runtime
+  // one. `patterns` is GrantLedger's rehydration of a persisted grant store
+  // (build step 2) -- untrusted JSON shape -- and this function's own doc
+  // comment promises it never throws on its own account. Restored 2026-08-27
+  // after review found A18's signature change had dropped it: passing
+  // anything other than an array (a bare string, null, undefined, or even a
+  // whole Manifest -- the pre-A18 argument) used to deny and started
+  // throwing TypeError out of `.length` or `.map` instead.
+  if (!Array.isArray(patterns)) return deny('not-declared')
+
+  // An empty list denies, whether nothing was ever declared or the user
+  // granted none of what was declared -- absence means absence, never
+  // default-allow (capability-api.md design rules 4 and 5). Which of those
+  // it was is the caller's concern, not this function's: it no longer parses
+  // a Manifest, so it cannot and does not distinguish them.
   if (patterns.length === 0) return deny('not-declared')
   if (patterns.length > MAX_PATTERNS) return deny('too-many-patterns')
 
@@ -251,13 +280,22 @@ export async function checkConnect (
   // there is nothing to resolve -- and not calling out means not depending on
   // how a resolver treats a literal. It is still checked identically below;
   // the shortcut skips the lookup, never the policy.
-  const literalClass = classifyAddress(requested)
-  const isLiteral = literalClass !== 'unparseable'
+  //
+  // classifyAddress, not canonicalAddress, decides isLiteral: classifyAddress
+  // still recognises a zone-scoped literal (`fe80::1%eth0`) as an address --
+  // permissive on purpose, so it can be denied as one -- while
+  // canonicalAddress returns null for it (see address.ts). Deciding isLiteral
+  // from canonicalAddress instead would make that null fall through to the
+  // resolver, demoting a recognised, malformed address to a hostname lookup:
+  // exactly the fallthrough the next line exists to rule out.
+  const isLiteral = classifyAddress(requested) !== 'unparseable'
   // An address this file will not hand onward is one it will not accept as an
   // argument either. Denying rather than falling through to the resolver
   // matters: `2130706433` is a perfectly good DNS label, so treating it as a
-  // name would send it to the nameserver.
-  if (isLiteral && !isCanonicalLiteral(requested)) return deny('non-canonical-host')
+  // name would send it to the nameserver. canonicalAddress NORMALISES
+  // (docs/open-questions.md A20), so the check is equality with the input,
+  // not merely "did it parse" -- see this file's header.
+  if (isLiteral && canonicalAddress(requested) !== requested) return deny('non-canonical-host')
 
   if (!couldAnyPatternMatch(parsed, requested, port)) return deny('no-pattern-possible')
 
@@ -275,12 +313,14 @@ export async function checkConnect (
 
     const address = normalizeHost(answer)
 
-    // Every answer must be a CANONICAL address literal. The caller dials what
-    // this function returns, so anything a dialer would resolve again is the
-    // rebinding window reopened one layer down -- and `net.isIP` rejects far
-    // more strings than ./address.ts parses. See canonical-host.ts's
-    // isCanonicalLiteral.
-    if (!isCanonicalLiteral(address)) return deny('bad-answer', [...addresses, address])
+    // Every answer must be a CANONICAL address literal, spelled exactly the
+    // way canonicalAddress would spell it -- not merely something it can
+    // parse. The caller dials what this function returns, so anything a
+    // dialer would resolve again is the rebinding window reopened one layer
+    // down, and a real resolver always answers in canonical form: this
+    // asserts the guarantee is enforced here rather than only inherited from
+    // that assumption. See address.ts's canonicalAddress.
+    if (canonicalAddress(address) !== address) return deny('bad-answer', [...addresses, address])
 
     if (!parsed.some((pattern) => patternAuthorises(pattern, requested, address, port))) {
       return deny('no-pattern-match', [...addresses, address])
