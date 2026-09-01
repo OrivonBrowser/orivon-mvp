@@ -621,6 +621,34 @@ describe('revocation delegates to the handle table\'s cascade (handle-contracts.
   })
 })
 
+describe('signal.aborted is checked before dial(), not only after (MINOR)', () => {
+  it('never calls dial when the grant is revoked while resolve is still pending', async () => {
+    // Without this check, correctness depends entirely on the INJECTED dial
+    // implementation independently honouring an already-aborted signal --
+    // this proves the broker itself does not rely on that.
+    let resolveDns!: (addresses: readonly string[]) => void
+    const dnsPending = new Promise<readonly string[]>((resolve) => { resolveDns = resolve })
+    const resolve = async (): Promise<readonly string[]> => await dnsPending
+    const dial = vi.fn(async () => okSocket())
+    const broker = createBroker(baseDeps({ resolve, dial }))
+    broker.registerApp(APP, manifestWith({ net: { tcp: { connect: ['example.com:443'] } } }))
+    const g = await broker.grant(APP, 'tcp.connect', ['example.com:443'])
+
+    const pending = broker.net.connect(APP, { host: 'example.com', port: 443 })
+    await nextTick()
+
+    await broker.revoke(APP, g.id)
+    // The DNS answer "arrives" only now -- late, after the grant is gone.
+    resolveDns(['93.184.216.34'])
+
+    const error = await rejection(pending)
+    expect(error.code).toBe('revoked')
+
+    await nextTick()
+    expect(dial).not.toHaveBeenCalled()
+  })
+})
+
 describe('grant() replaces, under a fresh id (open-questions.md A21)', () => {
   it('a second grant of the same capability replaces the first', async () => {
     const broker = createBroker(baseDeps())
