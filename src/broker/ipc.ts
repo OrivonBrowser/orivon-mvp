@@ -1,0 +1,398 @@
+// Wires createBroker (./index.ts) to a real renderer over Electron IPC.
+//
+// SCOPE: the CONTROL channel only -- app.manifest, app.grants, net.connect,
+// fs.readFile, fs.writeFile -- plus enough of net.connect's handle lifecycle
+// for the broker to register and track it. The per-socket bulk-byte pump
+// (MessageChannelMain, the credit window, ../contracts/ipc.ts's DataMessage/
+// CreditMessage) is NOT built here -- it is a task of its own, named as such
+// in this task's brief. net.connect below returns a plain, serialisable
+// socket descriptor (id + resolved addresses); it does not attempt to expose
+// TcpSocket.readable/writable/close over IPC, because a fake close() that
+// does not integrate with any byte path would be exactly the half-built
+// thing that task warned against. See the PR body's "Decisions and open
+// questions".
+//
+// THE RULE THIS FILE EXISTS TO ENFORCE (src/preload/README.md, T3, T13b):
+// every call is attributed to the ORIGIN OF THE SENDING FRAME, derived via
+// policy/origin.ts's originFromSenderFrame, NEVER to anything the renderer
+// put in the message payload. A compromised renderer can still reach this
+// channel directly (contextBridge only gates what a PAGE's JS can construct,
+// not what a compromised renderer PROCESS can send over the underlying
+// Chromium IPC pipe), so the envelope's `method` and `payload` are validated
+// here defensively rather than trusted because the preload is well-behaved.
+//
+// TWO RULES FROM SPIKE GATE 0 (../contracts/ipc.ts's header), both honoured
+// below: every reply carries an explicit timeout (`withTimeout`, keyed off
+// the envelope's required `timeoutMs`), and nothing on this path is a
+// transferable -- every value here is plain data, structurally cloned.
+//
+// TESTABLE WITHOUT ELECTRON, the way src/main/registry.ts is: the two
+// functions that matter for correctness -- `handleControlRequest` and
+// `registerBrokerIpc` -- take a `Broker` and a structurally-typed event/
+// ipcMain rather than reaching for `electron` themselves. Only
+// `brokerIpcSubsystem`, which nothing in ipc.test.ts calls, touches the real
+// `ipcMain` value import below -- confirmed safe to import at module scope
+// under plain Node/vitest (electron resolves to a harmless string outside a
+// real Electron process; destructuring `ipcMain` from it yields `undefined`,
+// which only breaks if actually called).
+
+import { createHash } from 'node:crypto'
+import { lookup } from 'node:dns/promises'
+import { realpathSync } from 'node:fs'
+import { mkdir, readFile as fsReadFile, writeFile as fsWriteFile } from 'node:fs/promises'
+import { connect as netConnect } from 'node:net'
+import { dirname, join } from 'node:path'
+import { Duplex } from 'node:stream'
+import { ipcMain } from 'electron'
+import { CONTROL_CHANNEL } from '../main/channels.js'
+import type { Subsystem, SubsystemContext } from '../main/registry.js'
+import { createBroker } from './index.js'
+import type { Broker, BrokerFs, CreateBrokerOptions, Dial, DialedSocket } from './index.js'
+import type { Resolver } from './policy/connect.js'
+import { originFromSenderFrame } from './policy/origin.js'
+import type { SenderFrameLike } from './policy/origin.js'
+import { fail } from './errors.js'
+import type { OrivonError, OrivonErrorCode, RequestEnvelope, ResponseEnvelope } from '../contracts/index.js'
+
+export { CONTROL_CHANNEL }
+
+/** The five wired control operations. Anything else is 'invalid'. */
+export type ControlMethod = 'app.manifest' | 'app.grants' | 'net.connect' | 'fs.readFile' | 'fs.writeFile'
+
+function isControlMethod (method: string): method is ControlMethod {
+  return method === 'app.manifest' || method === 'app.grants' ||
+    method === 'net.connect' || method === 'fs.readFile' || method === 'fs.writeFile'
+}
+
+export interface NetConnectParams { readonly host: string, readonly port: number }
+export interface FsReadFileParams { readonly path: string }
+export interface FsWriteFileParams { readonly path: string, readonly data: Uint8Array }
+
+/**
+ * What `orivon.net.connect` resolves to over this channel today -- see the
+ * file header. Deliberately NOT a `TcpSocket`: `readable`, `writable`,
+ * `close` and `closed` are the bulk-data task's to add.
+ */
+export interface SocketDescriptor {
+  readonly id: string
+  readonly remoteAddress: string
+  readonly remotePort: number
+  readonly localAddress: string
+  readonly localPort: number
+}
+
+function isNetConnectParams (payload: unknown): payload is NetConnectParams {
+  return typeof payload === 'object' && payload !== null &&
+    typeof (payload as { host?: unknown }).host === 'string' &&
+    typeof (payload as { port?: unknown }).port === 'number'
+}
+
+function isFsReadFileParams (payload: unknown): payload is FsReadFileParams {
+  return typeof payload === 'object' && payload !== null &&
+    typeof (payload as { path?: unknown }).path === 'string'
+}
+
+function isFsWriteFileParams (payload: unknown): payload is FsWriteFileParams {
+  return typeof payload === 'object' && payload !== null &&
+    typeof (payload as { path?: unknown }).path === 'string' &&
+    (payload as { data?: unknown }).data instanceof Uint8Array
+}
+
+/**
+ * The shape of Electron's `IpcMainInvokeEvent` this module reads -- just
+ * `senderFrame`, structurally, so a literal stands in for it in tests the
+ * same way `SenderFrameLike` (policy/origin.ts) lets a literal stand in for
+ * `WebFrameMain`. A real `IpcMainInvokeEvent` satisfies this with room to
+ * spare.
+ */
+export interface ControlEvent {
+  readonly senderFrame: SenderFrameLike | null
+}
+
+/** One request, dispatched to `broker` with the origin THIS FUNCTION derived -- never one from `payload`. */
+async function dispatch (broker: Broker, origin: string, method: string, payload: unknown): Promise<unknown> {
+  if (!isControlMethod(method)) throw fail('invalid', `unknown control method: ${method}`)
+
+  switch (method) {
+    case 'app.manifest':
+      return await broker.app.manifest(origin)
+    case 'app.grants':
+      return await broker.app.grants(origin)
+    case 'net.connect': {
+      if (!isNetConnectParams(payload)) throw fail('invalid', 'net.connect requires { host: string, port: number }')
+      const socket = await broker.net.connect(origin, { host: payload.host, port: payload.port })
+      const descriptor: SocketDescriptor = {
+        id: socket.id,
+        remoteAddress: socket.remoteAddress,
+        remotePort: socket.remotePort,
+        localAddress: socket.localAddress,
+        localPort: socket.localPort
+      }
+      return descriptor
+    }
+    case 'fs.readFile': {
+      if (!isFsReadFileParams(payload)) throw fail('invalid', 'fs.readFile requires { path: string }')
+      return await broker.fs.readFile(origin, payload.path)
+    }
+    case 'fs.writeFile': {
+      if (!isFsWriteFileParams(payload)) throw fail('invalid', 'fs.writeFile requires { path: string, data: Uint8Array }')
+      await broker.fs.writeFile(origin, payload.path, payload.data)
+      return undefined
+    }
+  }
+}
+
+/**
+ * Races `promise` against `timeoutMs`. ../contracts/ipc.ts's rule 2: this
+ * transport fails by SILENCE, and `timeoutMs` is a required field precisely
+ * so nothing on this path can forget to bound the wait. The underlying
+ * broker call is not cancelled when the timer wins -- there is no cancel
+ * signal threaded through `dispatch` for this -- it is left to settle on its
+ * own and its result is discarded; what matters is that the CALLER is never
+ * left waiting past its own stated budget.
+ */
+async function withTimeout<T> (promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return await new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(fail('timeout', `control call exceeded its ${timeoutMs}ms budget`))
+    }, timeoutMs)
+    timer.unref()
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value) },
+      (error: unknown) => { clearTimeout(timer); reject(error) }
+    )
+  })
+}
+
+const ORIVON_ERROR_CODES = new Set<OrivonErrorCode>([
+  'denied', 'revoked', 'unreachable', 'timeout', 'reset', 'closed', 'limit', 'invalid', 'notFound', 'exists', 'internal'
+])
+
+function isOrivonErrorLike (value: unknown): value is OrivonError {
+  return value instanceof Error && 'code' in value &&
+    ORIVON_ERROR_CODES.has((value as { code: OrivonErrorCode }).code)
+}
+
+/**
+ * Maps a thrown value to the failure branch of a `ResponseEnvelope`.
+ *
+ * DoD rule 4: a 'denied' crosses with no `platformCode`, whatever threw it.
+ * `./errors.ts`'s `fail()` already enforces that at construction, but this
+ * is the boundary the app actually crosses, so it is re-checked here rather
+ * than trusted from upstream -- the same defence-in-depth reasoning as
+ * dispatch()'s own payload validation.
+ *
+ * Anything that is not a recognised `OrivonError` is a BUG, not a capability
+ * decision, and its message is never forwarded: it may name a file path, a
+ * stack frame, or another internal detail an app has no business seeing
+ * (mirrors errors.ts's own 'internal' contract -- "always logged", never
+ * described to the caller beyond that).
+ */
+function toFailureResponse (id: string, error: unknown): ResponseEnvelope<never> {
+  if (isOrivonErrorLike(error)) {
+    const base = { id, ok: false as const, code: error.code, message: error.message }
+    if (error.code !== 'denied' && error.platformCode !== undefined) {
+      return { ...base, platformCode: error.platformCode }
+    }
+    return base
+  }
+  return { id, ok: false, code: 'internal', message: 'an internal error occurred' }
+}
+
+/**
+ * The pure core: one request in, one response out. No Electron, no I/O --
+ * everything that touches either is INJECTED (`broker`, `event`).
+ *
+ * Origin derivation happens here and ONLY here (DoD rule 1): `event.
+ * senderFrame` is the sole source of the caller's identity. `envelope.
+ * payload` is never inspected for anything resembling an origin.
+ */
+export async function handleControlRequest (
+  broker: Broker,
+  event: ControlEvent,
+  envelope: RequestEnvelope<unknown>
+): Promise<ResponseEnvelope<unknown>> {
+  const origin = originFromSenderFrame(event.senderFrame)
+  if (origin === null) {
+    return { id: envelope.id, ok: false, code: 'denied', message: 'no authenticated origin for this frame' }
+  }
+
+  try {
+    const result = await withTimeout(dispatch(broker, origin, envelope.method, envelope.payload), envelope.timeoutMs)
+    return { id: envelope.id, ok: true, result }
+  } catch (error) {
+    return toFailureResponse(envelope.id, error)
+  }
+}
+
+/** The one method this module needs from `electron`'s real `IpcMain`. Structural, so a test double never needs the real type. */
+export interface IpcMainLike {
+  handle (
+    channel: string,
+    listener: (event: ControlEvent, envelope: RequestEnvelope<unknown>) => Promise<ResponseEnvelope<unknown>>
+  ): void
+}
+
+/** Thin wiring: one `ipcMain.handle` registration over `handleControlRequest`. */
+export function registerBrokerIpc (ipc: IpcMainLike, broker: Broker): void {
+  ipc.handle(CONTROL_CHANNEL, async (event, envelope) => await handleControlRequest(broker, event, envelope))
+}
+
+// ---------------------------------------------------------------------------
+// Real, minimal Node adapters for createBroker's injected dependencies.
+// src/broker/README.md: "Anything with an import of electron belongs one
+// level up [from policy/], in src/broker/" -- this is that file. Nothing
+// below is reachable by a real app yet: orivon.app.registerApp/grant are the
+// app loader's and the permission-prompt UI's seams (later build steps,
+// broker/index.ts's own header), and neither is called anywhere in this
+// tree, so every one of the five control operations above currently answers
+// 'internal' (no manifest registered) or 'denied' (no grant issued) no
+// matter what these adapters do. They are still written for real rather than
+// stubbed, so this plumbing does not need revisiting when the loader lands.
+// ---------------------------------------------------------------------------
+
+/**
+ * `BrokerFs` over the real filesystem. `rootFor` is `sha256(origin)` under
+ * `<userData>/apps/`, per ADR-0003 and security-model.md T13b -- directory
+ * names must never be the literal origin string, or `https://Example.com`
+ * and `https://example.com` collide on a case-insensitive filesystem.
+ *
+ * Takes `userDataPath` as a plain string rather than reaching for Electron's
+ * `app` itself, so this adapter -- unlike `dialTcp`/`resolveHost`, which need
+ * no Electron at all -- stays testable against a real temp directory without
+ * needing Electron either.
+ */
+export function nodeFs (userDataPath: string): BrokerFs {
+  return {
+    rootFor: (origin) => join(userDataPath, 'apps', createHash('sha256').update(origin, 'utf8').digest('hex'), 'files'),
+    realpathSync,
+    readFile: async (path) => {
+      try {
+        const buffer = await fsReadFile(path)
+        // A Node Buffer IS a Uint8Array, but a zero-copy view keeps the
+        // return type honest rather than relying on subclass compatibility
+        // -- a caller comparing constructors, or a serialiser that treats
+        // Buffer specially, should never notice this passed through Node's
+        // fs module.
+        return new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength)
+      } catch (error) {
+        throw toFsError(error, `could not read ${path}`)
+      }
+    },
+    writeFile: async (path, data) => {
+      try {
+        await mkdir(dirname(path), { recursive: true })
+        await fsWriteFile(path, data)
+      } catch (error) {
+        throw toFsError(error, `could not write ${path}`)
+      }
+    }
+  }
+}
+
+function errnoCode (error: unknown): string | undefined {
+  return error instanceof Error && 'code' in error ? String((error as NodeJS.ErrnoException).code) : undefined
+}
+
+function toFsError (error: unknown, message: string): OrivonError {
+  const code = errnoCode(error)
+  if (code === 'ENOENT') return fail('notFound', message, undefined, code)
+  if (code === 'EEXIST') return fail('exists', message, undefined, code)
+  return fail('internal', message, undefined, code)
+}
+
+/** `Resolver` over real DNS. A lookup failure is 'unreachable' (handle-contracts.md), not a broker fault. */
+const resolveHost: Resolver = async (host) => {
+  try {
+    const answers = await lookup(host, { all: true })
+    return answers.map((answer) => answer.address)
+  } catch (error) {
+    throw fail('unreachable', `could not resolve ${host}`, undefined, errnoCode(error))
+  }
+}
+
+/**
+ * One dial attempt. `readable`/`writable` are real WHATWG streams
+ * (`node:stream`'s `Duplex.toWeb`) so `DialedSocket`'s type is honestly
+ * satisfied -- `broker.net.connect` cannot type-check otherwise -- even
+ * though nothing on the IPC path forwards them to a renderer yet.
+ *
+ * `destroy` does not implement the close/half-close table handle-
+ * contracts.md's `TcpSocket` specifies (FIN on a clean close, RST on
+ * revoke, ...): with no app-facing close() and no in-flight I/O reachable
+ * through this task, there is no half-close state to preserve. A plain
+ * `socket.destroy()` is honest for what this task actually exercises; the
+ * byte-pump task owns the real table.
+ */
+function dialOne (address: string, port: number, signal: AbortSignal): Promise<DialedSocket> {
+  return new Promise((resolve, reject) => {
+    const socket = netConnect({ host: address, port })
+    const onAbort = (): void => { socket.destroy() }
+    signal.addEventListener('abort', onAbort, { once: true })
+    const settle = (): void => { signal.removeEventListener('abort', onAbort) }
+
+    socket.once('error', (error: NodeJS.ErrnoException) => {
+      settle()
+      reject(fail('unreachable', error.message, undefined, error.code))
+    })
+    socket.once('connect', () => {
+      settle()
+      const { readable, writable } = Duplex.toWeb(socket)
+      resolve({
+        readable: readable as ReadableStream<Uint8Array>,
+        writable: writable as WritableStream<Uint8Array>,
+        remoteAddress: socket.remoteAddress ?? address,
+        remotePort: socket.remotePort ?? port,
+        localAddress: socket.localAddress ?? '',
+        localPort: socket.localPort ?? 0,
+        setNoDelay: async (on) => { socket.setNoDelay(on) },
+        setKeepAlive: async (on, initialDelayMs) => { socket.setKeepAlive(on, initialDelayMs) },
+        destroy: async () => { socket.destroy() }
+      })
+    })
+  })
+}
+
+/**
+ * `Dial` over real TCP. Tries `addresses` in order, first success wins --
+ * connect.ts hands over more than one literal so the caller can implement
+ * its own fallback strategy across them (its header, and Node 24's default
+ * `autoSelectFamily: true`). A SEQUENTIAL fallback rather than a parallel
+ * happy-eyeballs race: simpler, and correct for the control-channel wiring
+ * this task is about. Flagged in the PR as a simplification worth revisiting
+ * if connect latency to dual-stack hosts ever matters.
+ */
+const dialTcp: Dial = async (addresses, port, signal) => {
+  if (signal.aborted) throw fail('revoked', 'the grant authorising this connection was withdrawn')
+
+  let lastError: unknown
+  for (const address of addresses) {
+    try {
+      return await dialOne(address, port, signal)
+    } catch (error) {
+      lastError = error
+      if (signal.aborted) throw fail('revoked', 'the grant authorising this connection was withdrawn')
+    }
+  }
+  throw isOrivonErrorLike(lastError) ? lastError : fail('unreachable', 'could not connect to any resolved address')
+}
+
+/** Builds the production `Broker` and registers it on `ipcMain`. The one place this module's `electron` value import is used. */
+export const brokerIpcSubsystem: Subsystem = {
+  name: 'broker',
+  afterReady: (ctx: SubsystemContext) => {
+    const deps: CreateBrokerOptions = {
+      dial: dialTcp,
+      resolve: resolveHost,
+      now: () => Date.now(),
+      fs: nodeFs(ctx.app.getPath('userData')),
+      // ADR-0010 key derivation is out of scope for this task (broker/
+      // index.ts's own header: "nothing below calls it yet") -- none of the
+      // five wired control operations reach `orivon.id`.
+      keychain: {
+        getSeed: async () => { throw fail('internal', 'identity key derivation is not implemented yet (ADR-0010)') }
+      }
+    }
+    registerBrokerIpc(ipcMain, createBroker(deps))
+  }
+}

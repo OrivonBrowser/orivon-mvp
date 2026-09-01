@@ -11,8 +11,10 @@
 //
 // Which stream owns which entry: docs/development/parallel-work.md.
 import type { Subsystem } from './registry.js'
+import { brokerIpcSubsystem } from '../broker/ipc.js'
 
 export const subsystems: Subsystem[] = [
+  brokerIpcSubsystem,
   // build step 2: broker    -> src/broker/
   // build step 3: shim      -> src/shim/
   // build step 4: loader    -> src/loader/
