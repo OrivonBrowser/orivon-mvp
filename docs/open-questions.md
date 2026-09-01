@@ -58,7 +58,7 @@ None of these block starting the week-0 spike.
 | A17 | **RESOLVED 2026-08-27 (owner):** an `identityId` is **opaque and broker-generated** — never a user-typed name, never derived from one. The display name is stored beside the identity, not used to derive it. Found undefined during review of PR #5: it appeared exactly once in the whole repository, as one table cell | Recorded in `ADR-0010`, stated in `capability-api.md`, documented on `DeriveRequest.scope` |
 | A18 | **RESOLVED 2026-08-27 (owner): pass the GRANTED pattern list, not the manifest.** Original question: Nothing in the signature carries the grant, so a caller passing a raw manifest silently gets the declared authority | **Build step 2, before the broker calls it.** Narrow the list at the call site, or change the parameter to `readonly Pattern[]`. See below |
 | A19 | **IDN hostnames are unhandled in connect patterns.** A Unicode host, its case variants and its punycode A-label are three different strings to the matcher, and an app deriving its host from `new URL(...)` gets the A-label | **Before any non-ASCII app origin exists.** Non-ASCII is now rejected outright rather than silently never matching. See below |
-| A20 | **`address.ts` exposes a classifier but no canonicaliser.** `connect.ts` needs an identity answer ("is this the same address"), not a range answer, and currently gets it from a local strict-subset validator | **Whenever `broker-02-address` is next touched.** See below |
+| A20 | **PARTIALLY RESOLVED, `stream/a20-canonical-address`.** `canonicalAddress` now lives in `address.ts` and `connect.ts`/`connect-patterns.ts` use it. Still open: the grant prompt (build step 4) and `policy/update.ts`'s pattern comparison don't use it yet | **Whoever builds either.** See below |
 | A21 | **Does a re-granted capability reuse its GrantId?** `manifest.ts` says a `Grant` is keyed on (origin, capability, pattern set) but never says whether the `id` is derived from that key or minted fresh per grant event. The handle table now tombstones revoked grant ids, so under the derived reading a permanent tombstone would make re-granting impossible | **Before the grant ledger is written.** `HandleTable.grantIssued()` clears the tombstone, so the table is correct either way; the ledger must call it. See below |
 | A22 | **`src/broker/policy/paths.ts` assumes app root directory names are single-case hex.** True today and specified — `security-model.md` T13b makes directory names `sha256(canonical_origin)`, and `ADR-0009` reconfirms the bundle hash does not rename them. The assumption is load-bearing for a case-SENSITIVE comparison and is asserted only in a source comment | **Build step 4 (the app loader)**, which writes the first root directory and is the first chance to get the naming wrong. See below |
 | A23 | **A derived origin does not carry whether it may be PERSISTED.** T13c forbids ever writing a grant for a loopback or plain-`http` origin to disk, but `originFromUrl` returns a plain string — `http://127.0.0.1:8080` is shape-identical to `https://x.example`, so every caller must remember to re-parse and check | **Build step 2**, when the code that persists grants exists. Owner decided 2026-08-27 to keep the return type a plain string for now rather than change a durable interface before its consumer exists. See below |
@@ -223,6 +223,42 @@ be raised rather than made.
 
 **Needed by:** whoever next touches `broker-02-address`, and before the grant prompt is built in
 build step 4.
+
+**PARTIALLY RESOLVED on `stream/a20-canonical-address` (2026-08-28).** `canonicalAddress(addr):
+string | null` is exported from `address.ts`, built from the same `address-parse.ts` parsers
+`classifyAddress` uses; the local validator (`isCanonicalLiteral`, then living in
+`canonical-host.ts`) is deleted, and both of its call sites -- `connect.ts` and
+`connect-patterns.ts`'s `hostMatches` -- now compare `canonicalAddress(x) === x` instead, which is
+exactly what `isCanonicalLiteral(x)` used to mean. `checkConnect`'s behaviour is unchanged: still
+verified by the full existing suite (587 tests across `address.test.ts`, `connect.test.ts`,
+`connect-patterns.test.ts`) passing unmodified before a single new test was added, plus four
+deliberately-introduced mutants (accept a non-canonical literal at either of `connect.ts`'s two
+gates simultaneously; have `canonicalAddress` echo its input instead of normalising; corrupt
+`formatIpv4`'s byte order so it silently names a different address) all caught.
+
+**The reject-vs-normalise call, made:** `canonicalAddress` NORMALISES -- `canonicalAddress('2130706433') === '127.0.0.1'`, not
+`null`. An echo-only validator would give the still-open call sites below nothing to work with.
+`connect.ts` keeps today's stricter "declare it legibly or the connection is refused" behaviour on
+top of that by comparing the result to the input, so this is additive, not a loosening.
+
+**One surviving mutant, found and judged equivalent rather than fixed.** Weakening
+`hostMatches`'s pattern-literal check from `canonicalAddress(host) !== host` to
+`canonicalAddress(host) === null` passes the full suite unmodified. Proof it cannot be observed
+through `checkConnect`: `address` reaching `hostMatches` is always already canonical (`connect.ts`
+enforces `canonicalAddress(address) === address` before calling it on every path), and
+`canonicalAddress` is idempotent on a canonical string, so `host === address` can only be true
+when `host` is itself already canonical -- making the earlier check redundant for correctness
+given that invariant, provably rather than just untested. Not fixed, because
+`connect.test.ts`/`connect-patterns.test.ts`'s own header rules out unit-testing `hostMatches`
+directly ("do not take it"), and the check itself is pre-existing (a faithful port of
+`isCanonicalLiteral`'s equivalent shape, not something this stream introduced) and stays for
+defence in depth and for `udp.send`, which the file's header notes may reuse it later without
+`connect.ts`'s invariant necessarily holding.
+
+**Still open -- the two call sites named above are unchanged by this PR, deliberately:** the grant
+prompt does not exist before build step 4, and editing `policy/update.ts` from this stream would
+be the same cross-stream edit this entry already flagged once. Whoever builds either should read
+this entry first; `canonicalAddress` is ready for both.
 
 ---
 
