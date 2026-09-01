@@ -1,16 +1,16 @@
 // Wires createBroker (./index.ts) to a real renderer over Electron IPC.
 //
-// SCOPE: the CONTROL channel only -- app.manifest, app.grants, net.connect,
-// fs.readFile, fs.writeFile -- plus enough of net.connect's handle lifecycle
-// for the broker to register and track it. The per-socket bulk-byte pump
-// (MessageChannelMain, the credit window, ../contracts/ipc.ts's DataMessage/
-// CreditMessage) is NOT built here -- it is a task of its own, named as such
-// in this task's brief. net.connect below returns a plain, serialisable
-// socket descriptor (id + resolved addresses); it does not attempt to expose
-// TcpSocket.readable/writable/close over IPC, because a fake close() that
-// does not integrate with any byte path would be exactly the half-built
-// thing that task warned against. See the PR body's "Decisions and open
-// questions".
+// SCOPE: the CONTROL channel only -- app.manifest, app.grants, fs.readFile,
+// fs.writeFile. net.connect is DELIBERATELY not wired here even though
+// `dialTcp`/`resolveHost` below give createBroker a real dial/resolve: a
+// TcpSocket's actual shape is readable/writable/close/closed
+// (../contracts/capability-api.ts), and returning a serialisable descriptor
+// instead would hand the app a socket with no way to ever close it, leaking
+// one handle-table slot and one fd per call (LIMITS.concurrentSockets is
+// finite). The per-socket bulk-byte pump (MessageChannelMain, the credit
+// window, ../contracts/ipc.ts's DataMessage/CreditMessage) is its own task,
+// and net.connect is wired once, for real, when that task lands. See the PR
+// body's "Decisions and open questions".
 //
 // THE RULE THIS FILE EXISTS TO ENFORCE (src/preload/README.md, T3, T13b):
 // every call is attributed to the ORIGIN OF THE SENDING FRAME, derived via
@@ -56,36 +56,16 @@ import type { OrivonError, OrivonErrorCode, RequestEnvelope, ResponseEnvelope } 
 
 export { CONTROL_CHANNEL }
 
-/** The five wired control operations. Anything else is 'invalid'. */
-export type ControlMethod = 'app.manifest' | 'app.grants' | 'net.connect' | 'fs.readFile' | 'fs.writeFile'
+/** The four wired control operations. Anything else is 'invalid'. */
+export type ControlMethod = 'app.manifest' | 'app.grants' | 'fs.readFile' | 'fs.writeFile'
 
 function isControlMethod (method: string): method is ControlMethod {
   return method === 'app.manifest' || method === 'app.grants' ||
-    method === 'net.connect' || method === 'fs.readFile' || method === 'fs.writeFile'
+    method === 'fs.readFile' || method === 'fs.writeFile'
 }
 
-export interface NetConnectParams { readonly host: string, readonly port: number }
 export interface FsReadFileParams { readonly path: string }
 export interface FsWriteFileParams { readonly path: string, readonly data: Uint8Array }
-
-/**
- * What `orivon.net.connect` resolves to over this channel today -- see the
- * file header. Deliberately NOT a `TcpSocket`: `readable`, `writable`,
- * `close` and `closed` are the bulk-data task's to add.
- */
-export interface SocketDescriptor {
-  readonly id: string
-  readonly remoteAddress: string
-  readonly remotePort: number
-  readonly localAddress: string
-  readonly localPort: number
-}
-
-function isNetConnectParams (payload: unknown): payload is NetConnectParams {
-  return typeof payload === 'object' && payload !== null &&
-    typeof (payload as { host?: unknown }).host === 'string' &&
-    typeof (payload as { port?: unknown }).port === 'number'
-}
 
 function isFsReadFileParams (payload: unknown): payload is FsReadFileParams {
   return typeof payload === 'object' && payload !== null &&
@@ -118,18 +98,6 @@ async function dispatch (broker: Broker, origin: string, method: string, payload
       return await broker.app.manifest(origin)
     case 'app.grants':
       return await broker.app.grants(origin)
-    case 'net.connect': {
-      if (!isNetConnectParams(payload)) throw fail('invalid', 'net.connect requires { host: string, port: number }')
-      const socket = await broker.net.connect(origin, { host: payload.host, port: payload.port })
-      const descriptor: SocketDescriptor = {
-        id: socket.id,
-        remoteAddress: socket.remoteAddress,
-        remotePort: socket.remotePort,
-        localAddress: socket.localAddress,
-        localPort: socket.localPort
-      }
-      return descriptor
-    }
     case 'fs.readFile': {
       if (!isFsReadFileParams(payload)) throw fail('invalid', 'fs.readFile requires { path: string }')
       return await broker.fs.readFile(origin, payload.path)
@@ -333,7 +301,13 @@ function dialOne (address: string, port: number, signal: AbortSignal): Promise<D
 
     socket.once('error', (error: NodeJS.ErrnoException) => {
       settle()
-      reject(fail('unreachable', error.message, undefined, error.code))
+      // A fresh message, not error.message -- Node's own carries the
+      // address and port back verbatim, and index.ts's mapIoError only
+      // rewrites messages for errors it maps itself, not ones already
+      // shaped like an OrivonError (isOrivonError passes those through
+      // unchanged). Matching resolveHost's pattern just above: the errno
+      // survives as platformCode, the raw string does not.
+      reject(fail('unreachable', `could not connect to ${address}:${port}`, undefined, error.code))
     })
     socket.once('connect', () => {
       settle()
