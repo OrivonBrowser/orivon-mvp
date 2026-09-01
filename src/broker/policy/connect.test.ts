@@ -356,6 +356,25 @@ describe('absence means absence', () => {
     const decision = await checkConnect(junk, PUBLIC_A, 443, noResolution)
     expect(decision.allowed).toBe(false)
   })
+
+  it.each([
+    { label: 'a bare string', value: 'example.com:443' },
+    { label: 'null', value: null },
+    { label: 'undefined', value: undefined },
+    { label: 'a plain object', value: { length: 2 } },
+    { label: 'a whole Manifest (the pre-A18 argument)', value: { capabilities: { net: { tcp: { connect: ['*:*'] } } } } }
+  ])('denies rather than throws when patterns itself is not an array ($label)', async ({ value }) => {
+    // A18 moved shape-defensiveness for the LIST to the caller, but the
+    // caller is GrantLedger's rehydration of a persisted grant store --
+    // untrusted JSON shape, the same category of input the deleted guard
+    // existed for (docs/open-questions.md A18 resolution). checkConnect's own
+    // doc comment still promises "never throws on its own account", so a
+    // non-array here must deny, not throw TypeError out of `.length` or
+    // `.map`.
+    const decision = await checkConnect(value as unknown as Pattern[], PUBLIC_A, 443, noResolution)
+    if (decision.allowed) throw new Error('expected a denial')
+    expect(decision.reason).toBe('not-declared')
+  })
 })
 
 // ---------------------------------------------------------------------------
