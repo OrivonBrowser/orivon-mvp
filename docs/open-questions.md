@@ -58,11 +58,13 @@ None of these block starting the week-0 spike.
 | A17 | **RESOLVED 2026-08-27 (owner):** an `identityId` is **opaque and broker-generated** — never a user-typed name, never derived from one. The display name is stored beside the identity, not used to derive it. Found undefined during review of PR #5: it appeared exactly once in the whole repository, as one table cell | Recorded in `ADR-0010`, stated in `capability-api.md`, documented on `DeriveRequest.scope` |
 | A18 | **RESOLVED 2026-08-27 (owner): pass the GRANTED pattern list, not the manifest.** Original question: Nothing in the signature carries the grant, so a caller passing a raw manifest silently gets the declared authority | **Build step 2, before the broker calls it.** Narrow the list at the call site, or change the parameter to `readonly Pattern[]`. See below |
 | A19 | **IDN hostnames are unhandled in connect patterns.** A Unicode host, its case variants and its punycode A-label are three different strings to the matcher, and an app deriving its host from `new URL(...)` gets the A-label | **Before any non-ASCII app origin exists.** Non-ASCII is now rejected outright rather than silently never matching. See below |
-| A20 | **`address.ts` exposes a classifier but no canonicaliser.** `connect.ts` needs an identity answer ("is this the same address"), not a range answer, and currently gets it from a local strict-subset validator | **Whenever `broker-02-address` is next touched.** See below |
+| A20 | **PARTIALLY RESOLVED, `stream/a20-canonical-address`.** `canonicalAddress` now lives in `address.ts` and `connect.ts`/`connect-patterns.ts` use it. Still open: the grant prompt (build step 4) and `policy/update.ts`'s pattern comparison don't use it yet | **Whoever builds either.** See below |
 | A21 | **Does a re-granted capability reuse its GrantId?** `manifest.ts` says a `Grant` is keyed on (origin, capability, pattern set) but never says whether the `id` is derived from that key or minted fresh per grant event. The handle table now tombstones revoked grant ids, so under the derived reading a permanent tombstone would make re-granting impossible | **Before the grant ledger is written.** `HandleTable.grantIssued()` clears the tombstone, so the table is correct either way; the ledger must call it. See below |
 | A22 | **`src/broker/policy/paths.ts` assumes app root directory names are single-case hex.** True today and specified — `security-model.md` T13b makes directory names `sha256(canonical_origin)`, and `ADR-0009` reconfirms the bundle hash does not rename them. The assumption is load-bearing for a case-SENSITIVE comparison and is asserted only in a source comment | **Build step 4 (the app loader)**, which writes the first root directory and is the first chance to get the naming wrong. See below |
 | A23 | **A derived origin does not carry whether it may be PERSISTED.** T13c forbids ever writing a grant for a loopback or plain-`http` origin to disk, but `originFromUrl` returns a plain string — `http://127.0.0.1:8080` is shape-identical to `https://x.example`, so every caller must remember to re-parse and check | **Build step 2**, when the code that persists grants exists. Owner decided 2026-08-27 to keep the return type a plain string for now rather than change a durable interface before its consumer exists. See below |
 | A24 | **Should a whole-codebase guideline sweep be exempt from the one-stream-per-backlog-branch rule?** `stream/backlog-07-guidelines-cleanup` touches six streams' paths at once, which `parallel-work.md` says should be six branches. AI-REC: carve out repo-wide sweeps explicitly, same shape as the PR blueprint's `type:chore` short form | **Before the next backlog-NN sweep is started.** This PR is a fait accompli either way; what's open is whether the rule gets a carve-out. See below |
+| A25 | **The docs' own example of an unparseable version parses.** `capability-api.md` and `update.ts` both cite `"2026-08-26"` as a version that cannot be ordered. It orders fine -- hyphens are legal semver prerelease identifiers | Before anyone relies on the example |
+| A26 | **Three port-range parsers now exist**: `connect-patterns.ts`, privately in `update.ts`, and `loader/manifest.ts`. None is legally reusable from the others as written | Rule 3; before a fourth |
 | A27 | **`update.ts`'s wildcard host match and `connect-patterns.ts`'s pattern matcher disagree about what a leading `*.` means.** `update.ts`'s `hostCovers` treats `*.example.com` as a real suffix wildcard for its re-consent check; `connect-patterns.ts` treats the identical syntax as matching nothing. A manifest can declare, validate and be granted a `connect` pattern that can then never actually connect | **Before the grant prompt is built (build step 4)**, the first point a user sees a pattern spelled two different ways. See below |
 | A28 | **`confinePath` takes a synchronous `realpath`, so every confined `fs` call blocks the broker's main thread.** `policy/paths.ts` declares the parameter synchronous; any broker that calls it performs blocking `stat`/`lstat` syscalls inline with otherwise-async `readFile`/`writeFile` | **Before `orivon.fs` is wired to a renderer (build step 2's IPC task).** See below |
 | A29 | **`quotaBytes` promises reconciliation against the directory on startup, and nothing implements that half.** `contracts/manifest.ts` documents a running per-origin byte counter that reconciles on startup rather than walking the tree every operation; no storage layer or `BrokerFs` member does the reconciling, so the counter resets on every restart | **Before packaging (build step 10)**, when a real user's disk is at stake. See below |
@@ -228,6 +230,42 @@ be raised rather than made.
 
 **Needed by:** whoever next touches `broker-02-address`, and before the grant prompt is built in
 build step 4.
+
+**PARTIALLY RESOLVED on `stream/a20-canonical-address` (2026-08-28).** `canonicalAddress(addr):
+string | null` is exported from `address.ts`, built from the same `address-parse.ts` parsers
+`classifyAddress` uses; the local validator (`isCanonicalLiteral`, then living in
+`canonical-host.ts`) is deleted, and both of its call sites -- `connect.ts` and
+`connect-patterns.ts`'s `hostMatches` -- now compare `canonicalAddress(x) === x` instead, which is
+exactly what `isCanonicalLiteral(x)` used to mean. `checkConnect`'s behaviour is unchanged: still
+verified by the full existing suite (587 tests across `address.test.ts`, `connect.test.ts`,
+`connect-patterns.test.ts`) passing unmodified before a single new test was added, plus four
+deliberately-introduced mutants (accept a non-canonical literal at either of `connect.ts`'s two
+gates simultaneously; have `canonicalAddress` echo its input instead of normalising; corrupt
+`formatIpv4`'s byte order so it silently names a different address) all caught.
+
+**The reject-vs-normalise call, made:** `canonicalAddress` NORMALISES -- `canonicalAddress('2130706433') === '127.0.0.1'`, not
+`null`. An echo-only validator would give the still-open call sites below nothing to work with.
+`connect.ts` keeps today's stricter "declare it legibly or the connection is refused" behaviour on
+top of that by comparing the result to the input, so this is additive, not a loosening.
+
+**One surviving mutant, found and judged equivalent rather than fixed.** Weakening
+`hostMatches`'s pattern-literal check from `canonicalAddress(host) !== host` to
+`canonicalAddress(host) === null` passes the full suite unmodified. Proof it cannot be observed
+through `checkConnect`: `address` reaching `hostMatches` is always already canonical (`connect.ts`
+enforces `canonicalAddress(address) === address` before calling it on every path), and
+`canonicalAddress` is idempotent on a canonical string, so `host === address` can only be true
+when `host` is itself already canonical -- making the earlier check redundant for correctness
+given that invariant, provably rather than just untested. Not fixed, because
+`connect.test.ts`/`connect-patterns.test.ts`'s own header rules out unit-testing `hostMatches`
+directly ("do not take it"), and the check itself is pre-existing (a faithful port of
+`isCanonicalLiteral`'s equivalent shape, not something this stream introduced) and stays for
+defence in depth and for `udp.send`, which the file's header notes may reuse it later without
+`connect.ts`'s invariant necessarily holding.
+
+**Still open -- the two call sites named above are unchanged by this PR, deliberately:** the grant
+prompt does not exist before build step 4, and editing `policy/update.ts` from this stream would
+be the same cross-stream edit this entry already flagged once. Whoever builds either should read
+this entry first; `canonicalAddress` is ready for both.
 
 ---
 
@@ -660,3 +698,42 @@ Dashboard widget grid · App store · Web3 search · Wallet Crypto/Address-book 
 `CapabilityDescriptor` · Mobile · DAO / tokenomics · Proxy chains and VPN mode · Client
 Profile separation · DDOC · Trustless resolution · `subprocess` and `hid` capabilities ·
 Identity export/backup · Cross-device sync.
+
+### A25 -- the documented example of an unparseable version is parseable **[AI-REC]**
+
+Found while implementing `loader/manifest.ts` (2026-08-27) and verified directly against the
+real `compareVersions`/`parseVersion`.
+
+`architecture/capability-api.md` and `src/broker/policy/update.ts`'s own comment both offer
+`"2026-08-26"` as the example of a version string that cannot be ordered, and therefore fails
+closed at update time. **It parses.** Hyphens are legal in a semver prerelease identifier, so
+`2026-08-26` reads as major `2026` with prerelease `08-26` and orders against other versions
+without complaint.
+
+The *rule* is unaffected -- unorderable versions should still be rejected at first install, and
+`loader/manifest.ts` does that. Only the example is wrong.
+
+**AI recommendation:** replace the example in both places with something genuinely unorderable
+(`"v1.0"`, `"latest"`, `"1.0.0.0"`). A wrong example in a specification is worse than none: the
+next person writes a test asserting `2026-08-26` is rejected, watches it fail, and concludes the
+implementation is broken.
+
+**Needed by:** whoever next touches version handling. Not blocking.
+
+### A26 -- three port-range parsers **[AI-REC]**
+
+`connect-patterns.ts` exports one, `update.ts` keeps a private one, and `loader/manifest.ts`
+added a third (2026-08-27). Each was written because neither of the others was legally reusable
+from where it stood -- `policy/` may not import from `loader/`, and `update.ts`'s is private to
+a decision function that must not grow a dependency on pattern matching.
+
+This is the shape `CLAUDE.md` Rule 3 exists to catch, and the codebase has already done one
+dedupe pass for exactly this. The reasons are individually sound, which is how three of
+something appears without anyone deciding to have three.
+
+**AI recommendation:** move the port-range grammar into `src/shared/`, which exists precisely
+for a helper needed on both sides of a boundary, is change-controlled like contracts, imports
+nothing, and is currently empty. The audit that created it concluded nothing crossed that
+boundary yet. Something does now.
+
+**Needed by:** before a fourth appears. Not blocking.
