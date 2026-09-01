@@ -50,10 +50,10 @@ change belongs in their stream.
 
 > **`.claude/` is owned by `docs` for want of a better home, and the fit is imperfect.** It holds
 > agent instructions and the project skill — read by tooling, not shipped — so it belongs to no
-> build step and has no natural stream. It was unowned until 2026-08-27, which is how
-> `.github/` was found missing a month earlier: a path nobody owns is a path two streams edit on
-> the same afternoon without either noticing. If a session is editing `.claude/skills/`, say so
-> before starting.
+> build step and has no natural stream. It was unowned until 2026-08-27 — the same oversight
+> `.github/` had, found the same week: a path nobody owns is a path two streams edit on the same
+> afternoon without either noticing. If a session is editing `.claude/skills/`, say so before
+> starting.
 
 Every directory above carries its own `README.md` stating what it depends on and **what it must
 never import**. Those are the real boundary; this table is the index.
