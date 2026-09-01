@@ -158,8 +158,15 @@ export interface Broker {
    * freshly minted GrantId (open-questions.md A21 -- `HandleTable.grantIssued`
    * is called either way, so a future GrantId-reuse decision costs nothing
    * here).
+   *
+   * A replaced grant is revoked in the handle table SYNCHRONOUSLY inside this
+   * call, before it returns -- not lazily, not on the next operation. Without
+   * that, a capability the user just replaced stays live, permanently
+   * unrevocable (nothing keeps its old GrantId once app.grants() drops it),
+   * and invisible to every future caller. `async` here is that revoke, not a
+   * cosmetic change -- see GrantLedger.grant's own doc.
    */
-  grant(origin: string, capability: CapabilityKind, patterns: readonly Pattern[]): Grant
+  grant(origin: string, capability: CapabilityKind, patterns: readonly Pattern[]): Promise<Grant>
   /**
    * Withdraws one grant. Delegates the cascade to the handle table --
    * (handle-contracts.md SSRevocation) -- rather than reimplementing it: every
@@ -250,11 +257,18 @@ class GrantLedger {
     return this.#origins.get(origin)?.grants.get(capability)
   }
 
-  /** Records a capability as granted, replacing any earlier grant of the same kind. */
-  grant (origin: string, capability: CapabilityKind, patterns: readonly Pattern[], grantedAt: number): Grant {
+  /**
+   * Records a capability as granted, replacing any earlier grant of the same
+   * kind. Returns the replaced record too -- the ledger is the only thing
+   * that ever held it, so a caller that needs to revoke it (createBroker's
+   * `grant`, below) has no other way to find it once this returns.
+   */
+  grant (origin: string, capability: CapabilityKind, patterns: readonly Pattern[], grantedAt: number): { record: Grant, replaced: Grant | undefined } {
     const record: Grant = { id: newGrantId(), origin, capability, patterns, grantedAt }
-    this.#record(origin).grants.set(capability, record)
-    return record
+    const originRecord = this.#record(origin)
+    const replaced = originRecord.grants.get(capability)
+    originRecord.grants.set(capability, record)
+    return { record, replaced }
   }
 
   /**
@@ -394,14 +408,19 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     ledger.registerApp(canonical(origin), appManifest)
   }
 
-  function grant (origin: string, capability: CapabilityKind, patterns: readonly Pattern[]): Grant {
+  async function grant (origin: string, capability: CapabilityKind, patterns: readonly Pattern[]): Promise<Grant> {
     const key = canonical(origin)
-    const record = ledger.grant(key, capability, patterns, deps.now())
+    const { record, replaced } = ledger.grant(key, capability, patterns, deps.now())
     // Clears a stale revoked-tombstone under THIS id. A freshly minted id
     // makes this a no-op today, but the handle table is correct either way,
     // and open-questions.md A21 says the ledger must call it regardless of
     // how GrantId reuse across a revoke-then-re-grant is eventually decided.
     handleTable.grantIssued(key, record.id)
+    // The ledger has already dropped `replaced` (GrantLedger.grant's Map.set
+    // above), so this is the only remaining place anything still knows its
+    // id. Revoking it here, before returning, is what stops a superseded
+    // grant staying live forever -- see the interface doc on `grant`.
+    if (replaced !== undefined) await handleTable.revoke(key, replaced.id)
     return record
   }
 
