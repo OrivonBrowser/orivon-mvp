@@ -324,6 +324,12 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
       try {
         decision = await checkConnect(current.patterns, opts.host, opts.port, deps.resolve)
         if (!decision.allowed) throw fail('denied', 'the connection was not authorised')
+        // Checked here too, not only after `dial` resolves below: without
+        // this, a grant revoked while resolve was still pending would still
+        // reach `deps.dial`, and correctness would depend entirely on the
+        // INJECTED dial implementation independently honouring an
+        // already-aborted signal rather than on the broker itself.
+        if (signal.aborted) throw fail('revoked', 'the grant authorising this connection was withdrawn')
         dialed = await deps.dial(decision.addresses, opts.port, signal)
       } catch (error) {
         throw mapIoError(error, 'net')
