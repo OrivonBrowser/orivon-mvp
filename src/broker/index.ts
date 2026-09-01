@@ -396,10 +396,32 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     return await runFsIo(key, grant, async () => await deps.fs.readFile(resolved))
   }
 
+  /**
+   * manifest.ts's FsCapability.quotaBytes: "ENFORCED, not advisory ... The
+   * broker maintains a running per-origin byte counter, checks it on write,
+   * and yields 'limit' when exceeded." Checked BEFORE the I/O runs, not
+   * after, so a write that would blow the quota never reaches
+   * `deps.fs.writeFile` at all. Undeclared quota (the common case today --
+   * nothing in the corpus sets one yet) means unlimited, matching
+   * `quotaBytes?: number` being optional.
+   *
+   * Session-lifetime only -- see GrantLedger's own note on why "reconciling
+   * against the directory on startup" is filed (A29) rather than done here.
+   */
+  function checkFsQuota (key: string, bytes: number): void {
+    const quotaBytes = ledger.manifestFor(key)?.capabilities.fs?.quotaBytes
+    if (quotaBytes === undefined) return
+    if (ledger.fsBytesWritten(key) + bytes > quotaBytes) {
+      throw fail('limit', "this write would exceed the app's declared storage quota")
+    }
+  }
+
   async function writeFile (origin: string, path: string, data: Uint8Array): Promise<void> {
     const key = canonical(origin)
     const { resolved, grant } = confineForOrigin(key, path)
+    checkFsQuota(key, data.length)
     await runFsIo(key, grant, async () => { await deps.fs.writeFile(resolved, data) })
+    ledger.addFsBytesWritten(key, data.length)
   }
 
   async function manifest (origin: string): Promise<Manifest> {

@@ -37,6 +37,20 @@ interface OriginRecord {
    * GrantId rather than reusing the old one (open-questions.md A21).
    */
   readonly grants: Map<CapabilityKind, Grant>
+  /**
+   * Bytes written so far against `manifest.capabilities.fs.quotaBytes`.
+   *
+   * IN-MEMORY ONLY, and that is a known, filed gap, not an oversight:
+   * manifest.ts's contract also promises "reconciling against the directory
+   * on startup", which needs a persisted counter and a way to size the
+   * confinement directory -- neither exists yet, and `createBroker`'s
+   * dependency shape is fixed by build-plan.md, so closing it needs a new
+   * `BrokerFs` member. Filed as A29 (cross-cutting.md) rather than built
+   * here. This counter still closes the unbounded-write hole for the
+   * lifetime of one running session, which is the part that does not need
+   * a new dependency to fix.
+   */
+  fsBytesWritten: number
 }
 
 /**
@@ -61,7 +75,7 @@ export class GrantLedger {
   #record (origin: string): OriginRecord {
     const existing = this.#origins.get(origin)
     if (existing !== undefined) return existing
-    const created: OriginRecord = { manifest: undefined, grants: new Map() }
+    const created: OriginRecord = { manifest: undefined, grants: new Map(), fsBytesWritten: 0 }
     this.#origins.set(origin, created)
     return created
   }
@@ -121,5 +135,15 @@ export class GrantLedger {
         return
       }
     }
+  }
+
+  /** Bytes already written against `origin`'s quota this session. Zero for an origin the ledger has no record of yet. */
+  fsBytesWritten (origin: string): number {
+    return this.#origins.get(origin)?.fsBytesWritten ?? 0
+  }
+
+  /** Adds `bytes` to the running counter `fsBytesWritten` reads. Called only after a write has actually succeeded. */
+  addFsBytesWritten (origin: string, bytes: number): void {
+    this.#record(origin).fsBytesWritten += bytes
   }
 }

@@ -422,6 +422,80 @@ describe('orivon.fs reads and writes, confined via policy/paths.ts (T1/T10)', ()
   })
 })
 
+describe('fs.writeFile enforces manifest.capabilities.fs.quotaBytes (MAJOR)', () => {
+  // contracts/manifest.ts: "ENFORCED, not advisory ... The broker maintains
+  // a running per-origin byte counter, checks it on write, and yields
+  // 'limit' when exceeded." Only the running-counter half is implemented
+  // here -- reconciling against the directory on startup needs a persisted
+  // counter that does not exist yet, filed as A29 (cross-cutting.md) rather
+  // than built into this PR.
+
+  it('allows a write that fits within the declared quota', async () => {
+    const files = new Map<string, Uint8Array>()
+    const broker = createBroker(baseDeps({ fs: stubFs({ files }) }))
+    broker.registerApp(APP, manifestWith({ fs: { quotaBytes: 1024 } }))
+    await broker.grant(APP, 'fs', [])
+
+    await broker.fs.writeFile(APP, 'a.bin', new Uint8Array(1000))
+
+    expect(files.get('/apps/app/a.bin')).toHaveLength(1000)
+  })
+
+  it('rejects a single write that would exceed the declared quota, without calling deps.fs.writeFile', async () => {
+    const writeFile = vi.fn(async () => {})
+    const fs: CreateBrokerOptions['fs'] = { ...stubFs(), writeFile }
+    const broker = createBroker(baseDeps({ fs }))
+    broker.registerApp(APP, manifestWith({ fs: { quotaBytes: 1024 } }))
+    await broker.grant(APP, 'fs', [])
+
+    const error = await rejection(broker.fs.writeFile(APP, 'big.bin', new Uint8Array(2000)))
+
+    expect(error.code).toBe('limit')
+    expect(writeFile).not.toHaveBeenCalled()
+  })
+
+  it('accumulates across writes and rejects once the running total would exceed the quota', async () => {
+    // Five 1MB writes against a 1KB quota, exactly pr-31.md's failing
+    // scenario: before this fix, all five were accepted.
+    const files = new Map<string, Uint8Array>()
+    const broker = createBroker(baseDeps({ fs: stubFs({ files }) }))
+    broker.registerApp(APP, manifestWith({ fs: { quotaBytes: 1024 } }))
+    await broker.grant(APP, 'fs', [])
+
+    for (let i = 0; i < 5; i += 1) {
+      const error = await rejection(broker.fs.writeFile(APP, `blob${String(i)}.bin`, new Uint8Array(1_000_000)))
+      expect(error.code).toBe('limit')
+    }
+
+    expect(files.size).toBe(0)
+  })
+
+  it('lets a second write land once it fits under what remains of the quota', async () => {
+    const files = new Map<string, Uint8Array>()
+    const broker = createBroker(baseDeps({ fs: stubFs({ files }) }))
+    broker.registerApp(APP, manifestWith({ fs: { quotaBytes: 1500 } }))
+    await broker.grant(APP, 'fs', [])
+
+    await broker.fs.writeFile(APP, 'a.bin', new Uint8Array(1000))
+    const error = await rejection(broker.fs.writeFile(APP, 'b.bin', new Uint8Array(1000)))
+
+    expect(error.code).toBe('limit')
+    expect(files.has('/apps/app/b.bin')).toBe(false)
+    expect(files.get('/apps/app/a.bin')).toHaveLength(1000)
+  })
+
+  it('writes freely when the manifest declares no quota at all', async () => {
+    const files = new Map<string, Uint8Array>()
+    const broker = createBroker(baseDeps({ fs: stubFs({ files }) }))
+    broker.registerApp(APP, manifestWith({ fs: {} }))
+    await broker.grant(APP, 'fs', [])
+
+    await broker.fs.writeFile(APP, 'huge.bin', new Uint8Array(10_000_000))
+
+    expect(files.get('/apps/app/huge.bin')).toHaveLength(10_000_000)
+  })
+})
+
 describe('fs reads and writes share the per-origin in-flight cap (CRITICAL, T11b)', () => {
   /** Both I/O methods stall forever -- for proving the shared budget and abort-signal cancellation, never their result. */
   function stallingFs (): CreateBrokerOptions['fs'] {
