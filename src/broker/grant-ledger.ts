@@ -15,13 +15,9 @@ import type { CapabilityKind, Grant, GrantId, Manifest, Pattern } from '../contr
  * lookup, not the id's secrecy).
  *
  * NOT DEDUPLICATED with that function, or with policy/bundle-hash.ts's
- * private `toLowercaseHex`. Both live in files this task may not touch --
- * policy/ is off limits by the task brief, and handle-store.ts is not one of
- * the two files it may create -- so reusing either would need an edit outside
- * this PR's scope. code-guidelines.md Rule 3's open point 3 already tracks
- * one such pair as a deliberate, left-for-a-follow-up duplicate; this is the
- * same shape of trade-off, not a new kind of one. Flagged in the PR body as
- * an AI recommendation, not a silent shortcut.
+ * private `toLowercaseHex` -- three copies of the same hex encoding. A known,
+ * deliberate Rule 3 violation, tracked in code-guidelines.md's open point 3
+ * along with the pair it belongs to, and not a silent shortcut.
  */
 function newGrantId (): GrantId {
   const bytes = new Uint8Array(16)

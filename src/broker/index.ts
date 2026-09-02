@@ -309,8 +309,8 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
 
     return await handleTable.run(key, { on: 'grant', grantId: current.id }, async (signal) => {
       // `checkConnect` calls `deps.resolve` internally and does not catch
-      // its rejection (policy/connect.ts is pure and out of this PR's
-      // scope), so a raw DNS failure reaches here unmapped. `deps.dial`
+      // its rejection (policy/connect.ts is pure, and mapping I/O errors is
+      // not its job), so a raw DNS failure reaches here unmapped. `deps.dial`
       // rejects raw too. Both need mapIoError; nothing else in this
       // callback throws anything but an OrivonError already, and mapIoError
       // passes those through unchanged.

@@ -397,8 +397,7 @@ describe('fs.writeFile enforces manifest.capabilities.fs.quotaBytes (MAJOR)', ()
   // a running per-origin byte counter, checks it on write, and yields
   // 'limit' when exceeded." Only the running-counter half is implemented
   // here -- reconciling against the directory on startup needs a persisted
-  // counter that does not exist yet, filed as A29 (cross-cutting.md) rather
-  // than built into this PR.
+  // counter that does not exist yet. Tracked as A29 (cross-cutting.md).
 
   it('allows a write that fits within the declared quota', async () => {
     const files = new Map<string, Uint8Array>()

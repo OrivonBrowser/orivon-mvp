@@ -12,8 +12,8 @@
 //
 // THE WRITE HALF (an app writing bytes out) IS NOT WIRED HERE -- see
 // port-pump.ts's header for why: there is no wire message for it anywhere
-// in contracts/ipc.ts, and inventing one would be a contracts decision made
-// from inside this PR. Filed as an open question instead.
+// in contracts/ipc.ts, and inventing one is a contracts decision rather than
+// a broker one. Tracked as open-questions.md A37.
 //
 // THE RULE THIS FILE EXISTS TO ENFORCE (src/preload/README.md, T3, T13b):
 // every call is attributed to the ORIGIN OF THE SENDING FRAME, derived via
