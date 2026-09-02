@@ -39,6 +39,14 @@ Mark anything that must not leave the team draft as `(Keep private)`.
   edge of the 500 limit. A fourth duplicate in the same file pair (`isOrivonError`, stricter by
   a `.name` check) is filed as A39 rather than merged blind -- which of the two is correct is a
   behavioural call, not a move.
+- 2026-09-02: **A38's rate limiter (#38) and T22's CSP `connect-src` derivation (#40) both
+  open**, alongside session partitioning (#39) -- build step 2's remaining broker-side pieces
+  are now all in review. The CSP work found a live injection risk before any code shipped
+  (`isAsciiHost` permits space and `;`, either of which breaks out of a `connect-src` directive
+  if a granted host is emitted verbatim) and, separately, T22's own doc text was still wrong
+  post-A18 ("manifest-declared hosts" instead of granted patterns) -- corrected in the same PR.
+  WebRTC blocking has no mechanism anywhere in the corpus and conflicts with the flagship's own
+  webtorrent use of it -- filed as A41 rather than guessed at.
 
 ### In my head
 
