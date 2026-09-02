@@ -358,6 +358,123 @@ describe("net.connect / net.close (the byte pump's control-channel wiring)", () 
   })
 })
 
+describe('a socket whose port never reaches its frame is released, not leaked', () => {
+  // handle-contracts.ts's destroy rule: released exactly once, ALWAYS,
+  // "including when the acquisition that would have registered the handle is
+  // itself refused... otherwise one fd leaks per attempt against a limit an
+  // attacker can hit in a loop". A frame that navigated or was disposed
+  // between the request and the port delivery is ordinary, not adversarial --
+  // and because the descriptor is never returned, the app never learns the id
+  // it would need to call net.close with.
+  function disposedFrame (origin: string): ControlEvent {
+    return {
+      senderFrame: {
+        url: `${origin}/index.html`,
+        origin,
+        postMessage: () => { throw new Error('Render frame was disposed before WebFrameMain could be accessed') }
+      }
+    }
+  }
+
+  it('closes the socket and unregisters it when postMessage throws', async () => {
+    const calls: BrokerCall[] = []
+    const { socket, closeSpy } = fakeTcpSocket()
+    const transport = fakeTransport(fakePortPair().pair)
+
+    const response = await handleControlRequest(
+      stubBroker(calls, { connect: async () => socket }),
+      disposedFrame(APP),
+      envelope('net.connect', { host: 'x.example', port: 443 }),
+      transport
+    )
+    await tick(10)
+
+    expect(response.ok).toBe(false)
+    expect((response as { code: string }).code).toBe('internal')
+    expect(closeSpy).toHaveBeenCalledOnce()
+    expect(transport.registry.get(APP, 'handle-1')).toBeUndefined()
+  })
+
+  it('closes the port it minted, so the pump cannot go on writing into a port nobody holds', async () => {
+    const calls: BrokerCall[] = []
+    const { socket } = fakeTcpSocket()
+    const { pair, port1 } = fakePortPair()
+    const closePort = vi.spyOn(port1, 'close')
+
+    await handleControlRequest(
+      stubBroker(calls, { connect: async () => socket }),
+      disposedFrame(APP), envelope('net.connect', { host: 'x.example', port: 443 }), fakeTransport(pair)
+    )
+    await tick(10)
+
+    expect(closePort).toHaveBeenCalled()
+  })
+
+  it('releases the socket if the frame changed origin between the request and the delivery (T17)', async () => {
+    const calls: BrokerCall[] = []
+    const { socket, closeSpy } = fakeTcpSocket()
+    const transport = fakeTransport(fakePortPair().pair)
+    // A frame whose origin moves while broker.net.connect is in flight --
+    // the port would otherwise be delivered to a page that never asked for
+    // it and holds no grant, as a bearer capability it cannot be asked for.
+    const frame = { url: `${APP}/index.html`, origin: APP, postMessage: vi.fn() }
+    const event: ControlEvent = { senderFrame: frame }
+
+    const response = await handleControlRequest(
+      stubBroker(calls, {
+        connect: async () => {
+          frame.url = `${OTHER}/index.html`
+          frame.origin = OTHER
+          return socket
+        }
+      }),
+      event, envelope('net.connect', { host: 'x.example', port: 443 }), transport
+    )
+    await tick(10)
+
+    expect(response.ok).toBe(false)
+    expect(frame.postMessage).not.toHaveBeenCalled()
+    expect(closeSpy).toHaveBeenCalledOnce()
+    expect(transport.registry.get(APP, 'handle-1')).toBeUndefined()
+  })
+})
+
+describe('the request envelope itself is untrusted (a compromised renderer reaches this channel directly)', () => {
+  it.each<[string, unknown]>([
+    ['null', null],
+    ['a string', 'pwned'],
+    ['a number', 7],
+    ['no method', { id: 'req-1', payload: undefined, timeoutMs: 1_000 }],
+    ['a non-string method', { id: 'req-1', method: 42, payload: undefined, timeoutMs: 1_000 }],
+    ['a non-string id', { id: 42, method: 'app.grants', payload: undefined, timeoutMs: 1_000 }],
+    ['no timeoutMs', { id: 'req-1', method: 'app.grants', payload: undefined }],
+    ['a NaN timeoutMs', { id: 'req-1', method: 'app.grants', payload: undefined, timeoutMs: Number.NaN }],
+    ['a zero timeoutMs', { id: 'req-1', method: 'app.grants', payload: undefined, timeoutMs: 0 }],
+    ['a negative timeoutMs', { id: 'req-1', method: 'app.grants', payload: undefined, timeoutMs: -1 }],
+    // Above setTimeout's ceiling Node clamps the delay to 1ms and warns, so
+    // this would otherwise be answered 'timeout' almost instantly.
+    ['a timeoutMs past setTimeout\'s ceiling', { id: 'req-1', method: 'app.grants', payload: undefined, timeoutMs: 2 ** 40 }]
+  ])('returns a ResponseEnvelope rather than throwing, for %s', async (_label, malformed) => {
+    const calls: BrokerCall[] = []
+    const response = await handleControlRequest(
+      stubBroker(calls), frameFor(APP), malformed as RequestEnvelope<unknown>
+    )
+
+    expect(response.ok).toBe(false)
+    expect((response as { code: string }).code).toBe('invalid')
+    expect(calls).toEqual([]) // never reached the broker
+  })
+
+  it('correlates the rejection with the id when the envelope carried a usable one', async () => {
+    const response = await handleControlRequest(
+      stubBroker([]), frameFor(APP),
+      { id: 'req-9', method: 'app.grants', payload: undefined, timeoutMs: Number.NaN } as RequestEnvelope<unknown>
+    )
+
+    expect(response.id).toBe('req-9')
+  })
+})
+
 describe('defensive payload validation (a compromised renderer can bypass contextBridge entirely)', () => {
   it.each<[string, unknown]>([
     ['fs.readFile', {}],

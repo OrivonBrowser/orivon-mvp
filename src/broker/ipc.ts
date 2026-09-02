@@ -58,7 +58,10 @@ import type { PortRegistry } from './port-registry.js'
 import { originFromSenderFrame } from './policy/origin.js'
 import type { SenderFrameLike } from './policy/origin.js'
 import { fail, isOrivonErrorLike } from './errors.js'
-import { isControlMethod, isFsReadFileParams, isFsWriteFileParams, isNetCloseParams, isNetConnectParams } from './ipc-validation.js'
+import {
+  envelopeId, isControlMethod, isFsReadFileParams, isFsWriteFileParams,
+  isNetCloseParams, isNetConnectParams, isRequestEnvelope
+} from './ipc-validation.js'
 import type { DataMessage, OrivonErrorCode, RequestEnvelope, ResponseEnvelope, StreamEndMessage } from '../contracts/index.js'
 import { LIMITS } from '../contracts/index.js'
 
@@ -187,7 +190,8 @@ async function dispatch (
           typeof raw === 'object' && raw !== null &&
           (raw as { kind?: unknown }).kind === 'credit' &&
           typeof (raw as { handleId?: unknown }).handleId === 'string' &&
-          typeof (raw as { bytesConsumed?: unknown }).bytesConsumed === 'number'
+          Number.isFinite((raw as { bytesConsumed?: unknown }).bytesConsumed) &&
+          (raw as { bytesConsumed: number }).bytesConsumed >= 0
         ) {
           pump.handleCredit(raw as { kind: 'credit', handleId: string, bytesConsumed: number })
         }
@@ -204,14 +208,55 @@ async function dispatch (
 
       transport.registry.register(origin, socket.id, { close: socket.close })
 
+      // If the port never reaches the frame, the app never learns this
+      // socket's id -- the descriptor below is not returned -- so it can
+      // never call net.close for it either. Releasing it here is the only
+      // remaining chance: handle-contracts.ts's destroy rule is that a
+      // resource is released exactly once, ALWAYS, "including when the
+      // acquisition that would have registered the handle is itself
+      // refused... otherwise one fd leaks per attempt against a limit an
+      // attacker can hit in a loop". A frame that navigated or was disposed
+      // between this request and this line is ordinary, not adversarial.
+      const abandon = async (reason: string): Promise<never> => {
+        pump.stop('internal')
+        cleanup()
+        try {
+          await socket.close()
+        } catch {
+          // The handle table is the owner of record and has already been
+          // told to release; a failure here leaves nothing further to do.
+        }
+        throw fail('internal', reason)
+      }
+
       if (event.senderFrame === null) {
         // Unreachable in practice: handleControlRequest already denied a
         // null senderFrame before dispatch() ever runs. Guarded anyway
         // rather than asserted, since a thrown 'internal' here is a far
         // better failure mode than a crash if that ordering ever changes.
-        throw fail('internal', 'no frame to deliver the port to')
+        return await abandon('no frame to deliver the port to')
       }
-      event.senderFrame.postMessage(PORT_CHANNEL, { handleId: socket.id }, [pair.port2])
+      // RE-DERIVE, never reuse the origin from the top of this request.
+      // dispatch() has awaited a DNS lookup and a dial since then, and
+      // `senderFrame` is a live getter, so the frame this port is about to be
+      // handed to is not necessarily the frame that was authorised. T17's
+      // whole point is that a MessagePort carries NO sender identity -- once
+      // delivered it is a bearer capability, and delivering one across an
+      // origin change would hand it to a page that never asked for it and
+      // holds no grant. policy/origin.ts's own rule is to re-derive on every
+      // call; this is the second point in this request where that applies.
+      //
+      // Electron documents senderFrame as null once a frame has navigated,
+      // which the guard above would also catch -- but that is an undocumented
+      // lifetime detail to lean on, and this check does not depend on it.
+      if (originFromSenderFrame(event.senderFrame) !== origin) {
+        return await abandon('the calling frame changed origin before its socket port could be delivered')
+      }
+      try {
+        event.senderFrame.postMessage(PORT_CHANNEL, { handleId: socket.id }, [pair.port2])
+      } catch {
+        return await abandon('the calling frame went away before its socket port could be delivered')
+      }
 
       const descriptor: SocketDescriptor = {
         id: socket.id,
@@ -304,6 +349,17 @@ export async function handleControlRequest (
   envelope: RequestEnvelope<unknown>,
   transport?: PortTransport
 ): Promise<ResponseEnvelope<unknown>> {
+  // The envelope itself is untrusted, not just its payload. Reading
+  // `envelope.id` off a null or non-object value throws a TypeError straight
+  // out of the ipcMain.handle listener, which reaches the renderer as a
+  // rejected invoke() carrying a raw V8 message instead of a ResponseEnvelope
+  // -- the one shape every caller on this channel is entitled to. The same
+  // defence-in-depth reason as dispatch()'s payload validation: a compromised
+  // renderer process reaches this channel directly, without contextBridge.
+  if (!isRequestEnvelope(envelope)) {
+    return { id: envelopeId(envelope), ok: false, code: 'invalid', message: 'malformed request envelope' }
+  }
+
   const origin = originFromSenderFrame(event.senderFrame)
   if (origin === null) {
     return { id: envelope.id, ok: false, code: 'denied', message: 'no authenticated origin for this frame' }
