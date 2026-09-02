@@ -62,7 +62,7 @@ arbitrary hosts) · identity seed and derived keys · other apps' data · attent
 | T19 | Silent update widens capability *patterns* without adding a capability *kind* | Re-consent triggers on a **subset check over granted patterns**, not a kind comparison. `["api.example.com:443"]` → `["*:*"]` must prompt. Plus a per-origin **version floor**, so a validly-signed older bundle cannot be replayed |
 | T20 | `orivon.net` bypasses a configured proxy, de-anonymising the user | Node `net`/`dgram` do not honour Chromium's proxy settings. **Fail closed:** if a proxy is configured, socket capabilities refuse to open and the prompt says why. Never silently direct-connect around a proxy. Same for DNS resolution |
 | T21 | Cached app code is served in a way that loses the pin | Serve cached assets at the app's own https origin via a session `protocol` interceptor and **fail closed** — a same-origin request whose path is not in the pinned asset set is denied, not fetched. Re-verify the cached tree hash **at every load**, not only at fetch |
-| T22 | App reaches arbitrary hosts via `fetch`/WebSocket/WebRTC, invisible to the broker | Broker-injected CSP on each app's session partition (`connect-src` limited to the bundle plus manifest-declared hosts), applied via `onHeadersReceived` so the app cannot relax it. Without this the manifest does not bound network reach and the trust indicator reports what it cannot see (`ADR-0006`) |
+| T22 | App reaches arbitrary hosts via `fetch`/WebSocket/WebRTC, invisible to the broker | Broker-injected CSP on each app's session partition (`connect-src` limited to the bundle plus the origin's *granted* patterns — see the correction below), applied via `onHeadersReceived` so the app cannot relax it. Bounds `fetch`/WebSocket only; WebRTC is unmitigated (`docs/open-questions.md` A41) and the name-vs-address gap is open (A42). Without this the grant does not bound network reach and the trust indicator reports what it cannot see (`ADR-0006`) |
 | T23 | `magnet:` handler abused | Validate the URI against a strict grammar before it reaches any other code, and drop argv entries that do not parse (protocol-handler argument injection is a known Electron class). Magnet navigation from web content requires a confirm dialog — otherwise any page can silently place the user's IP in a swarm of its choosing. Manifest protocol claims need their own prompt; declaration alone never wins the default |
 | T24 | A same-user local process reads the seed, grant ledger, or app cache | Named explicitly as an adversary. `safeStorage` protects against *another OS user* and offline disk access — **not** against code running as the same user, which can simply ask the OS to decrypt |
 | T25 | The address bar displays a misleading origin (IDN/punycode homograph, embedded userinfo, an overlong subdomain pushing the real host out of view) | Newly reachable at build step 1 (2026-08-26) — the shell is the first component to render an origin to the user, and `capability-api.md`'s grant-prompt-must-be-origin-first requirement (T18-adjacent) exists for exactly this reason, one layer later. Mitigation not yet implemented in the shell itself: the address bar must show the resolved host distinctly from path/query, punycode must render in a form that reveals homograph confusables rather than the decoded Unicode alone, and userinfo (`user:pass@host`) must never be allowed to visually stand in for the host. Not consequential yet — nothing hangs a trust decision on the address bar's display until build step 4's grant prompt exists — but recorded now, before that step, rather than found late: the grant prompt cannot be trusted to be origin-first if the address bar one layer below it already is not |
@@ -128,6 +128,15 @@ can resolve after the frame is detached or navigated).
 invariant is two distinct preload files, and it had never been written down. A single wrong
 `webPreferences.preload` path, or one shared preload branching on renderer-influenced state,
 would turn every website into a fully capable Orivon app.
+
+**T22 said "manifest-declared hosts."** That predates A18's resolution and is wider than what
+actually ships: `src/broker/policy/connect-src.ts` derives `connect-src` from the origin's
+*granted* `tcp.connect` patterns, never `manifest.capabilities.net.tcp.connect` directly — the
+same distinction `src/broker/index.ts`'s own `connect()` already draws (a manifest may *declare*
+`*:*` while the user grants a single host). Deriving CSP from the manifest instead would let the
+header permit network reach the user explicitly refused. Docs-borrow precedent: A31 (following
+A38's own resolution, which corrected this same file for a different threat row). Found and
+fixed while writing T22's implementation, 2026-09-02.
 
 ## Capabilities excluded from v0, on security grounds
 `subprocess` and `hid` are absent from the v0 API entirely — for signed apps too, not merely
