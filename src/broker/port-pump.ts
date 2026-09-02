@@ -54,6 +54,27 @@ export interface PortPumpOptions {
   readonly initialCredit: number
   /** Maps a raw read-stream error to a closed-enum code. Defaults to 'internal' -- a caller with real errno detail (./ipc.ts) supplies a sharper one. */
   readonly mapError?: (error: unknown) => OrivonErrorCode
+  /**
+   * Called once if the stream ends ABNORMALLY -- a peer reset, not a clean
+   * EOF and not stop(). The socket died underneath us, and nothing else in
+   * the pipeline notices: handle-contracts.md's own words are that without an
+   * entry point for this "a peer RST is reported as a clean successful
+   * close, which is the COMMON way a socket ends". ./ipc.ts uses it to fail
+   * the handle for real (FailableTcpSocket.fail), which both releases it --
+   * otherwise it stays counted against the origin's socket budget for the
+   * life of the process -- and rejects `closed` with the real reason,
+   * instead of the app seeing a clean successful close for a connection that
+   * was actually reset.
+   *
+   * The raw error is passed alongside the mapped code so a caller with
+   * platformCode-extraction logic of its own (ipc.ts already has one, for
+   * this exact error) does not need a second copy of it.
+   *
+   * NOT called on clean EOF: a peer FIN ends `readable` but leaves the
+   * socket writable, and closing it there would break half-close
+   * (contracts/handles.ts's close table).
+   */
+  readonly onStreamFailed?: (code: OrivonErrorCode, error: unknown) => void
 }
 
 export interface PortPump {
@@ -68,7 +89,7 @@ export interface PortPump {
 }
 
 export function createPortPump (options: PortPumpOptions): PortPump {
-  const { handleId, readable, send, initialCredit, mapError = () => 'internal' } = options
+  const { handleId, readable, send, initialCredit, mapError = () => 'internal', onStreamFailed } = options
   const reader = readable.getReader()
   let credit = initialCredit
   let running = false
@@ -99,7 +120,20 @@ export function createPortPump (options: PortPumpOptions): PortPump {
         credit -= value.byteLength
       }
     } catch (error) {
-      if (!stopped) sendEnd(mapError(error))
+      if (!stopped) {
+        // A terminal state, same as stop(): an errored ReadableStream
+        // rejects every FUTURE read() with this same error without
+        // re-invoking its underlying source (WHATWG Streams spec), so a
+        // stray handleCredit() arriving after this point would otherwise
+        // re-enter this catch block with the identical error and call
+        // onStreamFailed a second time -- and a second FailableTcpSocket.fail
+        // on an already-failed handle is exactly the kind of duplicate
+        // teardown call the sibling commit on cleanup() guards against.
+        stopped = true
+        const code = mapError(error)
+        sendEnd(code)
+        onStreamFailed?.(code, error)
+      }
     } finally {
       running = false
     }

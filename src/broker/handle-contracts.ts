@@ -5,7 +5,7 @@
 // Spec: docs/architecture/handle-contracts.md. See ./handles.ts's header for
 // why this directory holds state at all and what it may and may not import.
 
-import type { GrantId } from '../contracts/index.js'
+import type { GrantId, OrivonErrorCode, TcpSocket } from '../contracts/index.js'
 
 /**
  * What kind of resource a handle names.
@@ -187,4 +187,32 @@ export interface HandleTableOptions {
    * user revoked is still open.
    */
   readonly onFault?: (fault: HandleTableFault) => void
+}
+
+/**
+ * A `TcpSocket` widened with one broker-internal escape hatch: telling the
+ * handle table a resource died on its own, from underneath the app, rather
+ * than through `close()` or a revoke. NOT part of `contracts/` -- an app
+ * never sees this method; only `./ipc.ts`'s port pump calls it, the moment it
+ * detects the underlying OS socket has errored. `HandleTable.fail` already
+ * existed and was already fully tested (`./handles.ts`); nothing had ever
+ * wired a caller up to it.
+ *
+ * Lives here, not in `./index.ts`, for the same reason the rest of this file
+ * does (Rule 2) -- and because widening `./index.ts`'s own `connect()` return
+ * type, rather than `contracts/capability-api.ts`'s `TcpSocket`, is what
+ * keeps this out of the durable, cross-app surface in the first place.
+ */
+export interface FailableTcpSocket extends TcpSocket {
+  /**
+   * Rejects `closed` with `code` (and `platformCode` if given) instead of
+   * resolving it, and releases the handle the same way `close()` does. Never
+   * throws: a caller in a fire-and-forget context has nothing further to do
+   * with a failure here beyond logging it, which `handleTable.fail` itself
+   * does not do either -- a broken call site would otherwise become an
+   * unhandled rejection on exactly the kind of path a sibling commit closes
+   * this same risk on ("Stop a connection's cleanup from being able to crash
+   * the entire browser").
+   */
+  fail: (code: OrivonErrorCode, platformCode?: string) => void
 }

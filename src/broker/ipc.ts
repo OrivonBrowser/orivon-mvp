@@ -133,6 +133,11 @@ export interface ControlEvent {
   readonly senderFrame: PortDeliveryFrame | null
 }
 
+/** The raw errno off a Node error, if it has one -- shared by the mapper below and by `onStreamFailed`'s platformCode. */
+function errnoOf (error: unknown): string | undefined {
+  return error instanceof Error && 'code' in error ? String((error as NodeJS.ErrnoException).code) : undefined
+}
+
 /**
  * Maps a raw error off `socket.readable` to a closed-enum code. Deliberately
  * narrow (this is the ONE call site that needs it): a real Node stream
@@ -141,7 +146,7 @@ export interface ControlEvent {
  * are the only ones with a sharper code than 'internal' worth naming.
  */
 function mapSocketReadError (error: unknown): OrivonErrorCode {
-  const code = error instanceof Error && 'code' in error ? String((error as NodeJS.ErrnoException).code) : undefined
+  const code = errnoOf(error)
   if (code === 'ECONNRESET' || code === 'EPIPE') return 'reset'
   if (code === 'ETIMEDOUT') return 'timeout'
   return 'internal'
@@ -183,7 +188,16 @@ async function dispatch (
         readable: socket.readable,
         send: (message) => { pair.port1.postMessage(message) },
         initialCredit: LIMITS.readWindowBytes,
-        mapError: mapSocketReadError
+        mapError: mapSocketReadError,
+        // A socket that dies underneath us releases nothing on its own:
+        // `socket.closed` never settles, so the handler below never runs and
+        // the handle stays counted against LIMITS.concurrentSockets forever.
+        // A peer reset is ordinary traffic, so 512 of them permanently
+        // exhaust an origin's socket budget with no way back but a restart.
+        // FailableTcpSocket.fail also rejects `closed` with the real reason
+        // -- conformance item 12 (handle-contracts.md): a peer reset must
+        // reject, not resolve as a clean successful close.
+        onStreamFailed: (code, error) => { socket.fail(code, errnoOf(error)) }
       })
       pair.port1.onMessage((raw) => {
         if (
