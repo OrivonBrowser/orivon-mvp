@@ -12,7 +12,6 @@
 // destroy became reason-aware in the same commit -- that IS new behaviour,
 // covered by this file's own tests, not carried over silently.
 
-import { createHash } from 'node:crypto'
 import { lookup } from 'node:dns/promises'
 import { mkdirSync, realpathSync } from 'node:fs'
 import { mkdir, readFile as fsReadFile, writeFile as fsWriteFile } from 'node:fs/promises'
@@ -22,14 +21,18 @@ import { dirname, join } from 'node:path'
 import { Duplex } from 'node:stream'
 import type { CloseReason } from './handle-contracts.js'
 import type { BrokerFs, Dial, DialedSocket } from './index.js'
+import { originHash } from './origin-hash.js'
 import type { Resolver } from './policy/connect.js'
 import { fail, isOrivonErrorLike } from './errors.js'
 
 /**
- * `BrokerFs` over the real filesystem. `rootFor` is `sha256(origin)` under
- * `<userData>/apps/`, per ADR-0003 and security-model.md T13b -- directory
- * names must never be the literal origin string, or `https://Example.com`
- * and `https://example.com` collide on a case-insensitive filesystem.
+ * `BrokerFs` over the real filesystem. `rootFor` is `./origin-hash.js`'s
+ * `originHash(origin)` under `<userData>/apps/`, per ADR-0003 and
+ * security-model.md T13b -- directory names must never be the literal
+ * origin string, or `https://Example.com` and `https://example.com`
+ * collide on a case-insensitive filesystem. `./origin-hash.js`'s own header
+ * explains why this construction is shared with `partitionFor` rather than
+ * inlined here.
  *
  * Takes `userDataPath` as a plain string rather than reaching for Electron's
  * `app` itself, so this adapter -- like `dialTcp`/`resolveHost`, which need
@@ -56,7 +59,7 @@ export function nodeFs (userDataPath: string): BrokerFs {
     // about, not a new class of it. Whoever makes realpath async should take
     // this with it.
     rootFor: (origin) => {
-      const root = join(userDataPath, 'apps', createHash('sha256').update(origin, 'utf8').digest('hex'), 'files')
+      const root = join(userDataPath, 'apps', originHash(origin), 'files')
       mkdirSync(root, { recursive: true })
       return root
     },
