@@ -113,13 +113,13 @@ export function portMatches (spec: string, port: number): boolean {
  * not hypothetical: docs/open-questions.md A27 is exactly `update.ts` and
  * this file once disagreeing about what a leading `*.` means.
  *
- * `'never'` covers two different reasons a spec authorises nothing --
- * a non-canonical address literal (`2130706433`, `0177.0.0.1`) and a
- * sub-glob (`*.example.com`) -- collapsed into one answer because both are
+ * `'authorises-nothing'` covers two different reasons -- a non-canonical
+ * address literal (`2130706433`, `0177.0.0.1`) and a sub-glob
+ * (`*.example.com`) -- collapsed into one answer because both are
  * unconditional: unlike `'hostname'`, whether they match depends on nothing
  * else you could pass in.
  */
-export type HostSpecKind = 'any-public-unicast' | 'address-literal' | 'hostname' | 'never'
+export type HostSpecKind = 'any-public-unicast' | 'address-literal' | 'hostname' | 'authorises-nothing'
 
 export function hostSpecKind (spec: string): HostSpecKind {
   // `*` means PUBLIC UNICAST ONLY -- specified, not inferred, because the
@@ -138,14 +138,14 @@ export function hostSpecKind (spec: string): HostSpecKind {
     // than rejecting (docs/open-questions.md A20), so this compares the
     // result to the input, not just checking it parsed -- exactly what the
     // deleted `isCanonicalLiteral(host)` used to mean.
-    return canonicalAddress(host) === host ? 'address-literal' : 'never'
+    return canonicalAddress(host) === host ? 'address-literal' : 'authorises-nothing'
   }
 
   // No sub-glob support: `*.example.com` matches nothing rather than being
   // approximated. A wildcard that silently spans a registry boundary
   // (`*.co.uk`) grants far more than its author read it as, and an app author
   // finds a denial in seconds while a user never finds an over-grant at all.
-  if (host.includes('*')) return 'never'
+  if (host.includes('*')) return 'authorises-nothing'
 
   return 'hostname'
 }
@@ -164,7 +164,7 @@ export function hostMatches (spec: string, requested: string, address: string): 
   switch (hostSpecKind(spec)) {
     case 'any-public-unicast':
       return isPublicUnicast(address)
-    case 'never':
+    case 'authorises-nothing':
       return false
     case 'address-literal':
       // An address literal in the manifest is an EXPLICIT declaration of that
