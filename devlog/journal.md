@@ -39,6 +39,23 @@ Mark anything that must not leave the team draft as `(Keep private)`.
   edge of the 500 limit. A fourth duplicate in the same file pair (`isOrivonError`, stricter by
   a `.name` check) is filed as A39 rather than merged blind -- which of the two is correct is a
   behavioural call, not a move.
+- 2026-09-02: **A38's rate limiter (#38) and T22's CSP `connect-src` derivation (#40) both
+  open**, alongside session partitioning (#39) -- build step 2's remaining broker-side pieces
+  are now all in review. The CSP work found a live injection risk before any code shipped
+  (`isAsciiHost` permits space and `;`, either of which breaks out of a `connect-src` directive
+  if a granted host is emitted verbatim) and, separately, T22's own doc text was still wrong
+  post-A18 ("manifest-declared hosts" instead of granted patterns) -- corrected in the same PR.
+  WebRTC blocking has no mechanism anywhere in the corpus and conflicts with the flagship's own
+  webtorrent use of it -- filed as A41 rather than guessed at.
+- 2026-09-02: **Review pass on #40 found a second real defect before merge**: every IPv6 pattern
+  the CSP derivation emitted was invalid CSP and silently dropped by Chromium (confirmed against
+  the actual Electron/Chrome build), while the file's own `omitted` list stayed empty for it --
+  claiming coverage that did not exist. Two tests had locked the wrong behaviour in as passing.
+  Also found the emitted header was non-monotonic (a later small pattern could sneak in after an
+  earlier large one was rejected) and that a `*` grant -- which the flagship genuinely holds --
+  gets no CSP coverage at all once wired in; the owner decided to keep that lock shut rather than
+  widen it (A43). Rewrote the reason union so every omission is diagnosable, fixed the budget walk
+  to be order-independent, and added a completeness property test. 2083/2083 passing.
 
 ### In my head
 

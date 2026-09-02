@@ -61,6 +61,34 @@ export function parsePattern (pattern: Pattern): ParsedPattern | null {
   return { host, port }
 }
 
+/** `'any'` (from `*`), or an inclusive `{lo, hi}` range (`lo === hi` for a single port). */
+export type PortSpec = 'any' | { readonly lo: number, readonly hi: number }
+
+/**
+ * Parses a port spec into its bounds, or `null` for anything unreadable --
+ * extracted so ../policy/connect-src.ts's CSP derivation can enumerate a
+ * range's actual ports instead of re-deriving this grammar a third time
+ * (`portMatches` below was already the second, private copy).
+ */
+export function parsePortSpec (spec: string): PortSpec | null {
+  if (spec === '*') return 'any'
+
+  // Leading zeros rejected: `0443` reads as octal in some parsers and decimal
+  // in others, and a pattern whose meaning depends on the reader is not a
+  // pattern. Port 0 is rejected by the `[1-9]` lead -- it means "any free
+  // port" to bind() and nothing at all to connect().
+  const parsed = /^([1-9][0-9]{0,4})(?:-([1-9][0-9]{0,4}))?$/.exec(spec)
+  if (parsed === null) return null
+
+  const loText = parsed[1]
+  if (loText === undefined) return null
+  const lo = Number.parseInt(loText, 10)
+  const hi = parsed[2] === undefined ? lo : Number.parseInt(parsed[2], 10)
+
+  if (lo > MAX_PORT || hi > MAX_PORT || lo > hi) return null
+  return { lo, hi }
+}
+
 /**
  * `*`, a single port, or an inclusive `lo-hi` range.
  *
@@ -71,22 +99,55 @@ export function parsePattern (pattern: Pattern): ParsedPattern | null {
  * that happen to mention the same number.
  */
 export function portMatches (spec: string, port: number): boolean {
-  if (spec === '*') return true
+  const parsedSpec = parsePortSpec(spec)
+  if (parsedSpec === null) return false
+  if (parsedSpec === 'any') return true
+  return port >= parsedSpec.lo && port <= parsedSpec.hi
+}
 
-  // Leading zeros rejected: `0443` reads as octal in some parsers and decimal
-  // in others, and a pattern whose meaning depends on the reader is not a
-  // pattern. Port 0 is rejected by the `[1-9]` lead -- it means "any free
-  // port" to bind() and nothing at all to connect().
-  const parsed = /^([1-9][0-9]{0,4})(?:-([1-9][0-9]{0,4}))?$/.exec(spec)
-  if (parsed === null) return false
+/**
+ * Which of the four shapes a pattern's host part is -- extracted so a second
+ * consumer (../policy/connect-src.ts's CSP `connect-src` derivation) can
+ * classify a host spec the SAME way `hostMatches` decides it, instead of
+ * writing a second classifier that can drift from this one. That drift is
+ * not hypothetical: docs/open-questions.md A27 is exactly `update.ts` and
+ * this file once disagreeing about what a leading `*.` means.
+ *
+ * `'authorises-nothing'` covers two different reasons -- a non-canonical
+ * address literal (`2130706433`, `0177.0.0.1`) and a sub-glob
+ * (`*.example.com`) -- collapsed into one answer because both are
+ * unconditional: unlike `'hostname'`, whether they match depends on nothing
+ * else you could pass in.
+ */
+export type HostSpecKind = 'any-public-unicast' | 'address-literal' | 'hostname' | 'authorises-nothing'
 
-  const loText = parsed[1]
-  if (loText === undefined) return false
-  const lo = Number.parseInt(loText, 10)
-  const hi = parsed[2] === undefined ? lo : Number.parseInt(parsed[2], 10)
+export function hostSpecKind (spec: string): HostSpecKind {
+  // `*` means PUBLIC UNICAST ONLY -- specified, not inferred, because the
+  // flagship genuinely declares `*:*` and an app holding it must still not
+  // reach the user's router, NAS or 169.254.169.254 (security-model.md T12,
+  // capability-api.md).
+  if (spec === '*') return 'any-public-unicast'
 
-  if (lo > MAX_PORT || hi > MAX_PORT || lo > hi) return false
-  return port >= lo && port <= hi
+  const host = normalizeHost(spec)
+
+  if (classifyAddress(host) !== 'unparseable') {
+    // It must be written CANONICALLY. `2130706433:22` is 127.0.0.1:22 spelled
+    // as an opaque number, and the "the user was shown it and granted it"
+    // justification an address literal otherwise earns is worth exactly as
+    // much as the rendering is legible. canonicalAddress NORMALISES rather
+    // than rejecting (docs/open-questions.md A20), so this compares the
+    // result to the input, not just checking it parsed -- exactly what the
+    // deleted `isCanonicalLiteral(host)` used to mean.
+    return canonicalAddress(host) === host ? 'address-literal' : 'authorises-nothing'
+  }
+
+  // No sub-glob support: `*.example.com` matches nothing rather than being
+  // approximated. A wildcard that silently spans a registry boundary
+  // (`*.co.uk`) grants far more than its author read it as, and an app author
+  // finds a denial in seconds while a user never finds an over-grant at all.
+  if (host.includes('*')) return 'authorises-nothing'
+
+  return 'hostname'
 }
 
 /**
@@ -98,53 +159,36 @@ export function portMatches (spec: string, port: number): boolean {
  * narrow what `address` already permitted.
  */
 export function hostMatches (spec: string, requested: string, address: string): boolean {
-  // `*` means PUBLIC UNICAST ONLY -- specified, not inferred, because the
-  // flagship genuinely declares `*:*` and an app holding it must still not
-  // reach the user's router, NAS or 169.254.169.254 (security-model.md T12,
-  // capability-api.md).
-  if (spec === '*') return isPublicUnicast(address)
-
   const host = normalizeHost(spec)
 
-  if (classifyAddress(host) !== 'unparseable') {
-    // An address literal in the manifest is an EXPLICIT declaration of that
-    // address, and it is the only way a private range becomes reachable: the
-    // user was shown it and granted it. Compared against the resolved address,
-    // so `nas.internal` -> 192.168.1.50 is allowed under a `192.168.1.50:5000`
-    // declaration while `evil.example` -> 127.0.0.1 is not.
-    //
-    // It must be written CANONICALLY. `2130706433:22` is 127.0.0.1:22 spelled
-    // as an opaque number, and the "the user was shown it and granted it"
-    // justification above is worth exactly as much as the rendering is
-    // legible. Rejecting here, rather than falling through to the hostname
-    // branch, is load-bearing. canonicalAddress NORMALISES rather than
-    // rejecting (docs/open-questions.md A20), so this compares the result to
-    // the input, not just checking it parsed -- exactly what the deleted
-    // `isCanonicalLiteral(host)` used to mean.
-    if (canonicalAddress(host) !== host) return false
-
-    // Compared as STRINGS, both sides already canonical (the check above, and
-    // ./connect.ts's own canonicalAddress(...) === address invariant on every
-    // resolved answer), so there is only one spelling of each to compare --
-    // never two different notions of "what an address is" that could point
-    // the check and the connect at different hosts. A mismatch DENIES, so the
-    // failure direction is safe.
-    return host === address
+  switch (hostSpecKind(spec)) {
+    case 'any-public-unicast':
+      return isPublicUnicast(address)
+    case 'authorises-nothing':
+      return false
+    case 'address-literal':
+      // An address literal in the manifest is an EXPLICIT declaration of that
+      // address, and it is the only way a private range becomes reachable:
+      // the user was shown it and granted it. Compared against the resolved
+      // address, so `nas.internal` -> 192.168.1.50 is allowed under a
+      // `192.168.1.50:5000` declaration while `evil.example` -> 127.0.0.1 is
+      // not.
+      //
+      // Compared as STRINGS, both sides already canonical (hostSpecKind's own
+      // check, and ./connect.ts's own canonicalAddress(...) === address
+      // invariant on every resolved answer), so there is only one spelling of
+      // each to compare -- never two different notions of "what an address
+      // is" that could point the check and the connect at different hosts. A
+      // mismatch DENIES, so the failure direction is safe.
+      return host === address
+    case 'hostname':
+      // A hostname NEVER authorises a private address, even its own. That is
+      // not an oversight: "the name resolved there" is the whole of the
+      // rebinding attack, so a name cannot be the evidence that the range was
+      // intended. Reaching a LAN host requires declaring its address
+      // literally, above.
+      return host === requested && isPublicUnicast(address)
   }
-
-  // Anything left is a hostname declaration.
-
-  // No sub-glob support: `*.example.com` matches nothing rather than being
-  // approximated. A wildcard that silently spans a registry boundary
-  // (`*.co.uk`) grants far more than its author read it as, and an app author
-  // finds a denial in seconds while a user never finds an over-grant at all.
-  if (host.includes('*')) return false
-
-  // A hostname NEVER authorises a private address, even its own. That is not
-  // an oversight: "the name resolved there" is the whole of the rebinding
-  // attack, so a name cannot be the evidence that the range was intended.
-  // Reaching a LAN host requires declaring its address literally, above.
-  return host === requested && isPublicUnicast(address)
 }
 
 /**
