@@ -1,10 +1,7 @@
-import { createHash } from 'node:crypto'
-import { mkdtemp, readFile as fsReadFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
-import { handleControlRequest, nodeFs, registerBrokerIpc } from './ipc.js'
-import type { ControlEvent, IpcMainLike } from './ipc.js'
+import { describe, expect, it, vi } from 'vitest'
+import { createPortRegistry } from './port-registry.js'
+import { handleControlRequest, registerBrokerIpc } from './ipc.js'
+import type { ControlEvent, IpcMainLike, PortLike, PortPair, PortTransport } from './ipc.js'
 import type { Broker } from './index.js'
 import type { Grant, Manifest, OrivonError, TcpSocket } from '../contracts/index.js'
 import type { RequestEnvelope, ResponseEnvelope } from '../contracts/ipc.js'
@@ -17,18 +14,13 @@ import type { RequestEnvelope, ResponseEnvelope } from '../contracts/ipc.js'
 // body): the origin check skipped in favour of trusting payload.origin, the
 // timeout wrapper removed, and a denial forwarding its platformCode. Each
 // was watched to fail before being fixed back.
-//
-// net.connect is intentionally NOT wired here even though stubBroker below
-// implements it (Broker's own interface requires it) -- see ipc.ts's file
-// header for why: no close() reaches the app yet, so returning any
-// descriptor would leak a handle-table slot per call.
 
 const APP = 'https://app.example'
 const OTHER = 'https://other.example'
 
 /** A ControlEvent whose senderFrame resolves to `origin` via originFromSenderFrame. */
 function frameFor (origin: string): ControlEvent {
-  return { senderFrame: { url: `${origin}/index.html`, origin } }
+  return { senderFrame: { url: `${origin}/index.html`, origin, postMessage: vi.fn() } }
 }
 
 const NO_FRAME: ControlEvent = { senderFrame: null }
@@ -105,7 +97,7 @@ describe('origin derivation (DoD rule 1 -- never the payload)', () => {
 
   it('denies when the frame is opaque (url and claimed origin disagree)', async () => {
     const calls: BrokerCall[] = []
-    const event: ControlEvent = { senderFrame: { url: `${APP}/sandboxed`, origin: 'null' } }
+    const event: ControlEvent = { senderFrame: { url: `${APP}/sandboxed`, origin: 'null', postMessage: vi.fn() } }
     const response = await handleControlRequest(stubBroker(calls), event, envelope('app.manifest', undefined))
     expect(response.ok).toBe(false)
     expect(calls).toEqual([])
@@ -172,12 +164,211 @@ describe('the four wired control operations', () => {
   })
 })
 
+/** A controllable in-memory PortLike -- captures every postMessage, and lets a test simulate the renderer sending a message back. */
+function fakePort (): PortLike & { readonly sent: unknown[], emit: (message: unknown) => void } {
+  let listener: ((message: unknown) => void) | undefined
+  const sent: unknown[] = []
+  return {
+    postMessage: (message) => { sent.push(message) },
+    onMessage: (l) => { listener = l },
+    close: () => {},
+    sent,
+    emit: (message) => { listener?.(message) }
+  }
+}
+
+function fakePortPair (): { readonly pair: PortPair, readonly port1: ReturnType<typeof fakePort> } {
+  const port1 = fakePort()
+  return { pair: { port1, port2: 'fake-port2' }, port1 }
+}
+
+/** A PortTransport whose createPortPair always returns the SAME pair -- fine for these tests, which each make at most one net.connect call. */
+function fakeTransport (pair: PortPair): PortTransport {
+  return { createPortPair: () => pair, registry: createPortRegistry() }
+}
+
+interface FakeSocket {
+  readonly socket: TcpSocket
+  readonly closeSpy: ReturnType<typeof vi.fn>
+  readonly settleClosed: (error?: OrivonError) => void
+}
+
+/** A TcpSocket whose `readable` a test controls directly and whose `closed` a test settles on demand -- close() itself settles it as a real TcpSocket.close() would. */
+function fakeTcpSocket (readable: ReadableStream<Uint8Array> = new ReadableStream({ start: (c) => { c.close() } })): FakeSocket {
+  let settle: (error?: OrivonError) => void = () => {}
+  const closed = new Promise<void>((resolve, reject) => {
+    settle = (error) => { if (error === undefined) resolve(); else reject(error) }
+  })
+  const closeSpy = vi.fn(async () => { settle() })
+  const socket: TcpSocket = {
+    id: 'handle-1',
+    closed,
+    close: closeSpy,
+    readable,
+    writable: new WritableStream(),
+    remoteAddress: '93.184.216.34',
+    remotePort: 443,
+    localAddress: '10.0.0.5',
+    localPort: 54321,
+    setNoDelay: async () => {},
+    setKeepAlive: async () => {}
+  }
+  return { socket, closeSpy, settleClosed: settle }
+}
+
+/** Lets a fire-and-forget pump/wiring chain progress before assertions run. */
+async function tick (times = 5): Promise<void> {
+  for (let i = 0; i < times; i++) await Promise.resolve()
+}
+
+describe("net.connect / net.close (the byte pump's control-channel wiring)", () => {
+  it('returns a plain descriptor -- never the socket, its streams, or its close function', async () => {
+    const calls: BrokerCall[] = []
+    const { socket } = fakeTcpSocket()
+    const broker = stubBroker(calls, { connect: async () => socket })
+    const { pair } = fakePortPair()
+
+    const response = await handleControlRequest(
+      broker, frameFor(APP), envelope('net.connect', { host: 'x.example', port: 443 }), fakeTransport(pair)
+    )
+
+    expect(response).toEqual({
+      id: 'req-1',
+      ok: true,
+      result: { id: 'handle-1', remoteAddress: '93.184.216.34', remotePort: 443, localAddress: '10.0.0.5', localPort: 54321 }
+    })
+    expect(calls).toEqual([{ method: 'net.connect', origin: APP, args: { host: 'x.example', port: 443 } }])
+  })
+
+  it('delivers a port to the CALLING FRAME, tagged with the handle id, over the delivery channel', async () => {
+    const calls: BrokerCall[] = []
+    const { socket } = fakeTcpSocket()
+    const broker = stubBroker(calls, { connect: async () => socket })
+    const { pair } = fakePortPair()
+    const frame = frameFor(APP)
+
+    await handleControlRequest(broker, frame, envelope('net.connect', { host: 'x.example', port: 443 }), fakeTransport(pair))
+
+    expect(frame.senderFrame?.postMessage).toHaveBeenCalledWith(
+      expect.any(String), { handleId: 'handle-1' }, [pair.port2]
+    )
+  })
+
+  it("relays the socket's bytes to the delivered port as DataMessages, then a clean end", async () => {
+    const calls: BrokerCall[] = []
+    const chunk = new Uint8Array([1, 2, 3])
+    const readable = new ReadableStream<Uint8Array>({
+      start (controller) { controller.enqueue(chunk); controller.close() }
+    })
+    const { socket } = fakeTcpSocket(readable)
+    const broker = stubBroker(calls, { connect: async () => socket })
+    const { pair, port1 } = fakePortPair()
+
+    await handleControlRequest(broker, frameFor(APP), envelope('net.connect', { host: 'x.example', port: 443 }), fakeTransport(pair))
+    await tick(10)
+
+    expect(port1.sent).toEqual([
+      { kind: 'data', handleId: 'handle-1', chunk },
+      { kind: 'end', handleId: 'handle-1' }
+    ])
+  })
+
+  it("a credit message arriving on the port does not throw, and is threaded to the pump", async () => {
+    const calls: BrokerCall[] = []
+    const { socket } = fakeTcpSocket()
+    const broker = stubBroker(calls, { connect: async () => socket })
+    const { pair, port1 } = fakePortPair()
+
+    await handleControlRequest(broker, frameFor(APP), envelope('net.connect', { host: 'x.example', port: 443 }), fakeTransport(pair))
+    await tick()
+
+    expect(() => { port1.emit({ kind: 'credit', handleId: 'handle-1', bytesConsumed: 100 }) }).not.toThrow()
+  })
+
+  it("closing the socket (a revoke, or the app's own close) sends a terminal end message tagged with the reason", async () => {
+    const calls: BrokerCall[] = []
+    const { socket, settleClosed } = fakeTcpSocket(new ReadableStream())
+    const broker = stubBroker(calls, { connect: async () => socket })
+    const { pair, port1 } = fakePortPair()
+    const revoked = Object.assign(new Error('the grant authorising this connection was withdrawn'), {
+      name: 'OrivonError',
+      code: 'revoked'
+    }) as OrivonError
+
+    await handleControlRequest(broker, frameFor(APP), envelope('net.connect', { host: 'x.example', port: 443 }), fakeTransport(pair))
+    settleClosed(revoked)
+    await tick()
+
+    expect(port1.sent).toEqual([{ kind: 'end', handleId: 'handle-1', code: 'revoked' }])
+  })
+
+  it('a clean app-initiated close (socket.closed resolves) sends a terminal end message with no code', async () => {
+    const calls: BrokerCall[] = []
+    const { socket, settleClosed } = fakeTcpSocket(new ReadableStream())
+    const broker = stubBroker(calls, { connect: async () => socket })
+    const { pair, port1 } = fakePortPair()
+
+    await handleControlRequest(broker, frameFor(APP), envelope('net.connect', { host: 'x.example', port: 443 }), fakeTransport(pair))
+    settleClosed()
+    await tick()
+
+    expect(port1.sent).toEqual([{ kind: 'end', handleId: 'handle-1' }])
+  })
+
+  it('net.close closes the registered socket for the origin that opened it', async () => {
+    const calls: BrokerCall[] = []
+    const { socket, closeSpy } = fakeTcpSocket()
+    const broker = stubBroker(calls, { connect: async () => socket })
+    const transport = fakeTransport(fakePortPair().pair)
+
+    const connectResponse = await handleControlRequest(
+      broker, frameFor(APP), envelope('net.connect', { host: 'x.example', port: 443 }), transport
+    )
+    const id = connectResponse.ok ? (connectResponse.result as { id: string }).id : ''
+
+    await handleControlRequest(broker, frameFor(APP), envelope('net.close', { id }), transport)
+
+    expect(closeSpy).toHaveBeenCalledOnce()
+  })
+
+  it('net.close for an id belonging to a DIFFERENT origin is a silent no-op (T11c: no cross-origin reach)', async () => {
+    const calls: BrokerCall[] = []
+    const { socket, closeSpy } = fakeTcpSocket()
+    const broker = stubBroker(calls, { connect: async () => socket })
+    const transport = fakeTransport(fakePortPair().pair)
+
+    const connectResponse = await handleControlRequest(
+      broker, frameFor(APP), envelope('net.connect', { host: 'x.example', port: 443 }), transport
+    )
+    const id = connectResponse.ok ? (connectResponse.result as { id: string }).id : ''
+
+    const response = await handleControlRequest(broker, frameFor(OTHER), envelope('net.close', { id }), transport)
+
+    expect(response).toEqual({ id: 'req-1', ok: true, result: undefined })
+    expect(closeSpy).not.toHaveBeenCalled()
+  })
+
+  it('net.close for an id nothing ever registered is a silent no-op', async () => {
+    const calls: BrokerCall[] = []
+    const response = await handleControlRequest(
+      stubBroker(calls), frameFor(APP), envelope('net.close', { id: 'never-registered' }), fakeTransport(fakePortPair().pair)
+    )
+
+    expect(response).toEqual({ id: 'req-1', ok: true, result: undefined })
+  })
+})
+
 describe('defensive payload validation (a compromised renderer can bypass contextBridge entirely)', () => {
   it.each<[string, unknown]>([
     ['fs.readFile', {}],
     ['fs.readFile', { path: 42 }],
     ['fs.writeFile', { path: '/a' }],
-    ['fs.writeFile', { path: '/a', data: 'not bytes' }]
+    ['fs.writeFile', { path: '/a', data: 'not bytes' }],
+    ['net.connect', {}],
+    ['net.connect', { host: 'x.example' }],
+    ['net.connect', { host: 123, port: 443 }],
+    ['net.close', {}],
+    ['net.close', { id: 42 }]
   ])('%s rejects a malformed payload as invalid, without calling the broker', async (method, payload) => {
     const calls: BrokerCall[] = []
     const response = await handleControlRequest(stubBroker(calls), frameFor(APP), envelope(method, payload))
@@ -275,7 +466,7 @@ describe('registerBrokerIpc', () => {
     const registered = new Map<string, (event: ControlEvent, envelope: RequestEnvelope<unknown>) => Promise<ResponseEnvelope<unknown>>>()
     const fakeIpcMain: IpcMainLike = { handle: (channel, listener) => { registered.set(channel, listener) } }
 
-    registerBrokerIpc(fakeIpcMain, broker)
+    registerBrokerIpc(fakeIpcMain, broker, fakeTransport(fakePortPair().pair))
 
     expect([...registered.keys()]).toEqual(['orivon:control'])
     const listener = registered.get('orivon:control')
@@ -285,38 +476,7 @@ describe('registerBrokerIpc', () => {
   })
 })
 
-describe('nodeFs (the real filesystem adapter)', () => {
-  async function tempRoot (): Promise<string> {
-    return await mkdtemp(join(tmpdir(), 'orivon-ipc-test-'))
-  }
-
-  it('rootFor is sha256(origin), never the origin string (T13b)', async () => {
-    const userData = await tempRoot()
-    const fs = nodeFs(userData)
-
-    const expectedHash = createHash('sha256').update(OTHER, 'utf8').digest('hex')
-    expect(fs.rootFor(OTHER)).toBe(join(userData, 'apps', expectedHash, 'files'))
-    expect(fs.rootFor(OTHER)).not.toContain(OTHER)
-  })
-
-  it('writeFile then readFile round-trips, creating parent directories', async () => {
-    const userData = await tempRoot()
-    const fs = nodeFs(userData)
-    const path = join(fs.rootFor(APP), 'nested', 'dir', 'file.bin')
-    const data = new Uint8Array([1, 2, 3, 4])
-
-    await fs.writeFile(path, data)
-    const readBack = await fs.readFile(path)
-
-    expect(readBack).toEqual(data)
-    // Confirms writeFile actually touched disk, not just this adapter's view of it.
-    expect(await fsReadFile(path)).toEqual(Buffer.from(data))
-  })
-
-  it('readFile of a missing file rejects with notFound, not a raw ENOENT', async () => {
-    const userData = await tempRoot()
-    const fs = nodeFs(userData)
-
-    await expect(fs.readFile(join(fs.rootFor(APP), 'missing.txt'))).rejects.toMatchObject({ code: 'notFound' })
-  })
-})
+// nodeFs/resolveHost/dialTcp moved to ./node-adapters.ts and their tests
+// with them (docs/development/code-guidelines.md Rule 2 -- this file's own
+// net.connect/net.close wiring pushed it over budget). See
+// node-adapters.test.ts.

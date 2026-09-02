@@ -35,3 +35,22 @@ class BrokerError extends Error implements OrivonError {
 export function fail (code: OrivonErrorCode, message: string, handleId?: string, platformCode?: string): OrivonError {
   return new BrokerError(code, message, handleId, platformCode)
 }
+
+/** Every value OrivonErrorCode actually has -- see contracts/errors.ts. */
+const ORIVON_ERROR_CODES: ReadonlySet<OrivonErrorCode> = new Set<OrivonErrorCode>([
+  'denied', 'revoked', 'unreachable', 'timeout', 'reset', 'closed', 'limit', 'invalid', 'notFound', 'exists', 'internal'
+])
+
+/**
+ * Recognises an error this broker (or an adapter constructing one the same
+ * way) already produced, as opposed to something still raw from an injected
+ * dependency. Shared by ./ipc.ts (mapping a thrown value to a
+ * ResponseEnvelope) and ./node-adapters.ts (dialTcp's own fallback) --
+ * previously two separate copies of the same five lines; ./index.ts keeps
+ * its own private one, a pre-existing duplicate this PR does not reach into
+ * (code-guidelines.md Rule 3's own note: fixed where touched, not chased).
+ */
+export function isOrivonErrorLike (value: unknown): value is OrivonError {
+  return value instanceof Error && 'code' in value &&
+    ORIVON_ERROR_CODES.has((value as { code: OrivonErrorCode }).code)
+}
