@@ -2,10 +2,10 @@ import { describe, expect, it, vi } from 'vitest'
 import { createPortRegistry } from './port-registry.js'
 import { handleControlRequest, registerBrokerIpc } from './ipc.js'
 import type { ControlEvent, IpcMainLike, PortLike, PortPair, PortTransport } from './ipc.js'
-import type { Broker } from './index.js'
 import type { Grant, Manifest, OrivonError, OrivonErrorCode } from '../contracts/index.js'
 import type { FailableTcpSocket } from './handle-contracts.js'
 import type { RequestEnvelope, ResponseEnvelope } from '../contracts/ipc.js'
+import { APP, type BrokerCall, envelope, frameFor, NO_FRAME, never, OTHER, stubBroker } from './ipc.test-helpers.js'
 
 // This suite is what proves handleControlRequest is the thing DoD rule 1
 // describes -- origin from the SENDER FRAME, never from the payload -- and
@@ -15,78 +15,6 @@ import type { RequestEnvelope, ResponseEnvelope } from '../contracts/ipc.js'
 // body): the origin check skipped in favour of trusting payload.origin, the
 // timeout wrapper removed, and a denial forwarding its platformCode. Each
 // was watched to fail before being fixed back.
-
-const APP = 'https://app.example'
-const OTHER = 'https://other.example'
-
-/** A ControlEvent whose senderFrame resolves to `origin` via originFromSenderFrame. */
-function frameFor (origin: string): ControlEvent {
-  return { senderFrame: { url: `${origin}/index.html`, origin, postMessage: vi.fn() } }
-}
-
-const NO_FRAME: ControlEvent = { senderFrame: null }
-
-function envelope (method: string, payload: unknown, timeoutMs = 1_000): RequestEnvelope<unknown> {
-  return { id: 'req-1', method, payload, timeoutMs }
-}
-
-/** A promise that never settles -- models a broker call still in flight when a timeout fires. */
-function never<T> (): Promise<T> {
-  return new Promise<T>(() => {})
-}
-
-interface BrokerCall { readonly method: string, readonly origin: string, readonly args: unknown }
-
-/**
- * A full `Broker`, every method recording its call into `calls` before
- * deferring to `overrides` (or rejecting "not stubbed" if the test never
- * asked for that method to succeed). `registerApp`/`grant`/`revoke` are
- * unused by ipc.ts -- see broker/index.ts's own doc on why they have no
- * orivon.* counterpart -- and are never expected to be called here.
- */
-function stubBroker (
-  calls: BrokerCall[],
-  overrides: Partial<{
-    manifest: (origin: string) => Promise<Manifest>
-    grants: (origin: string) => Promise<readonly Grant[]>
-    connect: (origin: string, opts: { host: string, port: number }) => Promise<FailableTcpSocket>
-    readFile: (origin: string, path: string) => Promise<Uint8Array>
-    writeFile: (origin: string, path: string, data: Uint8Array) => Promise<void>
-  }> = {}
-): Broker {
-  const notStubbed = async (): Promise<never> => { throw new Error('this stub method was not configured for this test') }
-  return {
-    app: {
-      manifest: async (origin) => {
-        calls.push({ method: 'app.manifest', origin, args: undefined })
-        return await (overrides.manifest?.(origin) ?? notStubbed())
-      },
-      grants: async (origin) => {
-        calls.push({ method: 'app.grants', origin, args: undefined })
-        return await (overrides.grants?.(origin) ?? notStubbed())
-      }
-    },
-    net: {
-      connect: async (origin, opts) => {
-        calls.push({ method: 'net.connect', origin, args: opts })
-        return await (overrides.connect?.(origin, opts) ?? notStubbed())
-      }
-    },
-    fs: {
-      readFile: async (origin, path) => {
-        calls.push({ method: 'fs.readFile', origin, args: path })
-        return await (overrides.readFile?.(origin, path) ?? notStubbed())
-      },
-      writeFile: async (origin, path, data) => {
-        calls.push({ method: 'fs.writeFile', origin, args: { path, data } })
-        await (overrides.writeFile?.(origin, path, data) ?? notStubbed())
-      }
-    },
-    registerApp: () => { throw new Error('registerApp is not reachable via orivon.* and should never be called here') },
-    grant: () => { throw new Error('grant is not reachable via orivon.* and should never be called here') },
-    revoke: async () => { throw new Error('revoke is not reachable via orivon.* and should never be called here') }
-  }
-}
 
 describe('origin derivation (DoD rule 1 -- never the payload)', () => {
   it('denies with no authenticated origin when senderFrame is null', async () => {
