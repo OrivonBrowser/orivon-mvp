@@ -29,3 +29,11 @@ export const NEWTAB_COMMAND_CHANNEL = 'orivon-newtab:command'
 /** Ordinary tab -> broker: orivon.app.manifest/grants and orivon.fs.readFile/
  * writeFile. See ../broker/ipc.ts. */
 export const CONTROL_CHANNEL = 'orivon:control'
+
+/** Broker -> ordinary tab, one-way: delivers a socket's dedicated
+ * MessageChannelMain port via WebFrameMain.postMessage, tagged with the
+ * handle id CONTROL_CHANNEL's net.connect response also carries. Never a
+ * request/reply pair like CONTROL_CHANNEL -- the port itself is the payload
+ * that cannot travel over ipcMain.handle/ipcRenderer.invoke. See
+ * ../broker/ipc.ts and ../broker/port-pump.ts. */
+export const PORT_CHANNEL = 'orivon:port'
