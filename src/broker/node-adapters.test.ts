@@ -1,5 +1,7 @@
+import { statSync } from 'node:fs'
 import { mkdtemp, readFile as fsReadFile } from 'node:fs/promises'
 import { createServer, type Server, type Socket } from 'node:net'
+import { createBroker } from './index.js'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -205,5 +207,38 @@ describe('dialTcp / dialOne against a real local TCP server', () => {
     // exactly what this reason must NOT do -- so this resolving promptly is
     // itself the behavioural difference from 'closed' worth asserting.
     await dialed.destroy('failed')
+  })
+})
+
+describe('the fs capability works end to end for an origin that has never written before', () => {
+  // confinePath's first act is realpath(root), and it denies when that
+  // throws -- so a root nothing ever creates denies every path an app asks
+  // for, with the same message a real traversal attempt gets. It fails
+  // closed, which is why nothing caught it, and it fails always.
+  it('rootFor creates the directory it names', async () => {
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-nodefs-'))
+
+    const root = nodeFs(userData).rootFor('https://app.example')
+
+    expect(statSync(root).isDirectory()).toBe(true)
+  })
+
+  it("a brand-new origin's very first writeFile succeeds rather than being denied", async () => {
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-nodefs-'))
+    const broker = createBroker({
+      dial: async () => { throw new Error('not used by this test') },
+      resolve: async () => [],
+      now: () => Date.now(),
+      fs: nodeFs(userData),
+      keychain: { getSeed: async () => { throw new Error('not used by this test') } }
+    })
+    broker.registerApp('https://app.example', {
+      name: 'probe', version: '1.0.0', orivonApiVersion: 0, capabilities: { fs: { quotaBytes: 1_000_000 } }
+    } as never)
+    broker.grant('https://app.example', 'fs', [])
+
+    await broker.fs.writeFile('https://app.example', 'hello.txt', new Uint8Array([1, 2, 3]))
+
+    expect(Array.from(await broker.fs.readFile('https://app.example', 'hello.txt'))).toEqual([1, 2, 3])
   })
 })

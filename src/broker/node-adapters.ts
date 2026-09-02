@@ -14,7 +14,7 @@
 
 import { createHash } from 'node:crypto'
 import { lookup } from 'node:dns/promises'
-import { realpathSync } from 'node:fs'
+import { mkdirSync, realpathSync } from 'node:fs'
 import { mkdir, readFile as fsReadFile, writeFile as fsWriteFile } from 'node:fs/promises'
 import { connect as netConnect } from 'node:net'
 import type { Socket } from 'node:net'
@@ -38,7 +38,28 @@ import { fail, isOrivonErrorLike } from './errors.js'
  */
 export function nodeFs (userDataPath: string): BrokerFs {
   return {
-    rootFor: (origin) => join(userDataPath, 'apps', createHash('sha256').update(origin, 'utf8').digest('hex'), 'files'),
+    // CREATES the root, it does not merely name it. confinePath's very first
+    // act is realpath(root), and its own doc calls a root that will not
+    // resolve "a broker bug, not an app's" -- so a root that has never been
+    // created denies every path the app ever asks for. Nothing else in the
+    // tree creates it: writeFile's own mkdir runs on the confined path, which
+    // is only reached after confinement has already refused.
+    //
+    // Without this the fs capability is inert end to end -- an origin's very
+    // first writeFile answers 'denied', with the same message a real
+    // traversal attempt gets. It fails closed, which is why nothing caught
+    // it; it also fails always.
+    //
+    // recursive: true makes this a no-op once the directory exists. It is a
+    // blocking syscall on the broker's thread, in a function that already
+    // hands confinePath a synchronous realpath -- the same cost A28 is open
+    // about, not a new class of it. Whoever makes realpath async should take
+    // this with it.
+    rootFor: (origin) => {
+      const root = join(userDataPath, 'apps', createHash('sha256').update(origin, 'utf8').digest('hex'), 'files')
+      mkdirSync(root, { recursive: true })
+      return root
+    },
     realpathSync,
     // NEITHER readFile NOR writeFile CATCHES. index.ts's `mapIoError` is the
     // one place an errno becomes an OrivonError, and it only rewrites errors
