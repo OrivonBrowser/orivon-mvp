@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { dialTcp, nodeFs, resolveHost } from './node-adapters.js'
+import { originHash } from './origin-hash.js'
 
 /** A once-only AbortController's signal -- dialTcp/dialOne need one, and none of these tests abort mid-dial. */
 function neverAborts (): AbortSignal {
@@ -21,6 +22,11 @@ describe('nodeFs (the real filesystem adapter)', () => {
 
     expect(root).not.toContain('app.example')
     expect(root).toMatch(/[0-9a-f]{64}[/\\]files$/)
+    // Pins this adapter to origin-hash.ts's frozen construction specifically
+    // -- the two assertions above pass for ANY 64-hex scheme (a salted
+    // hash, a different algorithm); this one fails if rootFor ever diverges
+    // from the shared originHash() partitionFor also derives from.
+    expect(root).toContain(originHash('https://app.example'))
   })
 
   it('writeFile then readFile round-trips, creating parent directories', async () => {
