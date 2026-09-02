@@ -14,7 +14,7 @@
 
 import { createHash } from 'node:crypto'
 import { lookup } from 'node:dns/promises'
-import { realpathSync } from 'node:fs'
+import { mkdirSync, realpathSync } from 'node:fs'
 import { mkdir, readFile as fsReadFile, writeFile as fsWriteFile } from 'node:fs/promises'
 import { connect as netConnect } from 'node:net'
 import type { Socket } from 'node:net'
@@ -24,7 +24,6 @@ import type { CloseReason } from './handle-contracts.js'
 import type { BrokerFs, Dial, DialedSocket } from './index.js'
 import type { Resolver } from './policy/connect.js'
 import { fail, isOrivonErrorLike } from './errors.js'
-import type { OrivonError } from '../contracts/index.js'
 
 /**
  * `BrokerFs` over the real filesystem. `rootFor` is `sha256(origin)` under
@@ -39,41 +38,70 @@ import type { OrivonError } from '../contracts/index.js'
  */
 export function nodeFs (userDataPath: string): BrokerFs {
   return {
-    rootFor: (origin) => join(userDataPath, 'apps', createHash('sha256').update(origin, 'utf8').digest('hex'), 'files'),
+    // CREATES the root, it does not merely name it. confinePath's very first
+    // act is realpath(root), and its own doc calls a root that will not
+    // resolve "a broker bug, not an app's" -- so a root that has never been
+    // created denies every path the app ever asks for. Nothing else in the
+    // tree creates it: writeFile's own mkdir runs on the confined path, which
+    // is only reached after confinement has already refused.
+    //
+    // Without this the fs capability is inert end to end -- an origin's very
+    // first writeFile answers 'denied', with the same message a real
+    // traversal attempt gets. It fails closed, which is why nothing caught
+    // it; it also fails always.
+    //
+    // recursive: true makes this a no-op once the directory exists. It is a
+    // blocking syscall on the broker's thread, in a function that already
+    // hands confinePath a synchronous realpath -- the same cost A28 is open
+    // about, not a new class of it. Whoever makes realpath async should take
+    // this with it.
+    rootFor: (origin) => {
+      const root = join(userDataPath, 'apps', createHash('sha256').update(origin, 'utf8').digest('hex'), 'files')
+      mkdirSync(root, { recursive: true })
+      return root
+    },
     realpathSync,
+    // NEITHER readFile NOR writeFile CATCHES. index.ts's `mapIoError` is the
+    // one place an errno becomes an OrivonError, and it only rewrites errors
+    // it maps ITSELF -- `isOrivonError(error) return error` passes an
+    // already-shaped one straight through. So a catch here that produced an
+    // OrivonError did not add mapping, it BYPASSED it: the message this file
+    // built (which named the confined absolute path, and through it the OS
+    // account name and the sha256 confinement root -- T13b, exactly what
+    // mapIoError's own doc comment says it exists to withhold) was forwarded
+    // to the app verbatim, and EACCES/EPERM never reached
+    // ERRNO_TO_CODE's 'denied' mapping, crossing instead as
+    // 'internal' + platformCode: 'EACCES' -- the permission-probe oracle
+    // errors.ts's uniformity rule exists to close.
+    //
+    // Two implementations of one idea, and the wrong one won
+    // (code-guidelines.md Rule 3). This is now the only one.
     readFile: async (path) => {
-      try {
-        const buffer = await fsReadFile(path)
-        // A Node Buffer IS a Uint8Array, but a zero-copy view keeps the
-        // return type honest rather than relying on subclass compatibility
-        // -- a caller comparing constructors, or a serialiser that treats
-        // Buffer specially, should never notice this passed through Node's
-        // fs module.
-        return new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength)
-      } catch (error) {
-        throw toFsError(error, `could not read ${path}`)
-      }
+      const buffer = await fsReadFile(path)
+      // A COPY, not a zero-copy view over `buffer.buffer`. A Node Buffer is
+      // a Uint8Array, but it can be a window into Node's shared allocation
+      // pool (an 8KB slab holding unrelated data), and structured clone --
+      // the path this value takes to the renderer -- serialises an
+      // ArrayBufferView by serialising its WHOLE backing ArrayBuffer. A
+      // pooled view would therefore hand the page bytes it never read,
+      // recoverable as `new Uint8Array(result.buffer)`.
+      //
+      // fs/promises.readFile happens to allocate exact-size today, so the
+      // view was not actually leaking; that is an unspecified Node
+      // implementation detail, not a guarantee, and readFileSync and
+      // Buffer.allocUnsafe both pool at this size. Copying costs one memcpy
+      // and removes the dependence entirely.
+      return new Uint8Array(buffer)
     },
     writeFile: async (path, data) => {
-      try {
-        await mkdir(dirname(path), { recursive: true })
-        await fsWriteFile(path, data)
-      } catch (error) {
-        throw toFsError(error, `could not write ${path}`)
-      }
+      await mkdir(dirname(path), { recursive: true })
+      await fsWriteFile(path, data)
     }
   }
 }
 
 function errnoCode (error: unknown): string | undefined {
   return error instanceof Error && 'code' in error ? String((error as NodeJS.ErrnoException).code) : undefined
-}
-
-function toFsError (error: unknown, message: string): OrivonError {
-  const code = errnoCode(error)
-  if (code === 'ENOENT') return fail('notFound', message, undefined, code)
-  if (code === 'EEXIST') return fail('exists', message, undefined, code)
-  return fail('internal', message, undefined, code)
 }
 
 /** `Resolver` over real DNS. A lookup failure is 'unreachable' (handle-contracts.md), not a broker fault. */
@@ -120,6 +148,21 @@ function destroySocket (socket: Socket, reason: CloseReason): Promise<void> {
 }
 
 /**
+ * How long ONE dial attempt may run before it is abandoned. Node's own
+ * `net.connect` has no timeout, and the only other bound in the path is
+ * ipc.ts's `withTimeout`, which answers the CALLER but by its own doc does
+ * not cancel the work -- so without this a connect to a blackholed address
+ * held an fd and a per-origin in-flight slot for the OS SYN timeout (~130s on
+ * Linux), and `dialTcp` walks its addresses sequentially, serialising that
+ * cost per address.
+ *
+ * AI recommendation, not an owner decision: the value is not specified
+ * anywhere in contracts/ or handle-contracts.md, and putting it in LIMITS
+ * would be a src/contracts/ change that has to merge on its own.
+ */
+const DIAL_TIMEOUT_MS = 30_000
+
+/**
  * One dial attempt. `readable`/`writable` are real WHATWG streams
  * (`node:stream`'s `Duplex.toWeb`) so `DialedSocket`'s type is honestly
  * satisfied -- `broker.net.connect` cannot type-check otherwise -- even
@@ -132,7 +175,17 @@ function dialOne (address: string, port: number, signal: AbortSignal): Promise<D
     const socket = netConnect({ host: address, port })
     const onAbort = (): void => { socket.destroy() }
     signal.addEventListener('abort', onAbort, { once: true })
-    const settle = (): void => { signal.removeEventListener('abort', onAbort) }
+    let timer: NodeJS.Timeout
+    const settle = (): void => {
+      clearTimeout(timer)
+      signal.removeEventListener('abort', onAbort)
+    }
+    timer = setTimeout(() => {
+      settle()
+      socket.destroy()
+      reject(fail('timeout', `connecting to ${address}:${port} exceeded ${String(DIAL_TIMEOUT_MS)}ms`))
+    }, DIAL_TIMEOUT_MS)
+    timer.unref()
 
     socket.once('error', (error: NodeJS.ErrnoException) => {
       settle()

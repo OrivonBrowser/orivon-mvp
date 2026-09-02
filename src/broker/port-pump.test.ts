@@ -197,3 +197,135 @@ describe('createPortPump', () => {
     expect(send.mock.calls.length).toBe(callsAtStop)
   })
 })
+
+describe('the credit window bounds the broker, whatever the renderer reports', () => {
+  // contracts/ipc.ts: "the broker sends at most LIMITS.readWindowBytes ahead
+  // of what has been acknowledged... When the outstanding credit budget
+  // reaches zero it STOPS READING THE UNDERLYING OS SOCKET." The renderer is
+  // the party that window exists to bound, so its own figures cannot be
+  // allowed to raise it.
+  it('an Infinity credit does not disable the window', async () => {
+    const send = vi.fn()
+    const pump = createPortPump({
+      handleId: HANDLE, readable: chunkStream(Array.from({ length: 100 }, () => chunk(10))), send, initialCredit: 25
+    })
+    await tick(20)
+    expect(dataMessages(send)).toHaveLength(3)
+
+    pump.handleCredit({ kind: 'credit', handleId: HANDLE, bytesConsumed: Number.POSITIVE_INFINITY })
+    await tick(50)
+
+    // Clamped to the 25-byte window, so exactly one more window's worth
+    // moves -- not the whole 1000-byte stream.
+    expect(dataMessages(send).length).toBeLessThanOrEqual(6)
+  })
+
+  it('a NaN credit is ignored rather than poisoning the budget', async () => {
+    const send = vi.fn()
+    const pump = createPortPump({
+      handleId: HANDLE, readable: chunkStream(Array.from({ length: 5 }, () => chunk(10))), send, initialCredit: 25
+    })
+    await tick()
+    expect(dataMessages(send)).toHaveLength(3)
+
+    pump.handleCredit({ kind: 'credit', handleId: HANDLE, bytesConsumed: Number.NaN })
+    await tick()
+    pump.handleCredit({ kind: 'credit', handleId: HANDLE, bytesConsumed: 30 })
+    await tick()
+
+    // A NaN that had been added would make every later `credit > 0` false,
+    // stranding the stream permanently even after a valid credit arrives.
+    expect(dataMessages(send)).toHaveLength(5)
+    expect(endMessages(send)).toEqual([{ kind: 'end', handleId: HANDLE }])
+  })
+
+  it('a negative credit is ignored rather than driving the budget below zero', async () => {
+    const send = vi.fn()
+    const pump = createPortPump({
+      handleId: HANDLE, readable: chunkStream(Array.from({ length: 5 }, () => chunk(10))), send, initialCredit: 25
+    })
+    await tick()
+    expect(dataMessages(send)).toHaveLength(3)
+
+    pump.handleCredit({ kind: 'credit', handleId: HANDLE, bytesConsumed: -1_000_000 })
+    await tick()
+    pump.handleCredit({ kind: 'credit', handleId: HANDLE, bytesConsumed: 30 })
+    await tick()
+
+    expect(dataMessages(send)).toHaveLength(5)
+  })
+
+  it('honest credit still refills the budget to exactly one window, no further', async () => {
+    const send = vi.fn()
+    const pump = createPortPump({
+      handleId: HANDLE, readable: chunkStream(Array.from({ length: 100 }, () => chunk(10))), send, initialCredit: 25
+    })
+    await tick(20)
+    pump.handleCredit({ kind: 'credit', handleId: HANDLE, bytesConsumed: 30 })
+    await tick(20)
+
+    // 3 sent, budget back to 25, so 3 more -- the same shape as the first
+    // window rather than an ever-growing one.
+    expect(dataMessages(send)).toHaveLength(6)
+  })
+})
+
+describe('onStreamFailed marks a stream that died, and only that', () => {
+  it('fires with the mapped code and the raw error when the stream errors', async () => {
+    const send = vi.fn()
+    const onStreamFailed = vi.fn()
+    const rawError = Object.assign(new Error('reset by peer'), { code: 'ECONNRESET' })
+    const readable = new ReadableStream<Uint8Array>({ pull (c) { c.error(rawError) } })
+    createPortPump({
+      handleId: HANDLE, readable, send, initialCredit: 1_000, onStreamFailed, mapError: () => 'reset'
+    })
+    await tick(10)
+
+    expect(onStreamFailed).toHaveBeenCalledWith('reset', rawError)
+    expect(endMessages(send)).toEqual([{ kind: 'end', handleId: HANDLE, code: 'reset' }])
+  })
+
+  it('does NOT fire on a clean EOF -- a peer FIN leaves the socket writable (half-close)', async () => {
+    const send = vi.fn()
+    const onStreamFailed = vi.fn()
+    createPortPump({ handleId: HANDLE, readable: chunkStream([chunk(4)]), send, initialCredit: 1_000, onStreamFailed })
+    await tick(10)
+
+    expect(endMessages(send)).toEqual([{ kind: 'end', handleId: HANDLE }])
+    expect(onStreamFailed).not.toHaveBeenCalled()
+  })
+
+  it('does NOT fire on stop() -- that path already has an owner releasing the handle', async () => {
+    const send = vi.fn()
+    const onStreamFailed = vi.fn()
+    const pump = createPortPump({
+      handleId: HANDLE, readable: chunkStream([chunk(4)]), send, initialCredit: 1_000, onStreamFailed
+    })
+    pump.stop('revoked')
+    await tick(10)
+
+    expect(onStreamFailed).not.toHaveBeenCalled()
+  })
+
+  it('fires exactly once even if credit keeps arriving after the stream has already errored', async () => {
+    // A ReadableStream rejects every FUTURE read() with the same error once
+    // errored (WHATWG Streams spec, not re-invoked pull()) -- so a stray
+    // CreditMessage arriving after the failure must not re-enter the pump
+    // and call onStreamFailed a second time for the same handle.
+    const send = vi.fn()
+    const onStreamFailed = vi.fn()
+    const readable = new ReadableStream<Uint8Array>({
+      pull (c) { c.error(Object.assign(new Error('reset'), { code: 'ECONNRESET' })) }
+    })
+    const pump = createPortPump({
+      handleId: HANDLE, readable, send, initialCredit: 25, onStreamFailed, mapError: () => 'reset'
+    })
+    await tick(10)
+    expect(onStreamFailed).toHaveBeenCalledTimes(1)
+
+    pump.handleCredit({ kind: 'credit', handleId: HANDLE, bytesConsumed: 1_000 })
+    await tick(10)
+
+    expect(onStreamFailed).toHaveBeenCalledTimes(1)
+  })
+})

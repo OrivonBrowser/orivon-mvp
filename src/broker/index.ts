@@ -31,7 +31,7 @@
 // that consult that ledger.
 
 import { HandleTable } from './handles.js'
-import type { DestroyResource } from './handle-contracts.js'
+import type { DestroyResource, FailableTcpSocket } from './handle-contracts.js'
 import { fail } from './errors.js'
 import { GrantLedger } from './grant-ledger.js'
 import { checkConnect } from './policy/connect.js'
@@ -143,7 +143,9 @@ export interface Broker {
     grants(origin: string): Promise<readonly Grant[]>
   }
   readonly net: {
-    connect(origin: string, opts: { host: string, port: number }): Promise<TcpSocket>
+    /** Returns a `FailableTcpSocket` -- a `TcpSocket` plus one broker-internal
+     * escape hatch, see handle-contracts.ts. */
+    connect(origin: string, opts: { host: string, port: number }): Promise<FailableTcpSocket>
   }
   readonly fs: {
     readFile(origin: string, path: string): Promise<Uint8Array>
@@ -305,7 +307,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     return { resolved: confined.resolved, grant }
   }
 
-  async function connect (origin: string, opts: { host: string, port: number }): Promise<TcpSocket> {
+  async function connect (origin: string, opts: { host: string, port: number }): Promise<FailableTcpSocket> {
     const key = canonical(origin)
 
     // THE NARROWING. `current.patterns` is what the user granted; nothing
@@ -372,7 +374,8 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
         ...socketFields,
         id: entry.id,
         closed: entry.closed,
-        close: async (): Promise<void> => { await handleTable.release(key, entry.id) }
+        close: async (): Promise<void> => { await handleTable.release(key, entry.id) },
+        fail: (code, platformCode) => { handleTable.fail(key, entry.id, code, platformCode) }
       }
     })
   }
