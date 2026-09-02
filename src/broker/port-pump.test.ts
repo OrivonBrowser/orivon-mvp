@@ -197,3 +197,75 @@ describe('createPortPump', () => {
     expect(send.mock.calls.length).toBe(callsAtStop)
   })
 })
+
+describe('the credit window bounds the broker, whatever the renderer reports', () => {
+  // contracts/ipc.ts: "the broker sends at most LIMITS.readWindowBytes ahead
+  // of what has been acknowledged... When the outstanding credit budget
+  // reaches zero it STOPS READING THE UNDERLYING OS SOCKET." The renderer is
+  // the party that window exists to bound, so its own figures cannot be
+  // allowed to raise it.
+  it('an Infinity credit does not disable the window', async () => {
+    const send = vi.fn()
+    const pump = createPortPump({
+      handleId: HANDLE, readable: chunkStream(Array.from({ length: 100 }, () => chunk(10))), send, initialCredit: 25
+    })
+    await tick(20)
+    expect(dataMessages(send)).toHaveLength(3)
+
+    pump.handleCredit({ kind: 'credit', handleId: HANDLE, bytesConsumed: Number.POSITIVE_INFINITY })
+    await tick(50)
+
+    // Clamped to the 25-byte window, so exactly one more window's worth
+    // moves -- not the whole 1000-byte stream.
+    expect(dataMessages(send).length).toBeLessThanOrEqual(6)
+  })
+
+  it('a NaN credit is ignored rather than poisoning the budget', async () => {
+    const send = vi.fn()
+    const pump = createPortPump({
+      handleId: HANDLE, readable: chunkStream(Array.from({ length: 5 }, () => chunk(10))), send, initialCredit: 25
+    })
+    await tick()
+    expect(dataMessages(send)).toHaveLength(3)
+
+    pump.handleCredit({ kind: 'credit', handleId: HANDLE, bytesConsumed: Number.NaN })
+    await tick()
+    pump.handleCredit({ kind: 'credit', handleId: HANDLE, bytesConsumed: 30 })
+    await tick()
+
+    // A NaN that had been added would make every later `credit > 0` false,
+    // stranding the stream permanently even after a valid credit arrives.
+    expect(dataMessages(send)).toHaveLength(5)
+    expect(endMessages(send)).toEqual([{ kind: 'end', handleId: HANDLE }])
+  })
+
+  it('a negative credit is ignored rather than driving the budget below zero', async () => {
+    const send = vi.fn()
+    const pump = createPortPump({
+      handleId: HANDLE, readable: chunkStream(Array.from({ length: 5 }, () => chunk(10))), send, initialCredit: 25
+    })
+    await tick()
+    expect(dataMessages(send)).toHaveLength(3)
+
+    pump.handleCredit({ kind: 'credit', handleId: HANDLE, bytesConsumed: -1_000_000 })
+    await tick()
+    pump.handleCredit({ kind: 'credit', handleId: HANDLE, bytesConsumed: 30 })
+    await tick()
+
+    expect(dataMessages(send)).toHaveLength(5)
+  })
+
+  it('honest credit still refills the budget to exactly one window, no further', async () => {
+    const send = vi.fn()
+    const pump = createPortPump({
+      handleId: HANDLE, readable: chunkStream(Array.from({ length: 100 }, () => chunk(10))), send, initialCredit: 25
+    })
+    await tick(20)
+    pump.handleCredit({ kind: 'credit', handleId: HANDLE, bytesConsumed: 30 })
+    await tick(20)
+
+    // 3 sent, budget back to 25, so 3 more -- the same shape as the first
+    // window rather than an ever-growing one.
+    expect(dataMessages(send)).toHaveLength(6)
+  })
+})
