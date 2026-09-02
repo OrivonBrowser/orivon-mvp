@@ -10,6 +10,8 @@
 // trusted because the preload is well-behaved -- not the payload, and not
 // the envelope carrying it.
 
+import type { RequestEnvelope } from '../contracts/index.js'
+
 /** The six wired control operations. Anything else is 'invalid'. */
 export type ControlMethod = 'app.manifest' | 'app.grants' | 'fs.readFile' | 'fs.writeFile' | 'net.connect' | 'net.close'
 
@@ -44,4 +46,27 @@ export function isNetConnectParams (payload: unknown): payload is NetConnectPara
 export function isNetCloseParams (payload: unknown): payload is NetCloseParams {
   return typeof payload === 'object' && payload !== null &&
     typeof (payload as { id?: unknown }).id === 'string'
+}
+
+/**
+ * setTimeout's own ceiling. Above it Node clamps the delay to 1ms and warns,
+ * so a caller asking for a 2^40ms budget would be answered 'timeout' almost
+ * immediately -- the opposite of what it asked for. Rejected as malformed
+ * rather than silently reinterpreted in either direction.
+ */
+const MAX_TIMEOUT_MS = 2_147_483_647
+
+/** Best-effort id for a malformed envelope, so even a rejection can be correlated. */
+export function envelopeId (value: unknown): string {
+  return typeof value === 'object' && value !== null && typeof (value as { id?: unknown }).id === 'string'
+    ? (value as { id: string }).id
+    : ''
+}
+
+export function isRequestEnvelope (value: unknown): value is RequestEnvelope<unknown> {
+  if (typeof value !== 'object' || value === null) return false
+  const { id, method, timeoutMs } = value as { id?: unknown, method?: unknown, timeoutMs?: unknown }
+  return typeof id === 'string' && typeof method === 'string' &&
+    typeof timeoutMs === 'number' && Number.isFinite(timeoutMs) &&
+    timeoutMs > 0 && timeoutMs <= MAX_TIMEOUT_MS
 }
