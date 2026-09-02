@@ -221,7 +221,10 @@ function deny (reason: ConnectDenialReason, checked?: readonly string[]): Connec
  * denies, which is the same direction everything else here fails.
  * Found by review, 2026-08-27.
  */
-const MAX_PATTERNS = 256
+// Exported so a second consumer (../policy/connect-src.ts's CSP `connect-src`
+// derivation) enforces the same bound instead of a second copy of 256 that
+// can drift from this one.
+export const MAX_PATTERNS = 256
 const MAX_ANSWERS = 64
 
 /**
