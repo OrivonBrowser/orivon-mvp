@@ -150,6 +150,13 @@ Load-bearing for the flagship, not a developer nicety (`ADR-0005`).
 every re-fetch. Depends on broker storage. The pinning here is also what `ADR-0006` and the
 future attestation model rest on.
 
+Also where T22's CSP gets wired in: `src/broker/policy/connect-src.ts` computes the
+`connect-src` header value (build step 2), but nothing calls
+`session.webRequest.onHeadersReceived` with it yet. That file's own header has four numbered
+facts whoever does this needs to read first — including whether `onHeadersReceived` fires at
+all for the `protocol.handle`-served cached bundle (ADR-0007), which is unconfirmed anywhere in
+the corpus and needs a live `context7` check before writing the wiring.
+
 > **Correction, 2026-08-26.** This item previously said *"pin the publisher key and record
 > per-version hashes; silent update on same key + unchanged capabilities (`ADR-0005`
 > amendment)"* — the publisher-key continuity amendment. `ADR-0005`'s **evening** amendment

