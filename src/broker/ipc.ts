@@ -57,7 +57,7 @@ import { createPortRegistry } from './port-registry.js'
 import type { PortRegistry } from './port-registry.js'
 import { originFromSenderFrame } from './policy/origin.js'
 import type { SenderFrameLike } from './policy/origin.js'
-import { fail, isOrivonErrorLike } from './errors.js'
+import { errnoOf, fail, isOrivonErrorLike } from './errors.js'
 import {
   envelopeId, isControlMethod, isFsReadFileParams, isFsWriteFileParams,
   isNetCloseParams, isNetConnectParams, isRequestEnvelope
@@ -131,11 +131,6 @@ export interface PortDeliveryFrame extends SenderFrameLike {
 
 export interface ControlEvent {
   readonly senderFrame: PortDeliveryFrame | null
-}
-
-/** The raw errno off a Node error, if it has one -- shared by the mapper below and by `onStreamFailed`'s platformCode. */
-function errnoOf (error: unknown): string | undefined {
-  return error instanceof Error && 'code' in error ? String((error as NodeJS.ErrnoException).code) : undefined
 }
 
 /**

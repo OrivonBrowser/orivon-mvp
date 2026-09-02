@@ -32,7 +32,7 @@
 
 import { HandleTable } from './handles.js'
 import type { DestroyResource, FailableTcpSocket } from './handle-contracts.js'
-import { fail } from './errors.js'
+import { errnoOf, fail } from './errors.js'
 import { GrantLedger } from './grant-ledger.js'
 import { checkConnect } from './policy/connect.js'
 import type { Resolver } from './policy/connect.js'
@@ -185,18 +185,6 @@ export interface Broker {
    * the app is awaiting on one of them rejects with 'revoked'.
    */
   revoke(origin: string, grantId: GrantId): Promise<void>
-}
-
-/**
- * Node's errno convention: an `Error` with a `.code` string, thrown by
- * `deps.resolve`, `deps.dial` and `deps.fs.*`. Not an `instanceof` check --
- * the injected implementations are test stubs as often as real Node calls,
- * and both shapes throw a plain object with this one property in common.
- */
-function errnoOf (error: unknown): string | undefined {
-  if (typeof error !== 'object' || error === null) return undefined
-  const code = (error as { code?: unknown }).code
-  return typeof code === 'string' ? code : undefined
 }
 
 /** Every value OrivonErrorCode actually has -- see contracts/errors.ts. Used to recognise an error this broker already produced, not one still raw from an injected dependency. */

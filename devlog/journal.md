@@ -27,6 +27,12 @@ Mark anything that must not leave the team draft as `(Keep private)`.
   branch's provisional A25/A26/A27 became A32/A33/A34 on merge, and nine code comments
   across six files were repointed in the same commit, because a renumber that stops at the
   table leaves code citing a stranger's question.
+- 2026-09-02: **Third duplicate `errnoOf` consolidated into `broker/errors.ts`** -- the two
+  copies disagreed on plain-object errors and coerced a `code: undefined` into the string
+  "undefined". Pinned with six tests first. Took `index.ts` from 499 to 487 lines, off the
+  edge of the 500 limit. A fourth duplicate in the same file pair (`isOrivonError`, stricter by
+  a `.name` check) is filed as A39 rather than merged blind -- which of the two is correct is a
+  behavioural call, not a move.
 
 ### In my head
 

@@ -753,6 +753,30 @@ immediately" rule) is a reasonable starting point. Where it would live (a new fi
 no user action gating it — realistically, whichever build step first ships an app that polls its
 own grants (a plausible pattern for anything that wants to react to a revocation live).
 
+### A39 — `index.ts` keeps a private, stricter `isOrivonError` than `errors.ts`'s **[AI-REC]**
+
+Found 2026-09-02 while consolidating a third duplicate in the same file pair (`errnoOf`, now in
+`errors.ts` and imported by both call sites).
+
+[`errors.ts`](../src/broker/errors.ts)'s `isOrivonErrorLike` requires `instanceof Error` plus a
+`code` in the enum. [`index.ts`](../src/broker/index.ts)'s private `isOrivonError` requires all
+of that **and** `.name === 'OrivonError'`. They therefore disagree about one real case: an error
+an adapter constructed with a valid `code` but a different `name` is broker-produced to
+`errors.ts` and raw-from-a-dependency to `index.ts`. `index.ts` also keeps its own copy of the
+11-value `ORIVON_ERROR_CODES` set that `errors.ts` already exports.
+
+`errors.ts`'s own doc comment has flagged this since it was written — deliberately deferred
+under "fixed where touched, not chased", not missed. It is recorded here because that note
+lived only in a code comment, where nothing tracks it, and because the `errnoOf` duplicate that
+prompted this entry shows the pattern reproducing in the same two files.
+
+**AI recommendation:** export `ORIVON_ERROR_CODES` from `errors.ts`, then decide which name
+check is correct rather than merging them blind — `.name` is set by `BrokerError`'s constructor,
+so the stricter test is the one that actually means "this broker built it", and the looser one
+may be the defect. That is a behavioural decision, which is why this was not folded into the
+`errnoOf` change.
+
+**Needed by:** before anything else starts classifying thrown values. Not blocking.
 
 ---
 
