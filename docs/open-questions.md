@@ -778,6 +778,54 @@ may be the defect. That is a behavioural decision, which is why this was not fol
 
 **Needed by:** before anything else starts classifying thrown values. Not blocking.
 
+### A40 — Rule 1 has a mechanically checkable failure mode, and enforcement is deferred **[AI-REC]**
+
+Found 2026-09-02, auditing the five byte-pump commits against `code-guidelines.md`.
+
+Three comments narrated the change rather than the code — two "a sibling commit ...", one
+"`HandleTable.fail` already existed ... nothing had ever wired a caller up to it". They passed
+Rule 1's stated test (none restates the line beneath it) and the files' comment density was in
+line with `derive.ts`'s 67%, which a prior audit reviewed and accepted. They fail the rule's
+*purpose*: after merge, "the sibling commit" names nothing a reader can resolve.
+
+**This is not new drift, which is the more useful finding, and the first count of it was wrong.**
+Widening the search from "sibling commit" to "this PR"/"this task"/"the PR body" turns up
+**nineteen** instances across four streams (`broker/`, `loader/`, `preload/`, `shim/`) and many
+separate commits. The dominant idiom is "see the PR body" — five instances, each pointing a
+future reader at a document that is not reachable from the tree, and one of them at "this PR's
+body under 'Decisions and open questions'" specifically. A second family ("OUT OF SCOPE for this
+task", "files this task may not touch") encodes a *branch-local constraint* as if it were a
+property of the code, and becomes false the moment the constraint lifts — `grant-ledger.ts`'s
+had already gone stale that way.
+
+So the five commits that prompted this entry did not introduce the habit; they inherited it.
+Eight are fixed here (the three above, plus four in `broker/` and `errors.ts`'s own). Eleven
+remain, seven of them in `broker/` and four in paths this stream does not own.
+
+**Not swept in one pass, deliberately.** A nineteen-comment rewrite spanning four streams is
+exactly the cross-stream edit `parallel-work.md` says to raise rather than make, and the repo's
+own "fixed where touched, not chased" principle applies. The hook below warns on edit, so the
+remainder get fixed as their files are next opened.
+
+Two things follow, and they pull in opposite directions:
+
+- Rule 1's worked example only covers restating-the-code, so an audit applying the rule as
+  written passes this class. The rule's §Where a long comment is right could name it: **a
+  comment describes the code as it stands, not the change that produced it.** Git history holds
+  the change.
+- Unlike the rest of Rule 1, this specific class *is* greppable — it has a lexical signature
+  ("sibling commit", "this PR", "already existed", "previously"). §Open points 2 records the
+  owner's decision that nothing enforces these rules mechanically, **rules first, enforcement
+  later**, so adding a `check:comments` guard would reverse a standing decision and is not done
+  here.
+
+**AI recommendation:** add the sentence to Rule 1 now (documentation, not enforcement, so it
+does not touch Open point 2), and add a `hookify` warn-only rule, which `CLAUDE.md` already
+sanctions as the mechanism for "whenever the owner corrects the same thing twice" and which is
+advisory rather than a build gate. Hold `check:comments` until Open point 2 is revisited.
+
+**Needed by:** whenever the next batch of commits is written by an agent. Not blocking.
+
 ---
 
 ## B. Contradictions still to fix

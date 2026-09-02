@@ -27,6 +27,12 @@ Mark anything that must not leave the team draft as `(Keep private)`.
   branch's provisional A25/A26/A27 became A32/A33/A34 on merge, and nine code comments
   across six files were repointed in the same commit, because a renumber that stops at the
   table leaves code citing a stranger's question.
+- 2026-09-02: **Nineteen code comments across four streams narrate the branch that wrote them,
+  not the code** -- "see the PR body", "OUT OF SCOPE for this task", "a sibling commit". All
+  passed Rule 1's stated test, which only covers restating-the-line-below, so every prior audit
+  cleared them. Rule 1 gained the missing sentence, the first hookify rule for a comment
+  defect now warns on edit, eight are fixed and the other eleven are left to be fixed as their
+  files are next touched (A40).
 - 2026-09-02: **Third duplicate `errnoOf` consolidated into `broker/errors.ts`** -- the two
   copies disagreed on plain-object errors and coerced a `code: undefined` into the string
   "undefined". Pinned with six tests first. Took `index.ts` from 499 to 487 lines, off the
