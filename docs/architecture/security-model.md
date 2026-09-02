@@ -138,6 +138,14 @@ header permit network reach the user explicitly refused. Docs-borrow precedent: 
 A38's own resolution, which corrected this same file for a different threat row). Found and
 fixed while writing T22's implementation, 2026-09-02.
 
+**A granted IPv6 literal cannot be represented in CSP at all**, found on review of the same file,
+2026-09-02. CSP's host grammar is `ALPHA / DIGIT / "-"` — no `[`, `]` or `:` — and Chromium drops
+a bracketed source outright rather than partially honouring it (confirmed in Electron 44.0.0 /
+Chrome 152). `connectSrcFor` omits an IPv6 pattern with reason `host-ipv6-literal` rather than
+emitting a token the browser silently discards. Same consequence as a `*` grant (open-questions.md
+A43): the pattern is `fetch`-blocked, not merely CSP-uncovered, and `omitted` is what lets a later
+build step explain why.
+
 ## Capabilities excluded from v0, on security grounds
 `subprocess` and `hid` are absent from the v0 API entirely — for signed apps too, not merely
 unsigned ones (`capability-api.md`). No MVP app needs them, and they are the largest available
