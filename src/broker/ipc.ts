@@ -197,14 +197,29 @@ async function dispatch (
         }
       })
 
+      // IDEMPOTENT, and it has to be: `abandon` below runs it and then calls
+      // socket.close(), which settles `socket.closed` and runs it a second
+      // time through the handler just below. A real MessagePortMain would be
+      // closed twice.
+      let released = false
       const cleanup = (): void => {
+        if (released) return
+        released = true
         transport.registry.remove(origin, socket.id)
         pair.port1.close()
       }
+      // The .catch is not decoration. This chain is nobody's awaited promise,
+      // so anything these handlers throw becomes an unhandled rejection --
+      // and Node's default for those since v15 is to THROW, which on the
+      // Electron main process takes the whole browser down, from a socket
+      // teardown path. Teardown failures are logged, never swallowed
+      // silently, per handle-contracts.ts.
       socket.closed.then(
         () => { pump.stop(); cleanup() },
         (error: unknown) => { pump.stop(isOrivonErrorLike(error) ? error.code : 'internal'); cleanup() }
-      )
+      ).catch((error: unknown) => {
+        console.error('[broker] releasing a socket failed after it closed', error)
+      })
 
       transport.registry.register(origin, socket.id, { close: socket.close })
 
