@@ -61,6 +61,34 @@ export function parsePattern (pattern: Pattern): ParsedPattern | null {
   return { host, port }
 }
 
+/** `'any'` (from `*`), or an inclusive `{lo, hi}` range (`lo === hi` for a single port). */
+export type PortSpec = 'any' | { readonly lo: number, readonly hi: number }
+
+/**
+ * Parses a port spec into its bounds, or `null` for anything unreadable --
+ * extracted so ../policy/connect-src.ts's CSP derivation can enumerate a
+ * range's actual ports instead of re-deriving this grammar a third time
+ * (`portMatches` below was already the second, private copy).
+ */
+export function parsePortSpec (spec: string): PortSpec | null {
+  if (spec === '*') return 'any'
+
+  // Leading zeros rejected: `0443` reads as octal in some parsers and decimal
+  // in others, and a pattern whose meaning depends on the reader is not a
+  // pattern. Port 0 is rejected by the `[1-9]` lead -- it means "any free
+  // port" to bind() and nothing at all to connect().
+  const parsed = /^([1-9][0-9]{0,4})(?:-([1-9][0-9]{0,4}))?$/.exec(spec)
+  if (parsed === null) return null
+
+  const loText = parsed[1]
+  if (loText === undefined) return null
+  const lo = Number.parseInt(loText, 10)
+  const hi = parsed[2] === undefined ? lo : Number.parseInt(parsed[2], 10)
+
+  if (lo > MAX_PORT || hi > MAX_PORT || lo > hi) return null
+  return { lo, hi }
+}
+
 /**
  * `*`, a single port, or an inclusive `lo-hi` range.
  *
@@ -71,22 +99,10 @@ export function parsePattern (pattern: Pattern): ParsedPattern | null {
  * that happen to mention the same number.
  */
 export function portMatches (spec: string, port: number): boolean {
-  if (spec === '*') return true
-
-  // Leading zeros rejected: `0443` reads as octal in some parsers and decimal
-  // in others, and a pattern whose meaning depends on the reader is not a
-  // pattern. Port 0 is rejected by the `[1-9]` lead -- it means "any free
-  // port" to bind() and nothing at all to connect().
-  const parsed = /^([1-9][0-9]{0,4})(?:-([1-9][0-9]{0,4}))?$/.exec(spec)
-  if (parsed === null) return false
-
-  const loText = parsed[1]
-  if (loText === undefined) return false
-  const lo = Number.parseInt(loText, 10)
-  const hi = parsed[2] === undefined ? lo : Number.parseInt(parsed[2], 10)
-
-  if (lo > MAX_PORT || hi > MAX_PORT || lo > hi) return false
-  return port >= lo && port <= hi
+  const parsedSpec = parsePortSpec(spec)
+  if (parsedSpec === null) return false
+  if (parsedSpec === 'any') return true
+  return port >= parsedSpec.lo && port <= parsedSpec.hi
 }
 
 /**
