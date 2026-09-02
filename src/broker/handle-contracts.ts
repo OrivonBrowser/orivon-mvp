@@ -194,9 +194,8 @@ export interface HandleTableOptions {
  * handle table a resource died on its own, from underneath the app, rather
  * than through `close()` or a revoke. NOT part of `contracts/` -- an app
  * never sees this method; only `./ipc.ts`'s port pump calls it, the moment it
- * detects the underlying OS socket has errored. `HandleTable.fail` already
- * existed and was already fully tested (`./handles.ts`); nothing had ever
- * wired a caller up to it.
+ * detects the underlying OS socket has errored. It is the one caller of
+ * `HandleTable.fail` (`./handles.ts`).
  *
  * Lives here, not in `./index.ts`, for the same reason the rest of this file
  * does (Rule 2) -- and because widening `./index.ts`'s own `connect()` return
@@ -209,10 +208,9 @@ export interface FailableTcpSocket extends TcpSocket {
    * resolving it, and releases the handle the same way `close()` does. Never
    * throws: a caller in a fire-and-forget context has nothing further to do
    * with a failure here beyond logging it, which `handleTable.fail` itself
-   * does not do either -- a broken call site would otherwise become an
-   * unhandled rejection on exactly the kind of path a sibling commit closes
-   * this same risk on ("Stop a connection's cleanup from being able to crash
-   * the entire browser").
+   * does not do either. A throwing call site would otherwise become an
+   * unhandled rejection on a socket-teardown path, which on the Electron main
+   * process takes the whole browser down.
    */
   fail: (code: OrivonErrorCode, platformCode?: string) => void
 }

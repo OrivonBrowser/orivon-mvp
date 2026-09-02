@@ -45,12 +45,33 @@ const ORIVON_ERROR_CODES: ReadonlySet<OrivonErrorCode> = new Set<OrivonErrorCode
  * Recognises an error this broker (or an adapter constructing one the same
  * way) already produced, as opposed to something still raw from an injected
  * dependency. Shared by ./ipc.ts (mapping a thrown value to a
- * ResponseEnvelope) and ./node-adapters.ts (dialTcp's own fallback) --
- * previously two separate copies of the same five lines; ./index.ts keeps
- * its own private one, a pre-existing duplicate this PR does not reach into
- * (code-guidelines.md Rule 3's own note: fixed where touched, not chased).
+ * ResponseEnvelope) and ./node-adapters.ts (dialTcp's own fallback).
+ *
+ * ./index.ts has a private, stricter variant that also demands
+ * `.name === 'OrivonError'`, so the two disagree about an error an adapter
+ * built with a valid code but a different name. Consolidating them is a
+ * behavioural decision, not a move -- open-questions.md A39.
  */
 export function isOrivonErrorLike (value: unknown): value is OrivonError {
   return value instanceof Error && 'code' in value &&
     ORIVON_ERROR_CODES.has((value as { code: OrivonErrorCode }).code)
+}
+
+/**
+ * The raw errno string off a thrown value, if it carries one. Node's own
+ * convention is an `Error` with a `.code` string, but this deliberately
+ * accepts any object: the broker reaches the network and filesystem through
+ * injected dependencies, so what arrives here is as often a test stub's plain
+ * object as a real Node error, and both carry `.code` alike.
+ *
+ * A non-string `.code` is ignored rather than coerced, which matters in both
+ * directions. Node puts the numeric form on `.errno` and never on `.code`, so
+ * a number here is not an errno to begin with; and coercing would turn a
+ * present-but-undefined `code` into the string "undefined" and hand a caller's
+ * errno table something to look up.
+ */
+export function errnoOf (error: unknown): string | undefined {
+  if (typeof error !== 'object' || error === null) return undefined
+  const code = (error as { code?: unknown }).code
+  return typeof code === 'string' ? code : undefined
 }

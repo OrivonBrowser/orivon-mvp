@@ -32,7 +32,7 @@
 
 import { HandleTable } from './handles.js'
 import type { DestroyResource, FailableTcpSocket } from './handle-contracts.js'
-import { fail } from './errors.js'
+import { errnoOf, fail } from './errors.js'
 import { GrantLedger } from './grant-ledger.js'
 import { checkConnect } from './policy/connect.js'
 import type { Resolver } from './policy/connect.js'
@@ -187,18 +187,6 @@ export interface Broker {
   revoke(origin: string, grantId: GrantId): Promise<void>
 }
 
-/**
- * Node's errno convention: an `Error` with a `.code` string, thrown by
- * `deps.resolve`, `deps.dial` and `deps.fs.*`. Not an `instanceof` check --
- * the injected implementations are test stubs as often as real Node calls,
- * and both shapes throw a plain object with this one property in common.
- */
-function errnoOf (error: unknown): string | undefined {
-  if (typeof error !== 'object' || error === null) return undefined
-  const code = (error as { code?: unknown }).code
-  return typeof code === 'string' ? code : undefined
-}
-
 /** Every value OrivonErrorCode actually has -- see contracts/errors.ts. Used to recognise an error this broker already produced, not one still raw from an injected dependency. */
 const ORIVON_ERROR_CODES: ReadonlySet<OrivonErrorCode> = new Set<OrivonErrorCode>([
   'denied', 'revoked', 'unreachable', 'timeout', 'reset', 'closed', 'limit', 'invalid', 'notFound', 'exists', 'internal'
@@ -321,8 +309,8 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
 
     return await handleTable.run(key, { on: 'grant', grantId: current.id }, async (signal) => {
       // `checkConnect` calls `deps.resolve` internally and does not catch
-      // its rejection (policy/connect.ts is pure and out of this PR's
-      // scope), so a raw DNS failure reaches here unmapped. `deps.dial`
+      // its rejection (policy/connect.ts is pure, and mapping I/O errors is
+      // not its job), so a raw DNS failure reaches here unmapped. `deps.dial`
       // rejects raw too. Both need mapIoError; nothing else in this
       // callback throws anything but an OrivonError already, and mapIoError
       // passes those through unchanged.
