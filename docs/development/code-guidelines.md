@@ -53,6 +53,18 @@ nothing in the code below states it. It stays.
 **Where it is wrong.** Narration of ordinary control flow, restating a type that is already
 written, or a block explaining a function whose name already explains it.
 
+**A comment describes the code as it stands, not the change that produced it.** Git history
+holds the change. "A sibling commit", "this PR", "already existed", "not deduplicated because
+this task may not touch that file" — each of these names something a reader cannot resolve once
+the branch is merged, and the second kind ages into an outright lie the moment the constraint
+lifts. Added 2026-09-02, after an audit found eight such comments across three streams: they all
+passed the restates-the-line-below test above, which is why the rule needed this sentence
+([`open-questions.md`](../open-questions.md) A40 for the full finding).
+
+The durable half of such a comment is usually worth keeping — write the *constraint*, not the
+episode. "Consolidating these is a behavioural decision, tracked as A39" survives the merge;
+"a duplicate this PR does not reach into" does not.
+
 ### Where the codebase stands
 
 **Cleaned up 2026-08-27**, on `stream/backlog-07-guidelines-cleanup`. An audit found that density

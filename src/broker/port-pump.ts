@@ -127,8 +127,8 @@ export function createPortPump (options: PortPumpOptions): PortPump {
         // stray handleCredit() arriving after this point would otherwise
         // re-enter this catch block with the identical error and call
         // onStreamFailed a second time -- and a second FailableTcpSocket.fail
-        // on an already-failed handle is exactly the kind of duplicate
-        // teardown call the sibling commit on cleanup() guards against.
+        // on an already-failed handle is a duplicate teardown call, which
+        // ./ipc.ts's cleanup() is separately written to tolerate.
         stopped = true
         const code = mapError(error)
         sendEnd(code)
