@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 import { never, outcomeNow, rejection } from './handles.test-helpers.js'
+import { APP, baseDeps, manifestWith, okSocket, stubFs } from './index.test-helpers.js'
 import { createBroker } from './index.js'
 import type { CreateBrokerOptions, Dial, DialedSocket } from './index.js'
-import type { Capabilities, Manifest } from '../contracts/index.js'
+import type { Manifest } from '../contracts/index.js'
 import { LIMITS } from '../contracts/index.js'
 
 // This is the assembly step build-plan.md's "Structural decision, day 1"
@@ -19,35 +20,7 @@ import { LIMITS } from '../contracts/index.js'
 // Each one was watched to fail before being fixed back. A passing suite
 // proves nothing until it has been watched to fail.
 
-const APP = 'https://app.example'
 const OTHER = 'https://other.example'
-
-function manifestWith (capabilities: Capabilities): Manifest {
-  return {
-    orivonApiVersion: 0,
-    id: 'org.orivon.test',
-    name: 'Test app',
-    version: '1.0.0',
-    entry: '/index.html',
-    capabilities
-  }
-}
-
-/** A DialedSocket that never touches a real stream -- readable/writable are never read from in these tests. */
-function okSocket (overrides: Partial<DialedSocket> = {}): DialedSocket {
-  return {
-    readable: new ReadableStream(),
-    writable: new WritableStream(),
-    remoteAddress: '93.184.216.34',
-    remotePort: 443,
-    localAddress: '10.0.0.5',
-    localPort: 54321,
-    setNoDelay: async () => {},
-    setKeepAlive: async () => {},
-    destroy: vi.fn(),
-    ...overrides
-  }
-}
 
 interface StubResolve {
   (host: string): Promise<readonly string[]>
@@ -62,34 +35,6 @@ function stubResolve (answers: Readonly<Record<string, readonly string[]>>): Stu
     return answers[host] ?? []
   }
   return Object.assign(fn, { calls })
-}
-
-function stubFs (options: { root?: string, files?: Map<string, Uint8Array> } = {}): CreateBrokerOptions['fs'] {
-  const root = options.root ?? '/apps/app'
-  const files = options.files ?? new Map<string, Uint8Array>()
-  return {
-    rootFor: () => root,
-    // Everything "exists" and resolves to itself. Confinement's own edge
-    // cases (symlink escapes, Windows device names, ..) are policy/paths.ts's
-    // suite; this file only has to prove createBroker calls it.
-    realpathSync: (p) => p,
-    readFile: async (path) => {
-      const data = files.get(path)
-      if (data === undefined) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' })
-      return data
-    },
-    writeFile: async (path, data) => { files.set(path, data) }
-  }
-}
-
-function baseDeps (overrides: Partial<CreateBrokerOptions> = {}): CreateBrokerOptions {
-  return {
-    dial: overrides.dial ?? (async () => okSocket()),
-    resolve: overrides.resolve ?? (async () => []),
-    now: overrides.now ?? (() => 0),
-    fs: overrides.fs ?? stubFs(),
-    keychain: overrides.keychain ?? { getSeed: async () => new Uint8Array(32) }
-  }
 }
 
 /** One real event-loop tick -- enough for a literal-address checkConnect (no real DNS) to reach `dial`. */

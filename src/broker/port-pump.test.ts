@@ -269,3 +269,63 @@ describe('the credit window bounds the broker, whatever the renderer reports', (
     expect(dataMessages(send)).toHaveLength(6)
   })
 })
+
+describe('onStreamFailed marks a stream that died, and only that', () => {
+  it('fires with the mapped code and the raw error when the stream errors', async () => {
+    const send = vi.fn()
+    const onStreamFailed = vi.fn()
+    const rawError = Object.assign(new Error('reset by peer'), { code: 'ECONNRESET' })
+    const readable = new ReadableStream<Uint8Array>({ pull (c) { c.error(rawError) } })
+    createPortPump({
+      handleId: HANDLE, readable, send, initialCredit: 1_000, onStreamFailed, mapError: () => 'reset'
+    })
+    await tick(10)
+
+    expect(onStreamFailed).toHaveBeenCalledWith('reset', rawError)
+    expect(endMessages(send)).toEqual([{ kind: 'end', handleId: HANDLE, code: 'reset' }])
+  })
+
+  it('does NOT fire on a clean EOF -- a peer FIN leaves the socket writable (half-close)', async () => {
+    const send = vi.fn()
+    const onStreamFailed = vi.fn()
+    createPortPump({ handleId: HANDLE, readable: chunkStream([chunk(4)]), send, initialCredit: 1_000, onStreamFailed })
+    await tick(10)
+
+    expect(endMessages(send)).toEqual([{ kind: 'end', handleId: HANDLE }])
+    expect(onStreamFailed).not.toHaveBeenCalled()
+  })
+
+  it('does NOT fire on stop() -- that path already has an owner releasing the handle', async () => {
+    const send = vi.fn()
+    const onStreamFailed = vi.fn()
+    const pump = createPortPump({
+      handleId: HANDLE, readable: chunkStream([chunk(4)]), send, initialCredit: 1_000, onStreamFailed
+    })
+    pump.stop('revoked')
+    await tick(10)
+
+    expect(onStreamFailed).not.toHaveBeenCalled()
+  })
+
+  it('fires exactly once even if credit keeps arriving after the stream has already errored', async () => {
+    // A ReadableStream rejects every FUTURE read() with the same error once
+    // errored (WHATWG Streams spec, not re-invoked pull()) -- so a stray
+    // CreditMessage arriving after the failure must not re-enter the pump
+    // and call onStreamFailed a second time for the same handle.
+    const send = vi.fn()
+    const onStreamFailed = vi.fn()
+    const readable = new ReadableStream<Uint8Array>({
+      pull (c) { c.error(Object.assign(new Error('reset'), { code: 'ECONNRESET' })) }
+    })
+    const pump = createPortPump({
+      handleId: HANDLE, readable, send, initialCredit: 25, onStreamFailed, mapError: () => 'reset'
+    })
+    await tick(10)
+    expect(onStreamFailed).toHaveBeenCalledTimes(1)
+
+    pump.handleCredit({ kind: 'credit', handleId: HANDLE, bytesConsumed: 1_000 })
+    await tick(10)
+
+    expect(onStreamFailed).toHaveBeenCalledTimes(1)
+  })
+})

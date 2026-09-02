@@ -3,7 +3,8 @@ import { createPortRegistry } from './port-registry.js'
 import { handleControlRequest, registerBrokerIpc } from './ipc.js'
 import type { ControlEvent, IpcMainLike, PortLike, PortPair, PortTransport } from './ipc.js'
 import type { Broker } from './index.js'
-import type { Grant, Manifest, OrivonError, TcpSocket } from '../contracts/index.js'
+import type { Grant, Manifest, OrivonError, OrivonErrorCode } from '../contracts/index.js'
+import type { FailableTcpSocket } from './handle-contracts.js'
 import type { RequestEnvelope, ResponseEnvelope } from '../contracts/ipc.js'
 
 // This suite is what proves handleControlRequest is the thing DoD rule 1
@@ -48,7 +49,7 @@ function stubBroker (
   overrides: Partial<{
     manifest: (origin: string) => Promise<Manifest>
     grants: (origin: string) => Promise<readonly Grant[]>
-    connect: (origin: string, opts: { host: string, port: number }) => Promise<TcpSocket>
+    connect: (origin: string, opts: { host: string, port: number }) => Promise<FailableTcpSocket>
     readFile: (origin: string, path: string) => Promise<Uint8Array>
     writeFile: (origin: string, path: string, data: Uint8Array) => Promise<void>
   }> = {}
@@ -188,22 +189,33 @@ function fakeTransport (pair: PortPair): PortTransport {
 }
 
 interface FakeSocket {
-  readonly socket: TcpSocket
+  readonly socket: FailableTcpSocket
   readonly closeSpy: ReturnType<typeof vi.fn>
+  readonly failSpy: ReturnType<typeof vi.fn>
   readonly settleClosed: (error?: OrivonError) => void
 }
 
-/** A TcpSocket whose `readable` a test controls directly and whose `closed` a test settles on demand -- close() itself settles it as a real TcpSocket.close() would. */
+/** A FailableTcpSocket whose `readable` a test controls directly and whose `closed` a test settles on demand -- close()/fail() themselves settle it, the same way the real ones do (index.ts's connect()). */
 function fakeTcpSocket (readable: ReadableStream<Uint8Array> = new ReadableStream({ start: (c) => { c.close() } })): FakeSocket {
   let settle: (error?: OrivonError) => void = () => {}
+  let settled = false
   const closed = new Promise<void>((resolve, reject) => {
-    settle = (error) => { if (error === undefined) resolve(); else reject(error) }
+    settle = (error) => {
+      if (settled) return
+      settled = true
+      if (error === undefined) resolve(); else reject(error)
+    }
   })
   const closeSpy = vi.fn(async () => { settle() })
-  const socket: TcpSocket = {
+  const failSpy = vi.fn((code: OrivonErrorCode, platformCode?: string) => {
+    const err = { name: 'OrivonError', message: 'the handle failed', code, platformCode } as OrivonError
+    settle(err)
+  })
+  const socket: FailableTcpSocket = {
     id: 'handle-1',
     closed,
     close: closeSpy,
+    fail: failSpy,
     readable,
     writable: new WritableStream(),
     remoteAddress: '93.184.216.34',
@@ -213,7 +225,7 @@ function fakeTcpSocket (readable: ReadableStream<Uint8Array> = new ReadableStrea
     setNoDelay: async () => {},
     setKeepAlive: async () => {}
   }
-  return { socket, closeSpy, settleClosed: settle }
+  return { socket, closeSpy, failSpy, settleClosed: settle }
 }
 
 /** Lets a fire-and-forget pump/wiring chain progress before assertions run. */
@@ -640,3 +652,44 @@ describe('registerBrokerIpc', () => {
 // with them (docs/development/code-guidelines.md Rule 2 -- this file's own
 // net.connect/net.close wiring pushed it over budget). See
 // node-adapters.test.ts.
+
+describe('a socket that dies underneath the broker fails its handle for real', () => {
+  // handle-contracts.md: without an entry point for "this resource died
+  // underneath us", a peer RST "is reported as a clean successful close,
+  // which is the COMMON way a socket ends" -- and conformance item 12 wants
+  // a peer reset to REJECT closed with the real platformCode, not resolve
+  // it. FailableTcpSocket.fail (index.ts) is that entry point; this proves
+  // ipc.ts's net.connect wiring actually reaches it.
+  it("calls the socket's fail(), not close(), when its readable errors", async () => {
+    const calls: BrokerCall[] = []
+    const rawError = Object.assign(new Error('reset'), { code: 'ECONNRESET' })
+    const readable = new ReadableStream<Uint8Array>({ pull (c) { c.error(rawError) } })
+    const { socket, closeSpy, failSpy } = fakeTcpSocket(readable)
+    const transport = fakeTransport(fakePortPair().pair)
+
+    await handleControlRequest(
+      stubBroker(calls, { connect: async () => socket }),
+      frameFor(APP), envelope('net.connect', { host: 'x.example', port: 443 }), transport
+    )
+    await tick(20)
+
+    expect(failSpy).toHaveBeenCalledWith('reset', 'ECONNRESET')
+    expect(closeSpy).not.toHaveBeenCalled()
+    expect(transport.registry.get(APP, 'handle-1')).toBeUndefined()
+  })
+
+  it('does not call fail() on a clean EOF -- readable ending is half-close, not death', async () => {
+    const calls: BrokerCall[] = []
+    const { socket, failSpy } = fakeTcpSocket() // default readable closes immediately
+    const transport = fakeTransport(fakePortPair().pair)
+
+    await handleControlRequest(
+      stubBroker(calls, { connect: async () => socket }),
+      frameFor(APP), envelope('net.connect', { host: 'x.example', port: 443 }), transport
+    )
+    await tick(20)
+
+    expect(failSpy).not.toHaveBeenCalled()
+    expect(transport.registry.get(APP, 'handle-1')).toBeDefined()
+  })
+})
