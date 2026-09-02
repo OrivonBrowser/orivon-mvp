@@ -148,6 +148,21 @@ function destroySocket (socket: Socket, reason: CloseReason): Promise<void> {
 }
 
 /**
+ * How long ONE dial attempt may run before it is abandoned. Node's own
+ * `net.connect` has no timeout, and the only other bound in the path is
+ * ipc.ts's `withTimeout`, which answers the CALLER but by its own doc does
+ * not cancel the work -- so without this a connect to a blackholed address
+ * held an fd and a per-origin in-flight slot for the OS SYN timeout (~130s on
+ * Linux), and `dialTcp` walks its addresses sequentially, serialising that
+ * cost per address.
+ *
+ * AI recommendation, not an owner decision: the value is not specified
+ * anywhere in contracts/ or handle-contracts.md, and putting it in LIMITS
+ * would be a src/contracts/ change that has to merge on its own.
+ */
+const DIAL_TIMEOUT_MS = 30_000
+
+/**
  * One dial attempt. `readable`/`writable` are real WHATWG streams
  * (`node:stream`'s `Duplex.toWeb`) so `DialedSocket`'s type is honestly
  * satisfied -- `broker.net.connect` cannot type-check otherwise -- even
@@ -160,7 +175,17 @@ function dialOne (address: string, port: number, signal: AbortSignal): Promise<D
     const socket = netConnect({ host: address, port })
     const onAbort = (): void => { socket.destroy() }
     signal.addEventListener('abort', onAbort, { once: true })
-    const settle = (): void => { signal.removeEventListener('abort', onAbort) }
+    let timer: NodeJS.Timeout
+    const settle = (): void => {
+      clearTimeout(timer)
+      signal.removeEventListener('abort', onAbort)
+    }
+    timer = setTimeout(() => {
+      settle()
+      socket.destroy()
+      reject(fail('timeout', `connecting to ${address}:${port} exceeded ${String(DIAL_TIMEOUT_MS)}ms`))
+    }, DIAL_TIMEOUT_MS)
+    timer.unref()
 
     socket.once('error', (error: NodeJS.ErrnoException) => {
       settle()
