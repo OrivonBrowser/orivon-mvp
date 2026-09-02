@@ -410,6 +410,49 @@ describe('a socket whose port never reaches its frame is released, not leaked', 
     expect(closePort).toHaveBeenCalled()
   })
 
+  it('closes the port exactly once even though abandon and the closed handler both release', async () => {
+    const calls: BrokerCall[] = []
+    const { socket } = fakeTcpSocket()
+    const { pair, port1 } = fakePortPair()
+    const closePort = vi.spyOn(port1, 'close')
+
+    await handleControlRequest(
+      stubBroker(calls, { connect: async () => socket }),
+      disposedFrame(APP), envelope('net.connect', { host: 'x.example', port: 443 }), fakeTransport(pair)
+    )
+    await tick(10)
+
+    // A real MessagePortMain would otherwise be closed twice: once by
+    // abandon(), once by the socket.closed handler abandon's own close()
+    // triggers.
+    expect(closePort).toHaveBeenCalledTimes(1)
+  })
+
+  it('a throwing teardown is logged, never left as an unhandled rejection (it would kill the main process)', async () => {
+    const calls: BrokerCall[] = []
+    const { socket, settleClosed } = fakeTcpSocket()
+    const { pair, port1 } = fakePortPair()
+    port1.close = () => { throw new Error('port already gone') }
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const unhandled = vi.fn()
+    process.on('unhandledRejection', unhandled)
+
+    await handleControlRequest(
+      stubBroker(calls, { connect: async () => socket }),
+      frameFor(APP), envelope('net.connect', { host: 'x.example', port: 443 }), fakeTransport(pair)
+    )
+    settleClosed()
+    await tick(20)
+    process.off('unhandledRejection', unhandled)
+    // Read the call count BEFORE restoring -- mockRestore() clears the
+    // recorded calls along with the stub.
+    const logCalls = logged.mock.calls.length
+    logged.mockRestore()
+
+    expect(unhandled).not.toHaveBeenCalled()
+    expect(logCalls).toBeGreaterThan(0)
+  })
+
   it('releases the socket if the frame changed origin between the request and the delivery (T17)', async () => {
     const calls: BrokerCall[] = []
     const { socket, closeSpy } = fakeTcpSocket()
