@@ -76,6 +76,7 @@ None of these block starting the week-0 spike.
 | A35 | **`ResponseEnvelope` carries no `handleId`, though `OrivonError` declares one.** `contracts/errors.ts` specifies `platformCode` and `handleId` as optional fields an error may carry; `contracts/ipc.ts`'s `ResponseEnvelope`'s failure branch forwards `code`/`platformCode`/`message` but not `handleId`. A `'closed'` error naming which handle closed loses that identifier the moment it crosses IPC | **Before a `'closed'` error needs to name its handle over IPC** — not reachable yet (build step 2's control channel wires no method that can throw `'closed'`), but a contracts gap, so its own PR per `parallel-work.md` rule 3. See below |
 | A36 | **`build-plan.md` places grant prompts in build step 2; `A20` and `A27` both say build step 4.** `build-plan.md`'s own Sequence section lists "grant prompts" under step 2 ("Capability broker"), but `A20`'s and `A27`'s "Needed by" columns both independently say "before the grant prompt is built (build step 4)" | **Before the grant prompt is scheduled.** One of the two documents is wrong; the owner should pick which. See below |
 | A37 | **The write direction of the byte pump (an app writing bytes out over `TcpSocket.writable`) has no wire message anywhere.** `contracts/ipc.ts` specifies `DataMessage`/`CreditMessage`/`StreamEndMessage` in full for the READ direction only; `handle-contracts.md`'s Backpressure section, `capability-api.md`'s Throughput section and `ADR-0008` all describe the write side only as an outcome ("`write()` resolves only once the broker has accepted the bytes"), never as a protocol | **Before the preload-side byte-pump PR** (readable/writable streams built over the port) **can implement `writable`.** See below |
+| A38 | **T11b's mitigation has two documented halves; only one exists.** `security-model.md`'s T11b entry names both a per-origin in-flight cap AND "a token-bucket rate limit on IPC dispatch" as the mitigation. The in-flight cap exists (`handles.ts`) and covers every method that does real I/O, but `app.manifest`/`app.grants` never call `handleTable.run`, so nothing bounds how *often* an origin may call them — only how many may be outstanding at once, which a call that resolves in a microtask never accumulates. Reproduced: 5,000 concurrent `app.grants` calls from one origin, zero rejected | **Before shipping any app that can call `orivon.app.*` in a tight loop** — a buggy or hostile one can currently keep the broker's UI thread (and so every tab) busy indefinitely through these two methods alone. See below |
 
 ---
 
@@ -706,6 +707,52 @@ against real backpressure behaviour — a recommendation to start from, not a de
 
 **Needed by:** before the preload-side byte-pump PR (readable/writable WHATWG streams built over
 the port in the isolated world) can implement `writable` at all.
+
+
+### A38 — no per-origin rate limit on IPC dispatch, only a concurrency cap **[STILL OPEN]**
+
+Found re-checking the control channel while fixing an unrelated defect in the byte-pump PRs
+(build step 2, 2026-09-02) — specifically while confirming what actually bounds
+`app.manifest`/`app.grants`, the two wired methods with no I/O of their own.
+
+`security-model.md`'s T11b entry names the mitigation as two things together: "Per-origin
+in-flight cap + token-bucket rate limit on IPC dispatch; all `fs` work genuinely async." The
+first half is real and tested — `HandleTable`'s `inFlight` counter (`handles.ts`), enforced via
+`handleTable.run`, rejects immediately rather than queueing once `LIMITS.inFlightOperations` is
+hit (`contracts/limits.ts`). The second half — a rate limit, bounding how often an origin may
+call in a given span of time, independent of how many calls are outstanding at once — does not
+exist anywhere in the tree. `grep`ping for "token", "bucket" or "rate.?limit" under `src/`
+returns nothing resembling one.
+
+This matters specifically for `app.manifest` and `app.grants`: neither calls `handleTable.run`
+(there is no handle, no grant, and no I/O to scope), so the in-flight cap never engages for
+them — each call resolves before the next one could push the count up. Confirmed empirically,
+not assumed: 5,000 concurrent `orivon.app.grants()` calls from a single origin, fired through
+`handleControlRequest` directly, were answered in full — zero rejected with `'limit'`. Every one
+of those calls still runs a dispatch through the broker on the Electron **UI thread** (the same
+thread every tab's compositor and input handling shares), so a loop of these from one origin is
+T11b by a route the in-flight cap was never built to cover: a freeze of every open tab, not a
+resource leak.
+
+**Not fixed in the branch that found it, on purpose.** A rate limit needs real decisions this
+document exists to surface rather than guess at: how many calls per second is the bound, whether
+it is shared across all six methods or set per method, whether it decays linearly or in discrete
+buckets, and whether `fs`/`net` calls — already capped by the in-flight limit — should also count
+against it. None of `contracts/`, `handle-contracts.md` or `capability-api.md` specifies any of
+this; inventing a set of numbers from inside a fix branch would be exactly the kind of
+undocumented, silently-decided architecture Rule 1 exists to prevent.
+
+**AI recommendation, for whoever designs it:** the shape T11b's own wording already implies
+(a token bucket: a per-origin budget that refills at a fixed rate and is spent per call,
+rejecting once empty rather than queueing, mirroring the in-flight cap's own "reject
+immediately" rule) is a reasonable starting point. Where it would live (a new field on
+`LIMITS`, a new small module analogous to `port-registry.ts`, and where in `handleControlRequest`
+/`dispatch` it would be checked) is not decided here.
+
+**Needed by:** before any app can call `orivon.app.manifest`/`orivon.app.grants` in a loop with
+no user action gating it — realistically, whichever build step first ships an app that polls its
+own grants (a plausible pattern for anything that wants to react to a revocation live).
+
 
 ---
 

@@ -1,5 +1,7 @@
+import { statSync } from 'node:fs'
 import { mkdtemp, readFile as fsReadFile } from 'node:fs/promises'
 import { createServer, type Server, type Socket } from 'node:net'
+import { createBroker } from './index.js'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -34,11 +36,66 @@ describe('nodeFs (the real filesystem adapter)', () => {
     expect(await fsReadFile(path)).toEqual(Buffer.from(data))
   })
 
-  it('readFile of a missing file rejects with notFound, not a raw ENOENT', async () => {
+  // This adapter deliberately does NOT classify its own errors. index.ts's
+  // mapIoError is the single place an errno becomes an OrivonError, and it
+  // passes an already-shaped OrivonError straight through unchanged -- so an
+  // adapter that pre-shaped one BYPASSED the mapper rather than helping it.
+  // index.test.ts already pins what the mapper then does with these
+  // (ENOENT -> notFound + platformCode; EACCES -> denied and no
+  // platformCode); those tests used a stub fs, which is why the real
+  // adapter's bypass did not show up there.
+  it('readFile of a missing file surfaces the raw errno for the broker to map', async () => {
     const userData = await mkdtemp(join(tmpdir(), 'orivon-nodefs-'))
     const fs = nodeFs(userData)
 
-    await expect(fs.readFile(join(userData, 'missing.txt'))).rejects.toMatchObject({ code: 'notFound' })
+    await expect(fs.readFile(join(userData, 'missing.txt'))).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('never raises an OrivonError-shaped failure naming the confined absolute path (T13b)', async () => {
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-nodefs-'))
+    const fs = nodeFs(userData)
+    const secret = join(fs.rootFor('https://app.example'), 'missing.txt')
+
+    const error = await fs.readFile(secret).then(() => undefined, (e: unknown) => e)
+
+    // A raw Node error names the path -- that is Node's own message, and
+    // mapIoError replaces it wholesale. What must never happen is this file
+    // handing back something mapIoError will pass through untouched, because
+    // that is what reaches the page verbatim.
+    expect((error as { name?: string }).name).not.toBe('OrivonError')
+  })
+})
+
+describe('readFile never hands back a window into shared memory', () => {
+  // Structured clone -- the path this value takes to a renderer -- serialises
+  // an ArrayBufferView by serialising its WHOLE backing ArrayBuffer. If the
+  // returned view were a slice of Node's shared allocation pool, the page
+  // would receive the entire slab and could read the rest of it back as
+  // `new Uint8Array(result.buffer)`: bytes it never asked for, from whatever
+  // the pool last held.
+  it('the returned array owns its buffer exactly (no pooled slack, no offset)', async () => {
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-nodefs-'))
+    const fs = nodeFs(userData)
+    const path = join(fs.rootFor('https://app.example'), 'small.bin')
+    // Small enough to be pool-allocated by Buffer.allocUnsafe, which is what
+    // readFileSync and friends use at this size.
+    await fs.writeFile(path, new Uint8Array([1, 2, 3, 4, 5]))
+
+    const result = await fs.readFile(path)
+
+    expect(result.byteLength).toBe(5)
+    expect(result.byteOffset).toBe(0)
+    expect(result.buffer.byteLength).toBe(5)
+  })
+
+  it('round-trips the actual bytes', async () => {
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-nodefs-'))
+    const fs = nodeFs(userData)
+    const path = join(fs.rootFor('https://app.example'), 'bytes.bin')
+    const written = new Uint8Array([9, 8, 7, 6])
+    await fs.writeFile(path, written)
+
+    expect(Array.from(await fs.readFile(path))).toEqual([9, 8, 7, 6])
   })
 })
 
@@ -150,5 +207,38 @@ describe('dialTcp / dialOne against a real local TCP server', () => {
     // exactly what this reason must NOT do -- so this resolving promptly is
     // itself the behavioural difference from 'closed' worth asserting.
     await dialed.destroy('failed')
+  })
+})
+
+describe('the fs capability works end to end for an origin that has never written before', () => {
+  // confinePath's first act is realpath(root), and it denies when that
+  // throws -- so a root nothing ever creates denies every path an app asks
+  // for, with the same message a real traversal attempt gets. It fails
+  // closed, which is why nothing caught it, and it fails always.
+  it('rootFor creates the directory it names', async () => {
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-nodefs-'))
+
+    const root = nodeFs(userData).rootFor('https://app.example')
+
+    expect(statSync(root).isDirectory()).toBe(true)
+  })
+
+  it("a brand-new origin's very first writeFile succeeds rather than being denied", async () => {
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-nodefs-'))
+    const broker = createBroker({
+      dial: async () => { throw new Error('not used by this test') },
+      resolve: async () => [],
+      now: () => Date.now(),
+      fs: nodeFs(userData),
+      keychain: { getSeed: async () => { throw new Error('not used by this test') } }
+    })
+    broker.registerApp('https://app.example', {
+      name: 'probe', version: '1.0.0', orivonApiVersion: 0, capabilities: { fs: { quotaBytes: 1_000_000 } }
+    } as never)
+    broker.grant('https://app.example', 'fs', [])
+
+    await broker.fs.writeFile('https://app.example', 'hello.txt', new Uint8Array([1, 2, 3]))
+
+    expect(Array.from(await broker.fs.readFile('https://app.example', 'hello.txt'))).toEqual([1, 2, 3])
   })
 })

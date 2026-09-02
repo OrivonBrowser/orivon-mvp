@@ -58,46 +58,15 @@ import type { PortRegistry } from './port-registry.js'
 import { originFromSenderFrame } from './policy/origin.js'
 import type { SenderFrameLike } from './policy/origin.js'
 import { fail, isOrivonErrorLike } from './errors.js'
+import {
+  envelopeId, isControlMethod, isFsReadFileParams, isFsWriteFileParams,
+  isNetCloseParams, isNetConnectParams, isRequestEnvelope
+} from './ipc-validation.js'
 import type { DataMessage, OrivonErrorCode, RequestEnvelope, ResponseEnvelope, StreamEndMessage } from '../contracts/index.js'
 import { LIMITS } from '../contracts/index.js'
 
 export { CONTROL_CHANNEL, PORT_CHANNEL }
-
-/** The six wired control operations. Anything else is 'invalid'. */
-export type ControlMethod = 'app.manifest' | 'app.grants' | 'fs.readFile' | 'fs.writeFile' | 'net.connect' | 'net.close'
-
-function isControlMethod (method: string): method is ControlMethod {
-  return method === 'app.manifest' || method === 'app.grants' ||
-    method === 'fs.readFile' || method === 'fs.writeFile' ||
-    method === 'net.connect' || method === 'net.close'
-}
-
-export interface FsReadFileParams { readonly path: string }
-export interface FsWriteFileParams { readonly path: string, readonly data: Uint8Array }
-export interface NetConnectParams { readonly host: string, readonly port: number }
-export interface NetCloseParams { readonly id: string }
-
-function isFsReadFileParams (payload: unknown): payload is FsReadFileParams {
-  return typeof payload === 'object' && payload !== null &&
-    typeof (payload as { path?: unknown }).path === 'string'
-}
-
-function isFsWriteFileParams (payload: unknown): payload is FsWriteFileParams {
-  return typeof payload === 'object' && payload !== null &&
-    typeof (payload as { path?: unknown }).path === 'string' &&
-    (payload as { data?: unknown }).data instanceof Uint8Array
-}
-
-function isNetConnectParams (payload: unknown): payload is NetConnectParams {
-  return typeof payload === 'object' && payload !== null &&
-    typeof (payload as { host?: unknown }).host === 'string' &&
-    typeof (payload as { port?: unknown }).port === 'number'
-}
-
-function isNetCloseParams (payload: unknown): payload is NetCloseParams {
-  return typeof payload === 'object' && payload !== null &&
-    typeof (payload as { id?: unknown }).id === 'string'
-}
+export type { ControlMethod, FsReadFileParams, FsWriteFileParams, NetConnectParams, NetCloseParams } from './ipc-validation.js'
 
 /**
  * What `orivon.net.connect` resolves to over CONTROL_CHANNEL. Deliberately
@@ -164,6 +133,11 @@ export interface ControlEvent {
   readonly senderFrame: PortDeliveryFrame | null
 }
 
+/** The raw errno off a Node error, if it has one -- shared by the mapper below and by `onStreamFailed`'s platformCode. */
+function errnoOf (error: unknown): string | undefined {
+  return error instanceof Error && 'code' in error ? String((error as NodeJS.ErrnoException).code) : undefined
+}
+
 /**
  * Maps a raw error off `socket.readable` to a closed-enum code. Deliberately
  * narrow (this is the ONE call site that needs it): a real Node stream
@@ -172,7 +146,7 @@ export interface ControlEvent {
  * are the only ones with a sharper code than 'internal' worth naming.
  */
 function mapSocketReadError (error: unknown): OrivonErrorCode {
-  const code = error instanceof Error && 'code' in error ? String((error as NodeJS.ErrnoException).code) : undefined
+  const code = errnoOf(error)
   if (code === 'ECONNRESET' || code === 'EPIPE') return 'reset'
   if (code === 'ETIMEDOUT') return 'timeout'
   return 'internal'
@@ -214,38 +188,104 @@ async function dispatch (
         readable: socket.readable,
         send: (message) => { pair.port1.postMessage(message) },
         initialCredit: LIMITS.readWindowBytes,
-        mapError: mapSocketReadError
+        mapError: mapSocketReadError,
+        // A socket that dies underneath us releases nothing on its own:
+        // `socket.closed` never settles, so the handler below never runs and
+        // the handle stays counted against LIMITS.concurrentSockets forever.
+        // A peer reset is ordinary traffic, so 512 of them permanently
+        // exhaust an origin's socket budget with no way back but a restart.
+        // FailableTcpSocket.fail also rejects `closed` with the real reason
+        // -- conformance item 12 (handle-contracts.md): a peer reset must
+        // reject, not resolve as a clean successful close.
+        onStreamFailed: (code, error) => { socket.fail(code, errnoOf(error)) }
       })
       pair.port1.onMessage((raw) => {
         if (
           typeof raw === 'object' && raw !== null &&
           (raw as { kind?: unknown }).kind === 'credit' &&
           typeof (raw as { handleId?: unknown }).handleId === 'string' &&
-          typeof (raw as { bytesConsumed?: unknown }).bytesConsumed === 'number'
+          Number.isFinite((raw as { bytesConsumed?: unknown }).bytesConsumed) &&
+          (raw as { bytesConsumed: number }).bytesConsumed >= 0
         ) {
           pump.handleCredit(raw as { kind: 'credit', handleId: string, bytesConsumed: number })
         }
       })
 
+      // IDEMPOTENT, and it has to be: `abandon` below runs it and then calls
+      // socket.close(), which settles `socket.closed` and runs it a second
+      // time through the handler just below. A real MessagePortMain would be
+      // closed twice.
+      let released = false
       const cleanup = (): void => {
+        if (released) return
+        released = true
         transport.registry.remove(origin, socket.id)
         pair.port1.close()
       }
+      // The .catch is not decoration. This chain is nobody's awaited promise,
+      // so anything these handlers throw becomes an unhandled rejection --
+      // and Node's default for those since v15 is to THROW, which on the
+      // Electron main process takes the whole browser down, from a socket
+      // teardown path. Teardown failures are logged, never swallowed
+      // silently, per handle-contracts.ts.
       socket.closed.then(
         () => { pump.stop(); cleanup() },
         (error: unknown) => { pump.stop(isOrivonErrorLike(error) ? error.code : 'internal'); cleanup() }
-      )
+      ).catch((error: unknown) => {
+        console.error('[broker] releasing a socket failed after it closed', error)
+      })
 
       transport.registry.register(origin, socket.id, { close: socket.close })
+
+      // If the port never reaches the frame, the app never learns this
+      // socket's id -- the descriptor below is not returned -- so it can
+      // never call net.close for it either. Releasing it here is the only
+      // remaining chance: handle-contracts.ts's destroy rule is that a
+      // resource is released exactly once, ALWAYS, "including when the
+      // acquisition that would have registered the handle is itself
+      // refused... otherwise one fd leaks per attempt against a limit an
+      // attacker can hit in a loop". A frame that navigated or was disposed
+      // between this request and this line is ordinary, not adversarial.
+      const abandon = async (reason: string): Promise<never> => {
+        pump.stop('internal')
+        cleanup()
+        try {
+          await socket.close()
+        } catch {
+          // The handle table is the owner of record and has already been
+          // told to release; a failure here leaves nothing further to do.
+        }
+        throw fail('internal', reason)
+      }
 
       if (event.senderFrame === null) {
         // Unreachable in practice: handleControlRequest already denied a
         // null senderFrame before dispatch() ever runs. Guarded anyway
         // rather than asserted, since a thrown 'internal' here is a far
         // better failure mode than a crash if that ordering ever changes.
-        throw fail('internal', 'no frame to deliver the port to')
+        return await abandon('no frame to deliver the port to')
       }
-      event.senderFrame.postMessage(PORT_CHANNEL, { handleId: socket.id }, [pair.port2])
+      // RE-DERIVE, never reuse the origin from the top of this request.
+      // dispatch() has awaited a DNS lookup and a dial since then, and
+      // `senderFrame` is a live getter, so the frame this port is about to be
+      // handed to is not necessarily the frame that was authorised. T17's
+      // whole point is that a MessagePort carries NO sender identity -- once
+      // delivered it is a bearer capability, and delivering one across an
+      // origin change would hand it to a page that never asked for it and
+      // holds no grant. policy/origin.ts's own rule is to re-derive on every
+      // call; this is the second point in this request where that applies.
+      //
+      // Electron documents senderFrame as null once a frame has navigated,
+      // which the guard above would also catch -- but that is an undocumented
+      // lifetime detail to lean on, and this check does not depend on it.
+      if (originFromSenderFrame(event.senderFrame) !== origin) {
+        return await abandon('the calling frame changed origin before its socket port could be delivered')
+      }
+      try {
+        event.senderFrame.postMessage(PORT_CHANNEL, { handleId: socket.id }, [pair.port2])
+      } catch {
+        return await abandon('the calling frame went away before its socket port could be delivered')
+      }
 
       const descriptor: SocketDescriptor = {
         id: socket.id,
@@ -338,6 +378,17 @@ export async function handleControlRequest (
   envelope: RequestEnvelope<unknown>,
   transport?: PortTransport
 ): Promise<ResponseEnvelope<unknown>> {
+  // The envelope itself is untrusted, not just its payload. Reading
+  // `envelope.id` off a null or non-object value throws a TypeError straight
+  // out of the ipcMain.handle listener, which reaches the renderer as a
+  // rejected invoke() carrying a raw V8 message instead of a ResponseEnvelope
+  // -- the one shape every caller on this channel is entitled to. The same
+  // defence-in-depth reason as dispatch()'s payload validation: a compromised
+  // renderer process reaches this channel directly, without contextBridge.
+  if (!isRequestEnvelope(envelope)) {
+    return { id: envelopeId(envelope), ok: false, code: 'invalid', message: 'malformed request envelope' }
+  }
+
   const origin = originFromSenderFrame(event.senderFrame)
   if (origin === null) {
     return { id: envelope.id, ok: false, code: 'denied', message: 'no authenticated origin for this frame' }

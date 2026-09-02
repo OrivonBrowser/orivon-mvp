@@ -3,7 +3,8 @@ import { createPortRegistry } from './port-registry.js'
 import { handleControlRequest, registerBrokerIpc } from './ipc.js'
 import type { ControlEvent, IpcMainLike, PortLike, PortPair, PortTransport } from './ipc.js'
 import type { Broker } from './index.js'
-import type { Grant, Manifest, OrivonError, TcpSocket } from '../contracts/index.js'
+import type { Grant, Manifest, OrivonError, OrivonErrorCode } from '../contracts/index.js'
+import type { FailableTcpSocket } from './handle-contracts.js'
 import type { RequestEnvelope, ResponseEnvelope } from '../contracts/ipc.js'
 
 // This suite is what proves handleControlRequest is the thing DoD rule 1
@@ -48,7 +49,7 @@ function stubBroker (
   overrides: Partial<{
     manifest: (origin: string) => Promise<Manifest>
     grants: (origin: string) => Promise<readonly Grant[]>
-    connect: (origin: string, opts: { host: string, port: number }) => Promise<TcpSocket>
+    connect: (origin: string, opts: { host: string, port: number }) => Promise<FailableTcpSocket>
     readFile: (origin: string, path: string) => Promise<Uint8Array>
     writeFile: (origin: string, path: string, data: Uint8Array) => Promise<void>
   }> = {}
@@ -188,22 +189,33 @@ function fakeTransport (pair: PortPair): PortTransport {
 }
 
 interface FakeSocket {
-  readonly socket: TcpSocket
+  readonly socket: FailableTcpSocket
   readonly closeSpy: ReturnType<typeof vi.fn>
+  readonly failSpy: ReturnType<typeof vi.fn>
   readonly settleClosed: (error?: OrivonError) => void
 }
 
-/** A TcpSocket whose `readable` a test controls directly and whose `closed` a test settles on demand -- close() itself settles it as a real TcpSocket.close() would. */
+/** A FailableTcpSocket whose `readable` a test controls directly and whose `closed` a test settles on demand -- close()/fail() themselves settle it, the same way the real ones do (index.ts's connect()). */
 function fakeTcpSocket (readable: ReadableStream<Uint8Array> = new ReadableStream({ start: (c) => { c.close() } })): FakeSocket {
   let settle: (error?: OrivonError) => void = () => {}
+  let settled = false
   const closed = new Promise<void>((resolve, reject) => {
-    settle = (error) => { if (error === undefined) resolve(); else reject(error) }
+    settle = (error) => {
+      if (settled) return
+      settled = true
+      if (error === undefined) resolve(); else reject(error)
+    }
   })
   const closeSpy = vi.fn(async () => { settle() })
-  const socket: TcpSocket = {
+  const failSpy = vi.fn((code: OrivonErrorCode, platformCode?: string) => {
+    const err = { name: 'OrivonError', message: 'the handle failed', code, platformCode } as OrivonError
+    settle(err)
+  })
+  const socket: FailableTcpSocket = {
     id: 'handle-1',
     closed,
     close: closeSpy,
+    fail: failSpy,
     readable,
     writable: new WritableStream(),
     remoteAddress: '93.184.216.34',
@@ -213,7 +225,7 @@ function fakeTcpSocket (readable: ReadableStream<Uint8Array> = new ReadableStrea
     setNoDelay: async () => {},
     setKeepAlive: async () => {}
   }
-  return { socket, closeSpy, settleClosed: settle }
+  return { socket, closeSpy, failSpy, settleClosed: settle }
 }
 
 /** Lets a fire-and-forget pump/wiring chain progress before assertions run. */
@@ -358,6 +370,166 @@ describe("net.connect / net.close (the byte pump's control-channel wiring)", () 
   })
 })
 
+describe('a socket whose port never reaches its frame is released, not leaked', () => {
+  // handle-contracts.ts's destroy rule: released exactly once, ALWAYS,
+  // "including when the acquisition that would have registered the handle is
+  // itself refused... otherwise one fd leaks per attempt against a limit an
+  // attacker can hit in a loop". A frame that navigated or was disposed
+  // between the request and the port delivery is ordinary, not adversarial --
+  // and because the descriptor is never returned, the app never learns the id
+  // it would need to call net.close with.
+  function disposedFrame (origin: string): ControlEvent {
+    return {
+      senderFrame: {
+        url: `${origin}/index.html`,
+        origin,
+        postMessage: () => { throw new Error('Render frame was disposed before WebFrameMain could be accessed') }
+      }
+    }
+  }
+
+  it('closes the socket and unregisters it when postMessage throws', async () => {
+    const calls: BrokerCall[] = []
+    const { socket, closeSpy } = fakeTcpSocket()
+    const transport = fakeTransport(fakePortPair().pair)
+
+    const response = await handleControlRequest(
+      stubBroker(calls, { connect: async () => socket }),
+      disposedFrame(APP),
+      envelope('net.connect', { host: 'x.example', port: 443 }),
+      transport
+    )
+    await tick(10)
+
+    expect(response.ok).toBe(false)
+    expect((response as { code: string }).code).toBe('internal')
+    expect(closeSpy).toHaveBeenCalledOnce()
+    expect(transport.registry.get(APP, 'handle-1')).toBeUndefined()
+  })
+
+  it('closes the port it minted, so the pump cannot go on writing into a port nobody holds', async () => {
+    const calls: BrokerCall[] = []
+    const { socket } = fakeTcpSocket()
+    const { pair, port1 } = fakePortPair()
+    const closePort = vi.spyOn(port1, 'close')
+
+    await handleControlRequest(
+      stubBroker(calls, { connect: async () => socket }),
+      disposedFrame(APP), envelope('net.connect', { host: 'x.example', port: 443 }), fakeTransport(pair)
+    )
+    await tick(10)
+
+    expect(closePort).toHaveBeenCalled()
+  })
+
+  it('closes the port exactly once even though abandon and the closed handler both release', async () => {
+    const calls: BrokerCall[] = []
+    const { socket } = fakeTcpSocket()
+    const { pair, port1 } = fakePortPair()
+    const closePort = vi.spyOn(port1, 'close')
+
+    await handleControlRequest(
+      stubBroker(calls, { connect: async () => socket }),
+      disposedFrame(APP), envelope('net.connect', { host: 'x.example', port: 443 }), fakeTransport(pair)
+    )
+    await tick(10)
+
+    // A real MessagePortMain would otherwise be closed twice: once by
+    // abandon(), once by the socket.closed handler abandon's own close()
+    // triggers.
+    expect(closePort).toHaveBeenCalledTimes(1)
+  })
+
+  it('a throwing teardown is logged, never left as an unhandled rejection (it would kill the main process)', async () => {
+    const calls: BrokerCall[] = []
+    const { socket, settleClosed } = fakeTcpSocket()
+    const { pair, port1 } = fakePortPair()
+    port1.close = () => { throw new Error('port already gone') }
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const unhandled = vi.fn()
+    process.on('unhandledRejection', unhandled)
+
+    await handleControlRequest(
+      stubBroker(calls, { connect: async () => socket }),
+      frameFor(APP), envelope('net.connect', { host: 'x.example', port: 443 }), fakeTransport(pair)
+    )
+    settleClosed()
+    await tick(20)
+    process.off('unhandledRejection', unhandled)
+    // Read the call count BEFORE restoring -- mockRestore() clears the
+    // recorded calls along with the stub.
+    const logCalls = logged.mock.calls.length
+    logged.mockRestore()
+
+    expect(unhandled).not.toHaveBeenCalled()
+    expect(logCalls).toBeGreaterThan(0)
+  })
+
+  it('releases the socket if the frame changed origin between the request and the delivery (T17)', async () => {
+    const calls: BrokerCall[] = []
+    const { socket, closeSpy } = fakeTcpSocket()
+    const transport = fakeTransport(fakePortPair().pair)
+    // A frame whose origin moves while broker.net.connect is in flight --
+    // the port would otherwise be delivered to a page that never asked for
+    // it and holds no grant, as a bearer capability it cannot be asked for.
+    const frame = { url: `${APP}/index.html`, origin: APP, postMessage: vi.fn() }
+    const event: ControlEvent = { senderFrame: frame }
+
+    const response = await handleControlRequest(
+      stubBroker(calls, {
+        connect: async () => {
+          frame.url = `${OTHER}/index.html`
+          frame.origin = OTHER
+          return socket
+        }
+      }),
+      event, envelope('net.connect', { host: 'x.example', port: 443 }), transport
+    )
+    await tick(10)
+
+    expect(response.ok).toBe(false)
+    expect(frame.postMessage).not.toHaveBeenCalled()
+    expect(closeSpy).toHaveBeenCalledOnce()
+    expect(transport.registry.get(APP, 'handle-1')).toBeUndefined()
+  })
+})
+
+describe('the request envelope itself is untrusted (a compromised renderer reaches this channel directly)', () => {
+  it.each<[string, unknown]>([
+    ['null', null],
+    ['a string', 'pwned'],
+    ['a number', 7],
+    ['no method', { id: 'req-1', payload: undefined, timeoutMs: 1_000 }],
+    ['a non-string method', { id: 'req-1', method: 42, payload: undefined, timeoutMs: 1_000 }],
+    ['a non-string id', { id: 42, method: 'app.grants', payload: undefined, timeoutMs: 1_000 }],
+    ['no timeoutMs', { id: 'req-1', method: 'app.grants', payload: undefined }],
+    ['a NaN timeoutMs', { id: 'req-1', method: 'app.grants', payload: undefined, timeoutMs: Number.NaN }],
+    ['a zero timeoutMs', { id: 'req-1', method: 'app.grants', payload: undefined, timeoutMs: 0 }],
+    ['a negative timeoutMs', { id: 'req-1', method: 'app.grants', payload: undefined, timeoutMs: -1 }],
+    // Above setTimeout's ceiling Node clamps the delay to 1ms and warns, so
+    // this would otherwise be answered 'timeout' almost instantly.
+    ['a timeoutMs past setTimeout\'s ceiling', { id: 'req-1', method: 'app.grants', payload: undefined, timeoutMs: 2 ** 40 }]
+  ])('returns a ResponseEnvelope rather than throwing, for %s', async (_label, malformed) => {
+    const calls: BrokerCall[] = []
+    const response = await handleControlRequest(
+      stubBroker(calls), frameFor(APP), malformed as RequestEnvelope<unknown>
+    )
+
+    expect(response.ok).toBe(false)
+    expect((response as { code: string }).code).toBe('invalid')
+    expect(calls).toEqual([]) // never reached the broker
+  })
+
+  it('correlates the rejection with the id when the envelope carried a usable one', async () => {
+    const response = await handleControlRequest(
+      stubBroker([]), frameFor(APP),
+      { id: 'req-9', method: 'app.grants', payload: undefined, timeoutMs: Number.NaN } as RequestEnvelope<unknown>
+    )
+
+    expect(response.id).toBe('req-9')
+  })
+})
+
 describe('defensive payload validation (a compromised renderer can bypass contextBridge entirely)', () => {
   it.each<[string, unknown]>([
     ['fs.readFile', {}],
@@ -480,3 +652,44 @@ describe('registerBrokerIpc', () => {
 // with them (docs/development/code-guidelines.md Rule 2 -- this file's own
 // net.connect/net.close wiring pushed it over budget). See
 // node-adapters.test.ts.
+
+describe('a socket that dies underneath the broker fails its handle for real', () => {
+  // handle-contracts.md: without an entry point for "this resource died
+  // underneath us", a peer RST "is reported as a clean successful close,
+  // which is the COMMON way a socket ends" -- and conformance item 12 wants
+  // a peer reset to REJECT closed with the real platformCode, not resolve
+  // it. FailableTcpSocket.fail (index.ts) is that entry point; this proves
+  // ipc.ts's net.connect wiring actually reaches it.
+  it("calls the socket's fail(), not close(), when its readable errors", async () => {
+    const calls: BrokerCall[] = []
+    const rawError = Object.assign(new Error('reset'), { code: 'ECONNRESET' })
+    const readable = new ReadableStream<Uint8Array>({ pull (c) { c.error(rawError) } })
+    const { socket, closeSpy, failSpy } = fakeTcpSocket(readable)
+    const transport = fakeTransport(fakePortPair().pair)
+
+    await handleControlRequest(
+      stubBroker(calls, { connect: async () => socket }),
+      frameFor(APP), envelope('net.connect', { host: 'x.example', port: 443 }), transport
+    )
+    await tick(20)
+
+    expect(failSpy).toHaveBeenCalledWith('reset', 'ECONNRESET')
+    expect(closeSpy).not.toHaveBeenCalled()
+    expect(transport.registry.get(APP, 'handle-1')).toBeUndefined()
+  })
+
+  it('does not call fail() on a clean EOF -- readable ending is half-close, not death', async () => {
+    const calls: BrokerCall[] = []
+    const { socket, failSpy } = fakeTcpSocket() // default readable closes immediately
+    const transport = fakeTransport(fakePortPair().pair)
+
+    await handleControlRequest(
+      stubBroker(calls, { connect: async () => socket }),
+      frameFor(APP), envelope('net.connect', { host: 'x.example', port: 443 }), transport
+    )
+    await tick(20)
+
+    expect(failSpy).not.toHaveBeenCalled()
+    expect(transport.registry.get(APP, 'handle-1')).toBeDefined()
+  })
+})
