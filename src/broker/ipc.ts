@@ -28,6 +28,20 @@
 // so a renderer that learns another origin's handle id cannot close it
 // (T11c).
 //
+// A SECOND, INDEPENDENT LIMIT GATES ALL SIX METHODS UNIFORMLY, before any
+// of them runs (open-questions.md A38): a per-origin token bucket
+// (./token-bucket.js), bounding call FREQUENCY rather than concurrency.
+// HandleTable's inFlight cap never engages for app.manifest/app.grants --
+// neither has a handle, a grant, or I/O to scope -- so nothing bounded how
+// often an origin could call them at all; 5,000 concurrent app.grants()
+// calls were answered in full before this existed. NO EXEMPTION FOR
+// net.close: it needs no grant, so exempting it would just move the same
+// unthrottled DoS onto a different, permanently-open method -- the
+// in-flight cap's own release-paths-bypass-the-limit asymmetry does not
+// transfer here, because releasing a handle at 100/sec is a trivial delay
+// next to leaving a method with no bound at all.
+//
+
 // TWO RULES FROM SPIKE GATE 0 (../contracts/ipc.ts's header), both honoured
 // below: every reply carries an explicit timeout (`withTimeout`, keyed off
 // the envelope's required `timeoutMs`), and nothing on CONTROL_CHANNEL is a
@@ -54,80 +68,21 @@ import type { Broker, CreateBrokerOptions } from './index.js'
 import { dialTcp, nodeFs, resolveHost } from './node-adapters.js'
 import { createPortPump } from './port-pump.js'
 import { createPortRegistry } from './port-registry.js'
-import type { PortRegistry } from './port-registry.js'
+import { createTokenBucketLimiter } from './token-bucket.js'
+import type { RateLimiter } from './token-bucket.js'
 import { originFromSenderFrame } from './policy/origin.js'
-import type { SenderFrameLike } from './policy/origin.js'
 import { errnoOf, fail, isOrivonErrorLike } from './errors.js'
 import {
   envelopeId, isControlMethod, isFsReadFileParams, isFsWriteFileParams,
   isNetCloseParams, isNetConnectParams, isRequestEnvelope
 } from './ipc-validation.js'
-import type { DataMessage, OrivonErrorCode, RequestEnvelope, ResponseEnvelope, StreamEndMessage } from '../contracts/index.js'
+import type { PortDeliveryFrame, PortLike, PortPair, PortTransport, SocketDescriptor } from './port-transport.js'
+import type { OrivonErrorCode, RequestEnvelope, ResponseEnvelope } from '../contracts/index.js'
 import { LIMITS } from '../contracts/index.js'
 
 export { CONTROL_CHANNEL, PORT_CHANNEL }
 export type { ControlMethod, FsReadFileParams, FsWriteFileParams, NetConnectParams, NetCloseParams } from './ipc-validation.js'
-
-/**
- * What `orivon.net.connect` resolves to over CONTROL_CHANNEL. Deliberately
- * NOT a `TcpSocket`: `readable`, `writable`, `close` and `closed` do not
- * survive structured clone, and the actual bytes travel over the port
- * PORT_CHANNEL delivers separately, tagged with this same `id`.
- */
-export interface SocketDescriptor {
-  readonly id: string
-  readonly remoteAddress: string
-  readonly remotePort: number
-  readonly localAddress: string
-  readonly localPort: number
-}
-
-/**
- * The shape of a real `MessagePortMain` this module needs, structurally --
- * a fake stands in for it in tests the same way `SenderFrameLike` lets a
- * literal stand in for `WebFrameMain`.
- */
-export interface PortLike {
-  postMessage: (message: DataMessage | StreamEndMessage) => void
-  onMessage: (listener: (message: unknown) => void) => void
-  close: () => void
-}
-
-/** `port1` (kept here, wired to the pump) and `port2` (handed to the calling frame's PORT_CHANNEL delivery). */
-export interface PortPair {
-  readonly port1: PortLike
-  readonly port2: unknown
-}
-
-/**
- * Everything net.connect/net.close need beyond `broker` itself: a way to
- * mint a real port pair, and the per-origin registry (./port-registry.js)
- * a later net.close call looks a live socket up in. ONE instance lives for
- * the subsystem's whole lifetime (registerBrokerIpc creates it once); every
- * `dispatch` call shares it.
- */
-export interface PortTransport {
-  readonly createPortPair: () => PortPair
-  readonly registry: PortRegistry<{ readonly close: () => Promise<void> }>
-}
-
-/**
- * The shape of Electron's `IpcMainInvokeEvent` this module reads: `
- * senderFrame`, widened with the one extra capability net.connect needs --
- * `postMessage`, to deliver PORT_CHANNEL's port to the SAME frame the
- * request came from. A real `WebFrameMain` satisfies this with room to
- * spare; `SenderFrameLike` (policy/origin.ts) alone would not, which is
- * why this type lives here rather than being reused unwidened.
- */
-export interface PortDeliveryFrame extends SenderFrameLike {
-  // Method shorthand, not a `postMessage: (...) => void` property -- like
-  // IpcMainLike.handle above, this is what makes a real WebFrameMain (whose
-  // own transfer parameter is the narrower MessagePortMain[]) assignable
-  // here. TypeScript checks method-shorthand signatures bivariantly;
-  // arrow-typed properties are checked strictly contravariant and would
-  // reject it.
-  postMessage (channel: string, message: unknown, transfer?: unknown[]): void
-}
+export type { PortDeliveryFrame, PortLike, PortPair, PortTransport, SocketDescriptor } from './port-transport.js'
 
 export interface ControlEvent {
   readonly senderFrame: PortDeliveryFrame | null
@@ -353,6 +308,9 @@ function toFailureResponse (id: string, error: unknown): ResponseEnvelope<never>
   return { id, ok: false, code: 'internal', message: 'an internal error occurred' }
 }
 
+/** Default for a caller (chiefly tests) that passes no real limiter. Never rejects; holds no state. */
+const ALLOW_ALL_LIMITER: RateLimiter = { tryConsume: () => true }
+
 /**
  * The pure core: one request in, one response out. No Electron, no I/O --
  * everything that touches either is INJECTED (`broker`, `event`,
@@ -366,12 +324,18 @@ function toFailureResponse (id: string, error: unknown): ResponseEnvelope<never>
  * net.close -- which is most of this file's own test suite -- does not need
  * one; dispatch() throws 'internal' if a call that needs it is ever made
  * without one, which is a wiring bug, not a capability decision.
+ *
+ * `limiter` is optional the same way: a caller that passes none is never
+ * throttled (`ALLOW_ALL_LIMITER` below), so the whole pre-existing test
+ * suite keeps working unmodified. Real production wiring always supplies
+ * one -- see `brokerIpcSubsystem`.
  */
 export async function handleControlRequest (
   broker: Broker,
   event: ControlEvent,
   envelope: RequestEnvelope<unknown>,
-  transport?: PortTransport
+  transport?: PortTransport,
+  limiter?: RateLimiter
 ): Promise<ResponseEnvelope<unknown>> {
   // The envelope itself is untrusted, not just its payload. Reading
   // `envelope.id` off a null or non-object value throws a TypeError straight
@@ -387,6 +351,13 @@ export async function handleControlRequest (
   const origin = originFromSenderFrame(event.senderFrame)
   if (origin === null) {
     return { id: envelope.id, ok: false, code: 'denied', message: 'no authenticated origin for this frame' }
+  }
+
+  // A38's fix: checked here, before dispatch() ever runs, so a throttled
+  // call never reaches the broker at all -- the same "reject immediately,
+  // never queue" rule the in-flight cap already applies (handles.ts).
+  if (!(limiter ?? ALLOW_ALL_LIMITER).tryConsume(origin)) {
+    return { id: envelope.id, ok: false, code: 'limit', message: 'this origin is calling too frequently; wait and retry' }
   }
 
   try {
@@ -405,9 +376,9 @@ export interface IpcMainLike {
   ): void
 }
 
-/** Thin wiring: one `ipcMain.handle` registration over `handleControlRequest`, sharing one `PortTransport` across every call. */
-export function registerBrokerIpc (ipc: IpcMainLike, broker: Broker, transport: PortTransport): void {
-  ipc.handle(CONTROL_CHANNEL, async (event, envelope) => await handleControlRequest(broker, event, envelope, transport))
+/** Thin wiring: one `ipcMain.handle` registration over `handleControlRequest`, sharing one `PortTransport` and `RateLimiter` across every call. */
+export function registerBrokerIpc (ipc: IpcMainLike, broker: Broker, transport: PortTransport, limiter?: RateLimiter): void {
+  ipc.handle(CONTROL_CHANNEL, async (event, envelope) => await handleControlRequest(broker, event, envelope, transport, limiter))
 }
 
 /** A real `PortPair`, backed by an actual `MessageChannelMain`. The one place this module constructs one. */
@@ -422,14 +393,40 @@ function realPortPair (): PortPair {
   return { port1: wrapped, port2 }
 }
 
+// AI recommendation (open-questions.md A38), NOT an owner decision --
+// flagged in the PR body, not silently chosen. No measured CONTROL_CHANNEL
+// dispatch-rate data exists anywhere in the corpus: spike gate 4 measured
+// socket BYTE throughput over the dedicated port (port-pump.ts), never this
+// channel's call frequency, and by design it never will -- fs.readFile/
+// writeFile and net.connect are each one dispatch per operation, not per
+// byte (this file's own header: "per-message IPC is too slow for
+// torrent-rate data"). Sized against the two things A38 names: the
+// empirical attack (5,000 concurrent app.grants() calls, all answered
+// before this existed -- this cuts that to ~200 admitted, the rest
+// rejected before dispatch()) and the realistic legitimate trigger (an app
+// polling app.grants() to react live to a revocation -- two orders of
+// magnitude of headroom below this budget for any sane polling interval).
+//
+// SHARED ACROSS ALL SIX METHODS, DELIBERATELY LOOSE: fs/net dispatch is
+// real I/O already (not stubs), and no measured call-rate data exists for
+// it either -- an unnecessarily tight shared limit risks 'limit' becoming
+// a routine error for a legitimately busy app well before any evidence
+// exists to size against. This is a genuine, unresolved fairness risk once
+// fs/net see real traffic (a burst of small file reads could starve an
+// unrelated app.grants() poll) -- named in open-questions.md A38's
+// resolution note, not solved here.
+const CONTROL_RATE_LIMIT_CAPACITY = 200
+const CONTROL_RATE_LIMIT_REFILL_PER_SECOND = 100
+
 /** Builds the production `Broker` and registers it on `ipcMain`. The one place this module's `electron` value imports are used. */
 export const brokerIpcSubsystem: Subsystem = {
   name: 'broker',
   afterReady: (ctx: SubsystemContext) => {
+    const realNow = (): number => Date.now()
     const deps: CreateBrokerOptions = {
       dial: dialTcp,
       resolve: resolveHost,
-      now: () => Date.now(),
+      now: realNow,
       fs: nodeFs(ctx.app.getPath('userData')),
       // ADR-0010 key derivation is out of scope for this task (broker/
       // index.ts's own header: "nothing below calls it yet") -- none of the
@@ -439,6 +436,11 @@ export const brokerIpcSubsystem: Subsystem = {
       }
     }
     const transport: PortTransport = { createPortPair: realPortPair, registry: createPortRegistry() }
-    registerBrokerIpc(ipcMain, createBroker(deps), transport)
+    const limiter = createTokenBucketLimiter({
+      capacity: CONTROL_RATE_LIMIT_CAPACITY,
+      refillPerSecond: CONTROL_RATE_LIMIT_REFILL_PER_SECOND,
+      now: realNow
+    })
+    registerBrokerIpc(ipcMain, createBroker(deps), transport, limiter)
   }
 }
