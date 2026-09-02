@@ -76,7 +76,7 @@ None of these block starting the week-0 spike.
 | A35 | **`ResponseEnvelope` carries no `handleId`, though `OrivonError` declares one.** `contracts/errors.ts` specifies `platformCode` and `handleId` as optional fields an error may carry; `contracts/ipc.ts`'s `ResponseEnvelope`'s failure branch forwards `code`/`platformCode`/`message` but not `handleId`. A `'closed'` error naming which handle closed loses that identifier the moment it crosses IPC | **Before a `'closed'` error needs to name its handle over IPC** — not reachable yet (build step 2's control channel wires no method that can throw `'closed'`), but a contracts gap, so its own PR per `parallel-work.md` rule 3. See below |
 | A36 | **`build-plan.md` places grant prompts in build step 2; `A20` and `A27` both say build step 4.** `build-plan.md`'s own Sequence section lists "grant prompts" under step 2 ("Capability broker"), but `A20`'s and `A27`'s "Needed by" columns both independently say "before the grant prompt is built (build step 4)" | **Before the grant prompt is scheduled.** One of the two documents is wrong; the owner should pick which. See below |
 | A37 | **The write direction of the byte pump (an app writing bytes out over `TcpSocket.writable`) has no wire message anywhere.** `contracts/ipc.ts` specifies `DataMessage`/`CreditMessage`/`StreamEndMessage` in full for the READ direction only; `handle-contracts.md`'s Backpressure section, `capability-api.md`'s Throughput section and `ADR-0008` all describe the write side only as an outcome ("`write()` resolves only once the broker has accepted the bytes"), never as a protocol | **Before the preload-side byte-pump PR** (readable/writable streams built over the port) **can implement `writable`.** See below |
-| A38 | **T11b's mitigation has two documented halves; only one exists.** `security-model.md`'s T11b entry names both a per-origin in-flight cap AND "a token-bucket rate limit on IPC dispatch" as the mitigation. The in-flight cap exists (`handles.ts`) and covers every method that does real I/O, but `app.manifest`/`app.grants` never call `handleTable.run`, so nothing bounds how *often* an origin may call them — only how many may be outstanding at once, which a call that resolves in a microtask never accumulates. Reproduced: 5,000 concurrent `app.grants` calls from one origin, zero rejected | **Before shipping any app that can call `orivon.app.*` in a tight loop** — a buggy or hostile one can currently keep the broker's UI thread (and so every tab) busy indefinitely through these two methods alone. See below |
+| A38 | **RESOLVED 2026-09-02.** `security-model.md`'s T11b entry names both a per-origin in-flight cap AND "a token-bucket rate limit on IPC dispatch" as the mitigation. The in-flight cap exists (`handles.ts`) and covers every method that does real I/O, but `app.manifest`/`app.grants` never call `handleTable.run`, so nothing bounded how *often* an origin could call them. Reproduced before the fix: 5,000 concurrent `app.grants` calls from one origin, zero rejected. A shared per-origin token bucket (`src/broker/token-bucket.ts`) now gates all six control methods uniformly, checked before `dispatch()` runs | Implemented in `src/broker/token-bucket.ts` and wired in `src/broker/ipc.ts`'s `handleControlRequest`. **The numbers (capacity 200, refill 100/sec) are AI-recommended, not owner-decided** — see below |
 
 ---
 
@@ -709,7 +709,7 @@ against real backpressure behaviour — a recommendation to start from, not a de
 the port in the isolated world) can implement `writable` at all.
 
 
-### A38 — no per-origin rate limit on IPC dispatch, only a concurrency cap **[STILL OPEN]**
+### A38 — no per-origin rate limit on IPC dispatch, only a concurrency cap **[RESOLVED]**
 
 Found re-checking the control channel while fixing an unrelated defect in the byte-pump PRs
 (build step 2, 2026-09-02) — specifically while confirming what actually bounds
@@ -752,6 +752,44 @@ immediately" rule) is a reasonable starting point. Where it would live (a new fi
 **Needed by:** before any app can call `orivon.app.manifest`/`orivon.app.grants` in a loop with
 no user action gating it — realistically, whichever build step first ships an app that polls its
 own grants (a plausible pattern for anything that wants to react to a revocation live).
+
+### Resolution, 2026-09-02
+
+A shared per-origin token bucket (`src/broker/token-bucket.ts`), checked in
+`handleControlRequest` before `dispatch()` runs, gates **all six** control methods uniformly —
+never queueing, mirroring the in-flight cap's own "reject immediately" rule. Answers the three
+open questions above:
+
+- **Shared across all six methods, not per-method.** Simpler, and automatically covers any
+  future seventh method with no more code. `fs`/`net` are already separately bounded by the
+  in-flight cap; this is an *additional*, independent bound on call *frequency*.
+- **Continuous linear refill, not discrete windows.** Avoids the classic double-burst-at-a-
+  boundary failure mode (max out the tail of one window, then immediately max out the head of
+  the next).
+- **`fs`/`net` calls count against the same shared bucket.** No special-casing.
+
+**The numbers — capacity 200, refill 100/sec per origin — are an AI recommendation, not an
+owner decision**, and are stated as such directly beside them in `src/broker/ipc.ts`. No
+measured `CONTROL_CHANNEL` dispatch-rate data exists anywhere in the corpus (spike gate 4
+measured socket *byte* throughput over the dedicated port, never this channel's call
+frequency), so they are sized against the demonstrated attack (5,000 concurrent calls, now cut
+to ~200 admitted) and the realistic legitimate case (an app polling `app.grants()` — two orders
+of magnitude of headroom below this budget), not against any real `fs`/`net` traffic pattern,
+since none has been exercised yet.
+
+**A `net.close` exemption was considered and rejected.** The idea (cleanup paths shouldn't be
+blocked by the limit they'd relieve, mirroring `HandleTable.release` never being gated by the
+in-flight cap) does not transfer: `net.close` needs no grant at all, so exempting it would
+reopen the exact vulnerability this entry describes through a different, permanently-open
+method. Releasing 512 sockets at 100/sec costs ~5 seconds — a trivial price next to leaving a
+method with no bound.
+
+**New, unresolved risk, named rather than solved:** once `fs`/`net` dispatch sees real traffic
+(build step 3+), a legitimate burst of small file reads or socket connects could consume most of
+an origin's shared budget and cause an *unrelated* `app.grants()` poll to be denied `'limit'`,
+even though that poll alone was well within any sane rate. Revisit once real webtorrent I/O
+drives this path end-to-end — either a second, separate bucket for I/O-bound methods, or a
+documented decision that the trade-off is acceptable.
 
 ### A39 — `index.ts` keeps a private, stricter `isOrivonError` than `errors.ts`'s **[AI-REC]**
 
