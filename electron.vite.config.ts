@@ -73,9 +73,12 @@ export default defineConfig({
         }
       },
       // BUG (found 2026-08-28, real regression): `shell.ts` and
-      // `newtab.ts` both import from `./channels.js` -- the first time
-      // two preload entries have shared a local import, since `app.ts`
-      // never did. Without isolatedEntries, Rollup's default multi-entry
+      // `newtab.ts` both import from `./channels.js` -- the first time two
+      // preload entries had shared a local import. (No longer the sole
+      // example: build step 2's IPC task has `app.ts` share `./channels.js`
+      // too, plus `./orivon-surface.js` with `newtab.ts`. isolatedEntries
+      // already covers both cases the same way.) Without isolatedEntries,
+      // Rollup's default multi-entry
       // behaviour extracts that shared import into `chunks/channels-
       // *.js` and each preload's own output calls
       // `require('./chunks/channels-*.js')` -- but a SANDBOXED preload's
