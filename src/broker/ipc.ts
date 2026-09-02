@@ -58,46 +58,12 @@ import type { PortRegistry } from './port-registry.js'
 import { originFromSenderFrame } from './policy/origin.js'
 import type { SenderFrameLike } from './policy/origin.js'
 import { fail, isOrivonErrorLike } from './errors.js'
+import { isControlMethod, isFsReadFileParams, isFsWriteFileParams, isNetCloseParams, isNetConnectParams } from './ipc-validation.js'
 import type { DataMessage, OrivonErrorCode, RequestEnvelope, ResponseEnvelope, StreamEndMessage } from '../contracts/index.js'
 import { LIMITS } from '../contracts/index.js'
 
 export { CONTROL_CHANNEL, PORT_CHANNEL }
-
-/** The six wired control operations. Anything else is 'invalid'. */
-export type ControlMethod = 'app.manifest' | 'app.grants' | 'fs.readFile' | 'fs.writeFile' | 'net.connect' | 'net.close'
-
-function isControlMethod (method: string): method is ControlMethod {
-  return method === 'app.manifest' || method === 'app.grants' ||
-    method === 'fs.readFile' || method === 'fs.writeFile' ||
-    method === 'net.connect' || method === 'net.close'
-}
-
-export interface FsReadFileParams { readonly path: string }
-export interface FsWriteFileParams { readonly path: string, readonly data: Uint8Array }
-export interface NetConnectParams { readonly host: string, readonly port: number }
-export interface NetCloseParams { readonly id: string }
-
-function isFsReadFileParams (payload: unknown): payload is FsReadFileParams {
-  return typeof payload === 'object' && payload !== null &&
-    typeof (payload as { path?: unknown }).path === 'string'
-}
-
-function isFsWriteFileParams (payload: unknown): payload is FsWriteFileParams {
-  return typeof payload === 'object' && payload !== null &&
-    typeof (payload as { path?: unknown }).path === 'string' &&
-    (payload as { data?: unknown }).data instanceof Uint8Array
-}
-
-function isNetConnectParams (payload: unknown): payload is NetConnectParams {
-  return typeof payload === 'object' && payload !== null &&
-    typeof (payload as { host?: unknown }).host === 'string' &&
-    typeof (payload as { port?: unknown }).port === 'number'
-}
-
-function isNetCloseParams (payload: unknown): payload is NetCloseParams {
-  return typeof payload === 'object' && payload !== null &&
-    typeof (payload as { id?: unknown }).id === 'string'
-}
+export type { ControlMethod, FsReadFileParams, FsWriteFileParams, NetConnectParams, NetCloseParams } from './ipc-validation.js'
 
 /**
  * What `orivon.net.connect` resolves to over CONTROL_CHANNEL. Deliberately
