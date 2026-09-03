@@ -1776,3 +1776,41 @@ is one decision, not two, and deserves its own pass rather than a fix folded int
 
 **Needed by:** before `versionFloorFor` is wired into the app loader's update path. Not blocking
 for this PR, which only adds the floor — it does not yet enforce it anywhere.
+
+---
+
+### A58 — nothing bounds total disk usage across origins, or across successive updates to one origin **[STILL OPEN]**
+
+Filed 2026-09-03, `fix-62` (`stream/loader-05-node-storage`), while fixing `readPin`'s
+corrupt-pin handling and `electron-fetch.ts`'s redirect trust. (A57 taken by a parallel fix
+lane for a different gap, filed the same day — see that lane's own record.)
+
+`fetch-bundle.ts` already bounds ONE bundle install: `MAX_BUNDLE_BYTES` (64 MiB) and
+`MAX_ASSET_BYTES` (16 MiB) cap a single `fetchBundle()` call. Nothing bounds total disk usage
+beyond that single call's own budget. Two distinct gaps, both real:
+
+1. **Across DIFFERENT origins.** Every distinct origin that gets pinned gets its own `code/`
+   root (`node-storage.ts`'s `appRoot`/`codeRoot`), each with its own fresh 64 MiB budget.
+   Nothing sums usage across origins or caps how many origins may be pinned at once.
+2. **Across successive updates to the SAME origin.** The `silent`/TOFU install path
+   (`install()` in `src/loader/index.ts`) never deletes assets left behind by a previous pin
+   before writing the new one — `LoaderStorage` (`storage.ts`) declares only
+   `readPin`/`writePin`/`writeAsset`, no delete/list/gc method at all. A hash-changing update
+   accumulates the old bundle's bytes on top of the new one, indefinitely.
+
+**Checked and ruled out as already covering this:** the `fs` capability's `quotaBytes`
+(`src/broker/grant-ledger.ts`) is a completely separate, unrelated budget — it governs what an
+app writes through its own granted `orivon.fs` capability. Confirmed no shared accounting and
+no shared root with the loader's code-cache storage; it cannot be read as already bounding this.
+
+**Urgency:** flagged as urgent to resolve before/alongside PR #63, which makes bundle
+fetch+cache automatic on just seeing an HTML `<link rel="orivon-manifest">` hint — once that
+discovery trigger exists with no install-time consent gate, this becomes a pure-browsing
+disk-fill vector: visiting enough hostile or merely careless pages, each not deleted or capped
+in aggregate, fills the disk with zero explicit consent.
+
+**Not proposed here:** a specific quota or eviction design (retention window, per-origin vs.
+global cap, eviction order). That is a policy decision for an ADR, not something to guess into
+this entry.
+
+**Needed by:** before/alongside PR #63 lands. See above.

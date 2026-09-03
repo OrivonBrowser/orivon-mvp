@@ -199,8 +199,8 @@ function isSafeDecodedPath (decoded: string): boolean {
   return segments.length > 1
 }
 
-/** Percent-decodes, or null if any escape is malformed. Never throws. */
-function decodePercentEscapes (path: string): string | null {
+/** Percent-decodes, or null if any escape is malformed. Never throws. Exported for ../../loader/node-storage.ts's own decode-then-write step (Rule 3). */
+export function decodePercentEscapes (path: string): string | null {
   if (!path.includes('%')) return path
   try {
     return decodeURIComponent(path)
