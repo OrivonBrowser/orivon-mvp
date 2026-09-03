@@ -285,8 +285,8 @@ justification, first becomes possible.
 ## How a URL becomes an app
 
 A normal page stays a normal page. An origin becomes an app when a manifest is found at
-`https://<origin>/.well-known/orivon.json` and the user accepts, which runs the ADR-0005 flow
-(grant prompt → fetch → cache → pin).
+`https://<origin>/.well-known/orivon.json`, which runs the ADR-0005 flow (fetch → cache → pin),
+and permissions are granted the moment the page actually asks for one — not before.
 
 > **Never probe automatically.** Three independent audits flagged this: an unsolicited request
 > to every origin the user visits is an active, attributable *"this visitor runs Orivon"*
@@ -294,9 +294,29 @@ A normal page stays a normal page. An origin becomes an app when a manifest is f
 > is strictly worse than the `window.nostr` fingerprint accepted in T16, and it costs a request
 > per navigation.
 >
-> **v0 discovery is therefore:** (a) a `<link rel="orivon-manifest">` hint in HTML already
-> delivered — zero extra requests; or (b) explicit user action, "Open as app" from a menu.
-> The well-known path is fetched *only after* one of those, never speculatively.
+> **v0 discovery is therefore:** a `<link rel="orivon-manifest">` hint in HTML already
+> delivered — zero extra requests. The well-known path is fetched *only after* seeing that hint
+> in a page the browser is already loading, never speculatively.
+
+> **Corrected 2026-09-03, owner decision — the "Open as app" menu action is cut.** This section
+> previously named a second discovery path: an explicit user action, "Open as app" from a menu,
+> alongside the passive HTML hint. There is no such action, and there will not be one — a
+> Web3site is not a separate category of thing a user "converts" a normal website into; it is
+> the same URL, the whole time. `mvp-scope.md`'s journey 2 and `README.md`'s "Apps come from a
+> URL" row said the same thing and are corrected to match.
+>
+> **What replaces the removed step:** nothing has to. The hint above is now the *only* discovery
+> trigger, not one of two — no explicit action was ever load-bearing for privacy (the hint
+> already covers the zero-extra-requests case); it only existed because nothing else was
+> specified yet. Once a manifest is found this way, the browser fetches and caches its declared
+> files automatically — a Web3site is expected to work fully offline by design (a Web3-Score
+> requirement, `ADR-0006`), the same way this already works for an ordinary browser and a
+> normal page's own cache. **The permission prompt is unaffected by any of this**: it still
+> fires only when the page's code actually calls for a capability, never at discovery or fetch
+> time — see `Grant`'s own doc comment (`src/contracts/manifest.ts`) on why a grant is keyed on
+> `(origin, capability, pattern set)` rather than "the whole manifest, once": the SAME hash can
+> be revisited with zero prompts once its capabilities are already granted, and only a changed
+> hash (a new version) or newly-requested authority ever asks again.
 
 **The grant prompt must be origin-first.** Any origin can serve a manifest, and `name`/`id` are
 self-asserted, so a hostile site can present itself as "Orivon Torrent" with an identical

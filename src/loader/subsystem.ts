@@ -4,10 +4,10 @@
 //
 // DELIBERATELY INERT: no beforeReady, no afterReady. Wiring createLoader to
 // real Electron effects -- a real `fetch`, a real disk-backed LoaderStorage,
-// and a real discovery trigger (the `<link rel="orivon-manifest">` listener
-// or "Open as app" menu action, src/loader/README.md) -- is explicitly out
-// of this lane's scope (this lane builds createLoader itself, injected and
-// unit-testable, not the shell wiring around it). Registering the name now,
+// and the discovery trigger itself (the `<link rel="orivon-manifest">`
+// listener, src/loader/README.md) -- is explicitly out of this lane's scope
+// (this lane builds createLoader itself, injected and unit-testable, not the
+// shell wiring around it). Registering the name now,
 // with no behaviour, means the append point (src/main/subsystems.ts) only
 // has to change once -- a later PR adds `afterReady` here, not a new entry
 // in the array.
