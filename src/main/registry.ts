@@ -25,22 +25,44 @@ import type { Broker } from '../broker/index.js'
 export interface SubsystemContext {
   readonly app: App
   /**
-   * The running app's one `Broker`, published here by `brokerIpcSubsystem`
-   * (`src/broker/ipc.ts`) once it constructs it, so a later subsystem --
-   * the app loader, the trust indicator, whatever eventually issues a real
-   * grant -- reads the SAME instance instead of constructing its own.
-   * `createBroker(deps)` used to be built and handed straight to
-   * `registerBrokerIpc` with nothing else keeping a reference, which meant
-   * nothing else in the process could ever call `grant()`/`registerApp()` --
-   * a second, independently-constructed broker would be worse than none: two
-   * disagreeing grant ledgers for one running app.
+   * The running app's one `Broker`. Nothing else in the process may
+   * construct a second one: two independently-constructed brokers mean two
+   * disagreeing grant ledgers for one running app, so every subsystem that
+   * needs a `Broker` -- the app loader, the trust indicator, whatever
+   * eventually issues a real grant -- must read this SAME instance rather
+   * than build its own.
    *
    * Undefined until the broker subsystem's `afterReady` runs; `runAfterReady`
    * is sequential (this file's own doc above), which is what makes "the
    * broker subsystem writes it, a later one reads it" reliable rather than a
-   * race. Mutable, not readonly, for exactly that write-then-read reason.
+   * race. Set this only via `publishBroker` below, never by direct
+   * assignment -- that is the one thing standing between an accidental
+   * second broker and a silent ledger split.
    */
   broker?: Broker
+}
+
+/**
+ * The one sanctioned way to set `ctx.broker`. Throws if a broker has
+ * already been published, so an accidental second `Broker` -- built by a
+ * subsystem that should have read `ctx.broker` instead of constructing its
+ * own -- fails loudly right away rather than silently overwriting the first
+ * one and splitting the grant ledger (`SubsystemContext.broker`'s own doc
+ * comment). This matches `runBeforeReady`'s own "must never be quiet"
+ * philosophy above, applied to a different failure.
+ *
+ * `broker` stays a plain, mutable field rather than `readonly`: TypeScript
+ * cannot express "settable exactly once" without either a cast at the one
+ * legitimate call site (which would just hide the same mutation from the
+ * type checker instead of preventing it) or replacing the field with a
+ * getter, which would complicate every later subsystem's read. The runtime
+ * guard here is the actual guarantee; the type stays honest about that.
+ */
+export function publishBroker (ctx: SubsystemContext, broker: Broker): void {
+  if (ctx.broker !== undefined) {
+    throw new Error('ctx.broker is already published; a second Broker would create two disagreeing grant ledgers for one running app')
+  }
+  ctx.broker = broker
 }
 
 export interface Subsystem {
