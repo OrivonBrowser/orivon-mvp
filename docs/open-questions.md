@@ -1318,6 +1318,49 @@ fixes (docs/development/pr-blueprint.md's anti-pattern list).
 **Needed by:** before Windows/macOS packaging is scoped as a real build step — this PR's own
 `electron-builder.yml` is explicitly Linux-only. Not blocking `packaging-01-build-verify`.
 
+### A51 — a critical subsystem now fails startup loudly; is fail-fast the right shape long-term **[AI-REC]**
+
+Found 2026-09-03, in a three-persona adversarial review of `stream/broker-15-reachable`
+(A47's own branch). `publishBroker`'s throw was caught by `runAfterReady`'s failure collection
+and demoted to one `console.error` line (`main/index.ts`'s `report()`); the app then booted a
+completely normal-looking shell window with the control channel never registered, so every
+`orivon.*` call from every app was silently unroutable. The change had turned a silent *data*
+bug (two disagreeing grant ledgers) into a silent *availability* bug (the capability layer going
+dark) — an improvement, but still invisible exactly where `runBeforeReady`'s own "must never be
+quiet" philosophy says it must not be.
+
+**Fixed on `stream/broker-17-ctx-broker`:** `Subsystem` gained an optional `critical` flag
+(`registry.ts`), copied onto each `SubsystemFailure`; `brokerIpcSubsystem` (`src/broker/ipc.ts`)
+is the first subsystem marked `critical: true`. `main/index.ts` now calls the new
+`criticalFailureMessage(failures)` after each phase and, if it returns non-null, calls
+`dialog.showErrorBox` and `app.exit(1)` instead of calling `createShellWindow()` — a browser
+whose capability layer is dead does not open at all, rather than opening one that only looks
+like it works.
+
+**What is decided vs. still open.** That a critical subsystem's failure must be impossible to
+miss is not in question. What is an AI recommendation, not an owner decision:
+
+1. **Fail-fast + native dialog, not a degraded mode.** An alternative considered and rejected:
+   open the shell window anyway with an in-page banner (e.g. a chrome-view indicator saying
+   capabilities are unavailable), which would at least let a user retry a normal tab. Rejected
+   here because the shell chrome itself is rendered by ordinary web content with no special
+   authority to assert "the broker is down" trustworthily, and because a half-working browser
+   that silently denies every `orivon.*` call is arguably a worse experience than one that
+   visibly refuses to start. Not tested against real users either way.
+2. **`dialog.showErrorBox` + `app.exit(1)`, not a friendlier recovery flow** (retry, a link to
+   diagnostics, an automatic restart). Chosen as the smallest change that makes the failure
+   impossible to miss, per this task's own brief — not because a better UX doesn't exist.
+3. **Only `brokerIpcSubsystem` is marked `critical` today.** Whether a future `src/shim/` or
+   `src/trust/` subsystem should also be critical is for whoever builds it to decide, following
+   this pattern (`Subsystem.critical`'s own doc in `registry.ts`) rather than reinventing one.
+
+**Related to A47, not a duplicate:** A47 asks who may edit `registry.ts` at all; this asks
+whether the failure-handling shape chosen inside it, once editable, is the right one long-term.
+
+**Needed by:** before packaging (build step 10), when a real user first sees this dialog instead
+of a console line. Not blocking — the behaviour is strictly louder than what it replaces either
+way.
+
 ---
 
 ## B. Contradictions still to fix
