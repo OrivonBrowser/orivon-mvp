@@ -419,9 +419,19 @@ function realPortPair (): PortPair {
 const CONTROL_RATE_LIMIT_CAPACITY = 200
 const CONTROL_RATE_LIMIT_REFILL_PER_SECOND = 100
 
-/** Builds the production `Broker` and registers it on `ipcMain`. The one place this module's `electron` value imports are used. */
+/**
+ * Builds the production `Broker` and registers it on `ipcMain`. The one
+ * place this module's `electron` value imports are used.
+ *
+ * `critical: true` (registry.ts's own doc on `Subsystem.critical`): if this
+ * fails, no control channel is ever registered and every `orivon.*` call
+ * from every app is unroutable for the rest of the run. `main/index.ts`
+ * treats a critical failure here as fatal to startup rather than opening a
+ * shell window with a dark capability layer (open-questions.md A51).
+ */
 export const brokerIpcSubsystem: Subsystem = {
   name: 'broker',
+  critical: true,
   afterReady: (ctx: SubsystemContext) => {
     const realNow = (): number => Date.now()
     const deps: CreateBrokerOptions = {
