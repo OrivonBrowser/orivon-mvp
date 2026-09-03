@@ -9,7 +9,7 @@
 // `Manifest` (src/contracts/manifest.ts) has no field naming an app's
 // frontend files -- only `entry`, one HTML file -- and nothing in the doc
 // corpus specifies a discovery/crawl mechanism. Filed as
-// docs/open-questions.md A44 rather than guessed. Everything downstream of
+// docs/open-questions.md A45 rather than guessed. Everything downstream of
 // "here is the asset URL set" is fully real below.
 //
 // THE MANIFEST IS ALWAYS FETCHED FROM EXACTLY `<origin>/.well-known/
