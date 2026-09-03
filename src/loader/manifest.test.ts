@@ -492,6 +492,22 @@ describe('assets', () => {
       .toMatch(/assets\[1\] duplicates assets\[0\]/)
   })
 
+  // collisionKey (canonical-path.ts), not exact string match -- the same
+  // idiom bundle-hash.ts's bundleTree() and pin.ts already use for this
+  // exact class of check (Rule 3). Two spellings that name the same file
+  // under percent-decoding/case/Unicode folding must not both validate as
+  // distinct entries, the same stance this file already takes on every
+  // other field.
+  it('rejects two assets that differ only by case', () => {
+    expect(reason(parseManifest(minimal({ assets: ['app.js', 'APP.JS'] }))))
+      .toMatch(/assets\[1\] duplicates assets\[0\]/)
+  })
+
+  it('rejects an asset that is a percent-encoded duplicate of entry', () => {
+    expect(reason(parseManifest(minimal({ entry: 'index.html', assets: ['%69ndex.html'] }))))
+      .toMatch(/assets\[0\] duplicates entry/)
+  })
+
   it('rejects more entries than the bundle could ever hold', () => {
     const tooMany = Array.from({ length: 4096 }, (_, i) => `f${i}.js`)
     expect(reason(parseManifest(minimal({ assets: tooMany })))).toMatch(/more than the/)
