@@ -7,12 +7,11 @@
 // way this lane's brief explicitly permits.
 //
 // NO REAL (node:fs-backed) IMPLEMENTATION SHIPS IN THIS LANE. That is a
-// deliberate scope line, not an oversight -- see this PR's body under
-// "Deliberately not done". Building one safely means reusing
+// deliberate scope line, not an oversight: building one safely means reusing
 // src/broker/policy/paths.ts's confinePath for the same reason nodeFs
-// (src/broker/node-adapters.ts) does, and that is broker-shaped work the
-// brief explicitly defers ("note in the PR that broker work is still needed
-// to back it for real").
+// (src/broker/node-adapters.ts) does, and that is broker-shaped work this
+// lane does not own. A real disk-backed LoaderStorage is still needed before
+// any of this can persist for real.
 //
 // KEYED ON THE CANONICAL ORIGIN, not a directory name -- matching
 // PinRecord.origin (pin.ts) and BrokerFs.rootFor's own shape

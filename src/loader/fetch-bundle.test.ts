@@ -1,7 +1,7 @@
-import { describe, expect, it, vi } from 'vitest'
-import { MAX_ASSET_BYTES } from '../broker/policy/bundle-hash.js'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { MAX_ASSET_BYTES, MAX_BUNDLE_BYTES } from '../broker/policy/bundle-hash.js'
 import { MAX_BUNDLE_ENTRIES } from '../broker/policy/canonical-path.js'
-import { fetchBundle } from './fetch-bundle.js'
+import { FETCH_TIMEOUT_MS, fetchBundle } from './fetch-bundle.js'
 import type { Fetch } from './fetch-bundle.js'
 import { MANIFEST_URL, ORIGIN, manifestJson, stubFetch, utf8 } from './test-helpers.js'
 import type { RouteSpec } from './test-helpers.js'
@@ -147,9 +147,9 @@ describe('fetchBundle: byte and entry caps enforced before holding the whole bun
       routes[`${ORIGIN}${path}`] = { body: new Uint8Array(perAsset) }
     }
     const requested: string[] = []
-    const fetchFn: Fetch = async (url) => {
+    const fetchFn: Fetch = async (url, signal) => {
       requested.push(url)
-      return await stubFetch(routes)(url)
+      return await stubFetch(routes)(url, signal)
     }
     const result = await fetchBundle(fetchFn, ORIGIN, paths)
     expect(result.ok).toBe(false)
@@ -157,6 +157,114 @@ describe('fetchBundle: byte and entry caps enforced before holding the whole bun
     // only has 8 MiB of budget left and tips it over, so a5 must never be
     // requested.
     expect(requested).not.toContain(`${ORIGIN}/a5.bin`)
+  })
+})
+
+describe('fetchBundle: the actual byte cap is enforced while streaming, not after buffering the body (T11b)', () => {
+  it('rejects a body with no Content-Length that exceeds MAX_ASSET_BYTES, without ever reading the whole thing', async () => {
+    // No Content-Length AND no end to the body -- the only thing that can
+    // stop this download is the incremental check inside the body-read loop
+    // itself. `streamed` proves it actually stopped early: an unbounded
+    // source, but only ever a few chunks over the cap were pulled.
+    const assetUrl = `${ORIGIN}/huge.bin`
+    const streamed = new Map<string, number>()
+    const routes: Record<string, RouteSpec> = {
+      [MANIFEST_URL]: { body: utf8(manifestJson()) },
+      [assetUrl]: { body: new Uint8Array(0), infinite: true }
+    }
+    const result = await fetchBundle(stubFetch(routes, undefined, streamed), ORIGIN, ['/huge.bin'])
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.reason).toMatch(/MAX_ASSET_BYTES/)
+    const bytesRead = streamed.get(assetUrl) ?? 0
+    expect(bytesRead).toBeGreaterThan(MAX_ASSET_BYTES)
+    // Bounded near the cap: at most one chunk of slack, nowhere close to
+    // "kept reading" -- the old bug read this same source until memory ran
+    // out or the process died, which this bound rules out.
+    expect(bytesRead).toBeLessThan(MAX_ASSET_BYTES + 64 * 1024 * 2)
+  })
+
+  it('rejects on actual bytes when Content-Length declares small but the body is large', async () => {
+    const assetUrl = `${ORIGIN}/lying.bin`
+    const oversized = new Uint8Array(MAX_ASSET_BYTES + 1024)
+    const routes: Record<string, RouteSpec> = {
+      [MANIFEST_URL]: { body: utf8(manifestJson()) },
+      [assetUrl]: { body: oversized, headers: { 'content-length': '10' } }
+    }
+    const result = await fetchBundle(stubFetch(routes), ORIGIN, ['/lying.bin'])
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.reason).toMatch(/MAX_ASSET_BYTES/)
+  })
+
+  it('accepts a body whose actual size is exactly MAX_ASSET_BYTES -- no off-by-one', async () => {
+    const routes: Record<string, RouteSpec> = {
+      [MANIFEST_URL]: { body: utf8(manifestJson()) },
+      [`${ORIGIN}/index.html`]: { body: new Uint8Array(MAX_ASSET_BYTES) }
+    }
+    const result = await fetchBundle(stubFetch(routes), ORIGIN, ['/index.html'])
+    expect(result.ok).toBe(true)
+  })
+
+  it('still enforces the cumulative MAX_BUNDLE_BYTES budget across several under-cap assets', async () => {
+    // Same scenario the pre-existing suite above already covers end-to-end
+    // (a 6th asset must never be requested once the running total tips the
+    // budget); restated here beside the streaming tests as the third caller
+    // this fix's brief names explicitly.
+    const perAsset = 14 * 1024 * 1024
+    const paths = ['/a0.bin', '/a1.bin', '/a2.bin', '/a3.bin', '/a4.bin', '/a5.bin']
+    const routes: Record<string, RouteSpec> = { [MANIFEST_URL]: { body: utf8(manifestJson()) } }
+    for (const path of paths) routes[`${ORIGIN}${path}`] = { body: new Uint8Array(perAsset) }
+    const result = await fetchBundle(stubFetch(routes), ORIGIN, paths)
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.reason).toMatch(/MAX_BUNDLE_BYTES/)
+    expect(perAsset * 5).toBeGreaterThan(MAX_BUNDLE_BYTES)
+  })
+})
+
+describe('fetchBundle: a stalled fetch or body cannot stall the install forever', () => {
+  beforeEach(() => { vi.useFakeTimers() })
+  afterEach(() => { vi.useRealTimers() })
+
+  it('aborts a fetchFn call that never resolves', async () => {
+    const stalls: Fetch = async () => await new Promise<never>(() => {})
+    const pending = fetchBundle(stalls, ORIGIN, [])
+    await vi.advanceTimersByTimeAsync(FETCH_TIMEOUT_MS + 1)
+    const result = await pending
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.reason).toMatch(/timed out/i)
+  })
+
+  it('aborts a body read that never completes', async () => {
+    const routes: Record<string, RouteSpec> = {
+      [MANIFEST_URL]: { body: new Uint8Array(0), stall: true }
+    }
+    const pending = fetchBundle(stubFetch(routes), ORIGIN, [])
+    await vi.advanceTimersByTimeAsync(FETCH_TIMEOUT_MS + 1)
+    const result = await pending
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.reason).toMatch(/timed out/i)
+  })
+})
+
+describe('fetchBundle: an asset URL is origin-checked before it is ever fetched', () => {
+  it('rejects an absolute cross-origin assetPath without fetching it', async () => {
+    const attackerUrl = 'https://attacker.example/x'
+    const routes: Record<string, RouteSpec> = { [MANIFEST_URL]: { body: utf8(manifestJson()) } }
+    const requested: string[] = []
+    const fetchFn: Fetch = async (url, signal) => {
+      requested.push(url)
+      return await stubFetch(routes)(url, signal)
+    }
+    const result = await fetchBundle(fetchFn, ORIGIN, [attackerUrl])
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.reason).toMatch(/origin/i)
+    expect(requested).not.toContain(attackerUrl)
+    expect(requested).toContain(MANIFEST_URL)
   })
 })
 

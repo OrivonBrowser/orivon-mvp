@@ -37,25 +37,85 @@ export interface RouteSpec {
   readonly url?: string
   readonly body: Uint8Array
   readonly headers?: Record<string, string>
+  /** Bytes per stream chunk -- defaults to 64 KiB, a realistic wire chunk size. Set smaller to see incremental caps bite sooner. */
+  readonly chunkSize?: number
+  /**
+   * The body stream never ends -- `chunkSize` zero-bytes at a time, forever
+   * (`body` is ignored). `arrayBuffer()` never resolves either, matching
+   * what a real fetch's `arrayBuffer()` would do against an unbounded body
+   * (it waits for the stream to finish). Models a chunked or compressed
+   * attacker response with no Content-Length and no end, for the T11b
+   * incremental-cap tests.
+   */
+  readonly infinite?: boolean
+  /** The body stream's `pull()` never settles -- no bytes, no close, ever. Models a stalled connection, for the fetch-timeout tests. Mutually exclusive with `infinite`. */
+  readonly stall?: boolean
+}
+
+function bodyStream (
+  spec: RouteSpec,
+  chunkSize: number,
+  url: string,
+  bodyReadSpy?: Set<string>,
+  streamedBytesSpy?: Map<string, number>
+): ReadableStream<Uint8Array> {
+  let offset = 0
+  return new ReadableStream<Uint8Array>({
+    pull (controller) {
+      bodyReadSpy?.add(url)
+      if (spec.stall === true) return new Promise<void>(() => {})
+      if (spec.infinite === true) {
+        const chunk = new Uint8Array(chunkSize)
+        streamedBytesSpy?.set(url, (streamedBytesSpy.get(url) ?? 0) + chunk.length)
+        controller.enqueue(chunk)
+        return undefined
+      }
+      if (offset >= spec.body.length) { controller.close(); return undefined }
+      const end = Math.min(offset + chunkSize, spec.body.length)
+      const chunk = spec.body.slice(offset, end)
+      offset = end
+      streamedBytesSpy?.set(url, (streamedBytesSpy.get(url) ?? 0) + chunk.length)
+      controller.enqueue(chunk)
+      return undefined
+    }
+    // `highWaterMark: 0` below matters more than it looks: a default
+    // ReadableStream (highWaterMark 1) calls `pull()` once EAGERLY right
+    // after construction, before any consumer ever calls `.read()` -- so
+    // merely building this stub response would mark `bodyReadSpy`/
+    // `streamedBytesSpy`, even down a code path that never reads the body
+    // at all (the whole point of the Content-Length fast-path test below).
+    // 0 suppresses that pre-fetch; an explicit `read()` still triggers
+    // `pull()` normally, because a pending read request also counts
+    // (WHATWG Streams `ReadableStreamDefaultControllerShouldCallPull`).
+  }, { highWaterMark: 0 })
 }
 
 /**
  * A stub Fetch built from a routing table keyed by requested URL.
- * `bodyReadSpy`, when given, records which URLs actually had arrayBuffer()
- * called -- so a test can prove a fail-fast path never downloaded a body it
- * declared too large via Content-Length.
+ * `bodyReadSpy`, when given, records which URLs actually had their body
+ * stream pulled from -- so a test can prove a fail-fast path never read a
+ * byte of a body it declared too large via Content-Length. `streamedBytesSpy`,
+ * when given, records cumulative bytes actually pulled per URL -- so a test
+ * can prove an oversized body was rejected long before it was read in full.
  */
-export function stubFetch (routes: Record<string, RouteSpec>, bodyReadSpy?: Set<string>): Fetch {
+export function stubFetch (
+  routes: Record<string, RouteSpec>,
+  bodyReadSpy?: Set<string>,
+  streamedBytesSpy?: Map<string, number>
+): Fetch {
   return async (url: string): Promise<FetchResponse> => {
     const spec = routes[url]
     if (spec === undefined) throw new Error(`stubFetch: no route for ${url}`)
     const headers = spec.headers ?? {}
+    const chunkSize = spec.chunkSize ?? 64 * 1024
     return {
       ok: (spec.status ?? 200) < 400,
       status: spec.status ?? 200,
       url: spec.url ?? url,
       headers: { get: (name: string) => headers[name.toLowerCase()] ?? headers[name] ?? null },
+      body: bodyStream(spec, chunkSize, url, bodyReadSpy, streamedBytesSpy),
       arrayBuffer: async () => {
+        if (spec.infinite === true || spec.stall === true) return await new Promise<ArrayBuffer>(() => {})
         bodyReadSpy?.add(url)
         return spec.body.buffer.slice(spec.body.byteOffset, spec.body.byteOffset + spec.body.byteLength) as ArrayBuffer
       }

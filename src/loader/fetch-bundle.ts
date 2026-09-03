@@ -52,10 +52,117 @@ export interface FetchResponse {
    * optimisation that reading one provides.
    */
   readonly headers?: { get(name: string): string | null }
+  /**
+   * The body as a stream -- what fetchWithBudget actually reads from, chunk
+   * by chunk, so the byte caps below are enforced against bytes actually
+   * arriving rather than a fully buffered whole (T11b). `null` for a
+   * body-less response, matching the real global fetch's `Response.body`.
+   */
+  readonly body: ReadableStream<Uint8Array> | null
   arrayBuffer(): Promise<ArrayBuffer>
 }
 
-export type Fetch = (url: string) => Promise<FetchResponse>
+/**
+ * `signal` mirrors src/broker/index.ts's `Dial` (`(addresses, port, signal)
+ * => ...`) -- the same "the caller owns cancellation, the callee just reacts
+ * to it" shape, so a real implementation can wire it straight to the global
+ * `fetch`'s own `{ signal }` option. fetchWithBudget below does not rely on
+ * a caller actually honouring it, though: it races its own wait on top, so
+ * a `Fetch` that ignores the signal still cannot hang the loader forever.
+ */
+export type Fetch = (url: string, signal: AbortSignal) => Promise<FetchResponse>
+
+/**
+ * Bounds BOTH the request (fetchFn itself) and the body read that follows
+ * it -- one wall-clock deadline for the whole one-asset operation. Without
+ * this, `fetchFn(url)` or a stalled/slowloris body could block an install of
+ * up to MAX_BUNDLE_ENTRIES sequential fetches indefinitely; nothing else in
+ * this file has a clock. 20s is generous for a legitimate host to deliver a
+ * full MAX_ASSET_BYTES (16 MiB) asset over a slow connection, and short
+ * enough that one unresponsive peer cannot stall the whole install for long.
+ * AI-recommended and uncalibrated against a real host, the same caveat the
+ * byte caps themselves carry -- see docs/open-questions.md A15.
+ */
+export const FETCH_TIMEOUT_MS = 20_000
+
+/**
+ * Races `promise` against `signal` firing. Exists because a `Fetch` (or a
+ * body stream's `read()`) is not guaranteed to honour an AbortSignal on its
+ * own -- this makes the timeout real regardless of what the callee does
+ * with it, the same "does not trust what it was handed" stance
+ * broker/port-pump.ts's credit clamp takes for a different input.
+ */
+async function raceAbort<T> (promise: Promise<T>, signal: AbortSignal, makeError: () => Error): Promise<T> {
+  if (signal.aborted) throw makeError()
+  return await new Promise<T>((resolve, reject) => {
+    const onAbort = (): void => { reject(makeError()) }
+    signal.addEventListener('abort', onAbort, { once: true })
+    promise.then(
+      (value) => { signal.removeEventListener('abort', onAbort); resolve(value) },
+      (error: unknown) => { signal.removeEventListener('abort', onAbort); reject(error) }
+    )
+  })
+}
+
+function concatChunks (chunks: readonly Uint8Array[], total: number): Uint8Array {
+  const out = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    out.set(chunk, offset)
+    offset += chunk.length
+  }
+  return out
+}
+
+/**
+ * Reads `response.body` chunk by chunk, rejecting the INSTANT the running
+ * total would exceed either cap -- an oversized or never-ending body is
+ * never buffered whole first. This is what actually enforces `assetCap`/
+ * `remaining` against a chunked, compressed (Content-Length is the wire
+ * size; decoded bytes can be far larger -- a decompression bomb), or lying
+ * response; fetchWithBudget's own Content-Length pre-check only ever
+ * catches a response that DECLARES its size honestly.
+ */
+async function readBodyWithBudget (
+  response: FetchResponse,
+  assetCap: number,
+  remaining: number,
+  signal: AbortSignal,
+  label: string,
+  url: string
+): Promise<Uint8Array | FetchBundleRejected> {
+  const body = response.body
+  if (body === null) return new Uint8Array(0)
+
+  const reader = body.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  while (true) {
+    let step: ReadableStreamReadResult<Uint8Array>
+    try {
+      step = await raceAbort(
+        reader.read(),
+        signal,
+        () => new Error(`reading ${label} timed out after ${String(FETCH_TIMEOUT_MS)}ms: ${url}`)
+      )
+    } catch (error) {
+      reader.cancel().catch(() => {})
+      return rejected(`${label}: ${error instanceof Error ? error.message : String(error)}`)
+    }
+    if (step.done) break
+    total += step.value.byteLength
+    if (total > assetCap) {
+      reader.cancel().catch(() => {})
+      return rejected(`${label} exceeds its cap of ${String(assetCap)} bytes (MAX_ASSET_BYTES): ${url}`)
+    }
+    if (total > remaining) {
+      reader.cancel().catch(() => {})
+      return rejected(`${label} does not fit in the bundle's remaining byte budget (MAX_BUNDLE_BYTES): ${url}`)
+    }
+    chunks.push(step.value)
+  }
+  return concatChunks(chunks, total)
+}
 
 export interface FetchBundleOk {
   readonly ok: true
@@ -90,10 +197,15 @@ function declaredLength (response: FetchResponse): number | undefined {
  * One fetch, with the byte caps applied on both sides of the download: the
  * DECLARED length (Content-Length), when the server sent one, is checked
  * BEFORE the body is read -- so an oversized response can be rejected
- * without ever downloading it. The ACTUAL length is checked again after,
- * because a declared length is advisory and may be absent, wrong, or a lie.
- * Both checks are against the same two numbers: this one asset's own cap
- * (`assetCap`) and how much room is left in the whole bundle (`remaining`).
+ * without ever downloading it. The ACTUAL length is checked incrementally
+ * WHILE the body is read (readBodyWithBudget), never after buffering it in
+ * full -- a declared length is advisory and may be absent (any chunked or
+ * dynamically generated response has none), wrong, or a lie. Both checks
+ * are against the same two numbers: this one asset's own cap (`assetCap`)
+ * and how much room is left in the whole bundle (`remaining`).
+ *
+ * One FETCH_TIMEOUT_MS deadline, via one AbortController, bounds the whole
+ * operation -- see FETCH_TIMEOUT_MS's own comment for why.
  */
 async function fetchWithBudget (
   fetchFn: Fetch,
@@ -102,26 +214,33 @@ async function fetchWithBudget (
   remaining: number,
   label: string
 ): Promise<{ readonly response: FetchResponse, readonly content: Uint8Array } | FetchBundleRejected> {
-  let response: FetchResponse
+  const controller = new AbortController()
+  const timer = setTimeout(() => { controller.abort() }, FETCH_TIMEOUT_MS)
   try {
-    response = await fetchFn(url)
-  } catch (error) {
-    return rejected(`could not fetch ${label} (${url}): ${error instanceof Error ? error.message : String(error)}`)
+    let response: FetchResponse
+    try {
+      response = await raceAbort(
+        fetchFn(url, controller.signal),
+        controller.signal,
+        () => new Error(`timed out after ${String(FETCH_TIMEOUT_MS)}ms`)
+      )
+    } catch (error) {
+      return rejected(`could not fetch ${label} (${url}): ${error instanceof Error ? error.message : String(error)}`)
+    }
+    if (!response.ok) return rejected(`${label} fetch failed: HTTP ${String(response.status)} (${url})`)
+
+    const declared = declaredLength(response)
+    if (declared !== undefined) {
+      if (declared > assetCap) return rejected(`${label} declares ${String(declared)} bytes, over its cap of ${String(assetCap)}: ${url}`)
+      if (declared > remaining) return rejected(`${label} declares ${String(declared)} bytes, more than fits in the bundle's remaining budget: ${url}`)
+    }
+
+    const body = await readBodyWithBudget(response, assetCap, remaining, controller.signal, label, url)
+    if (!(body instanceof Uint8Array)) return body
+    return { response, content: body }
+  } finally {
+    clearTimeout(timer)
   }
-  if (!response.ok) return rejected(`${label} fetch failed: HTTP ${String(response.status)} (${url})`)
-
-  const declared = declaredLength(response)
-  if (declared !== undefined) {
-    if (declared > assetCap) return rejected(`${label} declares ${String(declared)} bytes, over its cap of ${String(assetCap)}: ${url}`)
-    if (declared > remaining) return rejected(`${label} declares ${String(declared)} bytes, more than fits in the bundle's remaining budget: ${url}`)
-  }
-
-  const buffer = await response.arrayBuffer()
-  const content = new Uint8Array(buffer)
-  if (content.length > assetCap) return rejected(`${label} exceeds its cap of ${String(assetCap)} bytes (MAX_ASSET_BYTES): ${url}`)
-  if (content.length > remaining) return rejected(`${label} does not fit in the bundle's remaining byte budget (MAX_BUNDLE_BYTES): ${url}`)
-
-  return { response, content }
 }
 
 /**
@@ -174,6 +293,19 @@ export async function fetchBundle (
 
   for (const assetPath of assetPaths) {
     const assetUrl = new URL(assetPath, `${canonicalOrigin}/`).href
+
+    // Checked BEFORE fetchFn is ever called: `new URL(assetPath, base)`
+    // honours an absolute or protocol-relative assetPath (e.g.
+    // "https://attacker.example/x"), so without this an entry crafted that
+    // way would trigger a real outbound request before the origin is ever
+    // looked at. The post-fetch check below on the RESOLVED url still runs
+    // too -- this one catches a bad request before it happens, that one
+    // catches a redirect after it happens; neither replaces the other.
+    const requestedOrigin = originFromUrl(assetUrl)
+    if (requestedOrigin !== canonicalOrigin) {
+      return rejected(`asset ${assetPath} resolves to a different origin (${requestedOrigin ?? 'invalid'}) than the app's (${canonicalOrigin})`)
+    }
+
     const assetFetch = await fetchWithBudget(fetchFn, assetUrl, MAX_ASSET_BYTES, MAX_BUNDLE_BYTES - bytesUsed, `asset ${assetPath}`)
     if ('ok' in assetFetch) return assetFetch
 
