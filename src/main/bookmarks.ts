@@ -73,6 +73,7 @@ export class BookmarkStore {
   private readonly listeners = new Set<() => void>()
   private writeTimer: ReturnType<typeof setTimeout> | null = null
   private pendingWrite: Promise<void> | null = null
+  private resolvePendingWrite: (() => void) | null = null
 
   constructor (private readonly filePath: string) {}
 
@@ -113,10 +114,13 @@ export class BookmarkStore {
     this.listeners.add(cb)
   }
 
-  /** Resolves once the write currently scheduled or in flight has settled.
-   * `writeNow` never rejects (see below), so this never does either. Exists
-   * for tests: waiting on the real write, instead of a guessed delay, is
-   * what makes the debounce test's timing deterministic. */
+  /** Resolves once every write scheduled up to this call has landed on
+   * disk -- one still inside its debounce window, one already in flight, or
+   * a chain of both if more changes arrive while it waits. Resolves right
+   * away, without throwing, when nothing is pending. `writeNow` never
+   * rejects (see below), so this never does either. Exists for tests:
+   * waiting on the real write, instead of a guessed delay, is what makes
+   * the debounce test's timing deterministic. */
   async flushPendingWrite (): Promise<void> {
     await this.pendingWrite
   }
@@ -126,14 +130,40 @@ export class BookmarkStore {
     this.scheduleWrite()
   }
 
+  /** Debounces bursts of changes into one write. `pendingWrite` is created
+   * once per burst and reused across however many times the timer below
+   * gets reset, rather than replaced on each change -- otherwise a caller
+   * already awaiting an earlier promise would be left awaiting one that
+   * `clearTimeout` just cancelled the only resolver for, and it would never
+   * settle. See `settleWrite` for the other half: what stops it from
+   * resolving too early when a change arrives while the write is already
+   * running, past the point `clearTimeout` can still help. */
   private scheduleWrite (): void {
     if (this.writeTimer !== null) clearTimeout(this.writeTimer)
-    this.pendingWrite = new Promise((resolve) => {
-      this.writeTimer = setTimeout(() => {
-        this.writeTimer = null
-        void this.writeNow().finally(resolve)
-      }, WRITE_DEBOUNCE_MS)
-    })
+    if (this.pendingWrite === null) {
+      this.pendingWrite = new Promise((resolve) => {
+        this.resolvePendingWrite = resolve
+      })
+    }
+    this.writeTimer = setTimeout(() => {
+      this.writeTimer = null
+      void this.writeNow().finally(() => this.settleWrite())
+    }, WRITE_DEBOUNCE_MS)
+  }
+
+  /** Runs after a write finishes. If a change arrived while it was running,
+   * `scheduleWrite` already queued a fresh timer for it -- leave
+   * `pendingWrite` as is, so a caller awaiting it keeps waiting for the
+   * write that change is going to produce, instead of being told the data
+   * is on disk before it actually is. Otherwise this is the last write in
+   * the burst: resolve, and clear both fields so the next change starts a
+   * new promise rather than reusing this already-settled one. */
+  private settleWrite (): void {
+    if (this.writeTimer !== null) return
+    const resolve = this.resolvePendingWrite
+    this.pendingWrite = null
+    this.resolvePendingWrite = null
+    if (resolve !== null) resolve()
   }
 
   private async writeNow (): Promise<void> {
