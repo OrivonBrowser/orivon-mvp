@@ -6,10 +6,12 @@
 // Fetch (electron-fetch.ts) and real LoaderStorage (node-storage.ts) both
 // now exist -- this is the append-point wiring that constructs one Loader
 // from them and makes it reachable, the same way brokerIpcSubsystem
-// publishes the one Broker. What is still missing is a discovery trigger
-// (the `<link rel="orivon-manifest">` listener or "Open as app" action,
-// README.md) -- deliberately separate work, since it is shell UI, not
-// loader construction.
+// publishes the one Broker. What is still missing is the discovery trigger
+// itself -- the `<link rel="orivon-manifest">` hint listener
+// (src/loader/README.md). It is the ONLY trigger: there is no "Open as app"
+// action -- a Web3site is the URL, not a thing a user converts a website
+// into (capability-api.md's 2026-09-03 correction). Wiring it is
+// deliberately separate work, since it is shell UI, not loader construction.
 //
 // MUST BE LISTED AFTER brokerIpcSubsystem in subsystems.ts (that file's own
 // header says so) -- not because this loader reads ctx.broker itself today,

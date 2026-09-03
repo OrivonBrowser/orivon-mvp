@@ -46,7 +46,7 @@ Full prerequisites and the one environment trap worth knowing about:
 | | |
 |---|---|
 | **Capabilities are per app, declared, and granted by you** | An app gets what its manifest declares *and* you approve. Absence from the manifest means absence — not default-allow |
-| **Apps come from a URL, not a store** | Type an address, choose "Open as app". The code is fetched, cached and hash-pinned. No review process, no gatekeeper, no account |
+| **Apps come from a URL, not a store** | Visit the address — nothing else to choose. The code is fetched, cached and hash-pinned automatically; you're only asked anything the moment the site actually requests a capability. No review process, no gatekeeper, no account |
 | **Your data stays on your machine** | Per-origin isolation, local-first storage. There is no Orivon server holding user data, because there is no Orivon server |
 | **One identity, every site** | A Nostr identity that works across every client with no extension and no seed phrase to write down |
 

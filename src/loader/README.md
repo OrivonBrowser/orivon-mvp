@@ -13,8 +13,10 @@ reject).
 
 **Never probe automatically.** An unsolicited request to every origin the user visits is an
 active, attributable *"this visitor runs Orivon"* signal, sent from a privacy-branded browser.
-v0 discovery is a `<link rel="orivon-manifest">` hint in HTML already delivered, or explicit
-user action ("Open as app"). The well-known path is fetched **only after** one of those.
+Discovery is a `<link rel="orivon-manifest">` hint in HTML already delivered — the only
+trigger; there is no separate user action, a Web3site is the URL, not a thing to convert a
+website into (`capability-api.md`'s 2026-09-03 correction). The well-known path is fetched
+**only after** seeing that hint.
 
 **The update decision is where a silent failure is a security failure.** Its failure mode is
 "no prompt appeared", which no manual checklist catches, and the capability at stake is

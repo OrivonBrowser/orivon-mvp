@@ -1256,9 +1256,16 @@ which has a full, unsandboxed network position, issuing the very first request t
 whether an origin is an Orivon app at all.
 
 **Not live today.** `src/loader/subsystem.ts`'s `loaderSubsystem` ships with no `beforeReady`/
-`afterReady` — nothing wires a real trigger (a `<link rel="orivon-manifest">` hint, or "Open as
-app") to `createLoader.load()` yet, so nothing calls this against a real, attacker-influenced
-`hintedUrl` in the shipped product. This is why it is filed rather than blocking.
+`afterReady` — nothing wires a real trigger to `createLoader.load()` yet, so nothing calls this
+against a real, attacker-influenced `hintedUrl` in the shipped product. This is why it is filed
+rather than blocking.
+
+**Corrected 2026-09-03:** this entry previously named two eventual triggers, "a `<link
+rel="orivon-manifest">` hint, or 'Open as app'". The "Open as app" menu action never had an
+implementation and has been cut for good (`capability-api.md`'s 2026-09-03 correction block,
+`ADR-0012`) — the HTML hint is now the *only* discovery path this loader will ever be wired to.
+The substance of this entry (the loader's install path does not resolve-and-classify the install
+origin's hostname before treating it as fetchable, T12) is unaffected either way.
 
 **Leaning, not decided:** the loader should mirror `connect.ts`'s own T12 discipline —
 resolve the install origin's hostname once, reject if any resolved address is not
