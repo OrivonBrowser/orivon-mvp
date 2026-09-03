@@ -271,12 +271,28 @@ describe('the re-consent trigger is a subset check, not a kind comparison', () =
     ).toBe('capability-prompt')
   })
 
-  it('a subdomain wildcard does cover a subdomain', () => {
+  // Was 'silent' until A27's fix: connect-patterns.ts's hostSpecKind already
+  // treats any host containing '*' beyond a bare '*' as authorising NOTHING
+  // at connect time, so a granted '*.example.com' actually grants no host at
+  // all -- any REAL host the new manifest names is wider than that, not
+  // narrower, and must prompt like any other widening.
+  it('a subdomain wildcard does NOT cover a subdomain -- the granted wildcard authorised nothing', () => {
     expect(
       decideUpdate(
         update({
           grantedPatterns: { 'tcp.connect': ['*.example.com:443'] },
           newPatterns: { 'tcp.connect': ['api.example.com:443'] }
+        })
+      )
+    ).toBe('capability-prompt')
+  })
+
+  it('an unchanged subdomain-wildcard pattern is still silent -- the fix must not force needless prompts', () => {
+    expect(
+      decideUpdate(
+        update({
+          grantedPatterns: { 'tcp.connect': ['*.example.com:443'] },
+          newPatterns: { 'tcp.connect': ['*.example.com:443'] }
         })
       )
     ).toBe('silent')
@@ -291,6 +307,35 @@ describe('the re-consent trigger is a subset check, not a kind comparison', () =
         update({
           grantedPatterns: { 'tcp.listen': ['6881'] },
           newPatterns: { 'tcp.listen': ['peer.example.com:6881'] }
+        })
+      )
+    ).toBe('capability-prompt')
+  })
+})
+
+// A20: two spellings of the SAME address literal must read as identical
+// authority -- 2130706433 and 127.0.0.1 are one address, not two, and a
+// manifest rewriting one as the other has not actually asked for anything
+// new. Only applies when BOTH sides are address-shaped; a hostname is never
+// treated as if it might secretly be the same as some address literal.
+describe('an address literal survives being re-spelled (A20)', () => {
+  it('a decimal-integer spelling and a dotted-quad spelling of one address are unchanged', () => {
+    expect(
+      decideUpdate(
+        update({
+          grantedPatterns: { 'tcp.connect': ['2130706433:22'] },
+          newPatterns: { 'tcp.connect': ['127.0.0.1:22'] }
+        })
+      )
+    ).toBe('silent')
+  })
+
+  it('an address literal is never treated as equal to a hostname that merely looks similar', () => {
+    expect(
+      decideUpdate(
+        update({
+          grantedPatterns: { 'tcp.connect': ['127.0.0.1:22'] },
+          newPatterns: { 'tcp.connect': ['localhost:22'] }
         })
       )
     ).toBe('capability-prompt')
