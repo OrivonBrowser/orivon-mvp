@@ -77,6 +77,7 @@ None of these block starting the week-0 spike.
 | A36 | **`build-plan.md` places grant prompts in build step 2; `A20` and `A27` both say build step 4.** `build-plan.md`'s own Sequence section lists "grant prompts" under step 2 ("Capability broker"), but `A20`'s and `A27`'s "Needed by" columns both independently say "before the grant prompt is built (build step 4)" | **Before the grant prompt is scheduled.** One of the two documents is wrong; the owner should pick which. See below |
 | A37 | **The write direction of the byte pump (an app writing bytes out over `TcpSocket.writable`) has no wire message anywhere.** `contracts/ipc.ts` specifies `DataMessage`/`CreditMessage`/`StreamEndMessage` in full for the READ direction only; `handle-contracts.md`'s Backpressure section, `capability-api.md`'s Throughput section and `ADR-0008` all describe the write side only as an outcome ("`write()` resolves only once the broker has accepted the bytes"), never as a protocol | **Before the preload-side byte-pump PR** (readable/writable streams built over the port) **can implement `writable`.** See below |
 | A38 | **RESOLVED 2026-09-02.** `security-model.md`'s T11b entry names both a per-origin in-flight cap AND "a token-bucket rate limit on IPC dispatch" as the mitigation. The in-flight cap exists (`handles.ts`) and covers every method that does real I/O, but `app.manifest`/`app.grants` never call `handleTable.run`, so nothing bounded how *often* an origin could call them. Reproduced before the fix: 5,000 concurrent `app.grants` calls from one origin, zero rejected. A shared per-origin token bucket (`src/broker/token-bucket.ts`) now gates all six control methods uniformly, checked before `dispatch()` runs | Implemented in `src/broker/token-bucket.ts` and wired in `src/broker/ipc.ts`'s `handleControlRequest`. **The numbers (capacity 200, refill 100/sec) are AI-recommended, not owner-decided** — see below |
+| A44 | **`Manifest` has no asset-list field, so "fetch every asset the manifest declares" cannot be done from the manifest alone.** `src/contracts/manifest.ts`'s `Manifest` carries only `id`/`name`/`version`/`entry`/`capabilities` — nothing enumerates the frontend files that make up the app, and no document in the corpus specifies a discovery/crawl mechanism. `bundle-hash.md` and `ADR-0009` both assume a leaf set is already in hand ("the leaf set" is given, never derived) | **Build step 4 (the app loader), now.** `createLoader.load()` takes the discovered asset path list as an explicit parameter rather than guessing a crawl heuristic. See below |
 
 ---
 
@@ -1008,6 +1009,60 @@ in case the owner disagrees.
 in `src/nostr/` can sign a real event until this exists. Not blocking this PR: this lane's whole
 surface is built and tested against an injected stub per the owner's explicit decision (brief's
 Scope, item 6).
+
+---
+
+### A44 — nothing enumerates an app's asset set; the manifest cannot **[STILL OPEN]**
+
+Found 2026-09-03 building `src/loader/` (`stream/loader-02-fetch-cache`, build step 4). The
+lane's own brief describes the asset-fetch step as "given a validated manifest, fetch every
+asset it declares" — but `Manifest` (`src/contracts/manifest.ts`) declares no such thing. Its
+fields are `orivonApiVersion`, `id`, `name`, `version`, `entry`, `capabilities`. `entry` names
+one file (the HTML entry point); nothing names the rest of the frontend.
+
+This is not a gap this lane can fix by reading harder. `docs/architecture/bundle-hash.md` and
+`ADR-0009` both start from "the leaf set" as a given — they specify how to hash a set of
+(path, bytes) pairs once you have one, never how you get one. `app-compatibility.md` says
+tier-1 apps (existing Nostr web clients) are pinned "as-is", which for any real built SPA is
+dozens of JS/CSS/asset files — so the answer cannot be "just `entry`" either; a bundle hash
+covering only `index.html` would not be this app's actual content identity.
+
+**Two shapes an answer could take, neither chosen here:**
+
+1. **A manifest field.** `Manifest` gains an `assets`/`files` list the publisher declares
+   explicitly (alongside `entry`). Simple, matches `capabilities`' own already-declarative
+   style, and keeps the loader's job purely mechanical — but it is a `src/contracts/` change,
+   which is change-controlled (its own PR, merged first, never mixed with an implementation),
+   and it puts a burden on every publisher to keep the list in sync with what they actually
+   ship.
+2. **A crawl heuristic.** The loader fetches `entry`, parses it for referenced same-origin
+   assets (`<script src>`, `<link href>`, `<img src>`, recursively into fetched CSS/JS), and
+   builds the set from what it finds. No contracts change, matches how a browser's own "save
+   page" already behaves — but it is a genuine content-parsing surface over adversarial input,
+   it cannot see assets referenced only at runtime (a dynamic `import()`, a service-worker
+   `fetch()`), and whichever heuristic is chosen becomes load-bearing the moment the first real
+   pin is written: two implementations of "what counts as this app's content" that disagree
+   would disagree about the app's own identity, the same one-way-door class of problem
+   `ADR-0009` already had to solve once for the hash construction itself.
+
+**What this lane did instead, so the rest of the pipeline could still be built and tested for
+real:** `createLoader.load(hintedUrl, assetPaths, context)` takes the discovered asset path
+list as an explicit parameter. Everything downstream of "here is the set of asset URLs" —
+fetching under the byte caps, building `BundleEntry[]`, calling `bundleTree()`, checking the
+`Manifest.entry` leaf exists, driving `decideUpdate()` against the granted pattern set, and
+persisting through `LoaderStorage` — is real and tested. Discovering the set itself is left to
+whichever caller wires the loader to the shell.
+
+**AI recommendation:** option 1 (a manifest field) is narrower, cheaper, and testable the same
+way `capabilities` already is, at the cost of one more thing a publisher must maintain by hand;
+option 2 is more convenient for publishers but is a heuristic with real edge cases baked into a
+bundle hash that cannot be changed once the first pin exists. Leaning towards 1, but this is
+exactly the kind of load-bearing, only-reversible-at-cost choice `CLAUDE.md` Rule 1 reserves for
+an ADR, not an AI default.
+
+**Needed by:** whoever wires `createLoader` to the shell's discovery trigger (the remainder of
+build step 4) — not blocking this PR, which implements everything downstream of the asset list
+and is fully testable against an injected one.
 
 ---
 
