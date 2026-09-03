@@ -79,6 +79,7 @@ None of these block starting the week-0 spike.
 | A38 | **RESOLVED 2026-09-02.** `security-model.md`'s T11b entry names both a per-origin in-flight cap AND "a token-bucket rate limit on IPC dispatch" as the mitigation. The in-flight cap exists (`handles.ts`) and covers every method that does real I/O, but `app.manifest`/`app.grants` never call `handleTable.run`, so nothing bounded how *often* an origin could call them. Reproduced before the fix: 5,000 concurrent `app.grants` calls from one origin, zero rejected. A shared per-origin token bucket (`src/broker/token-bucket.ts`) now gates all six control methods uniformly, checked before `dispatch()` runs | Implemented in `src/broker/token-bucket.ts` and wired in `src/broker/ipc.ts`'s `handleControlRequest`. **The numbers (capacity 200, refill 100/sec) are AI-recommended, not owner-decided** — see below |
 | A45 | **`Manifest` has no asset-list field, so "fetch every asset the manifest declares" cannot be done from the manifest alone.** `src/contracts/manifest.ts`'s `Manifest` carries only `id`/`name`/`version`/`entry`/`capabilities` — nothing enumerates the frontend files that make up the app, and no document in the corpus specifies a discovery/crawl mechanism. `bundle-hash.md` and `ADR-0009` both assume a leaf set is already in hand ("the leaf set" is given, never derived) | **Build step 4 (the app loader), now.** `createLoader.load()` takes the discovered asset path list as an explicit parameter rather than guessing a crawl heuristic. See below |
 | A46 | **The loader never checks the install origin against private/loopback address ranges (T12).** `originFromUrl` validates only scheme and hostname syntax, never address class, and never calls `isPublicUnicast`/`classifyAddress` from `src/broker/policy/address.ts` — which already implements the correct "resolve once, validate every address" discipline for exactly this threat. `http://127.0.0.1:9222/.well-known/orivon.json`, `http://169.254.169.254/` (cloud metadata), or a low-TTL host that DNS-rebinds to either, all pass every check the loader runs today | **Not live today** — `loaderSubsystem` ships inert, so nothing calls this with a real network position yet. Before it is wired to a real trigger. See below |
+| A48 | **Two residual gaps in `fetch-bundle.ts`'s byte/time budget cannot be closed from this file alone, and now carry an explicit contract requirement on the real `Fetch` implementation.** (1) A `Fetch` (or its body stream's `read()`) that ignores its `AbortSignal` leaves the original promise permanently pending with its closures on every timeout — `BUNDLE_TIMEOUT_MS` (added this pass) bounds how many such abandoned attempts one `fetchBundle()` call can accumulate, but cannot force a foreign, non-cooperating promise to release whatever it holds (a socket, a timer). (2) The incremental byte cap can only refuse a chunk after `reader.read()` already returned it fully allocated — the real bound is "one chunk", not "the cap"; a BYOB reader would close this but requires the stream to declare `type: 'bytes'`, which this file's minimal structural `FetchResponse` type does not guarantee | **Before a real `Fetch`/stream implementation is wired in.** It must itself observe `AbortSignal` and promptly abort/release the underlying request, and should bound its own chunk sizes. See below |
 
 ---
 
@@ -1150,6 +1151,55 @@ carve-out.
 
 **Needed by:** whoever wires `loaderSubsystem` to a real discovery trigger — the point this
 stops being a theoretical gap and starts being a real one.
+
+---
+
+### A48 — two residual gaps a real `Fetch` must close, not `fetch-bundle.ts` **[AI-REC]**
+
+Found 2026-09-03, fixing an adversarial review's findings against `stream/loader-02-fetch-cache`
+(build step 4) before merge. Two of the three findings (an uncaught `new URL()` and the
+duration-axis T11b gap `BUNDLE_TIMEOUT_MS` now closes) were fully fixable inside this file. Two
+narrower gaps were not, and are recorded here rather than silently left as "should be fine":
+
+**1. A signal-ignoring `Fetch` still leaks one abandoned promise per timeout.** `raceAbort`
+(this file) races a promise against an `AbortSignal` and moves on the instant the signal fires
+— but it never forces the original, abandoned promise to settle or release what it holds. If
+the injected `Fetch` (or a body stream's `read()`) does not itself react to the signal it was
+given, that promise — and whatever real resource backs it, a socket, a timer, buffered bytes —
+keeps existing until it settles on its own, if it ever does. `AbortSignal` is cooperative by
+design; nothing on the caller's side can force a non-cooperating callee to cancel. `reader.
+cancel()` (already called on every timeout path) is a real, spec-guaranteed mitigation for the
+body-read phase specifically, because cancelling a `ReadableStreamDefaultReader` is required to
+propagate to the underlying source regardless of `Fetch`'s own behaviour — but nothing
+equivalent exists for the initial `fetchFn(url, signal)` call itself.
+
+`BUNDLE_TIMEOUT_MS` (added this pass) is a real, if partial, mitigation: it bounds how many
+such abandoned attempts one `fetchBundle()` call can accumulate — roughly 30 in the worst case,
+the multiple `BUNDLE_TIMEOUT_MS` is set to (`30 * FETCH_TIMEOUT_MS`) — not the 4095 an
+unbounded install could previously reach. It does not make the leak zero.
+
+**2. The incremental byte cap is bounded by "one chunk", not "the cap".** `readBodyWithBudget`
+rejects the instant a running total exceeds a cap, but it can only do that after `await reader.
+read()` has already handed back a chunk — and that chunk is already fully allocated by then,
+sized however the stream's producer decided, not this loop. A producer that returns the whole
+body as a single `read()` — a decompressing fetch, a naive shim that buffers then emits once, a
+real undici under a gzip bomb — still allocates that one oversized chunk before the rejection
+can fire. Proven still-correct (the rejection does fire) by a new test in `fetch-bundle.test.
+ts`; the allocation itself is what remains open. A bounded (BYOB) reader would close this, but
+requires the stream to declare `type: 'bytes'`, which this file's own minimal structural
+`FetchResponse` type (chosen so tests can stub it trivially) does not guarantee, and a stub or a
+naive real implementation is unlikely to provide.
+
+**AI recommendation:** the real `Fetch` implementation, when it is built, must (a) itself
+observe the `AbortSignal` it is given and promptly abort/release the underlying request on it —
+not merely tolerate the caller giving up on waiting — and (b) either use a BYOB reader with a
+bounded view size, or otherwise avoid handing back single chunks larger than a few times
+`MAX_ASSET_BYTES`'s neighbourhood. Neither is enforceable from `fetch-bundle.ts` as written.
+
+**Needed by:** whoever builds the real `Fetch` (wiring this loader to actual Node/Electron I/O
+is itself still open — see this file's own header and `CLAUDE.md`'s "Still open" note). Not
+blocking this PR: both gaps are already strictly better than main, and neither is reachable
+with the stubbed `Fetch` every current caller uses.
 
 ---
 

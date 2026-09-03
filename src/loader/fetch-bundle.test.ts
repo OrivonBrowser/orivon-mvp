@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MAX_ASSET_BYTES, MAX_BUNDLE_BYTES } from '../broker/policy/bundle-hash.js'
 import { MAX_BUNDLE_ENTRIES } from '../broker/policy/canonical-path.js'
-import { FETCH_TIMEOUT_MS, fetchBundle } from './fetch-bundle.js'
+import { BUNDLE_TIMEOUT_MS, FETCH_TIMEOUT_MS, fetchBundle } from './fetch-bundle.js'
 import type { Fetch } from './fetch-bundle.js'
 import { MANIFEST_URL, ORIGIN, manifestJson, stubFetch, utf8 } from './test-helpers.js'
 import type { RouteSpec } from './test-helpers.js'
@@ -221,6 +221,28 @@ describe('fetchBundle: the actual byte cap is enforced while streaming, not afte
     expect(result.reason).toMatch(/MAX_BUNDLE_BYTES/)
     expect(perAsset * 5).toBeGreaterThan(MAX_BUNDLE_BYTES)
   })
+
+  it('still rejects a single stream chunk that on its own is far larger than MAX_ASSET_BYTES', async () => {
+    // The incremental cap in readBodyWithBudget is only as fine-grained as
+    // the chunks the stream hands back -- it compares the RUNNING TOTAL
+    // against the cap after each `read()`, so it can only refuse a chunk
+    // once that chunk already exists. This proves the rejection still
+    // fires correctly even when the whole asset arrives as one oversized
+    // chunk (a decompressing fetch, a naive shim that buffers then emits
+    // once, or a real undici under a gzip bomb could all produce exactly
+    // this shape) -- see readBodyWithBudget's own comment for the residual
+    // limit this does NOT close: that one chunk is still allocated in full
+    // before the rejection can fire.
+    const size = MAX_ASSET_BYTES + 5 * 1024 * 1024
+    const routes: Record<string, RouteSpec> = {
+      [MANIFEST_URL]: { body: utf8(manifestJson()) },
+      [`${ORIGIN}/index.html`]: { body: new Uint8Array(size), chunkSize: size }
+    }
+    const result = await fetchBundle(stubFetch(routes), ORIGIN, ['/index.html'])
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.reason).toMatch(/MAX_ASSET_BYTES/)
+  })
 })
 
 describe('fetchBundle: a stalled fetch or body cannot stall the install forever', () => {
@@ -250,6 +272,50 @@ describe('fetchBundle: a stalled fetch or body cannot stall the install forever'
   })
 })
 
+describe('fetchBundle: a bundle-wide deadline bounds the whole install, not just one asset', () => {
+  beforeEach(() => { vi.useFakeTimers() })
+  afterEach(() => { vi.useRealTimers() })
+
+  it('rejects once cumulative time across many just-under-FETCH_TIMEOUT_MS assets exceeds BUNDLE_TIMEOUT_MS, cutting off the asset in flight and never starting the next one', async () => {
+    // Models a hostile origin that evades FETCH_TIMEOUT_MS on every single
+    // request (each asset resolves in FETCH_TIMEOUT_MS - 1ms, so no
+    // per-asset timer ever fires) while still exhausting the install's
+    // total wall-clock budget -- the T11b duration-axis DoS BUNDLE_TIMEOUT_MS
+    // exists to close. BUNDLE_TIMEOUT_MS is 30 * FETCH_TIMEOUT_MS, so the
+    // 31st such asset (index 30) is where the cumulative total
+    // (30 * 19999ms = 599970ms) tips past the 600000ms deadline -- 30ms
+    // into that asset's own fetch, proving the deadline can cut off a
+    // request already in flight, not only refuse to start the next one.
+    const perAssetDelay = FETCH_TIMEOUT_MS - 1
+    const assetCount = 32
+    const paths = Array.from({ length: assetCount }, (_, i) => `/a${String(i)}.js`)
+    const routes: Record<string, RouteSpec> = { [MANIFEST_URL]: { body: utf8(manifestJson({ entry: 'a0.js' })) } }
+    for (const path of paths) routes[`${ORIGIN}${path}`] = { body: utf8('x') }
+
+    const requested: string[] = []
+    const fetchFn: Fetch = async (url, signal) => {
+      requested.push(url)
+      if (url !== MANIFEST_URL) await new Promise<void>((resolve) => setTimeout(resolve, perAssetDelay))
+      return await stubFetch(routes)(url, signal)
+    }
+
+    const pending = fetchBundle(fetchFn, ORIGIN, paths)
+    await vi.advanceTimersByTimeAsync(assetCount * FETCH_TIMEOUT_MS)
+    const result = await pending
+
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.reason).toMatch(/overall deadline/i)
+    expect(result.reason).toMatch(String(BUNDLE_TIMEOUT_MS))
+    // The 30th asset (index 29) is the last one to finish cleanly; the
+    // 31st (index 30) is cut off mid-flight (still requested, never
+    // completes); the 32nd (index 31) must never be requested at all.
+    expect(requested).toContain(`${ORIGIN}/a29.js`)
+    expect(requested).toContain(`${ORIGIN}/a30.js`)
+    expect(requested).not.toContain(`${ORIGIN}/a31.js`)
+  })
+})
+
 describe('fetchBundle: an asset URL is origin-checked before it is ever fetched', () => {
   it('rejects an absolute cross-origin assetPath without fetching it', async () => {
     const attackerUrl = 'https://attacker.example/x'
@@ -265,6 +331,22 @@ describe('fetchBundle: an asset URL is origin-checked before it is ever fetched'
     expect(result.reason).toMatch(/origin/i)
     expect(requested).not.toContain(attackerUrl)
     expect(requested).toContain(MANIFEST_URL)
+  })
+})
+
+describe('fetchBundle: a malformed assetPath is rejected, never thrown', () => {
+  it('rejects an assetPath that new URL() cannot parse, instead of throwing', async () => {
+    // `new URL('http://[not-valid-ipv6/x.js', base)` throws TypeError:
+    // Invalid URL -- confirmed live against this runtime. assetPaths is
+    // trusted developer input today, but A45 records that the real caller
+    // does not exist yet and will plausibly derive it by crawling
+    // server-supplied HTML, at which point this is remotely triggerable.
+    const malformed = 'http://[not-valid-ipv6/x.js'
+    const routes: Record<string, RouteSpec> = { [MANIFEST_URL]: { body: utf8(manifestJson()) } }
+    const result = await fetchBundle(stubFetch(routes), ORIGIN, [malformed])
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.reason).toMatch(/not a valid url/i)
   })
 })
 
