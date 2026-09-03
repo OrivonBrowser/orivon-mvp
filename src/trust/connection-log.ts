@@ -1,31 +1,10 @@
-// The connection-log input contract -- what a caller (eventually the broker,
-// through wiring this lane does not do) hands this module to describe what an
-// app has actually done. Defined HERE, not imported from src/broker/, per
-// this directory's own README: "depend on the broker's connection log through
-// a contract, never by reaching into broker internals." No real broker
-// connection log exists yet (build step 2 assembled the broker; nothing wires
-// per-app observation to it) -- this is the shape both sides are expected to
-// meet at, not a transcription of something that already exists.
+// The shape the broker's per-app connection log is expected to meet. Defined
+// here rather than imported, because src/trust/ may not reach into broker
+// internals (this directory's README). Nothing wires per-app observation to
+// the broker yet, so this is an agreed shape, not a transcription.
 //
-// COVERS THREE CAPABILITY SURFACES IN ONE ENTRY SHAPE, DELIBERATELY. A
-// network connect, an `orivon.fs` operation and an `orivon.id` operation are
-// different in almost every respect, but they are alike in the one respect
-// this module cares about: each is a broker decision an app cannot see
-// around. Splitting them into three entry types would force every consumer
-// (the connection ladder, operation scoring) to merge three arrays back
-// together to answer "what did this app do, in order" -- one shape, one
-// `surface` discriminant, is what avoids that.
-//
-// BYTE COUNTS AND DURATION ARE HERE FOR A SPECIFIC REASON, not because the
-// brief's own sketch of this shape listed them. ADR-0006's 2026-08-25
-// amendment found the connection ladder was CHEAPER TO FAKE THAN TO EARN: an
-// app exfiltrating a user's files by opening many short connections to many
-// distinct hosts would classify as the best available grade, earned by the
-// attack itself. The fix the owner accepted was byte accounting per endpoint
-// and a byte-asymmetry signal (real swarm traffic is roughly symmetric;
-// exfiltration is not) -- omitting bytesSent/bytesReceived/durationMs here
-// would silently rebuild the exact bug ADR-0006 exists to prevent, one lane
-// later. See connection-ladder.ts for where these are actually used.
+// Why one entry shape covers net, fs and id, and why byte counts belong in
+// it: README.md, Design notes.
 
 import type { CapabilityKind, Pattern } from '../contracts/index.js'
 
@@ -89,7 +68,12 @@ export interface ConnectionLogEntry {
    * Bytes sent/received over this attempt, when the surface carries a byte
    * stream. Undefined, not zero, when byte accounting was not available --
    * zero is a real observation (nothing was sent yet); undefined says
-   * nothing was measured. See this file's header for why these exist.
+   * nothing was measured.
+   *
+   * Do not drop these to simplify the shape: without byte accounting, an app
+   * exfiltrating files over many short connections grades at the BEST
+   * available grade, earned by the attack itself (ADR-0006, and README.md's
+   * design notes).
    */
   readonly bytesSent?: number
   readonly bytesReceived?: number
@@ -98,15 +82,12 @@ export interface ConnectionLogEntry {
 }
 
 /**
- * Why a grant pattern this app actually holds has no way to be reached
- * through ordinary `fetch`/WebSocket at all -- CSP's `connect-src` cannot
- * represent every pattern `orivon.net.connect` accepts
- * (open-questions.md A43). This is a SMALLER, CALLER-FACING vocabulary, not
- * a mirror of connect-src.ts's `ConnectSrcOmissionReason` -- that type
- * distinguishes reasons an app AUTHOR would need (a malformed pattern is
- * their bug to fix), which a trust screen showing a USER what broke has no
- * use for. Whoever wires the real broker connect-src derivation to this
- * module maps its reasons down to these.
+ * Why a grant pattern this app holds cannot be reached through ordinary
+ * `fetch`/WebSocket at all: CSP's `connect-src` cannot represent every pattern
+ * `orivon.net.connect` accepts (open-questions.md A43).
+ *
+ * Deliberately smaller than connect-src.ts's `ConnectSrcOmissionReason`, which
+ * a caller must map down to these -- README.md, Design notes.
  */
 export type OmittedConnectReason =
   /** The grant covers more hosts than CSP's enumerable source list can name (e.g. "any public address"). */
@@ -131,13 +112,9 @@ export interface OmittedConnectPattern {
 }
 
 /**
- * Everything the connection ladder and operation scoring need about one
- * app's observed behaviour. `omittedConnectPatterns` is carried alongside
- * `entries`, not folded into them, because an omission is not something
- * that HAPPENED -- it is a standing fact about the grant ("this pattern can
- * never show up in `entries` even if the app tries it"), true for the whole
- * observation window rather than timestamped at one moment
- * (open-questions.md A43).
+ * Everything the connection ladder and operation scoring need about one app's
+ * observed behaviour. `omittedConnectPatterns` is separate from `entries`
+ * because an omission never appears as an event -- README.md, Design notes.
  */
 export interface ConnectionLogInput {
   readonly entries: readonly ConnectionLogEntry[]

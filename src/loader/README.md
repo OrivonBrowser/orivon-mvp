@@ -32,3 +32,10 @@ shape belongs here instead.
 per [`code-guidelines.md`](../../docs/development/code-guidelines.md) Rule 2 — it owns exactly
 one concern: turning `(fetch, hintedUrl, assetPaths)` into a validated bundle. TOFU versus
 `decideUpdate()` branching, and persistence, are `index.ts`'s job, not this file's.
+
+**`assetPaths` is an explicit parameter to `fetchBundle`, not discovered from the manifest.**
+`Manifest` ([`src/contracts/manifest.ts`](../contracts/manifest.ts)) has no field naming an
+app's frontend files — only `entry`, one HTML file — and nothing in the doc corpus specifies a
+discovery or crawl mechanism. Filed as [`open-questions.md`](../../docs/open-questions.md) A45
+rather than guessed at. Everything downstream of "here is the asset URL set" is fully
+implemented.

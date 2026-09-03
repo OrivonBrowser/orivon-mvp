@@ -340,13 +340,8 @@ function entryCanonicalPath (canonicalOrigin: string, entry: string): string | n
 }
 
 /**
- * `assetPaths` is an explicit parameter here, not discovered from the
- * manifest -- `Manifest` (src/contracts/manifest.ts) has no field naming an
- * app's frontend files, only `entry`, one HTML file, and nothing in the doc
- * corpus specifies a discovery/crawl mechanism (filed as
- * docs/open-questions.md A45 rather than guessed). Everything downstream of
- * `assetPaths` is fully real; only "how the caller assembles this list" is
- * still open.
+ * `assetPaths` is an explicit parameter, not discovered from the manifest.
+ * See README.md, Design notes for why.
  */
 export async function fetchBundle (
   fetchFn: Fetch,

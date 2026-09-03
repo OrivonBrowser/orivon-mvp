@@ -878,15 +878,24 @@ Two things follow, and they pull in opposite directions:
   comment describes the code as it stands, not the change that produced it.** Git history holds
   the change.
 - Unlike the rest of Rule 1, this specific class *is* greppable — it has a lexical signature
-  ("sibling commit", "this PR", "already existed", "previously"). §Open points 2 records the
+  ("sibling commit", "this PR", "already existed", "previously"). code-guidelines.md §Status records the
   owner's decision that nothing enforces these rules mechanically, **rules first, enforcement
   later**, so adding a `check:comments` guard would reverse a standing decision and is not done
   here.
 
 **AI recommendation:** add the sentence to Rule 1 now (documentation, not enforcement, so it
-does not touch Open point 2), and add a `hookify` warn-only rule, which `CLAUDE.md` already
+does not touch §Status), and add a `hookify` warn-only rule, which `CLAUDE.md` already
 sanctions as the mechanism for "whenever the owner corrects the same thing twice" and which is
-advisory rather than a build gate. Hold `check:comments` until Open point 2 is revisited.
+advisory rather than a build gate. Hold `check:comments` until §Status is revisited.
+
+> **Correction, 2026-09-03 (owner's decision).** `check:comments` was built and wired into CI
+> the same day this correction is written — `scripts/check-comments.mjs`, on
+> `stream/backlog-08-comment-budget` (PR #55). This entry's "not done here" and "hold until
+> revisited" are superseded; the deferral this entry describes expired for the reason it names:
+> the rule was being followed and the codebase drifted anyway. See `code-guidelines.md` §Status
+> for the reversal in full — it also corrects a claim §Status itself used to carry, that Rule 1
+> "is not mechanically checkable by anything, and never will be." Comment *quality* still is not;
+> a comment *budget* is, and that is the distinction the guard rests on.
 
 **Needed by:** whenever the next batch of commits is written by an agent. Not blocking.
 
@@ -1622,3 +1631,101 @@ only because the reference was not available. Either way this is a shell-stream 
 
 **Needed by:** before a second static registry of the same shape appears, or before anything else
 is added to `BookmarkStore` that holds meaningfully more memory than a bookmark list. Not blocking.
+
+---
+
+---
+
+### A54 — the comment-budget baseline holds 16 files, and `check-size.mjs` duplicates `isTestFile` **[STILL OPEN]**
+
+Filed 2026-09-03, on `stream/backlog-08-comment-budget`, which added Rule 1's comment budget
+(`scripts/check-comments.mjs`, `code-guidelines.md` §The budget).
+
+Two loose ends, both deliberate, both cheap to close once the branches in flight have merged.
+
+**1. Sixteen files sit in `scripts/comment-budget-baseline.txt`.** Each opens with 26-93 lines
+of comment and would fail the new check. None was fixed on this branch, because every one is
+owned by a stream with a live worktree as this is written — eight under `src/broker/` alone,
+with `broker-15`, `broker-16` and `broker-17` all open. Rewriting a file header from a borrowed
+branch while three others edit the same file is the structural conflict `code-guidelines.md`
+§Status already recorded once, and it was not worth repeating for a comment.
+
+The baseline is a **ratchet, not an exemption list**: an entry whose file comes back within
+budget fails the check, so the list can only shrink. The work is per-stream and small — move the
+header essay to the directory's `README.md` under `## Design notes`, which
+[`src/trust/`](../src/trust/README.md) demonstrates end to end (29-line header to 7).
+
+Worth deciding: whether clearing it is one backlog branch per stream, or whether each stream
+clears its own files the next time it touches them. **AI recommendation:** the latter. The
+files are not going to get worse (CI now blocks that), and a dedicated branch touching eight
+streams' paths reintroduces exactly the conflict the baseline exists to avoid.
+
+**2. `isTestFile` now exists twice.** `scripts/check-comments.mjs` and
+`scripts/check-size.mjs` — the latter on `main` since `stream/packaging-01-build-verify` merged,
+still not wired into CI or `postinstall` (`code-guidelines.md` §Status) — each define the same
+predicate over `code-guidelines.md`'s own "test file" definition. A textbook Rule 3 duplicate,
+still unconsolidated: this entry was written before `packaging-01` merged, and the move itself —
+`isTestFile` into `scripts/cli.mjs`, which already gained a home for shared guard helpers via
+`trackedFiles` on this branch — is separate work from resolving this merge, not done here.
+
+---
+
+### A55 — two hookify rules had never fired, and nothing would have reported it **[STILL OPEN]**
+
+Found 2026-09-03, while adding a hookify rule for the comment budget.
+
+`hookify.comment-narration.local.md` (added 2026-09-02, for Rule 1) and
+`hookify.scope-creep.local.md` (added 2026-08-26, for Rule 4) both matched `file_path` against
+`^(src|apps|...)/`. **`Write` and `Edit` always pass an absolute path**, so neither pattern
+could ever match. Both rules loaded cleanly, reported no error, and did nothing. Verified by
+driving the plugin's own `posttooluse.py` with a synthetic payload — absolute path, no output;
+relative path, the warning appears. Both are fixed on this branch and re-verified the same way.
+
+The narration rule was the owner's response to an audit that found eight bad comments across
+three streams. **It has never run.** That is the second time in two days that a correction to
+Rule 1 did not take, and it is a meaningful part of the answer to "why do agents keep doing
+this" — for one of those days, the enforcement was silently absent.
+
+Two properties of hookify make this failure mode quiet, and both are now in `CLAUDE.md`:
+
+- A rule whose conditions never match is indistinguishable from a rule that is working. There
+  is no "this rule has never fired" report, and `/hookify list` shows it as enabled.
+- **There is no `not_regex_match` operator.** An unknown operator returns false, which kills the
+  entire rule rather than just that condition — so a plausible-looking typo disables the rule
+  silently too. This branch nearly shipped one.
+
+**Still open:** whether the other five rules are actually firing. Three (`electron-webprefs`,
+`no-native-languages`, `package-json-natives`) use unanchored suffix patterns and are fine by
+inspection; `hardcoded-paths` and `native-modules` were not tested. **AI recommendation:** a
+tiny fixture that drives each rule through `posttooluse.py` and asserts it fires, run the way
+`scripts/check-*.mjs` are. A guard nobody can tell is broken is worse than no guard, and this
+repository now has seven of them.
+
+---
+
+### A56 — the "Awaiting owner decision" index table has at least one stale row **[STILL OPEN]**
+
+Found 2026-09-03, resolving PR #55's merge against `main` — checking that this branch's
+renumbered `A48`→`A54`/`A49`→`A55` (see `A54`) did not collide with anything in the `## A.
+Awaiting owner decision` summary table near the top of this file.
+
+The table's `A48` row reads "Two residual gaps in `fetch-bundle.ts`'s byte/time budget cannot
+be closed from this file alone..." — but the entry actually titled `### A48` further down is
+"the credit-window backpressure design is half-built", a different topic entirely. The
+byte/time-budget text the table describes now matches `### A52` ("two residual gaps a real
+`Fetch` must close, not `fetch-bundle.ts`"). At some point `A48` was renumbered to `A52` and the
+summary row was not updated to match — predates this branch and predates `A52`/`A53`'s own
+recent additions; not caused by, or a consequence of, this merge.
+
+**Not fixed here.** This branch's merge resolution touched the tail of this file, not this
+table, and confirming this is the table's *only* stale row (rather than a symptom of the table
+having drifted more broadly since it was last verified against the entries below it) needs a
+full table-against-entries pass this resolution did not do. Filed rather than spot-fixed, so a
+partial fix does not read as "checked and clean."
+
+**AI recommendation:** a full pass comparing every table row's summary against its linked
+entry's current title, next time this document is opened for an unrelated reason — the check is
+mechanical (row text vs. entry title) and cheap once someone is already in the file.
+
+**Needed by:** before the table is trusted as a reliable index rather than a historical
+snapshot. Not blocking.
