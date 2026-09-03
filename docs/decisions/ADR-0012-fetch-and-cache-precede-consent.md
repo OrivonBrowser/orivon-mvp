@@ -127,11 +127,16 @@ in the design as specified, and neither is fixed by this ADR:
    (`MAX_BUNDLE_BYTES`, `src/broker/policy/bundle-hash.ts`), but nothing limits how many distinct
    origins can each silently claim their own 64 MiB. A user who never grants a single capability
    can still accumulate an unbounded number of cached, unused app bundles purely by loading pages
-   that carry a manifest hint. Filed as `docs/open-questions.md` A57.
+   that carry a manifest hint.
 2. **No cleanup of superseded versions.** When an app's manifest changes (a new hash, per
    `ADR-0009`), the loader pins the new bundle; nothing removes the old one. Every version an app
-   has ever shipped that this browser fetched stays on disk indefinitely. Filed as
-   `docs/open-questions.md` A58.
+   has ever shipped that this browser fetched stays on disk indefinitely.
+
+Both gaps are filed as one entry, `docs/open-questions.md` A58 — found independently by a parallel
+review pass on PR #62 while this ADR was being written, covering exactly these two sub-cases.
+(`A57` was claimed at the same time by a different, unrelated fix, `GrantLedger`'s own missing
+persistence — the two-lane numbering collision this caused was resolved by keeping A58's single
+entry rather than duplicating it under a second number.)
 
 Neither is fixed here, and that is a deliberate, bounded acceptance rather than an oversight:
 **nothing in the current tree wires the discovery trigger to anything live.** `src/loader/

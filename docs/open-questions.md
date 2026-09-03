@@ -77,7 +77,7 @@ None of these block starting the week-0 spike.
 | A36 | **`build-plan.md` places grant prompts in build step 2; `A20` and `A27` both say build step 4.** `build-plan.md`'s own Sequence section lists "grant prompts" under step 2 ("Capability broker"), but `A20`'s and `A27`'s "Needed by" columns both independently say "before the grant prompt is built (build step 4)" | **Before the grant prompt is scheduled.** One of the two documents is wrong; the owner should pick which. See below |
 | A37 | **The write direction of the byte pump (an app writing bytes out over `TcpSocket.writable`) has no wire message anywhere.** `contracts/ipc.ts` specifies `DataMessage`/`CreditMessage`/`StreamEndMessage` in full for the READ direction only; `handle-contracts.md`'s Backpressure section, `capability-api.md`'s Throughput section and `ADR-0008` all describe the write side only as an outcome ("`write()` resolves only once the broker has accepted the bytes"), never as a protocol | **Before the preload-side byte-pump PR** (readable/writable streams built over the port) **can implement `writable`.** See below |
 | A38 | **RESOLVED 2026-09-02.** `security-model.md`'s T11b entry names both a per-origin in-flight cap AND "a token-bucket rate limit on IPC dispatch" as the mitigation. The in-flight cap exists (`handles.ts`) and covers every method that does real I/O, but `app.manifest`/`app.grants` never call `handleTable.run`, so nothing bounded how *often* an origin could call them. Reproduced before the fix: 5,000 concurrent `app.grants` calls from one origin, zero rejected. A shared per-origin token bucket (`src/broker/token-bucket.ts`) now gates all six control methods uniformly, checked before `dispatch()` runs | Implemented in `src/broker/token-bucket.ts` and wired in `src/broker/ipc.ts`'s `handleControlRequest`. **The numbers (capacity 200, refill 100/sec) are AI-recommended, not owner-decided** — see below |
-| A45 | **`Manifest` has no asset-list field, so "fetch every asset the manifest declares" cannot be done from the manifest alone.** `src/contracts/manifest.ts`'s `Manifest` carries only `id`/`name`/`version`/`entry`/`capabilities` — nothing enumerates the frontend files that make up the app, and no document in the corpus specifies a discovery/crawl mechanism. `bundle-hash.md` and `ADR-0009` both assume a leaf set is already in hand ("the leaf set" is given, never derived) | **Build step 4 (the app loader), now.** `createLoader.load()` takes the discovered asset path list as an explicit parameter rather than guessing a crawl heuristic. See below |
+| A45 | **RESOLVED 2026-09-03, `ADR-0011`.** `Manifest` gains `assets: readonly string[]`, publisher-declared alongside `entry` — a manifest field, not a crawl heuristic. See below | — |
 | A46 | **The loader never checks the install origin against private/loopback address ranges (T12).** `originFromUrl` validates only scheme and hostname syntax, never address class, and never calls `isPublicUnicast`/`classifyAddress` from `src/broker/policy/address.ts` — which already implements the correct "resolve once, validate every address" discipline for exactly this threat. `http://127.0.0.1:9222/.well-known/orivon.json`, `http://169.254.169.254/` (cloud metadata), or a low-TTL host that DNS-rebinds to either, all pass every check the loader runs today | **Not live today** — `loaderSubsystem` ships inert, so nothing calls this with a real network position yet. Before it is wired to a real trigger. See below |
 | A48 | **Two residual gaps in `fetch-bundle.ts`'s byte/time budget cannot be closed from this file alone, and now carry an explicit contract requirement on the real `Fetch` implementation.** (1) A `Fetch` (or its body stream's `read()`) that ignores its `AbortSignal` leaves the original promise permanently pending with its closures on every timeout — `BUNDLE_TIMEOUT_MS` (added this pass) bounds how many such abandoned attempts one `fetchBundle()` call can accumulate, but cannot force a foreign, non-cooperating promise to release whatever it holds (a socket, a timer). (2) The incremental byte cap can only refuse a chunk after `reader.read()` already returned it fully allocated — the real bound is "one chunk", not "the cap"; a BYOB reader would close this but requires the stream to declare `type: 'bytes'`, which this file's minimal structural `FetchResponse` type does not guarantee | **Before a real `Fetch`/stream implementation is wired in.** It must itself observe `AbortSignal` and promptly abort/release the underlying request, and should bound its own chunk sizes. See below |
 
@@ -1169,7 +1169,7 @@ Not blocking this PR, which is docs-only.
 
 ---
 
-### A45 — nothing enumerates an app's asset set; the manifest cannot **[STILL OPEN]**
+### A45 — nothing enumerates an app's asset set; the manifest cannot **[RESOLVED 2026-09-03]**
 
 Found 2026-09-03 building `src/loader/` (`stream/loader-02-fetch-cache`, build step 4). The
 lane's own brief describes the asset-fetch step as "given a validated manifest, fetch every
@@ -1220,6 +1220,15 @@ an ADR, not an AI default.
 **Needed by:** whoever wires `createLoader` to the shell's discovery trigger (the remainder of
 build step 4) — not blocking this PR, which implements everything downstream of the asset list
 and is fully testable against an injected one.
+
+**Resolved 2026-09-03, owner decision, `ADR-0011`.** Option 1 (a manifest field): `Manifest`
+gains `assets: readonly string[]`, alongside `entry` — see the ADR for the full reasoning,
+including why the "publisher must keep it in sync" cost is deliberately not compensated for in
+this field's design: an app that loads more than it declared is the trust/Web3-Score system's
+concern (`ADR-0006`), not something the manifest format tries to predict. `src/loader/manifest.ts`
+validates it the same way `entry` is validated (`stream/contracts-11-manifest-assets`).
+`createLoader.load()`'s own `assetPaths` parameter is unchanged by this — a caller now reads it
+off `manifest.assets` rather than inventing or discovering it.
 
 ---
 
@@ -1739,33 +1748,76 @@ snapshot. Not blocking.
 
 ---
 
-### A57 — no cross-app disk quota bounds how many apps can silently cache themselves **[STILL OPEN]**
+### A57 — `GrantLedger` has no persistence: everything resets on process restart, not just app uninstall **[STILL OPEN]**
 
-Found 2026-09-03, writing `ADR-0012` (fetch-and-cache now happens automatically and silently on
-every manifest hint, with consent deferred to first capability use). Each app's bundle is capped
-individually at `MAX_BUNDLE_BYTES`, 64 MiB (`src/broker/policy/bundle-hash.ts`), but nothing
-limits how many *distinct* origins can each silently claim their own 64 MiB. A user who never
-grants a single capability to anything can still accumulate an unbounded number of cached, unused
-app bundles purely by loading ordinary pages that happen to carry a manifest hint.
+Found 2026-09-03, as the required follow-up from PR #61's review (T19's version floor,
+`GrantLedger.versionFloor`).
 
-**Not live today**, same reason as `A46`/`A50`: `src/loader/subsystem.ts` ships deliberately
-inert, and nothing wires a real discovery trigger to `createLoader.load()` yet, so nothing can
-actually fill a real user's disk this way in the shipped product. `ADR-0012` accepts this gap
-explicitly rather than silently, on the condition that it is closed before that changes.
+`GrantLedger` is constructed fresh, in-memory, exactly once per process launch —
+`src/broker/index.ts:259` is the only call site (`grep -rn "GrantLedger(" src/` finds no other
+construction and no persistence layer anywhere in `src/`). Every field on `OriginRecord`
+(`manifest`, `grants`, `fsBytesWritten`, and now `versionFloor`) resets to nothing the moment the
+process restarts, regardless of whether the app itself was ever uninstalled.
 
-**Needed by:** before `src/loader/subsystem.ts`'s discovery trigger (the `<link
-rel="orivon-manifest">` listener) is ever wired to the real browser shell — `ADR-0012` states
-this as a hard precondition, not a nice-to-have.
+**Distinct from A29.** A29 is about `fsBytesWritten` specifically: a resource-limit gap where a
+careless app can outwrite its declared disk quota simply by restarting the browser. This entry is
+about `versionFloor` specifically, and the shape of the failure is different. `ADR-0009` states
+explicitly that the version floor "must survive an uninstalled/reinstalled app" and that a floor
+that dies with the pin record is "a rollback oracle" — surviving past uninstall is the entire
+reason the floor was placed in the grant ledger rather than the pin record. A floor that dies with
+the whole process, not just with the pin, fails that same requirement in a strictly bigger way: an
+adversarial host does not even need the user to uninstall and reinstall the app to roll it back to
+an older, vulnerable version — restarting the browser is enough. That makes this a T19
+replay-guard bypass against an adversarial host, not a resource-accounting gap against a careless
+one.
 
-### A58 — superseded app versions are never cleaned up **[STILL OPEN]**
+**Not yet a live risk.** `versionFloorFor` is defined and exposed on the `Broker` interface as
+"the app loader's seam" (its doc comment in `src/broker/index.ts`), but nothing outside
+`src/broker/` calls it yet — `grep -rn "versionFloorFor" src/loader/ src/main/ src/shim/` returns
+nothing. This entry is filed now, before that wiring exists, so the persistence gap is visible
+going in rather than discovered after an adversarial host is already able to exploit it.
 
-Found 2026-09-03, writing `ADR-0012`, alongside `A57`. When an app's manifest changes (a new
-bundle hash, `ADR-0009`), the loader pins the new version; nothing removes the old one from disk.
-Every version of every app this browser has ever fetched stays cached indefinitely, compounding
-`A57`'s unbounded-origin-count problem with an unbounded-versions-per-origin one.
+**AI recommendation:** none — persistence design (where the floor lives, what survives an
+uninstall versus a full app removal, how it interacts with `fsBytesWritten`'s own unresolved A29)
+is one decision, not two, and deserves its own pass rather than a fix folded into this PR.
 
-**Not live today**, for the same reason as `A57` — no discovery trigger is wired to anything real
-yet, so no version churn against a real cache happens in the shipped product either.
+**Needed by:** before `versionFloorFor` is wired into the app loader's update path. Not blocking
+for this PR, which only adds the floor — it does not yet enforce it anywhere.
 
-**Needed by:** same precondition as `A57` — before the discovery trigger is wired to the real
-browser shell, per `ADR-0012`.
+---
+
+### A58 — nothing bounds total disk usage across origins, or across successive updates to one origin **[STILL OPEN]**
+
+Filed 2026-09-03, `fix-62` (`stream/loader-05-node-storage`), while fixing `readPin`'s
+corrupt-pin handling and `electron-fetch.ts`'s redirect trust. (A57 taken by a parallel fix
+lane for a different gap, filed the same day — see that lane's own record.)
+
+`fetch-bundle.ts` already bounds ONE bundle install: `MAX_BUNDLE_BYTES` (64 MiB) and
+`MAX_ASSET_BYTES` (16 MiB) cap a single `fetchBundle()` call. Nothing bounds total disk usage
+beyond that single call's own budget. Two distinct gaps, both real:
+
+1. **Across DIFFERENT origins.** Every distinct origin that gets pinned gets its own `code/`
+   root (`node-storage.ts`'s `appRoot`/`codeRoot`), each with its own fresh 64 MiB budget.
+   Nothing sums usage across origins or caps how many origins may be pinned at once.
+2. **Across successive updates to the SAME origin.** The `silent`/TOFU install path
+   (`install()` in `src/loader/index.ts`) never deletes assets left behind by a previous pin
+   before writing the new one — `LoaderStorage` (`storage.ts`) declares only
+   `readPin`/`writePin`/`writeAsset`, no delete/list/gc method at all. A hash-changing update
+   accumulates the old bundle's bytes on top of the new one, indefinitely.
+
+**Checked and ruled out as already covering this:** the `fs` capability's `quotaBytes`
+(`src/broker/grant-ledger.ts`) is a completely separate, unrelated budget — it governs what an
+app writes through its own granted `orivon.fs` capability. Confirmed no shared accounting and
+no shared root with the loader's code-cache storage; it cannot be read as already bounding this.
+
+**Urgency:** flagged as urgent to resolve before/alongside PR #63, which makes bundle
+fetch+cache automatic on just seeing an HTML `<link rel="orivon-manifest">` hint — once that
+discovery trigger exists with no install-time consent gate, this becomes a pure-browsing
+disk-fill vector: visiting enough hostile or merely careless pages, each not deleted or capped
+in aggregate, fills the disk with zero explicit consent.
+
+**Not proposed here:** a specific quota or eviction design (retention window, per-origin vs.
+global cap, eviction order). That is a policy decision for an ADR, not something to guess into
+this entry.
+
+**Needed by:** before/alongside PR #63 lands. See above.

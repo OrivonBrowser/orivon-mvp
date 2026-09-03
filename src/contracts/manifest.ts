@@ -53,6 +53,14 @@ export interface Manifest {
    */
   readonly version: string
   readonly entry: string
+  /**
+   * Every other frontend file the app ships, alongside `entry`. Publisher-
+   * declared, never inferred (ADR-0011) -- this is the leaf set ADR-0009's
+   * bundle hash is computed over. Omit when the app is `entry` alone; an
+   * empty array is rejected as the same ambiguity every other optional list
+   * in this file rejects it as.
+   */
+  readonly assets?: readonly string[]
   readonly capabilities: Capabilities
 }
 
