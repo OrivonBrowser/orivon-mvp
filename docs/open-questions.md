@@ -949,6 +949,66 @@ for a future change to take by accident.
 screen needs `ConnectSrcPolicy.omitted` to explain the breakage). Not blocking this PR — the
 derivation is correct as specified; this records the decision and its cost for whoever wires it.
 
+### A44 — secp256k1 point derivation and BIP-340 Schnorr signing exist nowhere, and two sources disagree on which layer should build them **[RESEARCH]**
+
+Found 2026-09-03, building `src/nostr/`'s `window.nostr` (NIP-07) surface (build step 7,
+`nostr-01-nip07`).
+
+Confirmed, not assumed: `grep -rln "secp256k1" --include="*.ts" src/` finds the string only in
+`derive.ts`/`derive-p256.ts` (as a `DeriveCurve` member and an explicit rejection) and in this
+lane's own `nip07.ts` (a comment). No file anywhere in the tree performs secp256k1 scalar
+multiplication or produces a BIP-340 Schnorr signature. `derive-p256.ts`'s own `derivePublicKey`
+throws `'internal'` for any curve other than `'P-256'`, with the message *"no public-key
+derivation for `${curve}` in the policy layer; derive the point from `derivePrivateScalar()` one
+layer up (`src/nostr/`)"*.
+
+**Two sources disagree about where the fix belongs.** This lane's brief says the gap "belongs
+under `src/broker/policy/`, and not something to hand-roll under time pressure" — consistent with
+where P-256's point derivation already lives. But `derive-p256.ts`'s own doc comment (owner
+decision, 2026-08-27, citing `ADR-0010 §Rejected`) says the opposite: WebCrypto cannot do
+secp256k1 point multiplication or BIP-340 Schnorr signing at all, so once a pure-JS curve library
+is needed for the signature, deriving the point with that same library costs nothing extra — and
+names `src/nostr/` by path as where that should happen.
+
+**Taken literally, that would require `src/nostr/` to call `derivePrivateScalar()`** — exported
+from `derive.ts` — **directly, which conflicts with `src/nostr/README.md`'s own boundary** ("What
+it must never import: `src/broker/` internals"), a rule this lane was explicitly told to hold
+(brief's Out-of-bounds section). It would also mean the raw derived PRIVATE SCALAR leaving the
+broker for wherever `src/nostr/`'s code actually executes (preload or renderer-adjacent, since it
+constructs `window.nostr` for an untrusted page) — which reads as a direct conflict with
+`capability-api.ts`'s own rule that "the seed is never exposed and raw key export is not a
+capability at any tier." Not resolved here: it needs the owner, or whoever wrote
+`derive-p256.ts`'s comment, to say what "one layer up (`src/nostr/`)" actually meant — a new
+broker-internal module conceptually adjacent to Nostr, or literally this directory.
+
+**What the interface needs to look like, so whichever lane builds this does not have to redesign
+`src/nostr/`'s side:** `nip07.ts` exports `NostrSigner = (event: UnsignedNostrEvent, hint:
+SignPrompt) => Promise<SignedNostrEvent>` and `orivonIdentitySigner(orivon): NostrSigner`, the
+latter forwarding straight to `IdentityHandle.signEvent(event)` (after `orivon.id.requestIdentity(
+{ kind: 'nostr' })`). Whatever implements the real signature only needs to make
+`IdentityHandle.signEvent` — already in `src/contracts/handles.ts`, unchanged by this lane —
+actually: (1) independently recompute the NIP-01 id from the event's own fields rather than trust
+anything the caller supplies (`nip01.ts`'s `computeEventId` is a tested, frozen-vector reference
+implementation of exactly that serialization, safe to port or diff against); (2) derive the
+secp256k1 scalar for `('identity', identityId)` and its x-only public key; (3) produce a 64-byte
+BIP-340 Schnorr signature over the id; (4) return `{...event, id, pubkey, sig}`. Nothing in this
+lane's code assumes which layer does (2)-(3), or whether `IdentityHandle.signEvent` re-derives
+`screenEvent`'s table (`kind-screening.ts`) independently rather than trusting this module's
+`hint` parameter — it must, per that file's own header.
+
+**Secondary, resolved rather than escalated:** I considered whether `OrivonId.requestIdentity`'s
+or `IdentityHandle.signEvent`'s existing signatures can carry what a Nostr signer needs (the
+brief flagged this as a real candidate to stop on). I concluded they do: `signEvent(event:
+object)` already receives the whole structured event including `kind`, so a broker-side
+implementation can derive its own screening decision without any `src/contracts/` change. Not
+filed as a separate blocking question; recorded here and in the PR body as an AI recommendation
+in case the owner disagrees.
+
+**Needed by:** before `orivon.id`'s `'secp256k1'` curve can back a real Nostr identity — nothing
+in `src/nostr/` can sign a real event until this exists. Not blocking this PR: this lane's whole
+surface is built and tested against an injected stub per the owner's explicit decision (brief's
+Scope, item 6).
+
 ---
 
 ## B. Contradictions still to fix
