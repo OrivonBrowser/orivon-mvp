@@ -62,6 +62,7 @@
 
 import { ipcMain, MessageChannelMain } from 'electron'
 import { CONTROL_CHANNEL, PORT_CHANNEL } from '../main/channels.js'
+import { publishBroker } from '../main/registry.js'
 import type { Subsystem, SubsystemContext } from '../main/registry.js'
 import { createBroker } from './index.js'
 import type { Broker, CreateBrokerOptions } from './index.js'
@@ -441,6 +442,12 @@ export const brokerIpcSubsystem: Subsystem = {
       refillPerSecond: CONTROL_RATE_LIMIT_REFILL_PER_SECOND,
       now: realNow
     })
-    registerBrokerIpc(ipcMain, createBroker(deps), transport, limiter)
+    const broker = createBroker(deps)
+    // publishBroker (src/main/registry.ts) is the one sanctioned way to set
+    // ctx.broker -- it throws instead of silently overwriting if this ever
+    // runs twice, so a later subsystem is guaranteed to read this same
+    // instance rather than a second, disagreeing one.
+    publishBroker(ctx, broker)
+    registerBrokerIpc(ipcMain, broker, transport, limiter)
   }
 }
