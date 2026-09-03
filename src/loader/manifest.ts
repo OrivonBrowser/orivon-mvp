@@ -71,7 +71,10 @@ export function parseManifest (input: unknown): ManifestResult {
 // silently assumed (CLAUDE.md Rule 1). Generous for any real manifest;
 // bounded so "absurd size" rejects before any of these fields are used for
 // real work.
-const MAX_MANIFEST_BYTES = 64 * 1024
+// Exported so fetch-bundle.ts can fail fast on a declared Content-Length
+// before downloading a manifest response, rather than duplicating the
+// number (Rule 3, docs/development/code-guidelines.md).
+export const MAX_MANIFEST_BYTES = 64 * 1024
 const MAX_ID_LENGTH = 255
 const MAX_NAME_LENGTH = 200
 const MAX_VERSION_LENGTH = 256
