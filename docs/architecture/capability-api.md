@@ -1,6 +1,32 @@
 # Capability API — v0 specification
 
-> **Status: DRAFT, needs owner review before any code is written.**
+> **Status: specified; partially implemented as of 2026-09-03.** Code has been written against
+> most of this document (build step 2, underway) — the "DRAFT, needs owner review before any
+> code is written" status this line used to carry was stale, and PR #46 (2026-09-01) left it
+> uncorrected on purpose rather than guess at the replacement. This is that correction.
+>
+> **Reachable from an actual page today**, via `window.orivon` (`src/preload/orivon-surface.ts`,
+> wired to `src/broker/index.ts` over `src/broker/ipc.ts`'s control channel): `app.manifest`,
+> `app.grants`, `fs.readFile`, `fs.writeFile`. **Implemented in the broker and Electron's
+> main-process IPC layer, but not yet exposed to a page**: `net.connect` (TCP only) —
+> `orivon-surface.ts`'s own header explains why it stops there: nothing yet lands a socket back
+> in a shape a page could ever close. **Named here but with no implementation anywhere in the
+> tree**: `app.requestGrant`, `net.listen`, `net.udpBind`, every `fs.*` method below
+> `readFile`/`writeFile` (`open`, `mkdir`, `readdir`, `stat`, `rm`, `rename`, `userSelected`),
+> and all of `orivon.id`. Each is absent because its build step has not been reached yet, not
+> because it was decided against — see `handle-contracts.md`'s own status header for the same
+> distinction drawn per handle type.
+>
+> **Specified and separately implemented**, even though the v0-surface methods that would
+> exercise them end-to-end are not all wired yet: manifest validation (`src/loader/
+> manifest.ts`), the semver version-floor comparison this document's §`version` section
+> describes (`src/broker/policy/update.ts`'s `compareVersions`, T19), and `fs.quotaBytes`
+> enforcement (`src/broker/index.ts`'s `checkFsQuota`, matching the "Enforced" default under
+> §Open items below).
+>
+> §Open items below was already correctly framed — "AI-proposed defaults, awaiting owner
+> confirmation" — and needed no correction; it is the one part of this document's status that
+> was never stale.
 >
 > Per ADR-0002 this is the highest-care artefact in the repository. The Electron shell is
 > disposable; **this interface is not.** Every app ever written for Orivon codes against it,
