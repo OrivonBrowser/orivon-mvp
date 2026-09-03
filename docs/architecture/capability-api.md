@@ -111,6 +111,7 @@ Served alongside the app's frontend assets and fetched before first run.
   "name": "Orivon Torrent",
   "version": "0.1.0",
   "entry": "index.html",
+  "assets": ["style.css", "app.js"],  // every other frontend file; omit if entry is the whole app
   // NOTE: "publisherKey" is CUT from v0 (owner decision 2026-08-25). See "Signing is not in
   // v0" below. Every month-1 app is unsigned; integrity rests on hash-pinning alone.
 
