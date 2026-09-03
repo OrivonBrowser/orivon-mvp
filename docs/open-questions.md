@@ -1263,3 +1263,70 @@ nothing, and is currently empty. The audit that created it concluded nothing cro
 boundary yet. Something does now.
 
 **Needed by:** before a fourth appears. Not blocking.
+
+---
+
+### A48 — the comment-budget baseline holds 16 files, and `check-size.mjs` duplicates `isTestFile` **[STILL OPEN]**
+
+Filed 2026-09-03, on `stream/backlog-08-comment-budget`, which added Rule 1's comment budget
+(`scripts/check-comments.mjs`, `code-guidelines.md` §The budget).
+
+Two loose ends, both deliberate, both cheap to close once the branches in flight have merged.
+
+**1. Sixteen files sit in `scripts/comment-budget-baseline.txt`.** Each opens with 26-93 lines
+of comment and would fail the new check. None was fixed on this branch, because every one is
+owned by a stream with a live worktree as this is written — eight under `src/broker/` alone,
+with `broker-15`, `broker-16` and `broker-17` all open. Rewriting a file header from a borrowed
+branch while three others edit the same file is the structural conflict `code-guidelines.md`
+§Open points #3 already recorded once, and it was not worth repeating for a comment.
+
+The baseline is a **ratchet, not an exemption list**: an entry whose file comes back within
+budget fails the check, so the list can only shrink. The work is per-stream and small — move the
+header essay to the directory's `README.md` under `## Design notes`, which
+[`src/trust/`](../src/trust/README.md) demonstrates end to end (29-line header to 7).
+
+Worth deciding: whether clearing it is one backlog branch per stream, or whether each stream
+clears its own files the next time it touches them. **AI recommendation:** the latter. The
+files are not going to get worse (CI now blocks that), and a dedicated branch touching eight
+streams' paths reintroduces exactly the conflict the baseline exists to avoid.
+
+**2. `isTestFile` now exists twice.** `scripts/check-comments.mjs` and
+`scripts/check-size.mjs` (unmerged, on `stream/packaging-01-build-verify`) each define the same
+predicate over `code-guidelines.md`'s own "test file" definition. A textbook Rule 3 duplicate,
+left in place for the same reason as above: consolidating it into `scripts/cli.mjs` would have
+edited a file on another live branch. Once `packaging-01` merges, one of them moves to
+`cli.mjs` and the other imports it. `trackedFiles` was consolidated there on this branch, so
+the destination already exists.
+
+---
+
+### A49 — two hookify rules had never fired, and nothing would have reported it **[STILL OPEN]**
+
+Found 2026-09-03, while adding a hookify rule for the comment budget.
+
+`hookify.comment-narration.local.md` (added 2026-09-02, for Rule 1) and
+`hookify.scope-creep.local.md` (added 2026-08-26, for Rule 4) both matched `file_path` against
+`^(src|apps|...)/`. **`Write` and `Edit` always pass an absolute path**, so neither pattern
+could ever match. Both rules loaded cleanly, reported no error, and did nothing. Verified by
+driving the plugin's own `posttooluse.py` with a synthetic payload — absolute path, no output;
+relative path, the warning appears. Both are fixed on this branch and re-verified the same way.
+
+The narration rule was the owner's response to an audit that found eight bad comments across
+three streams. **It has never run.** That is the second time in two days that a correction to
+Rule 1 did not take, and it is a meaningful part of the answer to "why do agents keep doing
+this" — for one of those days, the enforcement was silently absent.
+
+Two properties of hookify make this failure mode quiet, and both are now in `CLAUDE.md`:
+
+- A rule whose conditions never match is indistinguishable from a rule that is working. There
+  is no "this rule has never fired" report, and `/hookify list` shows it as enabled.
+- **There is no `not_regex_match` operator.** An unknown operator returns false, which kills the
+  entire rule rather than just that condition — so a plausible-looking typo disables the rule
+  silently too. This branch nearly shipped one.
+
+**Still open:** whether the other five rules are actually firing. Three (`electron-webprefs`,
+`no-native-languages`, `package-json-natives`) use unanchored suffix patterns and are fine by
+inspection; `hardcoded-paths` and `native-modules` were not tested. **AI recommendation:** a
+tiny fixture that drives each rule through `posttooluse.py` and asserts it fires, run the way
+`scripts/check-*.mjs` are. A guard nobody can tell is broken is worse than no guard, and this
+repository now has seven of them.

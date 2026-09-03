@@ -65,6 +65,71 @@ The durable half of such a comment is usually worth keeping — write the *const
 episode. "Consolidating these is a behavioural decision, tracked as A39" survives the merge;
 "a duplicate this PR does not reach into" does not.
 
+### The second test: a trap belongs in the source, rationale belongs in the README
+
+Added 2026-09-03. The restates-the-code test above catches narration, and it was the whole of
+Rule 1 as originally written — which is why it could not see the failure that had already
+happened. **A file-header essay passes it.** Every line of one explains a decision, a trap or a
+non-obvious consequence, exactly as this rule asks. An agent following Rule 1 faithfully still
+writes a 90-line preamble, and by 2026-09-03 half the source files here had one.
+
+So there is a second test, and it is about **destination**, not length:
+
+> **A comment that stops a maintainer breaking the line in front of them belongs in the source.
+> A comment that explains why the file has the shape it has belongs in the directory's
+> `README.md`, or in an ADR.**
+>
+> The question to ask: *would someone editing this line get it wrong without this comment?*
+> Yes — it stays. No — it is rationale, and it goes in the README.
+
+Worked example, [`connection-log.ts`](../../src/trust/connection-log.ts), whose header was 29
+lines before this rule and is 7 after:
+
+| Comment | Verdict |
+|---|---|
+| "Undefined, not zero, when byte accounting was not available — zero is a real observation" | **Stays.** A maintainer would get this wrong. |
+| "Do not drop these to simplify the shape: an app exfiltrating files over many short connections grades at the *best* available grade" | **Stays**, moved next to the fields it protects. A trap, with a name. |
+| "Splitting them into three entry types would force every consumer to merge three arrays back together" | **Moves.** This argues with a reviewer about a design already chosen. |
+| "ADR-0006's amendment found the connection ladder was cheaper to fake than to earn…" (9 lines) | **Moves.** Real, and worth keeping — in [`src/trust/README.md`](../../src/trust/README.md) §Design notes. |
+
+**`## Design notes` in the directory's `README.md` is where rationale goes**, and
+`src/trust/README.md` is the worked example. Without somewhere legal to put it, the choice is
+between deleting real reasoning and writing the essay anyway — and the essay wins every time.
+That is why the 2026-09-02 correction above did not hold on its own.
+
+### The budget
+
+**A source file may open with at most 25 lines of comment**, enforced by
+`npm run check:comments` ([`scripts/check-comments.mjs`](../../scripts/check-comments.mjs)).
+
+Calibrated rather than picked: the files this document defends as correctly dense open with
+14–21 lines (`derive.ts` 20, `globals.ts` 21, `contracts/manifest.ts` 14); the essays open with
+26–94. **`src/contracts/` and test files are not checked** — the first by the carve-out below,
+the second because Rule 2 already gives tests a higher budget for the same reason.
+
+Only the *leading* block is measured. Density is not, and was tried first: it does not separate
+the two cases, because `derive.ts` is 67% comment and correct while `connection-log.ts` was 75%
+and an essay. What separates them is **where the comment sits**.
+
+**Long comments stay possible. They stop being free.** If a block genuinely cannot be
+shortened, say so in the file:
+
+```ts
+// orivon:comment-budget -- three strings once derived the same key through
+// unpaired surrogates; the vectors below are what proves that closed.
+```
+
+The reason is required, not optional — the guard rejects a bare pragma —  and
+`npm run check:comments -- --exemptions` lists every exemption in the tree with its reason, so
+the set stays small enough to actually review. **Owner's decision, 2026-09-03**, answering
+"we should still allow long comments when they are really necessary and not shortenable for
+very important reasons".
+
+The 16 files that were already over budget are listed in
+[`scripts/comment-budget-baseline.txt`](../../scripts/comment-budget-baseline.txt), untouched
+because each is owned by a stream with a live branch. That list is a **ratchet**: an entry whose
+file comes back within budget fails the check, so it can only shrink. Clearing it is A48.
+
 ### Where the codebase stands
 
 **Cleaned up 2026-08-27**, on `stream/backlog-07-guidelines-cleanup`. An audit found that density
@@ -302,6 +367,22 @@ the case Rule 3 could not answer, not the case that produced today's violations.
 Resolved by `src/shared/` — see §Where a shared helper lives.
 
 **2. Nothing mechanically enforces any of these rules, and that is deliberate for now.**
+**Partly superseded 2026-09-03 — read the correction first.**
+
+> **Correction, 2026-09-03 (owner's decision).** Rule 1's comment budget is now enforced in CI
+> by `npm run check:comments`. The deferral below expired for the reason it named: the rules
+> were being read and followed, and the codebase drifted anyway — half the source files had
+> grown a header essay, which Rule 1's restates-the-code test cannot see. §The budget above
+> has the mechanism and the escape hatch.
+>
+> The claim below that **"Rule 1 is not mechanically checkable by anything, and never will be"
+> was too strong.** Comment *quality* is not checkable and that part stands. A comment *budget*
+> is, and the distinction is the whole design: the guard measures how many lines a reader pays
+> before reaching code, and never tries to judge whether a comment is any good.
+>
+> Rules 2 and 3 are unchanged — still unenforced, still deliberate. `scripts/check-size.mjs`
+> exists on `stream/packaging-01-build-verify` and is deliberately not wired to CI, pending the
+> same owner call this correction made for Rule 1.
 
 **Owner's decision, 2026-08-27: rules first, enforcement later.** No linter, no formatter, no
 `check:size`. Revisit after the refactor lands.

@@ -6,7 +6,7 @@ action: warn
 conditions:
   - field: file_path
     operator: regex_match
-    pattern: ^(src|apps|packages)/.*\.(ts|tsx|json)$
+    pattern: ^(?:.*/)?(?:src|apps|packages)/.*\.(?:ts|tsx|json)$
   - field: content
     operator: regex_match
     pattern: (?i)\b(wasmtime|ipfs|ddoc|ens\b|app[- ]?store|wallet|electron-updater|autoUpdater|mkv|matroska|hevc|tor\b|upnp|nat-pmp)\b

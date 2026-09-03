@@ -20,6 +20,7 @@ code it guards could be disabled by the change it exists to catch.
 | `check-no-native-modules.mjs` | **Rule 8.** No dependency may require a compiler at install time. Runs on `postinstall`, so it fires on every `npm install` |
 | `check-contracts-pure.mjs` | `src/contracts/` is complete and references nothing outside itself |
 | `check-no-secrets.mjs` | No credentials in git-tracked files |
+| `check-comments.mjs` | **Rule 1.** No source file opens with more than 25 lines of comment. `--exemptions` lists every file that opted out and why |
 | `smoke.mjs` | The shell actually launches and works, driven with real clicks |
 | `devlog-cron.sh` | The Sunday devlog job |
 

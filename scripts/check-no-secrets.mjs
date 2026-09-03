@@ -19,11 +19,10 @@
  * OUTPUT: findings never contain the matched value. CI logs on a public repo
  * are public, so a guard that prints what it found has published it twice.
  */
-import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { isInvokedDirectly } from './cli.mjs'
+import { isInvokedDirectly, trackedFiles } from './cli.mjs'
 
 /**
  * Each pattern matches a credential FORMAT that is issued, not typed by a
@@ -145,19 +144,6 @@ function readConfiguredSecrets () {
     .filter((line) => !line.trimStart().startsWith('#'))
     .map((line) => line.slice(line.indexOf('=') + 1).trim().replace(/^["']|["']$/g, ''))
     .filter(Boolean)
-}
-
-function trackedFiles (root) {
-  try {
-    const out = execFileSync('git', ['ls-files', '-z'], {
-      cwd: root,
-      encoding: 'utf8',
-      maxBuffer: 64 * 1024 * 1024
-    })
-    return out.split('\0').filter(Boolean)
-  } catch {
-    return [] // not a git repo: nothing is tracked, so nothing can leak
-  }
 }
 
 /** Returns null for unreadable files and for anything that looks binary. */
