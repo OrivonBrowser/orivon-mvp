@@ -1278,6 +1278,89 @@ is itself still open — see this file's own header and `CLAUDE.md`'s "Still ope
 blocking this PR: both gaps are already strictly better than main, and neither is reachable
 with the stubbed `Fetch` every current caller uses.
 
+### A49 — `node-gyp` is now a permanent, always-installed member of the dev tree, dormant behind one unenforced line **[STILL OPEN]**
+
+Found 2026-09-03, reviewing `packaging-01-build-verify` (PR #47), after the owner had already
+approved the `electron-builder` devDependency itself. **This entry is about the durable policy
+question that approval leaves open, not about reversing it** — the dependency stays either way.
+
+Verified directly against the installed tree, not assumed: `app-builder-lib` (electron-builder's
+implementation package) depends on `@electron/rebuild@4.2.0`, which depends on
+`node-gyp@12.4.0`. Both are listed as ordinary dependencies of `app-builder-lib` — not
+`optionalDependencies` — so both install unconditionally on every platform, every time
+`electron-builder` is a devDependency of this repo, which it now is
+(`node_modules/@electron/rebuild`, `node_modules/node-gyp` both present). `electron-builder.yml`'s
+`npmRebuild: false` is the only thing standing between that installed `node-gyp` and it actually
+running: `node_modules/app-builder-lib/out/packager.js:454-455` checks exactly this flag before
+deciding whether to call into a real rebuild.
+
+**`npm run check:natives` structurally cannot see this.** Its scope, by Rule 8's own literal
+wording, is install-time scripts — whether anything runs a compiler when `npm install` runs. It
+says nothing about, and cannot say anything about, what a later `electron-builder` invocation
+does. The gate that currently passes and the gap that currently exists are simply about two
+different moments; the automated check was never going to catch this one.
+
+**The open question for the owner:** does Rule 8 ("pure-JS dependencies only... native modules
+break run-from-source on Windows and macOS") mean *nothing compiles at `npm install`* — true
+today, and all `check:natives` verifies — or the stronger *no native build tooling exists
+anywhere in the tree*, which is now false? Both readings were indistinguishable before this PR,
+because nothing in the tree depended on `node-gyp` at all. They diverge starting now.
+
+**AI leaning, not a decision:** if the owner wants the stronger property enforced, a guard would
+need to check something `check:natives` does not today — e.g. that no installed package's own
+`package.json` lists `node-gyp` (or another native-build tool) as a non-optional dependency
+anywhere in the resolved tree, run at `postinstall` alongside `check:natives` rather than folded
+into it (a different question: install-time toolchain presence, not packaging-time
+configuration). This is a leaning sketched for whoever the owner assigns it to, not a design
+committed to — building it now would be scope creep into a PR already carrying two unrelated
+fixes (docs/development/pr-blueprint.md's anti-pattern list).
+
+**Needed by:** before Windows/macOS packaging is scoped as a real build step — this PR's own
+`electron-builder.yml` is explicitly Linux-only. Not blocking `packaging-01-build-verify`.
+
+### A51 — a critical subsystem now fails startup loudly; is fail-fast the right shape long-term **[AI-REC]**
+
+Found 2026-09-03, in a three-persona adversarial review of `stream/broker-15-reachable`
+(A47's own branch). `publishBroker`'s throw was caught by `runAfterReady`'s failure collection
+and demoted to one `console.error` line (`main/index.ts`'s `report()`); the app then booted a
+completely normal-looking shell window with the control channel never registered, so every
+`orivon.*` call from every app was silently unroutable. The change had turned a silent *data*
+bug (two disagreeing grant ledgers) into a silent *availability* bug (the capability layer going
+dark) — an improvement, but still invisible exactly where `runBeforeReady`'s own "must never be
+quiet" philosophy says it must not be.
+
+**Fixed on `stream/broker-17-ctx-broker`:** `Subsystem` gained an optional `critical` flag
+(`registry.ts`), copied onto each `SubsystemFailure`; `brokerIpcSubsystem` (`src/broker/ipc.ts`)
+is the first subsystem marked `critical: true`. `main/index.ts` now calls the new
+`criticalFailureMessage(failures)` after each phase and, if it returns non-null, calls
+`dialog.showErrorBox` and `app.exit(1)` instead of calling `createShellWindow()` — a browser
+whose capability layer is dead does not open at all, rather than opening one that only looks
+like it works.
+
+**What is decided vs. still open.** That a critical subsystem's failure must be impossible to
+miss is not in question. What is an AI recommendation, not an owner decision:
+
+1. **Fail-fast + native dialog, not a degraded mode.** An alternative considered and rejected:
+   open the shell window anyway with an in-page banner (e.g. a chrome-view indicator saying
+   capabilities are unavailable), which would at least let a user retry a normal tab. Rejected
+   here because the shell chrome itself is rendered by ordinary web content with no special
+   authority to assert "the broker is down" trustworthily, and because a half-working browser
+   that silently denies every `orivon.*` call is arguably a worse experience than one that
+   visibly refuses to start. Not tested against real users either way.
+2. **`dialog.showErrorBox` + `app.exit(1)`, not a friendlier recovery flow** (retry, a link to
+   diagnostics, an automatic restart). Chosen as the smallest change that makes the failure
+   impossible to miss, per this task's own brief — not because a better UX doesn't exist.
+3. **Only `brokerIpcSubsystem` is marked `critical` today.** Whether a future `src/shim/` or
+   `src/trust/` subsystem should also be critical is for whoever builds it to decide, following
+   this pattern (`Subsystem.critical`'s own doc in `registry.ts`) rather than reinventing one.
+
+**Related to A47, not a duplicate:** A47 asks who may edit `registry.ts` at all; this asks
+whether the failure-handling shape chosen inside it, once editable, is the right one long-term.
+
+**Needed by:** before packaging (build step 10), when a real user first sees this dialog instead
+of a console line. Not blocking — the behaviour is strictly louder than what it replaces either
+way.
+
 ---
 
 ## B. Contradictions still to fix

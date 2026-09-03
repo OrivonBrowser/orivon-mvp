@@ -15,6 +15,11 @@ out/
 build/
 *.tsbuildinfo
 
+# Vitest coverage output (`vitest run --coverage`, not currently a wired
+# script) -- regenerated on every run, never source. Found untracked in the
+# repo root 2026-09-02.
+coverage/
+
 # Electron / packaging
 release/
 *.AppImage
@@ -24,6 +29,10 @@ release/
 .claude/settings.local.json
 .vscode/
 .idea/
+
+# codeArbiter's local tool state -- machine-local cache/config for that
+# plugin, not project source. Found untracked in the repo root 2026-09-02.
+.codearbiter/
 
 # Environment
 .env
