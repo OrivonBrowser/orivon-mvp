@@ -2,8 +2,9 @@ name: CI
 
 # With no code reviewer, CI is the reviewer (build-plan.md SS Week 0).
 #
-# workflow_dispatch exists only to let a human trigger the `e2e` job below --
-# see its own comment for why that job does not run on every push/pull_request.
+# workflow_dispatch lets a human re-trigger the `e2e` job below on demand; that
+# job also runs on every push and pull_request, because a security test nobody
+# remembers to launch is the same as no security test at all.
 on:
   push:
   pull_request:
@@ -83,8 +84,11 @@ jobs:
   # least once. Promote the `if:` below to run on push/pull_request once that
   # is confirmed; a green CI badge that silently skips this test is worse
   # than an honestly-manual job.
+  # Kept a separate job rather than folded into `check`: it needs a real Electron
+  # build and a display server, takes far longer than the unit suite, and a
+  # failure here means something different (the capability boundary itself
+  # broke), so it should be readable as its own red X.
   e2e:
-    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
