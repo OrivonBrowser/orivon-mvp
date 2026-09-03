@@ -20,5 +20,19 @@ export const electronFetch: Fetch = async (url, signal) => {
   // SESSION UNSPECIFIED, AI-REC not an owner decision: no `session` option
   // means Electron's default session. Once per-app partitions land, this
   // may need the confirmed app's own partitioned session instead.
-  return await net.fetch(url, { credentials: 'omit', signal })
+  //
+  // redirect: 'error' -- node_modules/electron/electron.d.ts documents the
+  // `.url` (and `.type`) of net.fetch's returned Response as INCORRECT.
+  // fetch-bundle.ts's entire same-origin check trusts response.url as the
+  // only source of truth for where fetched bytes actually came from
+  // (deliberately rejecting the originally-requested url for that purpose,
+  // per its own comment) -- so a redirect silently followed onto a
+  // different origin would be judged same-origin or not using a field
+  // Electron itself says may not be accurate. 'error' refuses outright
+  // rather than 'manual', which would hand fetch-bundle.ts a manual-redirect
+  // Response shape it has no code to interpret; the loader never expects a
+  // redirect in the first place (the manifest is always fetched from one
+  // fixed URL, assets resolve against the app's own origin), so failing
+  // closed here costs nothing.
+  return await net.fetch(url, { credentials: 'omit', signal, redirect: 'error' })
 }
