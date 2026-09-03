@@ -6,13 +6,19 @@ are not packaged at all -- they ship run-from-source, deliberately, to avoid buy
 certificates ([`docs/planning/build-plan.md`](../planning/build-plan.md) "Platform policy";
 [`docs/development/setup.md`](setup.md)).
 
-> **Status: config only, unbuilt.** `electron-builder.yml` has been checked by eye against
-> electron-builder's documented schema (looked up live, 2026-08-26 -- see "Why a live lookup
-> mattered" below) and validated as parseable YAML. It has **not** been run through a real
-> `electron-builder` invocation: that downloads several hundred MB of Electron and helper
-> binaries, which is out of scope for the change that added this file. The first real build is
-> follow-up work. Treat every claim below about what the output *will* contain as "designed to,
-> per current docs" rather than "observed."
+> **Status: built once, 2026-09-03.** A real `electron-builder` invocation ran for the first
+> time on `stream/packaging-01-build-verify`, producing real `deb`/`AppImage` artefacts in
+> `release/`. That run found `electron-builder.yml` had been checked by eye against the wrong
+> schema generation -- it assumed v27, which is still alpha-only; the installed `electron-builder`
+> is 26.15.3, npm's actual `latest` tag -- and rejected the file until `npmRebuild` was flattened
+> out of a nested `nativeModules:` object to match (see that key's `CORRECTED` comment in
+> `electron-builder.yml`). The app window itself was confirmed launching and rendering the real
+> shell from the built AppImage. **Not everything below has been checked against that build's
+> actual output** -- the desktop-entry contents, the `MimeType=`/`Categories=` composition, and
+> the `xdg-settings` registration flow have not been run yet; "Known gaps for the first real
+> build" below has the honest list of what is and is not confirmed. Treat any claim below that
+> isn't in that list, or isn't one of the two things confirmed above, as "designed to, per
+> current docs" rather than "observed."
 
 ## `deb` is the primary artefact
 
@@ -35,35 +41,29 @@ So:
 
 ## How to build
 
-`electron-builder` is **not yet a dependency of this repository** -- adding it means touching
-`package.json`, which this change deliberately does not do (see the PR that introduced this
-file). Until then:
+`electron-builder` (`^26.15.3`) is a `devDependency` of this repository, added
+2026-09-03 on `stream/packaging-01-build-verify` -- run `npm install` and it's there.
 
 ```bash
-npm install --save-dev electron-builder
+npm run package:linux
 ```
 
-Then, every time:
+`"package:linux": "electron-vite build && electron-builder --linux"` in `package.json` runs the
+same two steps a manual build would: `electron-vite build` first (`out/main`, `out/preload`,
+`out/renderer`), then `electron-builder --linux`. `electron-builder` does not invoke the app
+build itself -- it packages whatever is already on disk, so skipping the first step packages a
+stale (or missing) `out/`. `electron-builder.yml` is picked up automatically; it's the tool's
+default config filename, so no `--config` flag is needed.
 
-```bash
-npm run build                        # electron-vite -> out/main, out/preload, out/renderer
-npx electron-builder --linux deb AppImage
-```
-
-`electron-builder` does not invoke the app build itself -- it packages whatever is already on
-disk. Skipping `npm run build` packages a stale (or missing) `out/`. `electron-builder.yml` is
-picked up automatically; it's the tool's default config filename, so no `--config` flag is
-needed.
-
-Output lands in `release/` (already gitignored). A convenience script --
-`"package:linux": "electron-vite build && electron-builder --linux"` in `package.json` -- would
-collapse the two commands above into one; it isn't added here because this change isn't allowed
-to touch `package.json`. Worth adding when someone next has a reason to edit that file.
+Output lands in `release/` (already gitignored).
 
 ### Verifying what actually got built
 
-Nothing above has been run, so treat this section as a checklist for whoever runs it first, not
-a report of results.
+The build itself has now been run once (2026-09-03) and produced real `release/*.deb` and
+`release/*.AppImage` files; the app window was confirmed launching and rendering the real shell
+from the AppImage. The specific commands below -- inspecting the `.desktop` entry's contents and
+registering as the default browser -- have **not** been run against that build. Treat this
+section as a checklist still to complete, not a report of those results.
 
 ```bash
 # Confirm the desktop entry actually says what "Making 'set as default browser'
@@ -117,10 +117,11 @@ package during the 64-bit time_t transition).
 > electron-builder 27, the default AppImage runtime is a static, FUSE3-compatible build that no
 > longer requires host-level FUSE at all, specifically to improve compatibility with distros
 > like Ubuntu 24.04+ that this exact problem affects. Whether that lands in *this* project's
-> package depends on which electron-builder version eventually gets installed -- unpinned here,
-> left to whoever runs `npm install --save-dev electron-builder` above. **Don't delete this
-> caveat on the assumption it's obsolete; confirm the installed version and test on an
-> `libfuse2`-less system before deciding it doesn't apply.**
+> package depends on which electron-builder version is installed -- pinned at `^26.15.3` as of
+> 2026-09-03 ("Known gaps for the first real build" above), which is not v27. Whether 26.15.3's
+> AppImage runtime already carries the static FUSE3 build has not been checked. **Don't delete
+> this caveat on the assumption it's obsolete; confirm against the installed version and test on
+> a `libfuse2`-less system before deciding it doesn't apply.**
 
 **The `chrome-sandbox` SUID error.** Chromium's sandbox needs a small helper binary,
 `chrome-sandbox`, owned by `root` with the SUID bit set (`4755`), so it can set up an
@@ -165,7 +166,8 @@ blocklist subtracted from `**/*` would have to remember to keep excluding.
 ## Known gaps for the first real build
 
 Recorded here rather than silently worked around, per this repo's own rule about not blurring
-"decided" with "still open" ([`CLAUDE.md`](../../CLAUDE.md) Rule 2):
+"decided" with "still open" ([`CLAUDE.md`](../../CLAUDE.md) Rule 2). The first real build ran
+2026-09-03; the gaps below are what it left open, not what it was blocked on.
 
 - **No app icon exists in this repository.** `electron-builder.yml` does not set `linux.icon`
   or `directories.buildResources`, so it relies on the documented default: a `build/icon.png`
@@ -175,24 +177,26 @@ Recorded here rather than silently worked around, per this repo's own rule about
   file permission to create binary image assets and no source to draw one from; someone needs to
   design one before the first real build, or accept the placeholder knowingly.
 - **The `MimeType=` composition (`protocols.schemes` + `linux.mimeTypes` -> one merged line) is
-  documented behaviour, not something this task observed.** Verify it with the `dpkg -e`/`-x`
-  commands above the first time this actually builds.
+  documented behaviour, not something this task observed.** The build exists now
+  (`release/*.deb`) -- verify it with the `dpkg -e`/`-x` commands above; that verification itself
+  just hasn't been run yet.
 - **`StartupWMClass`/`executableName` (`orivon`) is a reasonable guess, not a confirmed match.**
   Nothing in `src/main/*.ts` currently calls `app.setName()` or sets an explicit window/app
   identifier (checked while writing this), so Electron's runtime default may not agree with the
   string baked into the `.desktop` file until someone sets one explicitly. A mismatch here means
   taskbar/window-manager icon grouping can misbehave even though the app itself runs fine --
-  worth a first-build check, not a launch blocker.
+  worth checking against the built `.deb`, not a launch blocker.
 - **`linux.maintainer` reuses the fallback contact address already public in
   [`SECURITY.md`](../../SECURITY.md)**, because `package.json` has no `author` field and a
   `.deb` control file requires *some* `Maintainer:` entry. Revisit if the project ever wants a
   dedicated packaging/releases address instead.
-- **No electron-builder version is pinned anywhere yet** -- that happens when it's added as a
-  devDependency, which this change does not do. The schema this file was written against
-  (nested `asar:`/`nativeModules:` keys, the v27 generated Linux launcher script, `publish: null`
-  suppressing `app-update.yml`) reflects a live documentation lookup done 2026-08-25/26, not
-  whatever a training-data cutoff would assume -- see "Why a live lookup mattered" below.
-  Confirm it still matches whatever version actually gets installed.
+- **`electron-builder` is pinned at `^26.15.3`** in `package.json`, added 2026-09-03 -- npm's
+  actual `latest` tag, not the v27 this file was originally checked by eye against (v27 is still
+  alpha-only prereleases). "Why a live lookup mattered" below and `electron-builder.yml`'s
+  `npmRebuild` key both describe what a 2026-08-25/26 documentation lookup got right (the v27
+  generated Linux launcher script, `publish: null` suppressing `app-update.yml`) versus the one
+  thing it got wrong (`asar`/native-module options are not nested under a `nativeModules:` object
+  in the schema that actually validates against 26.15.3 -- that assumption has been corrected).
 
 ## What this document does not cover
 
@@ -221,3 +225,13 @@ override has to reference instead of the raw binary, `productName`/`executableNa
 silently sanitized to hard-validated, and implicit CI-triggered publishing was removed in favor
 of requiring an explicit `--publish` flag. Writing this config from memory alone would have
 produced a plausible-looking file using an older, no-longer-current schema shape.
+
+**CORRECTED 2026-09-03, running the first real build:** v27 is not what `npm install --save-dev
+electron-builder` actually installs -- it resolves npm's `latest` tag, which is `26.15.3` (v27
+exists only as alpha prereleases). The installed schema rejected the nested `asar`/native-module
+form outright; those options are flat, top-level keys in 26.x, matching the shape this file used
+*before* the live lookup rather than after it. The other three findings above (the generated
+launcher script, hard-validated `productName`/`executableName`, explicit `--publish`) were not
+re-checked against 26.15.3 specifically -- confirmed only for the one key (`npmRebuild`) this PR
+actually touched. Treat the rest of this list as still worth a live re-check, not as re-verified
+by this correction.
