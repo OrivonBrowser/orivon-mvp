@@ -65,14 +65,14 @@ export function serializeBookmarksFile (list: readonly Bookmark[]): string {
 }
 
 /** Batches rapid star/unstar clicks into one write instead of one per
- * click. Exported so the test can wait exactly this long rather than
- * guessing at a timeout. */
+ * click. */
 export const WRITE_DEBOUNCE_MS = 300
 
 export class BookmarkStore {
   private list: Bookmark[] = []
   private readonly listeners = new Set<() => void>()
   private writeTimer: ReturnType<typeof setTimeout> | null = null
+  private pendingWrite: Promise<void> | null = null
 
   constructor (private readonly filePath: string) {}
 
@@ -113,6 +113,14 @@ export class BookmarkStore {
     this.listeners.add(cb)
   }
 
+  /** Resolves once the write currently scheduled or in flight has settled.
+   * `writeNow` never rejects (see below), so this never does either. Exists
+   * for tests: waiting on the real write, instead of a guessed delay, is
+   * what makes the debounce test's timing deterministic. */
+  async flushPendingWrite (): Promise<void> {
+    await this.pendingWrite
+  }
+
   private emitChange (): void {
     for (const listener of this.listeners) listener()
     this.scheduleWrite()
@@ -120,10 +128,12 @@ export class BookmarkStore {
 
   private scheduleWrite (): void {
     if (this.writeTimer !== null) clearTimeout(this.writeTimer)
-    this.writeTimer = setTimeout(() => {
-      this.writeTimer = null
-      void this.writeNow()
-    }, WRITE_DEBOUNCE_MS)
+    this.pendingWrite = new Promise((resolve) => {
+      this.writeTimer = setTimeout(() => {
+        this.writeTimer = null
+        void this.writeNow().finally(resolve)
+      }, WRITE_DEBOUNCE_MS)
+    })
   }
 
   private async writeNow (): Promise<void> {
