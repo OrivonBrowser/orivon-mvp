@@ -1,0 +1,14 @@
+{
+  "orivonApiVersion": 0,
+  "id": "app.orivon.fixture",
+  "name": "Orivon Fixture",
+  "version": "0.1.0",
+  "entry": "index.html",
+  "capabilities": {
+    "net": {
+      "tcp": {
+        "connect": ["127.0.0.1:8873"]
+      }
+    }
+  }
+}
