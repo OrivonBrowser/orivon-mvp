@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { compareVersions, decideUpdate } from './update.js'
+import { compareVersions, decideUpdate, patternSetFromGrants } from './update.js'
 import type { PatternSet, UpdateDecision, UpdateInput } from './update.js'
+import type { Grant } from '../../contracts/index.js'
 
 // Security-critical, and the failure mode is SILENCE: the bug this suite
 // exists to catch is "no prompt appeared". Nobody notices that by using the
@@ -475,4 +476,44 @@ describe('compareVersions', () => {
       expect(compareVersions('1.2.0', version)).toBeNull()
     }
   )
+})
+
+/** A minimal, valid Grant -- only the fields the function under test reads vary per call. */
+function grant (capability: Grant['capability'], patterns: readonly string[]): Grant {
+  return { id: 'g1', origin: 'https://app.example', capability, patterns, grantedAt: 0 }
+}
+
+// What the loader's LoadContext.grantedPatterns and the CSP derivation both
+// need: the ledger's actual Grant[] read back as a PatternSet, never the
+// manifest's declared one (index.ts's own connect() precedent -- A18).
+describe('patternSetFromGrants', () => {
+  it('an empty grant list is an empty pattern set', () => {
+    expect(patternSetFromGrants([])).toEqual({})
+  })
+
+  it('one grant becomes one key', () => {
+    expect(patternSetFromGrants([grant('tcp.connect', ['*:*'])])).toEqual({ 'tcp.connect': ['*:*'] })
+  })
+
+  it('a capability granted with no patterns (fs, id) keeps its key, present with an empty array', () => {
+    // Load-bearing distinction this file's own PatternSet doc names: present
+    // with [] means "granted, no patterns" -- absent means "not granted at
+    // all". Collapsing the two would make decideUpdate blind to a brand-new
+    // fs/id grant.
+    expect(patternSetFromGrants([grant('fs', [])])).toEqual({ fs: [] })
+  })
+
+  it('multiple grants for different kinds all appear', () => {
+    expect(patternSetFromGrants([
+      grant('tcp.connect', ['api.example.com:443']),
+      grant('fs', [])
+    ])).toEqual({ 'tcp.connect': ['api.example.com:443'], fs: [] })
+  })
+
+  it('never reads anything from the manifest -- only the Grant objects passed in', () => {
+    // No manifest parameter exists on this function at all; this test is the
+    // executable form of that invariant, not a redundant restatement of it.
+    const result = patternSetFromGrants([grant('tcp.connect', ['*:*'])])
+    expect(Object.keys(result)).toEqual(['tcp.connect'])
+  })
 })

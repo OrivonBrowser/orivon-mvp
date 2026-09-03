@@ -51,13 +51,25 @@ Measured per `ADR-0004` (first-run explicit choice, self-hosted), retaining an e
    simultaneously the product, the proof, and the distribution asset.
    *v0 plays MP4/H.264 only — use a known-good MP4 torrent, and state the format limitation
    in-product rather than letting users discover it on their own magnets.*
-2. **The app from a URL.** Type a URL → the browser offers **"Open as app"** → grant prompt →
-   a running app with real network access, delivered from that URL and nowhere else.
+2. **The app from a URL.** Type a URL → the page's own HTML hints that it has a manifest →
+   the browser fetches and caches it → the app runs, asking for the grant prompt only once it
+   actually calls for a capability, with real network access delivered from that URL and
+   nowhere else. **What the user sees, unlike journeys 1 and 3, is not a single clean visible
+   outcome but a gap:** the fetch-and-cache step is automatic and silent by design (`ADR-0012`)
+   — no install confirmation, no "this is now an app" indicator — so the *only* visible moment
+   in the whole journey is the eventual grant prompt, which may appear immediately or much
+   later depending on when the app's own code first asks for a capability. Stated here
+   explicitly because it is easy to miss: nothing marks the moment an origin becomes a cached
+   app.
    **Added 2026-08-25.** The audit found that no journey demonstrated URL delivery — journey 1
    runs a pre-cached app, journey 3 loads a local directory — even though URL delivery is the
    thesis, and is why the shim moved into month 1, why the spike exists, and why the flagship
    cannot take the cheap main-process path. Cheapest honest fix: serve the *same* torrent app
    from a second origin. A static deploy, not a second app.
+   **Corrected 2026-09-03, owner decision.** This previously read "the browser offers 'Open as
+   app'" — a discrete menu action that does not exist and will not: a Web3site is the URL, not
+   a separate thing a user converts a website into. See `capability-api.md`'s "How a URL
+   becomes an app" for the corrected mechanism (its own 2026-09-03 correction block).
 3. **The identity.** Open any Nostr client on the web → one connect prompt → signed in, and it
    is the *same* identity in every client — no extension installed, no seed phrase, no setup.
    *Proves the identity model, but claims little about the thesis: `window.nostr` injection is
