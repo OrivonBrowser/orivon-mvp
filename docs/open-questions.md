@@ -1821,3 +1821,158 @@ global cap, eviction order). That is a policy decision for an ADR, not something
 this entry.
 
 **Needed by:** before/alongside PR #63 lands. See above.
+
+---
+
+### A59 — whether `net.fetch`'s `Response.url` can be wrong on an ordinary, non-redirected fetch is unresearched **[STILL OPEN]**
+
+Found 2026-09-03, a review-pass follow-up to `electron-fetch.ts`'s `redirect: 'error'` fix.
+
+`node_modules/electron/electron.d.ts` documents the `.type` and `.url` values of `net.fetch`'s
+returned `Response` as incorrect — as an UNCONDITIONAL bullet under `net.fetch`'s own
+"Limitations", not one scoped to redirected responses. `fetch-bundle.ts`'s same-origin and
+canonical-path checks (`fetchBundle`'s manifest and asset-loop checks alike) read
+`response.url` as their SOLE source of truth for where fetched bytes actually came from, on
+EVERY fetch — not only a would-be-redirected one.
+
+**What is closed.** The redirect-specific attack — a malicious redirect landing `fetchBundle`
+on a different origin while `.url` still reads as the requested one — cannot happen:
+`redirect: 'error'` causes Electron's own `net-client-request.ts` to hard-reject the promise the
+instant a redirect response is seen, so a followed `Response` with a `.url` to distrust never
+exists in the first place. That mechanism does not depend on `.url`'s accuracy at all.
+
+**What is not closed, and not researched.** Whether `.url` can be wrong on an ORDINARY,
+non-redirected, 200-OK fetch — and if so, in what way (stale, re-derived from the request rather
+than the response, mangled for some URL shapes, or something else) — is not stated by Electron's
+docs and was not resolved by a context7 query against live Electron documentation either; both
+are silent past the one-line "incorrect" warning. If `.url` on a successful, non-redirected
+`net.fetch` can name a different origin or path than where the bytes actually came from,
+`fetch-bundle.ts`'s origin and canonical-path checks would be trusting exactly the field that is
+wrong, on every single fetch they perform — not a narrow gap.
+
+**AI recommendation:** before the loader's discovery trigger (PR #63's `<link
+rel="orivon-manifest">` hint, or any other path that reaches `fetchBundle` from live, un-curated
+content) is wired to something a real user's browsing can reach, someone should empirically test
+`net.fetch`'s actual `Response.url` value against a real HTTPS server in a real Electron process
+— varying scheme, port, path, query string and trailing slash — since neither Electron's docs
+nor available tooling explain the concrete failure mode well enough to reason about it from
+first principles.
+
+**Needed by:** before the loader's discovery trigger is wired to anything live. See
+`electron-fetch.ts`'s `redirect: 'error'` comment, which cites this entry.
+
+---
+
+### A60 — `GrantLedger.registerApp` unconditionally raises `versionFloor`; calling it on every FETCHED manifest, not only an ACCEPTED install, is a self-inflicted-DoS risk **[STILL OPEN]**
+
+Found 2026-09-03, a review-pass follow-up; no current caller exists yet to exhibit the bug.
+
+`registerApp` (`src/broker/grant-ledger.ts`) raises `versionFloor` to `manifest.version`
+unconditionally on every call, and its own doc comment states "T19's replay guard depends on
+every registration going through here." Nothing outside `src/broker/` calls it yet —
+`grep -rn "registerApp" src/loader/` returns nothing — so this is not a live bug, only a shape
+that would become one depending on how the loader-to-broker wiring is eventually written.
+
+**The risk.** If a future caller invokes `registerApp` for every manifest `fetchBundle`
+FETCHES — which is what the doc comment's "every registration" language implies — rather than
+only for a manifest whose `decideUpdate()` verdict is actually accepted (TOFU or `silent`), a
+hostile origin can serve a manifest declaring an absurdly high fake `version`, have it
+registered and the floor permanently raised, even though the install itself is separately
+rejected or forced into re-consent. That self-inflicts a denial-of-service against every future
+LEGITIMATE (numerically lower) version ever served from that origin afterward — T19's own replay
+guard, aimed at protecting the user from a rollback, would instead be locking the user out of
+every real update.
+
+**Compounds with A57.** `GrantLedger` has no persistence (A57): there is no undo path for a
+floor raised this way short of a full process restart, which resets ALL floors, not just the
+poisoned one — so the workaround for this bug is strictly worse than living with it.
+
+**AI recommendation:** whoever wires the loader to the broker should call `registerApp` only at
+the point an install is actually being accepted (the TOFU or `silent` branch of
+`decideUpdate()`), never merely on a successful fetch/parse. Not fixed here: no such call site
+exists yet to fix — this is a design constraint for the wiring PR, not a bug in
+`grant-ledger.ts`'s current code.
+
+**Needed by:** before the loader ever calls `registerApp`.
+
+---
+
+### A61 — `patternSetFromGrants` is fully unwired; `LoadContext.grantedPatterns` has no real caller building it from the grant ledger **[STILL OPEN]**
+
+Found 2026-09-03, a review-pass follow-up.
+
+`patternSetFromGrants` (`src/broker/policy/update.ts`) exists to turn what the grant ledger
+actually holds (`GrantLedger.grantsFor`) into the `PatternSet` shape `decideUpdate()` compares
+against — `grep -rn "patternSetFromGrants" src/` shows it is called only from its own test file
+(`update.test.ts`). `src/loader/index.ts`'s `LoadContext.grantedPatterns` — the field
+`load()`'s own header comment (CRITERION 4) insists must be "what the grant ledger actually
+holds... NEVER `manifest.capabilities`" — is still an externally-supplied parameter with no real
+caller anywhere in `src/` that builds it via
+`patternSetFromGrants(await broker.app.grants(origin))` or any equivalent. Confirmed:
+`grep -rn "grantedPatterns" src/` finds only `update.ts`'s own field definition, `index.ts`'s
+`LoadContext.grantedPatterns` declaration and its one pass-through into `decideUpdate()`, a
+comment in `update-patterns.ts` explicitly disclaiming it ("this file produces `newPatterns`,
+never `grantedPatterns`" — a different, unrelated mapping from manifest capabilities to
+patterns, not from grants to patterns), and test-only construction in `update.test.ts` and
+`index.test.ts`. No production code path builds the value.
+
+**Why this is worth filing plainly, unlike leaving it implicit.** `versionFloorFor`
+(`src/broker/index.ts`) is in the identical position — defined, exposed as "the app loader's
+seam," not yet called from `src/loader/` — and that non-wiring status is already stated
+outright in A57's own text. This entry does the same for `patternSetFromGrants` /
+`grantedPatterns`, matching this codebase's established discipline of filing a plumbing gap
+before it is discovered by someone assuming it already exists. Without this entry, a maintainer
+grepping for "how do I get granted patterns for the loader" would reasonably conclude the
+loader-to-broker wiring already exists end-to-end, when in fact `LoadContext` is still an
+injected stub with no production caller.
+
+**Not yet a live risk**, for the same reason A57 and A60 are not: nothing outside tests calls
+`Loader.load()` at all yet (`grep -rn "\.load(" src/` outside `src/loader/index.test.ts` finds
+no caller either), so there is no live path where `grantedPatterns` could currently be supplied
+wrong.
+
+**AI recommendation:** none beyond visibility — whoever wires the loader to the broker should
+build `LoadContext.grantedPatterns` via `patternSetFromGrants(broker.app.grants(origin))` (or
+whatever the real `Broker`-facing accessor turns out to be named), not invent a second mapping.
+
+**Needed by:** before `Loader.load()` is ever called from real code.
+
+---
+
+### A62 — `nodeLoaderStorage`'s writes are not atomic, and nothing serializes concurrent `load()` calls for the same origin **[STILL OPEN]**
+
+Found 2026-09-03, a review-pass follow-up.
+
+`nodeLoaderStorage` (`src/loader/node-storage.ts`) writes both the pinned asset bytes
+(`writeAsset`) and the pin record (`writePin`) via a direct `writeFile` call each — no
+temp-file-then-rename, no `fsync`, nothing that makes either write atomic. `Loader.load()`
+(`src/loader/index.ts`) has no per-origin lock or serialization of any kind: nothing prevents
+two concurrent `load()` calls for the same origin — two tabs hitting the same manifest hint at
+close to the same time, for instance — from interleaving their `writeAsset`/`writePin` calls
+into the same `code/` tree and the same `pin.json`.
+
+**Distinct from A58.** A58 is about disk QUOTA — nothing bounding total bytes written across
+origins or successive updates. This entry is about CONCURRENCY — two writers racing into the
+same on-disk state — a different mechanism entirely; a system with an airtight quota would still
+have this gap, and a system with unlimited disk would still have it too.
+
+**The specific hazard.** `bundleTree()`'s hash (`tree.root`) is computed over the bytes
+`fetchBundle` already holds in memory, entirely BEFORE `install()` writes anything to disk —
+nothing re-verifies, after a write completes, that the bytes actually on disk still match the
+hash that was pinned. Two racing `load()` calls for the same origin (same or different fetched
+bundles, e.g. an update landing mid-way through a slow first install) can interleave their
+`writeAsset` calls file-by-file and their `writePin` calls record-by-record, leaving `pin.json`
+naming a `bundleHash` that the actual bytes under `code/` — a mix of both writers' output — no
+longer add up to. A non-atomic single-file write can also leave a half-written file if the
+process dies mid-write, independent of any race.
+
+**Not yet a live risk**, same reasoning as A57/A60/A61: nothing outside `src/loader/index.test.ts`
+calls `Loader.load()` yet, so no real caller can currently trigger two concurrent installs for
+one origin.
+
+**AI recommendation:** none — whether the fix is a temp-file-then-rename write plus an fsync, a
+per-origin async lock/queue in front of `load()`, a post-write hash re-verification, or some
+combination, is a design decision for whoever wires `Loader.load()` into something with real
+concurrent callers (multiple windows/tabs), not something to guess into this entry.
+
+**Needed by:** before `Loader.load()` is reachable from more than one caller at a time.
