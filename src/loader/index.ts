@@ -100,7 +100,7 @@ export interface Loader {
    *
    * `assetPaths` is the discovered set of the app's frontend files.
    * `Manifest` has no field naming them and nothing in the doc corpus
-   * specifies a discovery mechanism -- docs/open-questions.md A44, filed
+   * specifies a discovery mechanism -- docs/open-questions.md A45, filed
    * rather than guessed. The caller supplies what it already knows.
    */
   load(hintedUrl: string, assetPaths: readonly string[], context: LoadContext): Promise<LoadResult>
