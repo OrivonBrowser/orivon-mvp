@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
-  createSubsystemContext, criticalFailureMessage, publishBroker, runAfterReady, runBeforeReady,
+  createSubsystemContext, criticalFailureMessage, publishBroker, publishLoader, runAfterReady, runBeforeReady,
   type Subsystem
 } from './registry.js'
 import type { App } from 'electron'
 import type { Broker } from '../broker/index.js'
+import type { Loader } from '../loader/index.js'
 
 // SubsystemContext's App and Broker fields are both type-only imports,
 // erased by verbatimModuleSyntax, so plain objects stand in for both below.
@@ -13,6 +14,7 @@ import type { Broker } from '../broker/index.js'
 const fakeApp = {} as unknown as App
 const ctx = createSubsystemContext(fakeApp)
 const fakeBroker = { marker: 'the-one-broker' } as unknown as Broker
+const fakeLoader = { marker: 'the-one-loader' } as unknown as Loader
 
 describe('runBeforeReady', () => {
   it('runs every beforeReady in list order', () => {
@@ -170,6 +172,39 @@ describe('publishBroker', () => {
   it('leaves ctx.broker undefined when nothing ever publishes', () => {
     const fresh = createSubsystemContext(fakeApp)
     expect(fresh.broker).toBeUndefined()
+  })
+})
+
+// Same guarantee as publishBroker, same reason (A47's own lower-cost path:
+// a second sanctioned slot on this same file rather than a new mechanism) --
+// two independently-constructed Loaders would mean two disagreeing ideas of
+// what is installed for one running app.
+describe('publishLoader', () => {
+  it('sets ctx.loader so a later reader sees it', () => {
+    const fresh = createSubsystemContext(fakeApp)
+    publishLoader(fresh, fakeLoader)
+    expect(fresh.loader).toBe(fakeLoader)
+  })
+
+  it('throws if a loader was already published, naming the hazard', () => {
+    const fresh = createSubsystemContext(fakeApp)
+    publishLoader(fresh, fakeLoader)
+    const second = { marker: 'a-second-loader' } as unknown as Loader
+    expect(() => publishLoader(fresh, second)).toThrow(/loader/)
+    expect(fresh.loader).toBe(fakeLoader)
+  })
+
+  it('leaves ctx.loader undefined when nothing ever publishes', () => {
+    const fresh = createSubsystemContext(fakeApp)
+    expect(fresh.loader).toBeUndefined()
+  })
+
+  it('broker and loader are independent slots -- publishing one never affects the other', () => {
+    const fresh = createSubsystemContext(fakeApp)
+    publishBroker(fresh, fakeBroker)
+    publishLoader(fresh, fakeLoader)
+    expect(fresh.broker).toBe(fakeBroker)
+    expect(fresh.loader).toBe(fakeLoader)
   })
 })
 

@@ -4,13 +4,14 @@
 // below. Nothing else in src/main/ changes -- WITH ONE EXCEPTION: where your
 // entry goes in the array, if your subsystem reads ctx.broker.
 //
-// ctx.broker IS ORDER-DEPENDENT. runAfterReady (registry.ts) runs this array
-// in order, and brokerIpcSubsystem is the only entry that writes ctx.broker.
-// List your entry AFTER it if you need to read ctx.broker -- before it, you
-// get `undefined`, silently, with no merge conflict and no compile error.
-// Read ctx.broker; never build your own Broker (registry.ts's
-// SubsystemContext.broker doc says why a second one is a real hazard, not a
-// style preference).
+// ctx.broker AND ctx.loader ARE ORDER-DEPENDENT, the same way. runAfterReady
+// (registry.ts) runs this array in order; brokerIpcSubsystem is the only
+// entry that writes ctx.broker, loaderSubsystem the only one that writes
+// ctx.loader. List your entry AFTER whichever one you need to read -- before
+// it, you get `undefined`, silently, with no merge conflict and no compile
+// error. Read the published value; never build your own Broker or Loader
+// (registry.ts's own doc on each says why a second one is a real hazard, not
+// a style preference).
 //
 // DO NOT ADD LOGIC TO THIS FILE OTHERWISE. No conditionals, no environment
 // checks, no ordering cleverness beyond the one rule above -- those

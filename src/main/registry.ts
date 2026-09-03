@@ -21,6 +21,7 @@
 // functions below unit testable without launching Electron.
 import type { App } from 'electron'
 import type { Broker } from '../broker/index.js'
+import type { Loader } from '../loader/index.js'
 
 export interface SubsystemContext {
   readonly app: App
@@ -40,20 +41,46 @@ export interface SubsystemContext {
    *
    * `readonly` here is not just documentation: `createSubsystemContext`
    * below returns an object whose `broker` is a get-only accessor backed by
-   * a module-private map, so `ctx.broker = x` is a TypeError at runtime, not
+   * a module-private slot, so `ctx.broker = x` is a TypeError at runtime, not
    * only a type error at compile time. `publishBroker` is the only way in.
    */
   readonly broker: Broker | undefined
+  /**
+   * The running app's one `Loader`, same guarantee as `broker` and for the
+   * same reason: two independently-constructed Loaders would disagree about
+   * what is installed for one running app. Undefined until the loader
+   * subsystem's `afterReady` runs; a subsystem reading this must be listed
+   * after `loaderSubsystem` in `subsystems.ts`.
+   */
+  readonly loader: Loader | undefined
 }
 
-// Backs SubsystemContext.broker. Keyed by context rather than stored as an
-// ordinary field so `broker` can be exposed as a get-only accessor
-// (SubsystemContextImpl below) -- the previous version of this file left
-// `broker` a plain mutable field and relied on every caller going through
-// `publishBroker` by convention alone; nothing stopped `ctx.broker = x`
-// from compiling and silently reproducing the split-ledger hazard this
-// module exists to prevent.
-const brokerByContext = new WeakMap<SubsystemContext, Broker>()
+/**
+ * One field on `SubsystemContext` that may be published exactly once.
+ * `broker` and `loader` both need this guarantee for the same reason (Rule
+ * 3): a second published value means two independently-constructed
+ * instances disagreeing about one running app's state. Keyed by context
+ * rather than stored as an ordinary field so the value can be exposed as a
+ * get-only accessor -- an early version of this file left `broker` a plain
+ * mutable field and relied on every caller going through `publishBroker` by
+ * convention alone, and nothing stopped `ctx.broker = x` from compiling.
+ */
+function createPublishedSlot<T> (label: string, hazard: string): {
+  get: (ctx: SubsystemContext) => T | undefined
+  publish: (ctx: SubsystemContext, value: T) => void
+} {
+  const byContext = new WeakMap<SubsystemContext, T>()
+  return {
+    get: (ctx) => byContext.get(ctx),
+    publish: (ctx, value) => {
+      if (byContext.has(ctx)) throw new Error(`ctx.${label} is already published; ${hazard}`)
+      byContext.set(ctx, value)
+    }
+  }
+}
+
+const brokerSlot = createPublishedSlot<Broker>('broker', 'a second Broker would create two disagreeing grant ledgers for one running app')
+const loaderSlot = createPublishedSlot<Loader>('loader', 'a second Loader would create two disagreeing ideas of what is installed for one running app')
 
 class SubsystemContextImpl implements SubsystemContext {
   readonly app: App
@@ -63,7 +90,11 @@ class SubsystemContextImpl implements SubsystemContext {
   }
 
   get broker (): Broker | undefined {
-    return brokerByContext.get(this)
+    return brokerSlot.get(this)
+  }
+
+  get loader (): Loader | undefined {
+    return loaderSlot.get(this)
   }
 }
 
@@ -85,10 +116,12 @@ export function createSubsystemContext (app: App): SubsystemContext {
  * philosophy above, applied to a different failure.
  */
 export function publishBroker (ctx: SubsystemContext, broker: Broker): void {
-  if (brokerByContext.has(ctx)) {
-    throw new Error('ctx.broker is already published; a second Broker would create two disagreeing grant ledgers for one running app')
-  }
-  brokerByContext.set(ctx, broker)
+  brokerSlot.publish(ctx, broker)
+}
+
+/** The one sanctioned way to set `ctx.loader` -- see `publishBroker`'s own doc; same guarantee, same reason. */
+export function publishLoader (ctx: SubsystemContext, loader: Loader): void {
+  loaderSlot.publish(ctx, loader)
 }
 
 export interface Subsystem {
