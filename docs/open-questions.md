@@ -1821,3 +1821,76 @@ global cap, eviction order). That is a policy decision for an ADR, not something
 this entry.
 
 **Needed by:** before/alongside PR #63 lands. See above.
+
+---
+
+### A59 — whether `net.fetch`'s `Response.url` can be wrong on an ordinary, non-redirected fetch is unresearched **[STILL OPEN]**
+
+Found 2026-09-03, a review-pass follow-up to `electron-fetch.ts`'s `redirect: 'error'` fix.
+
+`node_modules/electron/electron.d.ts` documents the `.type` and `.url` values of `net.fetch`'s
+returned `Response` as incorrect — as an UNCONDITIONAL bullet under `net.fetch`'s own
+"Limitations", not one scoped to redirected responses. `fetch-bundle.ts`'s same-origin and
+canonical-path checks (`fetchBundle`'s manifest and asset-loop checks alike) read
+`response.url` as their SOLE source of truth for where fetched bytes actually came from, on
+EVERY fetch — not only a would-be-redirected one.
+
+**What is closed.** The redirect-specific attack — a malicious redirect landing `fetchBundle`
+on a different origin while `.url` still reads as the requested one — cannot happen:
+`redirect: 'error'` causes Electron's own `net-client-request.ts` to hard-reject the promise the
+instant a redirect response is seen, so a followed `Response` with a `.url` to distrust never
+exists in the first place. That mechanism does not depend on `.url`'s accuracy at all.
+
+**What is not closed, and not researched.** Whether `.url` can be wrong on an ORDINARY,
+non-redirected, 200-OK fetch — and if so, in what way (stale, re-derived from the request rather
+than the response, mangled for some URL shapes, or something else) — is not stated by Electron's
+docs and was not resolved by a context7 query against live Electron documentation either; both
+are silent past the one-line "incorrect" warning. If `.url` on a successful, non-redirected
+`net.fetch` can name a different origin or path than where the bytes actually came from,
+`fetch-bundle.ts`'s origin and canonical-path checks would be trusting exactly the field that is
+wrong, on every single fetch they perform — not a narrow gap.
+
+**AI recommendation:** before the loader's discovery trigger (PR #63's `<link
+rel="orivon-manifest">` hint, or any other path that reaches `fetchBundle` from live, un-curated
+content) is wired to something a real user's browsing can reach, someone should empirically test
+`net.fetch`'s actual `Response.url` value against a real HTTPS server in a real Electron process
+— varying scheme, port, path, query string and trailing slash — since neither Electron's docs
+nor available tooling explain the concrete failure mode well enough to reason about it from
+first principles.
+
+**Needed by:** before the loader's discovery trigger is wired to anything live. See
+`electron-fetch.ts`'s `redirect: 'error'` comment, which cites this entry.
+
+---
+
+### A60 — `GrantLedger.registerApp` unconditionally raises `versionFloor`; calling it on every FETCHED manifest, not only an ACCEPTED install, is a self-inflicted-DoS risk **[STILL OPEN]**
+
+Found 2026-09-03, a review-pass follow-up; no current caller exists yet to exhibit the bug.
+
+`registerApp` (`src/broker/grant-ledger.ts`) raises `versionFloor` to `manifest.version`
+unconditionally on every call, and its own doc comment states "T19's replay guard depends on
+every registration going through here." Nothing outside `src/broker/` calls it yet —
+`grep -rn "registerApp" src/loader/` returns nothing — so this is not a live bug, only a shape
+that would become one depending on how the loader-to-broker wiring is eventually written.
+
+**The risk.** If a future caller invokes `registerApp` for every manifest `fetchBundle`
+FETCHES — which is what the doc comment's "every registration" language implies — rather than
+only for a manifest whose `decideUpdate()` verdict is actually accepted (TOFU or `silent`), a
+hostile origin can serve a manifest declaring an absurdly high fake `version`, have it
+registered and the floor permanently raised, even though the install itself is separately
+rejected or forced into re-consent. That self-inflicts a denial-of-service against every future
+LEGITIMATE (numerically lower) version ever served from that origin afterward — T19's own replay
+guard, aimed at protecting the user from a rollback, would instead be locking the user out of
+every real update.
+
+**Compounds with A57.** `GrantLedger` has no persistence (A57): there is no undo path for a
+floor raised this way short of a full process restart, which resets ALL floors, not just the
+poisoned one — so the workaround for this bug is strictly worse than living with it.
+
+**AI recommendation:** whoever wires the loader to the broker should call `registerApp` only at
+the point an install is actually being accepted (the TOFU or `silent` branch of
+`decideUpdate()`), never merely on a successful fetch/parse. Not fixed here: no such call site
+exists yet to fix — this is a design constraint for the wiring PR, not a bug in
+`grant-ledger.ts`'s current code.
+
+**Needed by:** before the loader ever calls `registerApp`.

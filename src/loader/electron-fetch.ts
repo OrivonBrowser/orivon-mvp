@@ -21,18 +21,29 @@ export const electronFetch: Fetch = async (url, signal) => {
   // means Electron's default session. Once per-app partitions land, this
   // may need the confirmed app's own partitioned session instead.
   //
-  // redirect: 'error' -- node_modules/electron/electron.d.ts documents the
-  // `.url` (and `.type`) of net.fetch's returned Response as INCORRECT.
-  // fetch-bundle.ts's entire same-origin check trusts response.url as the
-  // only source of truth for where fetched bytes actually came from
-  // (deliberately rejecting the originally-requested url for that purpose,
-  // per its own comment) -- so a redirect silently followed onto a
-  // different origin would be judged same-origin or not using a field
-  // Electron itself says may not be accurate. 'error' refuses outright
-  // rather than 'manual', which would hand fetch-bundle.ts a manual-redirect
+  // redirect: 'error' -- this closes the REDIRECT-specific vector, and only
+  // that one. Electron's own net-client-request.ts source causes a hard
+  // promise REJECTION the instant a redirect response is seen, so a
+  // malicious redirect can never produce a followed Response for
+  // fetch-bundle.ts to inspect at all -- the fetch call fails before there
+  // is a Response, let alone a `.url` on one, so this mechanism does not
+  // depend on `.url` being accurate. 'error' also has the practical
+  // advantage over 'manual' of not handing fetch-bundle.ts a manual-redirect
   // Response shape it has no code to interpret; the loader never expects a
   // redirect in the first place (the manifest is always fetched from one
   // fixed URL, assets resolve against the app's own origin), so failing
   // closed here costs nothing.
+  //
+  // WHAT THIS DOES NOT CLOSE: node_modules/electron/electron.d.ts documents
+  // the `.type` and `.url` of net.fetch's returned Response as INCORRECT --
+  // an UNCONDITIONAL limitation of net.fetch, not one scoped to redirects
+  // (confirmed directly in the installed .d.ts; neither it nor context7 says
+  // more about what is actually wrong or when). fetch-bundle.ts's same-origin
+  // and canonical-path checks read response.url on EVERY fetch, redirected or
+  // not. Whether `.url` can be inaccurate on an ordinary, non-redirected,
+  // 200-OK fetch -- and what that would mean for those checks -- is NOT
+  // resolved by this option and is not researched here. Tracked as
+  // docs/open-questions.md A59; do not read this comment as having closed
+  // that question.
   return await net.fetch(url, { credentials: 'omit', signal, redirect: 'error' })
 }
