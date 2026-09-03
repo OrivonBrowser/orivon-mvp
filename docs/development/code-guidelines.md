@@ -258,7 +258,7 @@ separates them is *where the comment sits*.
 A related finding, recorded because it explains why the 2026-09-02 correction did not hold: the
 hookify rule written to enforce it had **never fired**, and neither had `scope-creep`. Both
 anchored `file_path` at `^src/`, and `Write`/`Edit` always pass an absolute path
-([`open-questions.md`](../open-questions.md) A49).
+([`open-questions.md`](../open-questions.md) A55).
 
 **Rule 2 (2026-08-27).** Two coordinated branches. `stream/backlog-06-rule2-violations` fixed
 what had already broken the rule:
@@ -351,7 +351,7 @@ Still true, and still the cost of deferring:
 [`scripts/comment-budget-baseline.txt`](../../scripts/comment-budget-baseline.txt) open over
 budget and were not rewritten, because each is owned by a stream with a live branch. The list is
 a **ratchet**: an entry whose file comes back within budget fails the check, so it can only
-shrink ([`open-questions.md`](../open-questions.md) A48).
+shrink ([`open-questions.md`](../open-questions.md) A54).
 
 **Open — two Rule-3 duplicates, deliberately unfixed.** A lowercase-hex encoder
 ([`bundle-hash.ts`](../../src/broker/policy/bundle-hash.ts)'s `toLowercaseHex`, inlined again in
@@ -361,7 +361,7 @@ and `connect.ts`). Both cross into files `backlog-06` restructured wholesale; fi
 neither is fixed.
 
 **Open — whether the hookify rules fire.** Two of seven never had. Three more are fine by
-inspection; two were untested ([`open-questions.md`](../open-questions.md) A49).
+inspection; two were untested ([`open-questions.md`](../open-questions.md) A55).
 
 ---
 

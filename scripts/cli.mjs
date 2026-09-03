@@ -1,6 +1,6 @@
 // Small pieces of scaffolding duplicated across the check:* guard scripts
 // (check-no-native-modules.mjs, check-contracts-pure.mjs, check-no-secrets.mjs,
-// check-comments.mjs) -- docs/development/code-guidelines.md Rule 3.
+// check-comments.mjs, check-size.mjs) -- docs/development/code-guidelines.md Rule 3.
 
 import { execFileSync } from 'node:child_process'
 import { relative, sep } from 'node:path'

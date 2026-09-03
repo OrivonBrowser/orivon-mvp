@@ -1,9 +1,14 @@
 name: CI
 
 # With no code reviewer, CI is the reviewer (build-plan.md SS Week 0).
+#
+# workflow_dispatch lets a human re-trigger the `e2e` job below on demand; that
+# job also runs on every push and pull_request, because a security test nobody
+# remembers to launch is the same as no security test at all.
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 jobs:
   check:
@@ -57,3 +62,65 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  # test/e2e-capability-boundary.test.ts is, in its own header, "the
+  # highest-value assertion in the entire plan" (docs/development/testing.md
+  # SS"The end-to-end test"): it proves a granted net.connect round-trips
+  # real bytes through a real spawned echo server, AND that an
+  # out-of-manifest connect is denied before any dial is attempted. Until
+  # this job existed, nothing automated ran it at all -- CLAUDE.md's own
+  # notes on the spike flag the reason this is not on `check` above:
+  # Playwright's `_electron` driver has a real, previously-UNIDENTIFIED
+  # attach failure against this shell's window shape (spike gate 3,
+  # docs/open-questions.md C6). That failure was ruled out for THIS repo's
+  # shell shape once (CLAUDE.md SSNarrowed at build step 1: a BaseWindow
+  # with multiple WebContentsViews attaches cleanly), and this job's own
+  # wiring was verified locally against a real display AND against
+  # `xvfb-run` (headless, the same mechanism used below) on the same
+  # machine -- both passed, output pasted into this change's PR.
+  #
+  # UPDATED once the thing below was actually observed, not assumed: a
+  # GitHub-hosted ubuntu-latest runner specifically. Electron's sandbox has a
+  # separate, well-known CI failure mode on hosted runners (restricted
+  # unprivileged user namespaces), distinct from the C6 attach issue above,
+  # that a developer's own machine cannot reproduce or rule out -- this job
+  # started manual-only (`workflow_dispatch`) for exactly that reason, per
+  # this lane's own brief: a real GUI-requiring job must not be faked into
+  # looking automatic before it has been proven reliable in the ACTUAL CI
+  # environment. It has now been observed green on a real ubuntu-latest
+  # runner for BOTH `push` and `pull_request` -- that failure mode did not
+  # reproduce -- so the `if:` that used to gate this job to
+  # `workflow_dispatch` only is gone, and it runs unconditionally alongside
+  # `check` above (see `on:` at the top of this file). If a hosted runner
+  # ever fails to launch Electron here, that is the signal to reinstate the
+  # `if:` with the failing run recorded as the evidence, not to silently
+  # retry.
+  # Kept a separate job rather than folded into `check`: it needs a real Electron
+  # build and a display server, takes far longer than the unit suite, and a
+  # failure here means something different (the capability boundary itself
+  # broke), so it should be readable as its own red X.
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - run: npm ci
+
+      # Electron's real Chromium window has to land somewhere -- ubuntu-latest
+      # has no display server by default. xvfb-run is this repo's own existing
+      # pattern for a headed launch with no visible window
+      # (docs/planning/spike-remaining-gates-plan.md).
+      - name: Install a virtual display
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
+      # `npm run test:e2e` builds first (the app is launched from `out/`, not
+      # source) and then runs test/e2e-capability-boundary.test.ts via
+      # test/vitest.e2e.config.ts -- see that file's header for why this test
+      # cannot run through plain `npm test`.
+      - name: Capability-enforcement end-to-end test
+        run: xvfb-run -a npm run test:e2e

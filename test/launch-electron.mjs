@@ -46,7 +46,7 @@ const POISON = ['ELECTRON_RUN_AS_NODE']
  * explicitly for exactly this reason -- do not assume this constant covers
  * it.
  */
-const DEFAULT_ACTION_TIMEOUT_MS = 10_000
+export const DEFAULT_ACTION_TIMEOUT_MS = 10_000
 
 /**
  * @param {object} [options]

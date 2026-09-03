@@ -68,12 +68,43 @@ Mark anything that must not leave the team draft as `(Keep private)`.
   `file_path` at `^src/`, and Write/Edit always pass an absolute path -- including the comment
   rule the owner added on 2026-09-02 for this exact problem. So for a day, the correction was
   silently absent rather than ignored. Also found hookify has no `not_regex_match` operator and
-  an unknown operator kills the whole rule quietly; nearly shipped one. Filed as A49, with a
+  an unknown operator kills the whole rule quietly; nearly shipped one. Filed as A55, with a
   recommendation to test each rule the way the check:* guards are tested.
+
+- 2026-09-03: **Deep-review run over five PRs turned into seven merges and found three defects
+  nobody was looking for.** The worst was not in any PR under review: `orivon.fs`'s quota was
+  check-then-act, so an app with a file grant could exceed its declared limit ~256x with a plain
+  `Promise.all` -- eight 300-byte writes against a 1000-byte quota all landed, 2400 bytes. Shipped
+  code, on main, while `manifest.ts` called the quota "ENFORCED, not advisory". Fixed by reserving
+  synchronously before the first `await`; the same test caught a second bug where a write landing
+  after a mid-flight revoke was never charged at all.
+- 2026-09-03: **The e2e capability test never ran.** #48 landed "the highest-value assertion in the
+  whole plan" and it was in no include pattern, no CI job, and not typechecked -- `npm test` ran
+  2220 tests and that was not one of them. Wiring it up then exposed a real hosted-runner flake, and
+  the flake turned out to be in the UI phase, not the capability boundary: all three security
+  assertions passed even in the failing run. Split the phases so a fragile click can never again
+  hide a green security result.
+- 2026-09-03: **Three rounds of real defects on one small file (`bookmarks.ts`), each found by a
+  different method.** Hand-review caught an orphaned promise that made the new "wait for the write"
+  helper hang forever; adversarial personas caught overlapping writes clobbering each other while
+  the promise reported success -- a bookmark silently lost -- and that nothing flushed on quit, so
+  starring a page and immediately closing the browser lost it outright. The clobber was pre-existing;
+  what the fix added was a promise asserting it could not happen.
+- 2026-09-03: **A doc correction overshot and had to be corrected back.** #46 flipped
+  `handle-contracts.md` from DRAFT to IMPLEMENTED when four of five handle types are unbuilt --
+  worse than the stale claim, because DRAFT was at least honest. Fixing it found two more false
+  claims by the same method, including one inside the fixing PR itself.
 
 ### In my head
 - 2026-09-03: A guard nobody can tell is broken is worse than no guard -- seven hookify rules
   here and no way to know which ones run. Same worry as the smoke.mjs checks that reported green
   while doing nothing.
+
+- 2026-09-03: Every round of review this run found something the previous round had already cleared,
+  and the methods were not interchangeable -- hand-reading a diff, three hostile personas, and a
+  real CI runner each caught what the others missed. The recurring shape is a confident claim that
+  nobody re-ran: a status header, a comment, a pasted test count, a "filed as a question" pointer to
+  a question that was never filed. Worth asking whether the answer is more review or fewer
+  unverifiable claims.
 
 ### Non-repo

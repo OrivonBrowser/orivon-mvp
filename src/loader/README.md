@@ -23,24 +23,19 @@ on capability kinds — see [`capability-api.md`](../../docs/architecture/capabi
 
 ## Design notes
 
-Why the code here has the shape it has, per
-[`code-guidelines.md`](../../docs/development/code-guidelines.md) Rule 1 — a source comment
-warns about a trap; the argument for a design belongs here.
+Why the code here has the shape it has. This is the destination
+[`code-guidelines.md`](../../docs/development/code-guidelines.md) Rule 1 names for rationale: a
+source comment protects a specific line from a specific mistake; the case for a file's overall
+shape belongs here instead.
 
-**The asset list is an explicit parameter to `fetchBundle`, not discovered from the manifest**
-([`fetch-bundle.ts`](fetch-bundle.ts)). `Manifest` ([`src/contracts/manifest.ts`](../contracts/manifest.ts))
-has no field naming an app's frontend files — only `entry`, one HTML file — and nothing in the
-doc corpus specifies a discovery or crawl mechanism. Filed as
-[`open-questions.md`](../../docs/open-questions.md) A45 rather than guessed at. Everything
-downstream of "here is the asset URL set" is fully implemented.
+**Why [`fetch-bundle.ts`](fetch-bundle.ts) is its own file, not part of `index.ts`.** Split out
+per [`code-guidelines.md`](../../docs/development/code-guidelines.md) Rule 2 — it owns exactly
+one concern: turning `(fetch, hintedUrl, assetPaths)` into a validated bundle. TOFU versus
+`decideUpdate()` branching, and persistence, are `index.ts`'s job, not this file's.
 
-**The manifest is always fetched from exactly `<origin>/.well-known/orivon.json`**
-([`capability-api.md`](../../docs/architecture/capability-api.md) §How a URL becomes an app),
-never from a path component of `hintedUrl`. Not a stylistic choice: `bundleTree()` rejects any
-bundle with no leaf at that literal canonical path (`canonical-path.ts`'s `MANIFEST_PATH`), so
-a manifest fetched from anywhere else could never produce an accepted bundle. `hintedUrl` names
-which *origin* is being installed, nothing more.
-
-**Canonical paths come from the fetch response's resolved URL**, never the requested one — the
-same "trust what happened, not what was asked for" stance `origin.ts`'s `originFromSenderFrame`
-takes for T3.
+**`assetPaths` is an explicit parameter to `fetchBundle`, not discovered from the manifest.**
+`Manifest` ([`src/contracts/manifest.ts`](../contracts/manifest.ts)) has no field naming an
+app's frontend files — only `entry`, one HTML file — and nothing in the doc corpus specifies a
+discovery or crawl mechanism. Filed as [`open-questions.md`](../../docs/open-questions.md) A45
+rather than guessed at. Everything downstream of "here is the asset URL set" is fully
+implemented.

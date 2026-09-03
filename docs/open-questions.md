@@ -58,14 +58,14 @@ None of these block starting the week-0 spike.
 | A17 | **RESOLVED 2026-08-27 (owner):** an `identityId` is **opaque and broker-generated** — never a user-typed name, never derived from one. The display name is stored beside the identity, not used to derive it. Found undefined during review of PR #5: it appeared exactly once in the whole repository, as one table cell | Recorded in `ADR-0010`, stated in `capability-api.md`, documented on `DeriveRequest.scope` |
 | A18 | **RESOLVED 2026-08-27 (owner): pass the GRANTED pattern list, not the manifest.** Original question: Nothing in the signature carries the grant, so a caller passing a raw manifest silently gets the declared authority | **Build step 2, before the broker calls it.** Narrow the list at the call site, or change the parameter to `readonly Pattern[]`. See below |
 | A19 | **IDN hostnames are unhandled in connect patterns.** A Unicode host, its case variants and its punycode A-label are three different strings to the matcher, and an app deriving its host from `new URL(...)` gets the A-label | **Before any non-ASCII app origin exists.** Non-ASCII is now rejected outright rather than silently never matching. See below |
-| A20 | **PARTIALLY RESOLVED, `stream/a20-canonical-address`.** `canonicalAddress` now lives in `address.ts` and `connect.ts`/`connect-patterns.ts` use it. Still open: the grant prompt (build step 4) and `policy/update.ts`'s pattern comparison don't use it yet | **Whoever builds either.** See below |
+| A20 | **PARTIALLY RESOLVED.** `canonicalAddress` lives in `address.ts`; `connect.ts`, `connect-patterns.ts` and (2026-09-03) `policy/update.ts` all use it. Still open: the grant prompt, which does not exist yet | **Whoever builds the grant prompt.** See below |
 | A21 | **Does a re-granted capability reuse its GrantId?** `manifest.ts` says a `Grant` is keyed on (origin, capability, pattern set) but never says whether the `id` is derived from that key or minted fresh per grant event. The handle table now tombstones revoked grant ids, so under the derived reading a permanent tombstone would make re-granting impossible | **Before the grant ledger is written.** `HandleTable.grantIssued()` clears the tombstone, so the table is correct either way; the ledger must call it. See below |
 | A22 | **`src/broker/policy/paths.ts` assumes app root directory names are single-case hex.** True today and specified — `security-model.md` T13b makes directory names `sha256(canonical_origin)`, and `ADR-0009` reconfirms the bundle hash does not rename them. The assumption is load-bearing for a case-SENSITIVE comparison and is asserted only in a source comment | **Build step 4 (the app loader)**, which writes the first root directory and is the first chance to get the naming wrong. See below |
 | A23 | **A derived origin does not carry whether it may be PERSISTED.** T13c forbids ever writing a grant for a loopback or plain-`http` origin to disk, but `originFromUrl` returns a plain string — `http://127.0.0.1:8080` is shape-identical to `https://x.example`, so every caller must remember to re-parse and check | **Build step 2**, when the code that persists grants exists. Owner decided 2026-08-27 to keep the return type a plain string for now rather than change a durable interface before its consumer exists. See below |
 | A24 | **Should a whole-codebase guideline sweep be exempt from the one-stream-per-backlog-branch rule?** `stream/backlog-07-guidelines-cleanup` touches six streams' paths at once, which `parallel-work.md` says should be six branches. AI-REC: carve out repo-wide sweeps explicitly, same shape as the PR blueprint's `type:chore` short form | **Before the next backlog-NN sweep is started.** This PR is a fait accompli either way; what's open is whether the rule gets a carve-out. See below |
 | A25 | **The docs' own example of an unparseable version parses.** `capability-api.md` and `update.ts` both cite `"2026-08-26"` as a version that cannot be ordered. It orders fine -- hyphens are legal semver prerelease identifiers | Before anyone relies on the example |
 | A26 | **Three port-range parsers now exist**: `connect-patterns.ts`, privately in `update.ts`, and `loader/manifest.ts`. None is legally reusable from the others as written | Rule 3; before a fourth |
-| A27 | **`update.ts`'s wildcard host match and `connect-patterns.ts`'s pattern matcher disagree about what a leading `*.` means.** `update.ts`'s `hostCovers` treats `*.example.com` as a real suffix wildcard for its re-consent check; `connect-patterns.ts` treats the identical syntax as matching nothing. A manifest can declare, validate and be granted a `connect` pattern that can then never actually connect | **Before the grant prompt is built (build step 4)**, the first point a user sees a pattern spelled two different ways. See below |
+| A27 | **RESOLVED 2026-09-03.** `update.ts`'s `hostCovers` no longer treats a leading `*.` as a real suffix wildcard — it agrees with `connect-patterns.ts` that such a host authorises nothing, so a granted-but-inert wildcard pattern now correctly prompts for re-consent when replaced by a real host | — |
 | A28 | **`confinePath` takes a synchronous `realpath`, so every confined `fs` call blocks the broker's main thread.** `policy/paths.ts` declares the parameter synchronous; any broker that calls it performs blocking `stat`/`lstat` syscalls inline with otherwise-async `readFile`/`writeFile` | **Trigger re-dated 2026-09-01 (owner's decision).** `orivon.fs` is now wired to a renderer with `confinePath` still synchronous — see below for why that trigger fired a step early. Now needed **before any origin holds a real `fs` grant.** |
 | A29 | **`quotaBytes` promises reconciliation against the directory on startup, and nothing implements that half.** `contracts/manifest.ts` documents a running per-origin byte counter that reconciles on startup rather than walking the tree every operation; no storage layer or `BrokerFs` member does the reconciling, so the counter resets on every restart | **Before packaging (build step 10)**, when a real user's disk is at stake. See below |
 | A30 | **`CLAUDE.md` states as fact that three `BaseWindow` options are `BrowserWindow`-only; they are not.** `titleBarStyle`, `titleBarOverlay` and `trafficLightPosition` are all declared on `BaseWindowConstructorOptions` in electron 44.0.0's own `.d.ts` — only `ready-to-show` is genuinely `BrowserWindow`-only | **`/revise-claude-md`'s job; this A-number is the durable record if that pass does not run first.** See below |
@@ -283,6 +283,16 @@ prompt does not exist before build step 4, and editing `policy/update.ts` from t
 be the same cross-stream edit this entry already flagged once. Whoever builds either should read
 this entry first; `canonicalAddress` is ready for both.
 
+**One of the two adopted, 2026-09-03, `stream/broker-18-update-hostcovers`.**
+`policy/update.ts`'s `hostCovers` now compares two hosts via `canonicalAddress` whenever both
+parse as address literals, so `2130706433:22` and `127.0.0.1:22` correctly read as the SAME
+granted authority rather than a widening needing re-consent for nothing that actually changed.
+Stated precisely, not overclaimed (A50's own lesson): this closes `update.ts`'s call site only.
+**The grant prompt is still the one remaining un-adopted consumer** — it does not exist yet, so
+there is nothing to fix there today; whoever builds it should read this entry and use
+`canonicalAddress` the same way from the start, rather than rendering a manifest's raw, possibly
+opaque spelling of an address to the user.
+
 ---
 
 ### A21 -- grant id stability across a revoke and a re-grant **[AI-REC]**
@@ -394,7 +404,7 @@ verified, and re-splitting it now costs real time for uncertain benefit. What is
 is whether this is treated as a one-time, named exception or whether the rule itself should grow
 a carve-out for the next sweep.
 
-### A27 — `*.` means two different things depending which file reads it **[AI-REC]**
+### A27 — `*.` means two different things depending which file reads it **[RESOLVED 2026-09-03]**
 
 Pre-existing on `main`. Found from three independent angles during the broker/loader review
 pass (2026-09-01) — an altitude read of `update.ts` against `connect-patterns.ts`, and a
@@ -425,6 +435,19 @@ reading is "no sub-globs" — the one `connect-patterns.ts` already argues for �
 
 **Needed by:** before the grant prompt is built (build step 4), the first point a user sees a
 pattern that means two different things depending which file is asked.
+
+**Resolved 2026-09-03, `stream/broker-18-update-hostcovers`.** Took the AI recommendation above
+as written: `hostCovers`'s `*.` suffix-wildcard branch is deleted outright. A granted
+`*.example.com` now falls through to the exact-string check, matching `connect-patterns.ts`'s own
+"authorises nothing" reading — so the concrete failing scenario above can no longer occur: an app
+moving from an inert `*.example.com` grant to a real `api.example.com` pattern is now correctly
+seen as a WIDENING (the granted pattern authorised nothing; any real host is wider than that) and
+prompts for re-consent, rather than sliding through silently. An update whose wildcard pattern is
+completely unchanged between versions still reads as covered, via the same exact-string check —
+the fix does not force needless prompts, only closes the one that was missing.
+`src/broker/policy/update.test.ts`'s "a subdomain wildcard does cover a subdomain" case was
+inverted (now expects `capability-prompt`, with a comment citing this entry) and a new case pins
+the unchanged-pattern behaviour.
 
 ### A28 — path confinement's synchronous `realpath` blocks the broker on every confined `fs` call **[AI-REC]**
 
@@ -861,9 +884,18 @@ Two things follow, and they pull in opposite directions:
   here.
 
 **AI recommendation:** add the sentence to Rule 1 now (documentation, not enforcement, so it
-does not touch Open point 2), and add a `hookify` warn-only rule, which `CLAUDE.md` already
+does not touch §Status), and add a `hookify` warn-only rule, which `CLAUDE.md` already
 sanctions as the mechanism for "whenever the owner corrects the same thing twice" and which is
-advisory rather than a build gate. Hold `check:comments` until Open point 2 is revisited.
+advisory rather than a build gate. Hold `check:comments` until §Status is revisited.
+
+> **Correction, 2026-09-03 (owner's decision).** `check:comments` was built and wired into CI
+> the same day this correction is written — `scripts/check-comments.mjs`, on
+> `stream/backlog-08-comment-budget` (PR #55). This entry's "not done here" and "hold until
+> revisited" are superseded; the deferral this entry describes expired for the reason it names:
+> the rule was being followed and the codebase drifted anyway. See `code-guidelines.md` §Status
+> for the reversal in full — it also corrects a claim §Status itself used to carry, that Rule 1
+> "is not mechanically checkable by anything, and never will be." Comment *quality* still is not;
+> a comment *budget* is, and that is the distinction the guard rests on.
 
 **Needed by:** whenever the next batch of commits is written by an agent. Not blocking.
 
@@ -1278,6 +1310,89 @@ is itself still open — see this file's own header and `CLAUDE.md`'s "Still ope
 blocking this PR: both gaps are already strictly better than main, and neither is reachable
 with the stubbed `Fetch` every current caller uses.
 
+### A49 — `node-gyp` is now a permanent, always-installed member of the dev tree, dormant behind one unenforced line **[STILL OPEN]**
+
+Found 2026-09-03, reviewing `packaging-01-build-verify` (PR #47), after the owner had already
+approved the `electron-builder` devDependency itself. **This entry is about the durable policy
+question that approval leaves open, not about reversing it** — the dependency stays either way.
+
+Verified directly against the installed tree, not assumed: `app-builder-lib` (electron-builder's
+implementation package) depends on `@electron/rebuild@4.2.0`, which depends on
+`node-gyp@12.4.0`. Both are listed as ordinary dependencies of `app-builder-lib` — not
+`optionalDependencies` — so both install unconditionally on every platform, every time
+`electron-builder` is a devDependency of this repo, which it now is
+(`node_modules/@electron/rebuild`, `node_modules/node-gyp` both present). `electron-builder.yml`'s
+`npmRebuild: false` is the only thing standing between that installed `node-gyp` and it actually
+running: `node_modules/app-builder-lib/out/packager.js:454-455` checks exactly this flag before
+deciding whether to call into a real rebuild.
+
+**`npm run check:natives` structurally cannot see this.** Its scope, by Rule 8's own literal
+wording, is install-time scripts — whether anything runs a compiler when `npm install` runs. It
+says nothing about, and cannot say anything about, what a later `electron-builder` invocation
+does. The gate that currently passes and the gap that currently exists are simply about two
+different moments; the automated check was never going to catch this one.
+
+**The open question for the owner:** does Rule 8 ("pure-JS dependencies only... native modules
+break run-from-source on Windows and macOS") mean *nothing compiles at `npm install`* — true
+today, and all `check:natives` verifies — or the stronger *no native build tooling exists
+anywhere in the tree*, which is now false? Both readings were indistinguishable before this PR,
+because nothing in the tree depended on `node-gyp` at all. They diverge starting now.
+
+**AI leaning, not a decision:** if the owner wants the stronger property enforced, a guard would
+need to check something `check:natives` does not today — e.g. that no installed package's own
+`package.json` lists `node-gyp` (or another native-build tool) as a non-optional dependency
+anywhere in the resolved tree, run at `postinstall` alongside `check:natives` rather than folded
+into it (a different question: install-time toolchain presence, not packaging-time
+configuration). This is a leaning sketched for whoever the owner assigns it to, not a design
+committed to — building it now would be scope creep into a PR already carrying two unrelated
+fixes (docs/development/pr-blueprint.md's anti-pattern list).
+
+**Needed by:** before Windows/macOS packaging is scoped as a real build step — this PR's own
+`electron-builder.yml` is explicitly Linux-only. Not blocking `packaging-01-build-verify`.
+
+### A51 — a critical subsystem now fails startup loudly; is fail-fast the right shape long-term **[AI-REC]**
+
+Found 2026-09-03, in a three-persona adversarial review of `stream/broker-15-reachable`
+(A47's own branch). `publishBroker`'s throw was caught by `runAfterReady`'s failure collection
+and demoted to one `console.error` line (`main/index.ts`'s `report()`); the app then booted a
+completely normal-looking shell window with the control channel never registered, so every
+`orivon.*` call from every app was silently unroutable. The change had turned a silent *data*
+bug (two disagreeing grant ledgers) into a silent *availability* bug (the capability layer going
+dark) — an improvement, but still invisible exactly where `runBeforeReady`'s own "must never be
+quiet" philosophy says it must not be.
+
+**Fixed on `stream/broker-17-ctx-broker`:** `Subsystem` gained an optional `critical` flag
+(`registry.ts`), copied onto each `SubsystemFailure`; `brokerIpcSubsystem` (`src/broker/ipc.ts`)
+is the first subsystem marked `critical: true`. `main/index.ts` now calls the new
+`criticalFailureMessage(failures)` after each phase and, if it returns non-null, calls
+`dialog.showErrorBox` and `app.exit(1)` instead of calling `createShellWindow()` — a browser
+whose capability layer is dead does not open at all, rather than opening one that only looks
+like it works.
+
+**What is decided vs. still open.** That a critical subsystem's failure must be impossible to
+miss is not in question. What is an AI recommendation, not an owner decision:
+
+1. **Fail-fast + native dialog, not a degraded mode.** An alternative considered and rejected:
+   open the shell window anyway with an in-page banner (e.g. a chrome-view indicator saying
+   capabilities are unavailable), which would at least let a user retry a normal tab. Rejected
+   here because the shell chrome itself is rendered by ordinary web content with no special
+   authority to assert "the broker is down" trustworthily, and because a half-working browser
+   that silently denies every `orivon.*` call is arguably a worse experience than one that
+   visibly refuses to start. Not tested against real users either way.
+2. **`dialog.showErrorBox` + `app.exit(1)`, not a friendlier recovery flow** (retry, a link to
+   diagnostics, an automatic restart). Chosen as the smallest change that makes the failure
+   impossible to miss, per this task's own brief — not because a better UX doesn't exist.
+3. **Only `brokerIpcSubsystem` is marked `critical` today.** Whether a future `src/shim/` or
+   `src/trust/` subsystem should also be critical is for whoever builds it to decide, following
+   this pattern (`Subsystem.critical`'s own doc in `registry.ts`) rather than reinventing one.
+
+**Related to A47, not a duplicate:** A47 asks who may edit `registry.ts` at all; this asks
+whether the failure-handling shape chosen inside it, once editable, is the right one long-term.
+
+**Needed by:** before packaging (build step 10), when a real user first sees this dialog instead
+of a console line. Not blocking — the behaviour is strictly louder than what it replaces either
+way.
+
 ---
 
 ## B. Contradictions still to fix
@@ -1487,9 +1602,41 @@ boundary yet. Something does now.
 
 **Needed by:** before a fourth appears. Not blocking.
 
+### A53 — every `BookmarkStore` ever constructed is retained for the lifetime of the process **[AI-REC]**
+
+Found 2026-09-03, reviewing the fix that added `BookmarkStore.flushAll()` for the quit-time
+bookmark flush.
+
+`BookmarkStore` self-registers into a private static `Set` in its constructor, because
+`src/main/index.ts`'s quit path has to flush every window's store and holds a reference to none of
+them — each is a local inside `src/main/window.ts`'s `createShellWindow()`. Nothing ever removes an
+entry, so closing a window does not release its store: the instance, its bookmark list, and its
+subscriber callbacks stay reachable until the process exits.
+
+The in-place comment calls this "a permanent no-op flush (nothing left to write), which costs
+nothing to keep". That is true of the *flush*, and understates the *retention* — a long session
+that opens and closes many windows accumulates stores without bound. The amount is small per store
+and this is not a leak a user would notice soon, which is why it is filed rather than treated as a
+defect in that change.
+
+**Why it was not fixed there.** The clean fix is a `dispose()` (or a `WeakRef`-based registry)
+called when a window closes, and the call site is `src/main/window.ts` — the shell stream's file,
+outside that lane's owned paths. Registering a store is also not obviously the right shape long
+term: threading one reference from `createShellWindow()` to `index.ts` would remove the need for a
+registry at all.
+
+**AI recommendation, not a decision:** prefer removing the registry over adding a `dispose()` — a
+store that the quit path can reach directly needs no global list, and the current design exists
+only because the reference was not available. Either way this is a shell-stream call.
+
+**Needed by:** before a second static registry of the same shape appears, or before anything else
+is added to `BookmarkStore` that holds meaningfully more memory than a bookmark list. Not blocking.
+
 ---
 
-### A48 — the comment-budget baseline holds 16 files, and `check-size.mjs` duplicates `isTestFile` **[STILL OPEN]**
+---
+
+### A54 — the comment-budget baseline holds 16 files, and `check-size.mjs` duplicates `isTestFile` **[STILL OPEN]**
 
 Filed 2026-09-03, on `stream/backlog-08-comment-budget`, which added Rule 1's comment budget
 (`scripts/check-comments.mjs`, `code-guidelines.md` §The budget).
@@ -1514,16 +1661,16 @@ files are not going to get worse (CI now blocks that), and a dedicated branch to
 streams' paths reintroduces exactly the conflict the baseline exists to avoid.
 
 **2. `isTestFile` now exists twice.** `scripts/check-comments.mjs` and
-`scripts/check-size.mjs` (unmerged, on `stream/packaging-01-build-verify`) each define the same
+`scripts/check-size.mjs` — the latter on `main` since `stream/packaging-01-build-verify` merged,
+still not wired into CI or `postinstall` (`code-guidelines.md` §Status) — each define the same
 predicate over `code-guidelines.md`'s own "test file" definition. A textbook Rule 3 duplicate,
-left in place for the same reason as above: consolidating it into `scripts/cli.mjs` would have
-edited a file on another live branch. Once `packaging-01` merges, one of them moves to
-`cli.mjs` and the other imports it. `trackedFiles` was consolidated there on this branch, so
-the destination already exists.
+still unconsolidated: this entry was written before `packaging-01` merged, and the move itself —
+`isTestFile` into `scripts/cli.mjs`, which already gained a home for shared guard helpers via
+`trackedFiles` on this branch — is separate work from resolving this merge, not done here.
 
 ---
 
-### A49 — two hookify rules had never fired, and nothing would have reported it **[STILL OPEN]**
+### A55 — two hookify rules had never fired, and nothing would have reported it **[STILL OPEN]**
 
 Found 2026-09-03, while adding a hookify rule for the comment budget.
 
@@ -1553,3 +1700,32 @@ inspection; `hardcoded-paths` and `native-modules` were not tested. **AI recomme
 tiny fixture that drives each rule through `posttooluse.py` and asserts it fires, run the way
 `scripts/check-*.mjs` are. A guard nobody can tell is broken is worse than no guard, and this
 repository now has seven of them.
+
+---
+
+### A56 — the "Awaiting owner decision" index table has at least one stale row **[STILL OPEN]**
+
+Found 2026-09-03, resolving PR #55's merge against `main` — checking that this branch's
+renumbered `A48`→`A54`/`A49`→`A55` (see `A54`) did not collide with anything in the `## A.
+Awaiting owner decision` summary table near the top of this file.
+
+The table's `A48` row reads "Two residual gaps in `fetch-bundle.ts`'s byte/time budget cannot
+be closed from this file alone..." — but the entry actually titled `### A48` further down is
+"the credit-window backpressure design is half-built", a different topic entirely. The
+byte/time-budget text the table describes now matches `### A52` ("two residual gaps a real
+`Fetch` must close, not `fetch-bundle.ts`"). At some point `A48` was renumbered to `A52` and the
+summary row was not updated to match — predates this branch and predates `A52`/`A53`'s own
+recent additions; not caused by, or a consequence of, this merge.
+
+**Not fixed here.** This branch's merge resolution touched the tail of this file, not this
+table, and confirming this is the table's *only* stale row (rather than a symptom of the table
+having drifted more broadly since it was last verified against the entries below it) needs a
+full table-against-entries pass this resolution did not do. Filed rather than spot-fixed, so a
+partial fix does not read as "checked and clean."
+
+**AI recommendation:** a full pass comparing every table row's summary against its linked
+entry's current title, next time this document is opened for an unrelated reason — the check is
+mechanical (row text vs. entry title) and cheap once someone is already in the file.
+
+**Needed by:** before the table is trusted as a reliable index rather than a historical
+snapshot. Not blocking.

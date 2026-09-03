@@ -9,7 +9,7 @@
 #
 #   // orivon:comment-budget -- <why this cannot be shortened>
 #
-# Nothing may be ADDED here. New code meets the budget. Tracked as A48.
+# Nothing may be ADDED here. New code meets the budget. Tracked as A54.
 # Written 2026-09-03, against these files' state at that date.
 scripts/check-vectors.mjs
 src/broker/handles.ts

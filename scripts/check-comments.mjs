@@ -58,8 +58,8 @@ const EXEMPT_DIRECTORY = /^(src\/contracts|spike)\//
 
 /**
  * "Test file" exactly as code-guidelines.md Rule 2 defines it.
- * Duplicated from scripts/check-size.mjs, which is unmerged on another branch
- * as this is written; consolidating the two is tracked as A48.
+ * Duplicated from scripts/check-size.mjs; consolidating the two is tracked
+ * as A54.
  */
 function isTestFile (file) {
   return file.endsWith('.test.ts') || file === 'scripts/smoke.mjs' || file.startsWith('test/')
