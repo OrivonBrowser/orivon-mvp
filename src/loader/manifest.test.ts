@@ -497,9 +497,21 @@ describe('assets', () => {
     expect(reason(parseManifest(minimal({ assets: tooMany })))).toMatch(/more than the/)
   })
 
-  it('accepts exactly one below the cap, leaving room for entry itself', () => {
-    const atCap = Array.from({ length: 4095 }, (_, i) => `f${i}.js`)
+  // Two slots are reserved off MAX_BUNDLE_ENTRIES, not one: `entry` itself is
+  // unioned into `assetPaths` by a real caller (ADR-0011's own "the loader
+  // fetches the union of the two"), and fetch-bundle.ts's own `+1` in
+  // `assetPaths.length + 1 > MAX_BUNDLE_ENTRIES` reserves a further slot for
+  // the manifest leaf it always pushes onto `entries` first. So the true cap
+  // on `assets.length` is MAX_BUNDLE_ENTRIES - 2, not - 1 -- see MAX_ASSETS's
+  // own comment in manifest.ts.
+  it('accepts exactly one below the true cap, leaving room for entry and the manifest leaf', () => {
+    const atCap = Array.from({ length: 4094 }, (_, i) => `f${i}.js`)
     expect(parseManifest(minimal({ assets: atCap })).ok).toBe(true)
+  })
+
+  it('rejects one past the true cap, where fetch-bundle.ts would always reject it downstream', () => {
+    const overCap = Array.from({ length: 4095 }, (_, i) => `f${i}.js`)
+    expect(reason(parseManifest(minimal({ assets: overCap })))).toMatch(/more than the/)
   })
 })
 

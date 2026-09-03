@@ -82,8 +82,24 @@ const MAX_ENTRY_LENGTH = 1024
 
 const MANIFEST_KEYS = ['orivonApiVersion', 'id', 'name', 'version', 'entry', 'assets', 'capabilities']
 
-/** `assets.length + 1 (entry)` must never exceed what fetch-bundle.ts will accept downstream. */
-const MAX_ASSETS = MAX_BUNDLE_ENTRIES - 1
+/**
+ * Two slots are reserved off MAX_BUNDLE_ENTRIES, not one. A real caller
+ * unions `entry` into `assetPaths` before calling fetch-bundle.ts
+ * (ADR-0011's own "the loader fetches the union of the two"), so
+ * `assetPaths.length` is `1 (entry) + assets.length` -- that is the first
+ * reservation. fetch-bundle.ts's own check, `assetPaths.length + 1 >
+ * MAX_BUNDLE_ENTRIES`, reserves a SECOND slot on top of that, for the
+ * manifest leaf (MANIFEST_PATH) it always fetches and pushes onto `entries`
+ * before the assetPaths loop even starts -- that leaf is never a member of
+ * `assetPaths` itself. So the constraint this file must enforce is
+ * `(1 + assets.length) + 1 <= MAX_BUNDLE_ENTRIES`, i.e. `assets.length <=
+ * MAX_BUNDLE_ENTRIES - 2`. A cap of `- 1` here let a manifest with exactly
+ * MAX_BUNDLE_ENTRIES - 1 assets pass parseManifest while being permanently
+ * unfetchable -- fetch-bundle.ts would always reject it once entry was
+ * unioned in, with a rejection reason that gave no hint the manifest
+ * validator's own accepted range was the actual cause.
+ */
+const MAX_ASSETS = MAX_BUNDLE_ENTRIES - 2
 
 // C0/C1 controls, bidi overrides and isolates (U+202A-U+202E, U+2066-U+2069),
 // zero-width characters (U+200B-U+200D, U+2060-U+2064, U+FEFF) and the
