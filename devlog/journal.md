@@ -94,11 +94,26 @@ Mark anything that must not leave the team draft as `(Keep private)`.
   `handle-contracts.md` from DRAFT to IMPLEMENTED when four of five handle types are unbuilt --
   worse than the stale claim, because DRAFT was at least honest. Fixing it found two more false
   claims by the same method, including one inside the fixing PR itself.
+- 2026-09-03: **Sixteen open questions closed in one pass.** Six owner decisions: apps declare
+  their own file list rather than Orivon guessing it (confirming work already sitting unmerged);
+  localhost stays installable but only when you type it yourself, so a malicious page cannot make
+  Orivon reach into your own machine; the permission popup splits into a test-only "yes" now and
+  the real box later; an app that fills its storage asks you for more rather than failing quietly;
+  the bookmarks strip hides until you save something; DDOC is "Confirmation", not "Certification".
+  One more question dissolved on inspection -- where the `+Privacy` bonus sits was never a choice,
+  it follows from a rung already reinstated. Ten others were decided without the owner.
 
 ### In my head
 - 2026-09-03: A guard nobody can tell is broken is worse than no guard -- seven hookify rules
   here and no way to know which ones run. Same worry as the smoke.mjs checks that reported green
   while doing nothing.
+
+- 2026-09-03: **Cleared the standing owner-decision backlog -- and most of it should never have
+  been mine to answer.** Sixteen questions were queued; six actually changed what a person using
+  Orivon sees, and the other ten were engineering calls dressed as decisions. The owner's own test
+  for this is now explicit: if you cannot trace the answer to something a real user experiences,
+  do not ask -- decide it. Also, twice in one session I explained a question in terms only someone
+  who had read the planning docs could follow. Sixth time that has happened.
 
 - 2026-09-03: Every round of review this run found something the previous round had already cleared,
   and the methods were not interchangeable -- hand-reading a diff, three hostile personas, and a
