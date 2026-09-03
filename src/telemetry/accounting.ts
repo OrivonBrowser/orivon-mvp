@@ -94,7 +94,11 @@ export const initialState: AccountingState = {
  */
 export const DEFAULT_IDLE_TIMEOUT_MS = 5 * 60 * 1000
 
-function periodOf (ms: number): Period {
+// Exported for callers outside this file that need the same 'YYYY-MM' UTC
+// bucketing -- e.g. building a DisclosureMeta.period for "the current
+// period" -- so that logic has exactly one implementation
+// (code-guidelines.md Rule 3), not a second copy next to whoever needs it.
+export function periodOf (ms: number): Period {
   const d = new Date(ms)
   const month = String(d.getUTCMonth() + 1).padStart(2, '0')
   return `${d.getUTCFullYear()}-${month}`
