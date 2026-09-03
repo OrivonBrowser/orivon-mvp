@@ -1,6 +1,6 @@
-import { app, BaseWindow } from 'electron'
+import { app, BaseWindow, dialog } from 'electron'
 import { createShellWindow } from './window.js'
-import { runAfterReady, runBeforeReady, type SubsystemFailure } from './registry.js'
+import { createSubsystemContext, criticalFailureMessage, runAfterReady, runBeforeReady, type SubsystemFailure } from './registry.js'
 import { subsystems } from './subsystems.js'
 import { BookmarkStore } from './bookmarks.js'
 
@@ -53,10 +53,27 @@ function report (failures: SubsystemFailure[]): void {
   }
 }
 
-report(runBeforeReady(subsystems))
+const beforeReadyFailures = runBeforeReady(subsystems)
+report(beforeReadyFailures)
 
 void app.whenReady().then(async () => {
-  report(await runAfterReady(subsystems, { app }))
+  const ctx = createSubsystemContext(app)
+  const afterReadyFailures = await runAfterReady(subsystems, ctx)
+  report(afterReadyFailures)
+
+  // A CRITICAL subsystem failing (today: only the broker) means the
+  // capability layer is dark -- opening a normal-looking shell window in
+  // that state is strictly worse than not opening one at all: every
+  // orivon.* call from every app would be silently unroutable, with only a
+  // main-process console line as evidence. Fail loud instead of booting a
+  // browser that only looks like it works (open-questions.md A51).
+  const fatal = criticalFailureMessage([...beforeReadyFailures, ...afterReadyFailures])
+  if (fatal !== null) {
+    dialog.showErrorBox('Orivon failed to start', fatal)
+    app.exit(1)
+    return
+  }
+
   createShellWindow()
   app.on('activate', () => {
     if (BaseWindow.getAllWindows().length === 0) createShellWindow()
