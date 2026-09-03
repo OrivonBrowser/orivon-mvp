@@ -17,7 +17,7 @@
 > whether they want the app trains reflexive click-through, or turns ordinary browsing into a
 > permission gauntlet — deferring to first capability use keeps every prompt tied to something
 > concrete), and a known, currently-unmitigated cost (no cross-app disk quota, no cleanup of
-> superseded versions — `docs/open-questions.md` A57/A58) that must be closed before the
+> superseded versions — `docs/open-questions.md` A58) that must be closed before the
 > discovery trigger is ever wired to the real browser shell. The original wording is kept below,
 > unedited except for the "Delivery model" line itself, so the reversal stays visible rather than
 > silently rewritten.

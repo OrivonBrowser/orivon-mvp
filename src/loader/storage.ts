@@ -25,12 +25,18 @@ import type { PinRecord } from '../broker/policy/pin.js'
 export interface LoaderStorage {
   /**
    * The raw value previously passed to writePin for this origin, or
-   * undefined if this origin has never been pinned. NEVER THROWS -- same
-   * discipline pin.ts's own parsePinRecord takes: a storage backend that
-   * cannot read (missing file, corrupt bytes) returns undefined, exactly
-   * like "never pinned", so the caller's own parsePinRecord/TOFU branch
-   * decides what that means rather than an exception unwinding through a
-   * security decision.
+   * undefined ONLY if this origin has genuinely never been pinned (a
+   * missing file). NEVER THROWS -- same discipline pin.ts's own
+   * parsePinRecord takes: a security decision must not unwind through an
+   * exception. But a backend that FOUND a pin file and could not read or
+   * parse it (corrupt bytes, a permissions error) must NOT also return
+   * undefined -- that would be indistinguishable from "never pinned" to
+   * the caller, which is wrong: index.ts's load() treats undefined as
+   * fresh TOFU with zero reconsent check, and a once-pinned-then-corrupted
+   * origin must instead be forced through parsePinRecord's own rejection
+   * path (any non-undefined value that fails validation), landing on
+   * index.ts's `pinnedHash = ''` fallback rather than skipping the check
+   * entirely.
    */
   readPin(origin: string): Promise<unknown>
   /** Persists the pin record. Overwrites whatever was there before. */
