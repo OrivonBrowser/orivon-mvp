@@ -465,6 +465,73 @@ describe('fs.writeFile enforces manifest.capabilities.fs.quotaBytes (MAJOR)', ()
   })
 })
 
+describe('fs.writeFile reserves quota atomically against concurrent callers (CRITICAL)', () => {
+  it('never lets concurrent writes collectively exceed the declared quota', async () => {
+    // Fired together, not awaited one at a time -- serialised, this would
+    // pass against the pre-fix code too, and prove nothing.
+    const files = new Map<string, Uint8Array>()
+    const broker = createBroker(baseDeps({ fs: stubFs({ files }) }))
+    broker.registerApp(APP, manifestWith({ fs: { quotaBytes: 1000 } }))
+    await broker.grant(APP, 'fs', [])
+    const outcomes = await Promise.allSettled(
+      Array.from({ length: 8 }, async (_, i) => { await broker.fs.writeFile(APP, `f${String(i)}.bin`, new Uint8Array(300)) })
+    )
+
+    const totalWritten = Array.from(files.values()).reduce((sum, data) => sum + data.length, 0)
+    expect(totalWritten).toBeLessThanOrEqual(1000)
+    expect(outcomes.filter((o) => o.status === 'fulfilled')).toHaveLength(3) // 1000 / 300 = 3 fit
+  })
+
+  it("refunds a failed write's reservation so the same bytes can be written again", async () => {
+    const files = new Map<string, Uint8Array>()
+    let failNext = true
+    const fs: CreateBrokerOptions['fs'] = {
+      ...stubFs({ files }),
+      writeFile: async (path, data) => {
+        if (failNext) { failNext = false; throw Object.assign(new Error('simulated I/O failure'), { code: 'EIO' }) }
+        files.set(path, data)
+      }
+    }
+    const broker = createBroker(baseDeps({ fs }))
+    broker.registerApp(APP, manifestWith({ fs: { quotaBytes: 1000 } }))
+    await broker.grant(APP, 'fs', [])
+
+    const failed = await rejection(broker.fs.writeFile(APP, 'a.bin', new Uint8Array(1000)))
+    expect(failed.code).not.toBe('limit')
+
+    // A stuck reservation would answer 'limit' here, even though this is
+    // the first byte ever actually written.
+    await broker.fs.writeFile(APP, 'a.bin', new Uint8Array(1000))
+    expect(files.get('/apps/app/a.bin')).toHaveLength(1000)
+  })
+
+  it('does not refund a write that lands on disk after its grant is revoked mid-flight', async () => {
+    // deps.fs.writeFile takes no AbortSignal and lands regardless of
+    // revocation -- refunding here would let quota be laundered through it.
+    let resolveWrite!: () => void
+    const writeGate = new Promise<void>((resolve) => { resolveWrite = resolve })
+    const files = new Map<string, Uint8Array>()
+    const fs: CreateBrokerOptions['fs'] = {
+      ...stubFs({ files }),
+      writeFile: async (path, data) => { await writeGate; files.set(path, data) }
+    }
+    const broker = createBroker(baseDeps({ fs }))
+    broker.registerApp(APP, manifestWith({ fs: { quotaBytes: 1000 } }))
+    const g = await broker.grant(APP, 'fs', [])
+
+    const pending = broker.fs.writeFile(APP, 'a.bin', new Uint8Array(1000))
+    await broker.revoke(APP, g.id)
+    resolveWrite()
+    await rejection(pending)
+    await new Promise((resolve) => { setTimeout(resolve, 0) })
+    expect(files.get('/apps/app/a.bin')).toHaveLength(1000)
+
+    await broker.grant(APP, 'fs', [])
+    const blocked = await rejection(broker.fs.writeFile(APP, 'b.bin', new Uint8Array(1)))
+    expect(blocked.code).toBe('limit')
+  })
+})
+
 describe('fs reads and writes share the per-origin in-flight cap (CRITICAL, T11b)', () => {
   /** Both I/O methods stall forever -- for proving the shared budget and abort-signal cancellation, never their result. */
   function stallingFs (): CreateBrokerOptions['fs'] {
