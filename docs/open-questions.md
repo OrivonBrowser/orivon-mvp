@@ -1738,3 +1738,41 @@ mechanical (row text vs. entry title) and cheap once someone is already in the f
 
 **Needed by:** before the table is trusted as a reliable index rather than a historical
 snapshot. Not blocking.
+
+---
+
+### A57 — `GrantLedger` has no persistence: everything resets on process restart, not just app uninstall **[STILL OPEN]**
+
+Found 2026-09-03, as the required follow-up from PR #61's review (T19's version floor,
+`GrantLedger.versionFloor`).
+
+`GrantLedger` is constructed fresh, in-memory, exactly once per process launch —
+`src/broker/index.ts:259` is the only call site (`grep -rn "GrantLedger(" src/` finds no other
+construction and no persistence layer anywhere in `src/`). Every field on `OriginRecord`
+(`manifest`, `grants`, `fsBytesWritten`, and now `versionFloor`) resets to nothing the moment the
+process restarts, regardless of whether the app itself was ever uninstalled.
+
+**Distinct from A29.** A29 is about `fsBytesWritten` specifically: a resource-limit gap where a
+careless app can outwrite its declared disk quota simply by restarting the browser. This entry is
+about `versionFloor` specifically, and the shape of the failure is different. `ADR-0009` states
+explicitly that the version floor "must survive an uninstalled/reinstalled app" and that a floor
+that dies with the pin record is "a rollback oracle" — surviving past uninstall is the entire
+reason the floor was placed in the grant ledger rather than the pin record. A floor that dies with
+the whole process, not just with the pin, fails that same requirement in a strictly bigger way: an
+adversarial host does not even need the user to uninstall and reinstall the app to roll it back to
+an older, vulnerable version — restarting the browser is enough. That makes this a T19
+replay-guard bypass against an adversarial host, not a resource-accounting gap against a careless
+one.
+
+**Not yet a live risk.** `versionFloorFor` is defined and exposed on the `Broker` interface as
+"the app loader's seam" (its doc comment in `src/broker/index.ts`), but nothing outside
+`src/broker/` calls it yet — `grep -rn "versionFloorFor" src/loader/ src/main/ src/shim/` returns
+nothing. This entry is filed now, before that wiring exists, so the persistence gap is visible
+going in rather than discovered after an adversarial host is already able to exploit it.
+
+**AI recommendation:** none — persistence design (where the floor lives, what survives an
+uninstall versus a full app removal, how it interacts with `fsBytesWritten`'s own unresolved A29)
+is one decision, not two, and deserves its own pass rather than a fix folded into this PR.
+
+**Needed by:** before `versionFloorFor` is wired into the app loader's update path. Not blocking
+for this PR, which only adds the floor — it does not yet enforce it anywhere.
