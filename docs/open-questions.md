@@ -1247,9 +1247,16 @@ which has a full, unsandboxed network position, issuing the very first request t
 whether an origin is an Orivon app at all.
 
 **Not live today.** `src/loader/subsystem.ts`'s `loaderSubsystem` ships with no `beforeReady`/
-`afterReady` — nothing wires a real trigger (a `<link rel="orivon-manifest">` hint, or "Open as
-app") to `createLoader.load()` yet, so nothing calls this against a real, attacker-influenced
-`hintedUrl` in the shipped product. This is why it is filed rather than blocking.
+`afterReady` — nothing wires a real trigger to `createLoader.load()` yet, so nothing calls this
+against a real, attacker-influenced `hintedUrl` in the shipped product. This is why it is filed
+rather than blocking.
+
+**Corrected 2026-09-03:** this entry previously named two eventual triggers, "a `<link
+rel="orivon-manifest">` hint, or 'Open as app'". The "Open as app" menu action never had an
+implementation and has been cut for good (`capability-api.md`'s 2026-09-03 correction block,
+`ADR-0012`) — the HTML hint is now the *only* discovery path this loader will ever be wired to.
+The substance of this entry (the loader's install path does not resolve-and-classify the install
+origin's hostname before treating it as fetchable, T12) is unaffected either way.
 
 **Leaning, not decided:** the loader should mirror `connect.ts`'s own T12 discipline —
 resolve the install origin's hostname once, reject if any resolved address is not
@@ -1729,3 +1736,36 @@ mechanical (row text vs. entry title) and cheap once someone is already in the f
 
 **Needed by:** before the table is trusted as a reliable index rather than a historical
 snapshot. Not blocking.
+
+---
+
+### A57 — no cross-app disk quota bounds how many apps can silently cache themselves **[STILL OPEN]**
+
+Found 2026-09-03, writing `ADR-0012` (fetch-and-cache now happens automatically and silently on
+every manifest hint, with consent deferred to first capability use). Each app's bundle is capped
+individually at `MAX_BUNDLE_BYTES`, 64 MiB (`src/broker/policy/bundle-hash.ts`), but nothing
+limits how many *distinct* origins can each silently claim their own 64 MiB. A user who never
+grants a single capability to anything can still accumulate an unbounded number of cached, unused
+app bundles purely by loading ordinary pages that happen to carry a manifest hint.
+
+**Not live today**, same reason as `A46`/`A50`: `src/loader/subsystem.ts` ships deliberately
+inert, and nothing wires a real discovery trigger to `createLoader.load()` yet, so nothing can
+actually fill a real user's disk this way in the shipped product. `ADR-0012` accepts this gap
+explicitly rather than silently, on the condition that it is closed before that changes.
+
+**Needed by:** before `src/loader/subsystem.ts`'s discovery trigger (the `<link
+rel="orivon-manifest">` listener) is ever wired to the real browser shell — `ADR-0012` states
+this as a hard precondition, not a nice-to-have.
+
+### A58 — superseded app versions are never cleaned up **[STILL OPEN]**
+
+Found 2026-09-03, writing `ADR-0012`, alongside `A57`. When an app's manifest changes (a new
+bundle hash, `ADR-0009`), the loader pins the new version; nothing removes the old one from disk.
+Every version of every app this browser has ever fetched stays cached indefinitely, compounding
+`A57`'s unbounded-origin-count problem with an unbounded-versions-per-origin one.
+
+**Not live today**, for the same reason as `A57` — no discovery trigger is wired to anything real
+yet, so no version churn against a real cache happens in the shipped product either.
+
+**Needed by:** same precondition as `A57` — before the discovery trigger is wired to the real
+browser shell, per `ADR-0012`.

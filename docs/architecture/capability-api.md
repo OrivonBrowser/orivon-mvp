@@ -309,14 +309,22 @@ and permissions are granted the moment the page actually asks for one — not be
 > trigger, not one of two — no explicit action was ever load-bearing for privacy (the hint
 > already covers the zero-extra-requests case); it only existed because nothing else was
 > specified yet. Once a manifest is found this way, the browser fetches and caches its declared
-> files automatically — a Web3site is expected to work fully offline by design (a Web3-Score
-> requirement, `ADR-0006`), the same way this already works for an ordinary browser and a
-> normal page's own cache. **The permission prompt is unaffected by any of this**: it still
-> fires only when the page's code actually calls for a capability, never at discovery or fetch
-> time — see `Grant`'s own doc comment (`src/contracts/manifest.ts`) on why a grant is keyed on
-> `(origin, capability, pattern set)` rather than "the whole manifest, once": the SAME hash can
-> be revisited with zero prompts once its capabilities are already granted, and only a changed
-> hash (a new version) or newly-requested authority ever asks again.
+> files automatically and silently — no popup, nothing visible to the user — the same way an
+> ordinary browser already caches an ordinary page's own assets with no permission dialog,
+> because caching inert files is not itself a capability. **This is not yet live**: nothing in
+> the current tree wires the discovery trigger to a real Electron effect (`src/loader/
+> subsystem.ts` ships deliberately inert, no `beforeReady`/`afterReady` — same status this
+> document's top banner already states for every not-yet-wired v0-surface method), so today
+> nothing actually calls this against a real, attacker-influenced URL in the shipped product.
+> `ADR-0012` records the full decision — including a known, currently-unmitigated gap (no
+> cross-app disk quota, no cleanup of superseded versions, `docs/open-questions.md` A57/A58)
+> that must close before this trigger is ever wired for real. **The permission prompt is
+> unaffected by any of this**: it still fires only when the page's code actually calls for a
+> capability, never at discovery or fetch time — see `Grant`'s own doc comment
+> (`src/contracts/manifest.ts`) on why a grant is keyed on `(origin, capability, pattern set)`
+> rather than "the whole manifest, once": the SAME hash can be revisited with zero prompts once
+> its capabilities are already granted, and only a changed hash (a new version) or
+> newly-requested authority ever asks again.
 
 **The grant prompt must be origin-first.** Any origin can serve a manifest, and `name`/`id` are
 self-asserted, so a hostile site can present itself as "Orivon Torrent" with an identical
