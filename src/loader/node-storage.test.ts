@@ -1,9 +1,10 @@
-import { mkdtemp, readFile as fsReadFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile as fsReadFile, writeFile as fsWriteFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { nodeLoaderStorage } from './node-storage.js'
 import { appRootDirectoryName } from './storage.js'
+import { parsePinRecord } from '../broker/policy/pin.js'
 import type { PinRecord } from '../broker/policy/pin.js'
 
 // Real temp directory, no mocking -- the same discipline
@@ -30,6 +31,29 @@ describe('nodeLoaderStorage', () => {
     const storage = nodeLoaderStorage(userData)
 
     expect(await storage.readPin(APP)).toBeUndefined()
+  })
+
+  // A corrupt pin file (truncated write mid-crash, a full disk) is NOT the
+  // same situation as an origin that was never pinned -- index.ts's load()
+  // treats a `readPin` result of undefined as fresh TOFU with zero
+  // reconsent check, which is exactly wrong here: this origin WAS pinned
+  // once. Real bytes, written directly (never through storage.writePin, so
+  // this exercises exactly what a crash mid-write would leave behind), not
+  // a mock.
+  it('readPin does not return undefined for a pin file that exists but is not valid JSON', async () => {
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-loader-storage-'))
+    const storage = nodeLoaderStorage(userData)
+    const appDir = join(userData, 'apps', appRootDirectoryName(APP))
+    await mkdir(appDir, { recursive: true })
+    await fsWriteFile(join(appDir, 'pin.json'), '{"schema": 1, "origin": "https://app.example", "bundle')
+
+    const result = await storage.readPin(APP)
+
+    expect(result).not.toBeUndefined()
+    // The caller-visible consequence (index.ts's own safe path): a
+    // non-undefined-but-corrupt value must fail parsePinRecord's validation,
+    // never partially validate.
+    expect(parsePinRecord(result)).toBeNull()
   })
 
   it('writePin then readPin round-trips the record', async () => {
