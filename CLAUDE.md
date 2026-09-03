@@ -221,8 +221,8 @@ violations` (the two files that had already broken Rule 2 — `handles.ts` at 10
 `connect.ts` at 622 — plus their test files) and `stream/backlog-07-guidelines-cleanup` (the four
 that were close enough to break it next, the comment cuts, and eight Rule-3 duplicates including
 the `concat`/`encodeField` pair this rule was written from). Every source file is now under 500
-lines and every test file under 800; `docs/development/code-guidelines.md` §Where the codebase
-stands has the full before/after per file. Two known duplicates (a hex encoder, the
+lines and every test file under 800; `docs/development/code-guidelines.md` §Where each rule
+came from has the full before/after per file. Two known duplicates (a hex encoder, the
 `MAX_HOST_LENGTH`/`MAX_PORT` constants) were found and deliberately left for a follow-up rather
 than fixed mid-refactor, because both cross into files the other branch was restructuring at the
 same time — see that document's §Status.

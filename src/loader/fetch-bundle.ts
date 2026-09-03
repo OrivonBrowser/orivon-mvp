@@ -1,8 +1,8 @@
-// Turns (fetch, hintedUrl, assetPaths) into a hashed, entry-checked
-// BundleTree. TOFU/update branching and persistence are index.ts's job.
-//
-// Why the asset list is a parameter rather than discovered from the manifest,
-// and why the manifest path is fixed: README.md, Design notes.
+// Fetches a manifest and its declared assets, and turns them into a hashed,
+// entry-checked BundleTree: (fetch, hintedUrl, assetPaths) in, a validated
+// bundle out. TOFU vs. decideUpdate() branching and persistence are
+// index.ts's job, not this file's -- why this file exists on its own:
+// README.md, Design notes.
 
 import type { Manifest } from '../contracts/index.js'
 import { MAX_ASSET_BYTES, MAX_BUNDLE_BYTES, bundleTree } from '../broker/policy/bundle-hash.js'
@@ -21,7 +21,11 @@ import { MAX_MANIFEST_BYTES, parseManifest } from './manifest.js'
 export interface FetchResponse {
   readonly ok: boolean
   readonly status: number
-  /** The RESOLVED url, after any redirect -- see this file's header. */
+  /**
+   * The RESOLVED url, after any redirect. `fetchBundle()`'s origin and
+   * canonical-path checks are derived from this, never from the url that was
+   * requested -- see those checks for why.
+   */
   readonly url: string
   /**
    * Optional: not every caller can supply headers, and their absence never
@@ -335,6 +339,10 @@ function entryCanonicalPath (canonicalOrigin: string, entry: string): string | n
   return resolved === null ? null : canonicalAssetPath(resolved)
 }
 
+/**
+ * `assetPaths` is an explicit parameter, not discovered from the manifest.
+ * See README.md, Design notes for why.
+ */
 export async function fetchBundle (
   fetchFn: Fetch,
   hintedUrl: string,
@@ -357,17 +365,25 @@ export async function fetchBundle (
   const bundleTimer = setTimeout(() => { bundleController.abort() }, BUNDLE_TIMEOUT_MS)
   try {
     let bytesUsed = 0
-    // Always the well-known path, never a path component of hintedUrl:
-    // bundleTree() rejects any bundle with no leaf at MANIFEST_PATH, so a
-    // manifest fetched elsewhere could never produce an accepted bundle.
+    // Always exactly `<origin>${MANIFEST_PATH}` (capability-api.md "How a
+    // URL becomes an app"), never a path component of `hintedUrl`. Not a
+    // stylistic choice: bundleTree() rejects any bundle with no leaf at that
+    // literal canonical path (canonical-path.ts's MANIFEST_PATH), so a
+    // manifest fetched from anywhere else could never produce an accepted
+    // bundle regardless -- `hintedUrl` is used only to name which origin is
+    // being installed.
     const manifestUrl = `${canonicalOrigin}${MANIFEST_PATH}`
     const manifestFetch = await fetchWithBudget(fetchFn, manifestUrl, MAX_MANIFEST_BYTES, MAX_BUNDLE_BYTES, 'manifest', bundleController.signal)
     if ('ok' in manifestFetch) return manifestFetch
     bytesUsed += manifestFetch.content.length
 
-    // response.url, never the requested URL: a redirect must not be able to
-    // attribute an asset's bytes to an origin or path other than where they
-    // actually came from. Every canonical path below is derived the same way.
+    // Derived from the RESOLVED url the fetch actually returned
+    // (`response.url`), never the url that was requested. Same "trust what
+    // happened, not what was asked for" stance origin.ts's
+    // originFromSenderFrame takes for T3 -- a redirect must not be able to
+    // silently attribute these bytes to a path, or an origin, other than
+    // where they actually came from. The asset loop below applies the same
+    // stance to `assetFetch.response.url`.
     const manifestOrigin = originFromUrl(manifestFetch.response.url)
     if (manifestOrigin !== canonicalOrigin) {
       return rejected(`manifest was served from a different origin (${manifestOrigin ?? 'invalid'}) than requested (${canonicalOrigin})`)
@@ -403,6 +419,8 @@ export async function fetchBundle (
       const assetFetch = await fetchWithBudget(fetchFn, assetUrl, MAX_ASSET_BYTES, MAX_BUNDLE_BYTES - bytesUsed, `asset ${assetPath}`, bundleController.signal)
       if ('ok' in assetFetch) return assetFetch
 
+      // Resolved url, not requested url -- same stance as the manifest
+      // check above.
       const assetOrigin = originFromUrl(assetFetch.response.url)
       if (assetOrigin !== canonicalOrigin) {
         return rejected(`asset ${assetPath} was served from a different origin (${assetOrigin ?? 'invalid'}) than requested (${canonicalOrigin})`)

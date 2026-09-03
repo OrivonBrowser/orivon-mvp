@@ -21,6 +21,6 @@
 
     "noEmit": true
   },
-  "include": ["src/**/*.ts", "scripts/**/*.ts", "scripts/**/*.mjs", "spike/**/*.ts"],
+  "include": ["src/**/*.ts", "scripts/**/*.ts", "scripts/**/*.mjs", "spike/**/*.ts", "test/**/*.ts", "test/**/*.mjs"],
   "exclude": ["node_modules", "out", "dist"]
 }

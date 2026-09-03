@@ -1,7 +1,8 @@
-import { app, BaseWindow } from 'electron'
+import { app, BaseWindow, dialog } from 'electron'
 import { createShellWindow } from './window.js'
-import { runAfterReady, runBeforeReady, type SubsystemFailure } from './registry.js'
+import { createSubsystemContext, criticalFailureMessage, runAfterReady, runBeforeReady, type SubsystemFailure } from './registry.js'
 import { subsystems } from './subsystems.js'
+import { BookmarkStore } from './bookmarks.js'
 
 // Main and preload are CommonJS; only the renderer is ESM. This is
 // electron-vite's default and it is kept deliberately, for one reason:
@@ -52,16 +53,52 @@ function report (failures: SubsystemFailure[]): void {
   }
 }
 
-report(runBeforeReady(subsystems))
+const beforeReadyFailures = runBeforeReady(subsystems)
+report(beforeReadyFailures)
 
 void app.whenReady().then(async () => {
-  report(await runAfterReady(subsystems, { app }))
+  const ctx = createSubsystemContext(app)
+  const afterReadyFailures = await runAfterReady(subsystems, ctx)
+  report(afterReadyFailures)
+
+  // A CRITICAL subsystem failing (today: only the broker) means the
+  // capability layer is dark -- opening a normal-looking shell window in
+  // that state is strictly worse than not opening one at all: every
+  // orivon.* call from every app would be silently unroutable, with only a
+  // main-process console line as evidence. Fail loud instead of booting a
+  // browser that only looks like it works (open-questions.md A51).
+  const fatal = criticalFailureMessage([...beforeReadyFailures, ...afterReadyFailures])
+  if (fatal !== null) {
+    dialog.showErrorBox('Orivon failed to start', fatal)
+    app.exit(1)
+    return
+  }
+
   createShellWindow()
   app.on('activate', () => {
     if (BaseWindow.getAllWindows().length === 0) createShellWindow()
   })
 })
 
+// A bookmark starred within the debounce window of the browser closing must
+// not be silently lost -- that is precisely the failure BookmarkStore's
+// flushPendingWrite() exists to prevent, so quit needs to wait for it.
+// Bounded, not indefinite: BookmarkStore.flushAll() itself never rejects
+// (a slow or failed store is reported via console.error in bookmarks.ts and
+// does not stop the others), and the race below caps the wait so a stuck
+// disk turns into a bookmark loss on that one store rather than a browser
+// that will not close. The bound is generous relative to the 300ms debounce
+// (WRITE_DEBOUNCE_MS) plus ordinary disk latency, and short enough that a
+// user closing the window does not perceive a hang.
+const QUIT_FLUSH_TIMEOUT_MS = 2000
+
+async function flushBookmarksBeforeQuit (): Promise<void> {
+  await Promise.race([
+    BookmarkStore.flushAll(),
+    new Promise<void>((resolve) => setTimeout(resolve, QUIT_FLUSH_TIMEOUT_MS))
+  ])
+}
+
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
+  if (process.platform !== 'darwin') void flushBookmarksBeforeQuit().then(() => app.quit())
 })

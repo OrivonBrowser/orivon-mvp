@@ -5,14 +5,15 @@
 # avoid buying certificates (docs/planning/build-plan.md "Platform policy"). Signing is
 # not "left off for now" -- for this file it is simply out of scope.
 #
-# UNBUILT. This config has not been run through a real `electron-builder` invocation
-# (see docs/development/packaging.md -- that is deliberate, not an oversight: a real
-# build downloads hundreds of MB of Electron/7z binaries, which this task explicitly
-# does not do). It has been checked by eye against electron-builder's documented schema,
-# current as of a 2026-08-26 doc lookup rather than trained-in knowledge -- see the doc
-# for what that lookup changed versus what an older electron-builder version would have
-# needed (nested `asar`/`nativeModules`, the v27 generated Linux launcher script, and
-# app-update.yml suppression in particular). First real build is a follow-up task.
+# BUILT. A real `electron-builder` invocation was run for the first time 2026-09-03
+# (see docs/development/packaging.md), producing real `deb`/`AppImage` artefacts in
+# `release/` from a real `npm install --save-dev electron-builder` and a real `npm run
+# build`. That run found this file had been checked by eye against the wrong schema
+# generation -- see the CORRECTED note under `npmRebuild` below for what changed and why
+# -- so treat the schema shape here as verified against an installed electron-builder,
+# not merely eyeballed against docs. Not every claim in this file has been independently
+# confirmed against that build's actual output yet; docs/development/packaging.md's
+# "Known gaps" section is the honest list of what is and isn't.
 
 appId: com.orivonstack.orivon
 # Reverse-DNS of orivonstack.com, the project's actual registered domain (already used
@@ -57,14 +58,38 @@ asar: true
 # choice here, not an unexamined default -- see docs/development/packaging.md for what
 # it does and does not buy.
 
-nativeModules:
-  npmRebuild: false
-  # There is nothing native to rebuild: Rule 8 (CLAUDE.md) and the `check:natives` gate
-  # forbid native modules in this tree entirely, enforced independently on every
-  # install and every commit. Leaving npmRebuild at its default `true` would spend real
-  # build time re-confirming a fact this repo already guarantees a different way, and
-  # would be one more place that guarantee could silently drift out of sync if it were
-  # ever loosened.
+npmRebuild: false
+# SAFETY CONSTRAINT, not a build-time-savings optimisation -- read this before ever
+# flipping it. `electron-builder`'s own installed source
+# (node_modules/app-builder-lib/out/packager.js:454-455) checks exactly this flag: if it
+# is not `false`, packaging calls into `installOrRebuild`, which chains through
+# `@electron/rebuild` into `node-gyp` for real. Both are ordinary (non-"optional")
+# devDependencies of `app-builder-lib`, so they are already installed in this tree on
+# every platform right now, today, whether or not this flag is ever touched --
+# `node_modules/@electron/rebuild` and `node_modules/node-gyp` both exist already.
+# `npmRebuild: false` is the ONLY thing stopping that dormant `node-gyp` from actually
+# running at packaging time. On a machine with no C/C++ toolchain -- exactly the
+# Windows/macOS run-from-source path Rule 8 (CLAUDE.md) exists to protect -- a real
+# `node-gyp` invocation fails outright.
+#
+# `npm run check:natives` CANNOT see a regression here: its scope is install-time
+# scripts (Rule 8's literal wording), not electron-builder's packaging-time behaviour.
+# A future contributor deleting or flipping this line to add Windows/macOS packaging
+# will not get an error from any automated check -- see docs/open-questions.md A49 for
+# the open question this leaves about what Rule 8 is actually meant to guarantee.
+#
+# CORRECTED running a real build for the first time (2026-09-03, packaging-01-build-
+# verify): this key was previously nested under a `nativeModules:` object, on the
+# assumption (docs/development/packaging.md "Why a live lookup mattered") that
+# electron-builder v27 was the current schema. It is not released: `npm install
+# --save-dev electron-builder` resolves npm's `latest` tag, which is 26.15.3 as of
+# this build -- v27 exists only as alpha prereleases (`npm view electron-builder
+# dist-tags` -> next: 27.0.0-alpha.8). The installed schema
+# (node_modules/app-builder-lib/scheme.json) rejected the nested form outright
+# ("configuration has an unknown property 'nativeModules'"); `npmRebuild` is a
+# TOP-LEVEL key in 26.x. Flattened here to match what actually validates.
+# docs/development/packaging.md's matching v27 assumption is corrected in the same PR
+# that added this note, not left stale.
 
 publish: null
 # Explicitly disabled, not merely unconfigured. electron-builder auto-detects a GitHub
