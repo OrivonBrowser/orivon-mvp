@@ -15,16 +15,29 @@ recorded and a canonical form chosen.
 | Domain Data Ownership **Certification** | `Posts/Technical Specifications` |
 | **Data Domain** Ownership Certification | `Old-Private-Plan/Glossario` |
 
-**Recommendation: "Domain Data Ownership Confirmation."** It is what is already published, so
-it needs no correction to the live docs, and *Confirmation* is the more honest word —
-*Certification* implies an authority issuing a certificate, which is not what the mechanism
-does. It verifies that received data matches what the domain owner published.
+**RESOLVED 2026-09-03 (owner): "Domain Data Ownership Confirmation."** Canonical everywhere.
+It is what is already published, so the live docs need no correction, and *Confirmation* is the
+honest word — *Certification* implies an authority issuing a certificate, which is not what the
+mechanism does. It verifies that received data matches what the domain owner published, on the
+owner's own say-so. That distinction matters here specifically: `open-questions.md` C1 records
+that the DNS trust root is forgeable on ICANN domains without DNSSEC, so *Certification* would
+oversell precisely the weakest link.
 
-→ **Owner decision needed.** Once chosen, correct the other two documents.
+→ **Action outstanding:** correct the other two documents (`Posts/Technical Specifications`,
+`Old-Private-Plan/Glossario`) to match. Owner-side, not blocking the MVP.
 
-### `+Privacy` bonus placement
-Attaches to **L4** in the published `web3-score.md`, and to **L5** in the private
-`Web3 Verification levels`. Needs one canonical answer.
+### `+Privacy` bonus placement — **not a decision; a consequence**
+
+**Withdrawn 2026-09-03 as a question.** `+Privacy` attaches to the **top rung of each ladder**,
+not to a fixed number: the published `web3-score.md` reads "Level 4 + Privacy" for websites,
+"Level 4/5 + Privacy" for operations and "Level 3 + Privacy" for connections — each being that
+ladder's own top. The private `Web3 Verification levels` reads L5 for websites only because its
+website ladder carries one extra rung, *"full stack runs entirely locally"*, which the public
+version dropped.
+
+`ADR-0006` and `open-questions.md` B3 already reinstate that rung. Reinstating it makes the
+website ladder five rungs, and `+Privacy` lands on **L5** with no separate decision required.
+The action is B3's existing public-docs correction, not a new choice.
 
 ---
 

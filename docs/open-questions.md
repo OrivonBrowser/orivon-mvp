@@ -41,14 +41,64 @@ Legend: **[OWNER]** product/philosophy/irreversible — never decided by an AI �
 
 ---
 
+## Owner decisions taken 2026-09-03 (backlog-clearing session)
+
+The owner worked through the standing backlog and decided the five questions below that change
+what a person using Orivon sees or reads. **These are recorded here only as an index** — the
+authoritative resolution for each stays in that entry's own section further down this file, and
+where the two ever disagree, the entry wins. Stated explicitly because `A56` records this table
+drifting from its entries once already.
+
+| Was | Owner's decision |
+|---|---|
+| A46 Loader never checks the install origin's address class | **Loopback allowed only as a user-typed literal.** `127.0.0.1`, `[::1]` and `localhost` are installable ONLY when the URL came from a user action and is a literal — never from a page-supplied hint, never via a hostname that *resolved* to loopback. Every other private/link-local/metadata range is refused outright. Rebinding is structurally impossible against a literal, so this needs no dev flag |
+| A36 Grant prompts scheduled in two different build steps | **Split; both documents become true.** The grant ledger and a headless grant-decision interface land in build step 2, so the allow path is testable end to end before any human sees it. The user-facing prompt lands in build step 4, once a real manifest exists to render and A20/A27 are settled |
+| A29 `quotaBytes` has no startup reconciliation | **The counter must survive restart, and hitting the limit prompts the user.** When an app fills its declared quota Orivon asks whether to grant more space, rather than failing silently or only notifying. This makes the persisted counter user-visible, so it must be honest across restarts |
+| A33 Bookmarks bar always visible | **Hide it until there is a bookmark.** A fresh profile shows no empty strip; it appears on first save. The single content shift is user-caused, which is why it was preferred over always-on |
+| A7 DDOC expansion | **Domain Data Ownership *Confirmation*.** Accurate to the mechanism — the owner publishes and confirms their own files, with no authority vouching for them — and it does not oversell the DNS trust root that `C1` already flags as weak on ICANN domains |
+
+**A45 was put to the owner in the same session and answered identically** — the publisher
+declares the asset list, no crawl heuristic — but it needs no row above, because `ADR-0011` and
+PR #59 had already resolved and implemented it before this session recorded anything. The
+owner's answer independently confirms that decision rather than opening new work; the
+authoritative record stays at `### A45` below.
+
+**A8 was withdrawn rather than decided, because it is not a decision.** `+Privacy` attaches to
+the **top rung of each ladder** in the public `web3-score.md` ("Level 4 + Privacy" for websites,
+"Level 3 + Privacy" for connections). The private ladder reads L5 only because it carries one
+extra website rung — *"full stack runs entirely locally"* — that the public version dropped.
+`ADR-0006` and `B3` already reinstate that rung, and reinstating it moves `+Privacy` to L5 as a
+consequence. Nothing further to decide; the action is `B3`'s existing public-docs correction.
+
+### Decided without the owner, same session, and recorded here for visibility
+
+The owner's explicit instruction was that questions with no traceable consequence for a person
+using Orivon should not be brought to them at all. Ten backlog entries were re-read against that
+test, failed it, and were decided as engineering calls. Any of them is reversible on request.
+
+| Was | Call taken |
+|---|---|
+| A49 What Rule 8 forbids | Rule 8 means **nothing compiles at install time** — the property that actually protects a contributor running from source on Windows or macOS. Add a guard pinning `electron-builder.yml`'s `npmRebuild: false` so the dormant `node-gyp` cannot be woken silently. The stronger "no native tooling anywhere" reading is rejected: it is already false and would need a permanent exception list |
+| A28 `confinePath`'s synchronous `realpath` | Fix it — async `realpath`, async `confinePath`. One origin on a slow filesystem can currently block every open tab, which is T11b by a route the in-flight cap cannot bound. No decision to make; it is simply wrong |
+| A26 Three port-range parsers | Consolidate into `src/shared/`, which exists for exactly this and is still empty |
+| A39 Two disagreeing `isOrivonError` checks | Unify on the stricter `.name === 'OrivonError'` test, and export `ORIVON_ERROR_CODES` from `errors.ts`. The stricter one is the one that actually means "the broker built this" |
+| A55 Hookify rules that never fired | Add a fixture driving each rule through `posttooluse.py` and asserting it fires. A guard nobody can tell is broken is worse than no guard |
+| A54 16 files over the comment budget | Each stream clears its own files the next time it touches them. A dedicated branch would touch eight streams' paths and reintroduce the conflict the baseline exists to avoid |
+| A31 / A47 May a branch edit a file it does not own | Yes, when the edit keeps that file in step with a change the branch itself owns, and the PR body names the crossing. Extends the existing `backlog-NN` borrow mechanism to code as well as docs, answering both entries with one rule |
+| A21 Grant id stability | Mint a **fresh** `GrantId` per grant event. Tombstones stay harmless forever, and the ledger still calls `HandleTable.grantIssued()` |
+| A44 Where secp256k1 signing lives | The private scalar never leaves the broker. `IdentityHandle.signEvent` does the derivation and signing broker-side; `src/nostr/` never calls `derivePrivateScalar()`. This resolves the conflict in favour of `src/nostr/README.md`'s boundary and `capability-api.ts`'s "the seed is never exposed" rule |
+| A37 Write direction has no wire protocol | Write it as its own `src/contracts/` PR, taking the sketched `WriteMessage`/`WriteAckMessage` shape as the starting point |
+
+---
+
 ## A. Awaiting owner decision
 
 None of these block starting the week-0 spike.
 
 | | Decision | Needed by |
 |---|---|---|
-| A7 | Canonical **DDOC** expansion — recommendation: *Domain Data Ownership **Confirmation*** (`glossary.md`, B2) | before correcting public docs |
-| A8 | **`+Privacy`** attaches to L4 (published) or L5 (private)? (`glossary.md`) | before correcting public docs |
+| A7 | **RESOLVED 2026-09-03 (owner): *Domain Data Ownership Confirmation***, canonical everywhere. Already the published spelling, so the live docs need no change; *Certification* was rejected because it implies an authority vouching for the data and none exists — which would oversell exactly the DNS trust root `C1` flags as forgeable | Action outstanding: correct the two internal documents (`glossary.md`) |
+| A8 | **WITHDRAWN 2026-09-03 — not a decision.** `+Privacy` attaches to the top rung of each ladder, and the private website ladder simply has one more rung than the public one. Reinstating that rung (already decided in `ADR-0006`/`B3`) moves it to L5 by itself | Folded into `B3`'s existing public-docs correction |
 | A9 | Three capability-API items. **Defaults now proposed** in `architecture/capability-api.md` — `net.listen` grantable to unsigned apps with a declared port range and no privileged ports · grants keyed on `(origin, capability, pattern set)`, a **subset check** over the pattern set (not a kind comparison), with bundle-hash changes handled by the separate re-consent prompt · `fs.quotaBytes` enforced via a running per-origin counter | **Build proceeds on these unless overruled.** Cheap to change before any third-party app exists |
 | A12 | **`orivon.fs` option bags are unspecified.** `capability-api.md` names the entry points (`readFile(path, opts)`, `writeFile(path, data, opts)`, `mkdir / readdir / stat / rm / rename`) but never says what `opts` contains or what `readFile` returns | **Build step 2.** Provisional signatures are in `src/contracts/capability-api.ts` and marked as such |
 | A14 | **RESOLVED 2026-08-26 (owner):** a trailing DNS dot is stripped, so `https://x.example.` and `https://x.example` are ONE origin. Deliberately deviates from `URL.origin`. Exactly one dot; a host still carrying an empty label is rejected | Implemented in `src/broker/policy/origin.ts` |
@@ -67,18 +117,18 @@ None of these block starting the week-0 spike.
 | A26 | **Three port-range parsers now exist**: `connect-patterns.ts`, privately in `update.ts`, and `loader/manifest.ts`. None is legally reusable from the others as written | Rule 3; before a fourth |
 | A27 | **RESOLVED 2026-09-03.** `update.ts`'s `hostCovers` no longer treats a leading `*.` as a real suffix wildcard — it agrees with `connect-patterns.ts` that such a host authorises nothing, so a granted-but-inert wildcard pattern now correctly prompts for re-consent when replaced by a real host | — |
 | A28 | **`confinePath` takes a synchronous `realpath`, so every confined `fs` call blocks the broker's main thread.** `policy/paths.ts` declares the parameter synchronous; any broker that calls it performs blocking `stat`/`lstat` syscalls inline with otherwise-async `readFile`/`writeFile` | **Trigger re-dated 2026-09-01 (owner's decision).** `orivon.fs` is now wired to a renderer with `confinePath` still synchronous — see below for why that trigger fired a step early. Now needed **before any origin holds a real `fs` grant.** |
-| A29 | **`quotaBytes` promises reconciliation against the directory on startup, and nothing implements that half.** `contracts/manifest.ts` documents a running per-origin byte counter that reconciles on startup rather than walking the tree every operation; no storage layer or `BrokerFs` member does the reconciling, so the counter resets on every restart | **Before packaging (build step 10)**, when a real user's disk is at stake. See below |
+| A29 | **`quotaBytes` promises reconciliation against the directory on startup, and nothing implements that half.** `contracts/manifest.ts` documents a running per-origin byte counter that reconciles on startup rather than walking the tree every operation; no storage layer or `BrokerFs` member does the reconciling, so the counter resets on every restart. **RESOLVED 2026-09-03 (owner): the counter must survive restart, and filling the quota prompts the user for more space** rather than failing silently — which makes the persisted number user-visible, so it has to be honest across restarts | **Before packaging (build step 10)**, when a real user's disk is at stake. The prompt itself follows `A36`'s split — ledger-side in build step 2, user-facing box in build step 4. See below |
 | A30 | **`CLAUDE.md` states as fact that three `BaseWindow` options are `BrowserWindow`-only; they are not.** `titleBarStyle`, `titleBarOverlay` and `trafficLightPosition` are all declared on `BaseWindowConstructorOptions` in electron 44.0.0's own `.d.ts` — only `ready-to-show` is genuinely `BrowserWindow`-only | **`/revise-claude-md`'s job; this A-number is the durable record if that pass does not run first.** See below |
 | A31 | **May a non-`backlog-NN` stream branch edit a `docs`-owned file it must keep in step with its own signature change?** The borrow mechanism in `parallel-work.md`'s ownership map is written for `backlog-NN` branches only, but a signature-changing stream branch has already needed the same thing | **Before the next signature change lands. Not blocking.** See below |
 | A32 | **Should the new inert toolbar icons (extensions, sidebar, identity, star, shield, hamburger) ship at all before they do anything?** Added with the chrome restyle to match the reference screenshot exactly. AI-REC: ship disabled with an honest `title` tooltip on each, revisit at that build step's readability check | **Before the chrome-restyle PR opens.** Owner override already covers drawing them; this is only about whether "disabled + honest tooltip" is the right mitigation. See below |
-| A33 | **Should the bookmarks bar hide itself when there are no bookmarks?** Chrome shows the bar only on the new-tab page; this shell shows it unconditionally, which is simpler but always spends 28px on an empty row for a fresh profile | **Not blocking the restyle.** v0 always shows it. See below |
+| A33 | **Should the bookmarks bar hide itself when there are no bookmarks?** Chrome shows the bar only on the new-tab page; this shell shows it unconditionally, which is simpler but always spends 28px on an empty row for a fresh profile. **RESOLVED 2026-09-03 (owner): hide it until there is a bookmark.** Chosen over always-on because the one content shift it costs happens on first save — an action the user themselves took — rather than being a permanent empty strip on every fresh profile | **Whoever next touches `src/renderer/bookmarks-view.ts`.** See below |
 | A34 | **The tab strip's native-controls inset is a hardcoded approximation, not a measured value.** `env(titlebar-area-*)` and `navigator.windowControlsOverlay` both report empty/`false` for this shell's `BaseWindow` + `WebContentsView` chrome — confirmed by a throwaway probe app, 2026-08-28, contradicting every context7 example, which is `BrowserWindow`-only. The restyle reserves a fixed 138px (Windows/Linux, right) or 78px (macOS, left) instead | **Revisit if Electron ever wires window-controls-overlay geometry through `BaseWindow`, or once real hardware on all three platforms confirms the approximation holds.** See below |
 | A35 | **`ResponseEnvelope` carries no `handleId`, though `OrivonError` declares one.** `contracts/errors.ts` specifies `platformCode` and `handleId` as optional fields an error may carry; `contracts/ipc.ts`'s `ResponseEnvelope`'s failure branch forwards `code`/`platformCode`/`message` but not `handleId`. A `'closed'` error naming which handle closed loses that identifier the moment it crosses IPC | **Before a `'closed'` error needs to name its handle over IPC** — not reachable yet (build step 2's control channel wires no method that can throw `'closed'`), but a contracts gap, so its own PR per `parallel-work.md` rule 3. See below |
-| A36 | **`build-plan.md` places grant prompts in build step 2; `A20` and `A27` both say build step 4.** `build-plan.md`'s own Sequence section lists "grant prompts" under step 2 ("Capability broker"), but `A20`'s and `A27`'s "Needed by" columns both independently say "before the grant prompt is built (build step 4)" | **Before the grant prompt is scheduled.** One of the two documents is wrong; the owner should pick which. See below |
+| A36 | **`build-plan.md` places grant prompts in build step 2; `A20` and `A27` both say build step 4.** `build-plan.md`'s own Sequence section lists "grant prompts" under step 2 ("Capability broker"), but `A20`'s and `A27`'s "Needed by" columns both independently say "before the grant prompt is built (build step 4)" | **RESOLVED 2026-09-03 (owner): split it; neither document is wrong.** The grant ledger and a headless grant-decision interface land in **step 2**, so the allow path is exercised end to end before any human sees it; the user-facing prompt lands in **step 4**, once a real manifest exists to render and `A20`/`A27` are settled. Both documents get corrected to say which half they mean. See below |
 | A37 | **The write direction of the byte pump (an app writing bytes out over `TcpSocket.writable`) has no wire message anywhere.** `contracts/ipc.ts` specifies `DataMessage`/`CreditMessage`/`StreamEndMessage` in full for the READ direction only; `handle-contracts.md`'s Backpressure section, `capability-api.md`'s Throughput section and `ADR-0008` all describe the write side only as an outcome ("`write()` resolves only once the broker has accepted the bytes"), never as a protocol | **Before the preload-side byte-pump PR** (readable/writable streams built over the port) **can implement `writable`.** See below |
 | A38 | **RESOLVED 2026-09-02.** `security-model.md`'s T11b entry names both a per-origin in-flight cap AND "a token-bucket rate limit on IPC dispatch" as the mitigation. The in-flight cap exists (`handles.ts`) and covers every method that does real I/O, but `app.manifest`/`app.grants` never call `handleTable.run`, so nothing bounded how *often* an origin could call them. Reproduced before the fix: 5,000 concurrent `app.grants` calls from one origin, zero rejected. A shared per-origin token bucket (`src/broker/token-bucket.ts`) now gates all six control methods uniformly, checked before `dispatch()` runs | Implemented in `src/broker/token-bucket.ts` and wired in `src/broker/ipc.ts`'s `handleControlRequest`. **The numbers (capacity 200, refill 100/sec) are AI-recommended, not owner-decided** — see below |
 | A45 | **RESOLVED 2026-09-03, `ADR-0011`.** `Manifest` gains `assets: readonly string[]`, publisher-declared alongside `entry` — a manifest field, not a crawl heuristic. See below | — |
-| A46 | **The loader never checks the install origin against private/loopback address ranges (T12).** `originFromUrl` validates only scheme and hostname syntax, never address class, and never calls `isPublicUnicast`/`classifyAddress` from `src/broker/policy/address.ts` — which already implements the correct "resolve once, validate every address" discipline for exactly this threat. `http://127.0.0.1:9222/.well-known/orivon.json`, `http://169.254.169.254/` (cloud metadata), or a low-TTL host that DNS-rebinds to either, all pass every check the loader runs today | **Not live today** — `loaderSubsystem` ships inert, so nothing calls this with a real network position yet. Before it is wired to a real trigger. See below |
+| A46 | **The loader never checks the install origin against private/loopback address ranges (T12).** `originFromUrl` validates only scheme and hostname syntax, never address class, and never calls `isPublicUnicast`/`classifyAddress` from `src/broker/policy/address.ts` — which already implements the correct "resolve once, validate every address" discipline for exactly this threat. `http://127.0.0.1:9222/.well-known/orivon.json`, `http://169.254.169.254/` (cloud metadata), or a low-TTL host that DNS-rebinds to either, all pass every check the loader runs today. **RESOLVED 2026-09-03 (owner): loopback is installable only as a user-supplied literal** — `127.0.0.1`, `[::1]` or `localhost`, and only when the URL came from a user action, never from a page-supplied hint and never via a hostname that *resolved* to loopback. Every other private, link-local and metadata range is refused outright | **NOW LIVE, trigger re-dated 2026-09-03** — the entry's own "ships inert" premise expired when `loaderSubsystem` was wired to a real `Loader` and a real Electron `Fetch` (`98c4871`, `stream/loader-05-node-storage`). See below |
 | A48 | **Two residual gaps in `fetch-bundle.ts`'s byte/time budget cannot be closed from this file alone, and now carry an explicit contract requirement on the real `Fetch` implementation.** (1) A `Fetch` (or its body stream's `read()`) that ignores its `AbortSignal` leaves the original promise permanently pending with its closures on every timeout — `BUNDLE_TIMEOUT_MS` (added this pass) bounds how many such abandoned attempts one `fetchBundle()` call can accumulate, but cannot force a foreign, non-cooperating promise to release whatever it holds (a socket, a timer). (2) The incremental byte cap can only refuse a chunk after `reader.read()` already returned it fully allocated — the real bound is "one chunk", not "the cap"; a BYOB reader would close this but requires the stream to declare `type: 'bytes'`, which this file's minimal structural `FetchResponse` type does not guarantee | **Before a real `Fetch`/stream implementation is wired in.** It must itself observe `AbortSignal` and promptly abort/release the underlying request, and should bound its own chunk sizes. See below |
 
 ---
@@ -485,7 +535,7 @@ this fix, since it changes nothing reachable yet. The AI recommendation above is
 this only corrects when it actually starts to matter: **before any origin holds a real `fs`
 grant**, i.e. before the permission-prompt work lands.
 
-### A29 — `quotaBytes`'s startup-reconciliation promise has no owner **[AI-REC]**
+### A29 — `quotaBytes`'s startup-reconciliation promise has no owner **[RESOLVED 2026-09-03]**
 
 Pre-existing on `main` (`src/contracts/manifest.ts:102-111`). Found during a broker review
 pass's check for behaviour the contract promises but nothing implements, corroborated twice.
@@ -507,7 +557,38 @@ member plus a startup hook) or by the storage layer build step 4 introduces, and
 choice. `src/contracts/` itself should not change to soften the promise — the gap is in the
 implementation, not the contract.
 
+**Resolved 2026-09-03, owner decision, in two parts.**
+
+**1. The counter must survive a restart.** The gap this entry describes gets closed rather than
+documented away — `src/contracts/manifest.ts`'s promise stands and the implementation catches up.
+The failing scenario is unchanged and now explicitly accepted as a real defect: an app writes to
+its quota, the user quits and reopens, the in-memory counter resets to zero, and the app keeps
+writing. The quota bounds a session, not the disk.
+
+**2. Hitting the quota prompts the user for more space**, rather than failing silently or only
+posting a notice. Three options were weighed on what a person actually experiences:
+
+| | What the user sees | Why not |
+|---|---|---|
+| Silent refusal | An app that quietly stops being able to save, with whatever message the app chooses and no indication a limit was involved | Rejected: indistinguishable from the app being broken, and there is nothing the user can do about it |
+| A passive notice | "This app has filled its storage", with a settings screen to raise the limit | Rejected for v0: needs a settings surface that does not exist, and quiet notices are ignored |
+| **A prompt** | "*App* has used all the space it asked for. Give it more?" | **Chosen.** The user stays in control, learns which apps are storage-hungry, and can say no |
+
+**The consequence that makes part 1 non-optional:** the prompt states a number. If the counter
+resets on restart, that number is wrong — the box would tell a user an app has used 40 MB when
+it has actually written 400 MB across eight sessions. Part 2 is what turns a hidden accounting
+gap into a visible lie, which is why they were decided together and not separately.
+
+**Still open, deliberately:** where the persisted counter lives (a `BrokerFs` member with a
+startup hook, versus the storage layer build step 4 introduces) is an implementation choice, not
+an owner one. Whoever builds it should record which, here. Rate-limiting a badly-written app that
+triggers the prompt repeatedly is also unspecified; the shared per-origin token bucket (`A38`)
+already bounds call frequency, but "do not re-ask for N minutes after a decline" is separate and
+not designed.
+
 **Needed by:** before packaging (build step 10), which is when a real user's disk is at stake.
+The prompt half follows `A36`'s split — the ledger-side decision seam in build step 2, the box a
+person reads in build step 4.
 
 ### A30 — `CLAUDE.md`'s `BaseWindow` titleBar claim is false against electron 44 **[AI-REC]**
 
@@ -601,17 +682,32 @@ that don't exist, that is exactly the class of finding that check is for.
 
 ---
 
-### A33 — should the bookmarks bar hide itself when empty **[STILL OPEN]**
+### A33 — should the bookmarks bar hide itself when empty **[RESOLVED 2026-09-03]**
 
 Found while planning the chrome restyle (2026-08-28). Chrome only shows its bookmarks bar on
 the new-tab page by default; everywhere else, and for a user with zero bookmarks, it stays
 hidden. This shell's v0 always shows the row, which is simpler to implement and reason about
 but spends 28px of vertical space on an empty row for a fresh profile's very first launch.
 
-Not decided either way. v0 ships with it always visible; whether to hide it when the bookmark
-list is empty is left for whoever next touches `src/renderer/bookmarks-view.ts`.
+**Resolved 2026-09-03, owner decision: hide it until there is at least one bookmark.** The row
+appears the first time a site is saved and disappears again if the last one is removed.
 
-**Needed by:** not blocking anything.
+The trade the owner accepted: hiding costs one content shift, since the page below moves down
+by 28px when the row appears. That was preferred over always-on because the shift happens at
+the exact moment the user saved a bookmark — an action they took deliberately, so the movement
+reads as a response to what they just did rather than as the window rearranging itself. An
+always-visible empty row, by contrast, costs a fresh profile 28px permanently and reads as
+unfinished on the very first launch, which is the one launch that decides whether someone keeps
+the browser.
+
+Chrome's third option — show it only on the new-tab page — was considered and not taken: it
+costs the same shift, needs more logic, and leans on a proper new-tab page this shell does not
+have yet.
+
+**Known and accepted:** someone who never saves a bookmark never learns the feature exists.
+Discoverability of bookmarking rests on the star control in the toolbar, not on the empty row.
+
+**Needed by:** whoever next touches `src/renderer/bookmarks-view.ts`. Not blocking anything.
 
 ---
 
@@ -668,7 +764,7 @@ moment a wired method can reference a live handle — the byte-pump task's `net.
 **Needed by:** before any control method that can throw `'closed'` is wired — likely the
 byte-pump task.
 
-### A36 — `build-plan.md` schedules grant prompts a build step earlier than `A20`/`A27` do **[STILL OPEN]**
+### A36 — `build-plan.md` schedules grant prompts a build step earlier than `A20`/`A27` do **[RESOLVED 2026-09-03]**
 
 Found while wiring `src/broker/ipc.ts`'s control channel (build step 2's IPC task, 2026-09-01),
 while checking whether this PR was expected to include a grant-prompt driver.
@@ -691,8 +787,34 @@ have moved the line in `build-plan.md` and did not.
 `app.requestGrant` method — deliberately, per its own file header and this PR's "Deliberately
 not done".
 
-**Needed by:** before the grant prompt is scheduled into a specific build step's PR list — the
-owner should say which document is wrong.
+**Resolved 2026-09-03, owner decision: split the work; neither document is wrong, both are
+incomplete.** "Grant prompts" was being used for two different things, which is why two honest
+readings disagreed.
+
+| Half | Build step | What it is |
+|---|---|---|
+| The grant ledger, and a headless grant-decision interface | **2** | The machinery that records a grant and the seam a decision arrives through. Tests drive it directly, auto-approving, so the broker's **allow** path is exercised end to end |
+| The user-facing prompt | **4** | The dialog a person reads, built once a real manifest exists to render in it and `A20`/`A27` are settled |
+
+**Why this shape rather than picking one document.** Today nothing in the tree calls
+`broker.grant()`, so the broker can refuse perfectly and cannot be made to permit anything —
+which is why `A28`'s blocking `realpath` is currently unreachable. That means the first time
+anyone ever clicks Allow would also be the first time that path had ever run. For a user, the
+failure that produces is worse than a refusal: an app that asked for permission, was given it,
+and still does not work looks broken rather than deliberate. Putting the ledger in step 2 buys
+the allow path weeks of exercise before a human is involved.
+
+Deferring the **dialog** to step 4 is the other half of the same argument: `A20` (an address
+rendered as `2130706433:22` instead of `127.0.0.1:22`) and `A27` (a pattern that reads as
+"anything under this site" and authorises nothing) are both about a person being shown something
+misleading at exactly the moment they are asked to trust it. Neither is settled, and a permission
+prompt is the last surface in the product that should ship on a guess.
+
+**Action outstanding:** correct `build-plan.md`'s step-2 Sequence entry to say *grant ledger*
+rather than *grant prompts*, and add the prompt itself to step 4. `A20`'s and `A27`'s "Needed
+by" columns are already correct as written and need no change.
+
+**Needed by:** done — this was the blocker on scheduling either half.
 
 ### A37 — the byte pump's write direction has no wire protocol anywhere **[STILL OPEN]**
 
@@ -1232,7 +1354,7 @@ off `manifest.assets` rather than inventing or discovering it.
 
 ---
 
-### A46 — the loader never checks the install origin against private/loopback address ranges (T12) **[STILL OPEN]**
+### A46 — the loader never checks the install origin against private/loopback address ranges (T12) **[RESOLVED 2026-09-03]**
 
 Found 2026-09-03 reviewing `stream/loader-02-fetch-cache` (build step 4). `fetch-bundle.ts`
 resolves `hintedUrl` through `originFromUrl` (`src/broker/policy/origin.ts`), which validates
@@ -1267,8 +1389,53 @@ owner decision: it has not been weighed against, for instance, an explicit allow
 development origins, which a resolve-and-classify check alone would foreclose without a
 carve-out.
 
-**Needed by:** whoever wires `loaderSubsystem` to a real discovery trigger — the point this
-stops being a theoretical gap and starts being a real one.
+**The "not live today" premise above expired on 2026-09-03.** `loaderSubsystem` was wired to a
+real `Loader` and a real Electron `Fetch` (`98c4871`, `stream/loader-05-node-storage`). The gap
+is now reachable in the shipped tree, which is what moved this from filed to decided.
+
+**Resolved 2026-09-03, owner decision: loopback stays installable, but only as a user-supplied
+literal.** Precisely:
+
+- `127.0.0.1`, `[::1]` and `localhost` are installable **only** when the URL came from a user
+  action (typed into the address bar, or an explicit "open as app" on something the user typed),
+  and **only** as a literal.
+- **Never** from a page-supplied hint (a `<link rel="orivon-manifest">` on somebody else's site).
+- **Never** via a hostname that merely *resolved* to a loopback address.
+- Every other private, link-local, CGNAT and cloud-metadata range is refused outright,
+  regardless of provenance.
+
+**Why this shape and not the two simpler ones.** The owner's first instinct was to allow loopback
+unconditionally, on the reasoning that it is the user's own machine. That was withdrawn once the
+consequence was traced: a plain "allow loopback" is defeated by DNS rebinding, and not
+marginally — an attacker does not need to hand Orivon a `127.0.0.1` URL at all. They supply
+`evil.example` with a one-second TTL that answers with a public address when validated and
+`127.0.0.1` when fetched. If loopback is permitted at all, there is no check left for that to
+fail, so "block private except loopback" collapses into "block nothing" against anyone who
+controls a DNS name.
+
+Restricting to a **literal** is what closes it, and it closes it structurally rather than by
+vigilance: a literal address never goes through DNS, and `localhost` is special-cased by the
+resolver, so there is nothing left to rebind. The provenance condition closes the other half —
+a hostile page can no longer make the shell reach into the user's own machine, which matters
+because this request is issued by the shell itself, before any manifest exists and with no
+capability grant gating it: the most privileged network position in the product.
+
+**What this beat.** A strict block plus a developer flag was the standing AI recommendation and
+was rejected as strictly worse for the same security outcome: it needs a flag that must be
+verified off at packaging time, and it breaks `http://localhost:3000` for the person building an
+Orivon app. The literal-plus-provenance rule gives the same posture with no flag and no broken
+development story.
+
+**What is deliberately still permitted, and why it is acceptable.** A user who types
+`http://127.0.0.1:9222` themselves will reach it. That is not a hole in the same sense — it is
+the user acting on their own machine on purpose, which is the same authority they already have
+in any browser's address bar. The threat this closes is a *third party* causing that request.
+
+**Implementation constraint, not a decision:** follow `connect.ts`'s existing T12 discipline —
+resolve once, validate every returned address, then fetch the IP literal that was validated.
+Re-resolving the name after the check reopens the window the check exists to close.
+
+**Needed by:** now — this is live in the tree as of `98c4871`.
 
 ---
 
