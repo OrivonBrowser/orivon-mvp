@@ -2,23 +2,33 @@
 // file's header (append-only, one import + one array entry) and
 // docs/development/parallel-work.md.
 //
-// DELIBERATELY INERT: no beforeReady, no afterReady. Wiring createLoader to
-// real Electron effects -- a real `fetch`, a real disk-backed LoaderStorage,
-// and a real discovery trigger (the `<link rel="orivon-manifest">` listener
-// or "Open as app" menu action, src/loader/README.md) -- is explicitly out
-// of this lane's scope (this lane builds createLoader itself, injected and
-// unit-testable, not the shell wiring around it). Registering the name now,
-// with no behaviour, means the append point (src/main/subsystems.ts) only
-// has to change once -- a later PR adds `afterReady` here, not a new entry
-// in the array.
+// BUILDS AND PUBLISHES A REAL LOADER; STILL NOTHING CALLS load(). The real
+// Fetch (electron-fetch.ts) and real LoaderStorage (node-storage.ts) both
+// now exist -- this is the append-point wiring that constructs one Loader
+// from them and makes it reachable, the same way brokerIpcSubsystem
+// publishes the one Broker. What is still missing is a discovery trigger
+// (the `<link rel="orivon-manifest">` listener or "Open as app" action,
+// README.md) -- deliberately separate work, since it is shell UI, not
+// loader construction.
 //
-// storage.ts's own header records the matching gap on the other side: no
-// real node:fs-backed LoaderStorage ships yet either. Both are "broker/main
-// work still needed to back this for real", named explicitly rather than
-// silently left for someone to discover.
+// MUST BE LISTED AFTER brokerIpcSubsystem in subsystems.ts (that file's own
+// header says so) -- not because this loader reads ctx.broker itself today,
+// but because whatever eventually calls load() will, and getting the
+// ordering right once now costs nothing.
 
-import type { Subsystem } from '../main/registry.js'
+import { electronFetch } from './electron-fetch.js'
+import { nodeLoaderStorage } from './node-storage.js'
+import { createLoader } from './index.js'
+import { publishLoader, type Subsystem } from '../main/registry.js'
 
 export const loaderSubsystem: Subsystem = {
-  name: 'loader'
+  name: 'loader',
+  afterReady: (ctx) => {
+    const loader = createLoader({
+      fetch: electronFetch,
+      storage: nodeLoaderStorage(ctx.app.getPath('userData')),
+      now: () => Date.now()
+    })
+    publishLoader(ctx, loader)
+  }
 }
