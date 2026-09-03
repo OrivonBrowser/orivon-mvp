@@ -7,11 +7,11 @@
  * enforced by hand in the 2026-08-27 refactor; this is the mechanical guard
  * for it, following the same idiom as check-no-native-modules.mjs and
  * check-contracts-pure.mjs. It is deliberately NOT wired into `npm run
- * postinstall` or CI here -- code-guidelines.md's own §Open points #2 records
+ * postinstall` or CI here -- code-guidelines.md's own §Status records
  * that as the owner's call, still open.
  *
- * "Test file" is exactly what code-guidelines.md §Rule 2 and test files
- * defines, no more: a `*.test.ts` file, anything under `test/`, and
+ * "Test file" is exactly what code-guidelines.md Rule 2 defines, no more:
+ * a `*.test.ts` file, anything under `test/`, and
  * `scripts/smoke.mjs` specifically. Everything else -- including the rest of
  * `scripts/` -- is source, at the 500-line limit.
  */

@@ -198,6 +198,18 @@ short — the document carries the full reasoning and the worked examples:
    to the project or a model with a small context window. **Carve-out:** doc comments on
    exported declarations in `src/contracts/` are exempt — they are the product's documentation.
    Inline comments inside function bodies are not exempt anywhere.
+
+   **Two more tests, added 2026-09-03, because the one above cannot see the failure that
+   actually happened here — a file-header essay passes it, and half the source files had grown
+   one.** First: **a comment that stops a maintainer breaking the line in front of them belongs
+   in the source; a comment explaining why the file has the shape it has belongs in the
+   directory's `README.md` (`## Design notes`) or an ADR.** Ask *would someone editing this line
+   get it wrong without this comment?* — no means it is rationale, and rationale moves. Second:
+   **a source file may open with at most 25 lines of comment**, enforced in CI by
+   `npm run check:comments`. If a block genuinely cannot be shortened, keep it and say why in
+   the file — `// orivon:comment-budget -- <reason>`; the reason is required, and
+   `npm run check:comments -- --exemptions` lists every one. `src/trust/` is the worked example
+   for all of it.
 2. **500 lines for source, 800 for tests** (`*.test.ts`, `test/`, `scripts/smoke.mjs`). Split by
    concern, never by line count — `foo-part2.ts` is worse than the long file. The limit exists so
    a smaller model can hold a whole file and reason about it confidently.
@@ -209,22 +221,34 @@ violations` (the two files that had already broken Rule 2 — `handles.ts` at 10
 `connect.ts` at 622 — plus their test files) and `stream/backlog-07-guidelines-cleanup` (the four
 that were close enough to break it next, the comment cuts, and eight Rule-3 duplicates including
 the `concat`/`encodeField` pair this rule was written from). Every source file is now under 500
-lines and every test file under 800; `docs/development/code-guidelines.md` §Where the codebase
-stands has the full before/after per file. Two known duplicates (a hex encoder, the
+lines and every test file under 800; `docs/development/code-guidelines.md` §Where each rule
+came from has the full before/after per file. Two known duplicates (a hex encoder, the
 `MAX_HOST_LENGTH`/`MAX_PORT` constants) were found and deliberately left for a follow-up rather
 than fixed mid-refactor, because both cross into files the other branch was restructuring at the
-same time — see that document's Open Points §3.
+same time — see that document's §Status.
 
 **`src/shared/` exists for a helper needed on both sides of a trust boundary** — `src/broker/`
 and `src/shim/` may not import each other, and `check:contracts` rules out `src/contracts/`. It
 is **change-controlled like contracts** (own PR, merges first) and **imports nothing**. Still
 empty: the audit above confirmed nothing in the current tree actually crosses that boundary.
 
-**Nothing enforces these mechanically, by owner's decision (rules first, enforcement later).**
-No linter or formatter exists. The one place conventions had already drifted — 14 declarations in
-`derive.ts` and its test written `function name(args)` against 115 elsewhere written
-`function name (args)` — was normalised as part of the 2026-08-27 refactor. A **second** such
-split is the signal the deferral has expired.
+**Rule 1's comment budget is enforced in CI (`npm run check:comments`) as of 2026-09-03. Rules 2
+and 3 still are not, by owner's decision (rules first, enforcement later).** The deferral expired
+for Rule 1 for the reason it named: the rule was being followed and the codebase drifted anyway,
+because comment *quality* is not mechanically checkable but a comment *budget* is. No linter or
+formatter exists. The one place conventions had already drifted — 14 declarations in `derive.ts`
+and its test written `function name(args)` against 115 elsewhere written `function name (args)`
+— was normalised as part of the 2026-08-27 refactor. A **second** such split is the signal the
+deferral has expired for style too.
+
+**A hookify rule that anchors `file_path` at the repo root never fires.** `Write`/`Edit` always
+pass an absolute path, so `^src/...` cannot match; the rule loads, reports no error, and is
+simply dead. Two were (`comment-narration`, `scope-creep`), including the one added on
+2026-09-02 for this exact problem — fixed 2026-09-03 to `^(?:.*/)?(?:src|...)/`, and verified
+against the engine rather than assumed. There is also **no `not_regex_match` operator**: an
+unknown operator evaluates to false and silently kills the whole rule. Valid ones are
+`regex_match`, `contains`, `equals`, `not_contains`, `starts_with`, `ends_with` — exclusions go
+in a lookahead inside a single `regex_match`.
 
 ### Parallel work
 

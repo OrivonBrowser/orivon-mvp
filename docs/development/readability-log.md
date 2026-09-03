@@ -40,6 +40,38 @@ Three reasons, in order of how much they matter:
 
 | 2026-08-26 | `README.md` §How this relates to Web3 | **"Not a wallet, not a DAO" conflicts with Orivon's actual long-term goal — those are MVP boundaries, not permanent positions.** The wallet has a three-layer design (`docs/implementations/wallet-system.md`) of which this MVP ships only the first; the DAO has its own plan (`docs/dao-plan.mdx`) with a treasury and merit-tracked distribution | Reframed the whole block from *"what Orivon is not"* to *"what is not in this MVP"*, splitting two genuinely different categories: **deferred but planned** (wallet Crypto and Address-book layers, ENS, IPFS, DDOC) versus **organisational rather than a browser feature** (DAO, token, governance — real, and living in `orivon-docs`). The roadmap gained a matching note that it covers the product only |
 
+| 2026-09-03 | `docs/development/code-guidelines.md` §Rule 1, as rewritten | **"A comment describes the code as it stands, not the change that produced it" — could not follow it.** Four banned phrasings ran together in one sentence, and "the second kind ages into an outright lie" had no resolvable referent; the provenance of the rule was welded onto the end of the rule itself | Replaced the paragraph with a two-column **do-not-write / write-instead** table, one row per banned phrasing, and moved the audit provenance to §Background |
+
+
+### Round 3 — 2026-09-03, `code-guidelines.md`
+
+The owner gave five findings rather than one, and they turned out to be a single failure seen
+five times: **the document was organised as a history of decisions, not as a guide to writing
+code.** Every rule interleaved "here is the rule" with "here is the audit that produced it", so
+the rule could not be read without the archaeology.
+
+Which is the failure the document is about. It told the reader that rationale belongs somewhere
+other than the thing it explains, in a file where rationale was woven through every rule.
+
+| # | Finding | Fix |
+|---|---|---|
+| 1 | §"A comment describes the code as it stands" unreadable | Do-not-write / write-instead table; provenance moved out |
+| 2 | The opening of §The second test unreadable, though its examples were clear | **It opened with three sentences of rationale for why the rule exists, before stating the rule.** Now opens with the rule in a block quote, then the worked example. The reasoning moved to §Background |
+| 3 | §The budget understandable, but no quick view of what is and is not allowed | Added a **what you can and cannot do** table: seven rows, each naming the situation, whether it is allowed, and how |
+| 4 | Past errors referenced throughout, motivating but heavy — worst in Rules 2 and 3 | All history moved to a single §Background, explicitly marked skippable. Rules 1-3 now state the rule and nothing else |
+| 5 | §Applying the rules — could not tell why it mattered or why to read it | **Deleted as a section.** Its three parts were exceptions to Rules 1, 2 and 3, separated from the rules they modified. Each is now stated with its own rule |
+| 6 | §Open points felt off-topic for a code guidelines file | Shrunk to §Status: one short entry per item, each linking to where the detail lives |
+
+**The rule that follows, and it is binding on anything written here:**
+
+> **State the rule first and completely. Put why it exists somewhere the reader can skip.**
+
+A document that explains itself as it goes forces every reader to pay the cost of a debate that
+was settled once. That cost is invisible to whoever writes it — they already know which
+sentences are the rule — and it is the whole of the reading experience for everyone else. The
+same test Rule 1 now applies to comments applies to the documents: *would someone acting on this
+get it wrong without this sentence?* If not, it is background.
+
 ### What these rounds changed about how the docs are written
 
 The first two README findings were **absences** — nothing was wrong, something was missing, and
