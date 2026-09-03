@@ -27,7 +27,7 @@
 // outside this directory.
 
 import type { Manifest } from '../contracts/index.js'
-import { isValidCanonicalPath } from '../broker/policy/canonical-path.js'
+import { MAX_BUNDLE_ENTRIES, isValidCanonicalPath } from '../broker/policy/canonical-path.js'
 import { ownProperty } from '../broker/policy/own-property.js'
 import { compareVersions } from '../broker/policy/update.js'
 import { readCapabilities } from './manifest-capabilities.js'
@@ -80,7 +80,10 @@ const MAX_NAME_LENGTH = 200
 const MAX_VERSION_LENGTH = 256
 const MAX_ENTRY_LENGTH = 1024
 
-const MANIFEST_KEYS = ['orivonApiVersion', 'id', 'name', 'version', 'entry', 'capabilities']
+const MANIFEST_KEYS = ['orivonApiVersion', 'id', 'name', 'version', 'entry', 'assets', 'capabilities']
+
+/** `assets.length + 1 (entry)` must never exceed what fetch-bundle.ts will accept downstream. */
+const MAX_ASSETS = MAX_BUNDLE_ENTRIES - 1
 
 // C0/C1 controls, bidi overrides and isolates (U+202A-U+202E, U+2066-U+2069),
 // zero-width characters (U+200B-U+200D, U+2060-U+2064, U+FEFF) and the
@@ -201,7 +204,7 @@ export function optionalStringArray (
   max: number,
   validateOne: (item: string, index: number) => void
 ): readonly string[] | undefined {
-  const field = `${path}.${key}`
+  const field = path.length > 0 ? `${path}.${key}` : key
   const raw = ownProperty(value, key, isAny)
   if (raw === undefined) return undefined
   if (!Array.isArray(raw)) reject(`${field} must be an array, got ${describeValue(raw)}`)
@@ -219,9 +222,10 @@ export function optionalStringArray (
 }
 
 /**
- * `entry` (e.g. `"index.html"`) is relative to the app root, never a
- * canonical `/`-rooted path -- so it is validated by PREFIXING one and
- * reusing canonical-path.ts's isValidCanonicalPath, rather than a second
+ * Shared by `entry` and each element of `assets` (ADR-0011) -- both are a
+ * path relative to the app root (e.g. `"index.html"`), never a canonical
+ * `/`-rooted path, so both are validated by PREFIXING one and reusing
+ * canonical-path.ts's isValidCanonicalPath, rather than a second
  * traversal/control-char checker (Rule 3). That catches `..`, NUL and
  * control bytes, encoded traversal, Windows-reserved names and trailing
  * dot/space -- everything T1/T10 care about.
@@ -253,16 +257,16 @@ export function optionalStringArray (
  * to a literal `..` segment) and Windows-reserved names exactly as before --
  * verified against all three in this file's test suite, not assumed.
  */
-function validateEntry (entry: string): void {
-  if (entry.startsWith('/')) {
-    reject(`entry must be a path relative to the app root, without a leading slash: ${describeValue(entry)}`)
+function validateRelativePath (field: string, path: string): void {
+  if (path.startsWith('/')) {
+    reject(`${field} must be a path relative to the app root, without a leading slash: ${describeValue(path)}`)
   }
-  if (isAbsoluteUrl(entry)) {
-    reject(`entry must not be an absolute URL or use a URL scheme: ${describeValue(entry)}`)
+  if (isAbsoluteUrl(path)) {
+    reject(`${field} must not be an absolute URL or use a URL scheme: ${describeValue(path)}`)
   }
-  const canonical = '/' + entry.split('/').map(encodeEntrySegment).join('/')
+  const canonical = '/' + path.split('/').map(encodeEntrySegment).join('/')
   if (!isValidCanonicalPath(canonical)) {
-    reject(`entry is not a safe relative path: ${describeValue(entry)}`)
+    reject(`${field} is not a safe relative path: ${describeValue(path)}`)
   }
 }
 
@@ -291,6 +295,24 @@ function isAbsoluteUrl (text: string): boolean {
   } catch {
     return false
   }
+}
+
+/**
+ * `assets` (ADR-0011), validated the same way `entry` is, plus two checks
+ * `optionalStringArray` alone cannot do: no element may duplicate `entry`
+ * itself (one file, one name for it in the manifest), and no two elements
+ * may duplicate each other (`seen` tracks what validateOne has already
+ * passed, since it runs once per element in array order).
+ */
+function readAssets (value: Record<string, unknown>, entry: string): readonly string[] | undefined {
+  const seen = new Map<string, number>()
+  return optionalStringArray(value, '', 'assets', MAX_ASSETS, (item, index) => {
+    validateRelativePath(`assets[${index}]`, item)
+    if (item === entry) reject(`assets[${index}] duplicates entry: ${describeValue(item)}`)
+    const priorIndex = seen.get(item)
+    if (priorIndex !== undefined) reject(`assets[${index}] duplicates assets[${priorIndex}]: ${describeValue(item)}`)
+    seen.set(item, index)
+  })
 }
 
 // --- top level ---------------------------------------------------------------
@@ -337,13 +359,15 @@ function readManifest (value: unknown): Manifest {
   }
 
   const entry = requireString(value, 'entry', 1, MAX_ENTRY_LENGTH)
-  validateEntry(entry)
+  validateRelativePath('entry', entry)
+
+  const assets = readAssets(value, entry)
 
   const capabilitiesRaw = ownProperty(value, 'capabilities', isAny)
   if (capabilitiesRaw === undefined) reject('capabilities is required')
   const capabilities = readCapabilities(capabilitiesRaw, 'capabilities')
 
-  return { orivonApiVersion: 0, id, name, version, entry, capabilities }
+  return { orivonApiVersion: 0, id, name, version, entry, ...(assets !== undefined && { assets }), capabilities }
 }
 
 function parseJsonText (text: string): unknown {

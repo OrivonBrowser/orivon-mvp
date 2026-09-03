@@ -19,7 +19,7 @@
 // that rule and a silent regression, which is why that file mutation-tests
 // itself against three deliberately-wrong implementations.
 
-import type { CapabilityKind, Pattern } from '../../contracts/index.js'
+import type { CapabilityKind, Grant, Pattern } from '../../contracts/index.js'
 import { canonicalAddress, classifyAddress } from './address.js'
 import { isArray, ownProperty } from './own-property.js'
 
@@ -59,6 +59,21 @@ export type UpdateDecision = 'silent' | 'reconsent' | 'capability-prompt' | 'rej
  * `id` key at all is a brand-new capability and must prompt.
  */
 export type PatternSet = Readonly<Partial<Record<CapabilityKind, readonly Pattern[]>>>
+
+/**
+ * The ledger's actual `Grant[]` (`broker.app.grants(origin)`), collapsed into
+ * the `PatternSet` shape `decideUpdate` and T22's CSP derivation both take --
+ * never the manifest's declared set (index.ts's own `connect()` precedent,
+ * A18). Last-write-wins per key is safe here, not a shortcut: `GrantLedger`
+ * holds at most one live grant per capability kind per origin (`grant()`
+ * replaces, it never appends), so two entries for one kind cannot occur in a
+ * `Grant[]` this function is ever actually given.
+ */
+export function patternSetFromGrants (grants: readonly Grant[]): PatternSet {
+  const result: { [K in CapabilityKind]?: readonly Pattern[] } = {}
+  for (const grant of grants) result[grant.capability] = grant.patterns
+  return result
+}
 
 export interface UpdateInput {
   /** Bundle hash the user consented to, from the grant ledger (TOFU, ADR-0005). */
