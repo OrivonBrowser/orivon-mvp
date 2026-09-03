@@ -22,9 +22,10 @@ seconds, and a test would be paying rent to tell you something you already know.
 
 | Command | What |
 |---|---|
-| `npm run typecheck` | `tsc --noEmit`. Strict mode with `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes` — the compiler is doing a lot of the work a test suite would elsewhere |
+| `npm run typecheck` | `tsc --noEmit`. Strict mode with `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes` — the compiler is doing a lot of the work a test suite would elsewhere. `tsconfig.json`'s `include` covers `test/**/*.ts`, so this also type-checks `test/e2e-capability-boundary.test.ts` — a type error there fails this always-on check even on a push that never runs the separate `e2e` job below |
 | `npm test` | Vitest. `environment: 'node'`, no DOM. Picks up `src/**/*.test.ts` and `scripts/**/*.test.ts` |
 | `npm run smoke` | Builds and drives the real shell with real clicks. The only check that proves a window appears |
+| `npm run test:e2e` | Builds, then runs [`test/e2e-capability-boundary.test.ts`](../../test/e2e-capability-boundary.test.ts) via [`test/vitest.e2e.config.ts`](../../test/vitest.e2e.config.ts) — see §The end-to-end test below. Runs automatically in CI's `e2e` job on every push and pull request; needs a display, so run it locally under `xvfb-run -a npm run test:e2e` if there is none |
 
 Unit tests are **colocated** with what they test: `src/main/omnibox.test.ts` sits beside
 `src/main/omnibox.ts`.
@@ -56,7 +57,7 @@ Three properties it is required to keep:
   *not* happen — cannot be polled for at all; only waited out.
 
 It is **not** an end-to-end test of the capability stack — that is the separate one described in
-§The end-to-end test, and it does not exist yet.
+§The end-to-end test.
 
 ---
 
@@ -169,14 +170,41 @@ appeared to work perfectly.
 
 It costs about thirty lines to close. Do not drop it.
 
-### Known risk, check early
+**This exists now**, at
+[`test/e2e-capability-boundary.test.ts`](../../test/e2e-capability-boundary.test.ts), and **runs
+automatically**: `.github/workflows/ci.yml`'s `e2e` job runs it on every push and pull request
+(see `npm run test:e2e` in §How to run above). It ran on `workflow_dispatch` only until
+2026-09-03, when the risk the next section describes was confirmed resolved on a real hosted
+runner.
 
-Spike gate 3 is **BLOCKED, not failed.** The app works — confirmed by a direct, non-Playwright
-launch — but Playwright's `_electron` driver could not attach to that window, for a cause still
+It is **not yet the single ideal test described above** — stated as an omission, not an error.
+`window.orivon.net` is not wired onto the real contextBridge yet, and nothing on `main` calls
+`broker.registerApp()`/`broker.grant()` for a real origin yet; both are the app loader's and the
+permission-prompt UI's seams, and neither exists yet (the test file's own header has the current,
+verified-by-reading-the-code accounting). So the file is two independent checks rather than one:
+**Phase 1** launches the real shell and asserts that gap honestly, by name, rather than assuming
+it; **Phase 2** builds its own `Broker` directly against real Node I/O and real granted/denied
+enforcement — real bytes over a real spawned echo server, real denial of an out-of-manifest
+connect — without going through Electron IPC, because nothing on the other side of that bridge
+accepts the call yet. **The highest-value assertion two paragraphs up is Phase 2's, today.**
+Closing the gap Phase 1 documents is what turns this into the one test described above; that is
+future work, not something dropped.
+
+### Known risk, resolved for this shell's shape
+
+Spike gate 3 was **BLOCKED, not failed.** The app worked — confirmed by a direct, non-Playwright
+launch — but Playwright's `_electron` driver could not attach to that window, for a cause left
 unidentified ([`open-questions.md`](../open-questions.md) C6).
 
-**The end-to-end test uses the same driver.** Verify it can attach at the *start* of build step
-2, not on the day the test is due.
+**The end-to-end test uses the same driver**, and this was the risk to check at the *start* of
+build step 2, not on the day the test was due. It has been checked, twice over: a minimal
+`BaseWindow` with multiple `WebContentsView`s — this shell's actual composition — attaches to
+`_electron` cleanly (`CLAUDE.md` §Narrowed at build step 1), so whatever caused gate 3's failure
+is specific to that gate's own video/service-worker setup, not to `BaseWindow` in general. And the
+`e2e` job above has now been **observed green on a real, GitHub-hosted `ubuntu-latest` runner**,
+for both the `push` and `pull_request` events — the one part of this risk a developer's own
+machine could not confirm (a separate, well-known sandbox/user-namespace CI failure mode specific
+to hosted runners) did not reproduce either.
 
 ---
 
@@ -206,6 +234,11 @@ exercises and it is the one most likely to break silently.
 
 [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) runs on every push and pull
 request: `npm ci` (which fires the Rule 8 guard via `postinstall`), typecheck, unit tests,
-`check:natives`, `check:contracts`, build.
+`check:natives`, `check:contracts`, build — plus a separate `e2e` job, also on every push and
+pull request, that builds the real app and runs §The end-to-end test's `npm run test:e2e` under
+`xvfb-run` (no display server on `ubuntu-latest` otherwise). Kept separate from the job above: it
+needs a real Electron build and a display server, takes far longer than the unit suite, and a
+failure there means something different — the capability boundary itself broke — so it reads as
+its own red X.
 
 **With no dedicated code reviewer, CI is the reviewer.** A red pull request does not merge.
