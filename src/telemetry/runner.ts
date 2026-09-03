@@ -119,6 +119,14 @@ async function startTelemetry (app: App): Promise<void> {
 
   applyAndStore({ kind: 'session-start', atMs: realClock(), app: SHELL_APP_ID })
 
+  // Best-effort, not guaranteed: `void` here means the process could in
+  // principle exit before this write lands, the same way any other
+  // between-checkpoints termination can. Not treated as a gap worth
+  // blocking quit over (event.preventDefault() + a manual re-quit once
+  // flushed) -- that would make an ordinary quit occasionally hang for a
+  // subsystem with no UI, a worse tradeoff than accepting the same
+  // bounded loss (at most one CHECKPOINT_INTERVAL_MS) an ordinary crash
+  // already has.
   app.on('before-quit', () => {
     applyAndStore({ kind: 'session-stop', atMs: realClock(), app: SHELL_APP_ID })
     void store.checkpoint()
