@@ -1486,3 +1486,33 @@ nothing, and is currently empty. The audit that created it concluded nothing cro
 boundary yet. Something does now.
 
 **Needed by:** before a fourth appears. Not blocking.
+
+### A53 — every `BookmarkStore` ever constructed is retained for the lifetime of the process **[AI-REC]**
+
+Found 2026-09-03, reviewing the fix that added `BookmarkStore.flushAll()` for the quit-time
+bookmark flush.
+
+`BookmarkStore` self-registers into a private static `Set` in its constructor, because
+`src/main/index.ts`'s quit path has to flush every window's store and holds a reference to none of
+them — each is a local inside `src/main/window.ts`'s `createShellWindow()`. Nothing ever removes an
+entry, so closing a window does not release its store: the instance, its bookmark list, and its
+subscriber callbacks stay reachable until the process exits.
+
+The in-place comment calls this "a permanent no-op flush (nothing left to write), which costs
+nothing to keep". That is true of the *flush*, and understates the *retention* — a long session
+that opens and closes many windows accumulates stores without bound. The amount is small per store
+and this is not a leak a user would notice soon, which is why it is filed rather than treated as a
+defect in that change.
+
+**Why it was not fixed there.** The clean fix is a `dispose()` (or a `WeakRef`-based registry)
+called when a window closes, and the call site is `src/main/window.ts` — the shell stream's file,
+outside that lane's owned paths. Registering a store is also not obviously the right shape long
+term: threading one reference from `createShellWindow()` to `index.ts` would remove the need for a
+registry at all.
+
+**AI recommendation, not a decision:** prefer removing the registry over adding a `dispose()` — a
+store that the quit path can reach directly needs no global list, and the current design exists
+only because the reference was not available. Either way this is a shell-stream call.
+
+**Needed by:** before a second static registry of the same shape appears, or before anything else
+is added to `BookmarkStore` that holds meaningfully more memory than a bookmark list. Not blocking.
