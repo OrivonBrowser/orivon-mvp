@@ -225,7 +225,7 @@ lines and every test file under 800; `docs/development/code-guidelines.md` §Whe
 stands has the full before/after per file. Two known duplicates (a hex encoder, the
 `MAX_HOST_LENGTH`/`MAX_PORT` constants) were found and deliberately left for a follow-up rather
 than fixed mid-refactor, because both cross into files the other branch was restructuring at the
-same time — see that document's Open Points §3.
+same time — see that document's §Status.
 
 **`src/shared/` exists for a helper needed on both sides of a trust boundary** — `src/broker/`
 and `src/shim/` may not import each other, and `check:contracts` rules out `src/contracts/`. It

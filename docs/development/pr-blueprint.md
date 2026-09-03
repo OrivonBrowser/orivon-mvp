@@ -302,7 +302,7 @@ anything labelled `type:security` — takes the full form regardless of size.
 ### Nothing enforces this mechanically
 
 **Owner's decision, 2026-08-27: rules first, enforcement later** — the same call, for the same
-reason, as [`code-guidelines.md`](code-guidelines.md) §Open points. No CI check parses the PR
+reason, as [`code-guidelines.md`](code-guidelines.md) §Status. No CI check parses the PR
 body, no workflow requires a label.
 
 The template is doing the work, and it does it by being **already in the box** rather than by

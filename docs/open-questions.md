@@ -852,7 +852,7 @@ Two things follow, and they pull in opposite directions:
   comment describes the code as it stands, not the change that produced it.** Git history holds
   the change.
 - Unlike the rest of Rule 1, this specific class *is* greppable — it has a lexical signature
-  ("sibling commit", "this PR", "already existed", "previously"). §Open points 2 records the
+  ("sibling commit", "this PR", "already existed", "previously"). code-guidelines.md §Status records the
   owner's decision that nothing enforces these rules mechanically, **rules first, enforcement
   later**, so adding a `check:comments` guard would reverse a standing decision and is not done
   here.
@@ -1278,7 +1278,7 @@ of comment and would fail the new check. None was fixed on this branch, because 
 owned by a stream with a live worktree as this is written — eight under `src/broker/` alone,
 with `broker-15`, `broker-16` and `broker-17` all open. Rewriting a file header from a borrowed
 branch while three others edit the same file is the structural conflict `code-guidelines.md`
-§Open points #3 already recorded once, and it was not worth repeating for a comment.
+§Status already recorded once, and it was not worth repeating for a comment.
 
 The baseline is a **ratchet, not an exemption list**: an entry whose file comes back within
 budget fails the check, so the list can only shrink. The work is per-stream and small — move the
