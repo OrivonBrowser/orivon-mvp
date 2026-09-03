@@ -86,11 +86,51 @@ export type Fetch = (url: string, signal: AbortSignal) => Promise<FetchResponse>
 export const FETCH_TIMEOUT_MS = 20_000
 
 /**
+ * Bounds the WHOLE fetchBundle() operation -- manifest plus every asset --
+ * with one wall-clock deadline, on top of FETCH_TIMEOUT_MS's per-asset one.
+ * The two bound different things and neither replaces the other:
+ * FETCH_TIMEOUT_MS stops one stuck request; this stops death by a thousand
+ * cuts. Without it, a hostile origin can serve up to MAX_BUNDLE_ENTRIES - 1
+ * (4095) assets, each arriving in just under FETCH_TIMEOUT_MS and never
+ * tripping ITS timer -- roughly 22.6 hours during which fetchBundle()
+ * returns none of its documented outcomes. That is the same T11b
+ * denial-of-service the streaming byte budget already closes along the
+ * memory axis (readBodyWithBudget), reopened along the duration axis
+ * instead.
+ *
+ * Set to 30 * FETCH_TIMEOUT_MS: if every one of the first 30 assets
+ * happened to take the full per-asset timeout, the bundle deadline would
+ * still let the install finish. A real frontend is expected to have far
+ * fewer than 30 assets that are each individually that slow; an attacker
+ * needs 4095 to reach the old 22.6-hour figure. Either way this cuts the
+ * worst case from hours to minutes -- it does not claim to be tuned to a
+ * real host. AI-recommended and uncalibrated, the same caveat FETCH_TIMEOUT_MS
+ * and the byte caps themselves carry -- see docs/open-questions.md A15.
+ */
+export const BUNDLE_TIMEOUT_MS = 30 * FETCH_TIMEOUT_MS
+
+/**
  * Races `promise` against `signal` firing. Exists because a `Fetch` (or a
  * body stream's `read()`) is not guaranteed to honour an AbortSignal on its
  * own -- this makes the timeout real regardless of what the callee does
  * with it, the same "does not trust what it was handed" stance
  * broker/port-pump.ts's credit clamp takes for a different input.
+ *
+ * What this does NOT do: force the ABANDONED `promise` to release
+ * whatever it holds. If the callee (a `Fetch`, or a body stream's
+ * `read()`) genuinely ignores its `AbortSignal`, that promise keeps
+ * running -- and, more importantly, whatever real resource backs it
+ * (a socket, a timer, buffered bytes) stays open -- until it eventually
+ * settles on its own, if it ever does. JavaScript has no way to force an
+ * arbitrary foreign promise to cancel; `AbortSignal` is cooperative by
+ * design, and a callee that does not cooperate cannot be made to from the
+ * caller's side. That is a real, currently-unclosed gap this file cannot
+ * close alone -- see BUNDLE_TIMEOUT_MS's own comment for how bounding the
+ * whole operation at least bounds how many such abandoned attempts one
+ * fetchBundle() call can accumulate. **The real `Fetch` implementation
+ * must itself observe `signal` and promptly abort/release the underlying
+ * request on it** -- this file can hand the signal down and stop waiting
+ * on the promise, nothing more. Recorded as docs/open-questions.md A48.
  */
 async function raceAbort<T> (promise: Promise<T>, signal: AbortSignal, makeError: () => Error): Promise<T> {
   if (signal.aborted) throw makeError()
@@ -122,6 +162,25 @@ function concatChunks (chunks: readonly Uint8Array[], total: number): Uint8Array
  * size; decoded bytes can be far larger -- a decompression bomb), or lying
  * response; fetchWithBudget's own Content-Length pre-check only ever
  * catches a response that DECLARES its size honestly.
+ *
+ * RESIDUAL LIMIT, not closed by this function: the check below can only
+ * refuse a chunk AFTER `await reader.read()` has already returned it, and
+ * that Uint8Array is already fully allocated by then -- whoever produced it
+ * (the real stream implementation behind `response.body`) decided its size,
+ * not this loop. So the actual bound this file enforces is "one chunk",
+ * not "the cap": a producer that hands back the whole body as a single
+ * `read()` result -- a decompressing fetch, a naive shim that buffers then
+ * emits once, or a real undici under a gzip bomb -- still allocates that
+ * one oversized chunk before the rejection below can fire, even though the
+ * rejection is correct and immediate once it does (proven in
+ * fetch-bundle.test.ts's "still rejects a single stream chunk..." case).
+ * Closing this fully would need a bounded (BYOB) reader, which requires the
+ * stream to declare `type: 'bytes'` -- not guaranteed by this file's
+ * minimal structural `FetchResponse` type (see this file's header), and not
+ * something a stub or a naive real implementation is likely to provide.
+ * Not implemented for that reason; the real `Fetch`/stream implementation
+ * bounding its own chunk sizes is what would close this the rest of the way.
+ * Recorded as docs/open-questions.md A48.
  */
 async function readBodyWithBudget (
   response: FetchResponse,
@@ -129,7 +188,8 @@ async function readBodyWithBudget (
   remaining: number,
   signal: AbortSignal,
   label: string,
-  url: string
+  url: string,
+  bundleSignal: AbortSignal
 ): Promise<Uint8Array | FetchBundleRejected> {
   const body = response.body
   if (body === null) return new Uint8Array(0)
@@ -143,7 +203,13 @@ async function readBodyWithBudget (
       step = await raceAbort(
         reader.read(),
         signal,
-        () => new Error(`reading ${label} timed out after ${String(FETCH_TIMEOUT_MS)}ms: ${url}`)
+        // `bundleSignal` is already aborted by the time this runs in that
+        // case -- fetchWithBudget's forwarding listener aborts `signal`
+        // (this per-asset controller) synchronously in reaction to
+        // `bundleSignal` firing, before this makeError callback can run.
+        () => bundleSignal.aborted
+          ? new Error(`reading ${label} was cut short by the bundle's overall deadline of ${String(BUNDLE_TIMEOUT_MS)}ms: ${url}`)
+          : new Error(`reading ${label} timed out after ${String(FETCH_TIMEOUT_MS)}ms: ${url}`)
       )
     } catch (error) {
       reader.cancel().catch(() => {})
@@ -204,25 +270,41 @@ function declaredLength (response: FetchResponse): number | undefined {
  * are against the same two numbers: this one asset's own cap (`assetCap`)
  * and how much room is left in the whole bundle (`remaining`).
  *
- * One FETCH_TIMEOUT_MS deadline, via one AbortController, bounds the whole
- * operation -- see FETCH_TIMEOUT_MS's own comment for why.
+ * Two deadlines apply, and both matter: FETCH_TIMEOUT_MS via this call's own
+ * AbortController bounds ONE asset; `bundleSignal` (BUNDLE_TIMEOUT_MS,
+ * started once in fetchBundle) bounds the WHOLE install. `bundleSignal`
+ * firing is forwarded onto this call's own controller, so either deadline
+ * aborts the same in-flight fetch/read the same way -- see BUNDLE_TIMEOUT_MS's
+ * own comment for why the second deadline exists. If `bundleSignal` has
+ * already fired before this call even starts (the common case once the
+ * deadline has passed: every later asset in fetchBundle's loop reaches this
+ * function after the one that got cut off), the fetch never starts at all.
  */
 async function fetchWithBudget (
   fetchFn: Fetch,
   url: string,
   assetCap: number,
   remaining: number,
-  label: string
+  label: string,
+  bundleSignal: AbortSignal
 ): Promise<{ readonly response: FetchResponse, readonly content: Uint8Array } | FetchBundleRejected> {
+  if (bundleSignal.aborted) {
+    return rejected(`bundle install exceeded its overall deadline of ${String(BUNDLE_TIMEOUT_MS)}ms before ${label} could be fetched: ${url}`)
+  }
+
   const controller = new AbortController()
   const timer = setTimeout(() => { controller.abort() }, FETCH_TIMEOUT_MS)
+  const forwardBundleAbort = (): void => { controller.abort() }
+  bundleSignal.addEventListener('abort', forwardBundleAbort, { once: true })
   try {
     let response: FetchResponse
     try {
       response = await raceAbort(
         fetchFn(url, controller.signal),
         controller.signal,
-        () => new Error(`timed out after ${String(FETCH_TIMEOUT_MS)}ms`)
+        () => bundleSignal.aborted
+          ? new Error(`bundle install exceeded its overall deadline of ${String(BUNDLE_TIMEOUT_MS)}ms`)
+          : new Error(`timed out after ${String(FETCH_TIMEOUT_MS)}ms`)
       )
     } catch (error) {
       return rejected(`could not fetch ${label} (${url}): ${error instanceof Error ? error.message : String(error)}`)
@@ -235,11 +317,28 @@ async function fetchWithBudget (
       if (declared > remaining) return rejected(`${label} declares ${String(declared)} bytes, more than fits in the bundle's remaining budget: ${url}`)
     }
 
-    const body = await readBodyWithBudget(response, assetCap, remaining, controller.signal, label, url)
+    const body = await readBodyWithBudget(response, assetCap, remaining, controller.signal, label, url, bundleSignal)
     if (!(body instanceof Uint8Array)) return body
     return { response, content: body }
   } finally {
     clearTimeout(timer)
+    bundleSignal.removeEventListener('abort', forwardBundleAbort)
+  }
+}
+
+/**
+ * `new URL(path, base)`, guarded. `URL`'s constructor throws `TypeError` on
+ * a malformed `path` (confirmed live: `new URL('http://[not-valid-ipv6/x.js',
+ * 'https://good.example/')`) -- this file's own header promises exactly four
+ * outcomes and never a fifth, so nothing here may let that escape as an
+ * uncaught exception. Both callers below resolve caller-supplied path
+ * strings this way; neither may trust the input is well-formed.
+ */
+function resolveUrl (path: string, base: string): string | null {
+  try {
+    return new URL(path, base).href
+  } catch {
+    return null
   }
 }
 
@@ -249,10 +348,14 @@ async function fetchWithBudget (
  * (manifest.ts's validateEntry ran inside parseManifest) -- this resolves it
  * against the real origin the same way an asset URL would be, so the
  * comparison below is exact-string against `tree.assets`, never a second,
- * looser notion of "matches".
+ * looser notion of "matches". Guarded via resolveUrl anyway: validateEntry's
+ * own encoding walks `entry` one path segment at a time, a different
+ * algorithm from resolving the whole string as a relative reference here --
+ * a string that survives one is not proven to survive the other.
  */
 function entryCanonicalPath (canonicalOrigin: string, entry: string): string | null {
-  return canonicalAssetPath(new URL(entry, `${canonicalOrigin}/`).href)
+  const resolved = resolveUrl(entry, `${canonicalOrigin}/`)
+  return resolved === null ? null : canonicalAssetPath(resolved)
 }
 
 export async function fetchBundle (
@@ -269,69 +372,80 @@ export async function fetchBundle (
     return rejected(`bundle would have ${String(assetPaths.length + 1)} entries, more than MAX_BUNDLE_ENTRIES (${String(MAX_BUNDLE_ENTRIES)})`)
   }
 
-  let bytesUsed = 0
-  const manifestUrl = `${canonicalOrigin}${MANIFEST_PATH}`
-  const manifestFetch = await fetchWithBudget(fetchFn, manifestUrl, MAX_MANIFEST_BYTES, MAX_BUNDLE_BYTES, 'manifest')
-  if ('ok' in manifestFetch) return manifestFetch
-  bytesUsed += manifestFetch.content.length
-
-  const manifestOrigin = originFromUrl(manifestFetch.response.url)
-  if (manifestOrigin !== canonicalOrigin) {
-    return rejected(`manifest was served from a different origin (${manifestOrigin ?? 'invalid'}) than requested (${canonicalOrigin})`)
-  }
-  const manifestCanonicalPath = canonicalAssetPath(manifestFetch.response.url)
-  if (manifestCanonicalPath !== MANIFEST_PATH) {
-    return rejected(`manifest was served from ${manifestCanonicalPath ?? manifestFetch.response.url}, not the well-known path ${MANIFEST_PATH}`)
-  }
-
-  const manifestText = new TextDecoder('utf-8', { fatal: false }).decode(manifestFetch.content)
-  const parsed = parseManifest(manifestText)
-  if (!parsed.ok) return rejected(parsed.reason)
-  const manifest = parsed.manifest
-
-  const entries: BundleEntry[] = [{ path: MANIFEST_PATH, content: manifestFetch.content }]
-
-  for (const assetPath of assetPaths) {
-    const assetUrl = new URL(assetPath, `${canonicalOrigin}/`).href
-
-    // Checked BEFORE fetchFn is ever called: `new URL(assetPath, base)`
-    // honours an absolute or protocol-relative assetPath (e.g.
-    // "https://attacker.example/x"), so without this an entry crafted that
-    // way would trigger a real outbound request before the origin is ever
-    // looked at. The post-fetch check below on the RESOLVED url still runs
-    // too -- this one catches a bad request before it happens, that one
-    // catches a redirect after it happens; neither replaces the other.
-    const requestedOrigin = originFromUrl(assetUrl)
-    if (requestedOrigin !== canonicalOrigin) {
-      return rejected(`asset ${assetPath} resolves to a different origin (${requestedOrigin ?? 'invalid'}) than the app's (${canonicalOrigin})`)
-    }
-
-    const assetFetch = await fetchWithBudget(fetchFn, assetUrl, MAX_ASSET_BYTES, MAX_BUNDLE_BYTES - bytesUsed, `asset ${assetPath}`)
-    if ('ok' in assetFetch) return assetFetch
-
-    const assetOrigin = originFromUrl(assetFetch.response.url)
-    if (assetOrigin !== canonicalOrigin) {
-      return rejected(`asset ${assetPath} was served from a different origin (${assetOrigin ?? 'invalid'}) than requested (${canonicalOrigin})`)
-    }
-    const canonicalPath = canonicalAssetPath(assetFetch.response.url)
-    if (canonicalPath === null) return rejected(`asset ${assetPath} resolved to a URL with no canonical path: ${assetFetch.response.url}`)
-
-    bytesUsed += assetFetch.content.length
-    entries.push({ path: canonicalPath, content: assetFetch.content })
-  }
-
-  let tree: BundleTree
+  // BUNDLE_TIMEOUT_MS's one clock for the whole operation below -- started
+  // here so it covers the manifest fetch too, not just the asset loop.
+  // `bundleController.signal` is threaded into every fetchWithBudget call;
+  // see BUNDLE_TIMEOUT_MS's and fetchWithBudget's own comments for why.
+  const bundleController = new AbortController()
+  const bundleTimer = setTimeout(() => { bundleController.abort() }, BUNDLE_TIMEOUT_MS)
   try {
-    tree = await bundleTree(entries)
-  } catch (error) {
-    if (isOrivonErrorLike(error)) return rejected(error.message)
-    throw error // a bug in this file or bundle-hash.ts, not an untrusted-input outcome -- never swallowed
-  }
+    let bytesUsed = 0
+    const manifestUrl = `${canonicalOrigin}${MANIFEST_PATH}`
+    const manifestFetch = await fetchWithBudget(fetchFn, manifestUrl, MAX_MANIFEST_BYTES, MAX_BUNDLE_BYTES, 'manifest', bundleController.signal)
+    if ('ok' in manifestFetch) return manifestFetch
+    bytesUsed += manifestFetch.content.length
 
-  const entryPath = entryCanonicalPath(canonicalOrigin, manifest.entry)
-  if (entryPath === null || !tree.assets.some((asset) => asset.path === entryPath)) {
-    return rejected(`bundle has no leaf at the manifest's declared entry point: ${manifest.entry}`)
-  }
+    const manifestOrigin = originFromUrl(manifestFetch.response.url)
+    if (manifestOrigin !== canonicalOrigin) {
+      return rejected(`manifest was served from a different origin (${manifestOrigin ?? 'invalid'}) than requested (${canonicalOrigin})`)
+    }
+    const manifestCanonicalPath = canonicalAssetPath(manifestFetch.response.url)
+    if (manifestCanonicalPath !== MANIFEST_PATH) {
+      return rejected(`manifest was served from ${manifestCanonicalPath ?? manifestFetch.response.url}, not the well-known path ${MANIFEST_PATH}`)
+    }
 
-  return { ok: true, canonicalOrigin, manifest, tree, entries }
+    const manifestText = new TextDecoder('utf-8', { fatal: false }).decode(manifestFetch.content)
+    const parsed = parseManifest(manifestText)
+    if (!parsed.ok) return rejected(parsed.reason)
+    const manifest = parsed.manifest
+
+    const entries: BundleEntry[] = [{ path: MANIFEST_PATH, content: manifestFetch.content }]
+
+    for (const assetPath of assetPaths) {
+      const assetUrl = resolveUrl(assetPath, `${canonicalOrigin}/`)
+      if (assetUrl === null) return rejected(`asset path is not a valid URL: ${assetPath}`)
+
+      // Checked BEFORE fetchFn is ever called: `new URL(assetPath, base)`
+      // honours an absolute or protocol-relative assetPath (e.g.
+      // "https://attacker.example/x"), so without this an entry crafted that
+      // way would trigger a real outbound request before the origin is ever
+      // looked at. The post-fetch check below on the RESOLVED url still runs
+      // too -- this one catches a bad request before it happens, that one
+      // catches a redirect after it happens; neither replaces the other.
+      const requestedOrigin = originFromUrl(assetUrl)
+      if (requestedOrigin !== canonicalOrigin) {
+        return rejected(`asset ${assetPath} resolves to a different origin (${requestedOrigin ?? 'invalid'}) than the app's (${canonicalOrigin})`)
+      }
+
+      const assetFetch = await fetchWithBudget(fetchFn, assetUrl, MAX_ASSET_BYTES, MAX_BUNDLE_BYTES - bytesUsed, `asset ${assetPath}`, bundleController.signal)
+      if ('ok' in assetFetch) return assetFetch
+
+      const assetOrigin = originFromUrl(assetFetch.response.url)
+      if (assetOrigin !== canonicalOrigin) {
+        return rejected(`asset ${assetPath} was served from a different origin (${assetOrigin ?? 'invalid'}) than requested (${canonicalOrigin})`)
+      }
+      const canonicalPath = canonicalAssetPath(assetFetch.response.url)
+      if (canonicalPath === null) return rejected(`asset ${assetPath} resolved to a URL with no canonical path: ${assetFetch.response.url}`)
+
+      bytesUsed += assetFetch.content.length
+      entries.push({ path: canonicalPath, content: assetFetch.content })
+    }
+
+    let tree: BundleTree
+    try {
+      tree = await bundleTree(entries)
+    } catch (error) {
+      if (isOrivonErrorLike(error)) return rejected(error.message)
+      throw error // a bug in this file or bundle-hash.ts, not an untrusted-input outcome -- never swallowed
+    }
+
+    const entryPath = entryCanonicalPath(canonicalOrigin, manifest.entry)
+    if (entryPath === null || !tree.assets.some((asset) => asset.path === entryPath)) {
+      return rejected(`bundle has no leaf at the manifest's declared entry point: ${manifest.entry}`)
+    }
+
+    return { ok: true, canonicalOrigin, manifest, tree, entries }
+  } finally {
+    clearTimeout(bundleTimer)
+  }
 }
