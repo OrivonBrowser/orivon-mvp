@@ -130,7 +130,7 @@ export const BUNDLE_TIMEOUT_MS = 30 * FETCH_TIMEOUT_MS
  * fetchBundle() call can accumulate. **The real `Fetch` implementation
  * must itself observe `signal` and promptly abort/release the underlying
  * request on it** -- this file can hand the signal down and stop waiting
- * on the promise, nothing more. Recorded as docs/open-questions.md A48.
+ * on the promise, nothing more. Recorded as docs/open-questions.md A52.
  */
 async function raceAbort<T> (promise: Promise<T>, signal: AbortSignal, makeError: () => Error): Promise<T> {
   if (signal.aborted) throw makeError()
@@ -180,7 +180,7 @@ function concatChunks (chunks: readonly Uint8Array[], total: number): Uint8Array
  * something a stub or a naive real implementation is likely to provide.
  * Not implemented for that reason; the real `Fetch`/stream implementation
  * bounding its own chunk sizes is what would close this the rest of the way.
- * Recorded as docs/open-questions.md A48.
+ * Recorded as docs/open-questions.md A52.
  */
 async function readBodyWithBudget (
   response: FetchResponse,

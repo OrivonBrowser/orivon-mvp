@@ -1231,7 +1231,7 @@ stops being a theoretical gap and starts being a real one.
 
 ---
 
-### A48 — two residual gaps a real `Fetch` must close, not `fetch-bundle.ts` **[AI-REC]**
+### A52 — two residual gaps a real `Fetch` must close, not `fetch-bundle.ts` **[AI-REC]**
 
 Found 2026-09-03, fixing an adversarial review's findings against `stream/loader-02-fetch-cache`
 (build step 4) before merge. Two of the three findings (an uncaught `new URL()` and the
