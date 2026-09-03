@@ -8,8 +8,9 @@
 //
 // NEVER PROBED AUTOMATICALLY. An unsolicited request to every origin the user
 // visits is an active, attributable "this visitor runs Orivon" signal, sent
-// from a privacy-branded browser. v0 discovery is a <link rel="orivon-manifest">
-// hint in HTML already delivered, or explicit user action ("Open as app").
+// from a privacy-branded browser. Discovery is a <link rel="orivon-manifest">
+// hint in HTML already delivered -- the only trigger; there is no separate
+// user action (capability-api.md's 2026-09-03 correction).
 
 /** Opaque identifier for one persisted grant. See ./capability-api.js. */
 export type GrantId = string
