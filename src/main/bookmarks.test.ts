@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   addBookmark,
   BookmarkStore,
@@ -11,6 +11,33 @@ import {
   serializeBookmarksFile,
   type Bookmark
 } from './bookmarks.js'
+
+// BookmarkStore imports writeFile straight from node:fs/promises, so mocking
+// the module is the only way to hold one specific write open from outside
+// and prove flushPendingWrite() genuinely waits for it. `fsGate` is declared
+// through vi.hoisted because vi.mock's factory runs before the rest of this
+// file and would otherwise not see it. Every other fs/promises export, and
+// writeFile itself once nothing is gating it, passes straight through.
+const fsGate = vi.hoisted(() => ({
+  release: null as Promise<void> | null,
+  writeFileCallCount: 0
+}))
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>()
+  return {
+    ...actual,
+    writeFile: async (file: string, data: string, encoding: BufferEncoding): Promise<void> => {
+      fsGate.writeFileCallCount++
+      const gate = fsGate.release
+      if (gate !== null) {
+        fsGate.release = null
+        await gate
+      }
+      await actual.writeFile(file, data, encoding)
+    }
+  }
+})
 
 describe('addBookmark', () => {
   it('appends a new entry', () => {
@@ -101,6 +128,8 @@ describe('BookmarkStore', () => {
 
   afterEach(async () => {
     await rm(dir, { recursive: true, force: true })
+    fsGate.release = null
+    fsGate.writeFileCallCount = 0
   })
 
   it('starts empty when the file does not exist yet (first launch)', async () => {
@@ -149,6 +178,71 @@ describe('BookmarkStore', () => {
       { url: 'https://b.example/', title: 'B' }
     ])
   })
+
+  it('flushPendingWrite settles even when a second change arrives before the debounced write has fired', async () => {
+    const store = new BookmarkStore(filePath)
+    store.add({ url: 'https://a.example/', title: 'A' })
+    const flushed = store.flushPendingWrite()
+    store.add({ url: 'https://b.example/', title: 'B' })
+
+    // Short explicit timeout: a caller holding this promise must never wait
+    // forever just because another change landed before the write fired. If
+    // this regresses, it should fail fast here rather than hang the suite.
+    await expect(flushed).resolves.toBeUndefined()
+
+    const onDisk = parseBookmarksFile(await readFile(filePath, 'utf8'))
+    expect(onDisk).toEqual([
+      { url: 'https://a.example/', title: 'A' },
+      { url: 'https://b.example/', title: 'B' }
+    ])
+  }, 1000)
+
+  it('does not resolve until a change made while the write is already in flight is also on disk', async () => {
+    const store = new BookmarkStore(filePath)
+    store.add({ url: 'https://a.example/', title: 'A' })
+
+    let releaseFirstWrite: () => void = () => {}
+    fsGate.release = new Promise((resolve) => { releaseFirstWrite = resolve })
+
+    // Wait for the debounced write to actually start -- it is now blocked
+    // on the gate above, i.e. genuinely in flight, not merely scheduled.
+    await vi.waitFor(() => {
+      expect(fsGate.writeFileCallCount).toBe(1)
+    }, 1000)
+
+    const flushed = store.flushPendingWrite()
+    store.add({ url: 'https://b.example/', title: 'B' })
+    releaseFirstWrite()
+
+    await flushed
+
+    const onDisk = parseBookmarksFile(await readFile(filePath, 'utf8'))
+    expect(onDisk).toEqual([
+      { url: 'https://a.example/', title: 'A' },
+      { url: 'https://b.example/', title: 'B' }
+    ])
+  }, 2000)
+
+  it('resolves immediately, without throwing, when nothing has ever been scheduled', async () => {
+    const store = new BookmarkStore(filePath)
+    await expect(store.flushPendingWrite()).resolves.toBeUndefined()
+  })
+
+  it('resolves immediately once a previous write has fully settled, and still tracks the next one', async () => {
+    const store = new BookmarkStore(filePath)
+    store.add({ url: 'https://a.example/', title: 'A' })
+    await store.flushPendingWrite()
+    await expect(store.flushPendingWrite()).resolves.toBeUndefined()
+
+    store.add({ url: 'https://b.example/', title: 'B' })
+    await store.flushPendingWrite()
+
+    const onDisk = parseBookmarksFile(await readFile(filePath, 'utf8'))
+    expect(onDisk).toEqual([
+      { url: 'https://a.example/', title: 'A' },
+      { url: 'https://b.example/', title: 'B' }
+    ])
+  }, 1000)
 
   it('notifies onChange listeners on add and remove', () => {
     const store = new BookmarkStore(filePath)
