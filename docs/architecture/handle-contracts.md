@@ -1,11 +1,29 @@
 # Handle contracts — v0 specification
 
-> **Status: IMPLEMENTED.** Corrected 2026-09-03, superseding the "DRAFT, needs owner review
-> before any code is written" status this line used to carry. Verified against
-> `src/broker/handles.ts`, `handle-store.ts` and `handle-contracts.ts` (built 2026-08-26
-> through 2026-09-02): the closed error enum, close/half-close semantics, the credit-window
-> backpressure design and the revocation cascade this document specifies all exist in code, and
-> `open-questions.md` A10 already recorded the specification itself as resolved on 2026-08-26.
+> **Status: partially implemented, corrected 2026-09-03.** This replaces a blanket
+> "IMPLEMENTED" set 2026-09-01 (PR #46), which was checked section by section for this
+> correction and found true for `TcpSocket` and the kind-agnostic mechanics underneath every
+> handle type, but false for the other four handle types this document specifies. The
+> per-section markers below say which is which; this paragraph gives the shape.
+>
+> **Genuinely built and tested**, against `src/broker/handles.ts`, `handle-store.ts`,
+> `handle-contracts.ts` and `errors.ts`: the §Common shape ownership check, the 11-code closed
+> error enum in §Errors (every code verified to match exactly), the kind-agnostic §Revocation
+> cascade (tombstoning, graceful session teardown, the `fs.userSelected` exception), and
+> §TcpSocket in full, including its close/half-close wire table (`src/broker/node-adapters.ts`'s
+> `destroySocket`) — exercised by `handles.test.ts`, `handles-limits.test.ts` and
+> `node-adapters.test.ts`.
+>
+> **Specified here but not implemented anywhere in the tree**, each an omission of sequencing
+> rather than of attention — `build-plan.md`'s own build-step order has not reached them yet,
+> not a change of mind about the spec below: `TcpServer` (no accept/listen), `UdpSocket` (no
+> UDP/dgram at all), and `IdentityHandle` (no `publicKey()`/`signEvent()`, no `orivon.id.*`
+> control method wired — see §IdentityHandle for the P-256 key-derivation code that does exist)
+> exist only as the contract types in `src/contracts/handles.ts`. `FileHandle` is further along only
+> in that `src/broker/index.ts` exposes flat, whole-file `fs.readFile`/`writeFile` (checked
+> against path confinement and the per-origin quota) — the positional `read`/`write`, `stat`,
+> `truncate`, `sync` and `userSelected` shape below does not exist yet. See each section's own
+> marker.
 >
 > This document defines the five handle types named but not specified in
 > `capability-api.md` §v0 surface: `TcpSocket`, `TcpServer`, `UdpSocket`, `FileHandle`,
@@ -18,6 +36,10 @@
 > streams are the durable interface. Node shapes are presented by `orivon-node-shim` on top,
 > not by this layer.** `orivonApiVersion: 0` still applies — breaking changes are permitted
 > here while it is 0.
+>
+> Every `file:line` and function-name claim above was hand-verified against the tree on
+> 2026-09-03; nothing keeps it in sync automatically, so it can go stale silently the next time
+> the code it describes changes — re-check before trusting it.
 
 ## §Common shape
 
@@ -109,6 +131,13 @@ own reasoning says should stay uninformative.
 
 ## §TcpSocket
 
+> **Implemented in the broker and Electron's main-process IPC layer** — `src/broker/index.ts`'s
+> `net.connect`, `src/broker/ipc.ts`'s control-channel dispatch and real `MessageChannelMain`
+> port, `src/broker/port-pump.ts`'s read-side credit pump. TCP only. **Not yet reachable from a
+> page**: `net.connect` is absent from `window.orivon` — `src/preload/orivon-surface.ts`'s own
+> header explains why (no way to hand back a socket that could not be closed) — until the
+> write-side of the byte pump lands.
+
 ```ts
 interface TcpSocket extends Handle {
   readonly readable: ReadableStream<Uint8Array>
@@ -154,6 +183,12 @@ choke/interested handshake and keeps reading long after it has stopped writing n
 
 ### Backpressure — a credit window
 
+> **Split status.** The broker-side half below — stop reading the OS socket at credit zero — is
+> real and tested (`src/broker/port-pump.ts`). The renderer-side coalescing half is not: the
+> constant it would use, `CREDIT_COALESCE_BYTES` (`src/contracts/ipc.ts:103`), is defined once and
+> re-exported once (`src/contracts/index.ts:66`) — but no file anywhere in `src/` or `test/`
+> actually reads or consumes it today. See `open-questions.md` A48.
+
 This answers `capability-api.md` §Throughput's open note: *"`MessagePortMain` has no
 documented backpressure, so the shim must implement its own flow control."*
 
@@ -178,6 +213,12 @@ documented backpressure, so the shim must implement its own flow control."*
   cost `capability-api.md` §Throughput moved off the main channel in the first place.
 
 ## §TcpServer
+
+> **Not implemented.** No accept/listen and no `connections` stream anywhere in `src/broker/` —
+> `TcpServer` exists only as the contract type in `src/contracts/handles.ts`. Its build step has
+> not been reached; the handle-table mechanics below (`HandleKind: 'tcpServer'` in
+> `src/broker/handle-contracts.ts`) already account for it, ahead of the actual socket-accept
+> code.
 
 ```ts
 interface TcpServer extends Handle {
@@ -205,6 +246,9 @@ interface TcpServer extends Handle {
   the same synchronous-property rule as `TcpSocket`.
 
 ## §UdpSocket
+
+> **Not implemented.** No UDP/dgram code exists anywhere in `src/` — `UdpSocket` exists only as
+> the contract type. Its build step has not been reached.
 
 ```ts
 interface Datagram {
@@ -242,6 +286,14 @@ interface UdpSocket extends Handle {
   contract), matching the recorded v0 limitation that local peer discovery is unavailable.
 
 ## §FileHandle
+
+> **Partially implemented.** `src/broker/index.ts` exposes flat, whole-file
+> `fs.readFile`/`writeFile` — checked against path confinement and the running per-origin quota
+> — but not the `FileHandle` object below: no positional `read`/`write`, no `stat`, `truncate`
+> or `sync`, no `readable()`/`writable()` stream factories, and no `orivon.fs.userSelected`. The
+> kind-agnostic handle-table accounting for a `file`-kind handle (§Limits, the `userSelected`
+> revocation exception) is built and tested even though nothing yet acquires a handle through
+> this shape.
 
 ```ts
 interface FileStat {
@@ -289,6 +341,19 @@ interface FileHandle extends Handle {
   otherwise silently and incorrectly include it.
 
 ## §IdentityHandle
+
+> **No `IdentityHandle` is ever constructed, and no `orivon.id.*` method is callable** —
+> `src/broker/ipc.ts`'s control dispatch has no `'id.'` case, so `publicKey()`/`signEvent()` exist
+> only as the contract type. The P-256 half of the key math those methods would need is real and
+> tested (`src/broker/policy/derive.ts`'s `derivePrivateScalar`, `derive-p256.ts`'s
+> `derivePublicKey`, exercised by `derive.test.ts`'s frozen golden vectors), but nothing calls it
+> from a control method, and secp256k1 — Nostr's curve — has no point derivation or signing code
+> at all: `derivePublicKey` throws `'internal'` for any curve but `'P-256'`. `src/nostr/kind-
+> screening.ts`'s silent/prompt table is a real, tested policy module built one layer up, in
+> anticipation of this handle, but its own header calls it explicitly "NOT THE ENFORCEMENT
+> BOUNDARY" — a UI hint only — and `src/nostr/nip07.ts`'s own header records it was built and
+> tested against a stubbed signer, not a running broker. All three wait on this section's build
+> step.
 
 ```ts
 interface IdentityHandle extends Handle {
