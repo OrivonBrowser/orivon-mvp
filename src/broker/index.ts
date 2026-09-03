@@ -163,6 +163,13 @@ export interface Broker {
    */
   registerApp(origin: string, manifest: Manifest): Promise<void>
   /**
+   * T19's version floor: the highest version `registerApp` has ever recorded
+   * for this origin, `'0.0.0'` for one never registered. The app loader's
+   * seam, same category as `registerApp`/`grant`/`revoke` -- no `orivon.*`
+   * counterpart, an app can never read its own floor.
+   */
+  versionFloorFor(origin: string): Promise<string>
+  /**
    * Records a capability the user actually granted. The broker never grants
    * on its own initiative; this is the permission-prompt UI's seam, never an
    * app's. Replaces any earlier grant of the same capability kind, under a
@@ -460,6 +467,10 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     ledger.registerApp(canonical(origin), appManifest)
   }
 
+  async function versionFloorFor (origin: string): Promise<string> {
+    return ledger.versionFloorFor(canonical(origin))
+  }
+
   async function grant (origin: string, capability: CapabilityKind, patterns: readonly Pattern[]): Promise<Grant> {
     const key = canonical(origin)
     const { record, replaced } = ledger.grant(key, capability, patterns, deps.now())
@@ -491,6 +502,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     net: { connect },
     fs: { readFile, writeFile },
     registerApp,
+    versionFloorFor,
     grant,
     revoke
   }
