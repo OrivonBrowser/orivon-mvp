@@ -1055,6 +1055,83 @@ pick their own answer.
 **Needed by:** before the next stream needs to read `ctx.broker` — plausibly `src/shim/` or
 `src/trust/`, whichever build step reaches a real grant path first. Not blocking this PR.
 
+### A48 — the credit-window backpressure design is half-built; the constant for the other half is dead code **[STILL OPEN]**
+
+Found 2026-09-03, correcting `handle-contracts.md`'s status header (`docs-18-handle-contracts-
+scope`).
+
+Confirmed, not assumed: `grep -rn "CREDIT_COALESCE_BYTES" --include="*.ts"` across `src/` and
+`test/` finds exactly two hits — the constant's own definition (`src/contracts/ipc.ts:103`) and
+its re-export (`src/contracts/index.ts:66`). A re-export statement is technically an import of the
+binding, so "never imported" overstates it; the precise claim is: defined once and re-exported
+once, and no file anywhere in `src/` or `test/` actually reads or consumes the value.
+
+`handle-contracts.md`'s "Backpressure — a credit window" section specifies two halves: the broker
+stops reading the underlying OS socket once outstanding credit reaches zero, and the renderer
+coalesces its own credit acknowledgements ("at most one credit message per 64 KiB consumed, or
+once per animation frame") so a fast stream does not emit a broker message per chunk. The first
+half is real and tested — `src/broker/port-pump.ts`'s `pumpLoop` loops `while (!stopped && credit
+> 0)`, exercised by `port-pump.test.ts` and `port-pump-real-socket.test.ts`. The second half does
+not exist anywhere: nothing on the renderer/preload side sends a `CreditMessage` at all yet
+(`net.connect` itself is not wired past the broker/main-process IPC layer — see `capability-
+api.md`'s corrected status header, same PR), so `CREDIT_COALESCE_BYTES` has no caller and is
+exported dead code today.
+
+**Two readings, not resolved here:**
+1. The renderer half is still intended, and simply has not been reached — its own build step
+   (wiring `net.connect` into `window.orivon` and the page-facing byte stream) comes after this
+   one. Under this reading `CREDIT_COALESCE_BYTES` is a forward-declared constant for code that
+   does not exist yet, which is ordinary sequencing, not a defect.
+2. The design changed since this constant was written, and coalescing on the renderer side is no
+   longer how credit acknowledgement will work — in which case the constant is dead code that
+   should be removed and `handle-contracts.md`'s Backpressure section amended to match whatever
+   replaced it.
+
+**Leaning, not a decision:** reading 1 is the more likely one — nothing else in the corpus
+suggests the coalescing design was reconsidered, and `src/broker/index.ts`'s own header lists
+wiring the broker to the shell's IPC layer as still open, which the renderer-side byte path
+depends on. But this is this lane's read, not a verified fact, and the owner may know otherwise.
+
+**Needed by:** whichever build step wires `net.connect` into `window.orivon` and the renderer's
+`ReadableStream` — it needs to know whether to implement the coalescing half or whether
+`CREDIT_COALESCE_BYTES` should be deleted first. Not blocking this PR, which is docs-only.
+
+### A50 — nothing keeps `handle-contracts.md`'s and `capability-api.md`'s file:line claims honest automatically **[STILL OPEN]**
+
+Found 2026-09-03, during an adversarial review of `docs-18-handle-contracts-scope` (this PR)
+against its own claims.
+
+The review caught two defects in this PR's own text: A48 first claimed a grep found "exactly
+three hits" for `CREDIT_COALESCE_BYTES` when the real count is two, and
+`handle-contracts.md`'s backpressure section said the constant was "never imported anywhere,"
+which is literally false — `src/contracts/index.ts:66` re-exports it, and a re-export is an
+import. A second pass over the same PR found the identical pattern in the §IdentityHandle
+section and `capability-api.md`'s status header: both said "no `orivon.id`... anywhere in
+`src/broker/`," overlooking that `src/broker/policy/derive.ts` and `derive-p256.ts` already
+implement and test the P-256 half of the key math those methods would need. Both documents
+were corrected in this PR.
+
+This is the same failure mode PR #46's blanket "IMPLEMENTED" status went stale by, one PR
+earlier: a `file:line` or function-name claim is accurate only for as long as someone remembers
+to re-grep it by hand. Nothing in this repository mechanically ties either document's claims to
+the code they describe — no test, no CI check, no lint rule fails when a cited function is
+renamed, moved, or gains a new caller. Both documents now carry a one-line disclaimer next to
+their status header saying the claims are hand-verified as of a given date and can go stale
+silently, but a disclaimer is not a fix — it only tells the reader to distrust the document
+appropriately, which is not the same as the document staying true.
+
+**Not resolved here, and deliberately not proposed here** — filing this is surfacing the
+pattern, not designing the answer: whether anything should mechanically check these claims (a
+script that greps every cited `file:line`/function name and fails CI if one no longer resolves
+would catch a moved or renamed symbol, though not a claim that was wrong about *behavior* rather
+than existence), whether the review cadence that caught this twice should simply run more often
+so staleness is caught before it compounds, or whether the cost of either is not worth paying for
+two documents this actively maintained. All three are live options; none is a recommendation.
+
+**Needed by:** whoever next revises `handle-contracts.md` or `capability-api.md` substantively —
+worth deciding before a third round of this finds a third instance of the same overstatement.
+Not blocking this PR, which is docs-only.
+
 ---
 
 ## B. Contradictions still to fix
