@@ -441,6 +441,11 @@ export const brokerIpcSubsystem: Subsystem = {
       refillPerSecond: CONTROL_RATE_LIMIT_REFILL_PER_SECOND,
       now: realNow
     })
-    registerBrokerIpc(ipcMain, createBroker(deps), transport, limiter)
+    const broker = createBroker(deps)
+    // Published on ctx so a later subsystem reads this same instance rather
+    // than constructing a second one -- see SubsystemContext.broker's own
+    // doc comment (src/main/registry.ts) for why that matters.
+    ctx.broker = broker
+    registerBrokerIpc(ipcMain, broker, transport, limiter)
   }
 }
