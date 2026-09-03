@@ -48,5 +48,12 @@ jobs:
       - name: No credentials in tracked files
         run: npm run check:secrets
 
+      # Rule 1's restates-the-code test cannot see a file-header essay, and half
+      # the source files had drifted into one. This bounds the comment block a
+      # reader pays for before reaching any code; a file that genuinely needs
+      # more says why in the file. docs/development/code-guidelines.md Rule 1.
+      - name: No source file opens with an essay
+        run: npm run check:comments
+
       - name: Build
         run: npm run build

@@ -1,0 +1,29 @@
+# Files that opened with more comment than the Rule 1 budget allows before the
+# budget existed (docs/development/code-guidelines.md Rule 1, scripts/check-comments.mjs).
+#
+# This list is a RATCHET, not an exemption list. An entry whose file is now
+# within budget fails the check, so the list can only shrink. To leave it,
+# either move the rationale to the directory's README (src/trust/README.md's
+# "Design notes" is the worked example) or, if the block genuinely cannot be
+# shortened, put the reason in the file and delete the line here:
+#
+#   // orivon:comment-budget -- <why this cannot be shortened>
+#
+# Nothing may be ADDED here. New code meets the budget. Tracked as A48.
+# Written 2026-09-03, against these files' state at that date.
+scripts/check-vectors.mjs
+src/broker/handles.ts
+src/broker/index.ts
+src/broker/ipc.ts
+src/broker/origin-hash.ts
+src/broker/policy/address.ts
+src/broker/policy/connect-src.ts
+src/broker/policy/connect.ts
+src/broker/policy/origin.ts
+src/broker/policy/paths.ts
+src/loader/manifest.ts
+src/main/favicon.ts
+src/main/newtab-ipc.ts
+src/telemetry/accounting.ts
+src/telemetry/runner.ts
+src/telemetry/transport.ts

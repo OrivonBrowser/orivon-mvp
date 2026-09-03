@@ -6,7 +6,7 @@ action: warn
 conditions:
   - field: file_path
     operator: regex_match
-    pattern: ^(src|scripts|test)/.*\.(ts|tsx|mjs)$
+    pattern: ^(?:.*/)?(?:src|scripts|test)/.*\.(?:ts|tsx|mjs)$
   - field: content
     operator: regex_match
     pattern: (?i)(//|\*)[^\n]*\b(this (PR|commit|task)|the PR body|sibling commit|nothing had ever|already existed|already fully tested|previously (two|separate))\b

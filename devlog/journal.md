@@ -56,7 +56,24 @@ Mark anything that must not leave the team draft as `(Keep private)`.
   gets no CSP coverage at all once wired in; the owner decided to keep that lock shut rather than
   widen it (A43). Rewrote the reason union so every omission is diagnosable, fixed the budget walk
   to be order-independent, and added a completeness property test. 2083/2083 passing.
+- 2026-09-03: **Rule 1 now has teeth.** The owner pushed back that agents keep writing comment
+  essays; measuring it showed 40 of 84 non-contracts source files at 50%+ comment lines, and the
+  reason is that Rule 1's only test is "does it restate the code" -- which a file-header essay
+  passes. Added a second, destination-based test (a trap belongs in the source, rationale belongs
+  in the directory README), a 25-line budget on the leading comment block enforced in CI, and an
+  escape hatch that costs one written sentence. Calibrated the limit against the files the
+  guidelines already defend as correctly dense -- they open with 14-21 lines; the essays with
+  26-94. Density was tried first and dropped: it cannot separate the two.
+- 2026-09-03: **Two hookify rules had never fired, and nothing said so.** Both anchored
+  `file_path` at `^src/`, and Write/Edit always pass an absolute path -- including the comment
+  rule the owner added on 2026-09-02 for this exact problem. So for a day, the correction was
+  silently absent rather than ignored. Also found hookify has no `not_regex_match` operator and
+  an unknown operator kills the whole rule quietly; nearly shipped one. Filed as A49, with a
+  recommendation to test each rule the way the check:* guards are tested.
 
 ### In my head
+- 2026-09-03: A guard nobody can tell is broken is worse than no guard -- seven hookify rules
+  here and no way to know which ones run. Same worry as the smoke.mjs checks that reported green
+  while doing nothing.
 
 ### Non-repo

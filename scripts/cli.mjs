@@ -1,7 +1,8 @@
-// Two small pieces of scaffolding duplicated across the check:* guard
-// scripts (check-no-native-modules.mjs, check-contracts-pure.mjs, check-no-
-// secrets.mjs) -- docs/development/code-guidelines.md Rule 3.
+// Small pieces of scaffolding duplicated across the check:* guard scripts
+// (check-no-native-modules.mjs, check-contracts-pure.mjs, check-no-secrets.mjs,
+// check-comments.mjs) -- docs/development/code-guidelines.md Rule 3.
 
+import { execFileSync } from 'node:child_process'
 import { relative, sep } from 'node:path'
 
 /**
@@ -24,4 +25,26 @@ export function isInvokedDirectly (moduleUrl) {
  */
 export function relativeToRoot (root, full) {
   return relative(root, full).split(sep).join('/')
+}
+
+/**
+ * Every path git tracks under `root`, forward-slashed and root-relative.
+ *
+ * Tracked files are the right scope for a guard whose subject is what reaches
+ * GitHub or a reviewer: untracked scratch files and gitignored build output
+ * cannot, and scanning them produces false alarms that get the guard switched
+ * off. Returns [] outside a git repository -- nothing is tracked, so there is
+ * nothing to check.
+ */
+export function trackedFiles (root) {
+  try {
+    const out = execFileSync('git', ['ls-files', '-z'], {
+      cwd: root,
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024 * 1024
+    })
+    return out.split('\0').filter(Boolean)
+  } catch {
+    return []
+  }
 }
