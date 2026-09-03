@@ -58,12 +58,24 @@ asar: true
 # it does and does not buy.
 
 npmRebuild: false
-# There is nothing native to rebuild: Rule 8 (CLAUDE.md) and the `check:natives` gate
-# forbid native modules in this tree entirely, enforced independently on every
-# install and every commit. Leaving npmRebuild at its default `true` would spend real
-# build time re-confirming a fact this repo already guarantees a different way, and
-# would be one more place that guarantee could silently drift out of sync if it were
-# ever loosened.
+# SAFETY CONSTRAINT, not a build-time-savings optimisation -- read this before ever
+# flipping it. `electron-builder`'s own installed source
+# (node_modules/app-builder-lib/out/packager.js:454-455) checks exactly this flag: if it
+# is not `false`, packaging calls into `installOrRebuild`, which chains through
+# `@electron/rebuild` into `node-gyp` for real. Both are ordinary (non-"optional")
+# devDependencies of `app-builder-lib`, so they are already installed in this tree on
+# every platform right now, today, whether or not this flag is ever touched --
+# `node_modules/@electron/rebuild` and `node_modules/node-gyp` both exist already.
+# `npmRebuild: false` is the ONLY thing stopping that dormant `node-gyp` from actually
+# running at packaging time. On a machine with no C/C++ toolchain -- exactly the
+# Windows/macOS run-from-source path Rule 8 (CLAUDE.md) exists to protect -- a real
+# `node-gyp` invocation fails outright.
+#
+# `npm run check:natives` CANNOT see a regression here: its scope is install-time
+# scripts (Rule 8's literal wording), not electron-builder's packaging-time behaviour.
+# A future contributor deleting or flipping this line to add Windows/macOS packaging
+# will not get an error from any automated check -- see docs/open-questions.md A49 for
+# the open question this leaves about what Rule 8 is actually meant to guarantee.
 #
 # CORRECTED running a real build for the first time (2026-09-03, packaging-01-build-
 # verify): this key was previously nested under a `nativeModules:` object, on the

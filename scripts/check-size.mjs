@@ -35,6 +35,14 @@ const DECLARATION_FILE = /\.d\.ts$/
 /**
  * Directories never walked, and why:
  *   - install/build output: nothing here is authored, all of it is generated.
+ *     Matches .gitignore's own "Build output" grouping (dist/, out/, build/)
+ *     plus release/ (electron-builder.yml's configured output directory) and
+ *     coverage/ (generated test-coverage reports). `build/` does not exist in
+ *     this repo yet -- per electron-builder.yml's own comment it would hold
+ *     icon source images, not code, once it does -- so listing it here today
+ *     changes nothing about whether the guard passes; it is here so the
+ *     guard's own "generated build output" justification does not quietly
+ *     stop matching .gitignore's the day something creates that directory.
  *   - `spike/`: week-0 spike scaffolding, explicitly absent from
  *     parallel-work.md's ownership map and predates code-guidelines.md by
  *     weeks -- the orivon-electron skill states outright it is throwaway and
@@ -42,7 +50,7 @@ const DECLARATION_FILE = /\.d\.ts$/
  *     changes nothing about whether the guard currently passes: nothing under
  *     spike/ is over either limit today, checked file by file.
  */
-const SKIPPED_DIRECTORIES = new Set(['node_modules', 'out', 'dist', 'release', 'coverage', 'spike'])
+const SKIPPED_DIRECTORIES = new Set(['node_modules', 'out', 'dist', 'build', 'release', 'coverage', 'spike'])
 
 /**
  * @param {string} file Root-relative, forward-slashed path.
@@ -68,14 +76,20 @@ function countLines (text) {
 
 /**
  * @param {string} root Directory to check, typically the repo root.
- * @returns {{ ok: boolean, offenders: Array<{file: string, lines: number, limit: number}> }}
- *   `file` is root-relative and forward-slashed. Sorted by path.
+ * @returns {{ ok: boolean, offenders: Array<{file: string, lines: number, limit: number}>,
+ *   unreadable: Array<{file: string, error: string}> }}
+ *   `file` is root-relative and forward-slashed. Both arrays sorted by path.
+ *   `unreadable` lists files this guard could not open at all (permissions, a
+ *   TOCTOU race) -- their size is unknown, not zero, so they fail the check
+ *   rather than passing it silently. See readSafe below.
  */
 export function checkFileSizes (root) {
   const offenders = []
+  const unreadable = []
   walk(root, root)
   offenders.sort((a, b) => a.file.localeCompare(b.file))
-  return { ok: offenders.length === 0, offenders }
+  unreadable.sort((a, b) => a.file.localeCompare(b.file))
+  return { ok: offenders.length === 0 && unreadable.length === 0, offenders, unreadable }
 
   function walk (dir) {
     let entries
@@ -103,34 +117,65 @@ export function checkFileSizes (root) {
       if (DECLARATION_FILE.test(entry.name) || !SOURCE_EXTENSION.test(entry.name)) continue
 
       const file = relativeToRoot(root, full)
-      const lines = countLines(readSafe(full))
+      const read = readSafe(full)
+      if ('error' in read) {
+        unreadable.push({ file, error: read.error })
+        continue
+      }
+
+      const lines = countLines(read.text)
       const limit = isTestFile(file) ? TEST_LIMIT : SOURCE_LIMIT
       if (lines > limit) offenders.push({ file, lines, limit })
     }
   }
 }
 
+/**
+ * Reads `path` as UTF-8, or reports why it could not -- never silently. A
+ * file this guard cannot read (permissions, a TOCTOU race between the
+ * `readdirSync` above and this call) has an unknown line count, not zero, so
+ * treating a read failure the same as an empty compliant file would make the
+ * one guard whose entire purpose is "a wrong guard is worse than none" the
+ * thing that is wrong. Directly unlike the unreadable-directory case in
+ * `walk` above: a whole directory this guard cannot list is genuinely no
+ * files to check, but a *file* that exists and resists reading is a real
+ * unknown, reported by checkFileSizes's `unreadable` list rather than
+ * swallowed here.
+ * @returns {{ text: string } | { error: string }}
+ */
 function readSafe (path) {
   try {
-    return readFileSync(path, 'utf8')
-  } catch {
-    return ''
+    return { text: readFileSync(path, 'utf8') }
+  } catch (err) {
+    return { error: err.code ?? String(err) }
   }
 }
 
 if (isInvokedDirectly(import.meta.url)) {
-  const { ok, offenders } = checkFileSizes(process.cwd())
+  const { ok, offenders, unreadable } = checkFileSizes(process.cwd())
 
   if (!ok) {
-    console.error('\nFiles over the Rule 2 line limit (docs/development/code-guidelines.md):\n')
-    for (const { file, lines, limit } of offenders) {
-      console.error(`  ${file}  (${lines} lines, limit ${limit})`)
+    if (offenders.length > 0) {
+      console.error('\nFiles over the Rule 2 line limit (docs/development/code-guidelines.md):\n')
+      for (const { file, lines, limit } of offenders) {
+        console.error(`  ${file}  (${lines} lines, limit ${limit})`)
+      }
+      console.error(
+        '\nSource files split above 500 lines, test files (*.test.ts, test/, scripts/smoke.mjs)' +
+        '\nabove 800. Split by concern, never by line count -- see Rule 2 for the reasoning and' +
+        "\nCLAUDE.md's code-guidelines.md for the worked examples.\n"
+      )
     }
-    console.error(
-      '\nSource files split above 500 lines, test files (*.test.ts, test/, scripts/smoke.mjs)' +
-      '\nabove 800. Split by concern, never by line count -- see Rule 2 for the reasoning and' +
-      "\nCLAUDE.md's code-guidelines.md for the worked examples.\n"
-    )
+
+    if (unreadable.length > 0) {
+      console.error('\nFiles this guard could not read -- their line count is unknown, not 0,' +
+        ' so this is reported as a failure rather than a silent pass:\n')
+      for (const { file, error } of unreadable) {
+        console.error(`  ${file}  (${error})`)
+      }
+      console.error('\nFix the permissions (or re-run, if this was a transient race) and try again.\n')
+    }
+
     process.exit(1)
   }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { checkFileSizes, SOURCE_LIMIT, TEST_LIMIT } from './check-size.mjs'
@@ -13,7 +13,7 @@ const writeLines = (root: string, relPath: string, lines: number): void => {
   writeFileSync(full, 'x\n'.repeat(lines))
 }
 
-const CLEAN = { ok: true, offenders: [] }
+const CLEAN = { ok: true, offenders: [], unreadable: [] }
 
 describe('checkFileSizes', () => {
   describe('the 500-line source limit', () => {
@@ -133,10 +133,11 @@ describe('checkFileSizes', () => {
       expect(checkFileSizes(root)).toEqual(CLEAN)
     })
 
-    it('skips build/output directories (out, dist, release, coverage)', () => {
+    it('skips build/output directories (out, dist, build, release, coverage)', () => {
       const root = fixture()
       writeLines(root, 'out/main/index.js', SOURCE_LIMIT + 1)
       writeLines(root, 'dist/bundle.js', SOURCE_LIMIT + 1)
+      writeLines(root, 'build/icon-gen.js', SOURCE_LIMIT + 1)
       writeLines(root, 'release/linux-unpacked/resources/app.js', SOURCE_LIMIT + 1)
       writeLines(root, 'coverage/lcov-report/big.js', SOURCE_LIMIT + 1)
       expect(checkFileSizes(root)).toEqual(CLEAN)
@@ -163,6 +164,29 @@ describe('checkFileSizes', () => {
       mkdirSync(join(root, 'src', 'cyclic'), { recursive: true })
       symlinkSync(join(root, 'src', 'cyclic'), join(root, 'src', 'cyclic', 'self'), 'dir')
       expect(checkFileSizes(root).ok).toBe(true)
+    })
+  })
+
+  describe('a file this guard cannot read', () => {
+    it('fails the check distinctly from a size violation, instead of silently counting it as 0 lines', () => {
+      const root = fixture()
+      const blocked = join(root, 'blocked.ts')
+      writeFileSync(blocked, 'x\n'.repeat(600))
+      chmodSync(blocked, 0o000)
+      try {
+        const result = checkFileSizes(root)
+        expect(result.ok).toBe(false)
+        // Not a size offender -- its length was never determined.
+        expect(result.offenders).toEqual([])
+        expect(result.unreadable).toEqual([
+          { file: 'blocked.ts', error: expect.any(String) }
+        ])
+      } finally {
+        // Restore permissions before cleanup so the temp dir never leaves a
+        // chmod-000 file behind, even if an assertion above throws.
+        chmodSync(blocked, 0o644)
+        rmSync(root, { recursive: true, force: true })
+      }
     })
   })
 
