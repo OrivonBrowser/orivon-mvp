@@ -27,7 +27,7 @@
 // outside this directory.
 
 import type { Manifest } from '../contracts/index.js'
-import { MAX_BUNDLE_ENTRIES, isValidCanonicalPath } from '../broker/policy/canonical-path.js'
+import { MAX_BUNDLE_ENTRIES, collisionKey, isValidCanonicalPath } from '../broker/policy/canonical-path.js'
 import { ownProperty } from '../broker/policy/own-property.js'
 import { compareVersions } from '../broker/policy/update.js'
 import { readCapabilities } from './manifest-capabilities.js'
@@ -319,15 +319,28 @@ function isAbsoluteUrl (text: string): boolean {
  * itself (one file, one name for it in the manifest), and no two elements
  * may duplicate each other (`seen` tracks what validateOne has already
  * passed, since it runs once per element in array order).
+ *
+ * Compared via `collisionKey` (canonical-path.ts), never the raw string --
+ * the same idiom bundle-hash.ts's `bundleTree()` and pin.ts already use for
+ * this exact class of check (Rule 3), not a third reimplementation of it.
+ * An exact-string comparison would let `["style.css", "STYLE.CSS"]` or a
+ * percent-encoded duplicate of `entry` both validate as distinct, even
+ * though they name the same file under percent-decoding/case/Unicode
+ * folding -- `bundleTree()` independently re-rejects any such collision
+ * before a file is ever written, so this was never live-exploitable, but a
+ * validator whose own doc comment ("no two elements may duplicate each
+ * other") reads as a complete guarantee should actually provide one.
  */
 function readAssets (value: Record<string, unknown>, entry: string): readonly string[] | undefined {
   const seen = new Map<string, number>()
+  const entryKey = collisionKey(entry)
   return optionalStringArray(value, '', 'assets', MAX_ASSETS, (item, index) => {
     validateRelativePath(`assets[${index}]`, item)
-    if (item === entry) reject(`assets[${index}] duplicates entry: ${describeValue(item)}`)
-    const priorIndex = seen.get(item)
+    const key = collisionKey(item)
+    if (key === entryKey) reject(`assets[${index}] duplicates entry: ${describeValue(item)}`)
+    const priorIndex = seen.get(key)
     if (priorIndex !== undefined) reject(`assets[${index}] duplicates assets[${priorIndex}]: ${describeValue(item)}`)
-    seen.set(item, index)
+    seen.set(key, index)
   })
 }
 
