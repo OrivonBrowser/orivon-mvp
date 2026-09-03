@@ -5,14 +5,15 @@
 # avoid buying certificates (docs/planning/build-plan.md "Platform policy"). Signing is
 # not "left off for now" -- for this file it is simply out of scope.
 #
-# UNBUILT. This config has not been run through a real `electron-builder` invocation
-# (see docs/development/packaging.md -- that is deliberate, not an oversight: a real
-# build downloads hundreds of MB of Electron/7z binaries, which this task explicitly
-# does not do). It has been checked by eye against electron-builder's documented schema,
-# current as of a 2026-08-26 doc lookup rather than trained-in knowledge -- see the doc
-# for what that lookup changed versus what an older electron-builder version would have
-# needed (nested `asar`/`nativeModules`, the v27 generated Linux launcher script, and
-# app-update.yml suppression in particular). First real build is a follow-up task.
+# BUILT. A real `electron-builder` invocation was run for the first time 2026-09-03
+# (see docs/development/packaging.md), producing real `deb`/`AppImage` artefacts in
+# `release/` from a real `npm install --save-dev electron-builder` and a real `npm run
+# build`. That run found this file had been checked by eye against the wrong schema
+# generation -- see the CORRECTED note under `npmRebuild` below for what changed and why
+# -- so treat the schema shape here as verified against an installed electron-builder,
+# not merely eyeballed against docs. Not every claim in this file has been independently
+# confirmed against that build's actual output yet; docs/development/packaging.md's
+# "Known gaps" section is the honest list of what is and isn't.
 
 appId: com.orivonstack.orivon
 # Reverse-DNS of orivonstack.com, the project's actual registered domain (already used
@@ -86,9 +87,9 @@ npmRebuild: false
 # dist-tags` -> next: 27.0.0-alpha.8). The installed schema
 # (node_modules/app-builder-lib/scheme.json) rejected the nested form outright
 # ("configuration has an unknown property 'nativeModules'"); `npmRebuild` is a
-# TOP-LEVEL key in 26.x. Flattened here to match what actually validates. The
-# packaging doc's v27 assumption is now stale and needs a docs-stream fix -- filed
-# as a question, not edited here (docs/** is outside this lane's owned paths).
+# TOP-LEVEL key in 26.x. Flattened here to match what actually validates.
+# docs/development/packaging.md's matching v27 assumption is corrected in the same PR
+# that added this note, not left stale.
 
 publish: null
 # Explicitly disabled, not merely unconfigured. electron-builder auto-detects a GitHub
