@@ -34,6 +34,7 @@ function fullManifest (): Record<string, unknown> {
     name: 'Orivon Torrent',
     version: '0.1.0',
     entry: 'index.html',
+    assets: ['style.css', 'app.js'],
     capabilities: {
       net: {
         tcp: { connect: ['*:*'], listen: ['6881-6889'] },
@@ -79,6 +80,7 @@ describe('a fully valid manifest', () => {
       name: 'Orivon Torrent',
       version: '0.1.0',
       entry: 'index.html',
+      assets: ['style.css', 'app.js'],
       capabilities: {
         net: {
           tcp: { connect: ['*:*'], listen: ['6881-6889'] },
@@ -93,6 +95,13 @@ describe('a fully valid manifest', () => {
 
   it('accepts the smallest legal manifest -- capabilities: {}', () => {
     expect(parseManifest(minimal()).ok).toBe(true)
+  })
+
+  it('an app with no assets beyond entry omits the field entirely, not an empty array', () => {
+    const result = parseManifest(minimal())
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.manifest.assets).toBeUndefined()
   })
 
   it('accepts a JSON string, not only an already-parsed value', () => {
@@ -430,6 +439,67 @@ describe('entry', () => {
   it('still rejects an embedded NUL byte after the encode-first fix', () => {
     expect(reason(parseManifest(minimal({ entry: 'index.html' + String.fromCharCode(0) + '.txt' }))))
       .toMatch(/not a safe relative path/)
+  })
+})
+
+// ADR-0011: the app's own declared file list, alongside entry. Reuses
+// entry's own path-safety checks (Rule 3) -- these are not a second grammar.
+describe('assets', () => {
+  it('accepts a list of plain relative filenames', () => {
+    expect(parseManifest(minimal({ assets: ['style.css', 'app.js'] })).ok).toBe(true)
+  })
+
+  it('accepts a nested relative path', () => {
+    expect(parseManifest(minimal({ assets: ['css/style.css'] })).ok).toBe(true)
+  })
+
+  it('omitting the field is fine -- an app can be entry alone', () => {
+    expect(parseManifest(minimal()).ok).toBe(true)
+  })
+
+  it('rejects an empty array -- omit the field instead, same rule every optional list uses', () => {
+    expect(reason(parseManifest(minimal({ assets: [] })))).toMatch(/must not be empty when present/)
+  })
+
+  it('rejects a non-array value', () => {
+    expect(reason(parseManifest(minimal({ assets: 'style.css' })))).toMatch(/assets must be an array/)
+  })
+
+  it('rejects a non-string element', () => {
+    expect(reason(parseManifest(minimal({ assets: [42] })))).toMatch(/assets\[0\] must be a string/)
+  })
+
+  it('rejects path traversal in an asset path, the same way entry rejects it', () => {
+    expect(reason(parseManifest(minimal({ assets: ['../../../etc/passwd'] })))).toMatch(/not a safe relative path/)
+  })
+
+  it('rejects an absolute URL as an asset path', () => {
+    expect(reason(parseManifest(minimal({ assets: ['https://evil.example/x.js'] }))))
+      .toMatch(/must not be an absolute URL/)
+  })
+
+  it('rejects a leading slash', () => {
+    expect(reason(parseManifest(minimal({ assets: ['/app.js'] })))).toMatch(/without a leading slash/)
+  })
+
+  it('rejects an asset path identical to entry -- one file, one name for it', () => {
+    expect(reason(parseManifest(minimal({ entry: 'index.html', assets: ['index.html'] }))))
+      .toMatch(/assets\[0\] duplicates entry/)
+  })
+
+  it('rejects two identical entries within assets', () => {
+    expect(reason(parseManifest(minimal({ assets: ['app.js', 'app.js'] }))))
+      .toMatch(/assets\[1\] duplicates assets\[0\]/)
+  })
+
+  it('rejects more entries than the bundle could ever hold', () => {
+    const tooMany = Array.from({ length: 4096 }, (_, i) => `f${i}.js`)
+    expect(reason(parseManifest(minimal({ assets: tooMany })))).toMatch(/more than the/)
+  })
+
+  it('accepts exactly one below the cap, leaving room for entry itself', () => {
+    const atCap = Array.from({ length: 4095 }, (_, i) => `f${i}.js`)
+    expect(parseManifest(minimal({ assets: atCap })).ok).toBe(true)
   })
 })
 
