@@ -9,11 +9,8 @@ import {
   parseBookmarksFile,
   removeBookmark,
   serializeBookmarksFile,
-  WRITE_DEBOUNCE_MS,
   type Bookmark
 } from './bookmarks.js'
-
-const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
 describe('addBookmark', () => {
   it('appends a new entry', () => {
@@ -141,7 +138,10 @@ describe('BookmarkStore', () => {
     // Nothing written yet -- still inside the debounce window.
     await expect(readFile(filePath, 'utf8')).rejects.toThrow()
 
-    await delay(WRITE_DEBOUNCE_MS + 200)
+    // Waits for the actual write to settle instead of guessing how long the
+    // debounce plus disk I/O will take -- a fixed guess is what made this
+    // test flaky under load (ENOENT reading the file too early).
+    await store.flushPendingWrite()
 
     const onDisk = parseBookmarksFile(await readFile(filePath, 'utf8'))
     expect(onDisk).toEqual([
