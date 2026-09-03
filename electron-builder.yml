@@ -57,14 +57,26 @@ asar: true
 # choice here, not an unexamined default -- see docs/development/packaging.md for what
 # it does and does not buy.
 
-nativeModules:
-  npmRebuild: false
-  # There is nothing native to rebuild: Rule 8 (CLAUDE.md) and the `check:natives` gate
-  # forbid native modules in this tree entirely, enforced independently on every
-  # install and every commit. Leaving npmRebuild at its default `true` would spend real
-  # build time re-confirming a fact this repo already guarantees a different way, and
-  # would be one more place that guarantee could silently drift out of sync if it were
-  # ever loosened.
+npmRebuild: false
+# There is nothing native to rebuild: Rule 8 (CLAUDE.md) and the `check:natives` gate
+# forbid native modules in this tree entirely, enforced independently on every
+# install and every commit. Leaving npmRebuild at its default `true` would spend real
+# build time re-confirming a fact this repo already guarantees a different way, and
+# would be one more place that guarantee could silently drift out of sync if it were
+# ever loosened.
+#
+# CORRECTED running a real build for the first time (2026-09-03, packaging-01-build-
+# verify): this key was previously nested under a `nativeModules:` object, on the
+# assumption (docs/development/packaging.md "Why a live lookup mattered") that
+# electron-builder v27 was the current schema. It is not released: `npm install
+# --save-dev electron-builder` resolves npm's `latest` tag, which is 26.15.3 as of
+# this build -- v27 exists only as alpha prereleases (`npm view electron-builder
+# dist-tags` -> next: 27.0.0-alpha.8). The installed schema
+# (node_modules/app-builder-lib/scheme.json) rejected the nested form outright
+# ("configuration has an unknown property 'nativeModules'"); `npmRebuild` is a
+# TOP-LEVEL key in 26.x. Flattened here to match what actually validates. The
+# packaging doc's v27 assumption is now stale and needs a docs-stream fix -- filed
+# as a question, not edited here (docs/** is outside this lane's owned paths).
 
 publish: null
 # Explicitly disabled, not merely unconfigured. electron-builder auto-detects a GitHub
