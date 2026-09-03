@@ -1,31 +1,8 @@
-// Fetches a manifest and its declared assets, and turns them into a hashed,
-// entry-checked BundleTree. Split out of index.ts (docs/development/
-// code-guidelines.md Rule 2) -- this file owns exactly one concern: turning
-// (fetch, hintedUrl, assetPaths) into a validated bundle. TOFU vs.
-// decideUpdate() branching and persistence are index.ts's job, not this
-// file's.
+// Turns (fetch, hintedUrl, assetPaths) into a hashed, entry-checked
+// BundleTree. TOFU/update branching and persistence are index.ts's job.
 //
-// THE ASSET LIST IS AN EXPLICIT PARAMETER, not discovered from the manifest.
-// `Manifest` (src/contracts/manifest.ts) has no field naming an app's
-// frontend files -- only `entry`, one HTML file -- and nothing in the doc
-// corpus specifies a discovery/crawl mechanism. Filed as
-// docs/open-questions.md A45 rather than guessed. Everything downstream of
-// "here is the asset URL set" is fully real below.
-//
-// THE MANIFEST IS ALWAYS FETCHED FROM EXACTLY `<origin>/.well-known/
-// orivon.json` (capability-api.md SSHow a URL becomes an app), never from a
-// path component of `hintedUrl`. This is not a stylistic choice: bundleTree()
-// rejects any bundle with no leaf at that literal canonical path
-// (canonical-path.ts's MANIFEST_PATH), so a manifest fetched from anywhere
-// else could never produce an accepted bundle regardless. `hintedUrl` is
-// used only to name which ORIGIN is being installed.
-//
-// EVERY CANONICAL PATH IS DERIVED FROM THE ACTUAL FETCH RESPONSE'S RESOLVED
-// URL (`response.url`), never the URL that was requested. Same "trust what
-// happened, not what was asked for" stance origin.ts's originFromSenderFrame
-// takes for T3 -- a redirect must not be able to silently attribute an
-// asset's bytes to a path, or an origin, other than where they actually came
-// from.
+// Why the asset list is a parameter rather than discovered from the manifest,
+// and why the manifest path is fixed: README.md, Design notes.
 
 import type { Manifest } from '../contracts/index.js'
 import { MAX_ASSET_BYTES, MAX_BUNDLE_BYTES, bundleTree } from '../broker/policy/bundle-hash.js'
@@ -380,11 +357,17 @@ export async function fetchBundle (
   const bundleTimer = setTimeout(() => { bundleController.abort() }, BUNDLE_TIMEOUT_MS)
   try {
     let bytesUsed = 0
+    // Always the well-known path, never a path component of hintedUrl:
+    // bundleTree() rejects any bundle with no leaf at MANIFEST_PATH, so a
+    // manifest fetched elsewhere could never produce an accepted bundle.
     const manifestUrl = `${canonicalOrigin}${MANIFEST_PATH}`
     const manifestFetch = await fetchWithBudget(fetchFn, manifestUrl, MAX_MANIFEST_BYTES, MAX_BUNDLE_BYTES, 'manifest', bundleController.signal)
     if ('ok' in manifestFetch) return manifestFetch
     bytesUsed += manifestFetch.content.length
 
+    // response.url, never the requested URL: a redirect must not be able to
+    // attribute an asset's bytes to an origin or path other than where they
+    // actually came from. Every canonical path below is derived the same way.
     const manifestOrigin = originFromUrl(manifestFetch.response.url)
     if (manifestOrigin !== canonicalOrigin) {
       return rejected(`manifest was served from a different origin (${manifestOrigin ?? 'invalid'}) than requested (${canonicalOrigin})`)
