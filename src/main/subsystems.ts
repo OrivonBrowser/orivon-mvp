@@ -12,6 +12,7 @@
 // Which stream owns which entry: docs/development/parallel-work.md.
 import type { Subsystem } from './registry.js'
 import { brokerIpcSubsystem } from '../broker/ipc.js'
+import { telemetrySubsystem } from '../telemetry/runner.js'
 
 export const subsystems: Subsystem[] = [
   brokerIpcSubsystem, // build step 2: broker -> src/broker/
@@ -19,5 +20,5 @@ export const subsystems: Subsystem[] = [
   // build step 4: loader    -> src/loader/
   // build step 6: trust     -> src/trust/
   // build step 7: nostr     -> src/nostr/
-  // build step 8: telemetry -> src/telemetry/
+  telemetrySubsystem // build step 8: telemetry -> src/telemetry/
 ]
