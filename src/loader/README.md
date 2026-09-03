@@ -20,3 +20,15 @@ user action ("Open as app"). The well-known path is fetched **only after** one o
 "no prompt appeared", which no manual checklist catches, and the capability at stake is
 `tcp.connect *:*`. Re-consent triggers on a **subset check over the granted pattern set**, not
 on capability kinds — see [`capability-api.md`](../../docs/architecture/capability-api.md) A9 §2.
+
+## Design notes
+
+Why the code here has the shape it has. This is the destination
+[`code-guidelines.md`](../../docs/development/code-guidelines.md) Rule 1 names for rationale: a
+source comment protects a specific line from a specific mistake; the case for a file's overall
+shape belongs here instead.
+
+**Why [`fetch-bundle.ts`](fetch-bundle.ts) is its own file, not part of `index.ts`.** Split out
+per [`code-guidelines.md`](../../docs/development/code-guidelines.md) Rule 2 — it owns exactly
+one concern: turning `(fetch, hintedUrl, assetPaths)` into a validated bundle. TOFU versus
+`decideUpdate()` branching, and persistence, are `index.ts`'s job, not this file's.
