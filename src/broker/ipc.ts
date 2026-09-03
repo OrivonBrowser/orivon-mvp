@@ -62,6 +62,7 @@
 
 import { ipcMain, MessageChannelMain } from 'electron'
 import { CONTROL_CHANNEL, PORT_CHANNEL } from '../main/channels.js'
+import { publishBroker } from '../main/registry.js'
 import type { Subsystem, SubsystemContext } from '../main/registry.js'
 import { createBroker } from './index.js'
 import type { Broker, CreateBrokerOptions } from './index.js'
@@ -442,10 +443,11 @@ export const brokerIpcSubsystem: Subsystem = {
       now: realNow
     })
     const broker = createBroker(deps)
-    // Published on ctx so a later subsystem reads this same instance rather
-    // than constructing a second one -- see SubsystemContext.broker's own
-    // doc comment (src/main/registry.ts) for why that matters.
-    ctx.broker = broker
+    // publishBroker (src/main/registry.ts) is the one sanctioned way to set
+    // ctx.broker -- it throws instead of silently overwriting if this ever
+    // runs twice, so a later subsystem is guaranteed to read this same
+    // instance rather than a second, disagreeing one.
+    publishBroker(ctx, broker)
     registerBrokerIpc(ipcMain, broker, transport, limiter)
   }
 }

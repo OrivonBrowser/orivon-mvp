@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
-import { runAfterReady, runBeforeReady, type Subsystem, type SubsystemContext } from './registry.js'
+import { publishBroker, runAfterReady, runBeforeReady, type Subsystem, type SubsystemContext } from './registry.js'
 import type { Broker } from '../broker/index.js'
 
-// The registry never touches Electron OR the broker at runtime --
 // SubsystemContext's App and Broker fields are both type-only imports,
-// erased by verbatimModuleSyntax -- so plain objects stand in for both here.
-// That erasure is the whole reason this is unit testable.
+// erased by verbatimModuleSyntax, so plain objects stand in for both below.
+// What this file actually proves: ctx survives being written by an earlier
+// subsystem and read by a later one in the same run.
 const ctx = { app: {} } as unknown as SubsystemContext
 const fakeBroker = { marker: 'the-one-broker' } as unknown as Broker
 
@@ -122,5 +122,32 @@ describe('runAfterReady', () => {
       { name: 'later', afterReady: (c) => { seenByLater.push(c.broker) } }
     ], withBroker)
     expect(seenByLater).toEqual([fakeBroker])
+  })
+})
+
+describe('publishBroker', () => {
+  it('sets ctx.broker so a later reader sees it', () => {
+    const fresh: SubsystemContext = { app: ctx.app }
+    publishBroker(fresh, fakeBroker)
+    expect(fresh.broker).toBe(fakeBroker)
+  })
+
+  // The failure this guards against is silent, not loud: a second subsystem
+  // assigning c.broker directly would type-check and would just overwrite
+  // the first broker, reproducing the two-disagreeing-grant-ledgers problem
+  // SubsystemContext.broker's own doc comment exists to prevent. Routing the
+  // write through here turns that into an immediate throw instead.
+  it('throws if a broker was already published, naming the hazard', () => {
+    const fresh: SubsystemContext = { app: ctx.app }
+    publishBroker(fresh, fakeBroker)
+    const second = { marker: 'a-second-broker' } as unknown as Broker
+    expect(() => publishBroker(fresh, second)).toThrow(/grant ledger/)
+    // The first publish is not clobbered by the failed second attempt.
+    expect(fresh.broker).toBe(fakeBroker)
+  })
+
+  it('leaves ctx.broker undefined when nothing ever publishes', () => {
+    const fresh: SubsystemContext = { app: ctx.app }
+    expect(fresh.broker).toBeUndefined()
   })
 })
