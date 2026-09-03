@@ -1009,6 +1009,46 @@ in `src/nostr/` can sign a real event until this exists. Not blocking this PR: t
 surface is built and tested against an injected stub per the owner's explicit decision (brief's
 Scope, item 6).
 
+### A49 — `node-gyp` is now a permanent, always-installed member of the dev tree, dormant behind one unenforced line **[STILL OPEN]**
+
+Found 2026-09-03, reviewing `packaging-01-build-verify` (PR #47), after the owner had already
+approved the `electron-builder` devDependency itself. **This entry is about the durable policy
+question that approval leaves open, not about reversing it** — the dependency stays either way.
+
+Verified directly against the installed tree, not assumed: `app-builder-lib` (electron-builder's
+implementation package) depends on `@electron/rebuild@4.2.0`, which depends on
+`node-gyp@12.4.0`. Both are listed as ordinary dependencies of `app-builder-lib` — not
+`optionalDependencies` — so both install unconditionally on every platform, every time
+`electron-builder` is a devDependency of this repo, which it now is
+(`node_modules/@electron/rebuild`, `node_modules/node-gyp` both present). `electron-builder.yml`'s
+`npmRebuild: false` is the only thing standing between that installed `node-gyp` and it actually
+running: `node_modules/app-builder-lib/out/packager.js:454-455` checks exactly this flag before
+deciding whether to call into a real rebuild.
+
+**`npm run check:natives` structurally cannot see this.** Its scope, by Rule 8's own literal
+wording, is install-time scripts — whether anything runs a compiler when `npm install` runs. It
+says nothing about, and cannot say anything about, what a later `electron-builder` invocation
+does. The gate that currently passes and the gap that currently exists are simply about two
+different moments; the automated check was never going to catch this one.
+
+**The open question for the owner:** does Rule 8 ("pure-JS dependencies only... native modules
+break run-from-source on Windows and macOS") mean *nothing compiles at `npm install`* — true
+today, and all `check:natives` verifies — or the stronger *no native build tooling exists
+anywhere in the tree*, which is now false? Both readings were indistinguishable before this PR,
+because nothing in the tree depended on `node-gyp` at all. They diverge starting now.
+
+**AI leaning, not a decision:** if the owner wants the stronger property enforced, a guard would
+need to check something `check:natives` does not today — e.g. that no installed package's own
+`package.json` lists `node-gyp` (or another native-build tool) as a non-optional dependency
+anywhere in the resolved tree, run at `postinstall` alongside `check:natives` rather than folded
+into it (a different question: install-time toolchain presence, not packaging-time
+configuration). This is a leaning sketched for whoever the owner assigns it to, not a design
+committed to — building it now would be scope creep into a PR already carrying two unrelated
+fixes (docs/development/pr-blueprint.md's anti-pattern list).
+
+**Needed by:** before Windows/macOS packaging is scoped as a real build step — this PR's own
+`electron-builder.yml` is explicitly Linux-only. Not blocking `packaging-01-build-verify`.
+
 ---
 
 ## B. Contradictions still to fix
