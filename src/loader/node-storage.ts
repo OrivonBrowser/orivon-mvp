@@ -61,12 +61,30 @@ function resolveAssetPath (root: string, canonicalPath: string): string {
 export function nodeLoaderStorage (userDataPath: string): LoaderStorage {
   return {
     readPin: async (origin) => {
+      let text: string
       try {
-        return JSON.parse(await readFile(pinPath(userDataPath, origin), 'utf8')) as unknown
+        text = await readFile(pinPath(userDataPath, origin), 'utf8')
+      } catch (error) {
+        // ENOENT alone means "never pinned" -- LoaderStorage.readPin's own
+        // doc contract, and the only case index.ts's load() may treat as
+        // fresh TOFU. Any OTHER read failure (permissions, a directory where
+        // a file was expected, a mid-write crash leaving a 0-byte file some
+        // filesystems still let open() succeed on) must NOT collapse into
+        // that same undefined -- this origin WAS pinned before, so `{}` is
+        // returned instead: not a valid PinRecord shape (parsePinRecord
+        // rejects it for lacking `schema`), so it is forced through
+        // parsePinRecord's null path and index.ts's own pinnedHash = ''
+        // fallback rather than skipping that check entirely.
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+        return {}
+      }
+      try {
+        return JSON.parse(text) as unknown
       } catch {
-        // Missing file or corrupt JSON both read as "never pinned" -- see
-        // LoaderStorage.readPin's own doc on why this never throws.
-        return undefined
+        // Corrupt/truncated JSON: same reasoning as the non-ENOENT read
+        // failure above -- a file that exists but does not parse is not
+        // "never pinned" either.
+        return {}
       }
     },
     writePin: async (origin: string, record: PinRecord) => {
