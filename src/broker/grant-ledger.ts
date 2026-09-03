@@ -48,7 +48,18 @@ interface OriginRecord {
    * a new dependency to fix.
    */
   fsBytesWritten: number
-  /** T19's version floor: the highest version ever installed. `registerApp` is the only writer. */
+  /**
+   * T19's version floor: the highest version ever installed. `registerApp`
+   * is the only writer.
+   *
+   * IN-MEMORY ONLY, same known gap as `fsBytesWritten` above: `GrantLedger`
+   * is constructed fresh once per process launch, so this floor resets on
+   * every browser restart -- not only on an app's own uninstall. `ADR-0009`
+   * requires the floor to survive an uninstalled/reinstalled app precisely
+   * so a reset cannot happen that way; resetting on every restart is a
+   * strictly bigger gap than the one that ADR anticipated. Filed as A57
+   * (open-questions.md).
+   */
   versionFloor: string
 }
 
