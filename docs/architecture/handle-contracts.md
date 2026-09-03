@@ -1,6 +1,11 @@
 # Handle contracts — v0 specification
 
-> **Status: DRAFT, needs owner review before any code is written.**
+> **Status: IMPLEMENTED.** Corrected 2026-09-03, superseding the "DRAFT, needs owner review
+> before any code is written" status this line used to carry. Verified against
+> `src/broker/handles.ts`, `handle-store.ts` and `handle-contracts.ts` (built 2026-08-26
+> through 2026-09-02): the closed error enum, close/half-close semantics, the credit-window
+> backpressure design and the revocation cascade this document specifies all exist in code, and
+> `open-questions.md` A10 already recorded the specification itself as resolved on 2026-08-26.
 >
 > This document defines the five handle types named but not specified in
 > `capability-api.md` §v0 surface: `TcpSocket`, `TcpServer`, `UdpSocket`, `FileHandle`,
