@@ -20,6 +20,7 @@
 // itself against three deliberately-wrong implementations.
 
 import type { CapabilityKind, Pattern } from '../../contracts/index.js'
+import { canonicalAddress, classifyAddress } from './address.js'
 import { isArray, ownProperty } from './own-property.js'
 
 /**
@@ -361,22 +362,35 @@ function parsePort (text: string): number | null {
   return value <= 65535 ? value : null
 }
 
+/**
+ * True if `granted` already authorises every host `requested` would.
+ *
+ * NO SUFFIX-WILDCARD BRANCH, deliberately. This file used to treat a leading
+ * `*.` as a real suffix wildcard here -- `*.example.com` covering
+ * `api.example.com` -- while `connect-patterns.ts`'s `hostSpecKind` already
+ * treats ANY host containing `*` beyond a bare `*` as authorising NOTHING at
+ * connect time (docs/open-questions.md A27: the two files disagreed about
+ * this). A granted `*.example.com` therefore authorises no host at all, so
+ * any REAL host `requested` names is WIDER than that, not narrower --
+ * treating it as a real suffix match here silently skipped re-consent for an
+ * app moving from an inert pattern to one that actually works. An unchanged
+ * `*.example.com` pattern still reads as covered, via the exact-string check
+ * below; only a pattern that would actually widen falls through to a prompt.
+ */
 function hostCovers (granted: string, requested: string): boolean {
   if (granted === '*') return true
-  if (granted === requested) return true
 
-  // `*.example.com` covers `api.example.com` and also `*.eu.example.com`,
-  // because every host the latter admits is one the former already admits.
-  // It does NOT cover the apex `example.com` (no dot) nor `evilexample.com`
-  // (the leading dot in the suffix is what stops the classic suffix-match
-  // bug), and nothing but `*` covers a bare `*`.
-  if (granted.startsWith('*.')) {
-    const suffix = granted.slice(1)
-    const tail = requested.startsWith('*.') ? requested.slice(1) : requested
-    return tail.length > suffix.length && tail.endsWith(suffix)
+  // Both sides an address literal: compare canonically, so two spellings of
+  // ONE address (`127.0.0.1` / `2130706433`) read as identical authority
+  // rather than a widening needing re-consent for nothing that actually
+  // changed (docs/open-questions.md A20). Never applies across an
+  // address/hostname mismatch -- a hostname is never treated as if it might
+  // secretly be the same as some address literal.
+  if (classifyAddress(granted) !== 'unparseable' && classifyAddress(requested) !== 'unparseable') {
+    return canonicalAddress(granted) === canonicalAddress(requested)
   }
 
-  return false
+  return granted === requested
 }
 
 // --- bundle pin --------------------------------------------------------------
