@@ -7,6 +7,7 @@
 // this split; only the file it lives in.
 
 import type { CapabilityKind, Grant, GrantId, Manifest, Pattern } from '../contracts/index.js'
+import { compareVersions } from './policy/update.js'
 
 /**
  * 128 bits from the platform CSPRNG, as hex -- the same construction
@@ -47,6 +48,19 @@ interface OriginRecord {
    * a new dependency to fix.
    */
   fsBytesWritten: number
+  /**
+   * T19's version floor: the highest version ever installed. `registerApp`
+   * is the only writer.
+   *
+   * IN-MEMORY ONLY, same known gap as `fsBytesWritten` above: `GrantLedger`
+   * is constructed fresh once per process launch, so this floor resets on
+   * every browser restart -- not only on an app's own uninstall. `ADR-0009`
+   * requires the floor to survive an uninstalled/reinstalled app precisely
+   * so a reset cannot happen that way; resetting on every restart is a
+   * strictly bigger gap than the one that ADR anticipated. Filed as A57
+   * (open-questions.md).
+   */
+  versionFloor: string
 }
 
 /**
@@ -71,7 +85,7 @@ export class GrantLedger {
   #record (origin: string): OriginRecord {
     const existing = this.#origins.get(origin)
     if (existing !== undefined) return existing
-    const created: OriginRecord = { manifest: undefined, grants: new Map(), fsBytesWritten: 0 }
+    const created: OriginRecord = { manifest: undefined, grants: new Map(), fsBytesWritten: 0, versionFloor: '0.0.0' }
     this.#origins.set(origin, created)
     return created
   }
@@ -80,13 +94,29 @@ export class GrantLedger {
    * Registers -- or replaces -- an origin's manifest. Existing grants are
    * left untouched: a page reload re-declares the same manifest and must not
    * silently revoke what the user already granted it.
+   *
+   * RAISES THE VERSION FLOOR to `manifest.version`, never lowers it --
+   * `compareVersions` returning anything but 1 (including null, an
+   * unparseable version `parseManifest` should already have refused
+   * upstream) leaves the floor exactly where it was. This is the only writer
+   * of `versionFloor`; T19's replay guard depends on every registration
+   * going through here.
    */
   registerApp (origin: string, manifest: Manifest): void {
-    this.#record(origin).manifest = manifest
+    const record = this.#record(origin)
+    record.manifest = manifest
+    if (compareVersions(manifest.version, record.versionFloor) === 1) {
+      record.versionFloor = manifest.version
+    }
   }
 
   manifestFor (origin: string): Manifest | undefined {
     return this.#origins.get(origin)?.manifest
+  }
+
+  /** T19: the highest version ever installed for this origin. `'0.0.0'` for one never registered. */
+  versionFloorFor (origin: string): string {
+    return this.#origins.get(origin)?.versionFloor ?? '0.0.0'
   }
 
   /** What was ACTUALLY granted. Empty for an origin the ledger has no record of. */
