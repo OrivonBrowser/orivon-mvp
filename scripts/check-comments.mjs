@@ -57,7 +57,7 @@ const DECLARATION_FILE = /\.d\.ts$/
 const EXEMPT_DIRECTORY = /^(src\/contracts|spike)\//
 
 /**
- * "Test file" exactly as code-guidelines.md §Rule 2 and test files defines it.
+ * "Test file" exactly as code-guidelines.md Rule 2 defines it.
  * Duplicated from scripts/check-size.mjs, which is unmerged on another branch
  * as this is written; consolidating the two is tracked as A48.
  */

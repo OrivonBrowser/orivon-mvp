@@ -1,24 +1,29 @@
 # Code guidelines
 
-How code is written here, as opposed to [`parallel-work.md`](parallel-work.md), which is where
-it is written and by whom.
+How code is written here. [`parallel-work.md`](parallel-work.md) covers where it is written and
+by whom.
 
-Three rules, set by the owner on 2026-08-27 after reviewing what build steps 1 and 2 had
-actually produced. They are not style preferences. Each one is here because the codebase was
-already drifting in that direction, and the examples below are drawn from this repository
-rather than invented.
+Three rules:
 
-The audience is deliberately wide: a human contributor arriving cold, and a smaller model that
-has to work here without holding the whole tree in its head. Both are served by the same three
-things — short files, honest comments, and one implementation per idea.
+1. **Comments earn their place** — and rationale goes in the README, not the file header.
+2. **No source file over 500 lines** — 800 for tests.
+3. **One implementation per idea** — search before writing a helper.
 
-> **Provenance**, per [`CLAUDE.md`](../../CLAUDE.md) Rule 2. Rules 1, 2 and 3 and everything
-> under §Applying the rules are the **owner's decision**, taken 2026-08-27. §Open points is what
-> is **still open**. Nothing here is an unconfirmed AI recommendation.
+Written for a human contributor arriving cold and for a smaller model working here without
+holding the whole tree in its head. Both are served by the same three things: short files,
+honest comments, and one implementation per idea.
+
+**Read §Rules 1-3 to write code here. Everything below them is background** — where each rule
+came from and what the codebase's current state is. It is there so a settled argument is not
+reopened, not because you need it to start.
+
+> **Provenance**, per [`CLAUDE.md`](../../CLAUDE.md) Rule 2. The three rules and every exception
+> stated with them are the **owner's decision** — taken 2026-08-27, extended 2026-09-02 and
+> 2026-09-03. §Status is what is still open. Nothing in the rules is an unconfirmed AI
+> recommendation.
 >
 > No ADR was written: none of this is architecture, and the one structural piece — `src/shared/`
-> — is freely reversible while it is small. If it grows into a real dependency hub, that is the
-> point to record an ADR.
+> — is freely reversible while it is small.
 
 ---
 
@@ -26,13 +31,13 @@ things — short files, honest comments, and one implementation per idea.
 
 **Be as short as possible and as complete as necessary, in language a newcomer can follow.**
 
-A comment is allowed to be long when length is genuinely what makes a section understandable.
-It is not allowed to be long by default.
+A comment passes two tests. The first asks whether it says anything; the second asks whether it
+belongs in the source at all.
 
-The test is simple: **a comment explains *why*; the code already says *what*.** If a comment
-restates the line beneath it, delete the comment. If it explains a decision, a trap, or a
-non-obvious consequence, keep it — and keep it in plain words, because the reader may be new to
-the project, new to TypeScript, or a model with a small context window.
+### Test 1 — does it say what the code cannot?
+
+**A comment explains *why*; the code already says *what*.** If it restates the line beneath it,
+delete it.
 
 ```ts
 // Bad — restates the code, costs a line, teaches nothing.
@@ -45,146 +50,218 @@ out.setUint32(0, bytes.length, false)
 out.setUint32(0, bytes.length, false)
 ```
 
-**Where a long comment is right.** [`derive.ts`](../../src/broker/policy/derive.ts) spends
-about fifteen lines explaining that three different strings once derived the same key through
-unpaired surrogates. That is a security property, it was discovered rather than designed, and
-nothing in the code below states it. It stays.
-
-**Where it is wrong.** Narration of ordinary control flow, restating a type that is already
-written, or a block explaining a function whose name already explains it.
-
-**A comment describes the code as it stands, not the change that produced it.** Git history
-holds the change. "A sibling commit", "this PR", "already existed", "not deduplicated because
-this task may not touch that file" — each of these names something a reader cannot resolve once
-the branch is merged, and the second kind ages into an outright lie the moment the constraint
-lifts. Added 2026-09-02, after an audit found eight such comments across three streams: they all
-passed the restates-the-line-below test above, which is why the rule needed this sentence
-([`open-questions.md`](../open-questions.md) A40 for the full finding).
-
-The durable half of such a comment is usually worth keeping — write the *constraint*, not the
-episode. "Consolidating these is a behavioural decision, tracked as A39" survives the merge;
-"a duplicate this PR does not reach into" does not.
-
-### The second test: a trap belongs in the source, rationale belongs in the README
-
-Added 2026-09-03. The restates-the-code test above catches narration, and it was the whole of
-Rule 1 as originally written — which is why it could not see the failure that had already
-happened. **A file-header essay passes it.** Every line of one explains a decision, a trap or a
-non-obvious consequence, exactly as this rule asks. An agent following Rule 1 faithfully still
-writes a 90-line preamble, and by 2026-09-03 half the source files here had one.
-
-So there is a second test, and it is about **destination**, not length:
+### Test 2 — is it a trap, or is it rationale?
 
 > **A comment that stops a maintainer breaking the line in front of them belongs in the source.
 > A comment that explains why the file has the shape it has belongs in the directory's
-> `README.md`, or in an ADR.**
+> `README.md`, under `## Design notes`, or in an ADR.**
 >
-> The question to ask: *would someone editing this line get it wrong without this comment?*
-> Yes — it stays. No — it is rationale, and it goes in the README.
+> Ask: *would someone editing this line get it wrong without this comment?*
+> Yes — it stays. No — it is rationale, and it moves.
 
-Worked example, [`connection-log.ts`](../../src/trust/connection-log.ts), whose header was 29
-lines before this rule and is 7 after:
+Worked example: [`connection-log.ts`](../../src/trust/connection-log.ts), header 29 lines before
+this rule and 7 after. Its rationale now lives in
+[`src/trust/README.md`](../../src/trust/README.md) §Design notes.
 
 | Comment | Verdict |
 |---|---|
 | "Undefined, not zero, when byte accounting was not available — zero is a real observation" | **Stays.** A maintainer would get this wrong. |
 | "Do not drop these to simplify the shape: an app exfiltrating files over many short connections grades at the *best* available grade" | **Stays**, moved next to the fields it protects. A trap, with a name. |
-| "Splitting them into three entry types would force every consumer to merge three arrays back together" | **Moves.** This argues with a reviewer about a design already chosen. |
-| "ADR-0006's amendment found the connection ladder was cheaper to fake than to earn…" (9 lines) | **Moves.** Real, and worth keeping — in [`src/trust/README.md`](../../src/trust/README.md) §Design notes. |
+| "Splitting them into three entry types would force every consumer to merge three arrays back together" | **Moves.** It argues with a reviewer about a design already chosen. |
+| "ADR-0006's amendment found the connection ladder was cheaper to fake than to earn…" (9 lines) | **Moves.** Real, and worth keeping — in the README. |
 
-**`## Design notes` in the directory's `README.md` is where rationale goes**, and
-`src/trust/README.md` is the worked example. Without somewhere legal to put it, the choice is
-between deleting real reasoning and writing the essay anyway — and the essay wins every time.
-That is why the 2026-09-02 correction above did not hold on its own.
+**The tell is arguing with a reviewer in the source**: naming a design you did *not* choose,
+justifying the shape against alternatives, pre-empting an objection. That is PR-body content,
+and it ages badly in a file.
+
+### Describe the code, not the change that produced it
+
+Git history holds the change. A comment that names a branch, a PR or a moment cannot be resolved
+by anyone reading after the merge — and one that names a temporary constraint becomes false the
+moment that constraint lifts.
+
+| Do not write | Write instead |
+|---|---|
+| "a duplicate this PR does not reach into" | "Consolidating these is a behavioural decision, tracked as A39" |
+| "not deduplicated because this task may not touch that file" | "`policy/` may not import `loader/`" — name the boundary, not the task |
+| "a sibling commit added this" | nothing; delete it |
+| "already existed", "nothing had ever wired this up" | nothing; describe what the code does now |
+
+Keep the durable half: write the **constraint**, not the episode.
 
 ### The budget
 
-**A source file may open with at most 25 lines of comment**, enforced by
+**A source file may open with at most 25 lines of comment**, enforced in CI by
 `npm run check:comments` ([`scripts/check-comments.mjs`](../../scripts/check-comments.mjs)).
+Only the *leading* block is measured — comment density is not.
 
-Calibrated rather than picked: the files this document defends as correctly dense open with
-14–21 lines (`derive.ts` 20, `globals.ts` 21, `contracts/manifest.ts` 14); the essays open with
-26–94. **`src/contracts/` and test files are not checked** — the first by the carve-out below,
-the second because Rule 2 already gives tests a higher budget for the same reason.
+**What you can and cannot do:**
 
-Only the *leading* block is measured. Density is not, and was tried first: it does not separate
-the two cases, because `derive.ts` is 67% comment and correct while `connection-log.ts` was 75%
-and an essay. What separates them is **where the comment sits**.
+| You want to | Allowed | How |
+|---|---|---|
+| Explain why one line is the way it is | **Yes** | One or two lines, next to that line |
+| Keep a long trap explanation next to the code it protects | **Yes** | `derive.ts`'s surrogate-pair note is the example |
+| Explain why the *file* has the shape it has | **Not in the source** | `## Design notes` in the directory's `README.md` |
+| Write a long doc comment on an exported declaration in `src/contracts/` | **Yes, always** | Exempt — those comments *are* the product's API documentation |
+| Write a long narrating comment inside a function body | **No, nowhere** | Not exempt anywhere, contracts included. Split the function |
+| Open a file with more than 25 lines of comment | **Only with a written reason** | `// orivon:comment-budget -- <why>` (below) |
+| Reference a PR, branch or commit | **No** | Write the constraint, not the episode |
 
-**Long comments stay possible. They stop being free.** If a block genuinely cannot be
-shortened, say so in the file:
+**Long comments stay possible. They stop being free.** If a block genuinely cannot be shortened,
+say why, in the file:
 
 ```ts
 // orivon:comment-budget -- three strings once derived the same key through
 // unpaired surrogates; the vectors below are what proves that closed.
 ```
 
-The reason is required, not optional — the guard rejects a bare pragma —  and
+The reason is required — the guard rejects a bare pragma — and
 `npm run check:comments -- --exemptions` lists every exemption in the tree with its reason, so
-the set stays small enough to actually review. **Owner's decision, 2026-09-03**, answering
-"we should still allow long comments when they are really necessary and not shortenable for
-very important reasons".
+the set stays small enough to review. **Owner's decision, 2026-09-03**: allow long comments when
+they are genuinely necessary and not shortenable, but never silently.
 
-The 16 files that were already over budget are listed in
-[`scripts/comment-budget-baseline.txt`](../../scripts/comment-budget-baseline.txt), untouched
-because each is owned by a stream with a live branch. That list is a **ratchet**: an entry whose
-file comes back within budget fails the check, so it can only shrink. Clearing it is A48.
-
-### Where the codebase stands
-
-**Cleaned up 2026-08-27**, on `stream/backlog-07-guidelines-cleanup`. An audit found that density
-alone was not the useful signal — the two densest files in the repo
-([`src/contracts/handles.ts`](../../src/contracts/handles.ts) at 75% and
-[`src/broker/policy/derive.ts`](../../src/broker/policy/derive.ts) at 60%) were both correctly
-dense: the first is `src/contracts/`'s own carve-out below, the second is nearly all load-bearing
-security reasoning. Two files were genuinely restating themselves:
-
-| File | Cut | Reason |
-|---|---|---|
-| [`src/telemetry/disclosure.ts`](../../src/telemetry/disclosure.ts) | 200 → 181 lines | The same fact ("undecided excludes itself at the type level") stated three separate times; four purely decorative section-banner rules |
-| [`src/main/update-check.ts`](../../src/main/update-check.ts) | 467 → 441 lines (before the Rule-2 split below) | A 14-line header table-of-contents duplicating the file's own section banners; "no download happens here" stated three times |
-| [`src/telemetry/accounting.ts`](../../src/telemetry/accounting.ts) | 309 → 298 lines | Three separate restatements of "this is pure"; a header overview overlapping three functions' own docs |
-| [`src/broker/policy/derive.ts`](../../src/broker/policy/derive.ts) | 499 → 498 lines | One meta-clause introducing a correction — the correction itself stayed; deleting it would let a future reader re-derive the mistake it exists to prevent |
-
-Left alone, checked rather than skipped: [`src/shim/globals.ts`](../../src/shim/globals.ts) (62%,
-nearly all load-bearing trap documentation), and
-[`src/contracts/manifest.ts`](../../src/contracts/manifest.ts) /
-[`src/contracts/ipc.ts`](../../src/contracts/ipc.ts) (both exempt below, and correctly dense even
-setting the exemption aside).
+**Not checked:** `src/contracts/` (the carve-out above), test files (Rule 2 already gives them a
+higher budget for the same reason), and `spike/` (documented throwaway).
 
 ---
 
 ## Rule 2 — No source file over 500 lines
 
-**A file at 500 lines is at its limit. Split it.** Test files get **800**, for the reason in
-§Rule 2 and test files below.
+**A file at 500 lines is at its limit. Split it.**
 
-Two reasons, and the second is the one that is easy to underrate:
+| | Limit |
+|---|---|
+| Source | **500** |
+| Test files — `*.test.ts`, anything under [`test/`](../../test/), and [`scripts/smoke.mjs`](../../scripts/smoke.mjs) | **800** |
 
-1. A file that long has almost always stopped being one thing. The limit forces the split that
-   the organisation needed anyway.
-2. **A smaller model — Sonnet, or whatever is cheap next year — can hold a 300-line file and
-   reason about it confidently. It cannot do that with 900 lines**, and it will make confident
-   wrong edits instead of asking. Human contributors get the same benefit; they are just
-   politer about the failure.
+Everything else in `scripts/` is source and gets 500
+([`parallel-work.md`](parallel-work.md) §Why `scripts/` is split).
+
+Two reasons, and the second is easy to underrate:
+
+1. A file that long has almost always stopped being one thing. The limit forces the split the
+   organisation needed anyway.
+2. **A smaller model can hold a 300-line file and reason about it confidently. It cannot do that
+   with 900 lines**, and it will make confident wrong edits instead of asking. Human contributors
+   get the same benefit; they are just politer about the failure.
 
 **Split by concern, never by line count.** `derive-part2.ts` is worse than the 600-line file it
-came from: it has the same coupling plus a new lie in its name. If a file cannot be split along
-a real seam, that is a design signal — raise it rather than cutting arbitrarily.
+came from: same coupling, plus a new lie in its name. If a file cannot be split along a real
+seam, that is a design signal — raise it rather than cutting arbitrarily.
 
 Each new file lands inside the owning stream's paths
 ([`parallel-work.md`](parallel-work.md) §The ownership map), and each directory's `README.md`
 already states what it may import.
 
-### Where the codebase stands
+**Why tests get 800.** Table-driven tests grow with their vector tables, and that growth is
+legitimate — a golden vector is data, not logic, and splitting a vector table across files makes
+it harder to review, not easier. If a test file approaches 800, move the vector table into a
+sibling data module before splitting the tests themselves. That keeps the assertions short and
+makes the vectors reviewable on their own, which
+[`scripts/check-vectors.mjs`](../../scripts/check-vectors.mjs) already wants.
 
-**Nothing is over its limit**, as of two coordinated branches landing 2026-08-27:
-`stream/backlog-06-rule2-violations` (the files that had already broken the rule) and
-`stream/backlog-07-guidelines-cleanup` (the four that were close enough to break it on the next
-ordinary change). Both must merge for the table below to be accurate — check `git log` if you are
-reading this before they have.
+---
 
-**The real violations, found after PRs #8 and #13 landed** (`backlog-06`):
+## Rule 3 — One implementation per idea
+
+**Do not rewrite a function that already exists. Find it and reuse it.**
+
+Before writing a helper, search for it: `grep -rn "function <name>" src/` costs seconds. The
+same applies to near-misses — if the function you want is the one that exists plus one
+parameter, add the parameter.
+
+The failure mode is not someone deciding to duplicate. It is someone — or an agent working
+inside one stream's paths — not knowing the helper exists, writing a second one, and both being
+correct. Nobody notices, because nothing is broken. Then one gets a bug fix and the other does
+not.
+
+**The counterweight, so this rule does not become its own problem.** Two functions that happen
+to look alike today but answer to different requirements are not duplicates, and merging them
+creates a coupling that has to be undone later. [`CLAUDE.md`](../../CLAUDE.md) Rule 7 already
+says not to build abstractions for elegance alone. **Extract when the *reason* is shared, not
+when the shape is.**
+
+### Where a shared helper lives
+
+Most duplicates are fixable inside their own directory — that is the ordinary case, and it needs
+no special home.
+
+**`src/shared/` exists only for helpers needed across a trust boundary**, where Rule 3 otherwise
+has no legal answer: [`src/broker/`](../../src/broker/README.md) must never import `src/shim/`,
+and [`src/shim/`](../../src/shim/README.md) must never import `src/broker/`, so a helper both
+need has nowhere else to go. `src/contracts/` cannot be the answer either —
+`npm run check:contracts` fails the build if anything there references code outside itself, and
+runtime helpers are not contracts.
+
+Two rules travel with it, both borrowed from contracts because the failure mode is the same (one
+change touching every stream at once):
+
+- **It imports nothing from `src/`.** Pure, dependency-free helpers only. If it needs `electron`,
+  a broker type, or anything stream-owned, it does not belong there.
+- **A change to it goes in its own PR and merges first**, never mixed with an implementation
+  ([`CLAUDE.md`](../../CLAUDE.md) §Parallel work).
+
+**It is not a dumping ground.** A helper earns its place by being needed on both sides of a
+boundary. One caller means it stays where it is. See
+[`src/shared/README.md`](../../src/shared/README.md).
+
+---
+
+# Background
+
+**Nothing below is a rule.** It is where the rules came from and what the codebase's current
+state is, kept so a settled argument is not reopened. Skip it unless you are changing a rule or
+wondering why one exists.
+
+## Where each rule came from
+
+**Rule 1, the restatement test (2026-08-27).** An audit found that density alone was not the
+useful signal — the two densest files in the repo
+([`src/contracts/handles.ts`](../../src/contracts/handles.ts) at 75% and
+[`src/broker/policy/derive.ts`](../../src/broker/policy/derive.ts) at 60%) were both correctly
+dense. Two files were genuinely restating themselves, and were cut on
+`stream/backlog-07-guidelines-cleanup`:
+
+| File | Cut | Reason |
+|---|---|---|
+| [`src/telemetry/disclosure.ts`](../../src/telemetry/disclosure.ts) | 200 → 181 lines | The same fact ("undecided excludes itself at the type level") stated three times; four decorative section banners |
+| [`src/main/update-check.ts`](../../src/main/update-check.ts) | 467 → 441 lines | A 14-line header table-of-contents duplicating the file's own banners; "no download happens here" stated three times |
+| [`src/telemetry/accounting.ts`](../../src/telemetry/accounting.ts) | 309 → 298 lines | Three restatements of "this is pure"; a header overview overlapping three functions' own docs |
+| [`src/broker/policy/derive.ts`](../../src/broker/policy/derive.ts) | 499 → 498 lines | One meta-clause introducing a correction — the correction itself stayed |
+
+Left alone, checked rather than skipped: [`src/shim/globals.ts`](../../src/shim/globals.ts)
+(62%, nearly all load-bearing trap documentation) and
+[`src/contracts/manifest.ts`](../../src/contracts/manifest.ts) /
+[`src/contracts/ipc.ts`](../../src/contracts/ipc.ts).
+
+**Rule 1, describe-the-code-not-the-change (2026-09-02).** An audit found eight comments across
+three streams naming a branch, a PR or a temporary constraint. Every one passed the restatement
+test, which is why the rule needed a sentence of its own
+([`open-questions.md`](../open-questions.md) A40).
+
+**Rule 1, the destination test and the budget (2026-09-03).** The owner reported that agents
+kept writing comment essays. Measurement showed **40 of 84 non-contracts source files at or
+above 50% comment lines**, and 18 opening with a block over 25 lines — up to 94, in
+`policy/connect-src.ts`.
+
+The cause was that Rule 1 had only the restatement test, **which a file-header essay passes**:
+every line of one explains a decision, a trap or a non-obvious consequence, exactly as the rule
+asks. An agent following Rule 1 faithfully still wrote a 90-line preamble. Hence the destination
+test, and the budget to hold it.
+
+The 25 is calibrated, not picked. The files this document defends as correctly dense open with
+**14–21** lines (`derive.ts` 20, `globals.ts` 21, `contracts/manifest.ts` 14); the essays open
+with **26–94**. Density was tried first and dropped — it cannot separate the two cases, because
+`derive.ts` is 67% comment and correct while `connection-log.ts` was 75% and an essay. What
+separates them is *where the comment sits*.
+
+A related finding, recorded because it explains why the 2026-09-02 correction did not hold: the
+hookify rule written to enforce it had **never fired**, and neither had `scope-creep`. Both
+anchored `file_path` at `^src/`, and `Write`/`Edit` always pass an absolute path
+([`open-questions.md`](../open-questions.md) A49).
+
+**Rule 2 (2026-08-27).** Two coordinated branches. `stream/backlog-06-rule2-violations` fixed
+what had already broken the rule:
 
 | File | Before | Split into | Largest part after |
 |---|---|---|---|
@@ -193,12 +270,12 @@ reading this before they have.
 | `src/broker/handles.test.ts` | 1212 | `handles.test-helpers.ts`, `handles.test.ts`, `handles-limits.test.ts` | 750 |
 | `src/broker/policy/connect.test.ts` | 1149 | `connect.test-helpers.ts`, `connect.test.ts`, `connect-patterns.test.ts` | 623 |
 
-`handles.ts`'s split required a design decision, not just a mechanical move: the nine methods
-that acted on one origin's state became a real `OriginTable` **class** (`handle-store.ts`) rather
-than free functions taking a table parameter, so the ownership check that used to live in
-`#`-privacy did not quietly disappear. See that commit's message for the reasoning.
+`handles.ts`'s split needed a design decision, not a mechanical move: the nine methods acting on
+one origin's state became a real `OriginTable` **class** (`handle-store.ts`) rather than free
+functions taking a table parameter, so the ownership check that lived in `#`-privacy did not
+quietly disappear.
 
-**The four that were about to break it** (`backlog-07`, this branch):
+`stream/backlog-07-guidelines-cleanup` fixed the four about to break it:
 
 | File | Before | Split into | Largest part after |
 |---|---|---|---|
@@ -209,211 +286,82 @@ than free functions taking a table parameter, so the ownership check that used t
 
 Two splits paid for themselves beyond the line count: `canonical-path.ts` let
 [`pin.ts`](../../src/broker/policy/pin.ts) drop a dependency on the hashing half of
-`bundle-hash.ts` it never used, and `github-release-version.ts`'s extraction is what surfaced
-that its semver grammar had quietly diverged from
-[`policy/update.ts`](../../src/broker/policy/update.ts)'s (see Rule 3 below).
+`bundle-hash.ts` it never used, and `github-release-version.ts`'s extraction surfaced that its
+semver grammar had quietly diverged from
+[`policy/update.ts`](../../src/broker/policy/update.ts)'s.
 
-Two test files ([`bundle-hash.test.ts`](../../src/broker/policy/bundle-hash.test.ts),
-[`address.test.ts`](../../src/broker/policy/address.test.ts)) were also split or had their vector
-tables extracted (to `canonical-path.test.ts` and `address-vectors.ts`) even though neither was
-over the 800-line test limit — Rule 2 and test files below explains why that extraction is worth
-doing before a file is actually at risk, not after. Verifying these splits took more than a
-passing test count: several tests loop over path arrays inside one `it()`, where a dropped row is
-invisible to a count, and the extraction caught two real corrupted-Unicode mistakes in its own
-first pass — see that commit's message.
+Verifying those splits took more than a passing test count: several tests loop over path arrays
+inside one `it()`, where a dropped row is invisible to a count, and the extraction caught two
+real corrupted-Unicode mistakes in its own first pass.
 
-`scripts/smoke.mjs` (688/800) and the vector-table test files this audit originally flagged
-(`paths.test.ts`, `derive.test.ts`) were never violations under the 800-line test limit; the
-original table above listed them for context, not as a worklist.
-
----
-
-## Rule 3 — One implementation per idea
-
-**Do not rewrite a function that already exists. Find it and reuse it.**
-
-The failure mode is not a developer deciding to duplicate. It is a developer — or an agent
-working inside one stream's paths — not knowing the helper already exists, writing a second
-one, and both being correct. Nobody notices, because nothing is broken. Then one gets a bug fix
-and the other does not.
-
-**This had already happened here, twice, in the same pair of files** — found 2026-08-27 and fixed
-on `stream/backlog-07-guidelines-cleanup`:
+**Rule 3 (2026-08-27).** It had already happened twice in the same pair of files:
 
 | Helper | Copy A | Copy B | Now lives in |
 |---|---|---|---|
 | `concat(parts)` | `derive.ts:256` | `bundle-hash.ts:337` | [`bytes.ts`](../../src/broker/policy/bytes.ts) |
-| `encodeField(value)` | `derive.ts:215` | `bundle-hash.ts:324` | [`bytes.ts`](../../src/broker/policy/bytes.ts)'s `frame()`, wrapped by `derive-encoding.ts` |
+| `encodeField(value)` | `derive.ts:215` | `bundle-hash.ts:324` | [`bytes.ts`](../../src/broker/policy/bytes.ts)'s `frame()` |
 
-The `concat` pair was byte-for-byte the same function. The `encodeField` pair implemented the
-same length-prefix framing — a big-endian `uint32` byte count followed by the bytes — differing
-only in that one took a string and validated it first. That framing is a **wire format**: if the
-two copies had drifted, two subsystems would have disagreed about an encoding that hashes and
-keys depend on. Both frozen golden-vector tables (`derive.ts`'s and `bundle-hash.ts`'s) hash
-byte-identically after the consolidation — verified, not assumed.
+The `concat` pair was byte-for-byte identical. The `encodeField` pair implemented the same
+length-prefix framing — a big-endian `uint32` byte count followed by the bytes — differing only
+in that one took a string and validated it first. That framing is a **wire format**: had the
+copies drifted, two subsystems would have disagreed about an encoding that hashes and keys
+depend on. Both frozen golden-vector tables hash byte-identically after the consolidation —
+verified, not assumed.
 
-**Both copies sat in the same directory, owned by the same stream.** There was no boundary in
-the way and nothing to raise with anyone — the first copy was simply never looked for. That is
-the ordinary case this rule is aimed at, and it is why the first line of defence is a `grep`
-rather than a process.
+**Both copies sat in the same directory, owned by the same stream.** No boundary was in the way
+and there was nothing to raise with anyone — the first copy was simply never looked for. That is
+why the first line of defence is a `grep` rather than a process.
 
-**Six more turned up in the same audit, and all six were fixable inside their own directory —
-none needed `src/shared/`:**
+Six more turned up in the same audit, all fixable inside their own directory:
 
 | Helper | Copies | Now lives in |
 |---|---|---|
-| `fail(code, message)` | 4 copies across `derive.ts`, `derive-encoding.ts`, `bundle-hash.ts`, `pin.ts` | [`policy/errors.ts`](../../src/broker/policy/errors.ts) |
+| `fail(code, message)` | 4, across `derive.ts`, `derive-encoding.ts`, `bundle-hash.ts`, `pin.ts` | [`policy/errors.ts`](../../src/broker/policy/errors.ts) |
 | Own-property read + type guard | `pin.ts`'s `ownString`/`ownNumber`/`ownFiniteNumber`, `update.ts`'s `patternsFor` | [`own-property.ts`](../../src/broker/policy/own-property.ts) |
-| Truncate-for-logging (`x.slice(0, 120)`) | 5 inline copies in `pin.ts` | `canonical-path.ts`'s `describePath`, already exported |
-| Windows reserved-device-name table | `paths.ts`, `canonical-path.ts` | [`windows-device-names.ts`](../../src/broker/policy/windows-device-names.ts) (table only — the two wrapper checks apply it with different case rules and stayed separate) |
-| `invokedDirectly` CLI guard + `rel()` | 3 copies across `check-no-native-modules.mjs`, `check-contracts-pure.mjs`, `check-no-secrets.mjs` | [`scripts/cli.mjs`](../../scripts/cli.mjs) |
-| IPC channel strings | `main/ipc.ts`, `main/window.ts`, `preload/shell.ts`, under 3 different constant names | [`main/channels.ts`](../../src/main/channels.ts) |
+| Truncate-for-logging (`x.slice(0, 120)`) | 5 inline copies in `pin.ts` | `canonical-path.ts`'s `describePath` |
+| Windows reserved-device-name table | `paths.ts`, `canonical-path.ts` | [`windows-device-names.ts`](../../src/broker/policy/windows-device-names.ts) (table only) |
+| `invokedDirectly` CLI guard + `rel()` | 3, across the `check-no-*.mjs` guards | [`scripts/cli.mjs`](../../scripts/cli.mjs) |
+| IPC channel strings | `main/ipc.ts`, `main/window.ts`, `preload/shell.ts`, under 3 names | [`main/channels.ts`](../../src/main/channels.ts) |
 
-**Two known duplicates were deliberately left alone**, not missed: a lowercase-hex encoder shared
-between `bundle-hash.ts` and `handles.ts`, and `MAX_HOST_LENGTH`/`MAX_PORT` shared between
-`origin.ts` and `connect.ts`. Both cross into files `backlog-06` (above) restructured wholesale;
-fixing them from this branch would have created a guaranteed structural merge conflict rather than
-a content one. Left for a follow-up once both branches have merged.
-
-Before writing a helper, search for it. `grep -rn "function <name>" src/` costs seconds. The
-same applies to near-misses: if the function you want is the one that exists plus one
-parameter, add the parameter.
-
-**The counterweight, so this rule does not become its own problem.** Two functions that happen
-to look alike today but answer to different requirements are not duplicates, and merging them
-creates a coupling that has to be undone later. [`CLAUDE.md`](../../CLAUDE.md) Rule 7 already
-says not to build abstractions for elegance alone. Extract when the *reason* is shared, not
-when the shape is.
-
----
-
-## Applying the rules
-
-### Rule 1 and `src/contracts/`
-
-**Doc comments on exported declarations in `src/contracts/` are exempt from Rule 1's brevity
-pressure. Inline comments inside function bodies are not — anywhere, contracts included.**
-
-[`src/contracts/handles.ts`](../../src/contracts/handles.ts) is 75% comment lines, and that is
-correct rather than a violation. `src/contracts/` is the durable surface — a shortcut there
-costs every app ever written for Orivon ([`CLAUDE.md`](../../CLAUDE.md) §The load-bearing idea)
-— and its doc comments *are* the API documentation an app developer reads. Thinning them to hit
-a density target would be trading the expensive thing for the cheap one.
-
-The exemption is narrow on purpose. It covers the `/** ... */` block above an exported type or
-function. It does not license narration inside a body.
-
-### Rule 2 and test files
-
-**Test files get 800 lines. Source gets 500.**
-
-Table-driven tests grow with their vector tables, and that growth is legitimate — a golden
-vector is data, not logic, and splitting a vector table across files makes it harder to review,
-not easier. 800 leaves room for that while still bounding the file.
-
-"Test file" here means `*.test.ts`, plus [`test/`](../../test/) and
-[`scripts/smoke.mjs`](../../scripts/smoke.mjs) — the shell's e2e regression check, which is a
-test harness despite living in `scripts/` ([`parallel-work.md`](parallel-work.md) §Why
-`scripts/` is split). Everything else in `scripts/` is source and gets 500.
-
-If a test file does approach 800, move the vector table into a sibling data module before
-splitting the tests themselves. That keeps the assertions short and makes the vectors
-reviewable on their own, which [`scripts/check-vectors.mjs`](../../scripts/check-vectors.mjs)
-already wants.
-
-### Where a shared helper lives
-
-**`src/shared/`, change-controlled the way `src/contracts/` is.**
-
-For helpers needed across a trust boundary — the case where Rule 3 previously had no legal
-answer. See [`src/shared/README.md`](../../src/shared/README.md) for what may go in it, and
-§Open points for the boundary problem that motivated it.
-
-Two rules travel with it, both borrowed from contracts because the failure mode is the same
-(one change touching every stream at once):
-
-- **It imports nothing from `src/`.** Pure, dependency-free helpers only. If it needs
-  `electron`, a broker type, or anything stream-owned, it does not belong there.
-- **A change to it goes in its own PR and merges first**, never mixed with an implementation
-  ([`CLAUDE.md`](../../CLAUDE.md) §Parallel work).
-
-**It is not a dumping ground.** A helper earns its place there by being needed on both sides of
-a boundary. One caller means it stays where it is.
-
----
-
-## Open points
+## Status
 
 Raised under [`CLAUDE.md`](../../CLAUDE.md) Rule 3 rather than smoothed over.
 
-**1. Why `src/shared/` exists — the boundary problem. Answered 2026-08-27.**
+**Enforcement — partly reversed 2026-09-03.** Rule 1's comment budget is now enforced in CI by
+`npm run check:comments`. **Rules 2 and 3 remain unenforced, by owner's decision** ("rules first,
+enforcement later", 2026-08-27).
 
-Not an ownership-map oversight — a consequence of the trust boundaries. The per-directory
-`README.md` files state what each may never import, and two of them point at each other:
-[`src/broker/`](../../src/broker/README.md) must never import `src/shim/`, and
-[`src/shim/`](../../src/shim/README.md) must never import `src/broker/`. Those are real
-(importing the broker would hand renderer-side code main-process authority), so they are not
-going to be relaxed.
+The deferral expired for Rule 1 for the reason it named: the rule was read and followed, and the
+codebase drifted anyway. It also corrects that decision's claim that *"Rule 1 is not mechanically
+checkable by anything, and never will be"* — comment **quality** is not checkable, and that part
+stands; a comment **budget** is, and the guard never judges quality.
 
-The consequence: a helper needed by both has nowhere legal to live. Whichever stream writes it
-second is left with exactly the option Rule 3 forbids.
+Still true, and still the cost of deferring:
 
-`src/contracts/` cannot be the answer either — `npm run check:contracts` deliberately fails the
-build if anything there references code outside itself, and runtime helpers are not contracts.
+- There is no `eslint`, `prettier`, `biome` or `.editorconfig`, and the conventions **had already
+  split once** — 14 function declarations in `derive.ts` written `function name(args)` against 115
+  elsewhere written `function name (args)`. Normalised 2026-08-27, but the mechanism that let it
+  happen is unchanged. A **second** such split is the signal this deferral has expired for style
+  too.
+- Rule 2 is trivially checkable. `scripts/check-size.mjs` exists on
+  `stream/packaging-01-build-verify` and is deliberately **not** wired to CI, pending the same
+  owner call this correction made for Rule 1.
 
-**This does not excuse the duplicates above**, which were same-directory and same-stream. It is
-the case Rule 3 could not answer, not the case that produced today's violations.
+**Open — the comment-budget baseline.** 16 files listed in
+[`scripts/comment-budget-baseline.txt`](../../scripts/comment-budget-baseline.txt) open over
+budget and were not rewritten, because each is owned by a stream with a live branch. The list is
+a **ratchet**: an entry whose file comes back within budget fails the check, so it can only
+shrink ([`open-questions.md`](../open-questions.md) A48).
 
-Resolved by `src/shared/` — see §Where a shared helper lives.
+**Open — two Rule-3 duplicates, deliberately unfixed.** A lowercase-hex encoder
+([`bundle-hash.ts`](../../src/broker/policy/bundle-hash.ts)'s `toLowercaseHex`, inlined again in
+`handles.ts`'s `newHandleId`) and `MAX_HOST_LENGTH`/`MAX_PORT` (duplicated between `origin.ts`
+and `connect.ts`). Both cross into files `backlog-06` restructured wholesale; fixing them from
+`backlog-07` would have guaranteed a structural merge conflict. Both are real violations and
+neither is fixed.
 
-**2. Nothing mechanically enforces any of these rules, and that is deliberate for now.**
-**Partly superseded 2026-09-03 — read the correction first.**
-
-> **Correction, 2026-09-03 (owner's decision).** Rule 1's comment budget is now enforced in CI
-> by `npm run check:comments`. The deferral below expired for the reason it named: the rules
-> were being read and followed, and the codebase drifted anyway — half the source files had
-> grown a header essay, which Rule 1's restates-the-code test cannot see. §The budget above
-> has the mechanism and the escape hatch.
->
-> The claim below that **"Rule 1 is not mechanically checkable by anything, and never will be"
-> was too strong.** Comment *quality* is not checkable and that part stands. A comment *budget*
-> is, and the distinction is the whole design: the guard measures how many lines a reader pays
-> before reaching code, and never tries to judge whether a comment is any good.
->
-> Rules 2 and 3 are unchanged — still unenforced, still deliberate. `scripts/check-size.mjs`
-> exists on `stream/packaging-01-build-verify` and is deliberately not wired to CI, pending the
-> same owner call this correction made for Rule 1.
-
-**Owner's decision, 2026-08-27: rules first, enforcement later.** No linter, no formatter, no
-`check:size`. Revisit after the refactor lands.
-
-Recorded here because the cost is real and should be visible rather than discovered later:
-
-- There is no `eslint`, `prettier`, `biome` or `.editorconfig` in the repository, and the
-  conventions **had already split once**: 14 function declarations in
-  [`derive.ts`](../../src/broker/policy/derive.ts) and `derive.test.ts` were written
-  `function name(args)` against 115 written `function name (args)` everywhere else — one
-  module's worth, the shape of a convention set in a single session that then never spread.
-  Nobody chose it. Normalised 2026-08-27 (whitespace-only, verified with `git diff -w`, before
-  those two files were split further) as part of `backlog-07`, but the mechanism that let it
-  happen — nothing enforces style — is unchanged, and a **second** such split is the signal the
-  deferral below has expired.
-- Rule 2 is trivially checkable, and `scripts/` already holds four guards of this exact kind
-  (`check:natives`, `check:contracts`, `check:secrets`, `check:vectors`), so the pattern and the
-  CI wiring exist. It is a short script whenever it is wanted.
-- Rule 1 is not mechanically checkable by anything, and never will be. It depends on review.
-
-Deferring is defensible while the codebase is small and one person is reading every diff.
-
-**3. Two Rule-3 duplicates were found and deliberately left unfixed. Still open.**
-
-A lowercase-hex encoder ([`bundle-hash.ts`](../../src/broker/policy/bundle-hash.ts)'s
-`toLowercaseHex`, inlined again in `handles.ts`'s `newHandleId`) and the network-limit constants
-`MAX_HOST_LENGTH`/`MAX_PORT` (duplicated between `origin.ts` and `connect.ts`) both cross into a
-file `backlog-06` restructured wholesale in the same window this cleanup ran in. Editing either
-from `backlog-07` would have edited a file about to become three different files under a
-different branch, guaranteeing a structural merge conflict rather than the ordinary kind. Both
-are real Rule-3 violations and neither is fixed. Next up once both branches have merged.
+**Open — whether the hookify rules fire.** Two of seven never had. Three more are fine by
+inspection; two were untested ([`open-questions.md`](../open-questions.md) A49).
 
 ---
 
