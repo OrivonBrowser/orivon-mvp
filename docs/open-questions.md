@@ -53,7 +53,7 @@ None of these block starting the week-0 spike.
 | A12 | **`orivon.fs` option bags are unspecified.** `capability-api.md` names the entry points (`readFile(path, opts)`, `writeFile(path, data, opts)`, `mkdir / readdir / stat / rm / rename`) but never says what `opts` contains or what `readFile` returns | **Build step 2.** Provisional signatures are in `src/contracts/capability-api.ts` and marked as such |
 | A14 | **RESOLVED 2026-08-26 (owner):** a trailing DNS dot is stripped, so `https://x.example.` and `https://x.example` are ONE origin. Deliberately deviates from `URL.origin`. Exactly one dot; a host still carrying an empty label is rejected | Implemented in `src/broker/policy/origin.ts` |
 | A13 | **RESOLVED 2026-08-27 (owner): Promises**, per design rule 2. Widening a Promise to a plain value later is a smaller break than the reverse. Original question: `capability-api.md` §v0 surface writes them as `=> Manifest` and `=> Grant[]`, but design rule 2 in the same document says *"All entry points return Promises"* | **Build step 2.** Transcribed as Promises; see below |
-| A15 | **The four bundle-hash caps are guesses, not decisions** — `MAX_PATH_BYTES` 1024, `MAX_ASSET_BYTES` 16 MiB, `MAX_BUNDLE_BYTES` 64 MiB, `MAX_BUNDLE_ENTRIES` 4096 (`src/broker/policy/bundle-hash.ts`, `architecture/bundle-hash.md` §Caps). They are labelled AI-recommendation in the source, but a cap decides which bundles are *refusable*, so two implementations disagreeing on one disagree about whether an app can exist at all | **Before the app loader ships (build step 4).** Needs one real frontend's shape to calibrate against; guessing again now would not be better than the current guess |
+| A15 | **The four bundle-hash caps are guesses, not decisions** — `MAX_PATH_BYTES` 1024, `MAX_ASSET_BYTES` 16 MiB, `MAX_BUNDLE_BYTES` 64 MiB, `MAX_BUNDLE_ENTRIES` 4096 (`src/broker/policy/bundle-hash.ts`, `architecture/bundle-hash.md` §Caps). They are labelled AI-recommendation in the source, but a cap decides which bundles are *refusable*, so two implementations disagreeing on one disagree about whether an app can exist at all. **2026-09-03:** `src/loader/fetch-bundle.ts` (`stream/loader-02-fetch-cache`) is the first real caller of all four, and they are being carried forward uncalibrated | **Before the app loader ships (build step 4).** Needs one real frontend's shape to calibrate against; guessing again now would not be better than the current guess |
 | A16 | **RESOLVED 2026-08-28 (owner):** closing the last tab closes the window (option 2 below) — overrules this entry's own AI-REC, which favoured option 1. No `app.quit()` in `tabs.ts`/`window.ts`; `src/main/index.ts`'s existing `window-all-closed` handler already owns whether the whole process then exits | Implemented in `src/main/tabs.ts` (`TabManager`'s `onEmpty` callback) and `src/main/window.ts`. See below |
 | A17 | **RESOLVED 2026-08-27 (owner):** an `identityId` is **opaque and broker-generated** — never a user-typed name, never derived from one. The display name is stored beside the identity, not used to derive it. Found undefined during review of PR #5: it appeared exactly once in the whole repository, as one table cell | Recorded in `ADR-0010`, stated in `capability-api.md`, documented on `DeriveRequest.scope` |
 | A18 | **RESOLVED 2026-08-27 (owner): pass the GRANTED pattern list, not the manifest.** Original question: Nothing in the signature carries the grant, so a caller passing a raw manifest silently gets the declared authority | **Build step 2, before the broker calls it.** Narrow the list at the call site, or change the parameter to `readonly Pattern[]`. See below |
@@ -77,6 +77,9 @@ None of these block starting the week-0 spike.
 | A36 | **`build-plan.md` places grant prompts in build step 2; `A20` and `A27` both say build step 4.** `build-plan.md`'s own Sequence section lists "grant prompts" under step 2 ("Capability broker"), but `A20`'s and `A27`'s "Needed by" columns both independently say "before the grant prompt is built (build step 4)" | **Before the grant prompt is scheduled.** One of the two documents is wrong; the owner should pick which. See below |
 | A37 | **The write direction of the byte pump (an app writing bytes out over `TcpSocket.writable`) has no wire message anywhere.** `contracts/ipc.ts` specifies `DataMessage`/`CreditMessage`/`StreamEndMessage` in full for the READ direction only; `handle-contracts.md`'s Backpressure section, `capability-api.md`'s Throughput section and `ADR-0008` all describe the write side only as an outcome ("`write()` resolves only once the broker has accepted the bytes"), never as a protocol | **Before the preload-side byte-pump PR** (readable/writable streams built over the port) **can implement `writable`.** See below |
 | A38 | **RESOLVED 2026-09-02.** `security-model.md`'s T11b entry names both a per-origin in-flight cap AND "a token-bucket rate limit on IPC dispatch" as the mitigation. The in-flight cap exists (`handles.ts`) and covers every method that does real I/O, but `app.manifest`/`app.grants` never call `handleTable.run`, so nothing bounded how *often* an origin could call them. Reproduced before the fix: 5,000 concurrent `app.grants` calls from one origin, zero rejected. A shared per-origin token bucket (`src/broker/token-bucket.ts`) now gates all six control methods uniformly, checked before `dispatch()` runs | Implemented in `src/broker/token-bucket.ts` and wired in `src/broker/ipc.ts`'s `handleControlRequest`. **The numbers (capacity 200, refill 100/sec) are AI-recommended, not owner-decided** — see below |
+| A45 | **`Manifest` has no asset-list field, so "fetch every asset the manifest declares" cannot be done from the manifest alone.** `src/contracts/manifest.ts`'s `Manifest` carries only `id`/`name`/`version`/`entry`/`capabilities` — nothing enumerates the frontend files that make up the app, and no document in the corpus specifies a discovery/crawl mechanism. `bundle-hash.md` and `ADR-0009` both assume a leaf set is already in hand ("the leaf set" is given, never derived) | **Build step 4 (the app loader), now.** `createLoader.load()` takes the discovered asset path list as an explicit parameter rather than guessing a crawl heuristic. See below |
+| A46 | **The loader never checks the install origin against private/loopback address ranges (T12).** `originFromUrl` validates only scheme and hostname syntax, never address class, and never calls `isPublicUnicast`/`classifyAddress` from `src/broker/policy/address.ts` — which already implements the correct "resolve once, validate every address" discipline for exactly this threat. `http://127.0.0.1:9222/.well-known/orivon.json`, `http://169.254.169.254/` (cloud metadata), or a low-TTL host that DNS-rebinds to either, all pass every check the loader runs today | **Not live today** — `loaderSubsystem` ships inert, so nothing calls this with a real network position yet. Before it is wired to a real trigger. See below |
+| A48 | **Two residual gaps in `fetch-bundle.ts`'s byte/time budget cannot be closed from this file alone, and now carry an explicit contract requirement on the real `Fetch` implementation.** (1) A `Fetch` (or its body stream's `read()`) that ignores its `AbortSignal` leaves the original promise permanently pending with its closures on every timeout — `BUNDLE_TIMEOUT_MS` (added this pass) bounds how many such abandoned attempts one `fetchBundle()` call can accumulate, but cannot force a foreign, non-cooperating promise to release whatever it holds (a socket, a timer). (2) The incremental byte cap can only refuse a chunk after `reader.read()` already returned it fully allocated — the real bound is "one chunk", not "the cap"; a BYOB reader would close this but requires the stream to declare `type: 'bytes'`, which this file's minimal structural `FetchResponse` type does not guarantee | **Before a real `Fetch`/stream implementation is wired in.** It must itself observe `AbortSignal` and promptly abort/release the underlying request, and should bound its own chunk sizes. See below |
 
 ---
 
@@ -1131,6 +1134,149 @@ two documents this actively maintained. All three are live options; none is a re
 **Needed by:** whoever next revises `handle-contracts.md` or `capability-api.md` substantively —
 worth deciding before a third round of this finds a third instance of the same overstatement.
 Not blocking this PR, which is docs-only.
+
+---
+
+### A45 — nothing enumerates an app's asset set; the manifest cannot **[STILL OPEN]**
+
+Found 2026-09-03 building `src/loader/` (`stream/loader-02-fetch-cache`, build step 4). The
+lane's own brief describes the asset-fetch step as "given a validated manifest, fetch every
+asset it declares" — but `Manifest` (`src/contracts/manifest.ts`) declares no such thing. Its
+fields are `orivonApiVersion`, `id`, `name`, `version`, `entry`, `capabilities`. `entry` names
+one file (the HTML entry point); nothing names the rest of the frontend.
+
+This is not a gap this lane can fix by reading harder. `docs/architecture/bundle-hash.md` and
+`ADR-0009` both start from "the leaf set" as a given — they specify how to hash a set of
+(path, bytes) pairs once you have one, never how you get one. `app-compatibility.md` says
+tier-1 apps (existing Nostr web clients) are pinned "as-is", which for any real built SPA is
+dozens of JS/CSS/asset files — so the answer cannot be "just `entry`" either; a bundle hash
+covering only `index.html` would not be this app's actual content identity.
+
+**Two shapes an answer could take, neither chosen here:**
+
+1. **A manifest field.** `Manifest` gains an `assets`/`files` list the publisher declares
+   explicitly (alongside `entry`). Simple, matches `capabilities`' own already-declarative
+   style, and keeps the loader's job purely mechanical — but it is a `src/contracts/` change,
+   which is change-controlled (its own PR, merged first, never mixed with an implementation),
+   and it puts a burden on every publisher to keep the list in sync with what they actually
+   ship.
+2. **A crawl heuristic.** The loader fetches `entry`, parses it for referenced same-origin
+   assets (`<script src>`, `<link href>`, `<img src>`, recursively into fetched CSS/JS), and
+   builds the set from what it finds. No contracts change, matches how a browser's own "save
+   page" already behaves — but it is a genuine content-parsing surface over adversarial input,
+   it cannot see assets referenced only at runtime (a dynamic `import()`, a service-worker
+   `fetch()`), and whichever heuristic is chosen becomes load-bearing the moment the first real
+   pin is written: two implementations of "what counts as this app's content" that disagree
+   would disagree about the app's own identity, the same one-way-door class of problem
+   `ADR-0009` already had to solve once for the hash construction itself.
+
+**What this lane did instead, so the rest of the pipeline could still be built and tested for
+real:** `createLoader.load(hintedUrl, assetPaths, context)` takes the discovered asset path
+list as an explicit parameter. Everything downstream of "here is the set of asset URLs" —
+fetching under the byte caps, building `BundleEntry[]`, calling `bundleTree()`, checking the
+`Manifest.entry` leaf exists, driving `decideUpdate()` against the granted pattern set, and
+persisting through `LoaderStorage` — is real and tested. Discovering the set itself is left to
+whichever caller wires the loader to the shell.
+
+**AI recommendation:** option 1 (a manifest field) is narrower, cheaper, and testable the same
+way `capabilities` already is, at the cost of one more thing a publisher must maintain by hand;
+option 2 is more convenient for publishers but is a heuristic with real edge cases baked into a
+bundle hash that cannot be changed once the first pin exists. Leaning towards 1, but this is
+exactly the kind of load-bearing, only-reversible-at-cost choice `CLAUDE.md` Rule 1 reserves for
+an ADR, not an AI default.
+
+**Needed by:** whoever wires `createLoader` to the shell's discovery trigger (the remainder of
+build step 4) — not blocking this PR, which implements everything downstream of the asset list
+and is fully testable against an injected one.
+
+---
+
+### A46 — the loader never checks the install origin against private/loopback address ranges (T12) **[STILL OPEN]**
+
+Found 2026-09-03 reviewing `stream/loader-02-fetch-cache` (build step 4). `fetch-bundle.ts`
+resolves `hintedUrl` through `originFromUrl` (`src/broker/policy/origin.ts`), which validates
+scheme and hostname syntax and nothing else — it never checks what address class the hostname
+resolves to, and never calls `isPublicUnicast`/`classifyAddress` from
+`src/broker/policy/address.ts`.
+
+`address.ts` already exists to answer exactly this question, and its own header states the
+discipline required to use it correctly: *resolve once, validate every returned address, then
+connect to the IP literal that was validated* — because a hostname is not an address, and a
+low-TTL DNS answer can change between a check and a connect. `src/broker/policy/connect.ts`
+already follows this discipline for outbound `tcp.connect`. The loader's install path does not
+follow it at all: nothing in `fetch-bundle.ts` or `origin.ts` resolves the install origin's
+hostname before treating it as fetchable.
+
+**Concretely:** `http://127.0.0.1:9222/.well-known/orivon.json`, `http://169.254.169.254/`
+(the cloud metadata endpoint), or a low-TTL host that DNS-rebinds to either between two
+requests, all pass every check the loader runs today. Unlike an app's own declared
+`tcp.connect` capability, this request needs no grant and no manifest — it is the shell itself,
+which has a full, unsandboxed network position, issuing the very first request that discovers
+whether an origin is an Orivon app at all.
+
+**Not live today.** `src/loader/subsystem.ts`'s `loaderSubsystem` ships with no `beforeReady`/
+`afterReady` — nothing wires a real trigger (a `<link rel="orivon-manifest">` hint, or "Open as
+app") to `createLoader.load()` yet, so nothing calls this against a real, attacker-influenced
+`hintedUrl` in the shipped product. This is why it is filed rather than blocking.
+
+**Leaning, not decided:** the loader should mirror `connect.ts`'s own T12 discipline —
+resolve the install origin's hostname once, reject if any resolved address is not
+`isPublicUnicast`, and only then treat the origin as installable. This is an AI leaning, not an
+owner decision: it has not been weighed against, for instance, an explicit allowlist for local
+development origins, which a resolve-and-classify check alone would foreclose without a
+carve-out.
+
+**Needed by:** whoever wires `loaderSubsystem` to a real discovery trigger — the point this
+stops being a theoretical gap and starts being a real one.
+
+---
+
+### A52 — two residual gaps a real `Fetch` must close, not `fetch-bundle.ts` **[AI-REC]**
+
+Found 2026-09-03, fixing an adversarial review's findings against `stream/loader-02-fetch-cache`
+(build step 4) before merge. Two of the three findings (an uncaught `new URL()` and the
+duration-axis T11b gap `BUNDLE_TIMEOUT_MS` now closes) were fully fixable inside this file. Two
+narrower gaps were not, and are recorded here rather than silently left as "should be fine":
+
+**1. A signal-ignoring `Fetch` still leaks one abandoned promise per timeout.** `raceAbort`
+(this file) races a promise against an `AbortSignal` and moves on the instant the signal fires
+— but it never forces the original, abandoned promise to settle or release what it holds. If
+the injected `Fetch` (or a body stream's `read()`) does not itself react to the signal it was
+given, that promise — and whatever real resource backs it, a socket, a timer, buffered bytes —
+keeps existing until it settles on its own, if it ever does. `AbortSignal` is cooperative by
+design; nothing on the caller's side can force a non-cooperating callee to cancel. `reader.
+cancel()` (already called on every timeout path) is a real, spec-guaranteed mitigation for the
+body-read phase specifically, because cancelling a `ReadableStreamDefaultReader` is required to
+propagate to the underlying source regardless of `Fetch`'s own behaviour — but nothing
+equivalent exists for the initial `fetchFn(url, signal)` call itself.
+
+`BUNDLE_TIMEOUT_MS` (added this pass) is a real, if partial, mitigation: it bounds how many
+such abandoned attempts one `fetchBundle()` call can accumulate — roughly 30 in the worst case,
+the multiple `BUNDLE_TIMEOUT_MS` is set to (`30 * FETCH_TIMEOUT_MS`) — not the 4095 an
+unbounded install could previously reach. It does not make the leak zero.
+
+**2. The incremental byte cap is bounded by "one chunk", not "the cap".** `readBodyWithBudget`
+rejects the instant a running total exceeds a cap, but it can only do that after `await reader.
+read()` has already handed back a chunk — and that chunk is already fully allocated by then,
+sized however the stream's producer decided, not this loop. A producer that returns the whole
+body as a single `read()` — a decompressing fetch, a naive shim that buffers then emits once, a
+real undici under a gzip bomb — still allocates that one oversized chunk before the rejection
+can fire. Proven still-correct (the rejection does fire) by a new test in `fetch-bundle.test.
+ts`; the allocation itself is what remains open. A bounded (BYOB) reader would close this, but
+requires the stream to declare `type: 'bytes'`, which this file's own minimal structural
+`FetchResponse` type (chosen so tests can stub it trivially) does not guarantee, and a stub or a
+naive real implementation is unlikely to provide.
+
+**AI recommendation:** the real `Fetch` implementation, when it is built, must (a) itself
+observe the `AbortSignal` it is given and promptly abort/release the underlying request on it —
+not merely tolerate the caller giving up on waiting — and (b) either use a BYOB reader with a
+bounded view size, or otherwise avoid handing back single chunks larger than a few times
+`MAX_ASSET_BYTES`'s neighbourhood. Neither is enforceable from `fetch-bundle.ts` as written.
+
+**Needed by:** whoever builds the real `Fetch` (wiring this loader to actual Node/Electron I/O
+is itself still open — see this file's own header and `CLAUDE.md`'s "Still open" note). Not
+blocking this PR: both gaps are already strictly better than main, and neither is reachable
+with the stubbed `Fetch` every current caller uses.
 
 ---
 
