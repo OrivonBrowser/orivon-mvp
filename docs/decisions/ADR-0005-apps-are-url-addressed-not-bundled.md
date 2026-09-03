@@ -1,9 +1,26 @@
 # ADR-0005: Apps are URL-addressed and cached, never bundled into the browser
 
-- **Status:** accepted
+- **Status:** accepted — **amended 2026-09-03 to reorder fetch/cache relative to consent**, owner
+  decision recorded in full in `ADR-0012`
 - **Date:** 2026-08-18
 - **Type:** architecture
 - **Decided by:** owner concern, resolved by AI recommendation
+
+> **Amendment 2026-09-03: reversal recorded.** The "Delivery model" line below originally read
+> *"fetch → show the capability grant prompt → cache → run from cache thereafter"* — the grant
+> prompt sitting between fetch and cache, so the user was asked before anything was written to
+> disk. The owner has since decided the opposite order: fetch-and-cache now happens
+> automatically and silently the moment a manifest hint is seen, with **no prompt in that
+> sequence at all**; the grant prompt is deferred to the first moment the app's own code
+> actually requests a capability, which may be long after install, or never. `ADR-0012` records
+> the full decision, the argument for it (in short: a prompt shown before the user has any idea
+> whether they want the app trains reflexive click-through, or turns ordinary browsing into a
+> permission gauntlet — deferring to first capability use keeps every prompt tied to something
+> concrete), and a known, currently-unmitigated cost (no cross-app disk quota, no cleanup of
+> superseded versions — `docs/open-questions.md` A57/A58) that must be closed before the
+> discovery trigger is ever wired to the real browser shell. The original wording is kept below,
+> unedited except for the "Delivery model" line itself, so the reversal stays visible rather than
+> silently rewritten.
 
 ## Decision
 An Orivon app is **addressed by URL and fetched over the network**, then cached locally and
@@ -55,10 +72,14 @@ Three arguments, none of which is about install size:
 3. **It makes "installable Web3sites" real.** Fetch-then-run-locally is exactly the mechanism
    the public docs describe, and it is what gives local-executability something to mean.
 
-Delivery model: fetch **manifest + frontend assets** from a URL → show the capability grant
-prompt → cache into that app's storage domain (ADR-0003) → run from cache thereafter, with
-update checks. HTTPS in the MVP; IPFS and ENS-addressed delivery later, once trustless
-resolution exists.
+Delivery model **(amended 2026-09-03, see the correction block at the top of this document and
+`ADR-0012` for the full reasoning):** fetch **manifest + frontend assets** from a URL
+automatically and silently → cache into that app's storage domain (ADR-0003), hash-pinned → run
+from cache thereafter, with update checks → **show the capability grant prompt only when the
+app's own code first requests a capability**, not before. This originally read "fetch → show the
+capability grant prompt → cache → run from cache thereafter," with the prompt between fetch and
+cache; `ADR-0012` reverses that order. HTTPS in the MVP; IPFS and ENS-addressed delivery later,
+once trustless resolution exists.
 
 ## Consequence that changes the build plan
 If an app is fetched from a URL, **its backend cannot run in the Electron main process** —
