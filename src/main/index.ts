@@ -2,6 +2,7 @@ import { app, BaseWindow, dialog } from 'electron'
 import { createShellWindow } from './window.js'
 import { createSubsystemContext, criticalFailureMessage, runAfterReady, runBeforeReady, type SubsystemFailure } from './registry.js'
 import { subsystems } from './subsystems.js'
+import { BookmarkStore } from './bookmarks.js'
 
 // Main and preload are CommonJS; only the renderer is ESM. This is
 // electron-vite's default and it is kept deliberately, for one reason:
@@ -79,6 +80,25 @@ void app.whenReady().then(async () => {
   })
 })
 
+// A bookmark starred within the debounce window of the browser closing must
+// not be silently lost -- that is precisely the failure BookmarkStore's
+// flushPendingWrite() exists to prevent, so quit needs to wait for it.
+// Bounded, not indefinite: BookmarkStore.flushAll() itself never rejects
+// (a slow or failed store is reported via console.error in bookmarks.ts and
+// does not stop the others), and the race below caps the wait so a stuck
+// disk turns into a bookmark loss on that one store rather than a browser
+// that will not close. The bound is generous relative to the 300ms debounce
+// (WRITE_DEBOUNCE_MS) plus ordinary disk latency, and short enough that a
+// user closing the window does not perceive a hang.
+const QUIT_FLUSH_TIMEOUT_MS = 2000
+
+async function flushBookmarksBeforeQuit (): Promise<void> {
+  await Promise.race([
+    BookmarkStore.flushAll(),
+    new Promise<void>((resolve) => setTimeout(resolve, QUIT_FLUSH_TIMEOUT_MS))
+  ])
+}
+
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
+  if (process.platform !== 'darwin') void flushBookmarksBeforeQuit().then(() => app.quit())
 })
