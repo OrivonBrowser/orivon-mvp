@@ -17,8 +17,9 @@
 > **Specified here but not implemented anywhere in the tree**, each an omission of sequencing
 > rather than of attention — `build-plan.md`'s own build-step order has not reached them yet,
 > not a change of mind about the spec below: `TcpServer` (no accept/listen), `UdpSocket` (no
-> UDP/dgram at all), and `IdentityHandle` (no `publicKey()`/`signEvent()`, no `orivon.id`) exist
-> only as the contract types in `src/contracts/handles.ts`. `FileHandle` is further along only
+> UDP/dgram at all), and `IdentityHandle` (no `publicKey()`/`signEvent()`, no `orivon.id.*`
+> control method wired — see §IdentityHandle for the P-256 key-derivation code that does exist)
+> exist only as the contract types in `src/contracts/handles.ts`. `FileHandle` is further along only
 > in that `src/broker/index.ts` exposes flat, whole-file `fs.readFile`/`writeFile` (checked
 > against path confinement and the per-origin quota) — the positional `read`/`write`, `stat`,
 > `truncate`, `sync` and `userSelected` shape below does not exist yet. See each section's own
@@ -35,6 +36,10 @@
 > streams are the durable interface. Node shapes are presented by `orivon-node-shim` on top,
 > not by this layer.** `orivonApiVersion: 0` still applies — breaking changes are permitted
 > here while it is 0.
+>
+> Every `file:line` and function-name claim above was hand-verified against the tree on
+> 2026-09-03; nothing keeps it in sync automatically, so it can go stale silently the next time
+> the code it describes changes — re-check before trusting it.
 
 ## §Common shape
 
@@ -180,8 +185,9 @@ choke/interested handshake and keeps reading long after it has stopped writing n
 
 > **Split status.** The broker-side half below — stop reading the OS socket at credit zero — is
 > real and tested (`src/broker/port-pump.ts`). The renderer-side coalescing half is not: the
-> constant it would use, `CREDIT_COALESCE_BYTES` (`src/contracts/ipc.ts`), is exported but never
-> imported anywhere in `src/` or `test/` today. See `open-questions.md` A48.
+> constant it would use, `CREDIT_COALESCE_BYTES` (`src/contracts/ipc.ts:103`), is defined once and
+> re-exported once (`src/contracts/index.ts:66`) — but no file anywhere in `src/` or `test/`
+> actually reads or consumes it today. See `open-questions.md` A48.
 
 This answers `capability-api.md` §Throughput's open note: *"`MessagePortMain` has no
 documented backpressure, so the shim must implement its own flow control."*
@@ -336,12 +342,18 @@ interface FileHandle extends Handle {
 
 ## §IdentityHandle
 
-> **Not implemented in the broker.** No `publicKey()`/`signEvent()`, no `orivon.id`, anywhere in
-> `src/broker/` — `IdentityHandle` exists only as the contract type. `src/nostr/kind-
+> **No `IdentityHandle` is ever constructed, and no `orivon.id.*` method is callable** —
+> `src/broker/ipc.ts`'s control dispatch has no `'id.'` case, so `publicKey()`/`signEvent()` exist
+> only as the contract type. The P-256 half of the key math those methods would need is real and
+> tested (`src/broker/policy/derive.ts`'s `derivePrivateScalar`, `derive-p256.ts`'s
+> `derivePublicKey`, exercised by `derive.test.ts`'s frozen golden vectors), but nothing calls it
+> from a control method, and secp256k1 — Nostr's curve — has no point derivation or signing code
+> at all: `derivePublicKey` throws `'internal'` for any curve but `'P-256'`. `src/nostr/kind-
 > screening.ts`'s silent/prompt table is a real, tested policy module built one layer up, in
 > anticipation of this handle, but its own header calls it explicitly "NOT THE ENFORCEMENT
 > BOUNDARY" — a UI hint only — and `src/nostr/nip07.ts`'s own header records it was built and
-> tested against a stubbed signer, not a running broker. Both wait on this section's build step.
+> tested against a stubbed signer, not a running broker. All three wait on this section's build
+> step.
 
 ```ts
 interface IdentityHandle extends Handle {

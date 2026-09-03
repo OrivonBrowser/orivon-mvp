@@ -10,12 +10,17 @@
 > `app.grants`, `fs.readFile`, `fs.writeFile`. **Implemented in the broker and Electron's
 > main-process IPC layer, but not yet exposed to a page**: `net.connect` (TCP only) —
 > `orivon-surface.ts`'s own header explains why it stops there: nothing yet lands a socket back
-> in a shape a page could ever close. **Named here but with no implementation anywhere in the
-> tree**: `app.requestGrant`, `net.listen`, `net.udpBind`, every `fs.*` method below
-> `readFile`/`writeFile` (`open`, `mkdir`, `readdir`, `stat`, `rm`, `rename`, `userSelected`),
-> and all of `orivon.id`. Each is absent because its build step has not been reached yet, not
-> because it was decided against — see `handle-contracts.md`'s own status header for the same
-> distinction drawn per handle type.
+> in a shape a page could ever close. **Named here with no control method wired**:
+> `app.requestGrant`, `net.listen`, `net.udpBind`, every `fs.*` method below `readFile`/
+> `writeFile` (`open`, `mkdir`, `readdir`, `stat`, `rm`, `rename`, `userSelected`) — none of these
+> has any related code anywhere in `src/broker/`. `orivon.id` is a partial exception: no `'id.'`
+> case exists in `src/broker/ipc.ts`'s control dispatch, so none of `orivon.id.*` is callable, but
+> the P-256 half of the key math it would need is real and tested (`src/broker/policy/derive.ts`'s
+> `derivePrivateScalar`, `derive-p256.ts`'s `derivePublicKey`, exercised by `derive.test.ts`'s
+> frozen golden vectors) — just not wired to a control method, and secp256k1 (Nostr's curve) has
+> no derivation or signing code at all. Each of these is absent from `window.orivon` because its
+> build step has not been reached yet, not because it was decided against — see
+> `handle-contracts.md`'s own status header for the same distinction drawn per handle type.
 >
 > **Specified and separately implemented**, even though the v0-surface methods that would
 > exercise them end-to-end are not all wired yet: manifest validation (`src/loader/
@@ -27,6 +32,10 @@
 > §Open items below was already correctly framed — "AI-proposed defaults, awaiting owner
 > confirmation" — and needed no correction; it is the one part of this document's status that
 > was never stale.
+>
+> Every `file:line` and function-name claim above was hand-verified against the tree on
+> 2026-09-03; nothing keeps it in sync automatically, so it can go stale silently the next time
+> the code it describes changes — re-check before trusting it.
 >
 > Per ADR-0002 this is the highest-care artefact in the repository. The Electron shell is
 > disposable; **this interface is not.** Every app ever written for Orivon codes against it,
