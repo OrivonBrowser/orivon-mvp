@@ -1,10 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
 import { runAfterReady, runBeforeReady, type Subsystem, type SubsystemContext } from './registry.js'
+import type { Broker } from '../broker/index.js'
 
-// The registry never touches Electron at runtime -- SubsystemContext.app is a
-// type-only import, erased by verbatimModuleSyntax -- so a plain object stands
-// in for the App here. That erasure is the whole reason this is unit testable.
+// The registry never touches Electron OR the broker at runtime --
+// SubsystemContext's App and Broker fields are both type-only imports,
+// erased by verbatimModuleSyntax -- so plain objects stand in for both here.
+// That erasure is the whole reason this is unit testable.
 const ctx = { app: {} } as unknown as SubsystemContext
+const fakeBroker = { marker: 'the-one-broker' } as unknown as Broker
 
 describe('runBeforeReady', () => {
   it('runs every beforeReady in list order', () => {
@@ -103,5 +106,21 @@ describe('runAfterReady', () => {
       { name: 'b', afterReady: () => { throw new Error('b') } }
     ], ctx)
     expect(failures.map((f) => f.name)).toEqual(['a', 'b'])
+  })
+
+  // A later subsystem (the app loader, the trust indicator) needs the SAME
+  // broker the IPC subsystem built, never a second one -- two brokers means
+  // two independent, disagreeing grant ledgers for one running app. Proves
+  // ctx survives being written to by an earlier subsystem and read by a
+  // later one in the same run, which is the only mechanism that makes that
+  // possible.
+  it('lets an earlier subsystem publish the broker on ctx for a later one to read', async () => {
+    const seenByLater: Array<Broker | undefined> = []
+    const withBroker: SubsystemContext = { app: ctx.app }
+    await runAfterReady([
+      { name: 'broker', afterReady: (c) => { c.broker = fakeBroker } },
+      { name: 'later', afterReady: (c) => { seenByLater.push(c.broker) } }
+    ], withBroker)
+    expect(seenByLater).toEqual([fakeBroker])
   })
 })

@@ -20,9 +20,27 @@
 // import, erased by verbatimModuleSyntax. That erasure is what makes the two
 // functions below unit testable without launching Electron.
 import type { App } from 'electron'
+import type { Broker } from '../broker/index.js'
 
 export interface SubsystemContext {
   readonly app: App
+  /**
+   * The running app's one `Broker`, published here by `brokerIpcSubsystem`
+   * (`src/broker/ipc.ts`) once it constructs it, so a later subsystem --
+   * the app loader, the trust indicator, whatever eventually issues a real
+   * grant -- reads the SAME instance instead of constructing its own.
+   * `createBroker(deps)` used to be built and handed straight to
+   * `registerBrokerIpc` with nothing else keeping a reference, which meant
+   * nothing else in the process could ever call `grant()`/`registerApp()` --
+   * a second, independently-constructed broker would be worse than none: two
+   * disagreeing grant ledgers for one running app.
+   *
+   * Undefined until the broker subsystem's `afterReady` runs; `runAfterReady`
+   * is sequential (this file's own doc above), which is what makes "the
+   * broker subsystem writes it, a later one reads it" reliable rather than a
+   * race. Mutable, not readonly, for exactly that write-then-read reason.
+   */
+  broker?: Broker
 }
 
 export interface Subsystem {
