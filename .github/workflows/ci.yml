@@ -72,18 +72,22 @@ jobs:
   # `xvfb-run` (headless, the same mechanism used below) on the same
   # machine -- both passed, output pasted into this change's PR.
   #
-  # What was NOT verified: a GitHub-hosted ubuntu-latest runner specifically.
-  # Electron's sandbox has a separate, well-known CI failure mode on hosted
-  # runners (restricted unprivileged user namespaces), distinct from the C6
-  # attach issue, that this developer's own machine cannot reproduce or rule
-  # out. Per this lane's own brief: a real GUI-requiring job that has not
-  # been proven reliable in the ACTUAL CI environment must not be faked into
-  # looking automatic. So this job is manual-only (`workflow_dispatch`) --
-  # trigger it from the Actions tab's "Run workflow" button, or
-  # `gh workflow run ci.yml` -- until it has been observed green here at
-  # least once. Promote the `if:` below to run on push/pull_request once that
-  # is confirmed; a green CI badge that silently skips this test is worse
-  # than an honestly-manual job.
+  # UPDATED once the thing below was actually observed, not assumed: a
+  # GitHub-hosted ubuntu-latest runner specifically. Electron's sandbox has a
+  # separate, well-known CI failure mode on hosted runners (restricted
+  # unprivileged user namespaces), distinct from the C6 attach issue above,
+  # that a developer's own machine cannot reproduce or rule out -- this job
+  # started manual-only (`workflow_dispatch`) for exactly that reason, per
+  # this lane's own brief: a real GUI-requiring job must not be faked into
+  # looking automatic before it has been proven reliable in the ACTUAL CI
+  # environment. It has now been observed green on a real ubuntu-latest
+  # runner for BOTH `push` and `pull_request` -- that failure mode did not
+  # reproduce -- so the `if:` that used to gate this job to
+  # `workflow_dispatch` only is gone, and it runs unconditionally alongside
+  # `check` above (see `on:` at the top of this file). If a hosted runner
+  # ever fails to launch Electron here, that is the signal to reinstate the
+  # `if:` with the failing run recorded as the evidence, not to silently
+  # retry.
   # Kept a separate job rather than folded into `check`: it needs a real Electron
   # build and a display server, takes far longer than the unit suite, and a
   # failure here means something different (the capability boundary itself

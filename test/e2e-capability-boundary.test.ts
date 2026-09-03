@@ -61,12 +61,13 @@ import type { ChildProcess } from 'node:child_process'
 import { connect as netConnect } from 'node:net'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
-import { launchElectron } from './launch-electron.mjs'
+import { DEFAULT_ACTION_TIMEOUT_MS, launchElectron } from './launch-electron.mjs'
 import {
   evaluateRetrying,
   findChrome,
   findViewShowing,
   HERMETIC_RESOLVER,
+  WAIT_TIMEOUT_MS,
   waitFor,
   waitForTab
 } from './smoke-helpers.mjs'
@@ -86,10 +87,49 @@ const FIXTURE_ORIGIN = `http://${HOST}:${STATIC_PORT}`
 const FIXTURE_URL = `${FIXTURE_ORIGIN}/`
 const MANIFEST_URL = `${FIXTURE_URL}.well-known/orivon.json`
 
+/** Ceiling for waitForAddressBarStable below. Named so the budget
+ * arithmetic beneath it can reuse the real number instead of retyping
+ * `8_000` in two places that could quietly drift apart. */
+const ADDRESS_BAR_STABLE_TIMEOUT_MS = 8_000
+
+/** Ceiling on the teardown-time `app.close()` race in Phase 1's `finally`
+ * block below. Named for the same reason as ADDRESS_BAR_STABLE_TIMEOUT_MS. */
+const APP_CLOSE_RACE_MS = 8_000
+
+/**
+ * Phase 1's own worst-case wait budget, walked in the order its body
+ * actually awaits them -- each figure is the REAL ceiling that call site
+ * enforces, not a guess:
+ *
+ *   waitFor(windowsReady)              WAIT_TIMEOUT_MS             8_000
+ *   waitForAddressBarStable            ADDRESS_BAR_STABLE_TIMEOUT_MS 8_000
+ *   click + fill + press (3 actions)   DEFAULT_ACTION_TIMEOUT_MS x3 30_000
+ *   waitForTab                         WAIT_TIMEOUT_MS             8_000
+ *   evaluateRetrying (read page state) WAIT_TIMEOUT_MS             8_000
+ *   teardown: waitFor(windows === 0)   WAIT_TIMEOUT_MS             8_000
+ *   teardown: app.close() race         APP_CLOSE_RACE_MS           8_000
+ *                                                          total: 78_000
+ *
+ * Kept as an actual sum of the real constants, not restated as a bare
+ * number, so the next person who adds a wait to this critical path sees
+ * whether TEST_TIMEOUT_MS below still covers it -- from this arithmetic,
+ * not from a flaky CI run months later.
+ */
+const PHASE1_WAIT_BUDGET_MS =
+  WAIT_TIMEOUT_MS +
+  ADDRESS_BAR_STABLE_TIMEOUT_MS +
+  DEFAULT_ACTION_TIMEOUT_MS * 3 +
+  WAIT_TIMEOUT_MS +
+  WAIT_TIMEOUT_MS +
+  WAIT_TIMEOUT_MS +
+  APP_CLOSE_RACE_MS
+
 /** Long enough for `electron-vite build`'s output to launch, a real page
- * load, and several loopback TCP round trips -- all of which normally take
- * low single-digit seconds -- with real margin, not a hair trim. */
-const TEST_TIMEOUT_MS = 60_000
+ * load, several loopback TCP round trips, and Phase 1's own worst-case wait
+ * budget above -- real margin, not a hair trim, and not a round number
+ * picked by feel either: PHASE1_WAIT_BUDGET_MS plus headroom for
+ * process-spawn jitter on a loaded CI box. */
+const TEST_TIMEOUT_MS = PHASE1_WAIT_BUDGET_MS + 12_000
 
 let echoServer: ChildProcess
 let staticServer: ChildProcess
@@ -138,9 +178,23 @@ async function killChild (child: ChildProcess): Promise<void> {
   })
 }
 
+/** How many consecutive equal reads of `#address`'s bounding box count as
+ * "stopped moving". Two agreeing reads is enough for the documented cause
+ * below (a single discrete relayout, not a continuous transition) -- three
+ * costs one extra 50ms poll (smoke-helpers.mjs's own POLL_INTERVAL_MS) and
+ * buys a little margin against a slow, continuous motion that could
+ * otherwise land on the same sampled value twice in a row. It is NOT a
+ * general animation-detection guarantee: a continuous transition slow
+ * enough to hold one value for two full poll intervals would still pass.
+ * If that ever becomes the actual failure mode, that is the point to
+ * either require reads separated by a minimum interval or read a CSS
+ * transition/animation state directly instead of raising this number
+ * further. */
+const STABLE_READS_REQUIRED = 3
+
 /**
- * Waits until `#address`'s own bounding box reads the same twice in a row,
- * or the deadline passes.
+ * Waits until `#address`'s own bounding box reads the same
+ * STABLE_READS_REQUIRED times in a row, or the deadline passes.
  *
  * A plain `.click()` already retries its own "is this element stable" check
  * internally for up to DEFAULT_ACTION_TIMEOUT_MS (launch-electron.mjs) --
@@ -160,9 +214,10 @@ async function killChild (child: ChildProcess): Promise<void> {
  */
 async function waitForAddressBarStable (
   page: ReturnType<typeof findChrome>,
-  timeoutMs = 8_000
+  timeoutMs = ADDRESS_BAR_STABLE_TIMEOUT_MS
 ): Promise<boolean> {
   let previous: string | null = null
+  let streak = 0
   return waitFor(async () => {
     const rect = await evaluateRetrying(page, () => {
       const el = document.querySelector('#address')
@@ -170,9 +225,9 @@ async function waitForAddressBarStable (
       const r = el.getBoundingClientRect()
       return `${r.x},${r.y},${r.width},${r.height}`
     })
-    const stable = rect !== null && rect === previous
+    streak = (rect !== null && rect === previous) ? streak + 1 : 0
     previous = rect
-    return stable
+    return streak >= STABLE_READS_REQUIRED - 1
   }, timeoutMs)
 }
 
@@ -295,8 +350,19 @@ it('Phase 1: the real shell launches and navigates the fixture tab, and the fixt
         // See waitForAddressBarStable's own header (above beforeAll/afterAll):
         // a real, observed CI-runner layout race, not a capability concern --
         // this gives it somewhere to finish before the click's own
-        // actionability timeout starts competing with it.
-        await waitForAddressBarStable(chrome)
+        // actionability timeout starts competing with it. Its result is
+        // named and reported here rather than discarded: a genuine failure
+        // to stabilise must read as THIS check failing, not as a confusing
+        // downstream `.click()` action timeout with no diagnostic pointing
+        // at the address bar at all.
+        const addressBarStable = await waitForAddressBarStable(chrome)
+        check(
+          "the address bar's own layout settles before the click " +
+          '(waitForAddressBarStable -- see its header for the CI-runner ' +
+          'layout race this guards against)',
+          addressBarStable,
+          addressBarStable ? undefined : `did not read stable within ${ADDRESS_BAR_STABLE_TIMEOUT_MS}ms`
+        )
         await chrome.click('#address')
         await chrome.fill('#address', FIXTURE_URL)
         await chrome.press('#address', 'Enter')
@@ -376,7 +442,7 @@ it('Phase 1: the real shell launches and navigates the fixture tab, and the fixt
         await waitFor(() => app.windows().length === 0)
         const closed = await Promise.race([
           app.close().then(() => true),
-          new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 8_000))
+          new Promise<boolean>((resolve) => setTimeout(() => resolve(false), APP_CLOSE_RACE_MS))
         ])
         if (!closed) app.process().kill()
       }
