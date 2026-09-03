@@ -112,13 +112,20 @@ import**. Those are the actual boundaries; this table is the summary.
 ## How a URL becomes an app
 
 A normal page stays a normal page. An origin becomes an app when a manifest is found at
-`/.well-known/orivon.json` and the user accepts.
+`/.well-known/orivon.json` — automatically, as part of loading the page, never as a separate
+step the user takes. Permission is asked for only once the page's own code actually calls for
+a capability, not at this point.
 
 **The manifest is never probed automatically.** An unsolicited request to every origin you
 visit is an active, attributable *"this visitor runs Orivon"* signal — sent from a
-privacy-branded browser, to an audience that reads its own traffic. Discovery is either a
-`<link rel="orivon-manifest">` hint in HTML already delivered, or an explicit "Open as app"
-action.
+privacy-branded browser, to an audience that reads its own traffic. Discovery is a
+`<link rel="orivon-manifest">` hint in HTML already delivered — nothing is fetched from a page
+that never included it.
+
+> **Corrected 2026-09-03, owner decision.** This used to also name an explicit "Open as app"
+> action as a second discovery path. There is no such action: a Web3site is not a category a
+> user converts a website into, it is the URL. See `docs/architecture/capability-api.md`'s own
+> correction on this same point.
 
 **The grant prompt is origin-first.** Any origin can serve a manifest, and the `name` in it is
 self-asserted, so the origin is the largest and primary element and the app's claimed name is

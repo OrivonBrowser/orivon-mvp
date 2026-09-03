@@ -91,9 +91,9 @@ export type LoadResult = LoadInstalled | LoadNeedsReconsent | LoadNeedsCapabilit
 export interface Loader {
   /**
    * `hintedUrl` names the origin to install -- from a `<link
-   * rel="orivon-manifest">` hint already in delivered HTML, or an explicit
-   * "Open as app" action (src/loader/README.md's discovery rule; never
-   * probed automatically). The manifest is always fetched from exactly
+   * rel="orivon-manifest">` hint already in delivered HTML, the only
+   * discovery trigger (src/loader/README.md; never probed automatically).
+   * The manifest is always fetched from exactly
    * `<that origin>/.well-known/orivon.json` -- see fetch-bundle.ts's header
    * for why a path component of `hintedUrl` is never used as the manifest
    * location.
