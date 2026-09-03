@@ -9,6 +9,7 @@ import {
   parseBookmarksFile,
   removeBookmark,
   serializeBookmarksFile,
+  WRITE_DEBOUNCE_MS,
   type Bookmark
 } from './bookmarks.js'
 
@@ -18,9 +19,14 @@ import {
 // through vi.hoisted because vi.mock's factory runs before the rest of this
 // file and would otherwise not see it. Every other fs/promises export, and
 // writeFile itself once nothing is gating it, passes straight through.
+//
+// `failNextWith`: lets a test make the next writeFile call reject instead of
+// landing, to prove flushPendingWrite() reports a genuine failure instead of
+// resolving as though the write succeeded.
 const fsGate = vi.hoisted(() => ({
   release: null as Promise<void> | null,
-  writeFileCallCount: 0
+  writeFileCallCount: 0,
+  failNextWith: null as Error | null
 }))
 
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -33,6 +39,11 @@ vi.mock('node:fs/promises', async (importOriginal) => {
       if (gate !== null) {
         fsGate.release = null
         await gate
+      }
+      const failure = fsGate.failNextWith
+      if (failure !== null) {
+        fsGate.failNextWith = null
+        throw failure
       }
       await actual.writeFile(file, data, encoding)
     }
@@ -130,6 +141,7 @@ describe('BookmarkStore', () => {
     await rm(dir, { recursive: true, force: true })
     fsGate.release = null
     fsGate.writeFileCallCount = 0
+    fsGate.failNextWith = null
   })
 
   it('starts empty when the file does not exist yet (first launch)', async () => {
@@ -222,6 +234,66 @@ describe('BookmarkStore', () => {
       { url: 'https://b.example/', title: 'B' }
     ])
   }, 2000)
+
+  // Reproduces the clobber a three-persona review found in this branch's
+  // first attempt: a first write that is still in flight when a second
+  // change arrives must never be allowed to land AFTER a write reflecting
+  // that second change -- if it does, the second change is silently lost,
+  // and flushPendingWrite() must not have already told the caller it was
+  // safe.
+  it('does not resolve while a slow first write could still land after a fresher one and clobber it', async () => {
+    const store = new BookmarkStore(filePath)
+    store.add({ url: 'https://a.example/', title: 'A' })
+
+    let releaseFirstWrite: () => void = () => {}
+    fsGate.release = new Promise((resolve) => { releaseFirstWrite = resolve })
+
+    // Wait for the debounced write to actually start -- it is now blocked
+    // on the gate above, genuinely in flight rather than merely scheduled.
+    await vi.waitFor(() => {
+      expect(fsGate.writeFileCallCount).toBe(1)
+    }, 1000)
+
+    const flushed = store.flushPendingWrite()
+    let settled = false
+    void flushed.finally(() => { settled = true })
+
+    store.add({ url: 'https://b.example/', title: 'B' })
+
+    // Longer than one debounce window: enough time for a second, unblocked
+    // write to start and land if the implementation lets one run
+    // concurrently with the still-gated first write. A correct
+    // implementation never starts that second write at all while the
+    // first is in flight -- it waits and folds the change into the next
+    // write instead.
+    await new Promise((resolve) => setTimeout(resolve, WRITE_DEBOUNCE_MS + 200))
+    expect(fsGate.writeFileCallCount).toBe(1)
+    expect(settled).toBe(false)
+
+    releaseFirstWrite()
+    await flushed
+
+    expect(settled).toBe(true)
+    const onDisk = parseBookmarksFile(await readFile(filePath, 'utf8'))
+    expect(onDisk).toEqual([
+      { url: 'https://a.example/', title: 'A' },
+      { url: 'https://b.example/', title: 'B' }
+    ])
+  }, 3000)
+
+  it('flushPendingWrite() rejects after a write that genuinely failed, rather than resolving as if it landed', async () => {
+    const store = new BookmarkStore(filePath)
+    const failure = new Error('ENOSPC: no space left on device')
+    fsGate.failNextWith = failure
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    store.add({ url: 'https://a.example/', title: 'A' })
+
+    await expect(store.flushPendingWrite()).rejects.toBe(failure)
+    expect(errorSpy).toHaveBeenCalled()
+
+    errorSpy.mockRestore()
+  }, 1000)
 
   it('resolves immediately, without throwing, when nothing has ever been scheduled', async () => {
     const store = new BookmarkStore(filePath)
