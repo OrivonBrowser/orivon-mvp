@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { checkFileSizes, SOURCE_LIMIT, TEST_LIMIT } from './check-size.mjs'
+import { checkFileSizes, readSafe, SOURCE_LIMIT, TEST_LIMIT } from './check-size.mjs'
 
 const fixture = (): string => mkdtempSync(join(tmpdir(), 'orivon-size-'))
 
@@ -181,6 +181,53 @@ describe('checkFileSizes', () => {
         expect(result.unreadable).toEqual([
           { file: 'blocked.ts', error: expect.any(String) }
         ])
+      } finally {
+        // Restore permissions before cleanup so the temp dir never leaves a
+        // chmod-000 file behind, even if an assertion above throws.
+        chmodSync(blocked, 0o644)
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+  })
+
+  describe('readSafe: a vanished file is not the same problem as a blocked one', () => {
+    // A genuine TOCTOU race -- gone between checkFileSizes's own readdirSync
+    // and the readFileSync a moment later -- happens between two calls
+    // inside one synchronous function. There is no scheduling point in
+    // between for a test to delete the file at exactly the right instant,
+    // so it cannot be reproduced deterministically by racing a real delete
+    // against checkFileSizes end to end. readSafe is exported so this can
+    // exercise the exact fs-error-code branch a real race would hit instead:
+    // reading a path that was never created raises the identical ENOENT a
+    // freshly-vanished one would, through the same catch block.
+    it('reports a normal, readable file as { text }', () => {
+      const root = fixture()
+      try {
+        const full = join(root, 'thing.ts')
+        writeFileSync(full, 'x\n')
+        expect(readSafe(full)).toEqual({ text: 'x\n' })
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+
+    it('reports ENOENT as "gone", not as an error -- a benign race, not a violation', () => {
+      const root = fixture()
+      try {
+        const neverExisted = join(root, 'never-existed.ts')
+        expect(readSafe(neverExisted)).toEqual({ gone: true })
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+
+    it('reports EACCES as an error, distinct from "gone" -- a real problem, not a race', () => {
+      const root = fixture()
+      const blocked = join(root, 'blocked.ts')
+      writeFileSync(blocked, 'x\n'.repeat(600))
+      chmodSync(blocked, 0o000)
+      try {
+        expect(readSafe(blocked)).toEqual({ error: expect.any(String) })
       } finally {
         // Restore permissions before cleanup so the temp dir never leaves a
         // chmod-000 file behind, even if an assertion above throws.

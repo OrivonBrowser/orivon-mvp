@@ -37,12 +37,9 @@ const DECLARATION_FILE = /\.d\.ts$/
  *   - install/build output: nothing here is authored, all of it is generated.
  *     Matches .gitignore's own "Build output" grouping (dist/, out/, build/)
  *     plus release/ (electron-builder.yml's configured output directory) and
- *     coverage/ (generated test-coverage reports). `build/` does not exist in
- *     this repo yet -- per electron-builder.yml's own comment it would hold
- *     icon source images, not code, once it does -- so listing it here today
- *     changes nothing about whether the guard passes; it is here so the
- *     guard's own "generated build output" justification does not quietly
- *     stop matching .gitignore's the day something creates that directory.
+ *     coverage/ (generated test-coverage reports). `build/` is listed
+ *     pre-emptively, before it exists: per electron-builder.yml's own comment
+ *     it will hold icon source images, not code, the day someone adds one.
  *   - `spike/`: week-0 spike scaffolding, explicitly absent from
  *     parallel-work.md's ownership map and predates code-guidelines.md by
  *     weeks -- the orivon-electron skill states outright it is throwaway and
@@ -79,9 +76,11 @@ function countLines (text) {
  * @returns {{ ok: boolean, offenders: Array<{file: string, lines: number, limit: number}>,
  *   unreadable: Array<{file: string, error: string}> }}
  *   `file` is root-relative and forward-slashed. Both arrays sorted by path.
- *   `unreadable` lists files this guard could not open at all (permissions, a
- *   TOCTOU race) -- their size is unknown, not zero, so they fail the check
- *   rather than passing it silently. See readSafe below.
+ *   `unreadable` lists files that exist but this guard genuinely could not
+ *   open (permissions, ownership) -- their size is unknown, not zero, so
+ *   they fail the check rather than passing it silently. A file that raced
+ *   out of existence between being listed and being read is NOT one of
+ *   these -- see readSafe below.
  */
 export function checkFileSizes (root) {
   const offenders = []
@@ -96,7 +95,19 @@ export function checkFileSizes (root) {
     try {
       entries = readdirSync(dir, { withFileTypes: true })
     } catch {
-      return // unreadable directory: not this guard's failure to report
+      // A directory this guard cannot even list -- gone, or permission
+      // denied -- gives zero information about what might be inside it, so
+      // there is nothing to report a violation about either way. That is
+      // coarser than readSafe below, which DOES split "gone" from "blocked"
+      // for a single file: a file failure happens after this same
+      // readdirSync already told us the file exists, so a genuine
+      // permissions problem there is a known, specific thing worth failing
+      // loudly about. Do not "fix" this catch to match readSafe's
+      // fails-loud-on-real-problems behaviour, or "fix" readSafe to match
+      // this catch's blanket silence -- they differ on purpose, not by
+      // oversight, and both already agree on the part that matters: neither
+      // ever reports a violation about something it never actually read.
+      return
     }
 
     for (const entry of entries) {
@@ -118,6 +129,7 @@ export function checkFileSizes (root) {
 
       const file = relativeToRoot(root, full)
       const read = readSafe(full)
+      if ('gone' in read) continue // vanished since readdirSync above: nothing to check, not a violation
       if ('error' in read) {
         unreadable.push({ file, error: read.error })
         continue
@@ -131,22 +143,33 @@ export function checkFileSizes (root) {
 }
 
 /**
- * Reads `path` as UTF-8, or reports why it could not -- never silently. A
- * file this guard cannot read (permissions, a TOCTOU race between the
- * `readdirSync` above and this call) has an unknown line count, not zero, so
- * treating a read failure the same as an empty compliant file would make the
- * one guard whose entire purpose is "a wrong guard is worse than none" the
- * thing that is wrong. Directly unlike the unreadable-directory case in
- * `walk` above: a whole directory this guard cannot list is genuinely no
- * files to check, but a *file* that exists and resists reading is a real
- * unknown, reported by checkFileSizes's `unreadable` list rather than
- * swallowed here.
- * @returns {{ text: string } | { error: string }}
+ * Reads `path` as UTF-8, or reports why it could not -- and NOT every "could
+ * not" means the same thing:
+ *
+ *   - ENOENT: `path` was listed by the `readdirSync` in `walk` above but is
+ *     gone by the time this runs -- deleted, renamed, briefly touched by
+ *     something else. That is a benign race, not a violation: there is
+ *     nothing left to check, so it must not fail the run. (Exported as
+ *     `{ gone: true }` rather than swallowed here so checkFileSizes's caller
+ *     can skip it explicitly instead of this function deciding silently.)
+ *   - anything else (EACCES, EPERM, ...): `path` exists and this guard is
+ *     genuinely blocked from reading it. Its line count is unknown, not
+ *     zero, so treating this the same as an empty compliant file would make
+ *     the one guard whose entire purpose is "a wrong guard is worse than
+ *     none" the thing that is wrong -- reported via checkFileSizes's
+ *     `unreadable` list instead.
+ *
+ * (2026-09-03: this function used to fail loudly on ENOENT too, which meant
+ * a file that simply raced out of existence -- nowhere near any size limit
+ * -- could flip the whole check to failing. That conflated the two cases
+ * above; fixed by splitting them.)
+ * @returns {{ text: string } | { error: string } | { gone: true }}
  */
-function readSafe (path) {
+export function readSafe (path) {
   try {
     return { text: readFileSync(path, 'utf8') }
   } catch (err) {
+    if (err.code === 'ENOENT') return { gone: true }
     return { error: err.code ?? String(err) }
   }
 }
@@ -173,7 +196,8 @@ if (isInvokedDirectly(import.meta.url)) {
       for (const { file, error } of unreadable) {
         console.error(`  ${file}  (${error})`)
       }
-      console.error('\nFix the permissions (or re-run, if this was a transient race) and try again.\n')
+      console.error('\nA file that merely raced out of existence would not be listed here -- see' +
+        ' readSafe in this script. Fix the permissions and try again.\n')
     }
 
     process.exit(1)
