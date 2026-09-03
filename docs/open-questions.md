@@ -53,7 +53,7 @@ None of these block starting the week-0 spike.
 | A12 | **`orivon.fs` option bags are unspecified.** `capability-api.md` names the entry points (`readFile(path, opts)`, `writeFile(path, data, opts)`, `mkdir / readdir / stat / rm / rename`) but never says what `opts` contains or what `readFile` returns | **Build step 2.** Provisional signatures are in `src/contracts/capability-api.ts` and marked as such |
 | A14 | **RESOLVED 2026-08-26 (owner):** a trailing DNS dot is stripped, so `https://x.example.` and `https://x.example` are ONE origin. Deliberately deviates from `URL.origin`. Exactly one dot; a host still carrying an empty label is rejected | Implemented in `src/broker/policy/origin.ts` |
 | A13 | **RESOLVED 2026-08-27 (owner): Promises**, per design rule 2. Widening a Promise to a plain value later is a smaller break than the reverse. Original question: `capability-api.md` §v0 surface writes them as `=> Manifest` and `=> Grant[]`, but design rule 2 in the same document says *"All entry points return Promises"* | **Build step 2.** Transcribed as Promises; see below |
-| A15 | **The four bundle-hash caps are guesses, not decisions** — `MAX_PATH_BYTES` 1024, `MAX_ASSET_BYTES` 16 MiB, `MAX_BUNDLE_BYTES` 64 MiB, `MAX_BUNDLE_ENTRIES` 4096 (`src/broker/policy/bundle-hash.ts`, `architecture/bundle-hash.md` §Caps). They are labelled AI-recommendation in the source, but a cap decides which bundles are *refusable*, so two implementations disagreeing on one disagree about whether an app can exist at all | **Before the app loader ships (build step 4).** Needs one real frontend's shape to calibrate against; guessing again now would not be better than the current guess |
+| A15 | **The four bundle-hash caps are guesses, not decisions** — `MAX_PATH_BYTES` 1024, `MAX_ASSET_BYTES` 16 MiB, `MAX_BUNDLE_BYTES` 64 MiB, `MAX_BUNDLE_ENTRIES` 4096 (`src/broker/policy/bundle-hash.ts`, `architecture/bundle-hash.md` §Caps). They are labelled AI-recommendation in the source, but a cap decides which bundles are *refusable*, so two implementations disagreeing on one disagree about whether an app can exist at all. **2026-09-03:** `src/loader/fetch-bundle.ts` (`stream/loader-02-fetch-cache`) is the first real caller of all four, and they are being carried forward uncalibrated | **Before the app loader ships (build step 4).** Needs one real frontend's shape to calibrate against; guessing again now would not be better than the current guess |
 | A16 | **RESOLVED 2026-08-28 (owner):** closing the last tab closes the window (option 2 below) — overrules this entry's own AI-REC, which favoured option 1. No `app.quit()` in `tabs.ts`/`window.ts`; `src/main/index.ts`'s existing `window-all-closed` handler already owns whether the whole process then exits | Implemented in `src/main/tabs.ts` (`TabManager`'s `onEmpty` callback) and `src/main/window.ts`. See below |
 | A17 | **RESOLVED 2026-08-27 (owner):** an `identityId` is **opaque and broker-generated** — never a user-typed name, never derived from one. The display name is stored beside the identity, not used to derive it. Found undefined during review of PR #5: it appeared exactly once in the whole repository, as one table cell | Recorded in `ADR-0010`, stated in `capability-api.md`, documented on `DeriveRequest.scope` |
 | A18 | **RESOLVED 2026-08-27 (owner): pass the GRANTED pattern list, not the manifest.** Original question: Nothing in the signature carries the grant, so a caller passing a raw manifest silently gets the declared authority | **Build step 2, before the broker calls it.** Narrow the list at the call site, or change the parameter to `readonly Pattern[]`. See below |
@@ -78,6 +78,7 @@ None of these block starting the week-0 spike.
 | A37 | **The write direction of the byte pump (an app writing bytes out over `TcpSocket.writable`) has no wire message anywhere.** `contracts/ipc.ts` specifies `DataMessage`/`CreditMessage`/`StreamEndMessage` in full for the READ direction only; `handle-contracts.md`'s Backpressure section, `capability-api.md`'s Throughput section and `ADR-0008` all describe the write side only as an outcome ("`write()` resolves only once the broker has accepted the bytes"), never as a protocol | **Before the preload-side byte-pump PR** (readable/writable streams built over the port) **can implement `writable`.** See below |
 | A38 | **RESOLVED 2026-09-02.** `security-model.md`'s T11b entry names both a per-origin in-flight cap AND "a token-bucket rate limit on IPC dispatch" as the mitigation. The in-flight cap exists (`handles.ts`) and covers every method that does real I/O, but `app.manifest`/`app.grants` never call `handleTable.run`, so nothing bounded how *often* an origin could call them. Reproduced before the fix: 5,000 concurrent `app.grants` calls from one origin, zero rejected. A shared per-origin token bucket (`src/broker/token-bucket.ts`) now gates all six control methods uniformly, checked before `dispatch()` runs | Implemented in `src/broker/token-bucket.ts` and wired in `src/broker/ipc.ts`'s `handleControlRequest`. **The numbers (capacity 200, refill 100/sec) are AI-recommended, not owner-decided** — see below |
 | A45 | **`Manifest` has no asset-list field, so "fetch every asset the manifest declares" cannot be done from the manifest alone.** `src/contracts/manifest.ts`'s `Manifest` carries only `id`/`name`/`version`/`entry`/`capabilities` — nothing enumerates the frontend files that make up the app, and no document in the corpus specifies a discovery/crawl mechanism. `bundle-hash.md` and `ADR-0009` both assume a leaf set is already in hand ("the leaf set" is given, never derived) | **Build step 4 (the app loader), now.** `createLoader.load()` takes the discovered asset path list as an explicit parameter rather than guessing a crawl heuristic. See below |
+| A46 | **The loader never checks the install origin against private/loopback address ranges (T12).** `originFromUrl` validates only scheme and hostname syntax, never address class, and never calls `isPublicUnicast`/`classifyAddress` from `src/broker/policy/address.ts` — which already implements the correct "resolve once, validate every address" discipline for exactly this threat. `http://127.0.0.1:9222/.well-known/orivon.json`, `http://169.254.169.254/` (cloud metadata), or a low-TTL host that DNS-rebinds to either, all pass every check the loader runs today | **Not live today** — `loaderSubsystem` ships inert, so nothing calls this with a real network position yet. Before it is wired to a real trigger. See below |
 
 ---
 
@@ -1063,6 +1064,46 @@ an ADR, not an AI default.
 **Needed by:** whoever wires `createLoader` to the shell's discovery trigger (the remainder of
 build step 4) — not blocking this PR, which implements everything downstream of the asset list
 and is fully testable against an injected one.
+
+---
+
+### A46 — the loader never checks the install origin against private/loopback address ranges (T12) **[STILL OPEN]**
+
+Found 2026-09-03 reviewing `stream/loader-02-fetch-cache` (build step 4). `fetch-bundle.ts`
+resolves `hintedUrl` through `originFromUrl` (`src/broker/policy/origin.ts`), which validates
+scheme and hostname syntax and nothing else — it never checks what address class the hostname
+resolves to, and never calls `isPublicUnicast`/`classifyAddress` from
+`src/broker/policy/address.ts`.
+
+`address.ts` already exists to answer exactly this question, and its own header states the
+discipline required to use it correctly: *resolve once, validate every returned address, then
+connect to the IP literal that was validated* — because a hostname is not an address, and a
+low-TTL DNS answer can change between a check and a connect. `src/broker/policy/connect.ts`
+already follows this discipline for outbound `tcp.connect`. The loader's install path does not
+follow it at all: nothing in `fetch-bundle.ts` or `origin.ts` resolves the install origin's
+hostname before treating it as fetchable.
+
+**Concretely:** `http://127.0.0.1:9222/.well-known/orivon.json`, `http://169.254.169.254/`
+(the cloud metadata endpoint), or a low-TTL host that DNS-rebinds to either between two
+requests, all pass every check the loader runs today. Unlike an app's own declared
+`tcp.connect` capability, this request needs no grant and no manifest — it is the shell itself,
+which has a full, unsandboxed network position, issuing the very first request that discovers
+whether an origin is an Orivon app at all.
+
+**Not live today.** `src/loader/subsystem.ts`'s `loaderSubsystem` ships with no `beforeReady`/
+`afterReady` — nothing wires a real trigger (a `<link rel="orivon-manifest">` hint, or "Open as
+app") to `createLoader.load()` yet, so nothing calls this against a real, attacker-influenced
+`hintedUrl` in the shipped product. This is why it is filed rather than blocking.
+
+**Leaning, not decided:** the loader should mirror `connect.ts`'s own T12 discipline —
+resolve the install origin's hostname once, reject if any resolved address is not
+`isPublicUnicast`, and only then treat the origin as installable. This is an AI leaning, not an
+owner decision: it has not been weighed against, for instance, an explicit allowlist for local
+development origins, which a resolve-and-classify check alone would foreclose without a
+carve-out.
+
+**Needed by:** whoever wires `loaderSubsystem` to a real discovery trigger — the point this
+stops being a theoretical gap and starts being a real one.
 
 ---
 
