@@ -1,10 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
-import { runAfterReady, runBeforeReady, type Subsystem, type SubsystemContext } from './registry.js'
+import { publishBroker, runAfterReady, runBeforeReady, type Subsystem, type SubsystemContext } from './registry.js'
+import type { Broker } from '../broker/index.js'
 
-// The registry never touches Electron at runtime -- SubsystemContext.app is a
-// type-only import, erased by verbatimModuleSyntax -- so a plain object stands
-// in for the App here. That erasure is the whole reason this is unit testable.
+// SubsystemContext's App and Broker fields are both type-only imports,
+// erased by verbatimModuleSyntax, so plain objects stand in for both below.
+// What this file actually proves: ctx survives being written by an earlier
+// subsystem and read by a later one in the same run.
 const ctx = { app: {} } as unknown as SubsystemContext
+const fakeBroker = { marker: 'the-one-broker' } as unknown as Broker
 
 describe('runBeforeReady', () => {
   it('runs every beforeReady in list order', () => {
@@ -103,5 +106,48 @@ describe('runAfterReady', () => {
       { name: 'b', afterReady: () => { throw new Error('b') } }
     ], ctx)
     expect(failures.map((f) => f.name)).toEqual(['a', 'b'])
+  })
+
+  // A later subsystem (the app loader, the trust indicator) needs the SAME
+  // broker the IPC subsystem built, never a second one -- two brokers means
+  // two independent, disagreeing grant ledgers for one running app. Proves
+  // ctx survives being written to by an earlier subsystem and read by a
+  // later one in the same run, which is the only mechanism that makes that
+  // possible.
+  it('lets an earlier subsystem publish the broker on ctx for a later one to read', async () => {
+    const seenByLater: Array<Broker | undefined> = []
+    const withBroker: SubsystemContext = { app: ctx.app }
+    await runAfterReady([
+      { name: 'broker', afterReady: (c) => { c.broker = fakeBroker } },
+      { name: 'later', afterReady: (c) => { seenByLater.push(c.broker) } }
+    ], withBroker)
+    expect(seenByLater).toEqual([fakeBroker])
+  })
+})
+
+describe('publishBroker', () => {
+  it('sets ctx.broker so a later reader sees it', () => {
+    const fresh: SubsystemContext = { app: ctx.app }
+    publishBroker(fresh, fakeBroker)
+    expect(fresh.broker).toBe(fakeBroker)
+  })
+
+  // The failure this guards against is silent, not loud: a second subsystem
+  // assigning c.broker directly would type-check and would just overwrite
+  // the first broker, reproducing the two-disagreeing-grant-ledgers problem
+  // SubsystemContext.broker's own doc comment exists to prevent. Routing the
+  // write through here turns that into an immediate throw instead.
+  it('throws if a broker was already published, naming the hazard', () => {
+    const fresh: SubsystemContext = { app: ctx.app }
+    publishBroker(fresh, fakeBroker)
+    const second = { marker: 'a-second-broker' } as unknown as Broker
+    expect(() => publishBroker(fresh, second)).toThrow(/grant ledger/)
+    // The first publish is not clobbered by the failed second attempt.
+    expect(fresh.broker).toBe(fakeBroker)
+  })
+
+  it('leaves ctx.broker undefined when nothing ever publishes', () => {
+    const fresh: SubsystemContext = { app: ctx.app }
+    expect(fresh.broker).toBeUndefined()
   })
 })

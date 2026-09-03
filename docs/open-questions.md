@@ -1009,6 +1009,52 @@ in `src/nostr/` can sign a real event until this exists. Not blocking this PR: t
 surface is built and tested against an injected stub per the owner's explicit decision (brief's
 Scope, item 6).
 
+### A47 — `registry.ts` is shell-owned and "maintenance only"; this branch edited it anyway **[STILL OPEN]**
+
+Found 2026-09-03, fixing `stream/broker-15-reachable`'s `publishBroker` overwrite gap.
+
+`parallel-work.md`'s ownership map gives `src/main/` to the `shell` stream, and
+`src/main/README.md` says so explicitly for `registry.ts` itself: "Maintenance only; other
+streams add themselves via `subsystems.ts` rather than editing here." This branch adds
+`publishBroker` to `registry.ts` from outside the shell stream, and the sanctioned append point
+— `subsystems.ts` — is untouched, because what this branch needed was a second write path onto
+`SubsystemContext`, not a new list entry.
+
+The change itself is additive (a new exported function, a doc-comment rewrite) and low-risk, and
+the PR discloses the crossing. What makes it worth recording rather than waving through is that
+it is **precedent-setting, not one-off**: `src/shim/`, `src/trust/` and `src/nostr/` will each
+need to read the same `ctx.broker` this branch just made safely writable, and today the only
+pattern available to any of them is "edit `registry.ts` too" — there is no second legal way in.
+
+Two shapes an answer could take:
+
+1. **A second sanctioned append point inside `registry.ts` itself**, alongside `subsystems.ts`'s
+   existing one. `parallel-work.md` would name a class of change to `registry.ts` — a new
+   optional `SubsystemContext` field plus its own `publishX`-shaped guarded setter, following
+   the pattern this branch just established — as an APPEND other streams may make directly,
+   distinct from an EDIT to `runBeforeReady`/`runAfterReady` themselves, which stays shell-owned.
+   This gives the pattern a name and a place to find it without cross-referencing an unrelated
+   entry, and lets `parallel-work.md` state up front what "additive" is allowed to mean here,
+   before three streams each guess differently.
+2. **Fold this into A31.** A31 already asks whether a non-`backlog-NN` stream branch may edit a
+   `docs`-owned file it must keep in step with its own signature change, and proposes extending
+   the borrow carve-out on a case-by-case, name-it-in-the-PR-body basis. This is the same shape
+   one level down: a stream branch needing to touch a **code** file it does not own, to extend a
+   primitive (`ctx.broker`) that the branch itself did not invent but must interoperate with.
+   Answering A31 for code as well as docs would resolve both with one decision rather than two.
+
+**Leaning, not a decision:** (2) costs less right now — it reuses a carve-out the owner may
+already be inclined to grant rather than asking for a new mechanism to be designed. (1) costs
+more up front but scopes the boundary precisely, which matters more here than it does for docs:
+a docs edit that goes stale is a wrong sentence, but three streams independently deciding what
+counts as an "additive" edit to a shared context object is exactly the kind of drift
+`registry.ts`'s own header says the subsystem-registry pattern exists to prevent. Whichever
+shape, this should be settled before `shim/`, `trust/` or `nostr/` each hit the same wall and
+pick their own answer.
+
+**Needed by:** before the next stream needs to read `ctx.broker` — plausibly `src/shim/` or
+`src/trust/`, whichever build step reaches a real grant path first. Not blocking this PR.
+
 ### A48 — the credit-window backpressure design is half-built; the constant for the other half is dead code **[STILL OPEN]**
 
 Found 2026-09-03, correcting `handle-contracts.md`'s status header (`docs-18-handle-contracts-
