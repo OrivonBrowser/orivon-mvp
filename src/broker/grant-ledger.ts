@@ -133,13 +133,46 @@ export class GrantLedger {
     }
   }
 
-  /** Bytes already written against `origin`'s quota this session. Zero for an origin the ledger has no record of yet. */
+  /** Bytes already reserved (written, or still in flight) against `origin`'s quota this session. Zero for an origin the ledger has no record of yet. */
   fsBytesWritten (origin: string): number {
     return this.#origins.get(origin)?.fsBytesWritten ?? 0
   }
 
-  /** Adds `bytes` to the running counter `fsBytesWritten` reads. Called only after a write has actually succeeded. */
-  addFsBytesWritten (origin: string, bytes: number): void {
-    this.#record(origin).fsBytesWritten += bytes
+  /**
+   * The quota check AND the reservation, as one synchronous step. Reading
+   * the counter and only updating it later -- after an `await` -- lets every
+   * concurrent caller observe the same pre-write value and all pass; the
+   * ONLY thing that closes that gap is doing both in the same synchronous
+   * turn, before anything yields to another call. No lock is needed for
+   * that: JavaScript does not interleave two synchronous stretches of code,
+   * only what sits either side of an `await`.
+   *
+   * Returns false, reserving nothing, when `bytes` would push the running
+   * total over `quotaBytes`. Reserves unconditionally (and returns true)
+   * when the origin has no declared quota -- `quotaBytes?: number` is
+   * optional -- mirroring the old unconditional counter, so a quota added
+   * to the manifest later still sees every byte written before it existed.
+   *
+   * The caller must call `releaseFsBytes` for whatever it reserved here if
+   * the write does not end up landing.
+   */
+  reserveFsBytes (origin: string, bytes: number): boolean {
+    const record = this.#record(origin)
+    const quotaBytes = record.manifest?.capabilities.fs?.quotaBytes
+    if (quotaBytes !== undefined && record.fsBytesWritten + bytes > quotaBytes) return false
+    record.fsBytesWritten += bytes
+    return true
+  }
+
+  /**
+   * Refunds a reservation `reserveFsBytes` made for a write that did not
+   * land -- refused before the real I/O ran, or that I/O itself rejected.
+   * Clamped at zero rather than trusted to balance exactly, so a mismatched
+   * caller degrades to an over-strict quota instead of a negative counter
+   * that would then let a future write past the real limit.
+   */
+  releaseFsBytes (origin: string, bytes: number): void {
+    const record = this.#record(origin)
+    record.fsBytesWritten = Math.max(0, record.fsBytesWritten - bytes)
   }
 }
