@@ -1009,6 +1009,45 @@ in `src/nostr/` can sign a real event until this exists. Not blocking this PR: t
 surface is built and tested against an injected stub per the owner's explicit decision (brief's
 Scope, item 6).
 
+### A48 — the credit-window backpressure design is half-built; the constant for the other half is dead code **[STILL OPEN]**
+
+Found 2026-09-03, correcting `handle-contracts.md`'s status header (`docs-18-handle-contracts-
+scope`).
+
+Confirmed, not assumed: `grep -rn "CREDIT_COALESCE_BYTES" --include="*.ts"` across `src/` and
+`test/` finds exactly three hits — the constant's own definition (`src/contracts/ipc.ts:103`), its
+re-export (`src/contracts/index.ts`), and nothing else. No file imports or reads it.
+
+`handle-contracts.md`'s "Backpressure — a credit window" section specifies two halves: the broker
+stops reading the underlying OS socket once outstanding credit reaches zero, and the renderer
+coalesces its own credit acknowledgements ("at most one credit message per 64 KiB consumed, or
+once per animation frame") so a fast stream does not emit a broker message per chunk. The first
+half is real and tested — `src/broker/port-pump.ts`'s `pumpLoop` loops `while (!stopped && credit
+> 0)`, exercised by `port-pump.test.ts` and `port-pump-real-socket.test.ts`. The second half does
+not exist anywhere: nothing on the renderer/preload side sends a `CreditMessage` at all yet
+(`net.connect` itself is not wired past the broker/main-process IPC layer — see `capability-
+api.md`'s corrected status header, same PR), so `CREDIT_COALESCE_BYTES` has no caller and is
+exported dead code today.
+
+**Two readings, not resolved here:**
+1. The renderer half is still intended, and simply has not been reached — its own build step
+   (wiring `net.connect` into `window.orivon` and the page-facing byte stream) comes after this
+   one. Under this reading `CREDIT_COALESCE_BYTES` is a forward-declared constant for code that
+   does not exist yet, which is ordinary sequencing, not a defect.
+2. The design changed since this constant was written, and coalescing on the renderer side is no
+   longer how credit acknowledgement will work — in which case the constant is dead code that
+   should be removed and `handle-contracts.md`'s Backpressure section amended to match whatever
+   replaced it.
+
+**Leaning, not a decision:** reading 1 is the more likely one — nothing else in the corpus
+suggests the coalescing design was reconsidered, and `src/broker/index.ts`'s own header lists
+wiring the broker to the shell's IPC layer as still open, which the renderer-side byte path
+depends on. But this is this lane's read, not a verified fact, and the owner may know otherwise.
+
+**Needed by:** whichever build step wires `net.connect` into `window.orivon` and the renderer's
+`ReadableStream` — it needs to know whether to implement the coalescing half or whether
+`CREDIT_COALESCE_BYTES` should be deleted first. Not blocking this PR, which is docs-only.
+
 ---
 
 ## B. Contradictions still to fix
