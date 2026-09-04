@@ -18,6 +18,7 @@
 // but because whatever eventually calls load() will, and getting the
 // ordering right once now costs nothing.
 
+import { resolveHost } from '../broker/node-adapters.js'
 import { electronFetch } from './electron-fetch.js'
 import { nodeLoaderStorage } from './node-storage.js'
 import { createLoader } from './index.js'
@@ -29,7 +30,11 @@ export const loaderSubsystem: Subsystem = {
     const loader = createLoader({
       fetch: electronFetch,
       storage: nodeLoaderStorage(ctx.app.getPath('userData')),
-      now: () => Date.now()
+      now: () => Date.now(),
+      // T12/A46: the same resolver src/broker/ipc.ts already wires into
+      // createBroker's own outbound tcp.connect check -- one resolver
+      // implementation, not a second (Rule 3).
+      resolve: resolveHost
     })
     publishLoader(ctx, loader)
   }

@@ -8,12 +8,16 @@
 // own -- only fixtures.
 
 import { vi } from 'vitest'
+import type { Resolver } from '../broker/policy/connect.js'
 import type { PinRecord } from '../broker/policy/pin.js'
 import type { Fetch, FetchResponse } from './fetch-bundle.js'
 import type { LoaderStorage } from './storage.js'
 
 export const ORIGIN = 'https://app.example.com'
 export const MANIFEST_URL = `${ORIGIN}/.well-known/orivon.json`
+
+/** Resolves any hostname to one public-unicast literal -- the boring case for every test that isn't specifically about the T12/A46 install-origin guard. */
+export const PUBLIC_RESOLVER: Resolver = async () => ['93.184.216.34']
 
 export function manifestJson (overrides: Record<string, unknown> = {}): string {
   return JSON.stringify({

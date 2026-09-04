@@ -1461,6 +1461,20 @@ Re-resolving the name after the check reopens the window the check exists to clo
 
 **Needed by:** now — this is live in the tree as of `98c4871`.
 
+**Implemented 2026-09-04 (`stream/loader-09-install-origin-guard`).** Found still genuinely
+unbuilt while scoping the discovery-trigger wiring — the resolution above recorded the owner's
+decision but nothing in `fetch-bundle.ts` yet acted on it. `fetchBundle()` now takes a `resolveFn:
+Resolver` (the same type `policy/connect.ts` defines; `loaderSubsystem` wires the same
+`resolveHost` `createBroker` already uses, not a second resolver) and rejects before its first
+network request if the install origin's hostname resolves — or, for a literal, classifies — as
+anything but public-unicast (`install-origin.ts`, split out once adding this pushed
+`fetch-bundle.ts` over the 500-line limit). No loopback carve-out is implemented: the only
+discovery trigger is the page-supplied hint, which is exactly the case this entry's own
+resolution says loopback must never be reachable from, so the carve-out has no live path to
+attach to. That leaves a real, plainly-stated gap — a developer building their own local Orivon
+app cannot use the discovery trigger against `localhost` at all — tracked as its own entry, A65,
+rather than silently worked around.
+
 ---
 
 ### A52 — two residual gaps a real `Fetch` must close, not `fetch-bundle.ts` **[AI-REC]**
@@ -2339,3 +2353,37 @@ back), or whether counting only up to the first code line of any kind is the int
 rule.
 
 **Needed by:** nothing. Tooling accuracy only.
+
+---
+
+### A65 — no discovery-trigger path lets a developer install their own local Orivon app **[STILL OPEN]**
+
+Found 2026-09-04, building the T12/A46 install-origin guard (`stream/loader-09-install-origin-
+guard`) that made this concrete rather than hypothetical.
+
+A46's own resolution permits installing a loopback origin, but **only** when the URL came from a
+user action (typed into the address bar, or an explicit action on something the user typed) —
+**never** from a page-supplied hint. Since the "Open as app" cut (`capability-api.md`'s
+2026-09-03 correction), the passive `<link rel="orivon-manifest">` hint is the *only* discovery
+trigger this loader is ever wired to. There is no second trigger left for A46's user-action
+carve-out to attach to, so in practice loopback is never installable at all right now: a developer
+building their own local Orivon app has no way to exercise the discovery trigger against
+`http://localhost:PORT`.
+
+**Asked directly, answered, not yet built.** The owner's direction (2026-09-04, same conversation
+that raised this gap): a real permission mechanism, but **user-granted per address, before Orivon
+ever contacts it** — explicitly not a manifest-declared flag, since reading a manifest requires
+contacting the address first, which is the exact thing being guarded against. This is confirmed
+design intent, not an open question about the mechanism's shape.
+
+**Why not built now, an AI scope call rather than something the owner was asked to sequence:**
+the mechanism needs a genuinely new kind of UI surface — nothing like a settings page or a
+persisted, user-editable address allowlist exists anywhere in this shell today — and
+`build-plan.md`'s own Sequence already reserves this territory for build step 9, "Developer mode
+— unpacked loader, plainly-worded opt-in, unsigned marking, developer docs." Building a
+first-of-its-kind settings surface as a side effect of the discovery-trigger work risked exactly
+the scope creep `CLAUDE.md` Rule 4 warns about.
+
+**Needed by:** before build step 9 ships, if a real developer workflow for testing a local app's
+manifest hint is expected to exist by then. Not blocking anything in build step 2/4 — the
+discovery trigger works correctly for every real, public origin without this.
