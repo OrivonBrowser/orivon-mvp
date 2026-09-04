@@ -4,7 +4,7 @@
 
 import { vi } from 'vitest'
 import { createBroker } from './index.js'
-import type { Broker, CreateBrokerOptions, DialedSocket } from './index.js'
+import type { Broker, CreateBrokerOptions, DialedSocket } from './broker-contracts.js'
 import type { LedgerStorage } from './ledger-storage.js'
 import type { Capabilities, Manifest } from '../contracts/index.js'
 
