@@ -48,10 +48,11 @@ function undeletableLedgerStorage (): LedgerStorage & { readonly floors: Map<str
 }
 
 // T19's version floor: "the highest version ever installed for this origin"
-// (security-model.md), so a validly-hash-pinned OLDER bundle can never be
-// replayed to suppress a fix. Lives in the grant ledger, not the pin record
-// (ADR-0009's own consequence: it must survive an uninstalled/reinstalled
-// app, which a pin record does not).
+// (security-model.md), so a validly-hash-pinned OLDER bundle is never
+// installed unnoticed. Lives in the grant ledger, not the pin record --
+// ADR-0009's original reasoning was that it must survive an uninstalled/
+// reinstalled app, which its 2026-09-04 amendment corrects: the floor
+// survives a restart (A57), not a full "remove this app" action.
 describe('GrantLedger -- the version floor', () => {
   it('an origin never registered has floor 0.0.0', () => {
     expect(new GrantLedger().versionFloorFor(APP)).toBe('0.0.0')

@@ -26,9 +26,9 @@ import { isArray, ownProperty } from './own-property.js'
 /**
  * What the broker does with the update.
  *
- * These are ordered by severity -- `reject` > `capability-prompt` >
- * `reconsent` > `silent` -- and `decideUpdate` returns the most severe one
- * that applies:
+ * These are ordered by severity -- `rollback-choice`/`rollback-notice` >
+ * `capability-prompt` > `reconsent` > `silent` -- and `decideUpdate` returns
+ * the most severe one that applies:
  *
  * - `silent`        install it; nothing the user consented to has changed.
  * - `reconsent`     "this app's code changed" (ADR-0005: hash-pinning is the
@@ -40,12 +40,28 @@ import { isArray, ownProperty } from './own-property.js'
  *                   re-establishes consent for the app as it now is, whereas
  *                   re-consenting to changed code says nothing about new
  *                   authority.
- * - `reject`        do not install at any prompt. Reserved for the version
- *                   floor, where the correct answer is not "ask the user" --
- *                   a replayed old bundle looks identical to a legitimate one
- *                   and no prompt can tell the user which they are looking at.
+ * - `rollback-choice`   the version is below this origin's own floor -- a
+ *                   validly hash-pinned, validly-authorised bundle can still
+ *                   be a replayed older one, and no automated check can tell
+ *                   the two apart. **2026-09-04, owner decision, reversing
+ *                   this module's original stance:** this is no longer a
+ *                   silent, no-prompt block. The user is warned and given an
+ *                   actual choice -- proceed with the older version, or keep
+ *                   what is cached -- the first time this happens for a given
+ *                   origin (`update.rollbackAcknowledged` false).
+ * - `rollback-notice`   the same below-floor situation, but the user has
+ *                   already chosen, at least once, to accept a rollback from
+ *                   this origin (`update.rollbackAcknowledged` true). Installs
+ *                   proceed the same as `silent`; the caller shows an ongoing,
+ *                   passive, non-blocking notice rather than asking again --
+ *                   "warn every time, but never require a click" was the
+ *                   owner's own framing. `rollbackAcknowledged` is a fact
+ *                   about the ORIGIN, not the exact version being offered:
+ *                   once true, it stays true for every future below-floor
+ *                   version from that origin, there is no path back to
+ *                   `rollback-choice` inside this function.
  */
-export type UpdateDecision = 'silent' | 'reconsent' | 'capability-prompt' | 'reject'
+export type UpdateDecision = 'silent' | 'reconsent' | 'capability-prompt' | 'rollback-choice' | 'rollback-notice'
 
 /**
  * A pattern set keyed by capability kind -- the collapsed form of the origin's
@@ -92,6 +108,14 @@ export interface UpdateInput {
    * own purpose (T19).
    */
   readonly versionFloor: string
+  /**
+   * Whether the user has already chosen, at least once, to proceed with a
+   * below-floor version from this origin (2026-09-04 owner decision). Ignored
+   * entirely unless `version` is actually below `versionFloor` -- it must
+   * never, on its own, turn an ordinary at-or-above-floor update into a
+   * notice.
+   */
+  readonly rollbackAcknowledged: boolean
 }
 
 export function decideUpdate (update: UpdateInput): UpdateDecision {
@@ -101,8 +125,11 @@ export function decideUpdate (update: UpdateInput): UpdateDecision {
   // and its pattern set is by construction one the user already accepted. If
   // this check ran after the others, an attacker with control of the host
   // could suppress a security fix indefinitely and the user would only ever
-  // see a "the code changed" prompt (security-model.md T19).
-  if (!isAtOrAboveFloor(update.version, update.versionFloor)) return 'reject'
+  // see a "the code changed" prompt (security-model.md T19) -- or, since
+  // 2026-09-04, a capability-prompt that never mentions the rollback at all.
+  if (!isAtOrAboveFloor(update.version, update.versionFloor)) {
+    return update.rollbackAcknowledged ? 'rollback-notice' : 'rollback-choice'
+  }
 
   // A SUBSET CHECK, not a kind comparison. See the file header -- this single
   // line is the reason this module exists.
