@@ -20,7 +20,7 @@
 // import, erased by verbatimModuleSyntax. That erasure is what makes the two
 // functions below unit testable without launching Electron.
 import type { App } from 'electron'
-import type { Broker } from '../broker/index.js'
+import type { Broker } from '../broker/broker-contracts.js'
 import type { Loader } from '../loader/index.js'
 
 export interface SubsystemContext {

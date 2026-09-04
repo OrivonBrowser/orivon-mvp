@@ -5,7 +5,7 @@
 
 import { vi } from 'vitest'
 import type { ControlEvent } from './ipc.js'
-import type { Broker } from './index.js'
+import type { Broker } from './broker-contracts.js'
 import type { Grant, Manifest } from '../contracts/index.js'
 import type { FailableTcpSocket } from './handle-contracts.js'
 import type { RequestEnvelope } from '../contracts/ipc.js'

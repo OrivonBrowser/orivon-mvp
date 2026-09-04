@@ -4,7 +4,7 @@ import {
   type Subsystem
 } from './registry.js'
 import type { App } from 'electron'
-import type { Broker } from '../broker/index.js'
+import type { Broker } from '../broker/broker-contracts.js'
 import type { Loader } from '../loader/index.js'
 
 // SubsystemContext's App and Broker fields are both type-only imports,
