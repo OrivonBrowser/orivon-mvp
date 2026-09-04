@@ -34,6 +34,7 @@ import { HandleTable } from './handles.js'
 import type { DestroyResource, FailableTcpSocket } from './handle-contracts.js'
 import { errnoOf, fail } from './errors.js'
 import { GrantLedger } from './grant-ledger.js'
+import type { LedgerStorage } from './ledger-storage.js'
 import { checkConnect } from './policy/connect.js'
 import type { Resolver } from './policy/connect.js'
 import { CONFINEMENT_ERROR_CODE, confinePath } from './policy/paths.js'
@@ -121,6 +122,14 @@ export interface CreateBrokerOptions {
   readonly now: () => number
   readonly fs: BrokerFs
   readonly keychain: Keychain
+  /**
+   * Where `GrantLedger`'s version floor survives a restart (A57,
+   * `docs/open-questions.md`). Optional so every existing caller of this
+   * function -- every test in this codebase constructs `createBroker`
+   * with no persistence in mind -- keeps working unchanged: omitting it is
+   * exactly today's in-memory-only behaviour, not a degraded mode.
+   */
+  readonly ledgerStorage?: LedgerStorage
 }
 
 /**
@@ -256,7 +265,7 @@ function mapIoError (error: unknown, kind: 'net' | 'fs'): OrivonError {
 
 export function createBroker (deps: CreateBrokerOptions): Broker {
   const handleTable = new HandleTable()
-  const ledger = new GrantLedger()
+  const ledger = new GrantLedger(deps.ledgerStorage)
 
   /**
    * The isolation key, through the one definition of it (policy/origin.ts) --
