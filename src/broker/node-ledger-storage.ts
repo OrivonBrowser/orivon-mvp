@@ -3,7 +3,7 @@
 // async, node:fs/promises pattern.
 
 import { closeSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { originHash } from './origin-hash.js'
 import type { LedgerStorage } from './ledger-storage.js'
 
@@ -27,7 +27,9 @@ function floorPath (userDataPath: string, origin: string): string {
  * Writes `text` to `path` atomically: a temp file in the SAME directory
  * (`renameSync` across filesystems is not atomic, and is sometimes refused
  * outright), fsynced before the rename so the bytes are actually on disk and
- * not just buffered when the rename lands, then renamed over `path`.
+ * not just buffered when the rename lands, then renamed over `path`, then
+ * the containing directory fsynced so the entry naming those bytes is
+ * durable too (`fsyncDirectory` below).
  * POSIX `rename` replaces its target as one atomic operation -- there is no
  * window where a reader sees a partially-written file, only the old
  * complete one or the new complete one.
@@ -50,6 +52,37 @@ function writeFileAtomic (path: string, text: string): void {
     closeSync(fd)
   }
   renameSync(tmp, path)
+  fsyncDirectory(dirname(path))
+}
+
+/**
+ * Flushes the DIRECTORY ENTRY the rename above just created. Syncing the
+ * file's contents is only half of it: on ext4, XFS and others the entry
+ * naming those contents is metadata with its own write-back, so a crash
+ * between the rename and the next commit can leave the new file's bytes on
+ * disk with nothing pointing at them.
+ *
+ * BEST EFFORT, deliberately. Windows has no equivalent -- opening a
+ * directory as a file fails outright -- and some filesystems refuse fsync on
+ * a directory handle. The rename itself has already succeeded by this point,
+ * so the only thing lost is durability across a crash in the next few
+ * seconds; failing the whole write over that would trade a real, common
+ * outcome for a rare one.
+ */
+function fsyncDirectory (dir: string): void {
+  let fd: number
+  try {
+    fd = openSync(dir, 'r')
+  } catch {
+    return
+  }
+  try {
+    fsyncSync(fd)
+  } catch {
+    // See above: nothing to recover, the data is already renamed into place.
+  } finally {
+    closeSync(fd)
+  }
 }
 
 function isVersionFloorShape (value: unknown): value is { versionFloor: string } {
