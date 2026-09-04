@@ -1,6 +1,10 @@
 // Fetches a manifest and its declared assets, and turns them into a hashed,
-// entry-checked BundleTree: (fetch, hintedUrl, assetPaths) in, a validated
-// bundle out. TOFU vs. decideUpdate() branching and persistence are
+// entry-checked BundleTree: (fetch, hintedUrl) in, a validated bundle out.
+// The asset list is never supplied by a caller -- it is read off the
+// manifest itself (manifest.entry unioned with manifest.assets, ADR-0011)
+// once this file has fetched and parsed it, since the passive discovery
+// trigger this exists for (README.md) never has anything but hintedUrl to
+// start from. TOFU vs. decideUpdate() branching and persistence are
 // index.ts's job, not this file's -- why this file exists on its own:
 // README.md, Design notes.
 
@@ -340,22 +344,16 @@ function entryCanonicalPath (canonicalOrigin: string, entry: string): string | n
 }
 
 /**
- * `assetPaths` is an explicit parameter, not discovered from the manifest.
- * See README.md, Design notes for why.
+ * `hintedUrl` is all a passive discovery trigger ever has -- the asset list
+ * is read off the manifest itself, once it is fetched below, never supplied
+ * by a caller. See README.md, Design notes.
  */
 export async function fetchBundle (
   fetchFn: Fetch,
-  hintedUrl: string,
-  assetPaths: readonly string[]
+  hintedUrl: string
 ): Promise<FetchBundleResult> {
   const canonicalOrigin = originFromUrl(hintedUrl)
   if (canonicalOrigin === null) return rejected(`hintedUrl is not a valid app origin: ${hintedUrl}`)
-
-  // Cheap and exact -- checked before any network call, per this lane's
-  // acceptance criteria ("fail before exceeding them, not after").
-  if (assetPaths.length + 1 > MAX_BUNDLE_ENTRIES) {
-    return rejected(`bundle would have ${String(assetPaths.length + 1)} entries, more than MAX_BUNDLE_ENTRIES (${String(MAX_BUNDLE_ENTRIES)})`)
-  }
 
   // BUNDLE_TIMEOUT_MS's one clock for the whole operation below -- started
   // here so it covers the manifest fetch too, not just the asset loop.
@@ -397,6 +395,29 @@ export async function fetchBundle (
     const parsed = parseManifest(manifestText)
     if (!parsed.ok) return rejected(parsed.reason)
     const manifest = parsed.manifest
+
+    // ADR-0011: the manifest declares its own files. `entry` is unioned in
+    // rather than fetched separately -- it is a leaf of the bundle like any
+    // other declared asset, and the entry-leaf check below needs it present
+    // in `entries` to find it there.
+    const assetPaths = [manifest.entry, ...(manifest.assets ?? [])]
+
+    // Expected unreachable, kept anyway: manifest.ts's own MAX_ASSETS cap
+    // already guarantees manifest.assets.length <= MAX_BUNDLE_ENTRIES - 2 for
+    // any manifest that reached this line, so assetPaths.length + 1 here can
+    // never exceed MAX_BUNDLE_ENTRIES. This function must not trust that
+    // invariant blindly, though -- a bug in manifest.ts's own accounting must
+    // not silently turn into an oversized fetch loop here instead. Moved to
+    // after the manifest fetch, unlike before: with assetPaths now DERIVED
+    // from the manifest rather than supplied externally, there is no longer
+    // anything to check this against before that one fetch happens. That one
+    // fetch is itself bounded on its own terms (MAX_MANIFEST_BYTES, checked
+    // above by fetchWithBudget) and this line still runs before the per-asset
+    // loop below starts -- so an over-cap list still costs at most that one
+    // fetch, never one per declared asset.
+    if (assetPaths.length + 1 > MAX_BUNDLE_ENTRIES) {
+      return rejected(`bundle would have ${String(assetPaths.length + 1)} entries, more than MAX_BUNDLE_ENTRIES (${String(MAX_BUNDLE_ENTRIES)})`)
+    }
 
     const entries: BundleEntry[] = [{ path: MANIFEST_PATH, content: manifestFetch.content }]
 

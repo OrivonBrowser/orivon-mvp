@@ -24,7 +24,7 @@ describe('createLoader: fresh install (TOFU, ADR-0005)', () => {
       [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
     }
     const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow() })
-    const result = await loader.load(ORIGIN, ['/index.html'], NO_GRANTS)
+    const result = await loader.load(ORIGIN, NO_GRANTS)
 
     expect(result.outcome).toBe('installed')
     if (result.outcome !== 'installed') return
@@ -43,7 +43,7 @@ describe('createLoader: fresh install (TOFU, ADR-0005)', () => {
     const storage = memoryStorage()
     const routes: Record<string, RouteSpec> = { [MANIFEST_URL]: { body: utf8('{not json') } }
     const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow() })
-    const result = await loader.load(ORIGIN, [], NO_GRANTS)
+    const result = await loader.load(ORIGIN, NO_GRANTS)
 
     expect(result.outcome).toBe('rejected')
     expect(storage.pins.size).toBe(0)
@@ -58,7 +58,7 @@ describe('createLoader: refetch against an existing pin', () => {
       [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
     }
     const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow() })
-    const result = await loader.load(ORIGIN, ['/index.html'], NO_GRANTS)
+    const result = await loader.load(ORIGIN, NO_GRANTS)
     if (result.outcome !== 'installed') throw new Error('fixture setup failed')
   }
 
@@ -72,7 +72,7 @@ describe('createLoader: refetch against an existing pin', () => {
       [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
     }
     const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(1_700_000_001_000) })
-    const result = await loader.load(ORIGIN, ['/index.html'], NO_GRANTS)
+    const result = await loader.load(ORIGIN, NO_GRANTS)
 
     expect(result.outcome).toBe('installed')
     // Re-affirmed, not skipped -- but this is a real, if redundant, write:
@@ -91,7 +91,7 @@ describe('createLoader: refetch against an existing pin', () => {
     }
     const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow() })
     const before = storage.pins.get(ORIGIN)
-    const result = await loader.load(ORIGIN, ['/index.html'], NO_GRANTS)
+    const result = await loader.load(ORIGIN, NO_GRANTS)
 
     expect(result.outcome).toBe('needs-reconsent')
     expect(storage.pins.get(ORIGIN)).toBe(before) // untouched
@@ -106,7 +106,7 @@ describe('createLoader: refetch against an existing pin', () => {
       [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
     }
     const narrowLoader = createLoader({ fetch: stubFetch(narrowRoutes), storage, now: fixedNow() })
-    await narrowLoader.load(ORIGIN, ['/index.html'], NO_GRANTS)
+    await narrowLoader.load(ORIGIN, NO_GRANTS)
 
     // The user actually granted exactly that narrow pattern -- this is the
     // GRANTED set decideUpdate must be checked against.
@@ -125,7 +125,7 @@ describe('createLoader: refetch against an existing pin', () => {
       [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
     }
     const wideLoader = createLoader({ fetch: stubFetch(wideRoutes), storage, now: fixedNow() })
-    const result = await wideLoader.load(ORIGIN, ['/index.html'], granted)
+    const result = await wideLoader.load(ORIGIN, granted)
 
     expect(result.outcome).toBe('needs-capability-prompt')
     if (result.outcome !== 'needs-capability-prompt') return
@@ -136,11 +136,20 @@ describe('createLoader: refetch against an existing pin', () => {
     const storage = memoryStorage()
     await install(storage)
 
-    const routes: Record<string, RouteSpec> = { [MANIFEST_URL]: { body: utf8(manifestJson({ version: '0.9.0' })) } }
+    // The entry route must resolve, same as every other case in this
+    // describe block -- fetchBundle() always fetches `entry` now (ADR-0011),
+    // so an unrouted `/index.html` would reject on the fetch itself and
+    // never reach decideUpdate() at all, proving nothing about the floor.
+    const routes: Record<string, RouteSpec> = {
+      [MANIFEST_URL]: { body: utf8(manifestJson({ version: '0.9.0' })) },
+      [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
+    }
     const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow() })
-    const result = await loader.load(ORIGIN, [], { grantedPatterns: {}, versionFloor: '1.0.0' })
+    const result = await loader.load(ORIGIN, { grantedPatterns: {}, versionFloor: '1.0.0' })
 
     expect(result.outcome).toBe('rejected')
+    if (result.outcome !== 'rejected') return
+    expect(result.reason).toMatch(/version floor/i)
   })
 
   it('a corrupted/unparseable existing pin forces at least reconsent -- never silently re-installs as TOFU', async () => {
@@ -152,7 +161,7 @@ describe('createLoader: refetch against an existing pin', () => {
       [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
     }
     const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow() })
-    const result = await loader.load(ORIGIN, ['/index.html'], NO_GRANTS)
+    const result = await loader.load(ORIGIN, NO_GRANTS)
 
     // NO_GRANTS means the app holds no capabilities at all, and this
     // manifest requests none either, so the pattern-subset check cannot
