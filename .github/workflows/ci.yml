@@ -60,6 +60,9 @@ jobs:
       - name: No source file opens with an essay
         run: npm run check:comments
 
+      - name: No source file over the 500/800-line limit
+        run: npm run check:size
+
       - name: Build
         run: npm run build
 
