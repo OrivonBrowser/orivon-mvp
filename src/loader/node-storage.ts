@@ -7,10 +7,10 @@
 // `code/`, never inside it -- ADR-0009's own consequence: the pin record
 // must not itself become a hashed leaf.
 
-import { mkdirSync, realpathSync } from 'node:fs'
+import { lstatSync, mkdirSync, realpathSync } from 'node:fs'
 import { mkdir, readdir, readFile, rm, rmdir, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
-import { decodePercentEscapes } from '../broker/policy/canonical-path.js'
+import { dirname, join, sep } from 'node:path'
+import { decodePercentEscapes, foldForIdentity } from '../broker/policy/canonical-path.js'
 import { confinePath } from '../broker/policy/paths.js'
 import type { PinRecord } from '../broker/policy/pin.js'
 import type { LoaderStorage } from './storage.js'
@@ -25,15 +25,39 @@ function pinPath (userDataPath: string, origin: string): string {
 }
 
 /**
+ * Refuses a directory Orivon did not create. `lstatSync`, NEVER `statSync`:
+ * statSync follows a symlink and reports the target, so it answers "is there
+ * a directory over there", not "is this entry itself a directory".
+ *
+ * A symlink is refused, never removed: deleting an attacker-controlled path
+ * on an attacker-chosen schedule is its own hazard.
+ */
+function requireRealDirectory (path: string): void {
+  const entry = lstatSync(path, { throwIfNoEntry: false })
+  if (entry === undefined || entry.isDirectory()) return
+  throw new Error(`app storage path exists but is not a directory Orivon created: ${path}`)
+}
+
+/**
  * CREATES the root, it does not merely name it -- confinePath's very first
  * act is realpath(root), and a root that has never been created denies
  * every path with 'root-unresolvable' before ever reaching the app's own
  * traversal checks. Mirrors nodeFs.rootFor's exact reasoning
  * (node-adapters.ts) for the identical reason: fs writeAsset's is only
  * reached after this exists.
+ *
+ * Both directories are checked BEFORE the mkdir, because mkdirSync with
+ * `recursive: true` succeeds silently against an existing symlink to a
+ * directory -- and confinePath cannot catch that one, since it confines
+ * against realpath(root) and would simply confine to the symlink's target.
+ * Every writeAsset and every pruneAssets call comes through here, so the
+ * check re-runs on each rather than being done once at startup.
  */
 function codeRoot (userDataPath: string, origin: string): string {
-  const root = join(appRoot(userDataPath, origin), 'code')
+  const appDirectory = appRoot(userDataPath, origin)
+  const root = join(appDirectory, 'code')
+  requireRealDirectory(appDirectory)
+  requireRealDirectory(root)
   mkdirSync(root, { recursive: true })
   return root
 }
@@ -65,56 +89,64 @@ function resolveAssetPath (root: string, canonicalPath: string): string {
  */
 async function walkFiles (root: string): Promise<string[]> {
   const out: string[] = []
-  const entries = await readdir(root, { withFileTypes: true })
+  let entries
+  try {
+    entries = await readdir(root, { withFileTypes: true })
+  } catch (error) {
+    // An unlistable subtree contributes no files rather than aborting the
+    // walk. Throwing here would unwind through pruneAssets and abort
+    // install() between the last writeAsset and writePin -- leaving a fully
+    // written bundle with no pin record, which the next load() reads back as
+    // never-pinned fresh TOFU with no reconsent check at all. A subtree left
+    // unpruned is disk hygiene; that is not.
+    console.error('[loader] pruneAssets: failed to list a directory, skipping that subtree', root, error)
+    return out
+  }
   for (const entry of entries) {
     const full = join(root, entry.name)
     if (entry.isDirectory()) out.push(...await walkFiles(full))
     else if (entry.isFile()) out.push(full)
+    // Dirent types come from lstat, so a symlink matches neither branch and
+    // is never followed or deleted. Logged rather than passed over silently:
+    // nothing here creates one, so its presence is worth knowing about.
+    else if (entry.isSymbolicLink()) console.warn('[loader] pruneAssets: ignoring a symlink under the code root', full)
   }
   return out
 }
 
 /**
- * NFC-folds a resolved path before pruneAssets compares it for equality.
- * HFS+/APFS (a supported run-from-source target, CLAUDE.md Rule 8) store a
- * non-ASCII filename decomposed (NFD) on disk even when the bytes written
- * were precomposed (NFC, the form a JSON manifest string normally carries) --
- * so walkFiles's readdir-derived path and resolveAssetPath's manifest-derived
- * path can name the same file with two different byte sequences. Case is
- * left alone, unlike canonical-path.ts's collisionKey: these are already
- * percent-decoded real filesystem paths, not canonical URL paths, and
- * folding case here would wrongly conflate two distinct files on a
- * case-sensitive filesystem.
+ * Removes `from` and then each of its parents up to (never including) `root`,
+ * stopping at the first that is not empty. Called only with a directory this
+ * prune just deleted a file from, so a directory a CONCURRENT install has
+ * created and not yet written into is never touched -- nothing in the loader
+ * removed a directory at all before pruning existed, and a sweep of every
+ * empty directory under the root would turn that window into an ENOENT on a
+ * write already in flight (docs/open-questions.md A62). The cost is that a
+ * directory left empty by some earlier interrupted run is not swept up until
+ * a prune deletes from it again.
+ *
+ * `root` itself always survives: codeRoot() created it and the next
+ * writeAsset call for this origin expects it to still be there.
+ *
+ * ENOENT and ENOTEMPTY are silent: both mean something else changed this
+ * directory in between, which is exactly the concurrency this tolerates
+ * rather than reports. Anything else is logged and ends the climb.
  */
-function normalizeForComparison (path: string): string {
-  return path.normalize('NFC')
-}
-
-/**
- * Removes every directory under `root` left empty once pruneAssets has
- * deleted its files -- bottom-up, so a directory that only became empty
- * because its last subdirectory was just removed is caught too. Never
- * removes `root` itself: codeRoot() created it and the next writeAsset call
- * for this origin expects it to still be there. Best-effort, like the
- * deletions above: a directory-listing or rmdir failure is logged and
- * skipped rather than left to abort the prune.
- */
-async function removeEmptyDirectories (root: string, dir: string): Promise<void> {
-  let entries
-  try {
-    entries = await readdir(dir, { withFileTypes: true })
-  } catch (error) {
-    console.error('[loader] pruneAssets: failed to list a directory while removing empty ones', dir, error)
-    return
-  }
-  for (const entry of entries) {
-    if (entry.isDirectory()) await removeEmptyDirectories(root, join(dir, entry.name))
-  }
-  if (dir === root) return
-  try {
-    if ((await readdir(dir)).length === 0) await rmdir(dir)
-  } catch (error) {
-    console.error('[loader] pruneAssets: failed to remove an empty directory', dir, error)
+async function removeEmptyAncestors (root: string, from: string): Promise<void> {
+  const prefix = root + sep
+  let dir = from
+  while (dir !== root && dir.startsWith(prefix)) {
+    try {
+      if ((await readdir(dir)).length !== 0) return
+      await rmdir(dir)
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (code !== 'ENOENT' && code !== 'ENOTEMPTY') {
+        console.error('[loader] pruneAssets: failed to remove an empty directory', dir, error)
+      }
+      return
+    }
+    dir = dirname(dir)
   }
 }
 
@@ -159,15 +191,22 @@ export function nodeLoaderStorage (userDataPath: string): LoaderStorage {
     },
     pruneAssets: async (origin, keep) => {
       const root = codeRoot(userDataPath, origin)
-      const keepPaths = new Set(keep.map((canonicalPath) => normalizeForComparison(resolveAssetPath(root, canonicalPath))))
+      // foldForIdentity on BOTH sides, so a spelling difference the
+      // filesystem does not distinguish cannot read as "delete this". Its
+      // case fold is deliberately more permissive than a case-sensitive
+      // filesystem is: erring towards "these are the same file" leaves a
+      // stale file behind, while erring the other way deletes a live one.
+      const keepPaths = new Set(keep.map((canonicalPath) => foldForIdentity(resolveAssetPath(root, canonicalPath))))
+      const emptied = new Set<string>()
       for (const filePath of await walkFiles(root)) {
-        if (keepPaths.has(normalizeForComparison(filePath))) continue
+        if (keepPaths.has(foldForIdentity(filePath))) continue
         try {
           // force: true treats an already-gone file (ENOENT) as success --
           // walkFiles and this delete are not atomic (docs/open-questions.md
           // A62), so something else removing the file in between is a race,
           // not an error.
           await rm(filePath, { force: true })
+          emptied.add(dirname(filePath))
         } catch (error) {
           // A genuine failure here (EPERM, a directory where a file was
           // expected) is disk hygiene, not a security gap: install() (this
@@ -178,7 +217,10 @@ export function nodeLoaderStorage (userDataPath: string): LoaderStorage {
           console.error('[loader] pruneAssets: failed to delete a superseded asset', filePath, error)
         }
       }
-      await removeEmptyDirectories(root, root)
+      // Order does not matter: each climb re-reads every directory it visits,
+      // so a parent skipped as non-empty is reached again from below once its
+      // last subdirectory goes.
+      for (const dir of emptied) await removeEmptyAncestors(root, dir)
     }
   }
 }
