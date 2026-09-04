@@ -98,12 +98,12 @@ export interface Loader {
    * for why a path component of `hintedUrl` is never used as the manifest
    * location.
    *
-   * `assetPaths` is the discovered set of the app's frontend files.
-   * `Manifest` has no field naming them and nothing in the doc corpus
-   * specifies a discovery mechanism -- docs/open-questions.md A45, filed
-   * rather than guessed. The caller supplies what it already knows.
+   * The app's own file list is never supplied here -- fetch-bundle.ts reads
+   * it off the manifest itself (`entry` unioned with `assets`, ADR-0011)
+   * once it has fetched and parsed it. A passive discovery trigger never has
+   * anything but `hintedUrl` to start from (docs/open-questions.md A45).
    */
-  load(hintedUrl: string, assetPaths: readonly string[], context: LoadContext): Promise<LoadResult>
+  load(hintedUrl: string, context: LoadContext): Promise<LoadResult>
 }
 
 /** Persists a freshly accepted bundle (TOFU or a `silent` verdict) and returns the pin caller-facing code sees. */
@@ -124,8 +124,8 @@ async function install (
 }
 
 export function createLoader (options: CreateLoaderOptions): Loader {
-  async function load (hintedUrl: string, assetPaths: readonly string[], context: LoadContext): Promise<LoadResult> {
-    const fetched = await fetchBundle(options.fetch, hintedUrl, assetPaths)
+  async function load (hintedUrl: string, context: LoadContext): Promise<LoadResult> {
+    const fetched = await fetchBundle(options.fetch, hintedUrl)
     if (!fetched.ok) return { outcome: 'rejected', reason: fetched.reason }
     const { canonicalOrigin, manifest, tree, entries } = fetched
 

@@ -1352,6 +1352,14 @@ validates it the same way `entry` is validated (`stream/contracts-11-manifest-as
 `createLoader.load()`'s own `assetPaths` parameter is unchanged by this — a caller now reads it
 off `manifest.assets` rather than inventing or discovering it.
 
+**Corrected 2026-09-04.** The line above assumed a caller would already hold a parsed manifest
+before calling `load()` — impossible, since only `fetchBundle` (inside `load()`) ever fetches the
+fixed well-known manifest path; nothing upstream has `manifest.assets` to read. Fixed in
+`stream/loader-06-assets-from-manifest`: `assetPaths` is removed from both `fetchBundle` and
+`Loader.load()`; `fetchBundle` now derives it itself, internally, once it has fetched and parsed
+the manifest. See `ADR-0011`'s own 2026-09-04 amendment and `src/loader/README.md`'s Design notes
+for the full account.
+
 ---
 
 ### A46 — the loader never checks the install origin against private/loopback address ranges (T12) **[RESOLVED 2026-09-03]**
