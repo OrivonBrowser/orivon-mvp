@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { nodeLoaderStorage } from './node-storage.js'
 import { appRootDirectoryName } from './storage.js'
+import { utf8 } from './test-helpers.js'
 import { parsePinRecord } from '../broker/policy/pin.js'
 import type { PinRecord } from '../broker/policy/pin.js'
 
@@ -128,6 +129,51 @@ describe('nodeLoaderStorage', () => {
     const storage = nodeLoaderStorage(userData)
 
     await expect(storage.writeAsset(APP, '/../../etc/passwd', new Uint8Array())).rejects.toThrow()
+  })
+
+  it('pruneAssets deletes a file whose canonical path is not in the keep list', async () => {
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-loader-storage-'))
+    const storage = nodeLoaderStorage(userData)
+    await storage.writeAsset(APP, '/index.html', utf8('a'))
+    await storage.writeAsset(APP, '/old.js', utf8('stale'))
+
+    await storage.pruneAssets(APP, ['/index.html'])
+
+    const codeRoot = join(userData, 'apps', appRootDirectoryName(APP), 'code')
+    expect(await fsReadFile(join(codeRoot, 'index.html'), 'utf8')).toBe('a')
+    await expect(fsReadFile(join(codeRoot, 'old.js'))).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('pruneAssets keeps every file whose canonical path is in the keep list', async () => {
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-loader-storage-'))
+    const storage = nodeLoaderStorage(userData)
+    await storage.writeAsset(APP, '/index.html', utf8('a'))
+    await storage.writeAsset(APP, '/app.js', utf8('b'))
+
+    await storage.pruneAssets(APP, ['/index.html', '/app.js'])
+
+    const codeRoot = join(userData, 'apps', appRootDirectoryName(APP), 'code')
+    expect(await fsReadFile(join(codeRoot, 'index.html'), 'utf8')).toBe('a')
+    expect(await fsReadFile(join(codeRoot, 'app.js'), 'utf8')).toBe('b')
+  })
+
+  it('pruneAssets deletes a stale file under a nested directory', async () => {
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-loader-storage-'))
+    const storage = nodeLoaderStorage(userData)
+    await storage.writeAsset(APP, '/index.html', utf8('a'))
+    await storage.writeAsset(APP, '/css/old-style.css', utf8('stale'))
+
+    await storage.pruneAssets(APP, ['/index.html'])
+
+    const codeRoot = join(userData, 'apps', appRootDirectoryName(APP), 'code')
+    await expect(fsReadFile(join(codeRoot, 'css', 'old-style.css'))).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('pruneAssets is a no-op for an origin with nothing on disk yet', async () => {
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-loader-storage-'))
+    const storage = nodeLoaderStorage(userData)
+
+    await expect(storage.pruneAssets(APP, ['/index.html'])).resolves.toBeUndefined()
   })
 
   it('two different origins get two different code roots', async () => {

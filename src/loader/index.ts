@@ -106,7 +106,21 @@ export interface Loader {
   load(hintedUrl: string, context: LoadContext): Promise<LoadResult>
 }
 
-/** Persists a freshly accepted bundle (TOFU or a `silent` verdict) and returns the pin caller-facing code sees. */
+/**
+ * Persists a freshly accepted bundle (TOFU or a `silent` verdict) and returns
+ * the pin caller-facing code sees.
+ *
+ * `pruneAssets` after writing (docs/open-questions.md A58, gap 2) deletes
+ * whatever a PREVIOUS pin left behind that the new bundle no longer
+ * declares. Not independently exercisable end-to-end yet through `load()`
+ * as written: `decideUpdate` only reaches the `silent` branch that calls
+ * this function when the bundle hash is UNCHANGED (`isSameBundle`), which by
+ * construction means the same file set -- nothing to prune. It becomes live
+ * once something persists a bundle after a user approves a `reconsent`/
+ * `needs-capability-prompt` outcome, which does not exist yet (this file's
+ * header). Built now anyway, on the one function that ever persists a
+ * bundle, rather than guessed into whatever calls this function later.
+ */
 async function install (
   storage: LoaderStorage,
   canonicalOrigin: string,
@@ -119,6 +133,7 @@ async function install (
   for (const entry of entries) {
     await storage.writeAsset(canonicalOrigin, entry.path, entry.content)
   }
+  await storage.pruneAssets(canonicalOrigin, entries.map((entry) => entry.path))
   await storage.writePin(canonicalOrigin, pin)
   return pin
 }

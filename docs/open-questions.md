@@ -1961,7 +1961,7 @@ for this PR, which only adds the floor — it does not yet enforce it anywhere.
 
 ---
 
-### A58 — nothing bounds total disk usage across origins, or across successive updates to one origin **[STILL OPEN]**
+### A58 — nothing bounds total disk usage across origins, or across successive updates to one origin **[PARTIALLY RESOLVED 2026-09-04]**
 
 Filed 2026-09-03, `fix-62` (`stream/loader-05-node-storage`), while fixing `readPin`'s
 corrupt-pin handling and `electron-fetch.ts`'s redirect trust. (A57 taken by a parallel fix
@@ -1996,6 +1996,23 @@ global cap, eviction order). That is a policy decision for an ADR, not something
 this entry.
 
 **Needed by:** before/alongside PR #63 lands. See above.
+
+**Gap 1 (across different origins) resolved 2026-09-04, owner decision.** No aggregate,
+cross-origin disk cap is enforced. `MAX_BUNDLE_BYTES` (64 MiB) per origin remains the only bound
+— total disk use across every pinned origin is unbounded, deliberately. This mirrors how
+mainstream browsers already behave: no user-facing "total cache size" ceiling, only per-origin
+storage quotas, with the OS/browser's own storage-pressure eviction as the real backstop under
+genuine disk exhaustion (out of scope for Orivon's MVP to build its own version of). Asked as a
+direct question, not guessed: the owner considered and explicitly rejected a global ceiling
+(512 MiB / 1 GiB / 256 MiB were offered as concrete options) in favour of no ceiling at all. This
+closes the specific "wiring the trigger would ship an unbounded ... disk-fill vector" concern
+`ADR-0012` raised for THIS gap — the disk-fill is still technically unbounded, but that is now a
+considered design choice rather than an unexamined gap.
+
+**Gap 2 (across successive updates to one origin) still needs fixing, independent of the above**
+— it is not a quota question, it is plain hygiene: an update should not leave the previous
+version's now-unreferenced files sitting on disk forever regardless of any ceiling. Tracked for a
+follow-up fix in the same stream as this resolution.
 
 ---
 

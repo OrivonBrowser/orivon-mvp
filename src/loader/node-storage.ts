@@ -8,7 +8,7 @@
 // must not itself become a hashed leaf.
 
 import { mkdirSync, realpathSync } from 'node:fs'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { decodePercentEscapes } from '../broker/policy/canonical-path.js'
 import { confinePath } from '../broker/policy/paths.js'
@@ -58,6 +58,22 @@ function resolveAssetPath (root: string, canonicalPath: string): string {
   return confined.resolved
 }
 
+/**
+ * Every regular file under `root`, as an absolute real path -- a plain
+ * manual recursion rather than `readdir`'s own `recursive` option, so this
+ * does not depend on a Node version new enough to have it.
+ */
+async function walkFiles (root: string): Promise<string[]> {
+  const out: string[] = []
+  const entries = await readdir(root, { withFileTypes: true })
+  for (const entry of entries) {
+    const full = join(root, entry.name)
+    if (entry.isDirectory()) out.push(...await walkFiles(full))
+    else if (entry.isFile()) out.push(full)
+  }
+  return out
+}
+
 export function nodeLoaderStorage (userDataPath: string): LoaderStorage {
   return {
     readPin: async (origin) => {
@@ -96,6 +112,13 @@ export function nodeLoaderStorage (userDataPath: string): LoaderStorage {
       const resolved = resolveAssetPath(codeRoot(userDataPath, origin), path)
       await mkdir(dirname(resolved), { recursive: true })
       await writeFile(resolved, content)
+    },
+    pruneAssets: async (origin, keep) => {
+      const root = codeRoot(userDataPath, origin)
+      const keepPaths = new Set(keep.map((canonicalPath) => resolveAssetPath(root, canonicalPath)))
+      for (const filePath of await walkFiles(root)) {
+        if (!keepPaths.has(filePath)) await rm(filePath)
+      }
     }
   }
 }
