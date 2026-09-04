@@ -12,7 +12,9 @@ import type { Manifest } from '../contracts/index.js'
 import { MAX_ASSET_BYTES, MAX_BUNDLE_BYTES, bundleTree } from '../broker/policy/bundle-hash.js'
 import type { BundleEntry, BundleTree } from '../broker/policy/bundle-hash.js'
 import { MANIFEST_PATH, MAX_BUNDLE_ENTRIES, canonicalAssetPath } from '../broker/policy/canonical-path.js'
+import type { Resolver } from '../broker/policy/connect.js'
 import { originFromUrl } from '../broker/policy/origin.js'
+import { ensurePublicUnicastOrigin } from './install-origin.js'
 import { isOrivonErrorLike } from '../broker/errors.js'
 import { MAX_MANIFEST_BYTES, parseManifest } from './manifest.js'
 
@@ -350,10 +352,15 @@ function entryCanonicalPath (canonicalOrigin: string, entry: string): string | n
  */
 export async function fetchBundle (
   fetchFn: Fetch,
-  hintedUrl: string
+  hintedUrl: string,
+  resolveFn: Resolver
 ): Promise<FetchBundleResult> {
   const canonicalOrigin = originFromUrl(hintedUrl)
   if (canonicalOrigin === null) return rejected(`hintedUrl is not a valid app origin: ${hintedUrl}`)
+
+  // T12/A46, install-origin.ts -- checked before any network request below.
+  const originRejection = await ensurePublicUnicastOrigin(canonicalOrigin, resolveFn)
+  if (originRejection !== null) return rejected(originRejection)
 
   // BUNDLE_TIMEOUT_MS's one clock for the whole operation below -- started
   // here so it covers the manifest fetch too, not just the asset loop.
