@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { never, outcomeNow, rejection } from './handles.test-helpers.js'
 import { APP, baseDeps, manifestWith, okSocket, stubFs } from './index.test-helpers.js'
 import { createBroker } from './index.js'
-import type { CreateBrokerOptions, Dial, DialedSocket } from './index.js'
+import type { CreateBrokerOptions, Dial, DialedSocket } from './broker-contracts.js'
 import type { Manifest } from '../contracts/index.js'
 import { LIMITS } from '../contracts/index.js'
 

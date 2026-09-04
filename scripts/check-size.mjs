@@ -6,9 +6,9 @@
  * and reason about it confidently in a way it cannot for 900. Rule 2 was
  * enforced by hand in the 2026-08-27 refactor; this is the mechanical guard
  * for it, following the same idiom as check-no-native-modules.mjs and
- * check-contracts-pure.mjs. It is deliberately NOT wired into `npm run
- * postinstall` or CI here -- code-guidelines.md's own §Status records
- * that as the owner's call, still open.
+ * check-contracts-pure.mjs. Wired into `npm run check:size` and CI's `check`
+ * job as of 2026-09-04 -- code-guidelines.md's own §Status records the
+ * reversal of the earlier "rules first, enforcement later" deferral.
  *
  * "Test file" is exactly what code-guidelines.md Rule 2 defines, no more:
  * a `*.test.ts` file, anything under `test/`, and
