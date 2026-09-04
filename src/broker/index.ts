@@ -34,6 +34,7 @@ import { HandleTable } from './handles.js'
 import type { DestroyResource, FailableTcpSocket } from './handle-contracts.js'
 import { errnoOf, fail } from './errors.js'
 import { GrantLedger } from './grant-ledger.js'
+import type { LedgerStorage } from './ledger-storage.js'
 import { checkConnect } from './policy/connect.js'
 import type { Resolver } from './policy/connect.js'
 import { CONFINEMENT_ERROR_CODE, confinePath } from './policy/paths.js'
@@ -121,6 +122,14 @@ export interface CreateBrokerOptions {
   readonly now: () => number
   readonly fs: BrokerFs
   readonly keychain: Keychain
+  /**
+   * Where `GrantLedger`'s version floor survives a restart (A57,
+   * `docs/open-questions.md`). Optional so every existing caller of this
+   * function -- every test in this codebase constructs `createBroker`
+   * with no persistence in mind -- keeps working unchanged: omitting it is
+   * exactly today's in-memory-only behaviour, not a degraded mode.
+   */
+  readonly ledgerStorage?: LedgerStorage
 }
 
 /**
@@ -160,6 +169,11 @@ export interface Broker {
    * synchronously on a malformed origin, and every other Broker method
    * already rejects rather than throwing. A caller wrapping the whole
    * surface in one uniform `.catch()` must not have to special-case this one.
+   *
+   * REJECTS ONLY ON A BROKER FAULT, never on anything the app did. The
+   * version floor is raised in memory before this can reject, so a rejection
+   * means the raise was not written to disk -- not that the registration was
+   * refused (`GrantLedger.registerApp`).
    */
   registerApp(origin: string, manifest: Manifest): Promise<void>
   /**
@@ -256,7 +270,7 @@ function mapIoError (error: unknown, kind: 'net' | 'fs'): OrivonError {
 
 export function createBroker (deps: CreateBrokerOptions): Broker {
   const handleTable = new HandleTable()
-  const ledger = new GrantLedger()
+  const ledger = new GrantLedger(deps.ledgerStorage)
 
   /**
    * The isolation key, through the one definition of it (policy/origin.ts) --
@@ -463,8 +477,22 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     return ledger.grantsFor(canonical(origin))
   }
 
+  /**
+   * Re-throws the version-floor write failure (the one thing
+   * `GrantLedger.registerApp` throws) rather than swallowing it, but as an
+   * OrivonError: `canonical` above already rejects with one, and one method
+   * must not reject with two shapes. NOT `mapIoError` -- the floor already
+   * rose in memory, so 'denied'/'limit' would misreport a broker fault as
+   * the registration being refused. Fresh message, errno kept as
+   * `platformCode`, for `mapIoError`'s own path-leak reason.
+   */
   async function registerApp (origin: string, appManifest: Manifest): Promise<void> {
-    ledger.registerApp(canonical(origin), appManifest)
+    const key = canonical(origin)
+    try {
+      ledger.registerApp(key, appManifest)
+    } catch (error) {
+      throw fail('internal', 'the version floor could not be persisted', undefined, errnoOf(error))
+    }
   }
 
   async function versionFloorFor (origin: string): Promise<string> {

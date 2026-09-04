@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { originFromSenderFrame, originFromUrl, type SenderFrameLike } from './origin.js'
+import { isPersistableOrigin, originFromSenderFrame, originFromUrl, type SenderFrameLike } from './origin.js'
 
 // Origin derivation is the first of the six security-critical areas in
 // docs/development/testing.md, and it has the property that qualifies an area
@@ -222,6 +222,80 @@ describe('originFromUrl', () => {
     it('a megabyte of host is rejected without building a megabyte of key', () => {
       expect(originFromUrl(`https://${'a'.repeat(1_000_000)}/`)).toBeNull()
     })
+  })
+})
+
+// A23/T13c: never persist a grant for a loopback, file: or plain-http
+// origin. file: never reaches this function at all -- originFromUrl already
+// refuses it a derivable origin -- so only scheme and host remain to check.
+describe('isPersistableOrigin', () => {
+  describe('refused', () => {
+    it.each([
+      'http://x.example', // plain http, otherwise ordinary
+      'http://127.0.0.1:8080', // loopback IPv4, plain http
+      'https://127.0.0.1:8080', // loopback IPv4, even over https
+      'http://[::1]:9000',
+      'https://[::1]:9000', // loopback IPv6, even over https
+      'http://localhost:3000',
+      'https://localhost', // the reserved name, even over https
+      'https://0177.0.0.1', // octal loopback -- same address, different spelling
+      'https://2130706433', // decimal loopback -- same address, third spelling
+      // The "unspecified" addresses. classifyAddress calls these
+      // 'unspecified', not 'loopback', so a loopback-only check lets them
+      // through -- and connecting to 0.0.0.0 reaches 127.0.0.1 on Linux and
+      // macOS, which is the whole of what T13c cares about here.
+      'https://0.0.0.0',
+      'https://0.0.0.0:8443',
+      'https://[::]',
+      // RFC 6761 SS6.3 reserves the WHOLE .localhost namespace for loopback,
+      // not just the bare name, and Chromium honours the subtree. An exact
+      // `hostname === 'localhost'` check misses every subdomain of it.
+      'https://app.localhost',
+      'https://foo.bar.localhost'
+    ])('%s', (origin) => {
+      const canonical = originFromUrl(origin)
+      expect(canonical).not.toBeNull()
+      expect(isPersistableOrigin(canonical as string)).toBe(false)
+    })
+
+    // Defence in depth, not the documented contract: this function's
+    // precondition is an already-canonical origin, and `originFromUrl`
+    // strips the root label before one ever gets here. Running the host
+    // through the same canonicalisation anyway costs nothing and means a
+    // caller that skips that step cannot spell its way past the check.
+    it.each([
+      'https://localhost.',
+      'https://app.localhost.'
+    ])('%s (un-canonicalised, trailing root label)', (origin) => {
+      expect(isPersistableOrigin(origin)).toBe(false)
+    })
+  })
+
+  describe('allowed', () => {
+    it.each([
+      'https://x.example',
+      'https://x.example:8443',
+      'https://93.184.216.34', // an ordinary PUBLIC IP literal -- T13c names loopback specifically, not every non-hostname origin
+      // The .localhost refusal is a namespace check, not a substring one.
+      // These are ordinary registrable names that merely read like it, and
+      // refusing them would silently downgrade real apps to session-only
+      // grants.
+      'https://localhost.example',
+      'https://mylocalhost',
+      'https://notlocalhost.example'
+    ])('%s', (origin) => {
+      const canonical = originFromUrl(origin)
+      expect(canonical).not.toBeNull()
+      expect(isPersistableOrigin(canonical as string)).toBe(true)
+    })
+  })
+
+  it('a private (non-loopback) LAN address over https is not refused by this check -- T13c names loopback, not the wider private range T12 blocks for a different reason', () => {
+    expect(isPersistableOrigin('https://192.168.1.5')).toBe(true)
+  })
+
+  it('an unparseable string is refused rather than throwing', () => {
+    expect(isPersistableOrigin('not a url')).toBe(false)
   })
 })
 

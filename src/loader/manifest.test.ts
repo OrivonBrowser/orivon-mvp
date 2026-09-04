@@ -478,6 +478,16 @@ describe('assets', () => {
       .toMatch(/must not be an absolute URL/)
   })
 
+  // Belongs to this file rather than fetch-bundle.test.ts because
+  // parseManifest is what rejects it: `new URL()` does not recognise this
+  // string as an absolute reference (isAbsoluteUrl returns false), so it
+  // falls through to the relative-path branch below, and the check that
+  // catches it is this file's own encoding + canonical-path one.
+  it('rejects a malformed URL-shaped asset path, even though it does not parse as absolute', () => {
+    expect(reason(parseManifest(minimal({ assets: ['http://[not-valid-ipv6/x.js'] }))))
+      .toMatch(/not a safe relative path/)
+  })
+
   it('rejects a leading slash', () => {
     expect(reason(parseManifest(minimal({ assets: ['/app.js'] })))).toMatch(/without a leading slash/)
   })
@@ -514,12 +524,12 @@ describe('assets', () => {
   })
 
   // Two slots are reserved off MAX_BUNDLE_ENTRIES, not one: `entry` itself is
-  // unioned into `assetPaths` by a real caller (ADR-0011's own "the loader
-  // fetches the union of the two"), and fetch-bundle.ts's own `+1` in
-  // `assetPaths.length + 1 > MAX_BUNDLE_ENTRIES` reserves a further slot for
-  // the manifest leaf it always pushes onto `entries` first. So the true cap
-  // on `assets.length` is MAX_BUNDLE_ENTRIES - 2, not - 1 -- see MAX_ASSETS's
-  // own comment in manifest.ts.
+  // unioned into the file list fetch-bundle.ts derives from this manifest
+  // (ADR-0011's own "the loader fetches the union of the two"), and
+  // fetch-bundle.ts's own `+1` in `assetPaths.length + 1 > MAX_BUNDLE_ENTRIES`
+  // reserves a further slot for the manifest leaf it always pushes onto
+  // `entries` first. So the true cap on `assets.length` is MAX_BUNDLE_ENTRIES
+  // - 2, not - 1 -- see MAX_ASSETS's own comment in manifest.ts.
   it('accepts exactly one below the true cap, leaving room for entry and the manifest leaf', () => {
     const atCap = Array.from({ length: 4094 }, (_, i) => `f${i}.js`)
     expect(parseManifest(minimal({ assets: atCap })).ok).toBe(true)

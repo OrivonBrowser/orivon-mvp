@@ -7,6 +7,8 @@
 // this split; only the file it lives in.
 
 import type { CapabilityKind, Grant, GrantId, Manifest, Pattern } from '../contracts/index.js'
+import type { LedgerStorage } from './ledger-storage.js'
+import { isPersistableOrigin } from './policy/origin.js'
 import { compareVersions } from './policy/update.js'
 
 /**
@@ -50,15 +52,16 @@ interface OriginRecord {
   fsBytesWritten: number
   /**
    * T19's version floor: the highest version ever installed. `registerApp`
-   * is the only writer.
+   * is the only writer of a RAISED value; hydration (below) is the only
+   * other writer, and only ever raises it too.
    *
-   * IN-MEMORY ONLY, same known gap as `fsBytesWritten` above: `GrantLedger`
-   * is constructed fresh once per process launch, so this floor resets on
-   * every browser restart -- not only on an app's own uninstall. `ADR-0009`
-   * requires the floor to survive an uninstalled/reinstalled app precisely
-   * so a reset cannot happen that way; resetting on every restart is a
-   * strictly bigger gap than the one that ADR anticipated. Filed as A57
-   * (open-questions.md).
+   * Persisted via an injected `LedgerStorage` (A57, `docs/open-questions.md`)
+   * so it survives a browser restart, not just an app's own uninstall --
+   * `ADR-0009` requires exactly that. Deliberately NOT persisted the rest of
+   * `OriginRecord` (`manifest`, `grants`, `fsBytesWritten`): full ledger
+   * persistence is separate, larger, not-yet-built work (A23's own "when the
+   * code that persists grants exists"); this closes only the specific T19
+   * replay-guard gap A57 is about.
    */
   versionFloor: string
 }
@@ -81,13 +84,73 @@ interface OriginRecord {
  */
 export class GrantLedger {
   readonly #origins = new Map<string, OriginRecord>()
+  readonly #storage: LedgerStorage | undefined
+
+  /**
+   * `storage` is optional so every existing caller (every test in this
+   * codebase constructs `GrantLedger()`/`createBroker()` with no persistence
+   * in mind) keeps working unchanged -- omitting it is exactly today's
+   * in-memory-only behaviour, not a degraded mode.
+   */
+  constructor (storage?: LedgerStorage) {
+    this.#storage = storage
+  }
 
   #record (origin: string): OriginRecord {
     const existing = this.#origins.get(origin)
     if (existing !== undefined) return existing
     const created: OriginRecord = { manifest: undefined, grants: new Map(), fsBytesWritten: 0, versionFloor: '0.0.0' }
     this.#origins.set(origin, created)
+    this.#hydrateFloor(origin, created)
     return created
+  }
+
+  /**
+   * Loads `origin`'s persisted floor into a freshly created record -- called
+   * from `#record`'s create branch only, so BOTH `registerApp` and
+   * `versionFloorFor` pick it up on an origin's first touch this session,
+   * regardless of which one runs first (`Loader.load()` reads
+   * `versionFloorFor` before any registration decision, so hydration must
+   * not depend on `registerApp` having already run).
+   *
+   * Runs at most once per record instance: a record already in `#origins`
+   * short-circuits `#record` before this is ever called again for it. The
+   * one exception is `forgetOrigin` deleting the record outright, in which
+   * case re-hydrating on the origin's next touch is exactly correct -- the
+   * whole point of forgetting an origin is to let it compare against
+   * whatever is actually on disk afterward, not against a stale in-memory
+   * decision from before the forget.
+   *
+   * A no-op when no `LedgerStorage` was injected, and for an origin
+   * `isPersistableOrigin` refuses -- the same gate the write side applies, so
+   * T13c holds in both directions. Nothing writes a floor for such an origin
+   * today, so this reads as belt-and-braces; it is what stops a floor file
+   * that got there some other way (a bug, a hand-edit, a future code path)
+   * being honoured for a loopback origin anyway. It also spares a pointless
+   * disk read for every localhost origin, which is what this repo's own e2e
+   * tests and fixture app run on.
+   */
+  #hydrateFloor (origin: string, record: OriginRecord): void {
+    if (this.#storage === undefined || !isPersistableOrigin(origin)) return
+    const persisted = this.#storage.readVersionFloor(origin)
+    if (persisted === undefined) return
+
+    if (compareVersions(persisted, persisted) === null) {
+      // Corrupt/unparseable (LedgerStorage's own doc contract): applied
+      // AS-IS, bypassing the raise-only comparison below entirely, rather
+      // than left at '0.0.0'. update.ts's own isAtOrAboveFloor fails closed
+      // on a pair compareVersions cannot order -- this is what makes that
+      // fire for every future update against this origin, rather than
+      // silently reopening T19 by looking identical to "never installed".
+      record.versionFloor = persisted
+      return
+    }
+    // Raise only, never lower -- same rule registerApp enforces below. A
+    // freshly created record's default ('0.0.0') is always at or below any
+    // valid persisted floor, so this only ever raises in practice; written
+    // as a real comparison anyway rather than an unconditional assignment,
+    // so it can never regress if that default ever changes.
+    if (compareVersions(persisted, record.versionFloor) === 1) record.versionFloor = persisted
   }
 
   /**
@@ -99,24 +162,118 @@ export class GrantLedger {
    * `compareVersions` returning anything but 1 (including null, an
    * unparseable version `parseManifest` should already have refused
    * upstream) leaves the floor exactly where it was. This is the only writer
-   * of `versionFloor`; T19's replay guard depends on every registration
+   * of a raised `versionFloor` (hydration above only ever applies what was
+   * already persisted); T19's replay guard depends on every registration
    * going through here.
+   *
+   * THE IN-MEMORY RAISE HAPPENS FIRST, AND IS UNCONDITIONAL. Nothing about
+   * persistence may delay or skip it. A ledger with no `LedgerStorage` at
+   * all already guarantees that much, and a ledger WITH one must never be
+   * weaker: hold the raise back until a write succeeds, and a failed write
+   * leaves this session's floor at the superseded version -- so the same
+   * session accepts a replay of it, with no restart involved and nothing
+   * visible. That is a worse hole than the one persistence closes.
+   *
+   * Persists the raised value afterward via `LedgerStorage` (A57) so it
+   * survives a restart -- only when the floor actually moves, so an ordinary
+   * page reload that re-declares the same version never touches disk, and
+   * never at all for an origin `isPersistableOrigin` refuses (A23/T13c:
+   * loopback and plain-http origins are session-scoped only).
+   *
+   * THROWS if that write fails (EACCES, ENOSPC, EROFS), after the raise has
+   * already landed. The residual risk is then A57's original one and no
+   * worse -- a restart while writes keep failing hydrates the older on-disk
+   * value -- but it is reported instead of silent. `Broker.registerApp`
+   * (./index.ts) turns this into the rejected promise every other method on
+   * that surface already produces.
    */
   registerApp (origin: string, manifest: Manifest): void {
     const record = this.#record(origin)
     record.manifest = manifest
-    if (compareVersions(manifest.version, record.versionFloor) === 1) {
-      record.versionFloor = manifest.version
+    if (compareVersions(manifest.version, record.versionFloor) !== 1) return
+
+    record.versionFloor = manifest.version
+
+    if (this.#storage !== undefined && isPersistableOrigin(origin)) {
+      this.#storage.writeVersionFloor(origin, manifest.version)
     }
+  }
+
+  /**
+   * A60's escape hatch. `registerApp` raises the floor unconditionally, even
+   * for a manifest that was only ever FETCHED, never actually installed --
+   * so a hostile origin can poison the floor with a fake high version and
+   * lock the user out of every real, lower-numbered future update from it.
+   * Nothing else in this class lowers, resets or clears a floor once raised.
+   * This is the only way back: it clears the in-memory record and deletes
+   * whatever `LedgerStorage` persisted, so a subsequent registration for
+   * this origin starts at '0.0.0' again, on disk as well as in memory.
+   *
+   * BOTH have to go together. Clearing only memory would let the next
+   * hydration read the poisoned value straight back off disk; clearing only
+   * disk would leave the poisoned value live for the rest of this session.
+   * DISK FIRST, then memory, and memory is left untouched if the delete
+   * fails: clearing memory first means a failed delete leaves the poisoned
+   * floor on disk with nothing in memory to compare it against -- a state
+   * strictly worse than never having called this at all. A failed forget
+   * must change nothing.
+   *
+   * The delete failing is LOGGED, NOT THROWN, unlike `registerApp`'s write
+   * above. The two are not held to one standard because they carry different
+   * risk: `registerApp`'s write is the security-critical half of a raise that
+   * already happened, so hiding its failure hides a real weakening. This is
+   * best-effort cleanup, and its failure leaves the ledger exactly as it was
+   * -- still safe, just still poisoned, which is the state the caller was
+   * already in.
+   *
+   * Never a throw. With no `LedgerStorage` injected it still clears the
+   * in-memory record -- there is simply no disk half to clear. For an origin
+   * the ledger holds nothing for it is a no-op both halves.
+   *
+   * NOT AN "UNINSTALL THIS APP" PRIMITIVE, and it should not be mistaken for
+   * one when the UI action that drives it is eventually built. It is correct
+   * and complete for the version floor, which is what A60 needs. It also
+   * drops the origin's `manifest`, `grants` and `fsBytesWritten`, and those
+   * three it does NOT finish:
+   *   - dropping a grant here does not revoke the handles it authorised.
+   *     This class has no reference to `HandleTable` (it is broker-internal,
+   *     see the class doc), so that cascade belongs one layer up, in
+   *     `createBroker`, next to the one `revoke` already performs.
+   *   - resetting `fsBytesWritten` to zero frees no bytes on disk, so
+   *     forget-then-re-register is a way around the fs quota until the
+   *     confinement directory is actually sized (A29).
+   *
+   * NOTHING CALLS THIS YET (docs/open-questions.md A60), so neither gap is
+   * reachable today.
+   */
+  forgetOrigin (origin: string): void {
+    if (this.#storage !== undefined) {
+      try {
+        this.#storage.deleteVersionFloor(origin)
+      } catch (error) {
+        console.error('[broker] failed to delete a persisted version floor; the in-memory record was left intact so nothing is half-forgotten', error)
+        return
+      }
+    }
+    this.#origins.delete(origin)
   }
 
   manifestFor (origin: string): Manifest | undefined {
     return this.#origins.get(origin)?.manifest
   }
 
-  /** T19: the highest version ever installed for this origin. `'0.0.0'` for one never registered. */
+  /**
+   * T19: the highest version ever installed for this origin. `'0.0.0'` for
+   * one never registered NOR ever persisted. Routes through `#record`
+   * (rather than a plain `#origins.get`) so an origin queried for the first
+   * time this session -- before `registerApp` has run at all -- still
+   * hydrates from `LedgerStorage` first; the only externally visible effect
+   * of that is an in-memory record now existing for a merely-queried
+   * origin, which every other method already treats identically to "no
+   * record at all" (empty grants, undefined manifest).
+   */
   versionFloorFor (origin: string): string {
-    return this.#origins.get(origin)?.versionFloor ?? '0.0.0'
+    return this.#record(origin).versionFloor
   }
 
   /** What was ACTUALLY granted. Empty for an origin the ledger has no record of. */

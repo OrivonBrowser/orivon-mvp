@@ -403,7 +403,7 @@ and its case-sensitivity tests have to be revisited together.
 
 ---
 
-### A23 — a derived origin does not say whether it may be persisted **[AI-REC]**
+### A23 — a derived origin does not say whether it may be persisted **[RESOLVED 2026-09-04]**
 
 Found while reviewing `stream/broker-01-origin` (2026-08-27). T13c forbids ever writing a
 grant for a loopback, `file:` or plain-`http` origin to disk — session-scoped only, re-prompt
@@ -420,6 +420,15 @@ consumer at build step 2 is better than guessing now. `originFromUrl`'s doc comm
 gap explicitly so a caller meets it at the point of use.
 
 **Needed by:** build step 2, specifically whoever writes the grant ledger's persist path.
+
+**Resolved 2026-09-04 (PR #68).** `src/broker/policy/origin.ts` now exports
+`isPersistableOrigin(origin)`, built against the real consumer this entry deferred for —
+`GrantLedger`'s version-floor persistence (A57). It refuses `http:` outright, the whole
+`.localhost` namespace (not just the bare name), and any host `classifyAddress` calls `loopback`
+or `unspecified` (covering `0.0.0.0`/`[::]`, which route to loopback in practice on Linux and
+macOS even though they're a distinct address class from `loopback` itself). `originFromUrl`
+itself is unchanged, per the owner's original decision — the durable interface stayed a plain
+string; persistability is a separate, composable check a caller opts into.
 
 ### A24 — should a whole-codebase guideline sweep be exempt from the one-stream-per-backlog-branch rule **[STILL OPEN]**
 
@@ -1352,6 +1361,14 @@ validates it the same way `entry` is validated (`stream/contracts-11-manifest-as
 `createLoader.load()`'s own `assetPaths` parameter is unchanged by this — a caller now reads it
 off `manifest.assets` rather than inventing or discovering it.
 
+**Corrected 2026-09-04.** The line above assumed a caller would already hold a parsed manifest
+before calling `load()` — impossible, since only `fetchBundle` (inside `load()`) ever fetches the
+fixed well-known manifest path; nothing upstream has `manifest.assets` to read. Fixed in
+`stream/loader-06-assets-from-manifest`: `assetPaths` is removed from both `fetchBundle` and
+`Loader.load()`; `fetchBundle` now derives it itself, internally, once it has fetched and parsed
+the manifest. See `ADR-0011`'s own 2026-09-04 amendment and `src/loader/README.md`'s Design notes
+for the full account.
+
 ---
 
 ### A46 — the loader never checks the install origin against private/loopback address ranges (T12) **[RESOLVED 2026-09-03]**
@@ -1915,7 +1932,7 @@ snapshot. Not blocking.
 
 ---
 
-### A57 — `GrantLedger` has no persistence: everything resets on process restart, not just app uninstall **[STILL OPEN]**
+### A57 — `GrantLedger` has no persistence: everything resets on process restart, not just app uninstall **[RESOLVED 2026-09-04]**
 
 Found 2026-09-03, as the required follow-up from PR #61's review (T19's version floor,
 `GrantLedger.versionFloor`).
@@ -1951,9 +1968,26 @@ is one decision, not two, and deserves its own pass rather than a fix folded int
 **Needed by:** before `versionFloorFor` is wired into the app loader's update path. Not blocking
 for this PR, which only adds the floor — it does not yet enforce it anywhere.
 
+**Resolved 2026-09-04 (PR #68, `stream/broker-21-version-floor-persistence`).** `GrantLedger`
+now takes an optional `LedgerStorage`; the version floor is persisted to
+`<userData>/grants/<sha256(origin)>/version-floor.json` via a temp-file-then-rename atomic write,
+and hydrated on an origin's first touch each session. A first-round fix shipped a real regression
+(delaying the in-memory raise until after a successful disk write, so a single failed write left
+the in-memory floor at the *old* version for the rest of that session — worse than no persistence
+at all, since a same-session replay of the superseded version would then pass). Fixed in a second
+round: the in-memory floor now raises unconditionally and first, exactly matching what a
+no-persistence ledger already guaranteed; the disk write is attempted after, and a failure is
+reported (the promise rejects) rather than silently swallowed. The residual risk — if writes keep
+failing until an actual restart, that restart hydrates the stale on-disk value — is this entry's
+original, now-understood risk, not a new one, and it is at least observable via the rejection.
+Loopback, `file:` and plain-`http` origins never persist a floor at all (`isPersistableOrigin`,
+closing A23 below). A60's escape hatch (`GrantLedger.forgetOrigin`) exists for the case this entry
+itself did not anticipate — a floor poisoned by a hostile version number, now that a restart can
+no longer clear it by accident.
+
 ---
 
-### A58 — nothing bounds total disk usage across origins, or across successive updates to one origin **[STILL OPEN]**
+### A58 — nothing bounds total disk usage across origins, or across successive updates to one origin **[RESOLVED 2026-09-04]**
 
 Filed 2026-09-03, `fix-62` (`stream/loader-05-node-storage`), while fixing `readPin`'s
 corrupt-pin handling and `electron-fetch.ts`'s redirect trust. (A57 taken by a parallel fix
@@ -1988,6 +2022,37 @@ global cap, eviction order). That is a policy decision for an ADR, not something
 this entry.
 
 **Needed by:** before/alongside PR #63 lands. See above.
+
+**Gap 1 (across different origins) resolved 2026-09-04, owner decision.** No aggregate,
+cross-origin disk cap is enforced. `MAX_BUNDLE_BYTES` (64 MiB) per origin remains the only bound
+— total disk use across every pinned origin is unbounded, deliberately. This mirrors how
+mainstream browsers already behave: no user-facing "total cache size" ceiling, only per-origin
+storage quotas, with the OS/browser's own storage-pressure eviction as the real backstop under
+genuine disk exhaustion (out of scope for Orivon's MVP to build its own version of). Asked as a
+direct question, not guessed: the owner considered and explicitly rejected a global ceiling
+(512 MiB / 1 GiB / 256 MiB were offered as concrete options) in favour of no ceiling at all. This
+closes the specific "wiring the trigger would ship an unbounded ... disk-fill vector" concern
+`ADR-0012` raised for THIS gap — the disk-fill is still technically unbounded, but that is now a
+considered design choice rather than an unexamined gap.
+
+**Gap 2 (across successive updates to one origin) still needs fixing, independent of the above**
+— it is not a quota question, it is plain hygiene: an update should not leave the previous
+version's now-unreferenced files sitting on disk forever regardless of any ceiling. Tracked for a
+follow-up fix in the same stream as this resolution.
+
+**Gap 2 correction, 2026-09-04 (fix-67, `stream/loader-07-prune-superseded-assets`):** the
+"tracked for a follow-up fix" note above is superseded — the follow-up landed in the same PR
+this entry already named, not a later one. `pruneAssets` as originally merged had two real
+defects that made "gap 2 is fixed" premature: a Unicode-normalisation mismatch (NFC vs. NFD)
+between its keep set (`resolveAssetPath`, manifest-derived) and its on-disk walk (`readdir`-
+derived) could delete a live, still-declared asset on HFS+/APFS — a supported run-from-source
+target, not a hypothetical — and an unguarded `rm()` let a single undeletable file (a race, a
+permission error) abort the whole prune, which aborts `install()` before `writePin` runs,
+leaving a fully-written bundle with no pin record (the next `load()` would then read it back as
+fresh TOFU with no reconsent check — worse than the disk-hygiene gap this was fixing). Both are
+fixed: paths are NFC-folded on both sides before comparison, and the delete loop is `{ force:
+true }` plus a per-file try/catch that logs and continues rather than throwing. A directory left
+empty by pruning is now removed too. Gap 2 is resolved.
 
 ---
 
@@ -2054,6 +2119,11 @@ every real update.
 floor raised this way short of a full process restart, which resets ALL floors, not just the
 poisoned one — so the workaround for this bug is strictly worse than living with it.
 
+> **Correction, 2026-09-04 (fix-68, PR #68):** the paragraph above is now stale on both counts.
+> A57 is resolved — the floor is persisted and a restart no longer resets it, so "wait for a
+> restart" was never a real workaround to begin with going forward. See the amendment below for
+> the escape hatch this PR builds instead.
+
 **AI recommendation:** whoever wires the loader to the broker should call `registerApp` only at
 the point an install is actually being accepted (the TOFU or `silent` branch of
 `decideUpdate()`), never merely on a successful fetch/parse. Not fixed here: no such call site
@@ -2061,6 +2131,28 @@ exists yet to fix — this is a design constraint for the wiring PR, not a bug i
 `grant-ledger.ts`'s current code.
 
 **Needed by:** before the loader ever calls `registerApp`.
+
+**Update 2026-09-04 (fix-68, PR #68):** `GrantLedger.forgetOrigin` now exists as the escape
+hatch this entry's "AI recommendation" implicitly needed — it clears both the in-memory record
+and the persisted floor (`LedgerStorage.deleteVersionFloor`), so a poisoned floor is no longer
+permanent even though A57 removed the reset-on-restart this entry's own text relied on as the
+(bad) workaround. Nothing calls it yet: there is still no "remove this app" UI action, or any
+other call site, that decides WHEN to invoke it. That decision — and the loader-to-broker wiring
+this entry's main recommendation is about (call `registerApp` only on an accepted install, never
+a bare fetch) — remain open.
+
+**Amended again 2026-09-04 (fix-68 round 2, PR #68):** `forgetOrigin`'s doc comment previously
+called the primitive "provably correct ahead of that wiring". It is correct and complete for the
+version floor, which is what this entry needs, but it is not an "uninstall this app" primitive
+and must not be wired up as one. It also clears the origin's `manifest`, `grants` and
+`fsBytesWritten`, and two of those it does not finish: dropping a grant does not revoke the
+handles that grant authorised (`GrantLedger` holds no reference to `HandleTable` — that cascade
+belongs in `createBroker`, alongside the one `revoke` already performs), and resetting
+`fsBytesWritten` to zero frees no bytes on disk, so a forget-then-re-register sequence is a way
+around the `fs` quota until the confinement directory is actually sized (A29). Neither is
+reachable today because nothing calls the method; both become live the moment the "remove this
+app" action this entry describes is built. Whoever builds it owns the cascade, not `GrantLedger`.
+The doc comment now states this rather than overclaiming.
 
 ---
 
@@ -2143,3 +2235,107 @@ combination, is a design decision for whoever wires `Loader.load()` into somethi
 concurrent callers (multiple windows/tabs), not something to guess into this entry.
 
 **Needed by:** before `Loader.load()` is reachable from more than one caller at a time.
+
+**Amendment, 2026-09-04 (fix-67):** `pruneAssets` (merged the same day as this entry, in the PR
+this entry already anticipates — see A58 gap 2) adds a THIRD kind of interleaving into this
+exact window, distinct from the two writers described above: a DELETING mutation racing a
+writer, not just two writers racing each other. It appears at two levels.
+
+At the FILE level, two concurrent `load()` calls for the same origin can interleave one call's
+`writeAsset`s with the OTHER call's `pruneAssets` keep-set walk — a file the second call is about
+to write can be walked, found absent from the first call's (older) keep list, and deleted out
+from under a write still in flight, or a file the first call already wrote can be deleted by a
+second call's prune before the first call's own `writePin` ever runs. `pruneAssets` tolerates a
+file disappearing out from under it mid-prune (`{ force: true }`, ENOENT treated as success) and
+never aborts `install()` over one undeletable file or one unlistable subtree. That hardening
+makes the race non-fatal (no uncaught throw, no aborted `install()`), not correct: the deletion
+can still happen.
+
+At the DIRECTORY level, pruning is the FIRST thing in the loader that removes a directory at
+all. Before it, the write path (`mkdir` then `writeFile`) could not lose its parent directory
+mid-write, because nothing removed one. A prune that swept every empty directory under the code
+root would reintroduce exactly that: one call's `mkdir` for a new subdirectory, not yet written
+into, is indistinguishable from a leftover, and removing it makes the concurrent `writeFile` fail
+with ENOENT — a hard failure that did not exist before pruning. `pruneAssets` therefore removes a
+directory only if this prune itself deleted a file from it (`removeEmptyAncestors`), and treats
+ENOENT/ENOTEMPTY on that removal as the concurrency it is rather than an error. One residual
+window remains and is deliberately not closed here: a directory that a prune legitimately empties
+and removes can still be one a concurrent install is about to write into, between that install's
+`mkdir` and its `writeFile`.
+
+Neither level is closed by any of this. Both remain exactly the open question this entry already
+names, and the fix for both is the per-origin serialization below.
+
+---
+
+### A63 — `nodeLedgerStorage.readVersionFloor` cannot tell a transient OS read error from real corruption, and one such error fails an origin closed for the whole session **[STILL OPEN]**
+
+Found 2026-09-04 (fix-68 round 2, PR #68). Not fixed in that PR: the safe fix is a design change,
+and the obvious quick fix is a T19 regression.
+
+`readVersionFloor` (`src/broker/node-ledger-storage.ts`) returns `CORRUPT_FLOOR_SENTINEL` for
+every non-ENOENT read failure. That correctly covers genuine corruption (malformed JSON, wrong
+shape) but also covers EACCES, EMFILE, EBUSY and every other plausibly-transient OS condition,
+where the file on disk was never corrupt at all.
+
+**Why one such error is permanent for the session.** `GrantLedger.#hydrateFloor` runs at most
+once per record, on `#record`'s create branch. A transient failure at an origin's first touch
+this session therefore sets `versionFloor` to the sentinel, and `isAtOrAboveFloor`
+(`policy/update.ts`) fails closed on a value `compareVersions` cannot order — so every update
+from that origin is rejected for the rest of the session, with no writer that lowers a floor back
+out of that state. Failing closed is the right direction, but the user sees a working app refuse
+every legitimate update because a file descriptor was briefly unavailable.
+
+**Why the obvious fix is wrong.** Returning `undefined` for the OS-error case makes it
+indistinguishable from "never persisted", which resets the floor to `'0.0.0'` and reopens exactly
+the T19 rollback A57 closed. `LedgerStorage.readVersionFloor`'s own doc contract forbids it in as
+many words.
+
+**What a real fix needs**, all three together: (1) a third state in
+`LedgerStorage.readVersionFloor`'s return — something like
+`{ kind: 'absent' | 'value' | 'corrupt' | 'unavailable' }` — so the two failure classes are
+distinguishable at the boundary rather than collapsed; (2) a way for `#hydrateFloor` to run again
+on a later touch of the same record, which it cannot do today; (3) a rule for how a record leaves
+the fail-closed state on a successful retry without violating `versionFloor`'s "raise only, never
+lower" invariant — probably by never entering it in the `'unavailable'` case and instead marking
+the record un-hydrated, so the raise-only rule is untouched. Note (2) has a cost worth pricing: a
+retry-on-touch hydration reads disk on more paths than today's once-per-record does.
+
+**AI recommendation:** do this alongside, or after, whatever work first gives `GrantLedger` a
+real production caller. It is not worth designing a retry policy for a read path nothing outside
+tests exercises yet.
+
+**Needed by:** before the loader calls `versionFloorFor` on a real user's disk.
+
+---
+
+### A64 — `scripts/comment-budget-baseline.txt` lost `src/broker/policy/origin.ts` because an import moved, not because documentation shrank **[STILL OPEN]**
+
+Found 2026-09-04 (fix-68 round 2, PR #68), reviewing PR #68's own round-1 diff.
+
+Round 1 added `import { classifyAddress } from './address.js'` to `src/broker/policy/origin.ts`,
+positioned after the file's 16-line header and before the large JSDoc on
+`ORIGIN_BEARING_SCHEMES`. `check-comments.mjs`'s `measurePreamble` stops counting at the first
+non-comment line, so the measured preamble fell from 46 lines to 16 and the file's baseline entry
+became stale — the ratchet then REQUIRED its removal, since a stale entry fails the check. No
+documentation was shortened.
+
+**The honest reading, though, is not simply "the scanner was gamed."** The 46-line measurement
+was itself an artefact of declaration order: it counted the header (16 lines) PLUS a doc comment
+attached to a declaration, which is not the file-header essay Rule 1's guard exists to catch.
+What the file measures now — 16 lines, and a budget of 25 before the guard fires — is precisely
+the header, which is what the rule is about. So the file is arguably measured more correctly than
+before, by accident.
+
+**What is nonetheless true:** the guard's behaviour for any given file depends on where its first
+import sits, so two files with identical headers can measure differently. That is a property of
+the tool worth knowing about, and it was changed here by a side effect rather than a decision.
+
+**Not fixed in PR #68**, on the reasoning above — moving the import below the JSDoc blocks it
+serves would be unidiomatic TypeScript with no precedent in this tree, and the current position
+is where an import belongs. **Owner's call:** whether `measurePreamble` should skip import lines
+rather than stop at them (which would restore the 46-line measurement and put the baseline entry
+back), or whether counting only up to the first code line of any kind is the intended, simpler
+rule.
+
+**Needed by:** nothing. Tooling accuracy only.

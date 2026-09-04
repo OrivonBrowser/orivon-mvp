@@ -48,6 +48,21 @@ export interface LoaderStorage {
    * to decode into a filename.
    */
   writeAsset(origin: string, path: string, content: Uint8Array): Promise<void>
+  /**
+   * Deletes every previously written asset for `origin` whose canonical path
+   * is not in `keep` -- the cleanup half of an update (docs/open-questions.md
+   * A58, gap 2): without this, a superseded bundle version's files
+   * accumulate on disk forever, since nothing else in this interface can
+   * remove what a previous `writeAsset` call wrote. `index.ts`'s `install()`
+   * calls this AFTER writing every entry of the new bundle, never before --
+   * so a crash mid-cleanup leaves both old and new files present (safe,
+   * cleaned up again on the next successful install) rather than risking a
+   * gap where a still-needed new file has not landed yet but an old one
+   * already has been removed.
+   *
+   * A no-op for an origin with nothing on disk yet (a fresh install).
+   */
+  pruneAssets(origin: string, keep: readonly string[]): Promise<void>
 }
 
 /**
