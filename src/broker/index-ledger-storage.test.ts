@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import { createBroker } from './index.js'
 import { APP, baseDeps, manifestWith, memoryLedgerStorage } from './index.test-helpers.js'
+import type { LedgerStorage } from './ledger-storage.js'
+
+/** A LedgerStorage whose write always fails, the way a full or read-only disk does. */
+function throwingLedgerStorage (): LedgerStorage {
+  return {
+    readVersionFloor: () => undefined,
+    writeVersionFloor: () => { throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' }) },
+    deleteVersionFloor: () => {}
+  }
+}
 
 // createBroker's `ledgerStorage` option threads straight into GrantLedger's
 // constructor (./index.ts), so most of A57's behaviour is already covered at
@@ -28,5 +38,57 @@ describe('createBroker -- ledgerStorage actually reaches the grant ledger', () =
 
     const after = createBroker(baseDeps({ ledgerStorage: storage })) // the "restart"
     await expect(after.versionFloorFor(APP)).resolves.toBe('1.0.0')
+  })
+})
+
+// GrantLedger.registerApp throws when the floor cannot be written (see its
+// own doc). `Broker.registerApp` is `async`, so that throw is already a
+// rejected promise for its caller -- what this layer adds is the error SHAPE.
+// `canonical()` in index.ts rejects a malformed origin with an OrivonError,
+// so a raw Node error escaping from the persistence path would make one
+// method reject with two unrelated shapes.
+describe('createBroker -- a persistence failure surfaces, it is not swallowed', () => {
+  it('rejects, rather than resolving as if the app had been registered', async () => {
+    const broker = createBroker(baseDeps({ ledgerStorage: throwingLedgerStorage() }))
+
+    await expect(broker.registerApp(APP, manifestWith({}))).rejects.toMatchObject({
+      name: 'OrivonError',
+      code: 'internal',
+      platformCode: 'ENOSPC'
+    })
+  })
+
+  it('does not throw synchronously -- the rejection is the promise, matching every other Broker method', () => {
+    const broker = createBroker(baseDeps({ ledgerStorage: throwingLedgerStorage() }))
+
+    let thrown: unknown
+    let result: Promise<void> | undefined
+    try {
+      result = broker.registerApp(APP, manifestWith({}))
+    } catch (error) {
+      thrown = error
+    }
+
+    expect(thrown).toBeUndefined()
+    expect(result).toBeInstanceOf(Promise)
+    return expect(result).rejects.toThrow()
+  })
+
+  it('carries no filesystem path -- the message is written fresh, like mapIoError does for the app-facing methods', async () => {
+    const broker = createBroker(baseDeps({ ledgerStorage: throwingLedgerStorage() }))
+
+    const error = await broker.registerApp(APP, manifestWith({})).catch((e: unknown) => e)
+
+    expect((error as Error).message).not.toContain('no space left on device')
+  })
+
+  // The property the whole item exists for, asserted through the public
+  // surface rather than only on GrantLedger: the floor is raised regardless.
+  it('still raised the version floor before the write was attempted', async () => {
+    const broker = createBroker(baseDeps({ ledgerStorage: throwingLedgerStorage() }))
+
+    await expect(broker.registerApp(APP, manifestWith({}))).rejects.toThrow()
+
+    await expect(broker.versionFloorFor(APP)).resolves.toBe('1.0.0')
   })
 })

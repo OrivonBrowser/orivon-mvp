@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { GrantLedger } from './grant-ledger.js'
+import { memoryLedgerStorage } from './index.test-helpers.js'
 import type { LedgerStorage } from './ledger-storage.js'
 import type { Manifest } from '../contracts/index.js'
 
@@ -10,23 +11,39 @@ function manifestWith (version: string): Manifest {
   return { orivonApiVersion: 0, id: 'app.test', name: 'Test', version, entry: 'index.html', capabilities: {} }
 }
 
-/** A Map-backed LedgerStorage double -- real behaviour, no disk, matching src/loader/test-helpers.ts's memoryStorage() idiom. */
-function memoryLedgerStorage (): LedgerStorage & { readonly floors: Map<string, string> } {
-  const floors = new Map<string, string>()
-  return {
-    floors,
-    readVersionFloor: (origin) => floors.get(origin),
-    writeVersionFloor: (origin, versionFloor) => { floors.set(origin, versionFloor) },
-    deleteVersionFloor: (origin) => { floors.delete(origin) }
-  }
-}
-
 /** A LedgerStorage double whose write always fails, for A57's write-failure tests below. */
 function throwingLedgerStorage (): LedgerStorage {
   return {
     readVersionFloor: () => undefined,
     writeVersionFloor: () => { throw Object.assign(new Error('ENOSPC'), { code: 'ENOSPC' }) },
     deleteVersionFloor: () => {}
+  }
+}
+
+/**
+ * Writes once, then fails -- the shape of a disk that fills up (or is
+ * remounted read-only) partway through a session, which is what makes the
+ * memory/disk divergence reachable at all.
+ */
+function failingAfterFirstWrite (): LedgerStorage & { readonly floors: Map<string, string> } {
+  const storage = memoryLedgerStorage()
+  let writes = 0
+  return {
+    ...storage,
+    writeVersionFloor: (origin, versionFloor) => {
+      writes++
+      if (writes > 1) throw Object.assign(new Error('ENOSPC'), { code: 'ENOSPC' })
+      storage.writeVersionFloor(origin, versionFloor)
+    }
+  }
+}
+
+/** A LedgerStorage double whose delete fails with something other than ENOENT -- a real permission error or a lock, not "already gone". */
+function undeletableLedgerStorage (): LedgerStorage & { readonly floors: Map<string, string> } {
+  const storage = memoryLedgerStorage()
+  return {
+    ...storage,
+    deleteVersionFloor: () => { throw Object.assign(new Error('EACCES'), { code: 'EACCES' }) }
   }
 }
 
@@ -225,6 +242,32 @@ describe('GrantLedger -- forgetOrigin (A60 escape hatch)', () => {
 
     expect(ledger.versionFloorFor('https://other.example')).toBe('5.0.0')
   })
+
+  // Clearing memory first and disk second means a failing delete leaves a
+  // state WORSE than not having called forgetOrigin at all: the grants and
+  // manifest are gone while the poisoned floor is still on disk, waiting to
+  // hydrate straight back on the origin's next touch. Disk first, and leave
+  // memory alone if it fails, so a failed forget changes nothing.
+  it('leaves the in-memory record completely intact when the on-disk delete fails', () => {
+    const ledger = new GrantLedger(undeletableLedgerStorage())
+    ledger.registerApp(APP, manifestWith('9.0.0'))
+    ledger.grant(APP, 'tcp.connect', ['93.184.216.34:443'], 0)
+    ledger.reserveFsBytes(APP, 128)
+
+    ledger.forgetOrigin(APP)
+
+    expect(ledger.versionFloorFor(APP)).toBe('9.0.0')
+    expect(ledger.manifestFor(APP)?.version).toBe('9.0.0')
+    expect(ledger.grantsFor(APP)).toHaveLength(1)
+    expect(ledger.fsBytesWritten(APP)).toBe(128)
+  })
+
+  it('does not throw when the on-disk delete fails -- it is best-effort cleanup, not a security-critical write', () => {
+    const ledger = new GrantLedger(undeletableLedgerStorage())
+    ledger.registerApp(APP, manifestWith('9.0.0'))
+
+    expect(() => { ledger.forgetOrigin(APP) }).not.toThrow()
+  })
 })
 
 // A23: T13c forbids ever persisting a grant for a loopback, `file:` or
@@ -264,34 +307,100 @@ describe('GrantLedger -- non-persistable origins never touch disk (A23/T13c)', (
     const after = new GrantLedger(storage) // the "restart"
     expect(after.versionFloorFor('http://127.0.0.1:8080')).toBe('0.0.0')
   })
+
+  // The read side is gated too, not only the write side. Nothing in this
+  // codebase writes such a file, so this is what stops one that arrived some
+  // other way -- a bug, a hand-edit, a future code path -- being honoured for
+  // an origin T13c says must be session-scoped.
+  it.each([
+    'http://127.0.0.1:8080',
+    'https://localhost',
+    'https://app.localhost',
+    'https://0.0.0.0'
+  ])('%s: a floor already on disk is NOT hydrated for a non-persistable origin', (origin) => {
+    const storage = memoryLedgerStorage()
+    storage.floors.set(origin, '9.0.0')
+
+    expect(new GrantLedger(storage).versionFloorFor(origin)).toBe('0.0.0')
+  })
 })
 
-// A57's own persistence path is unguarded against a write failure (EACCES,
-// ENOSPC, EROFS). Left unguarded, the in-memory floor would already be
-// raised while the disk copy is not, so a restart would hydrate the OLD,
-// lower floor -- silently reopening the exact T19 rollback window A57 exists
-// to close, the moment a write ever fails.
-describe('GrantLedger -- a persist failure never raises the in-memory floor past what is on disk', () => {
-  it('does not raise the in-memory floor when the write throws', () => {
+// A57's persistence path can fail (EACCES, ENOSPC, EROFS), and the first
+// round of this review answered that by holding the IN-MEMORY floor back
+// until a write succeeded. That made this class strictly less safe than
+// having no persistence at all, in the same session, with no restart
+// involved: with no LedgerStorage the floor always rises, so a replay of the
+// superseded version is refused immediately; with a failing one the floor
+// stayed where it was and the replay passed.
+//
+// So the in-memory raise is unconditional and happens FIRST -- it is the
+// property this class exists for and it must hold every session -- and the
+// write failure is surfaced to the caller rather than swallowed. The residual
+// risk is the original A57 one and no worse: if writes keep failing until a
+// real restart, the restart hydrates the older on-disk value. That is now
+// observable, because registerApp throws.
+describe('GrantLedger -- a persist failure still raises the in-memory floor', () => {
+  it('raises the in-memory floor even though the write threw', () => {
     const ledger = new GrantLedger(throwingLedgerStorage())
 
-    expect(() => { ledger.registerApp(APP, manifestWith('1.0.0')) }).not.toThrow()
+    expect(() => { ledger.registerApp(APP, manifestWith('1.0.0')) }).toThrow()
 
-    expect(ledger.versionFloorFor(APP)).toBe('0.0.0')
+    expect(ledger.versionFloorFor(APP)).toBe('1.0.0')
   })
 
-  it('a later call with a working write still raises the floor normally', () => {
-    const ledger = new GrantLedger(throwingLedgerStorage())
-    ledger.registerApp(APP, manifestWith('1.0.0')) // fails, swallowed
+  // The regression this replaces, reproduced end to end. Version 1.0.0
+  // installs and persists; 2.0.0 installs while the disk is unwritable; the
+  // host then replays 1.0.0 in the SAME session. Holding the floor at 1.0.0
+  // would let `isAtOrAboveFloor` pass that replay.
+  it('a same-session replay of a superseded version is still refused after a failed persist', () => {
+    const storage = failingAfterFirstWrite()
+    const ledger = new GrantLedger(storage)
 
-    const storage = memoryLedgerStorage()
-    const workingLedger = new GrantLedger(storage)
-    workingLedger.registerApp(APP, manifestWith('1.0.0'))
-    expect(workingLedger.versionFloorFor(APP)).toBe('1.0.0')
+    ledger.registerApp(APP, manifestWith('1.0.0'))
+    expect(() => { ledger.registerApp(APP, manifestWith('2.0.0')) }).toThrow()
+
+    expect(ledger.versionFloorFor(APP)).toBe('2.0.0')
+
+    ledger.registerApp(APP, manifestWith('1.0.0')) // the replay
+    expect(ledger.versionFloorFor(APP)).toBe('2.0.0')
   })
 
-  it('does not throw out of registerApp -- a synchronous throw here becomes an unhandled rejection at every one of the ~44 unawaited call sites', () => {
+  // Same scenario, stated as the property that makes the fix worth making:
+  // persistence configured must never leave the ledger weaker than
+  // persistence absent.
+  it('matches the no-storage ledger exactly, which is the floor this must never fall below', () => {
+    const withoutStorage = new GrantLedger()
+    const withFailingStorage = new GrantLedger(throwingLedgerStorage())
+
+    withoutStorage.registerApp(APP, manifestWith('2.0.0'))
+    expect(() => { withFailingStorage.registerApp(APP, manifestWith('2.0.0')) }).toThrow()
+
+    expect(withFailingStorage.versionFloorFor(APP)).toBe(withoutStorage.versionFloorFor(APP))
+  })
+
+  // Swallowing it made a disk that stopped accepting writes completely
+  // invisible. There is no production caller of Broker.registerApp yet
+  // (every call site is a test), so this is the moment the interface can
+  // still choose to report the failure at all.
+  it('throws out of registerApp rather than swallowing the failure', () => {
     const ledger = new GrantLedger(throwingLedgerStorage())
+
+    expect(() => { ledger.registerApp(APP, manifestWith('1.0.0')) })
+      .toThrow(expect.objectContaining({ code: 'ENOSPC' }))
+  })
+
+  it('re-registering the same version after a failed persist does not throw again -- the floor did not move, so nothing is written', () => {
+    const ledger = new GrantLedger(throwingLedgerStorage())
+    expect(() => { ledger.registerApp(APP, manifestWith('1.0.0')) }).toThrow()
+
     expect(() => { ledger.registerApp(APP, manifestWith('1.0.0')) }).not.toThrow()
+    expect(ledger.versionFloorFor(APP)).toBe('1.0.0')
+  })
+
+  it('a non-persistable origin never reaches the write, so it cannot throw at all', () => {
+    const ledger = new GrantLedger(throwingLedgerStorage())
+
+    expect(() => { ledger.registerApp('http://localhost:3000', manifestWith('1.0.0')) }).not.toThrow()
+    expect(ledger.versionFloorFor('http://localhost:3000')).toBe('1.0.0')
   })
 })

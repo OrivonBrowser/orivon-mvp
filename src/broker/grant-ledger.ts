@@ -121,10 +121,17 @@ export class GrantLedger {
    * whatever is actually on disk afterward, not against a stale in-memory
    * decision from before the forget.
    *
-   * A no-op when no `LedgerStorage` was injected.
+   * A no-op when no `LedgerStorage` was injected, and for an origin
+   * `isPersistableOrigin` refuses -- the same gate the write side applies, so
+   * T13c holds in both directions. Nothing writes a floor for such an origin
+   * today, so this reads as belt-and-braces; it is what stops a floor file
+   * that got there some other way (a bug, a hand-edit, a future code path)
+   * being honoured for a loopback origin anyway. It also spares a pointless
+   * disk read for every localhost origin, which is what this repo's own e2e
+   * tests and fixture app run on.
    */
   #hydrateFloor (origin: string, record: OriginRecord): void {
-    if (this.#storage === undefined) return
+    if (this.#storage === undefined || !isPersistableOrigin(origin)) return
     const persisted = this.#storage.readVersionFloor(origin)
     if (persisted === undefined) return
 
@@ -159,35 +166,37 @@ export class GrantLedger {
    * already persisted); T19's replay guard depends on every registration
    * going through here.
    *
-   * Persists the raised value via `LedgerStorage` (A57) so it survives a
-   * restart -- only when it actually moves, not on every call, so an
-   * ordinary page reload that re-declares the same version never touches
-   * disk, and never at all for an origin `isPersistableOrigin` refuses
-   * (A23/T13c: loopback and plain-http origins are session-scoped only).
+   * THE IN-MEMORY RAISE HAPPENS FIRST, AND IS UNCONDITIONAL. Nothing about
+   * persistence may delay or skip it. A ledger with no `LedgerStorage` at
+   * all already guarantees that much, and a ledger WITH one must never be
+   * weaker: hold the raise back until a write succeeds, and a failed write
+   * leaves this session's floor at the superseded version -- so the same
+   * session accepts a replay of it, with no restart involved and nothing
+   * visible. That is a worse hole than the one persistence closes.
    *
-   * THE MEMORY FLOOR IS RAISED ONLY AFTER A PERSIST ATTEMPT SUCCEEDS. A
-   * write can fail (EACCES, ENOSPC, EROFS); raising memory regardless would
-   * leave this process believing a floor a restart could never confirm --
-   * exactly the T19 rollback window A57 exists to close, reopened the first
-   * time a disk write fails. The failure is swallowed, not rethrown:
-   * `Broker.registerApp` (./index.ts) is `async`, and dozens of call sites
-   * across this codebase invoke it without awaiting the returned promise, so
-   * a synchronous throw here would surface only as an unhandled rejection.
+   * Persists the raised value afterward via `LedgerStorage` (A57) so it
+   * survives a restart -- only when the floor actually moves, so an ordinary
+   * page reload that re-declares the same version never touches disk, and
+   * never at all for an origin `isPersistableOrigin` refuses (A23/T13c:
+   * loopback and plain-http origins are session-scoped only).
+   *
+   * THROWS if that write fails (EACCES, ENOSPC, EROFS), after the raise has
+   * already landed. The residual risk is then A57's original one and no
+   * worse -- a restart while writes keep failing hydrates the older on-disk
+   * value -- but it is reported instead of silent. `Broker.registerApp`
+   * (./index.ts) turns this into the rejected promise every other method on
+   * that surface already produces.
    */
   registerApp (origin: string, manifest: Manifest): void {
     const record = this.#record(origin)
     record.manifest = manifest
     if (compareVersions(manifest.version, record.versionFloor) !== 1) return
 
-    if (this.#storage !== undefined && isPersistableOrigin(origin)) {
-      try {
-        this.#storage.writeVersionFloor(origin, manifest.version)
-      } catch (error) {
-        console.error('[broker] failed to persist a raised version floor; the in-memory floor was left unraised so it cannot outrun what a restart would actually see', error)
-        return
-      }
-    }
     record.versionFloor = manifest.version
+
+    if (this.#storage !== undefined && isPersistableOrigin(origin)) {
+      this.#storage.writeVersionFloor(origin, manifest.version)
+    }
   }
 
   /**
@@ -203,18 +212,49 @@ export class GrantLedger {
    * BOTH have to go together. Clearing only memory would let the next
    * hydration read the poisoned value straight back off disk; clearing only
    * disk would leave the poisoned value live for the rest of this session.
+   * DISK FIRST, then memory, and memory is left untouched if the delete
+   * fails: clearing memory first means a failed delete leaves the poisoned
+   * floor on disk with nothing in memory to compare it against -- a state
+   * strictly worse than never having called this at all. A failed forget
+   * must change nothing.
    *
-   * A no-op, never a throw, for an origin the ledger holds nothing for, or
-   * when no `LedgerStorage` was injected at all.
+   * The delete failing is LOGGED, NOT THROWN, unlike `registerApp`'s write
+   * above. The two are not held to one standard because they carry different
+   * risk: `registerApp`'s write is the security-critical half of a raise that
+   * already happened, so hiding its failure hides a real weakening. This is
+   * best-effort cleanup, and its failure leaves the ledger exactly as it was
+   * -- still safe, just still poisoned, which is the state the caller was
+   * already in.
    *
-   * NOTHING CALLS THIS YET. There is no "remove this app" UI action built to
-   * drive it -- that wiring is separate, un-scoped follow-up work. This
-   * exists so the primitive itself is provably correct ahead of that wiring
-   * (docs/open-questions.md A60).
+   * A no-op for an origin the ledger holds nothing for, or when no
+   * `LedgerStorage` was injected at all.
+   *
+   * NOT AN "UNINSTALL THIS APP" PRIMITIVE, and it should not be mistaken for
+   * one when the UI action that drives it is eventually built. It is correct
+   * and complete for the version floor, which is what A60 needs. It also
+   * drops the origin's `manifest`, `grants` and `fsBytesWritten`, and those
+   * three it does NOT finish:
+   *   - dropping a grant here does not revoke the handles it authorised.
+   *     This class has no reference to `HandleTable` (it is broker-internal,
+   *     see the class doc), so that cascade belongs one layer up, in
+   *     `createBroker`, next to the one `revoke` already performs.
+   *   - resetting `fsBytesWritten` to zero frees no bytes on disk, so
+   *     forget-then-re-register is a way around the fs quota until the
+   *     confinement directory is actually sized (A29).
+   *
+   * NOTHING CALLS THIS YET (docs/open-questions.md A60), so neither gap is
+   * reachable today.
    */
   forgetOrigin (origin: string): void {
+    if (this.#storage !== undefined) {
+      try {
+        this.#storage.deleteVersionFloor(origin)
+      } catch (error) {
+        console.error('[broker] failed to delete a persisted version floor; the in-memory record was left intact so nothing is half-forgotten', error)
+        return
+      }
+    }
     this.#origins.delete(origin)
-    this.#storage?.deleteVersionFloor(origin)
   }
 
   manifestFor (origin: string): Manifest | undefined {
