@@ -15,6 +15,8 @@
 // Pure by structural rule: no electron, no node:fs/net/dns, no I/O at all
 // (src/broker/policy/README.md). `URL` is a global -- no import needed.
 
+import { classifyAddress } from './address.js'
+
 /**
  * Only these two schemes yield an origin.
  *
@@ -107,18 +109,14 @@ function canonicalHost (hostname: string): string | null {
  * authenticated one. The broker's caller identity comes from
  * `originFromSenderFrame` and from nowhere else.
  *
- * Two further properties the return value does NOT carry, both of which the
- * caller is responsible for:
- *   - Whether the origin may be PERSISTED. `http://127.0.0.1:8080` is
- *     shape-identical to `https://x.example`, and T13c forbids ever writing a
- *     grant for the former to disk: loopback, `file:` and plain-`http` origins
- *     are session-scoped and re-prompted each launch
- *     (docs/architecture/security-model.md T13c). Cited by document rather
- *     than by open-question number on purpose: the number this line used to
- *     carry pointed at an unrelated question for a week, because it was
- *     guessed on a branch and the question was filed on another one.
- *   - Whether it is safe as a path segment. It is not: it contains `://`.
- *     Storage directories are `sha256(origin)` (T13b), never the string.
+ * One further property the return value does NOT carry, which the caller is
+ * responsible for: whether it is safe as a path segment. It is not: it
+ * contains `://`. Storage directories are `sha256(origin)` (T13b), never the
+ * string.
+ *
+ * Whether the origin may be PERSISTED is a second such property -- see
+ * `isPersistableOrigin`, below, which answers it now that a real consumer
+ * (A23's own "Needed by") exists.
  */
 export function originFromUrl (url: string): string | null {
   let parsed: URL
@@ -139,6 +137,60 @@ export function originFromUrl (url: string): string | null {
   const port = parsed.port === '' ? '' : `:${parsed.port}`
 
   return `${parsed.protocol}//${host}${port}`
+}
+
+/**
+ * True only if `origin` (already in `originFromUrl`'s canonical shape) may
+ * ever be written to disk -- T13c: "Never persist grants for loopback,
+ * `file:` or plain-`http` origins" (security-model.md). Session-scoped,
+ * re-prompted every launch, is the answer for everything this returns false
+ * for.
+ *
+ * `file:` never reaches here at all: `ORIGIN_BEARING_SCHEMES` above already
+ * refuses it a derivable origin in the first place. That leaves scheme and
+ * host to check:
+ *   - `http:` is refused outright, regardless of host -- the "plain-http"
+ *     half of T13c.
+ *   - The whole `.localhost` NAMESPACE is refused by name, not just the bare
+ *     label: RFC 6761 SS6.3 reserves every name ending in `.localhost` for
+ *     loopback, and Chromium resolves the subtree that way, so
+ *     `app.localhost` is as much loopback as `localhost` is.
+ *     `classifyAddress` below only recognises address LITERALS, so a name
+ *     check is the only way to catch either.
+ *   - Every other host is classified via `./address.ts`'s `classifyAddress`,
+ *     the ONE place this codebase decides what counts as loopback (T12's own
+ *     table). Both 'loopback' AND 'unspecified' are refused: `0.0.0.0` and
+ *     `[::]` are a separate AddressClass there, but connecting to either
+ *     reaches 127.0.0.1 on Linux and macOS, which is exactly the reachability
+ *     T13c is about. An ordinary DNS name classifies as 'unparseable', which
+ *     is correctly neither -- this function does not (and must not) reject
+ *     every address `classifyAddress` would flag; T13c names loopback
+ *     specifically, not the wider private/link-local/reserved ranges T12
+ *     blocks for a different reason (outbound `net.connect`, not what may be
+ *     written to disk).
+ *
+ * Takes an already-canonical origin, same as `canonicalHost`. It runs the
+ * host through `canonicalHost` anyway rather than trusting that: a caller
+ * that skipped the step would otherwise spell its way past the name checks
+ * above with a trailing root label (`localhost.`), and failing closed on a
+ * host that cannot be canonicalised at all is free here.
+ */
+export function isPersistableOrigin (origin: string): boolean {
+  let parsed: URL
+  try {
+    parsed = new URL(origin)
+  } catch {
+    return false
+  }
+
+  if (parsed.protocol !== 'https:') return false
+
+  const host = canonicalHost(parsed.hostname)
+  if (host === null) return false
+  if (host === 'localhost' || host.endsWith('.localhost')) return false
+
+  const cls = classifyAddress(host)
+  return cls !== 'loopback' && cls !== 'unspecified'
 }
 
 /**
