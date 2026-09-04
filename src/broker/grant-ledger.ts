@@ -226,8 +226,9 @@ export class GrantLedger {
    * -- still safe, just still poisoned, which is the state the caller was
    * already in.
    *
-   * A no-op for an origin the ledger holds nothing for, or when no
-   * `LedgerStorage` was injected at all.
+   * Never a throw. With no `LedgerStorage` injected it still clears the
+   * in-memory record -- there is simply no disk half to clear. For an origin
+   * the ledger holds nothing for it is a no-op both halves.
    *
    * NOT AN "UNINSTALL THIS APP" PRIMITIVE, and it should not be mistaken for
    * one when the UI action that drives it is eventually built. It is correct
