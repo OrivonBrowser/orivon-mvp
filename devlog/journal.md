@@ -102,6 +102,17 @@ Mark anything that must not leave the team draft as `(Keep private)`.
   the bookmarks strip hides until you save something; DDOC is "Confirmation", not "Certification".
   One more question dissolved on inspection -- where the `+Privacy` bonus sits was never a choice,
   it follows from a rung already reinstated. Ten others were decided without the owner.
+- 2026-09-04: **Both hard gates `ADR-0012` put in front of the discovery trigger are now closed.**
+  Found the loader never actually read `manifest.assets` despite `ADR-0011` adding it -- fixed
+  (#66), and it surfaced three of `fetch-bundle.ts`'s own adversarial-input checks had quietly
+  become redundant with `manifest.ts`'s tighter upstream validation once assetPaths could only
+  ever come from a parsed manifest. Then A58: asked the owner directly, with real numbers on the
+  table, and got a clean answer -- no aggregate disk cap, ever, mirroring how ordinary browsers
+  already work; built the cleanup half regardless (#67). Then A57: version-floor persistence,
+  which turned out to hide a real trap -- `Broker.registerApp`/`versionFloorFor` are called
+  without `await` at ~40 sites in this repo's own tests, which only ever worked because nothing
+  inside them yielded. A naive async fix would have turned every one into a live race. Went
+  synchronous instead, backed by plain sync fs calls (#68).
 
 ### In my head
 - 2026-09-03: A guard nobody can tell is broken is worse than no guard -- seven hookify rules
