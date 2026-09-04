@@ -1361,6 +1361,14 @@ validates it the same way `entry` is validated (`stream/contracts-11-manifest-as
 `createLoader.load()`'s own `assetPaths` parameter is unchanged by this — a caller now reads it
 off `manifest.assets` rather than inventing or discovering it.
 
+**Corrected 2026-09-04.** The line above assumed a caller would already hold a parsed manifest
+before calling `load()` — impossible, since only `fetchBundle` (inside `load()`) ever fetches the
+fixed well-known manifest path; nothing upstream has `manifest.assets` to read. Fixed in
+`stream/loader-06-assets-from-manifest`: `assetPaths` is removed from both `fetchBundle` and
+`Loader.load()`; `fetchBundle` now derives it itself, internally, once it has fetched and parsed
+the manifest. See `ADR-0011`'s own 2026-09-04 amendment and `src/loader/README.md`'s Design notes
+for the full account.
+
 ---
 
 ### A46 — the loader never checks the install origin against private/loopback address ranges (T12) **[RESOLVED 2026-09-03]**
@@ -1979,7 +1987,7 @@ no longer clear it by accident.
 
 ---
 
-### A58 — nothing bounds total disk usage across origins, or across successive updates to one origin **[STILL OPEN]**
+### A58 — nothing bounds total disk usage across origins, or across successive updates to one origin **[RESOLVED 2026-09-04]**
 
 Filed 2026-09-03, `fix-62` (`stream/loader-05-node-storage`), while fixing `readPin`'s
 corrupt-pin handling and `electron-fetch.ts`'s redirect trust. (A57 taken by a parallel fix
@@ -2014,6 +2022,37 @@ global cap, eviction order). That is a policy decision for an ADR, not something
 this entry.
 
 **Needed by:** before/alongside PR #63 lands. See above.
+
+**Gap 1 (across different origins) resolved 2026-09-04, owner decision.** No aggregate,
+cross-origin disk cap is enforced. `MAX_BUNDLE_BYTES` (64 MiB) per origin remains the only bound
+— total disk use across every pinned origin is unbounded, deliberately. This mirrors how
+mainstream browsers already behave: no user-facing "total cache size" ceiling, only per-origin
+storage quotas, with the OS/browser's own storage-pressure eviction as the real backstop under
+genuine disk exhaustion (out of scope for Orivon's MVP to build its own version of). Asked as a
+direct question, not guessed: the owner considered and explicitly rejected a global ceiling
+(512 MiB / 1 GiB / 256 MiB were offered as concrete options) in favour of no ceiling at all. This
+closes the specific "wiring the trigger would ship an unbounded ... disk-fill vector" concern
+`ADR-0012` raised for THIS gap — the disk-fill is still technically unbounded, but that is now a
+considered design choice rather than an unexamined gap.
+
+**Gap 2 (across successive updates to one origin) still needs fixing, independent of the above**
+— it is not a quota question, it is plain hygiene: an update should not leave the previous
+version's now-unreferenced files sitting on disk forever regardless of any ceiling. Tracked for a
+follow-up fix in the same stream as this resolution.
+
+**Gap 2 correction, 2026-09-04 (fix-67, `stream/loader-07-prune-superseded-assets`):** the
+"tracked for a follow-up fix" note above is superseded — the follow-up landed in the same PR
+this entry already named, not a later one. `pruneAssets` as originally merged had two real
+defects that made "gap 2 is fixed" premature: a Unicode-normalisation mismatch (NFC vs. NFD)
+between its keep set (`resolveAssetPath`, manifest-derived) and its on-disk walk (`readdir`-
+derived) could delete a live, still-declared asset on HFS+/APFS — a supported run-from-source
+target, not a hypothetical — and an unguarded `rm()` let a single undeletable file (a race, a
+permission error) abort the whole prune, which aborts `install()` before `writePin` runs,
+leaving a fully-written bundle with no pin record (the next `load()` would then read it back as
+fresh TOFU with no reconsent check — worse than the disk-hygiene gap this was fixing). Both are
+fixed: paths are NFC-folded on both sides before comparison, and the delete loop is `{ force:
+true }` plus a per-file try/catch that logs and continues rather than throwing. A directory left
+empty by pruning is now removed too. Gap 2 is resolved.
 
 ---
 
@@ -2196,6 +2235,36 @@ combination, is a design decision for whoever wires `Loader.load()` into somethi
 concurrent callers (multiple windows/tabs), not something to guess into this entry.
 
 **Needed by:** before `Loader.load()` is reachable from more than one caller at a time.
+
+**Amendment, 2026-09-04 (fix-67):** `pruneAssets` (merged the same day as this entry, in the PR
+this entry already anticipates — see A58 gap 2) adds a THIRD kind of interleaving into this
+exact window, distinct from the two writers described above: a DELETING mutation racing a
+writer, not just two writers racing each other. It appears at two levels.
+
+At the FILE level, two concurrent `load()` calls for the same origin can interleave one call's
+`writeAsset`s with the OTHER call's `pruneAssets` keep-set walk — a file the second call is about
+to write can be walked, found absent from the first call's (older) keep list, and deleted out
+from under a write still in flight, or a file the first call already wrote can be deleted by a
+second call's prune before the first call's own `writePin` ever runs. `pruneAssets` tolerates a
+file disappearing out from under it mid-prune (`{ force: true }`, ENOENT treated as success) and
+never aborts `install()` over one undeletable file or one unlistable subtree. That hardening
+makes the race non-fatal (no uncaught throw, no aborted `install()`), not correct: the deletion
+can still happen.
+
+At the DIRECTORY level, pruning is the FIRST thing in the loader that removes a directory at
+all. Before it, the write path (`mkdir` then `writeFile`) could not lose its parent directory
+mid-write, because nothing removed one. A prune that swept every empty directory under the code
+root would reintroduce exactly that: one call's `mkdir` for a new subdirectory, not yet written
+into, is indistinguishable from a leftover, and removing it makes the concurrent `writeFile` fail
+with ENOENT — a hard failure that did not exist before pruning. `pruneAssets` therefore removes a
+directory only if this prune itself deleted a file from it (`removeEmptyAncestors`), and treats
+ENOENT/ENOTEMPTY on that removal as the concurrency it is rather than an error. One residual
+window remains and is deliberately not closed here: a directory that a prune legitimately empties
+and removes can still be one a concurrent install is about to write into, between that install's
+`mkdir` and its `writeFile`.
+
+Neither level is closed by any of this. Both remain exactly the open question this entry already
+names, and the fix for both is the per-origin serialization below.
 
 ---
 

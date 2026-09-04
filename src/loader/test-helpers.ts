@@ -142,6 +142,14 @@ export function memoryStorage (): MemoryStorage {
       const forOrigin = assets.get(origin) ?? new Map<string, Uint8Array>()
       forOrigin.set(path, content)
       assets.set(origin, forOrigin)
+    }),
+    pruneAssets: vi.fn(async (origin: string, keep: readonly string[]) => {
+      const forOrigin = assets.get(origin)
+      if (forOrigin === undefined) return
+      const keepSet = new Set(keep)
+      for (const path of forOrigin.keys()) {
+        if (!keepSet.has(path)) forOrigin.delete(path)
+      }
     })
   }
 }
