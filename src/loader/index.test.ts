@@ -43,7 +43,7 @@ describe('createLoader: fresh install (TOFU, ADR-0005)', () => {
     expect(written?.has('/index.html')).toBe(true)
   })
 
-  it('calls pruneAssets with the new bundle\'s own paths, after every writeAsset and before writePin', async () => {
+  it('never prunes: no earlier pin means nothing a previous bundle could have left behind', async () => {
     const storage = memoryStorage()
     const routes: Record<string, RouteSpec> = {
       [MANIFEST_URL]: { body: utf8(manifestJson()) },
@@ -53,32 +53,8 @@ describe('createLoader: fresh install (TOFU, ADR-0005)', () => {
 
     await loader.load(ORIGIN, NO_GRANTS)
 
-    expect(storage.pruneAssets).toHaveBeenCalledWith(ORIGIN, ['/.well-known/orivon.json', '/index.html'])
-    // Ordering matters, not just occurrence: pruneAssets must see every asset
-    // this install just wrote (or it would delete one), and writePin must
-    // not run until pruning is done (docs/open-questions.md A58 gap 2's own
-    // reasoning for why install() calls these in this order).
-    const order = (fn: unknown): number => (fn as { mock: { invocationCallOrder: number[] } }).mock.invocationCallOrder[0]!
-    const lastWriteAssetCall = Math.max(...(storage.writeAsset as unknown as { mock: { invocationCallOrder: number[] } }).mock.invocationCallOrder)
-    expect(lastWriteAssetCall).toBeLessThan(order(storage.pruneAssets))
-    expect(order(storage.pruneAssets)).toBeLessThan(order(storage.writePin))
-  })
-
-  it('a storage failure while pruning old assets surfaces as outcome "rejected", never an uncaught throw', async () => {
-    const base = memoryStorage()
-    const storage = { ...base, pruneAssets: vi.fn(async (): Promise<void> => { throw new Error('disk full') }) }
-    const routes: Record<string, RouteSpec> = {
-      [MANIFEST_URL]: { body: utf8(manifestJson()) },
-      [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
-    }
-    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow() })
-
-    const result = await loader.load(ORIGIN, NO_GRANTS)
-
-    expect(result.outcome).toBe('rejected')
-    // A failed prune must not leave assets written with no pin record --
-    // load() would then read this origin back as never-pinned fresh TOFU.
-    expect(base.writePin).not.toHaveBeenCalled()
+    expect(storage.pruneAssets).not.toHaveBeenCalled()
+    expect(storage.pins.has(ORIGIN)).toBe(true)
   })
 
   // A raw node:fs message carries the absolute host path it failed on.
@@ -134,6 +110,52 @@ describe('createLoader: refetch against an existing pin', () => {
     const result = await loader.load(ORIGIN, NO_GRANTS)
     if (result.outcome !== 'installed') throw new Error('fixture setup failed')
   }
+
+  it('calls pruneAssets with the new bundle\'s own paths, after every writeAsset and before writePin', async () => {
+    const storage = memoryStorage()
+    await install(storage)
+    vi.clearAllMocks() // only the refetch's own calls, not the install fixture's
+
+    const routes: Record<string, RouteSpec> = {
+      [MANIFEST_URL]: { body: utf8(manifestJson()) },
+      [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
+    }
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(1_700_000_001_000) })
+
+    await loader.load(ORIGIN, NO_GRANTS)
+
+    expect(storage.pruneAssets).toHaveBeenCalledWith(ORIGIN, ['/.well-known/orivon.json', '/index.html'])
+    // Ordering matters, not just occurrence: pruneAssets must see every asset
+    // this install just wrote (or it would delete one), and writePin must
+    // not run until pruning is done (docs/open-questions.md A58 gap 2's own
+    // reasoning for why install() calls these in this order).
+    const order = (fn: unknown): number => (fn as { mock: { invocationCallOrder: number[] } }).mock.invocationCallOrder[0]!
+    const lastWriteAssetCall = Math.max(...(storage.writeAsset as unknown as { mock: { invocationCallOrder: number[] } }).mock.invocationCallOrder)
+    expect(lastWriteAssetCall).toBeLessThan(order(storage.pruneAssets))
+    expect(order(storage.pruneAssets)).toBeLessThan(order(storage.writePin))
+  })
+
+  it('a storage failure while pruning old assets surfaces as outcome "rejected", never an uncaught throw', async () => {
+    const base = memoryStorage()
+    await install(base)
+    vi.clearAllMocks()
+    const storage = { ...base, pruneAssets: vi.fn(async (): Promise<void> => { throw new Error('disk full') }) }
+    const routes: Record<string, RouteSpec> = {
+      [MANIFEST_URL]: { body: utf8(manifestJson()) },
+      [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
+    }
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(1_700_000_001_000) })
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const result = await loader.load(ORIGIN, NO_GRANTS)
+    logged.mockRestore()
+
+    expect(result.outcome).toBe('rejected')
+    // A failed prune must not re-pin: the assets of the refetch are already
+    // written, and a pin naming them while the prune left the previous
+    // version's files in place is a record the disk does not back.
+    expect(base.writePin).not.toHaveBeenCalled()
+  })
 
   it('an unchanged bundle, still within the granted patterns, installs silently again', async () => {
     const storage = memoryStorage()

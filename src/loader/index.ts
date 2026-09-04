@@ -118,15 +118,10 @@ export interface Loader {
  * the pin caller-facing code sees.
  *
  * `pruneAssets` after writing (docs/open-questions.md A58, gap 2) deletes
- * whatever a PREVIOUS pin left behind that the new bundle no longer
- * declares. Not independently exercisable end-to-end yet through `load()`
- * as written: `decideUpdate` only reaches the `silent` branch that calls
- * this function when the bundle hash is UNCHANGED (`isSameBundle`), which by
- * construction means the same file set -- nothing to prune. It becomes live
- * once something persists a bundle after a user approves a `reconsent`/
- * `needs-capability-prompt` outcome, which does not exist yet (this file's
- * header). Built now anyway, on the one function that ever persists a
- * bundle, rather than guessed into whatever calls this function later.
+ * whatever a PREVIOUS pin left behind that the new bundle no longer declares.
+ * `replacesAPin` is false on the TOFU path: no earlier pin exists for this
+ * origin, so there is nothing a previous bundle could have left behind, and
+ * the walk would only re-read every file the loop above just wrote.
  */
 async function install (
   storage: LoaderStorage,
@@ -134,13 +129,14 @@ async function install (
   manifest: Manifest,
   tree: BundleTree,
   entries: readonly BundleEntry[],
-  now: number
+  now: number,
+  replacesAPin: boolean
 ): Promise<PinRecord> {
   const pin = fromBundleTree(canonicalOrigin, tree.root, tree.assets, manifest.version, now)
   for (const entry of entries) {
     await storage.writeAsset(canonicalOrigin, entry.path, entry.content)
   }
-  await storage.pruneAssets(canonicalOrigin, entries.map((entry) => entry.path))
+  if (replacesAPin) await storage.pruneAssets(canonicalOrigin, entries.map((entry) => entry.path))
   await storage.writePin(canonicalOrigin, pin)
   return pin
 }
@@ -158,10 +154,11 @@ async function installOrReject (
   manifest: Manifest,
   tree: BundleTree,
   entries: readonly BundleEntry[],
-  now: number
+  now: number,
+  replacesAPin: boolean
 ): Promise<LoadResult> {
   try {
-    const pin = await install(storage, canonicalOrigin, manifest, tree, entries, now)
+    const pin = await install(storage, canonicalOrigin, manifest, tree, entries, now, replacesAPin)
     return { outcome: 'installed', canonicalOrigin, manifest, pin }
   } catch (error) {
     // The raw message is a node:fs one and carries the absolute host path it
@@ -184,7 +181,7 @@ export function createLoader (options: CreateLoaderOptions): Loader {
     if (rawPin === undefined) {
       // TOFU (ADR-0005): nothing was ever pinned for this origin, so there
       // is no continuity to protect and nothing to prompt for.
-      return await installOrReject(options.storage, canonicalOrigin, manifest, tree, entries, options.now())
+      return await installOrReject(options.storage, canonicalOrigin, manifest, tree, entries, options.now(), false)
     }
 
     // A pin record exists but fails to parse (corrupt bytes, a schema this
@@ -222,7 +219,7 @@ export function createLoader (options: CreateLoaderOptions): Loader {
       case 'reconsent':
         return { outcome: 'needs-reconsent', canonicalOrigin, manifest, tree, entries }
       case 'silent':
-        return await installOrReject(options.storage, canonicalOrigin, manifest, tree, entries, options.now())
+        return await installOrReject(options.storage, canonicalOrigin, manifest, tree, entries, options.now(), true)
     }
   }
 
