@@ -5,13 +5,14 @@
 // the Manifest.capabilities -> PatternSet mapping is update-patterns.ts, and
 // the storage seam is storage.ts. See src/loader/README.md.
 //
-// THE FOUR OUTCOMES (this lane's acceptance criteria): `installed` (TOFU on
-// first install, or a `silent` decideUpdate() verdict on refetch -- both
-// mean "ready to run, nothing to ask the user"), `needs-reconsent`,
-// `needs-capability-prompt`, `rejected`. Showing UI for the middle two, or
-// wiring the broker's grant prompt, is explicitly out of this lane's scope
-// (src/loader/README.md, this lane's brief) -- this function returns the
-// verdict and stops.
+// THE FIVE OUTCOMES (this lane's acceptance criteria, grown by one
+// 2026-09-04 -- see LoadNeedsRollbackChoice below): `installed` (TOFU, a
+// `silent` decideUpdate() verdict, or an ALREADY-ACKNOWLEDGED rollback --
+// all three mean "ready to run, nothing new to ask the user"),
+// `needs-reconsent`, `needs-capability-prompt`, `needs-rollback-choice`,
+// `rejected`. Showing UI for the middle three, or wiring the broker's grant
+// prompt, is explicitly out of this lane's scope (src/loader/README.md,
+// this lane's brief) -- this function returns the verdict and stops.
 //
 // CRITERION 4: decideUpdate() is called with `context.grantedPatterns` --
 // what the grant ledger actually holds -- NEVER `manifest.capabilities`.
@@ -52,6 +53,8 @@ export interface LoadContext {
   readonly grantedPatterns: PatternSet
   /** The highest version ever installed for this origin (T19). `'0.0.0'` for an origin that has never been granted anything, per compareVersions' release-component semantics. */
   readonly versionFloor: string
+  /** See update.ts's UpdateInput.rollbackAcknowledged -- passed straight through, unchanged, to decideUpdate(). */
+  readonly rollbackAcknowledged: boolean
 }
 
 export interface LoadInstalled {
@@ -59,6 +62,16 @@ export interface LoadInstalled {
   readonly canonicalOrigin: string
   readonly manifest: Manifest
   readonly pin: PinRecord
+  /**
+   * True only when this install is a below-floor version the user has
+   * already chosen, at least once, to accept from this origin
+   * (decideUpdate()'s `rollback-notice`, 2026-09-04). Absent for every other
+   * install -- the caller uses this to show an ongoing, passive,
+   * non-blocking notice, never a prompt (the owner's own "warn every time,
+   * but never require a click" framing). Never present alongside a TOFU or
+   * ordinary `silent` install.
+   */
+  readonly rollbackNotice?: true
 }
 
 export interface LoadNeedsReconsent {
@@ -80,6 +93,24 @@ export interface LoadNeedsCapabilityPrompt {
   readonly requestedPatterns: PatternSet
 }
 
+/**
+ * 2026-09-04, T19 policy reversal: a below-floor version used to be a
+ * silent, no-prompt `rejected`. It is now a warned CHOICE the first time for
+ * a given origin -- proceed with this older version, or keep what's cached
+ * -- never a hard block. Carries `tree`/`entries`/`manifest` for the same
+ * reason `LoadNeedsReconsent`/`LoadNeedsCapabilityPrompt` do: so approving
+ * can persist without re-fetching.
+ */
+export interface LoadNeedsRollbackChoice {
+  readonly outcome: 'needs-rollback-choice'
+  readonly canonicalOrigin: string
+  readonly manifest: Manifest
+  readonly tree: BundleTree
+  readonly entries: readonly BundleEntry[]
+  /** The origin's own floor, so a prompt can say what's already been seen, not just what's being offered now. */
+  readonly versionFloor: string
+}
+
 export interface LoadRejected {
   readonly outcome: 'rejected'
   /**
@@ -93,7 +124,7 @@ export interface LoadRejected {
   readonly reason: string
 }
 
-export type LoadResult = LoadInstalled | LoadNeedsReconsent | LoadNeedsCapabilityPrompt | LoadRejected
+export type LoadResult = LoadInstalled | LoadNeedsReconsent | LoadNeedsCapabilityPrompt | LoadNeedsRollbackChoice | LoadRejected
 
 export interface Loader {
   /**
@@ -201,12 +232,13 @@ export function createLoader (options: CreateLoaderOptions): Loader {
       grantedPatterns: context.grantedPatterns,
       newPatterns: patternSetFromCapabilities(manifest.capabilities),
       version: manifest.version,
-      versionFloor: context.versionFloor
+      versionFloor: context.versionFloor,
+      rollbackAcknowledged: context.rollbackAcknowledged
     })
 
     switch (decision) {
-      case 'reject':
-        return { outcome: 'rejected', reason: `${manifest.version} is below this origin's version floor (${context.versionFloor})` }
+      case 'rollback-choice':
+        return { outcome: 'needs-rollback-choice', canonicalOrigin, manifest, tree, entries, versionFloor: context.versionFloor }
       case 'capability-prompt':
         return {
           outcome: 'needs-capability-prompt',
@@ -220,6 +252,10 @@ export function createLoader (options: CreateLoaderOptions): Loader {
         return { outcome: 'needs-reconsent', canonicalOrigin, manifest, tree, entries }
       case 'silent':
         return await installOrReject(options.storage, canonicalOrigin, manifest, tree, entries, options.now(), true)
+      case 'rollback-notice': {
+        const result = await installOrReject(options.storage, canonicalOrigin, manifest, tree, entries, options.now(), true)
+        return result.outcome === 'installed' ? { ...result, rollbackNotice: true } : result
+      }
     }
   }
 

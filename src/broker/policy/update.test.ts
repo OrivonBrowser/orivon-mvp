@@ -42,6 +42,7 @@ function update (overrides: Partial<UpdateInput>): UpdateInput {
     newPatterns: {},
     version: '1.2.0',
     versionFloor: '1.2.0',
+    rollbackAcknowledged: false,
     ...overrides
   }
 }
@@ -167,6 +168,15 @@ const TABLE: readonly Row[] = [
   },
 
   // ---- the version floor (T19) -------------------------------------------
+  //
+  // 2026-09-04, owner decision: a below-floor version is no longer a hard,
+  // no-prompt block. It is warned and offered as a CHOICE the first time for
+  // a given origin (`rollback-choice`), and an ongoing but non-blocking
+  // notice on every later visit once the user has said yes once
+  // (`rollback-notice`, see the separate block below this one) -- never
+  // silently installed either way without the caller knowing which case it
+  // is, which is why these two decisions exist as distinct outcomes rather
+  // than folding into `silent`.
   {
     // Validly hash-pinned -- it really is code this publisher shipped -- and
     // its pattern set is by construction one the user already accepted. Only
@@ -179,12 +189,12 @@ const TABLE: readonly Row[] = [
       grantedPatterns: ONE_HOST,
       newPatterns: ONE_HOST
     }),
-    decision: 'reject'
+    decision: 'rollback-choice'
   },
   {
     name: 'a prerelease of the floor version is offered',
     input: update({ newHash: REBUILT, version: '1.2.0-rc.1', versionFloor: '1.2.0' }),
-    decision: 'reject'
+    decision: 'rollback-choice'
   },
   {
     // Fails closed: "cannot prove this is not a rollback" and "is a rollback"
@@ -192,19 +202,56 @@ const TABLE: readonly Row[] = [
     // version string the parser cannot read.
     name: 'an unorderable version cannot be proven newer',
     input: update({ version: '1.x.0', versionFloor: '1.2.0' }),
-    decision: 'reject'
+    decision: 'rollback-choice'
   },
   {
     // The floor outranks every other signal, because no prompt can tell a
-    // user whether the bundle in front of them is the replayed one.
-    name: 'a rollback that also widens patterns is rejected, not prompted',
+    // user whether the bundle in front of them is the replayed one -- it
+    // still must not be silently folded into a weaker-sounding prompt, so
+    // the rollback outcome wins over capability-prompt too.
+    name: 'a rollback that also widens patterns is a rollback choice, not a capability prompt',
     input: update({
       version: '1.1.0',
       versionFloor: '1.2.0',
       grantedPatterns: ONE_HOST,
       newPatterns: ANY_HOST
     }),
-    decision: 'reject'
+    decision: 'rollback-choice'
+  },
+  {
+    // rollbackAcknowledged is per origin, not per exact version -- once the
+    // user has said yes once, EVERY later below-floor version from this
+    // origin is a notice, not a fresh choice, until they explicitly change
+    // that (there is no path back to `rollback-choice` in this table; that
+    // is deliberate, matching the owner's own "warn every single time, but
+    // informational" framing).
+    name: 'a rollback already acknowledged once for this origin is a notice, not a fresh choice',
+    input: update({
+      newHash: REBUILT,
+      version: '1.1.9',
+      versionFloor: '1.2.0',
+      rollbackAcknowledged: true
+    }),
+    decision: 'rollback-notice'
+  },
+  {
+    name: 'acknowledged rollback still wins over a capability widening -- same severity rule as the unacknowledged case',
+    input: update({
+      version: '1.1.0',
+      versionFloor: '1.2.0',
+      rollbackAcknowledged: true,
+      grantedPatterns: ONE_HOST,
+      newPatterns: ANY_HOST
+    }),
+    decision: 'rollback-notice'
+  },
+  {
+    // rollbackAcknowledged is irrelevant once the version is actually at or
+    // above the floor -- it must never itself cause a notice for an
+    // ordinary, non-rollback update.
+    name: 'rollbackAcknowledged does nothing once the version is at or above the floor',
+    input: update({ rollbackAcknowledged: true, grantedPatterns: ONE_HOST, newPatterns: ONE_HOST }),
+    decision: 'silent'
   },
   {
     name: 're-fetching the installed version is not a rollback',
@@ -232,7 +279,7 @@ describe('decideUpdate', () => {
 
   it('covers every decision the type allows', () => {
     const produced = new Set(TABLE.map((row) => row.decision))
-    expect([...produced].sort()).toEqual(['capability-prompt', 'reconsent', 'reject', 'silent'])
+    expect([...produced].sort()).toEqual(['capability-prompt', 'reconsent', 'rollback-choice', 'rollback-notice', 'silent'])
   })
 })
 

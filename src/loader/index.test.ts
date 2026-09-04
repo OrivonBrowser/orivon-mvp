@@ -8,17 +8,19 @@ import { nodeLoaderStorage } from './node-storage.js'
 import { MANIFEST_URL, ORIGIN, manifestJson, memoryStorage, stubFetch, utf8 } from './test-helpers.js'
 import type { RouteSpec } from './test-helpers.js'
 
-const NO_GRANTS: LoadContext = { grantedPatterns: {}, versionFloor: '0.0.0' }
+const NO_GRANTS: LoadContext = { grantedPatterns: {}, versionFloor: '0.0.0', rollbackAcknowledged: false }
 
 function fixedNow (value = 1_700_000_000_000): () => number {
   return () => value
 }
 
-// This suite is organised around the FOUR outcomes acceptance criterion 1
-// names (installed / needs-reconsent / needs-capability-prompt / rejected),
-// and separately around criterion 4 -- decideUpdate() must see the GRANTED
-// pattern set, never the manifest's declared one (A18/A27's own failure
-// class, named explicitly in this lane's brief).
+// This suite is organised around the FIVE outcomes acceptance criterion 1
+// names (installed / needs-reconsent / needs-capability-prompt /
+// needs-rollback-choice / rejected -- needs-rollback-choice added
+// 2026-09-04, the T19 policy reversal from a silent block to a warned
+// choice), and separately around criterion 4 -- decideUpdate() must see the
+// GRANTED pattern set, never the manifest's declared one (A18/A27's own
+// failure class, named explicitly in this lane's brief).
 
 describe('createLoader: fresh install (TOFU, ADR-0005)', () => {
   it('installs silently and persists the pin plus every asset', async () => {
@@ -207,7 +209,8 @@ describe('createLoader: refetch against an existing pin', () => {
     // GRANTED set decideUpdate must be checked against.
     const granted: LoadContext = {
       grantedPatterns: { 'tcp.connect': ['api.example.com:443'] },
-      versionFloor: '0.0.0'
+      versionFloor: '0.0.0',
+      rollbackAcknowledged: false
     }
 
     // The new manifest declares "*:*" -- strictly wider than what was
@@ -227,7 +230,7 @@ describe('createLoader: refetch against an existing pin', () => {
     expect(result.requestedPatterns['tcp.connect']).toEqual(['*:*'])
   })
 
-  it('a version below the version floor -> rejected, at every prompt (T19)', async () => {
+  it('a version below the version floor, never acknowledged -> needs-rollback-choice, and nothing is persisted (T19, 2026-09-04)', async () => {
     const storage = memoryStorage()
     await install(storage)
 
@@ -240,11 +243,47 @@ describe('createLoader: refetch against an existing pin', () => {
       [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
     }
     const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow() })
-    const result = await loader.load(ORIGIN, { grantedPatterns: {}, versionFloor: '1.0.0' })
+    const before = storage.pins.get(ORIGIN)
+    const result = await loader.load(ORIGIN, { grantedPatterns: {}, versionFloor: '1.0.0', rollbackAcknowledged: false })
 
-    expect(result.outcome).toBe('rejected')
-    if (result.outcome !== 'rejected') return
-    expect(result.reason).toMatch(/version floor/i)
+    expect(result.outcome).toBe('needs-rollback-choice')
+    if (result.outcome !== 'needs-rollback-choice') return
+    expect(result.versionFloor).toBe('1.0.0')
+    expect(result.manifest.version).toBe('0.9.0')
+    expect(storage.pins.get(ORIGIN)).toBe(before) // untouched, same as needs-reconsent/needs-capability-prompt
+  })
+
+  it('a version below the version floor, already acknowledged for this origin -> installed with a rollback notice, no choice required', async () => {
+    const storage = memoryStorage()
+    await install(storage)
+
+    const routes: Record<string, RouteSpec> = {
+      [MANIFEST_URL]: { body: utf8(manifestJson({ version: '0.9.0' })) },
+      [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
+    }
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(1_700_000_001_000) })
+    const result = await loader.load(ORIGIN, { grantedPatterns: {}, versionFloor: '1.0.0', rollbackAcknowledged: true })
+
+    expect(result.outcome).toBe('installed')
+    if (result.outcome !== 'installed') return
+    expect(result.pin.version).toBe('0.9.0')
+    expect(result.rollbackNotice).toBe(true)
+  })
+
+  it('an ordinary silent install never carries a rollback notice', async () => {
+    const storage = memoryStorage()
+    await install(storage)
+
+    const routes: Record<string, RouteSpec> = {
+      [MANIFEST_URL]: { body: utf8(manifestJson()) },
+      [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
+    }
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(1_700_000_001_000) })
+    const result = await loader.load(ORIGIN, NO_GRANTS)
+
+    expect(result.outcome).toBe('installed')
+    if (result.outcome !== 'installed') return
+    expect(result.rollbackNotice).toBeUndefined()
   })
 
   it('a corrupted/unparseable existing pin forces at least reconsent -- never silently re-installs as TOFU', async () => {

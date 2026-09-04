@@ -1985,6 +1985,14 @@ closing A23 below). A60's escape hatch (`GrantLedger.forgetOrigin`) exists for t
 itself did not anticipate — a floor poisoned by a hostile version number, now that a restart can
 no longer clear it by accident.
 
+**Correction, 2026-09-04, owner decision.** This entry's own §"Distinct from A29" paragraph
+quotes `ADR-0009` stating the floor "must survive an uninstalled/reinstalled app." Asked directly
+while scoping the discovery-trigger work that depends on this entry: the owner wants the opposite
+— a full "remove this app" action should forget the origin completely, including its floor, with
+no permanent tombstone. What was actually built matches the NEW decision, not the quoted old one:
+the floor survives a restart only. `ADR-0009` itself is amended (2026-09-04) to record the
+reversal, since it was the document making the now-superseded claim.
+
 ---
 
 ### A58 — nothing bounds total disk usage across origins, or across successive updates to one origin **[RESOLVED 2026-09-04]**

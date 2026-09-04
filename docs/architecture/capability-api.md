@@ -141,16 +141,25 @@ sorts below its release; numeric identifiers sort below alphanumeric ones).
 
 This is not a new rule — it transcribes what `src/broker/policy/update.ts`'s `compareVersions`
 already implements, because it backs a security control: `security-model.md` T19's per-origin
-**version floor**, which rejects any update below the highest version ever installed, so a
-validly-hash-pinned *older* bundle cannot be replayed to suppress a fix (`ADR-0009`).
+**version floor**, which flags any update below the highest version ever installed, so a
+validly-hash-pinned *older* bundle is never installed unnoticed (`ADR-0009`).
 
-**A version string that does not parse as semver is treated as below the floor and rejected —
-fails closed.** "We cannot prove this is not a replayed older bundle" and "this is a replayed
-older bundle" must reach the same outcome, or the floor is bypassed by publishing a version string
-the parser cannot order. Consequently: **the app loader must reject a non-semver `version` at
-first install**, not only on update — a publisher who ships `"2026-08-26"` needs to find out
-immediately, not on their first update when every install is already stuck below an unreachable
-floor.
+**A version string that does not parse as semver is treated as below the floor — fails closed.**
+"We cannot prove this is not a replayed older bundle" and "this is a replayed older bundle" must
+reach the same outcome, or the floor is bypassed by publishing a version string the parser cannot
+order. Consequently: **the app loader must reject a non-semver `version` at first install**, not
+only on update — a publisher who ships `"2026-08-26"` needs to find out immediately, not on their
+first update when every install is already stuck below an unreachable floor.
+
+> **Corrected 2026-09-04, owner decision (`ADR-0013`).** The two paragraphs above previously said
+> the floor "rejects" a below-floor update outright. That was the shipped behaviour at the time,
+> but never the intent: a below-floor version is warned and offered as a **choice** — proceed
+> with the older version, or keep what is cached — the first time for a given origin, and an
+> ongoing, non-blocking notice on every later visit once the user has said yes once. The floor
+> itself (`GrantLedger.versionFloor`, A57) is unaffected — it still only ever rises, and it is
+> still the thing that decides whether an update counts as a rollback at all — only the response
+> to reaching it changed, from a silent block to a user decision. The non-semver case above still
+> fails toward the same restrictive path (a choice/notice, not a silent installation).
 
 **Honesty note on P2P apps.** The torrent app genuinely needs `tcp.connect: ["*:*"]` and
 `udp.send: ["*:*"]` — DHT and peer exchange reach arbitrary hosts. That is close to
@@ -461,9 +470,11 @@ conflated:
 >
 > **The re-consent trigger is a subset check over the granted pattern set**, not a kind
 > comparison: silent only if the new manifest's patterns are a subset of what was granted.
-> Additionally, record a per-origin **version floor** and reject any lower version, so a
-> validly-hash-pinned *older* bundle cannot be replayed indefinitely to suppress a fix
-> (`security-model.md` T19).
+> Additionally, record a per-origin **version floor** and flag any lower version, so a
+> validly-hash-pinned *older* bundle is never installed unnoticed (`security-model.md` T19).
+> **Corrected 2026-09-04, owner decision (`ADR-0013`):** "flag", not "reject" — a below-floor
+> version is warned and offered as a choice, never silently blocked. See the correction on
+> this document's §`version` section for the full account.
 
 ### 3. Is `fs.quotaBytes` enforced or advisory? → **Enforced**
 Advisory means a buggy or hostile app fills the user's disk — threat **T11** in

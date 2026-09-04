@@ -1,6 +1,6 @@
 # ADR-0009: The bundle hash is an app's content identity
 
-- **Status:** accepted, **amended 2026-08-27** (see §Amendment)
+- **Status:** accepted, **amended 2026-08-27 and 2026-09-04** (see §Amendment)
 - **Date:** 2026-08-26
 - **Type:** architecture / security
 - **Decided by:** owner (manifest-as-leaf, scope, and the case-collision rule), AI recommendation
@@ -243,3 +243,25 @@ mutation: replacing the byte comparator with JavaScript's default sort passes th
 The comparator is kept (it costs nothing and is correct for any future construction admitting raw
 paths), but it is **defence in depth, not a load-bearing rule**. The Unicode risk in this design
 lives in the collision key, which is where the actual bug was.
+
+## Amendment, 2026-09-04
+
+**§Consequences said `versionFloor` "must survive an uninstalled/reinstalled app... a floor that
+dies with the pin is a rollback oracle."** That is now wrong in one direction, found while
+building the floor's actual persistence (A57, `stream/broker-21-version-floor-persistence`) and
+confirmed directly with the owner rather than assumed: **a full "remove this app" action is meant
+to forget the app completely, including its version floor — no permanent record survives it.**
+Restarting the browser is a different event and this ADR's original concern about it stands
+unchanged: the floor must survive a *restart* (built, A57), specifically so waiting for one is
+never a way to defeat T19. What this ADR got wrong was treating an intentional, user-initiated
+removal the same as an accidental or attacker-triggered reset — they are not the same threat.
+Removal is the user's own decision about their own machine, the same authority `open-questions.md`
+A46 already treats a user-typed loopback install as (the user acting on purpose, not a hole).
+
+Practically, this is why `src/broker/ledger-storage.ts`'s real implementation stores the floor
+under its own `grants/<origin-hash>/` root rather than folding it into the pin record `ADR-0009`
+above already places outside `code/`: a future "remove this app" action deletes exactly one
+subsystem's own directory and the floor goes with it, by construction, with no separate
+tombstone-clearing step to remember. `GrantLedger.forgetOrigin` (A60's escape hatch, same PR) is
+built on the same deletion primitive for the same reason, though it is not itself the removal
+action — nothing calls it yet.
