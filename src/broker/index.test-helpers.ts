@@ -5,6 +5,7 @@
 import { vi } from 'vitest'
 import { createBroker } from './index.js'
 import type { Broker, CreateBrokerOptions, DialedSocket } from './index.js'
+import type { LedgerStorage } from './ledger-storage.js'
 import type { Capabilities, Manifest } from '../contracts/index.js'
 
 export const APP = 'https://app.example'
@@ -54,13 +55,33 @@ export function stubFs (options: { root?: string, files?: Map<string, Uint8Array
   }
 }
 
+/**
+ * Spreads `overrides` last, rather than enumerating each known key with its
+ * own `??` fallback. The enumerated form silently drops any key this
+ * function has not been updated to name: `baseDeps({ ledgerStorage:
+ * someStorage })` would build a broker with no persistence at all, and
+ * nothing anywhere would signal the drop -- a caller only finds out by a
+ * test failing to behave like it was configured.
+ */
 export function baseDeps (overrides: Partial<CreateBrokerOptions> = {}): CreateBrokerOptions {
   return {
-    dial: overrides.dial ?? (async () => okSocket()),
-    resolve: overrides.resolve ?? (async () => []),
-    now: overrides.now ?? (() => 0),
-    fs: overrides.fs ?? stubFs(),
-    keychain: overrides.keychain ?? { getSeed: async () => new Uint8Array(32) }
+    dial: async () => okSocket(),
+    resolve: async () => [],
+    now: () => 0,
+    fs: stubFs(),
+    keychain: { getSeed: async () => new Uint8Array(32) },
+    ...overrides
+  }
+}
+
+/** A Map-backed LedgerStorage double -- real behaviour, no disk, matching grant-ledger.test.ts's own local copy of the same idiom. */
+export function memoryLedgerStorage (): LedgerStorage & { readonly floors: Map<string, string> } {
+  const floors = new Map<string, string>()
+  return {
+    floors,
+    readVersionFloor: (origin) => floors.get(origin),
+    writeVersionFloor: (origin, versionFloor) => { floors.set(origin, versionFloor) },
+    deleteVersionFloor: (origin) => { floors.delete(origin) }
   }
 }
 
