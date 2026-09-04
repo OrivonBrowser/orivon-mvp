@@ -331,6 +331,14 @@ Raised under [`CLAUDE.md`](../../CLAUDE.md) Rule 3 rather than smoothed over.
 `npm run check:comments`. **Rules 2 and 3 remain unenforced, by owner's decision** ("rules first,
 enforcement later", 2026-08-27).
 
+> **Correction, 2026-09-04 (owner's decision).** Rule 2 is now enforced too: `npm run check:size`
+> (`scripts/check-size.mjs`) is wired into CI's `check` job, in the same change that split
+> `src/broker/index.ts` back under the limit (`src/broker/broker-contracts.ts`,
+> `stream/backlog-09-rule2-and-size-gate`) so the newly-enforced gate would not immediately fail
+> on an existing file. This entry's "Rules 2 and 3 remain unenforced" is superseded for **Rule 2
+> only** — **Rule 3 remains unenforced**, unaffected by this change, and the bullet below about
+> `check-size.mjs` being deliberately unwired is stale for the same reason.
+
 The deferral expired for Rule 1 for the reason it named: the rule was read and followed, and the
 codebase drifted anyway. It also corrects that decision's claim that *"Rule 1 is not mechanically
 checkable by anything, and never will be"* — comment **quality** is not checkable, and that part
