@@ -169,6 +169,11 @@ export interface Broker {
    * synchronously on a malformed origin, and every other Broker method
    * already rejects rather than throwing. A caller wrapping the whole
    * surface in one uniform `.catch()` must not have to special-case this one.
+   *
+   * REJECTS ONLY ON A BROKER FAULT, never on anything the app did. The
+   * version floor is raised in memory before this can reject, so a rejection
+   * means the raise was not written to disk -- not that the registration was
+   * refused (`GrantLedger.registerApp`).
    */
   registerApp(origin: string, manifest: Manifest): Promise<void>
   /**
@@ -472,8 +477,22 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     return ledger.grantsFor(canonical(origin))
   }
 
+  /**
+   * Re-throws the version-floor write failure (the one thing
+   * `GrantLedger.registerApp` throws) rather than swallowing it, but as an
+   * OrivonError: `canonical` above already rejects with one, and one method
+   * must not reject with two shapes. NOT `mapIoError` -- the floor already
+   * rose in memory, so 'denied'/'limit' would misreport a broker fault as
+   * the registration being refused. Fresh message, errno kept as
+   * `platformCode`, for `mapIoError`'s own path-leak reason.
+   */
   async function registerApp (origin: string, appManifest: Manifest): Promise<void> {
-    ledger.registerApp(canonical(origin), appManifest)
+    const key = canonical(origin)
+    try {
+      ledger.registerApp(key, appManifest)
+    } catch (error) {
+      throw fail('internal', 'the version floor could not be persisted', undefined, errnoOf(error))
+    }
   }
 
   async function versionFloorFor (origin: string): Promise<string> {
