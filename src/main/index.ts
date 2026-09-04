@@ -74,9 +74,9 @@ void app.whenReady().then(async () => {
     return
   }
 
-  createShellWindow()
+  createShellWindow(ctx)
   app.on('activate', () => {
-    if (BaseWindow.getAllWindows().length === 0) createShellWindow()
+    if (BaseWindow.getAllWindows().length === 0) createShellWindow(ctx)
   })
 })
 
