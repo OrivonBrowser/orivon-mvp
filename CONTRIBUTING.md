@@ -73,14 +73,14 @@ a merge, and branch protection means nothing reaches `main` without the owner.
 ## Before you open a pull request
 
 ```bash
-npm run typecheck && npm test && npm run check:natives && npm run check:contracts && npm run check:secrets
+npm run typecheck && npm test && npm run check:natives && npm run check:contracts && npm run check:vectors && npm run check:secrets && npm run check:comments && npm run check:size
 npm run smoke     # only if you touched src/main/
 ```
 
 `npm run smoke` prints a JSON result and a failure list. **Read those, not the exit code
 alone.**
 
-All five run in CI on every push. **With no dedicated code reviewer, CI is the reviewer** — a
+All eight run in CI on every push. **With no dedicated code reviewer, CI is the reviewer** — a
 red pull request does not merge, ever.
 
 ## Pull request title and body
