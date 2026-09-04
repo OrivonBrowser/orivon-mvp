@@ -151,22 +151,29 @@ export function originFromUrl (url: string): string | null {
  * host to check:
  *   - `http:` is refused outright, regardless of host -- the "plain-http"
  *     half of T13c.
- *   - `localhost` is refused by name. It is a reserved DNS name that always
- *     resolves to loopback (RFC 6761); `classifyAddress` below only
- *     recognises address LITERALS, so a bare name check is the only way to
- *     catch it.
+ *   - The whole `.localhost` NAMESPACE is refused by name, not just the bare
+ *     label: RFC 6761 SS6.3 reserves every name ending in `.localhost` for
+ *     loopback, and Chromium resolves the subtree that way, so
+ *     `app.localhost` is as much loopback as `localhost` is.
+ *     `classifyAddress` below only recognises address LITERALS, so a name
+ *     check is the only way to catch either.
  *   - Every other host is classified via `./address.ts`'s `classifyAddress`,
  *     the ONE place this codebase decides what counts as loopback (T12's own
- *     table). An ordinary DNS name classifies as 'unparseable' there, which
- *     is correctly NOT 'loopback' -- this function does not (and must not)
- *     reject every address `classifyAddress` would flag; T13c names loopback
+ *     table). Both 'loopback' AND 'unspecified' are refused: `0.0.0.0` and
+ *     `[::]` are a separate AddressClass there, but connecting to either
+ *     reaches 127.0.0.1 on Linux and macOS, which is exactly the reachability
+ *     T13c is about. An ordinary DNS name classifies as 'unparseable', which
+ *     is correctly neither -- this function does not (and must not) reject
+ *     every address `classifyAddress` would flag; T13c names loopback
  *     specifically, not the wider private/link-local/reserved ranges T12
  *     blocks for a different reason (outbound `net.connect`, not what may be
  *     written to disk).
  *
- * PRECONDITION, enforced only at the call site, same as `canonicalHost`:
- * takes an already-canonical origin. A raw, un-canonicalised URL is not this
- * function's problem to catch.
+ * Takes an already-canonical origin, same as `canonicalHost`. It runs the
+ * host through `canonicalHost` anyway rather than trusting that: a caller
+ * that skipped the step would otherwise spell its way past the name checks
+ * above with a trailing root label (`localhost.`), and failing closed on a
+ * host that cannot be canonicalised at all is free here.
  */
 export function isPersistableOrigin (origin: string): boolean {
   let parsed: URL
@@ -177,9 +184,13 @@ export function isPersistableOrigin (origin: string): boolean {
   }
 
   if (parsed.protocol !== 'https:') return false
-  if (parsed.hostname === 'localhost') return false
 
-  return classifyAddress(parsed.hostname) !== 'loopback'
+  const host = canonicalHost(parsed.hostname)
+  if (host === null) return false
+  if (host === 'localhost' || host.endsWith('.localhost')) return false
+
+  const cls = classifyAddress(host)
+  return cls !== 'loopback' && cls !== 'unspecified'
 }
 
 /**
