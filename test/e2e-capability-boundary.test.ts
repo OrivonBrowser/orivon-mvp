@@ -73,7 +73,7 @@ import {
 } from './smoke-helpers.mjs'
 import { HOST, ECHO_PORT, STATIC_PORT } from '../apps/fixture/config.mjs'
 import { createBroker } from '../src/broker/index.js'
-import type { BrokerFs, CreateBrokerOptions, Keychain } from '../src/broker/index.js'
+import type { BrokerFs, CreateBrokerOptions, Keychain } from '../src/broker/broker-contracts.js'
 import { dialTcp, resolveHost } from '../src/broker/node-adapters.js'
 import { isOrivonErrorLike } from '../src/broker/errors.js'
 import { parseManifest } from '../src/loader/manifest.js'

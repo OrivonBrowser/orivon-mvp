@@ -182,7 +182,7 @@ check.
 **The commands you ran, and what they actually said.** Paste the numbers.
 
 ```
-npm run typecheck && npm test && npm run check:natives && npm run check:contracts && npm run check:secrets
+npm run typecheck && npm test && npm run check:natives && npm run check:contracts && npm run check:vectors && npm run check:secrets && npm run check:comments && npm run check:size
 npm run smoke     # only if you touched src/main/
 ```
 
