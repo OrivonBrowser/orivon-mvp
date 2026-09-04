@@ -138,6 +138,29 @@ async function install (
   return pin
 }
 
+/**
+ * Wraps install() so a storage failure (writeAsset/pruneAssets/writePin can
+ * all throw a plain Error on a rejected path or a filesystem error) resolves
+ * to one of load()'s own four documented outcomes instead of an uncaught
+ * exception -- a bundle that fetched and validated cleanly can still fail
+ * here, and LoadResult has no fifth "threw" case for that to become.
+ */
+async function installOrReject (
+  storage: LoaderStorage,
+  canonicalOrigin: string,
+  manifest: Manifest,
+  tree: BundleTree,
+  entries: readonly BundleEntry[],
+  now: number
+): Promise<LoadResult> {
+  try {
+    const pin = await install(storage, canonicalOrigin, manifest, tree, entries, now)
+    return { outcome: 'installed', canonicalOrigin, manifest, pin }
+  } catch (error) {
+    return { outcome: 'rejected', reason: error instanceof Error ? error.message : String(error) }
+  }
+}
+
 export function createLoader (options: CreateLoaderOptions): Loader {
   async function load (hintedUrl: string, context: LoadContext): Promise<LoadResult> {
     const fetched = await fetchBundle(options.fetch, hintedUrl)
@@ -148,8 +171,7 @@ export function createLoader (options: CreateLoaderOptions): Loader {
     if (rawPin === undefined) {
       // TOFU (ADR-0005): nothing was ever pinned for this origin, so there
       // is no continuity to protect and nothing to prompt for.
-      const pin = await install(options.storage, canonicalOrigin, manifest, tree, entries, options.now())
-      return { outcome: 'installed', canonicalOrigin, manifest, pin }
+      return await installOrReject(options.storage, canonicalOrigin, manifest, tree, entries, options.now())
     }
 
     // A pin record exists but fails to parse (corrupt bytes, a schema this
@@ -186,10 +208,8 @@ export function createLoader (options: CreateLoaderOptions): Loader {
         }
       case 'reconsent':
         return { outcome: 'needs-reconsent', canonicalOrigin, manifest, tree, entries }
-      case 'silent': {
-        const pin = await install(options.storage, canonicalOrigin, manifest, tree, entries, options.now())
-        return { outcome: 'installed', canonicalOrigin, manifest, pin }
-      }
+      case 'silent':
+        return await installOrReject(options.storage, canonicalOrigin, manifest, tree, entries, options.now())
     }
   }
 
