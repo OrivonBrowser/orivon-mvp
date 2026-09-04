@@ -8,7 +8,7 @@
 // must not itself become a hashed leaf.
 
 import { mkdirSync, realpathSync } from 'node:fs'
-import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, rm, rmdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { decodePercentEscapes } from '../broker/policy/canonical-path.js'
 import { confinePath } from '../broker/policy/paths.js'
@@ -74,6 +74,50 @@ async function walkFiles (root: string): Promise<string[]> {
   return out
 }
 
+/**
+ * NFC-folds a resolved path before pruneAssets compares it for equality.
+ * HFS+/APFS (a supported run-from-source target, CLAUDE.md Rule 8) store a
+ * non-ASCII filename decomposed (NFD) on disk even when the bytes written
+ * were precomposed (NFC, the form a JSON manifest string normally carries) --
+ * so walkFiles's readdir-derived path and resolveAssetPath's manifest-derived
+ * path can name the same file with two different byte sequences. Case is
+ * left alone, unlike canonical-path.ts's collisionKey: these are already
+ * percent-decoded real filesystem paths, not canonical URL paths, and
+ * folding case here would wrongly conflate two distinct files on a
+ * case-sensitive filesystem.
+ */
+function normalizeForComparison (path: string): string {
+  return path.normalize('NFC')
+}
+
+/**
+ * Removes every directory under `root` left empty once pruneAssets has
+ * deleted its files -- bottom-up, so a directory that only became empty
+ * because its last subdirectory was just removed is caught too. Never
+ * removes `root` itself: codeRoot() created it and the next writeAsset call
+ * for this origin expects it to still be there. Best-effort, like the
+ * deletions above: a directory-listing or rmdir failure is logged and
+ * skipped rather than left to abort the prune.
+ */
+async function removeEmptyDirectories (root: string, dir: string): Promise<void> {
+  let entries
+  try {
+    entries = await readdir(dir, { withFileTypes: true })
+  } catch (error) {
+    console.error('[loader] pruneAssets: failed to list a directory while removing empty ones', dir, error)
+    return
+  }
+  for (const entry of entries) {
+    if (entry.isDirectory()) await removeEmptyDirectories(root, join(dir, entry.name))
+  }
+  if (dir === root) return
+  try {
+    if ((await readdir(dir)).length === 0) await rmdir(dir)
+  } catch (error) {
+    console.error('[loader] pruneAssets: failed to remove an empty directory', dir, error)
+  }
+}
+
 export function nodeLoaderStorage (userDataPath: string): LoaderStorage {
   return {
     readPin: async (origin) => {
@@ -115,10 +159,26 @@ export function nodeLoaderStorage (userDataPath: string): LoaderStorage {
     },
     pruneAssets: async (origin, keep) => {
       const root = codeRoot(userDataPath, origin)
-      const keepPaths = new Set(keep.map((canonicalPath) => resolveAssetPath(root, canonicalPath)))
+      const keepPaths = new Set(keep.map((canonicalPath) => normalizeForComparison(resolveAssetPath(root, canonicalPath))))
       for (const filePath of await walkFiles(root)) {
-        if (!keepPaths.has(filePath)) await rm(filePath)
+        if (keepPaths.has(normalizeForComparison(filePath))) continue
+        try {
+          // force: true treats an already-gone file (ENOENT) as success --
+          // walkFiles and this delete are not atomic (docs/open-questions.md
+          // A62), so something else removing the file in between is a race,
+          // not an error.
+          await rm(filePath, { force: true })
+        } catch (error) {
+          // A genuine failure here (EPERM, a directory where a file was
+          // expected) is disk hygiene, not a security gap: install() (this
+          // file's own header) still calls writePin right after pruneAssets
+          // returns, and letting one stray file abort that would leave a
+          // fully-written bundle with no pin record at all -- worse than the
+          // file this leaves behind.
+          console.error('[loader] pruneAssets: failed to delete a superseded asset', filePath, error)
+        }
       }
+      await removeEmptyDirectories(root, root)
     }
   }
 }
