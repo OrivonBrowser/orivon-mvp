@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createLoader } from './index.js'
 import type { LoadContext } from './index.js'
 import { MANIFEST_URL, ORIGIN, manifestJson, memoryStorage, stubFetch, utf8 } from './test-helpers.js'
@@ -37,6 +37,44 @@ describe('createLoader: fresh install (TOFU, ADR-0005)', () => {
     const written = storage.assets.get(ORIGIN)
     expect(written?.has('/.well-known/orivon.json')).toBe(true)
     expect(written?.has('/index.html')).toBe(true)
+  })
+
+  it('calls pruneAssets with the new bundle\'s own paths, after every writeAsset and before writePin', async () => {
+    const storage = memoryStorage()
+    const routes: Record<string, RouteSpec> = {
+      [MANIFEST_URL]: { body: utf8(manifestJson()) },
+      [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
+    }
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow() })
+
+    await loader.load(ORIGIN, NO_GRANTS)
+
+    expect(storage.pruneAssets).toHaveBeenCalledWith(ORIGIN, ['/.well-known/orivon.json', '/index.html'])
+    // Ordering matters, not just occurrence: pruneAssets must see every asset
+    // this install just wrote (or it would delete one), and writePin must
+    // not run until pruning is done (docs/open-questions.md A58 gap 2's own
+    // reasoning for why install() calls these in this order).
+    const order = (fn: unknown): number => (fn as { mock: { invocationCallOrder: number[] } }).mock.invocationCallOrder[0]!
+    const lastWriteAssetCall = Math.max(...(storage.writeAsset as unknown as { mock: { invocationCallOrder: number[] } }).mock.invocationCallOrder)
+    expect(lastWriteAssetCall).toBeLessThan(order(storage.pruneAssets))
+    expect(order(storage.pruneAssets)).toBeLessThan(order(storage.writePin))
+  })
+
+  it('a storage failure while pruning old assets surfaces as outcome "rejected", never an uncaught throw', async () => {
+    const base = memoryStorage()
+    const storage = { ...base, pruneAssets: vi.fn(async (): Promise<void> => { throw new Error('disk full') }) }
+    const routes: Record<string, RouteSpec> = {
+      [MANIFEST_URL]: { body: utf8(manifestJson()) },
+      [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
+    }
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow() })
+
+    const result = await loader.load(ORIGIN, NO_GRANTS)
+
+    expect(result.outcome).toBe('rejected')
+    // A failed prune must not leave assets written with no pin record --
+    // load() would then read this origin back as never-pinned fresh TOFU.
+    expect(base.writePin).not.toHaveBeenCalled()
   })
 
   it('a rejected fetch (malformed manifest, oversized asset, missing entry, ...) surfaces as outcome "rejected" and writes nothing', async () => {
