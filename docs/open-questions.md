@@ -1961,7 +1961,7 @@ for this PR, which only adds the floor — it does not yet enforce it anywhere.
 
 ---
 
-### A58 — nothing bounds total disk usage across origins, or across successive updates to one origin **[PARTIALLY RESOLVED 2026-09-04]**
+### A58 — nothing bounds total disk usage across origins, or across successive updates to one origin **[RESOLVED 2026-09-04]**
 
 Filed 2026-09-03, `fix-62` (`stream/loader-05-node-storage`), while fixing `readPin`'s
 corrupt-pin handling and `electron-fetch.ts`'s redirect trust. (A57 taken by a parallel fix
@@ -2013,6 +2013,20 @@ considered design choice rather than an unexamined gap.
 — it is not a quota question, it is plain hygiene: an update should not leave the previous
 version's now-unreferenced files sitting on disk forever regardless of any ceiling. Tracked for a
 follow-up fix in the same stream as this resolution.
+
+**Gap 2 correction, 2026-09-04 (fix-67, `stream/loader-07-prune-superseded-assets`):** the
+"tracked for a follow-up fix" note above is superseded — the follow-up landed in the same PR
+this entry already named, not a later one. `pruneAssets` as originally merged had two real
+defects that made "gap 2 is fixed" premature: a Unicode-normalisation mismatch (NFC vs. NFD)
+between its keep set (`resolveAssetPath`, manifest-derived) and its on-disk walk (`readdir`-
+derived) could delete a live, still-declared asset on HFS+/APFS — a supported run-from-source
+target, not a hypothetical — and an unguarded `rm()` let a single undeletable file (a race, a
+permission error) abort the whole prune, which aborts `install()` before `writePin` runs,
+leaving a fully-written bundle with no pin record (the next `load()` would then read it back as
+fresh TOFU with no reconsent check — worse than the disk-hygiene gap this was fixing). Both are
+fixed: paths are NFC-folded on both sides before comparison, and the delete loop is `{ force:
+true }` plus a per-file try/catch that logs and continues rather than throwing. A directory left
+empty by pruning is now removed too. Gap 2 is resolved.
 
 ---
 
@@ -2168,3 +2182,17 @@ combination, is a design decision for whoever wires `Loader.load()` into somethi
 concurrent callers (multiple windows/tabs), not something to guess into this entry.
 
 **Needed by:** before `Loader.load()` is reachable from more than one caller at a time.
+
+**Amendment, 2026-09-04 (fix-67):** `pruneAssets` (merged the same day as this entry, in the PR
+this entry already anticipates — see A58 gap 2) adds a THIRD kind of interleaving into this
+exact window, distinct from the two writers described above: a DELETING mutation racing a
+writer, not just two writers racing each other. Two concurrent `load()` calls for the same
+origin can now interleave one call's `writeAsset`s with the OTHER call's `pruneAssets` keep-set
+walk — a file the second call is about to write can be walked, found absent from the first
+call's (older) keep list, and deleted out from under a write still in flight, or a file the
+first call already wrote can be deleted by a second call's prune before the first call's own
+`writePin` ever runs. `pruneAssets` was hardened (fix-67) to tolerate a file disappearing out
+from under it mid-prune (`{ force: true }`, ENOENT treated as success) and to never abort
+`install()` over one undeletable file — that hardening makes a race non-fatal (no uncaught
+throw, no aborted `install()`), not correct (the deletion can still happen). It does not close
+this window, which remains exactly the open question this entry already names.
