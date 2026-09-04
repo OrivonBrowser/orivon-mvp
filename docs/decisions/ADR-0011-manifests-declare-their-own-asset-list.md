@@ -69,7 +69,7 @@ verify — the manifest can verify a list matches what was fetched; it cannot ve
   **Amended 2026-09-04.** This bullet assumed a caller would fetch and parse the manifest itself
   before calling `load()`, then hand in `manifest.assets`. That assumption does not hold: the
   well-known manifest path (`/.well-known/orivon.json`) is fixed, and only `fetchBundle` (inside
-  `load()`) ever fetches it — nothing upstream of `load()` has a parsed manifest to read `assets`
+  `load()`) ever fetches it -- nothing upstream of `load()` has a parsed manifest to read `assets`
   off. The caller of `load()` only ever has `hintedUrl`, the same thing the passive
   `<link rel="orivon-manifest">` discovery trigger this ADR was written to eventually support
   has. Found while wiring that trigger's prerequisites (`stream/loader-06-assets-from-manifest`,
@@ -77,7 +77,7 @@ verify — the manifest can verify a list matches what was fetched; it cannot ve
   `Loader.load()`; `fetchBundle` derives it internally as `[manifest.entry,
   ...(manifest.assets ?? [])]` once it has fetched and parsed the manifest on its own. Every
   consequence of *declaring* the asset list on the manifest (the rest of this section, and the
-  Decision/Reasoning above) is unaffected — only where the declared list gets read off the
+  Decision/Reasoning above) is unaffected -- only where the declared list gets read off the
   manifest moves, from an external caller to `fetchBundle` itself. See `src/loader/README.md`'s
   Design notes for the fuller account, including which of `fetch-bundle.ts`'s own
   adversarial-input checks became defence-in-depth rather than the primary enforcement point as

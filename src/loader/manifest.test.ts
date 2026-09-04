@@ -478,12 +478,11 @@ describe('assets', () => {
       .toMatch(/must not be an absolute URL/)
   })
 
-  // Moved here from fetch-bundle.test.ts (stream/loader-06-assets-from-
-  // manifest): this string is not recognised by `new URL()` as an absolute
-  // reference on its own (isAbsoluteUrl returns false for it), so it falls
-  // through to the relative-path branch below -- confirmed live rather than
-  // assumed that this file's own encoding+canonical-path check still catches
-  // it there.
+  // Belongs to this file rather than fetch-bundle.test.ts because
+  // parseManifest is what rejects it: `new URL()` does not recognise this
+  // string as an absolute reference (isAbsoluteUrl returns false), so it
+  // falls through to the relative-path branch below, and the check that
+  // catches it is this file's own encoding + canonical-path one.
   it('rejects a malformed URL-shaped asset path, even though it does not parse as absolute', () => {
     expect(reason(parseManifest(minimal({ assets: ['http://[not-valid-ipv6/x.js'] }))))
       .toMatch(/not a safe relative path/)
