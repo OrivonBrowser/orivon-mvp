@@ -19,7 +19,6 @@ src/broker/origin-hash.ts
 src/broker/policy/address.ts
 src/broker/policy/connect-src.ts
 src/broker/policy/connect.ts
-src/broker/policy/origin.ts
 src/broker/policy/paths.ts
 src/loader/manifest.ts
 src/main/favicon.ts
