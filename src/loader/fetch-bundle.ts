@@ -410,7 +410,11 @@ export async function fetchBundle (
     // not silently turn into an oversized fetch loop here instead. Moved to
     // after the manifest fetch, unlike before: with assetPaths now DERIVED
     // from the manifest rather than supplied externally, there is no longer
-    // anything to check this against before that one fetch happens.
+    // anything to check this against before that one fetch happens. That one
+    // fetch is itself bounded on its own terms (MAX_MANIFEST_BYTES, checked
+    // above by fetchWithBudget) and this line still runs before the per-asset
+    // loop below starts -- so an over-cap list still costs at most that one
+    // fetch, never one per declared asset.
     if (assetPaths.length + 1 > MAX_BUNDLE_ENTRIES) {
       return rejected(`bundle would have ${String(assetPaths.length + 1)} entries, more than MAX_BUNDLE_ENTRIES (${String(MAX_BUNDLE_ENTRIES)})`)
     }

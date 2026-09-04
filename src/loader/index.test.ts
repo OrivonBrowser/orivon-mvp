@@ -136,11 +136,20 @@ describe('createLoader: refetch against an existing pin', () => {
     const storage = memoryStorage()
     await install(storage)
 
-    const routes: Record<string, RouteSpec> = { [MANIFEST_URL]: { body: utf8(manifestJson({ version: '0.9.0' })) } }
+    // The entry route must resolve, same as every other case in this
+    // describe block -- fetchBundle() always fetches `entry` now (ADR-0011),
+    // so an unrouted `/index.html` would reject on the fetch itself and
+    // never reach decideUpdate() at all, proving nothing about the floor.
+    const routes: Record<string, RouteSpec> = {
+      [MANIFEST_URL]: { body: utf8(manifestJson({ version: '0.9.0' })) },
+      [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
+    }
     const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow() })
     const result = await loader.load(ORIGIN, { grantedPatterns: {}, versionFloor: '1.0.0' })
 
     expect(result.outcome).toBe('rejected')
+    if (result.outcome !== 'rejected') return
+    expect(result.reason).toMatch(/version floor/i)
   })
 
   it('a corrupted/unparseable existing pin forces at least reconsent -- never silently re-installs as TOFU', async () => {
