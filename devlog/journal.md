@@ -102,6 +102,28 @@ Mark anything that must not leave the team draft as `(Keep private)`.
   the bookmarks strip hides until you save something; DDOC is "Confirmation", not "Certification".
   One more question dissolved on inspection -- where the `+Privacy` bonus sits was never a choice,
   it follows from a rung already reinstated. Ten others were decided without the owner.
+- 2026-09-04: **Both hard gates `ADR-0012` put in front of the discovery trigger are now closed
+  -- both halves of A58, merged as #67.** Found the loader never actually read `manifest.assets`
+  despite `ADR-0011` adding it -- fixed first (#66), which also surfaced three of
+  `fetch-bundle.ts`'s own adversarial-input checks had quietly become redundant with
+  `manifest.ts`'s tighter upstream validation once the asset list could only ever come from a
+  parsed manifest. Then A58 itself: asked the owner directly, with real numbers on the table, and
+  got a clean answer -- no aggregate disk cap, ever, mirroring how ordinary browsers already
+  work; built the cleanup half (pruning a superseded bundle's stale files) regardless.
+- 2026-09-04: **Separately, A57 (version-floor persistence) closed too, merged as #68.** Not one
+  of `ADR-0012`'s two gates -- a different, independent milestone that happened to land the same
+  day. Hid a real trap: `Broker.registerApp`/`versionFloorFor` are called without `await` at ~40
+  sites in this repo's own tests, which only ever worked because nothing inside them yielded. A
+  naive async fix would have turned every one into a live race; went synchronous instead, backed
+  by plain sync fs calls.
+- 2026-09-04: **A second, adversarial review pass caught a real regression in #68's own first
+  fix before it ever reached `main`.** The first pass made the version floor persist only
+  *after* a successful disk write -- reasonable-looking, but it meant one failed write left the
+  in-memory floor at the *old* version for the rest of that session, no restart needed, which is
+  worse than doing no persistence at all. Reproduced directly, then fixed properly: the floor now
+  raises in memory unconditionally and first, and a write failure is reported instead of
+  swallowed. Worth remembering the shape of this one -- an obviously-reasonable-sounding fix that
+  was actually backwards, caught only because a second pass went looking for exactly that.
 
 ### In my head
 - 2026-09-03: A guard nobody can tell is broken is worse than no guard -- seven hookify rules
