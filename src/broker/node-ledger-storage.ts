@@ -2,7 +2,7 @@
 // explains why this is synchronous rather than following LoaderStorage's
 // async, node:fs/promises pattern.
 
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { closeSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { originHash } from './origin-hash.js'
 import type { LedgerStorage } from './ledger-storage.js'
@@ -21,6 +21,35 @@ function floorDir (userDataPath: string, origin: string): string {
 
 function floorPath (userDataPath: string, origin: string): string {
   return join(floorDir(userDataPath, origin), 'version-floor.json')
+}
+
+/**
+ * Writes `text` to `path` atomically: a temp file in the SAME directory
+ * (`renameSync` across filesystems is not atomic, and is sometimes refused
+ * outright), fsynced before the rename so the bytes are actually on disk and
+ * not just buffered when the rename lands, then renamed over `path`.
+ * POSIX `rename` replaces its target as one atomic operation -- there is no
+ * window where a reader sees a partially-written file, only the old
+ * complete one or the new complete one.
+ *
+ * A bare `writeFileSync(path, text)` has no such guarantee: a process that
+ * dies mid-write can leave `path` truncated. `readVersionFloor`'s own
+ * corrupt-sentinel path makes that permanent -- `isAtOrAboveFloor`
+ * (`policy/update.ts`) fails every future update from the affected origin
+ * closed once it sees an unparseable floor, with no writer that ever lowers
+ * one back out of that state. A write that can only ever land whole, or not
+ * at all, is what keeps an ordinary crash from being mistaken for tampering.
+ */
+function writeFileAtomic (path: string, text: string): void {
+  const tmp = `${path}.tmp`
+  const fd = openSync(tmp, 'w')
+  try {
+    writeFileSync(fd, text)
+    fsyncSync(fd)
+  } finally {
+    closeSync(fd)
+  }
+  renameSync(tmp, path)
 }
 
 function isVersionFloorShape (value: unknown): value is { versionFloor: string } {
@@ -52,7 +81,16 @@ export function nodeLedgerStorage (userDataPath: string): LedgerStorage {
     },
     writeVersionFloor: (origin, versionFloor) => {
       mkdirSync(floorDir(userDataPath, origin), { recursive: true })
-      writeFileSync(floorPath(userDataPath, origin), JSON.stringify({ versionFloor }))
+      writeFileAtomic(floorPath(userDataPath, origin), JSON.stringify({ versionFloor }))
+    },
+    deleteVersionFloor: (origin) => {
+      try {
+        unlinkSync(floorPath(userDataPath, origin))
+      } catch (error) {
+        // Already gone (never persisted, or forgotten twice) is success, not
+        // a failure -- GrantLedger.forgetOrigin's own no-op contract.
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      }
     }
   }
 }

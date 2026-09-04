@@ -1,11 +1,16 @@
 // Where GrantLedger's own state that must survive a process restart gets
 // persisted -- currently just the T19 version floor (docs/open-questions.md
 // A57). Broker-owned, the same way src/loader/storage.ts's LoaderStorage is
-// loader-owned: src/broker/ and src/loader/ each persist their own state
-// under a separate root in userData (this file's real implementation uses
-// `grants/`, never the loader's `apps/`), so whichever subsystem eventually
-// deletes an app's data on removal only ever has to reason about its own
-// tree, and never needs to know the other subsystem's on-disk layout.
+// loader-owned: this file's real implementation puts the version floor
+// under its own `grants/` root, never the loader's `apps/`.
+//
+// NOT A CLEAN SEPARATION EVERYWHERE, THOUGH: node-adapters.ts's `nodeFs`
+// (the OTHER piece of broker state, the `fs` capability's confined bytes)
+// already writes under `apps/<hash>/files`, inside the loader's own root --
+// that predates this file and is unchanged by it. So "one root per
+// subsystem" holds for the version floor specifically, not as a whole-tree
+// guarantee; whoever eventually builds app removal has to know about both
+// roots either way.
 //
 // SYNCHRONOUS, not Promise-based like LoaderStorage -- deliberately.
 // GrantLedger's own registerApp/versionFloorFor are relied on throughout
@@ -34,4 +39,10 @@ export interface LedgerStorage {
   readVersionFloor(origin: string): string | undefined
   /** Persists the new version floor for `origin`. Overwrites whatever was there before. */
   writeVersionFloor(origin: string, versionFloor: string): void
+  /**
+   * Deletes whatever version floor was persisted for `origin`, if any --
+   * A60's escape hatch (`GrantLedger.forgetOrigin`). A no-op, never a throw,
+   * for an origin nothing was ever persisted for.
+   */
+  deleteVersionFloor(origin: string): void
 }

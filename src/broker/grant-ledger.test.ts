@@ -16,7 +16,17 @@ function memoryLedgerStorage (): LedgerStorage & { readonly floors: Map<string, 
   return {
     floors,
     readVersionFloor: (origin) => floors.get(origin),
-    writeVersionFloor: (origin, versionFloor) => { floors.set(origin, versionFloor) }
+    writeVersionFloor: (origin, versionFloor) => { floors.set(origin, versionFloor) },
+    deleteVersionFloor: (origin) => { floors.delete(origin) }
+  }
+}
+
+/** A LedgerStorage double whose write always fails, for A57's write-failure tests below. */
+function throwingLedgerStorage (): LedgerStorage {
+  return {
+    readVersionFloor: () => undefined,
+    writeVersionFloor: () => { throw Object.assign(new Error('ENOSPC'), { code: 'ENOSPC' }) },
+    deleteVersionFloor: () => {}
   }
 }
 
@@ -166,5 +176,122 @@ describe('GrantLedger -- version floor persistence (A57)', () => {
     const after = new GrantLedger(storage)
     expect(after.versionFloorFor(APP)).toBe('1.0.0')
     expect(after.versionFloorFor('https://other.example')).toBe('9.0.0')
+  })
+})
+
+// A60's escape hatch. registerApp raises the floor unconditionally, even for
+// a manifest that was only ever fetched, never actually installed -- so a
+// hostile origin can poison the floor with a fake high version and lock the
+// user out of every real future update. Before A57, restarting the browser
+// reset every floor, poisoned ones included; A57 removed that reset. This is
+// the replacement way out: forget one origin's floor entirely.
+describe('GrantLedger -- forgetOrigin (A60 escape hatch)', () => {
+  it('clears the in-memory floor immediately', () => {
+    const ledger = new GrantLedger()
+    ledger.registerApp(APP, manifestWith('99.0.0'))
+    ledger.forgetOrigin(APP)
+    expect(ledger.versionFloorFor(APP)).toBe('0.0.0')
+  })
+
+  it('deletes the persisted floor, so a fresh GrantLedger (simulating a restart) sees 0.0.0 again, not the old value', () => {
+    const storage = memoryLedgerStorage()
+    const before = new GrantLedger(storage)
+    before.registerApp(APP, manifestWith('99.0.0'))
+
+    before.forgetOrigin(APP)
+
+    const after = new GrantLedger(storage) // the "restart"
+    expect(after.versionFloorFor(APP)).toBe('0.0.0')
+  })
+
+  it('does not throw when no LedgerStorage was ever supplied', () => {
+    const ledger = new GrantLedger()
+    expect(() => { ledger.forgetOrigin(APP) }).not.toThrow()
+  })
+
+  it('is a no-op, not a throw, for an origin the ledger has no record of', () => {
+    const storage = memoryLedgerStorage()
+    const ledger = new GrantLedger(storage)
+    expect(() => { ledger.forgetOrigin('https://never-touched.example') }).not.toThrow()
+  })
+
+  it('does not disturb a different origin\'s floor', () => {
+    const storage = memoryLedgerStorage()
+    const ledger = new GrantLedger(storage)
+    ledger.registerApp(APP, manifestWith('2.0.0'))
+    ledger.registerApp('https://other.example', manifestWith('5.0.0'))
+
+    ledger.forgetOrigin(APP)
+
+    expect(ledger.versionFloorFor('https://other.example')).toBe('5.0.0')
+  })
+})
+
+// A23: T13c forbids ever persisting a grant for a loopback, `file:` or
+// plain-http origin -- session-scoped only, re-prompted every launch. The
+// version floor is exactly that kind of state, and A23's own "Needed by"
+// line names this file's persist path as the place to enforce it.
+describe('GrantLedger -- non-persistable origins never touch disk (A23/T13c)', () => {
+  it.each([
+    'http://127.0.0.1:8080',
+    'http://[::1]:9000',
+    'http://localhost:3000',
+    'http://app.example' // plain http on an ordinary host -- still forbidden
+  ])('%s: registering raises the in-memory floor but writes nothing to storage', (origin) => {
+    const storage = memoryLedgerStorage()
+    const ledger = new GrantLedger(storage)
+
+    ledger.registerApp(origin, manifestWith('1.2.0'))
+
+    expect(ledger.versionFloorFor(origin)).toBe('1.2.0') // still works normally in-memory
+    expect(storage.floors.has(origin)).toBe(false) // never written
+  })
+
+  it('an ordinary https origin still persists normally', () => {
+    const storage = memoryLedgerStorage()
+    const ledger = new GrantLedger(storage)
+
+    ledger.registerApp(APP, manifestWith('1.2.0'))
+
+    expect(storage.floors.get(APP)).toBe('1.2.0')
+  })
+
+  it('a non-persistable origin does not survive a simulated restart -- it was never on disk to hydrate from', () => {
+    const storage = memoryLedgerStorage()
+    const before = new GrantLedger(storage)
+    before.registerApp('http://127.0.0.1:8080', manifestWith('9.0.0'))
+
+    const after = new GrantLedger(storage) // the "restart"
+    expect(after.versionFloorFor('http://127.0.0.1:8080')).toBe('0.0.0')
+  })
+})
+
+// A57's own persistence path is unguarded against a write failure (EACCES,
+// ENOSPC, EROFS). Left unguarded, the in-memory floor would already be
+// raised while the disk copy is not, so a restart would hydrate the OLD,
+// lower floor -- silently reopening the exact T19 rollback window A57 exists
+// to close, the moment a write ever fails.
+describe('GrantLedger -- a persist failure never raises the in-memory floor past what is on disk', () => {
+  it('does not raise the in-memory floor when the write throws', () => {
+    const ledger = new GrantLedger(throwingLedgerStorage())
+
+    expect(() => { ledger.registerApp(APP, manifestWith('1.0.0')) }).not.toThrow()
+
+    expect(ledger.versionFloorFor(APP)).toBe('0.0.0')
+  })
+
+  it('a later call with a working write still raises the floor normally', () => {
+    const ledger = new GrantLedger(throwingLedgerStorage())
+    ledger.registerApp(APP, manifestWith('1.0.0')) // fails, swallowed
+
+    const storage = memoryLedgerStorage()
+    const workingLedger = new GrantLedger(storage)
+    workingLedger.registerApp(APP, manifestWith('1.0.0'))
+    expect(workingLedger.versionFloorFor(APP)).toBe('1.0.0')
+  })
+
+  it('does not throw out of registerApp -- a synchronous throw here becomes an unhandled rejection at every one of the ~44 unawaited call sites', () => {
+    const ledger = new GrantLedger(throwingLedgerStorage())
+    expect(() => { ledger.registerApp(APP, manifestWith('1.0.0')) }).not.toThrow()
   })
 })
