@@ -210,9 +210,29 @@ export function decodePercentEscapes (path: string): string | null {
 }
 
 /**
- * PERCENT-DECODE, then NFC-normalise, then simple-case-fold: does this path
- * name the same file on disk as another one? Used only to decide whether the
- * bundle must be rejected before hashing -- NEVER inside the hash itself.
+ * NFC-normalise, then simple-case-fold. THE ONE DEFINITION of "do these two
+ * spellings name the same file on disk?" (code-guidelines.md Rule 3), shared
+ * by collisionKey below and by the loader's prune comparison
+ * (../../loader/node-storage.ts), which folds already-decoded real
+ * filesystem paths and so must NOT re-run the decode step collisionKey adds
+ * on top of this.
+ *
+ * Approximation, stated plainly: `.toLowerCase()` is the closest thing the
+ * JS standard library offers to Unicode simple case folding, but it is not
+ * the full Unicode Default Case Folding table (which differs from locale-
+ * independent lowercasing for a handful of characters, e.g. the German sharp
+ * s under some folding modes). Good enough for the collisions macOS and
+ * Windows filesystems actually produce; not a formal guarantee for every
+ * codepoint.
+ */
+export function foldForIdentity (path: string): string {
+  return path.normalize('NFC').toLowerCase()
+}
+
+/**
+ * PERCENT-DECODE, then fold: does this path name the same file on disk as
+ * another one? Used only to decide whether the bundle must be rejected
+ * before hashing -- NEVER inside the hash itself.
  *
  * THE DECODE STEP IS THE WHOLE POINT, and its absence made this function
  * inert for every case it was written for (fixed 2026-08-27, before any pin
@@ -233,17 +253,9 @@ export function decodePercentEscapes (path: string): string | null {
  *
  * Safe to decode unconditionally: isValidCanonicalPath rejects any path whose
  * escapes do not decode, so this cannot be reached with one that throws.
- *
- * Approximation, stated plainly: `.toLowerCase()` is the closest thing the JS
- * standard library offers to Unicode simple case folding, but it is not the
- * full Unicode Default Case Folding table (which differs from locale-
- * independent lowercasing for a handful of characters, e.g. the German sharp
- * s under some folding modes). Good enough for the collisions macOS and
- * Windows filesystems actually produce; not a formal guarantee for every
- * codepoint.
  */
 export function collisionKey (path: string): string {
-  return (decodePercentEscapes(path) ?? path).normalize('NFC').toLowerCase()
+  return foldForIdentity(decodePercentEscapes(path) ?? path)
 }
 
 /** One leaf's canonical path paired with its digest, `"sha256:"`-prefixed lowercase hex. */
