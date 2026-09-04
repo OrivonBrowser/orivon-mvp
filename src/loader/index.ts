@@ -82,7 +82,14 @@ export interface LoadNeedsCapabilityPrompt {
 
 export interface LoadRejected {
   readonly outcome: 'rejected'
-  /** Developer-facing, same stance as fetch-bundle.ts's FetchBundleRejected. */
+  /**
+   * Developer-facing, same stance as fetch-bundle.ts's FetchBundleRejected --
+   * and, additionally, never a host filesystem path. Every other rejection
+   * here is a string this module wrote about the fetch or the manifest; the
+   * storage one is the only place a raw node:fs message could reach this
+   * field, and installOrReject below logs that message rather than returning
+   * it.
+   */
   readonly reason: string
 }
 
@@ -106,21 +113,62 @@ export interface Loader {
   load(hintedUrl: string, context: LoadContext): Promise<LoadResult>
 }
 
-/** Persists a freshly accepted bundle (TOFU or a `silent` verdict) and returns the pin caller-facing code sees. */
+/**
+ * Persists a freshly accepted bundle (TOFU or a `silent` verdict) and returns
+ * the pin caller-facing code sees.
+ *
+ * `pruneAssets` after writing (docs/open-questions.md A58, gap 2) deletes
+ * whatever a PREVIOUS pin left behind that the new bundle no longer declares.
+ * `replacesAPin` is false on the TOFU path: no earlier pin exists for this
+ * origin, so there is nothing a previous bundle could have left behind, and
+ * the walk would only re-read every file the loop above just wrote.
+ */
 async function install (
   storage: LoaderStorage,
   canonicalOrigin: string,
   manifest: Manifest,
   tree: BundleTree,
   entries: readonly BundleEntry[],
-  now: number
+  now: number,
+  replacesAPin: boolean
 ): Promise<PinRecord> {
   const pin = fromBundleTree(canonicalOrigin, tree.root, tree.assets, manifest.version, now)
   for (const entry of entries) {
     await storage.writeAsset(canonicalOrigin, entry.path, entry.content)
   }
+  if (replacesAPin) await storage.pruneAssets(canonicalOrigin, entries.map((entry) => entry.path))
   await storage.writePin(canonicalOrigin, pin)
   return pin
+}
+
+/**
+ * Wraps install() so a storage failure (writeAsset/pruneAssets/writePin can
+ * all throw a plain Error on a rejected path or a filesystem error) resolves
+ * to one of load()'s own four documented outcomes instead of an uncaught
+ * exception -- a bundle that fetched and validated cleanly can still fail
+ * here, and LoadResult has no fifth "threw" case for that to become.
+ */
+async function installOrReject (
+  storage: LoaderStorage,
+  canonicalOrigin: string,
+  manifest: Manifest,
+  tree: BundleTree,
+  entries: readonly BundleEntry[],
+  now: number,
+  replacesAPin: boolean
+): Promise<LoadResult> {
+  try {
+    const pin = await install(storage, canonicalOrigin, manifest, tree, entries, now, replacesAPin)
+    return { outcome: 'installed', canonicalOrigin, manifest, pin }
+  } catch (error) {
+    // The raw message is a node:fs one and carries the absolute host path it
+    // failed on. policy/paths.ts's CONFINEMENT_ERROR_CODE states the rule:
+    // the detail is for the local log, and a path oracle is a hazard on its
+    // own, so what is RETURNED names the origin and the stage and nothing
+    // about this machine.
+    console.error('[loader] install failed', canonicalOrigin, error)
+    return { outcome: 'rejected', reason: `the bundle for ${canonicalOrigin} could not be written to local storage` }
+  }
 }
 
 export function createLoader (options: CreateLoaderOptions): Loader {
@@ -133,8 +181,7 @@ export function createLoader (options: CreateLoaderOptions): Loader {
     if (rawPin === undefined) {
       // TOFU (ADR-0005): nothing was ever pinned for this origin, so there
       // is no continuity to protect and nothing to prompt for.
-      const pin = await install(options.storage, canonicalOrigin, manifest, tree, entries, options.now())
-      return { outcome: 'installed', canonicalOrigin, manifest, pin }
+      return await installOrReject(options.storage, canonicalOrigin, manifest, tree, entries, options.now(), false)
     }
 
     // A pin record exists but fails to parse (corrupt bytes, a schema this
@@ -171,10 +218,8 @@ export function createLoader (options: CreateLoaderOptions): Loader {
         }
       case 'reconsent':
         return { outcome: 'needs-reconsent', canonicalOrigin, manifest, tree, entries }
-      case 'silent': {
-        const pin = await install(options.storage, canonicalOrigin, manifest, tree, entries, options.now())
-        return { outcome: 'installed', canonicalOrigin, manifest, pin }
-      }
+      case 'silent':
+        return await installOrReject(options.storage, canonicalOrigin, manifest, tree, entries, options.now(), true)
     }
   }
 
