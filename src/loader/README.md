@@ -32,12 +32,33 @@ shape belongs here instead.
 
 **Why [`fetch-bundle.ts`](fetch-bundle.ts) is its own file, not part of `index.ts`.** Split out
 per [`code-guidelines.md`](../../docs/development/code-guidelines.md) Rule 2 — it owns exactly
-one concern: turning `(fetch, hintedUrl, assetPaths)` into a validated bundle. TOFU versus
-`decideUpdate()` branching, and persistence, are `index.ts`'s job, not this file's.
+one concern: turning `(fetch, hintedUrl)` into a validated bundle. TOFU versus `decideUpdate()`
+branching, and persistence, are `index.ts`'s job, not this file's.
 
-**`assetPaths` is an explicit parameter to `fetchBundle`, not discovered from the manifest.**
-`Manifest` ([`src/contracts/manifest.ts`](../contracts/manifest.ts)) has no field naming an
-app's frontend files — only `entry`, one HTML file — and nothing in the doc corpus specifies a
-discovery or crawl mechanism. Filed as [`open-questions.md`](../../docs/open-questions.md) A45
-rather than guessed at. Everything downstream of "here is the asset URL set" is fully
-implemented.
+**Corrected 2026-09-04 — `assetPaths` is no longer a parameter anywhere in this directory; the
+two paragraphs below describe what replaced the design this section used to document.**
+`fetchBundle` reads the app's file list off the manifest itself (`manifest.entry` unioned with
+`manifest.assets`, [`ADR-0011`](../../docs/decisions/ADR-0011-manifests-declare-their-own-asset-list.md))
+once it has fetched and parsed it — never supplied by a caller. `ADR-0011`'s own Consequences
+section originally kept `assetPaths` as an explicit parameter to `Loader.load()`, on the
+assumption that whatever eventually wires the discovery trigger would fetch the manifest itself
+first and pass the resulting list in. That assumption doesn't hold: the well-known manifest path
+is fixed and known only to `fetchBundle` itself (this file's own header, above), so nothing
+external ever has a parsed manifest to read `assets` off *before* calling `load()` — the caller
+of `load()` only ever has `hintedUrl`, the same thing a passive hint listener has. See
+`ADR-0011`'s own amendment for the full account.
+
+`entry` is unioned into the fetched set unconditionally, not only when convenient — it is a leaf
+of the bundle like any other declared asset, and the entry-leaf check needs it fetched to find
+it. One consequence worth knowing if you're reading `fetch-bundle.ts` next to its tests: several
+checks that used to guard against a hostile *caller-supplied* `assetPaths` array (an absolute
+cross-origin URL, a path-traversal string, two names that collide under case-folding, too many
+entries) are now unreachable through the public two-argument API, because `manifest.ts`'s own
+validation (`readAssets`/`validateRelativePath`/`MAX_ASSETS`) already rejects every one of those
+shapes before `fetchBundle` ever sees them — one layer earlier than before. Those checks are
+still in `fetch-bundle.ts`, kept as defence in depth rather than removed (this function must not
+quietly start trusting that `manifest.ts`'s validation is airtight), but their dedicated test
+coverage moved to [`manifest.test.ts`](manifest.test.ts), which already exercised the same input
+shapes independently. What `manifest.ts` cannot see — a *redirect* landing two distinct declared
+names, or a redirected entry, at the same or a different canonical path than declared — remains
+directly tested here, since only a real fetch can produce it.
