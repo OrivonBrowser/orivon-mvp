@@ -143,10 +143,23 @@ Neither is fixed here, and that is a deliberate, bounded acceptance rather than 
 subsystem.ts` ships deliberately inert (no `beforeReady`/`afterReady`); no code path today can
 reach `createLoader.load()` against a real, attacker-influenced `hintedUrl` in the shipped
 product (`docs/open-questions.md` A46, A50). Nothing this design describes can happen to a real
-user yet. That gives real time to design and build the quota and cleanup mechanisms before it
-matters — but it is a deadline, not an indefinite pass: **both gaps must be closed before the
+user yet. That gave real time to design and build the quota and cleanup mechanisms before it
+matters, and it was a deadline, not an indefinite pass: **both gaps must be closed before the
 discovery trigger is ever wired to the real browser shell.** Wiring the trigger while either gap
 is open would ship an unbounded, unauthenticated disk-fill vector to real users on day one.
+
+**Gap 1 closed 2026-09-04, owner decision -- not by building a quota, by deciding not to have
+one.** Asked directly, with concrete numbers on the table (512 MiB / 1 GiB / 256 MiB), the owner
+chose no aggregate cross-origin disk cap at all: per-origin `MAX_BUNDLE_BYTES` (64 MiB) remains
+the only bound, permanently, matching how mainstream browsers already behave (a per-origin
+storage quota, no user-facing total-cache ceiling, with OS/browser storage-pressure eviction as
+the real backstop, which Orivon's MVP does not attempt to build its own version of). This is not
+"gap 1 deferred again" -- it is closed, on the merits, as a considered choice rather than an
+unexamined one. `docs/open-questions.md` A58 carries the full record.
+
+Gap 2 (superseded-version cleanup) was not part of that question and remains open -- it is not a
+quota decision, it is plain hygiene independent of whether any ceiling exists -- and **still must
+be closed before the discovery trigger is wired**, per this ADR's own condition above.
 
 ## Reversibility
 - **Cost to reverse:** moderate. Reverting to "prompt before fetch" is a design and UX change, not
