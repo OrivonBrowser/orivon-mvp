@@ -2186,13 +2186,29 @@ concurrent callers (multiple windows/tabs), not something to guess into this ent
 **Amendment, 2026-09-04 (fix-67):** `pruneAssets` (merged the same day as this entry, in the PR
 this entry already anticipates — see A58 gap 2) adds a THIRD kind of interleaving into this
 exact window, distinct from the two writers described above: a DELETING mutation racing a
-writer, not just two writers racing each other. Two concurrent `load()` calls for the same
-origin can now interleave one call's `writeAsset`s with the OTHER call's `pruneAssets` keep-set
-walk — a file the second call is about to write can be walked, found absent from the first
-call's (older) keep list, and deleted out from under a write still in flight, or a file the
-first call already wrote can be deleted by a second call's prune before the first call's own
-`writePin` ever runs. `pruneAssets` was hardened (fix-67) to tolerate a file disappearing out
-from under it mid-prune (`{ force: true }`, ENOENT treated as success) and to never abort
-`install()` over one undeletable file — that hardening makes a race non-fatal (no uncaught
-throw, no aborted `install()`), not correct (the deletion can still happen). It does not close
-this window, which remains exactly the open question this entry already names.
+writer, not just two writers racing each other. It appears at two levels.
+
+At the FILE level, two concurrent `load()` calls for the same origin can interleave one call's
+`writeAsset`s with the OTHER call's `pruneAssets` keep-set walk — a file the second call is about
+to write can be walked, found absent from the first call's (older) keep list, and deleted out
+from under a write still in flight, or a file the first call already wrote can be deleted by a
+second call's prune before the first call's own `writePin` ever runs. `pruneAssets` tolerates a
+file disappearing out from under it mid-prune (`{ force: true }`, ENOENT treated as success) and
+never aborts `install()` over one undeletable file or one unlistable subtree. That hardening
+makes the race non-fatal (no uncaught throw, no aborted `install()`), not correct: the deletion
+can still happen.
+
+At the DIRECTORY level, pruning is the FIRST thing in the loader that removes a directory at
+all. Before it, the write path (`mkdir` then `writeFile`) could not lose its parent directory
+mid-write, because nothing removed one. A prune that swept every empty directory under the code
+root would reintroduce exactly that: one call's `mkdir` for a new subdirectory, not yet written
+into, is indistinguishable from a leftover, and removing it makes the concurrent `writeFile` fail
+with ENOENT — a hard failure that did not exist before pruning. `pruneAssets` therefore removes a
+directory only if this prune itself deleted a file from it (`removeEmptyAncestors`), and treats
+ENOENT/ENOTEMPTY on that removal as the concurrency it is rather than an error. One residual
+window remains and is deliberately not closed here: a directory that a prune legitimately empties
+and removes can still be one a concurrent install is about to write into, between that install's
+`mkdir` and its `writeFile`.
+
+Neither level is closed by any of this. Both remain exactly the open question this entry already
+names, and the fix for both is the per-origin serialization below.
