@@ -403,7 +403,7 @@ and its case-sensitivity tests have to be revisited together.
 
 ---
 
-### A23 — a derived origin does not say whether it may be persisted **[AI-REC]**
+### A23 — a derived origin does not say whether it may be persisted **[RESOLVED 2026-09-04]**
 
 Found while reviewing `stream/broker-01-origin` (2026-08-27). T13c forbids ever writing a
 grant for a loopback, `file:` or plain-`http` origin to disk — session-scoped only, re-prompt
@@ -420,6 +420,15 @@ consumer at build step 2 is better than guessing now. `originFromUrl`'s doc comm
 gap explicitly so a caller meets it at the point of use.
 
 **Needed by:** build step 2, specifically whoever writes the grant ledger's persist path.
+
+**Resolved 2026-09-04 (PR #68).** `src/broker/policy/origin.ts` now exports
+`isPersistableOrigin(origin)`, built against the real consumer this entry deferred for —
+`GrantLedger`'s version-floor persistence (A57). It refuses `http:` outright, the whole
+`.localhost` namespace (not just the bare name), and any host `classifyAddress` calls `loopback`
+or `unspecified` (covering `0.0.0.0`/`[::]`, which route to loopback in practice on Linux and
+macOS even though they're a distinct address class from `loopback` itself). `originFromUrl`
+itself is unchanged, per the owner's original decision — the durable interface stayed a plain
+string; persistability is a separate, composable check a caller opts into.
 
 ### A24 — should a whole-codebase guideline sweep be exempt from the one-stream-per-backlog-branch rule **[STILL OPEN]**
 
@@ -1915,7 +1924,7 @@ snapshot. Not blocking.
 
 ---
 
-### A57 — `GrantLedger` has no persistence: everything resets on process restart, not just app uninstall **[STILL OPEN]**
+### A57 — `GrantLedger` has no persistence: everything resets on process restart, not just app uninstall **[RESOLVED 2026-09-04]**
 
 Found 2026-09-03, as the required follow-up from PR #61's review (T19's version floor,
 `GrantLedger.versionFloor`).
@@ -1950,6 +1959,23 @@ is one decision, not two, and deserves its own pass rather than a fix folded int
 
 **Needed by:** before `versionFloorFor` is wired into the app loader's update path. Not blocking
 for this PR, which only adds the floor — it does not yet enforce it anywhere.
+
+**Resolved 2026-09-04 (PR #68, `stream/broker-21-version-floor-persistence`).** `GrantLedger`
+now takes an optional `LedgerStorage`; the version floor is persisted to
+`<userData>/grants/<sha256(origin)>/version-floor.json` via a temp-file-then-rename atomic write,
+and hydrated on an origin's first touch each session. A first-round fix shipped a real regression
+(delaying the in-memory raise until after a successful disk write, so a single failed write left
+the in-memory floor at the *old* version for the rest of that session — worse than no persistence
+at all, since a same-session replay of the superseded version would then pass). Fixed in a second
+round: the in-memory floor now raises unconditionally and first, exactly matching what a
+no-persistence ledger already guaranteed; the disk write is attempted after, and a failure is
+reported (the promise rejects) rather than silently swallowed. The residual risk — if writes keep
+failing until an actual restart, that restart hydrates the stale on-disk value — is this entry's
+original, now-understood risk, not a new one, and it is at least observable via the rejection.
+Loopback, `file:` and plain-`http` origins never persist a floor at all (`isPersistableOrigin`,
+closing A23 below). A60's escape hatch (`GrantLedger.forgetOrigin`) exists for the case this entry
+itself did not anticipate — a floor poisoned by a hostile version number, now that a restart can
+no longer clear it by accident.
 
 ---
 
@@ -2076,6 +2102,19 @@ other call site, that decides WHEN to invoke it. That decision — and the loade
 this entry's main recommendation is about (call `registerApp` only on an accepted install, never
 a bare fetch) — remain open.
 
+**Amended again 2026-09-04 (fix-68 round 2, PR #68):** `forgetOrigin`'s doc comment previously
+called the primitive "provably correct ahead of that wiring". It is correct and complete for the
+version floor, which is what this entry needs, but it is not an "uninstall this app" primitive
+and must not be wired up as one. It also clears the origin's `manifest`, `grants` and
+`fsBytesWritten`, and two of those it does not finish: dropping a grant does not revoke the
+handles that grant authorised (`GrantLedger` holds no reference to `HandleTable` — that cascade
+belongs in `createBroker`, alongside the one `revoke` already performs), and resetting
+`fsBytesWritten` to zero frees no bytes on disk, so a forget-then-re-register sequence is a way
+around the `fs` quota until the confinement directory is actually sized (A29). Neither is
+reachable today because nothing calls the method; both become live the moment the "remove this
+app" action this entry describes is built. Whoever builds it owns the cascade, not `GrantLedger`.
+The doc comment now states this rather than overclaiming.
+
 ---
 
 ### A61 — `patternSetFromGrants` is fully unwired; `LoadContext.grantedPatterns` has no real caller building it from the grant ledger **[STILL OPEN]**
@@ -2157,3 +2196,77 @@ combination, is a design decision for whoever wires `Loader.load()` into somethi
 concurrent callers (multiple windows/tabs), not something to guess into this entry.
 
 **Needed by:** before `Loader.load()` is reachable from more than one caller at a time.
+
+---
+
+### A63 — `nodeLedgerStorage.readVersionFloor` cannot tell a transient OS read error from real corruption, and one such error fails an origin closed for the whole session **[STILL OPEN]**
+
+Found 2026-09-04 (fix-68 round 2, PR #68). Not fixed in that PR: the safe fix is a design change,
+and the obvious quick fix is a T19 regression.
+
+`readVersionFloor` (`src/broker/node-ledger-storage.ts`) returns `CORRUPT_FLOOR_SENTINEL` for
+every non-ENOENT read failure. That correctly covers genuine corruption (malformed JSON, wrong
+shape) but also covers EACCES, EMFILE, EBUSY and every other plausibly-transient OS condition,
+where the file on disk was never corrupt at all.
+
+**Why one such error is permanent for the session.** `GrantLedger.#hydrateFloor` runs at most
+once per record, on `#record`'s create branch. A transient failure at an origin's first touch
+this session therefore sets `versionFloor` to the sentinel, and `isAtOrAboveFloor`
+(`policy/update.ts`) fails closed on a value `compareVersions` cannot order — so every update
+from that origin is rejected for the rest of the session, with no writer that lowers a floor back
+out of that state. Failing closed is the right direction, but the user sees a working app refuse
+every legitimate update because a file descriptor was briefly unavailable.
+
+**Why the obvious fix is wrong.** Returning `undefined` for the OS-error case makes it
+indistinguishable from "never persisted", which resets the floor to `'0.0.0'` and reopens exactly
+the T19 rollback A57 closed. `LedgerStorage.readVersionFloor`'s own doc contract forbids it in as
+many words.
+
+**What a real fix needs**, all three together: (1) a third state in
+`LedgerStorage.readVersionFloor`'s return — something like
+`{ kind: 'absent' | 'value' | 'corrupt' | 'unavailable' }` — so the two failure classes are
+distinguishable at the boundary rather than collapsed; (2) a way for `#hydrateFloor` to run again
+on a later touch of the same record, which it cannot do today; (3) a rule for how a record leaves
+the fail-closed state on a successful retry without violating `versionFloor`'s "raise only, never
+lower" invariant — probably by never entering it in the `'unavailable'` case and instead marking
+the record un-hydrated, so the raise-only rule is untouched. Note (2) has a cost worth pricing: a
+retry-on-touch hydration reads disk on more paths than today's once-per-record does.
+
+**AI recommendation:** do this alongside, or after, whatever work first gives `GrantLedger` a
+real production caller. It is not worth designing a retry policy for a read path nothing outside
+tests exercises yet.
+
+**Needed by:** before the loader calls `versionFloorFor` on a real user's disk.
+
+---
+
+### A64 — `scripts/comment-budget-baseline.txt` lost `src/broker/policy/origin.ts` because an import moved, not because documentation shrank **[STILL OPEN]**
+
+Found 2026-09-04 (fix-68 round 2, PR #68), reviewing PR #68's own round-1 diff.
+
+Round 1 added `import { classifyAddress } from './address.js'` to `src/broker/policy/origin.ts`,
+positioned after the file's 16-line header and before the large JSDoc on
+`ORIGIN_BEARING_SCHEMES`. `check-comments.mjs`'s `measurePreamble` stops counting at the first
+non-comment line, so the measured preamble fell from 46 lines to 16 and the file's baseline entry
+became stale — the ratchet then REQUIRED its removal, since a stale entry fails the check. No
+documentation was shortened.
+
+**The honest reading, though, is not simply "the scanner was gamed."** The 46-line measurement
+was itself an artefact of declaration order: it counted the header (16 lines) PLUS a doc comment
+attached to a declaration, which is not the file-header essay Rule 1's guard exists to catch.
+What the file measures now — 16 lines, and a budget of 25 before the guard fires — is precisely
+the header, which is what the rule is about. So the file is arguably measured more correctly than
+before, by accident.
+
+**What is nonetheless true:** the guard's behaviour for any given file depends on where its first
+import sits, so two files with identical headers can measure differently. That is a property of
+the tool worth knowing about, and it was changed here by a side effect rather than a decision.
+
+**Not fixed in PR #68**, on the reasoning above — moving the import below the JSDoc blocks it
+serves would be unidiomatic TypeScript with no precedent in this tree, and the current position
+is where an import belongs. **Owner's call:** whether `measurePreamble` should skip import lines
+rather than stop at them (which would restore the 46-line measurement and put the baseline entry
+back), or whether counting only up to the first code line of any kind is the intended, simpler
+rule.
+
+**Needed by:** nothing. Tooling accuracy only.
