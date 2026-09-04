@@ -8,6 +8,7 @@
 
 import type { CapabilityKind, Grant, GrantId, Manifest, Pattern } from '../contracts/index.js'
 import type { LedgerStorage } from './ledger-storage.js'
+import { isPersistableOrigin } from './policy/origin.js'
 import { compareVersions } from './policy/update.js'
 
 /**
@@ -84,7 +85,6 @@ interface OriginRecord {
 export class GrantLedger {
   readonly #origins = new Map<string, OriginRecord>()
   readonly #storage: LedgerStorage | undefined
-  readonly #hydrated = new Set<string>()
 
   /**
    * `storage` is optional so every existing caller (every test in this
@@ -106,21 +106,25 @@ export class GrantLedger {
   }
 
   /**
-   * Loads `origin`'s persisted floor into the freshly created record, once
-   * per origin per process -- called from `#record` itself so BOTH
-   * `registerApp` and `versionFloorFor` pick it up on an origin's first
-   * touch this session, regardless of which one runs first (`Loader.load()`
-   * reads `versionFloorFor` before any registration decision, so hydration
-   * must not depend on `registerApp` having already run).
+   * Loads `origin`'s persisted floor into a freshly created record -- called
+   * from `#record`'s create branch only, so BOTH `registerApp` and
+   * `versionFloorFor` pick it up on an origin's first touch this session,
+   * regardless of which one runs first (`Loader.load()` reads
+   * `versionFloorFor` before any registration decision, so hydration must
+   * not depend on `registerApp` having already run).
    *
-   * A no-op when no `LedgerStorage` was injected, or once already run for
-   * this origin this session -- `#hydrated` prevents a second disk read
-   * from ever re-applying a stale value over one `registerApp` already
-   * raised in memory since.
+   * Runs at most once per record instance: a record already in `#origins`
+   * short-circuits `#record` before this is ever called again for it. The
+   * one exception is `forgetOrigin` deleting the record outright, in which
+   * case re-hydrating on the origin's next touch is exactly correct -- the
+   * whole point of forgetting an origin is to let it compare against
+   * whatever is actually on disk afterward, not against a stale in-memory
+   * decision from before the forget.
+   *
+   * A no-op when no `LedgerStorage` was injected.
    */
   #hydrateFloor (origin: string, record: OriginRecord): void {
-    if (this.#storage === undefined || this.#hydrated.has(origin)) return
-    this.#hydrated.add(origin)
+    if (this.#storage === undefined) return
     const persisted = this.#storage.readVersionFloor(origin)
     if (persisted === undefined) return
 
@@ -153,18 +157,64 @@ export class GrantLedger {
    * upstream) leaves the floor exactly where it was. This is the only writer
    * of a raised `versionFloor` (hydration above only ever applies what was
    * already persisted); T19's replay guard depends on every registration
-   * going through here. Persists the raised value via `LedgerStorage`
-   * (A57) so it survives a restart -- only when it actually moves, not on
-   * every call, so an ordinary page reload that re-declares the same
-   * version never touches disk.
+   * going through here.
+   *
+   * Persists the raised value via `LedgerStorage` (A57) so it survives a
+   * restart -- only when it actually moves, not on every call, so an
+   * ordinary page reload that re-declares the same version never touches
+   * disk, and never at all for an origin `isPersistableOrigin` refuses
+   * (A23/T13c: loopback and plain-http origins are session-scoped only).
+   *
+   * THE MEMORY FLOOR IS RAISED ONLY AFTER A PERSIST ATTEMPT SUCCEEDS. A
+   * write can fail (EACCES, ENOSPC, EROFS); raising memory regardless would
+   * leave this process believing a floor a restart could never confirm --
+   * exactly the T19 rollback window A57 exists to close, reopened the first
+   * time a disk write fails. The failure is swallowed, not rethrown:
+   * `Broker.registerApp` (./index.ts) is `async`, and dozens of call sites
+   * across this codebase invoke it without awaiting the returned promise, so
+   * a synchronous throw here would surface only as an unhandled rejection.
    */
   registerApp (origin: string, manifest: Manifest): void {
     const record = this.#record(origin)
     record.manifest = manifest
-    if (compareVersions(manifest.version, record.versionFloor) === 1) {
-      record.versionFloor = manifest.version
-      this.#storage?.writeVersionFloor(origin, record.versionFloor)
+    if (compareVersions(manifest.version, record.versionFloor) !== 1) return
+
+    if (this.#storage !== undefined && isPersistableOrigin(origin)) {
+      try {
+        this.#storage.writeVersionFloor(origin, manifest.version)
+      } catch (error) {
+        console.error('[broker] failed to persist a raised version floor; the in-memory floor was left unraised so it cannot outrun what a restart would actually see', error)
+        return
+      }
     }
+    record.versionFloor = manifest.version
+  }
+
+  /**
+   * A60's escape hatch. `registerApp` raises the floor unconditionally, even
+   * for a manifest that was only ever FETCHED, never actually installed --
+   * so a hostile origin can poison the floor with a fake high version and
+   * lock the user out of every real, lower-numbered future update from it.
+   * Nothing else in this class lowers, resets or clears a floor once raised.
+   * This is the only way back: it clears the in-memory record and deletes
+   * whatever `LedgerStorage` persisted, so a subsequent registration for
+   * this origin starts at '0.0.0' again, on disk as well as in memory.
+   *
+   * BOTH have to go together. Clearing only memory would let the next
+   * hydration read the poisoned value straight back off disk; clearing only
+   * disk would leave the poisoned value live for the rest of this session.
+   *
+   * A no-op, never a throw, for an origin the ledger holds nothing for, or
+   * when no `LedgerStorage` was injected at all.
+   *
+   * NOTHING CALLS THIS YET. There is no "remove this app" UI action built to
+   * drive it -- that wiring is separate, un-scoped follow-up work. This
+   * exists so the primitive itself is provably correct ahead of that wiring
+   * (docs/open-questions.md A60).
+   */
+  forgetOrigin (origin: string): void {
+    this.#origins.delete(origin)
+    this.#storage?.deleteVersionFloor(origin)
   }
 
   manifestFor (origin: string): Manifest | undefined {

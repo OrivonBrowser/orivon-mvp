@@ -15,6 +15,8 @@
 // Pure by structural rule: no electron, no node:fs/net/dns, no I/O at all
 // (src/broker/policy/README.md). `URL` is a global -- no import needed.
 
+import { classifyAddress } from './address.js'
+
 /**
  * Only these two schemes yield an origin.
  *
@@ -107,18 +109,14 @@ function canonicalHost (hostname: string): string | null {
  * authenticated one. The broker's caller identity comes from
  * `originFromSenderFrame` and from nowhere else.
  *
- * Two further properties the return value does NOT carry, both of which the
- * caller is responsible for:
- *   - Whether the origin may be PERSISTED. `http://127.0.0.1:8080` is
- *     shape-identical to `https://x.example`, and T13c forbids ever writing a
- *     grant for the former to disk: loopback, `file:` and plain-`http` origins
- *     are session-scoped and re-prompted each launch
- *     (docs/architecture/security-model.md T13c). Cited by document rather
- *     than by open-question number on purpose: the number this line used to
- *     carry pointed at an unrelated question for a week, because it was
- *     guessed on a branch and the question was filed on another one.
- *   - Whether it is safe as a path segment. It is not: it contains `://`.
- *     Storage directories are `sha256(origin)` (T13b), never the string.
+ * One further property the return value does NOT carry, which the caller is
+ * responsible for: whether it is safe as a path segment. It is not: it
+ * contains `://`. Storage directories are `sha256(origin)` (T13b), never the
+ * string.
+ *
+ * Whether the origin may be PERSISTED is a second such property -- see
+ * `isPersistableOrigin`, below, which answers it now that a real consumer
+ * (A23's own "Needed by") exists.
  */
 export function originFromUrl (url: string): string | null {
   let parsed: URL
@@ -139,6 +137,49 @@ export function originFromUrl (url: string): string | null {
   const port = parsed.port === '' ? '' : `:${parsed.port}`
 
   return `${parsed.protocol}//${host}${port}`
+}
+
+/**
+ * True only if `origin` (already in `originFromUrl`'s canonical shape) may
+ * ever be written to disk -- T13c: "Never persist grants for loopback,
+ * `file:` or plain-`http` origins" (security-model.md). Session-scoped,
+ * re-prompted every launch, is the answer for everything this returns false
+ * for.
+ *
+ * `file:` never reaches here at all: `ORIGIN_BEARING_SCHEMES` above already
+ * refuses it a derivable origin in the first place. That leaves scheme and
+ * host to check:
+ *   - `http:` is refused outright, regardless of host -- the "plain-http"
+ *     half of T13c.
+ *   - `localhost` is refused by name. It is a reserved DNS name that always
+ *     resolves to loopback (RFC 6761); `classifyAddress` below only
+ *     recognises address LITERALS, so a bare name check is the only way to
+ *     catch it.
+ *   - Every other host is classified via `./address.ts`'s `classifyAddress`,
+ *     the ONE place this codebase decides what counts as loopback (T12's own
+ *     table). An ordinary DNS name classifies as 'unparseable' there, which
+ *     is correctly NOT 'loopback' -- this function does not (and must not)
+ *     reject every address `classifyAddress` would flag; T13c names loopback
+ *     specifically, not the wider private/link-local/reserved ranges T12
+ *     blocks for a different reason (outbound `net.connect`, not what may be
+ *     written to disk).
+ *
+ * PRECONDITION, enforced only at the call site, same as `canonicalHost`:
+ * takes an already-canonical origin. A raw, un-canonicalised URL is not this
+ * function's problem to catch.
+ */
+export function isPersistableOrigin (origin: string): boolean {
+  let parsed: URL
+  try {
+    parsed = new URL(origin)
+  } catch {
+    return false
+  }
+
+  if (parsed.protocol !== 'https:') return false
+  if (parsed.hostname === 'localhost') return false
+
+  return classifyAddress(parsed.hostname) !== 'loopback'
 }
 
 /**
