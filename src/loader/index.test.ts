@@ -1,6 +1,10 @@
+import { chmod, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { createLoader } from './index.js'
+import { appRootDirectoryName, createLoader } from './index.js'
 import type { LoadContext } from './index.js'
+import { nodeLoaderStorage } from './node-storage.js'
 import { MANIFEST_URL, ORIGIN, manifestJson, memoryStorage, stubFetch, utf8 } from './test-helpers.js'
 import type { RouteSpec } from './test-helpers.js'
 
@@ -75,6 +79,37 @@ describe('createLoader: fresh install (TOFU, ADR-0005)', () => {
     // A failed prune must not leave assets written with no pin record --
     // load() would then read this origin back as never-pinned fresh TOFU.
     expect(base.writePin).not.toHaveBeenCalled()
+  })
+
+  // A raw node:fs message carries the absolute host path it failed on.
+  // policy/paths.ts's CONFINEMENT_ERROR_CODE states the rule this follows:
+  // a path oracle lets whatever holds this string map the host filesystem
+  // one probe at a time, so the detail goes to the log and never into a
+  // value returned across the boundary.
+  it('a storage failure\'s reason names no host filesystem path -- the real error goes to the log instead', async () => {
+    const hostPath = '/home/someone/.config/Orivon/apps/deadbeef/code/index.html'
+    const base = memoryStorage()
+    const storage = {
+      ...base,
+      writeAsset: vi.fn(async (): Promise<void> => { throw new Error(`EACCES: permission denied, open '${hostPath}'`) })
+    }
+    const routes: Record<string, RouteSpec> = {
+      [MANIFEST_URL]: { body: utf8(manifestJson()) },
+      [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
+    }
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow() })
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const result = await loader.load(ORIGIN, NO_GRANTS)
+    const loggedText = logged.mock.calls.map((call) => call.map(String).join(' ')).join('\n')
+    logged.mockRestore()
+
+    expect(result.outcome).toBe('rejected')
+    if (result.outcome !== 'rejected') return
+    expect(result.reason).not.toContain(hostPath)
+    expect(result.reason).not.toContain('/home/')
+    // Not merely swallowed: the full error is still recoverable locally.
+    expect(loggedText).toContain(hostPath)
   })
 
   it('a rejected fetch (malformed manifest, oversized asset, missing entry, ...) surfaces as outcome "rejected" and writes nothing', async () => {
@@ -198,5 +233,43 @@ describe('createLoader: refetch against an existing pin', () => {
     // blank-pinnedHash route (isSameBundle treats a blank digest as
     // CHANGED), not fall through to a silent re-install.
     expect(result.outcome).toBe('needs-reconsent')
+  })
+})
+
+// One suite against the real node:fs storage rather than memoryStorage: the
+// failure this guards against is a DISK state (a fully written bundle with
+// no pin record), which an in-memory stub cannot produce.
+describe('createLoader: against the real node:fs storage', () => {
+  const ROUTES: Record<string, RouteSpec> = {
+    [MANIFEST_URL]: { body: utf8(manifestJson()) },
+    [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
+  }
+
+  it('still writes the pin record when a subtree under the code root cannot be listed during the prune', async () => {
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-loader-install-'))
+    const storage = nodeLoaderStorage(userData)
+    const appDir = join(userData, 'apps', appRootDirectoryName(ORIGIN))
+
+    const first = await createLoader({ fetch: stubFetch(ROUTES), storage, now: fixedNow() }).load(ORIGIN, NO_GRANTS)
+    expect(first.outcome).toBe('installed')
+
+    // Left behind by an earlier install and since made unreadable: the prune
+    // on the refetch below walks straight into it.
+    await mkdir(join(appDir, 'code', 'sealed'), { recursive: true })
+    await writeFile(join(appDir, 'code', 'sealed', 'stale.css'), 'stale')
+    await chmod(join(appDir, 'code', 'sealed'), 0o000)
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const again = await createLoader({ fetch: stubFetch(ROUTES), storage, now: fixedNow(1_700_000_009_000) }).load(ORIGIN, NO_GRANTS)
+
+    logged.mockRestore()
+    await chmod(join(appDir, 'code', 'sealed'), 0o755) // so a later run can clean up /tmp
+
+    expect(again.outcome).toBe('installed')
+    // The pin record ON DISK carries this second install's clock reading --
+    // proof writePin ran after the prune, rather than the prune aborting
+    // install() and leaving the first record standing.
+    const pin = JSON.parse(await readFile(join(appDir, 'pin.json'), 'utf8')) as { pinnedAt: number }
+    expect(pin.pinnedAt).toBe(1_700_000_009_000)
   })
 })

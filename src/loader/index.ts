@@ -82,7 +82,14 @@ export interface LoadNeedsCapabilityPrompt {
 
 export interface LoadRejected {
   readonly outcome: 'rejected'
-  /** Developer-facing, same stance as fetch-bundle.ts's FetchBundleRejected. */
+  /**
+   * Developer-facing, same stance as fetch-bundle.ts's FetchBundleRejected --
+   * and, additionally, never a host filesystem path. Every other rejection
+   * here is a string this module wrote about the fetch or the manifest; the
+   * storage one is the only place a raw node:fs message could reach this
+   * field, and installOrReject below logs that message rather than returning
+   * it.
+   */
   readonly reason: string
 }
 
@@ -157,7 +164,13 @@ async function installOrReject (
     const pin = await install(storage, canonicalOrigin, manifest, tree, entries, now)
     return { outcome: 'installed', canonicalOrigin, manifest, pin }
   } catch (error) {
-    return { outcome: 'rejected', reason: error instanceof Error ? error.message : String(error) }
+    // The raw message is a node:fs one and carries the absolute host path it
+    // failed on. policy/paths.ts's CONFINEMENT_ERROR_CODE states the rule:
+    // the detail is for the local log, and a path oracle is a hazard on its
+    // own, so what is RETURNED names the origin and the stage and nothing
+    // about this machine.
+    console.error('[loader] install failed', canonicalOrigin, error)
+    return { outcome: 'rejected', reason: `the bundle for ${canonicalOrigin} could not be written to local storage` }
   }
 }
 
