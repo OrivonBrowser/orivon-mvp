@@ -409,7 +409,11 @@ export async function fetchBundle (
     // invariant blindly, though -- a bug in manifest.ts's own accounting must
     // not silently turn into an oversized fetch loop here instead. It cannot
     // run any earlier: assetPaths is derived from the manifest, so there is
-    // nothing to count until that one fetch has already happened.
+    // nothing to count until that one fetch has already happened. That one
+    // fetch is itself bounded on its own terms (MAX_MANIFEST_BYTES, checked
+    // above by fetchWithBudget), and this line still runs before the
+    // per-asset loop below starts -- so an over-cap list still costs at most
+    // that one fetch, never one per declared asset.
     if (assetPaths.length + 1 > MAX_BUNDLE_ENTRIES) {
       return rejected(`bundle would have ${String(assetPaths.length + 1)} entries, more than MAX_BUNDLE_ENTRIES (${String(MAX_BUNDLE_ENTRIES)})`)
     }
