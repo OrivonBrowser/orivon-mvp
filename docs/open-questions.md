@@ -2054,6 +2054,11 @@ every real update.
 floor raised this way short of a full process restart, which resets ALL floors, not just the
 poisoned one — so the workaround for this bug is strictly worse than living with it.
 
+> **Correction, 2026-09-04 (fix-68, PR #68):** the paragraph above is now stale on both counts.
+> A57 is resolved — the floor is persisted and a restart no longer resets it, so "wait for a
+> restart" was never a real workaround to begin with going forward. See the amendment below for
+> the escape hatch this PR builds instead.
+
 **AI recommendation:** whoever wires the loader to the broker should call `registerApp` only at
 the point an install is actually being accepted (the TOFU or `silent` branch of
 `decideUpdate()`), never merely on a successful fetch/parse. Not fixed here: no such call site
@@ -2061,6 +2066,15 @@ exists yet to fix — this is a design constraint for the wiring PR, not a bug i
 `grant-ledger.ts`'s current code.
 
 **Needed by:** before the loader ever calls `registerApp`.
+
+**Update 2026-09-04 (fix-68, PR #68):** `GrantLedger.forgetOrigin` now exists as the escape
+hatch this entry's "AI recommendation" implicitly needed — it clears both the in-memory record
+and the persisted floor (`LedgerStorage.deleteVersionFloor`), so a poisoned floor is no longer
+permanent even though A57 removed the reset-on-restart this entry's own text relied on as the
+(bad) workaround. Nothing calls it yet: there is still no "remove this app" UI action, or any
+other call site, that decides WHEN to invoke it. That decision — and the loader-to-broker wiring
+this entry's main recommendation is about (call `registerApp` only on an accepted install, never
+a bare fetch) — remain open.
 
 ---
 
