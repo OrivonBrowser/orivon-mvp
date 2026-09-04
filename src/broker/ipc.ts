@@ -67,6 +67,7 @@ import type { Subsystem, SubsystemContext } from '../main/registry.js'
 import { createBroker } from './index.js'
 import type { Broker, CreateBrokerOptions } from './index.js'
 import { dialTcp, nodeFs, resolveHost } from './node-adapters.js'
+import { nodeLedgerStorage } from './node-ledger-storage.js'
 import { createPortPump } from './port-pump.js'
 import { createPortRegistry } from './port-registry.js'
 import { createTokenBucketLimiter } from './token-bucket.js'
@@ -439,6 +440,7 @@ export const brokerIpcSubsystem: Subsystem = {
       resolve: resolveHost,
       now: realNow,
       fs: nodeFs(ctx.app.getPath('userData')),
+      ledgerStorage: nodeLedgerStorage(ctx.app.getPath('userData')),
       // ADR-0010 key derivation is out of scope for this task (broker/
       // index.ts's own header: "nothing below calls it yet") -- none of the
       // six wired control operations reach `orivon.id`.
