@@ -72,10 +72,13 @@ export interface PortSink {
   /** `writable.abort()` -- RST. Ignored if addressed to a different handle. */
   readonly handleAbort: (message: WriteAbortMessage) => void
   /**
-   * Broker-initiated teardown (revocation, session close). Aborts the
-   * writer unless it has already ended cleanly via handleEnd. Idempotent.
+   * Broker-initiated teardown (revocation, session close, or any other
+   * reason `socket.closed` settled). Stops accepting further inbound
+   * writes. Does NOT touch the writer -- the real wire teardown already
+   * happened via the injected destroy callback before a caller reaches
+   * this; see the implementation's own comment. Idempotent.
    */
-  readonly stop: (code?: OrivonErrorCode) => void
+  readonly stop: () => void
 }
 
 function toWriteFailed (handleId: string, code: OrivonErrorCode, error?: unknown): WriteFailedMessage {
@@ -196,11 +199,21 @@ export function createPortSink (options: PortSinkOptions): PortSink {
       writer.abort(reason).catch(() => {})
     },
 
-    stop (code) {
-      if (stopped || ended) return
+    stop () {
+      if (stopped) return
       stopped = true
       clearHeartbeat()
-      writer.abort(new Error(code ?? 'stopped')).catch(() => {})
+      // Deliberately does NOT touch `writer`. By the time a caller reaches
+      // this (socket-relay.ts, from socket.closed settling), the REAL wire
+      // teardown has already happened -- HandleTable's injected destroy
+      // callback (node-adapters.ts's destroySocket) already sent the
+      // CloseReason-correct signal (FIN for 'closed'/'sessionEnded', RST
+      // for 'revoked') directly on the raw socket, and handle-contracts.ts
+      // documents that release() waits for it before `closed` ever settles.
+      // Calling writer.abort() here would send a SECOND, possibly
+      // contradictory signal -- an RST after a real FIN already went out
+      // for an ordinary 'closed'. Any write still in flight settles on its
+      // own once the underlying stream reflects that same real teardown.
     }
   }
 }
