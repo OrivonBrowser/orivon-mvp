@@ -9,8 +9,9 @@ The bundle hash is an Orivon app's **content identity**. Two bundles have the sa
 only if they contain the same files at the same paths with the same bytes. It is what
 `ADR-0006`'s attestation model signs over (*"provider P asserts: bundle `sha256:ab12…` is Site
 Level 4"*), what `security-model.md` T6/T19/T21 pin against, and what `decideUpdate()`
-(`src/broker/policy/update.ts`) compares to decide whether an update installs silently, re-prompts,
-or is rejected.
+(`src/broker/policy/update.ts`) compares to decide whether an update installs silently, needs
+re-consent or a wider capability grant, or (2026-09-04, `ADR-0013`) is a below-floor rollback the
+user is warned about and asked to choose on.
 
 **This construction is a one-way door** (`ADR-0009`). Changing anything below invalidates every
 pin already persisted and orphans every attestation issued against the old root.
