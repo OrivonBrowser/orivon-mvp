@@ -1,12 +1,14 @@
-// Shared fixtures for ipc.test.ts and ipc-rate-limit.test.ts -- both test
-// handleControlRequest against the same Broker/ControlEvent/RequestEnvelope
-// shapes (code-guidelines.md Rule 3: the reason for reuse is that both
-// files exercise the same function, not a stylistic preference).
+// Shared fixtures for ipc.test.ts, ipc-rate-limit.test.ts and
+// socket-relay.test.ts -- all three test handleControlRequest/
+// createSocketRelay against the same Broker/ControlEvent/PortLike/
+// FailableTcpSocket shapes (code-guidelines.md Rule 3: the reason for reuse
+// is that all three exercise the same seams, not a stylistic preference).
 
 import { vi } from 'vitest'
-import type { ControlEvent } from './ipc.js'
+import type { ControlEvent, PortLike, PortPair, PortTransport } from './ipc.js'
 import type { Broker } from './broker-contracts.js'
-import type { Grant, Manifest } from '../contracts/index.js'
+import { createPortRegistry } from './port-registry.js'
+import type { Grant, Manifest, OrivonError, OrivonErrorCode } from '../contracts/index.js'
 import type { FailableTcpSocket } from './handle-contracts.js'
 import type { RequestEnvelope } from '../contracts/ipc.js'
 
@@ -105,4 +107,79 @@ export function stubBroker (
     grant: () => { throw new Error('grant is not reachable via orivon.* and should never be called here') },
     revoke: async () => { throw new Error('revoke is not reachable via orivon.* and should never be called here') }
   }
+}
+
+/** A controllable in-memory PortLike -- captures every postMessage, and lets a test simulate the renderer sending a message back. */
+export function fakePort (): PortLike & { readonly sent: unknown[], emit: (message: unknown) => void } {
+  let listener: ((message: unknown) => void) | undefined
+  const sent: unknown[] = []
+  return {
+    postMessage: (message) => { sent.push(message) },
+    onMessage: (l) => { listener = l },
+    close: () => {},
+    sent,
+    emit: (message) => { listener?.(message) }
+  }
+}
+
+export function fakePortPair (): { readonly pair: PortPair, readonly port1: ReturnType<typeof fakePort> } {
+  const port1 = fakePort()
+  return { pair: { port1, port2: 'fake-port2' }, port1 }
+}
+
+/** A PortTransport whose createPortPair always returns the SAME pair -- fine for tests that make at most one net.connect call. */
+export function fakeTransport (pair: PortPair): PortTransport {
+  return { createPortPair: () => pair, registry: createPortRegistry() }
+}
+
+export interface FakeSocket {
+  readonly socket: FailableTcpSocket
+  readonly closeSpy: ReturnType<typeof vi.fn>
+  readonly failSpy: ReturnType<typeof vi.fn>
+  readonly settleClosed: (error?: OrivonError) => void
+}
+
+/**
+ * A FailableTcpSocket whose `readable`/`writable` a test controls directly
+ * and whose `closed` a test settles on demand -- close()/fail() themselves
+ * settle it, the same way the real ones do (index.ts's connect()).
+ */
+export function fakeTcpSocket (
+  readable: ReadableStream<Uint8Array> = new ReadableStream({ start: (c) => { c.close() } }),
+  writable: WritableStream<Uint8Array> = new WritableStream()
+): FakeSocket {
+  let settle: (error?: OrivonError) => void = () => {}
+  let settled = false
+  const closed = new Promise<void>((resolve, reject) => {
+    settle = (error) => {
+      if (settled) return
+      settled = true
+      if (error === undefined) resolve(); else reject(error)
+    }
+  })
+  const closeSpy = vi.fn(async () => { settle() })
+  const failSpy = vi.fn((code: OrivonErrorCode, platformCode?: string) => {
+    const err = { name: 'OrivonError', message: 'the handle failed', code, platformCode } as OrivonError
+    settle(err)
+  })
+  const socket: FailableTcpSocket = {
+    id: 'handle-1',
+    closed,
+    close: closeSpy,
+    fail: failSpy,
+    readable,
+    writable,
+    remoteAddress: '93.184.216.34',
+    remotePort: 443,
+    localAddress: '10.0.0.5',
+    localPort: 54321,
+    setNoDelay: async () => {},
+    setKeepAlive: async () => {}
+  }
+  return { socket, closeSpy, failSpy, settleClosed: settle }
+}
+
+/** Lets a fire-and-forget pump/wiring chain progress before assertions run. */
+export async function tick (times = 5): Promise<void> {
+  for (let i = 0; i < times; i++) await Promise.resolve()
 }

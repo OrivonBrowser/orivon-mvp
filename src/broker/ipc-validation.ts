@@ -12,19 +12,24 @@
 
 import type { RequestEnvelope } from '../contracts/index.js'
 
-/** The six wired control operations. Anything else is 'invalid'. */
-export type ControlMethod = 'app.manifest' | 'app.grants' | 'fs.readFile' | 'fs.writeFile' | 'net.connect' | 'net.close'
+/** The eight wired control operations. Anything else is 'invalid'. */
+export type ControlMethod =
+  | 'app.manifest' | 'app.grants' | 'fs.readFile' | 'fs.writeFile'
+  | 'net.connect' | 'net.close' | 'net.setNoDelay' | 'net.setKeepAlive'
 
 export function isControlMethod (method: string): method is ControlMethod {
   return method === 'app.manifest' || method === 'app.grants' ||
     method === 'fs.readFile' || method === 'fs.writeFile' ||
-    method === 'net.connect' || method === 'net.close'
+    method === 'net.connect' || method === 'net.close' ||
+    method === 'net.setNoDelay' || method === 'net.setKeepAlive'
 }
 
 export interface FsReadFileParams { readonly path: string }
 export interface FsWriteFileParams { readonly path: string, readonly data: Uint8Array }
 export interface NetConnectParams { readonly host: string, readonly port: number }
 export interface NetCloseParams { readonly id: string }
+export interface NetSetNoDelayParams { readonly id: string, readonly on: boolean }
+export interface NetSetKeepAliveParams { readonly id: string, readonly on: boolean, readonly initialDelayMs?: number }
 
 export function isFsReadFileParams (payload: unknown): payload is FsReadFileParams {
   return typeof payload === 'object' && payload !== null &&
@@ -41,6 +46,19 @@ export function isNetConnectParams (payload: unknown): payload is NetConnectPara
   return typeof payload === 'object' && payload !== null &&
     typeof (payload as { host?: unknown }).host === 'string' &&
     typeof (payload as { port?: unknown }).port === 'number'
+}
+
+export function isNetSetNoDelayParams (payload: unknown): payload is NetSetNoDelayParams {
+  return typeof payload === 'object' && payload !== null &&
+    typeof (payload as { id?: unknown }).id === 'string' &&
+    typeof (payload as { on?: unknown }).on === 'boolean'
+}
+
+export function isNetSetKeepAliveParams (payload: unknown): payload is NetSetKeepAliveParams {
+  if (typeof payload !== 'object' || payload === null) return false
+  const { id, on, initialDelayMs } = payload as { id?: unknown, on?: unknown, initialDelayMs?: unknown }
+  return typeof id === 'string' && typeof on === 'boolean' &&
+    (initialDelayMs === undefined || typeof initialDelayMs === 'number')
 }
 
 export function isNetCloseParams (payload: unknown): payload is NetCloseParams {
