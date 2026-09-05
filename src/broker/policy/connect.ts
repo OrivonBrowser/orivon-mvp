@@ -225,7 +225,10 @@ function deny (reason: ConnectDenialReason, checked?: readonly string[]): Connec
 // derivation) enforces the same bound instead of a second copy of 256 that
 // can drift from this one.
 export const MAX_PATTERNS = 256
-const MAX_ANSWERS = 64
+// Exported so a second consumer (../../loader/install-origin.ts's T12 guard,
+// which resolves once against the same kind of untrusted answer count) shares
+// this bound instead of a second copy that can drift from it (Rule 3).
+export const MAX_ANSWERS = 64
 
 /**
  * Decides whether `patterns` -- the GRANTED pattern list, not the manifest's

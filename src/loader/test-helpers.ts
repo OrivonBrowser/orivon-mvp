@@ -8,12 +8,16 @@
 // own -- only fixtures.
 
 import { vi } from 'vitest'
+import type { Resolver } from '../broker/policy/connect.js'
 import type { PinRecord } from '../broker/policy/pin.js'
-import type { Fetch, FetchResponse } from './fetch-bundle.js'
+import type { Fetch, FetchResponse } from './fetch-budget.js'
 import type { LoaderStorage } from './storage.js'
 
 export const ORIGIN = 'https://app.example.com'
 export const MANIFEST_URL = `${ORIGIN}/.well-known/orivon.json`
+
+/** Resolves any hostname to one public-unicast literal -- the boring case for every test that isn't specifically about the T12/A46 install-origin guard. */
+export const PUBLIC_RESOLVER: Resolver = async () => ['93.184.216.34']
 
 export function manifestJson (overrides: Record<string, unknown> = {}): string {
   return JSON.stringify({
@@ -103,7 +107,14 @@ export function stubFetch (
   bodyReadSpy?: Set<string>,
   streamedBytesSpy?: Map<string, number>
 ): Fetch {
-  return async (url: string): Promise<FetchResponse> => {
+  // `pinnedAddresses` is F2/F5's validated-literal hand-off (fetch-budget.ts's
+  // own `Fetch` doc comment) -- this stub is a fake HTTP layer keyed by URL
+  // string, with no real DNS/TCP underneath to pin, so it has nothing to do
+  // with the argument beyond accepting it. Tests that care whether it was
+  // threaded through correctly wrap this stub in their own spy (see
+  // fetch-bundle.test.ts's F2 and F5 suites) rather than this shared fixture
+  // asserting anything about it.
+  return async (url: string, _pinnedAddresses: readonly string[]): Promise<FetchResponse> => {
     const spec = routes[url]
     if (spec === undefined) throw new Error(`stubFetch: no route for ${url}`)
     const headers = spec.headers ?? {}
