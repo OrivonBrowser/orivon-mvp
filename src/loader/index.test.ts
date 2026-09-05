@@ -8,7 +8,7 @@ import { nodeLoaderStorage } from './node-storage.js'
 import { MANIFEST_URL, ORIGIN, PUBLIC_RESOLVER, manifestJson, memoryStorage, stubFetch, utf8 } from './test-helpers.js'
 import type { RouteSpec } from './test-helpers.js'
 
-const NO_GRANTS: LoadContext = { grantedPatterns: {}, versionFloor: '0.0.0', rollbackAcknowledged: false }
+const NO_GRANTS: LoadContext = { grantedPatterns: {}, versionFloor: '0.0.0', acknowledgedRollbackVersion: undefined }
 
 function fixedNow (value = 1_700_000_000_000): () => number {
   return () => value
@@ -210,7 +210,7 @@ describe('createLoader: refetch against an existing pin', () => {
     const granted: LoadContext = {
       grantedPatterns: { 'tcp.connect': ['api.example.com:443'] },
       versionFloor: '0.0.0',
-      rollbackAcknowledged: false
+      acknowledgedRollbackVersion: undefined
     }
 
     // The new manifest declares "*:*" -- strictly wider than what was
@@ -244,13 +244,36 @@ describe('createLoader: refetch against an existing pin', () => {
     }
     const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER })
     const before = storage.pins.get(ORIGIN)
-    const result = await loader.load(ORIGIN, { grantedPatterns: {}, versionFloor: '1.0.0', rollbackAcknowledged: false })
+    const result = await loader.load(ORIGIN, { grantedPatterns: {}, versionFloor: '1.0.0', acknowledgedRollbackVersion: undefined })
 
     expect(result.outcome).toBe('needs-rollback-choice')
     if (result.outcome !== 'needs-rollback-choice') return
     expect(result.versionFloor).toBe('1.0.0')
     expect(result.manifest.version).toBe('0.9.0')
     expect(storage.pins.get(ORIGIN)).toBe(before) // untouched, same as needs-reconsent/needs-capability-prompt
+  })
+
+  it('an acknowledged version that does not match the one being offered -> needs-rollback-choice, never treated as acknowledged', async () => {
+    const storage = memoryStorage()
+    await install(storage)
+
+    const routes: Record<string, RouteSpec> = {
+      [MANIFEST_URL]: { body: utf8(manifestJson({ version: '0.5.0' })) },
+      [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
+    }
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER })
+    const before = storage.pins.get(ORIGIN)
+    // The origin's rollback to a DIFFERENT below-floor version (0.9.0) was
+    // acknowledged previously -- exactly the scenario the version-keyed
+    // design (not a bare boolean) exists to distinguish from THIS version
+    // (0.5.0) being offered now. A caller comparing loosely (any prior
+    // acknowledgment counts) would silently install 0.5.0; this must not.
+    const result = await loader.load(ORIGIN, { grantedPatterns: {}, versionFloor: '1.0.0', acknowledgedRollbackVersion: '0.9.0' })
+
+    expect(result.outcome).toBe('needs-rollback-choice')
+    if (result.outcome !== 'needs-rollback-choice') return
+    expect(result.manifest.version).toBe('0.5.0')
+    expect(storage.pins.get(ORIGIN)).toBe(before) // untouched
   })
 
   it('a version below the version floor, already acknowledged, offering exactly what is already pinned -> installed with a rollback notice, no choice required', async () => {
@@ -267,11 +290,11 @@ describe('createLoader: refetch against an existing pin', () => {
     // widening and no bundle change; see the two tests below for the
     // adversarial combinations the 2026-09-05 fix actually exists to catch.
     const firstLoad = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER })
-    const first = await firstLoad.load(ORIGIN, { grantedPatterns: {}, versionFloor: '0.0.0', rollbackAcknowledged: false })
+    const first = await firstLoad.load(ORIGIN, { grantedPatterns: {}, versionFloor: '0.0.0', acknowledgedRollbackVersion: undefined })
     if (first.outcome !== 'installed') throw new Error('fixture setup failed')
 
     const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(1_700_000_001_000), resolve: PUBLIC_RESOLVER })
-    const result = await loader.load(ORIGIN, { grantedPatterns: {}, versionFloor: '1.0.0', rollbackAcknowledged: true })
+    const result = await loader.load(ORIGIN, { grantedPatterns: {}, versionFloor: '1.0.0', acknowledgedRollbackVersion: '0.9.0' })
 
     expect(result.outcome).toBe('installed')
     if (result.outcome !== 'installed') return
@@ -289,7 +312,7 @@ describe('createLoader: refetch against an existing pin', () => {
     }
     const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(1_700_000_001_000), resolve: PUBLIC_RESOLVER })
     const before = storage.pins.get(ORIGIN)
-    const result = await loader.load(ORIGIN, { grantedPatterns: {}, versionFloor: '1.0.0', rollbackAcknowledged: true })
+    const result = await loader.load(ORIGIN, { grantedPatterns: {}, versionFloor: '1.0.0', acknowledgedRollbackVersion: '0.9.0' })
 
     // Acknowledging a rollback for this origin is not a blank cheque for
     // whatever code that origin serves under an already-forgiven version
@@ -316,7 +339,7 @@ describe('createLoader: refetch against an existing pin', () => {
     const granted: LoadContext = {
       grantedPatterns: { 'tcp.connect': ['api.example.com:443'] },
       versionFloor: '2.0.0',
-      rollbackAcknowledged: true
+      acknowledgedRollbackVersion: '0.9.0'
     }
     const wideRoutes: Record<string, RouteSpec> = {
       [MANIFEST_URL]: { body: utf8(manifestJson({ version: '0.9.0', capabilities: { net: { tcp: { connect: ['*:*'] } } } })) },
