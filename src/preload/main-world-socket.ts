@@ -25,9 +25,30 @@
 // the one real global environment a whole test run shares makes a test
 // suite unable to run twice, let alone in parallel).
 
+import type { OrivonErrorCode } from '../contracts/errors.js'
+
 export interface OrivonLimits {
   readonly readWindowBytes: number
   readonly writeWindowBytes: number
+}
+
+/** The shape ./socket-port.ts's SocketPort plus a connection descriptor and the three control-channel operations net.connect doesn't otherwise expose -- what orivon-surface.ts's netConnect bridge closure resolves to. */
+export interface MainWorldSocketBridge {
+  readonly id: string
+  readonly remoteAddress: string
+  readonly remotePort: number
+  readonly localAddress: string
+  readonly localPort: number
+  readonly onData: (cb: (chunk: Uint8Array) => void) => void
+  readonly onReadEnd: (cb: (code: OrivonErrorCode | undefined) => void) => void
+  readonly reportConsumed: (bytesConsumed: number) => void
+  readonly write: (chunk: Uint8Array) => Promise<void>
+  readonly endWrite: () => Promise<void>
+  readonly abortWrite: () => void
+  readonly closed: Promise<void>
+  readonly close: () => Promise<void>
+  readonly setNoDelay: (on: boolean) => Promise<void>
+  readonly setKeepAlive: (on: boolean, initialDelayMs?: number) => Promise<void>
 }
 
 export function installOrivon (
@@ -36,28 +57,12 @@ export function installOrivon (
     appGrants: () => Promise<unknown>
     fsReadFile: (path: string) => Promise<Uint8Array>
     fsWriteFile: (path: string, data: Uint8Array) => Promise<void>
-    netConnect: (opts: { host: string, port: number }) => Promise<{
-      id: string
-      remoteAddress: string
-      remotePort: number
-      localAddress: string
-      localPort: number
-      onData: (cb: (chunk: Uint8Array) => void) => void
-      onReadEnd: (cb: (code?: string) => void) => void
-      reportConsumed: (bytesConsumed: number) => void
-      write: (chunk: Uint8Array) => Promise<void>
-      endWrite: () => Promise<void>
-      abortWrite: () => void
-      closed: Promise<void>
-      close: () => Promise<void>
-      setNoDelay: (on: boolean) => Promise<void>
-      setKeepAlive: (on: boolean, initialDelayMs?: number) => Promise<void>
-    }>
+    netConnect: (opts: { host: string, port: number }) => Promise<MainWorldSocketBridge>
   },
   limits: OrivonLimits,
   target: { orivon?: unknown } = typeof window === 'undefined' ? {} : window as unknown as { orivon?: unknown }
 ): void {
-  function toOrivonError (code: string): { name: string, message: string, code: string } {
+  function toOrivonError (code: OrivonErrorCode): { name: string, message: string, code: OrivonErrorCode } {
     return { name: 'OrivonError', message: `orivon: ${code}`, code }
   }
 
