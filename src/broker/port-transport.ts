@@ -7,7 +7,7 @@
 
 import type { SenderFrameLike } from './policy/origin.js'
 import type { PortRegistry } from './port-registry.js'
-import type { DataMessage, StreamEndMessage } from '../contracts/index.js'
+import type { BrokerToRendererMessage } from '../contracts/index.js'
 
 /**
  * What `orivon.net.connect` resolves to over CONTROL_CHANNEL. Deliberately
@@ -29,7 +29,7 @@ export interface SocketDescriptor {
  * literal stand in for `WebFrameMain`.
  */
 export interface PortLike {
-  postMessage: (message: DataMessage | StreamEndMessage) => void
+  postMessage: (message: BrokerToRendererMessage) => void
   onMessage: (listener: (message: unknown) => void) => void
   close: () => void
 }
@@ -41,6 +41,20 @@ export interface PortPair {
 }
 
 /**
+ * What `net.close` and `./socket-relay.ts`'s registry entry need beyond the
+ * raw socket: enough to release it and to answer the two operations
+ * declared on `TcpSocket` (`handles.ts`) but not yet wired as their own
+ * control methods -- `setNoDelay`/`setKeepAlive` dispatch through this same
+ * per-origin lookup, the same ownership check `close` already relies on
+ * (T11c: a handle id from one origin means nothing presented by another).
+ */
+export interface RegisteredSocket {
+  readonly close: () => Promise<void>
+  readonly setNoDelay: (on: boolean) => Promise<void>
+  readonly setKeepAlive: (on: boolean, initialDelayMs?: number) => Promise<void>
+}
+
+/**
  * Everything net.connect/net.close need beyond `broker` itself: a way to
  * mint a real port pair, and the per-origin registry (./port-registry.js)
  * a later net.close call looks a live socket up in. ONE instance lives for
@@ -49,7 +63,7 @@ export interface PortPair {
  */
 export interface PortTransport {
   readonly createPortPair: () => PortPair
-  readonly registry: PortRegistry<{ readonly close: () => Promise<void> }>
+  readonly registry: PortRegistry<RegisteredSocket>
 }
 
 /**
