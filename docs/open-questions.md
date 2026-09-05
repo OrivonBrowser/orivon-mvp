@@ -1708,6 +1708,21 @@ view-add order, which is an implementation detail, not a contract) — the shell
 test matches windows by URL/title via `app.windows()` instead of relying on first-added
 ordering.
 
+**A related but distinct flake, hit twice in the 2026-09-05 review/merge run (PRs #72 and #73):**
+`test/e2e-capability-boundary.test.ts`'s Phase 1 (the same `_electron` driver this entry is
+about) intermittently timed out on `chrome.click('#address')` in CI, despite
+`waitForAddressBarStable` already reporting the element's bounding box had stopped moving —
+proven a genuine flake, not a regression, by two CI runs against the *identical* commit, one
+red and one green. Bounding-box stability proves position stopped changing; it does not prove
+Chromium's compositor caught up to it, which is a plausible cause distinct from this entry's own
+"no target-created event" mystery. **Mitigated, not resolved:** the click/fill/press sequence
+now retries once, re-running `waitForAddressBarStable` first, if the first attempt hits exactly
+this timeout signature (`clickAddressBarRetrying`, same file). A second consecutive failure on
+the same element still fails the test for real — this is a bounded, explicit retry against a
+named environmental race, not a general-purpose retry-until-green. This entry's own root cause
+(the CDP auto-attach question) remains exactly as unknown as before; only the address-bar
+symptom has a mitigation.
+
 ---
 
 ## BB. Public-docs corrections — and what is *not* one
