@@ -1,29 +1,24 @@
-// The one function handed to `contextBridge.executeInMainWorld`. It is
-// SERIALISED (Function.prototype.toString) and re-evaluated fresh in the
-// main world, so every helper it needs must be declared INSIDE its own
-// body -- no free variables, no imports, no module-level consts. This is
-// what makes `ReadableStream`/`WritableStream`/`ByteLengthQueuingStrategy`
-// inside it resolve to the PAGE's own constructors rather than the
-// preload's isolated-world ones, which is the entire reason this function
-// exists rather than building the streams in ./socket-port.ts directly
-// (contextBridge copies plain values across, but a stream built in the
-// isolated world would cross broken -- see the design note this PR's body
-// links).
+// The one function handed to `contextBridge.executeInMainWorld`. SERIALISED
+// (Function.prototype.toString) and re-evaluated fresh in the main world,
+// so every helper it needs must be declared INSIDE its own body -- no free
+// variables, no imports, no module-level consts. That is what makes
+// `ReadableStream`/`WritableStream`/`ByteLengthQueuingStrategy` inside it
+// the PAGE's own constructors, not the preload's isolated-world ones --
+// the whole reason this exists rather than building streams directly in
+// ./socket-port.ts (contextBridge copies plain values across, but a stream
+// built in the isolated world crosses broken; see the PR body).
 //
-// `bridge` is a plain object of proxied closures the preload built (see
-// orivon-surface.ts): one per app.manifest/app.grants/fs.readFile/
-// fs.writeFile, plus `netConnect`, which itself resolves to a per-socket
-// bag of closures shaped exactly like ./socket-port.ts's own SocketPort
-// (data/read-end/credit/write/end/abort/fatal/closed) plus the connection
-// descriptor and the three control-channel operations (close/setNoDelay/
-// setKeepAlive) net.connect doesn't otherwise expose.
+// `bridge` is a plain object of proxied closures orivon-surface.ts built:
+// one per app.manifest/app.grants/fs.readFile/fs.writeFile, plus
+// `netConnect`, resolving to a per-socket bag shaped like ./socket-port.ts's
+// own SocketPort plus the connection descriptor and the three
+// control-channel operations (close/setNoDelay/setKeepAlive) net.connect
+// doesn't otherwise expose.
 //
-// `target` defaults to the real `window` -- present in production because
-// this function runs IN the main world -- but is overridable so a test can
-// install onto a throwaway object instead, the same pattern
-// src/shim/globals.ts already uses for the same reason (installing onto
-// the one real global environment a whole test run shares makes a test
-// suite unable to run twice, let alone in parallel).
+// `target` defaults to the real `window` (this runs IN the main world) but
+// is overridable, the same pattern src/shim/globals.ts uses for the same
+// reason: never mutate the one real global environment a whole test run
+// shares.
 
 import type { OrivonErrorCode } from '../contracts/errors.js'
 
