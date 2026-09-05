@@ -26,9 +26,18 @@ import { isArray, ownProperty } from './own-property.js'
 /**
  * What the broker does with the update.
  *
- * These are ordered by severity -- `reject` > `capability-prompt` >
- * `reconsent` > `silent` -- and `decideUpdate` returns the most severe one
- * that applies:
+ * `rollback-choice` is the one outcome that always wins outright: an
+ * unacknowledged below-floor version needs an explicit choice regardless of
+ * anything else, because nothing else about it can be trusted either (see
+ * `rollback-choice` below). Once a rollback is acknowledged, the outcome
+ * instead follows the SAME `capability-prompt` > `reconsent` > `silent`
+ * hierarchy an ordinary at-or-above-floor update would -- `rollback-notice`
+ * is the rollback world's `silent`, not a rung above `capability-prompt`/
+ * `reconsent`, and applies only once neither fires. **Fixed 2026-09-05**
+ * (`ADR-0013`'s amendment): it used to reach `rollback-notice` -- a silent
+ * install -- even when the offering also widened authority or changed the
+ * bundle, downgrading what should have been a prompt into the one outcome
+ * that installs unattended.
  *
  * - `silent`        install it; nothing the user consented to has changed.
  * - `reconsent`     "this app's code changed" (ADR-0005: hash-pinning is the
@@ -40,12 +49,32 @@ import { isArray, ownProperty } from './own-property.js'
  *                   re-establishes consent for the app as it now is, whereas
  *                   re-consenting to changed code says nothing about new
  *                   authority.
- * - `reject`        do not install at any prompt. Reserved for the version
- *                   floor, where the correct answer is not "ask the user" --
- *                   a replayed old bundle looks identical to a legitimate one
- *                   and no prompt can tell the user which they are looking at.
+ * - `rollback-choice`   the version is below this origin's own floor -- a
+ *                   validly hash-pinned, validly-authorised bundle can still
+ *                   be a replayed older one, and no automated check can tell
+ *                   the two apart. **2026-09-04, owner decision, reversing
+ *                   this module's original stance:** this is no longer a
+ *                   silent, no-prompt block. The user is warned and given an
+ *                   actual choice -- proceed with the older version, or keep
+ *                   what is cached -- the first time this happens for a given
+ *                   origin (`update.rollbackAcknowledged` false).
+ * - `rollback-notice`   the same below-floor situation, but the user has
+ *                   already chosen, at least once, to accept a rollback from
+ *                   this origin (`update.rollbackAcknowledged` true), AND
+ *                   this offering asks for nothing an ordinary
+ *                   at-or-above-floor update wouldn't also get `silent` for
+ *                   -- no wider authority, no bundle change `isSameBundle`
+ *                   would flag. Installs proceed the same as `silent`; the
+ *                   caller shows an ongoing, passive, non-blocking notice
+ *                   rather than asking again -- "warn every time, but never
+ *                   require a click" was the owner's framing.
+ *                   `rollbackAcknowledged` never expires on its own once
+ *                   true, so this function never asks `rollback-choice`
+ *                   again for that origin -- but a widened pattern set or
+ *                   genuinely different code is exactly as `capability-
+ *                   prompt`/`reconsent`-worthy as for any other update.
  */
-export type UpdateDecision = 'silent' | 'reconsent' | 'capability-prompt' | 'reject'
+export type UpdateDecision = 'silent' | 'reconsent' | 'capability-prompt' | 'rollback-choice' | 'rollback-notice'
 
 /**
  * A pattern set keyed by capability kind -- the collapsed form of the origin's
@@ -92,18 +121,40 @@ export interface UpdateInput {
    * own purpose (T19).
    */
   readonly versionFloor: string
+  /**
+   * Whether the user has already chosen, at least once, to proceed with a
+   * below-floor version from this origin (2026-09-04 owner decision). Ignored
+   * entirely unless `version` is actually below `versionFloor` -- it must
+   * never, on its own, turn an ordinary at-or-above-floor update into a
+   * notice.
+   *
+   * CALLER CONTRACT: a bare per-origin flag is only safe because
+   * `ordinaryEscalation` still runs before it's trusted (fixed 2026-09-05) --
+   * an unparseable `version` fails closed into this SAME below-floor branch
+   * as a real rollback (`isAtOrAboveFloor`), so a "this origin had SOME
+   * rollback approved once" boolean would let a garbage version string ride a
+   * prior, unrelated approval. The `rollback-ack` persistence lane (A61)
+   * stores the acknowledged VERSION itself for exactly this reason -- derive
+   * this field by comparing the offered `version` against that, so an
+   * unparseable or different version naturally computes `false`.
+   */
+  readonly rollbackAcknowledged: boolean
 }
 
-export function decideUpdate (update: UpdateInput): UpdateDecision {
-  // The floor is checked FIRST and outranks everything, because a replayed
-  // old bundle is indistinguishable from a legitimate one at every other
-  // level: it hash-pins validly (it really is code this publisher shipped),
-  // and its pattern set is by construction one the user already accepted. If
-  // this check ran after the others, an attacker with control of the host
-  // could suppress a security fix indefinitely and the user would only ever
-  // see a "the code changed" prompt (security-model.md T19).
-  if (!isAtOrAboveFloor(update.version, update.versionFloor)) return 'reject'
-
+/**
+ * What a same-or-higher-version update would require for this authority/
+ * bundle change, if either check fires -- `null` means neither does
+ * (`silent` territory).
+ *
+ * Pulled out so `decideUpdate` has exactly one place running the widening/
+ * bundle-change checks, called from both its at-or-above-floor path and its
+ * acknowledged-rollback path below -- fixing the 2026-09-05 defect where an
+ * acknowledged rollback skipped both and fell straight to the silently-
+ * installing `rollback-notice`. Sharing one function makes "a rollback is
+ * never LESS scrutinised than an ordinary update with the same change" true
+ * by construction, not by two call sites happening to agree.
+ */
+function ordinaryEscalation (update: UpdateInput): 'capability-prompt' | 'reconsent' | null {
   // A SUBSET CHECK, not a kind comparison. See the file header -- this single
   // line is the reason this module exists.
   if (widensAuthority(update.grantedPatterns, update.newPatterns)) return 'capability-prompt'
@@ -121,7 +172,28 @@ export function decideUpdate (update: UpdateInput): UpdateDecision {
   // not a short-circuit for it.
   if (!isSameBundle(update.pinnedHash, update.newHash)) return 'reconsent'
 
-  return 'silent'
+  return null
+}
+
+export function decideUpdate (update: UpdateInput): UpdateDecision {
+  // The floor is checked FIRST, because a replayed old bundle is
+  // indistinguishable from a legitimate one at every other level: it
+  // hash-pins validly (it really is code this publisher shipped), and its
+  // pattern set is by construction one the user already accepted. If this
+  // check ran after the others, an attacker with control of the host could
+  // suppress a security fix indefinitely and the user would only ever see a
+  // "the code changed" prompt (security-model.md T19).
+  if (!isAtOrAboveFloor(update.version, update.versionFloor)) {
+    if (!update.rollbackAcknowledged) return 'rollback-choice'
+
+    // FIXED 2026-09-05 (ADR-0013's own amendment): acknowledging a rollback
+    // settles only the rollback question -- it is a fact about the origin,
+    // not a blank cheque for whatever that origin serves under an
+    // already-forgiven version number. See ordinaryEscalation's own comment.
+    return ordinaryEscalation(update) ?? 'rollback-notice'
+  }
+
+  return ordinaryEscalation(update) ?? 'silent'
 }
 
 // --- version floor -----------------------------------------------------------
