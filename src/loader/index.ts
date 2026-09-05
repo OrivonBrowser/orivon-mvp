@@ -70,6 +70,19 @@ export interface LoadInstalled {
    * non-blocking notice, never a prompt (the owner's own "warn every time,
    * but never require a click" framing). Never present alongside a TOFU or
    * ordinary `silent` install.
+   *
+   * A caller that ignores this field still gets a SAFE install --
+   * decideUpdate() only reaches `rollback-notice` once it has confirmed the
+   * update neither widens authority nor changes the bundle in a way that
+   * would need reconsent (fixed 2026-09-05, `ADR-0013`'s own amendment: it
+   * used to skip those checks entirely for an acknowledged rollback, which is
+   * why this field existing was not enough on its own). What a caller loses by ignoring it is purely
+   * the ongoing visibility the owner asked for -- the user never being told
+   * they are still running an origin's below-floor version -- which is the
+   * entire reason this outcome is distinguished from an ordinary `installed`
+   * result rather than folded into it. A future caller keyed only on
+   * `outcome === 'installed'` (an `installFromHint`-shaped helper, say) has
+   * to consciously decide to drop that visibility, not do it by accident.
    */
   readonly rollbackNotice?: true
 }
@@ -175,9 +188,10 @@ async function install (
 /**
  * Wraps install() so a storage failure (writeAsset/pruneAssets/writePin can
  * all throw a plain Error on a rejected path or a filesystem error) resolves
- * to one of load()'s own four documented outcomes instead of an uncaught
- * exception -- a bundle that fetched and validated cleanly can still fail
- * here, and LoadResult has no fifth "threw" case for that to become.
+ * to one of load()'s own five documented outcomes (this file's header)
+ * instead of an uncaught exception -- a bundle that fetched and validated
+ * cleanly can still fail here, and LoadResult has no sixth "threw" case for
+ * that to become.
  */
 async function installOrReject (
   storage: LoaderStorage,
@@ -255,6 +269,14 @@ export function createLoader (options: CreateLoaderOptions): Loader {
       case 'rollback-notice': {
         const result = await installOrReject(options.storage, canonicalOrigin, manifest, tree, entries, options.now(), true)
         return result.outcome === 'installed' ? { ...result, rollbackNotice: true } : result
+      }
+      default: {
+        // Exhaustiveness guard: a compile error at `exhaustive` is how a new
+        // UpdateDecision case added without a branch here gets caught, not a
+        // runtime path reachable through the closed union above (same
+        // pattern as src/telemetry/accounting.ts's applyEvent).
+        const exhaustive: never = decision
+        throw new Error(`loader: unhandled update decision ${JSON.stringify(exhaustive)}`)
       }
     }
   }

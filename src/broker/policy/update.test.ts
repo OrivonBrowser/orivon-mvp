@@ -220,14 +220,15 @@ const TABLE: readonly Row[] = [
   },
   {
     // rollbackAcknowledged is per origin, not per exact version -- once the
-    // user has said yes once, EVERY later below-floor version from this
-    // origin is a notice, not a fresh choice, until they explicitly change
-    // that (there is no path back to `rollback-choice` in this table; that
-    // is deliberate, matching the owner's own "warn every single time, but
-    // informational" framing).
-    name: 'a rollback already acknowledged once for this origin is a notice, not a fresh choice',
+    // user has said yes once, EVERY later below-floor version that asks for
+    // nothing new (same authority, same bytes as what's pinned) is a notice,
+    // not a fresh choice, until they explicitly change that (there is no
+    // path back to `rollback-choice` in this table; that is deliberate,
+    // matching the owner's own "warn every single time, but informational"
+    // framing). Same hash, same patterns as what's already pinned -- the
+    // genuine no-op repeat this outcome exists for.
+    name: 'a rollback already acknowledged once for this origin, asking for nothing new, is a notice, not a fresh choice',
     input: update({
-      newHash: REBUILT,
       version: '1.1.9',
       versionFloor: '1.2.0',
       rollbackAcknowledged: true
@@ -235,7 +236,13 @@ const TABLE: readonly Row[] = [
     decision: 'rollback-notice'
   },
   {
-    name: 'acknowledged rollback still wins over a capability widening -- same severity rule as the unacknowledged case',
+    // FIXED 2026-09-05 (the defect ADR-0013's amendment records): acknowledging
+    // a rollback for an origin is not a blank cheque for whatever authority
+    // that origin asks for under an already-forgiven version number. A rollback
+    // that also widens the granted pattern set is exactly as capability-prompt
+    // -worthy as an ordinary update making the same request, acknowledged or
+    // not -- it must never resolve to the silently-installing rollback-notice.
+    name: 'an acknowledged rollback that also widens authority still needs a capability prompt, never a silent notice',
     input: update({
       version: '1.1.0',
       versionFloor: '1.2.0',
@@ -243,7 +250,23 @@ const TABLE: readonly Row[] = [
       grantedPatterns: ONE_HOST,
       newPatterns: ANY_HOST
     }),
-    decision: 'rollback-notice'
+    decision: 'capability-prompt'
+  },
+  {
+    // Same defect, the reconsent-worthy half: the origin kept the SAME
+    // authority but served bytes that don't match what's actually pinned --
+    // real, different code under an already-forgiven version number. Must
+    // still surface as reconsent, never fold into the silent rollback-notice.
+    name: 'an acknowledged rollback whose bytes differ from what is pinned still needs reconsent, never a silent notice',
+    input: update({
+      newHash: REBUILT,
+      version: '1.1.9',
+      versionFloor: '1.2.0',
+      rollbackAcknowledged: true,
+      grantedPatterns: ONE_HOST,
+      newPatterns: ONE_HOST
+    }),
+    decision: 'reconsent'
   },
   {
     // rollbackAcknowledged is irrelevant once the version is actually at or

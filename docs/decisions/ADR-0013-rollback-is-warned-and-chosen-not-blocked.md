@@ -1,6 +1,6 @@
 # ADR-0013: A below-floor version is warned and chosen, never silently blocked
 
-- **Status:** accepted
+- **Status:** accepted — **amended 2026-09-05, see the Consequences correction below**
 - **Date:** 2026-09-04
 - **Type:** security / product
 - **Decided by:** owner
@@ -89,20 +89,24 @@ for any of them.
 ## Consequences
 - `UpdateDecision` (`src/broker/policy/update.ts`) drops `'reject'` and gains `'rollback-choice'`
   and `'rollback-notice'`. `UpdateInput` gains `rollbackAcknowledged: boolean`. The floor check
-  still runs first and still outranks every other check (a rollback that also widens authority is
-  still a rollback decision, never silently downgraded to a capability-prompt) — only what it
-  returns changed.
+  still runs first. **Corrected 2026-09-05 (was: "and still outranks every other check ... only
+  what it returns changed") — see the amendment below: that was true, and safe, only while every
+  below-floor outcome was some flavour of prompt. Once one of those outcomes (`rollback-notice`)
+  became a SILENT install, "the floor outranks everything" stopped being a safety property and
+  became the bug this amendment fixes.**
 - `LoadResult` (`src/loader/index.ts`) gains `LoadNeedsRollbackChoice` (parallel to
   `LoadNeedsReconsent`/`LoadNeedsCapabilityPrompt` — carries `manifest`/`tree`/`entries` so
   approving can persist without re-fetching, plus the origin's own `versionFloor` for the prompt to
   display). `LoadInstalled` gains an optional `rollbackNotice?: true`, set only when the install is
   an acknowledged rollback — the caller uses this to render the passive notice, never a prompt.
-- **Not decided here, flagged rather than guessed:** whether choosing "proceed with the older
-  version" persists it as the new pin (so the app keeps running that version until something else
-  changes) or is session-ephemeral. This ADR's own implementation recommends persisting it — the
-  point of choosing to stay on an older version is to keep using it, and a choice that silently
-  reverted on the next launch would surprise the user — but this specific sub-point was not asked
-  directly and should be confirmed, not assumed settled by this document alone.
+- **Resolved 2026-09-05 (owner decision `d-0017`), was flagged as open below:** choosing "proceed
+  with the older version" DOES persist it as the new pin. The owner's own wording: "remember per
+  site — asked once, then the older version installs with a permanent passive notice, never
+  re-prompted." This confirms the recommendation this ADR's implementation already made — a choice
+  to stay on an older version that silently reverted on the next launch would surprise the user —
+  and is why `rollback-ack` (the sibling lane `d-0017` also spawned) persists the acknowledged
+  VERSION itself, not merely a boolean: "permanent" means it survives a restart, the same
+  durability `versionFloor` already has (A57).
 - **Not built by this ADR:** where `rollbackAcknowledged` itself is read from and written to. It
   is a new, small piece of per-origin state, analogous to `versionFloor` (A57) — the natural home
   is the same `LedgerStorage`-backed mechanism, extended with a second field, built as part of the
@@ -128,3 +132,33 @@ for any of them.
   or user research showing the warning's wording doesn't land. Not "if it turns out badly" in the
   abstract; a specific, observed failure of the warning to actually inform the choice it exists to
   support.
+
+## Amendment, 2026-09-05
+
+**Consequences said the floor check "still outranks every other check ... a rollback that also
+widens authority is still a rollback decision, never silently downgraded to a capability-prompt —
+only what it returns changed."** That was accurate the day it was written, and dangerously
+misleading a defect later found it to be: it was describing a property of the OLD `'reject'`
+semantics, restated without re-checking it against the new ones this same ADR had just
+introduced. Under `'reject'`, "the floor outranks everything" was strictly the SAFEST possible
+behaviour — a rollback that also widened authority still got the maximally restrictive response.
+Under `'rollback-notice'`, outranking everything means the opposite: an acknowledged rollback that
+also widened authority or served different bytes than what was pinned installed with **no
+prompt at all**, silently granting whatever authority or code the manifest asked for under an
+already-forgiven version number. A publisher's benign, one-time revert (2.0.0 → 1.9.0, accepted
+once) left `rollbackAcknowledged` permanently true for that origin; anyone who later controlled
+that origin's DNS or CDN could then serve, say, 1.0.0 with `net.tcp.connect: ["*:*"]` and it would
+install via `LoadNeedsRollbackChoice`'s sibling `installOrReject(..., replacesAPin=true)` path with
+no capability prompt and no re-consent check.
+
+**Fix:** `decideUpdate()` (`src/broker/policy/update.ts`) now runs the same widening/bundle-change
+checks an ordinary at-or-above-floor update runs whenever a rollback has been acknowledged, and
+only returns `'rollback-notice'` when neither fires — otherwise it escalates to
+`'capability-prompt'` or `'reconsent'`, exactly as it would for a same-or-higher-version update
+carrying the same change. An UNacknowledged rollback is unaffected: `'rollback-choice'` still wins
+outright regardless of widening, because it is already the most restrictive response available (an
+explicit, interactive choice, not a silent install) — there was nothing to escalate it TO. The
+corrected invariant, stated plainly: **a rollback is never less scrutinised than a same-or-higher
+version update carrying the same authority/bundle change would be** — not "the floor always wins,"
+which is the sentence that stopped being true the moment one of the floor's own outcomes became
+silent. `security-model.md`'s T19 correction block is amended alongside this one.
