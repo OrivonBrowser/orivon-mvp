@@ -324,22 +324,40 @@ describe('createPortSink -- the write heartbeat', () => {
 })
 
 describe('createPortSink -- stop()', () => {
-  it('is idempotent, and no further sends happen after it', async () => {
+  // stop() never touches the writer -- see its own doc comment. By the time
+  // a real caller (socket-relay.ts) reaches it, HandleTable's injected
+  // destroy callback has already sent the CloseReason-correct wire signal
+  // (FIN or RST) directly on the raw socket; a stop()-driven abort() here
+  // would risk sending a SECOND, contradictory one (RST after a real FIN).
+  it('is idempotent, never touches the writer, and blocks further writes', async () => {
+    const { writable, written, abortReasons } = controllableWritable()
+    const send = vi.fn()
+    const sink = createPortSink({ handleId: HANDLE, writable, send, windowBytes: 1_000 })
+
+    sink.stop()
+    sink.stop()
+
+    expect(abortReasons).toEqual([])
+
+    sink.handleWrite({ kind: 'write', handleId: HANDLE, chunk: chunk(4) })
+    await tick()
+    expect(written).toEqual([])
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('never touches the writer even with a write still pending when it is called', async () => {
     const { writable, abortReasons } = controllableWritable()
     const send = vi.fn()
     const sink = createPortSink({ handleId: HANDLE, writable, send, windowBytes: 1_000 })
 
-    sink.stop('revoked')
-    sink.stop('revoked')
-    await tick()
-
-    expect(abortReasons).toHaveLength(1)
-
     sink.handleWrite({ kind: 'write', handleId: HANDLE, chunk: chunk(4) })
-    expect(send).not.toHaveBeenCalled()
+    await tick()
+    sink.stop()
+
+    expect(abortReasons).toEqual([])
   })
 
-  it('does not abort a writable that already closed cleanly via write-end', async () => {
+  it('does not interfere with a writable that already closed cleanly via write-end', async () => {
     const { writable, abortReasons, resolveNext } = controllableWritable()
     const send = vi.fn()
     const sink = createPortSink({ handleId: HANDLE, writable, send, windowBytes: 1_000 })

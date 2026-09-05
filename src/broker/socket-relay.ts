@@ -119,7 +119,7 @@ export function createSocketRelay (options: SocketRelayOptions): SocketRelay {
     () => { pump.stop(); sink.stop(); cleanup() },
     (error: unknown) => {
       const code = isOrivonErrorLike(error) ? error.code : 'internal'
-      pump.stop(code); sink.stop(code); cleanup()
+      pump.stop(code); sink.stop(); cleanup()
     }
   ).catch((error: unknown) => {
     console.error('[broker] releasing a socket failed after it closed', error)
