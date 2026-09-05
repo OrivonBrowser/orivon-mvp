@@ -229,6 +229,70 @@ describe("net.connect / net.close (the byte pump's control-channel wiring)", () 
 
     expect(response).toEqual({ id: 'req-1', ok: true, result: undefined })
   })
+
+  it('net.setNoDelay calls the registered socket\'s setNoDelay for the origin that opened it', async () => {
+    const calls: BrokerCall[] = []
+    const { socket } = fakeTcpSocket()
+    const setNoDelay = vi.spyOn(socket, 'setNoDelay')
+    const broker = stubBroker(calls, { connect: async () => socket })
+    const transport = fakeTransport(fakePortPair().pair)
+
+    const connectResponse = await handleControlRequest(
+      broker, frameFor(APP), envelope('net.connect', { host: 'x.example', port: 443 }), transport
+    )
+    const id = connectResponse.ok ? (connectResponse.result as { id: string }).id : ''
+
+    const response = await handleControlRequest(broker, frameFor(APP), envelope('net.setNoDelay', { id, on: true }), transport)
+
+    expect(response).toEqual({ id: 'req-1', ok: true, result: undefined })
+    expect(setNoDelay).toHaveBeenCalledWith(true)
+  })
+
+  it('net.setKeepAlive calls the registered socket\'s setKeepAlive, forwarding initialDelayMs', async () => {
+    const calls: BrokerCall[] = []
+    const { socket } = fakeTcpSocket()
+    const setKeepAlive = vi.spyOn(socket, 'setKeepAlive')
+    const broker = stubBroker(calls, { connect: async () => socket })
+    const transport = fakeTransport(fakePortPair().pair)
+
+    const connectResponse = await handleControlRequest(
+      broker, frameFor(APP), envelope('net.connect', { host: 'x.example', port: 443 }), transport
+    )
+    const id = connectResponse.ok ? (connectResponse.result as { id: string }).id : ''
+
+    await handleControlRequest(broker, frameFor(APP), envelope('net.setKeepAlive', { id, on: true, initialDelayMs: 5_000 }), transport)
+
+    expect(setKeepAlive).toHaveBeenCalledWith(true, 5_000)
+  })
+
+  it('net.setNoDelay for an id belonging to a DIFFERENT origin is a silent no-op (T11c)', async () => {
+    const calls: BrokerCall[] = []
+    const { socket } = fakeTcpSocket()
+    const setNoDelay = vi.spyOn(socket, 'setNoDelay')
+    const broker = stubBroker(calls, { connect: async () => socket })
+    const transport = fakeTransport(fakePortPair().pair)
+
+    const connectResponse = await handleControlRequest(
+      broker, frameFor(APP), envelope('net.connect', { host: 'x.example', port: 443 }), transport
+    )
+    const id = connectResponse.ok ? (connectResponse.result as { id: string }).id : ''
+
+    const response = await handleControlRequest(broker, frameFor(OTHER), envelope('net.setNoDelay', { id, on: true }), transport)
+
+    expect(response).toEqual({ id: 'req-1', ok: true, result: undefined })
+    expect(setNoDelay).not.toHaveBeenCalled()
+  })
+
+  it('net.setNoDelay/net.setKeepAlive for an id nothing ever registered are silent no-ops', async () => {
+    const calls: BrokerCall[] = []
+    const transport = fakeTransport(fakePortPair().pair)
+
+    const r1 = await handleControlRequest(stubBroker(calls), frameFor(APP), envelope('net.setNoDelay', { id: 'x', on: true }), transport)
+    const r2 = await handleControlRequest(stubBroker(calls), frameFor(APP), envelope('net.setKeepAlive', { id: 'x', on: true }), transport)
+
+    expect(r1).toEqual({ id: 'req-1', ok: true, result: undefined })
+    expect(r2).toEqual({ id: 'req-1', ok: true, result: undefined })
+  })
 })
 
 describe('a socket whose port never reaches its frame is released, not leaked', () => {
@@ -401,7 +465,15 @@ describe('defensive payload validation (a compromised renderer can bypass contex
     ['net.connect', { host: 'x.example' }],
     ['net.connect', { host: 123, port: 443 }],
     ['net.close', {}],
-    ['net.close', { id: 42 }]
+    ['net.close', { id: 42 }],
+    ['net.setNoDelay', {}],
+    ['net.setNoDelay', { id: 'handle-1' }],
+    ['net.setNoDelay', { id: 42, on: true }],
+    ['net.setNoDelay', { id: 'handle-1', on: 'yes' }],
+    ['net.setKeepAlive', {}],
+    ['net.setKeepAlive', { id: 'handle-1' }],
+    ['net.setKeepAlive', { id: 'handle-1', on: 'yes' }],
+    ['net.setKeepAlive', { id: 'handle-1', on: true, initialDelayMs: 'soon' }]
   ])('%s rejects a malformed payload as invalid, without calling the broker', async (method, payload) => {
     const calls: BrokerCall[] = []
     const response = await handleControlRequest(stubBroker(calls), frameFor(APP), envelope(method, payload))

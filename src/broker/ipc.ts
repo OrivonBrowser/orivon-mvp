@@ -76,14 +76,17 @@ import { originFromSenderFrame } from './policy/origin.js'
 import { fail, isOrivonErrorLike } from './errors.js'
 import {
   envelopeId, isControlMethod, isFsReadFileParams, isFsWriteFileParams,
-  isNetCloseParams, isNetConnectParams, isRequestEnvelope
+  isNetCloseParams, isNetConnectParams, isNetSetKeepAliveParams, isNetSetNoDelayParams, isRequestEnvelope
 } from './ipc-validation.js'
 import type { PortDeliveryFrame, PortLike, PortPair, PortTransport, SocketDescriptor } from './port-transport.js'
 import type { RequestEnvelope, ResponseEnvelope } from '../contracts/index.js'
 import { LIMITS } from '../contracts/index.js'
 
 export { CONTROL_CHANNEL, PORT_CHANNEL }
-export type { ControlMethod, FsReadFileParams, FsWriteFileParams, NetConnectParams, NetCloseParams } from './ipc-validation.js'
+export type {
+  ControlMethod, FsReadFileParams, FsWriteFileParams, NetConnectParams, NetCloseParams,
+  NetSetKeepAliveParams, NetSetNoDelayParams
+} from './ipc-validation.js'
 export type { PortDeliveryFrame, PortLike, PortPair, PortTransport, SocketDescriptor } from './port-transport.js'
 
 export interface ControlEvent {
@@ -202,6 +205,21 @@ async function dispatch (
       // it does not hold.
       const entry = transport?.registry.get(origin, payload.id)
       if (entry !== undefined) await entry.close()
+      return undefined
+    }
+    case 'net.setNoDelay': {
+      if (!isNetSetNoDelayParams(payload)) throw fail('invalid', 'net.setNoDelay requires { id: string, on: boolean }')
+      // Same T11c ownership check and same silent-no-op contract as
+      // net.close above, over the same registry -- a handle id from one
+      // origin means nothing presented by another.
+      const entry = transport?.registry.get(origin, payload.id)
+      if (entry !== undefined) await entry.setNoDelay(payload.on)
+      return undefined
+    }
+    case 'net.setKeepAlive': {
+      if (!isNetSetKeepAliveParams(payload)) throw fail('invalid', 'net.setKeepAlive requires { id: string, on: boolean }')
+      const entry = transport?.registry.get(origin, payload.id)
+      if (entry !== undefined) await entry.setKeepAlive(payload.on, payload.initialDelayMs)
       return undefined
     }
   }
