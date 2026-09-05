@@ -253,14 +253,23 @@ describe('createLoader: refetch against an existing pin', () => {
     expect(storage.pins.get(ORIGIN)).toBe(before) // untouched, same as needs-reconsent/needs-capability-prompt
   })
 
-  it('a version below the version floor, already acknowledged for this origin -> installed with a rollback notice, no choice required', async () => {
+  it('a version below the version floor, already acknowledged, offering exactly what is already pinned -> installed with a rollback notice, no choice required', async () => {
     const storage = memoryStorage()
-    await install(storage)
-
     const routes: Record<string, RouteSpec> = {
       [MANIFEST_URL]: { body: utf8(manifestJson({ version: '0.9.0' })) },
       [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
     }
+    // The origin's own below-floor bundle is what's ALREADY pinned -- TOFU
+    // against a floor of '0.0.0' accepts any first version -- so refetching
+    // the identical bytes below is the genuine no-op repeat `rollback-notice`
+    // exists for (same authority, same code as what's on disk), not a fresh
+    // below-floor transition. This is the one input combination with no
+    // widening and no bundle change; see the two tests below for the
+    // adversarial combinations the 2026-09-05 fix actually exists to catch.
+    const firstLoad = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow() })
+    const first = await firstLoad.load(ORIGIN, { grantedPatterns: {}, versionFloor: '0.0.0', rollbackAcknowledged: false })
+    if (first.outcome !== 'installed') throw new Error('fixture setup failed')
+
     const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(1_700_000_001_000) })
     const result = await loader.load(ORIGIN, { grantedPatterns: {}, versionFloor: '1.0.0', rollbackAcknowledged: true })
 
@@ -268,6 +277,60 @@ describe('createLoader: refetch against an existing pin', () => {
     if (result.outcome !== 'installed') return
     expect(result.pin.version).toBe('0.9.0')
     expect(result.rollbackNotice).toBe(true)
+  })
+
+  it('a version below the version floor, already acknowledged, but its bytes differ from what is pinned -> needs-reconsent, never a silent install', async () => {
+    const storage = memoryStorage()
+    await install(storage) // pins manifestJson()'s own 1.0.0 bundle
+
+    const routes: Record<string, RouteSpec> = {
+      [MANIFEST_URL]: { body: utf8(manifestJson({ version: '0.9.0' })) },
+      [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
+    }
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(1_700_000_001_000) })
+    const before = storage.pins.get(ORIGIN)
+    const result = await loader.load(ORIGIN, { grantedPatterns: {}, versionFloor: '1.0.0', rollbackAcknowledged: true })
+
+    // Acknowledging a rollback for this origin is not a blank cheque for
+    // whatever code that origin serves under an already-forgiven version
+    // number: this 0.9.0 bundle's bytes are not what's actually pinned (the
+    // fixture installed a DIFFERENT 1.0.0 bundle), so it must still surface
+    // as reconsent -- never fold into the silently-installing rollback
+    // notice (the 2026-09-05 fix, ADR-0013's own amendment).
+    expect(result.outcome).toBe('needs-reconsent')
+    expect(storage.pins.get(ORIGIN)).toBe(before) // untouched
+  })
+
+  it('a version below the version floor, already acknowledged, but widening the granted patterns -> needs-capability-prompt, never a silent install', async () => {
+    const storage = memoryStorage()
+    const narrowRoutes: Record<string, RouteSpec> = {
+      [MANIFEST_URL]: { body: utf8(manifestJson({ capabilities: { net: { tcp: { connect: ['api.example.com:443'] } } } })) },
+      [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
+    }
+    await createLoader({ fetch: stubFetch(narrowRoutes), storage, now: fixedNow() }).load(ORIGIN, NO_GRANTS)
+
+    // The user actually granted exactly that narrow pattern, and the origin
+    // once shipped something at or above 2.0.0 (hence this floor) -- it is
+    // now offering a below-floor 0.9.0 that ALSO asks for "*:*", strictly
+    // wider than granted.
+    const granted: LoadContext = {
+      grantedPatterns: { 'tcp.connect': ['api.example.com:443'] },
+      versionFloor: '2.0.0',
+      rollbackAcknowledged: true
+    }
+    const wideRoutes: Record<string, RouteSpec> = {
+      [MANIFEST_URL]: { body: utf8(manifestJson({ version: '0.9.0', capabilities: { net: { tcp: { connect: ['*:*'] } } } })) },
+      [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
+    }
+    const result = await createLoader({ fetch: stubFetch(wideRoutes), storage, now: fixedNow() }).load(ORIGIN, granted)
+
+    // An acknowledged rollback that ALSO widens authority is exactly as
+    // capability-prompt-worthy as an ordinary update making the same
+    // request -- it must never resolve to the silently-installing rollback
+    // notice (the 2026-09-05 fix, ADR-0013's own amendment).
+    expect(result.outcome).toBe('needs-capability-prompt')
+    if (result.outcome !== 'needs-capability-prompt') return
+    expect(result.requestedPatterns['tcp.connect']).toEqual(['*:*'])
   })
 
   it('an ordinary silent install never carries a rollback notice', async () => {

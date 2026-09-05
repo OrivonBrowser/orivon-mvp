@@ -144,11 +144,23 @@ wrong in. **Reversed 2026-09-04, owner decision (`ADR-0013`):** a below-floor ve
 meant to be a silent, no-prompt block — the code shipped that way, but the intent was always to
 warn the user and let them choose. It now does: the first time a given origin offers a below-floor
 version, the user is warned and asked whether to proceed with it or keep the cached version; once
-they have said yes once for that origin, every later below-floor version from it installs with an
-ongoing, passive, non-blocking notice rather than asking again. The floor itself is unchanged and
-still only ever rises (`GrantLedger.versionFloor`, persisted, A57) — what changed is that reaching
-it is now a user decision, never a silent outcome in either direction. See `ADR-0013` for the full
-reasoning and the mechanics `src/broker/policy/update.ts`'s `decideUpdate()` now implements.
+they have said yes once for that origin, every later below-floor version from it that asks for
+nothing new — same authority, same bytes as what's already pinned — installs with an ongoing,
+passive, non-blocking notice rather than asking again. The floor itself is unchanged and still only
+ever rises (`GrantLedger.versionFloor`, persisted, A57) — what changed is that reaching it is now a
+user decision, never a silent outcome in either direction. See `ADR-0013` for the full reasoning
+and the mechanics `src/broker/policy/update.ts`'s `decideUpdate()` now implements.
+
+**Correction, 2026-09-05 (`ADR-0013`'s own amendment of the same date):** "every later below-floor
+version from it installs with an ongoing, passive, non-blocking notice" was true only for a
+version asking for nothing new, and the row above did not say so until this correction — the gap
+was a real defect, not a wording nit. An acknowledged rollback that ALSO widens the granted pattern
+set, or serves bytes that don't match what's actually pinned, still produces `capability-prompt` or
+`reconsent` exactly as an ordinary, at-or-above-floor update carrying the same change would; the
+passive notice never overrides those. Before this fix, `rollbackAcknowledged` becoming true for an
+origin (from one benign, user-approved rollback) was enough to let anyone who later controlled that
+origin serve arbitrarily different code or a widened capability set under an already-forgiven
+version number, with no prompt at all.
 
 **A granted IPv6 literal cannot be represented in CSP at all**, found on review of the same file,
 2026-09-02. CSP's host grammar is `ALPHA / DIGIT / "-"` — no `[`, `]` or `:` — and Chromium drops
