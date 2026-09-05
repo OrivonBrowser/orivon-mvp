@@ -5,20 +5,22 @@ import { describe, expect, it, vi } from 'vitest'
 import { appRootDirectoryName, createLoader } from './index.js'
 import type { LoadContext } from './index.js'
 import { nodeLoaderStorage } from './node-storage.js'
-import { MANIFEST_URL, ORIGIN, manifestJson, memoryStorage, stubFetch, utf8 } from './test-helpers.js'
+import { MANIFEST_URL, ORIGIN, PUBLIC_RESOLVER, manifestJson, memoryStorage, stubFetch, utf8 } from './test-helpers.js'
 import type { RouteSpec } from './test-helpers.js'
 
-const NO_GRANTS: LoadContext = { grantedPatterns: {}, versionFloor: '0.0.0' }
+const NO_GRANTS: LoadContext = { grantedPatterns: {}, versionFloor: '0.0.0', acknowledgedRollbackVersion: undefined }
 
 function fixedNow (value = 1_700_000_000_000): () => number {
   return () => value
 }
 
-// This suite is organised around the FOUR outcomes acceptance criterion 1
-// names (installed / needs-reconsent / needs-capability-prompt / rejected),
-// and separately around criterion 4 -- decideUpdate() must see the GRANTED
-// pattern set, never the manifest's declared one (A18/A27's own failure
-// class, named explicitly in this lane's brief).
+// This suite is organised around the FIVE outcomes acceptance criterion 1
+// names (installed / needs-reconsent / needs-capability-prompt /
+// needs-rollback-choice / rejected -- needs-rollback-choice added
+// 2026-09-04, the T19 policy reversal from a silent block to a warned
+// choice), and separately around criterion 4 -- decideUpdate() must see the
+// GRANTED pattern set, never the manifest's declared one (A18/A27's own
+// failure class, named explicitly in this lane's brief).
 
 describe('createLoader: fresh install (TOFU, ADR-0005)', () => {
   it('installs silently and persists the pin plus every asset', async () => {
@@ -27,7 +29,7 @@ describe('createLoader: fresh install (TOFU, ADR-0005)', () => {
       [MANIFEST_URL]: { body: utf8(manifestJson()) },
       [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
     }
-    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow() })
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER })
     const result = await loader.load(ORIGIN, NO_GRANTS)
 
     expect(result.outcome).toBe('installed')
@@ -49,7 +51,7 @@ describe('createLoader: fresh install (TOFU, ADR-0005)', () => {
       [MANIFEST_URL]: { body: utf8(manifestJson()) },
       [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
     }
-    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow() })
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER })
 
     await loader.load(ORIGIN, NO_GRANTS)
 
@@ -73,7 +75,7 @@ describe('createLoader: fresh install (TOFU, ADR-0005)', () => {
       [MANIFEST_URL]: { body: utf8(manifestJson()) },
       [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
     }
-    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow() })
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER })
     const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
 
     const result = await loader.load(ORIGIN, NO_GRANTS)
@@ -91,7 +93,7 @@ describe('createLoader: fresh install (TOFU, ADR-0005)', () => {
   it('a rejected fetch (malformed manifest, oversized asset, missing entry, ...) surfaces as outcome "rejected" and writes nothing', async () => {
     const storage = memoryStorage()
     const routes: Record<string, RouteSpec> = { [MANIFEST_URL]: { body: utf8('{not json') } }
-    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow() })
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER })
     const result = await loader.load(ORIGIN, NO_GRANTS)
 
     expect(result.outcome).toBe('rejected')
@@ -106,7 +108,7 @@ describe('createLoader: refetch against an existing pin', () => {
       [MANIFEST_URL]: { body: utf8(manifestJson()) },
       [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
     }
-    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow() })
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER })
     const result = await loader.load(ORIGIN, NO_GRANTS)
     if (result.outcome !== 'installed') throw new Error('fixture setup failed')
   }
@@ -120,7 +122,7 @@ describe('createLoader: refetch against an existing pin', () => {
       [MANIFEST_URL]: { body: utf8(manifestJson()) },
       [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
     }
-    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(1_700_000_001_000) })
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(1_700_000_001_000), resolve: PUBLIC_RESOLVER })
 
     await loader.load(ORIGIN, NO_GRANTS)
 
@@ -144,7 +146,7 @@ describe('createLoader: refetch against an existing pin', () => {
       [MANIFEST_URL]: { body: utf8(manifestJson()) },
       [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
     }
-    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(1_700_000_001_000) })
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(1_700_000_001_000), resolve: PUBLIC_RESOLVER })
     const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
 
     const result = await loader.load(ORIGIN, NO_GRANTS)
@@ -166,7 +168,7 @@ describe('createLoader: refetch against an existing pin', () => {
       [MANIFEST_URL]: { body: utf8(manifestJson()) },
       [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
     }
-    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(1_700_000_001_000) })
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(1_700_000_001_000), resolve: PUBLIC_RESOLVER })
     const result = await loader.load(ORIGIN, NO_GRANTS)
 
     expect(result.outcome).toBe('installed')
@@ -184,7 +186,7 @@ describe('createLoader: refetch against an existing pin', () => {
       [MANIFEST_URL]: { body: utf8(manifestJson()) },
       [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html><!-- changed --> ') }
     }
-    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow() })
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER })
     const before = storage.pins.get(ORIGIN)
     const result = await loader.load(ORIGIN, NO_GRANTS)
 
@@ -200,14 +202,15 @@ describe('createLoader: refetch against an existing pin', () => {
       [MANIFEST_URL]: { body: utf8(manifestJson({ capabilities: { net: { tcp: { connect: ['api.example.com:443'] } } } })) },
       [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
     }
-    const narrowLoader = createLoader({ fetch: stubFetch(narrowRoutes), storage, now: fixedNow() })
+    const narrowLoader = createLoader({ fetch: stubFetch(narrowRoutes), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER })
     await narrowLoader.load(ORIGIN, NO_GRANTS)
 
     // The user actually granted exactly that narrow pattern -- this is the
     // GRANTED set decideUpdate must be checked against.
     const granted: LoadContext = {
       grantedPatterns: { 'tcp.connect': ['api.example.com:443'] },
-      versionFloor: '0.0.0'
+      versionFloor: '0.0.0',
+      acknowledgedRollbackVersion: undefined
     }
 
     // The new manifest declares "*:*" -- strictly wider than what was
@@ -219,7 +222,7 @@ describe('createLoader: refetch against an existing pin', () => {
       [MANIFEST_URL]: { body: utf8(manifestJson({ version: '1.0.1', capabilities: { net: { tcp: { connect: ['*:*'] } } } })) },
       [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
     }
-    const wideLoader = createLoader({ fetch: stubFetch(wideRoutes), storage, now: fixedNow() })
+    const wideLoader = createLoader({ fetch: stubFetch(wideRoutes), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER })
     const result = await wideLoader.load(ORIGIN, granted)
 
     expect(result.outcome).toBe('needs-capability-prompt')
@@ -227,7 +230,7 @@ describe('createLoader: refetch against an existing pin', () => {
     expect(result.requestedPatterns['tcp.connect']).toEqual(['*:*'])
   })
 
-  it('a version below the version floor -> rejected, at every prompt (T19)', async () => {
+  it('a version below the version floor, never acknowledged -> needs-rollback-choice, and nothing is persisted (T19, 2026-09-04)', async () => {
     const storage = memoryStorage()
     await install(storage)
 
@@ -239,12 +242,134 @@ describe('createLoader: refetch against an existing pin', () => {
       [MANIFEST_URL]: { body: utf8(manifestJson({ version: '0.9.0' })) },
       [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
     }
-    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow() })
-    const result = await loader.load(ORIGIN, { grantedPatterns: {}, versionFloor: '1.0.0' })
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER })
+    const before = storage.pins.get(ORIGIN)
+    const result = await loader.load(ORIGIN, { grantedPatterns: {}, versionFloor: '1.0.0', acknowledgedRollbackVersion: undefined })
 
-    expect(result.outcome).toBe('rejected')
-    if (result.outcome !== 'rejected') return
-    expect(result.reason).toMatch(/version floor/i)
+    expect(result.outcome).toBe('needs-rollback-choice')
+    if (result.outcome !== 'needs-rollback-choice') return
+    expect(result.versionFloor).toBe('1.0.0')
+    expect(result.manifest.version).toBe('0.9.0')
+    expect(storage.pins.get(ORIGIN)).toBe(before) // untouched, same as needs-reconsent/needs-capability-prompt
+  })
+
+  it('an acknowledged version that does not match the one being offered -> needs-rollback-choice, never treated as acknowledged', async () => {
+    const storage = memoryStorage()
+    await install(storage)
+
+    const routes: Record<string, RouteSpec> = {
+      [MANIFEST_URL]: { body: utf8(manifestJson({ version: '0.5.0' })) },
+      [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
+    }
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER })
+    const before = storage.pins.get(ORIGIN)
+    // The origin's rollback to a DIFFERENT below-floor version (0.9.0) was
+    // acknowledged previously -- exactly the scenario the version-keyed
+    // design (not a bare boolean) exists to distinguish from THIS version
+    // (0.5.0) being offered now. A caller comparing loosely (any prior
+    // acknowledgment counts) would silently install 0.5.0; this must not.
+    const result = await loader.load(ORIGIN, { grantedPatterns: {}, versionFloor: '1.0.0', acknowledgedRollbackVersion: '0.9.0' })
+
+    expect(result.outcome).toBe('needs-rollback-choice')
+    if (result.outcome !== 'needs-rollback-choice') return
+    expect(result.manifest.version).toBe('0.5.0')
+    expect(storage.pins.get(ORIGIN)).toBe(before) // untouched
+  })
+
+  it('a version below the version floor, already acknowledged, offering exactly what is already pinned -> installed with a rollback notice, no choice required', async () => {
+    const storage = memoryStorage()
+    const routes: Record<string, RouteSpec> = {
+      [MANIFEST_URL]: { body: utf8(manifestJson({ version: '0.9.0' })) },
+      [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
+    }
+    // The origin's own below-floor bundle is what's ALREADY pinned -- TOFU
+    // against a floor of '0.0.0' accepts any first version -- so refetching
+    // the identical bytes below is the genuine no-op repeat `rollback-notice`
+    // exists for (same authority, same code as what's on disk), not a fresh
+    // below-floor transition. This is the one input combination with no
+    // widening and no bundle change; see the two tests below for the
+    // adversarial combinations the 2026-09-05 fix actually exists to catch.
+    const firstLoad = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER })
+    const first = await firstLoad.load(ORIGIN, { grantedPatterns: {}, versionFloor: '0.0.0', acknowledgedRollbackVersion: undefined })
+    if (first.outcome !== 'installed') throw new Error('fixture setup failed')
+
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(1_700_000_001_000), resolve: PUBLIC_RESOLVER })
+    const result = await loader.load(ORIGIN, { grantedPatterns: {}, versionFloor: '1.0.0', acknowledgedRollbackVersion: '0.9.0' })
+
+    expect(result.outcome).toBe('installed')
+    if (result.outcome !== 'installed') return
+    expect(result.pin.version).toBe('0.9.0')
+    expect(result.rollbackNotice).toBe(true)
+  })
+
+  it('a version below the version floor, already acknowledged, but its bytes differ from what is pinned -> needs-reconsent, never a silent install', async () => {
+    const storage = memoryStorage()
+    await install(storage) // pins manifestJson()'s own 1.0.0 bundle
+
+    const routes: Record<string, RouteSpec> = {
+      [MANIFEST_URL]: { body: utf8(manifestJson({ version: '0.9.0' })) },
+      [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
+    }
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(1_700_000_001_000), resolve: PUBLIC_RESOLVER })
+    const before = storage.pins.get(ORIGIN)
+    const result = await loader.load(ORIGIN, { grantedPatterns: {}, versionFloor: '1.0.0', acknowledgedRollbackVersion: '0.9.0' })
+
+    // Acknowledging a rollback for this origin is not a blank cheque for
+    // whatever code that origin serves under an already-forgiven version
+    // number: this 0.9.0 bundle's bytes are not what's actually pinned (the
+    // fixture installed a DIFFERENT 1.0.0 bundle), so it must still surface
+    // as reconsent -- never fold into the silently-installing rollback
+    // notice (the 2026-09-05 fix, ADR-0013's own amendment).
+    expect(result.outcome).toBe('needs-reconsent')
+    expect(storage.pins.get(ORIGIN)).toBe(before) // untouched
+  })
+
+  it('a version below the version floor, already acknowledged, but widening the granted patterns -> needs-capability-prompt, never a silent install', async () => {
+    const storage = memoryStorage()
+    const narrowRoutes: Record<string, RouteSpec> = {
+      [MANIFEST_URL]: { body: utf8(manifestJson({ capabilities: { net: { tcp: { connect: ['api.example.com:443'] } } } })) },
+      [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
+    }
+    await createLoader({ fetch: stubFetch(narrowRoutes), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER }).load(ORIGIN, NO_GRANTS)
+
+    // The user actually granted exactly that narrow pattern, and the origin
+    // once shipped something at or above 2.0.0 (hence this floor) -- it is
+    // now offering a below-floor 0.9.0 that ALSO asks for "*:*", strictly
+    // wider than granted.
+    const granted: LoadContext = {
+      grantedPatterns: { 'tcp.connect': ['api.example.com:443'] },
+      versionFloor: '2.0.0',
+      acknowledgedRollbackVersion: '0.9.0'
+    }
+    const wideRoutes: Record<string, RouteSpec> = {
+      [MANIFEST_URL]: { body: utf8(manifestJson({ version: '0.9.0', capabilities: { net: { tcp: { connect: ['*:*'] } } } })) },
+      [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
+    }
+    const result = await createLoader({ fetch: stubFetch(wideRoutes), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER }).load(ORIGIN, granted)
+
+    // An acknowledged rollback that ALSO widens authority is exactly as
+    // capability-prompt-worthy as an ordinary update making the same
+    // request -- it must never resolve to the silently-installing rollback
+    // notice (the 2026-09-05 fix, ADR-0013's own amendment).
+    expect(result.outcome).toBe('needs-capability-prompt')
+    if (result.outcome !== 'needs-capability-prompt') return
+    expect(result.requestedPatterns['tcp.connect']).toEqual(['*:*'])
+  })
+
+  it('an ordinary silent install never carries a rollback notice', async () => {
+    const storage = memoryStorage()
+    await install(storage)
+
+    const routes: Record<string, RouteSpec> = {
+      [MANIFEST_URL]: { body: utf8(manifestJson()) },
+      [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
+    }
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(1_700_000_001_000), resolve: PUBLIC_RESOLVER })
+    const result = await loader.load(ORIGIN, NO_GRANTS)
+
+    expect(result.outcome).toBe('installed')
+    if (result.outcome !== 'installed') return
+    expect(result.rollbackNotice).toBeUndefined()
   })
 
   it('a corrupted/unparseable existing pin forces at least reconsent -- never silently re-installs as TOFU', async () => {
@@ -255,7 +380,7 @@ describe('createLoader: refetch against an existing pin', () => {
       [MANIFEST_URL]: { body: utf8(manifestJson()) },
       [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
     }
-    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow() })
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER })
     const result = await loader.load(ORIGIN, NO_GRANTS)
 
     // NO_GRANTS means the app holds no capabilities at all, and this
@@ -281,7 +406,7 @@ describe('createLoader: against the real node:fs storage', () => {
     const storage = nodeLoaderStorage(userData)
     const appDir = join(userData, 'apps', appRootDirectoryName(ORIGIN))
 
-    const first = await createLoader({ fetch: stubFetch(ROUTES), storage, now: fixedNow() }).load(ORIGIN, NO_GRANTS)
+    const first = await createLoader({ fetch: stubFetch(ROUTES), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER }).load(ORIGIN, NO_GRANTS)
     expect(first.outcome).toBe('installed')
 
     // Left behind by an earlier install and since made unreadable: the prune
@@ -291,7 +416,7 @@ describe('createLoader: against the real node:fs storage', () => {
     await chmod(join(appDir, 'code', 'sealed'), 0o000)
     const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
 
-    const again = await createLoader({ fetch: stubFetch(ROUTES), storage, now: fixedNow(1_700_000_009_000) }).load(ORIGIN, NO_GRANTS)
+    const again = await createLoader({ fetch: stubFetch(ROUTES), storage, now: fixedNow(1_700_000_009_000), resolve: PUBLIC_RESOLVER }).load(ORIGIN, NO_GRANTS)
 
     logged.mockRestore()
     await chmod(join(appDir, 'code', 'sealed'), 0o755) // so a later run can clean up /tmp

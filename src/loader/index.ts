@@ -5,13 +5,14 @@
 // the Manifest.capabilities -> PatternSet mapping is update-patterns.ts, and
 // the storage seam is storage.ts. See src/loader/README.md.
 //
-// THE FOUR OUTCOMES (this lane's acceptance criteria): `installed` (TOFU on
-// first install, or a `silent` decideUpdate() verdict on refetch -- both
-// mean "ready to run, nothing to ask the user"), `needs-reconsent`,
-// `needs-capability-prompt`, `rejected`. Showing UI for the middle two, or
-// wiring the broker's grant prompt, is explicitly out of this lane's scope
-// (src/loader/README.md, this lane's brief) -- this function returns the
-// verdict and stops.
+// THE FIVE OUTCOMES (this lane's acceptance criteria, grown by one
+// 2026-09-04 -- see LoadNeedsRollbackChoice below): `installed` (TOFU, a
+// `silent` decideUpdate() verdict, or an ALREADY-ACKNOWLEDGED rollback --
+// all three mean "ready to run, nothing new to ask the user"),
+// `needs-reconsent`, `needs-capability-prompt`, `needs-rollback-choice`,
+// `rejected`. Showing UI for the middle three, or wiring the broker's grant
+// prompt, is explicitly out of this lane's scope (src/loader/README.md,
+// this lane's brief) -- this function returns the verdict and stops.
 //
 // CRITERION 4: decideUpdate() is called with `context.grantedPatterns` --
 // what the grant ledger actually holds -- NEVER `manifest.capabilities`.
@@ -21,6 +22,7 @@
 
 import type { Manifest } from '../contracts/index.js'
 import type { BundleEntry, BundleTree } from '../broker/policy/bundle-hash.js'
+import type { Resolver } from '../broker/policy/connect.js'
 import { fromBundleTree, parsePinRecord } from '../broker/policy/pin.js'
 import type { PinRecord } from '../broker/policy/pin.js'
 import { decideUpdate } from '../broker/policy/update.js'
@@ -39,6 +41,17 @@ export interface CreateLoaderOptions {
   readonly storage: LoaderStorage
   /** Clock, read once per install/refetch (`PinRecord.pinnedAt`). Injected so a test can freeze it -- matches createBroker's own `now`. */
   readonly now: () => number
+  /**
+   * T12/A46/F2: resolves the install origin's hostname before
+   * fetchBundle.ts's first network request -- see that file's own
+   * `ensurePublicUnicastOrigin` for why this belongs there, not here. Same
+   * `Resolver` shape `policy/connect.ts` already defines; no second type for
+   * one idea (Rule 3). The real implementation wired in
+   * (`electron-resolve.ts`'s `electronResolveHost`) is deliberately NOT the
+   * broker's own node:dns-based one -- see that file's header for why the
+   * loader needs Chromium's own resolver instead.
+   */
+  readonly resolve: Resolver
 }
 
 /**
@@ -52,6 +65,23 @@ export interface LoadContext {
   readonly grantedPatterns: PatternSet
   /** The highest version ever installed for this origin (T19). `'0.0.0'` for an origin that has never been granted anything, per compareVersions' release-component semantics. */
   readonly versionFloor: string
+  /**
+   * The SPECIFIC below-floor version this origin's rollback was last
+   * acknowledged for (`Broker.rollbackAcknowledgedVersionFor`), or
+   * `undefined` if never acknowledged. NOT the boolean `decideUpdate()`
+   * itself wants -- this file supplies that boolean itself, at the point it
+   * calls `decideUpdate()`, by comparing this value against the manifest's
+   * ACTUAL offered version once fetchBundle() has returned it.
+   *
+   * Deliberately not a precomputed boolean: the caller of `load()` cannot
+   * know the offered version in advance (fetching the manifest is this
+   * file's own job, not the caller's -- see its header), so it cannot
+   * correctly decide "is this acknowledged" itself. Asking it to would force
+   * a guess or a second fetch. Handing over the raw acknowledged version
+   * and letting THIS file do the comparison once it actually knows what is
+   * being offered is the only point where both facts are available at once.
+   */
+  readonly acknowledgedRollbackVersion: string | undefined
 }
 
 export interface LoadInstalled {
@@ -59,6 +89,29 @@ export interface LoadInstalled {
   readonly canonicalOrigin: string
   readonly manifest: Manifest
   readonly pin: PinRecord
+  /**
+   * True only when this install is a below-floor version the user has
+   * already chosen, at least once, to accept from this origin
+   * (decideUpdate()'s `rollback-notice`, 2026-09-04). Absent for every other
+   * install -- the caller uses this to show an ongoing, passive,
+   * non-blocking notice, never a prompt (the owner's own "warn every time,
+   * but never require a click" framing). Never present alongside a TOFU or
+   * ordinary `silent` install.
+   *
+   * A caller that ignores this field still gets a SAFE install --
+   * decideUpdate() only reaches `rollback-notice` once it has confirmed the
+   * update neither widens authority nor changes the bundle in a way that
+   * would need reconsent (fixed 2026-09-05, `ADR-0013`'s own amendment: it
+   * used to skip those checks entirely for an acknowledged rollback, which is
+   * why this field existing was not enough on its own). What a caller loses by ignoring it is purely
+   * the ongoing visibility the owner asked for -- the user never being told
+   * they are still running an origin's below-floor version -- which is the
+   * entire reason this outcome is distinguished from an ordinary `installed`
+   * result rather than folded into it. A future caller keyed only on
+   * `outcome === 'installed'` (an `installFromHint`-shaped helper, say) has
+   * to consciously decide to drop that visibility, not do it by accident.
+   */
+  readonly rollbackNotice?: true
 }
 
 export interface LoadNeedsReconsent {
@@ -80,6 +133,32 @@ export interface LoadNeedsCapabilityPrompt {
   readonly requestedPatterns: PatternSet
 }
 
+/**
+ * 2026-09-04, T19 policy reversal: a below-floor version used to be a
+ * silent, no-prompt `rejected`. It is now a warned CHOICE the first time for
+ * a given origin -- proceed with this older version, or keep what's cached
+ * -- never a hard block. Carries `tree`/`entries`/`manifest` for the same
+ * reason `LoadNeedsReconsent`/`LoadNeedsCapabilityPrompt` carry them --
+ * so a caller doesn't have to re-fetch to act on the choice.
+ *
+ * NOT the same reason, though: for those two, approving is terminal --
+ * `widensAuthority`/`isSameBundle` (`ordinaryEscalation`, `update.ts`)
+ * already ran, so persisting the result on approval is safe. Here they have
+ * NOT run yet -- `decideUpdate` returns `rollback-choice` before either
+ * check, so this manifest could also widen capabilities. Approving must
+ * record the acknowledgement and let `decideUpdate` run again (now correctly
+ * reaching `ordinaryEscalation`), never persist this result directly.
+ */
+export interface LoadNeedsRollbackChoice {
+  readonly outcome: 'needs-rollback-choice'
+  readonly canonicalOrigin: string
+  readonly manifest: Manifest
+  readonly tree: BundleTree
+  readonly entries: readonly BundleEntry[]
+  /** The origin's own floor, so a prompt can say what's already been seen, not just what's being offered now. */
+  readonly versionFloor: string
+}
+
 export interface LoadRejected {
   readonly outcome: 'rejected'
   /**
@@ -93,7 +172,7 @@ export interface LoadRejected {
   readonly reason: string
 }
 
-export type LoadResult = LoadInstalled | LoadNeedsReconsent | LoadNeedsCapabilityPrompt | LoadRejected
+export type LoadResult = LoadInstalled | LoadNeedsReconsent | LoadNeedsCapabilityPrompt | LoadNeedsRollbackChoice | LoadRejected
 
 export interface Loader {
   /**
@@ -144,9 +223,10 @@ async function install (
 /**
  * Wraps install() so a storage failure (writeAsset/pruneAssets/writePin can
  * all throw a plain Error on a rejected path or a filesystem error) resolves
- * to one of load()'s own four documented outcomes instead of an uncaught
- * exception -- a bundle that fetched and validated cleanly can still fail
- * here, and LoadResult has no fifth "threw" case for that to become.
+ * to one of load()'s own five documented outcomes (this file's header)
+ * instead of an uncaught exception -- a bundle that fetched and validated
+ * cleanly can still fail here, and LoadResult has no sixth "threw" case for
+ * that to become.
  */
 async function installOrReject (
   storage: LoaderStorage,
@@ -173,7 +253,7 @@ async function installOrReject (
 
 export function createLoader (options: CreateLoaderOptions): Loader {
   async function load (hintedUrl: string, context: LoadContext): Promise<LoadResult> {
-    const fetched = await fetchBundle(options.fetch, hintedUrl)
+    const fetched = await fetchBundle(options.fetch, hintedUrl, options.resolve)
     if (!fetched.ok) return { outcome: 'rejected', reason: fetched.reason }
     const { canonicalOrigin, manifest, tree, entries } = fetched
 
@@ -201,12 +281,16 @@ export function createLoader (options: CreateLoaderOptions): Loader {
       grantedPatterns: context.grantedPatterns,
       newPatterns: patternSetFromCapabilities(manifest.capabilities),
       version: manifest.version,
-      versionFloor: context.versionFloor
+      versionFloor: context.versionFloor,
+      // The comparison LoadContext.acknowledgedRollbackVersion's own doc
+      // promises: only NOW is the actual offered version known, so only
+      // now can "was THIS version acknowledged" be answered.
+      rollbackAcknowledged: context.acknowledgedRollbackVersion === manifest.version
     })
 
     switch (decision) {
-      case 'reject':
-        return { outcome: 'rejected', reason: `${manifest.version} is below this origin's version floor (${context.versionFloor})` }
+      case 'rollback-choice':
+        return { outcome: 'needs-rollback-choice', canonicalOrigin, manifest, tree, entries, versionFloor: context.versionFloor }
       case 'capability-prompt':
         return {
           outcome: 'needs-capability-prompt',
@@ -220,6 +304,18 @@ export function createLoader (options: CreateLoaderOptions): Loader {
         return { outcome: 'needs-reconsent', canonicalOrigin, manifest, tree, entries }
       case 'silent':
         return await installOrReject(options.storage, canonicalOrigin, manifest, tree, entries, options.now(), true)
+      case 'rollback-notice': {
+        const result = await installOrReject(options.storage, canonicalOrigin, manifest, tree, entries, options.now(), true)
+        return result.outcome === 'installed' ? { ...result, rollbackNotice: true } : result
+      }
+      default: {
+        // Exhaustiveness guard: a compile error at `exhaustive` is how a new
+        // UpdateDecision case added without a branch here gets caught, not a
+        // runtime path reachable through the closed union above (same
+        // pattern as src/telemetry/accounting.ts's applyEvent).
+        const exhaustive: never = decision
+        throw new Error(`loader: unhandled update decision ${JSON.stringify(exhaustive)}`)
+      }
     }
   }
 

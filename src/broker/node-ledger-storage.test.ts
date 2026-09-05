@@ -145,6 +145,155 @@ describe('nodeLedgerStorage', () => {
     expect(storage.readVersionFloor(APP)).toBe('1.0.0')
   })
 
+  // d-0017: the SPECIFIC acknowledged rollback version, stored alongside the
+  // version floor (same `grants/<hash>/` directory, same atomic-write
+  // discipline), never a bare flag -- a boolean would let accepting one
+  // real rollback (say 1.2.0 -> 1.1.9) silently authorise any later,
+  // unrelated below-floor version the same origin chooses to serve. See
+  // ledger-storage.ts's own doc for why a corrupt read must fail closed to
+  // `undefined`, indistinguishable from "never acknowledged".
+  describe('readAcknowledgedRollbackVersion / writeAcknowledgedRollbackVersion', () => {
+    it('readAcknowledgedRollbackVersion returns undefined for an origin never acknowledged', () => {
+      const userData = mkdtempSync(join(tmpdir(), 'orivon-ledger-storage-'))
+      const storage = nodeLedgerStorage(userData)
+
+      expect(storage.readAcknowledgedRollbackVersion(APP)).toBeUndefined()
+    })
+
+    it('writeAcknowledgedRollbackVersion then readAcknowledgedRollbackVersion round-trips the exact version', () => {
+      const userData = mkdtempSync(join(tmpdir(), 'orivon-ledger-storage-'))
+      const storage = nodeLedgerStorage(userData)
+
+      storage.writeAcknowledgedRollbackVersion(APP, '1.1.9')
+
+      expect(storage.readAcknowledgedRollbackVersion(APP)).toBe('1.1.9')
+    })
+
+    it('writeAcknowledgedRollbackVersion overwrites whatever was there before', () => {
+      const userData = mkdtempSync(join(tmpdir(), 'orivon-ledger-storage-'))
+      const storage = nodeLedgerStorage(userData)
+
+      storage.writeAcknowledgedRollbackVersion(APP, '1.1.9')
+      storage.writeAcknowledgedRollbackVersion(APP, '1.1.5')
+
+      expect(storage.readAcknowledgedRollbackVersion(APP)).toBe('1.1.5')
+    })
+
+    it('two different origins get two different acknowledged versions', () => {
+      const userData = mkdtempSync(join(tmpdir(), 'orivon-ledger-storage-'))
+      const storage = nodeLedgerStorage(userData)
+
+      storage.writeAcknowledgedRollbackVersion(APP, '1.1.9')
+
+      expect(storage.readAcknowledgedRollbackVersion(APP)).toBe('1.1.9')
+      expect(storage.readAcknowledgedRollbackVersion('https://other.example')).toBeUndefined()
+    })
+
+    it('lives under the same grants/<hash> directory as the version floor, not a separate root', () => {
+      const userData = mkdtempSync(join(tmpdir(), 'orivon-ledger-storage-'))
+      const storage = nodeLedgerStorage(userData)
+
+      storage.writeAcknowledgedRollbackVersion(APP, '1.1.9')
+
+      const dir = join(userData, 'grants', originHash(APP))
+      expect(readdirSync(dir)).toEqual(['rollback-ack.json'])
+    })
+
+    // Real bytes, written directly -- exactly what a crash mid-write, or a
+    // hand-edit, would leave behind. Must read as `undefined`, identical to
+    // "never acknowledged" -- there is no valid version string a corrupt
+    // read could produce that a legitimately-offered version might
+    // coincidentally match.
+    it('a rollback-ack file that exists but is not valid JSON reads as undefined', () => {
+      const userData = mkdtempSync(join(tmpdir(), 'orivon-ledger-storage-'))
+      const storage = nodeLedgerStorage(userData)
+      const dir = join(userData, 'grants', originHash(APP))
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, 'rollback-ack.json'), '{"acknowledgedVersion": "1.1.9"')
+
+      expect(storage.readAcknowledgedRollbackVersion(APP)).toBeUndefined()
+    })
+
+    it('a rollback-ack file with the wrong JSON shape also reads as undefined', () => {
+      const userData = mkdtempSync(join(tmpdir(), 'orivon-ledger-storage-'))
+      const storage = nodeLedgerStorage(userData)
+      const dir = join(userData, 'grants', originHash(APP))
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, 'rollback-ack.json'), '{"notAcknowledgedVersion": "1.1.9"}')
+
+      expect(storage.readAcknowledgedRollbackVersion(APP)).toBeUndefined()
+    })
+
+    it('a normal write leaves no temp file behind -- it lands via rename, not a truncate in place', () => {
+      const userData = mkdtempSync(join(tmpdir(), 'orivon-ledger-storage-'))
+      const storage = nodeLedgerStorage(userData)
+
+      storage.writeAcknowledgedRollbackVersion(APP, '1.1.9')
+
+      const dir = join(userData, 'grants', originHash(APP))
+      expect(readdirSync(dir)).toEqual(['rollback-ack.json'])
+    })
+
+    it.skipIf(isRoot)('a write that cannot create its temp file leaves the previously-persisted value untouched', () => {
+      const userData = mkdtempSync(join(tmpdir(), 'orivon-ledger-storage-'))
+      const storage = nodeLedgerStorage(userData)
+      storage.writeAcknowledgedRollbackVersion(APP, '1.1.9')
+
+      const dir = join(userData, 'grants', originHash(APP))
+      chmodSync(dir, 0o555)
+      try {
+        expect(() => { storage.writeAcknowledgedRollbackVersion(APP, '1.1.5') }).toThrow()
+      } finally {
+        chmodSync(dir, 0o755)
+      }
+
+      expect(storage.readAcknowledgedRollbackVersion(APP)).toBe('1.1.9')
+    })
+
+    describe('deleteAcknowledgedRollbackVersion', () => {
+      it('removes the file, so a later read returns undefined again', () => {
+        const userData = mkdtempSync(join(tmpdir(), 'orivon-ledger-storage-'))
+        const storage = nodeLedgerStorage(userData)
+        storage.writeAcknowledgedRollbackVersion(APP, '1.1.9')
+
+        storage.deleteAcknowledgedRollbackVersion(APP)
+
+        expect(storage.readAcknowledgedRollbackVersion(APP)).toBeUndefined()
+      })
+
+      it('is a silent no-op for an origin never acknowledged', () => {
+        const userData = mkdtempSync(join(tmpdir(), 'orivon-ledger-storage-'))
+        const storage = nodeLedgerStorage(userData)
+
+        expect(() => { storage.deleteAcknowledgedRollbackVersion(APP) }).not.toThrow()
+      })
+
+      it('does not disturb the version floor persisted for the same origin', () => {
+        const userData = mkdtempSync(join(tmpdir(), 'orivon-ledger-storage-'))
+        const storage = nodeLedgerStorage(userData)
+        storage.writeVersionFloor(APP, '1.0.0')
+        storage.writeAcknowledgedRollbackVersion(APP, '1.1.9')
+
+        storage.deleteAcknowledgedRollbackVersion(APP)
+
+        expect(storage.readAcknowledgedRollbackVersion(APP)).toBeUndefined()
+        expect(storage.readVersionFloor(APP)).toBe('1.0.0')
+      })
+
+      it('does not disturb a different origin\'s acknowledged version', () => {
+        const userData = mkdtempSync(join(tmpdir(), 'orivon-ledger-storage-'))
+        const storage = nodeLedgerStorage(userData)
+        storage.writeAcknowledgedRollbackVersion(APP, '1.1.9')
+        storage.writeAcknowledgedRollbackVersion('https://other.example', '2.0.0')
+
+        storage.deleteAcknowledgedRollbackVersion(APP)
+
+        expect(storage.readAcknowledgedRollbackVersion(APP)).toBeUndefined()
+        expect(storage.readAcknowledgedRollbackVersion('https://other.example')).toBe('2.0.0')
+      })
+    })
+  })
+
   // A60's escape hatch: GrantLedger.forgetOrigin needs a real on-disk
   // delete, or a "forgotten" origin's poisoned floor would silently
   // resurrect itself the next time this origin is hydrated.

@@ -56,14 +56,35 @@ interface OriginRecord {
    * other writer, and only ever raises it too.
    *
    * Persisted via an injected `LedgerStorage` (A57, `docs/open-questions.md`)
-   * so it survives a browser restart, not just an app's own uninstall --
-   * `ADR-0009` requires exactly that. Deliberately NOT persisted the rest of
+   * so it survives a browser restart -- but deliberately NOT a full "remove
+   * this app" action, which is meant to forget the origin completely
+   * (`ADR-0009`'s 2026-09-04 amendment corrects its own earlier claim that
+   * the floor must survive that too). Deliberately NOT persisted the rest of
    * `OriginRecord` (`manifest`, `grants`, `fsBytesWritten`): full ledger
    * persistence is separate, larger, not-yet-built work (A23's own "when the
    * code that persists grants exists"); this closes only the specific T19
    * replay-guard gap A57 is about.
    */
   versionFloor: string
+  /**
+   * d-0017 (owner decision): the SPECIFIC below-floor version this origin's
+   * rollback was last accepted for, or `undefined` if never acknowledged.
+   *
+   * NOT A BOOLEAN. An earlier version of this field recorded only whether
+   * the origin had EVER been acknowledged -- caught in review: accepting one
+   * real, presumably-safe rollback (`1.2.0` -> `1.1.9`) would then silently
+   * cover any OTHER below-floor version the same origin later chooses to
+   * serve, with no further consent. Recording the specific version lets the
+   * caller (a future UI-wiring PR) compare it against whatever below-floor
+   * version is being offered now and prompt fresh on anything but an exact
+   * match -- this class stores the value, it does not perform that
+   * comparison itself.
+   *
+   * `acknowledgeRollback` is the only writer; hydration (below) is the only
+   * other writer. Persisted the same way `versionFloor` is, for the same
+   * reason: it must survive a restart, not just this session.
+   */
+  rollbackAcknowledgedVersion: string | undefined
 }
 
 /**
@@ -99,9 +120,10 @@ export class GrantLedger {
   #record (origin: string): OriginRecord {
     const existing = this.#origins.get(origin)
     if (existing !== undefined) return existing
-    const created: OriginRecord = { manifest: undefined, grants: new Map(), fsBytesWritten: 0, versionFloor: '0.0.0' }
+    const created: OriginRecord = { manifest: undefined, grants: new Map(), fsBytesWritten: 0, versionFloor: '0.0.0', rollbackAcknowledgedVersion: undefined }
     this.#origins.set(origin, created)
     this.#hydrateFloor(origin, created)
+    this.#hydrateRollbackAcknowledgedVersion(origin, created)
     return created
   }
 
@@ -151,6 +173,26 @@ export class GrantLedger {
     // as a real comparison anyway rather than an unconditional assignment,
     // so it can never regress if that default ever changes.
     if (compareVersions(persisted, record.versionFloor) === 1) record.versionFloor = persisted
+  }
+
+  /**
+   * d-0017's counterpart to `#hydrateFloor`, same call site and same reason:
+   * a record created for an origin queried before `acknowledgeRollback` ever
+   * ran this session must still see what a previous session persisted.
+   *
+   * A read of `undefined` (never persisted, or a corrupt record --
+   * `LedgerStorage.readAcknowledgedRollbackVersion`'s own contract collapses
+   * both to the same value) leaves the freshly-created record's default
+   * `undefined` untouched. There is no raise-only comparison needed the way
+   * the floor's does: unlike a version ordering, there is no "lower" value
+   * than "never acknowledged" to protect against, and this class does not
+   * itself judge whether one acknowledged version is more or less permissive
+   * than another -- it only remembers the one most recently accepted.
+   */
+  #hydrateRollbackAcknowledgedVersion (origin: string, record: OriginRecord): void {
+    if (this.#storage === undefined || !isPersistableOrigin(origin)) return
+    const persisted = this.#storage.readAcknowledgedRollbackVersion(origin)
+    if (persisted !== undefined) record.rollbackAcknowledgedVersion = persisted
   }
 
   /**
@@ -249,9 +291,19 @@ export class GrantLedger {
   forgetOrigin (origin: string): void {
     if (this.#storage !== undefined) {
       try {
+        // Both persisted pieces of this origin's grant-ledger state go
+        // together, same reasoning as the floor's own disk-then-memory
+        // order above: if EITHER delete throws, the in-memory record is
+        // left completely intact rather than half-forgotten. This is still
+        // best-effort across the two files, not a filesystem transaction --
+        // the class doc's own "not an uninstall primitive" caveat already
+        // says this forgets what A60/d-0017 need, not everything origin-
+        // scoped, and a partially-deleted disk state on a genuine mid-loop
+        // crash is no worse than the single-file version already accepted.
         this.#storage.deleteVersionFloor(origin)
+        this.#storage.deleteAcknowledgedRollbackVersion(origin)
       } catch (error) {
-        console.error('[broker] failed to delete a persisted version floor; the in-memory record was left intact so nothing is half-forgotten', error)
+        console.error('[broker] failed to delete a persisted version floor or rollback acknowledgement; the in-memory record was left intact so nothing is half-forgotten', error)
         return
       }
     }
@@ -274,6 +326,51 @@ export class GrantLedger {
    */
   versionFloorFor (origin: string): string {
     return this.#record(origin).versionFloor
+  }
+
+  /**
+   * d-0017: the SPECIFIC below-floor version this origin's rollback was
+   * last accepted for, or `undefined` if never acknowledged (or if the
+   * persisted record was corrupt -- `LedgerStorage.
+   * readAcknowledgedRollbackVersion`'s own doc explains why that collapse is
+   * the only safe one). Routes through `#record` for the same reason
+   * `versionFloorFor` does: a first-ever query must hydrate before the
+   * caller (a future UI-wiring PR) decides whether to prompt. The caller is
+   * responsible for the actual "is this the version I am about to offer"
+   * comparison -- this class only remembers the value.
+   */
+  rollbackAcknowledgedVersionFor (origin: string): string | undefined {
+    return this.#record(origin).rollbackAcknowledgedVersion
+  }
+
+  /**
+   * Records that `origin`'s rollback to `version` has been acknowledged
+   * (d-0017) -- called once, when the user actually chooses to accept that
+   * specific below-floor version. This class never calls it on its own
+   * initiative; the caller (a future UI-wiring PR, per PR #72's
+   * `rollbackAcknowledged` field and PR #75's `installFromHint`) decides
+   * WHEN that choice was made and WHICH version it was for. Overwrites
+   * whatever version was previously acknowledged for this origin -- one
+   * acknowledgement in force at a time, same shape as `registerApp`
+   * replacing a manifest.
+   *
+   * Mirrors `registerApp`'s ordering exactly, for the same reason: the
+   * in-memory value is set FIRST and unconditionally, and persistence is
+   * attempted only after -- so a failed write still leaves this session not
+   * re-prompting for the version just accepted, matching a no-persistence
+   * ledger's own behaviour, rather than regressing to "prompt again" the
+   * moment disk trouble strikes. THROWS if the write fails, same shape as
+   * `registerApp`'s own throw; `Broker.acknowledgeRollback` (./index.ts)
+   * turns that into the same rejected-promise shape every other Broker
+   * method already uses.
+   */
+  acknowledgeRollback (origin: string, version: string): void {
+    const record = this.#record(origin)
+    record.rollbackAcknowledgedVersion = version
+
+    if (this.#storage !== undefined && isPersistableOrigin(origin)) {
+      this.#storage.writeAcknowledgedRollbackVersion(origin, version)
+    }
   }
 
   /** What was ACTUALLY granted. Empty for an origin the ledger has no record of. */

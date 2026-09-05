@@ -140,6 +140,23 @@ export function originFromUrl (url: string): string | null {
 }
 
 /**
+ * RFC 6761 SS6.3 reserves the WHOLE `.localhost` namespace for loopback, not
+ * just the bare label -- Chromium resolves the entire subtree that way
+ * without consulting DNS at all, so `app.localhost` is as much loopback as
+ * `localhost` is. `classifyAddress` only recognises address LITERALS, so a
+ * name check is the only way to catch either; a resolver-based check would be
+ * resolver-dependent where Chromium's own behaviour is not.
+ *
+ * Exported so a second caller checking name-based loopback outside this file
+ * (`../../loader/install-origin.ts`'s T12 guard, which fetches through
+ * Electron's `net.fetch` -- the same Chromium behaviour this comment
+ * describes) reuses this rather than a second copy (Rule 3).
+ */
+export function isLocalhostName (host: string): boolean {
+  return host === 'localhost' || host.endsWith('.localhost')
+}
+
+/**
  * True only if `origin` (already in `originFromUrl`'s canonical shape) may
  * ever be written to disk -- T13c: "Never persist grants for loopback,
  * `file:` or plain-`http` origins" (security-model.md). Session-scoped,
@@ -187,7 +204,7 @@ export function isPersistableOrigin (origin: string): boolean {
 
   const host = canonicalHost(parsed.hostname)
   if (host === null) return false
-  if (host === 'localhost' || host.endsWith('.localhost')) return false
+  if (isLocalhostName(host)) return false
 
   const cls = classifyAddress(host)
   return cls !== 'loopback' && cls !== 'unspecified'

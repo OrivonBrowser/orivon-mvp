@@ -17,18 +17,21 @@ function grant (overrides: Partial<Grant> = {}): Grant {
 
 /**
  * `stubBroker` (ipc.test-helpers.ts) extended with `registerApp`/
- * `versionFloorFor` overrides -- see that file's own doc on why this reuses
- * it rather than a second full fake Broker. `calls` defaults to a
- * throwaway array; pass one in to assert which origin each method was
- * actually called with.
+ * `versionFloorFor`/`rollbackAcknowledgedVersionFor` overrides -- see that
+ * file's own doc on why this reuses it rather than a second full fake
+ * Broker. `calls` defaults to a throwaway array; pass one in to assert
+ * which origin each method was actually called with. `acknowledgedRollback`
+ * defaults to `undefined` (never acknowledged) -- the natural default for
+ * every test that isn't specifically about rollback acknowledgement.
  */
 function fakeBroker (
-  overrides: Partial<{ grants: readonly Grant[], versionFloor: string, registerApp: Broker['registerApp'] }> = {},
+  overrides: Partial<{ grants: readonly Grant[], versionFloor: string, acknowledgedRollback: string | undefined, registerApp: Broker['registerApp'] }> = {},
   calls: BrokerCall[] = []
 ): Broker {
   return stubBroker(calls, {
     grants: async () => overrides.grants ?? [],
     versionFloorFor: async () => overrides.versionFloor ?? '0.0.0',
+    rollbackAcknowledgedVersionFor: async () => overrides.acknowledgedRollback,
     registerApp: overrides.registerApp ?? (async () => {})
   })
 }
@@ -73,10 +76,25 @@ describe('installFromHint', () => {
 
     expect(calls).toContainEqual({ method: 'app.grants', origin: APP, args: undefined })
     expect(calls).toContainEqual({ method: 'versionFloorFor', origin: APP, args: undefined })
+    expect(calls).toContainEqual({ method: 'rollbackAcknowledgedVersionFor', origin: APP, args: undefined })
     expect(loader.load).toHaveBeenCalledWith(APP, {
       grantedPatterns: { 'tcp.connect': ['api.example.com:443'] },
-      versionFloor: '2.0.0'
+      versionFloor: '2.0.0',
+      acknowledgedRollbackVersion: undefined
     })
+  })
+
+  // F3: the raw acknowledged version passes straight through to LoadContext,
+  // unexamined -- installFromHint cannot know which version load() is about
+  // to offer, so it must not do any comparison itself (see this file's own
+  // header for why an origin-only check would reopen rollback-ack's flaw).
+  it('passes the broker\'s acknowledged rollback version straight through to LoadContext, unexamined', async () => {
+    const broker = fakeBroker({ acknowledgedRollback: '0.9.0' })
+    const loader = fakeLoader(REJECTED)
+
+    await installFromHint({ broker, loader }, APP, APP)
+
+    expect(loader.load).toHaveBeenCalledWith(APP, expect.objectContaining({ acknowledgedRollbackVersion: '0.9.0' }))
   })
 
   it('calls registerApp when the outcome is installed, with exactly the result\'s own canonicalOrigin and manifest', async () => {
@@ -117,6 +135,7 @@ describe('installFromHint', () => {
   it.each([
     ['needs-reconsent', { outcome: 'needs-reconsent', canonicalOrigin: APP, manifest: manifestWith(), tree: { root: 'sha256:' + 'a'.repeat(64), assets: [] }, entries: [] }],
     ['needs-capability-prompt', { outcome: 'needs-capability-prompt', canonicalOrigin: APP, manifest: manifestWith(), tree: { root: 'sha256:' + 'a'.repeat(64), assets: [] }, entries: [], requestedPatterns: {} }],
+    ['needs-rollback-choice', { outcome: 'needs-rollback-choice', canonicalOrigin: APP, manifest: manifestWith(), tree: { root: 'sha256:' + 'a'.repeat(64), assets: [] }, entries: [], versionFloor: '1.0.0' }],
     ['rejected', { outcome: 'rejected', reason: 'malformed manifest' }]
   ] satisfies Array<[string, LoadResult]>)('never calls registerApp for outcome "%s" (A60)', async (_label, loadResult) => {
     const registerApp = vi.fn(async () => {})

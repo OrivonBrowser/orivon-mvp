@@ -12,13 +12,17 @@
 // floor with a fake high version and permanently lock itself (and the user)
 // out of every real, lower-numbered future update.
 //
-// F3 (fleet run review-72-76): PR #72 (`stream/loader-08-rollback-warning`)
-// and the `rollback-ack` PR (`stream/broker-22-rollback-ack-persistence`)
-// are both still open, unmerged -- verified directly via `gh pr list`, not
-// assumed. Neither this branch's `LoadContext` nor its `Broker` interface
-// declares `rollbackAcknowledged` / `rollbackAcknowledgedVersionFor` today,
-// so there is nothing to wire up yet; the sections below name exactly what
-// changes once they land.
+// F3 (fleet run review-72-76): both PR #72 and `rollback-ack` are merged, so
+// this now wires for real. `LoadContext.acknowledgedRollbackVersion` (#72)
+// takes the RAW value `Broker.rollbackAcknowledgedVersionFor` (rollback-ack)
+// returns -- a version string or `undefined` -- not a boolean this function
+// would have to compute itself. That is deliberate: this function cannot
+// know which version `Loader.load()` is about to offer until `load()` has
+// already fetched the manifest, so it hands over the acknowledged version
+// unexamined and lets `load()` do the exact-match comparison once it
+// actually knows. See `LoadContext`'s own doc (`src/loader/index.ts`) for
+// why an origin-only "has this origin ever been acknowledged" check would
+// reopen the exact flaw `rollback-ack`'s version-keyed storage closed.
 
 import { originFromUrl } from '../broker/policy/origin.js'
 import { patternSetFromGrants } from '../broker/policy/update.js'
@@ -36,8 +40,10 @@ export interface AppInstallDeps {
  * together everything `Loader.load()` needs from the broker
  * (`LoadContext.grantedPatterns` via `patternSetFromGrants(await
  * broker.app.grants(origin))` -- A61's own recommendation, `versionFloor`
- * verbatim from `broker.versionFloorFor(origin)`) and everything the broker
- * needs back once `load()` decides (`registerApp`, A60's timing rule above).
+ * verbatim from `broker.versionFloorFor(origin)`, `acknowledgedRollbackVersion`
+ * verbatim from `broker.rollbackAcknowledgedVersionFor(origin)`) and
+ * everything the broker needs back once `load()` decides (`registerApp`,
+ * A60's timing rule above).
  *
  * `hintingOrigin` is the origin that actually SUPPLIED the hint -- e.g.
  * `originFromSenderFrame(event.senderFrame)` (`src/broker/policy/
@@ -53,9 +59,10 @@ export interface AppInstallDeps {
  * broker call (N2/N3): `GrantLedger.versionFloorFor` creates a permanent
  * in-memory record for any origin it is asked about at all, even a bogus
  * one, so validating first is not optional. What this does NOT run is the
- * full T12/SSRF resolution check `Loader.load()` itself will apply
- * (`src/loader/install-origin.ts`, being rewritten by a sibling, unmerged
- * lane) -- a known, accepted residual gap; see this lane's PR body.
+ * full T12/SSRF resolution check `Loader.load()` itself applies internally
+ * (`src/loader/install-origin.ts`) -- this function's own check is cheap
+ * same-origin validation only, not a substitute for it; see this lane's PR
+ * body for why duplicating that check here was rejected.
  *
  * Wrapped in `withOriginQueue` (A62) so two calls for the same origin --
  * two tabs hitting the same manifest hint near-simultaneously -- never
@@ -69,25 +76,16 @@ export async function installFromHint (deps: AppInstallDeps, hintingOrigin: stri
   }
 
   return await withOriginQueue(origin, async () => {
-    const [grants, versionFloor] = await Promise.all([
+    const [grants, versionFloor, acknowledgedRollbackVersion] = await Promise.all([
       deps.broker.app.grants(origin),
-      deps.broker.versionFloorFor(origin)
+      deps.broker.versionFloorFor(origin),
+      deps.broker.rollbackAcknowledgedVersionFor(origin)
     ])
 
-    // F3: `LoadContext` has no `rollbackAcknowledged` field on this branch
-    // yet -- see this file's header. DO NOT wire it up as `await deps.
-    // broker.rollbackAcknowledgedVersionFor(origin) !== undefined` once it
-    // does: that origin-only check reopens the exact flaw `rollback-ack`'s
-    // storage redesign closed (one accepted rollback would silently cover
-    // any later, unrelated below-floor version). The field must be derived
-    // by comparing the ACKNOWLEDGED version against the version `Loader.
-    // load()` is about to OFFER -- which this function cannot know until
-    // `load()` itself fetches the manifest, after `LoadContext` must
-    // already exist. Unresolved design gap, not this lane's file to fix
-    // (`src/loader/`); see this lane's PR body.
     const result = await deps.loader.load(hintedUrl, {
       grantedPatterns: patternSetFromGrants(grants),
-      versionFloor
+      versionFloor,
+      acknowledgedRollbackVersion
     })
 
     switch (result.outcome) {
@@ -108,9 +106,14 @@ export async function installFromHint (deps: AppInstallDeps, hintingOrigin: stri
         return result
       case 'needs-reconsent':
       case 'needs-capability-prompt':
+      case 'needs-rollback-choice':
       case 'rejected':
         // A60: registerApp fires only on an accepted install, never here --
-        // returned exactly as loader.load() produced it.
+        // returned exactly as loader.load() produced it. A caller that
+        // drives the 'needs-rollback-choice' prompt to acceptance is
+        // expected to call broker.acknowledgeRollback(origin, version)
+        // itself, then call installFromHint again -- not this function's
+        // job (no UI exists yet to make that choice).
         return result
       default: {
         // Exhaustiveness guard: a compile error at `exhaustive` is how a new

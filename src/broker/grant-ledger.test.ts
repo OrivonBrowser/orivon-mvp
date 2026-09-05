@@ -16,7 +16,10 @@ function throwingLedgerStorage (): LedgerStorage {
   return {
     readVersionFloor: () => undefined,
     writeVersionFloor: () => { throw Object.assign(new Error('ENOSPC'), { code: 'ENOSPC' }) },
-    deleteVersionFloor: () => {}
+    deleteVersionFloor: () => {},
+    readAcknowledgedRollbackVersion: () => undefined,
+    writeAcknowledgedRollbackVersion: () => { throw Object.assign(new Error('ENOSPC'), { code: 'ENOSPC' }) },
+    deleteAcknowledgedRollbackVersion: () => {}
   }
 }
 
@@ -48,10 +51,11 @@ function undeletableLedgerStorage (): LedgerStorage & { readonly floors: Map<str
 }
 
 // T19's version floor: "the highest version ever installed for this origin"
-// (security-model.md), so a validly-hash-pinned OLDER bundle can never be
-// replayed to suppress a fix. Lives in the grant ledger, not the pin record
-// (ADR-0009's own consequence: it must survive an uninstalled/reinstalled
-// app, which a pin record does not).
+// (security-model.md), so a validly-hash-pinned OLDER bundle is never
+// installed unnoticed. Lives in the grant ledger, not the pin record --
+// ADR-0009's original reasoning was that it must survive an uninstalled/
+// reinstalled app, which its 2026-09-04 amendment corrects: the floor
+// survives a restart (A57), not a full "remove this app" action.
 describe('GrantLedger -- the version floor', () => {
   it('an origin never registered has floor 0.0.0', () => {
     expect(new GrantLedger().versionFloorFor(APP)).toBe('0.0.0')
@@ -322,6 +326,224 @@ describe('GrantLedger -- non-persistable origins never touch disk (A23/T13c)', (
     storage.floors.set(origin, '9.0.0')
 
     expect(new GrantLedger(storage).versionFloorFor(origin)).toBe('0.0.0')
+  })
+})
+
+// d-0017 (owner decision): T19 warns on a below-floor version instead of only
+// ever blocking it, and lets the user accept it -- once per origin, for the
+// SPECIFIC version accepted. Not a bare per-origin flag: a review caught
+// that a flag would let accepting one real rollback (1.2.0 -> 1.1.9)
+// permanently wave through any OTHER below-floor version the same origin
+// later serves, with no new prompt. `acknowledgeRollback` therefore takes
+// the version being accepted, and `rollbackAcknowledgedVersionFor` returns
+// the specific version last accepted (or undefined) -- a future UI-wiring
+// PR compares that against whatever below-floor version is being offered
+// and prompts fresh on anything but an exact match. No orivon.* counterpart,
+// same category as versionFloorFor.
+describe('GrantLedger -- rollback acknowledgement (d-0017)', () => {
+  it('an origin never acknowledged reads undefined', () => {
+    expect(new GrantLedger().rollbackAcknowledgedVersionFor(APP)).toBeUndefined()
+  })
+
+  it('acknowledging a version makes it read back exactly that version', () => {
+    const ledger = new GrantLedger()
+    ledger.acknowledgeRollback(APP, '1.1.9')
+    expect(ledger.rollbackAcknowledgedVersionFor(APP)).toBe('1.1.9')
+  })
+
+  it('two origins have independent acknowledged versions', () => {
+    const ledger = new GrantLedger()
+    ledger.acknowledgeRollback(APP, '1.1.9')
+    expect(ledger.rollbackAcknowledgedVersionFor('https://other.example')).toBeUndefined()
+  })
+
+  // The property the whole redesign exists for: accepting a rollback to ONE
+  // version must not silently cover a DIFFERENT, unrelated below-floor
+  // version from the same origin -- the caller (not this class) is expected
+  // to compare `rollbackAcknowledgedVersionFor` against the version it is
+  // about to offer and prompt again on anything but an exact match.
+  it('acknowledging 1.1.9 does not read as an acknowledgement of a different version, 1.1.8', () => {
+    const ledger = new GrantLedger()
+    ledger.acknowledgeRollback(APP, '1.1.9')
+    expect(ledger.rollbackAcknowledgedVersionFor(APP)).not.toBe('1.1.8')
+    expect(ledger.rollbackAcknowledgedVersionFor(APP)).toBe('1.1.9')
+  })
+
+  it('acknowledging a new version overwrites the previously acknowledged one', () => {
+    const ledger = new GrantLedger()
+    ledger.acknowledgeRollback(APP, '1.1.9')
+    ledger.acknowledgeRollback(APP, '1.1.5')
+    expect(ledger.rollbackAcknowledgedVersionFor(APP)).toBe('1.1.5')
+  })
+})
+
+// Mirrors the version floor's own A57 persistence suite above -- same
+// hydrate-on-first-touch discipline, same "a new GrantLedger stands in for a
+// restart" idiom.
+describe('GrantLedger -- rollback-acknowledgement persistence (d-0017)', () => {
+  it('with no LedgerStorage supplied, behaves exactly as before -- in-memory only', () => {
+    const ledger = new GrantLedger()
+    ledger.acknowledgeRollback(APP, '1.1.9')
+    expect(ledger.rollbackAcknowledgedVersionFor(APP)).toBe('1.1.9')
+  })
+
+  it('acknowledging persists via the injected storage', () => {
+    const storage = memoryLedgerStorage()
+    const ledger = new GrantLedger(storage)
+    ledger.acknowledgeRollback(APP, '1.1.9')
+    expect(storage.rollbackAcks.get(APP)).toBe('1.1.9')
+  })
+
+  it('an acknowledged version persisted before this GrantLedger existed is picked up on first touch -- simulates surviving a restart', () => {
+    const storage = memoryLedgerStorage()
+    storage.rollbackAcks.set(APP, '1.1.9')
+    const ledger = new GrantLedger(storage)
+    expect(ledger.rollbackAcknowledgedVersionFor(APP)).toBe('1.1.9')
+  })
+
+  it('reading (never acknowledging) still hydrates from storage', () => {
+    const storage = memoryLedgerStorage()
+    storage.rollbackAcks.set(APP, '1.1.9')
+    const ledger = new GrantLedger(storage)
+    // No acknowledgeRollback call at all -- a future caller may need to read
+    // this before it ever decides to write it, the same reason
+    // versionFloorFor's own hydration cannot depend on registerApp running
+    // first.
+    expect(ledger.rollbackAcknowledgedVersionFor(APP)).toBe('1.1.9')
+  })
+
+  it('two origins persist and hydrate independently', () => {
+    const storage = memoryLedgerStorage()
+    const before = new GrantLedger(storage)
+    before.acknowledgeRollback(APP, '1.1.9')
+
+    const after = new GrantLedger(storage)
+    expect(after.rollbackAcknowledgedVersionFor(APP)).toBe('1.1.9')
+    expect(after.rollbackAcknowledgedVersionFor('https://other.example')).toBeUndefined()
+  })
+
+  // F11 (this repo's own review, as first applied to the boolean design this
+  // replaced): the fail-closed collapse must not produce a value that could
+  // pass a future exact-match comparison. `undefined` never equals any real
+  // version string a manifest could declare, so a storage double that
+  // returns it directly (what node-ledger-storage.ts's own corrupt-read path
+  // collapses to -- see its test file) proves GrantLedger does not layer a
+  // second, more dangerous defaulting rule on top of what storage decided.
+  it('a corrupt persisted record (storage already collapsed to undefined) never reads back as any version', () => {
+    const storage = memoryLedgerStorage()
+    const ledger = new GrantLedger({ ...storage, readAcknowledgedRollbackVersion: () => undefined })
+    expect(ledger.rollbackAcknowledgedVersionFor(APP)).toBeUndefined()
+  })
+})
+
+// A60's escape hatch already forgets the version floor; d-0017's acknowledged
+// version has the same lifecycle ("remove this app" forgets everything
+// about it), so forgetOrigin clears both.
+describe('GrantLedger -- forgetOrigin also clears the rollback acknowledgement (d-0017)', () => {
+  it('clears the in-memory acknowledged version immediately', () => {
+    const ledger = new GrantLedger()
+    ledger.acknowledgeRollback(APP, '1.1.9')
+    ledger.forgetOrigin(APP)
+    expect(ledger.rollbackAcknowledgedVersionFor(APP)).toBeUndefined()
+  })
+
+  it('deletes the persisted acknowledged version, so a fresh GrantLedger (simulating a restart) sees undefined again', () => {
+    const storage = memoryLedgerStorage()
+    const before = new GrantLedger(storage)
+    before.acknowledgeRollback(APP, '1.1.9')
+
+    before.forgetOrigin(APP)
+
+    const after = new GrantLedger(storage)
+    expect(after.rollbackAcknowledgedVersionFor(APP)).toBeUndefined()
+  })
+
+  it('does not disturb a different origin\'s acknowledged version', () => {
+    const storage = memoryLedgerStorage()
+    const ledger = new GrantLedger(storage)
+    ledger.acknowledgeRollback(APP, '1.1.9')
+    ledger.acknowledgeRollback('https://other.example', '2.0.0')
+
+    ledger.forgetOrigin(APP)
+
+    expect(ledger.rollbackAcknowledgedVersionFor('https://other.example')).toBe('2.0.0')
+  })
+
+  // Disk-first, memory-untouched-on-failure -- forgetOrigin's own existing
+  // rule for the floor, extended to cover either half failing: a failed
+  // forget must change nothing, regardless of which of the two deletes is
+  // the one that failed.
+  it('leaves the in-memory acknowledged version intact when the on-disk FLOOR delete fails', () => {
+    const storage = memoryLedgerStorage()
+    const failing: LedgerStorage = { ...storage, deleteVersionFloor: () => { throw Object.assign(new Error('EACCES'), { code: 'EACCES' }) } }
+    const ledger = new GrantLedger(failing)
+    ledger.registerApp(APP, manifestWith('9.0.0'))
+    ledger.acknowledgeRollback(APP, '1.1.9')
+
+    ledger.forgetOrigin(APP)
+
+    expect(ledger.versionFloorFor(APP)).toBe('9.0.0')
+    expect(ledger.rollbackAcknowledgedVersionFor(APP)).toBe('1.1.9')
+  })
+
+  it('leaves the in-memory floor intact when the on-disk ACKNOWLEDGEMENT delete fails', () => {
+    const storage = memoryLedgerStorage()
+    const failing: LedgerStorage = { ...storage, deleteAcknowledgedRollbackVersion: () => { throw Object.assign(new Error('EACCES'), { code: 'EACCES' }) } }
+    const ledger = new GrantLedger(failing)
+    ledger.registerApp(APP, manifestWith('9.0.0'))
+    ledger.acknowledgeRollback(APP, '1.1.9')
+
+    ledger.forgetOrigin(APP)
+
+    expect(ledger.versionFloorFor(APP)).toBe('9.0.0')
+    expect(ledger.rollbackAcknowledgedVersionFor(APP)).toBe('1.1.9')
+  })
+})
+
+// A23/T13c applies to every piece of state this ledger ever persists, not
+// only the floor -- session-scoped only for loopback, file: and plain-http
+// origins.
+describe('GrantLedger -- rollback acknowledgement on non-persistable origins never touches disk (A23/T13c)', () => {
+  it.each([
+    'http://127.0.0.1:8080',
+    'http://[::1]:9000',
+    'http://localhost:3000',
+    'http://app.example'
+  ])('%s: acknowledging raises the in-memory version but writes nothing to storage', (origin) => {
+    const storage = memoryLedgerStorage()
+    const ledger = new GrantLedger(storage)
+
+    ledger.acknowledgeRollback(origin, '1.1.9')
+
+    expect(ledger.rollbackAcknowledgedVersionFor(origin)).toBe('1.1.9') // still works normally in-memory
+    expect(storage.rollbackAcks.has(origin)).toBe(false) // never written
+  })
+})
+
+// Same discipline as registerApp's own failure-handling suite below: the
+// in-memory version must rise unconditionally and first, and a write
+// failure is reported rather than swallowed.
+describe('GrantLedger -- a rollback-acknowledgement persist failure still raises the in-memory version', () => {
+  it('raises the in-memory version even though the write threw', () => {
+    const ledger = new GrantLedger(throwingLedgerStorage())
+
+    expect(() => { ledger.acknowledgeRollback(APP, '1.1.9') }).toThrow()
+
+    expect(ledger.rollbackAcknowledgedVersionFor(APP)).toBe('1.1.9')
+  })
+
+  it('throws out of acknowledgeRollback rather than swallowing the failure', () => {
+    const ledger = new GrantLedger(throwingLedgerStorage())
+
+    expect(() => { ledger.acknowledgeRollback(APP, '1.1.9') })
+      .toThrow(expect.objectContaining({ code: 'ENOSPC' }))
+  })
+
+  it('a non-persistable origin never reaches the write, so it cannot throw at all', () => {
+    const ledger = new GrantLedger(throwingLedgerStorage())
+
+    expect(() => { ledger.acknowledgeRollback('http://localhost:3000', '1.1.9') }).not.toThrow()
+    expect(ledger.rollbackAcknowledgedVersionFor('http://localhost:3000')).toBe('1.1.9')
   })
 })
 
