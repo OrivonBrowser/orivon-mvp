@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { installOrivon } from './main-world-socket.js'
+import type { OrivonErrorCode } from '../contracts/errors.js'
 
 const LIMITS = { readWindowBytes: 1_000, writeWindowBytes: 1_000 }
 
@@ -7,18 +8,18 @@ const LIMITS = { readWindowBytes: 1_000, writeWindowBytes: 1_000 }
 function fakeSocketBridgeResult (): {
   id: string, remoteAddress: string, remotePort: number, localAddress: string, localPort: number
   onData: (cb: (chunk: Uint8Array) => void) => void
-  onReadEnd: (cb: (code?: string) => void) => void
+  onReadEnd: (cb: (code: OrivonErrorCode | undefined) => void) => void
   reportConsumed: (n: number) => void
   write: (chunk: Uint8Array) => Promise<void>
   endWrite: () => Promise<void>
   abortWrite: () => void
-  onFatal: (cb: (code: string) => void) => void
+  onFatal: (cb: (code: OrivonErrorCode) => void) => void
   closed: Promise<void>
   close: () => Promise<void>
   setNoDelay: (on: boolean) => Promise<void>
   setKeepAlive: (on: boolean, ms?: number) => Promise<void>
   emitData: (chunk: Uint8Array) => void
-  emitReadEnd: (code?: string) => void
+  emitReadEnd: (code?: OrivonErrorCode) => void
   written: Uint8Array[]
   writeCalls: Array<{ resolve: () => void, reject: (e: unknown) => void }>
   endWriteCalls: number
@@ -26,7 +27,7 @@ function fakeSocketBridgeResult (): {
   closeCalls: number
 } {
   let dataCb: ((chunk: Uint8Array) => void) | undefined
-  let readEndCb: ((code?: string) => void) | undefined
+  let readEndCb: ((code: OrivonErrorCode | undefined) => void) | undefined
   const written: Uint8Array[] = []
   const writeCalls: Array<{ resolve: () => void, reject: (e: unknown) => void }> = []
   let closedResolve: () => void = () => {}
