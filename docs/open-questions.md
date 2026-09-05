@@ -2023,6 +2023,14 @@ closing A23 below). A60's escape hatch (`GrantLedger.forgetOrigin`) exists for t
 itself did not anticipate — a floor poisoned by a hostile version number, now that a restart can
 no longer clear it by accident.
 
+**Correction, 2026-09-04, owner decision.** This entry's own §"Distinct from A29" paragraph
+quotes `ADR-0009` stating the floor "must survive an uninstalled/reinstalled app." Asked directly
+while scoping the discovery-trigger work that depends on this entry: the owner wants the opposite
+— a full "remove this app" action should forget the origin completely, including its floor, with
+no permanent tombstone. What was actually built matches the NEW decision, not the quoted old one:
+the floor survives a restart only. `ADR-0009` itself is amended (2026-09-04) to record the
+reversal, since it was the document making the now-superseded claim.
+
 ---
 
 ### A58 — nothing bounds total disk usage across origins, or across successive updates to one origin **[RESOLVED 2026-09-04]**
@@ -2483,3 +2491,42 @@ build step 2/4 — every real, public origin installs correctly, and the practic
 who can win a race against Chromium's own resolver cache, immediately before a request it also
 controls) is far higher than the original bug (two independent, disagreeing resolvers with a
 multi-minute window).
+
+---
+
+### A67 — `widensAuthority` cannot see a capability being dropped entirely, so a rollback (or any update) can silently change a scalar quota **[STILL OPEN]**
+
+Found 2026-09-05, `stream/loader-08-rollback-warning` (PR #72), reviewing that PR's own F1 fix.
+
+`widensAuthority` (`src/broker/policy/update.ts`) iterates `Object.keys(requested)` -- the NEW
+manifest's own declared capabilities -- and asks whether each requested pattern is covered by an
+already-granted one. If the new manifest drops a capability kind entirely (e.g. no `fs` block at
+all, where the previous manifest had one with an explicit `quotaBytes`), that kind is never
+visited, so the check reads this as "nothing new requested," never as a change worth a prompt.
+
+`fs.quotaBytes` defaults to unlimited when absent (`src/broker/grant-ledger.ts`'s quota-reservation
+path), read from whatever manifest is currently REGISTERED, not from a pattern the grant ledger
+separately tracks. So a manifest that drops `fs` (or otherwise omits a scalar capability field)
+can move actual, effective quota enforcement from a stated limit to unlimited, with
+`widensAuthority` seeing no widening at all -- because there is no PATTERN to compare, only a
+scalar field's absence.
+
+**Not the silent-install bug F1 was.** `isSameBundle` (the other half of `ordinaryEscalation`,
+`update.ts`) still fires here in every real case: the manifest itself is a hashed bundle leaf
+(`ADR-0009`), so dropping a field moves the bundle hash, and the caller sees at minimum
+`reconsent` -- "the code changed," never a silent install. What's missing is precision, not a
+bypass: the user is asked to reconsent to what looks like an ordinary content update, with no
+signal that a scalar resource limit is about to change underneath it.
+
+**Not fixed in PR #72**, deliberately: `PatternSet` models capability KINDS as lists of string
+patterns; it has no vocabulary for a scalar field like `quotaBytes` at all, and giving
+`widensAuthority` an opinion about one specific scalar without a general shape for "capabilities
+carry non-pattern fields too" would be exactly the kind of one-off carve-out `code-guidelines.md`
+Rule 7 warns against. This needs either a `PatternSet` shape change (a real, reversible-only-at-
+cost decision -- Rule 1) or a narrower, `fs`-specific check with its own justification, not a
+quick patch inside this PR.
+
+**Needed by:** nothing urgent -- no live caller reaches `registerApp` outside tests yet
+(`docs/open-questions.md` A60/A61). Worth resolving before the loader-to-broker glue
+(`installFromHint`, A60/A61's own eventual caller) is the thing that makes this reachable from a
+real, page-supplied manifest.

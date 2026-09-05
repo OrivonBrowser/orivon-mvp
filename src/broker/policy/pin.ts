@@ -50,11 +50,13 @@ export type PinnedAsset = PathLeaf
 
 /**
  * What the broker persists once a bundle is accepted (TOFU or a re-consented
- * update). Deliberately does NOT carry `versionFloor`: that value must
- * survive an uninstalled-then-reinstalled app (ADR-0009), and this record
- * does not -- uninstall deletes the pin and the code cache together. The
- * floor lives in the grant ledger / browser-secrets tier instead
- * (ADR-0003's four-tier table, which this record is a fifth thing next to).
+ * update). Deliberately does NOT carry `versionFloor`: that value survives a
+ * browser restart (A57), which this record does not need to -- it lives in
+ * the grant ledger / browser-secrets tier instead (ADR-0003's four-tier
+ * table, which this record is a fifth thing next to). Unlike this record,
+ * the floor is NOT meant to survive a full "remove this app" action --
+ * `ADR-0009`'s 2026-09-04 amendment corrects its own earlier claim that it
+ * must survive that too.
  */
 export interface PinRecord {
   /**
