@@ -68,40 +68,29 @@ import { createBroker } from './index.js'
 import type { Broker, CreateBrokerOptions } from './broker-contracts.js'
 import { dialTcp, nodeFs, resolveHost } from './node-adapters.js'
 import { nodeLedgerStorage } from './node-ledger-storage.js'
-import { createPortPump } from './port-pump.js'
 import { createPortRegistry } from './port-registry.js'
+import { createSocketRelay } from './socket-relay.js'
 import { createTokenBucketLimiter } from './token-bucket.js'
 import type { RateLimiter } from './token-bucket.js'
 import { originFromSenderFrame } from './policy/origin.js'
-import { errnoOf, fail, isOrivonErrorLike } from './errors.js'
+import { fail, isOrivonErrorLike } from './errors.js'
 import {
   envelopeId, isControlMethod, isFsReadFileParams, isFsWriteFileParams,
-  isNetCloseParams, isNetConnectParams, isRequestEnvelope
+  isNetCloseParams, isNetConnectParams, isNetSetKeepAliveParams, isNetSetNoDelayParams, isRequestEnvelope
 } from './ipc-validation.js'
 import type { PortDeliveryFrame, PortLike, PortPair, PortTransport, SocketDescriptor } from './port-transport.js'
-import type { OrivonErrorCode, RequestEnvelope, ResponseEnvelope } from '../contracts/index.js'
+import type { RequestEnvelope, ResponseEnvelope } from '../contracts/index.js'
 import { LIMITS } from '../contracts/index.js'
 
 export { CONTROL_CHANNEL, PORT_CHANNEL }
-export type { ControlMethod, FsReadFileParams, FsWriteFileParams, NetConnectParams, NetCloseParams } from './ipc-validation.js'
+export type {
+  ControlMethod, FsReadFileParams, FsWriteFileParams, NetConnectParams, NetCloseParams,
+  NetSetKeepAliveParams, NetSetNoDelayParams
+} from './ipc-validation.js'
 export type { PortDeliveryFrame, PortLike, PortPair, PortTransport, SocketDescriptor } from './port-transport.js'
 
 export interface ControlEvent {
   readonly senderFrame: PortDeliveryFrame | null
-}
-
-/**
- * Maps a raw error off `socket.readable` to a closed-enum code. Deliberately
- * narrow (this is the ONE call site that needs it): a real Node stream
- * wrapping a TCP socket (node-adapters.ts's dialOne, via Duplex.toWeb)
- * surfaces the underlying socket's own errors here, and ECONNRESET/EPIPE
- * are the only ones with a sharper code than 'internal' worth naming.
- */
-function mapSocketReadError (error: unknown): OrivonErrorCode {
-  const code = errnoOf(error)
-  if (code === 'ECONNRESET' || code === 'EPIPE') return 'reset'
-  if (code === 'ETIMEDOUT') return 'timeout'
-  return 'internal'
 }
 
 /** One request, dispatched to `broker` with the origin THIS FUNCTION derived -- never one from `payload`. */
@@ -135,59 +124,19 @@ async function dispatch (
       const socket = await broker.net.connect(origin, { host: payload.host, port: payload.port })
 
       const pair = transport.createPortPair()
-      const pump = createPortPump({
-        handleId: socket.id,
-        readable: socket.readable,
-        send: (message) => { pair.port1.postMessage(message) },
-        initialCredit: LIMITS.readWindowBytes,
-        mapError: mapSocketReadError,
-        // A socket that dies underneath us releases nothing on its own:
-        // `socket.closed` never settles, so the handler below never runs and
-        // the handle stays counted against LIMITS.concurrentSockets forever.
-        // A peer reset is ordinary traffic, so 512 of them permanently
-        // exhaust an origin's socket budget with no way back but a restart.
-        // FailableTcpSocket.fail also rejects `closed` with the real reason
-        // -- conformance item 12 (handle-contracts.md): a peer reset must
-        // reject, not resolve as a clean successful close.
-        onStreamFailed: (code, error) => { socket.fail(code, errnoOf(error)) }
+      // Owns everything mechanical about relaying this socket's bytes in
+      // both directions, registering it for net.close, and releasing it
+      // exactly once -- see ./socket-relay.ts. What stays here is only
+      // what is security-relevant: the transport check above, the origin
+      // re-derivation below, and the port delivery itself.
+      const relay = createSocketRelay({
+        origin,
+        socket,
+        port: pair.port1,
+        registry: transport.registry,
+        readWindowBytes: LIMITS.readWindowBytes,
+        writeWindowBytes: LIMITS.writeWindowBytes
       })
-      pair.port1.onMessage((raw) => {
-        if (
-          typeof raw === 'object' && raw !== null &&
-          (raw as { kind?: unknown }).kind === 'credit' &&
-          typeof (raw as { handleId?: unknown }).handleId === 'string' &&
-          Number.isFinite((raw as { bytesConsumed?: unknown }).bytesConsumed) &&
-          (raw as { bytesConsumed: number }).bytesConsumed >= 0
-        ) {
-          pump.handleCredit(raw as { kind: 'credit', handleId: string, bytesConsumed: number })
-        }
-      })
-
-      // IDEMPOTENT, and it has to be: `abandon` below runs it and then calls
-      // socket.close(), which settles `socket.closed` and runs it a second
-      // time through the handler just below. A real MessagePortMain would be
-      // closed twice.
-      let released = false
-      const cleanup = (): void => {
-        if (released) return
-        released = true
-        transport.registry.remove(origin, socket.id)
-        pair.port1.close()
-      }
-      // The .catch is not decoration. This chain is nobody's awaited promise,
-      // so anything these handlers throw becomes an unhandled rejection --
-      // and Node's default for those since v15 is to THROW, which on the
-      // Electron main process takes the whole browser down, from a socket
-      // teardown path. Teardown failures are logged, never swallowed
-      // silently, per handle-contracts.ts.
-      socket.closed.then(
-        () => { pump.stop(); cleanup() },
-        (error: unknown) => { pump.stop(isOrivonErrorLike(error) ? error.code : 'internal'); cleanup() }
-      ).catch((error: unknown) => {
-        console.error('[broker] releasing a socket failed after it closed', error)
-      })
-
-      transport.registry.register(origin, socket.id, { close: socket.close })
 
       // If the port never reaches the frame, the app never learns this
       // socket's id -- the descriptor below is not returned -- so it can
@@ -199,8 +148,7 @@ async function dispatch (
       // attacker can hit in a loop". A frame that navigated or was disposed
       // between this request and this line is ordinary, not adversarial.
       const abandon = async (reason: string): Promise<never> => {
-        pump.stop('internal')
-        cleanup()
+        relay.cleanup()
         try {
           await socket.close()
         } catch {
@@ -257,6 +205,21 @@ async function dispatch (
       // it does not hold.
       const entry = transport?.registry.get(origin, payload.id)
       if (entry !== undefined) await entry.close()
+      return undefined
+    }
+    case 'net.setNoDelay': {
+      if (!isNetSetNoDelayParams(payload)) throw fail('invalid', 'net.setNoDelay requires { id: string, on: boolean }')
+      // Same T11c ownership check and same silent-no-op contract as
+      // net.close above, over the same registry -- a handle id from one
+      // origin means nothing presented by another.
+      const entry = transport?.registry.get(origin, payload.id)
+      if (entry !== undefined) await entry.setNoDelay(payload.on)
+      return undefined
+    }
+    case 'net.setKeepAlive': {
+      if (!isNetSetKeepAliveParams(payload)) throw fail('invalid', 'net.setKeepAlive requires { id: string, on: boolean }')
+      const entry = transport?.registry.get(origin, payload.id)
+      if (entry !== undefined) await entry.setKeepAlive(payload.on, payload.initialDelayMs)
       return undefined
     }
   }
