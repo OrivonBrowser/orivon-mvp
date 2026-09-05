@@ -14,6 +14,7 @@ import { join } from 'node:path'
 import type { Bookmark } from './bookmarks.js'
 import { fetchFaviconDataUrlCached, pickFaviconUrl, shouldClearFavicon } from './favicon.js'
 import { parseOmniboxInput, sanitizeDirectUrl } from './omnibox.js'
+import type { SubsystemContext } from './registry.js'
 
 export interface TabState {
   id: string
@@ -141,7 +142,21 @@ export class TabManager {
      * `url` argument) loads this, with the dashboard's own preload
      * below. Never reachable via a rejected navigation -- see
      * BLANK_URL and resolveTarget(). */
-    private readonly dashboardUrl: string
+    private readonly dashboardUrl: string,
+    /**
+     * Read-only plumbing, unused today: `ctx.broker`/`ctx.loader` are what
+     * the not-yet-built discovery-trigger hint listener needs to install an
+     * app the moment a tab's own page shows the `<link rel="orivon-manifest">`
+     * hint (A60/A61, `docs/open-questions.md`). Threaded through now, on its
+     * own, deliberately separate from that behavior -- see
+     * `docs/development/parallel-work.md`'s append-only-first discipline,
+     * applied here to a constructor parameter rather than a registry array.
+     * `ctx.loader` may be `undefined` (`loaderSubsystem` is not `critical`,
+     * unlike the broker) -- whoever reads it here later must treat an
+     * absent loader as "the discovery trigger is disabled this run", never
+     * assume it is always present.
+     */
+    private readonly ctx: SubsystemContext
   ) {
     this.preloadPath = join(import.meta.dirname, '../preload/app.js')
     this.newTabPreloadPath = join(import.meta.dirname, '../preload/newtab.js')
