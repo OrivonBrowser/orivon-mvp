@@ -18,8 +18,8 @@
 // but because whatever eventually calls load() will, and getting the
 // ordering right once now costs nothing.
 
-import { resolveHost } from '../broker/node-adapters.js'
 import { electronFetch } from './electron-fetch.js'
+import { electronResolveHost } from './electron-resolve.js'
 import { nodeLoaderStorage } from './node-storage.js'
 import { createLoader } from './index.js'
 import { publishLoader, type Subsystem } from '../main/registry.js'
@@ -31,10 +31,14 @@ export const loaderSubsystem: Subsystem = {
       fetch: electronFetch,
       storage: nodeLoaderStorage(ctx.app.getPath('userData')),
       now: () => Date.now(),
-      // T12/A46: the same resolver src/broker/ipc.ts already wires into
-      // createBroker's own outbound tcp.connect check -- one resolver
-      // implementation, not a second (Rule 3).
-      resolve: resolveHost
+      // T12/A46/F2: Chromium's OWN resolver (net.resolveHost), the SAME one
+      // electronFetch's net.fetch will consult -- deliberately NOT
+      // node-adapters.ts's node:dns-based resolveHost (the broker's own
+      // outbound tcp.connect uses that one correctly, because it dials with
+      // real node:net sockets; this loader dials nothing of the kind). See
+      // electron-resolve.ts's own header for why these are two
+      // implementations of two different things, not a Rule 3 violation.
+      resolve: electronResolveHost
     })
     publishLoader(ctx, loader)
   }

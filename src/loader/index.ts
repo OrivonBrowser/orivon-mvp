@@ -40,7 +40,16 @@ export interface CreateLoaderOptions {
   readonly storage: LoaderStorage
   /** Clock, read once per install/refetch (`PinRecord.pinnedAt`). Injected so a test can freeze it -- matches createBroker's own `now`. */
   readonly now: () => number
-  /** T12/A46: resolves the install origin's hostname before fetchBundle.ts's first network request -- see that file's own `ensurePublicUnicastOrigin` for why this belongs there, not here. Same `Resolver` shape `policy/connect.ts` already defines; no second type for one idea (Rule 3). */
+  /**
+   * T12/A46/F2: resolves the install origin's hostname before
+   * fetchBundle.ts's first network request -- see that file's own
+   * `ensurePublicUnicastOrigin` for why this belongs there, not here. Same
+   * `Resolver` shape `policy/connect.ts` already defines; no second type for
+   * one idea (Rule 3). The real implementation wired in
+   * (`electron-resolve.ts`'s `electronResolveHost`) is deliberately NOT the
+   * broker's own node:dns-based one -- see that file's header for why the
+   * loader needs Chromium's own resolver instead.
+   */
   readonly resolve: Resolver
 }
 

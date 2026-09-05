@@ -2387,3 +2387,75 @@ the scope creep `CLAUDE.md` Rule 4 warns about.
 **Needed by:** before build step 9 ships, if a real developer workflow for testing a local app's
 manifest hint is expected to exist by then. Not blocking anything in build step 2/4 — the
 discovery trigger works correctly for every real, public origin without this.
+
+---
+
+### A66 — Electron's `net` module cannot pin a fetch's connection to a resolved literal (residual TOCTOU narrowing only, F2) **[RESEARCH — investigated, no fix available on this API surface]**
+
+Found 2026-09-05, `stream/loader-09-install-origin-guard`, fixing the DNS-rebinding/TOCTOU hole
+two independent review passes found in the T12/A46 install-origin guard (F2 in that lane's brief):
+`ensurePublicUnicastOrigin` resolved, validated, and then discarded the addresses, so
+`fetch-bundle.ts` named the install origin's host a SECOND time for every request — a fresh,
+independent resolution free to disagree with the guard's.
+
+`src/broker/policy/connect.ts`'s own discipline for the same problem, one layer down, is "resolve
+once, validate every answer, and hand the caller the validated literals **to dial**" — the broker's
+real `dialTcp` (`src/broker/node-adapters.ts`) then opens a raw `node:net` socket straight to one of
+those literals, never naming the hostname again. **That exact mechanism does not exist for a
+Chromium-mediated fetch.** Confirmed directly against `node_modules/electron/electron.d.ts`
+(electron 44) and Electron's own docs, not assumed:
+
+- `request.setHeader()` explicitly refuses to set `Host` (citing Chromium's own
+  `header_util.cc`) — the standard "rewrite the URL to the IP literal, keep the real hostname via a
+  `Host` header" pinning pattern is not available.
+- `--host-resolver-rules` (the one way to force a hostname to resolve to a specific address) is a
+  **command-line switch, set once before `app.whenReady()`** — not a per-request option, so it
+  cannot pin one install's fetch without affecting every other request the whole process makes at
+  the same time.
+- Neither `net.fetch`'s `Response` nor `net.request`'s `ClientRequest`/`IncomingMessage` exposes
+  the remote address a request actually connected to — there is no way to verify after the fact,
+  either.
+- Rewriting the fetch URL itself to the validated IP literal was considered and rejected: it breaks
+  TLS/SNI-based certificate validation for every real `https:` host (the certificate is issued for
+  the hostname, not the IP), and it breaks `fetch-bundle.ts`'s own same-origin check
+  (`originFromUrl(response.url) === canonicalOrigin`), which can never hold once `response.url`'s
+  host is an IP literal instead of the app's real hostname — trading a real, closed hole for a
+  worse one (either every legitimate install starts failing, or that origin check gets loosened to
+  accept IP literals, which is the actual security regression).
+
+**What shipped instead, in this fix:** the install-origin guard's resolver was switched from
+`node-adapters.ts`'s node:dns-based `resolveHost` (correct for the broker's own raw-socket
+`tcp.connect`, wrong here) to `electron-resolve.ts`'s `electronResolveHost`, over Electron's
+`net.resolveHost` — Chromium's own resolver, the same one `electron-fetch.ts`'s `net.fetch` call
+actually consults (both run under the default session). This closes F2's root cause: the guard and
+the real request are no longer answered by two independent resolvers/caches that can simply
+disagree. `electron-fetch.ts` additionally re-runs `net.resolveHost` and re-validates
+publicness immediately before every individual fetch (manifest and each asset), narrowing the
+window `F5` named — an up-to-`BUNDLE_TIMEOUT_MS` (10 minute) asset loop — from "the guard's
+resolution may be arbitrarily stale by the time this asset is fetched" to "this address was public
+a moment before this specific request went out."
+
+**What this does NOT reach:** connect.ts's own guarantee (dial the literal address that was
+validated, so the hostname is never resolved again at all) is structurally unavailable to a fetch
+that must go through Chromium's network stack rather than a raw socket this codebase controls.  A
+sufficiently well-timed rebind — flipping between `electron-resolve.ts`'s check and `net.fetch`'s
+own internal resolution a moment later, against the *same* resolver and cache — is not
+impossible, only far narrower than the original bug (which had two entirely different resolvers,
+and a window as wide as the whole install). This is a genuine platform limitation, not an
+oversight left for later inside this lane.
+
+**Leaning, not decided:** if this residual gap is judged unacceptable for the flagship's threat
+model, the fix would need to replace `net.fetch` with a fetch implementation this codebase does
+control the socket layer for (e.g. Node's own `fetch`/`undici`, wired through a custom `Agent`
+whose `connect`/`lookup` can be pinned the way `dialTcp` already pins TCP) — at the cost of losing
+`net.fetch`'s session-awareness and Chromium network-stack integration (proxy config, cookie
+jars, etc.) that `electron-fetch.ts`'s own header names as the reason it exists. That trade was not
+made here: it is a bigger architectural change than one guard fix, and belongs in front of the
+owner, not decided inside this lane.
+
+**Needed by:** before this loader is exposed to a threat model that assumes full DNS-rebind
+closure rather than "closed at the resolver level, narrowed at the request level." Not blocking
+build step 2/4 — every real, public origin installs correctly, and the practical bar (an attacker
+who can win a race against Chromium's own resolver cache, immediately before a request it also
+controls) is far higher than the original bug (two independent, disagreeing resolvers with a
+multi-minute window).
