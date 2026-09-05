@@ -339,6 +339,28 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     return ledger.versionFloorFor(canonical(origin))
   }
 
+  async function rollbackAcknowledgedVersionFor (origin: string): Promise<string | undefined> {
+    return ledger.rollbackAcknowledgedVersionFor(canonical(origin))
+  }
+
+  /**
+   * Same shape as `registerApp`'s own rethrow above, and for the same
+   * reason: `canonical` already rejects with an OrivonError, so this method
+   * must not reject with a second, raw shape when `GrantLedger.
+   * acknowledgeRollback`'s write fails. The version has already been raised
+   * in memory by the time this can throw -- see that method's own doc -- so
+   * 'internal' reports a broker fault, never a denial of the acknowledgement
+   * itself.
+   */
+  async function acknowledgeRollback (origin: string, version: string): Promise<void> {
+    const key = canonical(origin)
+    try {
+      ledger.acknowledgeRollback(key, version)
+    } catch (error) {
+      throw fail('internal', 'the rollback acknowledgement could not be persisted', undefined, errnoOf(error))
+    }
+  }
+
   async function grant (origin: string, capability: CapabilityKind, patterns: readonly Pattern[]): Promise<Grant> {
     const key = canonical(origin)
     const { record, replaced } = ledger.grant(key, capability, patterns, deps.now())
@@ -371,6 +393,8 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     fs: { readFile, writeFile },
     registerApp,
     versionFloorFor,
+    rollbackAcknowledgedVersionFor,
+    acknowledgeRollback,
     grant,
     revoke
   }

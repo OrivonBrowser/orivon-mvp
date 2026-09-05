@@ -2530,3 +2530,32 @@ quick patch inside this PR.
 (`docs/open-questions.md` A60/A61). Worth resolving before the loader-to-broker glue
 (`installFromHint`, A60/A61's own eventual caller) is the thing that makes this reachable from a
 real, page-supplied manifest.
+
+---
+
+### A68 — the T19 rollback acknowledgement is remembered per SPECIFIC VERSION, not per origin **[AI RECOMMENDATION — not yet directly confirmed by the owner]**
+
+Found 2026-09-05, `stream/broker-22-rollback-ack-persistence`, building the storage PR #72's
+rollback-warning design (`ADR-0013`) needs.
+
+**Owner's decision (d-0017, this session):** when a user accepts a below-floor ("rollback")
+version for an app, that choice is remembered — asked once, then the older version installs
+with a permanent passive notice rather than a re-prompt every launch.
+
+**AI recommendation, not put to the owner in this exact form:** what gets remembered is the
+SPECIFIC version accepted, not a bare per-origin "this origin's rollbacks are trusted" flag. A
+flag was the first design built for this lane, matching a literal reading of d-0017's one-line
+summary; caught in review before it shipped: a flag would let accepting one real,
+presumably-safe rollback (`1.2.0` → `1.1.9`) permanently wave through any OTHER, unrelated
+below-floor version the same origin later chooses to serve — `0.0.1`, or anything else — with
+no further consent. That is a capability escalation wearing a UX-shortcut's clothes, not what
+d-0017 asked for. Storing the specific accepted version and comparing it exactly (never "any
+prior acknowledgment counts") closes that gap. `src/broker/grant-ledger.ts`'s
+`rollbackAcknowledgedVersionFor`/`acknowledgeRollback`, `src/loader/index.ts`'s
+`LoadContext.acknowledgedRollbackVersion`, and `docs/decisions/ADR-0013`'s own text should all
+agree on this — recorded here because d-0017 itself was otherwise undocumented anywhere in
+`docs/` or `docs/decisions/`, only in this session's own `state.json`.
+
+**Needed by:** confirm before the discovery-trigger hint listener (the first real UI caller of
+`acknowledgeRollback`) is built — that PR should not have to guess at this granularity or
+re-derive the reasoning above.

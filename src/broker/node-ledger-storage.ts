@@ -15,12 +15,17 @@ import type { LedgerStorage } from './ledger-storage.js'
  */
 const CORRUPT_FLOOR_SENTINEL = 'unreadable-or-corrupt-version-floor'
 
-function floorDir (userDataPath: string, origin: string): string {
+/** Shared by the version floor and the rollback-acknowledgement flag (d-0017) -- one directory per origin under `grants/`, one file per piece of state. */
+function originGrantsDir (userDataPath: string, origin: string): string {
   return join(userDataPath, 'grants', originHash(origin))
 }
 
 function floorPath (userDataPath: string, origin: string): string {
-  return join(floorDir(userDataPath, origin), 'version-floor.json')
+  return join(originGrantsDir(userDataPath, origin), 'version-floor.json')
+}
+
+function rollbackAckPath (userDataPath: string, origin: string): string {
+  return join(originGrantsDir(userDataPath, origin), 'rollback-ack.json')
 }
 
 /**
@@ -90,6 +95,11 @@ function isVersionFloorShape (value: unknown): value is { versionFloor: string }
     typeof (value as { versionFloor?: unknown }).versionFloor === 'string'
 }
 
+function isAcknowledgedVersionShape (value: unknown): value is { acknowledgedVersion: string } {
+  return typeof value === 'object' && value !== null &&
+    typeof (value as { acknowledgedVersion?: unknown }).acknowledgedVersion === 'string'
+}
+
 export function nodeLedgerStorage (userDataPath: string): LedgerStorage {
   return {
     readVersionFloor: (origin) => {
@@ -113,7 +123,7 @@ export function nodeLedgerStorage (userDataPath: string): LedgerStorage {
       return isVersionFloorShape(parsed) ? parsed.versionFloor : CORRUPT_FLOOR_SENTINEL
     },
     writeVersionFloor: (origin, versionFloor) => {
-      mkdirSync(floorDir(userDataPath, origin), { recursive: true })
+      mkdirSync(originGrantsDir(userDataPath, origin), { recursive: true })
       writeFileAtomic(floorPath(userDataPath, origin), JSON.stringify({ versionFloor }))
     },
     deleteVersionFloor: (origin) => {
@@ -122,6 +132,38 @@ export function nodeLedgerStorage (userDataPath: string): LedgerStorage {
       } catch (error) {
         // Already gone (never persisted, or forgotten twice) is success, not
         // a failure -- GrantLedger.forgetOrigin's own no-op contract.
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      }
+    },
+
+    readAcknowledgedRollbackVersion: (origin) => {
+      let text: string
+      try {
+        text = readFileSync(rollbackAckPath(userDataPath, origin), 'utf8')
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+        // Any other read failure (permissions, a mid-write crash) must fail
+        // closed -- LedgerStorage.readAcknowledgedRollbackVersion's own doc
+        // explains why collapsing to `undefined` (== "never acknowledged")
+        // is the safe direction here, unlike the version floor's sentinel.
+        return undefined
+      }
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(text)
+      } catch {
+        return undefined
+      }
+      return isAcknowledgedVersionShape(parsed) ? parsed.acknowledgedVersion : undefined
+    },
+    writeAcknowledgedRollbackVersion: (origin, version) => {
+      mkdirSync(originGrantsDir(userDataPath, origin), { recursive: true })
+      writeFileAtomic(rollbackAckPath(userDataPath, origin), JSON.stringify({ acknowledgedVersion: version }))
+    },
+    deleteAcknowledgedRollbackVersion: (origin) => {
+      try {
+        unlinkSync(rollbackAckPath(userDataPath, origin))
+      } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
       }
     }

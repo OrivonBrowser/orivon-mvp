@@ -45,4 +45,42 @@ export interface LedgerStorage {
    * for an origin nothing was ever persisted for.
    */
   deleteVersionFloor(origin: string): void
+
+  /**
+   * The SPECIFIC below-floor version `origin`'s rollback was last
+   * acknowledged for (owner decision d-0017: T19 warns and lets the user
+   * accept a below-floor version rather than only ever blocking it).
+   * `undefined` for an origin never acknowledged, AND for a corrupt or
+   * unreadable record.
+   *
+   * NOT A BOOLEAN, on purpose -- an earlier version of this file stored a
+   * bare "has this origin ever been acknowledged" flag, and a review caught
+   * the escalation it opens: accepting one real, presumably-safe rollback
+   * (say `1.2.0` -> `1.1.9`) would permanently mark the ORIGIN as
+   * acknowledged, silently waving through any later, unrelated below-floor
+   * version the same host chooses to serve (`0.0.1`, or anything else) with
+   * no new prompt and no further consent. Storing the specific version the
+   * user actually agreed to lets the caller (a future UI-wiring PR) compare
+   * it against whatever below-floor version is being offered NOW, and
+   * prompt fresh on anything but an exact match.
+   *
+   * The fail-closed direction is simpler than the boolean's was: a corrupt
+   * read collapsing to `undefined` is indistinguishable from "never
+   * acknowledged" to every future comparison, which is exactly correct --
+   * there is no valid version string a corrupt read could produce that
+   * would coincidentally equal a real offered version and skip a prompt it
+   * should not.
+   */
+  readAcknowledgedRollbackVersion(origin: string): string | undefined
+  /** Persists `version` as the acknowledged rollback version for `origin`. Overwrites whatever was there before -- one acknowledgement in force per origin at a time, same shape as `writeVersionFloor`. */
+  writeAcknowledgedRollbackVersion(origin: string, version: string): void
+  /**
+   * Deletes whatever acknowledged version was persisted for `origin`, if
+   * any -- called alongside `deleteVersionFloor` from `GrantLedger.
+   * forgetOrigin`, so removing an app's poisoned floor also removes its
+   * acknowledgement rather than leaving a stale one for a floor that no
+   * longer exists. A no-op, never a throw, for an origin nothing was ever
+   * persisted for.
+   */
+  deleteAcknowledgedRollbackVersion(origin: string): void
 }

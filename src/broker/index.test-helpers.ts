@@ -75,13 +75,18 @@ export function baseDeps (overrides: Partial<CreateBrokerOptions> = {}): CreateB
 }
 
 /** A Map-backed LedgerStorage double -- real behaviour, no disk, matching grant-ledger.test.ts's own local copy of the same idiom. */
-export function memoryLedgerStorage (): LedgerStorage & { readonly floors: Map<string, string> } {
+export function memoryLedgerStorage (): LedgerStorage & { readonly floors: Map<string, string>, readonly rollbackAcks: Map<string, string> } {
   const floors = new Map<string, string>()
+  const rollbackAcks = new Map<string, string>()
   return {
     floors,
+    rollbackAcks,
     readVersionFloor: (origin) => floors.get(origin),
     writeVersionFloor: (origin, versionFloor) => { floors.set(origin, versionFloor) },
-    deleteVersionFloor: (origin) => { floors.delete(origin) }
+    deleteVersionFloor: (origin) => { floors.delete(origin) },
+    readAcknowledgedRollbackVersion: (origin) => rollbackAcks.get(origin),
+    writeAcknowledgedRollbackVersion: (origin, version) => { rollbackAcks.set(origin, version) },
+    deleteAcknowledgedRollbackVersion: (origin) => { rollbackAcks.delete(origin) }
   }
 }
 
