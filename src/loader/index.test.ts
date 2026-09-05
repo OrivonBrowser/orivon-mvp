@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { appRootDirectoryName, createLoader } from './index.js'
 import type { LoadContext } from './index.js'
 import { nodeLoaderStorage } from './node-storage.js'
-import { MANIFEST_URL, ORIGIN, manifestJson, memoryStorage, stubFetch, utf8 } from './test-helpers.js'
+import { MANIFEST_URL, ORIGIN, PUBLIC_RESOLVER, manifestJson, memoryStorage, stubFetch, utf8 } from './test-helpers.js'
 import type { RouteSpec } from './test-helpers.js'
 
 const NO_GRANTS: LoadContext = { grantedPatterns: {}, versionFloor: '0.0.0', rollbackAcknowledged: false }
@@ -29,7 +29,7 @@ describe('createLoader: fresh install (TOFU, ADR-0005)', () => {
       [MANIFEST_URL]: { body: utf8(manifestJson()) },
       [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
     }
-    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow() })
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER })
     const result = await loader.load(ORIGIN, NO_GRANTS)
 
     expect(result.outcome).toBe('installed')
@@ -51,7 +51,7 @@ describe('createLoader: fresh install (TOFU, ADR-0005)', () => {
       [MANIFEST_URL]: { body: utf8(manifestJson()) },
       [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
     }
-    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow() })
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER })
 
     await loader.load(ORIGIN, NO_GRANTS)
 
@@ -75,7 +75,7 @@ describe('createLoader: fresh install (TOFU, ADR-0005)', () => {
       [MANIFEST_URL]: { body: utf8(manifestJson()) },
       [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
     }
-    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow() })
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER })
     const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
 
     const result = await loader.load(ORIGIN, NO_GRANTS)
@@ -93,7 +93,7 @@ describe('createLoader: fresh install (TOFU, ADR-0005)', () => {
   it('a rejected fetch (malformed manifest, oversized asset, missing entry, ...) surfaces as outcome "rejected" and writes nothing', async () => {
     const storage = memoryStorage()
     const routes: Record<string, RouteSpec> = { [MANIFEST_URL]: { body: utf8('{not json') } }
-    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow() })
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER })
     const result = await loader.load(ORIGIN, NO_GRANTS)
 
     expect(result.outcome).toBe('rejected')
@@ -108,7 +108,7 @@ describe('createLoader: refetch against an existing pin', () => {
       [MANIFEST_URL]: { body: utf8(manifestJson()) },
       [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
     }
-    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow() })
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER })
     const result = await loader.load(ORIGIN, NO_GRANTS)
     if (result.outcome !== 'installed') throw new Error('fixture setup failed')
   }
@@ -122,7 +122,7 @@ describe('createLoader: refetch against an existing pin', () => {
       [MANIFEST_URL]: { body: utf8(manifestJson()) },
       [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
     }
-    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(1_700_000_001_000) })
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(1_700_000_001_000), resolve: PUBLIC_RESOLVER })
 
     await loader.load(ORIGIN, NO_GRANTS)
 
@@ -146,7 +146,7 @@ describe('createLoader: refetch against an existing pin', () => {
       [MANIFEST_URL]: { body: utf8(manifestJson()) },
       [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
     }
-    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(1_700_000_001_000) })
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(1_700_000_001_000), resolve: PUBLIC_RESOLVER })
     const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
 
     const result = await loader.load(ORIGIN, NO_GRANTS)
@@ -168,7 +168,7 @@ describe('createLoader: refetch against an existing pin', () => {
       [MANIFEST_URL]: { body: utf8(manifestJson()) },
       [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
     }
-    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(1_700_000_001_000) })
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(1_700_000_001_000), resolve: PUBLIC_RESOLVER })
     const result = await loader.load(ORIGIN, NO_GRANTS)
 
     expect(result.outcome).toBe('installed')
@@ -186,7 +186,7 @@ describe('createLoader: refetch against an existing pin', () => {
       [MANIFEST_URL]: { body: utf8(manifestJson()) },
       [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html><!-- changed --> ') }
     }
-    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow() })
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER })
     const before = storage.pins.get(ORIGIN)
     const result = await loader.load(ORIGIN, NO_GRANTS)
 
@@ -202,7 +202,7 @@ describe('createLoader: refetch against an existing pin', () => {
       [MANIFEST_URL]: { body: utf8(manifestJson({ capabilities: { net: { tcp: { connect: ['api.example.com:443'] } } } })) },
       [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
     }
-    const narrowLoader = createLoader({ fetch: stubFetch(narrowRoutes), storage, now: fixedNow() })
+    const narrowLoader = createLoader({ fetch: stubFetch(narrowRoutes), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER })
     await narrowLoader.load(ORIGIN, NO_GRANTS)
 
     // The user actually granted exactly that narrow pattern -- this is the
@@ -222,7 +222,7 @@ describe('createLoader: refetch against an existing pin', () => {
       [MANIFEST_URL]: { body: utf8(manifestJson({ version: '1.0.1', capabilities: { net: { tcp: { connect: ['*:*'] } } } })) },
       [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
     }
-    const wideLoader = createLoader({ fetch: stubFetch(wideRoutes), storage, now: fixedNow() })
+    const wideLoader = createLoader({ fetch: stubFetch(wideRoutes), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER })
     const result = await wideLoader.load(ORIGIN, granted)
 
     expect(result.outcome).toBe('needs-capability-prompt')
@@ -242,7 +242,7 @@ describe('createLoader: refetch against an existing pin', () => {
       [MANIFEST_URL]: { body: utf8(manifestJson({ version: '0.9.0' })) },
       [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
     }
-    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow() })
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER })
     const before = storage.pins.get(ORIGIN)
     const result = await loader.load(ORIGIN, { grantedPatterns: {}, versionFloor: '1.0.0', rollbackAcknowledged: false })
 
@@ -266,11 +266,11 @@ describe('createLoader: refetch against an existing pin', () => {
     // below-floor transition. This is the one input combination with no
     // widening and no bundle change; see the two tests below for the
     // adversarial combinations the 2026-09-05 fix actually exists to catch.
-    const firstLoad = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow() })
+    const firstLoad = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER })
     const first = await firstLoad.load(ORIGIN, { grantedPatterns: {}, versionFloor: '0.0.0', rollbackAcknowledged: false })
     if (first.outcome !== 'installed') throw new Error('fixture setup failed')
 
-    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(1_700_000_001_000) })
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(1_700_000_001_000), resolve: PUBLIC_RESOLVER })
     const result = await loader.load(ORIGIN, { grantedPatterns: {}, versionFloor: '1.0.0', rollbackAcknowledged: true })
 
     expect(result.outcome).toBe('installed')
@@ -287,7 +287,7 @@ describe('createLoader: refetch against an existing pin', () => {
       [MANIFEST_URL]: { body: utf8(manifestJson({ version: '0.9.0' })) },
       [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
     }
-    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(1_700_000_001_000) })
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(1_700_000_001_000), resolve: PUBLIC_RESOLVER })
     const before = storage.pins.get(ORIGIN)
     const result = await loader.load(ORIGIN, { grantedPatterns: {}, versionFloor: '1.0.0', rollbackAcknowledged: true })
 
@@ -307,7 +307,7 @@ describe('createLoader: refetch against an existing pin', () => {
       [MANIFEST_URL]: { body: utf8(manifestJson({ capabilities: { net: { tcp: { connect: ['api.example.com:443'] } } } })) },
       [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
     }
-    await createLoader({ fetch: stubFetch(narrowRoutes), storage, now: fixedNow() }).load(ORIGIN, NO_GRANTS)
+    await createLoader({ fetch: stubFetch(narrowRoutes), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER }).load(ORIGIN, NO_GRANTS)
 
     // The user actually granted exactly that narrow pattern, and the origin
     // once shipped something at or above 2.0.0 (hence this floor) -- it is
@@ -322,7 +322,7 @@ describe('createLoader: refetch against an existing pin', () => {
       [MANIFEST_URL]: { body: utf8(manifestJson({ version: '0.9.0', capabilities: { net: { tcp: { connect: ['*:*'] } } } })) },
       [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
     }
-    const result = await createLoader({ fetch: stubFetch(wideRoutes), storage, now: fixedNow() }).load(ORIGIN, granted)
+    const result = await createLoader({ fetch: stubFetch(wideRoutes), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER }).load(ORIGIN, granted)
 
     // An acknowledged rollback that ALSO widens authority is exactly as
     // capability-prompt-worthy as an ordinary update making the same
@@ -341,7 +341,7 @@ describe('createLoader: refetch against an existing pin', () => {
       [MANIFEST_URL]: { body: utf8(manifestJson()) },
       [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
     }
-    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(1_700_000_001_000) })
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(1_700_000_001_000), resolve: PUBLIC_RESOLVER })
     const result = await loader.load(ORIGIN, NO_GRANTS)
 
     expect(result.outcome).toBe('installed')
@@ -357,7 +357,7 @@ describe('createLoader: refetch against an existing pin', () => {
       [MANIFEST_URL]: { body: utf8(manifestJson()) },
       [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
     }
-    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow() })
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER })
     const result = await loader.load(ORIGIN, NO_GRANTS)
 
     // NO_GRANTS means the app holds no capabilities at all, and this
@@ -383,7 +383,7 @@ describe('createLoader: against the real node:fs storage', () => {
     const storage = nodeLoaderStorage(userData)
     const appDir = join(userData, 'apps', appRootDirectoryName(ORIGIN))
 
-    const first = await createLoader({ fetch: stubFetch(ROUTES), storage, now: fixedNow() }).load(ORIGIN, NO_GRANTS)
+    const first = await createLoader({ fetch: stubFetch(ROUTES), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER }).load(ORIGIN, NO_GRANTS)
     expect(first.outcome).toBe('installed')
 
     // Left behind by an earlier install and since made unreadable: the prune
@@ -393,7 +393,7 @@ describe('createLoader: against the real node:fs storage', () => {
     await chmod(join(appDir, 'code', 'sealed'), 0o000)
     const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
 
-    const again = await createLoader({ fetch: stubFetch(ROUTES), storage, now: fixedNow(1_700_000_009_000) }).load(ORIGIN, NO_GRANTS)
+    const again = await createLoader({ fetch: stubFetch(ROUTES), storage, now: fixedNow(1_700_000_009_000), resolve: PUBLIC_RESOLVER }).load(ORIGIN, NO_GRANTS)
 
     logged.mockRestore()
     await chmod(join(appDir, 'code', 'sealed'), 0o755) // so a later run can clean up /tmp

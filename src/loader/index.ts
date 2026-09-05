@@ -22,6 +22,7 @@
 
 import type { Manifest } from '../contracts/index.js'
 import type { BundleEntry, BundleTree } from '../broker/policy/bundle-hash.js'
+import type { Resolver } from '../broker/policy/connect.js'
 import { fromBundleTree, parsePinRecord } from '../broker/policy/pin.js'
 import type { PinRecord } from '../broker/policy/pin.js'
 import { decideUpdate } from '../broker/policy/update.js'
@@ -40,6 +41,17 @@ export interface CreateLoaderOptions {
   readonly storage: LoaderStorage
   /** Clock, read once per install/refetch (`PinRecord.pinnedAt`). Injected so a test can freeze it -- matches createBroker's own `now`. */
   readonly now: () => number
+  /**
+   * T12/A46/F2: resolves the install origin's hostname before
+   * fetchBundle.ts's first network request -- see that file's own
+   * `ensurePublicUnicastOrigin` for why this belongs there, not here. Same
+   * `Resolver` shape `policy/connect.ts` already defines; no second type for
+   * one idea (Rule 3). The real implementation wired in
+   * (`electron-resolve.ts`'s `electronResolveHost`) is deliberately NOT the
+   * broker's own node:dns-based one -- see that file's header for why the
+   * loader needs Chromium's own resolver instead.
+   */
+  readonly resolve: Resolver
 }
 
 /**
@@ -226,7 +238,7 @@ async function installOrReject (
 
 export function createLoader (options: CreateLoaderOptions): Loader {
   async function load (hintedUrl: string, context: LoadContext): Promise<LoadResult> {
-    const fetched = await fetchBundle(options.fetch, hintedUrl)
+    const fetched = await fetchBundle(options.fetch, hintedUrl, options.resolve)
     if (!fetched.ok) return { outcome: 'rejected', reason: fetched.reason }
     const { canonicalOrigin, manifest, tree, entries } = fetched
 
