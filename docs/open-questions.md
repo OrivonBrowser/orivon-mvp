@@ -1464,16 +1464,25 @@ Re-resolving the name after the check reopens the window the check exists to clo
 **Implemented 2026-09-04 (`stream/loader-09-install-origin-guard`).** Found still genuinely
 unbuilt while scoping the discovery-trigger wiring — the resolution above recorded the owner's
 decision but nothing in `fetch-bundle.ts` yet acted on it. `fetchBundle()` now takes a `resolveFn:
-Resolver` (the same type `policy/connect.ts` defines; `loaderSubsystem` wires the same
-`resolveHost` `createBroker` already uses, not a second resolver) and rejects before its first
-network request if the install origin's hostname resolves — or, for a literal, classifies — as
-anything but public-unicast (`install-origin.ts`, split out once adding this pushed
-`fetch-bundle.ts` over the 500-line limit). No loopback carve-out is implemented: the only
-discovery trigger is the page-supplied hint, which is exactly the case this entry's own
-resolution says loopback must never be reachable from, so the carve-out has no live path to
-attach to. That leaves a real, plainly-stated gap — a developer building their own local Orivon
-app cannot use the discovery trigger against `localhost` at all — tracked as its own entry, A65,
-rather than silently worked around.
+Resolver` (the same type `policy/connect.ts` defines) and rejects before its first network request
+if the install origin's hostname resolves — or, for a literal, classifies — as anything but
+public-unicast (`install-origin.ts`, split out once adding this pushed `fetch-bundle.ts` over the
+500-line limit). No loopback carve-out is implemented: the only discovery trigger is the
+page-supplied hint, which is exactly the case this entry's own resolution says loopback must never
+be reachable from, so the carve-out has no live path to attach to. That leaves a real,
+plainly-stated gap — a developer building their own local Orivon app cannot use the discovery
+trigger against `localhost` at all — tracked as its own entry, A65, rather than silently worked
+around.
+
+**Corrected 2026-09-05.** The sentence above originally claimed `loaderSubsystem` wires "the same
+`resolveHost` `createBroker` already uses, not a second resolver" — true of the first commit, made
+false by the same lane's own follow-up fix and never updated here. `loaderSubsystem` now wires
+`electronResolveHost` (Electron's `net.resolveHost` — the resolver Chromium's own `net.fetch`
+actually consults), a deliberate **second, different** `Resolver` implementation from the broker's
+node:dns-based one. See **A66** for why: reusing one resolver for both a raw TCP dial and a
+Chromium-mediated fetch would answer the wrong question for one of the two callers, and A66 is
+also where this guard's real residual limitation — the validated address cannot be pinned for the
+actual Electron fetch — is recorded in full.
 
 ---
 
