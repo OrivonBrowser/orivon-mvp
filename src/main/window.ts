@@ -19,6 +19,7 @@ import { pathToFileURL } from 'node:url'
 import { BookmarkStore } from './bookmarks.js'
 import { COMMAND_CHANNEL, NEWTAB_COMMAND_CHANNEL, STATE_CHANNEL } from './channels.js'
 import { registerNewTabIpc } from './newtab-ipc.js'
+import type { SubsystemContext } from './registry.js'
 import { TabManager, type Bounds } from './tabs.js'
 import { registerShellIpc } from './ipc.js'
 
@@ -42,7 +43,7 @@ const CHROME_HEIGHT = 104
 const OVERLAY_DARK = { color: '#1e1f24', symbolColor: '#e6e7e8' }
 const OVERLAY_LIGHT = { color: '#e4e4eb', symbolColor: '#202124' }
 
-export function createShellWindow (): BaseWindow {
+export function createShellWindow (ctx: SubsystemContext): BaseWindow {
   // Centers on the OS's primary display -- no explicit x/y. A cursor-based
   // "open on whichever display has the pointer" variant was tried here
   // (2026-08-26) on a wrong diagnosis (a report of "no window appears" was
@@ -136,7 +137,7 @@ export function createShellWindow (): BaseWindow {
   // app.quit() here -- index.ts's window-all-closed handler already owns
   // whether the whole process then exits (quits on non-darwin, stays
   // resident on macOS per platform convention).
-  const tabs = new TabManager(win.contentView, tabBounds, () => { win.close() }, dashboardUrl)
+  const tabs = new TabManager(win.contentView, tabBounds, () => { win.close() }, dashboardUrl, ctx)
 
   // Bookmarks: owner override, 2026-08-28 (mvp-scope.md, ADR-0003) -- not
   // in the original scope pass, arrived bundled with the chrome restyle.

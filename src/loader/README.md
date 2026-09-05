@@ -18,6 +18,14 @@ trigger; there is no separate user action, a Web3site is the URL, not a thing to
 website into (`capability-api.md`'s 2026-09-03 correction). The well-known path is fetched
 **only after** seeing that hint.
 
+**The install origin's hostname must resolve as public-unicast before that fetch, no exception**
+([`install-origin.ts`](install-origin.ts), T12/A46). This is the shell itself, unsandboxed,
+making the very first request — with no grant and no manifest yet to gate it — so a hint pointing
+at a loopback, private, link-local or cloud-metadata address is refused outright, even the
+loopback case `docs/open-questions.md` A46 otherwise permits for a *user-typed* address: the only
+discovery trigger here is a page-supplied hint, which is exactly the provenance A46 says loopback
+must never be reachable from.
+
 **The update decision is where a silent failure is a security failure.** Its failure mode is
 "no prompt appeared", which no manual checklist catches, and the capability at stake is
 `tcp.connect *:*`. Re-consent triggers on a **subset check over the granted pattern set**, not
@@ -62,6 +70,13 @@ coverage moved to [`manifest.test.ts`](manifest.test.ts), which already exercise
 shapes independently. What `manifest.ts` cannot see -- a *redirect* landing two distinct declared
 names, or a redirected entry, at the same or a different canonical path than declared -- remains
 directly tested here, since only a real fetch can produce it.
+
+**Why [`install-origin.ts`](install-origin.ts) is its own file.** Split out of `fetch-bundle.ts`
+per Rule 2 (adding the T12/A46 guard pushed that file to 524 lines) — it owns exactly one
+question, "may this hostname be installed at all," independent of everything else `fetchBundle()`
+does once that question is answered. Tested through `fetch-bundle.test.ts` rather than a file of
+its own, the same way `manifest-capabilities.ts` is tested through `manifest.test.ts` — it has no
+caller-visible contract beyond what `fetchBundle()` already exercises.
 
 **Why `pruneAssets` compares folded paths, and why folding is the safe direction.**
 [`node-storage.ts`](node-storage.ts) decides what to delete by comparing the manifest's declared
