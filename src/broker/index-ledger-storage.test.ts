@@ -8,7 +8,10 @@ function throwingLedgerStorage (): LedgerStorage {
   return {
     readVersionFloor: () => undefined,
     writeVersionFloor: () => { throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' }) },
-    deleteVersionFloor: () => {}
+    deleteVersionFloor: () => {},
+    readAcknowledgedRollbackVersion: () => undefined,
+    writeAcknowledgedRollbackVersion: () => { throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' }) },
+    deleteAcknowledgedRollbackVersion: () => {}
   }
 }
 
@@ -38,6 +41,77 @@ describe('createBroker -- ledgerStorage actually reaches the grant ledger', () =
 
     const after = createBroker(baseDeps({ ledgerStorage: storage })) // the "restart"
     await expect(after.versionFloorFor(APP)).resolves.toBe('1.0.0')
+  })
+})
+
+// d-0017's counterpart to the suite above -- same wiring concern
+// (`baseDeps`'s spread once silently dropped `ledgerStorage` entirely; see
+// that suite's own header), proven again for the two new Broker methods
+// rather than assumed to follow from GrantLedger's own coverage.
+describe('createBroker -- rollback acknowledgement (d-0017) reaches the grant ledger', () => {
+  it('is undefined through the Broker surface for an origin never acknowledged', async () => {
+    const broker = createBroker(baseDeps({ ledgerStorage: memoryLedgerStorage() }))
+
+    await expect(broker.rollbackAcknowledgedVersionFor(APP)).resolves.toBeUndefined()
+  })
+
+  it('acknowledging a version through the Broker surface is written via the injected LedgerStorage', async () => {
+    const storage = memoryLedgerStorage()
+    const broker = createBroker(baseDeps({ ledgerStorage: storage }))
+
+    await broker.acknowledgeRollback(APP, '1.1.9')
+
+    expect(storage.rollbackAcks.get(APP)).toBe('1.1.9')
+  })
+
+  it('rollbackAcknowledgedVersionFor reads back what a previous broker instance persisted -- simulates surviving a restart', async () => {
+    const storage = memoryLedgerStorage()
+    const before = createBroker(baseDeps({ ledgerStorage: storage }))
+    await before.acknowledgeRollback(APP, '1.1.9')
+
+    const after = createBroker(baseDeps({ ledgerStorage: storage })) // the "restart"
+    await expect(after.rollbackAcknowledgedVersionFor(APP)).resolves.toBe('1.1.9')
+  })
+
+  // The property the version-keyed redesign exists for, proven again
+  // through the Broker surface rather than assumed to follow from
+  // GrantLedger's own coverage: accepting 1.1.9 must not read back as an
+  // acknowledgement of a different version, 1.1.8.
+  it('acknowledging 1.1.9 is not indistinguishable from acknowledging 1.1.8', async () => {
+    const broker = createBroker(baseDeps({ ledgerStorage: memoryLedgerStorage() }))
+
+    await broker.acknowledgeRollback(APP, '1.1.9')
+
+    await expect(broker.rollbackAcknowledgedVersionFor(APP)).resolves.not.toBe('1.1.8')
+    await expect(broker.rollbackAcknowledgedVersionFor(APP)).resolves.toBe('1.1.9')
+  })
+})
+
+describe('createBroker -- an acknowledgeRollback persistence failure surfaces, it is not swallowed', () => {
+  it('rejects, rather than resolving as if the acknowledgement had been recorded', async () => {
+    const broker = createBroker(baseDeps({ ledgerStorage: throwingLedgerStorage() }))
+
+    await expect(broker.acknowledgeRollback(APP, '1.1.9')).rejects.toMatchObject({
+      name: 'OrivonError',
+      code: 'internal',
+      platformCode: 'ENOSPC'
+    })
+  })
+
+  it('carries no filesystem path -- the message is written fresh, like registerApp\'s own persistence-failure path', async () => {
+    const broker = createBroker(baseDeps({ ledgerStorage: throwingLedgerStorage() }))
+
+    const error = await broker.acknowledgeRollback(APP, '1.1.9').catch((e: unknown) => e)
+
+    expect((error as Error).message).not.toContain('no space left on device')
+  })
+
+  it('still raised the in-memory acknowledged version before the write was attempted', async () => {
+    const broker = createBroker(baseDeps({ ledgerStorage: throwingLedgerStorage() }))
+
+    await expect(broker.acknowledgeRollback(APP, '1.1.9')).rejects.toThrow()
+
+    await expect(broker.rollbackAcknowledgedVersionFor(APP)).resolves.toBe('1.1.9')
   })
 })
 

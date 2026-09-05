@@ -152,6 +152,30 @@ export interface Broker {
    */
   versionFloorFor(origin: string): Promise<string>
   /**
+   * d-0017 (owner decision): the SPECIFIC below-floor version this origin's
+   * rollback was last acknowledged for, or `undefined` if never
+   * acknowledged (or if the persisted record was corrupt --
+   * `LedgerStorage.readAcknowledgedRollbackVersion`'s own doc explains why
+   * that collapse is the only safe one). NOT a boolean: a flag would let
+   * accepting one real rollback silently cover any other below-floor
+   * version the same origin later serves -- see `GrantLedger`'s own doc for
+   * the finding that drove this. The caller compares this against whatever
+   * below-floor version is being offered and prompts fresh on anything but
+   * an exact match. Same category as `versionFloorFor`: the app loader's
+   * seam, no `orivon.*` counterpart.
+   */
+  rollbackAcknowledgedVersionFor(origin: string): Promise<string | undefined>
+  /**
+   * Records that `origin`'s rollback to `version` has been acknowledged
+   * (d-0017) -- meant to be called once, at the point a future UI-wiring PR
+   * (per PR #72's `rollbackAcknowledged` field and PR #75's
+   * `installFromHint`) determines the user actually chose to accept that
+   * specific below-floor version. This broker never calls it on its own
+   * initiative, the same way it never grants a capability on its own
+   * initiative.
+   */
+  acknowledgeRollback(origin: string, version: string): Promise<void>
+  /**
    * Records a capability the user actually granted. The broker never grants
    * on its own initiative; this is the permission-prompt UI's seam, never an
    * app's. Replaces any earlier grant of the same capability kind, under a
