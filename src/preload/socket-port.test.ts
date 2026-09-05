@@ -37,6 +37,7 @@ describe('createSocketPort -- read side', () => {
   it('calls onReadEnd once, with the code if any, on a StreamEndMessage', () => {
     const port = fakePort()
     const socketPort = createSocketPort({ handleId: HANDLE, port })
+    socketPort.closed.catch(() => {}) // an errored end also rejects `closed` -- not this test's concern
     const ends: Array<string | undefined> = []
     socketPort.onReadEnd((code) => { ends.push(code) })
 
@@ -118,6 +119,7 @@ describe('createSocketPort -- write side', () => {
   it('write-failed rejects the pending write with the real code and platformCode', async () => {
     const port = fakePort()
     const socketPort = createSocketPort({ handleId: HANDLE, port })
+    socketPort.closed.catch(() => {}) // covered separately below
 
     const written = socketPort.write(new Uint8Array([1]))
     port.emit({ kind: 'write-failed', handleId: HANDLE, code: 'reset', platformCode: 'ECONNRESET' })
@@ -128,6 +130,7 @@ describe('createSocketPort -- write side', () => {
   it('onFatal fires once a write-failed arrives', () => {
     const port = fakePort()
     const socketPort = createSocketPort({ handleId: HANDLE, port })
+    socketPort.closed.catch(() => {}) // covered separately below
     const fatal = vi.fn()
     socketPort.onFatal(fatal)
 
@@ -149,6 +152,7 @@ describe('createSocketPort -- write side', () => {
   it('abortWrite sends write-abort and rejects a pending write with reset', async () => {
     const port = fakePort()
     const socketPort = createSocketPort({ handleId: HANDLE, port })
+    socketPort.closed.catch(() => {}) // covered separately below
     const written = socketPort.write(new Uint8Array([1]))
 
     socketPort.abortWrite()
@@ -176,6 +180,7 @@ describe('createSocketPort -- the silence watchdog', () => {
   it('fires onFatal with timeout after true silence past WRITE_SILENCE_TIMEOUT_MS', async () => {
     const port = fakePort()
     const socketPort = createSocketPort({ handleId: HANDLE, port })
+    socketPort.closed.catch(() => {}) // covered separately in the closed describe block
     const fatal = vi.fn()
     socketPort.onFatal(fatal)
     const written = socketPort.write(new Uint8Array([1])).catch(() => {})
@@ -199,5 +204,70 @@ describe('createSocketPort -- the silence watchdog', () => {
     await vi.advanceTimersByTimeAsync(WRITE_SILENCE_TIMEOUT_MS - 100)
 
     expect(fatal).not.toHaveBeenCalled()
+  })
+})
+
+describe('createSocketPort -- closed (settles once BOTH directions are terminal)', () => {
+  it('does not settle while only the read side has ended cleanly', async () => {
+    const port = fakePort()
+    const socketPort = createSocketPort({ handleId: HANDLE, port })
+    let settled = false
+    socketPort.closed.then(() => { settled = true }, () => { settled = true })
+
+    port.emit({ kind: 'end', handleId: HANDLE })
+    await tick()
+
+    expect(settled).toBe(false)
+  })
+
+  it('does not settle while only the write side has ended (endWrite called)', async () => {
+    const port = fakePort()
+    const socketPort = createSocketPort({ handleId: HANDLE, port })
+    let settled = false
+    socketPort.closed.then(() => { settled = true }, () => { settled = true })
+
+    await socketPort.endWrite()
+    await tick()
+
+    expect(settled).toBe(false)
+  })
+
+  it('resolves once both a clean read end and endWrite have happened, in either order', async () => {
+    const port = fakePort()
+    const socketPort = createSocketPort({ handleId: HANDLE, port })
+
+    port.emit({ kind: 'end', handleId: HANDLE })
+    await socketPort.endWrite()
+
+    await expect(socketPort.closed).resolves.toBeUndefined()
+  })
+
+  it('rejects immediately on an errored read end, without waiting for the write side', async () => {
+    const port = fakePort()
+    const socketPort = createSocketPort({ handleId: HANDLE, port })
+
+    port.emit({ kind: 'end', handleId: HANDLE, code: 'revoked' })
+
+    await expect(socketPort.closed).rejects.toMatchObject({ code: 'revoked' })
+  })
+
+  it('rejects immediately on a write-failed, without waiting for the read side', async () => {
+    const port = fakePort()
+    const socketPort = createSocketPort({ handleId: HANDLE, port })
+
+    socketPort.write(new Uint8Array([1])).catch(() => {})
+    port.emit({ kind: 'write-failed', handleId: HANDLE, code: 'reset', platformCode: 'ECONNRESET' })
+
+    await expect(socketPort.closed).rejects.toMatchObject({ code: 'reset', platformCode: 'ECONNRESET' })
+  })
+
+  it('rejects on abortWrite with reset', async () => {
+    const port = fakePort()
+    const socketPort = createSocketPort({ handleId: HANDLE, port })
+
+    socketPort.write(new Uint8Array([1])).catch(() => {})
+    socketPort.abortWrite()
+
+    await expect(socketPort.closed).rejects.toMatchObject({ code: 'reset' })
   })
 })

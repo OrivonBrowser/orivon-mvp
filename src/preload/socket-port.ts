@@ -50,12 +50,23 @@ export interface SocketPort {
   /** Fires once if the write direction fails outright (write-failed) or the port goes silent past the timeout. */
   onFatal: (cb: (code: OrivonErrorCode) => void) => void
 
+  /**
+   * Resolves once BOTH directions have reached a clean terminal state
+   * (handle-contracts.md SSCommon shape / SSTcpSocket's close table);
+   * rejects immediately -- without waiting for the other direction -- the
+   * moment either one reaches an ABRUPT one (an errored read end,
+   * write-failed, abortWrite, or the silence timeout). Every error row in
+   * the close table has both sides erroring together, so there is nothing
+   * to wait for once one has.
+   */
+  readonly closed: Promise<void>
+
   /** Local cleanup only -- stops the timer and the message listener. Sends nothing. */
   dispose: () => void
 }
 
 function toOrivonError (code: OrivonErrorCode, platformCode?: string): OrivonError {
-  const base = { name: 'OrivonError', message: `write failed: ${code}`, code }
+  const base = { name: 'OrivonError', message: `socket failed: ${code}`, code }
   return platformCode === undefined ? base : { ...base, platformCode }
 }
 
@@ -73,6 +84,24 @@ export function createSocketPort (options: SocketPortOptions): SocketPort {
   let silenceTimer: ReturnType<typeof setTimeout> | undefined
   let disposed = false
 
+  let readTerminal = false
+  let writeTerminal = false
+  let closedSettled = false
+  let resolveClosed: () => void = () => {}
+  let rejectClosed: (error: OrivonError) => void = () => {}
+  const closed = new Promise<void>((resolve, reject) => { resolveClosed = resolve; rejectClosed = reject })
+
+  function tryResolveClosed (): void {
+    if (closedSettled || !readTerminal || !writeTerminal) return
+    closedSettled = true
+    resolveClosed()
+  }
+  function forceRejectClosed (error: OrivonError): void {
+    if (closedSettled) return
+    closedSettled = true
+    rejectClosed(error)
+  }
+
   function flushCredit (): void {
     creditFlushScheduled = false
     if (sinceLastCredit <= 0) return
@@ -84,9 +113,11 @@ export function createSocketPort (options: SocketPortOptions): SocketPort {
     if (silenceTimer !== undefined) clearTimeout(silenceTimer)
     if (disposed) return
     silenceTimer = setTimeout(() => {
-      pendingWrite?.reject(toOrivonError('timeout'))
+      const error = toOrivonError('timeout')
+      pendingWrite?.reject(error)
       pendingWrite = undefined
       fatalCb?.('timeout')
+      forceRejectClosed(error)
     }, silenceTimeoutMs)
   }
 
@@ -100,6 +131,9 @@ export function createSocketPort (options: SocketPortOptions): SocketPort {
         break
       case 'end':
         readEndCb?.(message.code)
+        if (message.code === undefined) { readTerminal = true; tryResolveClosed() } else {
+          forceRejectClosed(toOrivonError(message.code))
+        }
         break
       case 'write-ack':
         if (pendingWrite !== undefined) {
@@ -115,6 +149,7 @@ export function createSocketPort (options: SocketPortOptions): SocketPort {
         pendingWrite?.reject(error)
         pendingWrite = undefined
         fatalCb?.(message.code)
+        forceRejectClosed(error)
         break
       }
     }
@@ -147,13 +182,18 @@ export function createSocketPort (options: SocketPortOptions): SocketPort {
     },
     async endWrite () {
       port.postMessage({ kind: 'write-end', handleId })
+      writeTerminal = true
+      tryResolveClosed()
     },
     abortWrite () {
       port.postMessage({ kind: 'write-abort', handleId })
-      pendingWrite?.reject(toOrivonError('reset'))
+      const error = toOrivonError('reset')
+      pendingWrite?.reject(error)
       pendingWrite = undefined
+      forceRejectClosed(error)
     },
     onFatal (cb) { fatalCb = cb },
+    closed,
     dispose () {
       disposed = true
       if (silenceTimer !== undefined) clearTimeout(silenceTimer)
