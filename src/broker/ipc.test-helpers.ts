@@ -34,9 +34,14 @@ export interface BrokerCall { readonly method: string, readonly origin: string, 
 /**
  * A full `Broker`, every method recording its call into `calls` before
  * deferring to `overrides` (or rejecting "not stubbed" if the test never
- * asked for that method to succeed). `registerApp`/`grant`/`revoke` are
- * unused by ipc.ts -- see broker/index.ts's own doc on why they have no
- * orivon.* counterpart -- and are never expected to be called here.
+ * asked for that method to succeed). `grant`/`revoke` are unused by ipc.ts
+ * -- see broker/index.ts's own doc on why they have no orivon.*
+ * counterpart -- and are never expected to be called here.
+ *
+ * `registerApp`/`versionFloorFor` are ALSO unreachable via orivon.* (same
+ * reason), but app-install.test.ts's `installFromHint` calls them directly
+ * as the app loader's own seam into the broker -- stubbable here rather
+ * than a second full fake Broker (code-guidelines.md Rule 3).
  */
 export function stubBroker (
   calls: BrokerCall[],
@@ -46,6 +51,8 @@ export function stubBroker (
     connect: (origin: string, opts: { host: string, port: number }) => Promise<FailableTcpSocket>
     readFile: (origin: string, path: string) => Promise<Uint8Array>
     writeFile: (origin: string, path: string, data: Uint8Array) => Promise<void>
+    registerApp: (origin: string, manifest: Manifest) => Promise<void>
+    versionFloorFor: (origin: string) => Promise<string>
   }> = {}
 ): Broker {
   const notStubbed = async (): Promise<never> => { throw new Error('this stub method was not configured for this test') }
@@ -76,8 +83,14 @@ export function stubBroker (
         await (overrides.writeFile?.(origin, path, data) ?? notStubbed())
       }
     },
-    registerApp: () => { throw new Error('registerApp is not reachable via orivon.* and should never be called here') },
-    versionFloorFor: () => { throw new Error('versionFloorFor is not reachable via orivon.* and should never be called here') },
+    registerApp: async (origin, manifest) => {
+      calls.push({ method: 'registerApp', origin, args: manifest })
+      await (overrides.registerApp?.(origin, manifest) ?? notStubbed())
+    },
+    versionFloorFor: async (origin) => {
+      calls.push({ method: 'versionFloorFor', origin, args: undefined })
+      return await (overrides.versionFloorFor?.(origin) ?? notStubbed())
+    },
     grant: () => { throw new Error('grant is not reachable via orivon.* and should never be called here') },
     revoke: async () => { throw new Error('revoke is not reachable via orivon.* and should never be called here') }
   }
