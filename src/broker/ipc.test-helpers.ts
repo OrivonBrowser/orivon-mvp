@@ -78,6 +78,8 @@ export function stubBroker (
     },
     registerApp: () => { throw new Error('registerApp is not reachable via orivon.* and should never be called here') },
     versionFloorFor: () => { throw new Error('versionFloorFor is not reachable via orivon.* and should never be called here') },
+    rollbackAcknowledgedVersionFor: () => { throw new Error('rollbackAcknowledgedVersionFor is not reachable via orivon.* and should never be called here') },
+    acknowledgeRollback: () => { throw new Error('acknowledgeRollback is not reachable via orivon.* and should never be called here') },
     grant: () => { throw new Error('grant is not reachable via orivon.* and should never be called here') },
     revoke: async () => { throw new Error('revoke is not reachable via orivon.* and should never be called here') }
   }
