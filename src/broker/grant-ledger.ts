@@ -56,8 +56,10 @@ interface OriginRecord {
    * other writer, and only ever raises it too.
    *
    * Persisted via an injected `LedgerStorage` (A57, `docs/open-questions.md`)
-   * so it survives a browser restart, not just an app's own uninstall --
-   * `ADR-0009` requires exactly that. Deliberately NOT persisted the rest of
+   * so it survives a browser restart -- but deliberately NOT a full "remove
+   * this app" action, which is meant to forget the origin completely
+   * (`ADR-0009`'s 2026-09-04 amendment corrects its own earlier claim that
+   * the floor must survive that too). Deliberately NOT persisted the rest of
    * `OriginRecord` (`manifest`, `grants`, `fsBytesWritten`): full ledger
    * persistence is separate, larger, not-yet-built work (A23's own "when the
    * code that persists grants exists"); this closes only the specific T19
