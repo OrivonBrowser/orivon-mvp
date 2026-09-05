@@ -2559,3 +2559,64 @@ agree on this — recorded here because d-0017 itself was otherwise undocumented
 **Needed by:** confirm before the discovery-trigger hint listener (the first real UI caller of
 `acknowledgeRollback`) is built — that PR should not have to guess at this granularity or
 re-derive the reasoning above.
+
+---
+
+### A69 — `netConnect`'s missing `allowHalfOpen` is real, but its "one-line fix" breaks `Duplex.toWeb`'s EOF detection entirely **[RESEARCH — investigated, no safe fix found yet]**
+
+Found 2026-09-05, `stream/broker-23-write-pump`, while building the write-side byte pump (A37)
+and checking `handle-contracts.md`'s close table against the real dial path.
+
+`src/broker/node-adapters.ts`'s `dialOne` calls `netConnect({ host: address, port })` with no
+`allowHalfOpen`, so Node's default (`false`) applies: when the **peer** sends FIN, Node
+auto-ends our writable too. This genuinely contradicts close-table row 2
+(`handle-contracts.md` §TcpSocket: peer sends FIN → readable ends, **writable stays open**,
+`closed` pending) — half-close is called load-bearing there for exactly this reason (a
+BitTorrent peer keeps reading a choke/interested handshake long after it stops writing new
+requests). The natural-looking fix is one line: add `allowHalfOpen: true` to the `netConnect`
+call.
+
+**That fix was written, then reverted before merging, because live testing found it trades this
+bug for a worse one.** Checked empirically (Node 24.11.1), not assumed:
+
+- With `allowHalfOpen: true`, once the peer sends FIN, the raw socket's own `readableEnded`
+  becomes `true` and its `'end'` event fires correctly and promptly — Node's own classic-streams
+  behaviour is exactly right.
+- But `Duplex.toWeb(socket).readable`'s `reader.read()` **never resolves with `done: true`** —
+  it hangs forever, even though the peer will never send another byte. Confirmed by ruling out
+  timing: waiting 500ms after the raw `'end'` event, then calling `reader.read()`, still hangs.
+- Confirmed the cause precisely: `reader.read()` only resolves once **our own side ALSO ends**
+  (calling `socket.end()` ourselves, in addition to the peer's FIN, immediately unblocks it).
+  With `allowHalfOpen: false` (today's default), the same scenario resolves `reader.read()`
+  correctly and immediately — the EOF-detection regression appears **only** in combination with
+  `allowHalfOpen: true`.
+- The write itself succeeds fine after the peer's FIN either way (`allowHalfOpen: true` does fix
+  the writable-closes-too-early half of the bug) — the newly-discovered problem is specifically
+  that `Duplex.toWeb`'s readable side stops reporting completion at all once the socket can be
+  half-open, seemingly gating its "done" signal on the underlying duplex's fully-closed state
+  rather than the readable half's own `'end'`.
+
+**Why this is worse than the bug it would have fixed.** The read side (`port-pump.ts`,
+merged and tested) depends entirely on `Duplex.toWeb(socket).readable` reporting EOF promptly.
+A peer that finishes sending and simply waits (an ordinary, common half-close pattern, not an
+edge case) would leave `port-pump.ts` waiting for bytes that will never arrive — the pump never
+sends `StreamEndMessage`, and the app-facing `readable` never closes — for the lifetime of the
+connection. Shipping `allowHalfOpen: true` as a drive-by fix inside the write-pump PR would have
+silently regressed already-correct, already-tested read-side behaviour, for a class of peer
+behaviour common enough that it would likely surface in the flagship's own BitTorrent traffic.
+
+**Not fixed here.** `dialOne` still omits `allowHalfOpen`, unchanged — the pre-existing gap
+(writable closes too early on a peer FIN) stands exactly as before this was investigated.
+Fixing it correctly needs one of: (a) a custom `ReadableStream` wrapper around the socket that
+derives its own completion signal from the raw socket's `'end'` event rather than trusting
+`Duplex.toWeb`'s, independent of `allowHalfOpen`; (b) confirming whether a newer or older Node
+release behaves differently (not checked — this repo pins Node 24); or (c) filing this upstream
+against Node's `Duplex.toWeb` if no released version resolves it. None of these is a one-line
+change, and (a) in particular changes `dialOne`'s readable-stream construction for every socket,
+not just half-open ones, so it deserves its own reviewed PR and its own test suite rather than
+riding in on the write-pump work that happened to surface it.
+
+**Needed by:** before any fix to this ships. Not blocking build step 2's write-pump work, whose
+own half-close support (the app's own `writable.close()`/`.abort()`, handled in
+`port-sink.ts`) is unaffected — Node's half-close behaviour when **we** close first is not
+gated by `allowHalfOpen` the way the peer-closes-first direction is.

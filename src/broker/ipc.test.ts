@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createPortRegistry } from './port-registry.js'
 import { handleControlRequest, registerBrokerIpc } from './ipc.js'
-import type { ControlEvent, IpcMainLike, PortLike, PortPair, PortTransport } from './ipc.js'
-import type { Grant, Manifest, OrivonError, OrivonErrorCode } from '../contracts/index.js'
-import type { FailableTcpSocket } from './handle-contracts.js'
+import type { ControlEvent, IpcMainLike } from './ipc.js'
+import type { Grant, Manifest, OrivonError } from '../contracts/index.js'
 import type { RequestEnvelope, ResponseEnvelope } from '../contracts/ipc.js'
-import { APP, type BrokerCall, envelope, frameFor, NO_FRAME, never, OTHER, stubBroker } from './ipc.test-helpers.js'
+import {
+  APP, type BrokerCall, envelope, fakePort, fakePortPair, fakeTcpSocket, fakeTransport,
+  frameFor, NO_FRAME, never, OTHER, stubBroker, tick
+} from './ipc.test-helpers.js'
 
 // This suite is what proves handleControlRequest is the thing DoD rule 1
 // describes -- origin from the SENDER FRAME, never from the payload -- and
@@ -92,74 +93,6 @@ describe('the four wired control operations', () => {
     expect(calls).toEqual([{ method: 'fs.writeFile', origin: APP, args: { path: '/a/b.txt', data } }])
   })
 })
-
-/** A controllable in-memory PortLike -- captures every postMessage, and lets a test simulate the renderer sending a message back. */
-function fakePort (): PortLike & { readonly sent: unknown[], emit: (message: unknown) => void } {
-  let listener: ((message: unknown) => void) | undefined
-  const sent: unknown[] = []
-  return {
-    postMessage: (message) => { sent.push(message) },
-    onMessage: (l) => { listener = l },
-    close: () => {},
-    sent,
-    emit: (message) => { listener?.(message) }
-  }
-}
-
-function fakePortPair (): { readonly pair: PortPair, readonly port1: ReturnType<typeof fakePort> } {
-  const port1 = fakePort()
-  return { pair: { port1, port2: 'fake-port2' }, port1 }
-}
-
-/** A PortTransport whose createPortPair always returns the SAME pair -- fine for these tests, which each make at most one net.connect call. */
-function fakeTransport (pair: PortPair): PortTransport {
-  return { createPortPair: () => pair, registry: createPortRegistry() }
-}
-
-interface FakeSocket {
-  readonly socket: FailableTcpSocket
-  readonly closeSpy: ReturnType<typeof vi.fn>
-  readonly failSpy: ReturnType<typeof vi.fn>
-  readonly settleClosed: (error?: OrivonError) => void
-}
-
-/** A FailableTcpSocket whose `readable` a test controls directly and whose `closed` a test settles on demand -- close()/fail() themselves settle it, the same way the real ones do (index.ts's connect()). */
-function fakeTcpSocket (readable: ReadableStream<Uint8Array> = new ReadableStream({ start: (c) => { c.close() } })): FakeSocket {
-  let settle: (error?: OrivonError) => void = () => {}
-  let settled = false
-  const closed = new Promise<void>((resolve, reject) => {
-    settle = (error) => {
-      if (settled) return
-      settled = true
-      if (error === undefined) resolve(); else reject(error)
-    }
-  })
-  const closeSpy = vi.fn(async () => { settle() })
-  const failSpy = vi.fn((code: OrivonErrorCode, platformCode?: string) => {
-    const err = { name: 'OrivonError', message: 'the handle failed', code, platformCode } as OrivonError
-    settle(err)
-  })
-  const socket: FailableTcpSocket = {
-    id: 'handle-1',
-    closed,
-    close: closeSpy,
-    fail: failSpy,
-    readable,
-    writable: new WritableStream(),
-    remoteAddress: '93.184.216.34',
-    remotePort: 443,
-    localAddress: '10.0.0.5',
-    localPort: 54321,
-    setNoDelay: async () => {},
-    setKeepAlive: async () => {}
-  }
-  return { socket, closeSpy, failSpy, settleClosed: settle }
-}
-
-/** Lets a fire-and-forget pump/wiring chain progress before assertions run. */
-async function tick (times = 5): Promise<void> {
-  for (let i = 0; i < times; i++) await Promise.resolve()
-}
 
 describe("net.connect / net.close (the byte pump's control-channel wiring)", () => {
   it('returns a plain descriptor -- never the socket, its streams, or its close function', async () => {
@@ -295,6 +228,70 @@ describe("net.connect / net.close (the byte pump's control-channel wiring)", () 
     )
 
     expect(response).toEqual({ id: 'req-1', ok: true, result: undefined })
+  })
+
+  it('net.setNoDelay calls the registered socket\'s setNoDelay for the origin that opened it', async () => {
+    const calls: BrokerCall[] = []
+    const { socket } = fakeTcpSocket()
+    const setNoDelay = vi.spyOn(socket, 'setNoDelay')
+    const broker = stubBroker(calls, { connect: async () => socket })
+    const transport = fakeTransport(fakePortPair().pair)
+
+    const connectResponse = await handleControlRequest(
+      broker, frameFor(APP), envelope('net.connect', { host: 'x.example', port: 443 }), transport
+    )
+    const id = connectResponse.ok ? (connectResponse.result as { id: string }).id : ''
+
+    const response = await handleControlRequest(broker, frameFor(APP), envelope('net.setNoDelay', { id, on: true }), transport)
+
+    expect(response).toEqual({ id: 'req-1', ok: true, result: undefined })
+    expect(setNoDelay).toHaveBeenCalledWith(true)
+  })
+
+  it('net.setKeepAlive calls the registered socket\'s setKeepAlive, forwarding initialDelayMs', async () => {
+    const calls: BrokerCall[] = []
+    const { socket } = fakeTcpSocket()
+    const setKeepAlive = vi.spyOn(socket, 'setKeepAlive')
+    const broker = stubBroker(calls, { connect: async () => socket })
+    const transport = fakeTransport(fakePortPair().pair)
+
+    const connectResponse = await handleControlRequest(
+      broker, frameFor(APP), envelope('net.connect', { host: 'x.example', port: 443 }), transport
+    )
+    const id = connectResponse.ok ? (connectResponse.result as { id: string }).id : ''
+
+    await handleControlRequest(broker, frameFor(APP), envelope('net.setKeepAlive', { id, on: true, initialDelayMs: 5_000 }), transport)
+
+    expect(setKeepAlive).toHaveBeenCalledWith(true, 5_000)
+  })
+
+  it('net.setNoDelay for an id belonging to a DIFFERENT origin is a silent no-op (T11c)', async () => {
+    const calls: BrokerCall[] = []
+    const { socket } = fakeTcpSocket()
+    const setNoDelay = vi.spyOn(socket, 'setNoDelay')
+    const broker = stubBroker(calls, { connect: async () => socket })
+    const transport = fakeTransport(fakePortPair().pair)
+
+    const connectResponse = await handleControlRequest(
+      broker, frameFor(APP), envelope('net.connect', { host: 'x.example', port: 443 }), transport
+    )
+    const id = connectResponse.ok ? (connectResponse.result as { id: string }).id : ''
+
+    const response = await handleControlRequest(broker, frameFor(OTHER), envelope('net.setNoDelay', { id, on: true }), transport)
+
+    expect(response).toEqual({ id: 'req-1', ok: true, result: undefined })
+    expect(setNoDelay).not.toHaveBeenCalled()
+  })
+
+  it('net.setNoDelay/net.setKeepAlive for an id nothing ever registered are silent no-ops', async () => {
+    const calls: BrokerCall[] = []
+    const transport = fakeTransport(fakePortPair().pair)
+
+    const r1 = await handleControlRequest(stubBroker(calls), frameFor(APP), envelope('net.setNoDelay', { id: 'x', on: true }), transport)
+    const r2 = await handleControlRequest(stubBroker(calls), frameFor(APP), envelope('net.setKeepAlive', { id: 'x', on: true }), transport)
+
+    expect(r1).toEqual({ id: 'req-1', ok: true, result: undefined })
+    expect(r2).toEqual({ id: 'req-1', ok: true, result: undefined })
   })
 })
 
@@ -468,7 +465,15 @@ describe('defensive payload validation (a compromised renderer can bypass contex
     ['net.connect', { host: 'x.example' }],
     ['net.connect', { host: 123, port: 443 }],
     ['net.close', {}],
-    ['net.close', { id: 42 }]
+    ['net.close', { id: 42 }],
+    ['net.setNoDelay', {}],
+    ['net.setNoDelay', { id: 'handle-1' }],
+    ['net.setNoDelay', { id: 42, on: true }],
+    ['net.setNoDelay', { id: 'handle-1', on: 'yes' }],
+    ['net.setKeepAlive', {}],
+    ['net.setKeepAlive', { id: 'handle-1' }],
+    ['net.setKeepAlive', { id: 'handle-1', on: 'yes' }],
+    ['net.setKeepAlive', { id: 'handle-1', on: true, initialDelayMs: 'soon' }]
   ])('%s rejects a malformed payload as invalid, without calling the broker', async (method, payload) => {
     const calls: BrokerCall[] = []
     const response = await handleControlRequest(stubBroker(calls), frameFor(APP), envelope(method, payload))
