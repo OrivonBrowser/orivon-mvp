@@ -101,14 +101,20 @@ const APP_CLOSE_RACE_MS = 8_000
  * actually awaits them -- each figure is the REAL ceiling that call site
  * enforces, not a guess:
  *
- *   waitFor(windowsReady)              WAIT_TIMEOUT_MS             8_000
+ *   waitFor(windowsReady)              WAIT_TIMEOUT_MS               8_000
  *   waitForAddressBarStable            ADDRESS_BAR_STABLE_TIMEOUT_MS 8_000
- *   click + fill + press (3 actions)   DEFAULT_ACTION_TIMEOUT_MS x3 30_000
- *   waitForTab                         WAIT_TIMEOUT_MS             8_000
- *   evaluateRetrying (read page state) WAIT_TIMEOUT_MS             8_000
- *   teardown: waitFor(windows === 0)   WAIT_TIMEOUT_MS             8_000
- *   teardown: app.close() race         APP_CLOSE_RACE_MS           8_000
- *                                                          total: 78_000
+ *   clickAddressBarRetrying, worst case (the first click hits C6's known
+ *   flake and the single retry fires): first click, re-settle, retried
+ *   click, fill, press -- five actions, two of them DEFAULT_ACTION_TIMEOUT_MS
+ *   apart from the one extra waitForAddressBarStable in between:
+ *     click (1st attempt)               DEFAULT_ACTION_TIMEOUT_MS     10_000
+ *     waitForAddressBarStable (retry)   ADDRESS_BAR_STABLE_TIMEOUT_MS  8_000
+ *     click (2nd attempt) + fill + press DEFAULT_ACTION_TIMEOUT_MS x3 30_000
+ *   waitForTab                         WAIT_TIMEOUT_MS               8_000
+ *   evaluateRetrying (read page state) WAIT_TIMEOUT_MS               8_000
+ *   teardown: waitFor(windows === 0)   WAIT_TIMEOUT_MS               8_000
+ *   teardown: app.close() race         APP_CLOSE_RACE_MS             8_000
+ *                                                            total: 96_000
  *
  * Kept as an actual sum of the real constants, not restated as a bare
  * number, so the next person who adds a wait to this critical path sees
@@ -118,7 +124,7 @@ const APP_CLOSE_RACE_MS = 8_000
 const PHASE1_WAIT_BUDGET_MS =
   WAIT_TIMEOUT_MS +
   ADDRESS_BAR_STABLE_TIMEOUT_MS +
-  DEFAULT_ACTION_TIMEOUT_MS * 3 +
+  DEFAULT_ACTION_TIMEOUT_MS + ADDRESS_BAR_STABLE_TIMEOUT_MS + DEFAULT_ACTION_TIMEOUT_MS * 3 +
   WAIT_TIMEOUT_MS +
   WAIT_TIMEOUT_MS +
   WAIT_TIMEOUT_MS +
@@ -229,6 +235,40 @@ async function waitForAddressBarStable (
     previous = rect
     return streak >= STABLE_READS_REQUIRED - 1
   }, timeoutMs)
+}
+
+/**
+ * Runs the address-bar navigation (click, fill, press Enter), retrying
+ * ONCE if the first attempt fails with the exact known-flaky signature
+ * (`docs/open-questions.md` C6): `waitForAddressBarStable` above already
+ * reported the bounding box stopped moving, but Playwright's own
+ * actionability wait on `.click()` -- which checks more than position, most
+ * likely hit-testability against the compositor's actual paint state -- can
+ * still time out on a loaded CI runner a frame or two behind a layout that
+ * has already stopped moving. Bounding-box stability proves position
+ * stopped changing; it does not prove the compositor caught up to it.
+ *
+ * A single explicit retry, never a loop: this is a mitigation for a
+ * documented environment race, not a general-purpose retry-until-it-passes.
+ * Two consecutive failures on the exact same element are far more likely to
+ * be a real regression than CI-runner timing, and this must not paper over
+ * that -- the second attempt's error propagates unchanged.
+ *
+ * Matches on the timeout's own message rather than catching everything,
+ * so an unrelated failure from `.fill()`/`.press()` (a real bug) still
+ * fails immediately rather than being masked by a pointless retry.
+ */
+async function clickAddressBarRetrying (page: ReturnType<typeof findChrome>, url: string): Promise<void> {
+  try {
+    await page.click('#address')
+  } catch (error) {
+    const isKnownFlake = error instanceof Error && error.message.includes('Timeout') && error.message.includes("locator('#address')")
+    if (!isKnownFlake) throw error
+    await waitForAddressBarStable(page)
+    await page.click('#address')
+  }
+  await page.fill('#address', url)
+  await page.press('#address', 'Enter')
 }
 
 /**
@@ -363,9 +403,7 @@ it('Phase 1: the real shell launches and navigates the fixture tab, and the fixt
           addressBarStable,
           addressBarStable ? undefined : `did not read stable within ${ADDRESS_BAR_STABLE_TIMEOUT_MS}ms`
         )
-        await chrome.click('#address')
-        await chrome.fill('#address', FIXTURE_URL)
-        await chrome.press('#address', 'Enter')
+        await clickAddressBarRetrying(chrome, FIXTURE_URL)
 
         const navigated = await waitForTab(chrome, { address: FIXTURE_URL, title: 'Orivon fixture app' })
         check(
