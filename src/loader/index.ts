@@ -65,8 +65,23 @@ export interface LoadContext {
   readonly grantedPatterns: PatternSet
   /** The highest version ever installed for this origin (T19). `'0.0.0'` for an origin that has never been granted anything, per compareVersions' release-component semantics. */
   readonly versionFloor: string
-  /** See update.ts's UpdateInput.rollbackAcknowledged -- passed straight through, unchanged, to decideUpdate(). */
-  readonly rollbackAcknowledged: boolean
+  /**
+   * The SPECIFIC below-floor version this origin's rollback was last
+   * acknowledged for (`Broker.rollbackAcknowledgedVersionFor`), or
+   * `undefined` if never acknowledged. NOT the boolean `decideUpdate()`
+   * itself wants -- this file supplies that boolean itself, at the point it
+   * calls `decideUpdate()`, by comparing this value against the manifest's
+   * ACTUAL offered version once fetchBundle() has returned it.
+   *
+   * Deliberately not a precomputed boolean: the caller of `load()` cannot
+   * know the offered version in advance (fetching the manifest is this
+   * file's own job, not the caller's -- see its header), so it cannot
+   * correctly decide "is this acknowledged" itself. Asking it to would force
+   * a guess or a second fetch. Handing over the raw acknowledged version
+   * and letting THIS file do the comparison once it actually knows what is
+   * being offered is the only point where both facts are available at once.
+   */
+  readonly acknowledgedRollbackVersion: string | undefined
 }
 
 export interface LoadInstalled {
@@ -267,7 +282,10 @@ export function createLoader (options: CreateLoaderOptions): Loader {
       newPatterns: patternSetFromCapabilities(manifest.capabilities),
       version: manifest.version,
       versionFloor: context.versionFloor,
-      rollbackAcknowledged: context.rollbackAcknowledged
+      // The comparison LoadContext.acknowledgedRollbackVersion's own doc
+      // promises: only NOW is the actual offered version known, so only
+      // now can "was THIS version acknowledged" be answered.
+      rollbackAcknowledged: context.acknowledgedRollbackVersion === manifest.version
     })
 
     switch (decision) {
