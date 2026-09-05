@@ -111,8 +111,16 @@ export interface LoadNeedsCapabilityPrompt {
  * silent, no-prompt `rejected`. It is now a warned CHOICE the first time for
  * a given origin -- proceed with this older version, or keep what's cached
  * -- never a hard block. Carries `tree`/`entries`/`manifest` for the same
- * reason `LoadNeedsReconsent`/`LoadNeedsCapabilityPrompt` do: so approving
- * can persist without re-fetching.
+ * reason `LoadNeedsReconsent`/`LoadNeedsCapabilityPrompt` carry them --
+ * so a caller doesn't have to re-fetch to act on the choice.
+ *
+ * NOT the same reason, though: for those two, approving is terminal --
+ * `widensAuthority`/`isSameBundle` (`ordinaryEscalation`, `update.ts`)
+ * already ran, so persisting the result on approval is safe. Here they have
+ * NOT run yet -- `decideUpdate` returns `rollback-choice` before either
+ * check, so this manifest could also widen capabilities. Approving must
+ * record the acknowledgement and let `decideUpdate` run again (now correctly
+ * reaching `ordinaryEscalation`), never persist this result directly.
  */
 export interface LoadNeedsRollbackChoice {
   readonly outcome: 'needs-rollback-choice'
