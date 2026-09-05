@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { withOriginQueue } from './origin-queue.js'
+import { hasQueuedOrigin, withOriginQueue } from './origin-queue.js'
 
 /** A deferred promise -- lets a test control exactly when a queued task settles, so it can prove ordering rather than merely observing whatever the event loop happens to do. */
 function deferred<T> (): { promise: Promise<T>, resolve: (value: T) => void, reject: (error: unknown) => void } {
@@ -97,4 +97,81 @@ describe('withOriginQueue', () => {
     await Promise.all(calls)
     expect(order).toEqual([0, 1, 2])
   })
+
+  it('drops the origin\'s queue entry once every chained task for it has drained', async () => {
+    const origin = 'https://drains.example'
+    expect(hasQueuedOrigin(origin)).toBe(false)
+
+    const call = withOriginQueue(origin, async () => 'done')
+    expect(hasQueuedOrigin(origin)).toBe(true)
+
+    await call
+    // Cleanup runs in a microtask chained off settlement, not synchronously
+    // with it -- give it a few turns of the microtask queue.
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(hasQueuedOrigin(origin)).toBe(false)
+  })
+
+  it('a call\'s cleanup must not evict a NEWER call\'s still-in-flight entry (guarded delete, not naive)', async () => {
+    const origin = 'https://guarded.example'
+    const order: string[] = []
+    const firstDone = deferred<void>()
+    const secondStarted = deferred<void>()
+    const secondDone = deferred<void>()
+
+    const call1 = withOriginQueue(origin, async () => {
+      order.push('1 start')
+      await firstDone.promise
+      order.push('1 end')
+    })
+    const call2 = withOriginQueue(origin, async () => {
+      order.push('2 start')
+      secondStarted.resolve()
+      await secondDone.promise
+      order.push('2 end')
+    })
+
+    firstDone.resolve()
+    // Waits until call2's task has actually started -- which can only
+    // happen after call1's whole chain (and therefore call1's cleanup,
+    // registered earlier on the same settlement) has already run.
+    await secondStarted.promise
+    expect(order).toEqual(['1 start', '1 end', '2 start'])
+
+    // A third call arrives while call2 is still in flight. If call1's
+    // cleanup deleted the map entry NAIVELY (unconditionally, rather than
+    // only when it is still the current one), this call would find no
+    // queue for the origin at all and run immediately -- interleaving with
+    // call2, which is exactly the A62 hazard this file exists to prevent.
+    const call3 = withOriginQueue(origin, async () => {
+      order.push('3 start')
+    })
+
+    // Give call3 every chance to start early if the guard were missing.
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(order).toEqual(['1 start', '1 end', '2 start'])
+
+    secondDone.resolve()
+    await call1
+    await call2
+    await call3
+
+    expect(order).toEqual(['1 start', '1 end', '2 start', '2 end', '3 start'])
+  })
+
+  it('throws instead of deadlocking when a task calls withOriginQueue again for its own origin', async () => {
+    const origin = 'https://reentrant.example'
+
+    const outer = withOriginQueue(origin, async () => {
+      await withOriginQueue(origin, async () => {
+        // Never reached: the re-entrant call must be rejected before this runs.
+      })
+    })
+
+    await expect(outer).rejects.toThrow(/re-entrant/i)
+  }, 2000)
 })
