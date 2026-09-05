@@ -145,16 +145,16 @@ export class TabManager {
     private readonly dashboardUrl: string,
     /**
      * Read-only plumbing, unused today: `ctx.broker`/`ctx.loader` are what
-     * the not-yet-built discovery-trigger hint listener needs (A60/A61's
-     * own glue, `src/main/app-install.ts`) to install an app the moment a
-     * tab's own page shows the `<link rel="orivon-manifest">` hint. Threaded
-     * through now, on its own, deliberately separate from that behavior --
-     * see `docs/development/parallel-work.md`'s append-only-first
-     * discipline, applied here to a constructor parameter rather than a
-     * registry array. `ctx.loader` may be `undefined` (`loaderSubsystem` is
-     * not `critical`, unlike the broker) -- whoever reads it here later must
-     * treat an absent loader as "the discovery trigger is disabled this
-     * run", never assume it is always present.
+     * the not-yet-built discovery-trigger hint listener needs to install an
+     * app the moment a tab's own page shows the `<link rel="orivon-manifest">`
+     * hint (A60/A61, `docs/open-questions.md`). Threaded through now, on its
+     * own, deliberately separate from that behavior -- see
+     * `docs/development/parallel-work.md`'s append-only-first discipline,
+     * applied here to a constructor parameter rather than a registry array.
+     * `ctx.loader` may be `undefined` (`loaderSubsystem` is not `critical`,
+     * unlike the broker) -- whoever reads it here later must treat an
+     * absent loader as "the discovery trigger is disabled this run", never
+     * assume it is always present.
      */
     private readonly ctx: SubsystemContext
   ) {
