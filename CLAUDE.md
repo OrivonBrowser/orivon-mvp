@@ -2,17 +2,21 @@
 
 ## Start here
 
-**Phase: build step 2 (the capability broker) underway.** `checkConnect` now takes the
-granted pattern list, not the manifest (A18); `src/broker/index.ts` assembles `createBroker`
-against the grant ledger; `src/loader/manifest.ts` validates untrusted app manifests. All
-merged 2026-09-01, after a review pass found and fixed four real defects in the broker
-assembly (an unmapped I/O-error contract, a superseded grant that stayed live and
-unrevocable, an fs-capability DoS gap against T11b, an unenforced disk quota).
-**Still open** (not verified this session, per `build-plan.md`'s own sequencing):
-`dial`/`resolve`/`fs` remain injected dependencies, not real Node I/O, and nothing wires
-the broker to the shell's IPC layer yet.
-Last updated 2026-09-01 (8-PR review/fix/merge pass; five newly-found pre-existing defects
-filed as A27-A31, `docs/open-questions.md`).
+**Phase: build step 2 (the capability broker) essentially complete.** `orivon.net.connect`
+is now reachable from a real page — `dial`/`resolve`/`fs` are real Node I/O (not stubs, contrary
+to what this section said before 2026-09-05), the broker is wired to a real `ipcMain` control
+channel, and the byte pump's write direction (A37) is built, tested, and wired onto
+`window.orivon` via a real `contextBridge.executeInMainWorld` main-world stream wrapper —
+verified end to end via a real Electron launch, not just unit tests. Four stacked PRs, open
+and merging in order: #79 (contracts) -> #80 (broker write half) -> #81 (preload/main-world
+surface) -> #82 (the e2e test's Phase 1, updated to match).
+**Still open, by design, not a gap in this work:** no origin has a grant yet
+(`broker.grant()` has no production caller) — that is build step 4's job (the app loader and
+the permission prompt), and it is *why* the real e2e check now correctly ends in a `'denied'`,
+not a completed byte transfer. Also filed as A69: an `allowHalfOpen` half-close fix was found
+to break `Duplex.toWeb`'s own EOF detection and was reverted rather than shipped broken.
+Last updated 2026-09-05 (write-pump completed across 4 stacked PRs; see PR bodies for the
+full verification trail).
 
 **The human documentation is the map. Read it first — this file adds only what is specific to
 working here as an agent.**
@@ -72,6 +76,12 @@ app). **Corrected 2026-09-01 (A30):** the earlier claim that `titleBarStyle`/`ti
 rather than wrong, and that silence got over-generalized into a false "family" claim. **Check
 `node_modules/electron/electron.d.ts` directly first** — context7 is a second check, not a
 substitute.
+
+**`contextBridge.executeInMainWorld` (marked `@experimental`) works as documented, including
+in a `sandbox: true` preload** — confirmed live 2026-09-05 via a throwaway probe app: a
+function passed in `args` is proxied and callable from the main world, a callback passed back
+through it works, and a real main-world `ReadableStream` built this way behaves normally for
+page code. See PR #81 for the probe.
 
 Open owner decisions are in `docs/open-questions.md` §A. A11 is closed (`ADR-0007`: cached
 bundles keep their real origin, intercepted inside the app's partition). **A10 is closed**
@@ -183,9 +193,12 @@ Nothing enforces this mechanically, by owner's decision — same call as the cod
 template does the work by being already in the box. Note it is bypassed entirely by
 `gh pr create --body`, which is exactly how an agent tends to open one.
 
-**`gh pr edit`/`gh pr create` fail here with a GraphQL "Projects (classic)" error**, unrelated
-to auth or content. Use `gh api -X PATCH repos/OrivonBrowser/orivon-mvp/pulls/<n> -F body=@file`
-instead (`-F` reads `@file`'s contents; `-f` would send the literal string `@file`).
+**`gh pr edit` fails here with a GraphQL "Projects (classic)" error** (also true of
+`--label`/`--add-label` on `gh pr create`), unrelated to auth or content — but plain
+`gh pr create --title ... --body-file ...` with no `--label` works fine, confirmed
+repeatedly 2026-09-05. To edit an existing PR's body, use
+`gh api -X PATCH repos/OrivonBrowser/orivon-mvp/pulls/<n> -F body=@file` instead (`-F` reads
+`@file`'s contents; `-f` would send the literal string `@file`).
 
 ### Code guidelines
 
@@ -255,6 +268,9 @@ in a lookahead inside a single `regex_match`.
 **Read `docs/development/parallel-work.md` before starting any build step.** Then:
 
 - Work in a **worktree** on `stream/<name>`, matching the ownership map.
+- **A stacked PR (branch B needs branch A's unmerged commits) needs a base ref a native
+  worktree tool can't take** — it only branches from `origin/<default>` or the current HEAD.
+  Use `git worktree add <path> -b <new-branch> <base-branch>` directly instead.
 - **Stay inside your owned paths.** If a change needs a file another stream owns, that is a
   signal — raise it, do not just edit it.
 - **Never modify `src/contracts/` in the same PR as an implementation.** A contracts change
