@@ -59,7 +59,7 @@ arbitrary hosts) · identity seed and derived keys · other apps' data · attent
 | T16 | Any website probes `window.nostr` to fingerprint Orivon or read the user's pubkey | Presence is detectable — true of every NIP-07 extension. The pubkey and signing are gated behind a per-site connect prompt; no identity data leaks without consent. **Note the disanalogy:** an extension is a deliberate install of a key the user generated and can back up; this identity is silent, shipped to 100% of installs, and not exportable in v0 |
 | T17 | An app transfers a live socket `MessagePort` to an unauthorised origin | **The raw port never crosses into the main world.** The preload holds it in the isolated world and exposes only `contextBridge` closures. `MessagePort` is transferable and carries **no sender identity**, so a transferred port is a bearer capability — the fast implementation is the insecure one |
 | T18 | Compromised host navigates a granted app to attacker content, or embeds it in a subframe | Block navigation away from the app's own origin (`will-navigate`, `setWindowOpenHandler`); **reject `orivon.*` from subframes outright in v0**; `webviewTag: false`. Without this, a 302 defeats the publisher-key pinning entirely — no signing key required |
-| T19 | Silent update widens capability *patterns* without adding a capability *kind* | Re-consent triggers on a **subset check over granted patterns**, not a kind comparison. `["api.example.com:443"]` → `["*:*"]` must prompt. Plus a per-origin **version floor**, so a validly-signed older bundle cannot be replayed |
+| T19 | Silent update widens capability *patterns* without adding a capability *kind* | Re-consent triggers on a **subset check over granted patterns**, not a kind comparison. `["api.example.com:443"]` → `["*:*"]` must prompt. Plus a per-origin **version floor** that only ever rises, so a validly-signed older bundle is never installed unnoticed (see the 2026-09-04 correction below — it is warned and chosen, not silently replayed, but it is never silent either) |
 | T20 | `orivon.net` bypasses a configured proxy, de-anonymising the user | Node `net`/`dgram` do not honour Chromium's proxy settings. **Fail closed:** if a proxy is configured, socket capabilities refuse to open and the prompt says why. Never silently direct-connect around a proxy. Same for DNS resolution |
 | T21 | Cached app code is served in a way that loses the pin | Serve cached assets at the app's own https origin via a session `protocol` interceptor and **fail closed** — a same-origin request whose path is not in the pinned asset set is denied, not fetched. Re-verify the cached tree hash **at every load**, not only at fetch |
 | T22 | App reaches arbitrary hosts via `fetch`/WebSocket/WebRTC, invisible to the broker | Broker-injected CSP on each app's session partition (`connect-src` limited to the bundle plus the origin's *granted* patterns — see the correction below), applied via `onHeadersReceived` so the app cannot relax it. Bounds `fetch`/WebSocket only; WebRTC is unmitigated (`docs/open-questions.md` A41) and the name-vs-address gap is open (A42). Without this the grant does not bound network reach and the trust indicator reports what it cannot see (`ADR-0006`) |
@@ -137,6 +137,30 @@ same distinction `src/broker/index.ts`'s own `connect()` already draws (a manife
 header permit network reach the user explicitly refused. Docs-borrow precedent: A31 (following
 A38's own resolution, which corrected this same file for a different threat row). Found and
 fixed while writing T22's implementation, 2026-09-02.
+
+**T19 said the version floor stops a replayed older bundle from being "installed."** That
+overstated it in the direction of silence, which is the wrong direction for a security row to be
+wrong in. **Reversed 2026-09-04, owner decision (`ADR-0013`):** a below-floor version was never
+meant to be a silent, no-prompt block — the code shipped that way, but the intent was always to
+warn the user and let them choose. It now does: the first time a given origin offers a below-floor
+version, the user is warned and asked whether to proceed with it or keep the cached version; once
+they have said yes once for that origin, every later below-floor version from it that asks for
+nothing new — same authority, same bytes as what's already pinned — installs with an ongoing,
+passive, non-blocking notice rather than asking again. The floor itself is unchanged and still only
+ever rises (`GrantLedger.versionFloor`, persisted, A57) — what changed is that reaching it is now a
+user decision, never a silent outcome in either direction. See `ADR-0013` for the full reasoning
+and the mechanics `src/broker/policy/update.ts`'s `decideUpdate()` now implements.
+
+**Correction, 2026-09-05 (`ADR-0013`'s own amendment of the same date):** "every later below-floor
+version from it installs with an ongoing, passive, non-blocking notice" was true only for a
+version asking for nothing new, and the row above did not say so until this correction — the gap
+was a real defect, not a wording nit. An acknowledged rollback that ALSO widens the granted pattern
+set, or serves bytes that don't match what's actually pinned, still produces `capability-prompt` or
+`reconsent` exactly as an ordinary, at-or-above-floor update carrying the same change would; the
+passive notice never overrides those. Before this fix, `rollbackAcknowledged` becoming true for an
+origin (from one benign, user-approved rollback) was enough to let anyone who later controlled that
+origin serve arbitrarily different code or a widened capability set under an already-forgiven
+version number, with no prompt at all.
 
 **A granted IPv6 literal cannot be represented in CSP at all**, found on review of the same file,
 2026-09-02. CSP's host grammar is `ALPHA / DIGIT / "-"` — no `[`, `]` or `:` — and Chromium drops

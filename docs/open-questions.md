@@ -1461,6 +1461,29 @@ Re-resolving the name after the check reopens the window the check exists to clo
 
 **Needed by:** now — this is live in the tree as of `98c4871`.
 
+**Implemented 2026-09-04 (`stream/loader-09-install-origin-guard`).** Found still genuinely
+unbuilt while scoping the discovery-trigger wiring — the resolution above recorded the owner's
+decision but nothing in `fetch-bundle.ts` yet acted on it. `fetchBundle()` now takes a `resolveFn:
+Resolver` (the same type `policy/connect.ts` defines) and rejects before its first network request
+if the install origin's hostname resolves — or, for a literal, classifies — as anything but
+public-unicast (`install-origin.ts`, split out once adding this pushed `fetch-bundle.ts` over the
+500-line limit). No loopback carve-out is implemented: the only discovery trigger is the
+page-supplied hint, which is exactly the case this entry's own resolution says loopback must never
+be reachable from, so the carve-out has no live path to attach to. That leaves a real,
+plainly-stated gap — a developer building their own local Orivon app cannot use the discovery
+trigger against `localhost` at all — tracked as its own entry, A65, rather than silently worked
+around.
+
+**Corrected 2026-09-05.** The sentence above originally claimed `loaderSubsystem` wires "the same
+`resolveHost` `createBroker` already uses, not a second resolver" — true of the first commit, made
+false by the same lane's own follow-up fix and never updated here. `loaderSubsystem` now wires
+`electronResolveHost` (Electron's `net.resolveHost` — the resolver Chromium's own `net.fetch`
+actually consults), a deliberate **second, different** `Resolver` implementation from the broker's
+node:dns-based one. See **A66** for why: reusing one resolver for both a raw TCP dial and a
+Chromium-mediated fetch would answer the wrong question for one of the two callers, and A66 is
+also where this guard's real residual limitation — the validated address cannot be pinned for the
+actual Electron fetch — is recorded in full.
+
 ---
 
 ### A52 — two residual gaps a real `Fetch` must close, not `fetch-bundle.ts` **[AI-REC]**
@@ -1684,6 +1707,21 @@ consequence for the shell: `app.firstWindow()` is not reliable long-term (it dep
 view-add order, which is an implementation detail, not a contract) — the shell's own smoke
 test matches windows by URL/title via `app.windows()` instead of relying on first-added
 ordering.
+
+**A related but distinct flake, hit twice in the 2026-09-05 review/merge run (PRs #72 and #73):**
+`test/e2e-capability-boundary.test.ts`'s Phase 1 (the same `_electron` driver this entry is
+about) intermittently timed out on `chrome.click('#address')` in CI, despite
+`waitForAddressBarStable` already reporting the element's bounding box had stopped moving —
+proven a genuine flake, not a regression, by two CI runs against the *identical* commit, one
+red and one green. Bounding-box stability proves position stopped changing; it does not prove
+Chromium's compositor caught up to it, which is a plausible cause distinct from this entry's own
+"no target-created event" mystery. **Mitigated, not resolved:** the click/fill/press sequence
+now retries once, re-running `waitForAddressBarStable` first, if the first attempt hits exactly
+this timeout signature (`clickAddressBarRetrying`, same file). A second consecutive failure on
+the same element still fails the test for real — this is a bounded, explicit retry against a
+named environmental race, not a general-purpose retry-until-green. This entry's own root cause
+(the CDP auto-attach question) remains exactly as unknown as before; only the address-bar
+symptom has a mitigation.
 
 ---
 
@@ -1984,6 +2022,14 @@ Loopback, `file:` and plain-`http` origins never persist a floor at all (`isPers
 closing A23 below). A60's escape hatch (`GrantLedger.forgetOrigin`) exists for the case this entry
 itself did not anticipate — a floor poisoned by a hostile version number, now that a restart can
 no longer clear it by accident.
+
+**Correction, 2026-09-04, owner decision.** This entry's own §"Distinct from A29" paragraph
+quotes `ADR-0009` stating the floor "must survive an uninstalled/reinstalled app." Asked directly
+while scoping the discovery-trigger work that depends on this entry: the owner wants the opposite
+— a full "remove this app" action should forget the origin completely, including its floor, with
+no permanent tombstone. What was actually built matches the NEW decision, not the quoted old one:
+the floor survives a restart only. `ADR-0009` itself is amended (2026-09-04) to record the
+reversal, since it was the document making the now-superseded claim.
 
 ---
 
@@ -2339,3 +2385,177 @@ back), or whether counting only up to the first code line of any kind is the int
 rule.
 
 **Needed by:** nothing. Tooling accuracy only.
+
+---
+
+### A65 — no discovery-trigger path lets a developer install their own local Orivon app **[STILL OPEN]**
+
+Found 2026-09-04, building the T12/A46 install-origin guard (`stream/loader-09-install-origin-
+guard`) that made this concrete rather than hypothetical.
+
+A46's own resolution permits installing a loopback origin, but **only** when the URL came from a
+user action (typed into the address bar, or an explicit action on something the user typed) —
+**never** from a page-supplied hint. Since the "Open as app" cut (`capability-api.md`'s
+2026-09-03 correction), the passive `<link rel="orivon-manifest">` hint is the *only* discovery
+trigger this loader is ever wired to. There is no second trigger left for A46's user-action
+carve-out to attach to, so in practice loopback is never installable at all right now: a developer
+building their own local Orivon app has no way to exercise the discovery trigger against
+`http://localhost:PORT`.
+
+**Asked directly, answered, not yet built.** The owner's direction (2026-09-04, same conversation
+that raised this gap): a real permission mechanism, but **user-granted per address, before Orivon
+ever contacts it** — explicitly not a manifest-declared flag, since reading a manifest requires
+contacting the address first, which is the exact thing being guarded against. This is confirmed
+design intent, not an open question about the mechanism's shape.
+
+**Why not built now, an AI scope call rather than something the owner was asked to sequence:**
+the mechanism needs a genuinely new kind of UI surface — nothing like a settings page or a
+persisted, user-editable address allowlist exists anywhere in this shell today — and
+`build-plan.md`'s own Sequence already reserves this territory for build step 9, "Developer mode
+— unpacked loader, plainly-worded opt-in, unsigned marking, developer docs." Building a
+first-of-its-kind settings surface as a side effect of the discovery-trigger work risked exactly
+the scope creep `CLAUDE.md` Rule 4 warns about.
+
+**Needed by:** before build step 9 ships, if a real developer workflow for testing a local app's
+manifest hint is expected to exist by then. Not blocking anything in build step 2/4 — the
+discovery trigger works correctly for every real, public origin without this.
+
+---
+
+### A66 — Electron's `net` module cannot pin a fetch's connection to a resolved literal (residual TOCTOU narrowing only, F2) **[RESEARCH — investigated, no fix available on this API surface]**
+
+Found 2026-09-05, `stream/loader-09-install-origin-guard`, fixing the DNS-rebinding/TOCTOU hole
+two independent review passes found in the T12/A46 install-origin guard (F2 in that lane's brief):
+`ensurePublicUnicastOrigin` resolved, validated, and then discarded the addresses, so
+`fetch-bundle.ts` named the install origin's host a SECOND time for every request — a fresh,
+independent resolution free to disagree with the guard's.
+
+`src/broker/policy/connect.ts`'s own discipline for the same problem, one layer down, is "resolve
+once, validate every answer, and hand the caller the validated literals **to dial**" — the broker's
+real `dialTcp` (`src/broker/node-adapters.ts`) then opens a raw `node:net` socket straight to one of
+those literals, never naming the hostname again. **That exact mechanism does not exist for a
+Chromium-mediated fetch.** Confirmed directly against `node_modules/electron/electron.d.ts`
+(electron 44) and Electron's own docs, not assumed:
+
+- `request.setHeader()` explicitly refuses to set `Host` (citing Chromium's own
+  `header_util.cc`) — the standard "rewrite the URL to the IP literal, keep the real hostname via a
+  `Host` header" pinning pattern is not available.
+- `--host-resolver-rules` (the one way to force a hostname to resolve to a specific address) is a
+  **command-line switch, set once before `app.whenReady()`** — not a per-request option, so it
+  cannot pin one install's fetch without affecting every other request the whole process makes at
+  the same time.
+- Neither `net.fetch`'s `Response` nor `net.request`'s `ClientRequest`/`IncomingMessage` exposes
+  the remote address a request actually connected to — there is no way to verify after the fact,
+  either.
+- Rewriting the fetch URL itself to the validated IP literal was considered and rejected: it breaks
+  TLS/SNI-based certificate validation for every real `https:` host (the certificate is issued for
+  the hostname, not the IP), and it breaks `fetch-bundle.ts`'s own same-origin check
+  (`originFromUrl(response.url) === canonicalOrigin`), which can never hold once `response.url`'s
+  host is an IP literal instead of the app's real hostname — trading a real, closed hole for a
+  worse one (either every legitimate install starts failing, or that origin check gets loosened to
+  accept IP literals, which is the actual security regression).
+
+**What shipped instead, in this fix:** the install-origin guard's resolver was switched from
+`node-adapters.ts`'s node:dns-based `resolveHost` (correct for the broker's own raw-socket
+`tcp.connect`, wrong here) to `electron-resolve.ts`'s `electronResolveHost`, over Electron's
+`net.resolveHost` — Chromium's own resolver, the same one `electron-fetch.ts`'s `net.fetch` call
+actually consults (both run under the default session). This closes F2's root cause: the guard and
+the real request are no longer answered by two independent resolvers/caches that can simply
+disagree. `electron-fetch.ts` additionally re-runs `net.resolveHost` and re-validates
+publicness immediately before every individual fetch (manifest and each asset), narrowing the
+window `F5` named — an up-to-`BUNDLE_TIMEOUT_MS` (10 minute) asset loop — from "the guard's
+resolution may be arbitrarily stale by the time this asset is fetched" to "this address was public
+a moment before this specific request went out."
+
+**What this does NOT reach:** connect.ts's own guarantee (dial the literal address that was
+validated, so the hostname is never resolved again at all) is structurally unavailable to a fetch
+that must go through Chromium's network stack rather than a raw socket this codebase controls.  A
+sufficiently well-timed rebind — flipping between `electron-resolve.ts`'s check and `net.fetch`'s
+own internal resolution a moment later, against the *same* resolver and cache — is not
+impossible, only far narrower than the original bug (which had two entirely different resolvers,
+and a window as wide as the whole install). This is a genuine platform limitation, not an
+oversight left for later inside this lane.
+
+**Leaning, not decided:** if this residual gap is judged unacceptable for the flagship's threat
+model, the fix would need to replace `net.fetch` with a fetch implementation this codebase does
+control the socket layer for (e.g. Node's own `fetch`/`undici`, wired through a custom `Agent`
+whose `connect`/`lookup` can be pinned the way `dialTcp` already pins TCP) — at the cost of losing
+`net.fetch`'s session-awareness and Chromium network-stack integration (proxy config, cookie
+jars, etc.) that `electron-fetch.ts`'s own header names as the reason it exists. That trade was not
+made here: it is a bigger architectural change than one guard fix, and belongs in front of the
+owner, not decided inside this lane.
+
+**Needed by:** before this loader is exposed to a threat model that assumes full DNS-rebind
+closure rather than "closed at the resolver level, narrowed at the request level." Not blocking
+build step 2/4 — every real, public origin installs correctly, and the practical bar (an attacker
+who can win a race against Chromium's own resolver cache, immediately before a request it also
+controls) is far higher than the original bug (two independent, disagreeing resolvers with a
+multi-minute window).
+
+---
+
+### A67 — `widensAuthority` cannot see a capability being dropped entirely, so a rollback (or any update) can silently change a scalar quota **[STILL OPEN]**
+
+Found 2026-09-05, `stream/loader-08-rollback-warning` (PR #72), reviewing that PR's own F1 fix.
+
+`widensAuthority` (`src/broker/policy/update.ts`) iterates `Object.keys(requested)` -- the NEW
+manifest's own declared capabilities -- and asks whether each requested pattern is covered by an
+already-granted one. If the new manifest drops a capability kind entirely (e.g. no `fs` block at
+all, where the previous manifest had one with an explicit `quotaBytes`), that kind is never
+visited, so the check reads this as "nothing new requested," never as a change worth a prompt.
+
+`fs.quotaBytes` defaults to unlimited when absent (`src/broker/grant-ledger.ts`'s quota-reservation
+path), read from whatever manifest is currently REGISTERED, not from a pattern the grant ledger
+separately tracks. So a manifest that drops `fs` (or otherwise omits a scalar capability field)
+can move actual, effective quota enforcement from a stated limit to unlimited, with
+`widensAuthority` seeing no widening at all -- because there is no PATTERN to compare, only a
+scalar field's absence.
+
+**Not the silent-install bug F1 was.** `isSameBundle` (the other half of `ordinaryEscalation`,
+`update.ts`) still fires here in every real case: the manifest itself is a hashed bundle leaf
+(`ADR-0009`), so dropping a field moves the bundle hash, and the caller sees at minimum
+`reconsent` -- "the code changed," never a silent install. What's missing is precision, not a
+bypass: the user is asked to reconsent to what looks like an ordinary content update, with no
+signal that a scalar resource limit is about to change underneath it.
+
+**Not fixed in PR #72**, deliberately: `PatternSet` models capability KINDS as lists of string
+patterns; it has no vocabulary for a scalar field like `quotaBytes` at all, and giving
+`widensAuthority` an opinion about one specific scalar without a general shape for "capabilities
+carry non-pattern fields too" would be exactly the kind of one-off carve-out `code-guidelines.md`
+Rule 7 warns against. This needs either a `PatternSet` shape change (a real, reversible-only-at-
+cost decision -- Rule 1) or a narrower, `fs`-specific check with its own justification, not a
+quick patch inside this PR.
+
+**Needed by:** nothing urgent -- no live caller reaches `registerApp` outside tests yet
+(`docs/open-questions.md` A60/A61). Worth resolving before the loader-to-broker glue
+(`installFromHint`, A60/A61's own eventual caller) is the thing that makes this reachable from a
+real, page-supplied manifest.
+
+---
+
+### A68 — the T19 rollback acknowledgement is remembered per SPECIFIC VERSION, not per origin **[AI RECOMMENDATION — not yet directly confirmed by the owner]**
+
+Found 2026-09-05, `stream/broker-22-rollback-ack-persistence`, building the storage PR #72's
+rollback-warning design (`ADR-0013`) needs.
+
+**Owner's decision (d-0017, this session):** when a user accepts a below-floor ("rollback")
+version for an app, that choice is remembered — asked once, then the older version installs
+with a permanent passive notice rather than a re-prompt every launch.
+
+**AI recommendation, not put to the owner in this exact form:** what gets remembered is the
+SPECIFIC version accepted, not a bare per-origin "this origin's rollbacks are trusted" flag. A
+flag was the first design built for this lane, matching a literal reading of d-0017's one-line
+summary; caught in review before it shipped: a flag would let accepting one real,
+presumably-safe rollback (`1.2.0` → `1.1.9`) permanently wave through any OTHER, unrelated
+below-floor version the same origin later chooses to serve — `0.0.1`, or anything else — with
+no further consent. That is a capability escalation wearing a UX-shortcut's clothes, not what
+d-0017 asked for. Storing the specific accepted version and comparing it exactly (never "any
+prior acknowledgment counts") closes that gap. `src/broker/grant-ledger.ts`'s
+`rollbackAcknowledgedVersionFor`/`acknowledgeRollback`, `src/loader/index.ts`'s
+`LoadContext.acknowledgedRollbackVersion`, and `docs/decisions/ADR-0013`'s own text should all
+agree on this — recorded here because d-0017 itself was otherwise undocumented anywhere in
+`docs/` or `docs/decisions/`, only in this session's own `state.json`.
+
+**Needed by:** confirm before the discovery-trigger hint listener (the first real UI caller of
+`acknowledgeRollback`) is built — that PR should not have to guess at this granularity or
+re-derive the reasoning above.
