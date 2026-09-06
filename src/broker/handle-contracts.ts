@@ -241,4 +241,23 @@ export interface FailableTcpSocket extends TcpSocket {
    * same reason `fail` never does.
    */
   abort: () => void
+
+  /**
+   * Registers the one listener told when this handle leaves the broker's
+   * tables -- synchronously, ahead of its teardown. `code` is the terminal
+   * error code, or undefined for a close the app asked for.
+   *
+   * The consumer needs a trigger that is not `closed`, because teardown itself
+   * can stall without limit: a clean close is a half-close, and a peer that
+   * stops reading never lets it finish (open-questions.md A84). `closed` stays
+   * as the backstop and carries the same reason.
+   *
+   * `reason` IS PASSED, AND THE CONSUMER MUST BRANCH ON IT. A listener that
+   * tears the resource down unconditionally here corrupts a clean close:
+   * `destroy` flushes for 'closed'/'sessionEnded' and destroys outright for
+   * the rest, so acting immediately on a flushing reason discards whatever the
+   * app had queued. Measured, not theorised -- see socket-relay.ts's own note
+   * and ./socket-drain.test.ts's truncation case.
+   */
+  onUnlink: (listener: (reason: CloseReason, code?: OrivonErrorCode) => void) => void
 }

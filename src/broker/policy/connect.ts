@@ -84,6 +84,7 @@ import type { OrivonErrorCode, Pattern } from '../../contracts/index.js'
 import { canonicalAddress, classifyAddress } from './address.js'
 import { MAX_HOST_LENGTH, isAsciiHost, isValidPort, normalizeHost } from './canonical-host.js'
 import { couldAnyPatternMatch, parsePattern, patternAuthorises } from './connect-patterns.js'
+import { isReservedPort, namesPortExactly } from './reserved-ports.js'
 
 /**
  * Resolves a hostname to every address it currently answers with.
@@ -173,6 +174,8 @@ export type ConnectDenialReason =
   | 'bad-answer'
   /** Answers were fine; no pattern matched one of them at this port. */
   | 'no-pattern-match'
+  /** The port is one no blanket grant reaches, and no pattern named it exactly (A82). */
+  | 'reserved-port'
 
 export interface ConnectDenied {
   readonly allowed: false
@@ -281,6 +284,12 @@ export async function checkConnect (
   // both counts are chosen by somebody else; re-splitting every pattern inside
   // it made a single call cost seconds. See MAX_PATTERNS.
   const parsed = patterns.map(parsePattern)
+
+  // Checked HERE -- after parsing, before resolving. Before, so a reserved
+  // port is never a name-existence oracle (the same reason
+  // couldAnyPatternMatch denies early); after, because the answer depends on
+  // whether any pattern NAMED this port, which needs them parsed.
+  if (isReservedPort(port) && !namesPortExactly(parsed, port)) return deny('reserved-port')
 
   // An address literal is already the thing patterns are matched against, so
   // there is nothing to resolve -- and not calling out means not depending on

@@ -665,3 +665,70 @@ describe('bounds and result hygiene', () => {
     expect(decision.addresses).toStrictEqual([PUBLIC_A])
   })
 })
+
+describe('checkConnect -- reserved ports (open-questions.md A82)', () => {
+  function denialReason (decision: ConnectDecision): string | undefined {
+    return decision.allowed ? undefined : decision.reason
+  }
+
+  it('a blanket *:* grant does not reach the mail submission port', async () => {
+    // The flagship genuinely declares `*:*`. Before this rule that made every
+    // granted origin an outbound mail relay from the user's own IP.
+    const decision = await checkConnect(['*:*'], 'mail.example', 25, resolverFor({ 'mail.example': [PUBLIC_A] }))
+    expect(decision.allowed).toBe(false)
+    expect(denialReason(decision)).toBe('reserved-port')
+  })
+
+  it('a host-specific grant with a wildcard port does not reach it either', async () => {
+    const decision = await checkConnect(
+      ['mail.example:*'], 'mail.example', 25, resolverFor({ 'mail.example': [PUBLIC_A] })
+    )
+    expect(denialReason(decision)).toBe('reserved-port')
+  })
+
+  it('a range covering the port is still not a naming of it', async () => {
+    const decision = await checkConnect(
+      ['mail.example:20-30'], 'mail.example', 25, resolverFor({ 'mail.example': [PUBLIC_A] })
+    )
+    expect(denialReason(decision)).toBe('reserved-port')
+  })
+
+  it('an app that names the exact port still gets it', async () => {
+    const decision = await checkConnect(
+      ['mail.example:25'], 'mail.example', 25, resolverFor({ 'mail.example': [PUBLIC_A] })
+    )
+    expect(allowedAddresses(decision)).toStrictEqual([PUBLIC_A])
+  })
+
+  it('naming the port in ONE pattern is enough, even alongside a blanket one', async () => {
+    const decision = await checkConnect(
+      ['*:*', 'mail.example:25'], 'mail.example', 25, resolverFor({ 'mail.example': [PUBLIC_A] })
+    )
+    expect(allowedAddresses(decision)).toStrictEqual([PUBLIC_A])
+  })
+
+  it('the naming still does not bypass the host check', async () => {
+    // A pattern naming :25 for one host must not open :25 everywhere. This is
+    // why namesPortExactly deliberately ignores the host half -- the host
+    // rules run unchanged afterwards, rather than being folded into it.
+    const decision = await checkConnect(
+      ['other.example:25'], 'mail.example', 25, resolverFor({ 'mail.example': [PUBLIC_A] })
+    )
+    expect(decision.allowed).toBe(false)
+    expect(denialReason(decision)).not.toBe('reserved-port')
+  })
+
+  it('leaves ordinary ports completely alone under the same blanket grant', async () => {
+    const decision = await checkConnect(['*:*'], 'web.example', 443, resolverFor({ 'web.example': [PUBLIC_A] }))
+    expect(allowedAddresses(decision)).toStrictEqual([PUBLIC_A])
+  })
+
+  it('denies before resolving, so it cannot be used as a name-existence oracle', async () => {
+    // Same discipline couldAnyPatternMatch already follows: a request that
+    // cannot possibly be authorised must not reach the resolver at all.
+    let resolverCalls = 0
+    const counting: Resolver = async (host) => { resolverCalls++; return await resolverFor({ 'mail.example': [PUBLIC_A] })(host) }
+    await checkConnect(['*:*'], 'mail.example', 25, counting)
+    expect(resolverCalls).toBe(0)
+  })
+})
