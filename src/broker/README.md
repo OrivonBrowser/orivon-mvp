@@ -40,6 +40,13 @@ Three files stay at the top level because they belong to no single directory:
 - [`broker-contracts.ts`](broker-contracts.ts) — the `Broker` interface and its fixed dependency shape
 - [`errors.ts`](errors.ts) — `OrivonError` construction, used by every directory above
 
+The decomposition and the import boundaries are recorded in
+[`ADR-0015`](../../docs/decisions/ADR-0015-the-broker-is-organised-by-job.md), including the two
+alternatives that lost and the one file that makes the "I/O lives in `adapters/`" row need a
+footnote. **Those boundaries are prose, enforced by nothing** — that gap is
+[`A85`](../../docs/open-questions.md), deliberately left open rather than closed with a guard
+written the same hour as the rule.
+
 **Tests live in a `tests/` folder inside the directory they cover**, so what you scroll past when
 reading a directory is that directory's code.
 
