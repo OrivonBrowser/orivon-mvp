@@ -9,7 +9,7 @@ import type { ControlEvent, PortLike, PortPair, PortTransport } from './ipc.js'
 import type { Broker } from './broker-contracts.js'
 import { createPortRegistry } from './port-registry.js'
 import type { Grant, Manifest, OrivonError, OrivonErrorCode } from '../contracts/index.js'
-import type { FailableTcpSocket } from './handle-contracts.js'
+import type { CloseReason, FailableTcpSocket } from './handle-contracts.js'
 import type { RequestEnvelope } from '../contracts/ipc.js'
 
 export const APP = 'https://app.example'
@@ -157,7 +157,7 @@ export interface FakeSocket {
   readonly abortSpy: ReturnType<typeof vi.fn>
   readonly settleClosed: (error?: OrivonError) => void
   /** Fires whatever the socket's consumer registered via `onUnlink`, the way HandleTable's own unlink pass does. Leaves `closed` pending, which is the case that matters. */
-  readonly unlink: (code?: OrivonErrorCode) => void
+  readonly unlink: (reason: CloseReason, code?: OrivonErrorCode) => void
 }
 
 /**
@@ -171,7 +171,7 @@ export function fakeTcpSocket (
 ): FakeSocket {
   let settle: (error?: OrivonError) => void = () => {}
   let settled = false
-  let unlinkListener: ((code?: OrivonErrorCode) => void) | undefined
+  let unlinkListener: ((reason: CloseReason, code?: OrivonErrorCode) => void) | undefined
   const closed = new Promise<void>((resolve, reject) => {
     settle = (error) => {
       if (settled) return
@@ -210,7 +210,7 @@ export function fakeTcpSocket (
     failSpy,
     abortSpy,
     settleClosed: settle,
-    unlink: (code) => { unlinkListener?.(code) }
+    unlink: (reason, code) => { unlinkListener?.(reason, code) }
   }
 }
 

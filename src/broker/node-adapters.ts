@@ -118,6 +118,23 @@ export const resolveHost: Resolver = async (host) => {
 }
 
 /**
+ * How long a clean close waits for queued bytes to reach the peer before the
+ * socket is destroyed regardless.
+ *
+ * Without a deadline this path does not end: `socket.end(cb)` fires `cb` only
+ * once every queued byte has drained into the peer's receive window, and a
+ * peer that simply stops reading never lets that happen -- so the returned
+ * promise, and the handle's own `closed`, never settle (open-questions.md
+ * A84, reproduced in ./socket-drain.test.ts).
+ *
+ * AI recommendation, not an owner decision: nothing in contracts/ or
+ * handle-contracts.md specifies it. Matched to DIAL_TIMEOUT_MS above, on the
+ * same reasoning -- long enough that a genuinely slow but working peer is
+ * never cut off, short enough to bound an fd held for nothing.
+ */
+export const CLOSE_DRAIN_TIMEOUT_MS = 30_000
+
+/**
  * Releases a real Node socket per handle-contracts.ts's CloseReason table --
  * the table this file's own dialOne doc comment used to say was not yet
  * implemented ("the byte-pump task owns the real table"). This is that task.
@@ -186,23 +203,6 @@ export function destroySocket (
  * would be a src/contracts/ change that has to merge on its own.
  */
 const DIAL_TIMEOUT_MS = 30_000
-
-/**
- * How long a clean close waits for queued bytes to reach the peer before the
- * socket is destroyed regardless.
- *
- * Without a deadline this path does not end: `socket.end(cb)` fires `cb` only
- * once every queued byte has drained into the peer's receive window, and a
- * peer that simply stops reading never lets that happen -- so the returned
- * promise, and the handle's own `closed`, never settle (open-questions.md
- * A84, reproduced in ./socket-drain.test.ts).
- *
- * AI recommendation, not an owner decision: nothing in contracts/ or
- * handle-contracts.md specifies it. Matched to DIAL_TIMEOUT_MS above, on the
- * same reasoning -- long enough that a genuinely slow but working peer is
- * never cut off, short enough to bound an fd held for nothing.
- */
-export const CLOSE_DRAIN_TIMEOUT_MS = 30_000
 
 /**
  * One dial attempt. `readable`/`writable` are real WHATWG streams

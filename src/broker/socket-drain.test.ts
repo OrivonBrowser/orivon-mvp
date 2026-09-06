@@ -8,6 +8,7 @@
 // described.
 
 import { createServer, connect as netConnect, type Server, type Socket } from 'node:net'
+import { Duplex } from 'node:stream'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CLOSE_DRAIN_TIMEOUT_MS, destroySocket } from './node-adapters.js'
 
@@ -117,4 +118,64 @@ describe('destroySocket against a real non-draining peer', () => {
 
     expect(socket.destroyed).toBe(true)
   })
+})
+
+describe('why the unlink hook branches on reason rather than tearing down always', () => {
+  let server: Server
+  let port: number
+  let peer: Socket | undefined
+
+  afterEach(async () => {
+    peer?.destroy()
+    peer = undefined
+    await new Promise<void>((resolve) => { server.close(() => resolve()) })
+  })
+
+  function listenPaused (): Promise<void> {
+    server = createServer((socket) => { socket.pause(); socket.on('error', () => {}); peer = socket })
+    return new Promise((resolve) => {
+      server.listen(0, '127.0.0.1', () => {
+        const address = server.address()
+        port = typeof address === 'object' && address !== null ? address.port : 0
+        resolve()
+      })
+    })
+  }
+
+  /** Queues bytes the peer is not reading, optionally cancels the read half, then closes. */
+  async function sendThenClose (cancelReadHalfFirst: boolean): Promise<{ written: number, received: number }> {
+    await listenPaused()
+    const socket = netConnect({ host: '127.0.0.1', port })
+    socket.on('error', () => {})
+    await new Promise<void>((resolve) => { socket.once('connect', () => { resolve() }) })
+
+    const received: Buffer[] = []
+    const reader = Duplex.toWeb(socket).readable.getReader()
+
+    const chunk = Buffer.alloc(256 * 1024, 0x41)
+    let written = 0
+    while (socket.writableLength < 8 * 1024 * 1024) { socket.write(chunk); written += chunk.length }
+
+    if (cancelReadHalfFirst) await reader.cancel().catch(() => {})
+    void destroySocket(socket, 'closed', 2_000)
+
+    peer?.on('data', (d: Buffer) => received.push(d))
+    peer?.resume()
+    await new Promise((resolve) => setTimeout(resolve, 1_500))
+
+    return { written, received: received.reduce((n, b) => n + b.length, 0) }
+  }
+
+  it('cancelling the read half first DESTROYS the socket and discards the queued write', async () => {
+    // This is the hazard the branch in socket-relay.ts exists for, pinned as a
+    // fact about Node rather than left as a comment. `stop()` cancels the
+    // reader; on a flushing close that would lose the app's own final bytes.
+    const { written, received } = await sendThenClose(true)
+    expect(received).toBeLessThan(written)
+  }, 20_000)
+
+  it('leaving the read half alone flushes every queued byte to the peer', async () => {
+    const { written, received } = await sendThenClose(false)
+    expect(received).toBe(written)
+  }, 20_000)
 })

@@ -174,14 +174,29 @@ export function createSocketRelay (options: SocketRelayOptions): SocketRelay {
   // all live for the process's lifetime (T11b).
   port.onClose(() => { stop() })
 
-  // The PRIMARY teardown trigger, ahead of `socket.closed` below.
-  // HandleTable unlinks a handle synchronously and only then awaits its
-  // destroy -- which a peer that stops reading can stall forever, leaving the
-  // registry slot, the pump and the sink live with no remaining path able to
-  // reach them (open-questions.md A84). Reaching them at unlink instead is
-  // also what shuts A70's window: net.close/setNoDelay/setKeepAlive resolve
-  // through the registry entry this releases.
-  socket.onUnlink((code) => { stop(code) })
+  // Teardown ahead of `socket.closed`, but ONLY for a reason that destroys the
+  // socket anyway. HandleTable unlinks a handle synchronously and only then
+  // awaits its destroy, which a peer that stops reading can stall forever --
+  // leaving the registry slot, the pump and the sink live with nothing able to
+  // reach them (open-questions.md A84). Acting at unlink is what shuts that,
+  // and with it A70's window: net.close/setNoDelay/setKeepAlive resolve through
+  // the registry entry `cleanup()` releases.
+  //
+  // THE BRANCH IS LOAD-BEARING, and it is here because the version without it
+  // was measured and found to lose data. `stop()` calls `pump.stop()`, which
+  // cancels the reader -- and cancelling the readable half of a Duplex.toWeb
+  // DESTROYS the whole socket, discarding anything still in its write queue.
+  // On a flushing reason ('closed'/'sessionEnded', where destroy calls
+  // `socket.end()`) that truncates the app's own final bytes: 8 MiB queued,
+  // 8 MiB lost, against a real socket. Those reasons are left to settle
+  // through `closed` below, which the drain deadline in node-adapters.ts now
+  // guarantees always happens -- later than unlink, but without truncating.
+  // 'revoked'/'aborted'/'failed' destroy the socket regardless, so there is
+  // nothing to preserve and immediate teardown is the whole point.
+  socket.onUnlink((reason, code) => {
+    if (reason === 'closed' || reason === 'sessionEnded') return
+    stop(code)
+  })
 
   // The .catch is not decoration -- this chain is nobody's awaited promise,
   // so anything these handlers throw becomes an unhandled rejection, and
