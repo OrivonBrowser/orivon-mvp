@@ -210,7 +210,8 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
         origin: key,
         kind: 'tcpSocket',
         authorisedBy: { by: 'grant', grantId: current.id },
-        destroy
+        destroy,
+        socketLimit: ledger.socketAllowance(key)
       })
 
       // Spread FIRST, then the broker-assigned fields -- not the other way

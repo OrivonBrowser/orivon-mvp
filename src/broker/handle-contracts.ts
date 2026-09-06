@@ -130,6 +130,14 @@ export interface AcquireRequest {
   readonly kind: HandleKind
   readonly authorisedBy: Authorisation
   readonly destroy: DestroyResource
+  /**
+   * This origin's socket allowance, from its manifest via
+   * `GrantLedger.socketAllowance`. Omitted falls back to
+   * `LIMITS.concurrentSockets`, the platform ceiling -- so a caller that does
+   * not know the origin's declaration can never accidentally grant a SMALLER
+   * budget than the app is entitled to, only the largest one.
+   */
+  readonly socketLimit?: number
 }
 
 /**
@@ -145,6 +153,8 @@ export interface AcquireDerivedRequest {
   readonly kind: HandleKind
   readonly parentId: string
   readonly destroy: DestroyResource
+  /** As AcquireRequest.socketLimit -- an accepted connection counts against the same budget. */
+  readonly socketLimit?: number
 }
 
 /**
