@@ -28,6 +28,72 @@ Rationale that explains why a file has the shape it has, moved out of source hea
 [`code-guidelines.md`](../../docs/development/code-guidelines.md)'s destination test -- kept here
 rather than in the file so the 25-line comment budget measures a file's traps, not its history.
 
+### The unlink hook -- why teardown does not wait for `closed`
+
+`HandleTable.onUnlink` (`handles.ts`), the `unlink` field on a record
+(`handle-store.ts`) and `socket.onUnlink(...)` (`socket-relay.ts`) are one
+mechanism, added 2026-09-06 for `open-questions.md` A84. The rationale lives
+here rather than in three source headers.
+
+**The bug it closes.** `closeTree()` removes a handle from `handles` and
+`byGrant` synchronously, then awaits `record.destroy(reason)`. For a clean
+close that destroy is `socket.end(cb)` -- a HALF-close, whose callback fires
+only once every queued byte has drained into the peer's receive window. A peer
+that stops reading never lets that happen, so `destroy` never settled, the
+handle's `closed` never settled, and everything gated on `closed` -- the pump,
+the sink, the port, the `PortRegistry` slot -- stayed live. The record was
+already out of both tables by then, so `revoke()` (which walks `byGrant`) and
+`dropOrigin()` (which walks `handles`) could no longer find it either. There
+was no remaining code path able to close that socket. Reproduced against Node
+v24.11.1: ~3 MB queued, `writableLength` still over 1 MB three seconds later,
+`end()`'s callback never fired.
+
+**Why a hook rather than a shorter timeout.** `closeTree`'s own doc already
+promised this ordering -- "the unlink pass and the promise rejections are
+SYNCHRONOUS, before any destroy callback runs. That ordering is what makes
+revocation immediate". The relay simply was not subscribed to it; it only had
+`closed`. The hook finishes the design rather than adding a second one.
+
+**Both halves, not one.** A84 named two fix shapes and the owner took both.
+The hook makes teardown immediate; `destroySocket`'s `CLOSE_DRAIN_TIMEOUT_MS`
+(`node-adapters.ts`) additionally guarantees the destroy itself always settles,
+so `closed` and the handle count are released even in the pathological case.
+Either alone leaves a real gap: without the deadline `closed` still never
+settles, and without the hook the registry slot still waits on it.
+
+**The hook fires for every reason, but the relay acts on only some of them, and
+this is not a detail.** The first version of this fix tore down unconditionally,
+and it lost data. `stop()` cancels the read stream, and cancelling the readable
+half of a `Duplex.toWeb` DESTROYS the whole socket -- dropping everything still
+in its write queue. Measured against a real paused peer: 8 MiB queued, 8 MiB
+lost, where the unmodified path delivered all of it. So:
+
+- `'closed'` and `'sessionEnded'` FLUSH (`destroySocket` calls `socket.end()`).
+  The relay must not touch the socket at unlink; these settle through `closed`,
+  which the drain deadline now guarantees always happens. Later than unlink, but
+  the app's final bytes actually arrive.
+- `'revoked'`, `'aborted'` and `'failed'` DESTROY the socket regardless
+  (`resetAndDestroy()`/`destroy()`). Nothing to preserve, so immediate teardown
+  is correct and is the entire point of the fix.
+
+The listener therefore receives the `CloseReason`, not only the error code --
+because the code cannot tell these apart: `'sessionEnded'` and `'revoked'` both
+carry code `'revoked'` and sit on opposite sides of the branch. Both cases are
+pinned by tests (`socket-relay.test.ts`, and the real-socket truncation pair in
+`socket-drain.test.ts`) so the branch cannot be simplified away silently.
+
+**It also shuts A70's window.** `net.close`/`setNoDelay`/`setKeepAlive`
+dispatch through `PortRegistry`, which has no concept of a grant, so they could
+still reach a socket whose grant had just been revoked. The registry slot is
+now released in the same synchronous pass that unlinks the handle, so the
+lookup those three share simply stops answering. No extra check was needed.
+
+**`code` is undefined for an app-initiated close.** Deliberate, and it matches
+what `socket.closed` already did: it resolves for `'closed'` and rejects
+otherwise, so the relay sent a bare `end` for a clean close and a coded one
+for everything else. Passing the reason through the hook keeps the wire
+identical -- only the timing changed, never the message.
+
 ### `port-pump.ts` -- the read-side byte pump
 
 Relays bytes from an already-real WHATWG `ReadableStream` (`Duplex.toWeb`, [`ipc.ts`](ipc.ts)'s
