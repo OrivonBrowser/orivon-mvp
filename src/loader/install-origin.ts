@@ -74,7 +74,7 @@ export async function ensurePublicUnicastOrigin (canonicalOrigin: string, resolv
   // install outright, with nothing left to detect it -- there is no TLS
   // certificate to have been wrong. Checked first, and for free: no
   // resolution has happened yet, so refusing here costs nothing beyond the
-  // string compare. Mirrors ./policy/origin.ts's `isPersistableOrigin`,
+  // string compare. Mirrors ../broker/policy/origin.ts's `isPersistableOrigin`,
   // which refuses `http:` for the same reason (T13c), one layer up.
   if (url.protocol !== 'https:') return { ok: false, reason: `install origin must be https, not ${url.protocol}` }
 
@@ -84,7 +84,7 @@ export async function ensurePublicUnicastOrigin (canonicalOrigin: string, resolv
   // Chromium maps the WHOLE `.localhost` subtree to loopback per RFC 6761
   // without ever consulting DNS. Checked before resolving so the guard and
   // the real fetch can never disagree about this name the way a resolved
-  // answer could. Reuses ./policy/origin.ts's own check (Rule 3) rather than
+  // answer could. Reuses ../broker/policy/origin.ts's own check (Rule 3) rather than
   // a second copy of the RFC 6761 reasoning.
   if (isLocalhostName(host)) return { ok: false, reason: `install origin's host is in the .localhost namespace: ${host}` }
 

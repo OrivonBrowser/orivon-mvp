@@ -1,7 +1,7 @@
-import type { OrivonErrorCode } from '../contracts/errors.js'
-import type { WriteAbortMessage, WriteAckMessage, WriteEndMessage, WriteFailedMessage, WriteMessage } from '../contracts/ipc.js'
-import { CREDIT_COALESCE_BYTES, WRITE_HEARTBEAT_MS } from '../contracts/ipc.js'
-import { errnoOf } from './errors.js'
+import type { OrivonErrorCode } from '../../contracts/errors.js'
+import type { WriteAbortMessage, WriteAckMessage, WriteEndMessage, WriteFailedMessage, WriteMessage } from '../../contracts/ipc.js'
+import { CREDIT_COALESCE_BYTES, WRITE_HEARTBEAT_MS } from '../../contracts/ipc.js'
+import { errnoOf } from '../errors.js'
 
 // The WRITE half of the credit-window relay (contracts/ipc.ts,
 // handle-contracts.md's "Backpressure -- a credit window"), run BACKWARDS

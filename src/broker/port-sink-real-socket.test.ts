@@ -13,9 +13,9 @@
 
 import { createServer, type Server, type Socket } from 'node:net'
 import { afterEach, describe, expect, it } from 'vitest'
-import { dialTcp } from './node-adapters.js'
-import { createPortSink } from './port-sink.js'
-import { mapSocketError } from './socket-relay.js'
+import { dialTcp } from './adapters/node-adapters.js'
+import { createPortSink } from './transport/port-sink.js'
+import { mapSocketError } from './transport/socket-relay.js'
 import type { WriteAckMessage, WriteFailedMessage } from '../contracts/ipc.js'
 
 function neverAborts (): AbortSignal {

@@ -1,5 +1,5 @@
-import type { OrivonErrorCode } from '../contracts/errors.js'
-import type { CreditMessage, DataMessage, StreamEndMessage } from '../contracts/ipc.js'
+import type { OrivonErrorCode } from '../../contracts/errors.js'
+import type { CreditMessage, DataMessage, StreamEndMessage } from '../../contracts/ipc.js'
 
 // The READ half of the credit-window relay contracts/ipc.ts and
 // handle-contracts.md's "Backpressure" specify. Pure and Electron-free, like

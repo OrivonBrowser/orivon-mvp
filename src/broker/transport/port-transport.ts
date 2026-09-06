@@ -5,9 +5,9 @@
 // input checks. No logic here, only shapes; ./ipc.ts still owns dispatch(),
 // registerBrokerIpc and the real MessageChannelMain/WebFrameMain wiring.
 
-import type { SenderFrameLike } from './policy/origin.js'
+import type { SenderFrameLike } from '../policy/origin.js'
 import type { PortRegistry } from './port-registry.js'
-import type { BrokerToRendererMessage } from '../contracts/index.js'
+import type { BrokerToRendererMessage } from '../../contracts/index.js'
 
 /**
  * What `orivon.net.connect` resolves to over CONTROL_CHANNEL. Deliberately

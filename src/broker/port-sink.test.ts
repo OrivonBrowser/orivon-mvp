@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createPortSink } from './port-sink.js'
+import { createPortSink } from './transport/port-sink.js'
 import type { WriteAckMessage, WriteFailedMessage } from '../contracts/ipc.js'
 import { CREDIT_COALESCE_BYTES, WRITE_HEARTBEAT_MS } from '../contracts/ipc.js'
 import { tick } from './ipc.test-helpers.js'

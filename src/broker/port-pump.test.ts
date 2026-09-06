@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createPortPump } from './port-pump.js'
+import { createPortPump } from './transport/port-pump.js'
 import type { DataMessage, PortMessage, StreamEndMessage } from '../contracts/ipc.js'
 
 const HANDLE = 'handle-1'

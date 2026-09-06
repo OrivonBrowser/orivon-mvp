@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createTokenBucketLimiter } from './token-bucket.js'
+import { createTokenBucketLimiter } from './transport/token-bucket.js'
 
 const APP = 'https://app.example'
 const OTHER = 'https://other.example'

@@ -6,8 +6,8 @@
 // See ./index.ts's header for what createBroker actually does, why its
 // dependency shape is fixed, and what `Broker` is for.
 
-import type { DestroyResource, FailableTcpSocket } from './handle-contracts.js'
-import type { LedgerStorage } from './ledger-storage.js'
+import type { DestroyResource, FailableTcpSocket } from './handles/handle-contracts.js'
+import type { LedgerStorage } from './grants/ledger-storage.js'
 import type { Resolver } from './policy/connect.js'
 import type {
   CapabilityKind,
@@ -47,7 +47,7 @@ export interface DialedSocket extends Omit<TcpSocket, keyof Handle> {
  * `signal` fires the instant the grant authorising this connection is
  * revoked while the dial is still in flight. A `dial` that ignores it leaves
  * a socket connecting for a capability the app no longer holds -- see
- * `HandleTable.run`'s own note, in ./handles.ts, to whoever writes this path.
+ * `HandleTable.run`'s own note, in ./handles/handles.ts, to whoever writes this path.
  */
 export type Dial = (addresses: readonly string[], port: number, signal: AbortSignal) => Promise<DialedSocket>
 

@@ -15,9 +15,9 @@
 // bare OriginTable -- HandleTable is the ownership boundary; this class is the
 // state it owns, not a second entry point to it.
 
-import { LIMITS } from '../contracts/index.js'
-import type { GrantId, OrivonError, OrivonErrorCode } from '../contracts/index.js'
-import { fail } from './errors.js'
+import { LIMITS } from '../../contracts/index.js'
+import type { GrantId, OrivonError, OrivonErrorCode } from '../../contracts/index.js'
+import { fail } from '../errors.js'
 import type {
   Authorisation,
   CloseReason,

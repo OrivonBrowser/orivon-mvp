@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   isCreditMessage, isWriteAbortMessage, isWriteEndMessage, isWriteMessage, parseRendererToBrokerMessage
-} from './port-messages.js'
+} from './transport/port-messages.js'
 import { LIMITS } from '../contracts/index.js'
 
 const HANDLE = 'handle-1'

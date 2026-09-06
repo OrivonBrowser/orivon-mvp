@@ -7,7 +7,7 @@
 //
 // CONTROL_CHANNEL below is broker's, added on the same terms: src/preload/
 // README.md forbids preload/app.ts importing anything under src/broker/, so
-// the channel name it shares with src/broker/ipc.ts has nowhere else neutral
+// the channel name it shares with src/broker/transport/ipc.ts has nowhere else neutral
 // to live. Flagged in that PR rather than silently added to a file this
 // stream does not own -- see its "Decisions and open questions".
 
@@ -27,7 +27,7 @@ export const NEWTAB_COMMAND_CHANNEL = 'orivon-newtab:command'
 // APPEND POINT: one const per channel, newest last.
 
 /** Ordinary tab -> broker: orivon.app.manifest/grants and orivon.fs.readFile/
- * writeFile. See ../broker/ipc.ts. */
+ * writeFile. See ../broker/transport/ipc.ts. */
 export const CONTROL_CHANNEL = 'orivon:control'
 
 /** Broker -> ordinary tab, one-way: delivers a socket's dedicated
@@ -35,5 +35,5 @@ export const CONTROL_CHANNEL = 'orivon:control'
  * handle id CONTROL_CHANNEL's net.connect response also carries. Never a
  * request/reply pair like CONTROL_CHANNEL -- the port itself is the payload
  * that cannot travel over ipcMain.handle/ipcRenderer.invoke. See
- * ../broker/ipc.ts and ../broker/port-pump.ts. */
+ * ../broker/transport/ipc.ts and ../broker/transport/port-pump.ts. */
 export const PORT_CHANNEL = 'orivon:port'

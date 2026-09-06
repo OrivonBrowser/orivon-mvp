@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import { handleControlRequest, registerBrokerIpc } from './ipc.js'
-import type { ControlEvent, IpcMainLike } from './ipc.js'
+import { handleControlRequest, registerBrokerIpc } from './transport/ipc.js'
+import type { ControlEvent, IpcMainLike } from './transport/ipc.js'
 import type { Grant, Manifest, OrivonError } from '../contracts/index.js'
 import type { RequestEnvelope, ResponseEnvelope } from '../contracts/ipc.js'
 import {
@@ -606,7 +606,7 @@ describe('registerBrokerIpc', () => {
   })
 })
 
-// nodeFs/resolveHost/dialTcp moved to ./node-adapters.ts and their tests
+// nodeFs/resolveHost/dialTcp moved to ./adapters/node-adapters.ts and their tests
 // with them (docs/development/code-guidelines.md Rule 2 -- this file's own
 // net.connect/net.close wiring pushed it over budget). See
 // node-adapters.test.ts.

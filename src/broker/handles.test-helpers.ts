@@ -4,8 +4,8 @@
 
 import { vi } from 'vitest'
 import type { OrivonError } from '../contracts/index.js'
-import { HandleTable } from './handles.js'
-import type { CloseReason } from './handle-contracts.js'
+import { HandleTable } from './handles/handles.js'
+import type { CloseReason } from './handles/handle-contracts.js'
 
 export const APP = 'https://app.example'
 export const OTHER = 'https://other.example'

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { GrantLedger } from './grant-ledger.js'
+import { GrantLedger } from './grants/grant-ledger.js'
 import { memoryLedgerStorage } from './index.test-helpers.js'
-import type { LedgerStorage } from './ledger-storage.js'
+import type { LedgerStorage } from './grants/ledger-storage.js'
 import type { Manifest } from '../contracts/index.js'
 import { LIMITS } from '../contracts/index.js'
 

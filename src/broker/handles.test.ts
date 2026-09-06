@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { LIMITS } from '../contracts/index.js'
-import type { CloseReason } from './handle-contracts.js'
+import type { CloseReason } from './handles/handle-contracts.js'
 import {
   APP,
   FS_GRANT,

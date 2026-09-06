@@ -24,8 +24,8 @@
 
 import { createServer, type Server, type Socket } from 'node:net'
 import { afterEach, describe, expect, it } from 'vitest'
-import { dialTcp } from './node-adapters.js'
-import { createPortPump } from './port-pump.js'
+import { dialTcp } from './adapters/node-adapters.js'
+import { createPortPump } from './transport/port-pump.js'
 import type { DataMessage } from '../contracts/ipc.js'
 
 function neverAborts (): AbortSignal {

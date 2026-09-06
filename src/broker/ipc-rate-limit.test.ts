@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
-import { handleControlRequest, registerBrokerIpc } from './ipc.js'
-import type { ControlEvent, IpcMainLike } from './ipc.js'
-import type { RateLimiter } from './token-bucket.js'
+import { handleControlRequest, registerBrokerIpc } from './transport/ipc.js'
+import type { ControlEvent, IpcMainLike } from './transport/ipc.js'
+import type { RateLimiter } from './transport/token-bucket.js'
 import type { RequestEnvelope, ResponseEnvelope } from '../contracts/ipc.js'
 import { APP, type BrokerCall, envelope, frameFor, stubBroker } from './ipc.test-helpers.js'
 

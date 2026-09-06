@@ -5,8 +5,8 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import type { OrivonErrorCode } from '../contracts/index.js'
-import type { CloseReason } from './handle-contracts.js'
-import { HandleTable } from './handles.js'
+import type { CloseReason } from './handles/handle-contracts.js'
+import { HandleTable } from './handles/handles.js'
 import { APP, TCP_GRANT, never, table } from './handles.test-helpers.js'
 
 /** Acquires one grant-authorised socket whose destroy never settles -- A84's peer that never drains. */

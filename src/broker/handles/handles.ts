@@ -18,7 +18,7 @@
 // not restate a ladder here; the ADR owns it.)
 //
 // Split across five files (Rule 2, docs/development/code-guidelines.md):
-// ./handle-contracts.ts (types), ./errors.ts (OrivonError), ./handle-store.ts
+// ./handle-contracts.ts (types), ../errors.ts (OrivonError), ./handle-store.ts
 // (OriginTable, one origin's state), ./origin-registry.ts (the map of
 // origins), and this file (the operations run against that map).
 //
@@ -46,9 +46,9 @@
 //      unbounded queue on the broker's UI thread is precisely how one
 //      misbehaving origin freezes every tab.
 
-import { LIMITS } from '../contracts/index.js'
-import type { GrantId, OrivonError, OrivonErrorCode } from '../contracts/index.js'
-import { fail } from './errors.js'
+import { LIMITS } from '../../contracts/index.js'
+import type { GrantId, OrivonError, OrivonErrorCode } from '../../contracts/index.js'
+import { fail } from '../errors.js'
 import { OriginRegistry } from './origin-registry.js'
 import {
   OriginTable,

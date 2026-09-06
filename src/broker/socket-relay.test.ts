@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createSocketRelay } from './socket-relay.js'
-import { createPortRegistry } from './port-registry.js'
+import { createSocketRelay } from './transport/socket-relay.js'
+import { createPortRegistry } from './transport/port-registry.js'
 import { fakePort, fakeTcpSocket, tick } from './ipc.test-helpers.js'
-import type { PortRegistry } from './port-registry.js'
-import type { RegisteredSocket } from './port-transport.js'
+import type { PortRegistry } from './transport/port-registry.js'
+import type { RegisteredSocket } from './transport/port-transport.js'
 
 const ORIGIN = 'https://app.example'
 
@@ -124,7 +124,7 @@ describe('createSocketRelay -- socket.fail/socket.abort must never crash the mes
 
     // A write-window violation reaches handleWrite's own fail() synchronously,
     // which is what now reaches socket.fail straight from this listener --
-    // see ./socket-relay.ts's own comment on failSocket.
+    // see ./transport/socket-relay.ts's own comment on failSocket.
     expect(() => {
       port.emit({ kind: 'write', handleId: 'handle-1', chunk: new Uint8Array(6) })
       port.emit({ kind: 'write', handleId: 'handle-1', chunk: new Uint8Array(6) }) // 6+6 > 10
