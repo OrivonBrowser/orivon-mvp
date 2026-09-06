@@ -265,3 +265,99 @@ describe('createSocketRelay -- registers and releases, exactly once', () => {
     expect(closePort).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('createSocketRelay -- unlink (open-questions.md A84/A70)', () => {
+  it('releases the registry slot the moment the handle is unlinked, without waiting for `closed`', async () => {
+    const { socket, unlink } = fakeTcpSocket(new ReadableStream())
+    const port = fakePort()
+    const registry = createPortRegistry<RegisteredSocket>()
+
+    createSocketRelay({ origin: ORIGIN, socket, port, registry, readWindowBytes: 1_000, writeWindowBytes: 1_000 })
+    expect(registeredEntry(registry)).toBeDefined()
+
+    unlink('revoked', 'revoked')
+
+    // `closed` is deliberately left pending: A84's non-draining peer holds it
+    // open forever, and before this hook that pinned the slot with it.
+    expect(registeredEntry(registry)).toBeUndefined()
+  })
+
+  it('closes the port on unlink, so an abandoned socket stops costing a port', async () => {
+    const { socket, unlink } = fakeTcpSocket(new ReadableStream())
+    const port = fakePort()
+    const registry = createPortRegistry<RegisteredSocket>()
+
+    createSocketRelay({ origin: ORIGIN, socket, port, registry, readWindowBytes: 1_000, writeWindowBytes: 1_000 })
+    unlink('revoked', 'revoked')
+
+    expect(port.isClosed()).toBe(true)
+  })
+
+  it('reports the terminal code it was unlinked with, so a revoke does not read as a clean end', async () => {
+    const { socket, unlink } = fakeTcpSocket(new ReadableStream())
+    const port = fakePort()
+    const registry = createPortRegistry<RegisteredSocket>()
+
+    createSocketRelay({ origin: ORIGIN, socket, port, registry, readWindowBytes: 1_000, writeWindowBytes: 1_000 })
+    unlink('revoked', 'revoked')
+    await tick()
+
+    expect(port.sent).toContainEqual({ kind: 'end', handleId: 'handle-1', code: 'revoked' })
+  })
+
+  it('does NOT tear down on a clean close -- that would truncate the app\'s queued bytes', async () => {
+    const { socket, unlink } = fakeTcpSocket(new ReadableStream())
+    const port = fakePort()
+    const registry = createPortRegistry<RegisteredSocket>()
+
+    createSocketRelay({ origin: ORIGIN, socket, port, registry, readWindowBytes: 1_000, writeWindowBytes: 1_000 })
+    unlink('closed', undefined)
+    await tick()
+
+    // stop() cancels the reader, and cancelling a Duplex.toWeb readable
+    // destroys the whole socket -- discarding whatever destroySocket's end()
+    // was about to flush. Measured: 8 MiB queued, 8 MiB lost. The clean close
+    // settles through `closed` instead, which the drain deadline guarantees.
+    expect(registeredEntry(registry)).toBeDefined()
+    expect(port.isClosed()).toBe(false)
+  })
+
+  it('a session teardown is a flushing reason too, and is left alone the same way', async () => {
+    const { socket, unlink } = fakeTcpSocket(new ReadableStream())
+    const port = fakePort()
+    const registry = createPortRegistry<RegisteredSocket>()
+
+    createSocketRelay({ origin: ORIGIN, socket, port, registry, readWindowBytes: 1_000, writeWindowBytes: 1_000 })
+    // destroySocket('sessionEnded') calls end(), not resetAndDestroy -- so it
+    // flushes, and its CODE is 'revoked', which is exactly why the branch reads
+    // the REASON rather than the code.
+    unlink('sessionEnded', 'revoked')
+    await tick()
+
+    expect(registeredEntry(registry)).toBeDefined()
+  })
+
+  it('still tears down immediately for an abort, which destroys the socket anyway', async () => {
+    const { socket, unlink } = fakeTcpSocket(new ReadableStream())
+    const port = fakePort()
+    const registry = createPortRegistry<RegisteredSocket>()
+
+    createSocketRelay({ origin: ORIGIN, socket, port, registry, readWindowBytes: 1_000, writeWindowBytes: 1_000 })
+    unlink('aborted', 'reset')
+
+    expect(registeredEntry(registry)).toBeUndefined()
+  })
+
+  it('is idempotent against `closed` settling afterwards', async () => {
+    const { socket, unlink, settleClosed } = fakeTcpSocket(new ReadableStream())
+    const port = fakePort()
+    const registry = createPortRegistry<RegisteredSocket>()
+
+    createSocketRelay({ origin: ORIGIN, socket, port, registry, readWindowBytes: 1_000, writeWindowBytes: 1_000 })
+    unlink('revoked', 'revoked')
+    settleClosed()
+    await tick()
+
+    expect(port.sent.filter((m) => (m as { kind: string }).kind === 'end')).toHaveLength(1)
+  })
+})
