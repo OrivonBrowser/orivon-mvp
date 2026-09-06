@@ -183,11 +183,14 @@ choke/interested handshake and keeps reading long after it has stopped writing n
 
 ### Backpressure — a credit window
 
-> **Split status.** The broker-side half below — stop reading the OS socket at credit zero — is
-> real and tested (`src/broker/port-pump.ts`). The renderer-side coalescing half is not: the
-> constant it would use, `CREDIT_COALESCE_BYTES` (`src/contracts/ipc.ts:103`), is defined once and
-> re-exported once (`src/contracts/index.ts:66`) — but no file anywhere in `src/` or `test/`
-> actually reads or consumes it today. See `open-questions.md` A48.
+> **Split status, corrected.** The broker-side half below — stop reading the OS socket at
+> credit zero — is real and tested (`src/broker/port-pump.ts`). The renderer-side READ
+> coalescing half (a `CreditMessage` per `CREDIT_COALESCE_BYTES`) is still not wired up on the
+> renderer/preload side — see `open-questions.md` A48, unaffected by this correction. What
+> *has* changed: `CREDIT_COALESCE_BYTES` (`src/contracts/ipc.ts`) is no longer read by nothing
+> — the broker's write-side sink (PR #80) also coalesces `WriteAckMessage` against this same
+> constant, so the superseded claim that "no file anywhere in `src/` or `test/` actually reads
+> or consumes it" no longer holds for the write direction (see §Write direction below).
 
 This answers `capability-api.md` §Throughput's open note: *"`MessagePortMain` has no
 documented backpressure, so the shim must implement its own flow control."*
@@ -211,6 +214,46 @@ documented backpressure, so the shim must implement its own flow control."*
   per animation frame, whichever comes first. A 52 MB/s stream (gate 4's measured throughput)
   must not emit a broker message per chunk of data — that reintroduces the per-message IPC
   cost `capability-api.md` §Throughput moved off the main channel in the first place.
+
+### Backpressure — write direction
+
+The write direction is the read-side credit window run backwards: instead of the broker
+granting the renderer permission to receive, the broker grants the renderer a byte budget to
+*send into*, because a `MessagePortMain` has no `pause()`/drain of its own and nothing at the
+transport layer would otherwise stop a hostile renderer posting bytes faster than the OS
+socket drains (`security-model.md` T11b). The wire messages are `src/contracts/ipc.ts`'s
+`WriteMessage`, `WriteAckMessage`, `WriteFailedMessage`, `WriteEndMessage` and
+`WriteAbortMessage` — this section describes only the contract those types encode, not how any
+particular broker or preload implements them.
+
+- **The write window (`LIMITS.writeWindowBytes`, 256 KiB)** bounds how many bytes the renderer
+  may have outstanding on one handle — posted via `WriteMessage`, not yet accepted into the OS
+  socket's send buffer via a matching `WriteAckMessage`. A single `WriteMessage.chunk` must not
+  itself exceed this many bytes; a caller with a larger buffer splits it into
+  `writeWindowBytes`-sized or smaller pieces before posting, and posting an oversized chunk is
+  a protocol error, not something the broker is obliged to accept, truncate, or buffer.
+- **Ack coalescing.** `WriteAckMessage.bytesAccepted` is cumulative since the last ack on that
+  handle and may be coalesced under the same `CREDIT_COALESCE_BYTES` threshold the read
+  direction uses (`src/contracts/ipc.ts`) — one number both directions agree on, per
+  `code-guidelines.md` Rule 3, rather than a second constant that could drift from it.
+- **The heartbeat (`WRITE_HEARTBEAT_MS`, 5 s).** While a write is posted and not yet accepted,
+  the broker emits a `bytesAccepted: 0` `WriteAckMessage` at this interval. This is what lets a
+  genuinely slow-but-healthy peer (a choked BitTorrent connection can legitimately stall for
+  minutes) be told apart from a dead transport, whose failure mode is silence rather than an
+  error (see §What the shim must do).
+- **The silence timeout (`WRITE_SILENCE_TIMEOUT_MS`, 15 s).** Scoped to **outstanding writes
+  only** — it runs while at least one posted `WriteMessage` has not yet been resolved by a
+  `WriteAckMessage` (including a heartbeat) or a `WriteFailedMessage`, and is cleared the
+  instant nothing is outstanding on that handle. **It is not a whole-port idle timeout**: a
+  socket with no write in flight — an ordinary request/response pause, or a choked peer between
+  writes — has nothing armed and cannot trip it. Firing it is terminal for the write direction:
+  both streams error and `closed` rejects with `'timeout'`. Deliberately more than double the
+  heartbeat interval, so a heartbeat has a real chance to land first (`src/contracts/ipc.test.ts`
+  asserts the ratio).
+- **No sequence number.** A `MessagePort` delivers in order without loss on this path, a
+  `WritableStream`'s sink is never re-entered before the previous write settles, and write
+  silence is terminal rather than something to resynchronise after — so nothing needs a
+  sequence number to recover.
 
 ## §TcpServer
 
@@ -464,8 +507,15 @@ sockets exercised cleanly) with headroom:
 | concurrent open `IdentityHandle`s | 64 |
 | in-flight broker operations, **per origin** | 256 |
 | per-socket read window (§TcpSocket backpressure `WINDOW`) | 1 MiB |
+| per-socket write window (`LIMITS.writeWindowBytes`, §Backpressure — write direction) | 256 KiB |
 
 Exceeding any of these yields `limit`.
+
+**The write window is a quarter of the read window, not a symmetric 1 MiB — deliberately.**
+The read window already commits `concurrentSockets * readWindowBytes` = 512 MiB of worst-case
+per-origin exposure; doubling that for a write window nobody asked for would be an unforced
+increase to an aggregate this document already flags as unbounded rather than fixed
+(`src/contracts/limits.ts`'s own comment carries the same reasoning).
 
 **Two amendments, AI-recommended and applied in `src/broker/handles.ts` (2026-08-27), flagged
 rather than folded in silently:**
