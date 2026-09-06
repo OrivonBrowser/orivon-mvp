@@ -35,3 +35,19 @@ the shell needs a chrome view *plus* tab views, which only `BaseWindow` composes
 context at all. `sandbox: true` is non-negotiable, so the preload must be CJS, and matching
 main to it avoids a two-format build for no gain. An ESM main process does work — verified
 against Electron 44 — if a reason to switch ever appears.
+
+## Design notes
+
+Why the code here has the shape it has. This is the destination
+[`code-guidelines.md`](../../docs/development/code-guidelines.md) Rule 1 names for rationale: a
+source comment protects a specific line from a specific mistake; the case for a file's overall
+shape belongs here instead.
+
+**[`index.ts`](index.ts) — do not re-add `ozone-platform: x11`.** Tried and reverted 2026-08-26,
+same session: it was tried on a since-corrected diagnosis (a report of "no window ever appears"
+was first misread as the window opening on the wrong monitor, chased partway down a
+Wayland-can't-control-window-position path). It made things strictly worse — the GPU process
+segfaulted under XWayland on this machine (`exit_code=139`) and the window stopped rendering at
+all — and was reverted immediately. The real bug was never about display selection; see
+[`window.ts`](window.ts)'s `showOnce` comment for the actual root cause and fix (`ready-to-show`
+unreliable when loading from the dev server).
