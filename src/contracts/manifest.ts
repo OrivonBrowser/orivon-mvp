@@ -81,6 +81,27 @@ export interface Capabilities {
 export interface NetCapability {
   readonly tcp?: TcpCapability
   readonly udp?: UdpCapability
+  /**
+   * How many sockets this app may hold open at once -- TcpSocket, UdpSocket
+   * and accepted connections combined, the same total `LIMITS.concurrentSockets`
+   * bounds.
+   *
+   * DECLARED BY THE APP, SHOWN AT GRANT TIME, ENFORCED BY THE BROKER, exactly
+   * as `FsCapability.quotaBytes` already is (owner decision, 2026-09-06). The
+   * number a person approves is the app's own stated need rather than a hidden
+   * platform default, and it is the honest one to show, because this is also
+   * what bounds the memory an app can pin: every open socket carries a read
+   * and a write credit window (`readWindowBytes` + `writeWindowBytes`), so the
+   * socket count IS the memory ceiling.
+   *
+   * Omitted means `LIMITS.defaultConcurrentSockets`, deliberately modest --
+   * an ordinary app never reaches it, and anything that genuinely needs more
+   * (a P2P app talking to a swarm) has to say so, which is the point: the
+   * heavy case is always a number the user was shown. Declaring MORE than
+   * `LIMITS.concurrentSockets` is not a manifest error; the broker enforces
+   * the lower of the two, so the platform ceiling always wins.
+   */
+  readonly concurrentSockets?: number
 }
 
 export interface TcpCapability {
