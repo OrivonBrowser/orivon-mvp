@@ -6,7 +6,7 @@
 > uncorrected on purpose rather than guess at the replacement. This is that correction.
 >
 > **Reachable from an actual page today**, via `window.orivon` (`src/preload/orivon-surface.ts`,
-> wired to `src/broker/index.ts` over `src/broker/ipc.ts`'s control channel): `app.manifest`,
+> wired to `src/broker/index.ts` over `src/broker/transport/ipc.ts`'s control channel): `app.manifest`,
 > `app.grants`, `fs.readFile`, `fs.writeFile`. **Implemented in the broker and Electron's
 > main-process IPC layer, but not yet exposed to a page**: `net.connect` (TCP only) —
 > `orivon-surface.ts`'s own header explains why it stops there: nothing yet lands a socket back
@@ -14,7 +14,7 @@
 > `app.requestGrant`, `net.listen`, `net.udpBind`, every `fs.*` method below `readFile`/
 > `writeFile` (`open`, `mkdir`, `readdir`, `stat`, `rm`, `rename`, `userSelected`) — none of these
 > has any related code anywhere in `src/broker/`. `orivon.id` is a partial exception: no `'id.'`
-> case exists in `src/broker/ipc.ts`'s control dispatch, so none of `orivon.id.*` is callable, but
+> case exists in `src/broker/transport/ipc.ts`'s control dispatch, so none of `orivon.id.*` is callable, but
 > the P-256 half of the key math it would need is real and tested (`src/broker/policy/derive.ts`'s
 > `derivePrivateScalar`, `derive-p256.ts`'s `derivePublicKey`, exercised by `derive.test.ts`'s
 > frozen golden vectors) — just not wired to a control method, and secp256k1 (Nostr's curve) has

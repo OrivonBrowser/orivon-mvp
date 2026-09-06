@@ -6,11 +6,11 @@
 > handle type, but false for the other four handle types this document specifies. The
 > per-section markers below say which is which; this paragraph gives the shape.
 >
-> **Genuinely built and tested**, against `src/broker/handles.ts`, `handle-store.ts`,
+> **Genuinely built and tested**, against `src/broker/handles/handles.ts`, `handle-store.ts`,
 > `handle-contracts.ts` and `errors.ts`: the §Common shape ownership check, the 11-code closed
 > error enum in §Errors (every code verified to match exactly), the kind-agnostic §Revocation
 > cascade (tombstoning, graceful session teardown, the `fs.userSelected` exception), and
-> §TcpSocket in full, including its close/half-close wire table (`src/broker/node-adapters.ts`'s
+> §TcpSocket in full, including its close/half-close wire table (`src/broker/adapters/node-adapters.ts`'s
 > `destroySocket`) — exercised by `handles.test.ts`, `handles-limits.test.ts` and
 > `node-adapters.test.ts`.
 >
@@ -132,8 +132,8 @@ own reasoning says should stay uninformative.
 ## §TcpSocket
 
 > **Implemented in the broker and Electron's main-process IPC layer** — `src/broker/index.ts`'s
-> `net.connect`, `src/broker/ipc.ts`'s control-channel dispatch and real `MessageChannelMain`
-> port, `src/broker/port-pump.ts`'s read-side credit pump. TCP only. **Not yet reachable from a
+> `net.connect`, `src/broker/transport/ipc.ts`'s control-channel dispatch and real `MessageChannelMain`
+> port, `src/broker/transport/port-pump.ts`'s read-side credit pump. TCP only. **Not yet reachable from a
 > page**: `net.connect` is absent from `window.orivon` — `src/preload/orivon-surface.ts`'s own
 > header explains why (no way to hand back a socket that could not be closed) — until the
 > write-side of the byte pump lands.
@@ -187,11 +187,11 @@ choke/interested handshake and keeps reading long after it has stopped writing n
 > said the renderer-side half "is still not wired up" — true when written, false since the
 > preload byte pump landed, and left uncorrected for three days. Both halves now exist:
 >
-> - Broker read side: `src/broker/port-pump.ts`'s `pumpLoop` stops reading the OS socket at
+> - Broker read side: `src/broker/transport/port-pump.ts`'s `pumpLoop` stops reading the OS socket at
 >   credit zero.
 > - Renderer read side: `src/preload/socket-port.ts`'s `reportConsumed` flushes a
 >   `CreditMessage` once `CREDIT_COALESCE_BYTES` has been consumed, and otherwise coalesces.
-> - Broker write side: `src/broker/port-sink.ts` coalesces `WriteAckMessage` against the same
+> - Broker write side: `src/broker/transport/port-sink.ts` coalesces `WriteAckMessage` against the same
 >   constant (see §Write direction below).
 >
 > **One deliberate departure from the text below, made knowingly.** This section specifies
@@ -269,7 +269,7 @@ particular broker or preload implements them.
 > **Not implemented.** No accept/listen and no `connections` stream anywhere in `src/broker/` —
 > `TcpServer` exists only as the contract type in `src/contracts/handles.ts`. Its build step has
 > not been reached; the handle-table mechanics below (`HandleKind: 'tcpServer'` in
-> `src/broker/handle-contracts.ts`) already account for it, ahead of the actual socket-accept
+> `src/broker/handles/handle-contracts.ts`) already account for it, ahead of the actual socket-accept
 > code.
 
 ```ts
@@ -395,7 +395,7 @@ interface FileHandle extends Handle {
 ## §IdentityHandle
 
 > **No `IdentityHandle` is ever constructed, and no `orivon.id.*` method is callable** —
-> `src/broker/ipc.ts`'s control dispatch has no `'id.'` case, so `publicKey()`/`signEvent()` exist
+> `src/broker/transport/ipc.ts`'s control dispatch has no `'id.'` case, so `publicKey()`/`signEvent()` exist
 > only as the contract type. The P-256 half of the key math those methods would need is real and
 > tested (`src/broker/policy/derive.ts`'s `derivePrivateScalar`, `derive-p256.ts`'s
 > `derivePublicKey`, exercised by `derive.test.ts`'s frozen golden vectors), but nothing calls it
@@ -526,7 +526,7 @@ per-origin exposure; doubling that for a write window nobody asked for would be 
 increase to an aggregate this document already flags as unbounded rather than fixed
 (`src/contracts/limits.ts`'s own comment carries the same reasoning).
 
-**Two amendments, AI-recommended and applied in `src/broker/handles.ts` (2026-08-27), flagged
+**Two amendments, AI-recommended and applied in `src/broker/handles/handles.ts` (2026-08-27), flagged
 rather than folded in silently:**
 
 1. **A `TcpServer`'s listening socket counts against the socket budget.** This table originally
