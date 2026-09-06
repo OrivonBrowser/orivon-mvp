@@ -418,7 +418,6 @@ export class GrantLedger {
     }
   }
 
-  /** Bytes already reserved (written, or still in flight) against `origin`'s quota this session. Zero for an origin the ledger has no record of yet. */
   /**
    * How many sockets this origin may hold at once: what its manifest declared
    * (`net.concurrentSockets`), clamped to `LIMITS.concurrentSockets`, or
@@ -429,7 +428,7 @@ export class GrantLedger {
    * never turn an already-published manifest into an invalid one.
    *
    * Reads through `#origins.get`, not `#record`, so merely asking about an
-   * origin does not create a row for it -- same as `fsBytesWritten` above.
+   * origin does not create a row for it -- same as `fsBytesWritten` below.
    */
   socketAllowance (origin: string): number {
     const declared = this.#origins.get(origin)?.manifest?.capabilities.net?.concurrentSockets
@@ -437,6 +436,7 @@ export class GrantLedger {
     return Math.min(declared, LIMITS.concurrentSockets)
   }
 
+  /** Bytes already reserved (written, or still in flight) against `origin`'s quota this session. Zero for an origin the ledger has no record of yet. */
   fsBytesWritten (origin: string): number {
     return this.#origins.get(origin)?.fsBytesWritten ?? 0
   }
