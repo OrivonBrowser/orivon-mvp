@@ -28,33 +28,35 @@
 // THE GAP THIS TEST WORKS AROUND, READ BEFORE CHANGING THE SHAPE OF THIS
 // FILE. docs/development/testing.md's ideal end-to-end test drives the
 // fixture app's own frontend (apps/fixture/app.js) through
-// `window.orivon.net.connect()`, loaded via a real app loader. Neither
-// exists yet, verified by reading the actual code rather than assumed:
+// `window.orivon.net.connect()`, loaded via a real app loader, and completes
+// a real granted round trip. The app loader half still does not exist,
+// verified by reading the actual code rather than assumed:
 //
-//   1. src/preload/orivon-surface.ts's exposeOrivon() wires app.manifest,
-//      app.grants, fs.readFile and fs.writeFile onto window.orivon -- and
-//      nothing else. net.connect is deliberately absent (its own header:
-//      the per-socket byte-pump wiring across contextBridge "is not here
-//      yet"), even though src/broker/ipc.ts's dispatch() already
-//      implements net.connect on the OTHER side of that bridge. So
-//      `window.orivon.net` is `undefined` in every real tab today.
-//   2. Nothing on `main` ever calls broker.registerApp()/broker.grant() for
-//      a real origin -- those are explicitly the app loader's and the
-//      permission-prompt UI's seams (src/broker/index.ts's own doc on
-//      `Broker.grant`), and neither exists yet. scripts/smoke.mjs's own
-//      existing dashboard checks already show this indirectly: an ordinary
-//      tab's orivon.app.manifest() returns 'internal' ("no manifest
-//      registered"), and orivon.app.grants() is always `[]`.
+//   Nothing on `main` ever calls broker.registerApp()/broker.grant() for a
+//   real origin -- those are explicitly the app loader's and the
+//   permission-prompt UI's seams (src/broker/index.ts's own doc on
+//   `Broker.grant`), and neither exists yet. scripts/smoke.mjs's own
+//   existing dashboard checks already show this indirectly: an ordinary
+//   tab's orivon.app.manifest() returns 'internal' ("no manifest
+//   registered"), and orivon.app.grants() is always `[]`.
 //
-// So a real page in the real launched shell cannot complete a net.connect
-// round trip today, whatever grant mechanism a test invents -- there is no
-// method on window.orivon to call. Phase 1 below proves exactly that (it is
-// real, current, observable behaviour, not a stand-in for the real
-// assertion); Phase 2 is "directly exercises... whatever grant mechanism
-// exists" (this lane's brief, SSScope) taken as far as it can go: the real
-// broker, real Node I/O, real granted-vs-denied enforcement, against a real
-// separate echo-server process -- just not carried over real Electron IPC,
-// because nothing on the other end of that bridge accepts the call yet.
+// WHAT CHANGED (stream/broker-24-preload-net-surface): `window.orivon.net`
+// is no longer absent. src/preload/orivon-surface.ts now wires net.connect
+// onto window.orivon for real, via contextBridge.executeInMainWorld -- so a
+// real page in the real launched shell CAN now reach the full IPC/broker
+// pipe. What it still cannot do is complete a GRANTED round trip, because
+// nothing grants it anything. Phase 1 below now proves the pipe itself:
+// window.orivon.net.connect exists, a real call through it reaches the real
+// broker's real policy check over real Electron IPC, and correctly comes
+// back denied -- not a timeout, not a crash, not a malformed error, not a
+// silent success. That is real, current, observable behaviour, not a
+// stand-in for the ideal test; closing the remaining gap (a real grant) is
+// the app loader's job, build step 4. Phase 2 is "directly exercises...
+// whatever grant mechanism exists" (this lane's original brief, SSScope)
+// taken as far as it can go: the real broker, real Node I/O, real
+// granted-vs-denied enforcement, against a real separate echo-server
+// process -- just not carried over real Electron IPC, because nothing
+// grants the fixture's origin anything on that path either.
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { spawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
@@ -110,11 +112,21 @@ const APP_CLOSE_RACE_MS = 8_000
  *     click (1st attempt)               DEFAULT_ACTION_TIMEOUT_MS     10_000
  *     waitForAddressBarStable (retry)   ADDRESS_BAR_STABLE_TIMEOUT_MS  8_000
  *     click (2nd attempt) + fill + press DEFAULT_ACTION_TIMEOUT_MS x3 30_000
- *   waitForTab                         WAIT_TIMEOUT_MS               8_000
- *   evaluateRetrying (read page state) WAIT_TIMEOUT_MS               8_000
- *   teardown: waitFor(windows === 0)   WAIT_TIMEOUT_MS               8_000
- *   teardown: app.close() race         APP_CLOSE_RACE_MS             8_000
- *                                                            total: 96_000
+ *   waitForTab                          WAIT_TIMEOUT_MS               8_000
+ *   evaluateRetrying (Loading clears)   WAIT_TIMEOUT_MS               8_000
+ *   evaluateRetrying (grants + connect) WAIT_TIMEOUT_MS               8_000
+ *   teardown: waitFor(windows === 0)    WAIT_TIMEOUT_MS               8_000
+ *   teardown: app.close() race          APP_CLOSE_RACE_MS             8_000
+ *                                                            total: 104_000
+ *
+ * E-F2 (docs/open-questions.md A76): the page-state read used to be ONE
+ * evaluateRetrying call doing both the "wait for Loading to clear" poll and
+ * the full net.connect IPC round trip, sharing a single WAIT_TIMEOUT_MS --
+ * on a loaded CI runner the poll alone could spend most of that budget,
+ * leaving too little for the round trip this file exists to prove, and a
+ * timeout there reported evaluateRetrying's own generic message instead of
+ * the real failure. Split into two calls below, each billed its own full
+ * WAIT_TIMEOUT_MS here.
  *
  * Kept as an actual sum of the real constants, not restated as a bare
  * number, so the next person who adds a wait to this critical path sees
@@ -125,6 +137,7 @@ const PHASE1_WAIT_BUDGET_MS =
   WAIT_TIMEOUT_MS +
   ADDRESS_BAR_STABLE_TIMEOUT_MS +
   DEFAULT_ACTION_TIMEOUT_MS + ADDRESS_BAR_STABLE_TIMEOUT_MS + DEFAULT_ACTION_TIMEOUT_MS * 3 +
+  WAIT_TIMEOUT_MS +
   WAIT_TIMEOUT_MS +
   WAIT_TIMEOUT_MS +
   WAIT_TIMEOUT_MS +
@@ -360,7 +373,22 @@ async function roundTripBytes (
 // all. Both phases do share the echo/static servers started in beforeAll
 // above, which is file-level setup independent of either `it()`.
 
-it('Phase 1: the real shell launches and navigates the fixture tab, and the fixture reports its own known net.connect gap honestly', async () => {
+/**
+ * The EXACT text `src/broker/index.ts`'s `connect()` throws when
+ * `ledger.currentGrant(key, 'tcp.connect')` finds no grant for this origin --
+ * the one call site that can produce it. Matched verbatim below (E-F1,
+ * `docs/open-questions.md` A76) rather than a loose pattern like /denied/i:
+ * `src/broker/ipc.ts`'s EARLIER, unrelated check -- "no authenticated origin
+ * for this frame", thrown before `dispatch()` ever reaches the grant check --
+ * produces the identical `{ name: 'OrivonError', code: 'denied',
+ * platformCode: undefined }` shape. A T3/T13b origin-derivation regression
+ * that made that earlier check fire instead would satisfy the old, looser
+ * assertion just as well as a real grant denial -- exactly the kind of bug
+ * this file exists to catch.
+ */
+const GRANT_DENIAL_MESSAGE = 'tcp.connect is not granted to this origin'
+
+it('Phase 1: the real shell launches, and a real net.connect through the full IPC pipe is correctly denied (no grant exists)', async () => {
   await runPhase('Phase 1', async (check) => {
     // ---- the real shell, the real page, the real (documented) gap
     // Launches via test/launch-electron.mjs -- the only correct way to start
@@ -421,16 +449,81 @@ it('Phase 1: the real shell launches and navigates the fixture tab, and the fixt
           // network of its own (fetch of a local manifest, then either the
           // "no runtime" branch or a doomed net.connect call), so waiting
           // for the status text to stop reading "Loading..." is enough of a
-          // transition to read from safely.
-          const state = await evaluateRetrying(view, async () => {
+          // transition to read from safely. E-F2: its own bounded call,
+          // separate from the round trip below -- see PHASE1_WAIT_BUDGET_MS's
+          // own note on why sharing one evaluateRetrying budget was a flake
+          // risk.
+          await evaluateRetrying(view, async () => {
             const deadline = Date.now() + 5_000
             while (document.getElementById('status')?.textContent === 'Loading...' && Date.now() < deadline) {
               await new Promise((r) => setTimeout(r, 50))
             }
+          })
+
+          // A SECOND, INDEPENDENT connect attempt, made directly here rather
+          // than relying only on the fixture's own display text (which
+          // stringifies a plain OrivonError-shaped rejection as "[object
+          // Object]" -- apps/fixture/app.js's `error instanceof Error` check
+          // is false for it by design, see orivon-surface.ts's own header).
+          // This is what actually proves the full pipe: window.orivon.net.
+          // connect -> the real preload/main-world wiring -> real Electron
+          // IPC -> the real broker's real policy check -> a real denial,
+          // propagated all the way back as a rejected promise IN THE PAGE.
+          // The literal host:port here need not have anything listening --
+          // checkConnect denies for want of a grant before any dial is ever
+          // attempted.
+          const state = await evaluateRetrying(view, async () => {
+            const orivon = (window as unknown as {
+              orivon: {
+                app: { grants: () => Promise<unknown> }
+                net: { connect: (o: unknown) => Promise<{ close?: () => Promise<void> } | undefined> }
+              }
+            }).orivon
+
+            // E-F1's extra rigor: prove the frame IS authenticated -- origin
+            // derivation (ipc.ts's originFromSenderFrame, T3/T13b) already
+            // succeeded and dispatch() actually ran -- independently of the
+            // net.connect grant check below. app.grants() resolves to `[]`
+            // for an authenticated origin the ledger has never registered
+            // (grant-ledger.ts's grantsFor), rather than rejecting: nothing
+            // about it depends on any grant existing, only on the origin
+            // being real.
+            let grantsResult: unknown
+            let grantsRejected = false
+            try {
+              grantsResult = await orivon.app.grants()
+            } catch {
+              grantsRejected = true
+            }
+
+            // E-F3: capture the call's return value WITHOUT awaiting it
+            // first, so a synchronous throw -- a different and worse
+            // regression than a rejected promise, since it would break every
+            // `.catch()`-based caller -- is distinguishable from the
+            // rejection this check actually claims to prove.
+            let netConnectIsThenable = false
+            let netConnectError
+            try {
+              const pending = orivon.net.connect({ host: '127.0.0.1', port: 8873 })
+              netConnectIsThenable = typeof (pending as unknown as { then?: unknown })?.then === 'function'
+              const socket = await pending
+              // Unexpected success IS this check correctly failing -- the
+              // real security regression this file exists to catch -- but
+              // the real broker-side handle and its MessagePort must not
+              // leak in the Electron process for the rest of the run (E-F6).
+              await socket?.close?.()
+            } catch (e) {
+              const err = e as { code?: unknown, message?: unknown, name?: unknown, platformCode?: unknown }
+              netConnectError = { code: err?.code, message: err?.message, name: err?.name, platformCode: err?.platformCode }
+            }
+
             return {
               hasOrivon: typeof (window as unknown as { orivon?: unknown }).orivon,
               hasOrivonNet: typeof (window as unknown as { orivon?: { net?: unknown } }).orivon?.net,
-              status: document.getElementById('status')?.textContent
+              hasOrivonNetConnect: typeof (window as unknown as { orivon?: { net?: { connect?: unknown } } }).orivon?.net?.connect,
+              grantsOk: !grantsRejected && Array.isArray(grantsResult),
+              netConnectIsThenable,
+              netConnectError
             }
           })
           check(
@@ -439,15 +532,47 @@ it('Phase 1: the real shell launches and navigates the fixture tab, and the fixt
             JSON.stringify(state)
           )
           check(
-            'window.orivon.net is NOT present -- the gap this test documents, not assumes ' +
-            '(src/preload/orivon-surface.ts has no net.connect entry yet)',
-            state.hasOrivonNet === 'undefined',
+            'window.orivon.net IS present -- stream/broker-24-preload-net-surface wired it ' +
+            'onto window.orivon via contextBridge.executeInMainWorld',
+            state.hasOrivonNet === 'object',
             JSON.stringify(state)
           )
           check(
-            "the fixture's own frontend detects the runtime, attempts the call, and reports " +
-            "the resulting failure honestly (apps/fixture/app.js's real catch branch)",
-            state.status === 'Connect failed.',
+            'window.orivon.net.connect IS a callable function, not merely a truthy placeholder ' +
+            '(E-F4) -- an `orivon.net = {}` regression would otherwise surface one check later as ' +
+            'a confusing generic TypeError rather than pointing at the actual gap',
+            state.hasOrivonNetConnect === 'function',
+            JSON.stringify(state)
+          )
+          check(
+            'the frame is authenticated BEFORE the connect attempt -- orivon.app.grants() resolves ' +
+            "(to `[]`, for an origin the ledger has never registered) rather than rejecting, " +
+            "proving origin derivation already succeeded independently of the grant check below " +
+            '(E-F1)',
+            state.grantsOk,
+            JSON.stringify(state)
+          )
+          check(
+            'orivon.net.connect() returns a real thenable synchronously, before any rejection -- ' +
+            'not a synchronous throw, which would be a different and worse regression breaking ' +
+            'every `.catch()`-based caller (E-F3)',
+            state.netConnectIsThenable,
+            JSON.stringify(state)
+          )
+          check(
+            'a real net.connect through the full IPC pipe is denied with a real, correctly ' +
+            '-shaped OrivonError -- not a timeout, a crash, or a malformed response',
+            state.netConnectError?.name === 'OrivonError' &&
+            state.netConnectError?.code === 'denied' &&
+            state.netConnectError?.platformCode === undefined,
+            JSON.stringify(state)
+          )
+          check(
+            "the denial is SPECIFICALLY the grant check refusing this origin (src/broker/index.ts's " +
+            "connect(), for want of a grant), not ipc.ts's EARLIER, unrelated \"no authenticated " +
+            'origin for this frame\" check answering first -- which would be a real T3/T13b ' +
+            'origin-derivation regression this test must not let slide through unnoticed (E-F1)',
+            state.netConnectError?.message === GRANT_DENIAL_MESSAGE,
             JSON.stringify(state)
           )
         }
