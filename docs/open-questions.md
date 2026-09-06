@@ -2620,3 +2620,55 @@ riding in on the write-pump work that happened to surface it.
 own half-close support (the app's own `writable.close()`/`.abort()`, handled in
 `port-sink.ts`) is unaffected — Node's half-close behaviour when **we** close first is not
 gated by `allowHalfOpen` the way the peer-closes-first direction is.
+
+**Correction, 2026-09-06 (AI-REC, `stream/broker-23-write-pump`, B-F1).** The paragraph above
+understates one consequence: the write pump is not "unaffected" once it can be called after a
+peer FIN. Before the write-side pump existed, nothing ever wrote after a peer FIN, so the gap
+was latent. With the pump wired (this same branch), a write issued after a peer FIN rejects
+with an AbortError (`name: 'AbortError'`, `code: 'ABORT_ERR'`, confirmed empirically against a
+real socket, not assumed) because Node auto-ended our writable when the FIN arrived.
+`mapSocketError` had no sharper mapping for that shape than `'internal'`, and treating any
+mapped code as a whole-handle failure meant this specific write rejection killed the read side
+and rejected `closed` too — directly the close-table row this entry already names (peer FIN:
+readable ends, writable stays open, `closed` pending).
+
+**A narrower fix shipped in this same branch, not touching `allowHalfOpen`.**
+`port-sink.ts`'s write-rejection handler now recognises this exact AbortError shape and fails
+only the write direction, with code `'closed'`, leaving the read side and `closed` alone. The
+writable still ends too early on a peer FIN, exactly as the rest of this entry describes — this
+only stops that pre-existing gap from cascading into a second, worse failure (the whole handle
+dying) once something writes after it. The deeper fix this entry describes (a custom
+`ReadableStream` wrapper, or a Node-version/upstream fix) remains open and unattempted.
+
+---
+
+### A70 — `net.setNoDelay`/`net.setKeepAlive`/`net.close` consult only the connect-time registry, never a live re-check against the grant ledger **[STILL OPEN]**
+
+Found 2026-09-06, `stream/broker-23-write-pump`, during an adversarial pass over this same
+branch's diff.
+
+`ipc.ts`'s dispatch for these three control methods looks the handle id up in
+`transport.registry` -- populated once, at `net.connect` time -- and, if present, calls straight
+through to the registered `close`/`setNoDelay`/`setKeepAlive`. None of the three re-derives or
+re-checks the grant that authorised the underlying socket. `handles.ts`'s own header states the
+invariant this is measured against: "every operation on a handle goes through `lookup` or
+`run`" (T11c's ownership re-check, generalised) -- but these three control methods bypass
+`HandleTable` entirely, going through `PortRegistry` instead, which has no concept of a grant at
+all.
+
+**Practical window.** Between a grant being revoked and the socket's `closed` promise actually
+settling (revocation is documented as NOT waiting for teardown -- see `HandleTable.revoke`'s own
+doc, "does not wait for teardown"), these three calls can still succeed against a socket that is,
+from the app's declared authority, already gone. `net.close` succeeding here is arguably benign
+(the app is asking to close something already being closed); `net.setNoDelay`/`net.setKeepAlive`
+succeeding is a narrower concern -- calling a native binding against a socket mid-revocation,
+for a capability the ledger no longer grants.
+
+**Not fixed here.** This pattern predates this PR (the registry-lookup shape for `net.close` was
+already there); this PR only added two more control methods following the same shape. Whether
+the fix is "re-check `HandleTable.lookup` before dispatching these three" or "accept that the
+window is bounded by how fast `closed` settles and is not worth the extra check" is a design
+call, not a mechanical one -- flagged rather than decided here.
+
+**Needed by:** whoever next touches `ipc.ts`'s net.* dispatch, or before this window is treated
+as closed by any future security review.

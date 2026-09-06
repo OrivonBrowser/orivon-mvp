@@ -95,4 +95,29 @@ describe('createPortSink against a real local TCP server', () => {
     expect(failure?.code).toBe('reset')
     expect(failure?.platformCode).toBe('ECONNRESET')
   }, 15_000)
+
+  it('BASELINE for B-F6 (a different lane\'s follow-up PR): handleAbort currently produces a clean FIN against a real peer, not an RST', async () => {
+    // handle-contracts.md's close table specifies 'revoked' -> RST,
+    // buffered data discarded on both sides. Confirmed empirically (Node
+    // 24.11.1) that writer.abort() does not produce that today: the peer
+    // sees an ordinary FIN, then a clean close. Fixing that is B-F6,
+    // tracked separately and owned by a different lane's follow-up PR --
+    // this test intentionally documents TODAY's behavior, not the correct
+    // one, so that PR has a real assertion to change rather than a guess.
+    await listen()
+    const dialed = await dialTcp(['127.0.0.1'], port, neverAborts())
+    const peer = await firstAccepted()
+    const peerEvents: string[] = []
+    const peerEnded = new Promise<void>((resolve) => { peer.once('end', () => { peerEvents.push('end'); resolve() }) })
+    const peerClosed = new Promise<boolean>((resolve) => { peer.once('close', (hadError) => { peerEvents.push('close'); resolve(hadError) }) })
+
+    const sink = createPortSink({ handleId: 'h1', writable: dialed.writable, send: () => {}, windowBytes: 1_024 })
+    sink.handleAbort({ kind: 'write-abort', handleId: 'h1' })
+
+    await peerEnded
+    const hadError = await peerClosed
+
+    expect(peerEvents).toEqual(['end', 'close'])
+    expect(hadError).toBe(false)
+  }, 15_000)
 })

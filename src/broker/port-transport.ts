@@ -31,6 +31,16 @@ export interface SocketDescriptor {
 export interface PortLike {
   postMessage: (message: BrokerToRendererMessage) => void
   onMessage: (listener: (message: unknown) => void) => void
+  /**
+   * Fires when the OTHER side of the port closes -- a real
+   * `MessagePortMain`'s own `'close'` event, which a renderer navigating
+   * away or explicitly closing its side triggers without ever calling
+   * `net.close`. The only other release trigger is `socket.closed`
+   * settling, which never happens on its own for an idle, healthy,
+   * established socket -- so without this, an abandoned renderer's socket,
+   * registry slot and pumps live for the process's lifetime (T11b).
+   */
+  onClose: (listener: () => void) => void
   close: () => void
 }
 
@@ -41,12 +51,12 @@ export interface PortPair {
 }
 
 /**
- * What `net.close` and `./socket-relay.ts`'s registry entry need beyond the
- * raw socket: enough to release it and to answer the two operations
- * declared on `TcpSocket` (`handles.ts`) but not yet wired as their own
- * control methods -- `setNoDelay`/`setKeepAlive` dispatch through this same
- * per-origin lookup, the same ownership check `close` already relies on
- * (T11c: a handle id from one origin means nothing presented by another).
+ * What `net.close`, `net.setNoDelay` and `net.setKeepAlive` (`./ipc.ts`) and
+ * `./socket-relay.ts`'s registry entry need beyond the raw socket: enough to
+ * release it and to answer the other two operations declared on `TcpSocket`
+ * (`handles.ts`) -- all three dispatch through this same per-origin lookup,
+ * the same ownership check `close` relies on (T11c: a handle id from one
+ * origin means nothing presented by another).
  */
 export interface RegisteredSocket {
   readonly close: () => Promise<void>
