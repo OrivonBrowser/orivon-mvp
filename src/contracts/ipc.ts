@@ -111,6 +111,16 @@ export interface StreamEndMessage {
  * `writable.write()` call -- WritableStream's own queuing guarantees the
  * broker never sees two of these for one handle out of order or
  * overlapping.
+ *
+ * HARD LIMIT: `chunk.byteLength` MUST NOT exceed `LIMITS.writeWindowBytes`
+ * (owner decision d-0021). A caller holding a larger buffer -- the shim
+ * presenting a Node-shaped `write()`, or the renderer's own `writable` --
+ * is responsible for splitting it into writeWindowBytes-sized or smaller
+ * pieces and posting each as its own WriteMessage before the next one is
+ * written. This is an obligation on the sender, not a suggestion: the
+ * broker does not split, truncate, or buffer an oversized chunk on the
+ * caller's behalf, and is entitled to treat one that exceeds the limit as
+ * a protocol error.
  */
 export interface WriteMessage {
   readonly kind: 'write'
@@ -219,10 +229,29 @@ export const CREDIT_COALESCE_BYTES = 64 * 1024
 export const WRITE_HEARTBEAT_MS = 5_000
 
 /**
- * How long the renderer waits with NO message at all arriving on a
- * socket's port -- not even a heartbeat -- before treating the write
- * direction as dead: both streams error, `closed` rejects with 'timeout',
- * and the handle is closed. Deliberately more than double
+ * How long the renderer waits for a WriteAckMessage/WriteFailedMessage
+ * covering an outstanding write before treating the WRITE DIRECTION as
+ * dead: both streams error, `closed` rejects with 'timeout', and the
+ * handle is closed.
+ *
+ * SCOPE, READ CAREFULLY: this timer runs ONLY WHILE AT LEAST ONE WRITE IS
+ * OUTSTANDING -- posted via WriteMessage and not yet resolved by a
+ * WriteAckMessage (a WRITE_HEARTBEAT_MS zero-byte ack counts as "still
+ * alive" and keeps resetting this clock) or a WriteFailedMessage. It is
+ * NOT a whole-port idle timeout and must never be armed by, or reset by,
+ * unrelated inbound traffic (DataMessage, CreditMessage) or by simple
+ * absence of traffic on a socket with no write in flight. An ordinary
+ * request/response protocol pause, or a choked BitTorrent peer (whose own
+ * keepalive interval is 120 seconds), has nothing outstanding and must
+ * never trip this -- an implementation that starts this clock on socket
+ * open, or clears it only on inbound reads, is wrong regardless of how
+ * literally it matches the name.
+ *
+ * Correct arming: start (or restart) the clock when a WriteMessage is
+ * posted with nothing already outstanding on that handle; keep it running
+ * across each WRITE_HEARTBEAT_MS ack while the write is still unaccepted;
+ * clear it the instant every outstanding write on that handle has been
+ * resolved (accepted or failed). Deliberately more than double
  * WRITE_HEARTBEAT_MS, so at least one heartbeat has a real chance to land
  * before this fires -- see ipc.test.ts for the assertion.
  */

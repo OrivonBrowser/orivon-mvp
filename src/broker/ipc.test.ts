@@ -347,6 +347,27 @@ describe('a socket whose port never reaches its frame is released, not leaked', 
     expect(closePort).toHaveBeenCalled()
   })
 
+  it('stops the pump too, so data already buffered on the socket never reaches a port that was just closed', async () => {
+    const calls: BrokerCall[] = []
+    const chunk = new Uint8Array([7, 7, 7])
+    // Never closes -- there is always more the pump COULD read, the same
+    // shape as a live socket abandoned mid-stream.
+    const readable = new ReadableStream<Uint8Array>({ start (c) { c.enqueue(chunk) } })
+    const { socket } = fakeTcpSocket(readable)
+    const { pair, port1 } = fakePortPair()
+    const postMessage = vi.spyOn(port1, 'postMessage')
+
+    await handleControlRequest(
+      stubBroker(calls, { connect: async () => socket }),
+      disposedFrame(APP), envelope('net.connect', { host: 'x.example', port: 443 }), fakeTransport(pair)
+    )
+    await tick(20)
+
+    // relay.stop() itself legitimately posts one terminal end message --
+    // what must never arrive is the buffered chunk the pump was mid-read on.
+    expect(postMessage).not.toHaveBeenCalledWith({ kind: 'data', handleId: 'handle-1', chunk })
+  })
+
   it('closes the port exactly once even though abandon and the closed handler both release', async () => {
     const calls: BrokerCall[] = []
     const { socket } = fakeTcpSocket()
@@ -473,7 +494,11 @@ describe('defensive payload validation (a compromised renderer can bypass contex
     ['net.setKeepAlive', {}],
     ['net.setKeepAlive', { id: 'handle-1' }],
     ['net.setKeepAlive', { id: 'handle-1', on: 'yes' }],
-    ['net.setKeepAlive', { id: 'handle-1', on: true, initialDelayMs: 'soon' }]
+    ['net.setKeepAlive', { id: 'handle-1', on: true, initialDelayMs: 'soon' }],
+    ['net.setKeepAlive', { id: 'handle-1', on: true, initialDelayMs: Number.NaN }],
+    ['net.setKeepAlive', { id: 'handle-1', on: true, initialDelayMs: Number.POSITIVE_INFINITY }],
+    ['net.setKeepAlive', { id: 'handle-1', on: true, initialDelayMs: -1 }],
+    ['net.setKeepAlive', { id: 'handle-1', on: true, initialDelayMs: 1.5 }]
   ])('%s rejects a malformed payload as invalid, without calling the broker', async (method, payload) => {
     const calls: BrokerCall[] = []
     const response = await handleControlRequest(stubBroker(calls), frameFor(APP), envelope(method, payload))

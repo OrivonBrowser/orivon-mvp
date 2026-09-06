@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createSocketPort } from './socket-port.js'
 import { CREDIT_COALESCE_BYTES, WRITE_SILENCE_TIMEOUT_MS } from '../contracts/ipc.js'
+import { LIMITS } from '../contracts/limits.js'
 
 const HANDLE = 'handle-1'
 
@@ -207,6 +208,64 @@ describe('createSocketPort -- the silence watchdog', () => {
   })
 })
 
+describe('createSocketPort -- P-F1: the silence timer only tracks an OUTSTANDING write', () => {
+  beforeEach(() => { vi.useFakeTimers() })
+  afterEach(() => { vi.useRealTimers() })
+
+  it('an idle socket (data received, then nothing) survives past WRITE_SILENCE_TIMEOUT_MS with no pending write', async () => {
+    const port = fakePort()
+    const socketPort = createSocketPort({ handleId: HANDLE, port })
+    const fatal = vi.fn()
+    socketPort.onFatal(fatal)
+    const received: Uint8Array[] = []
+    socketPort.onData((chunk) => { received.push(chunk) })
+    let settled = false
+    socketPort.closed.then(() => { settled = true }, () => { settled = true })
+
+    port.emit({ kind: 'data', handleId: HANDLE, chunk: new Uint8Array([1]) })
+    await vi.advanceTimersByTimeAsync(WRITE_SILENCE_TIMEOUT_MS + 1)
+
+    expect(fatal).not.toHaveBeenCalled()
+    expect(settled).toBe(false)
+
+    // The socket must remain fully usable afterward -- this is the real
+    // BitTorrent shape: connect, one chunk, then a long ordinary quiet spell.
+    port.emit({ kind: 'data', handleId: HANDLE, chunk: new Uint8Array([2]) })
+    expect(received).toEqual([new Uint8Array([1]), new Uint8Array([2])])
+  })
+})
+
+describe('createSocketPort -- P-F2: dispose() reflects an app-initiated close', () => {
+  it('resolves closed once dispose() runs, even with nothing else having happened', async () => {
+    const port = fakePort()
+    const socketPort = createSocketPort({ handleId: HANDLE, port })
+
+    socketPort.dispose()
+
+    await expect(socketPort.closed).resolves.toBeUndefined()
+  })
+
+  it('rejects a write that was in flight when dispose() was called, with a closed-coded error, instead of hanging forever', async () => {
+    const port = fakePort()
+    const socketPort = createSocketPort({ handleId: HANDLE, port })
+    const written = socketPort.write(new Uint8Array([1, 2, 3]))
+
+    socketPort.dispose()
+
+    await expect(written).rejects.toMatchObject({ code: 'closed' })
+    await expect(socketPort.closed).resolves.toBeUndefined()
+  })
+
+  it('is idempotent -- disposing twice does not throw', async () => {
+    const port = fakePort()
+    const socketPort = createSocketPort({ handleId: HANDLE, port })
+
+    socketPort.dispose()
+    expect(() => { socketPort.dispose() }).not.toThrow()
+    await expect(socketPort.closed).resolves.toBeUndefined()
+  })
+})
+
 describe('createSocketPort -- closed (settles once BOTH directions are terminal)', () => {
   it('does not settle while only the read side has ended cleanly', async () => {
     const port = fakePort()
@@ -269,5 +328,115 @@ describe('createSocketPort -- closed (settles once BOTH directions are terminal)
     socketPort.abortWrite()
 
     await expect(socketPort.closed).rejects.toMatchObject({ code: 'reset' })
+  })
+})
+
+describe('createSocketPort -- P-F8: write() does not derive its safety from the main-world stream', () => {
+  it('a re-entrant write() call while one is pending rejects immediately with invalid, and leaves the first one able to settle normally', async () => {
+    const port = fakePort()
+    const socketPort = createSocketPort({ handleId: HANDLE, port })
+
+    const first = socketPort.write(new Uint8Array([1, 2]))
+    const second = socketPort.write(new Uint8Array([3, 4]))
+
+    await expect(second).rejects.toMatchObject({ code: 'invalid' })
+    expect(port.sent).toEqual([{ kind: 'write', handleId: HANDLE, chunk: new Uint8Array([1, 2]) }])
+
+    port.emit({ kind: 'write-ack', handleId: HANDLE, bytesAccepted: 2 })
+    await expect(first).resolves.toBeUndefined()
+  })
+})
+
+describe('createSocketPort -- P-F9: closed never produces an unhandled rejection on its own', () => {
+  it('does not fire process "unhandledRejection" even when nobody attaches a .catch() to closed', async () => {
+    const port = fakePort()
+    const socketPort = createSocketPort({ handleId: HANDLE, port })
+    void socketPort // deliberately not touching .closed at all -- that is the production gap this proves is closed
+
+    const unhandled: unknown[] = []
+    const onUnhandled = (reason: unknown): void => { unhandled.push(reason) }
+    process.on('unhandledRejection', onUnhandled)
+    try {
+      port.emit({ kind: 'end', handleId: HANDLE, code: 'revoked' })
+      // Node only flags a rejection unhandled once the microtask queue has
+      // drained without a handler attached -- a couple of macrotask
+      // boundaries is enough to observe that either way.
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    } finally {
+      process.off('unhandledRejection', onUnhandled)
+    }
+
+    expect(unhandled).toEqual([])
+  })
+})
+
+describe('createSocketPort -- P-F13: reportConsumed rejects a malformed report rather than crediting it', () => {
+  it('ignores NaN and negative reports -- no credit message is ever sent for them', async () => {
+    const port = fakePort()
+    const socketPort = createSocketPort({ handleId: HANDLE, port })
+
+    socketPort.reportConsumed(Number.NaN)
+    socketPort.reportConsumed(-5)
+    socketPort.reportConsumed(Number.POSITIVE_INFINITY)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(port.sent).toEqual([])
+  })
+})
+
+describe('createSocketPort -- d-0021: an oversized write is split at LIMITS.writeWindowBytes', () => {
+  it('splits a chunk larger than writeWindowBytes into sequential WriteMessages, each within the limit, resolving only once the last is acked', async () => {
+    const port = fakePort()
+    const socketPort = createSocketPort({ handleId: HANDLE, port })
+    const size = LIMITS.writeWindowBytes * 3 + 10 // not an exact multiple -- proves the remainder piece
+    const chunk = new Uint8Array(size)
+
+    const written = socketPort.write(chunk)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    // Pieces are sequential -- only the first is sent before its own ack arrives.
+    expect(port.sent).toHaveLength(1)
+    const pieces = port.sent as Array<{ kind: string, handleId: string, chunk: Uint8Array }>
+    expect(pieces[0]?.chunk.byteLength).toBe(LIMITS.writeWindowBytes)
+
+    for (let i = 0; i < 3; i++) {
+      port.emit({ kind: 'write-ack', handleId: HANDLE, bytesAccepted: LIMITS.writeWindowBytes })
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    }
+    expect(pieces).toHaveLength(4)
+    expect(pieces[3]?.chunk.byteLength).toBe(10)
+    port.emit({ kind: 'write-ack', handleId: HANDLE, bytesAccepted: 10 })
+
+    await expect(written).resolves.toBeUndefined()
+    for (const piece of pieces) expect(piece.chunk.byteLength).toBeLessThanOrEqual(LIMITS.writeWindowBytes)
+  })
+
+  it('a chunk at or under writeWindowBytes is sent as a single WriteMessage, unchanged', async () => {
+    const port = fakePort()
+    const socketPort = createSocketPort({ handleId: HANDLE, port })
+    const chunk = new Uint8Array(LIMITS.writeWindowBytes)
+
+    const written = socketPort.write(chunk)
+    expect(port.sent).toEqual([{ kind: 'write', handleId: HANDLE, chunk }])
+
+    port.emit({ kind: 'write-ack', handleId: HANDLE, bytesAccepted: LIMITS.writeWindowBytes })
+    await expect(written).resolves.toBeUndefined()
+  })
+
+  it('rejects and sends no further pieces if a middle piece fails', async () => {
+    const port = fakePort()
+    const socketPort = createSocketPort({ handleId: HANDLE, port })
+    const chunk = new Uint8Array(LIMITS.writeWindowBytes * 3)
+
+    const written = socketPort.write(chunk)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    port.emit({ kind: 'write-ack', handleId: HANDLE, bytesAccepted: LIMITS.writeWindowBytes }) // first piece ok
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    port.emit({ kind: 'write-failed', handleId: HANDLE, code: 'reset', platformCode: 'ECONNRESET' }) // second piece fails
+
+    await expect(written).rejects.toMatchObject({ code: 'reset' })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(port.sent).toHaveLength(2) // the third piece was never sent
   })
 })

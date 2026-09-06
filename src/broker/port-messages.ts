@@ -1,15 +1,11 @@
-// Shape validation for messages arriving on a socket's dedicated
-// MessagePortMain port, the write-side counterpart of ./ipc-validation.ts.
-// Split out of ./ipc.ts's inline credit-message check under
-// code-guidelines.md Rule 2, once a second and third message kind joined it.
-//
-// SAME THREAT MODEL AS ./ipc-validation.ts, restated because this is a
-// different channel: a compromised renderer PROCESS reaches this port
-// directly (it is not gated by contextBridge, which only restricts what a
-// PAGE's JS can construct), so every message read here is untrusted, not
-// merely unexpected.
+// Shape validation for messages on a socket's dedicated MessagePortMain
+// port -- the write-side counterpart of ./ipc-validation.ts. Every message
+// here is UNTRUSTED, not merely unexpected: a compromised renderer PROCESS
+// reaches this port directly, unfiltered by contextBridge (which only
+// restricts what a PAGE's JS can construct).
 
 import type { CreditMessage, RendererToBrokerMessage, WriteAbortMessage, WriteEndMessage, WriteMessage } from '../contracts/index.js'
+import { LIMITS } from '../contracts/index.js'
 
 function hasStringHandleId (value: object): value is { handleId: string } {
   return typeof (value as { handleId?: unknown }).handleId === 'string'
@@ -29,9 +25,21 @@ export function isCreditMessage (value: unknown): value is CreditMessage {
   return typeof bytesConsumed === 'number' && Number.isFinite(bytesConsumed) && bytesConsumed >= 0
 }
 
+/**
+ * `chunk.byteLength` is bounded here too, not only by ./port-sink.ts's own
+ * write-window check -- defense in depth against the RETAINED-vs-PEAK
+ * distinction: Electron structured-clones a WriteMessage into this process
+ * BEFORE anything here runs, so a hostile renderer's oversized chunk has
+ * already cost the memory by the time the window check would reject it.
+ * This is not the primary backpressure mechanism (the window is); it only
+ * stops one single message from being larger than the window could ever
+ * admit regardless.
+ */
 export function isWriteMessage (value: unknown): value is WriteMessage {
   if (typeof value !== 'object' || value === null || !hasStringHandleId(value)) return false
-  return (value as { kind?: unknown }).kind === 'write' && (value as { chunk?: unknown }).chunk instanceof Uint8Array
+  if ((value as { kind?: unknown }).kind !== 'write') return false
+  const chunk = (value as { chunk?: unknown }).chunk
+  return chunk instanceof Uint8Array && chunk.byteLength <= LIMITS.writeWindowBytes
 }
 
 export function isWriteEndMessage (value: unknown): value is WriteEndMessage {
