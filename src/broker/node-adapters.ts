@@ -136,11 +136,31 @@ export const resolveHost: Resolver = async (host) => {
  *                            neither end() nor resetAndDestroy(), just
  *                            destroy().
  */
-function destroySocket (socket: Socket, reason: CloseReason): Promise<void> {
+export function destroySocket (
+  socket: Socket,
+  reason: CloseReason,
+  drainTimeoutMs: number = CLOSE_DRAIN_TIMEOUT_MS
+): Promise<void> {
   switch (reason) {
     case 'closed':
     case 'sessionEnded':
-      return new Promise((resolve) => { socket.end(() => { resolve() }) })
+      return new Promise((resolve) => {
+        let settled = false
+        let timer: ReturnType<typeof setTimeout> | undefined
+        function finish (destroy: boolean): void {
+          if (settled) return
+          settled = true
+          if (timer !== undefined) clearTimeout(timer)
+          // Only on the deadline. A socket that ended cleanly has already
+          // sent its FIN, and destroying it afterwards is how a clean close
+          // turns into an RST the peer reads as a failure.
+          if (destroy) socket.destroy()
+          resolve()
+        }
+        timer = setTimeout(() => { finish(true) }, drainTimeoutMs)
+        timer.unref()
+        socket.end(() => { finish(false) })
+      })
     case 'revoked':
     case 'aborted':
       if (typeof socket.resetAndDestroy === 'function') socket.resetAndDestroy()
@@ -166,6 +186,23 @@ function destroySocket (socket: Socket, reason: CloseReason): Promise<void> {
  * would be a src/contracts/ change that has to merge on its own.
  */
 const DIAL_TIMEOUT_MS = 30_000
+
+/**
+ * How long a clean close waits for queued bytes to reach the peer before the
+ * socket is destroyed regardless.
+ *
+ * Without a deadline this path does not end: `socket.end(cb)` fires `cb` only
+ * once every queued byte has drained into the peer's receive window, and a
+ * peer that simply stops reading never lets that happen -- so the returned
+ * promise, and the handle's own `closed`, never settle (open-questions.md
+ * A84, reproduced in ./socket-drain.test.ts).
+ *
+ * AI recommendation, not an owner decision: nothing in contracts/ or
+ * handle-contracts.md specifies it. Matched to DIAL_TIMEOUT_MS above, on the
+ * same reasoning -- long enough that a genuinely slow but working peer is
+ * never cut off, short enough to bound an fd held for nothing.
+ */
+export const CLOSE_DRAIN_TIMEOUT_MS = 30_000
 
 /**
  * One dial attempt. `readable`/`writable` are real WHATWG streams

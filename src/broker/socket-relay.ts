@@ -174,6 +174,15 @@ export function createSocketRelay (options: SocketRelayOptions): SocketRelay {
   // all live for the process's lifetime (T11b).
   port.onClose(() => { stop() })
 
+  // The PRIMARY teardown trigger, ahead of `socket.closed` below.
+  // HandleTable unlinks a handle synchronously and only then awaits its
+  // destroy -- which a peer that stops reading can stall forever, leaving the
+  // registry slot, the pump and the sink live with no remaining path able to
+  // reach them (open-questions.md A84). Reaching them at unlink instead is
+  // also what shuts A70's window: net.close/setNoDelay/setKeepAlive resolve
+  // through the registry entry this releases.
+  socket.onUnlink((code) => { stop(code) })
+
   // The .catch is not decoration -- this chain is nobody's awaited promise,
   // so anything these handlers throw becomes an unhandled rejection, and
   // Node's default for those since v15 is to THROW, taking the whole

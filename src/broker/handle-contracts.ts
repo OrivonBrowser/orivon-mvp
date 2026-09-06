@@ -231,4 +231,16 @@ export interface FailableTcpSocket extends TcpSocket {
    * same reason `fail` never does.
    */
   abort: () => void
+
+  /**
+   * Registers the one listener told when this handle leaves the broker's
+   * tables -- synchronously, ahead of its teardown. `code` is the terminal
+   * reason, or undefined for a close the app asked for.
+   *
+   * The consumer needs a trigger that is not `closed`, because teardown
+   * itself can stall without limit: a clean close is a half-close, and a peer
+   * that stops reading never lets it finish (open-questions.md A84). `closed`
+   * stays as the backstop and carries the same reason.
+   */
+  onUnlink: (listener: (code?: OrivonErrorCode) => void) => void
 }

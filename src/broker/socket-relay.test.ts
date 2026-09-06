@@ -265,3 +265,68 @@ describe('createSocketRelay -- registers and releases, exactly once', () => {
     expect(closePort).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('createSocketRelay -- unlink (open-questions.md A84/A70)', () => {
+  it('releases the registry slot the moment the handle is unlinked, without waiting for `closed`', async () => {
+    const { socket, unlink } = fakeTcpSocket(new ReadableStream())
+    const port = fakePort()
+    const registry = createPortRegistry<RegisteredSocket>()
+
+    createSocketRelay({ origin: ORIGIN, socket, port, registry, readWindowBytes: 1_000, writeWindowBytes: 1_000 })
+    expect(registeredEntry(registry)).toBeDefined()
+
+    unlink()
+
+    // `closed` is deliberately left pending: A84's non-draining peer holds it
+    // open forever, and before this hook that pinned the slot with it.
+    expect(registeredEntry(registry)).toBeUndefined()
+  })
+
+  it('closes the port on unlink, so an abandoned socket stops costing a port', async () => {
+    const { socket, unlink } = fakeTcpSocket(new ReadableStream())
+    const port = fakePort()
+    const registry = createPortRegistry<RegisteredSocket>()
+
+    createSocketRelay({ origin: ORIGIN, socket, port, registry, readWindowBytes: 1_000, writeWindowBytes: 1_000 })
+    unlink()
+
+    expect(port.isClosed()).toBe(true)
+  })
+
+  it('reports the terminal code it was unlinked with, so a revoke does not read as a clean end', async () => {
+    const { socket, unlink } = fakeTcpSocket(new ReadableStream())
+    const port = fakePort()
+    const registry = createPortRegistry<RegisteredSocket>()
+
+    createSocketRelay({ origin: ORIGIN, socket, port, registry, readWindowBytes: 1_000, writeWindowBytes: 1_000 })
+    unlink('revoked')
+    await tick()
+
+    expect(port.sent).toContainEqual({ kind: 'end', handleId: 'handle-1', code: 'revoked' })
+  })
+
+  it('an app-initiated close still reads as a clean end, with no code', async () => {
+    const { socket, unlink } = fakeTcpSocket(new ReadableStream())
+    const port = fakePort()
+    const registry = createPortRegistry<RegisteredSocket>()
+
+    createSocketRelay({ origin: ORIGIN, socket, port, registry, readWindowBytes: 1_000, writeWindowBytes: 1_000 })
+    unlink(undefined)
+    await tick()
+
+    expect(port.sent).toContainEqual({ kind: 'end', handleId: 'handle-1' })
+  })
+
+  it('is idempotent against `closed` settling afterwards', async () => {
+    const { socket, unlink, settleClosed } = fakeTcpSocket(new ReadableStream())
+    const port = fakePort()
+    const registry = createPortRegistry<RegisteredSocket>()
+
+    createSocketRelay({ origin: ORIGIN, socket, port, registry, readWindowBytes: 1_000, writeWindowBytes: 1_000 })
+    unlink('revoked')
+    settleClosed()
+    await tick()
+
+    expect(port.sent.filter((m) => (m as { kind: string }).kind === 'end')).toHaveLength(1)
+  })
+})
