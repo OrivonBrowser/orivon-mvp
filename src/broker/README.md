@@ -28,6 +28,104 @@ Rationale that explains why a file has the shape it has, moved out of source hea
 [`code-guidelines.md`](../../docs/development/code-guidelines.md)'s destination test -- kept here
 rather than in the file so the 25-line comment budget measures a file's traps, not its history.
 
+### The unlink hook -- why teardown does not wait for `closed`
+
+`HandleTable.onUnlink` (`handles.ts`), the `unlink` field on a record
+(`handle-store.ts`) and `socket.onUnlink(...)` (`socket-relay.ts`) are one
+mechanism, added 2026-09-06 for `open-questions.md` A84. The rationale lives
+here rather than in three source headers.
+
+**The bug it closes.** `closeTree()` removes a handle from `handles` and
+`byGrant` synchronously, then awaits `record.destroy(reason)`. For a clean
+close that destroy is `socket.end(cb)` -- a HALF-close, whose callback fires
+only once every queued byte has drained into the peer's receive window. A peer
+that stops reading never lets that happen, so `destroy` never settled, the
+handle's `closed` never settled, and everything gated on `closed` -- the pump,
+the sink, the port, the `PortRegistry` slot -- stayed live. The record was
+already out of both tables by then, so `revoke()` (which walks `byGrant`) and
+`dropOrigin()` (which walks `handles`) could no longer find it either. There
+was no remaining code path able to close that socket. Reproduced against Node
+v24.11.1: ~3 MB queued, `writableLength` still over 1 MB three seconds later,
+`end()`'s callback never fired.
+
+**Why a hook rather than a shorter timeout.** `closeTree`'s own doc already
+promised this ordering -- "the unlink pass and the promise rejections are
+SYNCHRONOUS, before any destroy callback runs. That ordering is what makes
+revocation immediate". The relay simply was not subscribed to it; it only had
+`closed`. The hook finishes the design rather than adding a second one.
+
+**Both halves, not one.** A84 named two fix shapes and the owner took both.
+The hook makes teardown immediate; `destroySocket`'s `CLOSE_DRAIN_TIMEOUT_MS`
+(`node-adapters.ts`) additionally guarantees the destroy itself always settles,
+so `closed` and the handle count are released even in the pathological case.
+Either alone leaves a real gap: without the deadline `closed` still never
+settles, and without the hook the registry slot still waits on it.
+
+**The hook fires for every reason, but the relay acts on only some of them, and
+this is not a detail.** The first version of this fix tore down unconditionally,
+and it lost data. `stop()` cancels the read stream, and cancelling the readable
+half of a `Duplex.toWeb` DESTROYS the whole socket -- dropping everything still
+in its write queue. Measured against a real paused peer: 8 MiB queued, 8 MiB
+lost, where the unmodified path delivered all of it. So:
+
+- `'closed'` and `'sessionEnded'` FLUSH (`destroySocket` calls `socket.end()`).
+  The relay must not touch the socket at unlink; these settle through `closed`,
+  which the drain deadline now guarantees always happens. Later than unlink, but
+  the app's final bytes actually arrive.
+- `'revoked'`, `'aborted'` and `'failed'` DESTROY the socket regardless
+  (`resetAndDestroy()`/`destroy()`). Nothing to preserve, so immediate teardown
+  is correct and is the entire point of the fix.
+
+The listener therefore receives the `CloseReason`, not only the error code --
+because the code cannot tell these apart: `'sessionEnded'` and `'revoked'` both
+carry code `'revoked'` and sit on opposite sides of the branch. Both cases are
+pinned by tests (`socket-relay.test.ts`, and the real-socket truncation pair in
+`socket-drain.test.ts`) so the branch cannot be simplified away silently.
+
+**It also shuts A70's window.** `net.close`/`setNoDelay`/`setKeepAlive`
+dispatch through `PortRegistry`, which has no concept of a grant, so they could
+still reach a socket whose grant had just been revoked. The registry slot is
+now released in the same synchronous pass that unlinks the handle, so the
+lookup those three share simply stops answering. No extra check was needed.
+
+**`code` is undefined for an app-initiated close.** Deliberate, and it matches
+what `socket.closed` already did: it resolves for `'closed'` and rejects
+otherwise, so the relay sent a bare `end` for a clean close and a coded one
+for everything else. Passing the reason through the hook keeps the wire
+identical -- only the timing changed, never the message.
+### `policy/reserved-ports.ts` -- what a blanket grant does not reach
+
+Owner decision, 2026-09-06 (`open-questions.md` A82). A grant of `*:*` is
+legitimate -- the flagship declares one, because DHT and peer exchange reach
+arbitrary hosts -- but it made every granted origin a general outbound traffic
+generator from the user's own IP address, on any port. The ports with a real
+abuse history and no legitimate use from a page's network grant are excluded
+from any BLANKET grant, and reachable only when a pattern names the exact port.
+
+**A range is not a naming.** `20-30` covers port 25 without anyone having read
+the number, so it is treated as the blanket `*` is. Requiring `lo === hi ===
+port` means a reserved port is reachable only when an app author typed it and a
+person approved that exact line -- which is the property that makes it worth
+showing in a prompt at all.
+
+**The host half is deliberately not consulted.** `namesPortExactly` answers
+"did anyone name this port", nothing more; `hostMatches` still runs unchanged
+afterwards. Folding the two together would let a pattern naming `:25` for one
+host quietly open `:25` everywhere.
+
+**Checked after parsing, before resolving.** Before, so a reserved port never
+becomes a name-existence oracle -- the same discipline `couldAnyPatternMatch`
+already follows. After, because the answer depends on what the patterns say.
+
+**Not a substitute for the address rules, and narrower than it looks.**
+`policy/address.ts` already denies every private, loopback, link-local and
+metadata address outright, so the remote-access ports in the set only matter
+against a PUBLIC host. The owner chose the wider set knowing that.
+
+**Scope: `tcp.connect` only.** `udp.send` shares the pattern grammar and would
+want the same rule, but it has no implementation yet -- wiring it is part of
+whoever builds `udp.send`, not of this.
+
 ### `port-pump.ts` -- the read-side byte pump
 
 Relays bytes from an already-real WHATWG `ReadableStream` (`Duplex.toWeb`, [`ipc.ts`](ipc.ts)'s
