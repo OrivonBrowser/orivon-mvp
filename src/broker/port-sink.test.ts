@@ -2,13 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPortSink } from './port-sink.js'
 import type { WriteAckMessage, WriteFailedMessage } from '../contracts/ipc.js'
 import { CREDIT_COALESCE_BYTES, WRITE_HEARTBEAT_MS } from '../contracts/ipc.js'
+import { tick } from './ipc.test-helpers.js'
 
 const HANDLE = 'handle-1'
-
-/** Lets fire-and-forget promise chains progress before assertions run. */
-async function tick (times = 5): Promise<void> {
-  for (let i = 0; i < times; i++) await Promise.resolve()
-}
 
 const chunk = (n: number): Uint8Array => new Uint8Array(n).fill(1)
 
@@ -122,6 +118,17 @@ describe('createPortSink -- basic write/ack flow', () => {
     expect(acks(send)).toEqual([{ kind: 'write-ack', handleId: HANDLE, bytesAccepted: CREDIT_COALESCE_BYTES }])
   })
 
+  it('acks a zero-length write, so its write() promise is never left unresolved', async () => {
+    const { writable } = immediateWritable()
+    const send = vi.fn()
+    const sink = createPortSink({ handleId: HANDLE, writable, send, windowBytes: 1_000 })
+
+    sink.handleWrite({ kind: 'write', handleId: HANDLE, chunk: chunk(0) })
+    await tick()
+
+    expect(acks(send)).toEqual([{ kind: 'write-ack', handleId: HANDLE, bytesAccepted: 0 }])
+  })
+
   it('ignores a message addressed to a different handleId', () => {
     const { writable, written } = immediateWritable()
     const send = vi.fn()
@@ -174,6 +181,26 @@ describe('createPortSink -- the write window bounds broker memory', () => {
 
     expect(onSinkFailed).not.toHaveBeenCalled()
     expect(failures(send)).toEqual([])
+  })
+
+  it('rejects a flood of zero-length writes once too many are outstanding at once, even though none of them costs a single byte against the window', () => {
+    // Never resolves -- models the worst case, where nothing ever drains,
+    // so pendingCount only ever climbs. A byte-based window alone cannot
+    // see this flood at all: unacked stays 0 forever for a zero-length
+    // chunk, so every one of these would otherwise be admitted (T11b).
+    const { writable, written } = controllableWritable()
+    const send = vi.fn()
+    const onSinkFailed = vi.fn()
+    const sink = createPortSink({ handleId: HANDLE, writable, send, windowBytes: 1_000_000, onSinkFailed })
+
+    for (let i = 0; i < 10_000; i++) {
+      sink.handleWrite({ kind: 'write', handleId: HANDLE, chunk: chunk(0) })
+    }
+
+    expect(failures(send)).toEqual([{ kind: 'write-failed', handleId: HANDLE, code: 'limit' }])
+    expect(onSinkFailed).toHaveBeenCalledWith('limit', expect.anything())
+    // Proof the cap actually bit well before all 10,000 were queued.
+    expect(written.length).toBeLessThan(1_000)
   })
 })
 
@@ -234,6 +261,48 @@ describe('createPortSink -- errors from the underlying writable', () => {
   })
 })
 
+describe('createPortSink -- the writable independently ending underneath a write (A69: peer FIN, allowHalfOpen: false)', () => {
+  it('maps the resulting AbortError to write-failed code closed, not internal, and does not fail the whole handle', async () => {
+    // The exact shape Node 24.11.1 produces for a write() issued after our
+    // own writable auto-ended on a peer FIN with allowHalfOpen: false --
+    // confirmed empirically against a real socket, not assumed.
+    const abortError = Object.assign(new Error('The operation was aborted'), { name: 'AbortError', code: 'ABORT_ERR' })
+    const { writable, rejectNext } = controllableWritable()
+    const send = vi.fn()
+    const onSinkFailed = vi.fn()
+    const sink = createPortSink({
+      handleId: HANDLE, writable, send, windowBytes: 1_000, onSinkFailed,
+      mapError: () => 'internal' // what the OLD, wrong behaviour would have produced
+    })
+
+    sink.handleWrite({ kind: 'write', handleId: HANDLE, chunk: chunk(4) })
+    await tick()
+    rejectNext(abortError)
+    await tick()
+
+    expect(failures(send)).toEqual([{ kind: 'write-failed', handleId: HANDLE, code: 'closed' }])
+    expect(onSinkFailed).not.toHaveBeenCalled()
+  })
+
+  it('still maps a genuine transport failure (a real ECONNRESET) the ordinary way, unaffected by the A69 special case', async () => {
+    const { writable, rejectNext } = controllableWritable()
+    const send = vi.fn()
+    const onSinkFailed = vi.fn()
+    const boom = Object.assign(new Error('ECONNRESET'), { code: 'ECONNRESET' })
+    const sink = createPortSink({
+      handleId: HANDLE, writable, send, windowBytes: 1_000, onSinkFailed, mapError: () => 'reset'
+    })
+
+    sink.handleWrite({ kind: 'write', handleId: HANDLE, chunk: chunk(4) })
+    await tick()
+    rejectNext(boom)
+    await tick()
+
+    expect(failures(send)).toEqual([{ kind: 'write-failed', handleId: HANDLE, code: 'reset', platformCode: 'ECONNRESET' }])
+    expect(onSinkFailed).toHaveBeenCalledWith('reset', boom)
+  })
+})
+
 describe('createPortSink -- write-end (half-close)', () => {
   it('drains queued writes before closing, and never awaits close() settling', async () => {
     // NOTE: read `.closeCalls` off `controllable` at each check, never
@@ -272,6 +341,24 @@ describe('createPortSink -- write-end (half-close)', () => {
   })
 })
 
+describe('createPortSink -- a rejected writer.close()', () => {
+  it('reports write-failed when the FIN never actually went out', async () => {
+    let rejectClose: (error: unknown) => void = () => {}
+    const writable = new WritableStream<Uint8Array>({
+      close () { return new Promise((_resolve, reject) => { rejectClose = reject }) }
+    })
+    const send = vi.fn()
+    const sink = createPortSink({ handleId: HANDLE, writable, send, windowBytes: 1_000, mapError: () => 'internal' })
+
+    sink.handleEnd({ kind: 'write-end', handleId: HANDLE })
+    await tick()
+    rejectClose(new Error('close failed'))
+    await tick()
+
+    expect(failures(send)).toEqual([{ kind: 'write-failed', handleId: HANDLE, code: 'internal' }])
+  })
+})
+
 describe('createPortSink -- write-abort (RST)', () => {
   it('aborts the writer, fires onSinkFailed with reset, and discards further writes', async () => {
     const { writable, abortReasons } = controllableWritable()
@@ -298,12 +385,27 @@ describe('createPortSink -- the write heartbeat', () => {
     const { writable } = controllableWritable() // never resolves -- the write stays pending
     const send = vi.fn()
     const sink = createPortSink({ handleId: HANDLE, writable, send, windowBytes: 1_000, heartbeatMs: WRITE_HEARTBEAT_MS })
-    void sink
 
     sink.handleWrite({ kind: 'write', handleId: HANDLE, chunk: chunk(4) })
     await vi.advanceTimersByTimeAsync(WRITE_HEARTBEAT_MS)
 
     expect(acks(send)).toEqual([{ kind: 'write-ack', handleId: HANDLE, bytesAccepted: 0 }])
+  })
+
+  it('carries bytes already earned by an earlier resolved write instead of zero, when a later write is still outstanding', async () => {
+    const { writable, resolveNext } = controllableWritable()
+    const send = vi.fn()
+    const sink = createPortSink({ handleId: HANDLE, writable, send, windowBytes: 1_000, heartbeatMs: WRITE_HEARTBEAT_MS })
+
+    sink.handleWrite({ kind: 'write', handleId: HANDLE, chunk: chunk(4) }) // W1: small
+    sink.handleWrite({ kind: 'write', handleId: HANDLE, chunk: chunk(10) }) // W2: stays pending
+    await vi.advanceTimersByTimeAsync(0) // both reach the writable; pendingCount = 2
+    resolveNext() // W1 resolves; W2 still outstanding, so pendingCount stays 1 -- no flush yet
+    await vi.advanceTimersByTimeAsync(0)
+
+    await vi.advanceTimersByTimeAsync(WRITE_HEARTBEAT_MS) // heartbeat fires while W2 is still pending
+
+    expect(acks(send)).toEqual([{ kind: 'write-ack', handleId: HANDLE, bytesAccepted: 4 }])
   })
 
   it('does not heartbeat once nothing is outstanding', async () => {
@@ -320,6 +422,43 @@ describe('createPortSink -- the write heartbeat', () => {
     await vi.advanceTimersByTimeAsync(WRITE_HEARTBEAT_MS * 3)
 
     expect(send).not.toHaveBeenCalled()
+  })
+
+  it('stop() clears the heartbeat timer, so it never fires afterward', async () => {
+    const { writable } = controllableWritable() // never resolves -- the write stays pending
+    const send = vi.fn()
+    const sink = createPortSink({ handleId: HANDLE, writable, send, windowBytes: 1_000, heartbeatMs: WRITE_HEARTBEAT_MS })
+
+    sink.handleWrite({ kind: 'write', handleId: HANDLE, chunk: chunk(4) })
+    await vi.advanceTimersByTimeAsync(0)
+    sink.stop()
+    send.mockClear()
+
+    await vi.advanceTimersByTimeAsync(WRITE_HEARTBEAT_MS * 3)
+
+    expect(send).not.toHaveBeenCalled()
+  })
+})
+
+describe('createPortSink -- the heartbeat timer cannot keep the process alive on its own', () => {
+  it('is unref()d as soon as it is armed', () => {
+    const { writable } = controllableWritable() // never resolves -- keeps the timer armed
+    const send = vi.fn()
+    const realSetTimeout = setTimeout
+    const unref = vi.fn()
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((fn: () => void, ms?: number) => {
+      const timer = realSetTimeout(fn, ms)
+      timer.unref = unref
+      return timer
+    }) as typeof setTimeout)
+
+    const sink = createPortSink({ handleId: HANDLE, writable, send, windowBytes: 1_000 })
+    sink.handleWrite({ kind: 'write', handleId: HANDLE, chunk: chunk(4) })
+
+    expect(unref).toHaveBeenCalled()
+
+    sink.stop() // clears the real timer before this test ends
+    setTimeoutSpy.mockRestore()
   })
 })
 
@@ -372,5 +511,40 @@ describe('createPortSink -- stop()', () => {
     sink.stop()
 
     expect(abortReasons).toEqual([]) // already ended cleanly -- stop() is a no-op here
+  })
+
+  it('stop(code) reports the real reason for a write still outstanding, instead of leaving it to the renderer\'s own silence timeout', async () => {
+    const { writable, abortReasons } = controllableWritable()
+    const send = vi.fn()
+    const sink = createPortSink({ handleId: HANDLE, writable, send, windowBytes: 1_000 })
+
+    sink.handleWrite({ kind: 'write', handleId: HANDLE, chunk: chunk(4) })
+    await tick()
+    sink.stop('revoked')
+
+    expect(failures(send)).toEqual([{ kind: 'write-failed', handleId: HANDLE, code: 'revoked' }])
+    expect(abortReasons).toEqual([]) // still never touches the writer -- see the tests above
+  })
+
+  it('an ordinary stop() with no code stays silent even with a write outstanding', async () => {
+    const { writable } = controllableWritable()
+    const send = vi.fn()
+    const sink = createPortSink({ handleId: HANDLE, writable, send, windowBytes: 1_000 })
+
+    sink.handleWrite({ kind: 'write', handleId: HANDLE, chunk: chunk(4) })
+    await tick()
+    sink.stop()
+
+    expect(failures(send)).toEqual([])
+  })
+
+  it('stop(code) sends nothing extra when nothing was outstanding', () => {
+    const { writable } = controllableWritable()
+    const send = vi.fn()
+    const sink = createPortSink({ handleId: HANDLE, writable, send, windowBytes: 1_000 })
+
+    sink.stop('revoked')
+
+    expect(failures(send)).toEqual([])
   })
 })

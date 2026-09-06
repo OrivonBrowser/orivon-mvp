@@ -1,16 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createSocketRelay } from './socket-relay.js'
 import { createPortRegistry } from './port-registry.js'
-import { fakePort, fakeTcpSocket } from './ipc.test-helpers.js'
+import { fakePort, fakeTcpSocket, tick } from './ipc.test-helpers.js'
 import type { PortRegistry } from './port-registry.js'
 import type { RegisteredSocket } from './port-transport.js'
 
 const ORIGIN = 'https://app.example'
-
-/** Lets fire-and-forget promise chains progress before assertions run -- same idiom as ipc.test-helpers.ts's tick(). */
-async function tick (times = 10): Promise<void> {
-  for (let i = 0; i < times; i++) await Promise.resolve()
-}
 
 function registeredEntry (registry: PortRegistry<RegisteredSocket>, id = 'handle-1'): RegisteredSocket | undefined {
   return registry.get(ORIGIN, id)
@@ -104,6 +99,105 @@ describe('createSocketRelay -- write side (new: routes write/write-end/write-abo
 
     expect(failSpy).toHaveBeenCalledWith('limit', undefined)
     expect(registeredEntry(registry)).toBeUndefined() // the socket-budget slot was actually freed
+  })
+})
+
+describe('createSocketRelay -- socket.fail must never crash the message listener that calls it', () => {
+  it('does not throw synchronously when socket.fail itself throws (the handle table already reaped for this origin)', async () => {
+    const writable = new WritableStream<Uint8Array>({ abort () {} })
+    const { socket } = fakeTcpSocket(new ReadableStream(), writable)
+    // FailableTcpSocket.fail's own contract promises it never throws, but a
+    // caller upstream of this test (HandleTable.fail, handles.ts) can --
+    // this stands in for that, to prove createSocketRelay tolerates it
+    // rather than relying on the promise always holding.
+    const throwingFail = vi.fn(() => { throw new Error('no such handle for this origin') })
+    const socketWithThrowingFail = { ...socket, fail: throwingFail }
+    const port = fakePort()
+    const registry = createPortRegistry<RegisteredSocket>()
+
+    createSocketRelay({ origin: ORIGIN, socket: socketWithThrowingFail, port, registry, readWindowBytes: 1_000, writeWindowBytes: 1_000 })
+
+    // write-abort reaches handleAbort synchronously, which fails the sink
+    // synchronously (onSinkFailed), which is what now reaches socket.fail
+    // straight from this listener -- see ./socket-relay.ts's own comment.
+    expect(() => { port.emit({ kind: 'write-abort', handleId: 'handle-1' }) }).not.toThrow()
+    await tick()
+    expect(throwingFail).toHaveBeenCalled()
+  })
+})
+
+describe('createSocketRelay -- stop() (the abandon path)', () => {
+  it('stops the pump too, so a chunk already buffered in the stream never reaches port.postMessage', async () => {
+    const chunk = new Uint8Array([9, 9, 9])
+    // Never closes -- there is always more the pump COULD read, the same
+    // shape as a live socket abandoned mid-stream.
+    const readable = new ReadableStream<Uint8Array>({ start (c) { c.enqueue(chunk) } })
+    const { socket } = fakeTcpSocket(readable)
+    const port = fakePort()
+    const registry = createPortRegistry<RegisteredSocket>()
+
+    const relay = createSocketRelay({ origin: ORIGIN, socket, port, registry, readWindowBytes: 1_000, writeWindowBytes: 1_000 })
+    relay.stop('internal') // before the pump's own in-flight reader.read() has a chance to settle
+    await tick()
+
+    // stop() itself legitimately sends one terminal end message -- what
+    // must never arrive is the buffered chunk the pump was mid-read on.
+    expect(port.sent).not.toContainEqual({ kind: 'data', handleId: 'handle-1', chunk })
+  })
+
+  it('also frees the registry slot and closes the port, like cleanup()', async () => {
+    const { socket } = fakeTcpSocket()
+    const port = fakePort()
+    const closePort = vi.spyOn(port, 'close')
+    const registry = createPortRegistry<RegisteredSocket>()
+
+    const relay = createSocketRelay({ origin: ORIGIN, socket, port, registry, readWindowBytes: 1_000, writeWindowBytes: 1_000 })
+    relay.stop('internal')
+
+    expect(registeredEntry(registry)).toBeUndefined()
+    expect(closePort).toHaveBeenCalledOnce()
+  })
+})
+
+describe('createSocketRelay -- the renderer-side port closing frees resources too', () => {
+  it('triggers the same cleanup as socket.closed settling, even though socket.closed itself never settles', async () => {
+    const { socket } = fakeTcpSocket() // an idle, healthy, established socket -- closed never settles on its own
+    const port = fakePort()
+    const closePort = vi.spyOn(port, 'close')
+    const registry = createPortRegistry<RegisteredSocket>()
+
+    createSocketRelay({ origin: ORIGIN, socket, port, registry, readWindowBytes: 1_000, writeWindowBytes: 1_000 })
+    expect(registeredEntry(registry)).toBeDefined()
+
+    port.simulateClose()
+    await tick()
+
+    expect(registeredEntry(registry)).toBeUndefined()
+    expect(closePort).toHaveBeenCalledOnce()
+  })
+
+  it('stops the sink heartbeat too, so an orphaned socket cannot keep a timer alive on its own', async () => {
+    vi.useFakeTimers()
+    try {
+      const writable = new WritableStream<Uint8Array>({ write: async () => await new Promise(() => {}) }) // never resolves
+      const { socket } = fakeTcpSocket(new ReadableStream(), writable)
+      const port = fakePort()
+      const registry = createPortRegistry<RegisteredSocket>()
+
+      createSocketRelay({ origin: ORIGIN, socket, port, registry, readWindowBytes: 1_000, writeWindowBytes: 1_000 })
+      port.emit({ kind: 'write', handleId: 'handle-1', chunk: new Uint8Array([1]) })
+      await vi.advanceTimersByTimeAsync(0)
+
+      port.simulateClose()
+      await vi.advanceTimersByTimeAsync(0)
+      const sentBeforeWaiting = port.sent.length
+
+      await vi.advanceTimersByTimeAsync(30_000) // several heartbeat intervals, if the timer were still armed
+
+      expect(port.sent.length).toBe(sentBeforeWaiting)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

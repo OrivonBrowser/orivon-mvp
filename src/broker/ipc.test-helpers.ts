@@ -109,16 +109,33 @@ export function stubBroker (
   }
 }
 
-/** A controllable in-memory PortLike -- captures every postMessage, and lets a test simulate the renderer sending a message back. */
-export function fakePort (): PortLike & { readonly sent: unknown[], emit: (message: unknown) => void } {
+/**
+ * A controllable in-memory PortLike -- captures every postMessage, lets a
+ * test simulate the renderer sending a message back (`emit`), and lets a
+ * test simulate the renderer's own side of the port closing (`simulateClose`).
+ *
+ * `postMessage` THROWS once `close()` has been called, matching a real
+ * `MessagePortMain`'s own behaviour -- a fake that instead accepted a
+ * postMessage after close silently would let a caller that keeps posting
+ * to a closed port pass its tests while crashing the real Electron main
+ * process the moment it ran for real.
+ */
+export function fakePort (): PortLike & { readonly sent: unknown[], emit: (message: unknown) => void, simulateClose: () => void } {
   let listener: ((message: unknown) => void) | undefined
+  let closeListener: (() => void) | undefined
+  let closed = false
   const sent: unknown[] = []
   return {
-    postMessage: (message) => { sent.push(message) },
+    postMessage: (message) => {
+      if (closed) throw new Error('Object has been destroyed')
+      sent.push(message)
+    },
     onMessage: (l) => { listener = l },
-    close: () => {},
+    onClose: (l) => { closeListener = l },
+    close: () => { closed = true },
     sent,
-    emit: (message) => { listener?.(message) }
+    emit: (message) => { listener?.(message) },
+    simulateClose: () => { closeListener?.() }
   }
 }
 
