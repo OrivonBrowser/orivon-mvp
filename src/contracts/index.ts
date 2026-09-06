@@ -61,6 +61,13 @@ export type {
   DataMessage,
   CreditMessage,
   StreamEndMessage,
+  WriteMessage,
+  WriteAckMessage,
+  WriteFailedMessage,
+  WriteEndMessage,
+  WriteAbortMessage,
+  BrokerToRendererMessage,
+  RendererToBrokerMessage,
   PortMessage
 } from './ipc.js'
-export { CREDIT_COALESCE_BYTES } from './ipc.js'
+export { CREDIT_COALESCE_BYTES, WRITE_HEARTBEAT_MS, WRITE_SILENCE_TIMEOUT_MS } from './ipc.js'
