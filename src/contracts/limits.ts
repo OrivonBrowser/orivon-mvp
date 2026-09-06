@@ -27,7 +27,29 @@ export const LIMITS = {
    * many bytes ahead of what the renderer has acknowledged consuming, then
    * stops reading the underlying OS socket. See ./ipc.js.
    */
-  readWindowBytes: 1024 * 1024
+  readWindowBytes: 1024 * 1024,
+  /**
+   * Per-socket WRITE credit window, in bytes -- the write direction's
+   * mirror of readWindowBytes, needed because MessagePortMain has no
+   * flow-control API of its own (open-questions.md A37): the broker
+   * refuses ('limit') rather than buffers once a socket has this many
+   * bytes outstanding -- sent by the renderer, not yet accepted into the
+   * OS socket's send buffer. See ./ipc.js's WriteMessage/WriteAckMessage.
+   *
+   * Deliberately a quarter of readWindowBytes, not a symmetric 1 MiB:
+   * readWindowBytes already commits concurrentSockets * readWindowBytes =
+   * 512 MiB of worst-case per-origin exposure, and doubling that for a
+   * write window nobody asked for would be an unforced increase to an
+   * already-unbounded aggregate (open-questions.md A80: no check enforces
+   * a combined cap across an origin's concurrently-open sockets).
+   *
+   * This is also the hard ceiling on a SINGLE WriteMessage.chunk (owner
+   * decision d-0021, see ./ipc.js's WriteMessage): a caller with a larger
+   * buffer splits it into pieces this size or smaller before posting, and
+   * an oversized chunk is a protocol error the broker may reject outright
+   * rather than split, truncate, or buffer itself.
+   */
+  writeWindowBytes: 256 * 1024
 } as const
 
 export type Limits = typeof LIMITS

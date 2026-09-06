@@ -37,7 +37,7 @@ change belongs in their stream.
 | `shell` | `src/main/{index,window,tabs,omnibox,ipc}.ts`, `src/renderer/`, `src/preload/shell.ts`, **`scripts/smoke.mjs`**, **`test/`** | 1 | **done**, maintenance only |
 | `contracts` | `src/contracts/` | — | **change-controlled**, see below |
 | `shared` | `src/shared/` | — | **change-controlled**, same rules as `contracts`. Empty by design; see its `README.md` |
-| `broker` | `src/broker/`, `src/broker/policy/`, `src/preload/app.ts` | 2 | critical path |
+| `broker` | `src/broker/`, `src/broker/policy/`, `src/preload/app.ts`, `src/preload/orivon-surface.ts`, `src/preload/socket-bridge.ts`, `src/preload/socket-port.ts`, `src/preload/main-world-socket.ts` | 2 | critical path |
 | `shim` | `src/shim/`, the `renderer.resolve.alias` map in `electron.vite.config.ts` | 3 | |
 | `loader` | `src/loader/` | 4 | |
 | `torrent-app` | `apps/torrent/` | 5 | ships as a pre-built app asset |
@@ -54,6 +54,16 @@ change belongs in their stream.
 > `.github/` had, found the same week: a path nobody owns is a path two streams edit on the same
 > afternoon without either noticing. If a session is editing `.claude/skills/`, say so before
 > starting.
+
+> **`src/preload/` outside `app.ts` is `broker`'s too, not unowned.** Corrected 2026-09-06 — a
+> review found `src/preload/README.md` already documenting `orivon-surface.ts` as belonging to
+> `broker` (build step 2) while this table's `broker` row still listed only `app.ts`, so the
+> authoritative map and the directory's own `README.md` disagreed. Left alone, a future stream
+> could read this table, see `src/preload/app.ts` as the only claimed path, and treat the rest
+> of the directory as free to write to. `socket-bridge.ts`, `socket-port.ts` and
+> `main-world-socket.ts` are the main-world stream-building surface added alongside
+> `orivon-surface.ts` for `window.orivon`'s `net` capability (`ADR-0014`) — all four files are
+> `broker`'s; see `src/preload/README.md` for what each one does.
 
 Every directory above carries its own `README.md` stating what it depends on and **what it must
 never import**. Those are the real boundary; this table is the index.
