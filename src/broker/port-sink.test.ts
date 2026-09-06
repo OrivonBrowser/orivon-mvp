@@ -360,20 +360,26 @@ describe('createPortSink -- a rejected writer.close()', () => {
 })
 
 describe('createPortSink -- write-abort (RST)', () => {
-  it('aborts the writer, fires onSinkFailed with reset, and discards further writes', async () => {
+  it('aborts the writer, fires onAbort (never onSinkFailed) with a reset write-failed, and discards further writes', async () => {
     const { writable, abortReasons } = controllableWritable()
     const send = vi.fn()
     const onSinkFailed = vi.fn()
-    const sink = createPortSink({ handleId: HANDLE, writable, send, windowBytes: 1_000, onSinkFailed })
+    const onAbort = vi.fn()
+    const sink = createPortSink({ handleId: HANDLE, writable, send, windowBytes: 1_000, onSinkFailed, onAbort })
 
     sink.handleAbort({ kind: 'write-abort', handleId: HANDLE })
 
-    expect(onSinkFailed).toHaveBeenCalledWith('reset', expect.anything())
+    // onSinkFailed's CloseReason ('failed') means the wire is already dead;
+    // an app-initiated abort needs the opposite (an active reset), which is
+    // exactly what the separate onAbort hook is for -- see its own doc.
+    expect(onSinkFailed).not.toHaveBeenCalled()
+    expect(onAbort).toHaveBeenCalledOnce()
+    expect(failures(send)).toEqual([{ kind: 'write-failed', handleId: HANDLE, code: 'reset' }])
     await tick()
     expect(abortReasons).toHaveLength(1)
 
     sink.handleWrite({ kind: 'write', handleId: HANDLE, chunk: chunk(4) })
-    expect(onSinkFailed).toHaveBeenCalledTimes(1) // the refused write did not re-fire it
+    expect(onAbort).toHaveBeenCalledTimes(1) // the refused write did not re-fire it
   })
 })
 

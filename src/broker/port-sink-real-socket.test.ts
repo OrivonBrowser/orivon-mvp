@@ -96,28 +96,33 @@ describe('createPortSink against a real local TCP server', () => {
     expect(failure?.platformCode).toBe('ECONNRESET')
   }, 15_000)
 
-  it('BASELINE for B-F6 (a different lane\'s follow-up PR): handleAbort currently produces a clean FIN against a real peer, not an RST', async () => {
-    // handle-contracts.md's close table specifies 'revoked' -> RST,
-    // buffered data discarded on both sides. Confirmed empirically (Node
-    // 24.11.1) that writer.abort() does not produce that today: the peer
-    // sees an ordinary FIN, then a clean close. Fixing that is B-F6,
-    // tracked separately and owned by a different lane's follow-up PR --
-    // this test intentionally documents TODAY's behavior, not the correct
-    // one, so that PR has a real assertion to change rather than a guess.
+  it('handleAbort produces a real RST against a real peer when onAbort resets the underlying socket (B-F6)', async () => {
+    // handle-contracts.md's close table specifies `writable.abort(e)` -> RST
+    // sent, `closed` rejects 'reset'. writer.abort() alone cannot produce
+    // that -- it calls the underlying duplex's plain destroy(), confirmed
+    // empirically (Node 24.11.1) to send a clean FIN, not an RST. The real
+    // reset has to happen at the raw socket level, which is exactly what
+    // `onAbort` is for: production wires it to HandleTable.abort, which
+    // tells node-adapters.ts's destroySocket to use the 'aborted' reason
+    // (resetAndDestroy()) -- modelled here by wiring it straight to this
+    // socket's own destroy().
     await listen()
     const dialed = await dialTcp(['127.0.0.1'], port, neverAborts())
     const peer = await firstAccepted()
-    const peerEvents: string[] = []
-    const peerEnded = new Promise<void>((resolve) => { peer.once('end', () => { peerEvents.push('end'); resolve() }) })
-    const peerClosed = new Promise<boolean>((resolve) => { peer.once('close', (hadError) => { peerEvents.push('close'); resolve(hadError) }) })
+    const peerErrored = new Promise<NodeJS.ErrnoException>((resolve) => { peer.once('error', resolve) })
+    const peerClosed = new Promise<boolean>((resolve) => { peer.once('close', (hadError) => { resolve(hadError) }) })
 
-    const sink = createPortSink({ handleId: 'h1', writable: dialed.writable, send: () => {}, windowBytes: 1_024 })
+    const sink = createPortSink({
+      handleId: 'h1',
+      writable: dialed.writable,
+      send: () => {},
+      windowBytes: 1_024,
+      onAbort: () => { void dialed.destroy('aborted') }
+    })
     sink.handleAbort({ kind: 'write-abort', handleId: 'h1' })
 
-    await peerEnded
-    const hadError = await peerClosed
-
-    expect(peerEvents).toEqual(['end', 'close'])
-    expect(hadError).toBe(false)
+    const error = await peerErrored
+    expect(error.code).toBe('ECONNRESET')
+    expect(await peerClosed).toBe(true)
   }, 15_000)
 })
