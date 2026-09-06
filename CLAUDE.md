@@ -6,21 +6,26 @@
 4 per an amended build plan** (`build-plan.md` on `main` still lists it under step 2 today; the
 `docs-alignment` stream carries the amendment). `dial`/`resolve`/`fs` are real Node I/O (not
 stubs) and the broker is wired to a real `ipcMain` control channel -- both already true on
-`main` today, independent of anything below. **Landing in #79-#82** (four stacked PRs, open
-and merging in order: #79 contracts -> #80 broker write half -> #81 preload/main-world surface
--> #82 the e2e test's Phase 1, updated to match): `orivon.net.connect` reachable from a real
-page, and the byte pump's write direction (A37, still open on `main` as of this branch) built,
-tested and wired onto `window.orivon` via a `contextBridge.executeInMainWorld` main-world
-stream wrapper, verified end to end via a real Electron launch once merged -- not just unit
-tests.
-**Still open, by design, not a gap in this work:** no origin has a grant yet
+`main` today, independent of anything below. **Landed via #79-#82** (four stacked PRs, merged
+in order: #79 contracts -> #80 broker write half -> #81 preload/main-world surface -> #82 the
+e2e test's Phase 1, updated to match): `orivon.net.connect` is reachable from a real page, and
+the byte pump's write direction (A37, resolved) is built, tested and wired onto `window.orivon`
+via a `contextBridge.executeInMainWorld` main-world stream wrapper, verified end to end via a
+real Electron launch, not just unit tests -- a real grant, a real local echo server and a real
+denial of an out-of-manifest address all pass under `xvfb-run npm run test:e2e`.
+**Still open, by design, not a gap in this work:** no origin has a grant yet in production
 (`broker.grant()` has no production caller) -- that is build step 4's job (the app loader and
-the permission prompt), and it is *why* the real e2e check will correctly end in a `'denied'`
-once #82 lands, not a completed byte transfer. A half-close fix for `allowHalfOpen` was found
-to break `Duplex.toWeb`'s own EOF detection and was reverted rather than shipped broken --
-filed as A69 in PR #80, not yet on `main`.
-Last updated 2026-09-05 (write-pump work landing across 4 stacked PRs, #79-#82; see PR bodies
-for the full verification trail; prior pass: A27-A31, `docs/open-questions.md`).
+the permission prompt), and it is *why* a page's own `net.connect` call is correctly `'denied'`
+today, not a completed byte transfer (the e2e test's own grant is test-only, via the broker's
+own API, not a production path). A half-close fix for `allowHalfOpen` was found to break
+`Duplex.toWeb`'s own EOF detection and was reverted rather than shipped broken -- filed as
+**A69**, now on `main`. A review pass across this whole landing found and fixed two CRITICAL
+defects (an idle-socket silence-timeout misfire, `close()` never resolving) plus a proven
+main-process-crash path and a message-count DoS gap -- see the PR bodies for #80/#81 and
+`docs/open-questions.md` A70/A80-A85 for what was found, fixed, and filed rather than fixed.
+Last updated 2026-09-06 (write-pump work landed across 4 stacked PRs, #79-#82, plus a same-day
+review/fix round; see PR bodies for the full verification trail; prior pass: A27-A31,
+`docs/open-questions.md`).
 
 **The human documentation is the map. Read it first — this file adds only what is specific to
 working here as an agent.**
