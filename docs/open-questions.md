@@ -825,7 +825,7 @@ by" columns are already correct as written and need no change.
 
 **Needed by:** done — this was the blocker on scheduling either half.
 
-### A37 — the byte pump's write direction has no wire protocol anywhere **[STILL OPEN]**
+### A37 — the byte pump's write direction has no wire protocol anywhere **[RESOLVED 2026-09-06]**
 
 Found while implementing the byte pump's broker side (build step 2, 2026-09-01) — specifically
 while designing `src/broker/port-pump.ts`, which relays the READ direction only.
@@ -865,6 +865,24 @@ against real backpressure behaviour — a recommendation to start from, not a de
 **Needed by:** before the preload-side byte-pump PR (readable/writable WHATWG streams built over
 the port in the isolated world) can implement `writable` at all.
 
+### Resolution, 2026-09-06
+
+`src/contracts/ipc.ts` (PR #79) now specifies the full write-side wire protocol this entry asked for:
+`WriteMessage` (renderer -> broker), `WriteAckMessage`/`WriteFailedMessage` (broker ->
+renderer), and the half-close/abort pair `WriteEndMessage`/`WriteAbortMessage` that the AI
+recommendation above did not anticipate needing. `LIMITS.writeWindowBytes`
+(`src/contracts/limits.ts`, 256 KiB) is the write-side credit window the AI recommendation's
+sketch omitted; `WRITE_HEARTBEAT_MS`/`WRITE_SILENCE_TIMEOUT_MS` are the timing pair that tells
+a slow peer apart from a dead transport. `handle-contracts.md`'s new "Backpressure — write
+direction" section specifies all of this at the wire level, matching how the read side was
+already documented, and its `§Limits` table now carries the write window alongside the read
+one.
+
+This closes what A37 actually asked for — a defined protocol, not a shipped implementation.
+The broker-side write sink (PR #80) and the renderer's `writable` built over this contract
+(PR #81) are separate, sibling changes built against the types PR #79 adds; their correctness
+is tracked wherever those changes land, not here. If either implementation needs a message
+shape this entry does not describe, that is new work, not this entry reopening.
 
 ### A38 — no per-origin rate limit on IPC dispatch, only a concurrency cap **[RESOLVED]**
 
@@ -2559,6 +2577,157 @@ agree on this — recorded here because d-0017 itself was otherwise undocumented
 **Needed by:** confirm before the discovery-trigger hint listener (the first real UI caller of
 `acknowledgeRollback`) is built — that PR should not have to guess at this granularity or
 re-derive the reasoning above.
+
+### A80 — nothing bounds the aggregate per-origin socket-memory ceiling, despite a comment claiming it is tracked here **[STILL OPEN]**
+
+Found 2026-09-06, `ca:security-reviewer` pass on `stream/contracts-12-write-pump-protocol`
+(PR #79, the write-pump wire protocol).
+
+`src/contracts/limits.ts`'s doc comment on `writeWindowBytes` says doubling the write window to
+match `readWindowBytes` "would be an unforced increase to an already-unbounded aggregate
+(flagged, not fixed, in `open-questions.md`)" — but no prior entry here actually names this. The
+real numbers: `LIMITS.concurrentSockets` (512) times `readWindowBytes` (1 MiB) already commits
+512 MiB of worst-case per-origin memory before this PR; `writeWindowBytes` (256 KiB) adds up to
+another 128 MiB, for a combined ~640 MiB per-origin ceiling — real, structural, and not
+referenced by any A-number an auditor searching for a T11/T11b tracking entry would find.
+
+**Still open, not fixed by this PR or any sibling in this stack:** no single check anywhere
+enforces a *combined* cap across concurrently-open sockets for one origin; each socket's window
+is bounded individually, but the aggregate is only as bounded as `concurrentSockets` allows.
+Whether 640 MiB/origin is an acceptable ceiling for the MVP, or whether a future PR should add
+an aggregate per-origin quota (distinct from the per-socket window), is the owner's call —
+raised here rather than decided unilaterally, per Rule 1.
+
+**Needed by:** whoever next revisits `LIMITS.concurrentSockets` or adds a third per-socket
+window (e.g. if a future capability needs its own credit scheme) should re-derive this number
+rather than assume it stayed flagged-but-unfixed by coincidence.
+
+### A81 — clean socket teardown depends on an unverified same-tick MessagePortMain delivery guarantee **[STILL OPEN]**
+
+Found 2026-09-06, adversarial-review pass on `stream/broker-23-write-pump` (PR #80).
+
+`src/broker/socket-relay.ts`'s teardown path does `pump.stop()` (which `postMessage`s the
+terminal `end` message) immediately followed by `cleanup()` -> `port.close()`, in the same
+synchronous tick. Every "clean" socket close in this stack's design depends on
+`MessagePortMain` actually delivering a message posted immediately before `close()` is called
+on the same port — nobody has verified this against the real Electron implementation; every
+existing test uses a fake `PortLike` whose `close()` is a no-op, so the fake cannot fail this
+way even if the real one does.
+
+**Still open:** if the real `MessagePortMain` ever drops a same-tick posted-then-closed
+message (plausible if delivery is asynchronous/queued rather than synchronous), every "clean"
+teardown in this design silently degrades to the renderer's 15-second silence timer reporting
+`'timeout'` instead of the real terminal reason — the same wrong-error-code failure mode as
+A69, but from the closing side rather than the peer-FIN side.
+
+**Needed by:** whoever next has a real Electron test harness in hand for this subsystem should
+add a same-tick post-then-close regression test against a REAL `MessagePortMain` pair (not the
+fake), to convert this from an assumption into a verified guarantee one way or the other.
+
+### A82 — the capability model has no destination-port restriction or egress rate limit once `tcp.connect` is granted **[STILL OPEN — owner decision needed]**
+
+Found 2026-09-06, adversarial-review pass on `stream/broker-23-write-pump` (PR #80), surfaced
+per Rule 3 rather than smoothed over — this is pre-existing design from earlier sessions, not
+introduced by this PR, but PR #80 is what "arms" it: the write direction is what turns an
+already-accepted READ capability into a genuine outbound-traffic-generation primitive.
+
+`checkConnect`/`policy/address.ts` correctly scope `tcp.connect` to public unicast addresses
+only (loopback, private, link-local and metadata addresses are all blocked — no SSRF-to-LAN).
+But within that already-correct scope: a grant of `*:*` is possible and the flagship app
+declares one; nothing restricts which DESTINATION PORT a granted origin may dial (port 25,
+6667, 53 are all reachable identically to 443); and nothing in `LIMITS` bounds egress byte-rate
+or connection-churn per origin. Combined with 512 concurrent sockets and now a working write
+direction, a single granted origin is a real outbound traffic generator from the user's own IP
+address — e.g. usable as an open relay for the specific things port restrictions and rate
+limits conventionally exist to prevent.
+
+**Still open, genuinely the owner's call, not decided here:** whether this is an acceptable MVP
+risk (the grant is explicit, user-approved, and per-origin — not automatically exploitable
+without a user first choosing to grant broad network access to a specific app) or whether it
+needs a mitigation before this stack (or a near-term follow-up) ships — e.g. a documented
+recommended-grant-scope UI nudge, a default egress rate limit, or a port-range restriction
+option surfaced at grant time. Not blocking the current merge (this is pre-existing scope,
+already implicitly accepted when `tcp.connect` was designed), but flagged explicitly rather
+than left to be rediscovered later.
+
+**Needed by:** the owner, before any product surface (a permission-prompt UI, a marketing
+description of the capability model) makes a claim about what a network grant does and does not
+allow.
+
+### A84 — a non-draining peer can defeat `net.close()`/revocation, permanently orphaning a live socket **[HIGH — STILL OPEN, owner decision needed]**
+
+Found 2026-09-06, an independent vulnerability-hunt pass on `stream/broker-23-write-pump`
+(PR #80). **Empirically confirmed against Node v24.11.1** (the pinned version), not just read
+out of the source. Pre-existing on `main` — not introduced by this PR stack, but see the scoping
+note below for why it is raised now rather than left for whenever it happened to be noticed.
+
+**The mechanism.** `src/broker/handle-store.ts`'s `closeTree()` deletes a handle's record from
+`this.handles` and from `byGrant` **synchronously**, before it awaits `record.destroy(reason)`.
+For `reason === 'closed'`, `destroy` calls `destroySocket(socket, 'closed')`
+(`src/broker/node-adapters.ts`), which is `new Promise(resolve => socket.end(() => resolve()))`.
+`socket.end()`'s callback only fires once Node's `'finish'` event fires, which requires every
+queued outbound byte to actually drain into the peer's TCP receive window. **A peer that simply
+stops reading never lets that happen** — the callback never fires, `destroy()` never resolves,
+and the handle's own `closed` promise never settles.
+
+Everything that actually tears the socket down in `src/broker/socket-relay.ts` (`pump.stop()`,
+`sink.stop()`, `cleanup()` -- which frees the registry slot and closes the port) is gated on that
+same `closed` promise settling. So: the record is already gone from `handles`/`byGrant` (step 1,
+synchronous), but the underlying OS socket, the port, and the registry slot are all still fully
+live (step 2, never happens). `revoke()` (`handles.ts`) walks `byGrant` to find what to kill --
+finds nothing. `dropOrigin()` walks `handles` -- finds nothing. **There is no remaining code
+path that can close this socket once this window opens.** It also silently stops counting
+against `LIMITS.concurrentSockets`.
+
+`socket.end()` is a half-close: the read direction is untouched throughout, so peer data keeps
+flowing into the renderer the whole time this window is open, and (new since this PR arms the
+write direction) the write side -- the sink's writer and its acceptance of further `write`
+messages -- also stays live, which the old inline `main` implementation did not have to account
+for since there was no write pump.
+
+**Empirical reproduction** (peer = `net.createServer(s => s.pause())`, i.e. a peer that accepts
+the connection and then never reads): queued ~3 MB with `writableLength` still over 1 MB three
+seconds later; `end()`'s callback never fired; the socket was not destroyed; the client still
+received bytes the peer had queued, after the app had already called `close()`.
+
+**Scoping, honestly stated:** the underlying gating bug is pre-existing on `main`, in code this
+PR stack did not write. It is raised here, now, for two reasons specific to this stack rather
+than left as a someday-finding: (1) this is the first PR to expose `net.connect`/`close()` to
+page script at all -- before it, nothing reachable from a real page could trigger this path, so
+the bug was real but unreachable; (2) `socket-relay.ts` (new in this PR) is what makes the WRITE
+direction also stay live inside the window, which is new exposure the pre-existing bug did not
+previously have to be evaluated against.
+
+**Why this does not block the current merge:** per PR #81's own body, no production code path
+calls `broker.registerApp()`/`broker.grant()` for any real origin yet -- that is build step 4's
+job. So even after this whole stack merges, nobody can actually reach this bug in production,
+identically to why the rest of this stack's `net.connect` surface is safe to ship
+always-`denied`. The moment build step 4 ships real grants, this stops being latent.
+
+**Two fix shapes, both named by the finding, neither applied here -- owner's call which:**
+(a) the smaller change: race `socket.end(cb)` against a timeout in `destroySocket`, falling
+through to `socket.destroy()` if the peer never drains, so `closed` always eventually settles;
+(b) the more thorough change: stop making relay teardown depend on `closed` settling at all --
+have `closeTree` fire a synchronous "unlinked" hook at the same point it removes the record,
+which `socket-relay.ts` uses to run its teardown immediately, leaving `closed` to report only
+the wire outcome afterward. (b) also closes the window that makes the already-known
+`socket.fail()`-throws-after-reap crash (assigned to `fix-80` as B-F9/NEW from `review-security`)
+reachable ON DEMAND rather than by race, since the record-already-gone state is exactly what
+that crash depends on -- whoever picks (b) should coordinate with that fix.
+
+**A closely related MEDIUM, independently confirmed by the same pass, already covered:** when a
+grant is revoked while a write is outstanding, the app currently only ever finds out via the
+15-second silence timeout (reporting `'timeout'`, not `'revoked'`) rather than an immediate
+`write-failed` carrying the real reason -- this is the exact fix already requested of `fix-80` as
+NEW-F4 in this run (make `PortSink.stop(code)` emit a real `write-failed` before going silent,
+mirroring `PortPump.stop(code)`'s existing shape). No separate action needed; noted here only to
+record that two independent review passes converged on the same root cause from different
+trigger scenarios (broker-initiated revoke here, vs. abrupt read-end/peer-reset in NEW-F4).
+
+**Needed by:** before build step 4 (the app loader, real grants) ships -- this is the point at
+which "the owner revokes an app's network access and it actually stops" becomes a real,
+user-facing promise rather than an unreachable one, and this bug means that promise does not
+currently hold against an uncooperative remote peer.
 
 ---
 
