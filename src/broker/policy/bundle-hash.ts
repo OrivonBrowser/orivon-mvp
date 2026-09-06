@@ -5,7 +5,7 @@
 // THIS CONSTRUCTION IS A ONE-WAY DOOR (ADR-0009). Once the first pin is
 // persisted, changing anything below invalidates every stored pin and orphans
 // every attestation issued against the old root. A failing row in
-// ./bundle-hash.test.ts's frozen vector table means THE CHANGE IS WRONG --
+// ./tests/bundle-hash.test.ts's frozen vector table means THE CHANGE IS WRONG --
 // read that file's header before touching anything here.
 //
 // ONE VECTOR HAS BEEN REVISED, ONCE, AND THE DOOR IS NOW SHUT. On 2026-08-27,

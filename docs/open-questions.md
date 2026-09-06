@@ -126,7 +126,7 @@ None of these block starting the week-0 spike.
 | A35 | **`ResponseEnvelope` carries no `handleId`, though `OrivonError` declares one.** `contracts/errors.ts` specifies `platformCode` and `handleId` as optional fields an error may carry; `contracts/ipc.ts`'s `ResponseEnvelope`'s failure branch forwards `code`/`platformCode`/`message` but not `handleId`. A `'closed'` error naming which handle closed loses that identifier the moment it crosses IPC | **Before a `'closed'` error needs to name its handle over IPC** — not reachable yet (build step 2's control channel wires no method that can throw `'closed'`), but a contracts gap, so its own PR per `parallel-work.md` rule 3. See below |
 | A36 | **`build-plan.md` places grant prompts in build step 2; `A20` and `A27` both say build step 4.** `build-plan.md`'s own Sequence section lists "grant prompts" under step 2 ("Capability broker"), but `A20`'s and `A27`'s "Needed by" columns both independently say "before the grant prompt is built (build step 4)" | **RESOLVED 2026-09-03 (owner): split it; neither document is wrong.** The grant ledger and a headless grant-decision interface land in **step 2**, so the allow path is exercised end to end before any human sees it; the user-facing prompt lands in **step 4**, once a real manifest exists to render and `A20`/`A27` are settled. Both documents get corrected to say which half they mean. See below |
 | A37 | **The write direction of the byte pump (an app writing bytes out over `TcpSocket.writable`) has no wire message anywhere.** `contracts/ipc.ts` specifies `DataMessage`/`CreditMessage`/`StreamEndMessage` in full for the READ direction only; `handle-contracts.md`'s Backpressure section, `capability-api.md`'s Throughput section and `ADR-0008` all describe the write side only as an outcome ("`write()` resolves only once the broker has accepted the bytes"), never as a protocol | **Before the preload-side byte-pump PR** (readable/writable streams built over the port) **can implement `writable`.** See below |
-| A38 | **RESOLVED 2026-09-02.** `security-model.md`'s T11b entry names both a per-origin in-flight cap AND "a token-bucket rate limit on IPC dispatch" as the mitigation. The in-flight cap exists (`handles.ts`) and covers every method that does real I/O, but `app.manifest`/`app.grants` never call `handleTable.run`, so nothing bounded how *often* an origin could call them. Reproduced before the fix: 5,000 concurrent `app.grants` calls from one origin, zero rejected. A shared per-origin token bucket (`src/broker/token-bucket.ts`) now gates all six control methods uniformly, checked before `dispatch()` runs | Implemented in `src/broker/token-bucket.ts` and wired in `src/broker/ipc.ts`'s `handleControlRequest`. **The numbers (capacity 200, refill 100/sec) are AI-recommended, not owner-decided** — see below |
+| A38 | **RESOLVED 2026-09-02.** `security-model.md`'s T11b entry names both a per-origin in-flight cap AND "a token-bucket rate limit on IPC dispatch" as the mitigation. The in-flight cap exists (`handles.ts`) and covers every method that does real I/O, but `app.manifest`/`app.grants` never call `handleTable.run`, so nothing bounded how *often* an origin could call them. Reproduced before the fix: 5,000 concurrent `app.grants` calls from one origin, zero rejected. A shared per-origin token bucket (`src/broker/transport/token-bucket.ts`) now gates all six control methods uniformly, checked before `dispatch()` runs | Implemented in `src/broker/transport/token-bucket.ts` and wired in `src/broker/transport/ipc.ts`'s `handleControlRequest`. **The numbers (capacity 200, refill 100/sec) are AI-recommended, not owner-decided** — see below |
 | A45 | **RESOLVED 2026-09-03, `ADR-0011`.** `Manifest` gains `assets: readonly string[]`, publisher-declared alongside `entry` — a manifest field, not a crawl heuristic. See below | — |
 | A46 | **The loader never checks the install origin against private/loopback address ranges (T12).** `originFromUrl` validates only scheme and hostname syntax, never address class, and never calls `isPublicUnicast`/`classifyAddress` from `src/broker/policy/address.ts` — which already implements the correct "resolve once, validate every address" discipline for exactly this threat. `http://127.0.0.1:9222/.well-known/orivon.json`, `http://169.254.169.254/` (cloud metadata), or a low-TTL host that DNS-rebinds to either, all pass every check the loader runs today. **RESOLVED 2026-09-03 (owner): loopback is installable only as a user-supplied literal** — `127.0.0.1`, `[::1]` or `localhost`, and only when the URL came from a user action, never from a page-supplied hint and never via a hostname that *resolved* to loopback. Every other private, link-local and metadata range is refused outright | **NOW LIVE, trigger re-dated 2026-09-03** — the entry's own "ships inert" premise expired when `loaderSubsystem` was wired to a real `Loader` and a real Electron `Fetch` (`98c4871`, `stream/loader-05-node-storage`). See below |
 | A48 | **Two residual gaps in `fetch-bundle.ts`'s byte/time budget cannot be closed from this file alone, and now carry an explicit contract requirement on the real `Fetch` implementation.** (1) A `Fetch` (or its body stream's `read()`) that ignores its `AbortSignal` leaves the original promise permanently pending with its closures on every timeout — `BUNDLE_TIMEOUT_MS` (added this pass) bounds how many such abandoned attempts one `fetchBundle()` call can accumulate, but cannot force a foreign, non-cooperating promise to release whatever it holds (a socket, a timer). (2) The incremental byte cap can only refuse a chunk after `reader.read()` already returned it fully allocated — the real bound is "one chunk", not "the cap"; a BYOB reader would close this but requires the stream to declare `type: 'bytes'`, which this file's minimal structural `FetchResponse` type does not guarantee | **Before a real `Fetch`/stream implementation is wired in.** It must itself observe `AbortSignal` and promptly abort/release the underlying request, and should bound its own chunk sizes. See below |
@@ -347,7 +347,7 @@ opaque spelling of an address to the user.
 
 ### A21 -- grant id stability across a revoke and a re-grant **[AI-REC]**
 
-Found while fixing the revocation cascade in `src/broker/handles.ts` (review pass, 2026-08-27).
+Found while fixing the revocation cascade in `src/broker/handles/handles.ts` (review pass, 2026-08-27).
 
 The cascade used to be a one-shot sweep: `revoke()` closed the handles a grant had
 authorised and then forgot the grant entirely. An acquisition that passed the policy check
@@ -504,7 +504,7 @@ seen as a WIDENING (the granted pattern authorised nothing; any real host is wid
 prompts for re-consent, rather than sliding through silently. An update whose wildcard pattern is
 completely unchanged between versions still reads as covered, via the same exact-string check —
 the fix does not force needless prompts, only closes the one that was missing.
-`src/broker/policy/update.test.ts`'s "a subdomain wildcard does cover a subdomain" case was
+`src/broker/policy/tests/update.test.ts`'s "a subdomain wildcard does cover a subdomain" case was
 inverted (now expects `capability-prompt`, with a comment citing this entry) and a new case pins
 the unchanged-pattern behaviour.
 
@@ -538,7 +538,7 @@ and it fired one step early. `confinePath` has exactly one caller in the whole t
 (`:300`: `if (grant === undefined) throw fail('denied', ...)`). Nothing anywhere calls
 `broker.grant()` yet, so every `orivon.fs` call today is refused before `confinePath` ever runs
 — the blocking `realpath` this entry describes is real but currently **unreachable**.
-`orivon.fs.readFile`/`writeFile` were wired to a renderer in `src/broker/ipc.ts` (build step 2's
+`orivon.fs.readFile`/`writeFile` were wired to a renderer in `src/broker/transport/ipc.ts` (build step 2's
 IPC task) on this date regardless, a decision the owner made explicitly rather than blocking on
 this fix, since it changes nothing reachable yet. The AI recommendation above is unchanged —
 this only corrects when it actually starts to matter: **before any origin holds a real `fs`
@@ -752,7 +752,7 @@ approximation holds. Nobody has verified this outside Linux/X11, where the probe
 
 ### A35 — `ResponseEnvelope` has no `handleId`, though `OrivonError` declares one **[AI-REC]**
 
-Found while wiring `src/broker/ipc.ts`'s control channel (build step 2's IPC task, 2026-09-01).
+Found while wiring `src/broker/transport/ipc.ts`'s control channel (build step 2's IPC task, 2026-09-01).
 
 `contracts/errors.ts`'s `OrivonError` declares an optional `handleId`, and `src/broker/
 handle-store.ts` populates it — a `'closed'` error is meant to be able to say *which* handle
@@ -775,7 +775,7 @@ byte-pump task.
 
 ### A36 — `build-plan.md` schedules grant prompts a build step earlier than `A20`/`A27` do **[RESOLVED 2026-09-03]**
 
-Found while wiring `src/broker/ipc.ts`'s control channel (build step 2's IPC task, 2026-09-01),
+Found while wiring `src/broker/transport/ipc.ts`'s control channel (build step 2's IPC task, 2026-09-01),
 while checking whether this PR was expected to include a grant-prompt driver.
 
 `build-plan.md`'s own `## Sequence` section lists *"grant prompts"* as part of step 2, alongside
@@ -792,7 +792,7 @@ open contradiction, not obviously a typo — `build-plan.md`'s step-2 sequence t
 `A20`/`A27`, or the step-4 dependency may itself be a later-discovered constraint that should
 have moved the line in `build-plan.md` and did not.
 
-**Not resolved in this PR.** `src/broker/ipc.ts` wires no grant-prompt driver and no
+**Not resolved in this PR.** `src/broker/transport/ipc.ts` wires no grant-prompt driver and no
 `app.requestGrant` method — deliberately, per its own file header and this PR's "Deliberately
 not done".
 
@@ -828,7 +828,7 @@ by" columns are already correct as written and need no change.
 ### A37 — the byte pump's write direction has no wire protocol anywhere **[RESOLVED 2026-09-06]**
 
 Found while implementing the byte pump's broker side (build step 2, 2026-09-01) — specifically
-while designing `src/broker/port-pump.ts`, which relays the READ direction only.
+while designing `src/broker/transport/port-pump.ts`, which relays the READ direction only.
 
 `contracts/ipc.ts` specifies exactly three messages for a socket's dedicated
 `MessageChannelMain` port: `DataMessage` (broker -> renderer, bytes arriving), `CreditMessage`
@@ -930,7 +930,7 @@ own grants (a plausible pattern for anything that wants to react to a revocation
 
 ### Resolution, 2026-09-02
 
-A shared per-origin token bucket (`src/broker/token-bucket.ts`), checked in
+A shared per-origin token bucket (`src/broker/transport/token-bucket.ts`), checked in
 `handleControlRequest` before `dispatch()` runs, gates **all six** control methods uniformly —
 never queueing, mirroring the in-flight cap's own "reject immediately" rule. Answers the three
 open questions above:
@@ -944,7 +944,7 @@ open questions above:
 - **`fs`/`net` calls count against the same shared bucket.** No special-casing.
 
 **The numbers — capacity 200, refill 100/sec per origin — are an AI recommendation, not an
-owner decision**, and are stated as such directly beside them in `src/broker/ipc.ts`. No
+owner decision**, and are stated as such directly beside them in `src/broker/transport/ipc.ts`. No
 measured `CONTROL_CHANNEL` dispatch-rate data exists anywhere in the corpus (spike gate 4
 measured socket *byte* throughput over the dedicated port, never this channel's call
 frequency), so they are sized against the demonstrated attack (5,000 concurrent calls, now cut
@@ -1254,7 +1254,7 @@ once, and no file anywhere in `src/` or `test/` actually reads or consumes the v
 stops reading the underlying OS socket once outstanding credit reaches zero, and the renderer
 coalesces its own credit acknowledgements ("at most one credit message per 64 KiB consumed, or
 once per animation frame") so a fast stream does not emit a broker message per chunk. The first
-half is real and tested — `src/broker/port-pump.ts`'s `pumpLoop` loops `while (!stopped && credit
+half is real and tested — `src/broker/transport/port-pump.ts`'s `pumpLoop` loops `while (!stopped && credit
 > 0)`, exercised by `port-pump.test.ts` and `port-pump-real-socket.test.ts`. The second half does
 not exist anywhere: nothing on the renderer/preload side sends a `CreditMessage` at all yet
 (`net.connect` itself is not wired past the broker/main-process IPC layer — see `capability-
@@ -1284,7 +1284,7 @@ depends on. But this is this lane's read, not a verified fact, and the owner may
 > **Resolved 2026-09-06.** Reading 1 was correct: the renderer half was still intended and had
 > simply not been reached. Both halves now exist and are tested.
 >
-> - Broker read side: `src/broker/port-pump.ts`'s `pumpLoop` stops at credit zero (already true
+> - Broker read side: `src/broker/transport/port-pump.ts`'s `pumpLoop` stops at credit zero (already true
 >   when this was filed).
 > - **Renderer read side: `src/preload/socket-port.ts`'s `reportConsumed` flushes a
 >   `CreditMessage` once `CREDIT_COALESCE_BYTES` has been consumed, and otherwise coalesces on a
@@ -1293,7 +1293,7 @@ depends on. But this is this lane's read, not a verified fact, and the owner may
 >   and a torrent downloading in a background tab is the ordinary case here, not an edge one.
 >   That is a real (small) departure from the spec text, made knowingly and recorded in the
 >   source next to the line.
-> - Broker write side: `src/broker/port-sink.ts` coalesces `WriteAckMessage` against the same
+> - Broker write side: `src/broker/transport/port-sink.ts` coalesces `WriteAckMessage` against the same
 >   constant.
 >
 > `CREDIT_COALESCE_BYTES` therefore has three real consumers and is no longer dead code.
@@ -1623,7 +1623,7 @@ dark) — an improvement, but still invisible exactly where `runBeforeReady`'s o
 quiet" philosophy says it must not be.
 
 **Fixed on `stream/broker-17-ctx-broker`:** `Subsystem` gained an optional `critical` flag
-(`registry.ts`), copied onto each `SubsystemFailure`; `brokerIpcSubsystem` (`src/broker/ipc.ts`)
+(`registry.ts`), copied onto each `SubsystemFailure`; `brokerIpcSubsystem` (`src/broker/transport/ipc.ts`)
 is the first subsystem marked `critical: true`. `main/index.ts` now calls the new
 `criticalFailureMessage(failures)` after each phase and, if it returns non-null, calls
 `dialog.showErrorBox` and `app.exit(1)` instead of calling `createShellWindow()` — a browser
@@ -2091,7 +2091,7 @@ beyond that single call's own budget. Two distinct gaps, both real:
    accumulates the old bundle's bytes on top of the new one, indefinitely.
 
 **Checked and ruled out as already covering this:** the `fs` capability's `quotaBytes`
-(`src/broker/grant-ledger.ts`) is a completely separate, unrelated budget — it governs what an
+(`src/broker/grants/grant-ledger.ts`) is a completely separate, unrelated budget — it governs what an
 app writes through its own granted `orivon.fs` capability. Confirmed no shared accounting and
 no shared root with the loader's code-cache storage; it cannot be read as already bounding this.
 
@@ -2183,7 +2183,7 @@ first principles.
 
 Found 2026-09-03, a review-pass follow-up; no current caller exists yet to exhibit the bug.
 
-`registerApp` (`src/broker/grant-ledger.ts`) raises `versionFloor` to `manifest.version`
+`registerApp` (`src/broker/grants/grant-ledger.ts`) raises `versionFloor` to `manifest.version`
 unconditionally on every call, and its own doc comment states "T19's replay guard depends on
 every registration going through here." Nothing outside `src/broker/` calls it yet —
 `grep -rn "registerApp" src/loader/` returns nothing — so this is not a live bug, only a shape
@@ -2357,7 +2357,7 @@ names, and the fix for both is the per-origin serialization below.
 Found 2026-09-04 (fix-68 round 2, PR #68). Not fixed in that PR: the safe fix is a design change,
 and the obvious quick fix is a T19 regression.
 
-`readVersionFloor` (`src/broker/node-ledger-storage.ts`) returns `CORRUPT_FLOOR_SENTINEL` for
+`readVersionFloor` (`src/broker/grants/node-ledger-storage.ts`) returns `CORRUPT_FLOOR_SENTINEL` for
 every non-ENOENT read failure. That correctly covers genuine corruption (malformed JSON, wrong
 shape) but also covers EACCES, EMFILE, EBUSY and every other plausibly-transient OS condition,
 where the file on disk was never corrupt at all.
@@ -2470,7 +2470,7 @@ independent resolution free to disagree with the guard's.
 
 `src/broker/policy/connect.ts`'s own discipline for the same problem, one layer down, is "resolve
 once, validate every answer, and hand the caller the validated literals **to dial**" — the broker's
-real `dialTcp` (`src/broker/node-adapters.ts`) then opens a raw `node:net` socket straight to one of
+real `dialTcp` (`src/broker/adapters/node-adapters.ts`) then opens a raw `node:net` socket straight to one of
 those literals, never naming the hostname again. **That exact mechanism does not exist for a
 Chromium-mediated fetch.** Confirmed directly against `node_modules/electron/electron.d.ts`
 (electron 44) and Electron's own docs, not assumed:
@@ -2542,7 +2542,7 @@ already-granted one. If the new manifest drops a capability kind entirely (e.g. 
 all, where the previous manifest had one with an explicit `quotaBytes`), that kind is never
 visited, so the check reads this as "nothing new requested," never as a change worth a prompt.
 
-`fs.quotaBytes` defaults to unlimited when absent (`src/broker/grant-ledger.ts`'s quota-reservation
+`fs.quotaBytes` defaults to unlimited when absent (`src/broker/grants/grant-ledger.ts`'s quota-reservation
 path), read from whatever manifest is currently REGISTERED, not from a pattern the grant ledger
 separately tracks. So a manifest that drops `fs` (or otherwise omits a scalar capability field)
 can move actual, effective quota enforcement from a stated limit to unlimited, with
@@ -2588,7 +2588,7 @@ presumably-safe rollback (`1.2.0` → `1.1.9`) permanently wave through any OTHE
 below-floor version the same origin later chooses to serve — `0.0.1`, or anything else — with
 no further consent. That is a capability escalation wearing a UX-shortcut's clothes, not what
 d-0017 asked for. Storing the specific accepted version and comparing it exactly (never "any
-prior acknowledgment counts") closes that gap. `src/broker/grant-ledger.ts`'s
+prior acknowledgment counts") closes that gap. `src/broker/grants/grant-ledger.ts`'s
 `rollbackAcknowledgedVersionFor`/`acknowledgeRollback`, `src/loader/index.ts`'s
 `LoadContext.acknowledgedRollbackVersion`, and `docs/decisions/ADR-0013`'s own text should all
 agree on this — recorded here because d-0017 itself was otherwise undocumented anywhere in
@@ -2650,7 +2650,7 @@ rather than assume it stayed flagged-but-unfixed by coincidence.
 
 Found 2026-09-06, adversarial-review pass on `stream/broker-23-write-pump` (PR #80).
 
-`src/broker/socket-relay.ts`'s teardown path does `pump.stop()` (which `postMessage`s the
+`src/broker/transport/socket-relay.ts`'s teardown path does `pump.stop()` (which `postMessage`s the
 terminal `end` message) immediately followed by `cleanup()` -> `port.close()`, in the same
 synchronous tick. Every "clean" socket close in this stack's design depends on
 `MessagePortMain` actually delivering a message posted immediately before `close()` is called
@@ -2731,16 +2731,16 @@ Found 2026-09-06, an independent vulnerability-hunt pass on `stream/broker-23-wr
 out of the source. Pre-existing on `main` — not introduced by this PR stack, but see the scoping
 note below for why it is raised now rather than left for whenever it happened to be noticed.
 
-**The mechanism.** `src/broker/handle-store.ts`'s `closeTree()` deletes a handle's record from
+**The mechanism.** `src/broker/handles/handle-store.ts`'s `closeTree()` deletes a handle's record from
 `this.handles` and from `byGrant` **synchronously**, before it awaits `record.destroy(reason)`.
 For `reason === 'closed'`, `destroy` calls `destroySocket(socket, 'closed')`
-(`src/broker/node-adapters.ts`), which is `new Promise(resolve => socket.end(() => resolve()))`.
+(`src/broker/adapters/node-adapters.ts`), which is `new Promise(resolve => socket.end(() => resolve()))`.
 `socket.end()`'s callback only fires once Node's `'finish'` event fires, which requires every
 queued outbound byte to actually drain into the peer's TCP receive window. **A peer that simply
 stops reading never lets that happen** — the callback never fires, `destroy()` never resolves,
 and the handle's own `closed` promise never settles.
 
-Everything that actually tears the socket down in `src/broker/socket-relay.ts` (`pump.stop()`,
+Everything that actually tears the socket down in `src/broker/transport/socket-relay.ts` (`pump.stop()`,
 `sink.stop()`, `cleanup()` -- which frees the registry slot and closes the port) is gated on that
 same `closed` promise settling. So: the record is already gone from `handles`/`byGrant` (step 1,
 synchronous), but the underlying OS socket, the port, and the registry slot are all still fully
@@ -2838,7 +2838,7 @@ currently hold against an uncooperative remote peer.
 > by resolving vs. rejecting.
 >
 > **Verified as the finding asked, not by reading.** The reproduction is now a test:
-> `src/broker/socket-drain.test.ts` dials a real local server that accepts and then `pause()`s,
+> `src/broker/adapters/tests/socket-drain.test.ts` dials a real local server that accepts and then `pause()`s,
 > queues past 1 MiB of `writableLength`, and asserts `destroySocket` settles and the socket is
 > destroyed. The same file also pins the truncation hazard above as a matched pair
 > (cancel-then-close loses bytes, close-alone does not), so the branch that avoids it cannot be
@@ -2863,7 +2863,7 @@ currently hold against an uncooperative remote peer.
 Found 2026-09-05, `stream/broker-23-write-pump`, while building the write-side byte pump (A37)
 and checking `handle-contracts.md`'s close table against the real dial path.
 
-`src/broker/node-adapters.ts`'s `dialOne` calls `netConnect({ host: address, port })` with no
+`src/broker/adapters/node-adapters.ts`'s `dialOne` calls `netConnect({ host: address, port })` with no
 `allowHalfOpen`, so Node's default (`false`) applies: when the **peer** sends FIN, Node
 auto-ends our writable too. This genuinely contradicts close-table row 2
 (`handle-contracts.md` §TcpSocket: peer sends FIN → readable ends, **writable stays open**,
@@ -2972,7 +2972,7 @@ as closed by any future security review.
 > **Correction, 2026-09-06 (`stream/backlog-12-comment-budget-gap`).** Resolved in the direction
 > A64 left open: `measurePreamble` (now `findPreambleBlock`) treats an import line as neither a
 > comment nor the end of the opening region, so a header essay after the imports measures the
-> same as one at line one. Two real in-review PRs (`src/broker/port-sink.ts`,
+> same as one at line one. Two real in-review PRs (`src/broker/transport/port-sink.ts`,
 > `src/preload/orivon-surface.ts`) exposed the gap by placing a 40+/46-line rationale block after
 > their imports; both are now correctly flagged. Restores the pre-PR#68 46-line reading for A64's
 > own file, `src/broker/policy/origin.ts`, rather than the 16-line one the bug produced. See A79
@@ -3018,7 +3018,7 @@ more in that same shape, none previously flagged, none in `scripts/comment-budge
 - `src/broker/policy/origin.ts` -- 30 lines (the exact file A64 was filed on; see the correction
   there -- this is its restored, accurate measurement)
 - `src/broker/policy/update.ts` -- 52 lines
-- `src/broker/port-pump.ts` -- 45 lines
+- `src/broker/transport/port-pump.ts` -- 45 lines
 - `src/main/index.ts` -- 40 lines
 
 Each was read in full (not just measured) to rule out a detection bug rather than a real
@@ -3063,3 +3063,50 @@ lane does not own -- the sixth, `orivon-surface.ts`, was already being fixed on
 corrected checker and merged to `main` before this branch (comment-gate itself), so `main`'s
 `check:comments` never actually goes red -- the sequencing problem this entry raised was avoided,
 not merely tracked. The baseline file's "closed" rule was correctly left untouched.
+
+---
+
+### A85 — the broker's directory boundaries are declared in five READMEs and enforced by nothing **[STILL OPEN — AI recommendation]**
+
+**Raised 2026-09-06**, by the restructure that created them (`ADR-0015`, `stream/broker-29-file-layout`).
+
+`src/broker/` is now five directories, each carrying a `README.md` with a **what it must never
+import** section. Those declarations were read off the real import graph rather than asserted,
+so they are true today. Nothing keeps them true tomorrow.
+
+**The four rules currently stated in prose only:**
+
+- `policy/` must import nothing that performs I/O — no `electron`, `node:fs`, `node:net`,
+  `node:dns`. This one is the oldest and the most load-bearing: it is what makes the
+  security-critical decision functions testable with no network, which is the entire argument
+  of `policy/README.md` and of `build-plan.md`'s Week 0 structural decision.
+- `handles/` must import no `node:*` builtin at all. Every real resource arrives as an injected
+  `destroy` callback; an import here would mean the handle table had started owning a resource
+  directly, which is exactly the coupling the injection exists to prevent.
+- `adapters/` must not import `electron`. It is the Node seam, not the Electron one.
+- `src/broker/` as a whole must not import `src/shim/`, `src/loader/`, `src/preload/` or any
+  renderer code — the pre-existing rule from `src/broker/README.md`, which also has no guard.
+
+**Why this was not built in the same change.** A guard written the same hour as the layout tests
+the author's assumptions, not the layout's staying power. A few weeks of real edits will show
+which rule actually drifts, and a guard aimed at that is worth more than four written blind.
+Deliberately deferred, not overlooked — owner's call, 2026-09-06.
+
+**Shape it would take if built.** `scripts/check-layers.mjs` plus an `npm run check:layers`,
+alongside `check:contracts` in CI. `check-contracts-pure.mjs` is the working model: it already
+walks a directory's imports and fails on anything outside an allowed set, so this is a
+generalisation of an existing guard rather than a new mechanism (Rule 6).
+
+**One wrinkle it has to handle.** `grants/node-ledger-storage.ts` writes to disk while living
+outside `adapters/` (see `ADR-0015` §Consequences), so a rule of the form "only `adapters/` may
+import `node:fs`" needs a named allowlist entry rather than being absolute. That is not a reason
+to skip the guard — `check:comments` already carries an exemption mechanism with a required
+reason, and `enforcement-keeps-a-justified-escape-hatch` is the established owner preference:
+exceptions possible, never silent.
+
+**Counter-argument worth recording.** `CLAUDE.md` states that Rules 2 and 3 of the code
+guidelines are unenforced by owner's decision — "rules first, enforcement later" — and this
+would be a third guard on a solo project. The case for building it anyway is the one that closed
+that deferral for Rule 1: the rule was being followed and the codebase drifted regardless,
+because a human cannot see an import boundary by reading one file at a time. If `A85` is ever
+resolved by *not* building it, that reasoning is what has to be answered.

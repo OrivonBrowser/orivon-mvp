@@ -76,7 +76,7 @@ import {
 import { HOST, ECHO_PORT, STATIC_PORT } from '../apps/fixture/config.mjs'
 import { createBroker } from '../src/broker/index.js'
 import type { BrokerFs, CreateBrokerOptions, Keychain } from '../src/broker/broker-contracts.js'
-import { dialTcp, resolveHost } from '../src/broker/node-adapters.js'
+import { dialTcp, resolveHost } from '../src/broker/adapters/node-adapters.js'
 import { isOrivonErrorLike } from '../src/broker/errors.js'
 import { parseManifest } from '../src/loader/manifest.js'
 
@@ -378,7 +378,7 @@ async function roundTripBytes (
  * `ledger.currentGrant(key, 'tcp.connect')` finds no grant for this origin --
  * the one call site that can produce it. Matched verbatim below (E-F1,
  * `docs/open-questions.md` A76) rather than a loose pattern like /denied/i:
- * `src/broker/ipc.ts`'s EARLIER, unrelated check -- "no authenticated origin
+ * `src/broker/transport/ipc.ts`'s EARLIER, unrelated check -- "no authenticated origin
  * for this frame", thrown before `dispatch()` ever reaches the grant check --
  * produces the identical `{ name: 'OrivonError', code: 'denied',
  * platformCode: undefined }` shape. A T3/T13b origin-derivation regression
@@ -624,7 +624,7 @@ it('Phase 2: the real broker grants a round trip and denies an out-of-manifest c
   await runPhase('Phase 2', async (check) => {
     // ---- the real broker, real I/O, granted vs. denied
     // Constructs its OWN Broker instance with REAL dependencies (dialTcp,
-    // resolveHost -- src/broker/node-adapters.ts, no `electron` import, real
+    // resolveHost -- src/broker/adapters/node-adapters.ts, no `electron` import, real
     // node:net/node:dns) rather than the stubs every unit test in
     // src/broker/*.test.ts uses. registerApp()/grant() are called exactly as
     // the (not-yet-built) app loader and permission-prompt UI will call them

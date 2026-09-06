@@ -21,7 +21,7 @@
 //
 // The resolver is INJECTED for the same reason this whole directory is pure
 // (./README.md): no `electron`, no `node:dns`, no `node:net`, no I/O. That is
-// what makes the tests in ./connect.test.ts cheap enough to actually exist,
+// what makes the tests in ./tests/connect.test.ts cheap enough to actually exist,
 // and a security check nobody can afford to test is a security check nobody
 // has.
 //

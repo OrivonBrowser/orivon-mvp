@@ -1,6 +1,6 @@
 // The loader's cache: what persists a fetched, validated bundle and its pin
 // record. src/loader/README.md permits depending on src/broker/ for storage;
-// src/broker/grant-ledger.ts (in-memory only, no disk I/O anywhere) and
+// src/broker/grants/grant-ledger.ts (in-memory only, no disk I/O anywhere) and
 // src/broker/index.ts's CreateBrokerOptions (dial/resolve/now/fs/keychain --
 // no pin- or manifest-cache member) were both checked, and neither has
 // anything to call. So this interface is defined here, loader-side, the same
@@ -9,7 +9,7 @@
 // NO REAL (node:fs-backed) IMPLEMENTATION SHIPS IN THIS LANE. That is a
 // deliberate scope line, not an oversight: building one safely means reusing
 // src/broker/policy/paths.ts's confinePath for the same reason nodeFs
-// (src/broker/node-adapters.ts) does, and that is broker-shaped work this
+// (src/broker/adapters/node-adapters.ts) does, and that is broker-shaped work this
 // lane does not own. A real disk-backed LoaderStorage is still needed before
 // any of this can persist for real.
 //
@@ -69,7 +69,7 @@ export interface LoaderStorage {
  * The app's on-disk root directory name (A22, security-model.md T13b):
  * `sha256(canonical_origin)`, lowercase hex, single-case -- load-bearing for
  * policy/paths.ts's case-SENSITIVE confinement comparison. Re-exported from
- * src/broker/origin-hash.ts's `originHash` rather than a second
+ * src/broker/grants/origin-hash.ts's `originHash` rather than a second
  * implementation (code-guidelines.md Rule 3) -- that file's own header
  * explains why the construction lives beside its other caller
  * (`partitionFor`) rather than in policy/, and it is the one definition A22
@@ -82,4 +82,4 @@ export interface LoaderStorage {
  * yet is a real filesystem writing bytes under a directory of this name --
  * see this file's header.
  */
-export { originHash as appRootDirectoryName } from '../broker/origin-hash.js'
+export { originHash as appRootDirectoryName } from '../broker/grants/origin-hash.js'

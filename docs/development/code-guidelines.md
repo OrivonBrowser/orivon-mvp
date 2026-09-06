@@ -265,10 +265,10 @@ what had already broken the rule:
 
 | File | Before | Split into | Largest part after |
 |---|---|---|---|
-| [`src/broker/handles.ts`](../../src/broker/handles.ts) | 1045 | `handle-contracts.ts`, `errors.ts`, `handle-store.ts`, `handles.ts` | 497 |
+| [`src/broker/handles/handles.ts`](../../src/broker/handles/handles.ts) | 1045 | `handle-contracts.ts`, `errors.ts`, `handle-store.ts`, `handles.ts` | 497 |
 | [`src/broker/policy/connect.ts`](../../src/broker/policy/connect.ts) | 622 | `canonical-host.ts`, `connect-patterns.ts`, `connect.ts` | 297 |
-| `src/broker/handles.test.ts` | 1212 | `handles.test-helpers.ts`, `handles.test.ts`, `handles-limits.test.ts` | 750 |
-| `src/broker/policy/connect.test.ts` | 1149 | `connect.test-helpers.ts`, `connect.test.ts`, `connect-patterns.test.ts` | 623 |
+| `src/broker/handles/tests/handles.test.ts` | 1212 | `handles.test-helpers.ts`, `handles.test.ts`, `handles-limits.test.ts` | 750 |
+| `src/broker/policy/tests/connect.test.ts` | 1149 | `connect.test-helpers.ts`, `connect.test.ts`, `connect-patterns.test.ts` | 623 |
 
 `handles.ts`'s split needed a design decision, not a mechanical move: the nine methods acting on
 one origin's state became a real `OriginTable` **class** (`handle-store.ts`) rather than free

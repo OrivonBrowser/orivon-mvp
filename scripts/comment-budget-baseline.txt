@@ -12,10 +12,10 @@
 # Nothing may be ADDED here. New code meets the budget. Tracked as A54.
 # Written 2026-09-03, against these files' state at that date.
 scripts/check-vectors.mjs
-src/broker/handles.ts
+src/broker/handles/handles.ts
 src/broker/index.ts
-src/broker/ipc.ts
-src/broker/origin-hash.ts
+src/broker/transport/ipc.ts
+src/broker/grants/origin-hash.ts
 src/broker/policy/address.ts
 src/broker/policy/connect-src.ts
 src/broker/policy/connect.ts

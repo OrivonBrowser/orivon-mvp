@@ -258,7 +258,7 @@ removal the same as an accidental or attacker-triggered reset — they are not t
 Removal is the user's own decision about their own machine, the same authority `open-questions.md`
 A46 already treats a user-typed loopback install as (the user acting on purpose, not a hole).
 
-Practically, this is why `src/broker/ledger-storage.ts`'s real implementation stores the floor
+Practically, this is why `src/broker/grants/ledger-storage.ts`'s real implementation stores the floor
 under its own `grants/<origin-hash>/` root rather than folding it into the pin record `ADR-0009`
 above already places outside `code/`: a future "remove this app" action deletes exactly one
 subsystem's own directory and the floor goes with it, by construction, with no separate

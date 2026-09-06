@@ -91,7 +91,7 @@ async function call<TResult> (method: string, payload: unknown, timeoutMs: numbe
 
 /**
  * What `net.connect`'s CONTROL_CHANNEL reply actually carries -- deliberately
- * NOT imported from ../broker/port-transport.ts's SocketDescriptor: this
+ * NOT imported from ../broker/transport/port-transport.ts's SocketDescriptor: this
  * directory's own README forbids importing src/broker/ at all (a preload
  * runs in the renderer process; broker logic cannot run there), so the
  * shape is repeated at this trust boundary rather than shared across it.
