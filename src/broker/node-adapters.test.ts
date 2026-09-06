@@ -203,6 +203,18 @@ describe('dialTcp / dialOne against a real local TCP server', () => {
     expect(error.code).toBe('ECONNRESET')
   })
 
+  it("destroy('aborted') also resets the connection, same as 'revoked' -- the app chose to discard a still-live socket", async () => {
+    await listen()
+    const dialed = await dialTcp(['127.0.0.1'], port, neverAborts())
+    const peer = await firstAccepted()
+    const peerErrored = new Promise<NodeJS.ErrnoException>((resolve) => peer.once('error', resolve))
+
+    await dialed.destroy('aborted')
+
+    const error = await peerErrored
+    expect(error.code).toBe('ECONNRESET')
+  })
+
   it("destroy('failed') releases the local socket without waiting on a FIN handshake", async () => {
     await listen()
     const dialed = await dialTcp(['127.0.0.1'], port, neverAborts())

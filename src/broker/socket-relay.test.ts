@@ -70,10 +70,10 @@ describe('createSocketRelay -- write side (new: routes write/write-end/write-abo
     expect(closed).toBe(true)
   })
 
-  it('write-abort reaches the writer\'s abort()', async () => {
+  it('write-abort reaches both the writer\'s abort() and socket.abort(), and frees the registry slot', async () => {
     const abortReasons: unknown[] = []
     const writable = new WritableStream<Uint8Array>({ abort (r) { abortReasons.push(r) } })
-    const { socket } = fakeTcpSocket(new ReadableStream(), writable)
+    const { socket, abortSpy } = fakeTcpSocket(new ReadableStream(), writable)
     const port = fakePort()
     const registry = createPortRegistry<RegisteredSocket>()
 
@@ -82,6 +82,11 @@ describe('createSocketRelay -- write side (new: routes write/write-end/write-abo
     await tick()
 
     expect(abortReasons).toHaveLength(1)
+    // socket.abort() -- not socket.fail() -- is what reaches HandleTable.abort
+    // in production, the path that produces a real RST rather than a plain
+    // destroy (handles.ts).
+    expect(abortSpy).toHaveBeenCalledOnce()
+    expect(registeredEntry(registry)).toBeUndefined()
   })
 
   it('a write-window violation fails the handle AND frees its registry slot, not just a wire message', async () => {
@@ -102,9 +107,9 @@ describe('createSocketRelay -- write side (new: routes write/write-end/write-abo
   })
 })
 
-describe('createSocketRelay -- socket.fail must never crash the message listener that calls it', () => {
+describe('createSocketRelay -- socket.fail/socket.abort must never crash the message listener that calls them', () => {
   it('does not throw synchronously when socket.fail itself throws (the handle table already reaped for this origin)', async () => {
-    const writable = new WritableStream<Uint8Array>({ abort () {} })
+    const writable = new WritableStream<Uint8Array>({ write: async () => await new Promise(() => {}) })
     const { socket } = fakeTcpSocket(new ReadableStream(), writable)
     // FailableTcpSocket.fail's own contract promises it never throws, but a
     // caller upstream of this test (HandleTable.fail, handles.ts) can --
@@ -115,14 +120,34 @@ describe('createSocketRelay -- socket.fail must never crash the message listener
     const port = fakePort()
     const registry = createPortRegistry<RegisteredSocket>()
 
-    createSocketRelay({ origin: ORIGIN, socket: socketWithThrowingFail, port, registry, readWindowBytes: 1_000, writeWindowBytes: 1_000 })
+    createSocketRelay({ origin: ORIGIN, socket: socketWithThrowingFail, port, registry, readWindowBytes: 1_000, writeWindowBytes: 10 })
 
-    // write-abort reaches handleAbort synchronously, which fails the sink
-    // synchronously (onSinkFailed), which is what now reaches socket.fail
-    // straight from this listener -- see ./socket-relay.ts's own comment.
-    expect(() => { port.emit({ kind: 'write-abort', handleId: 'handle-1' }) }).not.toThrow()
+    // A write-window violation reaches handleWrite's own fail() synchronously,
+    // which is what now reaches socket.fail straight from this listener --
+    // see ./socket-relay.ts's own comment on failSocket.
+    expect(() => {
+      port.emit({ kind: 'write', handleId: 'handle-1', chunk: new Uint8Array(6) })
+      port.emit({ kind: 'write', handleId: 'handle-1', chunk: new Uint8Array(6) }) // 6+6 > 10
+    }).not.toThrow()
     await tick()
     expect(throwingFail).toHaveBeenCalled()
+  })
+
+  it('does not throw synchronously when socket.abort itself throws', async () => {
+    const writable = new WritableStream<Uint8Array>({ abort () {} })
+    const { socket } = fakeTcpSocket(new ReadableStream(), writable)
+    // Same contract, same reason as socket.fail above -- HandleTable.abort
+    // (handles.ts) can throw (e.g. an id already reaped by a racing revoke).
+    const throwingAbort = vi.fn(() => { throw new Error('no such handle for this origin') })
+    const socketWithThrowingAbort = { ...socket, abort: throwingAbort }
+    const port = fakePort()
+    const registry = createPortRegistry<RegisteredSocket>()
+
+    createSocketRelay({ origin: ORIGIN, socket: socketWithThrowingAbort, port, registry, readWindowBytes: 1_000, writeWindowBytes: 1_000 })
+
+    expect(() => { port.emit({ kind: 'write-abort', handleId: 'handle-1' }) }).not.toThrow()
+    await tick()
+    expect(throwingAbort).toHaveBeenCalled()
   })
 })
 

@@ -93,6 +93,18 @@ export function createSocketRelay (options: SocketRelayOptions): SocketRelay {
     }
   }
 
+  // Same tolerance as failSocket above, and for the same reason: socket.abort
+  // (FailableTcpSocket, handle-contracts.ts) promises it never throws, but
+  // its real implementation (HandleTable.abort, handles.ts) can, and this is
+  // reached synchronously from port.onMessage via the sink's onAbort.
+  function abortSocket (): void {
+    try {
+      socket.abort()
+    } catch (caught) {
+      console.error('[broker] aborting a socket handle threw', caught)
+    }
+  }
+
   // Shared by the pump and the sink (code-guidelines.md Rule 3 -- one
   // implementation, not two identical closures). Guarded the same way: a
   // real MessagePortMain can be closed out from under either one -- stop()
@@ -130,7 +142,11 @@ export function createSocketRelay (options: SocketRelayOptions): SocketRelay {
     // a real write failure is this direction's own "died underneath us",
     // and must fail the SAME handle the read side would -- freeing the
     // registry slot this file just claimed, not merely notifying the page.
-    onSinkFailed: failSocket
+    onSinkFailed: failSocket,
+    // Distinct from onSinkFailed above: the app CHOSE to discard a still-live
+    // connection, so this must reach the ACTIVE-reset path (HandleTable.abort),
+    // not the "already dead, touch nothing" one onSinkFailed's 'failed' means.
+    onAbort: abortSocket
   })
 
   port.onMessage((raw) => {

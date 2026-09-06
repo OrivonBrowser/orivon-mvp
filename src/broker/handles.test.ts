@@ -652,6 +652,49 @@ describe('a resource that dies on its own (SSTcpSocket close table)', () => {
   })
 })
 
+describe('the app discarding a still-live handle (SSTcpSocket close table: writable.abort(e))', () => {
+  it('tells the destroy callback to reset the wire, not merely release the fd', async () => {
+    const t = table()
+    const destroy = spyDestroy()
+    const handle = t.acquire({ origin: APP, kind: 'tcpSocket', authorisedBy: { by: 'grant', grantId: TCP_GRANT }, destroy })
+
+    t.abort(APP, handle.id)
+
+    // Unlike fail()'s 'failed' (the wire is already dead, touch nothing),
+    // 'aborted' is the app choosing to discard a still-live connection --
+    // node-adapters.ts routes it to the same active reset as 'revoked'.
+    expect(destroy).toHaveBeenCalledWith('aborted')
+  })
+
+  it('rejects closed with reset, per handle-contracts.md\'s close table', async () => {
+    const t = table()
+    const handle = acquireSocket(t)
+
+    t.abort(APP, handle.id)
+
+    const error = await rejection(handle.closed)
+    expect(error.code).toBe('reset')
+  })
+
+  it('rejects pending operations with the same code', async () => {
+    const t = table()
+    const handle = acquireSocket(t)
+    const pending = t.run(APP, { on: 'handle', handleId: handle.id }, never)
+
+    t.abort(APP, handle.id)
+
+    expect((await rejection(pending)).code).toBe('reset')
+  })
+
+  it('is ownership-checked like every other operation', () => {
+    const t = table()
+    const handle = acquireSocket(t)
+
+    expect(thrown(() => t.abort(OTHER, handle.id)).code).toBe('denied')
+    expect(t.lookup(APP, handle.id).id).toBe(handle.id)
+  })
+})
+
 describe('revocation does not wait for a teardown it cannot bound', () => {
   it('settles the revoke promise even when a destroy never completes', async () => {
     const t = table()

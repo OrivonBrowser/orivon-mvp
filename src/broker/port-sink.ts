@@ -24,12 +24,21 @@ export interface PortSinkOptions {
   readonly heartbeatMs?: number
   /**
    * Called once if a write is refused (a window violation, a write after
-   * write-end) or the underlying writable itself fails (a rejected write, an
-   * app-initiated abort). Mirrors ./port-pump.ts's onStreamFailed: the caller
-   * uses it to fail the handle for real, the same way a dead read direction
-   * does, so the socket does not sit half-alive against its budget forever.
+   * write-end) or the underlying writable rejects a write for real (a dead
+   * transport). Mirrors ./port-pump.ts's onStreamFailed: the caller uses it
+   * to fail the handle for real, the same way a dead read direction does, so
+   * the socket does not sit half-alive against its budget forever. An
+   * app-initiated abort is NOT one of these cases -- see `onAbort` below.
    */
   readonly onSinkFailed?: (code: OrivonErrorCode, error: unknown) => void
+  /**
+   * Called once when the app calls writable.abort() on this handle, right
+   * before `writer.abort()` itself runs. The caller's job is to reset the
+   * REAL resource (handle-contracts.md's close table: `writable.abort(e)` ->
+   * RST sent) -- the opposite of what onSinkFailed's CloseReason ('failed')
+   * means, which is that the wire is already dead and must not be touched.
+   */
+  readonly onAbort?: () => void
 }
 
 export interface PortSink {
@@ -86,7 +95,7 @@ function isWritableAlreadyEnded (error: unknown): boolean {
 }
 
 export function createPortSink (options: PortSinkOptions): PortSink {
-  const { handleId, writable, send, windowBytes, mapError = () => 'internal', heartbeatMs = WRITE_HEARTBEAT_MS, onSinkFailed } = options
+  const { handleId, writable, send, windowBytes, mapError = () => 'internal', heartbeatMs = WRITE_HEARTBEAT_MS, onSinkFailed, onAbort } = options
   const writer = writable.getWriter()
 
   let unacked = 0
@@ -131,10 +140,11 @@ export function createPortSink (options: PortSinkOptions): PortSink {
     }
   }
 
-  // `notifyHandle: false` is for A69's peer-FIN case only (see the write
-  // rejection handler below): that failure is this direction's own, not the
-  // whole handle's, so onSinkFailed -- which the caller uses to fail the
-  // WHOLE socket, read side included -- must not run.
+  // `notifyHandle: false` skips onSinkFailed for two cases where it would be
+  // the wrong caller to notify: A69's peer-FIN case (this direction's own
+  // failure, not the whole handle's) and handleAbort below, which reaches
+  // the whole handle through `onAbort` instead -- onSinkFailed's CloseReason
+  // ('failed') means the wire is already dead, exactly wrong for an abort.
   function fail (code: OrivonErrorCode, error?: unknown, notifyHandle = true): void {
     if (stopped) return
     stopped = true
@@ -226,7 +236,16 @@ export function createPortSink (options: PortSinkOptions): PortSink {
     handleAbort (message) {
       if (stopped || message.handleId !== handleId) return
       const reason = new Error('write-abort')
-      fail('reset', reason)
+      // notifyHandle: false -- onAbort is the one that resets the real
+      // resource; running onSinkFailed too would additionally tear it down
+      // via the 'failed' CloseReason, a plain destroy that can race the real
+      // reset and, on some platforms, win, silently turning the RST back
+      // into the clean FIN this exists to avoid.
+      fail('reset', reason, false)
+      onAbort?.()
+      // Still settles the LOCAL writable/readable pair even when nothing is
+      // wired to onAbort (a caller with no real socket underneath), and is a
+      // safe no-op once onAbort's real teardown above has already run.
       writer.abort(reason).catch(() => {})
     },
 
