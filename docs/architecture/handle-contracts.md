@@ -183,14 +183,23 @@ choke/interested handshake and keeps reading long after it has stopped writing n
 
 ### Backpressure — a credit window
 
-> **Split status, corrected.** The broker-side half below — stop reading the OS socket at
-> credit zero — is real and tested (`src/broker/port-pump.ts`). The renderer-side READ
-> coalescing half (a `CreditMessage` per `CREDIT_COALESCE_BYTES`) is still not wired up on the
-> renderer/preload side — see `open-questions.md` A48, unaffected by this correction. What
-> *has* changed: `CREDIT_COALESCE_BYTES` (`src/contracts/ipc.ts`) is no longer read by nothing
-> — the broker's write-side sink (PR #80) also coalesces `WriteAckMessage` against this same
-> constant, so the superseded claim that "no file anywhere in `src/` or `test/` actually reads
-> or consumes it" no longer holds for the write direction (see §Write direction below).
+> **Status: implemented, corrected 2026-09-06.** This supersedes a "split status" block that
+> said the renderer-side half "is still not wired up" — true when written, false since the
+> preload byte pump landed, and left uncorrected for three days. Both halves now exist:
+>
+> - Broker read side: `src/broker/port-pump.ts`'s `pumpLoop` stops reading the OS socket at
+>   credit zero.
+> - Renderer read side: `src/preload/socket-port.ts`'s `reportConsumed` flushes a
+>   `CreditMessage` once `CREDIT_COALESCE_BYTES` has been consumed, and otherwise coalesces.
+> - Broker write side: `src/broker/port-sink.ts` coalesces `WriteAckMessage` against the same
+>   constant (see §Write direction below).
+>
+> **One deliberate departure from the text below, made knowingly.** This section specifies
+> coalescing as "at most one credit message per 64 KiB consumed, **or once per animation
+> frame**". The implementation uses a `setTimeout` macrotask, not `requestAnimationFrame`: rAF
+> does not fire in a backgrounded tab, and a torrent downloading in a background tab is the
+> ordinary case for this browser rather than an edge one. Coalescing must not depend on the tab
+> being visible. `open-questions.md` A48 records the whole resolution.
 
 This answers `capability-api.md` §Throughput's open note: *"`MessagePortMain` has no
 documented backpressure, so the shim must implement its own flow control."*

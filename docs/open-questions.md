@@ -1239,7 +1239,7 @@ pick their own answer.
 **Needed by:** before the next stream needs to read `ctx.broker` — plausibly `src/shim/` or
 `src/trust/`, whichever build step reaches a real grant path first. Not blocking this PR.
 
-### A48 — the credit-window backpressure design is half-built; the constant for the other half is dead code **[STILL OPEN]**
+### A48 — the credit-window backpressure design is half-built; the constant for the other half is dead code **[RESOLVED 2026-09-06]**
 
 Found 2026-09-03, correcting `handle-contracts.md`'s status header (`docs-18-handle-contracts-
 scope`).
@@ -1279,6 +1279,26 @@ depends on. But this is this lane's read, not a verified fact, and the owner may
 **Needed by:** whichever build step wires `net.connect` into `window.orivon` and the renderer's
 `ReadableStream` — it needs to know whether to implement the coalescing half or whether
 `CREDIT_COALESCE_BYTES` should be deleted first. Not blocking this PR, which is docs-only.
+
+
+> **Resolved 2026-09-06.** Reading 1 was correct: the renderer half was still intended and had
+> simply not been reached. Both halves now exist and are tested.
+>
+> - Broker read side: `src/broker/port-pump.ts`'s `pumpLoop` stops at credit zero (already true
+>   when this was filed).
+> - **Renderer read side: `src/preload/socket-port.ts`'s `reportConsumed` flushes a
+>   `CreditMessage` once `CREDIT_COALESCE_BYTES` has been consumed, and otherwise coalesces on a
+>   macrotask** -- deliberately `setTimeout`, NOT `requestAnimationFrame` as
+>   `handle-contracts.md` originally suggested, because rAF does not fire in a backgrounded tab
+>   and a torrent downloading in a background tab is the ordinary case here, not an edge one.
+>   That is a real (small) departure from the spec text, made knowingly and recorded in the
+>   source next to the line.
+> - Broker write side: `src/broker/port-sink.ts` coalesces `WriteAckMessage` against the same
+>   constant.
+>
+> `CREDIT_COALESCE_BYTES` therefore has three real consumers and is no longer dead code.
+> `handle-contracts.md` §Backpressure's "still not wired up on the renderer/preload side"
+> status block is corrected in the same PR as this entry.
 
 ### A50 — nothing keeps `handle-contracts.md`'s and `capability-api.md`'s file:line claims honest automatically **[STILL OPEN]**
 
@@ -2578,7 +2598,7 @@ agree on this — recorded here because d-0017 itself was otherwise undocumented
 `acknowledgeRollback`) is built — that PR should not have to guess at this granularity or
 re-derive the reasoning above.
 
-### A80 — nothing bounds the aggregate per-origin socket-memory ceiling, despite a comment claiming it is tracked here **[STILL OPEN]**
+### A80 — nothing bounds the aggregate per-origin socket-memory ceiling, despite a comment claiming it is tracked here **[RESOLVED 2026-09-06 — owner decision]**
 
 Found 2026-09-06, `ca:security-reviewer` pass on `stream/contracts-12-write-pump-protocol`
 (PR #79, the write-pump wire protocol).
@@ -2602,6 +2622,30 @@ raised here rather than decided unilaterally, per Rule 1.
 window (e.g. if a future capability needs its own credit scheme) should re-derive this number
 rather than assume it stayed flagged-but-unfixed by coincidence.
 
+
+> **Owner decision, 2026-09-06.** Neither of the two options this entry offered (accept 640 MiB,
+> or add a second aggregate quota) was taken. The owner's answer was a third one: *the app
+> declares the connection count it needs, the user sees that number when granting, and the
+> broker enforces what was declared.*
+>
+> The aggregate is therefore bounded by a DECLARATION rather than by a second runtime cap --
+> and, more to the point, by a number a person actually saw. The socket count is the memory
+> ceiling (every open socket pins `readWindowBytes + writeWindowBytes`), so bounding one bounds
+> the other.
+>
+> Shipped as `NetCapability.concurrentSockets` (PR #89, contracts) plus
+> `GrantLedger.socketAllowance` and its enforcement in `assertCapacity` (PR #92). An app that
+> declares nothing gets `LIMITS.defaultConcurrentSockets` (64, ~80 MiB) rather than the 512
+> ceiling: modest on purpose, so that anything genuinely needing the ceiling has to ask for it
+> in the manifest, where the prompt can show it. A declaration above the ceiling is clamped, not
+> rejected -- rejecting would make a future change to `LIMITS.concurrentSockets` a breaking
+> change for every already-published manifest. It follows `FsCapability.quotaBytes`, which had
+> already solved the identical problem for disk.
+>
+> **Still not bounded, stated as an omission rather than left to be rediscovered:** the aggregate
+> ACROSS origins. Ten apps at 64 sockets each is still 640 sockets. That was never in this
+> entry's scope, which is explicitly per-origin, and no part of this work claims otherwise.
+
 ### A81 — clean socket teardown depends on an unverified same-tick MessagePortMain delivery guarantee **[STILL OPEN]**
 
 Found 2026-09-06, adversarial-review pass on `stream/broker-23-write-pump` (PR #80).
@@ -2624,7 +2668,7 @@ A69, but from the closing side rather than the peer-FIN side.
 add a same-tick post-then-close regression test against a REAL `MessagePortMain` pair (not the
 fake), to convert this from an assumption into a verified guarantee one way or the other.
 
-### A82 — the capability model has no destination-port restriction or egress rate limit once `tcp.connect` is granted **[STILL OPEN — owner decision needed]**
+### A82 — the capability model has no destination-port restriction or egress rate limit once `tcp.connect` is granted **[RESOLVED 2026-09-06 — owner decision]**
 
 Found 2026-09-06, adversarial-review pass on `stream/broker-23-write-pump` (PR #80), surfaced
 per Rule 3 rather than smoothed over — this is pre-existing design from earlier sessions, not
@@ -2654,7 +2698,33 @@ than left to be rediscovered later.
 description of the capability model) makes a claim about what a network grant does and does not
 allow.
 
-### A84 — a non-draining peer can defeat `net.close()`/revocation, permanently orphaning a live socket **[HIGH — STILL OPEN, owner decision needed]**
+
+> **Owner decision, 2026-09-06: mitigate the port half, accept the rate half.** Of the three
+> mitigations this entry offered, the owner chose the port restriction, in its wider form.
+>
+> **Done (PR #91).** Ten ports are excluded from any BLANKET grant and reachable only when a
+> pattern names the exact port: 25/465/587 (mail), 53 (DNS), 6667/6697 (IRC), and 23/139/445/3389
+> (telnet, SMB, RDP). A range is treated as a blanket, not a naming -- `20-30` covers 25 without
+> anyone having read the number -- so the escape hatch is a literal `:25` an app author typed and
+> a person approved. `src/broker/policy/reserved-ports.ts`, enforced in `checkConnect`.
+>
+> **Deliberately NOT done: the egress rate limit.** It fights the flagship's entire purpose --
+> a torrent client exists to move bytes as fast as the swarm allows -- and no defensible number
+> exists to pick today. Recorded here as an accepted tradeoff, not an oversight.
+>
+> **What the prompt must still say, and this is the part that is not code.** The remaining
+> exposure is real: a granted `*:*` origin can still open many connections to many public hosts
+> and push data at line rate. This entry's own "Needed by" was the owner, before any product
+> surface makes a claim about what a network grant allows -- that obligation is unchanged and
+> now belongs to build step 4's prompt. `contracts/manifest.ts` already requires the plain-words
+> version ("connect to any computer on the internet"); the honest sentence has to survive into
+> the UI.
+>
+> **Scope: `tcp.connect` only.** `udp.send` shares the pattern grammar and wants the same rule,
+> but has no implementation to wire it into. Named in the module header and `src/broker/README.md`
+> so whoever builds `udp.send` inherits it.
+
+### A84 — a non-draining peer can defeat `net.close()`/revocation, permanently orphaning a live socket **[RESOLVED 2026-09-06 — owner decision]**
 
 Found 2026-09-06, an independent vulnerability-hunt pass on `stream/broker-23-write-pump`
 (PR #80). **Empirically confirmed against Node v24.11.1** (the pinned version), not just read
@@ -2730,6 +2800,63 @@ user-facing promise rather than an unreachable one, and this bug means that prom
 currently hold against an uncooperative remote peer.
 
 ---
+
+
+> **Owner decision, 2026-09-06: BOTH fix shapes, not one (PR #90).** The reasoning for taking
+> both is that either alone leaves a real gap -- without (a) the handle's `closed` still never
+> settles for a stalled peer, and without (b) the registry slot and the relay still wait on it.
+>
+> **(b), the thorough one.** `HandleRecord` gained an `unlink` hook that `closeTree()` fires
+> synchronously, in the same pass that removes the record from `handles`/`byGrant`, before any
+> destroy is awaited. `socket-relay.ts` subscribes to it via `FailableTcpSocket.onUnlink`. This
+> finishes a design that was already stated rather than adding a new one -- `closeTree`'s own doc
+> already promised "the unlink pass and the promise rejections are SYNCHRONOUS, before any
+> destroy callback runs. That ordering is what makes revocation immediate"; the relay simply was
+> not subscribed to it.
+>
+> **The hook fires for every reason; the relay acts on only some. This distinction was NOT in
+> the first implementation, and review caught it losing data.** `stop()` cancels the read
+> stream, and cancelling the readable half of a `Duplex.toWeb` destroys the whole socket,
+> discarding its write queue. So tearing down at unlink on a reason that FLUSHES
+> (`'closed'`/`'sessionEnded'`, where `destroySocket` calls `socket.end()`) truncates the app's
+> own final bytes. Measured against a real paused peer: 8 MiB queued, 8 MiB lost, where the
+> unmodified path delivered all 11 MiB. Those reasons now settle through `closed` instead --
+> later than unlink, but complete, and fix (a) is what guarantees they settle at all.
+> `'revoked'`/`'aborted'`/`'failed'` destroy the socket regardless, so they still tear down
+> immediately, which is what this entry and A70 actually needed.
+>
+> The listener therefore receives the `CloseReason`, not only the error code: `'sessionEnded'`
+> and `'revoked'` both carry code `'revoked'` and fall on opposite sides of that branch, so the
+> code alone cannot decide it.
+>
+> **(a), the smaller one.** `destroySocket` now races `socket.end(cb)` against
+> `CLOSE_DRAIN_TIMEOUT_MS` (30s, an AI-chosen value matched to `DIAL_TIMEOUT_MS`; nothing in the
+> corpus specifies one) and calls `socket.destroy()` if the deadline wins.
+>
+> **The wire did not change, only the timing.** The hook passes `undefined` for an app-initiated
+> close and the real code otherwise, which is exactly what `socket.closed` already distinguished
+> by resolving vs. rejecting.
+>
+> **Verified as the finding asked, not by reading.** The reproduction is now a test:
+> `src/broker/socket-drain.test.ts` dials a real local server that accepts and then `pause()`s,
+> queues past 1 MiB of `writableLength`, and asserts `destroySocket` settles and the socket is
+> destroyed. The same file also pins the truncation hazard above as a matched pair
+> (cancel-then-close loses bytes, close-alone does not), so the branch that avoids it cannot be
+> simplified away without a test going red.
+>
+> **This closes A70 as a side effect** -- see that entry, including what it does *not* claim.
+>
+> **This increases exposure to A81**, and that is worth stating rather than leaving to be found:
+> `stop()` posts a terminal message and then closes the port in the same tick, and it now runs on
+> a new and more common path. If `MessagePortMain` does not deliver a same-tick posted-then-closed
+> message, more closes than before degrade to the renderer's silence timer. A81 is unchanged and
+> still wants a real `MessagePortMain` pair to test against.
+>
+> **The coordination note in this entry still stands.** Fix (b) makes the record-already-gone
+> state reachable on demand rather than by race, which is what the `socket.fail()`-throws-after-
+> reap crash depended on -- that crash was already fixed on `main` (`socket-relay.ts`'s
+> `failSocket`/`abortSocket` guards), and those guards are what keep it closed under the new
+> path. Confirmed present, not assumed.
 
 ### A69 — `netConnect`'s missing `allowHalfOpen` is real, but its "one-line fix" breaks `Duplex.toWeb`'s EOF detection entirely **[RESEARCH — investigated, no safe fix found yet]**
 
@@ -2811,7 +2938,7 @@ dying) once something writes after it. The deeper fix this entry describes (a cu
 
 ---
 
-### A70 — `net.setNoDelay`/`net.setKeepAlive`/`net.close` consult only the connect-time registry, never a live re-check against the grant ledger **[STILL OPEN]**
+### A70 — `net.setNoDelay`/`net.setKeepAlive`/`net.close` consult only the connect-time registry, never a live re-check against the grant ledger **[RESOLVED 2026-09-06]**
 
 Found 2026-09-06, `stream/broker-23-write-pump`, during an adversarial pass over this same
 branch's diff.
@@ -2852,6 +2979,27 @@ as closed by any future security review.
 > for what re-measuring correctly also surfaced.
 
 ---
+
+
+> **Resolved 2026-09-06 (PR #90), and NOT by the fix this entry proposed.** Neither named option
+> was taken: no re-check was added to `ipc.ts`, and the window was not accepted either. Fixing
+> A84 closed it structurally instead.
+>
+> The window this entry describes is bounded by "how fast `closed` settles", and A84's fix stops
+> teardown depending on `closed` at all: `socket-relay.ts` now runs `cleanup()` -- which calls
+> `registry.remove(origin, socket.id)` -- from the unlink hook, in the same synchronous pass that
+> removes the handle from `handles`/`byGrant`. So by the time revocation has returned, the
+> `PortRegistry` entry all three control methods look up is already gone, and all three degrade
+> to their existing silent no-op for an unknown id.
+>
+> **What this does NOT claim.** `PortRegistry` still has no concept of a grant, and these three
+> methods still do not consult `HandleTable`. The invariant in `handles.ts`'s header ("every
+> operation on a handle goes through `lookup` or `run`") is still literally untrue of them. What
+> changed is that the registry can no longer answer for a handle the tables have released, which
+> is what made the gap reachable. If a future change reintroduces a path that registers a socket
+> without unlinking it, this reopens -- so the assertion lives in a test
+> (`socket-relay.test.ts`, "releases the registry slot the moment the handle is unlinked"),
+> not only in this paragraph.
 
 ### A79 — fixing A64 correctly reveals FIVE more files already over the Rule 1 budget on `main`, not just the two known ones **[RESOLVED 2026-09-06]**
 
