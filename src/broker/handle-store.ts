@@ -115,7 +115,7 @@ export interface HandleRecord {
   readonly resolveClosed: () => void
   readonly rejectClosed: (error: OrivonError) => void
   /** Set through HandleTable.onUnlink, fired once by closeTree below. */
-  unlink: ((code?: OrivonErrorCode) => void) | undefined
+  unlink: ((reason: CloseReason, code?: OrivonErrorCode) => void) | undefined
 }
 
 /**
@@ -369,7 +369,7 @@ export class OriginTable {
       record.unlink = undefined
       if (unlink !== undefined) {
         try {
-          unlink(reason === 'closed' ? undefined : error.code)
+          unlink(reason, reason === 'closed' ? undefined : error.code)
         } catch (caught) {
           onFault({ origin: record.entry.origin, handleId: id, error: caught })
         }

@@ -275,7 +275,7 @@ describe('createSocketRelay -- unlink (open-questions.md A84/A70)', () => {
     createSocketRelay({ origin: ORIGIN, socket, port, registry, readWindowBytes: 1_000, writeWindowBytes: 1_000 })
     expect(registeredEntry(registry)).toBeDefined()
 
-    unlink()
+    unlink('revoked', 'revoked')
 
     // `closed` is deliberately left pending: A84's non-draining peer holds it
     // open forever, and before this hook that pinned the slot with it.
@@ -288,7 +288,7 @@ describe('createSocketRelay -- unlink (open-questions.md A84/A70)', () => {
     const registry = createPortRegistry<RegisteredSocket>()
 
     createSocketRelay({ origin: ORIGIN, socket, port, registry, readWindowBytes: 1_000, writeWindowBytes: 1_000 })
-    unlink()
+    unlink('revoked', 'revoked')
 
     expect(port.isClosed()).toBe(true)
   })
@@ -299,22 +299,53 @@ describe('createSocketRelay -- unlink (open-questions.md A84/A70)', () => {
     const registry = createPortRegistry<RegisteredSocket>()
 
     createSocketRelay({ origin: ORIGIN, socket, port, registry, readWindowBytes: 1_000, writeWindowBytes: 1_000 })
-    unlink('revoked')
+    unlink('revoked', 'revoked')
     await tick()
 
     expect(port.sent).toContainEqual({ kind: 'end', handleId: 'handle-1', code: 'revoked' })
   })
 
-  it('an app-initiated close still reads as a clean end, with no code', async () => {
+  it('does NOT tear down on a clean close -- that would truncate the app\'s queued bytes', async () => {
     const { socket, unlink } = fakeTcpSocket(new ReadableStream())
     const port = fakePort()
     const registry = createPortRegistry<RegisteredSocket>()
 
     createSocketRelay({ origin: ORIGIN, socket, port, registry, readWindowBytes: 1_000, writeWindowBytes: 1_000 })
-    unlink(undefined)
+    unlink('closed', undefined)
     await tick()
 
-    expect(port.sent).toContainEqual({ kind: 'end', handleId: 'handle-1' })
+    // stop() cancels the reader, and cancelling a Duplex.toWeb readable
+    // destroys the whole socket -- discarding whatever destroySocket's end()
+    // was about to flush. Measured: 8 MiB queued, 8 MiB lost. The clean close
+    // settles through `closed` instead, which the drain deadline guarantees.
+    expect(registeredEntry(registry)).toBeDefined()
+    expect(port.isClosed()).toBe(false)
+  })
+
+  it('a session teardown is a flushing reason too, and is left alone the same way', async () => {
+    const { socket, unlink } = fakeTcpSocket(new ReadableStream())
+    const port = fakePort()
+    const registry = createPortRegistry<RegisteredSocket>()
+
+    createSocketRelay({ origin: ORIGIN, socket, port, registry, readWindowBytes: 1_000, writeWindowBytes: 1_000 })
+    // destroySocket('sessionEnded') calls end(), not resetAndDestroy -- so it
+    // flushes, and its CODE is 'revoked', which is exactly why the branch reads
+    // the REASON rather than the code.
+    unlink('sessionEnded', 'revoked')
+    await tick()
+
+    expect(registeredEntry(registry)).toBeDefined()
+  })
+
+  it('still tears down immediately for an abort, which destroys the socket anyway', async () => {
+    const { socket, unlink } = fakeTcpSocket(new ReadableStream())
+    const port = fakePort()
+    const registry = createPortRegistry<RegisteredSocket>()
+
+    createSocketRelay({ origin: ORIGIN, socket, port, registry, readWindowBytes: 1_000, writeWindowBytes: 1_000 })
+    unlink('aborted', 'reset')
+
+    expect(registeredEntry(registry)).toBeUndefined()
   })
 
   it('is idempotent against `closed` settling afterwards', async () => {
@@ -323,7 +354,7 @@ describe('createSocketRelay -- unlink (open-questions.md A84/A70)', () => {
     const registry = createPortRegistry<RegisteredSocket>()
 
     createSocketRelay({ origin: ORIGIN, socket, port, registry, readWindowBytes: 1_000, writeWindowBytes: 1_000 })
-    unlink('revoked')
+    unlink('revoked', 'revoked')
     settleClosed()
     await tick()
 

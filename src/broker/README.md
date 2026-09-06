@@ -61,6 +61,27 @@ so `closed` and the handle count are released even in the pathological case.
 Either alone leaves a real gap: without the deadline `closed` still never
 settles, and without the hook the registry slot still waits on it.
 
+**The hook fires for every reason, but the relay acts on only some of them, and
+this is not a detail.** The first version of this fix tore down unconditionally,
+and it lost data. `stop()` cancels the read stream, and cancelling the readable
+half of a `Duplex.toWeb` DESTROYS the whole socket -- dropping everything still
+in its write queue. Measured against a real paused peer: 8 MiB queued, 8 MiB
+lost, where the unmodified path delivered all of it. So:
+
+- `'closed'` and `'sessionEnded'` FLUSH (`destroySocket` calls `socket.end()`).
+  The relay must not touch the socket at unlink; these settle through `closed`,
+  which the drain deadline now guarantees always happens. Later than unlink, but
+  the app's final bytes actually arrive.
+- `'revoked'`, `'aborted'` and `'failed'` DESTROY the socket regardless
+  (`resetAndDestroy()`/`destroy()`). Nothing to preserve, so immediate teardown
+  is correct and is the entire point of the fix.
+
+The listener therefore receives the `CloseReason`, not only the error code --
+because the code cannot tell these apart: `'sessionEnded'` and `'revoked'` both
+carry code `'revoked'` and sit on opposite sides of the branch. Both cases are
+pinned by tests (`socket-relay.test.ts`, and the real-socket truncation pair in
+`socket-drain.test.ts`) so the branch cannot be simplified away silently.
+
 **It also shuts A70's window.** `net.close`/`setNoDelay`/`setKeepAlive`
 dispatch through `PortRegistry`, which has no concept of a grant, so they could
 still reach a socket whose grant had just been revoked. The registry slot is

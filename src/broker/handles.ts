@@ -269,7 +269,7 @@ export class HandleTable {
    * `closed` promise already carries the real one. See README.md's design
    * notes for why this hook exists.
    */
-  onUnlink (origin: string, handleId: string, listener: (code?: OrivonErrorCode) => void): void {
+  onUnlink (origin: string, handleId: string, listener: (reason: CloseReason, code?: OrivonErrorCode) => void): void {
     const record = this.#registry.existing(this.#key(origin))?.handles.get(handleId)
     if (record !== undefined) record.unlink = listener
   }
