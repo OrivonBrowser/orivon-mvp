@@ -124,6 +124,22 @@ Mark anything that must not leave the team draft as `(Keep private)`.
   raises in memory unconditionally and first, and a write failure is reported instead of
   swallowed. Worth remembering the shape of this one -- an obviously-reasonable-sounding fix that
   was actually backwards, caught only because a second pass went looking for exactly that.
+- 2026-09-06: **`orivon.net.connect` has a working write direction and is reachable from a real
+  page for the first time** -- nine PRs merged (#79-#87), the byte pump's write half, the
+  `window.orivon.net` surface, and the e2e test proving a real grant round-trips through a real
+  echo server. Three independent review passes (plus two the conductor ran personally on the
+  code itself, not just agent reports) found two CRITICAL bugs before merge: any idle-but-
+  healthy socket was silently killed after 15 seconds by a timer scoped to the wrong condition,
+  and `socket.close()` could hang a pending write forever instead of resolving. Also caught: an
+  unconditional main-process crash reachable by any page with any grant (a refactor dropped a
+  stop-before-cleanup ordering), and a DoS where the write window bounded bytes but not message
+  count. All fixed with real red-then-green tests, not patched over.
+- 2026-09-06: A deeper root cause than filed: the write-abort RST fix (B-F6) turned out not to be
+  about `writer.abort()` at all -- the old code was racing two different teardown paths via the
+  wrong internal reason code, and `writer.abort()` never got a chance to matter because the
+  socket was already destroyed by the time it ran. The filed finding pointed at the right
+  symptom and the wrong cause; worth remembering that "the fix this finding names" and "the fix
+  that's actually needed" can diverge even when the finding itself is correct.
 
 ### In my head
 - 2026-09-03: A guard nobody can tell is broken is worse than no guard -- seven hookify rules
@@ -143,5 +159,16 @@ Mark anything that must not leave the team draft as `(Keep private)`.
   nobody re-ran: a status header, a comment, a pasted test count, a "filed as a question" pointer to
   a question that was never filed. Worth asking whether the answer is more review or fewer
   unverifiable claims.
+
+- 2026-09-06: First run at real scale -- eleven agents in parallel plus a live-relayed second
+  round once two of them surfaced findings the first pass missed. The two CRITICALs would have
+  shipped with only one review pass; they only surfaced because a second, independently-run
+  pass looked at the same code with different questions in mind, and a third caught a real
+  root-cause underneath a finding the second pass had already correctly named but not fully
+  explained. None of the three passes was redundant with either of the others. Also: an
+  agent's confident override of a review finding ("this is correct design, not a bug") was
+  right, but only checking the actual guard code myself made that trustworthy rather than
+  assumed -- the same lesson as 2026-09-03's, arrived at from the opposite direction this time
+  (trusting a pushback rather than a claim).
 
 ### Non-repo
