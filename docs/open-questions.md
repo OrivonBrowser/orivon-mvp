@@ -2601,3 +2601,55 @@ raised here rather than decided unilaterally, per Rule 1.
 **Needed by:** whoever next revisits `LIMITS.concurrentSockets` or adds a third per-socket
 window (e.g. if a future capability needs its own credit scheme) should re-derive this number
 rather than assume it stayed flagged-but-unfixed by coincidence.
+
+### A81 — clean socket teardown depends on an unverified same-tick MessagePortMain delivery guarantee **[STILL OPEN]**
+
+Found 2026-09-06, adversarial-review pass on `stream/broker-23-write-pump` (PR #80).
+
+`src/broker/socket-relay.ts`'s teardown path does `pump.stop()` (which `postMessage`s the
+terminal `end` message) immediately followed by `cleanup()` -> `port.close()`, in the same
+synchronous tick. Every "clean" socket close in this stack's design depends on
+`MessagePortMain` actually delivering a message posted immediately before `close()` is called
+on the same port — nobody has verified this against the real Electron implementation; every
+existing test uses a fake `PortLike` whose `close()` is a no-op, so the fake cannot fail this
+way even if the real one does.
+
+**Still open:** if the real `MessagePortMain` ever drops a same-tick posted-then-closed
+message (plausible if delivery is asynchronous/queued rather than synchronous), every "clean"
+teardown in this design silently degrades to the renderer's 15-second silence timer reporting
+`'timeout'` instead of the real terminal reason — the same wrong-error-code failure mode as
+A69, but from the closing side rather than the peer-FIN side.
+
+**Needed by:** whoever next has a real Electron test harness in hand for this subsystem should
+add a same-tick post-then-close regression test against a REAL `MessagePortMain` pair (not the
+fake), to convert this from an assumption into a verified guarantee one way or the other.
+
+### A82 — the capability model has no destination-port restriction or egress rate limit once `tcp.connect` is granted **[STILL OPEN — owner decision needed]**
+
+Found 2026-09-06, adversarial-review pass on `stream/broker-23-write-pump` (PR #80), surfaced
+per Rule 3 rather than smoothed over — this is pre-existing design from earlier sessions, not
+introduced by this PR, but PR #80 is what "arms" it: the write direction is what turns an
+already-accepted READ capability into a genuine outbound-traffic-generation primitive.
+
+`checkConnect`/`policy/address.ts` correctly scope `tcp.connect` to public unicast addresses
+only (loopback, private, link-local and metadata addresses are all blocked — no SSRF-to-LAN).
+But within that already-correct scope: a grant of `*:*` is possible and the flagship app
+declares one; nothing restricts which DESTINATION PORT a granted origin may dial (port 25,
+6667, 53 are all reachable identically to 443); and nothing in `LIMITS` bounds egress byte-rate
+or connection-churn per origin. Combined with 512 concurrent sockets and now a working write
+direction, a single granted origin is a real outbound traffic generator from the user's own IP
+address — e.g. usable as an open relay for the specific things port restrictions and rate
+limits conventionally exist to prevent.
+
+**Still open, genuinely the owner's call, not decided here:** whether this is an acceptable MVP
+risk (the grant is explicit, user-approved, and per-origin — not automatically exploitable
+without a user first choosing to grant broad network access to a specific app) or whether it
+needs a mitigation before this stack (or a near-term follow-up) ships — e.g. a documented
+recommended-grant-scope UI nudge, a default egress rate limit, or a port-range restriction
+option surfaced at grant time. Not blocking the current merge (this is pre-existing scope,
+already implicitly accepted when `tcp.connect` was designed), but flagged explicitly rather
+than left to be rediscovered later.
+
+**Needed by:** the owner, before any product surface (a permission-prompt UI, a marketing
+description of the capability model) makes a claim about what a network grant does and does not
+allow.
