@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   isCreditMessage, isWriteAbortMessage, isWriteEndMessage, isWriteMessage, parseRendererToBrokerMessage
 } from './port-messages.js'
+import { LIMITS } from '../contracts/index.js'
 
 const HANDLE = 'handle-1'
 
@@ -37,9 +38,14 @@ describe('isWriteMessage', () => {
     ['non-string handleId', { kind: 'write', handleId: 1, chunk: new Uint8Array() }],
     ['chunk not a Uint8Array (plain array)', { kind: 'write', handleId: HANDLE, chunk: [1, 2] }],
     ['chunk not a Uint8Array (raw ArrayBuffer)', { kind: 'write', handleId: HANDLE, chunk: new ArrayBuffer(4) }],
-    ['missing chunk', { kind: 'write', handleId: HANDLE }]
+    ['missing chunk', { kind: 'write', handleId: HANDLE }],
+    ['chunk larger than the write window', { kind: 'write', handleId: HANDLE, chunk: new Uint8Array(LIMITS.writeWindowBytes + 1) }]
   ])('rejects %s', (_name, value) => {
     expect(isWriteMessage(value)).toBe(false)
+  })
+
+  it('accepts a chunk exactly at the write-window boundary', () => {
+    expect(isWriteMessage({ kind: 'write', handleId: HANDLE, chunk: new Uint8Array(LIMITS.writeWindowBytes) })).toBe(true)
   })
 })
 

@@ -1,6 +1,8 @@
 import type { OrivonError, OrivonErrorCode } from '../contracts/errors.js'
 import type { BrokerToRendererMessage } from '../contracts/ipc.js'
 import { CREDIT_COALESCE_BYTES, WRITE_SILENCE_TIMEOUT_MS } from '../contracts/ipc.js'
+import { LIMITS } from '../contracts/limits.js'
+import { toOrivonError } from './orivon-error.js'
 
 // The isolated-world state machine for ONE socket's dedicated port -- the
 // preload-side counterpart of ../broker/port-pump.ts (read) and
@@ -65,11 +67,6 @@ export interface SocketPort {
   dispose: () => void
 }
 
-function toOrivonError (code: OrivonErrorCode, platformCode?: string): OrivonError {
-  const base = { name: 'OrivonError', message: `socket failed: ${code}`, code }
-  return platformCode === undefined ? base : { ...base, platformCode }
-}
-
 export function createSocketPort (options: SocketPortOptions): SocketPort {
   const { handleId, port, silenceTimeoutMs = WRITE_SILENCE_TIMEOUT_MS } = options
 
@@ -90,6 +87,11 @@ export function createSocketPort (options: SocketPortOptions): SocketPort {
   let resolveClosed: () => void = () => {}
   let rejectClosed: (error: OrivonError) => void = () => {}
   const closed = new Promise<void>((resolve, reject) => { resolveClosed = resolve; rejectClosed = reject })
+  // Handled on THIS reference only, so an app that never touches `closed`
+  // itself doesn't produce a Node/V8 unhandled-rejection warning on every
+  // abrupt close (P-F9). main-world-socket.ts derives a fresh promise off
+  // this one for the page, so a real rejection is still observable there.
+  closed.catch(() => {})
 
   function tryResolveClosed (): void {
     if (closedSettled || !readTerminal || !writeTerminal) return
@@ -109,8 +111,18 @@ export function createSocketPort (options: SocketPortOptions): SocketPort {
     sinceLastCredit = 0
   }
 
+  function clearSilenceTimer (): void {
+    if (silenceTimer !== undefined) { clearTimeout(silenceTimer); silenceTimer = undefined }
+  }
+
+  // Armed only while a write is actually outstanding (P-F1). The broker's
+  // own heartbeat (port-sink.ts's armHeartbeat) is a no-op on an idle
+  // socket, so resetting this on every inbound message -- including a
+  // 'data' chunk with no write pending -- would fire 'timeout' on an
+  // ordinary quiet spell: a choked BitTorrent peer's own keepalive is 120s,
+  // well past WRITE_SILENCE_TIMEOUT_MS.
   function resetSilenceTimer (): void {
-    if (silenceTimer !== undefined) clearTimeout(silenceTimer)
+    clearSilenceTimer()
     if (disposed) return
     silenceTimer = setTimeout(() => {
       const error = toOrivonError('timeout')
@@ -124,7 +136,6 @@ export function createSocketPort (options: SocketPortOptions): SocketPort {
   port.onMessage((raw) => {
     const message = raw as BrokerToRendererMessage
     if (message == null || typeof message !== 'object' || message.handleId !== handleId) return
-    resetSilenceTimer()
     switch (message.kind) {
       case 'data':
         dataCb?.(message.chunk)
@@ -139,13 +150,19 @@ export function createSocketPort (options: SocketPortOptions): SocketPort {
         if (pendingWrite !== undefined) {
           pendingWrite.acceptedSoFar += message.bytesAccepted
           if (pendingWrite.acceptedSoFar >= pendingWrite.length) {
+            clearSilenceTimer()
             pendingWrite.resolve()
             pendingWrite = undefined
+          } else {
+            resetSilenceTimer() // a heartbeat (possibly zero-byte) on a still-outstanding write
           }
         }
         break
       case 'write-failed': {
-        const error = toOrivonError(message.code, message.platformCode)
+        // exactOptionalPropertyTypes: an explicit `platformCode: undefined`
+        // is not the same as omitting the key.
+        const error = toOrivonError(message.code, message.platformCode === undefined ? {} : { platformCode: message.platformCode })
+        clearSilenceTimer()
         pendingWrite?.reject(error)
         pendingWrite = undefined
         fatalCb?.(message.code)
@@ -155,10 +172,24 @@ export function createSocketPort (options: SocketPortOptions): SocketPort {
     }
   })
 
+  // One outstanding WriteMessage at a time, matching the single-pendingWrite
+  // state machine (P-F8 guards it explicitly rather than only trusting the
+  // main-world WritableStream's own re-entrancy guarantee -- see the header).
+  function sendOneWrite (chunk: Uint8Array): Promise<void> {
+    if (disposed) return Promise.reject(toOrivonError('closed'))
+    if (pendingWrite !== undefined) return Promise.reject(toOrivonError('invalid', { message: 'a write is already pending on this socket' }))
+    return new Promise<void>((resolve, reject) => {
+      pendingWrite = { length: chunk.byteLength, acceptedSoFar: 0, resolve, reject }
+      resetSilenceTimer()
+      port.postMessage({ kind: 'write', handleId, chunk })
+    })
+  }
+
   return {
     onData (cb) { dataCb = cb },
     onReadEnd (cb) { readEndCb = cb },
     reportConsumed (bytesConsumed) {
+      if (!Number.isFinite(bytesConsumed) || bytesConsumed < 0) return // P-F13: never credit a malformed report
       sinceLastCredit += bytesConsumed
       if (sinceLastCredit >= CREDIT_COALESCE_BYTES) {
         flushCredit()
@@ -173,12 +204,22 @@ export function createSocketPort (options: SocketPortOptions): SocketPort {
         setTimeout(flushCredit, 0)
       }
     },
-    write (chunk) {
-      return new Promise<void>((resolve, reject) => {
-        pendingWrite = { length: chunk.byteLength, acceptedSoFar: 0, resolve, reject }
-        resetSilenceTimer()
-        port.postMessage({ kind: 'write', handleId, chunk })
-      })
+    // d-0021: a chunk over LIMITS.writeWindowBytes kills the connection at
+    // the broker outright, so it is split into sequential pieces here --
+    // each one fully accepted before the next is sent, since sendOneWrite
+    // (and the single-pendingWrite state machine underneath it) only ever
+    // tracks one outstanding WriteMessage.
+    async write (chunk) {
+      if (chunk.byteLength <= LIMITS.writeWindowBytes) {
+        await sendOneWrite(chunk)
+        return
+      }
+      let offset = 0
+      while (offset < chunk.byteLength) {
+        const end = Math.min(offset + LIMITS.writeWindowBytes, chunk.byteLength)
+        await sendOneWrite(chunk.subarray(offset, end))
+        offset = end
+      }
     },
     async endWrite () {
       port.postMessage({ kind: 'write-end', handleId })
@@ -187,6 +228,7 @@ export function createSocketPort (options: SocketPortOptions): SocketPort {
     },
     abortWrite () {
       port.postMessage({ kind: 'write-abort', handleId })
+      clearSilenceTimer()
       const error = toOrivonError('reset')
       pendingWrite?.reject(error)
       pendingWrite = undefined
@@ -196,8 +238,18 @@ export function createSocketPort (options: SocketPortOptions): SocketPort {
     closed,
     dispose () {
       disposed = true
-      if (silenceTimer !== undefined) clearTimeout(silenceTimer)
+      clearSilenceTimer()
+      // P-F2: an app-initiated close resolves `closed` (handle-contracts.md's
+      // close table) rather than leaving it, and any write still in flight,
+      // hanging forever now that no ack or timeout can ever reach it.
+      if (pendingWrite !== undefined) {
+        pendingWrite.reject(toOrivonError('closed'))
+        pendingWrite = undefined
+      }
       port.close()
+      readTerminal = true
+      writeTerminal = true
+      tryResolveClosed()
     }
   }
 }
