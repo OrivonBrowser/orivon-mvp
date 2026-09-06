@@ -94,9 +94,65 @@ describe('createSocketBridge -- a waiter that is never delivered', () => {
       const bridge = createSocketBridge({ ipcRenderer, portChannel: 'orivon:port', wrapPort, waitTimeoutMs: 100 })
 
       const waiting = bridge.waitForPort(HANDLE)
-      const assertion = expect(waiting).rejects.toThrow(/handle-1/)
+      const assertion = expect(waiting).rejects.toMatchObject({ name: 'OrivonError', code: 'timeout' })
       await vi.advanceTimersByTimeAsync(101)
       await assertion
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('P-F5: the timeout rejection is a plain OrivonError-shaped object, not a raw Error, and never leaks the handle id', async () => {
+    vi.useFakeTimers()
+    try {
+      const ipcRenderer = fakeIpcRenderer()
+      const { wrapPort } = fakeWrapPort()
+      const bridge = createSocketBridge({ ipcRenderer, portChannel: 'orivon:port', wrapPort, waitTimeoutMs: 100 })
+
+      const waiting = bridge.waitForPort(HANDLE)
+      waiting.catch(() => {})
+      await vi.advanceTimersByTimeAsync(101)
+
+      let reason: unknown
+      try { await waiting } catch (error) { reason = error }
+
+      expect(reason).not.toBeInstanceOf(Error)
+      expect(reason).toMatchObject({ name: 'OrivonError', code: 'timeout' })
+      expect(JSON.stringify(reason)).not.toContain(HANDLE)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
+describe('createSocketBridge -- P-F12: a collision on handleId is refused, not silently clobbered', () => {
+  it('a second waitForPort for the same handleId, while the first is still pending, rejects immediately with internal', async () => {
+    const ipcRenderer = fakeIpcRenderer()
+    const { wrapPort } = fakeWrapPort()
+    const bridge = createSocketBridge({ ipcRenderer, portChannel: 'orivon:port', wrapPort, waitTimeoutMs: 10_000 })
+
+    const first = bridge.waitForPort(HANDLE)
+    const second = bridge.waitForPort(HANDLE)
+
+    await expect(second).rejects.toMatchObject({ code: 'internal' })
+
+    ipcRenderer.emit({ handleId: HANDLE })
+    const port = await first
+    expect(port).toMatchObject({ raw: 'raw-port' })
+  })
+
+  it('clears the first waiter\'s timer once its port is delivered -- no dangling timer survives', async () => {
+    vi.useFakeTimers()
+    try {
+      const ipcRenderer = fakeIpcRenderer()
+      const { wrapPort } = fakeWrapPort()
+      const bridge = createSocketBridge({ ipcRenderer, portChannel: 'orivon:port', wrapPort, waitTimeoutMs: 100 })
+
+      const waiting = bridge.waitForPort(HANDLE)
+      ipcRenderer.emit({ handleId: HANDLE })
+      await waiting
+
+      expect(vi.getTimerCount()).toBe(0)
     } finally {
       vi.useRealTimers()
     }
