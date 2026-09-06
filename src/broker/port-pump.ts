@@ -2,49 +2,12 @@ import type { OrivonErrorCode } from '../contracts/errors.js'
 import type { CreditMessage, DataMessage, StreamEndMessage } from '../contracts/ipc.js'
 
 // The READ half of the credit-window relay contracts/ipc.ts and
-// handle-contracts.md's "Backpressure -- a credit window" specify: bytes
-// flowing broker -> renderer over a socket's dedicated MessageChannelMain
-// port. Pure and Electron-free on purpose, the same way ./policy/ is --
-// `readable` is already a real WHATWG ReadableStream by the time this file
-// sees it (Duplex.toWeb, ./ipc.ts's dialOne), and `send` is injected, so
-// this whole module runs under plain Node/vitest with no MessagePortMain at
-// all. ./ipc.ts is where a real port's `postMessage`/`on('message')` get
-// wired to `send`/`handleCredit`.
-//
-// THE WRITE HALF (an app writing bytes out) IS DELIBERATELY NOT HERE. There
-// is no wire message for it anywhere in contracts/ipc.ts -- handle-
-// contracts.md's Backpressure section only specifies the read side in
-// detail, and capability-api.md's Throughput section and ADR-0008 both stop
-// at the same point. Inventing one here would be a contracts decision made
-// from inside a broker-owned PR, which the write half's own review flagged
-// and filed as an open question rather than deciding silently.
-//
-// WHAT "STOPS READING THE UNDERLYING OS SOCKET" ACTUALLY MEANS HERE: this
-// pump never calls reader.read() again once `credit` reaches zero or below.
-// It does not keep draining `readable` into a local buffer while waiting for
-// credit -- that would just move the unbounded-memory problem T11b names
-// from the renderer to here, which is exactly what the credit window exists
-// to prevent (handle-contracts.md's own words for it).
-//
-// CREDIT IS BOUNDED BY THE WINDOW, NOT TRUSTED AS REPORTED. `handleCredit`
-// clamps the running budget to `initialCredit`, because that is what
-// contracts/ipc.ts actually specifies: "the broker sends at most
-// LIMITS.readWindowBytes ahead of what has been acknowledged". Credit is a
-// remaining-budget counter, so `sent - acknowledged <= window` is the same
-// statement as `credit <= initialCredit`.
-//
-// This file previously trusted the reported figure, on the reasoning that an
-// over-reporting renderer only inflates its own queue in its own process.
-// That reasoning was wrong in one direction: a CreditMessage carrying
-// Infinity made `credit > 0` permanently true, so the pump never stopped
-// reading the OS socket -- defeating A2 above outright, and with it the TCP
-// backpressure to the remote peer that is the whole point. Whatever the
-// renderer's own queue does, the broker must not be talked out of the window
-// by the party the window exists to bound.
-//
-// Non-finite and negative figures are rejected rather than applied: NaN
-// poisoned the counter permanently (every later comparison false), and a
-// negative value drove it below zero with no way back.
+// handle-contracts.md's "Backpressure" specify. Pure and Electron-free, like
+// ./policy/ -- `readable` is already a real WHATWG ReadableStream by the time
+// this file sees it (Duplex.toWeb, ./ipc.ts's dialOne), and `send` is
+// injected, so this module runs under plain Node/vitest with no
+// MessagePortMain at all. See README.md, Design notes, for the write-half
+// boundary and the credit-trust history.
 
 export interface PortPumpOptions {
   readonly handleId: string
@@ -109,6 +72,11 @@ export function createPortPump (options: PortPumpOptions): PortPump {
     if (running || stopped) return
     running = true
     try {
+      // Never drains ahead of credit: this loop simply stops calling
+      // reader.read() once credit reaches zero, rather than buffering
+      // `readable` locally while waiting -- so the OS socket itself
+      // backpressures (draining ahead would move T11b's unbounded-memory
+      // problem from the renderer to here instead of preventing it).
       while (!stopped && credit > 0) {
         const { value, done } = await reader.read()
         if (stopped) break
@@ -145,6 +113,11 @@ export function createPortPump (options: PortPumpOptions): PortPump {
     handleCredit (message) {
       if (stopped || message.handleId !== handleId) return
       const { bytesConsumed } = message
+      // Non-finite or negative figures are ignored outright, and the total is
+      // clamped to initialCredit: a self-reported delta must never push
+      // credit past the window or stop it reaching zero -- either would
+      // defeat the backpressure this pump exists to enforce (README.md,
+      // Design notes).
       if (!Number.isFinite(bytesConsumed) || bytesConsumed < 0) return
       credit = Math.min(credit + bytesConsumed, initialCredit)
       void pumpLoop()
