@@ -40,8 +40,14 @@ export const LIMITS = {
    * readWindowBytes already commits concurrentSockets * readWindowBytes =
    * 512 MiB of worst-case per-origin exposure, and doubling that for a
    * write window nobody asked for would be an unforced increase to an
-   * already-unbounded aggregate (flagged, not fixed, in
-   * open-questions.md).
+   * already-unbounded aggregate (open-questions.md A80: no check enforces
+   * a combined cap across an origin's concurrently-open sockets).
+   *
+   * This is also the hard ceiling on a SINGLE WriteMessage.chunk (owner
+   * decision d-0021, see ./ipc.js's WriteMessage): a caller with a larger
+   * buffer splits it into pieces this size or smaller before posting, and
+   * an oversized chunk is a protocol error the broker may reject outright
+   * rather than split, truncate, or buffer itself.
    */
   writeWindowBytes: 256 * 1024
 } as const

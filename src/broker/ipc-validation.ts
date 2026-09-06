@@ -58,7 +58,8 @@ export function isNetSetKeepAliveParams (payload: unknown): payload is NetSetKee
   if (typeof payload !== 'object' || payload === null) return false
   const { id, on, initialDelayMs } = payload as { id?: unknown, on?: unknown, initialDelayMs?: unknown }
   return typeof id === 'string' && typeof on === 'boolean' &&
-    (initialDelayMs === undefined || typeof initialDelayMs === 'number')
+    (initialDelayMs === undefined ||
+      (typeof initialDelayMs === 'number' && Number.isInteger(initialDelayMs) && initialDelayMs >= 0))
 }
 
 export function isNetCloseParams (payload: unknown): payload is NetCloseParams {

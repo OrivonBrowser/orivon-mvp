@@ -7,18 +7,12 @@ import { createPortSink } from './port-sink.js'
 import { parseRendererToBrokerMessage } from './port-messages.js'
 import { errnoOf, isOrivonErrorLike } from './errors.js'
 
-// Everything mechanical about relaying ONE socket's bytes over its dedicated
-// port -- both directions -- split out of ./ipc.ts's net.connect case
-// (code-guidelines.md Rule 2) so that file keeps only what is
-// security-relevant: the transport check, the origin re-derivation, and the
-// port delivery. This file owns none of that; it is handed an already-
-// delivered PortLike and just wires it to a pump and a sink.
-//
-// REGISTRATION LIVES HERE TOO, not split back out to the caller, because
-// registering and releasing a socket are one lifecycle, not two: whichever
-// path ends the socket -- a clean close, a revoke, a write-window
-// violation the sink itself detects -- must free the SAME registry slot,
-// and keeping both ends in one file is what makes that easy to see.
+// Everything mechanical about relaying ONE socket's bytes over its
+// dedicated port, in both directions: given an already-delivered PortLike,
+// wires it to a read pump and a write sink, and owns the one registry slot
+// both directions and ./ipc.ts's net.close/net.setNoDelay/net.setKeepAlive
+// share. See src/broker/README.md's "Design notes" for why registration
+// and release live in this one file rather than split back to the caller.
 
 /**
  * Maps a raw error off `socket.readable`/`socket.writable` to a closed-enum
@@ -54,6 +48,17 @@ export interface SocketRelayOptions {
 export interface SocketRelay {
   /** Unregisters the socket and closes the port. Idempotent -- safe to call from both the abandon path and socket.closed settling. */
   readonly cleanup: () => void
+  /**
+   * Stops both the pump and the sink, then cleans up. Idempotent, via the
+   * same `cleanup` and the pump/sink's own stop() guards.
+   *
+   * `cleanup()` alone unregisters the socket and closes the port, but
+   * leaves the pump free to still be mid-`pumpLoop` when it returns --
+   * still reading the OS socket and calling `port.postMessage` on a port
+   * that was just closed. `./ipc.ts`'s abandon path (a request that fails
+   * after the socket already exists) needs this, not `cleanup()` alone.
+   */
+  readonly stop: (code?: OrivonErrorCode) => void
 }
 
 export function createSocketRelay (options: SocketRelayOptions): SocketRelay {
@@ -73,10 +78,38 @@ export function createSocketRelay (options: SocketRelayOptions): SocketRelay {
     port.close()
   }
 
+  // `socket.fail` (FailableTcpSocket, handle-contracts.ts) promises it never
+  // throws, but its real implementation is HandleTable.fail (handles.ts),
+  // which can -- e.g. if this origin's whole table was already reaped
+  // before a queued write-abort for the same handle is delivered. Both
+  // callers below now reach it SYNCHRONOUSLY from port.onMessage, so an
+  // uncaught throw here would crash the whole Electron main process from a
+  // teardown path with nowhere further to report to.
+  function failSocket (code: OrivonErrorCode, error: unknown): void {
+    try {
+      socket.fail(code, errnoOf(error))
+    } catch (caught) {
+      console.error('[broker] failing a socket handle threw', caught)
+    }
+  }
+
+  // Shared by the pump and the sink (code-guidelines.md Rule 3 -- one
+  // implementation, not two identical closures). Guarded the same way: a
+  // real MessagePortMain can be closed out from under either one -- stop()
+  // races a message still queued behind it -- and this is a teardown path
+  // with nowhere further to report a throw to.
+  function send (message: Parameters<PortLike['postMessage']>[0]): void {
+    try {
+      port.postMessage(message)
+    } catch (caught) {
+      console.error('[broker] posting to a socket\'s port failed', caught)
+    }
+  }
+
   const pump = createPortPump({
     handleId: socket.id,
     readable: socket.readable,
-    send: (message) => { port.postMessage(message) },
+    send,
     initialCredit: readWindowBytes,
     mapError: mapSocketError,
     // A socket that dies underneath us releases nothing on its own:
@@ -84,20 +117,20 @@ export function createSocketRelay (options: SocketRelayOptions): SocketRelay {
     // runs and the handle stays counted against LIMITS.concurrentSockets
     // forever. See ./ipc.ts's own prior comment on this exact point --
     // moved here with the pump it describes.
-    onStreamFailed: (code, error) => { socket.fail(code, errnoOf(error)) }
+    onStreamFailed: failSocket
   })
 
   const sink = createPortSink({
     handleId: socket.id,
     writable: socket.writable,
-    send: (message) => { port.postMessage(message) },
+    send,
     windowBytes: writeWindowBytes,
     mapError: mapSocketError,
     // Symmetric with the pump's onStreamFailed: a write-window violation or
     // a real write failure is this direction's own "died underneath us",
     // and must fail the SAME handle the read side would -- freeing the
     // registry slot this file just claimed, not merely notifying the page.
-    onSinkFailed: (code, error) => { socket.fail(code, errnoOf(error)) }
+    onSinkFailed: failSocket
   })
 
   port.onMessage((raw) => {
@@ -111,19 +144,30 @@ export function createSocketRelay (options: SocketRelayOptions): SocketRelay {
     }
   })
 
+  function stop (code?: OrivonErrorCode): void {
+    pump.stop(code)
+    sink.stop(code)
+    cleanup()
+  }
+
+  // A renderer navigating away or explicitly closing its side of the port
+  // triggers this without ever calling net.close. socket.closed settling is
+  // otherwise the only release trigger, and it never happens on its own for
+  // an idle, healthy, established socket -- without this, an abandoned
+  // renderer's registry slot, pump reader and sink heartbeat timer would
+  // all live for the process's lifetime (T11b).
+  port.onClose(() => { stop() })
+
   // The .catch is not decoration -- this chain is nobody's awaited promise,
   // so anything these handlers throw becomes an unhandled rejection, and
   // Node's default for those since v15 is to THROW, taking the whole
   // Electron main process down from a socket-teardown path.
   socket.closed.then(
-    () => { pump.stop(); sink.stop(); cleanup() },
-    (error: unknown) => {
-      const code = isOrivonErrorLike(error) ? error.code : 'internal'
-      pump.stop(code); sink.stop(); cleanup()
-    }
+    () => { stop() },
+    (error: unknown) => { stop(isOrivonErrorLike(error) ? error.code : 'internal') }
   ).catch((error: unknown) => {
     console.error('[broker] releasing a socket failed after it closed', error)
   })
 
-  return { cleanup }
+  return { cleanup, stop }
 }

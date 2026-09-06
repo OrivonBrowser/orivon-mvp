@@ -1,19 +1,15 @@
 // Wires createBroker (./index.ts) to a real renderer over Electron IPC.
 //
 // SCOPE: app.manifest, app.grants, fs.readFile, fs.writeFile, net.connect,
-// net.close. net.connect returns a plain descriptor over CONTROL_CHANNEL --
-// never the socket, its streams, or its close function, which is exactly
-// what a structured-clone response can't carry anyway -- and separately
-// delivers a dedicated MessageChannelMain port to the calling frame over
-// PORT_CHANNEL (../main/channels.js), tagged with the same handle id. Bytes
-// then relay over THAT port via ./port-pump.js's credit-window pump, never
-// through ipcMain.handle/ipcRenderer.invoke: contracts/ipc.ts's own header
-// says per-message IPC is too slow for torrent-rate data.
-//
-// THE WRITE HALF (an app writing bytes out) IS NOT WIRED HERE -- see
-// port-pump.ts's header for why: there is no wire message for it anywhere
-// in contracts/ipc.ts, and inventing one is a contracts decision rather than
-// a broker one. Tracked as open-questions.md A37.
+// net.close, net.setNoDelay, net.setKeepAlive. net.connect returns a plain
+// descriptor over CONTROL_CHANNEL -- never the socket, its streams, or its
+// close function, which is exactly what a structured-clone response can't
+// carry anyway -- and separately delivers a dedicated MessageChannelMain
+// port to the calling frame over PORT_CHANNEL (../main/channels.js), tagged
+// with the same handle id. Bytes then relay over THAT port via
+// ./socket-relay.js's read and write pumps, never through
+// ipcMain.handle/ipcRenderer.invoke: contracts/ipc.ts's own header says
+// per-message IPC is too slow for torrent-rate data.
 //
 // THE RULE THIS FILE EXISTS TO ENFORCE (src/preload/README.md, T3, T13b):
 // every call is attributed to the ORIGIN OF THE SENDING FRAME, derived via
@@ -28,7 +24,7 @@
 // so a renderer that learns another origin's handle id cannot close it
 // (T11c).
 //
-// A SECOND, INDEPENDENT LIMIT GATES ALL SIX METHODS UNIFORMLY, before any
+// A SECOND, INDEPENDENT LIMIT GATES ALL EIGHT METHODS UNIFORMLY, before any
 // of them runs (open-questions.md A38): a per-origin token bucket
 // (./token-bucket.js), bounding call FREQUENCY rather than concurrency.
 // HandleTable's inFlight cap never engages for app.manifest/app.grants --
@@ -148,7 +144,11 @@ async function dispatch (
       // attacker can hit in a loop". A frame that navigated or was disposed
       // between this request and this line is ordinary, not adversarial.
       const abandon = async (reason: string): Promise<never> => {
-        relay.cleanup()
+        // stop(), not the bare cleanup() this used to call: cleanup() alone
+        // unregisters and closes the port but leaves the pump free to still
+        // be mid-pumpLoop, reading the OS socket and posting to a port that
+        // was just closed. stop() halts the pump and sink first.
+        relay.stop('internal')
         try {
           await socket.close()
         } catch {
@@ -352,6 +352,7 @@ function realPortPair (): PortPair {
   const wrapped: PortLike = {
     postMessage: (message) => { port1.postMessage(message) },
     onMessage: (listener) => { port1.on('message', (event) => { listener(event.data) }) },
+    onClose: (listener) => { port1.on('close', listener) },
     close: () => { port1.close() }
   }
   port1.start()
@@ -372,7 +373,7 @@ function realPortPair (): PortPair {
 // polling app.grants() to react live to a revocation -- two orders of
 // magnitude of headroom below this budget for any sane polling interval).
 //
-// SHARED ACROSS ALL SIX METHODS, DELIBERATELY LOOSE: fs/net dispatch is
+// SHARED ACROSS ALL EIGHT METHODS, DELIBERATELY LOOSE: fs/net dispatch is
 // real I/O already (not stubs), and no measured call-rate data exists for
 // it either -- an unnecessarily tight shared limit risks 'limit' becoming
 // a routine error for a legitimately busy app well before any evidence
