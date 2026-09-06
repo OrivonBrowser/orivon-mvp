@@ -198,7 +198,7 @@ export function hostMatches (spec: string, requested: string, address: string): 
  * which reads identically and grants the cross product: a manifest declaring
  * `["a.example:443", "b.example:8080"]` would authorise `a.example:8080`,
  * which the user granted for neither host. It passed the entire suite before
- * ./connect.test.ts grew a test for it. Found by review, 2026-08-27.
+ * ./tests/connect.test.ts grew a test for it. Found by review, 2026-08-27.
  */
 export function patternAuthorises (
   parsed: ParsedPattern | null,

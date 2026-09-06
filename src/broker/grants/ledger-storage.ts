@@ -14,7 +14,7 @@
 //
 // SYNCHRONOUS, not Promise-based like LoaderStorage -- deliberately.
 // GrantLedger's own registerApp/versionFloorFor are relied on throughout
-// this codebase's own tests (src/broker/index.test.ts) as effectively
+// this codebase's own tests (src/broker/tests/index.test.ts) as effectively
 // synchronous: dozens of call sites invoke Broker.registerApp without
 // awaiting its Promise<void>, which only ever worked because nothing inside
 // it actually yielded. Making persistence genuinely async would turn every

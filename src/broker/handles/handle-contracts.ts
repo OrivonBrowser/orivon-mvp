@@ -257,7 +257,7 @@ export interface FailableTcpSocket extends TcpSocket {
    * `destroy` flushes for 'closed'/'sessionEnded' and destroys outright for
    * the rest, so acting immediately on a flushing reason discards whatever the
    * app had queued. Measured, not theorised -- see socket-relay.ts's own note
-   * and ../socket-drain.test.ts's truncation case.
+   * and ../adapters/tests/socket-drain.test.ts's truncation case.
    */
   onUnlink: (listener: (reason: CloseReason, code?: OrivonErrorCode) => void) => void
 }
