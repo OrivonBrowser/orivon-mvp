@@ -3063,3 +3063,50 @@ lane does not own -- the sixth, `orivon-surface.ts`, was already being fixed on
 corrected checker and merged to `main` before this branch (comment-gate itself), so `main`'s
 `check:comments` never actually goes red -- the sequencing problem this entry raised was avoided,
 not merely tracked. The baseline file's "closed" rule was correctly left untouched.
+
+---
+
+### A85 — the broker's directory boundaries are declared in five READMEs and enforced by nothing **[STILL OPEN — AI recommendation]**
+
+**Raised 2026-09-06**, by the restructure that created them (`ADR-0015`, `stream/broker-29-file-layout`).
+
+`src/broker/` is now five directories, each carrying a `README.md` with a **what it must never
+import** section. Those declarations were read off the real import graph rather than asserted,
+so they are true today. Nothing keeps them true tomorrow.
+
+**The four rules currently stated in prose only:**
+
+- `policy/` must import nothing that performs I/O — no `electron`, `node:fs`, `node:net`,
+  `node:dns`. This one is the oldest and the most load-bearing: it is what makes the
+  security-critical decision functions testable with no network, which is the entire argument
+  of `policy/README.md` and of `build-plan.md`'s Week 0 structural decision.
+- `handles/` must import no `node:*` builtin at all. Every real resource arrives as an injected
+  `destroy` callback; an import here would mean the handle table had started owning a resource
+  directly, which is exactly the coupling the injection exists to prevent.
+- `adapters/` must not import `electron`. It is the Node seam, not the Electron one.
+- `src/broker/` as a whole must not import `src/shim/`, `src/loader/`, `src/preload/` or any
+  renderer code — the pre-existing rule from `src/broker/README.md`, which also has no guard.
+
+**Why this was not built in the same change.** A guard written the same hour as the layout tests
+the author's assumptions, not the layout's staying power. A few weeks of real edits will show
+which rule actually drifts, and a guard aimed at that is worth more than four written blind.
+Deliberately deferred, not overlooked — owner's call, 2026-09-06.
+
+**Shape it would take if built.** `scripts/check-layers.mjs` plus an `npm run check:layers`,
+alongside `check:contracts` in CI. `check-contracts-pure.mjs` is the working model: it already
+walks a directory's imports and fails on anything outside an allowed set, so this is a
+generalisation of an existing guard rather than a new mechanism (Rule 6).
+
+**One wrinkle it has to handle.** `grants/node-ledger-storage.ts` writes to disk while living
+outside `adapters/` (see `ADR-0015` §Consequences), so a rule of the form "only `adapters/` may
+import `node:fs`" needs a named allowlist entry rather than being absolute. That is not a reason
+to skip the guard — `check:comments` already carries an exemption mechanism with a required
+reason, and `enforcement-keeps-a-justified-escape-hatch` is the established owner preference:
+exceptions possible, never silent.
+
+**Counter-argument worth recording.** `CLAUDE.md` states that Rules 2 and 3 of the code
+guidelines are unenforced by owner's decision — "rules first, enforcement later" — and this
+would be a third guard on a solo project. The case for building it anyway is the one that closed
+that deferral for Rule 1: the rule was being followed and the codebase drifted regardless,
+because a human cannot see an import boundary by reading one file at a time. If `A85` is ever
+resolved by *not* building it, that reasoning is what has to be answered.
