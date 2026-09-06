@@ -7,6 +7,7 @@
 // this split; only the file it lives in.
 
 import type { CapabilityKind, Grant, GrantId, Manifest, Pattern } from '../contracts/index.js'
+import { LIMITS } from '../contracts/index.js'
 import type { LedgerStorage } from './ledger-storage.js'
 import { isPersistableOrigin } from './policy/origin.js'
 import { compareVersions } from './policy/update.js'
@@ -415,6 +416,24 @@ export class GrantLedger {
         return
       }
     }
+  }
+
+  /**
+   * How many sockets this origin may hold at once: what its manifest declared
+   * (`net.concurrentSockets`), clamped to `LIMITS.concurrentSockets`, or
+   * `LIMITS.defaultConcurrentSockets` when it declared nothing.
+   *
+   * CLAMPED, not rejected, and the manifest validator deliberately accepts a
+   * larger number for the same reason: changing the platform ceiling must
+   * never turn an already-published manifest into an invalid one.
+   *
+   * Reads through `#origins.get`, not `#record`, so merely asking about an
+   * origin does not create a row for it -- same as `fsBytesWritten` below.
+   */
+  socketAllowance (origin: string): number {
+    const declared = this.#origins.get(origin)?.manifest?.capabilities.net?.concurrentSockets
+    if (declared === undefined) return LIMITS.defaultConcurrentSockets
+    return Math.min(declared, LIMITS.concurrentSockets)
   }
 
   /** Bytes already reserved (written, or still in flight) against `origin`'s quota this session. Zero for an origin the ledger has no record of yet. */
