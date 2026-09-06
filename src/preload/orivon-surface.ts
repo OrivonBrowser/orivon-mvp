@@ -1,99 +1,68 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { CONTROL_CHANNEL } from '../main/channels.js'
+import { CONTROL_CHANNEL, PORT_CHANNEL } from '../main/channels.js'
+import { createSocketBridge } from './socket-bridge.js'
+import type { IpcRendererLike } from './socket-bridge.js'
+import { createSocketPort } from './socket-port.js'
+import type { PortLike } from './socket-port.js'
+import { installOrivon } from './main-world-socket.js'
+import type { MainWorldSocketBridge } from './main-world-socket.js'
 import type { Grant, Manifest, OrivonErrorCode } from '../contracts/index.js'
+import { LIMITS } from '../contracts/index.js'
 import type { RequestEnvelope, ResponseEnvelope } from '../contracts/ipc.js'
+import { toOrivonError } from './orivon-error.js'
 
-// The real orivon.* surface, shared by BOTH places it is exposed: every
-// ordinary tab (preload/app.ts) and a dashboard tab the user has navigated
-// away from (preload/newtab.ts's fallback branch -- its own comment already
-// promised "the same { version: 0 } every ordinary tab already gets from
-// preload/app.ts", which this file is what makes literally true rather than
-// two copies of the same object maintained separately, code-guidelines.md
-// Rule 3).
+// The real orivon.* surface, shared by preload/app.ts and preload/newtab.ts's
+// fallback branch. See README.md SSDesign notes for why this file is shaped
+// the way it is (the two-world split, the CONTROL_CHANNEL import source,
+// what is and isn't wired yet).
 //
-// Build step 2's control surface -- ../broker/ipc.ts's handleControlRequest,
-// on the other side of CONTROL_CHANNEL. Four methods are wired: app.
-// manifest, app.grants, fs.readFile, fs.writeFile. net.connect is
-// DELIBERATELY absent here even though the broker implements it: a
-// TcpSocket's real shape is readable/writable/close/closed
-// (contracts/capability-api.ts), and nothing on this control channel carries
-// a live handle across IPC yet -- that is the per-socket byte-pump task's
-// job (MessageChannelMain, the credit window, contracts/ipc.ts's
-// DataMessage/CreditMessage). Wiring net.connect here first would mean
-// returning a socket descriptor with no way to ever close it, leaking one
-// handle-table slot and one fd per call. Everything else in
-// docs/architecture/capability-api.md (net.connect until the byte pump
-// lands, net.listen, udpBind, fs.open/mkdir/readdir/stat/rm/rename/
-// userSelected, id.*, app.requestGrant) is simply absent from the object
-// below -- the broker does not implement the rest yet either, and a method
-// that always threw 'invalid' would be worse than a method that is not
-// there.
-//
-// Importing CONTROL_CHANNEL from ../main/channels.js, not ../broker/, is
-// deliberate and matches preload/shell.ts's own precedent (COMMAND_CHANNEL/
-// STATE_CHANNEL, same file): this directory's own README's "never import
-// src/broker/" rule is about broker LOGIC, which cannot run in a renderer
-// process at all -- channels.ts is a zero-dependency leaf of plain string
-// constants, safe in either process, and the one neutral place a channel
-// name shared across this trust boundary can live.
-//
-// THE RULE THIS FILE IS HELD TO (this directory's own README): the raw
-// MessagePortMain -- and here, the raw ipcRenderer -- never crosses into the
-// main world. Nothing below hands the page anything but a Promise-returning
-// closure; `call()` is the only thing that ever touches `ipcRenderer`.
-//
-// EVERY CALL CARRIES AN EXPLICIT TIMEOUT (../contracts/ipc.ts's rule 2,
-// ../broker/ipc.ts's own withTimeout does the same on the main side). The
-// literal budgets below are this file's own choice -- capability-api.md
-// does not specify one -- flagged as an AI recommendation in the PR body.
+// Nothing below hands the page anything but a Promise-returning closure --
+// `call()` is the only thing that ever touches `ipcRenderer` (the raw
+// MessagePortMain/ipcRenderer never crossing into the main world is this
+// whole directory's rule, not just this file's). Every call carries an
+// explicit timeout (../contracts/ipc.ts's rule 2) -- see each budget below.
 const TIMEOUT_MS = {
   /** app.manifest / app.grants: broker-local reads, no I/O of their own. */
   metadata: 5_000,
   /** fs.readFile / fs.writeFile: disk I/O, generous for a large file. */
-  fs: 15_000
+  fs: 15_000,
+  /**
+   * net.connect / net.close / net.setNoDelay / net.setKeepAlive. Must
+   * exceed node-adapters.ts's own DIAL_TIMEOUT_MS (30_000) -- otherwise a
+   * legitimately slow dial reports THIS timeout instead of the broker's
+   * real 'timeout' answer, discarding the more specific error for a less
+   * useful one.
+   */
+  net: 35_000
 } as const
 
-// A PLAIN OBJECT, never `new Error(...)` -- confirmed empirically via a real
-// Electron launch (scripts/smoke.mjs), not assumed: contextBridge's promise-
-// rejection marshaling only preserves `.message` on a value that IS an
-// `Error` instance, silently discarding every custom property (`.code`,
-// `.platformCode`) and even overwriting `.name` back to the generic
-// `'Error'`. A value that is NOT `instanceof Error` crosses the same bridge
-// through the ordinary structured-clone path instead -- the one that
-// already carries `SocketDescriptor`-shaped results and plain arrays
-// (`orivon.app.grants()`'s `[]`) over intact. contracts/errors.ts's own
-// header explains why this is contract-legal, not a workaround: OrivonError
-// is declared as an interface, deliberately not a class, precisely because
-// "every consumer only needs its shape" -- and TypeScript's structural
-// `Error` (name, message, stack?) does not require `instanceof Error` at
-// runtime, only these fields.
-interface OrivonErrorLike {
-  readonly name: string
-  readonly message: string
-  readonly code: OrivonErrorCode
-  readonly platformCode?: string
-}
-
-function toOrivonError (code: OrivonErrorCode, message: string, platformCode?: string): OrivonErrorLike {
-  return platformCode === undefined
-    ? { name: 'OrivonError', message, code }
-    : { name: 'OrivonError', message, code, platformCode }
-}
-
 /**
- * Settles with a synthetic 'timeout' ResponseEnvelope if `promise` has not
- * settled within `timeoutMs`, rather than rejecting directly -- so `call()`
- * below has exactly one place that turns a failure envelope into a thrown
- * OrivonError, whether the failure came from the broker or from this guard.
+ * Settles with a synthetic failure ResponseEnvelope -- 'timeout' if `promise`
+ * has not settled within `timeoutMs`, 'internal' if it rejects outright --
+ * rather than ever rejecting itself. That gives `call()` below exactly one
+ * place that turns a failure envelope into a thrown OrivonError, regardless
+ * of which of the three ways (broker failure response, our own timeout, a
+ * raw rejection) the underlying call failed. A raw rejection is possible
+ * here (Electron's own internal string, a serialisation refusal) and must
+ * never reach the page unwrapped -- contracts/errors.ts requires every
+ * rejection an app sees to be OrivonError-shaped so an exhaustive
+ * `switch (e.code)` works.
  */
 async function raceTimeout<T> (promise: Promise<ResponseEnvelope<T>>, timeoutMs: number): Promise<ResponseEnvelope<T>> {
-  return await new Promise((resolve, reject) => {
+  return await new Promise((resolve) => {
     const timer = setTimeout(() => {
       resolve({ id: '', ok: false, code: 'timeout', message: `control call exceeded its ${timeoutMs}ms budget` })
     }, timeoutMs)
     promise.then(
       (value) => { clearTimeout(timer); resolve(value) },
-      (error: unknown) => { clearTimeout(timer); reject(error) }
+      (error: unknown) => {
+        clearTimeout(timer)
+        // The isolated world's OWN console -- contextIsolation means the
+        // page cannot see or intercept this call. See ./README.md's design
+        // notes for why the underlying error can never just be re-thrown.
+        console.error('[orivon] control call failed', error)
+        resolve({ id: '', ok: false, code: 'internal', message: 'control call failed' })
+      }
     )
   })
 }
@@ -115,23 +84,155 @@ async function call<TResult> (method: string, payload: unknown, timeoutMs: numbe
     timeoutMs
   )
   if (response.ok) return response.result
-  throw toOrivonError(response.code, response.message, response.platformCode)
+  throw toOrivonError(response.code, response.platformCode === undefined
+    ? { message: response.message }
+    : { message: response.message, platformCode: response.platformCode })
 }
 
-/** Exposes `window.orivon` in the calling preload's main world. Idempotent
- * per-world, but never called twice from the same script -- each caller
- * (app.ts, newtab.ts's fallback branch) calls it exactly once. */
-export function exposeOrivon (): void {
+/**
+ * What `net.connect`'s CONTROL_CHANNEL reply actually carries -- deliberately
+ * NOT imported from ../broker/port-transport.ts's SocketDescriptor: this
+ * directory's own README forbids importing src/broker/ at all (a preload
+ * runs in the renderer process; broker logic cannot run there), so the
+ * shape is repeated at this trust boundary rather than shared across it.
+ */
+interface SocketDescriptor {
+  readonly id: string
+  readonly remoteAddress: string
+  readonly remotePort: number
+  readonly localAddress: string
+  readonly localPort: number
+}
+
+/** Adapts a real (DOM) `MessagePort` -- Electron's own conversion of the transferred `MessagePortMain` -- to ./socket-port.ts's PortLike. */
+function wrapPort (raw: unknown): PortLike {
+  const port = raw as MessagePort
+  return {
+    postMessage: (message) => { port.postMessage(message) },
+    // Assigning .onmessage (rather than addEventListener) implicitly starts
+    // the port per the WHATWG spec -- no separate port.start() needed.
+    onMessage: (listener) => { port.onmessage = (event) => { listener(event.data) } },
+    close: () => { port.close() }
+  }
+}
+
+const socketBridge = createSocketBridge({ ipcRenderer: ipcRenderer as unknown as IpcRendererLike, portChannel: PORT_CHANNEL, wrapPort })
+
+/**
+ * The one net.connect closure handed into the main world. Correlates the
+ * CONTROL_CHANNEL descriptor with its separately-delivered PORT_CHANNEL
+ * port (socketBridge.waitForPort handles either arrival order), then wraps
+ * that port in a SocketPort (./socket-port.ts) -- the whole per-socket state
+ * machine main-world-socket.ts needs, plus the three control-channel
+ * operations (close/setNoDelay/setKeepAlive) net.connect itself doesn't
+ * expose.
+ */
+async function netConnectBridge (opts: { host: string, port: number }): Promise<MainWorldSocketBridge> {
+  const descriptor = await call<SocketDescriptor>('net.connect', opts, TIMEOUT_MS.net)
+  try {
+    return buildBridgeResult(descriptor, await socketBridge.waitForPort(descriptor.id))
+  } catch (error) {
+    // The broker already registered this socket against the concurrentSockets
+    // cap the instant net.connect replied -- if anything after that fails
+    // (most plausibly waitForPort's own 35s timeout racing a slow-but-real
+    // dial), nothing else on this side ever tells it to release the slot.
+    // Best-effort and fire-and-forget: this cleanup's own failure must not
+    // shadow the real error the caller is about to see.
+    call('net.close', { id: descriptor.id }, TIMEOUT_MS.net).catch(() => {})
+    throw error
+  }
+}
+
+function buildBridgeResult (descriptor: SocketDescriptor, port: PortLike): MainWorldSocketBridge {
+  const socketPort = createSocketPort({ handleId: descriptor.id, port })
+
+  return {
+    id: descriptor.id,
+    remoteAddress: descriptor.remoteAddress,
+    remotePort: descriptor.remotePort,
+    localAddress: descriptor.localAddress,
+    localPort: descriptor.localPort,
+    onData: socketPort.onData,
+    onReadEnd: socketPort.onReadEnd,
+    reportConsumed: socketPort.reportConsumed,
+    write: socketPort.write,
+    endWrite: socketPort.endWrite,
+    abortWrite: socketPort.abortWrite,
+    onFatal: socketPort.onFatal,
+    closed: socketPort.closed,
+    close: async () => {
+      await call('net.close', { id: descriptor.id }, TIMEOUT_MS.net)
+      socketPort.dispose()
+    },
+    setNoDelay: async (on) => { await call('net.setNoDelay', { id: descriptor.id, on }, TIMEOUT_MS.net) },
+    setKeepAlive: async (on, initialDelayMs) => {
+      // exactOptionalPropertyTypes: an explicit `initialDelayMs: undefined`
+      // is not the same as omitting the key.
+      const payload = initialDelayMs === undefined
+        ? { id: descriptor.id, on }
+        : { id: descriptor.id, on, initialDelayMs }
+      await call('net.setKeepAlive', payload, TIMEOUT_MS.net)
+    }
+  }
+}
+
+// The four closures both exposeFallback (no net) and the executeInMainWorld
+// bridge (with net) need -- one implementation, reused by both, rather than
+// two copies of the same broker call/timeout pair (code-guidelines.md Rule
+// 3, the same reuse fix-80's B-F11 applied to installFromHint).
+async function appManifest (): Promise<Manifest> { return await call('app.manifest', undefined, TIMEOUT_MS.metadata) }
+async function appGrants (): Promise<readonly Grant[]> { return await call('app.grants', undefined, TIMEOUT_MS.metadata) }
+async function fsReadFile (path: string): Promise<Uint8Array> { return await call('fs.readFile', { path }, TIMEOUT_MS.fs) }
+async function fsWriteFile (path: string, data: Uint8Array): Promise<void> {
+  await call('fs.writeFile', { path, data }, TIMEOUT_MS.fs)
+}
+
+/** The `net`-less surface: used both when `executeInMainWorld` is absent and when it exists but throws (P-F10) -- one implementation, not two copies quietly drifting apart. */
+function exposeFallback (): void {
   contextBridge.exposeInMainWorld('orivon', {
     version: 0,
-    app: {
-      manifest: async (): Promise<Manifest> => await call('app.manifest', undefined, TIMEOUT_MS.metadata),
-      grants: async (): Promise<readonly Grant[]> => await call('app.grants', undefined, TIMEOUT_MS.metadata)
-    },
-    fs: {
-      readFile: async (path: string): Promise<Uint8Array> => await call('fs.readFile', { path }, TIMEOUT_MS.fs),
-      writeFile: async (path: string, data: Uint8Array): Promise<void> =>
-        await call('fs.writeFile', { path, data }, TIMEOUT_MS.fs)
-    }
+    app: { manifest: appManifest, grants: appGrants },
+    fs: { readFile: fsReadFile, writeFile: fsWriteFile }
   })
+}
+
+/**
+ * Exposes `window.orivon` in the calling preload's main world. Idempotent
+ * per-world, but never called twice from the same script -- each caller
+ * (app.ts, newtab.ts's fallback branch) calls it exactly once.
+ *
+ * FAIL-CLOSED: `contextBridge.executeInMainWorld` is `@experimental`
+ * (electron.d.ts) -- confirmed working live (a throwaway probe: a
+ * sandboxed preload, a function argument proxied and callable from the
+ * main world, a callback passed back through it, a real main-world
+ * ReadableStream built this way behaving normally for page code), but if
+ * it is ever unavailable, OR THROWS (a serialisation refusal, a CSP issue,
+ * an `@experimental` API not actually ready), this falls back to
+ * `exposeFallback()` WITHOUT `net` rather than ship a `net.connect` whose
+ * return value is not a real `TcpSocket` -- the exact failure mode
+ * ADR-0002 exists to prevent for this interface -- or, worse, abort the
+ * whole preload script and leave the page with no `window.orivon` at all.
+ */
+export function exposeOrivon (): void {
+  if (typeof contextBridge.executeInMainWorld !== 'function') {
+    exposeFallback()
+    return
+  }
+
+  const bridge = {
+    appManifest,
+    appGrants,
+    fsReadFile,
+    fsWriteFile,
+    netConnect: netConnectBridge
+  }
+  try {
+    contextBridge.executeInMainWorld({
+      func: installOrivon,
+      args: [bridge, { readWindowBytes: LIMITS.readWindowBytes, writeWindowBytes: LIMITS.writeWindowBytes }]
+    })
+  } catch (error) {
+    console.error('[orivon] executeInMainWorld failed; falling back without net', error)
+    exposeFallback()
+  }
 }
