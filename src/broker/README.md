@@ -25,54 +25,75 @@ Patterns are checked against **resolved addresses**, always.
 ## Design notes
 
 Rationale that explains why a file has the shape it has, moved out of source headers per
-[`code-guidelines.md`](../../docs/development/code-guidelines.md)'s destination test — kept here
+[`code-guidelines.md`](../../docs/development/code-guidelines.md)'s destination test -- kept here
 rather than in the file so the 25-line comment budget measures a file's traps, not its history.
 
-### `port-sink.ts` — the write-side byte pump
+### `port-pump.ts` -- the read-side byte pump
+
+Relays bytes from an already-real WHATWG `ReadableStream` (`Duplex.toWeb`, [`ipc.ts`](ipc.ts)'s
+`dialOne`) to the renderer over a socket's dedicated `MessagePortMain`. Deliberately pure and
+Electron-free, the same reason `policy/` is, so it runs under plain Node/vitest with no
+`MessagePortMain` at all -- `ipc.ts` (via `socket-relay.ts`) is where a real port's
+`postMessage`/`on('message')` get wired to `send`/`handleCredit`. The write direction is
+`port-sink.ts`, below -- this file is the read half only.
+
+**Credit is bounded by the window, never trusted as reported.** `handleCredit` clamps the running
+budget to `initialCredit` -- `contracts/ipc.ts` specifies "the broker sends at most
+`LIMITS.readWindowBytes` ahead of what has been acknowledged", and credit is a remaining-budget
+counter, so `sent - acknowledged <= window` is the same statement as `credit <= initialCredit`.
+This file once trusted the renderer's reported figure outright, on the reasoning that an
+over-reporting renderer only inflates its own queue in its own process -- wrong in one direction: a
+`CreditMessage` carrying `Infinity` made `credit > 0` permanently true, so the pump never stopped
+reading the OS socket, defeating the backpressure (and the TCP backpressure to the remote peer)
+that is the whole point. Non-finite and negative figures are rejected rather than applied for the
+same reason: `NaN` poisons the counter permanently, and a negative value drives it below zero with
+no way back.
+
+### `port-sink.ts` -- the write-side byte pump
 
 Runs the credit-window relay backwards from `port-pump.ts`'s read side: the BROKER grants the
 RENDERER a byte window to post outbound bytes into, because a `MessagePortMain` has no
 `pause()`/drain of its own (`electron.d.ts`'s `MessagePortMain` has exactly `postMessage`,
-`start`, `close`, `on('message')`, `on('close')`) — so nothing at the transport layer stops a
+`start`, `close`, `on('message')`, `on('close')`) -- so nothing at the transport layer stops a
 hostile renderer posting faster than the OS socket drains (T11b).
 
 **No sequence number, no pending-write queue.** A `WritableStreamDefaultWriter` serialises its
-own sink calls — `write()` is never re-entered before the previous call settles — so tracking one
+own sink calls -- `write()` is never re-entered before the previous call settles -- so tracking one
 scalar `unacked` count and one scalar `pendingCount` is sufficient; there is nothing to reorder.
 See `contracts/ipc.ts`'s own header for why write-end/write-abort travel on this port rather than
 over `CONTROL_CHANNEL`.
 
 **Acks are flushed either once `CREDIT_COALESCE_BYTES` has accepted, or once nothing else is
-outstanding** (`pendingCount === 0`) — so a lone slow write is never held hostage by coalescing,
+outstanding** (`pendingCount === 0`) -- so a lone slow write is never held hostage by coalescing,
 and a burst of same-tick writes naturally merges into one ack, the same way a burst of same-tick
 reads merges into one credit consumption on the read side.
 
-**The heartbeat (`WRITE_HEARTBEAT_MS`) exists** because `contracts/ipc.ts`'s rule 2 — every
-reply-carrying message needs a timeout, because this transport fails by silence — cannot be a
+**The heartbeat (`WRITE_HEARTBEAT_MS`) exists** because `contracts/ipc.ts`'s rule 2 -- every
+reply-carrying message needs a timeout, because this transport fails by silence -- cannot be a
 flat deadline here: a choked BitTorrent peer legitimately stalls a write for real, sometimes for
 minutes. A zero-byte `WriteAckMessage` lets the renderer's own silence timer distinguish "the peer
 is just slow" from "the transport died" without either side inventing a new message kind.
 
 **`writer.close()` is never awaited** (the source keeps this as a trap next to the call itself,
 not only here). Measured directly against `Duplex.toWeb` (Node 24.11.1): its `close()` promise
-does not settle until the whole duplex is destroyed — after the readable side also ends — not
+does not settle until the whole duplex is destroyed -- after the readable side also ends -- not
 when the FIN this call sends is itself flushed. Awaiting it would deadlock any peer that
 (correctly, per half-close) keeps reading after our FIN and waits for our reply before sending
 its own.
 
-### `socket-relay.ts` — wiring one socket's pump and sink to its port
+### `socket-relay.ts` -- wiring one socket's pump and sink to its port
 
 Split out of `ipc.ts`'s `net.connect` case so that file keeps only what is security-relevant: the
 transport check, the origin re-derivation, and the port delivery. This file owns none of that; it
 is handed an already-delivered `PortLike` and just wires it to a pump and a sink.
 
 **Registration lives here too, not split back out to the caller**, because registering and
-releasing a socket are one lifecycle, not two: whichever path ends the socket — a clean close, a
-revoke, a write-window violation the sink itself detects, the renderer's own port closing — must
+releasing a socket are one lifecycle, not two: whichever path ends the socket -- a clean close, a
+revoke, a write-window violation the sink itself detects, the renderer's own port closing -- must
 free the SAME registry slot, and keeping both ends in one file is what makes that easy to see.
 
-### `port-messages.ts` — validating messages on a socket's port
+### `port-messages.ts` -- validating messages on a socket's port
 
 Split out of `ipc.ts`'s inline credit-message check once a second and third message kind joined
-it — one job (shape validation at this trust boundary), the same way `ipc-validation.ts` owns it
+it -- one job (shape validation at this trust boundary), the same way `ipc-validation.ts` owns it
 for `CONTROL_CHANNEL`.
