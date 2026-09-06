@@ -2808,11 +2808,26 @@ currently hold against an uncooperative remote peer.
 >
 > **(b), the thorough one.** `HandleRecord` gained an `unlink` hook that `closeTree()` fires
 > synchronously, in the same pass that removes the record from `handles`/`byGrant`, before any
-> destroy is awaited. `socket-relay.ts` subscribes to it via `FailableTcpSocket.onUnlink` and
-> runs its `stop(code)` there. This finishes a design that was already stated rather than adding
-> a new one -- `closeTree`'s own doc already promised "the unlink pass and the promise rejections
-> are SYNCHRONOUS, before any destroy callback runs. That ordering is what makes revocation
-> immediate"; the relay simply was not subscribed to it.
+> destroy is awaited. `socket-relay.ts` subscribes to it via `FailableTcpSocket.onUnlink`. This
+> finishes a design that was already stated rather than adding a new one -- `closeTree`'s own doc
+> already promised "the unlink pass and the promise rejections are SYNCHRONOUS, before any
+> destroy callback runs. That ordering is what makes revocation immediate"; the relay simply was
+> not subscribed to it.
+>
+> **The hook fires for every reason; the relay acts on only some. This distinction was NOT in
+> the first implementation, and review caught it losing data.** `stop()` cancels the read
+> stream, and cancelling the readable half of a `Duplex.toWeb` destroys the whole socket,
+> discarding its write queue. So tearing down at unlink on a reason that FLUSHES
+> (`'closed'`/`'sessionEnded'`, where `destroySocket` calls `socket.end()`) truncates the app's
+> own final bytes. Measured against a real paused peer: 8 MiB queued, 8 MiB lost, where the
+> unmodified path delivered all 11 MiB. Those reasons now settle through `closed` instead --
+> later than unlink, but complete, and fix (a) is what guarantees they settle at all.
+> `'revoked'`/`'aborted'`/`'failed'` destroy the socket regardless, so they still tear down
+> immediately, which is what this entry and A70 actually needed.
+>
+> The listener therefore receives the `CloseReason`, not only the error code: `'sessionEnded'`
+> and `'revoked'` both carry code `'revoked'` and fall on opposite sides of that branch, so the
+> code alone cannot decide it.
 >
 > **(a), the smaller one.** `destroySocket` now races `socket.end(cb)` against
 > `CLOSE_DRAIN_TIMEOUT_MS` (30s, an AI-chosen value matched to `DIAL_TIMEOUT_MS`; nothing in the
@@ -2825,7 +2840,9 @@ currently hold against an uncooperative remote peer.
 > **Verified as the finding asked, not by reading.** The reproduction is now a test:
 > `src/broker/socket-drain.test.ts` dials a real local server that accepts and then `pause()`s,
 > queues past 1 MiB of `writableLength`, and asserts `destroySocket` settles and the socket is
-> destroyed.
+> destroyed. The same file also pins the truncation hazard above as a matched pair
+> (cancel-then-close loses bytes, close-alone does not), so the branch that avoids it cannot be
+> simplified away without a test going red.
 >
 > **This closes A70 as a side effect** -- see that entry, including what it does *not* claim.
 >
