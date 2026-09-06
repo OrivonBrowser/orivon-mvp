@@ -16,7 +16,7 @@
 // state it owns, not a second entry point to it.
 
 import { LIMITS } from '../contracts/index.js'
-import type { GrantId, OrivonError } from '../contracts/index.js'
+import type { GrantId, OrivonError, OrivonErrorCode } from '../contracts/index.js'
 import { fail } from './errors.js'
 import type {
   Authorisation,
@@ -114,6 +114,8 @@ export interface HandleRecord {
   readonly destroy: DestroyResource
   readonly resolveClosed: () => void
   readonly rejectClosed: (error: OrivonError) => void
+  /** Set through HandleTable.onUnlink, fired once by closeTree below. */
+  unlink: ((reason: CloseReason, code?: OrivonErrorCode) => void) | undefined
 }
 
 /**
@@ -225,11 +227,14 @@ export class OriginTable {
     }
   }
 
-  assertCapacity (kind: HandleKind): void {
+  assertCapacity (kind: HandleKind, socketLimit: number = LIMITS.concurrentSockets): void {
     const counts = this.#census()
 
-    if (SOCKET_KINDS.has(kind) && counts.sockets >= LIMITS.concurrentSockets) {
-      throw fail('limit', `origin holds ${String(LIMITS.concurrentSockets)} sockets`)
+    // The app's own declared allowance when the caller knows it, the platform
+    // ceiling otherwise -- never above the ceiling, which GrantLedger clamps
+    // before the number ever reaches here.
+    if (SOCKET_KINDS.has(kind) && counts.sockets >= socketLimit) {
+      throw fail('limit', `origin holds ${String(socketLimit)} sockets`)
     }
     // Counted however the user authorised it: the userSelected exception is to
     // the revocation cascade, not to the limits. An open fd is an open fd.
@@ -279,6 +284,7 @@ export class OriginTable {
       entry,
       children: new Set(),
       operations: new Set(),
+      unlink: undefined,
       destroy,
       resolveClosed,
       rejectClosed
@@ -353,6 +359,24 @@ export class OriginTable {
       // close settles after the teardown, so that resolving means the resource
       // really is released.
       if (reason !== 'closed') record.rejectClosed(error)
+
+      // Fired HERE, not after the destroy below, because destroy is precisely
+      // what a peer that stops reading can stall forever: the consumer would
+      // never learn the handle is gone, and nothing else can reach it once it
+      // has left these tables.
+      //
+      // Guarded, unlike cancelOperation above, and the difference is real: a
+      // plain callback's throw IS catchable here, where an AbortSignal
+      // listener's is not.
+      const unlink = record.unlink
+      record.unlink = undefined
+      if (unlink !== undefined) {
+        try {
+          unlink(reason, reason === 'closed' ? undefined : error.code)
+        } catch (caught) {
+          onFault({ origin: record.entry.origin, handleId: id, error: caught })
+        }
+      }
     }
 
     const teardowns = doomed.map(async (record) => {

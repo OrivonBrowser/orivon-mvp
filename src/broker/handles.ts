@@ -95,7 +95,7 @@ export class HandleTable {
       const origin = this.#key(request.origin)
       const table = this.#table(origin)
       table.assertAcquirable(request.authorisedBy)
-      table.assertCapacity(request.kind)
+      table.assertCapacity(request.kind, request.socketLimit)
       return table.insert(origin, request.kind, request.authorisedBy, null, request.destroy)
     } catch (error) {
       this.#releaseUnregistered(request.origin, request.destroy)
@@ -130,7 +130,7 @@ export class HandleTable {
         throw fail('internal', 'only a tcpSocket may be derived, and only from a socket')
       }
       table.assertAcquirable(parent.entry.authorisedBy)
-      table.assertCapacity(request.kind)
+      table.assertCapacity(request.kind, request.socketLimit)
       const entry = table.insert(origin, request.kind, parent.entry.authorisedBy, parent.entry.id, request.destroy)
       parent.children.add(entry.id)
       return entry
@@ -259,6 +259,19 @@ export class HandleTable {
 
     await table.closeTree(record, 'closed', this.#onFault)
     this.#reap(key, table)
+  }
+
+  /**
+   * Registers the one listener told when this handle leaves the tables --
+   * synchronously, ahead of its teardown. Silent no-op for a handle this
+   * origin does not hold, including one already unlinked: registering late
+   * must not invent a terminal reason it cannot know, and the resource's own
+   * `closed` promise already carries the real one. See README.md's design
+   * notes for why this hook exists.
+   */
+  onUnlink (origin: string, handleId: string, listener: (reason: CloseReason, code?: OrivonErrorCode) => void): void {
+    const record = this.#registry.existing(this.#key(origin))?.handles.get(handleId)
+    if (record !== undefined) record.unlink = listener
   }
 
   /**
