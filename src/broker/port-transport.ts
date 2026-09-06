@@ -7,7 +7,7 @@
 
 import type { SenderFrameLike } from './policy/origin.js'
 import type { PortRegistry } from './port-registry.js'
-import type { DataMessage, StreamEndMessage } from '../contracts/index.js'
+import type { BrokerToRendererMessage } from '../contracts/index.js'
 
 /**
  * What `orivon.net.connect` resolves to over CONTROL_CHANNEL. Deliberately
@@ -29,8 +29,18 @@ export interface SocketDescriptor {
  * literal stand in for `WebFrameMain`.
  */
 export interface PortLike {
-  postMessage: (message: DataMessage | StreamEndMessage) => void
+  postMessage: (message: BrokerToRendererMessage) => void
   onMessage: (listener: (message: unknown) => void) => void
+  /**
+   * Fires when the OTHER side of the port closes -- a real
+   * `MessagePortMain`'s own `'close'` event, which a renderer navigating
+   * away or explicitly closing its side triggers without ever calling
+   * `net.close`. The only other release trigger is `socket.closed`
+   * settling, which never happens on its own for an idle, healthy,
+   * established socket -- so without this, an abandoned renderer's socket,
+   * registry slot and pumps live for the process's lifetime (T11b).
+   */
+  onClose: (listener: () => void) => void
   close: () => void
 }
 
@@ -38,6 +48,20 @@ export interface PortLike {
 export interface PortPair {
   readonly port1: PortLike
   readonly port2: unknown
+}
+
+/**
+ * What `net.close`, `net.setNoDelay` and `net.setKeepAlive` (`./ipc.ts`) and
+ * `./socket-relay.ts`'s registry entry need beyond the raw socket: enough to
+ * release it and to answer the other two operations declared on `TcpSocket`
+ * (`handles.ts`) -- all three dispatch through this same per-origin lookup,
+ * the same ownership check `close` relies on (T11c: a handle id from one
+ * origin means nothing presented by another).
+ */
+export interface RegisteredSocket {
+  readonly close: () => Promise<void>
+  readonly setNoDelay: (on: boolean) => Promise<void>
+  readonly setKeepAlive: (on: boolean, initialDelayMs?: number) => Promise<void>
 }
 
 /**
@@ -49,7 +73,7 @@ export interface PortPair {
  */
 export interface PortTransport {
   readonly createPortPair: () => PortPair
-  readonly registry: PortRegistry<{ readonly close: () => Promise<void> }>
+  readonly registry: PortRegistry<RegisteredSocket>
 }
 
 /**

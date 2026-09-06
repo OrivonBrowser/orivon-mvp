@@ -1,23 +1,9 @@
 // The update decision table. Pure function, no I/O -- see ./README.md.
-//
 // One question: an app the user has already granted has published a new
-// bundle and/or a new manifest. Does it install silently, must the user be
-// asked, or is it refused outright?
-//
-// THE RULE THIS FILE EXISTS FOR (capability-api.md open item A9 SS2, corrected
-// 2026-08-25; security-model.md T19; ADR-0005 SSAmendment 2026-08-25 evening):
-// the re-consent trigger is a SUBSET CHECK OVER THE GRANTED PATTERN SET, never
-// a comparison of capability KINDS. An update changing
-// `connect: ["api.example.com:443"]` to `connect: ["*:*"]` requests no new
-// capability kind at all. Under a kind comparison it installs SILENTLY, and a
-// user who granted "talk to one host" is now running an app that may "connect
-// to any computer on the internet" -- the exact grant journey 1 puts on
-// camera.
-//
-// Its failure mode is "no prompt appeared", which no manual checklist catches
-// (docs/development/testing.md SS5). ./update.test.ts is the only thing between
-// that rule and a silent regression, which is why that file mutation-tests
-// itself against three deliberately-wrong implementations.
+// bundle and/or manifest -- does it install silently, must the user be
+// asked, or is it refused outright? Re-consent is a SUBSET CHECK over the
+// granted PATTERN set, never a comparison of capability KINDS -- see
+// widensAuthority below, and README.md's Design notes for why.
 
 import type { CapabilityKind, Grant, Pattern } from '../../contracts/index.js'
 import { canonicalAddress, classifyAddress } from './address.js'
@@ -26,53 +12,26 @@ import { isArray, ownProperty } from './own-property.js'
 /**
  * What the broker does with the update.
  *
- * `rollback-choice` is the one outcome that always wins outright: an
- * unacknowledged below-floor version needs an explicit choice regardless of
- * anything else, because nothing else about it can be trusted either (see
- * `rollback-choice` below). Once a rollback is acknowledged, the outcome
- * instead follows the SAME `capability-prompt` > `reconsent` > `silent`
- * hierarchy an ordinary at-or-above-floor update would -- `rollback-notice`
- * is the rollback world's `silent`, not a rung above `capability-prompt`/
- * `reconsent`, and applies only once neither fires. **Fixed 2026-09-05**
- * (`ADR-0013`'s amendment): it used to reach `rollback-notice` -- a silent
- * install -- even when the offering also widened authority or changed the
- * bundle, downgrading what should have been a prompt into the one outcome
- * that installs unattended.
+ * Ordered by severity: `capability-prompt` > `reconsent` > `silent`. A
+ * below-floor version needs `rollback-choice` until acknowledged for this
+ * origin; after that it re-enters the same hierarchy, with `rollback-notice`
+ * standing in for `silent` -- never a shortcut past `capability-prompt`/
+ * `reconsent` (README.md, Design notes).
  *
- * - `silent`        install it; nothing the user consented to has changed.
- * - `reconsent`     "this app's code changed" (ADR-0005: hash-pinning is the
- *                   only integrity mechanism in v0, so the pin breaking IS the
- *                   signal). Same authority, different bytes.
+ * - `silent`             nothing the user consented to has changed.
+ * - `reconsent`          same authority, different code (ADR-0005: the hash
+ *                        pin breaking IS the signal).
  * - `capability-prompt`  the manifest asks for authority beyond the granted
- *                   pattern set. Strictly more serious than `reconsent`, and
- *                   it subsumes it: granting new authority necessarily
- *                   re-establishes consent for the app as it now is, whereas
- *                   re-consenting to changed code says nothing about new
- *                   authority.
- * - `rollback-choice`   the version is below this origin's own floor -- a
- *                   validly hash-pinned, validly-authorised bundle can still
- *                   be a replayed older one, and no automated check can tell
- *                   the two apart. **2026-09-04, owner decision, reversing
- *                   this module's original stance:** this is no longer a
- *                   silent, no-prompt block. The user is warned and given an
- *                   actual choice -- proceed with the older version, or keep
- *                   what is cached -- the first time this happens for a given
- *                   origin (`update.rollbackAcknowledged` false).
- * - `rollback-notice`   the same below-floor situation, but the user has
- *                   already chosen, at least once, to accept a rollback from
- *                   this origin (`update.rollbackAcknowledged` true), AND
- *                   this offering asks for nothing an ordinary
- *                   at-or-above-floor update wouldn't also get `silent` for
- *                   -- no wider authority, no bundle change `isSameBundle`
- *                   would flag. Installs proceed the same as `silent`; the
- *                   caller shows an ongoing, passive, non-blocking notice
- *                   rather than asking again -- "warn every time, but never
- *                   require a click" was the owner's framing.
- *                   `rollbackAcknowledged` never expires on its own once
- *                   true, so this function never asks `rollback-choice`
- *                   again for that origin -- but a widened pattern set or
- *                   genuinely different code is exactly as `capability-
- *                   prompt`/`reconsent`-worthy as for any other update.
+ *                        pattern set -- subsumes `reconsent`: granting new
+ *                        authority re-establishes consent for the app as it
+ *                        now is.
+ * - `rollback-choice`    below this origin's version floor, never yet
+ *                        acknowledged -- the user is warned and chooses
+ *                        (README.md, Design notes).
+ * - `rollback-notice`    below floor, already acknowledged, and this
+ *                        offering wants nothing an ordinary update wouldn't
+ *                        also get `silent` for -- installs, with a passive,
+ *                        non-blocking notice instead of a prompt.
  */
 export type UpdateDecision = 'silent' | 'reconsent' | 'capability-prompt' | 'rollback-choice' | 'rollback-notice'
 
@@ -155,8 +114,8 @@ export interface UpdateInput {
  * by construction, not by two call sites happening to agree.
  */
 function ordinaryEscalation (update: UpdateInput): 'capability-prompt' | 'reconsent' | null {
-  // A SUBSET CHECK, not a kind comparison. See the file header -- this single
-  // line is the reason this module exists.
+  // A SUBSET CHECK, not a kind comparison -- see widensAuthority below, and
+  // ./README.md's Design notes for why a kind comparison misses a `*:*` widening.
   if (widensAuthority(update.grantedPatterns, update.newPatterns)) return 'capability-prompt'
 
   // Deliberately checked AFTER the pattern check and not folded into it.
