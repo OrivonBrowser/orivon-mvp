@@ -226,7 +226,8 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
         closed: entry.closed,
         close: async (): Promise<void> => { await handleTable.release(key, entry.id) },
         fail: (code, platformCode) => { handleTable.fail(key, entry.id, code, platformCode) },
-        abort: () => { handleTable.abort(key, entry.id) }
+        abort: () => { handleTable.abort(key, entry.id) },
+        onUnlink: (listener) => { handleTable.onUnlink(key, entry.id, listener) }
       }
     })
   }

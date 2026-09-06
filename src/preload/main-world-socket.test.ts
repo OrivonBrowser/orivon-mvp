@@ -1,6 +1,6 @@
 import { execSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { installOrivon } from './main-world-socket.js'
 import type { OrivonErrorCode } from '../contracts/errors.js'
@@ -302,7 +302,7 @@ describe('installOrivon', () => {
 
   it('P-F6: the SHIPPED bundle\'s installOrivon has no free identifier, not just the per-module transform\'s copy', () => {
     const builtPath = resolve(process.cwd(), 'out/preload/app.js')
-    if (!existsSync(builtPath)) execSync('npm run build', { stdio: 'ignore' })
+    if (isStale(builtPath)) execSync('npm run build', { stdio: 'ignore' })
     const bundled = readFileSync(builtPath, 'utf8')
 
     const source = extractFunctionSource(bundled, 'installOrivon')
@@ -336,6 +336,30 @@ describe('installOrivon', () => {
     })
   })
 })
+
+
+/**
+ * Whether `out/preload/app.js` needs rebuilding before it can be trusted as
+ * "the SHIPPED bundle".
+ *
+ * An existence check alone is not enough, and this test failed on `main`
+ * exactly that way: a leftover `out/` from before installOrivon existed is
+ * present, so no rebuild was triggered, and the assertion failed against a
+ * bundle that predated the code under test. Mtimes are what actually answer
+ * the question the test is asking.
+ */
+function isStale (builtPath: string): boolean {
+  if (!existsSync(builtPath)) return true
+  const builtAt = statSync(builtPath).mtimeMs
+  // Both directories, because the bundle inlines contracts/ as well as this
+  // file's own sources -- a stale contracts constant would be just as wrong.
+  return ['src/preload', 'src/contracts'].some((dir) => {
+    const full = resolve(process.cwd(), dir)
+    return readdirSync(full)
+      .filter((name) => name.endsWith('.ts'))
+      .some((name) => statSync(join(full, name)).mtimeMs > builtAt)
+  })
+}
 
 /** Finds `functionName`'s full declaration text in `source` by brace/paren balancing -- a regex alone cannot find the body's opening brace past a default-parameter expression that itself contains `{}` (installOrivon's own `target = ... ? {} : window`). */
 function extractFunctionSource (source: string, functionName: string): string {
