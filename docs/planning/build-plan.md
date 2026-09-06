@@ -136,10 +136,17 @@ distribution, so it is reached as early as possible rather than last.
 **1. Shell** — `WebContentsView` tabs, omnibox, back/forward, window chrome.
 No dependencies. Use the prior prototype's GUI as *visual reference only* (`ADR-0002`).
 
-**2. Capability broker** — manifest parsing, grant model, per-origin enforcement, grant
-prompts, per-app `session` partitions. Depends on the shell for preload/IPC.
+**2. Capability broker** — manifest parsing, the grant model (the grant ledger and a headless
+grant-decision interface, so the allow path is exercised end to end before any human sees it),
+per-origin enforcement, per-app `session` partitions. Depends on the shell for preload/IPC.
 **Settle the origin definition here** — it keys storage, partitions, grants and derived keys,
 and changing it after the first grant is persisted orphans every app (`ADR-0003`).
+
+> **Amendment, 2026-09-06 (owner decision `d-0022`).** This step's deliverable list previously
+> also said "grant prompts", which contradicted `A20`/`A27`'s own "Needed by" columns (both:
+> "before the grant prompt is built, build step 4"). `docs/open-questions.md` A36 resolved this
+> on 2026-09-03 — split it, neither document was wrong — but the fix was never actually carried
+> into this file's own wording until now. The user-facing prompt itself moves to step 4 below.
 
 **3. `orivon-node-shim`** — `net`, `dgram`, `fs` over `orivon.*`. Depends on the broker.
 Load-bearing for the flagship, not a developer nicety (`ADR-0005`).
@@ -147,8 +154,10 @@ Load-bearing for the flagship, not a developer nicety (`ADR-0005`).
 **4. App loader** — discover the manifest at `/.well-known/orivon.json`
 (`capability-api.md`), fetch + cache assets, compute and pin the **bundle hash**
 (`ADR-0009`, `bundle-hash.md`) and drive `decideUpdate()` (`src/broker/policy/update.ts`) on
-every re-fetch. Depends on broker storage. The pinning here is also what `ADR-0006` and the
-future attestation model rest on.
+every re-fetch. **Also where the user-facing grant prompt is built** (moved from step 2, see the
+amendment there) — the dialog a person actually reads, built once a real manifest exists to
+render in it and `A20`/`A27` are settled. Depends on broker storage. The pinning here is also
+what `ADR-0006` and the future attestation model rest on.
 
 Also where T22's CSP gets wired in: `src/broker/policy/connect-src.ts` computes the
 `connect-src` header value (build step 2), but nothing calls

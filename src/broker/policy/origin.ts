@@ -1,50 +1,18 @@
-// Origin derivation -- the isolation key.
-//
-// An app's origin keys its storage domain, its session partition, its grant
-// ledger entry and its derived identity key (capability-api.md SSOrigin,
-// ADR-0003). Changing the definition after the first grant is persisted
-// invalidates every stored grant and orphans every app's data, so it is
-// settled here, once, before the broker that will persist those grants exists.
-//
-// The definition is the WEB's -- scheme + host + port -- deliberately not a
-// new one (capability-api.md). What this file adds on top of `URL.origin` is
-// the rejection of everything that is not a real network origin, plus one
-// host canonicalisation the URL parser does not do. Both are below, with the
-// reason each exists.
-//
-// Pure by structural rule: no electron, no node:fs/net/dns, no I/O at all
-// (src/broker/policy/README.md). `URL` is a global -- no import needed.
+// Origin derivation -- the isolation key. Settled once, here, before the
+// broker persists real grants: see ../README.md's "Settle the origin
+// definition here" for why changing it later orphans every app's data.
+// `URL` is a global -- no import needed for it.
 
 import { classifyAddress } from './address.js'
 
 /**
  * Only these two schemes yield an origin.
  *
- * An ALLOWLIST, never a denylist, because `URL.origin` has two distinct
- * silent failure modes and a denylist of `file:` and `data:` misses both:
- *
- *   1. `new URL('file:///etc/passwd').origin` is the STRING `"null"`, not the
- *      value `null`. Returned unchecked it is a perfectly serviceable object
- *      key and directory name, so every `file:`, `data:`, `about:`,
- *      `javascript:` and `magnet:` URL in the browser would collapse into ONE
- *      shared storage domain holding ONE grant ledger entry. Nothing throws
- *      and nothing looks wrong (security-model.md T13b).
- *
- *   2. `new URL('blob:https://x.example/u').origin` is `"https://x.example"` --
- *      a real, entirely legitimate-looking origin, for a scheme T13b requires
- *      be rejected outright. `ws:`, `wss:` and `ftp:` do the same thing. A
- *      denylist that names `file:` and `data:` reads as complete and lets all
- *      four through.
- *
- * IPFS CIDs and ENS names key on something other than scheme+host+port and are
- * deferred until trustless resolution exists (capability-api.md). They get an
- * explicit branch here when they arrive; until then an unrecognised scheme is
- * a denial, which is the failure direction we want.
- *
- * `http:` is present on purpose. security-model.md T13c forbids PERSISTING a
- * grant for a loopback or plain-http origin -- it does not forbid deriving
- * one. The developer-mode and localhost-fixture paths both need a real origin
- * to scope a session-lifetime grant to (docs/development/testing.md).
+ * ALLOWLIST, never a denylist -- extending it to `file:`, `blob:`, `ws:` or
+ * similar reopens the origin-collapse and opaque-origin-borrowing bugs a
+ * denylist can't see (README.md, Design notes). `http:` stays: T13c forbids
+ * PERSISTING a loopback/plain-http grant, not deriving one -- dev-mode and
+ * the localhost fixture both need a real origin to scope a session grant to.
  */
 const ORIGIN_BEARING_SCHEMES = ['http:', 'https:']
 

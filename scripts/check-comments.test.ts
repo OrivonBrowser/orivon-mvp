@@ -59,9 +59,16 @@ describe('checkComments', () => {
       expect(checkComments(repo({ 'src/a.ts': body }), { limit: 1 }).ok).toBe(true)
     })
 
-    it('ignores comments that are not at the top of the file', () => {
+    it('does not ignore a header essay relocated below the file\'s imports (A64)', () => {
+      // The exact bypass A64 named: measurePreamble used to stop counting at
+      // the first non-comment line, so an import at line 1 made a 40-line
+      // essay after it measure as 0. Rule 1's purpose -- bounding what a
+      // reader passes through before reaching real code -- does not care
+      // whether that reader passed an import or nothing first.
       const body = 'import { y } from "./y.js"\n' + '// a\n'.repeat(40) + 'export const x = 1\n'
-      expect(checkComments(repo({ 'src/a.ts': body })).ok).toBe(true)
+      const result = checkComments(repo({ 'src/a.ts': body }))
+      expect(result.ok).toBe(false)
+      expect(result.offenders).toEqual([{ file: 'src/a.ts', preamble: 40, limit: PREAMBLE_LIMIT }])
     })
 
     it('does not count a shebang toward the preamble', () => {
@@ -72,6 +79,81 @@ describe('checkComments', () => {
     it('measures a file that is entirely comments', () => {
       const result = checkComments(repo({ 'src/a.ts': '// a\n'.repeat(PREAMBLE_LIMIT + 5) }))
       expect(result.offenders[0]?.preamble).toBe(PREAMBLE_LIMIT + 5)
+    })
+
+    it('accepts a short comment at line one', () => {
+      const result = checkComments(repo({ 'src/a.ts': preamble(3) }))
+      expect(result.ok).toBe(true)
+      expect(result.offenders).toEqual([])
+    })
+  })
+
+  describe('a header essay placed after the imports (A64)', () => {
+    it('measures it the same as one at line one, through several single-line imports', () => {
+      const body = 'import { a } from "./a.js"\n' +
+        'import { b } from "./b.js"\n' +
+        '/**\n' + ' * x\n'.repeat(38) + ' */\n' +
+        'export const x = 1\n'
+      const result = checkComments(repo({ 'src/a.ts': body }))
+      expect(result.ok).toBe(false)
+      expect(result.offenders[0]?.preamble).toBe(40)
+    })
+
+    it('follows a multi-line (brace-spanning) import to find the essay after it', () => {
+      const body = 'import {\n  a,\n  b,\n  c\n} from "./abc.js"\n' +
+        '// essay\n'.repeat(30) +
+        'export const x = 1\n'
+      const result = checkComments(repo({ 'src/a.ts': body }))
+      expect(result.ok).toBe(false)
+      expect(result.offenders[0]?.preamble).toBe(30)
+    })
+
+    it('does not let the essay-after-imports bypass survive the exemption pragma', () => {
+      const body = 'import { a } from "./a.js"\n' +
+        '// orivon:comment-budget -- reason\n' +
+        '// a\n'.repeat(39) +
+        'export const x = 1\n'
+      const result = checkComments(repo({ 'src/a.ts': body }))
+      expect(result.ok).toBe(true)
+      expect(result.exempted).toEqual([{ file: 'src/a.ts', reason: 'reason' }])
+    })
+
+    it('does not flag a run of short, per-declaration comments scattered after the first declaration', () => {
+      // Only the OPENING region -- before the first substantive statement --
+      // is ever measured. A file whose first real line is a small export,
+      // followed by many short doc comments on later declarations, is the
+      // ordinary case Rule 1 is not meant to catch.
+      const body = 'import { a } from "./a.js"\n' +
+        'export const FIRST = 1\n' +
+        ('/** three lines\n * of doc\n */\nexport const NEXT = 2\n').repeat(10)
+      expect(checkComments(repo({ 'src/a.ts': body })).ok).toBe(true)
+    })
+
+    it('does not sum several short comment blocks separated by imports into a false positive', () => {
+      // Each block is well under the limit on its own; only the LARGEST
+      // contiguous run should ever be compared against it, never the total.
+      const body = '// 10 lines, block one\n'.repeat(10) +
+        'import { a } from "./a.js"\n' +
+        '// 10 lines, block two\n'.repeat(10) +
+        'import { b } from "./b.js"\n' +
+        '// 10 lines, block three\n'.repeat(10) +
+        'export const x = 1\n'
+      const result = checkComments(repo({ 'src/a.ts': body }))
+      expect(result.ok).toBe(true)
+      expect(result.offenders).toEqual([])
+    })
+
+    it('does not flag a large comment block that sits AFTER the first declaration, not before it', () => {
+      // Guards against a third bypass: relocating the essay past the first
+      // substantive line (inside a class body, say) rather than merely past
+      // the imports. The measured region ends at the first real statement,
+      // wherever the essay sits after that.
+      const body = 'import { a } from "./a.js"\n' +
+        'export class Foo {\n' +
+        '  // a\n'.repeat(1) +
+        '}\n' +
+        '/**\n' + ' * mid-file block, not a header\n'.repeat(40) + ' */\n'
+      expect(checkComments(repo({ 'src/a.ts': body })).ok).toBe(true)
     })
   })
 
