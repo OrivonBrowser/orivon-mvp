@@ -450,3 +450,64 @@ describe('what may cross to a renderer', () => {
     expect(wire.id).toBe(handle.id)
   })
 })
+
+describe('a declared socket allowance (open-questions.md A80)', () => {
+  /** Acquires one socket under an explicit per-origin allowance. */
+  function acquireUnder (t: ReturnType<typeof table>, socketLimit: number, origin = APP): void {
+    t.acquire({ origin, kind: 'tcpSocket', authorisedBy: { by: 'grant', grantId: TCP_GRANT }, destroy: noop, socketLimit })
+  }
+
+  it('allows exactly the declared number and refuses the next', () => {
+    const t = table()
+    for (let i = 0; i < 3; i += 1) acquireUnder(t, 3)
+
+    expect(t.counts(APP).sockets).toBe(3)
+    expect(thrown(() => { acquireUnder(t, 3) }).code).toBe('limit')
+  })
+
+  it('names the declared number in the message, not the platform ceiling', () => {
+    const t = table()
+    for (let i = 0; i < 3; i += 1) acquireUnder(t, 3)
+
+    expect(thrown(() => { acquireUnder(t, 3) }).message).toContain('3')
+  })
+
+  it('shares the declared budget across socket kinds, exactly as the ceiling does', () => {
+    const t = table()
+    const server = t.acquire({ origin: APP, kind: 'tcpServer', authorisedBy: { by: 'grant', grantId: TCP_GRANT }, destroy: noop, socketLimit: 2 })
+    t.acquireDerived({ origin: APP, kind: 'tcpSocket', parentId: server.id, destroy: noop, socketLimit: 2 })
+
+    expect(thrown(() => { acquireUnder(t, 2) }).code).toBe('limit')
+  })
+
+  it('still falls back to the platform ceiling when no allowance is given', () => {
+    const t = table()
+    for (let i = 0; i < LIMITS.concurrentSockets; i += 1) acquireSocket(t)
+
+    expect(thrown(() => acquireSocket(t)).code).toBe('limit')
+  })
+
+  it('releases the refused handle rather than leaking it, same as every other cap', () => {
+    const t = table()
+    for (let i = 0; i < 2; i += 1) acquireUnder(t, 2)
+
+    const released: string[] = []
+    expect(thrown(() => {
+      t.acquire({
+        origin: APP,
+        kind: 'tcpSocket',
+        authorisedBy: { by: 'grant', grantId: TCP_GRANT },
+        destroy: (reason) => { released.push(reason) },
+        socketLimit: 2
+      })
+    }).code).toBe('limit')
+    expect(released).toEqual(['failed'])
+  })
+
+  it('is per origin: one app\'s small allowance does not bind another', () => {
+    const t = table()
+    for (let i = 0; i < 2; i += 1) acquireUnder(t, 2)
+
+    expect(() => { acquireUnder(t, 50, OTHER) }).not.toThrow()
+  })
+})

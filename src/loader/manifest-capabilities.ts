@@ -43,7 +43,7 @@ const MAX_CURVES = 8
 const MIN_UNPRIVILEGED_PORT = 1024
 
 const CAPABILITIES_KEYS = ['net', 'fs', 'id', 'protocols']
-const NET_KEYS = ['tcp', 'udp']
+const NET_KEYS = ['tcp', 'udp', 'concurrentSockets']
 const TCP_KEYS = ['connect', 'listen']
 const UDP_KEYS = ['bind', 'send']
 const FS_KEYS = ['quotaBytes']
@@ -250,10 +250,35 @@ function readNet (raw: unknown, path: string): NetCapability {
   const tcpRaw = ownProperty(raw, 'tcp', isAny)
   const udpRaw = ownProperty(raw, 'udp', isAny)
 
-  const result: { tcp?: TcpCapability, udp?: UdpCapability } = {}
+  const result: { tcp?: TcpCapability, udp?: UdpCapability, concurrentSockets?: number } = {}
   if (tcpRaw !== undefined) result.tcp = readTcp(tcpRaw, `${path}.tcp`)
   if (udpRaw !== undefined) result.udp = readUdp(udpRaw, `${path}.udp`)
+
+  // NOT bounded against LIMITS.concurrentSockets here. The broker clamps it
+  // instead (GrantLedger.socketAllowance), so raising or lowering the platform
+  // ceiling never turns an already-published manifest into an invalid one --
+  // see contracts/manifest.ts's own note on the field.
+  const declared = readPositiveInteger(raw, path, 'concurrentSockets')
+  if (declared !== undefined) result.concurrentSockets = declared
   return result
+}
+
+/**
+ * The declared-quota grammar, shared by `fs.quotaBytes` and
+ * `net.concurrentSockets` (code-guidelines.md Rule 3 -- the REASON is shared,
+ * not just the shape: both are an app declaring a positive integer budget the
+ * broker then enforces).
+ */
+function readPositiveInteger (raw: Record<string, unknown>, path: string, field: string): number | undefined {
+  const value = ownProperty(raw, field, isAny)
+  if (value === undefined) return undefined
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    reject(`${path}.${field} must be a finite number, got ${describeValue(value)}`)
+  }
+  if (!Number.isInteger(value)) reject(`${path}.${field} must be an integer, got ${value}`)
+  if (value <= 0) reject(`${path}.${field} must be positive, got ${value}`)
+  if (!Number.isSafeInteger(value)) reject(`${path}.${field} exceeds Number.MAX_SAFE_INTEGER`)
+  return value
 }
 
 function readFs (raw: unknown, path: string): FsCapability {
@@ -261,15 +286,8 @@ function readFs (raw: unknown, path: string): FsCapability {
   const extra = extraKey(raw, FS_KEYS)
   if (extra !== null) reject(`${path} has an unrecognised field: ${describeValue(extra)}`)
 
-  const quotaRaw = ownProperty(raw, 'quotaBytes', isAny)
-  if (quotaRaw === undefined) return {}
-  if (typeof quotaRaw !== 'number' || !Number.isFinite(quotaRaw)) {
-    reject(`${path}.quotaBytes must be a finite number, got ${describeValue(quotaRaw)}`)
-  }
-  if (!Number.isInteger(quotaRaw)) reject(`${path}.quotaBytes must be an integer, got ${quotaRaw}`)
-  if (quotaRaw <= 0) reject(`${path}.quotaBytes must be positive, got ${quotaRaw}`)
-  if (!Number.isSafeInteger(quotaRaw)) reject(`${path}.quotaBytes exceeds Number.MAX_SAFE_INTEGER`)
-  return { quotaBytes: quotaRaw }
+  const quotaBytes = readPositiveInteger(raw, path, 'quotaBytes')
+  return quotaBytes === undefined ? {} : { quotaBytes }
 }
 
 function readIdCapability (raw: unknown, path: string): IdCapability {

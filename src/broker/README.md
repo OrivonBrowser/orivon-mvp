@@ -125,6 +125,36 @@ against a PUBLIC host. The owner chose the wider set knowing that.
 **Scope: `tcp.connect` only.** `udp.send` shares the pattern grammar and would
 want the same rule, but it has no implementation yet -- wiring it is part of
 whoever builds `udp.send`, not of this.
+### The socket allowance -- a declared number, not a hidden one
+
+Owner decision, 2026-09-06 (`open-questions.md` A80). An origin's simultaneous-
+socket budget used to be `LIMITS.concurrentSockets` (512) for everyone, declared
+by nobody and shown to nobody -- while being the largest resource commitment in
+the system, because every open socket pins a read and a write credit window
+(~640 MiB at the ceiling).
+
+It is now the app's own `net.concurrentSockets`, clamped to the ceiling, with
+`LIMITS.defaultConcurrentSockets` (64) for an app that declares nothing. The
+point of the modest default is that it is the *forcing function*: an ordinary
+app never reaches 64, so anything that genuinely needs the ceiling must declare
+a number -- and that number is then one a person saw at grant time.
+
+**It follows `fs.quotaBytes` exactly**, which already solved this for disk:
+optional in the manifest, enforced in the broker, rendered in the prompt. Both
+now share one validator (`readPositiveInteger`, `loader/manifest-capabilities.ts`)
+because the reason is shared, not only the shape.
+
+**Clamped, never rejected.** The manifest validator deliberately accepts a
+number above the ceiling and `GrantLedger.socketAllowance` takes the minimum.
+Rejecting at parse time would make any future change to
+`LIMITS.concurrentSockets` a breaking change for every manifest that had
+declared the old one.
+
+**`AcquireRequest.socketLimit` is optional and falls back to the CEILING, not
+the default.** Deliberate, and the direction matters: a caller that does not
+know an origin's declaration must not be able to hand it a budget SMALLER than
+it is entitled to. Only `index.ts`'s `connect` knows the ledger, and only it
+passes the real number.
 
 ### `port-pump.ts` -- the read-side byte pump
 
