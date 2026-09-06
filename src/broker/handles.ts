@@ -262,6 +262,19 @@ export class HandleTable {
   }
 
   /**
+   * Registers the one listener told when this handle leaves the tables --
+   * synchronously, ahead of its teardown. Silent no-op for a handle this
+   * origin does not hold, including one already unlinked: registering late
+   * must not invent a terminal reason it cannot know, and the resource's own
+   * `closed` promise already carries the real one. See README.md's design
+   * notes for why this hook exists.
+   */
+  onUnlink (origin: string, handleId: string, listener: (code?: OrivonErrorCode) => void): void {
+    const record = this.#registry.existing(this.#key(origin))?.handles.get(handleId)
+    if (record !== undefined) record.unlink = listener
+  }
+
+  /**
    * The resource layer reporting that a handle died on its own.
    *
    * SSTcpSocket's close table requires `closed` to reject with 'reset' when the

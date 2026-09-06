@@ -120,7 +120,7 @@ export function stubBroker (
  * to a closed port pass its tests while crashing the real Electron main
  * process the moment it ran for real.
  */
-export function fakePort (): PortLike & { readonly sent: unknown[], emit: (message: unknown) => void, simulateClose: () => void } {
+export function fakePort (): PortLike & { readonly sent: unknown[], emit: (message: unknown) => void, simulateClose: () => void, isClosed: () => boolean } {
   let listener: ((message: unknown) => void) | undefined
   let closeListener: (() => void) | undefined
   let closed = false
@@ -135,7 +135,8 @@ export function fakePort (): PortLike & { readonly sent: unknown[], emit: (messa
     close: () => { closed = true },
     sent,
     emit: (message) => { listener?.(message) },
-    simulateClose: () => { closeListener?.() }
+    simulateClose: () => { closeListener?.() },
+    isClosed: () => closed
   }
 }
 
@@ -155,6 +156,8 @@ export interface FakeSocket {
   readonly failSpy: ReturnType<typeof vi.fn>
   readonly abortSpy: ReturnType<typeof vi.fn>
   readonly settleClosed: (error?: OrivonError) => void
+  /** Fires whatever the socket's consumer registered via `onUnlink`, the way HandleTable's own unlink pass does. Leaves `closed` pending, which is the case that matters. */
+  readonly unlink: (code?: OrivonErrorCode) => void
 }
 
 /**
@@ -168,6 +171,7 @@ export function fakeTcpSocket (
 ): FakeSocket {
   let settle: (error?: OrivonError) => void = () => {}
   let settled = false
+  let unlinkListener: ((code?: OrivonErrorCode) => void) | undefined
   const closed = new Promise<void>((resolve, reject) => {
     settle = (error) => {
       if (settled) return
@@ -197,9 +201,17 @@ export function fakeTcpSocket (
     localAddress: '10.0.0.5',
     localPort: 54321,
     setNoDelay: async () => {},
-    setKeepAlive: async () => {}
+    setKeepAlive: async () => {},
+    onUnlink: (listener) => { unlinkListener = listener }
   }
-  return { socket, closeSpy, failSpy, abortSpy, settleClosed: settle }
+  return {
+    socket,
+    closeSpy,
+    failSpy,
+    abortSpy,
+    settleClosed: settle,
+    unlink: (code) => { unlinkListener?.(code) }
+  }
 }
 
 /** Lets a fire-and-forget pump/wiring chain progress before assertions run. */
