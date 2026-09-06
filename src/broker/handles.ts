@@ -95,7 +95,7 @@ export class HandleTable {
       const origin = this.#key(request.origin)
       const table = this.#table(origin)
       table.assertAcquirable(request.authorisedBy)
-      table.assertCapacity(request.kind)
+      table.assertCapacity(request.kind, request.socketLimit)
       return table.insert(origin, request.kind, request.authorisedBy, null, request.destroy)
     } catch (error) {
       this.#releaseUnregistered(request.origin, request.destroy)
@@ -130,7 +130,7 @@ export class HandleTable {
         throw fail('internal', 'only a tcpSocket may be derived, and only from a socket')
       }
       table.assertAcquirable(parent.entry.authorisedBy)
-      table.assertCapacity(request.kind)
+      table.assertCapacity(request.kind, request.socketLimit)
       const entry = table.insert(origin, request.kind, parent.entry.authorisedBy, parent.entry.id, request.destroy)
       parent.children.add(entry.id)
       return entry
