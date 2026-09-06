@@ -3,6 +3,7 @@ import { GrantLedger } from './grant-ledger.js'
 import { memoryLedgerStorage } from './index.test-helpers.js'
 import type { LedgerStorage } from './ledger-storage.js'
 import type { Manifest } from '../contracts/index.js'
+import { LIMITS } from '../contracts/index.js'
 
 const APP = 'https://app.example'
 
@@ -624,5 +625,52 @@ describe('GrantLedger -- a persist failure still raises the in-memory floor', ()
 
     expect(() => { ledger.registerApp('http://localhost:3000', manifestWith('1.0.0')) }).not.toThrow()
     expect(ledger.versionFloorFor('http://localhost:3000')).toBe('1.0.0')
+  })
+})
+
+describe('GrantLedger.socketAllowance (open-questions.md A80)', () => {
+  function withNet (concurrentSockets?: number): Manifest {
+    const net = concurrentSockets === undefined ? {} : { concurrentSockets }
+    return { ...manifestWith('1.0.0'), capabilities: { net } }
+  }
+
+  it('gives an origin that declares nothing the modest default, not the ceiling', () => {
+    const ledger = new GrantLedger()
+    ledger.registerApp(APP, withNet())
+    expect(ledger.socketAllowance(APP)).toBe(LIMITS.defaultConcurrentSockets)
+  })
+
+  it('gives an origin the number it declared', () => {
+    const ledger = new GrantLedger()
+    ledger.registerApp(APP, withNet(200))
+    expect(ledger.socketAllowance(APP)).toBe(200)
+  })
+
+  it('clamps a declaration above the platform ceiling instead of honouring it', () => {
+    const ledger = new GrantLedger()
+    ledger.registerApp(APP, withNet(100_000))
+    expect(ledger.socketAllowance(APP)).toBe(LIMITS.concurrentSockets)
+  })
+
+  it('clamps rather than rejects, so raising the ceiling never invalidates a shipped manifest', () => {
+    const ledger = new GrantLedger()
+    expect(() => { ledger.registerApp(APP, withNet(100_000)) }).not.toThrow()
+  })
+
+  it('falls back to the default for an origin it has never seen', () => {
+    expect(new GrantLedger().socketAllowance('https://unknown.example')).toBe(LIMITS.defaultConcurrentSockets)
+  })
+
+  it('does not create a record for an origin merely asked about', () => {
+    const ledger = new GrantLedger()
+    ledger.socketAllowance('https://unknown.example')
+    expect(ledger.grantsFor('https://unknown.example')).toEqual([])
+  })
+
+  it('follows the manifest when a re-registered manifest changes the number', () => {
+    const ledger = new GrantLedger()
+    ledger.registerApp(APP, withNet(10))
+    ledger.registerApp(APP, withNet(300))
+    expect(ledger.socketAllowance(APP)).toBe(300)
   })
 })

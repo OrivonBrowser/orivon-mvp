@@ -225,11 +225,14 @@ export class OriginTable {
     }
   }
 
-  assertCapacity (kind: HandleKind): void {
+  assertCapacity (kind: HandleKind, socketLimit: number = LIMITS.concurrentSockets): void {
     const counts = this.#census()
 
-    if (SOCKET_KINDS.has(kind) && counts.sockets >= LIMITS.concurrentSockets) {
-      throw fail('limit', `origin holds ${String(LIMITS.concurrentSockets)} sockets`)
+    // The app's own declared allowance when the caller knows it, the platform
+    // ceiling otherwise -- never above the ceiling, which GrantLedger clamps
+    // before the number ever reaches here.
+    if (SOCKET_KINDS.has(kind) && counts.sockets >= socketLimit) {
+      throw fail('limit', `origin holds ${String(socketLimit)} sockets`)
     }
     // Counted however the user authorised it: the userSelected exception is to
     // the revocation cascade, not to the limits. An open fd is an open fd.
