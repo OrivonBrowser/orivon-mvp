@@ -2577,3 +2577,27 @@ agree on this — recorded here because d-0017 itself was otherwise undocumented
 **Needed by:** confirm before the discovery-trigger hint listener (the first real UI caller of
 `acknowledgeRollback`) is built — that PR should not have to guess at this granularity or
 re-derive the reasoning above.
+
+### A80 — nothing bounds the aggregate per-origin socket-memory ceiling, despite a comment claiming it is tracked here **[STILL OPEN]**
+
+Found 2026-09-06, `ca:security-reviewer` pass on `stream/contracts-12-write-pump-protocol`
+(PR #79, the write-pump wire protocol).
+
+`src/contracts/limits.ts`'s doc comment on `writeWindowBytes` says doubling the write window to
+match `readWindowBytes` "would be an unforced increase to an already-unbounded aggregate
+(flagged, not fixed, in `open-questions.md`)" — but no prior entry here actually names this. The
+real numbers: `LIMITS.concurrentSockets` (512) times `readWindowBytes` (1 MiB) already commits
+512 MiB of worst-case per-origin memory before this PR; `writeWindowBytes` (256 KiB) adds up to
+another 128 MiB, for a combined ~640 MiB per-origin ceiling — real, structural, and not
+referenced by any A-number an auditor searching for a T11/T11b tracking entry would find.
+
+**Still open, not fixed by this PR or any sibling in this stack:** no single check anywhere
+enforces a *combined* cap across concurrently-open sockets for one origin; each socket's window
+is bounded individually, but the aggregate is only as bounded as `concurrentSockets` allows.
+Whether 640 MiB/origin is an acceptable ceiling for the MVP, or whether a future PR should add
+an aggregate per-origin quota (distinct from the per-socket window), is the owner's call —
+raised here rather than decided unilaterally, per Rule 1.
+
+**Needed by:** whoever next revisits `LIMITS.concurrentSockets` or adds a third per-socket
+window (e.g. if a future capability needs its own credit scheme) should re-derive this number
+rather than assume it stayed flagged-but-unfixed by coincidence.
