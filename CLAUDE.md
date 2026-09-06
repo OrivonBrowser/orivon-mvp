@@ -2,17 +2,30 @@
 
 ## Start here
 
-**Phase: build step 2 (the capability broker) underway.** `checkConnect` now takes the
-granted pattern list, not the manifest (A18); `src/broker/index.ts` assembles `createBroker`
-against the grant ledger; `src/loader/manifest.ts` validates untrusted app manifests. All
-merged 2026-09-01, after a review pass found and fixed four real defects in the broker
-assembly (an unmapped I/O-error contract, a superseded grant that stayed live and
-unrevocable, an fs-capability DoS gap against T11b, an unenforced disk quota).
-**Still open** (not verified this session, per `build-plan.md`'s own sequencing):
-`dial`/`resolve`/`fs` remain injected dependencies, not real Node I/O, and nothing wires
-the broker to the shell's IPC layer yet.
-Last updated 2026-09-01 (8-PR review/fix/merge pass; five newly-found pre-existing defects
-filed as A27-A31, `docs/open-questions.md`).
+**Phase: step 2's remaining scope is the permission/grant prompt, now attributed to build step
+4 per an amended build plan** (`build-plan.md` on `main` still lists it under step 2 today; the
+`docs-alignment` stream carries the amendment). `dial`/`resolve`/`fs` are real Node I/O (not
+stubs) and the broker is wired to a real `ipcMain` control channel -- both already true on
+`main` today, independent of anything below. **Landed via #79-#82** (four stacked PRs, merged
+in order: #79 contracts -> #80 broker write half -> #81 preload/main-world surface -> #82 the
+e2e test's Phase 1, updated to match): `orivon.net.connect` is reachable from a real page, and
+the byte pump's write direction (A37, resolved) is built, tested and wired onto `window.orivon`
+via a `contextBridge.executeInMainWorld` main-world stream wrapper, verified end to end via a
+real Electron launch, not just unit tests -- a real grant, a real local echo server and a real
+denial of an out-of-manifest address all pass under `xvfb-run npm run test:e2e`.
+**Still open, by design, not a gap in this work:** no origin has a grant yet in production
+(`broker.grant()` has no production caller) -- that is build step 4's job (the app loader and
+the permission prompt), and it is *why* a page's own `net.connect` call is correctly `'denied'`
+today, not a completed byte transfer (the e2e test's own grant is test-only, via the broker's
+own API, not a production path). A half-close fix for `allowHalfOpen` was found to break
+`Duplex.toWeb`'s own EOF detection and was reverted rather than shipped broken -- filed as
+**A69**, now on `main`. A review pass across this whole landing found and fixed two CRITICAL
+defects (an idle-socket silence-timeout misfire, `close()` never resolving) plus a proven
+main-process-crash path and a message-count DoS gap -- see the PR bodies for #80/#81 and
+`docs/open-questions.md` A70/A80-A85 for what was found, fixed, and filed rather than fixed.
+Last updated 2026-09-06 (write-pump work landed across 4 stacked PRs, #79-#82, plus a same-day
+review/fix round; see PR bodies for the full verification trail; prior pass: A27-A31,
+`docs/open-questions.md`).
 
 **The human documentation is the map. Read it first — this file adds only what is specific to
 working here as an agent.**
@@ -72,6 +85,16 @@ app). **Corrected 2026-09-01 (A30):** the earlier claim that `titleBarStyle`/`ti
 rather than wrong, and that silence got over-generalized into a false "family" claim. **Check
 `node_modules/electron/electron.d.ts` directly first** — context7 is a second check, not a
 substitute.
+
+**`contextBridge.executeInMainWorld` (marked `@experimental`) is accepted as the main-world
+stream wrapper's mechanism -- owner's decision, formally recorded in ADR-0014** (docs-alignment
+branch, not yet on `main`; landing in a follow-up PR after this one). Confirmed live
+2026-09-05 via a throwaway probe app, including in a `sandbox: true` preload: a function passed
+in `args` is proxied and callable from the main world, a callback passed back through it works,
+and a real main-world `ReadableStream` built this way behaves normally for page code, failing
+closed rather than leaving a stream half-open on error. The alternative,
+`webFrame.executeJavaScript`, was rejected as weaker and was not built. See PR #81 for the
+probe.
 
 Open owner decisions are in `docs/open-questions.md` §A. A11 is closed (`ADR-0007`: cached
 bundles keep their real origin, intercepted inside the app's partition). **A10 is closed**
@@ -183,9 +206,15 @@ Nothing enforces this mechanically, by owner's decision — same call as the cod
 template does the work by being already in the box. Note it is bypassed entirely by
 `gh pr create --body`, which is exactly how an agent tends to open one.
 
-**`gh pr edit`/`gh pr create` fail here with a GraphQL "Projects (classic)" error**, unrelated
-to auth or content. Use `gh api -X PATCH repos/OrivonBrowser/orivon-mvp/pulls/<n> -F body=@file`
-instead (`-F` reads `@file`'s contents; `-f` would send the literal string `@file`).
+**`gh pr edit` fails here with a GraphQL "Projects (classic)" error** (also true of
+`--label`/`--add-label` on `gh pr create`), unrelated to auth or content -- but plain
+`gh pr create --title ... --body-file ...` with no `--label` works fine, confirmed
+repeatedly 2026-09-05. To edit an existing PR's body, use
+`gh api -X PATCH repos/OrivonBrowser/orivon-mvp/pulls/<n> -F body=@file` instead (`-F` reads
+`@file`'s contents; `-f` would send the literal string `@file`). To label a PR, use
+`gh api -X POST repos/OrivonBrowser/orivon-mvp/issues/<n>/labels -f labels[]=<label>` instead
+(repeat `-f labels[]=` per label, or send a JSON array body) -- confirmed working for all of
+#79-#83's labels.
 
 ### Code guidelines
 
@@ -255,6 +284,9 @@ in a lookahead inside a single `regex_match`.
 **Read `docs/development/parallel-work.md` before starting any build step.** Then:
 
 - Work in a **worktree** on `stream/<name>`, matching the ownership map.
+- **A stacked PR (branch B needs branch A's unmerged commits) needs a base ref a native
+  worktree tool can't take** -- it only branches from `origin/<default>` or the current HEAD.
+  Use `git worktree add <path> -b <new-branch> <base-branch>` directly instead.
 - **Stay inside your owned paths.** If a change needs a file another stream owns, that is a
   signal — raise it, do not just edit it.
 - **Never modify `src/contracts/` in the same PR as an implementation.** A contracts change
