@@ -125,7 +125,7 @@ export const resolveHost: Resolver = async (host) => {
  * once every queued byte has drained into the peer's receive window, and a
  * peer that simply stops reading never lets that happen -- so the returned
  * promise, and the handle's own `closed`, never settle (open-questions.md
- * A84, reproduced in ../socket-drain.test.ts).
+ * A84, reproduced in ./tests/socket-drain.test.ts).
  *
  * AI recommendation, not an owner decision: nothing in contracts/ or
  * handle-contracts.md specifies it. Matched to DIAL_TIMEOUT_MS above, on the
