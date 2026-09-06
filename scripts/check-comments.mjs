@@ -43,6 +43,9 @@ const PRAGMA_WITH_REASON = /orivon:comment-budget\s*--\s*(\S.*?)\s*$/
 const SOURCE_EXTENSION = /\.(ts|tsx|mts|cts|js|mjs|cjs)$/
 const DECLARATION_FILE = /\.d\.ts$/
 
+/** A line opening (or continuing) an `import` statement -- see `findPreambleBlock`. */
+const IMPORT_STATEMENT = /^import\b/
+
 /**
  * Two directories this guard never reads.
  *
@@ -65,37 +68,117 @@ function isTestFile (file) {
   return file.endsWith('.test.ts') || file === 'scripts/smoke.mjs' || file.startsWith('test/')
 }
 
+/** True for a line this guard treats as a comment line: `//`, `/*`, or a block-comment continuation (`*`). */
+function isCommentLine (line) {
+  return line.startsWith('//') || line.startsWith('/*') || line.startsWith('*')
+}
+
 /**
- * How many lines of comment a file opens with.
+ * Index just past the import statement starting at line `i` -- `i + 1` for an
+ * ordinary single-line import, further along when its `{ ... }` (or,
+ * defensively, `( ... )`) spans multiple lines. Tracks bracket depth rather
+ * than looking for a terminating `from` or `;`, since neither is required
+ * syntax: a bare `import './x.css'` has no `from`, and ASI makes the
+ * semicolon optional.
+ */
+function skipImportStatement (lines, i) {
+  const netDepth = (line) => {
+    let d = 0
+    for (const ch of line) {
+      if (ch === '{' || ch === '(') d++
+      else if (ch === '}' || ch === ')') d--
+    }
+    return d
+  }
+
+  let depth = netDepth(lines[i])
+  let j = i + 1
+  while (depth > 0 && j < lines.length) {
+    depth += netDepth(lines[j])
+    j++
+  }
+  return j
+}
+
+/**
+ * Length of the comment run over `[from, until)`, a range built by
+ * `findPreambleBlock` to hold only blank and comment lines. Measured, as
+ * before, from `from` through the LAST comment line in the range, so an
+ * interior blank line (a paragraph break) counts but trailing ones do not.
+ */
+function commentRunLength (lines, from, until) {
+  let last = -1
+  for (let i = from; i < until; i++) {
+    if (isCommentLine(lines[i].trim())) last = i
+  }
+  return last < from ? 0 : last - from + 1
+}
+
+/**
+ * The file's opening rationale block: the single largest contiguous run of
+ * comment lines sitting before the first substantive (non-import,
+ * non-comment, non-blank) line. An import line does not itself count toward
+ * a run, but does not end the opening region either -- so a header placed
+ * after the file's imports is measured exactly the same as one at line one,
+ * closing the gap a header could open by moving below them (A64). A comment
+ * block past that first real declaration is an ordinary per-declaration
+ * comment, not this file's header, and this function never looks at it.
  *
- * Counts from the first line (after a shebang, which is not a comment and is
- * not optional) through the LAST comment line before any code. A blank line
- * between two comment paragraphs counts -- the reader pays for it -- but the
- * blank lines between the block and the code do not.
+ * @returns {{ length: number, start: number, end: number }} `start`/`end`
+ *   bound the winning run (absolute line indices, `end` inclusive); both are
+ *   0 and meaningless when `length` is 0.
+ */
+function findPreambleBlock (text) {
+  const lines = text.split('\n')
+  const start = lines[0]?.startsWith('#!') ? 1 : 0
+
+  let best = { length: 0, start: 0, end: 0 }
+  const consider = (from, until) => {
+    const length = commentRunLength(lines, from, until)
+    if (length > best.length) best = { length, start: from, end: from + length - 1 }
+  }
+
+  let segmentStart = start
+  let i = start
+  while (i < lines.length) {
+    const trimmed = lines[i].trim()
+
+    if (trimmed === '' || isCommentLine(trimmed)) {
+      i++
+      continue
+    }
+
+    if (IMPORT_STATEMENT.test(trimmed)) {
+      consider(segmentStart, i)
+      i = skipImportStatement(lines, i)
+      segmentStart = i
+      continue
+    }
+
+    consider(segmentStart, i)
+    return best
+  }
+
+  consider(segmentStart, lines.length)
+  return best
+}
+
+/**
+ * How many lines of comment a file opens with -- see `findPreambleBlock` for
+ * what "opens with" means once imports are in play.
  *
  * @returns {number} 0 when the file does not open with a comment at all.
  */
 export function measurePreamble (text) {
-  const lines = text.split('\n')
-  const start = lines[0]?.startsWith('#!') ? 1 : 0
-
-  let lastComment = -1
-  for (let i = start; i < lines.length; i++) {
-    const line = lines[i].trim()
-    if (line === '') continue
-    if (!line.startsWith('//') && !line.startsWith('/*') && !line.startsWith('*')) break
-    lastComment = i
-  }
-
-  return lastComment < start ? 0 : lastComment - start + 1
+  return findPreambleBlock(text).length
 }
 
 /** The pragma's reason, or null when there is no pragma or it carries none. */
-function exemptionReason (text, preambleLines) {
-  const head = text.split('\n').slice(0, preambleLines + 1)
-  for (const line of head) {
-    if (!PRAGMA.test(line)) continue
-    return line.match(PRAGMA_WITH_REASON)?.[1] ?? null
+function exemptionReason (text, block) {
+  const lines = text.split('\n')
+  for (let i = block.start; i <= block.end; i++) {
+    if (!PRAGMA.test(lines[i])) continue
+    return lines[i].match(PRAGMA_WITH_REASON)?.[1] ?? null
   }
   return undefined
 }
@@ -153,10 +236,10 @@ export function checkComments (root, opts = {}) {
       continue
     }
 
-    const preamble = measurePreamble(text)
-    if (preamble <= limit) continue
+    const block = findPreambleBlock(text)
+    if (block.length <= limit) continue
 
-    const reason = exemptionReason(text, preamble)
+    const reason = exemptionReason(text, block)
     if (reason === null) {
       unjustified.push({ file })
       continue
@@ -170,7 +253,7 @@ export function checkComments (root, opts = {}) {
       continue
     }
 
-    offenders.push({ file, preamble, limit })
+    offenders.push({ file, preamble: block.length, limit })
   }
 
   const overLimit = new Set(baselined)

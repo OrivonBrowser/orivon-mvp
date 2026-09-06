@@ -2559,3 +2559,69 @@ agree on this — recorded here because d-0017 itself was otherwise undocumented
 **Needed by:** confirm before the discovery-trigger hint listener (the first real UI caller of
 `acknowledgeRollback`) is built — that PR should not have to guess at this granularity or
 re-derive the reasoning above.
+
+> **Correction, 2026-09-06 (`stream/backlog-12-comment-budget-gap`).** Resolved in the direction
+> A64 left open: `measurePreamble` (now `findPreambleBlock`) treats an import line as neither a
+> comment nor the end of the opening region, so a header essay after the imports measures the
+> same as one at line one. Two real in-review PRs (`src/broker/port-sink.ts`,
+> `src/preload/orivon-surface.ts`) exposed the gap by placing a 40+/46-line rationale block after
+> their imports; both are now correctly flagged. Restores the pre-PR#68 46-line reading for A64's
+> own file, `src/broker/policy/origin.ts`, rather than the 16-line one the bug produced. See A79
+> for what re-measuring correctly also surfaced.
+
+---
+
+### A79 — fixing A64 correctly reveals FIVE more files already over the Rule 1 budget on `main`, not just the two known ones **[STILL OPEN — needs owner decision]**
+
+Found 2026-09-06, `stream/backlog-12-comment-budget-gap`, verifying the A64 fix against `main`'s
+current tree per that lane's own gate instructions ("run `check:comments` against `main`
+unchanged, to catch a false positive in the new logic").
+
+It is not a false positive. A64's bug -- `measurePreamble` stopping at the first line that is
+neither comment nor blank, which an import always is -- silently hid every file shaped
+[imports][rationale essay][first declaration], not just the two sibling PRs
+(`stream/broker-23-write-pump`, `stream/broker-24-preload-net-surface`) were reviewed under.
+Running the fixed checker against `main` as it stands today (no source file changed) finds five
+more in that same shape, none previously flagged, none in `scripts/comment-budget-baseline.txt`:
+
+- `src/broker/policy/derive-p256.ts` -- 26 lines (limit 25)
+- `src/broker/policy/origin.ts` -- 30 lines (the exact file A64 was filed on; see the correction
+  there -- this is its restored, accurate measurement)
+- `src/broker/policy/update.ts` -- 52 lines
+- `src/broker/port-pump.ts` -- 45 lines
+- `src/main/index.ts` -- 40 lines
+
+Each was read in full (not just measured) to rule out a detection bug rather than a real
+violation: all five are genuine ALL-CAPS-section rationale blocks sitting between the last import
+and the first substantive declaration -- structurally identical to `port-sink.ts` and
+`orivon-surface.ts`'s own headers, right down to the "argues against a design not chosen" shape
+Rule 1's guard exists to catch. `src/preload/orivon-surface.ts` itself is also on this list in its
+CURRENT `main` form (44 lines), independent of `broker-24`'s own larger version (47) -- that
+sibling PR grows an already-hidden violation rather than introducing a new one.
+
+**Why not fixed or baselined here.** Every one of these six files (five above plus
+`orivon-surface.ts`) is owned by a stream other than this one (`comment-budget-gap` owns
+`scripts/check-comments.mjs` and its test only), so rewriting any of them is the cross-stream edit
+`parallel-work.md` says to raise, not make. Baselining them is equally not this lane's call:
+`scripts/comment-budget-baseline.txt`'s own header says, in as many words, "Nothing may be ADDED
+here. New code meets the budget" -- reopening that file to add six entries reverses a written
+convention, which is exactly the kind of promotion-by-side-effect Rule 1 (`CLAUDE.md`) warns
+against.
+
+**The practical consequence:** once this branch's checker fix reaches `main`, `check:comments`
+goes red on `main`'s own HEAD for these six files, independent of which PR happens to carry the
+fix -- fixing the bug and having `main` stay green are not both possible without one of the three
+remedies below landing first, or in the same merge.
+
+**AI recommendation, matching A54 SS1's precedent for the original 16-file baseline:** each owning
+stream fixes its own file's header (move the rationale to that directory's `README.md` under
+`## Design notes`; `src/trust/README.md` is the worked example) the next time it touches that
+file, rather than one coordinated branch reaching into five unrelated streams' paths. For
+whichever files cannot land a fix before this checker merges, either a per-file
+`// orivon:comment-budget -- <reason>` pragma (written by that file's owning stream, since the
+reason has to be real) or a one-time, owner-approved reopening of the baseline for exactly these
+six entries. **Owner's call** which remedy, and in particular whether the baseline's "closed" rule
+gets a one-time exception or stays closed while every file gets fixed or pragma'd first.
+
+**Needed by:** before `stream/backlog-12-comment-budget-gap` merges to `main` -- this is the
+sequencing note the conductor asked this lane to surface rather than resolve unilaterally.
