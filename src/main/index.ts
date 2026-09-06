@@ -4,45 +4,11 @@ import { createSubsystemContext, criticalFailureMessage, runAfterReady, runBefor
 import { subsystems } from './subsystems.js'
 import { BookmarkStore } from './bookmarks.js'
 
-// Main and preload are CommonJS; only the renderer is ESM. This is
-// electron-vite's default and it is kept deliberately, for one reason:
-// sandboxed preload scripts have no ESM context at all -- they run as plain
-// JavaScript and load electron via require. `sandbox: true` is non-negotiable
-// here, so the preload must be CJS, and matching main to it avoids a
-// two-format build for no gain.
-//
-// For the record, because it would otherwise be assumed: an ESM main process
-// works fine. `import { app, ... } from 'electron'` was verified against
-// Electron 44 on 2026-08-25 and returns the real API. If a future need for
-// ESM in main appears, nothing here blocks it.
-//
-// BrowserWindow -> BaseWindow (build step 1, 2026-08-26): confirmed via
-// live docs that BrowserWindow supports only a single full-size web view,
-// while BaseWindow composes many (window-customization.md) -- required for
-// the shell's chrome view + tab views. The webPreferences load-bearing note
-// below now lives in window.ts and tabs.ts, next to where each view is
-// actually constructed; still true, still worth reading there.
-//
-// A hookify rule rejects edits that weaken contextIsolation/sandbox/
-// nodeIntegration/webSecurity anywhere in this tree (security-model.md T17
-// and the block-insecure-webpreferences rule).
+// Do not add `ozone-platform: x11` here without solving its GPU crash on
+// this machine first -- the window-visibility bug it was chasing is really
+// window.ts's `showOnce` (README.md, Design notes).
 
-// TRIED AND REVERTED 2026-08-26, same session: forcing
-// `ozone-platform: x11` was tried here on a since-corrected diagnosis (a
-// report of "no window ever appears" was first misread as the window
-// opening on the wrong monitor, chased partway down a Wayland-can't-
-// control-window-position path). It made things strictly worse: the GPU
-// process segfaulted under XWayland on this machine (`exit_code=139`)
-// and the window stopped rendering at all. Reverted immediately. The
-// real bug was never about display selection -- see window.ts's
-// `showOnce` comment for the actual root cause and fix
-// (`ready-to-show` unreliable when loading from the dev server). Do not
-// re-add this switch without a real reason and without first solving
-// the GPU crash it causes here.
-
-// Subsystems register here rather than editing this file -- see registry.ts
-// and src/main/subsystems.ts. This is the only wiring code; adding a broker,
-// shim or telemetry subsystem touches subsystems.ts and nothing else.
+// Subsystems register in subsystems.ts (the append point), never here.
 function report (failures: SubsystemFailure[]): void {
   // Loud, never silent. A subsystem that failed to start may be a capability
   // that is now enforcing nothing, and handle-contracts.md SSWhat the shim

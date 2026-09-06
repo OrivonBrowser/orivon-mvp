@@ -1,8 +1,6 @@
-// The P-256 point derivation, split out of ./derive.ts (Rule 2,
-// docs/development/code-guidelines.md) because it is the part of key
-// derivation allowed to grow -- see its own doc comment below for why
-// secp256k1 is not served here. Frozen by the same golden vectors as
-// derive.ts; read that file's header before touching anything below.
+// Split out of ./derive.ts (Rule 2) -- frozen by the same golden vectors;
+// read that file's header before changing anything below. Why secp256k1
+// isn't served here: README.md, Design notes.
 
 import { concat } from './bytes.js'
 import { SCALAR_BYTES } from './derive-encoding.js'
@@ -12,28 +10,8 @@ import { fail } from './errors.js'
 
 /**
  * The public key for a derived scalar, as an uncompressed SEC1 point
- * (0x04 || X || Y, 65 bytes). **P-256 only.**
- *
- * secp256k1 IS NOT SERVED HERE, and that is the loud limitation of this file.
- * WebCrypto has no secp256k1 at all, so serving it would mean either
- * hand-rolling scalar multiplication -- variable-time, over a secret scalar, in
- * the file that holds every user's identity -- or reaching for a curve library
- * from the layer that ADR-0002 says must outlive the engine beneath it. The
- * first is unacceptable outright. The second is a real option, just not one to
- * take here: `src/nostr/` needs a secp256k1 implementation regardless, because
- * WebCrypto cannot produce a BIP-340 Schnorr signature either, so the point
- * multiplication costs nothing extra there and buys nothing extra here.
- *
- * The project rule is CLAUDE.md Rule 8, "pure-JS dependencies only" (no
- * compiler at install time), and Rule 6, "do not reinvent without a written
- * reason". There is no blanket "add no dependency" rule, and a pure-JS
- * audited curve library would satisfy both. The argument for staying on
- * WebCrypto here is engine-independence, not dependency count. Owner decision,
- * 2026-08-27; revisit it in the `nostr` stream (ADR-0010 SSRejected).
- *
- * What this file owns for secp256k1 -- the scalar, frozen by golden vectors --
- * is the part that must never change. The point is a deterministic function of
- * it, so the identity is pinned either way.
+ * (0x04 || X || Y, 65 bytes). **P-256 only** -- secp256k1 is deliberately
+ * not served here; see this directory's README.md, Design notes, for why.
  */
 export async function derivePublicKey (
   request: DeriveRequest & { readonly curve: 'P-256' }
