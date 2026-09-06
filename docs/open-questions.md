@@ -2728,3 +2728,116 @@ trigger scenarios (broker-initiated revoke here, vs. abrupt read-end/peer-reset 
 which "the owner revokes an app's network access and it actually stops" becomes a real,
 user-facing promise rather than an unreachable one, and this bug means that promise does not
 currently hold against an uncooperative remote peer.
+
+---
+
+### A69 — `netConnect`'s missing `allowHalfOpen` is real, but its "one-line fix" breaks `Duplex.toWeb`'s EOF detection entirely **[RESEARCH — investigated, no safe fix found yet]**
+
+Found 2026-09-05, `stream/broker-23-write-pump`, while building the write-side byte pump (A37)
+and checking `handle-contracts.md`'s close table against the real dial path.
+
+`src/broker/node-adapters.ts`'s `dialOne` calls `netConnect({ host: address, port })` with no
+`allowHalfOpen`, so Node's default (`false`) applies: when the **peer** sends FIN, Node
+auto-ends our writable too. This genuinely contradicts close-table row 2
+(`handle-contracts.md` §TcpSocket: peer sends FIN → readable ends, **writable stays open**,
+`closed` pending) — half-close is called load-bearing there for exactly this reason (a
+BitTorrent peer keeps reading a choke/interested handshake long after it stops writing new
+requests). The natural-looking fix is one line: add `allowHalfOpen: true` to the `netConnect`
+call.
+
+**That fix was written, then reverted before merging, because live testing found it trades this
+bug for a worse one.** Checked empirically (Node 24.11.1), not assumed:
+
+- With `allowHalfOpen: true`, once the peer sends FIN, the raw socket's own `readableEnded`
+  becomes `true` and its `'end'` event fires correctly and promptly — Node's own classic-streams
+  behaviour is exactly right.
+- But `Duplex.toWeb(socket).readable`'s `reader.read()` **never resolves with `done: true`** —
+  it hangs forever, even though the peer will never send another byte. Confirmed by ruling out
+  timing: waiting 500ms after the raw `'end'` event, then calling `reader.read()`, still hangs.
+- Confirmed the cause precisely: `reader.read()` only resolves once **our own side ALSO ends**
+  (calling `socket.end()` ourselves, in addition to the peer's FIN, immediately unblocks it).
+  With `allowHalfOpen: false` (today's default), the same scenario resolves `reader.read()`
+  correctly and immediately — the EOF-detection regression appears **only** in combination with
+  `allowHalfOpen: true`.
+- The write itself succeeds fine after the peer's FIN either way (`allowHalfOpen: true` does fix
+  the writable-closes-too-early half of the bug) — the newly-discovered problem is specifically
+  that `Duplex.toWeb`'s readable side stops reporting completion at all once the socket can be
+  half-open, seemingly gating its "done" signal on the underlying duplex's fully-closed state
+  rather than the readable half's own `'end'`.
+
+**Why this is worse than the bug it would have fixed.** The read side (`port-pump.ts`,
+merged and tested) depends entirely on `Duplex.toWeb(socket).readable` reporting EOF promptly.
+A peer that finishes sending and simply waits (an ordinary, common half-close pattern, not an
+edge case) would leave `port-pump.ts` waiting for bytes that will never arrive — the pump never
+sends `StreamEndMessage`, and the app-facing `readable` never closes — for the lifetime of the
+connection. Shipping `allowHalfOpen: true` as a drive-by fix inside the write-pump PR would have
+silently regressed already-correct, already-tested read-side behaviour, for a class of peer
+behaviour common enough that it would likely surface in the flagship's own BitTorrent traffic.
+
+**Not fixed here.** `dialOne` still omits `allowHalfOpen`, unchanged — the pre-existing gap
+(writable closes too early on a peer FIN) stands exactly as before this was investigated.
+Fixing it correctly needs one of: (a) a custom `ReadableStream` wrapper around the socket that
+derives its own completion signal from the raw socket's `'end'` event rather than trusting
+`Duplex.toWeb`'s, independent of `allowHalfOpen`; (b) confirming whether a newer or older Node
+release behaves differently (not checked — this repo pins Node 24); or (c) filing this upstream
+against Node's `Duplex.toWeb` if no released version resolves it. None of these is a one-line
+change, and (a) in particular changes `dialOne`'s readable-stream construction for every socket,
+not just half-open ones, so it deserves its own reviewed PR and its own test suite rather than
+riding in on the write-pump work that happened to surface it.
+
+**Needed by:** before any fix to this ships. Not blocking build step 2's write-pump work, whose
+own half-close support (the app's own `writable.close()`/`.abort()`, handled in
+`port-sink.ts`) is unaffected — Node's half-close behaviour when **we** close first is not
+gated by `allowHalfOpen` the way the peer-closes-first direction is.
+
+**Correction, 2026-09-06 (AI-REC, `stream/broker-23-write-pump`, B-F1).** The paragraph above
+understates one consequence: the write pump is not "unaffected" once it can be called after a
+peer FIN. Before the write-side pump existed, nothing ever wrote after a peer FIN, so the gap
+was latent. With the pump wired (this same branch), a write issued after a peer FIN rejects
+with an AbortError (`name: 'AbortError'`, `code: 'ABORT_ERR'`, confirmed empirically against a
+real socket, not assumed) because Node auto-ended our writable when the FIN arrived.
+`mapSocketError` had no sharper mapping for that shape than `'internal'`, and treating any
+mapped code as a whole-handle failure meant this specific write rejection killed the read side
+and rejected `closed` too — directly the close-table row this entry already names (peer FIN:
+readable ends, writable stays open, `closed` pending).
+
+**A narrower fix shipped in this same branch, not touching `allowHalfOpen`.**
+`port-sink.ts`'s write-rejection handler now recognises this exact AbortError shape and fails
+only the write direction, with code `'closed'`, leaving the read side and `closed` alone. The
+writable still ends too early on a peer FIN, exactly as the rest of this entry describes — this
+only stops that pre-existing gap from cascading into a second, worse failure (the whole handle
+dying) once something writes after it. The deeper fix this entry describes (a custom
+`ReadableStream` wrapper, or a Node-version/upstream fix) remains open and unattempted.
+
+---
+
+### A70 — `net.setNoDelay`/`net.setKeepAlive`/`net.close` consult only the connect-time registry, never a live re-check against the grant ledger **[STILL OPEN]**
+
+Found 2026-09-06, `stream/broker-23-write-pump`, during an adversarial pass over this same
+branch's diff.
+
+`ipc.ts`'s dispatch for these three control methods looks the handle id up in
+`transport.registry` -- populated once, at `net.connect` time -- and, if present, calls straight
+through to the registered `close`/`setNoDelay`/`setKeepAlive`. None of the three re-derives or
+re-checks the grant that authorised the underlying socket. `handles.ts`'s own header states the
+invariant this is measured against: "every operation on a handle goes through `lookup` or
+`run`" (T11c's ownership re-check, generalised) -- but these three control methods bypass
+`HandleTable` entirely, going through `PortRegistry` instead, which has no concept of a grant at
+all.
+
+**Practical window.** Between a grant being revoked and the socket's `closed` promise actually
+settling (revocation is documented as NOT waiting for teardown -- see `HandleTable.revoke`'s own
+doc, "does not wait for teardown"), these three calls can still succeed against a socket that is,
+from the app's declared authority, already gone. `net.close` succeeding here is arguably benign
+(the app is asking to close something already being closed); `net.setNoDelay`/`net.setKeepAlive`
+succeeding is a narrower concern -- calling a native binding against a socket mid-revocation,
+for a capability the ledger no longer grants.
+
+**Not fixed here.** This pattern predates this PR (the registry-lookup shape for `net.close` was
+already there); this PR only added two more control methods following the same shape. Whether
+the fix is "re-check `HandleTable.lookup` before dispatching these three" or "accept that the
+window is bounded by how fast `closed` settles and is not worth the extra check" is a design
+call, not a mechanical one -- flagged rather than decided here.
+
+**Needed by:** whoever next touches `ipc.ts`'s net.* dispatch, or before this window is treated
+as closed by any future security review.

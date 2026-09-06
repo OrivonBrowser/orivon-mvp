@@ -11,13 +11,10 @@ import type { CreditMessage, DataMessage, StreamEndMessage } from '../contracts/
 // all. ./ipc.ts is where a real port's `postMessage`/`on('message')` get
 // wired to `send`/`handleCredit`.
 //
-// THE WRITE HALF (an app writing bytes out) IS DELIBERATELY NOT HERE. There
-// is no wire message for it anywhere in contracts/ipc.ts -- handle-
-// contracts.md's Backpressure section only specifies the read side in
-// detail, and capability-api.md's Throughput section and ADR-0008 both stop
-// at the same point. Inventing one here would be a contracts decision made
-// from inside a broker-owned PR, which the write half's own review flagged
-// and filed as an open question rather than deciding silently.
+// THE WRITE HALF (an app writing bytes out) IS DELIBERATELY NOT HERE --
+// ./port-sink.ts is that direction's own pump, run backwards (the BROKER
+// grants the byte window there, rather than the renderer granting one
+// here), and ./socket-relay.ts is what wires both to one socket's port.
 //
 // WHAT "STOPS READING THE UNDERLYING OS SOCKET" ACTUALLY MEANS HERE: this
 // pump never calls reader.read() again once `credit` reaches zero or below.
