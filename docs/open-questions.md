@@ -825,7 +825,7 @@ by" columns are already correct as written and need no change.
 
 **Needed by:** done — this was the blocker on scheduling either half.
 
-### A37 — the byte pump's write direction has no wire protocol anywhere **[STILL OPEN]**
+### A37 — the byte pump's write direction has no wire protocol anywhere **[RESOLVED 2026-09-06]**
 
 Found while implementing the byte pump's broker side (build step 2, 2026-09-01) — specifically
 while designing `src/broker/port-pump.ts`, which relays the READ direction only.
@@ -865,6 +865,24 @@ against real backpressure behaviour — a recommendation to start from, not a de
 **Needed by:** before the preload-side byte-pump PR (readable/writable WHATWG streams built over
 the port in the isolated world) can implement `writable` at all.
 
+### Resolution, 2026-09-06
+
+`src/contracts/ipc.ts` (PR #79) now specifies the full write-side wire protocol this entry asked for:
+`WriteMessage` (renderer -> broker), `WriteAckMessage`/`WriteFailedMessage` (broker ->
+renderer), and the half-close/abort pair `WriteEndMessage`/`WriteAbortMessage` that the AI
+recommendation above did not anticipate needing. `LIMITS.writeWindowBytes`
+(`src/contracts/limits.ts`, 256 KiB) is the write-side credit window the AI recommendation's
+sketch omitted; `WRITE_HEARTBEAT_MS`/`WRITE_SILENCE_TIMEOUT_MS` are the timing pair that tells
+a slow peer apart from a dead transport. `handle-contracts.md`'s new "Backpressure — write
+direction" section specifies all of this at the wire level, matching how the read side was
+already documented, and its `§Limits` table now carries the write window alongside the read
+one.
+
+This closes what A37 actually asked for — a defined protocol, not a shipped implementation.
+The broker-side write sink (PR #80) and the renderer's `writable` built over this contract
+(PR #81) are separate, sibling changes built against the types PR #79 adds; their correctness
+is tracked wherever those changes land, not here. If either implementation needs a message
+shape this entry does not describe, that is new work, not this entry reopening.
 
 ### A38 — no per-origin rate limit on IPC dispatch, only a concurrency cap **[RESOLVED]**
 

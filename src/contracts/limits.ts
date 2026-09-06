@@ -42,6 +42,12 @@ export const LIMITS = {
    * write window nobody asked for would be an unforced increase to an
    * already-unbounded aggregate (flagged, not fixed, in
    * open-questions.md).
+   *
+   * This is also the hard ceiling on a SINGLE WriteMessage.chunk (owner
+   * decision d-0021, see ./ipc.js's WriteMessage): a caller with a larger
+   * buffer splits it into pieces this size or smaller before posting, and
+   * an oversized chunk is a protocol error the broker may reject outright
+   * rather than split, truncate, or buffer itself.
    */
   writeWindowBytes: 256 * 1024
 } as const
