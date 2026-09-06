@@ -6,7 +6,7 @@
 // a real temp directory and a real local TCP server, with no Electron and
 // no mocking.
 //
-// Split out of ./ipc.ts (docs/development/code-guidelines.md Rule 2) when
+// Split out of ../transport/ipc.ts (docs/development/code-guidelines.md Rule 2) when
 // the byte-pump task's net.connect/net.close wiring pushed that file over
 // its 500-line budget. No behaviour changed by the split itself; dialOne's
 // destroy became reason-aware in the same commit -- that IS new behaviour,
@@ -19,11 +19,11 @@ import { connect as netConnect } from 'node:net'
 import type { Socket } from 'node:net'
 import { dirname, join } from 'node:path'
 import { Duplex } from 'node:stream'
-import type { CloseReason } from './handle-contracts.js'
-import type { BrokerFs, Dial, DialedSocket } from './broker-contracts.js'
-import { originHash } from './origin-hash.js'
-import type { Resolver } from './policy/connect.js'
-import { fail, isOrivonErrorLike } from './errors.js'
+import type { CloseReason } from '../handles/handle-contracts.js'
+import type { BrokerFs, Dial, DialedSocket } from '../broker-contracts.js'
+import { originHash } from '../grants/origin-hash.js'
+import type { Resolver } from '../policy/connect.js'
+import { fail, isOrivonErrorLike } from '../errors.js'
 
 /**
  * `BrokerFs` over the real filesystem. `rootFor` is `./origin-hash.js`'s
@@ -125,7 +125,7 @@ export const resolveHost: Resolver = async (host) => {
  * once every queued byte has drained into the peer's receive window, and a
  * peer that simply stops reading never lets that happen -- so the returned
  * promise, and the handle's own `closed`, never settle (open-questions.md
- * A84, reproduced in ./socket-drain.test.ts).
+ * A84, reproduced in ../socket-drain.test.ts).
  *
  * AI recommendation, not an owner decision: nothing in contracts/ or
  * handle-contracts.md specifies it. Matched to DIAL_TIMEOUT_MS above, on the
@@ -209,8 +209,8 @@ const DIAL_TIMEOUT_MS = 30_000
  * (`node:stream`'s `Duplex.toWeb`) so `DialedSocket`'s type is honestly
  * satisfied -- `broker.net.connect` cannot type-check otherwise -- even
  * though nothing on the control channel forwards them to a renderer
- * directly (./port-pump.ts relays `readable`'s bytes over a
- * MessageChannelMain port instead; see ./ipc.ts).
+ * directly (../transport/port-pump.ts relays `readable`'s bytes over a
+ * MessageChannelMain port instead; see ../transport/ipc.ts).
  */
 function dialOne (address: string, port: number, signal: AbortSignal): Promise<DialedSocket> {
   return new Promise((resolve, reject) => {

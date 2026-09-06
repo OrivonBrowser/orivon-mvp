@@ -10,7 +10,7 @@
 // trusted because the preload is well-behaved -- not the payload, and not
 // the envelope carrying it.
 
-import type { RequestEnvelope } from '../contracts/index.js'
+import type { RequestEnvelope } from '../../contracts/index.js'
 
 /** The eight wired control operations. Anything else is 'invalid'. */
 export type ControlMethod =

@@ -5,11 +5,11 @@
 // is that all three exercise the same seams, not a stylistic preference).
 
 import { vi } from 'vitest'
-import type { ControlEvent, PortLike, PortPair, PortTransport } from './ipc.js'
+import type { ControlEvent, PortLike, PortPair, PortTransport } from './transport/ipc.js'
 import type { Broker } from './broker-contracts.js'
-import { createPortRegistry } from './port-registry.js'
+import { createPortRegistry } from './transport/port-registry.js'
 import type { Grant, Manifest, OrivonError, OrivonErrorCode } from '../contracts/index.js'
-import type { CloseReason, FailableTcpSocket } from './handle-contracts.js'
+import type { CloseReason, FailableTcpSocket } from './handles/handle-contracts.js'
 import type { RequestEnvelope } from '../contracts/ipc.js'
 
 export const APP = 'https://app.example'

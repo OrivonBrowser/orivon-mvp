@@ -5,7 +5,7 @@ import { toOrivonError } from './orivon-error.js'
 // Solves one problem: net.connect's CONTROL_CHANNEL reply (a
 // SocketDescriptor) and PORT_CHANNEL's port delivery for the same handle
 // travel over two different Electron channels, and Electron gives no
-// ordering guarantee between them (../broker/ipc.ts sends the port via
+// ordering guarantee between them (../broker/transport/ipc.ts sends the port via
 // senderFrame.postMessage before returning its own reply, but nothing on
 // this side may assume that arrives first). Both orders are handled.
 //

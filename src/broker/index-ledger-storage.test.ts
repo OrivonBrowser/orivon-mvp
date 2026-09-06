@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createBroker } from './index.js'
 import { APP, baseDeps, manifestWith, memoryLedgerStorage } from './index.test-helpers.js'
-import type { LedgerStorage } from './ledger-storage.js'
+import type { LedgerStorage } from './grants/ledger-storage.js'
 
 /** A LedgerStorage whose write always fails, the way a full or read-only disk does. */
 function throwingLedgerStorage (): LedgerStorage {

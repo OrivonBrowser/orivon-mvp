@@ -1,11 +1,11 @@
-import type { OrivonErrorCode } from '../contracts/errors.js'
-import type { FailableTcpSocket } from './handle-contracts.js'
+import type { OrivonErrorCode } from '../../contracts/errors.js'
+import type { FailableTcpSocket } from '../handles/handle-contracts.js'
 import type { PortLike, RegisteredSocket } from './port-transport.js'
 import type { PortRegistry } from './port-registry.js'
 import { createPortPump } from './port-pump.js'
 import { createPortSink } from './port-sink.js'
 import { parseRendererToBrokerMessage } from './port-messages.js'
-import { errnoOf, isOrivonErrorLike } from './errors.js'
+import { errnoOf, isOrivonErrorLike } from '../errors.js'
 
 // Everything mechanical about relaying ONE socket's bytes over its
 // dedicated port, in both directions: given an already-delivered PortLike,

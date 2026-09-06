@@ -1,6 +1,6 @@
 // A per-origin token bucket -- the rate-limit half of T11b's mitigation
 // (security-model.md: "Per-origin in-flight cap + token-bucket rate limit
-// on IPC dispatch"). HandleTable's inFlight counter (./handles.ts) is the
+// on IPC dispatch"). HandleTable's inFlight counter (../handles/handles.ts) is the
 // first half, and bounds how many operations an origin has OUTSTANDING at
 // once; it does not bound how often an origin may call at all, which is the
 // gap open-questions.md A38 records. This is that second, independent
@@ -8,7 +8,7 @@
 //
 // Pure and Electron-free, the same way ./port-registry.ts is: time is read
 // once per `tryConsume` call via an injected clock rather than
-// `Date.now()`, mirroring `CreateBrokerOptions.now` (./index.ts), so tests
+// `Date.now()`, mirroring `CreateBrokerOptions.now` (../index.ts), so tests
 // drive refill deterministically instead of waiting on real timers.
 //
 // NEVER QUEUES -- mirrors HandleTable.run's own "reject immediately" rule

@@ -2,9 +2,9 @@
 // code-guidelines.md's 800-line test limit, following handles.test-helpers.ts's
 // established split pattern (a coherent concern gets its own sibling file).
 //
-// ./handle-contracts.ts's entry point for "this resource died underneath
+// ./handles/handle-contracts.ts's entry point for "this resource died underneath
 // us" -- otherwise a peer RST is reported as a clean successful close, which
-// is the COMMON way a socket ends (handle-contracts.md). Only ./ipc.ts's
+// is the COMMON way a socket ends (handle-contracts.md). Only ./transport/ipc.ts's
 // port pump calls this in production, the moment it detects the underlying
 // OS socket has errored; nothing here is reachable from orivon.net directly.
 

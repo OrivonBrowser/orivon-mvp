@@ -9,8 +9,8 @@
 // map they all operate on, the same division ./handle-store.ts already
 // drew between "one origin's state" and the map of origins.
 
-import { originFromUrl } from './policy/origin.js'
-import { fail } from './errors.js'
+import { originFromUrl } from '../policy/origin.js'
+import { fail } from '../errors.js'
 import { OriginTable } from './handle-store.js'
 import type { HandleTableFault } from './handle-contracts.js'
 

@@ -4,8 +4,8 @@
 // reaches this port directly, unfiltered by contextBridge (which only
 // restricts what a PAGE's JS can construct).
 
-import type { CreditMessage, RendererToBrokerMessage, WriteAbortMessage, WriteEndMessage, WriteMessage } from '../contracts/index.js'
-import { LIMITS } from '../contracts/index.js'
+import type { CreditMessage, RendererToBrokerMessage, WriteAbortMessage, WriteEndMessage, WriteMessage } from '../../contracts/index.js'
+import { LIMITS } from '../../contracts/index.js'
 
 function hasStringHandleId (value: object): value is { handleId: string } {
   return typeof (value as { handleId?: unknown }).handleId === 'string'

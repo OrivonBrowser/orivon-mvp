@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createPortRegistry } from './port-registry.js'
+import { createPortRegistry } from './transport/port-registry.js'
 
 const APP = 'https://app.example'
 const OTHER = 'https://other.example'

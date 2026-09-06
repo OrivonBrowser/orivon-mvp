@@ -22,6 +22,32 @@ T1/T10 path traversal, T3 origin spoofing via `senderFrame`, and **T12 DNS rebin
 subtlest, because a correct glob matcher fed a *hostname* is still completely defeated by it.
 Patterns are checked against **resolved addresses**, always.
 
+## The layout
+
+Five directories, one per job. The name of the directory is the question it answers.
+
+| Directory | Job | Holds state? | Touches I/O? |
+|---|---|---|---|
+| [`policy/`](policy/) | **Decide** — may this origin do this? | no, pure functions | **never** |
+| [`grants/`](grants/) | **Remember** — what did the user approve? | yes, per origin | disk, for persistence |
+| [`handles/`](handles/) | **Hold** — what is this origin holding, and can I take it back? | yes, per origin | **never**, `destroy` is injected |
+| [`adapters/`](adapters/) | **Do** — dial the address, open the file | no | **this is the only place** |
+| [`transport/`](transport/) | **Speak** — reach the page, move the bytes | connection registry | Electron IPC and ports |
+
+Three files stay at the top level because they belong to no single directory:
+
+- [`index.ts`](index.ts) — `createBroker`, the five capability entry points that consult all five
+- [`broker-contracts.ts`](broker-contracts.ts) — the `Broker` interface and its fixed dependency shape
+- [`errors.ts`](errors.ts) — `OrivonError` construction, used by every directory above
+
+**Tests live in a `tests/` folder inside the directory they cover**, so what you scroll past when
+reading a directory is that directory's code.
+
+**Reading order, cold:** [`src/contracts/`](../contracts/) first (it is the product, and it is
+types only), then [`policy/connect.ts`](policy/connect.ts)'s header for how security is reasoned
+about here, then [`index.ts`](index.ts)'s `connect()` for one call end to end.
+
+
 ## Design notes
 
 Rationale that explains why a file has the shape it has, moved out of source headers per
@@ -156,9 +182,9 @@ know an origin's declaration must not be able to hand it a budget SMALLER than
 it is entitled to. Only `index.ts`'s `connect` knows the ledger, and only it
 passes the real number.
 
-### `port-pump.ts` -- the read-side byte pump
+### `transport/port-pump.ts` -- the read-side byte pump
 
-Relays bytes from an already-real WHATWG `ReadableStream` (`Duplex.toWeb`, [`ipc.ts`](ipc.ts)'s
+Relays bytes from an already-real WHATWG `ReadableStream` (`Duplex.toWeb`, [`ipc.ts`](transport/ipc.ts)'s
 `dialOne`) to the renderer over a socket's dedicated `MessagePortMain`. Deliberately pure and
 Electron-free, the same reason `policy/` is, so it runs under plain Node/vitest with no
 `MessagePortMain` at all -- `ipc.ts` (via `socket-relay.ts`) is where a real port's
@@ -177,7 +203,7 @@ that is the whole point. Non-finite and negative figures are rejected rather tha
 same reason: `NaN` poisons the counter permanently, and a negative value drives it below zero with
 no way back.
 
-### `port-sink.ts` -- the write-side byte pump
+### `transport/port-sink.ts` -- the write-side byte pump
 
 Runs the credit-window relay backwards from `port-pump.ts`'s read side: the BROKER grants the
 RENDERER a byte window to post outbound bytes into, because a `MessagePortMain` has no
@@ -209,7 +235,7 @@ when the FIN this call sends is itself flushed. Awaiting it would deadlock any p
 (correctly, per half-close) keeps reading after our FIN and waits for our reply before sending
 its own.
 
-### `socket-relay.ts` -- wiring one socket's pump and sink to its port
+### `transport/socket-relay.ts` -- wiring one socket's pump and sink to its port
 
 Split out of `ipc.ts`'s `net.connect` case so that file keeps only what is security-relevant: the
 transport check, the origin re-derivation, and the port delivery. This file owns none of that; it
@@ -220,7 +246,7 @@ releasing a socket are one lifecycle, not two: whichever path ends the socket --
 revoke, a write-window violation the sink itself detects, the renderer's own port closing -- must
 free the SAME registry slot, and keeping both ends in one file is what makes that easy to see.
 
-### `port-messages.ts` -- validating messages on a socket's port
+### `transport/port-messages.ts` -- validating messages on a socket's port
 
 Split out of `ipc.ts`'s inline credit-message check once a second and third message kind joined
 it -- one job (shape validation at this trust boundary), the same way `ipc-validation.ts` owns it

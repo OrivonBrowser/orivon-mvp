@@ -5,7 +5,7 @@
 // Spec: docs/architecture/handle-contracts.md. See ./handles.ts's header for
 // why this directory holds state at all and what it may and may not import.
 
-import type { GrantId, OrivonErrorCode, TcpSocket } from '../contracts/index.js'
+import type { GrantId, OrivonErrorCode, TcpSocket } from '../../contracts/index.js'
 
 /**
  * What kind of resource a handle names.
@@ -210,12 +210,12 @@ export interface HandleTableOptions {
  * A `TcpSocket` widened with one broker-internal escape hatch: telling the
  * handle table a resource died on its own, from underneath the app, rather
  * than through `close()` or a revoke. NOT part of `contracts/` -- an app
- * never sees this method; only `./ipc.ts`'s port pump calls it, the moment it
+ * never sees this method; only `../transport/ipc.ts`'s port pump calls it, the moment it
  * detects the underlying OS socket has errored. It is the one caller of
  * `HandleTable.fail` (`./handles.ts`).
  *
- * Lives here, not in `./index.ts`, for the same reason the rest of this file
- * does (Rule 2) -- and because widening `./index.ts`'s own `connect()` return
+ * Lives here, not in `../index.ts`, for the same reason the rest of this file
+ * does (Rule 2) -- and because widening `../index.ts`'s own `connect()` return
  * type, rather than `contracts/capability-api.ts`'s `TcpSocket`, is what
  * keeps this out of the durable, cross-app surface in the first place.
  */
@@ -257,7 +257,7 @@ export interface FailableTcpSocket extends TcpSocket {
    * `destroy` flushes for 'closed'/'sessionEnded' and destroys outright for
    * the rest, so acting immediately on a flushing reason discards whatever the
    * app had queued. Measured, not theorised -- see socket-relay.ts's own note
-   * and ./socket-drain.test.ts's truncation case.
+   * and ../socket-drain.test.ts's truncation case.
    */
   onUnlink: (listener: (reason: CloseReason, code?: OrivonErrorCode) => void) => void
 }

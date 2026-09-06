@@ -5,8 +5,8 @@ import { LIMITS } from '../contracts/limits.js'
 import { toOrivonError } from './orivon-error.js'
 
 // The isolated-world state machine for ONE socket's dedicated port -- the
-// preload-side counterpart of ../broker/port-pump.ts (read) and
-// ../broker/port-sink.ts (write), run from the renderer's end. Pure and
+// preload-side counterpart of ../broker/transport/port-pump.ts (read) and
+// ../broker/transport/port-sink.ts (write), run from the renderer's end. Pure and
 // Electron-free by construction (an injected PortLike, real timers): the
 // only Electron-specific piece, listening on ipcRenderer.on(PORT_CHANNEL)
 // to obtain a real port in the first place, lives in ./socket-bridge.ts.

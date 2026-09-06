@@ -5,8 +5,8 @@ import { createBroker } from './index.js'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { dialTcp, nodeFs, resolveHost } from './node-adapters.js'
-import { originHash } from './origin-hash.js'
+import { dialTcp, nodeFs, resolveHost } from './adapters/node-adapters.js'
+import { originHash } from './grants/origin-hash.js'
 
 /** A once-only AbortController's signal -- dialTcp/dialOne need one, and none of these tests abort mid-dial. */
 function neverAborts (): AbortSignal {

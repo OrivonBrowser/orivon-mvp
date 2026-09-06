@@ -1,4 +1,4 @@
-// Split out of ./index.ts (docs/development/code-guidelines.md Rule 2 --
+// Split out of ../index.ts (docs/development/code-guidelines.md Rule 2 --
 // index.ts crossed its 500-line budget once the fixes in pr-31.md's review
 // landed). This is the seam that file's own header anticipated: GrantLedger
 // is the per-origin state (manifest and grants, kept apart on purpose --
@@ -6,11 +6,11 @@
 // five capability entry points that consult it. No behaviour changed in
 // this split; only the file it lives in.
 
-import type { CapabilityKind, Grant, GrantId, Manifest, Pattern } from '../contracts/index.js'
-import { LIMITS } from '../contracts/index.js'
+import type { CapabilityKind, Grant, GrantId, Manifest, Pattern } from '../../contracts/index.js'
+import { LIMITS } from '../../contracts/index.js'
 import type { LedgerStorage } from './ledger-storage.js'
-import { isPersistableOrigin } from './policy/origin.js'
-import { compareVersions } from './policy/update.js'
+import { isPersistableOrigin } from '../policy/origin.js'
+import { compareVersions } from '../policy/update.js'
 
 /**
  * 128 bits from the platform CSPRNG, as hex -- the same construction
@@ -90,7 +90,7 @@ interface OriginRecord {
 
 /**
  * The grant ledger: what each origin has declared (its manifest) and what it
- * has actually been granted, kept apart on purpose -- see ./index.ts's file
+ * has actually been granted, kept apart on purpose -- see ../index.ts's file
  * header.
  *
  * DOES NOT ENFORCE that a grant is a subset of what the manifest declares.
@@ -99,7 +99,7 @@ interface OriginRecord {
  * only remembers what it is told, the same way HandleTable trusts the
  * ownership its caller asserts rather than re-deriving it.
  *
- * BROKER-INTERNAL, the same way OriginTable (./handle-store.ts) is private to
+ * BROKER-INTERNAL, the same way OriginTable (../handles/handle-store.ts) is private to
  * HandleTable. Nothing outside `createBroker` should hold a bare
  * GrantLedger; `canonical()` in index.ts is the boundary that normalises an
  * origin before this class ever sees one.
@@ -227,7 +227,7 @@ export class GrantLedger {
    * already landed. The residual risk is then A57's original one and no
    * worse -- a restart while writes keep failing hydrates the older on-disk
    * value -- but it is reported instead of silent. `Broker.registerApp`
-   * (./index.ts) turns this into the rejected promise every other method on
+   * (../index.ts) turns this into the rejected promise every other method on
    * that surface already produces.
    */
   registerApp (origin: string, manifest: Manifest): void {
@@ -361,7 +361,7 @@ export class GrantLedger {
    * re-prompting for the version just accepted, matching a no-persistence
    * ledger's own behaviour, rather than regressing to "prompt again" the
    * moment disk trouble strikes. THROWS if the write fails, same shape as
-   * `registerApp`'s own throw; `Broker.acknowledgeRollback` (./index.ts)
+   * `registerApp`'s own throw; `Broker.acknowledgeRollback` (../index.ts)
    * turns that into the same rejected-promise shape every other Broker
    * method already uses.
    */

@@ -10,7 +10,7 @@
 import { createServer, connect as netConnect, type Server, type Socket } from 'node:net'
 import { Duplex } from 'node:stream'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { CLOSE_DRAIN_TIMEOUT_MS, destroySocket } from './node-adapters.js'
+import { CLOSE_DRAIN_TIMEOUT_MS, destroySocket } from './adapters/node-adapters.js'
 
 /** A Socket-shaped double whose `end` callback never fires -- the peer that never drains. */
 function stuckSocket (): { socket: Socket, destroyed: () => boolean } {

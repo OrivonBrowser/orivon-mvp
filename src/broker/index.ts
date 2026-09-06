@@ -24,16 +24,16 @@
 // do it.
 //
 // GrantLedger (the per-origin state -- manifest and grants, kept apart on
-// purpose) split out to ./grant-ledger.ts once this file crossed
+// purpose) split out to ./grants/grant-ledger.ts once this file crossed
 // docs/development/code-guidelines.md's 500-line limit (Rule 2: split by
 // concern -- this was the seam the file's own header had already earmarked).
 // This file keeps the dependency shape and the five capability entry points
 // that consult that ledger.
 
-import { HandleTable } from './handles.js'
-import type { FailableTcpSocket } from './handle-contracts.js'
+import { HandleTable } from './handles/handles.js'
+import type { FailableTcpSocket } from './handles/handle-contracts.js'
 import { errnoOf, fail } from './errors.js'
-import { GrantLedger } from './grant-ledger.js'
+import { GrantLedger } from './grants/grant-ledger.js'
 import { checkConnect } from './policy/connect.js'
 import { CONFINEMENT_ERROR_CODE, confinePath } from './policy/paths.js'
 import { originFromUrl } from './policy/origin.js'
@@ -200,7 +200,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
         // socket that needs a proper revoked-style teardown, not silence.
         // Handling it here rather than leaning on `acquire`'s refusal is
         // exactly what HandleTable.run's own note asks the connect path to
-        // do (./handles.ts).
+        // do (./handles/handles.ts).
         await dialed.destroy('revoked')
         throw fail('revoked', 'the grant authorising this connection was withdrawn')
       }

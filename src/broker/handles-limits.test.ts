@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { LIMITS } from '../contracts/index.js'
-import { HandleTable } from './handles.js'
-import { toWire } from './handle-contracts.js'
+import { HandleTable } from './handles/handles.js'
+import { toWire } from './handles/handle-contracts.js'
 import {
   APP,
   FS_GRANT,

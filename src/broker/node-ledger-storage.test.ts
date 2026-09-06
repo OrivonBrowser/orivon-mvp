@@ -2,8 +2,8 @@ import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFile
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { nodeLedgerStorage } from './node-ledger-storage.js'
-import { originHash } from './origin-hash.js'
+import { nodeLedgerStorage } from './grants/node-ledger-storage.js'
+import { originHash } from './grants/origin-hash.js'
 import { compareVersions } from './policy/update.js'
 
 // Real temp directory, no mocking -- the same discipline

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { originHash, partitionFor } from './origin-hash.js'
+import { originHash, partitionFor } from './grants/origin-hash.js'
 
 // Frozen vectors -- NEVER edit once merged, same discipline as
 // bundle-hash.test.ts's golden vectors. Computed independently, twice: once

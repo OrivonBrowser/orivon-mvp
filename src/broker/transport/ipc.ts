@@ -1,4 +1,4 @@
-// Wires createBroker (./index.ts) to a real renderer over Electron IPC.
+// Wires createBroker (../index.ts) to a real renderer over Electron IPC.
 //
 // SCOPE: app.manifest, app.grants, fs.readFile, fs.writeFile, net.connect,
 // net.close, net.setNoDelay, net.setKeepAlive. net.connect returns a plain
@@ -38,7 +38,7 @@
 // next to leaving a method with no bound at all.
 //
 
-// TWO RULES FROM SPIKE GATE 0 (../contracts/ipc.ts's header), both honoured
+// TWO RULES FROM SPIKE GATE 0 (../../contracts/ipc.ts's header), both honoured
 // below: every reply carries an explicit timeout (`withTimeout`, keyed off
 // the envelope's required `timeoutMs`), and nothing on CONTROL_CHANNEL is a
 // transferable -- every value there is plain data, structurally cloned. The
@@ -57,26 +57,26 @@
 // only breaks if actually called).
 
 import { ipcMain, MessageChannelMain } from 'electron'
-import { CONTROL_CHANNEL, PORT_CHANNEL } from '../main/channels.js'
-import { publishBroker } from '../main/registry.js'
-import type { Subsystem, SubsystemContext } from '../main/registry.js'
-import { createBroker } from './index.js'
-import type { Broker, CreateBrokerOptions } from './broker-contracts.js'
-import { dialTcp, nodeFs, resolveHost } from './node-adapters.js'
-import { nodeLedgerStorage } from './node-ledger-storage.js'
+import { CONTROL_CHANNEL, PORT_CHANNEL } from '../../main/channels.js'
+import { publishBroker } from '../../main/registry.js'
+import type { Subsystem, SubsystemContext } from '../../main/registry.js'
+import { createBroker } from '../index.js'
+import type { Broker, CreateBrokerOptions } from '../broker-contracts.js'
+import { dialTcp, nodeFs, resolveHost } from '../adapters/node-adapters.js'
+import { nodeLedgerStorage } from '../grants/node-ledger-storage.js'
 import { createPortRegistry } from './port-registry.js'
 import { createSocketRelay } from './socket-relay.js'
 import { createTokenBucketLimiter } from './token-bucket.js'
 import type { RateLimiter } from './token-bucket.js'
-import { originFromSenderFrame } from './policy/origin.js'
-import { fail, isOrivonErrorLike } from './errors.js'
+import { originFromSenderFrame } from '../policy/origin.js'
+import { fail, isOrivonErrorLike } from '../errors.js'
 import {
   envelopeId, isControlMethod, isFsReadFileParams, isFsWriteFileParams,
   isNetCloseParams, isNetConnectParams, isNetSetKeepAliveParams, isNetSetNoDelayParams, isRequestEnvelope
 } from './ipc-validation.js'
 import type { PortDeliveryFrame, PortLike, PortPair, PortTransport, SocketDescriptor } from './port-transport.js'
-import type { RequestEnvelope, ResponseEnvelope } from '../contracts/index.js'
-import { LIMITS } from '../contracts/index.js'
+import type { RequestEnvelope, ResponseEnvelope } from '../../contracts/index.js'
+import { LIMITS } from '../../contracts/index.js'
 
 export { CONTROL_CHANNEL, PORT_CHANNEL }
 export type {
@@ -226,7 +226,7 @@ async function dispatch (
 }
 
 /**
- * Races `promise` against `timeoutMs`. ../contracts/ipc.ts's rule 2: this
+ * Races `promise` against `timeoutMs`. ../../contracts/ipc.ts's rule 2: this
  * transport fails by SILENCE, and `timeoutMs` is a required field precisely
  * so nothing on this path can forget to bound the wait. The underlying
  * broker call is not cancelled when the timer wins -- there is no cancel
@@ -251,7 +251,7 @@ async function withTimeout<T> (promise: Promise<T>, timeoutMs: number): Promise<
  * Maps a thrown value to the failure branch of a `ResponseEnvelope`.
  *
  * DoD rule 4: a 'denied' crosses with no `platformCode`, whatever threw it.
- * `./errors.ts`'s `fail()` already enforces that at construction, but this
+ * `../errors.ts`'s `fail()` already enforces that at construction, but this
  * is the boundary the app actually crosses, so it is re-checked here rather
  * than trusted from upstream -- the same defence-in-depth reasoning as
  * dispatch()'s own payload validation.
