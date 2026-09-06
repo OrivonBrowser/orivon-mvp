@@ -2,21 +2,25 @@
 
 ## Start here
 
-**Phase: build step 2 (the capability broker) essentially complete.** `orivon.net.connect`
-is now reachable from a real page — `dial`/`resolve`/`fs` are real Node I/O (not stubs, contrary
-to what this section said before 2026-09-05), the broker is wired to a real `ipcMain` control
-channel, and the byte pump's write direction (A37) is built, tested, and wired onto
-`window.orivon` via a real `contextBridge.executeInMainWorld` main-world stream wrapper —
-verified end to end via a real Electron launch, not just unit tests. Four stacked PRs, open
-and merging in order: #79 (contracts) -> #80 (broker write half) -> #81 (preload/main-world
-surface) -> #82 (the e2e test's Phase 1, updated to match).
+**Phase: step 2's remaining scope is the permission/grant prompt, now attributed to build step
+4 per an amended build plan** (`build-plan.md` on `main` still lists it under step 2 today; the
+`docs-alignment` stream carries the amendment). `dial`/`resolve`/`fs` are real Node I/O (not
+stubs) and the broker is wired to a real `ipcMain` control channel -- both already true on
+`main` today, independent of anything below. **Landing in #79-#82** (four stacked PRs, open
+and merging in order: #79 contracts -> #80 broker write half -> #81 preload/main-world surface
+-> #82 the e2e test's Phase 1, updated to match): `orivon.net.connect` reachable from a real
+page, and the byte pump's write direction (A37, still open on `main` as of this branch) built,
+tested and wired onto `window.orivon` via a `contextBridge.executeInMainWorld` main-world
+stream wrapper, verified end to end via a real Electron launch once merged -- not just unit
+tests.
 **Still open, by design, not a gap in this work:** no origin has a grant yet
-(`broker.grant()` has no production caller) — that is build step 4's job (the app loader and
-the permission prompt), and it is *why* the real e2e check now correctly ends in a `'denied'`,
-not a completed byte transfer. Also filed as A69: an `allowHalfOpen` half-close fix was found
-to break `Duplex.toWeb`'s own EOF detection and was reverted rather than shipped broken.
-Last updated 2026-09-05 (write-pump completed across 4 stacked PRs; see PR bodies for the
-full verification trail).
+(`broker.grant()` has no production caller) -- that is build step 4's job (the app loader and
+the permission prompt), and it is *why* the real e2e check will correctly end in a `'denied'`
+once #82 lands, not a completed byte transfer. A half-close fix for `allowHalfOpen` was found
+to break `Duplex.toWeb`'s own EOF detection and was reverted rather than shipped broken --
+filed as A69 in PR #80, not yet on `main`.
+Last updated 2026-09-05 (write-pump work landing across 4 stacked PRs, #79-#82; see PR bodies
+for the full verification trail; prior pass: A27-A31, `docs/open-questions.md`).
 
 **The human documentation is the map. Read it first — this file adds only what is specific to
 working here as an agent.**
@@ -77,11 +81,15 @@ rather than wrong, and that silence got over-generalized into a false "family" c
 `node_modules/electron/electron.d.ts` directly first** — context7 is a second check, not a
 substitute.
 
-**`contextBridge.executeInMainWorld` (marked `@experimental`) works as documented, including
-in a `sandbox: true` preload** — confirmed live 2026-09-05 via a throwaway probe app: a
-function passed in `args` is proxied and callable from the main world, a callback passed back
-through it works, and a real main-world `ReadableStream` built this way behaves normally for
-page code. See PR #81 for the probe.
+**`contextBridge.executeInMainWorld` (marked `@experimental`) is accepted as the main-world
+stream wrapper's mechanism -- owner's decision, formally recorded in ADR-0014** (docs-alignment
+branch, not yet on `main`; landing in a follow-up PR after this one). Confirmed live
+2026-09-05 via a throwaway probe app, including in a `sandbox: true` preload: a function passed
+in `args` is proxied and callable from the main world, a callback passed back through it works,
+and a real main-world `ReadableStream` built this way behaves normally for page code, failing
+closed rather than leaving a stream half-open on error. The alternative,
+`webFrame.executeJavaScript`, was rejected as weaker and was not built. See PR #81 for the
+probe.
 
 Open owner decisions are in `docs/open-questions.md` §A. A11 is closed (`ADR-0007`: cached
 bundles keep their real origin, intercepted inside the app's partition). **A10 is closed**
@@ -194,11 +202,14 @@ template does the work by being already in the box. Note it is bypassed entirely
 `gh pr create --body`, which is exactly how an agent tends to open one.
 
 **`gh pr edit` fails here with a GraphQL "Projects (classic)" error** (also true of
-`--label`/`--add-label` on `gh pr create`), unrelated to auth or content — but plain
+`--label`/`--add-label` on `gh pr create`), unrelated to auth or content -- but plain
 `gh pr create --title ... --body-file ...` with no `--label` works fine, confirmed
 repeatedly 2026-09-05. To edit an existing PR's body, use
 `gh api -X PATCH repos/OrivonBrowser/orivon-mvp/pulls/<n> -F body=@file` instead (`-F` reads
-`@file`'s contents; `-f` would send the literal string `@file`).
+`@file`'s contents; `-f` would send the literal string `@file`). To label a PR, use
+`gh api -X POST repos/OrivonBrowser/orivon-mvp/issues/<n>/labels -f labels[]=<label>` instead
+(repeat `-f labels[]=` per label, or send a JSON array body) -- confirmed working for all of
+#79-#83's labels.
 
 ### Code guidelines
 
@@ -269,7 +280,7 @@ in a lookahead inside a single `regex_match`.
 
 - Work in a **worktree** on `stream/<name>`, matching the ownership map.
 - **A stacked PR (branch B needs branch A's unmerged commits) needs a base ref a native
-  worktree tool can't take** — it only branches from `origin/<default>` or the current HEAD.
+  worktree tool can't take** -- it only branches from `origin/<default>` or the current HEAD.
   Use `git worktree add <path> -b <new-branch> <base-branch>` directly instead.
 - **Stay inside your owned paths.** If a change needs a file another stream owns, that is a
   signal — raise it, do not just edit it.
