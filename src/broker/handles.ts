@@ -17,9 +17,10 @@
 // would be a DIFFERENT APP MODEL rather than a swap beneath a stable API. Do
 // not restate a ladder here; the ADR owns it.)
 //
-// Split across four files (Rule 2, docs/development/code-guidelines.md):
+// Split across five files (Rule 2, docs/development/code-guidelines.md):
 // ./handle-contracts.ts (types), ./errors.ts (OrivonError), ./handle-store.ts
-// (OriginTable), and this file (the map of origins, owned only here).
+// (OriginTable, one origin's state), ./origin-registry.ts (the map of
+// origins), and this file (the operations run against that map).
 //
 // THE FOUR PROPERTIES THIS EXISTS TO GUARANTEE, each one a failure that is
 // silent when it goes wrong:
@@ -47,8 +48,8 @@
 
 import { LIMITS } from '../contracts/index.js'
 import type { GrantId, OrivonError, OrivonErrorCode } from '../contracts/index.js'
-import { originFromUrl } from './policy/origin.js'
 import { fail } from './errors.js'
+import { OriginRegistry } from './origin-registry.js'
 import {
   OriginTable,
   NOT_YOURS,
@@ -61,6 +62,7 @@ import type { PendingOperation } from './handle-store.js'
 import type {
   AcquireDerivedRequest,
   AcquireRequest,
+  CloseReason,
   DestroyResource,
   HandleEntry,
   HandleTableFault,
@@ -71,7 +73,7 @@ import type {
 
 /** The per-origin handle table. One instance per browser session. */
 export class HandleTable {
-  readonly #tables = new Map<string, OriginTable>()
+  readonly #registry = new OriginRegistry()
   readonly #onFault: (fault: HandleTableFault) => void
 
   constructor (options: HandleTableOptions = {}) {
@@ -148,7 +150,7 @@ export class HandleTable {
   lookup (origin: string, handleId: string): HandleEntry {
     // Deliberately does not create a table: a read must not allocate one per
     // origin that merely asked.
-    const table = this.#tables.get(this.#key(origin))
+    const table = this.#registry.existing(this.#key(origin))
     if (table === undefined) throw fail('denied', NOT_YOURS, handleId)
     return table.record(handleId).entry
   }
@@ -179,12 +181,12 @@ export class HandleTable {
     let table: OriginTable
     let operations: Set<PendingOperation>
     if (scope.on === 'handle') {
-      const existing = this.#tables.get(key)
+      const existing = this.#registry.existing(key)
       if (existing === undefined) throw fail('denied', NOT_YOURS, scope.handleId)
       table = existing
       operations = table.record(scope.handleId).operations
     } else {
-      const existing = this.#tables.get(key)
+      const existing = this.#registry.existing(key)
       if (existing?.revokedGrants.has(scope.grantId) === true || existing?.dropping === true) {
         throw fail('revoked', 'the grant authorising this operation was withdrawn')
       }
@@ -251,7 +253,7 @@ export class HandleTable {
    */
   async release (origin: string, handleId: string): Promise<void> {
     const key = this.#key(origin)
-    const table = this.#tables.get(key)
+    const table = this.#registry.existing(key)
     const record = table?.handles.get(handleId)
     if (table === undefined || record === undefined) return
 
@@ -276,12 +278,37 @@ export class HandleTable {
    * is the socket layer's job -- it calls `release` or `fail` when they have.
    */
   fail (origin: string, handleId: string, code: OrivonErrorCode, platformCode?: string): void {
+    this.#closeWithError(origin, handleId, 'failed', fail(code, 'the handle failed', handleId, platformCode))
+  }
+
+  /**
+   * The app itself discarding a handle (`writable.abort()`), as opposed to
+   * `fail` reporting one that died on its own.
+   *
+   * The CloseReason handed to the destroy callback is 'aborted', not
+   * 'failed' -- that is the whole difference from `fail` above. `fail`'s
+   * 'failed' means the wire is already dead and must not be touched; an
+   * app-initiated abort means the opposite, the wire is still live and an
+   * ACTIVE reset is the entire point (handle-contracts.md's close table:
+   * `writable.abort(e)` -> RST sent, `closed` rejects 'reset').
+   */
+  abort (origin: string, handleId: string): void {
+    this.#closeWithError(origin, handleId, 'aborted', fail('reset', 'the app aborted this handle', handleId))
+  }
+
+  /**
+   * Shared shape of `fail` and `abort`: both look up a record still owned by
+   * `origin`, tear its whole tree down with a synthesized error rather than
+   * an app request, and reap the table afterwards. They differ only in the
+   * CloseReason passed to the injected destroy callback -- see `abort`'s doc.
+   */
+  #closeWithError (origin: string, handleId: string, reason: CloseReason, error: OrivonError): void {
     const key = this.#key(origin)
-    const table = this.#tables.get(key)
+    const table = this.#registry.existing(key)
     if (table === undefined) throw fail('denied', NOT_YOURS, handleId)
     const record = table.record(handleId)
 
-    void table.closeTree(record, 'failed', this.#onFault, fail(code, 'the handle failed', handleId, platformCode))
+    void table.closeTree(record, reason, this.#onFault, error)
     this.#reap(key, table)
   }
 
@@ -307,7 +334,7 @@ export class HandleTable {
    */
   async revoke (origin: string, grantId: GrantId): Promise<void> {
     const key = this.#key(origin)
-    const existing = this.#tables.get(key)
+    const existing = this.#registry.existing(key)
     // Still tombstone it: the acquisition this is racing may not have built a
     // table yet, and it must be refused when it does.
     const table = existing ?? this.#table(key)
@@ -355,7 +382,7 @@ export class HandleTable {
    * docs/open-questions.md A16.
    */
   grantIssued (origin: string, grantId: GrantId): void {
-    const table = this.#tables.get(this.#key(origin))
+    const table = this.#registry.existing(this.#key(origin))
     table?.revokedGrants.delete(grantId)
   }
 
@@ -379,7 +406,7 @@ export class HandleTable {
    */
   async dropOrigin (origin: string): Promise<void> {
     const key = this.#key(origin)
-    const existing = this.#tables.get(key)
+    const existing = this.#registry.existing(key)
     if (existing === undefined) return
     existing.dropping = true
 
@@ -400,12 +427,12 @@ export class HandleTable {
     await Promise.all(teardowns)
     // Only now, so that a late registration is refused by `dropping` rather
     // than quietly building a fresh table for a session that has ended.
-    if (this.#tables.get(key) === existing) this.#tables.delete(key)
+    this.#registry.deleteIfCurrent(key, existing)
   }
 
   /** What the origin currently holds. Drives the permissions UI. */
   counts (origin: string): OriginCounts {
-    const existing = this.#tables.get(this.#key(origin))
+    const existing = this.#registry.existing(this.#key(origin))
     return existing === undefined
       ? { sockets: 0, files: 0, identities: 0, handles: 0, inFlight: 0, grants: 0, revokedGrants: 0 }
       : existing.counts()
@@ -413,64 +440,22 @@ export class HandleTable {
 
   /** Origins with a live table. Exists so the no-allocation rule is testable. */
   originCount (): number {
-    return this.#tables.size
+    return this.#registry.size()
   }
 
-  /**
-   * The isolation key, through the one definition of it (policy/origin.ts).
-   *
-   * Normalises rather than trusts: `https://app.example:443/path` and
-   * `https://app.example` are one app, and keying on the raw string would give
-   * it two tables -- two socket budgets to exhaust, and a revoke that reached
-   * only one of them. A string that cannot be an origin at all (file:, data:,
-   * blob:, a bare hostname) is a BROKER fault, not an app-visible denial: the
-   * app never supplies its own origin, the broker derives it from the sender
-   * frame (T3).
-   *
-   * Reported to `onFault` as well as thrown. errors.ts says an 'internal' error
-   * is "a broker fault; should never be observed by an app, always logged", and
-   * origin.ts documents a detached frame resolving to about:blank as an
-   * EXPECTED condition -- so this fires in normal operation and was previously
-   * recorded nowhere.
-   */
+  /** The isolation key for `origin`. See ./origin-registry.ts's `key` for why this normalises rather than trusts the raw string. */
   #key (origin: string): string {
-    const canonical = originFromUrl(origin)
-    if (canonical === null) {
-      const error = fail('internal', 'handle table keyed on a string that is not an origin')
-      this.#onFault({ origin, handleId: null, error })
-      throw error
-    }
-    return canonical
+    return this.#registry.key(origin, this.#onFault)
   }
 
-  #table (origin: string): OriginTable {
-    const existing = this.#tables.get(origin)
-    if (existing !== undefined) return existing
-
-    const created = new OriginTable()
-    this.#tables.set(origin, created)
-    return created
+  /** The table for an already-normalised key, creating one if this is that origin's first handle. */
+  #table (key: string): OriginTable {
+    return this.#registry.getOrCreate(key)
   }
 
-  /**
-   * Drops an origin's table once it holds nothing at all.
-   *
-   * Without this every origin the broker ever asked about keeps a permanent
-   * row, each carrying a recently-closed ring of up to 576 ids. Tombstones and
-   * live handles both count as "holds something", so this cannot discard a
-   * revocation that still has to be enforced.
-   */
+  /** Drops `key`'s table once it holds nothing at all. See ./origin-registry.ts's `reap`. */
   #reap (key: string, table: OriginTable): void {
-    if (table.dropping) return
-    if (table.handles.size > 0 || table.inFlight > 0) return
-    if (table.revokedGrants.size > 0 || table.grantOperations.size > 0) return
-    // recentlyClosed counts as "holds something". Reaping a table that still
-    // remembers ids would make an origin's own just-closed handle answer
-    // 'denied' instead of 'closed' -- losing the distinction OriginTable.record
-    // exists to draw. It is bounded per origin and cleared by dropOrigin, so
-    // keeping it is a bound, not a leak.
-    if (table.recentlyClosed.size > 0) return
-    if (this.#tables.get(key) === table) this.#tables.delete(key)
+    this.#registry.reap(key, table)
   }
 
   /**
