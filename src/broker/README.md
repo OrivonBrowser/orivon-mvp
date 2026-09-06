@@ -93,6 +93,38 @@ what `socket.closed` already did: it resolves for `'closed'` and rejects
 otherwise, so the relay sent a bare `end` for a clean close and a coded one
 for everything else. Passing the reason through the hook keeps the wire
 identical -- only the timing changed, never the message.
+### `policy/reserved-ports.ts` -- what a blanket grant does not reach
+
+Owner decision, 2026-09-06 (`open-questions.md` A82). A grant of `*:*` is
+legitimate -- the flagship declares one, because DHT and peer exchange reach
+arbitrary hosts -- but it made every granted origin a general outbound traffic
+generator from the user's own IP address, on any port. The ports with a real
+abuse history and no legitimate use from a page's network grant are excluded
+from any BLANKET grant, and reachable only when a pattern names the exact port.
+
+**A range is not a naming.** `20-30` covers port 25 without anyone having read
+the number, so it is treated as the blanket `*` is. Requiring `lo === hi ===
+port` means a reserved port is reachable only when an app author typed it and a
+person approved that exact line -- which is the property that makes it worth
+showing in a prompt at all.
+
+**The host half is deliberately not consulted.** `namesPortExactly` answers
+"did anyone name this port", nothing more; `hostMatches` still runs unchanged
+afterwards. Folding the two together would let a pattern naming `:25` for one
+host quietly open `:25` everywhere.
+
+**Checked after parsing, before resolving.** Before, so a reserved port never
+becomes a name-existence oracle -- the same discipline `couldAnyPatternMatch`
+already follows. After, because the answer depends on what the patterns say.
+
+**Not a substitute for the address rules, and narrower than it looks.**
+`policy/address.ts` already denies every private, loopback, link-local and
+metadata address outright, so the remote-access ports in the set only matter
+against a PUBLIC host. The owner chose the wider set knowing that.
+
+**Scope: `tcp.connect` only.** `udp.send` shares the pattern grammar and would
+want the same rule, but it has no implementation yet -- wiring it is part of
+whoever builds `udp.send`, not of this.
 
 ### `port-pump.ts` -- the read-side byte pump
 
