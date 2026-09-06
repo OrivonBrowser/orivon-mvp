@@ -27,7 +27,11 @@ main-process-crash path and a message-count DoS gap -- see the PR bodies for #80
 **A second 2026-09-06 round closed step 2's known defects** (#89-#92, plus this docs PR).
 A84 (HIGH) is fixed with both shapes the owner chose: a socket now tears down when its handle
 is unlinked rather than when the peer drains, so `close()`/revocation can no longer be defeated
-by a peer that stops reading -- and A70 closed structurally with it. Two owner decisions became
+by a peer that stops reading -- and A70 closed structurally with it. **The teardown is
+conditional on the close reason, and that is load-bearing:** cancelling the read half of a
+`Duplex.toWeb` destroys the socket and drops its write queue, so acting at unlink on a reason
+that flushes truncates the app's own final bytes (measured: 8 MiB queued, 8 MiB lost). Review
+caught this after the first implementation; see A84 and `src/broker/README.md`. Two owner decisions became
 policy: a blanket `*:*` grant no longer reaches the mail/DNS/IRC/remote-access ports unless a
 pattern names the exact port (A82), and an app's simultaneous-socket allowance is now declared
 in its manifest, clamped, and enforced, with a modest default so anything needing the ceiling
