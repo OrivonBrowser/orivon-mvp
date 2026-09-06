@@ -28,7 +28,7 @@ cost, write an ADR"). It is exactly that kind of choice: if a future Electron re
 removes `executeInMainWorld` with no replacement, every app's `orivon.net.*` calls stop working
 at once, and the fix is a broker-side rewrite, not a config flag.
 
-Built by `stream/broker-24-preload-net-surface` (forthcoming PR #81), which this ADR formalises.
+Built by `stream/broker-24-preload-net-surface` (PR #81, merged), which this ADR formalises.
 
 ## Context
 
