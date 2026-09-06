@@ -249,7 +249,7 @@ function main() {
     console.error(
       'A mismatch means the frozen KDF changed, or this reference drifted from ADR-0010.\n' +
         'Do NOT edit derive-vectors.json to make this pass. See the header of\n' +
-        'src/broker/policy/derive.test.ts and ADR-0010.'
+        'src/broker/policy/tests/derive.test.ts and ADR-0010.'
     )
     process.exit(1)
   }

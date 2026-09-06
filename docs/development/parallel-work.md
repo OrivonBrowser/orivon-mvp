@@ -37,7 +37,7 @@ change belongs in their stream.
 | `shell` | `src/main/{index,window,tabs,omnibox,ipc}.ts`, `src/renderer/`, `src/preload/shell.ts`, **`scripts/smoke.mjs`**, **`test/`** | 1 | **done**, maintenance only |
 | `contracts` | `src/contracts/` | — | **change-controlled**, see below |
 | `shared` | `src/shared/` | — | **change-controlled**, same rules as `contracts`. Empty by design; see its `README.md` |
-| `broker` | `src/broker/`, `src/broker/policy/`, `src/preload/app.ts`, `src/preload/orivon-surface.ts`, `src/preload/socket-bridge.ts`, `src/preload/socket-port.ts`, `src/preload/main-world-socket.ts` | 2 | critical path |
+| `broker` | `src/broker/` and its five directories (`policy/`, `grants/`, `handles/`, `transport/`, `adapters/`), `src/preload/app.ts`, `src/preload/orivon-surface.ts`, `src/preload/socket-bridge.ts`, `src/preload/socket-port.ts`, `src/preload/main-world-socket.ts` | 2 | critical path |
 | `shim` | `src/shim/`, the `renderer.resolve.alias` map in `electron.vite.config.ts` | 3 | |
 | `loader` | `src/loader/` | 4 | |
 | `torrent-app` | `apps/torrent/` | 5 | ships as a pre-built app asset |

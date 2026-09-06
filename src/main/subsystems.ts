@@ -22,7 +22,7 @@
 //
 // Which stream owns which entry: docs/development/parallel-work.md.
 import type { Subsystem } from './registry.js'
-import { brokerIpcSubsystem } from '../broker/ipc.js'
+import { brokerIpcSubsystem } from '../broker/transport/ipc.js'
 import { loaderSubsystem } from '../loader/subsystem.js'
 import { telemetrySubsystem } from '../telemetry/runner.js'
 

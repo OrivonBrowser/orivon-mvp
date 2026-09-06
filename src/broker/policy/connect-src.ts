@@ -71,7 +71,7 @@
 //
 // DERIVES FROM THE GRANTED PATTERNS, NEVER THE MANIFEST'S DECLARED ONES.
 // T22's own wording says "manifest-declared hosts", which predates A18's
-// resolution -- ./index.ts's own connect() already establishes the
+// resolution -- ../index.ts's own connect() already establishes the
 // precedent this file follows: "nothing below ever reads
 // manifest.capabilities.net.tcp.connect, which is what the app DECLARED and
 // may be far wider." Using the manifest here would let CSP permit reach the

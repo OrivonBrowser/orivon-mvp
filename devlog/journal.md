@@ -35,6 +35,13 @@ Mark anything that must not leave the team draft as `(Keep private)`.
   bundle only when the file was missing, never when it was out of date, so a leftover build
   directory made it fail on a clean `main` -- and, worse, a slightly-stale one would have let
   it pass against code that predated the test.
+- 2026-09-06: **src/broker/ is now five directories named for the job they do**, not 83 files
+  in two flat folders. `policy/` decides, `grants/` remembers what the user approved,
+  `handles/` holds what an app has open, `adapters/` is the only place a real address is
+  dialled, `transport/` talks to the page. Tests moved into a `tests/` folder beside the code
+  they cover -- half of what you scrolled past before was not the thing you were auditing.
+  No behaviour change; 2813 tests identical before and after. Two stale path references that
+  predated the move were found by the sweep and fixed.
 
 ### In my head
 

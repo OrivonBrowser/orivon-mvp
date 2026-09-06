@@ -70,7 +70,7 @@ the file's overall shape):
   `preload/newtab.ts`'s fallback branch (a dashboard tab the user has navigated away from) both
   call this file's `exposeOrivon()`, so there is exactly one `orivon.*` object definition, not
   two copies drifting apart (code-guidelines.md Rule 3).
-- **This is build step 2's control surface** -- `../broker/ipc.ts`'s `handleControlRequest`, on
+- **This is build step 2's control surface** -- `../broker/transport/ipc.ts`'s `handleControlRequest`, on
   the other side of `CONTROL_CHANNEL`. Six methods are wired: `app.manifest`, `app.grants`,
   `fs.readFile`, `fs.writeFile`, `net.connect`, `net.close` (plus `net.setNoDelay`/
   `setKeepAlive`). Everything else in `docs/architecture/capability-api.md` (`net.listen`,

@@ -43,6 +43,11 @@ recorded reasons.**
 | [`ADR-0008`](decisions/ADR-0008-handles-are-whatwg-streams.md) | Handles are WHATWG streams; Node shapes live in the shim |
 | [`ADR-0009`](decisions/ADR-0009-the-bundle-hash-is-an-app-s-content-identity.md) | The bundle hash construction: what makes an app's content identity, and how a change is noticed |
 | [`ADR-0010`](decisions/ADR-0010-key-derivation-frozen-at-v1.md) | Key derivation is frozen at v1, versioned by its salt |
+| [`ADR-0011`](decisions/ADR-0011-manifests-declare-their-own-asset-list.md) | Manifests declare their own asset list |
+| [`ADR-0012`](decisions/ADR-0012-fetch-and-cache-precede-consent.md) | Fetch-and-cache is automatic and silent; consent is deferred to first capability use |
+| [`ADR-0013`](decisions/ADR-0013-rollback-is-warned-and-chosen-not-blocked.md) | A below-floor version is warned and chosen, never silently blocked |
+| [`ADR-0014`](decisions/ADR-0014-main-world-streams-via-experimental-api.md) | The `window.orivon` net surface depends on `executeInMainWorld`, an experimental Electron API |
+| [`ADR-0015`](decisions/ADR-0015-the-broker-is-organised-by-job.md) | The broker is organised by job; each directory declares what it may not import |
 
 > **Several carry amendments that supersede parts of their own text.** ADR-0002, ADR-0005
 > and ADR-0009 have inline amendments; ADR-0008 rescopes ADR-0002's mirror-Node's-shapes rule to

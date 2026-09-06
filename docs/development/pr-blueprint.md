@@ -139,7 +139,7 @@ Four short lines. This is the block that makes parallel work safe, so it stays t
 
 ```markdown
 - **Stream:** broker
-- **Paths touched:** src/broker/handles.ts, src/broker/handles.test.ts -- both mine
+- **Paths touched:** src/broker/handles/handles.ts, src/broker/handles/tests/handles.test.ts -- both mine
 - **Contracts:** depends on LIMITS, Handle, OrivonError, GrantId. None changed.
 - **Merge order:** stacked on #1 -- review that first
 ```

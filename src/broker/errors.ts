@@ -1,4 +1,4 @@
-// The concrete OrivonError, moved unchanged out of ./handles.ts (that file's
+// The concrete OrivonError, moved unchanged out of ./handles/handles.ts (that file's
 // own note asked for this) so it can be shared by every broker module that
 // throws one instead of each defining its own copy.
 
@@ -44,8 +44,8 @@ const ORIVON_ERROR_CODES: ReadonlySet<OrivonErrorCode> = new Set<OrivonErrorCode
 /**
  * Recognises an error this broker (or an adapter constructing one the same
  * way) already produced, as opposed to something still raw from an injected
- * dependency. Shared by ./ipc.ts (mapping a thrown value to a
- * ResponseEnvelope) and ./node-adapters.ts (dialTcp's own fallback).
+ * dependency. Shared by ./transport/ipc.ts (mapping a thrown value to a
+ * ResponseEnvelope) and ./adapters/node-adapters.ts (dialTcp's own fallback).
  *
  * ./index.ts has a private, stricter variant that also demands
  * `.name === 'OrivonError'`, so the two disagree about an error an adapter
