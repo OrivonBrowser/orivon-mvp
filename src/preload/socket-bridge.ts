@@ -1,4 +1,5 @@
 import type { PortLike } from './socket-port.js'
+import { toOrivonError } from './orivon-error.js'
 
 // The only file in this directory touching ipcRenderer.on(PORT_CHANNEL).
 // Solves one problem: net.connect's CONTROL_CHANNEL reply (a
@@ -41,7 +42,7 @@ export function createSocketBridge (options: SocketBridgeOptions): SocketBridge 
 
   const arrived = new Map<string, PortLike>()
   const arrivedTimers = new Map<string, ReturnType<typeof setTimeout>>()
-  const waiters = new Map<string, { resolve: (port: PortLike) => void }>()
+  const waiters = new Map<string, { resolve: (port: PortLike) => void, timer: ReturnType<typeof setTimeout> }>()
 
   ipcRenderer.on(portChannel, (event, payload) => {
     const handleId = (payload as { handleId?: unknown }).handleId
@@ -53,6 +54,7 @@ export function createSocketBridge (options: SocketBridgeOptions): SocketBridge 
     const waiter = waiters.get(handleId)
     if (waiter !== undefined) {
       waiters.delete(handleId)
+      clearTimeout(waiter.timer) // P-F12: otherwise this fires later as a dangling no-op timer
       waiter.resolve(port)
       return
     }
@@ -72,13 +74,21 @@ export function createSocketBridge (options: SocketBridgeOptions): SocketBridge 
         if (timer !== undefined) { clearTimeout(timer); arrivedTimers.delete(handleId) }
         return Promise.resolve(existing)
       }
+      // P-F12: two waiters on the same handleId would otherwise clobber each
+      // other in the map -- whichever registers second silently drops the
+      // first's resolve, and delivery or timeout for one can misfire onto
+      // the other. Each handleId is only ever awaited once in practice (the
+      // broker mints a fresh one per net.connect), so a collision is a bug.
+      if (waiters.has(handleId)) {
+        return Promise.reject(toOrivonError('internal', { message: 'a port is already awaited for this handle' }))
+      }
       return new Promise<PortLike>((resolve, reject) => {
-        waiters.set(handleId, { resolve })
-        setTimeout(() => {
+        const timer = setTimeout(() => {
           if (waiters.delete(handleId)) {
-            reject(new Error(`no port delivered for handle ${handleId} within ${waitTimeoutMs}ms`))
+            reject(toOrivonError('timeout', { message: 'the socket port was not delivered' }))
           }
         }, waitTimeoutMs)
+        waiters.set(handleId, { resolve, timer })
       })
     }
   }

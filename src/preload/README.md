@@ -50,8 +50,44 @@ T17). `main-world-socket.ts`'s `installOrivon` builds the page's real `ReadableS
 `contextBridge.executeInMainWorld`'s proxying, the port itself never does.
 
 This is a **security rule, not a throughput optimisation left for later**. `contextIsolation:
-true` is what makes it free. Spike gate 0 measured 1134.8 MB/s *through the closures*, so there
-is no performance argument for weakening it.
+true` is what makes it free. Spike gate 0 measured 1134.8 MB/s *through the closures* for the
+`exposeInMainWorld` mechanism -- **stale for `net.connect`'s path specifically** (AR-F8): that
+number predates this PR's shift to `executeInMainWorld` for the `net` surface, which adds a
+`contextBridge` clone on top of the structured clone already in the path (three copies of every
+byte, two of them on the renderer main thread). Re-measurement against the new path is pending;
+until then this is not evidence for `net.connect`'s throughput, only for `app.*`/`fs.*`'s.
 
 The smoke check asserts `require` and `process` are `undefined` in every renderer. If that ever
 regresses, stop.
+
+## Design notes
+
+**Why `orivon-surface.ts` is shaped the way it is**, moved here from its own header per
+code-guidelines.md's destination test (none of this is a trap a single line needs; it explains
+the file's overall shape):
+
+- **Shared by both exposure sites.** `preload/app.ts` (every ordinary tab) and
+  `preload/newtab.ts`'s fallback branch (a dashboard tab the user has navigated away from) both
+  call this file's `exposeOrivon()`, so there is exactly one `orivon.*` object definition, not
+  two copies drifting apart (code-guidelines.md Rule 3).
+- **This is build step 2's control surface** -- `../broker/ipc.ts`'s `handleControlRequest`, on
+  the other side of `CONTROL_CHANNEL`. Six methods are wired: `app.manifest`, `app.grants`,
+  `fs.readFile`, `fs.writeFile`, `net.connect`, `net.close` (plus `net.setNoDelay`/
+  `setKeepAlive`). Everything else in `docs/architecture/capability-api.md` (`net.listen`,
+  `udpBind`, `fs.open`/`mkdir`/`readdir`/`stat`/`rm`/`rename`/`userSelected`, `id.*`,
+  `app.requestGrant`) is simply absent -- the broker does not implement the rest yet either, and
+  a method that always threw `'invalid'` would be worse than a method that is not there.
+- **`net.connect`'s real shape (readable/writable are actual WHATWG streams) cannot be built in
+  the isolated world.** `contextBridge` copies plain values into the main world; it does not
+  proxy a stream built on this side intact (checked live via context7 against Electron's own
+  docs: "Function values are proxied, while other data types are copied and frozen" -- a copied
+  `ReadableStream` loses its prototype). `./main-world-socket.ts`'s `installOrivon` is therefore
+  handed to `contextBridge.executeInMainWorld`: it runs IN the main world, so its own
+  `ReadableStream`/`WritableStream` are the page's real constructors, wired to plain proxied
+  closures (`netConnectBridge`) built in `orivon-surface.ts`.
+- **`CONTROL_CHANNEL` is imported from `../main/channels.js`, not `../broker/`,** deliberately,
+  matching `preload/shell.ts`'s own precedent (`COMMAND_CHANNEL`/`STATE_CHANNEL`, same file):
+  this directory's "never import `src/broker/`" rule is about broker LOGIC, which cannot run in
+  a renderer process at all -- `channels.ts` is a zero-dependency leaf of plain string constants,
+  safe in either process, and the one neutral place a channel name shared across this trust
+  boundary can live.
