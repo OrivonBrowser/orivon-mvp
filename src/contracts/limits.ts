@@ -18,8 +18,25 @@
  * broker responsive to every other origin.
  */
 export const LIMITS = {
-  /** TcpSocket + UdpSocket + accepted connections, combined, per origin. */
+  /**
+   * The PLATFORM CEILING on TcpSocket + UdpSocket + accepted connections,
+   * combined, per origin. An app declares its own need below this
+   * (`manifest.js`'s `NetCapability.concurrentSockets`); the broker enforces
+   * whichever of the two is lower, so no declaration can raise this number.
+   */
   concurrentSockets: 512,
+  /**
+   * What an origin gets when its manifest declares no
+   * `net.concurrentSockets` (owner decision, 2026-09-06).
+   *
+   * Modest ON PURPOSE, and this is the whole mechanism: an ordinary app never
+   * reaches 64 open sockets, so the default costs it nothing, while anything
+   * that genuinely needs the ceiling must declare a number -- which is then a
+   * number the person granting the capability actually saw. A silent 512 for
+   * every app would put the largest resource commitment in the system behind
+   * no statement by anyone.
+   */
+  defaultConcurrentSockets: 64,
   concurrentFileHandles: 64,
   inFlightOperations: 256,
   /**
@@ -36,12 +53,14 @@ export const LIMITS = {
    * bytes outstanding -- sent by the renderer, not yet accepted into the
    * OS socket's send buffer. See ./ipc.js's WriteMessage/WriteAckMessage.
    *
-   * Deliberately a quarter of readWindowBytes, not a symmetric 1 MiB:
-   * readWindowBytes already commits concurrentSockets * readWindowBytes =
-   * 512 MiB of worst-case per-origin exposure, and doubling that for a
-   * write window nobody asked for would be an unforced increase to an
-   * already-unbounded aggregate (open-questions.md A80: no check enforces
-   * a combined cap across an origin's concurrently-open sockets).
+   * Deliberately a quarter of readWindowBytes, not a symmetric 1 MiB. The
+   * aggregate an origin can pin is (its socket allowance) * (readWindowBytes
+   * + writeWindowBytes), so this number is a multiplier on every socket the
+   * origin holds: at the default allowance of 64 that is ~80 MiB, and at the
+   * 512 ceiling ~640 MiB. Doubling it for a write window nobody asked for
+   * would raise both figures for no stated need (open-questions.md A80,
+   * whose "no combined cap exists" reading is answered by the declared
+   * allowance above rather than by a second runtime check).
    *
    * This is also the hard ceiling on a SINGLE WriteMessage.chunk (owner
    * decision d-0021, see ./ipc.js's WriteMessage): a caller with a larger
