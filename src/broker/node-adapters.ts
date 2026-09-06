@@ -124,10 +124,11 @@ export const resolveHost: Resolver = async (host) => {
  *
  *   'closed'/'sessionEnded'  FIN, buffered writes flushed -- socket.end()
  *                            waits for the flush before resolving.
- *   'revoked'                RST, buffered data discarded on both sides --
+ *   'revoked'/'aborted'      RST, buffered data discarded on both sides --
  *                            resetAndDestroy() is Node's explicit "send an
  *                            RST" API; destroy() alone does not guarantee
- *                            one.
+ *                            one. Same wire effect for both reasons; only
+ *                            who initiated it differs (handle-contracts.ts).
  *   'failed'                 the resource is ALREADY GONE (handle-
  *                            contracts.ts's own CloseReason doc: "release
  *                            the fd and touch the wire not at all; a FIN
@@ -141,6 +142,7 @@ function destroySocket (socket: Socket, reason: CloseReason): Promise<void> {
     case 'sessionEnded':
       return new Promise((resolve) => { socket.end(() => { resolve() }) })
     case 'revoked':
+    case 'aborted':
       if (typeof socket.resetAndDestroy === 'function') socket.resetAndDestroy()
       else socket.destroy()
       return Promise.resolve()

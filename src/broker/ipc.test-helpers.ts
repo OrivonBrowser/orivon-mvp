@@ -153,6 +153,7 @@ export interface FakeSocket {
   readonly socket: FailableTcpSocket
   readonly closeSpy: ReturnType<typeof vi.fn>
   readonly failSpy: ReturnType<typeof vi.fn>
+  readonly abortSpy: ReturnType<typeof vi.fn>
   readonly settleClosed: (error?: OrivonError) => void
 }
 
@@ -179,11 +180,16 @@ export function fakeTcpSocket (
     const err = { name: 'OrivonError', message: 'the handle failed', code, platformCode } as OrivonError
     settle(err)
   })
+  const abortSpy = vi.fn(() => {
+    const err = { name: 'OrivonError', message: 'the app aborted this handle', code: 'reset' as OrivonErrorCode } as OrivonError
+    settle(err)
+  })
   const socket: FailableTcpSocket = {
     id: 'handle-1',
     closed,
     close: closeSpy,
     fail: failSpy,
+    abort: abortSpy,
     readable,
     writable,
     remoteAddress: '93.184.216.34',
@@ -193,7 +199,7 @@ export function fakeTcpSocket (
     setNoDelay: async () => {},
     setKeepAlive: async () => {}
   }
-  return { socket, closeSpy, failSpy, settleClosed: settle }
+  return { socket, closeSpy, failSpy, abortSpy, settleClosed: settle }
 }
 
 /** Lets a fire-and-forget pump/wiring chain progress before assertions run. */

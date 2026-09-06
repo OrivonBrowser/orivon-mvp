@@ -48,6 +48,13 @@ export type Authorisation =
  *                  nobody withdrew anything: sending an RST to every peer and
  *                  discarding a half-written torrent piece because a user
  *                  clicked a link is data loss, not enforcement.
+ *   'aborted'      the app called writable.abort() on this handle. RST, same
+ *                  wire effect as 'revoked' -- but nobody withdrew a grant,
+ *                  the app itself chose to discard a still-live connection
+ *                  (handle-contracts.md's close table: "writable.abort(e)" ->
+ *                  RST sent, `closed` rejects 'reset'). Kept distinct from
+ *                  'revoked' so a fault log or a future policy never has to
+ *                  guess which of the two actually happened.
  *   'failed'       the resource is ALREADY GONE -- the peer reset it, or the
  *                  acquisition that would have registered it was refused.
  *                  Release the fd and touch the wire not at all; a FIN here is
@@ -57,7 +64,7 @@ export type Authorisation =
  * a server the app closed get 'closed', and the same sockets under a revoked
  * grant get 'revoked'.
  */
-export type CloseReason = 'closed' | 'revoked' | 'sessionEnded' | 'failed'
+export type CloseReason = 'closed' | 'revoked' | 'sessionEnded' | 'aborted' | 'failed'
 
 /**
  * Releases the real resource. Injected -- this module never imports electron
@@ -213,4 +220,15 @@ export interface FailableTcpSocket extends TcpSocket {
    * process takes the whole browser down.
    */
   fail: (code: OrivonErrorCode, platformCode?: string) => void
+
+  /**
+   * The app itself discarding this handle (`writable.abort()`), as opposed to
+   * `fail` reporting one that died on its own. Releases the handle the same
+   * way `fail` does, but the CloseReason it hands the injected destroy
+   * callback is 'aborted', not 'failed' -- the wire here is still alive, and
+   * an active reset is the whole point, where `fail`'s 'failed' means the
+   * opposite (the wire is already dead; touch nothing). Never throws, for the
+   * same reason `fail` never does.
+   */
+  abort: () => void
 }
