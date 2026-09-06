@@ -3,8 +3,9 @@
 ## Start here
 
 **Phase: step 2's remaining scope is the permission/grant prompt, now attributed to build step
-4 per an amended build plan** (`build-plan.md` on `main` still lists it under step 2 today; the
-`docs-alignment` stream carries the amendment). `dial`/`resolve`/`fs` are real Node I/O (not
+4** -- `build-plan.md`'s own step-2 entry carries the amendment (owner decision `d-0022`), so
+the earlier note here that `main` "still lists it under step 2" is obsolete and has been
+removed. `dial`/`resolve`/`fs` are real Node I/O (not
 stubs) and the broker is wired to a real `ipcMain` control channel -- both already true on
 `main` today, independent of anything below. **Landed via #79-#82** (four stacked PRs, merged
 in order: #79 contracts -> #80 broker write half -> #81 preload/main-world surface -> #82 the
@@ -23,9 +24,25 @@ own API, not a production path). A half-close fix for `allowHalfOpen` was found 
 defects (an idle-socket silence-timeout misfire, `close()` never resolving) plus a proven
 main-process-crash path and a message-count DoS gap -- see the PR bodies for #80/#81 and
 `docs/open-questions.md` A70/A80-A85 for what was found, fixed, and filed rather than fixed.
-Last updated 2026-09-06 (write-pump work landed across 4 stacked PRs, #79-#82, plus a same-day
-review/fix round; see PR bodies for the full verification trail; prior pass: A27-A31,
-`docs/open-questions.md`).
+**A second 2026-09-06 round closed step 2's known defects** (#89-#92, plus this docs PR).
+A84 (HIGH) is fixed with both shapes the owner chose: a socket now tears down when its handle
+is unlinked rather than when the peer drains, so `close()`/revocation can no longer be defeated
+by a peer that stops reading -- and A70 closed structurally with it. **The teardown is
+conditional on the close reason, and that is load-bearing:** cancelling the read half of a
+`Duplex.toWeb` destroys the socket and drops its write queue, so acting at unlink on a reason
+that flushes truncates the app's own final bytes (measured: 8 MiB queued, 8 MiB lost). Review
+caught this after the first implementation; see A84 and `src/broker/README.md`. Two owner decisions became
+policy: a blanket `*:*` grant no longer reaches the mail/DNS/IRC/remote-access ports unless a
+pattern names the exact port (A82), and an app's simultaneous-socket allowance is now declared
+in its manifest, clamped, and enforced, with a modest default so anything needing the ceiling
+has to ask in a number the user sees (A80). A48 was found stale -- both credit-window halves
+have existed since the preload pump landed -- and `handle-contracts.md` corrected to match.
+**Note for whoever edits next: `src/broker/handles.ts` is at 491 lines against Rule 2's 500;
+the next addition to it needs a split, not another method.**
+
+Last updated 2026-09-06 (two rounds: the write-pump landing across #79-#82, then the step-2
+defect closeout in #89-#92; see PR bodies for the full verification trail; prior pass:
+A27-A31, `docs/open-questions.md`).
 
 **The human documentation is the map. Read it first — this file adds only what is specific to
 working here as an agent.**
