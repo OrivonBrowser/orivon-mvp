@@ -18,10 +18,10 @@
 //   1. SHELL_APP_ID below is a placeholder AppId representing the whole
 //      Orivon process, standing in until a future app loader gives a real
 //      capability-app's identity a source (nothing in this tree connects
-//      a loaded app to a tab yet). docs/open-questions.md A88.
+//      a loaded app to a tab yet). docs/open-questions.md A92.
 //   2. TELEMETRY_INGEST_URL is unprovisioned -- ADR-0004 requires a
 //      self-hosted ingest endpoint that does not exist yet anywhere in
-//      this repository or its docs. docs/open-questions.md A89.
+//      this repository or its docs. docs/open-questions.md A93.
 import type { App } from 'electron'
 import { join } from 'node:path'
 import type { Subsystem } from '../main/registry.js'
@@ -48,10 +48,10 @@ import { initialTransportState, type Sender, type TransportState } from './trans
 import { TelemetryStore } from './store.js'
 import { reconcileWindowFocus, type TrackedWindow } from './window-focus.js'
 
-/** See the file header's note and docs/open-questions.md A88. */
+/** See the file header's note and docs/open-questions.md A92. */
 export const SHELL_APP_ID = 'shell'
 
-/** See the file header's note and docs/open-questions.md A89. RFC 2606
+/** See the file header's note and docs/open-questions.md A93. RFC 2606
  *  `.example` -- guaranteed never to resolve, so this placeholder cannot
  *  silently start receiving real user data before the owner replaces it
  *  with a real endpoint. */
