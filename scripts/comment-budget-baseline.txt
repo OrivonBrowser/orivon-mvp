@@ -21,6 +21,4 @@ src/broker/policy/connect-src.ts
 src/broker/policy/connect.ts
 src/broker/policy/paths.ts
 src/loader/manifest.ts
-src/main/favicon.ts
-src/main/newtab-ipc.ts
 src/telemetry/transport.ts

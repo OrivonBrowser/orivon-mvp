@@ -13,7 +13,8 @@
 //
 // TWO PHASES, because Electron forces it: protocol.registerSchemesAsPrivileged
 // must be called BEFORE the app is ready, and build step 5's range-capable
-// custom media scheme needs it (build-plan.md SS5). A single phase would make
+// custom media scheme needs it (build-plan.md's "Sequence" section, build
+// step 5). A single phase would make
 // that stream restructure index.ts -- exactly what this exists to prevent.
 //
 // This module imports nothing from electron at runtime: `App` is a type-only
@@ -61,9 +62,9 @@ export interface SubsystemContext {
  * 3): a second published value means two independently-constructed
  * instances disagreeing about one running app's state. Keyed by context
  * rather than stored as an ordinary field so the value can be exposed as a
- * get-only accessor -- an early version of this file left `broker` a plain
- * mutable field and relied on every caller going through `publishBroker` by
- * convention alone, and nothing stopped `ctx.broker = x` from compiling.
+ * get-only accessor -- a plain mutable field would let `ctx.broker = x`
+ * compile, relying on every caller going through `publishBroker` by
+ * convention alone.
  */
 function createPublishedSlot<T> (label: string, hazard: string): {
   get: (ctx: SubsystemContext) => T | undefined
@@ -161,7 +162,7 @@ export interface SubsystemFailure {
  * silently prevent the ones after it from registering. The caller reports
  * them loudly -- a subsystem that failed to start may be a capability
  * enforcing nothing, which is the one class of failure that must never be
- * quiet (handle-contracts.md SSWhat the shim must do, rule 2).
+ * quiet (handle-contracts.md's "What the shim must do" section, rule 2).
  */
 export function runBeforeReady (list: Subsystem[]): SubsystemFailure[] {
   const failures: SubsystemFailure[] = []
@@ -203,10 +204,10 @@ export async function runAfterReady (
  * A human-readable message naming every CRITICAL failure in `failures`, or
  * `null` if none of them were critical.
  *
- * Why this exists: PR #49 made the broker reachable via `publishBroker`, but
- * a throw there was still only `console.error`'d by `runAfterReady`'s own
- * failure collection -- the app booted a completely normal-looking window
- * with every `orivon.*` call from every app silently unroutable
+ * Why this exists: a critical subsystem's throw was previously only
+ * `console.error`'d by `runAfterReady`'s own failure collection -- the app
+ * booted a completely normal-looking window with every `orivon.*` call
+ * from every app silently unroutable
  * (open-questions.md A51). A subsystem marked `critical` failing is exactly
  * the case `runBeforeReady`'s doc above calls "must never be quiet", and
  * logging it is not loud enough: nobody reads a packaged app's main-process
