@@ -13,10 +13,9 @@ function hasStringHandleId (value: object): value is { handleId: string } {
 
 /**
  * `bytesConsumed` must be finite and non-negative HERE, not left to
- * ./port-pump.ts's own defence -- preserved unchanged from the inline check
- * this file replaces, so a NaN/Infinity/negative figure never reaches
- * `handleCredit` at all, rather than relying solely on the pump's own
- * (separately tested) tolerance for the same cases.
+ * ./port-pump.ts's own defence, so a NaN/Infinity/negative figure never
+ * reaches `handleCredit` at all, rather than relying solely on the pump's
+ * own (separately tested) tolerance for the same cases.
  */
 export function isCreditMessage (value: unknown): value is CreditMessage {
   if (typeof value !== 'object' || value === null || !hasStringHandleId(value)) return false
