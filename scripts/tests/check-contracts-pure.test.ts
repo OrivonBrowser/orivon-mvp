@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { checkContractsArePure, REQUIRED_CONTRACT_FILES } from './check-contracts-pure.mjs'
+import { checkContractsArePure, REQUIRED_CONTRACT_FILES } from '../check-contracts-pure.mjs'
 
 /** A root whose src/contracts holds exactly the files given. */
 const fixture = (files: Record<string, string>): string => {

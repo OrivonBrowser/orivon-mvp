@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { checkFileSizes, readSafe, SOURCE_LIMIT, TEST_LIMIT } from './check-size.mjs'
+import { checkFileSizes, readSafe, SOURCE_LIMIT, TEST_LIMIT } from '../check-size.mjs'
 
 const fixture = (): string => mkdtempSync(join(tmpdir(), 'orivon-size-'))
 
