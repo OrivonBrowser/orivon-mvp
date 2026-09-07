@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { installGlobals, type GlobalsErrorReporter, type GlobalsTarget } from './globals.js'
+import { installGlobals, type GlobalsErrorReporter, type GlobalsTarget } from '../globals.js'
 
 // Every test installs onto a throwaway object, never onto the real
 // globalThis -- that is the property under test as much as any single
@@ -158,7 +158,7 @@ describe('installGlobals', () => {
   describe('setImmediate / clearImmediate', () => {
     // A macrotask, unlike nextTick's microtask -- a real (short) wait is
     // needed, matching this repo's existing async-ordering test style
-    // (src/main/registry.test.ts) rather than introducing fake timers.
+    // (src/main/tests/registry.test.ts) rather than introducing fake timers.
     const flushMacrotask = async (): Promise<void> => {
       await new Promise((resolve) => setTimeout(resolve, 10))
     }
