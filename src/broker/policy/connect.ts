@@ -28,6 +28,7 @@ import type { OrivonErrorCode, Pattern } from '../../contracts/index.js'
 import { canonicalAddress, classifyAddress } from './address.js'
 import { MAX_HOST_LENGTH, isAsciiHost, isValidPort, normalizeHost } from './canonical-host.js'
 import { couldAnyPatternMatch, parsePattern, patternAuthorises } from './connect-patterns.js'
+import type { ParsedPattern } from './connect-patterns.js'
 import { isReservedPort, namesPortExactly } from './reserved-ports.js'
 
 /**
@@ -189,12 +190,22 @@ export const MAX_ANSWERS = 64
  *
  * Never throws on its own account. A rejection from `resolveFn` propagates:
  * see the note on Resolver.
+ *
+ * `parsedPatterns`, when supplied, MUST be `patterns.map(parsePattern)` for
+ * this exact `patterns` array -- a caller checking the same grant repeatedly
+ * (GrantLedger.parsedPatternsFor, for authorisedSend's per-datagram udp.send
+ * check in ../index.ts) may pass its cached result instead of paying to
+ * redo it on every call. A length mismatch means the two arguments do not
+ * actually correspond, so this parses fresh rather than trusting a caller's
+ * mistake -- every OTHER validation and the live resolve below are unchanged
+ * either way.
  */
 export async function checkConnect (
   patterns: readonly Pattern[],
   hostArg: string,
   port: number,
-  resolveFn: Resolver
+  resolveFn: Resolver,
+  parsedPatterns?: ReadonlyArray<ParsedPattern | null>
 ): Promise<ConnectDecision> {
   // Runtime shape guard, kept for the same reason hostArg and answer each get
   // one below: the type signature is a compile-time promise, not a runtime
@@ -223,7 +234,9 @@ export async function checkConnect (
   // Parsed ONCE, not per address. The loop below is O(answers x patterns) and
   // both counts are chosen by somebody else; re-splitting every pattern inside
   // it made a single call cost seconds. See MAX_PATTERNS.
-  const parsed = patterns.map(parsePattern)
+  const parsed = parsedPatterns !== undefined && parsedPatterns.length === patterns.length
+    ? parsedPatterns
+    : patterns.map(parsePattern)
 
   // Checked HERE -- after parsing, before resolving. Before, so a reserved
   // port is never a name-existence oracle (the same reason

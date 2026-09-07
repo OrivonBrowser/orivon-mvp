@@ -14,6 +14,7 @@ import { LIMITS } from '../../contracts/index.js'
 import type { BoundUdpSocket, SendOutcome } from '../broker-contracts.js'
 import type { PortRange } from '../policy/bind.js'
 import { fail } from '../errors.js'
+import { mapIoError } from '../io-errors.js'
 
 /** How many ports to try inside the granted ranges before giving up. */
 const BIND_ATTEMPTS = 64
@@ -89,6 +90,19 @@ function bindOne (socket: DgramSocket, port: number): Promise<void> {
 }
 
 /**
+ * Errno values that mean this socket's OWN file descriptor is gone, not that
+ * one peer or one packet had a problem. Deliberately narrow, and confirmed so
+ * rather than guessed: a throwaway probe against real Linux dgram sockets
+ * found that the obvious peer-shaped trigger -- an ICMP port-unreachable
+ * answer for a datagram sent to a closed port -- never even reaches an
+ * UNCONNECTED socket's 'error' event at all (only a `.connect()`-ed socket
+ * sees that, as ECONNREFUSED, and this file never connects one). EBADF is the
+ * one condition left that genuinely means nothing further can ever be sent or
+ * received on this fd.
+ */
+const FATAL_SOCKET_ERRNOS: ReadonlySet<string> = new Set(['EBADF'])
+
+/**
  * Wires a bound socket's inbound datagrams to a WHATWG readable, dropping
  * rather than queueing once the window is full.
  *
@@ -96,8 +110,12 @@ function bindOne (socket: DgramSocket, port: number): Promise<void> {
  * not, rather than in the relay: `controller.desiredSize` is the only honest
  * reading of how full the queue actually is, and a second drop point in the
  * relay would mean two places deciding the same thing.
+ *
+ * Exported so a fake-emitter test can drive its error classification
+ * directly -- a real OS is not a reliable way to provoke a specific errno on
+ * demand (see FATAL_SOCKET_ERRNOS's own note).
  */
-function readableOf (socket: DgramSocket, dropped: { count: number }, windowBytes: number): ReadableStream<Datagram> {
+export function readableOf (socket: DgramSocket, dropped: { count: number }, windowBytes: number): ReadableStream<Datagram> {
   return new ReadableStream<Datagram>({
     start (controller) {
       socket.on('message', (data, rinfo) => {
@@ -118,11 +136,18 @@ function readableOf (socket: DgramSocket, dropped: { count: number }, windowByte
           family: rinfo.family === 'IPv6' ? 'IPv6' : 'IPv4'
         })
       })
-      // A socket that dies under us must surface, or the relay reports a dead
-      // socket as a quiet one -- the same failure port-pump.ts's
-      // onStreamFailed exists to prevent on the TCP side.
+      // ONE peer's async error must not end every OTHER peer's traffic on
+      // this shared socket -- the same shape A87 already fixed for a
+      // policy-denied send, never extended to an OS-reported one. Only
+      // FATAL_SOCKET_ERRNOS ends the stream; anything else is a condition
+      // this socket cannot tie to one pending datagram, and is dropped the
+      // same way a full inbound queue already is -- no error, no event, the
+      // socket keeps running for every other peer (DATAGRAM LOSS IS EXPECTED,
+      // ../handles/handle-contracts.ts).
       socket.on('error', (error: NodeJS.ErrnoException) => {
-        controller.error(fail('internal', 'the UDP socket failed', undefined, error.code))
+        if (error.code !== undefined && FATAL_SOCKET_ERRNOS.has(error.code)) {
+          controller.error(mapIoError(error, 'net'))
+        }
       })
     }
   }, {
