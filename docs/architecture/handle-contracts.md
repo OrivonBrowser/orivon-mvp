@@ -299,11 +299,15 @@ interface TcpServer extends Handle {
 
 ## §UdpSocket
 
-> **Not implemented; the wire it will run on now exists.** No UDP/dgram behaviour exists anywhere
-> in `src/` — no policy check, no `node:dgram` adapter, no relay, nothing on `window.orivon`. What
-> landed 2026-09-07 is the contract half only: `UdpSocket` and `Datagram` in
-> `src/contracts/handles.ts`, and the datagram messages, window and constants in
-> `src/contracts/ipc.ts` / `limits.ts`. Build step 2's UDP work is underway against those.
+> **Implemented, correcting the "not implemented" banner this replaced.** That version described
+> the contract-only landing of 2026-09-07's first hours; the implementation landed the same day.
+> `udp.bind` policy: `src/broker/policy/bind.ts`. The `node:dgram` adapter: `src/broker/adapters/
+> udp-adapter.ts`. The relay pumping datagrams between the OS socket and the renderer's dedicated
+> port: `src/broker/transport/datagram-relay.ts`. Reachable from a real page as
+> `window.orivon.net.udpBind`, built in the main world by `src/preload/main-world-socket.ts`'s
+> `buildUdpSocket` and wired through `src/broker/index.ts`'s `udpBind`. As with `TcpSocket`,
+> reachable does not mean granted in production: no origin holds a `udp.bind` grant yet, so a
+> real page's call correctly answers `'denied'` until build step 4's permission prompt exists.
 
 ```ts
 interface Datagram {
