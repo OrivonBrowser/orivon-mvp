@@ -68,7 +68,7 @@ Recorded here rather than applied silently.
 | Path | Responsibility |
 |---|---|
 | `scripts/check-contracts-pure.mjs` | Guard: `src/contracts/` has every required file and imports nothing |
-| `scripts/check-contracts-pure.test.ts` | Its unit tests |
+| `scripts/tests/check-contracts-pure.test.ts` | Its unit tests |
 | `src/contracts/errors.ts` | `OrivonErrorCode` closed enum, `OrivonError` shape |
 | `src/contracts/handles.ts` | `Handle` and the five handle interfaces |
 | `src/contracts/manifest.ts` | `/.well-known/orivon.json` shape, `Grant` |
@@ -77,7 +77,7 @@ Recorded here rather than applied silently.
 | `src/contracts/ipc.ts` | Renderer/main message shapes, the credit-window protocol |
 | `src/contracts/index.ts` | Single import site; re-exports everything |
 | `src/main/registry.ts` | `Subsystem` type + the two pure phase runners |
-| `src/main/registry.test.ts` | Its unit tests |
+| `src/main/tests/registry.test.ts` | Its unit tests |
 | `src/main/subsystems.ts` | The append-only registration list |
 | `src/{broker,shim,loader,trust,nostr,telemetry}/README.md` | One per stream: what lives here, what it depends on, what it must never import |
 | `src/broker/policy/README.md` | The pure-function boundary from `build-plan.md` §Week 0 |
@@ -113,7 +113,7 @@ tested against `mkdtemp` fixtures, plus a direct-invocation CLI block.
 
 **Files:**
 - Create: `scripts/check-contracts-pure.mjs`
-- Test: `scripts/check-contracts-pure.test.ts`
+- Test: `scripts/tests/check-contracts-pure.test.ts`
 
 **Interfaces:**
 - Consumes: nothing.
@@ -124,14 +124,14 @@ tested against `mkdtemp` fixtures, plus a direct-invocation CLI block.
 
 - [ ] **Step 1: Write the failing test**
 
-Create `scripts/check-contracts-pure.test.ts`:
+Create `scripts/tests/check-contracts-pure.test.ts`:
 
 ```typescript
 import { describe, expect, it } from 'vitest'
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { checkContractsArePure, REQUIRED_CONTRACT_FILES } from './check-contracts-pure.mjs'
+import { checkContractsArePure, REQUIRED_CONTRACT_FILES } from '../check-contracts-pure.mjs'
 
 /** A root whose src/contracts holds exactly the files given, all import-free. */
 const fixture = (files: Record<string, string>): string => {
@@ -235,8 +235,8 @@ describe('checkContractsArePure', () => {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `npx vitest run scripts/check-contracts-pure.test.ts`
-Expected: FAIL — cannot resolve `./check-contracts-pure.mjs`.
+Run: `npx vitest run scripts/tests/check-contracts-pure.test.ts`
+Expected: FAIL — cannot resolve `../check-contracts-pure.mjs`.
 
 - [ ] **Step 3: Write the implementation**
 
@@ -365,7 +365,7 @@ if (invokedDirectly) {
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `npx vitest run scripts/check-contracts-pure.test.ts`
+Run: `npx vitest run scripts/tests/check-contracts-pure.test.ts`
 Expected: PASS, all cases.
 
 Then run the full suite to confirm nothing regressed:
@@ -375,7 +375,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add scripts/check-contracts-pure.mjs scripts/check-contracts-pure.test.ts
+git add scripts/check-contracts-pure.mjs scripts/tests/check-contracts-pure.test.ts
 git commit -m "$(cat <<'EOF'
 Guard: src/contracts must be complete and import nothing
 
@@ -578,7 +578,7 @@ function hasNonSiblingReference (source) {
 }
 ```
 
-Add the matching cases to `scripts/check-contracts-pure.test.ts`:
+Add the matching cases to `scripts/tests/check-contracts-pure.test.ts`:
 
 ```typescript
   describe('the index.ts barrel exemption', () => {
@@ -607,7 +607,7 @@ Add the matching cases to `scripts/check-contracts-pure.test.ts`:
 
 - [ ] **Step 5: Run the checks**
 
-Run: `npm run typecheck && npx vitest run scripts/check-contracts-pure.test.ts`
+Run: `npm run typecheck && npx vitest run scripts/tests/check-contracts-pure.test.ts`
 Expected: typecheck PASS (contracts compile), all guard tests PASS.
 
 Run: `node scripts/check-contracts-pure.mjs`
@@ -619,7 +619,7 @@ state at the end of Task 2; Task 3 makes it green.
 
 ```bash
 git add src/contracts/errors.ts src/contracts/handles.ts src/contracts/index.ts \
-        scripts/check-contracts-pure.mjs scripts/check-contracts-pure.test.ts
+        scripts/check-contracts-pure.mjs scripts/tests/check-contracts-pure.test.ts
 git commit -m "$(cat <<'EOF'
 Contracts: the error enum and the five handle interfaces
 
@@ -819,7 +819,7 @@ Converts `src/main/index.ts` from a file every stream must *edit* into one every
 *appends to*. Two lines per subsystem: an import and a list entry.
 
 **Files:**
-- Create: `src/main/registry.ts`, `src/main/registry.test.ts`, `src/main/subsystems.ts`
+- Create: `src/main/registry.ts`, `src/main/tests/registry.test.ts`, `src/main/subsystems.ts`
 - Modify: `src/main/index.ts`, `electron.vite.config.ts`
 
 **Interfaces:**
@@ -838,7 +838,7 @@ prevent.
 
 - [ ] **Step 1: Write the failing test**
 
-Create `src/main/registry.test.ts`:
+Create `src/main/tests/registry.test.ts`:
 
 ```typescript
 import { describe, expect, it, vi } from 'vitest'
@@ -924,7 +924,7 @@ describe('runAfterReady', () => {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `npx vitest run src/main/registry.test.ts`
+Run: `npx vitest run src/main/tests/registry.test.ts`
 Expected: FAIL — cannot resolve `./registry.js`.
 
 - [ ] **Step 3: Write `src/main/registry.ts`**
@@ -1005,7 +1005,7 @@ export async function runAfterReady (
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `npx vitest run src/main/registry.test.ts`
+Run: `npx vitest run src/main/tests/registry.test.ts`
 Expected: PASS, all eleven cases.
 
 - [ ] **Step 5: Write `src/main/subsystems.ts`**
@@ -1087,7 +1087,7 @@ and one above `renderer.resolve.alias`, after the existing block:
 - [ ] **Step 8: Verify the shell still works**
 
 Run: `npm run typecheck && npm test`
-Expected: PASS, including the pre-existing `src/main/omnibox.test.ts`.
+Expected: PASS, including the pre-existing `src/main/tests/omnibox.test.ts`.
 
 Run: `npm run smoke`
 Expected: PASS. This builds and drives the real shell with real clicks. **Read the JSON result
@@ -1098,7 +1098,7 @@ must actually appear; if nothing does, check `ELECTRON_RUN_AS_NODE` is being str
 - [ ] **Step 9: Commit**
 
 ```bash
-git add src/main/registry.ts src/main/registry.test.ts src/main/subsystems.ts \
+git add src/main/registry.ts src/main/tests/registry.test.ts src/main/subsystems.ts \
         src/main/index.ts electron.vite.config.ts
 git commit -m "$(cat <<'EOF'
 Composition root: subsystems append, they do not edit

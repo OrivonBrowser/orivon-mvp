@@ -160,6 +160,31 @@ sibling data module before splitting the tests themselves. That keeps the assert
 makes the vectors reviewable on their own, which
 [`scripts/check-vectors.mjs`](../../scripts/check-vectors.mjs) already wants.
 
+
+### Where a test file lives
+
+**Every test lives in a `tests/` folder inside the directory whose code it covers** — not beside
+that code, and not pooled into one directory at the root. `src/loader/index.test.ts` is
+`src/loader/tests/index.test.ts`; `src/broker/handles/handles.test.ts` is
+`src/broker/handles/tests/handles.test.ts`.
+
+The reason is what a directory listing is *for*. Before this, `src/broker/` held 83 files of
+which 40 were tests, interleaved alphabetically, so roughly half of what a reader scrolled past
+was not the code being read. Grouping by directory rather than pooling at the root keeps the
+locality that made colocation attractive in the first place: a directory still shows its own
+tests and nobody else's.
+
+This applies to test helpers and test-only fixtures too (`*.test-helpers.ts`, a vector table
+imported only by a test). It does **not** apply to an artefact that a guard verifies
+independently — [`src/broker/policy/derive-vectors.json`](../../src/broker/policy/derive-vectors.json)
+stays beside the code it freezes, because
+[`check-vectors.mjs`](../../scripts/check-vectors.mjs) and `ADR-0010` treat it as a
+specification rather than a fixture.
+
+**Nothing enforces this.** The line-limit and comment guards classify by filename suffix, not by
+directory, so a stray `foo.test.ts` beside its source still gets the 800-line budget and still
+passes CI. Filed with the other unenforced layout rules as `A85`.
+
 ---
 
 ## Rule 3 — One implementation per idea
