@@ -2270,7 +2270,7 @@ loader-to-broker wiring already exists end-to-end, when in fact `LoadContext` is
 injected stub with no production caller.
 
 **Not yet a live risk**, for the same reason A57 and A60 are not: nothing outside tests calls
-`Loader.load()` at all yet (`grep -rn "\.load(" src/` outside `src/loader/index.test.ts` finds
+`Loader.load()` at all yet (`grep -rn "\.load(" src/` outside `src/loader/tests/index.test.ts` finds
 no caller either), so there is no live path where `grantedPatterns` could currently be supplied
 wrong.
 
@@ -2309,7 +2309,7 @@ naming a `bundleHash` that the actual bytes under `code/` — a mix of both writ
 longer add up to. A non-atomic single-file write can also leave a half-written file if the
 process dies mid-write, independent of any race.
 
-**Not yet a live risk**, same reasoning as A57/A60/A61: nothing outside `src/loader/index.test.ts`
+**Not yet a live risk**, same reasoning as A57/A60/A61: nothing outside `src/loader/tests/index.test.ts`
 calls `Loader.load()` yet, so no real caller can currently trigger two concurrent installs for
 one origin.
 
@@ -3111,6 +3111,15 @@ that deferral for Rule 1: the rule was being followed and the codebase drifted r
 because a human cannot see an import boundary by reading one file at a time. If `A85` is ever
 resolved by *not* building it, that reasoning is what has to be answered.
 
+**Widened 2026-09-07** (`stream/backlog-14-test-layout`). The test-placement rule now applies to
+the whole repository, not only the broker — every test lives in a `tests/` folder inside the
+directory it covers ([`code-guidelines.md`](development/code-guidelines.md) §Where a test file
+lives). It is unenforced for the same reason and in the same way as the import boundaries above:
+`check-size.mjs` and `check-comments.mjs` both classify by filename suffix (`*.test.ts`), never
+by directory, so a test file left beside its source still receives the 800-line budget and still
+passes CI. Whatever eventually closes this entry should cover both rules; they are one gap with
+two faces, not two entries.
+
 ---
 
 ### A86 — the specified UDP inbound window is a count, and a count alone cannot bound the memory **[AI-REC]**
@@ -3152,7 +3161,7 @@ reading needs an answer to the 1 GiB figure above.
 
 ---
 
-### A87 — an outbound datagram that is denied cannot be reported without killing the socket **[AI-REC]**
+### A87 — an outbound datagram that is denied cannot be reported without killing the socket **[RESOLVED 2026-09-07, owner]**
 
 **Raised 2026-09-07**, same branch as A86.
 
@@ -3161,28 +3170,46 @@ no single acquisition-time destination to authorise: a UDP socket has no fixed p
 `udp.send` grant has to be checked **per datagram**. That creates a failure this specification had
 no case for — a send the grant does not authorise.
 
-**Why the obvious answer is wrong.** A `WritableStream` reports one failed write by rejecting the
+**Why rejecting the write is wrong.** A `WritableStream` reports one failed write by rejecting the
 sink's promise, and doing so errors the stream **permanently**. A DHT peer list routinely names
 addresses outside what the user granted — private ranges, reserved ports (A82) — so the first
-excluded peer would tear down a working swarm. Denying correctly would break the flagship.
+excluded peer would tear down a working swarm. Denying correctly by that route would break the
+flagship.
 
-**What was built:** the write is accepted, the datagram is discarded, and a new
-`UdpSocket.droppedOutbound` counter increments — the same treatment `droppedInbound` already gets
-for the direction where this document had already accepted loss as normal. The wire carries the
-reason (`SendFailedMessage.code`) so the broker can log it; the app sees only the count.
+**What was first built, and why it did not stand.** The write was accepted, the datagram
+discarded, and `UdpSocket.droppedOutbound` incremented silently — the wire already carried the
+reason (`SendFailedMessage.code`), but nothing surfaced it to the app. **Owner's decision,
+2026-09-07: a blocked send must tell the app.** Every other denial path in this codebase does;
+a bare counter a developer has to think to check is not that, and the owner was explicit that
+if this permission boundary does not visibly exist to an app, the enforcement model built around
+it does not hold together.
 
-**Two properties this deliberately keeps.** Loss stays consistent with UDP's own semantics rather
-than being a special case invented for permissions. And `denied` stays uniform (`errors.ts`): an
-app can learn *that* a send was dropped by comparing the counter, never which pattern excluded
-it, so the counter is not a map of the grant boundary.
+**What was built instead — a second, non-terminal stream.**
 
-**The honest cost, stated rather than buried:** a permission denial is now silent to an app that
-does not read the counter. A developer whose sends vanish has a count and no reason. Mitigated
-only by the counter existing at all — the alternative designs either kill the socket or hand the
-app a probe oracle.
+```ts
+// src/contracts/handles.ts, on UdpSocket
+readonly refusals: ReadableStream<SendRefusal>   // { address, port, code }
+```
 
-**Needed by:** confirm before the flagship ships, since it decides what a torrent app experiences
-when the user grants a narrow `udp.send` pattern. Nothing before that blocks on it.
+Stream-shaped, matching `ADR-0008`'s ban on `EventEmitter`s; drop-on-full under the same
+backpressure discipline as `readable`, so a socket that never reads `refusals` behaves exactly as
+before — nothing about the transport half changes. `write()` itself still never rejects. An app
+that ignores the stream loses nothing over the original design; an app that reads it is told
+plainly which of its own writes were refused and why, matching every other capability's denial
+surface instead of being the one silent exception.
+
+**What it deliberately still does not carry.** Only the destination the app itself already named,
+plus the bare `code` — no resolved address, no which-pattern-excluded-it. Handing back more would
+turn the boundary into a probe oracle for the grant's own shape, the same reasoning `errors.ts`
+already applies to every other `denied`.
+
+**Needed by:** lands in the contracts PR (`stream/contracts-14-datagram-wire`, #95) that already
+carries this entry, since `refusals` is a contract addition, not an implementation detail; the
+sink (`datagram-sink.ts`) and preload (`datagram-port.ts`, `main-world-socket.ts`) changes that
+populate it follow in the PRs that already touch those files.
+
+---
+
 ### A88 — `bind(0)` asks the OS to pick a port, and nothing says whether it may pick outside the granted range **[AI-REC]**
 
 **Raised 2026-09-07**, building `checkBind` (`stream/broker-30-bind-policy`), build step 2's UDP

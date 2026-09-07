@@ -1,4 +1,4 @@
-// Transcribed from docs/architecture/handle-contracts.md SSLimits.
+// Transcribed from docs/architecture/handle-contracts.md's "Limits" section.
 //
 // This is the one file in src/contracts/ that emits runtime code -- a frozen
 // object literal. It still references no module, so the purity guard is
@@ -37,7 +37,9 @@ export const LIMITS = {
    * no statement by anyone.
    */
   defaultConcurrentSockets: 64,
+  /** Open FileHandles per origin. */
   concurrentFileHandles: 64,
+  /** Operations awaiting a broker response, per origin. See this object's own doc on what happens beyond it. */
   inFlightOperations: 256,
   /**
    * Per-socket read credit window, in bytes. The broker sends at most this
@@ -57,10 +59,8 @@ export const LIMITS = {
    * aggregate an origin can pin is (its socket allowance) * (readWindowBytes
    * + writeWindowBytes), so this number is a multiplier on every socket the
    * origin holds: at the default allowance of 64 that is ~80 MiB, and at the
-   * 512 ceiling ~640 MiB. Doubling it for a write window nobody asked for
-   * would raise both figures for no stated need (open-questions.md A80,
-   * whose "no combined cap exists" reading is answered by the declared
-   * allowance above rather than by a second runtime check).
+   * 512 ceiling ~640 MiB. A symmetric window would raise both figures for no
+   * stated need.
    *
    * This is also the hard ceiling on a SINGLE WriteMessage.chunk (owner
    * decision d-0021, see ./ipc.js's WriteMessage): a caller with a larger
@@ -93,6 +93,22 @@ export const LIMITS = {
    * two that can drift.
    */
   inboundDatagramWindowBytes: 1024 * 1024,
+  /**
+   * Outbound datagrams one socket may have posted-but-not-yet-accepted.
+   *
+   * The mirror of the inbound window, and a SEPARATE number rather than a
+   * reuse of `inboundDatagramWindow`: it bounds a different resource (sends
+   * the broker is holding on the app's behalf, not receives it is holding for
+   * the app), and the two would be free to diverge. Reusing one constant for
+   * both would couple them by accident and read as deliberate.
+   *
+   * Smaller than the inbound window, because the asymmetry is real: inbound
+   * arrival is paced by the network and a burst is normal, while outbound is
+   * paced by the app and a backlog this deep already means the app is
+   * outrunning the OS. Exceeding it is a protocol violation by the renderer,
+   * not backpressure -- see ./ipc.js's SendAckMessage.
+   */
+  outboundDatagramWindow: 64,
   /**
    * The largest single datagram, in bytes -- the maximum UDP payload over
    * IPv4 (65535 minus the 8-byte UDP and 20-byte IP headers).

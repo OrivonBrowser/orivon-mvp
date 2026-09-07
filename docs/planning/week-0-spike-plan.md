@@ -183,7 +183,7 @@ real shim is written.
 | `electron.vite.config.ts` | Three build targets; the renderer's resolution overrides |
 | `vitest.config.ts` | `environment: 'node'`, unit tests only |
 | `scripts/check-no-native-modules.mjs` | Fails the build on any `binding.gyp` / `prebuilds/` |
-| `scripts/check-no-native-modules.test.ts` | Its tests — this one is TDD |
+| `scripts/tests/check-no-native-modules.test.ts` | Its tests — this one is TDD |
 | `.github/workflows/ci.yml` | Typecheck + unit tests + the guard, on push |
 | `src/main/index.ts` | Window creation, secure `webPreferences` |
 | `src/preload/index.ts` | `contextBridge` surface |
@@ -211,7 +211,7 @@ real shim is written.
 - Create: `package.json`, `tsconfig.json`, `electron.vite.config.ts`, `vitest.config.ts`
 - Create: `src/main/index.ts`, `src/preload/index.ts`, `src/renderer/index.html`
 - Create: `scripts/check-no-native-modules.mjs`
-- Test: `scripts/check-no-native-modules.test.ts`
+- Test: `scripts/tests/check-no-native-modules.test.ts`
 - Create: `.github/workflows/ci.yml`
 
 **Interfaces:**
@@ -221,12 +221,12 @@ real shim is written.
 - [ ] **Step 1: Write the failing test for the guard**
 
 ```ts
-// scripts/check-no-native-modules.test.ts
+// scripts/tests/check-no-native-modules.test.ts
 import { describe, expect, it } from 'vitest'
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { checkNoNativeModules } from './check-no-native-modules.mjs'
+import { checkNoNativeModules } from '../check-no-native-modules.mjs'
 
 const fixture = () => mkdtempSync(join(tmpdir(), 'orivon-guard-'))
 
@@ -274,8 +274,8 @@ describe('checkNoNativeModules', () => {
 
 - [ ] **Step 2: Run it and confirm it fails**
 
-Run: `npx vitest run scripts/check-no-native-modules.test.ts`
-Expected: FAIL — `Failed to resolve import "./check-no-native-modules.mjs"`.
+Run: `npx vitest run scripts/tests/check-no-native-modules.test.ts`
+Expected: FAIL — `Failed to resolve import "../check-no-native-modules.mjs"`.
 
 - [ ] **Step 3: Write the guard**
 
@@ -323,7 +323,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 
 - [ ] **Step 4: Run the tests and confirm they pass**
 
-Run: `npx vitest run scripts/check-no-native-modules.test.ts`
+Run: `npx vitest run scripts/tests/check-no-native-modules.test.ts`
 Expected: PASS, 5 tests.
 
 - [ ] **Step 5: Wire up the project**

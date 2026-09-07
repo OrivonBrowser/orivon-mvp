@@ -257,7 +257,7 @@ particular broker or preload implements them.
   socket with no write in flight — an ordinary request/response pause, or a choked peer between
   writes — has nothing armed and cannot trip it. Firing it is terminal for the write direction:
   both streams error and `closed` rejects with `'timeout'`. Deliberately more than double the
-  heartbeat interval, so a heartbeat has a real chance to land first (`src/contracts/ipc.test.ts`
+  heartbeat interval, so a heartbeat has a real chance to land first (`src/contracts/tests/ipc.test.ts`
   asserts the ratio).
 - **No sequence number.** A `MessagePort` delivers in order without loss on this path, a
   `WritableStream`'s sink is never re-entered before the previous write settles, and write

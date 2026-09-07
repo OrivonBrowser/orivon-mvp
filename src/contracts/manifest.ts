@@ -1,4 +1,4 @@
-// Transcribed from docs/architecture/capability-api.md SSManifest.
+// Transcribed from docs/architecture/capability-api.md's "Manifest" section.
 //
 // The manifest is served alongside the app's frontend assets at
 // /.well-known/orivon.json and fetched before first run. It DECLARES what an
@@ -44,7 +44,7 @@ export interface Manifest {
   readonly name: string
   /**
    * Semver core plus optional prerelease; build metadata is stripped and
-   * ignored (capability-api.md SSversion). Backs the per-origin VERSION FLOOR
+   * ignored (capability-api.md's "version" section). Backs the per-origin VERSION FLOOR
    * (security-model.md T19): an update below the highest version ever
    * installed is rejected, so a validly-hash-pinned older bundle cannot be
    * replayed to suppress a fix. A version that does not parse as semver FAILS
@@ -52,6 +52,7 @@ export interface Manifest {
    * at first install, not only on update.
    */
   readonly version: string
+  /** Path to the app's entry HTML, relative to the manifest's own origin. */
   readonly entry: string
   /**
    * Every other frontend file the app ships, alongside `entry`. Publisher-
@@ -116,7 +117,7 @@ export interface TcpCapability {
   /**
    * Port ranges. `"*"` is REJECTED here -- a declared range is required, and
    * privileged ports below 1024 are denied outright at every tier
-   * (capability-api.md A9 SS1). Listening opens a service rather than making
+   * (capability-api.md's open item A9, point 1). Listening opens a service rather than making
    * an outbound call, and gets a distinct, more serious prompt.
    */
   readonly listen?: readonly Pattern[]
@@ -131,7 +132,7 @@ export interface UdpCapability {
 
 export interface FsCapability {
   /**
-   * ENFORCED, not advisory (capability-api.md A9 SS3). Advisory means a buggy
+   * ENFORCED, not advisory (capability-api.md's open item A9, point 3). Advisory means a buggy
    * or hostile app fills the user's disk -- security-model.md T11, and a
    * genuinely bad first-run experience for a torrent-first browser. The broker
    * maintains a running per-origin byte counter, checks it on write, and
@@ -142,13 +143,14 @@ export interface FsCapability {
 }
 
 export interface IdCapability {
+  /** Curve names the app may pass to `orivon.id.publicKey`/`sign`, e.g. `["secp256k1"]`. Omitted means none. */
   readonly curves?: readonly string[]
 }
 
 /**
  * One capability actually granted to one origin.
  *
- * KEYED ON (origin, capability, pattern set) -- capability-api.md A9 SS2. The
+ * KEYED ON (origin, capability, pattern set) -- capability-api.md's open item A9, point 2. The
  * pattern set is load-bearing and not decoration: the re-consent trigger is a
  * SUBSET CHECK over it, not a comparison of capability kinds. An update
  * changing `connect: ["api.example.com:443"]` to `connect: ["*:*"]` requests
