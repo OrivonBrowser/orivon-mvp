@@ -52,13 +52,24 @@ function portAt (ranges: readonly PortRange[], offset: number): number {
  * One bind attempt. Resolves once the socket is listening, rejects on any
  * error -- including EADDRINUSE, which the caller retries against a different
  * port rather than treating as fatal.
+ *
+ * Also settles on 'close': a socket closed mid-bind (the abort race in
+ * `bindUdp` below) fires neither 'error' nor the bind callback, only 'close'
+ * -- verified against real Node dgram sockets, not assumed. Without this,
+ * that race left this promise, and `bindUdp`'s, pending forever.
  */
 function bindOne (socket: DgramSocket, port: number): Promise<void> {
   return new Promise((resolve, reject) => {
-    const onError = (error: Error): void => { reject(error) }
-    socket.once('error', onError)
-    socket.bind(port, '0.0.0.0', () => {
+    const cleanup = (): void => {
       socket.removeListener('error', onError)
+      socket.removeListener('close', onClose)
+    }
+    const onError = (error: Error): void => { cleanup(); reject(error) }
+    const onClose = (): void => { cleanup(); reject(fail('revoked', 'the socket was closed while binding')) }
+    socket.once('error', onError)
+    socket.once('close', onClose)
+    socket.bind(port, '0.0.0.0', () => {
+      cleanup()
       resolve()
     })
   })
@@ -139,7 +150,13 @@ export async function bindUdp (
   if (total === 0) throw fail('internal', 'no granted port ranges to bind within')
 
   const socket = createSocket({ type: 'udp4' })
-  const onAbort = (): void => { socket.close() }
+  // Guarded via closeSocket, not a raw socket.close(): this callback runs
+  // inside an AbortSignal listener, so a synchronous ERR_SOCKET_DGRAM_NOT_RUNNING
+  // here (a redundant close racing the ones below) would be an uncaught
+  // exception on whatever called `signal`'s controller.abort() -- on
+  // Electron's main process, that can crash the whole browser rather than
+  // just fail one bind.
+  const onAbort = (): void => { void closeSocket(socket) }
   signal.addEventListener('abort', onAbort, { once: true })
 
   let lastError: unknown
@@ -157,11 +174,14 @@ export async function bindUdp (
 
   signal.removeEventListener('abort', onAbort)
   if (signal.aborted) {
-    socket.close()
+    // closeSocket, not socket.close(): onAbort above may already have closed
+    // this socket, and closeSocket's own guard is what makes that redundant
+    // close safe instead of a synchronous ERR_SOCKET_DGRAM_NOT_RUNNING.
+    await closeSocket(socket)
     throw fail('revoked', 'the grant authorising this bind was withdrawn')
   }
   if (lastError !== undefined) {
-    socket.close()
+    await closeSocket(socket)
     // 'limit', not 'unreachable': every port the grant covers is taken, which
     // is a resource exhaustion the app can act on, not an unreachable peer.
     throw fail('limit', 'no free port in the granted range', undefined, errnoCode(lastError))
