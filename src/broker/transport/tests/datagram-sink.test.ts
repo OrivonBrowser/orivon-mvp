@@ -72,6 +72,16 @@ describe('createDatagramSink -- the happy path', () => {
 
     expect(sent.filter((m) => m.kind === 'send-ack')).toHaveLength(1)
   })
+
+  it('ignores a message addressed to a different handleId', async () => {
+    const sendDatagram = vi.fn(async () => ({ sent: true as const }))
+    const { sink } = harness(sendDatagram)
+
+    sink.handleSend(sendMessage({ handleId: 'some-other-handle' }))
+    await settle()
+
+    expect(sendDatagram).not.toHaveBeenCalled()
+  })
 })
 
 describe('createDatagramSink -- a refused datagram (A87)', () => {
