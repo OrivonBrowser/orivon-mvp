@@ -1,5 +1,5 @@
-// Transcribed from docs/architecture/handle-contracts.md SSErrors. That
-// document is the specification; this file must not diverge from it.
+// Transcribed from docs/architecture/handle-contracts.md's "Errors" section.
+// That document is the specification; this file must not diverge from it.
 //
 // OrivonError is declared as an interface rather than a class because this
 // directory emits no runtime code -- a `class` would. The broker constructs
@@ -10,7 +10,7 @@
  * unrecognised value as a bug, not a case to silently ignore.
  *
  * Adding a code is a BREAKING CHANGE once orivonApiVersion reaches 1
- * (handle-contracts.md SSVersioning). While it is 0, the surface is unstable
+ * (handle-contracts.md's "Versioning" section). While it is 0, the surface is unstable
  * by declaration and codes may still be added.
  */
 export type OrivonErrorCode =
@@ -22,7 +22,7 @@ export type OrivonErrorCode =
    * platformCode -- see the note on that field.
    */
   | 'denied'
-  /** The grant authorising this handle was withdrawn. See handle-contracts.md SSRevocation. */
+  /** The grant authorising this handle was withdrawn. See handle-contracts.md's "Revocation" section. */
   | 'revoked'
   /** The peer could not be reached: refused, no route, DNS failure. */
   | 'unreachable'
