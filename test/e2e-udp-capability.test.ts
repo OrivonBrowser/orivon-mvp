@@ -253,9 +253,14 @@ it('Phase 2: the real broker binds a real UDP socket, round-trips a datagram, an
         echoedAgain !== undefined && new TextDecoder().decode(echoedAgain.data) === payload)
 
       // ---- revocation reaches an already-bound socket
-      const [bindGrant] = (await broker.app.grants(FIXTURE_ORIGIN))
+      const [sendGrant] = (await broker.app.grants(FIXTURE_ORIGIN))
         .filter((g) => g.capability === 'udp.send')
-      if (bindGrant !== undefined) await broker.revoke(FIXTURE_ORIGIN, bindGrant.id)
+      // Unconditional on purpose: silently skipping the revoke when this comes back
+      // empty would still fail the check below (the socket keeps sending), but at
+      // the wrong place, blaming revocation for what is actually a broken grant
+      // lookup. Fail here, at the real cause.
+      if (sendGrant === undefined) throw new Error('expected FIXTURE_ORIGIN to hold a udp.send grant to revoke, but grants() returned none')
+      await broker.revoke(FIXTURE_ORIGIN, sendGrant.id)
       const afterRevoke = await socket.send({
         data: new TextEncoder().encode(payload), address: HOST, port: UDP_ECHO_PORT, family: 'IPv4'
       })
