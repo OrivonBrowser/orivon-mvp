@@ -1,4 +1,4 @@
-// Transcribed from docs/architecture/capability-api.md SSv0 surface.
+// Transcribed from docs/architecture/capability-api.md's "v0 surface" section.
 //
 // THIS IS THE DURABLE ASSET (ADR-0002). Apps call orivon.net.connect; beneath
 // it that is a Node net.Socket in the main process today, a Wasmtime host
@@ -48,8 +48,21 @@ export interface CapabilityRequest {
 }
 
 export interface OrivonNet {
+  /**
+   * Opens an outbound TCP connection. `host` may be a hostname or an address
+   * literal; it is checked against the app's granted `tcp.connect` patterns
+   * by the RESOLVED address, never by this string (security-model.md T12).
+   * Rejects with `'denied'` if no granted pattern authorises the result.
+   */
   connect(opts: { host: string, port: number }): Promise<TcpSocket>
+  /**
+   * Opens a TCP listening socket on `port`, checked against the app's
+   * granted `tcp.listen` patterns. `port: 0` asks the OS to pick; the real
+   * port is on the returned `TcpServer.localPort` before this promise
+   * resolves (Handle rule 3, ./handles.js).
+   */
   listen(opts: { port: number }): Promise<TcpServer>
+  /** Binds a UDP socket on `port`, checked against `udp.bind`. Same `port: 0` behaviour as `listen`. */
   udpBind(opts: { port: number }): Promise<UdpSocket>
 }
 
@@ -85,7 +98,7 @@ export interface OrivonFs {
 
 /**
  * TWO KINDS OF IDENTITY, and conflating them is a recorded past error
- * (capability-api.md SSTwo kinds of identity).
+ * (capability-api.md's "Two kinds of identity" section).
  *
  * APP KEYS -- publicKey/sign -- are per-origin and silent. They need no
  * consent because they cannot link users across apps.
@@ -104,6 +117,7 @@ export interface OrivonFs {
 export interface OrivonId {
   /** derive(seed, "app", origin). Silent, no prompt. */
   publicKey(opts: { curve: string }): Promise<Uint8Array>
+  /** Signs `payload` with the same per-origin key `publicKey` returns for this `curve`. Silent, no prompt. */
   sign(opts: { curve: string, payload: Uint8Array }): Promise<Uint8Array>
   /** derive(seed, "identity", identityId). Triggers the connect prompt. */
   requestIdentity(opts: { kind: string }): Promise<IdentityHandle | null>

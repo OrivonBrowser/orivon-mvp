@@ -27,7 +27,7 @@ seconds, and a test would be paying rent to tell you something you already know.
 | `npm run smoke` | Builds and drives the real shell with real clicks. The only check that proves a window appears |
 | `npm run test:e2e` | Builds, then runs [`test/e2e-capability-boundary.test.ts`](../../test/e2e-capability-boundary.test.ts) via [`test/vitest.e2e.config.ts`](../../test/vitest.e2e.config.ts) — see §The end-to-end test below. Runs automatically in CI's `e2e` job on every push and pull request; needs a display, so run it locally under `xvfb-run -a npm run test:e2e` if there is none |
 
-Unit tests are **colocated** with what they test: `src/main/omnibox.test.ts` sits beside
+Unit tests are **colocated** with what they test: `src/main/tests/omnibox.test.ts` sits beside
 `src/main/omnibox.ts`.
 
 ### What `npm run smoke` is, and what it is not
