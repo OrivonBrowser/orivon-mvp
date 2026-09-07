@@ -119,6 +119,22 @@ Concrete examples, so this is not abstract:
 
 ---
 
+## Reference shorthand
+
+Source comments and this corpus cite several short token families. Three resolve to a real
+document; two do not, and a comment should say so by spelling the decision or the constraint out
+in words rather than leaning on the token alone.
+
+| Token | Resolves to | Example |
+|---|---|---|
+| `T<n>` | [`architecture/security-model.md`](architecture/security-model.md)'s threat table | `T12` — DNS rebinding |
+| `A<n>` | [`open-questions.md`](open-questions.md) §A | `A18` — pass the granted pattern list, not the manifest |
+| `ADR-NNNN` | [`decisions/`](decisions/) | `ADR-0008` — handles are WHATWG streams |
+| `d-NNNN` | **Nothing yet.** Cited in source as an owner decision, with no register — [`open-questions.md`](open-questions.md) A86 | `d-0017` |
+| `F<n>`, `B-F<n>`, `P-F<n>`, `AR-F<n>` | **Nothing.** Per-review-round finding IDs, meaningful only for the duration of the review that assigned them — not to be written into source (`development/code-guidelines.md` Rule 1) | — |
+
+---
+
 ## What each directory is
 
 | | |

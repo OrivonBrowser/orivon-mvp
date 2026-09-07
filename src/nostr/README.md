@@ -22,3 +22,10 @@ from a mistake here.
 **Verify against real clients early** ([`open-questions.md`](../../docs/open-questions.md) C4).
 The release checklist requires the displayed npub to be **byte-identical across two pinned
 clients**.
+
+## Design notes
+
+Why the code here has the shape it has. This is the destination
+[`code-guidelines.md`](../../docs/development/code-guidelines.md) Rule 1 names for rationale: a
+source comment protects a specific line from a specific mistake; the case for a file's overall
+shape belongs here instead.
