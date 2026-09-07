@@ -1,8 +1,5 @@
-// Split out of fetch-bundle.ts (docs/development/code-guidelines.md Rule 2 --
-// threading install-origin.ts's validated `pinnedAddresses` through this
-// file's own deadline machinery, F2/F5/F6, pushed fetch-bundle.ts to 524
-// lines). This half is "one fetch, with a byte cap and a wall-clock deadline
-// both enforced against bytes actually arriving" -- a self-contained concern
+// One fetch, with a byte cap and a wall-clock deadline both enforced
+// against bytes actually arriving -- a self-contained concern
 // fetch-bundle.ts's own orchestration (manifest, then every declared asset,
 // into a hashed BundleTree) does not need to know the inside of. Tested
 // through fetch-bundle.test.ts's own suite, same as install-origin.ts.
@@ -41,11 +38,11 @@ export interface FetchResponse {
 /**
  * `pinnedAddresses` and `signal` both mirror src/broker/index.ts's `Dial`
  * (`(addresses, port, signal) => ...`): the caller resolves once
- * (install-origin.ts's `ensurePublicUnicastOrigin`, F2) and hands the
+ * (install-origin.ts's `ensurePublicUnicastOrigin`) and hands the
  * validated literal(s) down, the same "dial the literal you checked, never
  * the name again" contract connect.ts's own header states -- see
  * fetch-bundle.ts's own comment on where `pinnedAddresses` comes from and why
- * it is the SAME array for every fetch across one install (F5), never
+ * it is the SAME array for every fetch across one install, never
  * re-resolved per request. A real implementation is expected to use it to
  * pin its actual connection as far as its underlying network stack allows;
  * see electron-fetch.ts's own comment for what that means concretely, and
@@ -75,7 +72,7 @@ export const FETCH_TIMEOUT_MS = 20_000
 
 /**
  * Bounds the WHOLE fetchBundle() operation -- the install-origin guard's own
- * resolution (F6), the manifest fetch, and every asset -- with one
+ * resolution, the manifest fetch, and every asset -- with one
  * wall-clock deadline, on top of FETCH_TIMEOUT_MS's per-asset one. The two
  * bound different things and neither replaces the other: FETCH_TIMEOUT_MS
  * stops one stuck request; this stops death by a thousand cuts. Without it,
@@ -98,7 +95,7 @@ export const FETCH_TIMEOUT_MS = 20_000
 export const BUNDLE_TIMEOUT_MS = 30 * FETCH_TIMEOUT_MS
 
 /**
- * Why one fetch (or the install-origin guard's own resolution, F6) did not
+ * Why one fetch (or the install-origin guard's own resolution) did not
  * produce a usable result. Developer-facing, same stance as manifest.ts's
  * own ManifestRejected -- never shown to an end user as-is. Shared by this
  * file and fetch-bundle.ts's own `FetchBundleResult`: a single fetch's
@@ -139,7 +136,7 @@ export function rejected (reason: string): FetchBundleRejected {
  * on the promise, nothing more. Recorded as docs/open-questions.md A52.
  *
  * Exported: fetch-bundle.ts's own orchestration now also races the
- * install-origin guard's resolution against the bundle deadline (F6), the
+ * install-origin guard's resolution against the bundle deadline, the
  * same shape as this file's own fetchWithBudget racing `fetchFn` -- one
  * implementation of "race a promise against a deadline signal", not two
  * (Rule 3).
@@ -261,7 +258,7 @@ function declaredLength (response: FetchResponse): number | undefined {
  * are against the same two numbers: this one asset's own cap (`assetCap`)
  * and how much room is left in the whole bundle (`remaining`).
  *
- * `pinnedAddresses` (F2/F5) is passed straight to `fetchFn` untouched --
+ * `pinnedAddresses` is passed straight to `fetchFn` untouched --
  * this function's own job is the byte/time budget, not the address the
  * caller already validated; see fetch-bundle.ts's own comment on where it
  * comes from and why it is the same for every call across one install.

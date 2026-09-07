@@ -6,22 +6,13 @@
 //
 // WHY THE ELECTRON IMPORT BELOW IS `import type`, AND WHY REAL ELECTRON
 // VALUES (Notification/net/shell) ARE IMPORTED DYNAMICALLY INSIDE THE
-// FUNCTIONS THAT USE THEM, NOT STATICALLY AT THE TOP:
-// Outside a real Electron process (i.e. under vitest, which runs this file
-// in plain Node), the `electron` npm package's entry point is
-// `module.exports = getElectronPath()` -- a STRING (the path to the binary),
-// computed by calling a function, not a static object. A top-level
-// `import { Notification, net, shell } from 'electron'` was verified
-// (2026-08-26) to not throw under this repo's vitest, but only because
-// Vite/esbuild's loose CJS interop silently destructures `undefined` off
-// that string for every named binding -- an accident of the current
-// toolchain's interop strategy, not a guarantee, and the resulting bindings
-// would be silently broken for the whole lifetime of the module. A dynamic
-// `import('electron')` INSIDE a function body is never reached at all while
-// vitest merely imports this file to test the pure/injected parts in
-// ./update-check.ts -- the exact same erasure-by-construction principle
-// registry.ts uses for its type-only `import type { App }`, extended to the
-// values this file also needs for real.
+// FUNCTIONS THAT USE THEM: same reasoning as src/telemetry/runner.ts's own
+// file header -- a top-level static value import from 'electron' is
+// silently broken under this repo's vitest (the package's entry point
+// outside a real Electron process is a string, not the API surface), and
+// this file has no test importing it, so a dynamic import inside each
+// function body is never reached at all while other tests merely import
+// sibling files.
 import type { App } from 'electron'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -181,10 +172,9 @@ export async function runUpdateCheck (app: App, now: number = Date.now()): Promi
 }
 
 /**
- * NOT wired into src/main/subsystems.ts by this change -- that file's
- * append point is out of scope for this stream by task boundary, left for
- * the integrator. Shaped as a ready-to-append Subsystem so doing so is
- * exactly the two lines subsystems.ts's own comment promises:
+ * Not wired into src/main/subsystems.ts yet. Shaped as a ready-to-append
+ * Subsystem so doing so is exactly the two lines subsystems.ts's own
+ * comment promises:
  *
  *   import { updateCheckSubsystem } from './update-check-runner.js'
  *   ... and add `updateCheckSubsystem` to the array.

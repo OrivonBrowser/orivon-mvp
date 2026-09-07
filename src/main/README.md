@@ -51,3 +51,13 @@ segfaulted under XWayland on this machine (`exit_code=139`) and the window stopp
 all — and was reverted immediately. The real bug was never about display selection; see
 [`window.ts`](window.ts)'s `showOnce` comment for the actual root cause and fix (`ready-to-show`
 unreliable when loading from the dev server).
+
+**[`favicon.ts`](favicon.ts) — main fetches favicons to a `data:` URL rather than letting the
+renderer fetch directly.** AI recommendation, not yet an owner decision. The chrome view's CSP
+(`index.html`) is a one-line, readable guarantee today that the one privileged view in this app
+makes zero outbound requests. Letting the renderer `<img src>` an arbitrary, attacker-influenced
+`https://` URL directly would need `img-src 'self' https:` and hands a hostile page a live
+request from the privileged, cookie-bearing chrome origin — a new, silent tracking surface
+exactly where this codebase has been careful before (`mvp-scope.md` already flags DuckDuckGo
+search itself as a stated "known limitation" for far less: leaving the machine at all). Fetching
+in main instead keeps the guarantee intact; the CSP only needs `img-src 'self' data:`.
