@@ -521,3 +521,35 @@ describe('the returned addresses are canonical literals', () => {
     }
   })
 })
+
+// ---------------------------------------------------------------------------
+// A multicast/broadcast literal is not "one host" the way the address-literal
+// carve-out assumes -- security finding, hostMatches's 'address-literal' case.
+// ---------------------------------------------------------------------------
+
+describe('an address-literal pattern never authorises multicast or broadcast', () => {
+  it.each([
+    { literal: '224.0.0.251', pattern: '224.0.0.251:5353', port: 5353, why: 'mDNS multicast' },
+    { literal: '239.255.255.250', pattern: '239.255.255.250:1900', port: 1900, why: 'SSDP multicast' },
+    { literal: '255.255.255.255', pattern: '255.255.255.255:1900', port: 1900, why: 'limited broadcast' },
+    { literal: 'ff02::fb', pattern: '[ff02::fb]:5353', port: 5353, why: 'IPv6 multicast' }
+  ])('denies an exact literal declaration of $literal ($why)', async ({ literal, pattern, port }) => {
+    // The carve-out's whole justification is "the user was shown ONE address
+    // and granted it" -- false for multicast/broadcast, which is delivered to
+    // every listener on the segment that joined the group, not to one device.
+    // Exact string equality (the old behaviour) would allow this; it must not.
+    const decision = await checkConnect([pattern], literal, port, noResolution)
+    expect(decision.allowed).toBe(false)
+  })
+
+  it.each([
+    { literal: '192.168.1.50', port: 8080, why: 'an ordinary private unicast literal' },
+    { literal: PUBLIC_A, port: 443, why: 'an ordinary public unicast literal' }
+  ])('still allows $why declared and requested exactly ($why)', async ({ literal, port }) => {
+    // The regression this suite must not introduce: the address-literal
+    // carve-out itself (reaching a LAN device the user was shown and granted)
+    // must keep working for every address class it was actually meant for.
+    const decision = await checkConnect([`${literal}:${port}`], literal, port, noResolution)
+    expect(allowedAddresses(decision)).toStrictEqual([literal])
+  })
+})
