@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { hexToBytes, toLowercaseHex } from './hex.js'
+import { hexToBytes, toLowercaseHex } from '../hex.js'
 
 describe('toLowercaseHex', () => {
   it('encodes bytes as lowercase, zero-padded hex', () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fail } from './errors.js'
+import { fail } from '../errors.js'
 
 describe('fail', () => {
   it('builds a real Error carrying the given code', () => {

@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { IdentityHandle, Orivon } from '../contracts/index.js'
-import { computeEventId } from './nip01.js'
-import type { NostrSigner } from './nip07.js'
-import { createNostrProvider, orivonIdentitySigner } from './nip07.js'
+import type { IdentityHandle, Orivon } from '../../contracts/index.js'
+import { computeEventId } from '../nip01.js'
+import type { NostrSigner } from '../nip07.js'
+import { createNostrProvider, orivonIdentitySigner } from '../nip07.js'
 
 function notImplemented (name: string) {
   return () => {
