@@ -2270,7 +2270,7 @@ loader-to-broker wiring already exists end-to-end, when in fact `LoadContext` is
 injected stub with no production caller.
 
 **Not yet a live risk**, for the same reason A57 and A60 are not: nothing outside tests calls
-`Loader.load()` at all yet (`grep -rn "\.load(" src/` outside `src/loader/index.test.ts` finds
+`Loader.load()` at all yet (`grep -rn "\.load(" src/` outside `src/loader/tests/index.test.ts` finds
 no caller either), so there is no live path where `grantedPatterns` could currently be supplied
 wrong.
 
@@ -2309,7 +2309,7 @@ naming a `bundleHash` that the actual bytes under `code/` — a mix of both writ
 longer add up to. A non-atomic single-file write can also leave a half-written file if the
 process dies mid-write, independent of any race.
 
-**Not yet a live risk**, same reasoning as A57/A60/A61: nothing outside `src/loader/index.test.ts`
+**Not yet a live risk**, same reasoning as A57/A60/A61: nothing outside `src/loader/tests/index.test.ts`
 calls `Loader.load()` yet, so no real caller can currently trigger two concurrent installs for
 one origin.
 
@@ -3110,6 +3110,15 @@ would be a third guard on a solo project. The case for building it anyway is the
 that deferral for Rule 1: the rule was being followed and the codebase drifted regardless,
 because a human cannot see an import boundary by reading one file at a time. If `A85` is ever
 resolved by *not* building it, that reasoning is what has to be answered.
+
+**Widened 2026-09-07** (`stream/backlog-14-test-layout`). The test-placement rule now applies to
+the whole repository, not only the broker — every test lives in a `tests/` folder inside the
+directory it covers ([`code-guidelines.md`](development/code-guidelines.md) §Where a test file
+lives). It is unenforced for the same reason and in the same way as the import boundaries above:
+`check-size.mjs` and `check-comments.mjs` both classify by filename suffix (`*.test.ts`), never
+by directory, so a test file left beside its source still receives the 800-line budget and still
+passes CI. Whatever eventually closes this entry should cover both rules; they are one gap with
+two faces, not two entries.
 
 ---
 

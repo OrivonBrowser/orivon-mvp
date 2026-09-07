@@ -3,7 +3,7 @@
 // Control operations (open, close, options) use normal Electron IPC; BULK
 // BYTES use a dedicated MessageChannelMain port per handle, because
 // per-message IPC is too slow for torrent-rate data
-// (capability-api.md SSThroughput).
+// (capability-api.md's "Throughput" section).
 //
 // SECURITY RULE, NOT AN OPTIMISATION DETAIL: the raw port NEVER crosses into
 // the main world. The preload holds it in the isolated world and exposes only
@@ -12,8 +12,8 @@
 // anything the page can reach (security-model.md T17). contextIsolation: true
 // is what makes this free.
 //
-// TWO RULES FROM SPIKE GATE 0, both binding per handle-contracts.md
-// SSWhat the shim must do:
+// TWO RULES FROM SPIKE GATE 0, both binding per handle-contracts.md's
+// "What the shim must do" section:
 //
 //   1. NO TRANSFERABLES ON THE RENDERER -> MAIN PATH, EVER, as an optimisation
 //      or otherwise. electron#34905 reproduces and is worse than reported:
@@ -137,7 +137,7 @@ export interface WriteMessage {
  * "Accepted" is deliberately not "written": a write resolves the instant
  * the OS socket's send buffer takes it under its own high-water mark,
  * before the bytes reach the peer -- exactly what handle-contracts.md's
- * SSTcpSocket backpressure section means by "the broker has accepted the
+ * handle-contracts.md's "TcpSocket" backpressure section means by "the broker has accepted the
  * bytes into the OS socket send buffer".
  *
  * A `bytesAccepted: 0` message with nothing newly accepted is a valid
@@ -170,7 +170,7 @@ export interface WriteFailedMessage {
  * `writable.close()` -- half-close, FIN only, flowing renderer -> broker.
  * Travels on the port rather than CONTROL_CHANNEL so it stays ordered
  * against the writes it finishes, needing no new control method or
- * timeout. Half-close is load-bearing (handle-contracts.md SSTcpSocket's
+ * timeout. Half-close is load-bearing (handle-contracts.md's "TcpSocket"
  * close table): the readable side is left untouched.
  */
 export interface WriteEndMessage {
@@ -237,15 +237,11 @@ export const WRITE_HEARTBEAT_MS = 5_000
  * SCOPE, READ CAREFULLY: this timer runs ONLY WHILE AT LEAST ONE WRITE IS
  * OUTSTANDING -- posted via WriteMessage and not yet resolved by a
  * WriteAckMessage (a WRITE_HEARTBEAT_MS zero-byte ack counts as "still
- * alive" and keeps resetting this clock) or a WriteFailedMessage. It is
- * NOT a whole-port idle timeout and must never be armed by, or reset by,
- * unrelated inbound traffic (DataMessage, CreditMessage) or by simple
- * absence of traffic on a socket with no write in flight. An ordinary
- * request/response protocol pause, or a choked BitTorrent peer (whose own
- * keepalive interval is 120 seconds), has nothing outstanding and must
- * never trip this -- an implementation that starts this clock on socket
- * open, or clears it only on inbound reads, is wrong regardless of how
- * literally it matches the name.
+ * alive" and keeps resetting this clock) or a WriteFailedMessage. It is NOT
+ * a whole-port idle timeout: unrelated inbound traffic (DataMessage,
+ * CreditMessage) and an ordinary silent gap with nothing outstanding -- a
+ * choked BitTorrent peer's own keepalive interval is 120 seconds -- must
+ * never arm or reset it.
  *
  * Correct arming: start (or restart) the clock when a WriteMessage is
  * posted with nothing already outstanding on that handle; keep it running
