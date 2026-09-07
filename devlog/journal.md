@@ -43,6 +43,17 @@ Mark anything that must not leave the team draft as `(Keep private)`.
   No behaviour change; 2813 tests identical before and after. Two stale path references that
   predated the move were found by the sweep and fixed.
 
+- 2026-09-07: **A page can now ask for a UDP socket.** `orivon.net.udpBind` is real end to end --
+  policy, a `node:dgram` adapter, a datagram relay over its own MessagePort, and `window.orivon`
+  -- proved by a real Electron launch that round-trips a datagram against a real echo server and
+  refuses an ungranted destination. Six stacked PRs (#95-#100). This is what unblocks the DHT, and
+  with it build step 3's `dgram` shim: without it the torrent app could only find peers the way
+  Chrome and Brave already can.
+- 2026-09-07: **Step 2 turned out not to be finished.** `CLAUDE.md` said the only thing left was
+  the permission prompt; the architecture docs said four of the six capability kinds had no code
+  at all. The docs were right. UDP was the first of the four; `tcp.listen`, the rest of `fs` and
+  `id` are still empty.
+
 ### In my head
 
 - **Two documents had gone quietly false rather than wrong.** `CLAUDE.md` still said the
@@ -56,5 +67,14 @@ Mark anything that must not leave the team draft as `(Keep private)`.
   should see that number. That reframes a resource limit as a consent surface, which is the
   same move `fs.quotaBytes` already made for disk -- and it is a better answer than either
   option offered.
+
+- **A test that passes locally and fails on CI is usually telling you about a shared resource.**
+  Adding a second e2e file made two suites contend for the same fixture ports and the same
+  Electron binary, and vitest runs files in parallel by default. Locally the interleaving happened
+  to be benign, which is the least useful kind of green.
+- **Three tests failed while I was writing them, and two of the three were the test's fault.**
+  The UDP window overshoots by one datagram by design, and the drop timer reports a change rather
+  than a total. Both times the tempting fix was to bend the code to the guess. Writing the
+  reasoning into the code instead is what turned a wrong assertion into a documented property.
 
 ### Non-repo
