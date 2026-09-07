@@ -54,7 +54,7 @@ export function createSocketBridge (options: SocketBridgeOptions): SocketBridge 
     const waiter = waiters.get(handleId)
     if (waiter !== undefined) {
       waiters.delete(handleId)
-      clearTimeout(waiter.timer) // P-F12: otherwise this fires later as a dangling no-op timer
+      clearTimeout(waiter.timer) // otherwise this fires later as a dangling no-op timer
       waiter.resolve(port)
       return
     }
@@ -74,7 +74,7 @@ export function createSocketBridge (options: SocketBridgeOptions): SocketBridge 
         if (timer !== undefined) { clearTimeout(timer); arrivedTimers.delete(handleId) }
         return Promise.resolve(existing)
       }
-      // P-F12: two waiters on the same handleId would otherwise clobber each
+      // Two waiters on the same handleId would otherwise clobber each
       // other in the map -- whichever registers second silently drops the
       // first's resolve, and delivery or timeout for one can misfire onto
       // the other. Each handleId is only ever awaited once in practice (the
