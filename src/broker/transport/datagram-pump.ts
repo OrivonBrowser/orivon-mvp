@@ -45,13 +45,13 @@ function usableCredit (value: unknown): number {
 }
 
 export function createDatagramPump (options: DatagramPumpOptions): DatagramPump {
-  const { handleId, readable, send, droppedInbound, onStreamFailed } = options
+  const { handleId, readable, send, droppedInbound, onStreamFailed, initialCredit, initialCreditBytes } = options
   const mapError = options.mapError ?? ((): OrivonErrorCode => 'internal')
   const dropReportMs = options.dropReportMs ?? DROP_REPORT_MS
 
   const reader = readable.getReader()
-  let credit = options.initialCredit
-  let creditBytes = options.initialCreditBytes
+  let credit = initialCredit
+  let creditBytes = initialCreditBytes
   let stopped = false
   let ended = false
   let waiting: (() => void) | undefined
@@ -132,9 +132,14 @@ export function createDatagramPump (options: DatagramPumpOptions): DatagramPump 
 
   return {
     handleCredit (message) {
-      if (stopped) return
-      credit += usableCredit(message.datagramsConsumed)
-      creditBytes += usableCredit(message.bytesConsumed)
+      if (stopped || message.handleId !== handleId) return
+      // Clamped to each counter's own ceiling, mirroring ../port-pump.ts's
+      // handleCredit: a self-reported delta must never push either counter
+      // past the window it belongs to, or a renderer that over-reports
+      // consumption could defeat the backpressure these windows exist to
+      // enforce.
+      credit = Math.min(credit + usableCredit(message.datagramsConsumed), initialCredit)
+      creditBytes = Math.min(creditBytes + usableCredit(message.bytesConsumed), initialCreditBytes)
       waiting?.()
     },
     stop (code) {

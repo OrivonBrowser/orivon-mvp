@@ -100,19 +100,75 @@ describe('createDatagramPump', () => {
       handleId: 'h1',
       readable: source.readable,
       send: (m) => { sent.push(m) },
-      initialCredit: 1,
+      initialCredit: 2,
       initialCreditBytes: 1_000_000,
       droppedInbound: () => 0
     })
 
     for (let i = 0; i < 3; i += 1) source.push(datagram())
     await settle()
-    expect(sent).toHaveLength(1)
+    expect(sent).toHaveLength(2)
 
-    pump.handleCredit({ kind: 'datagram-credit', handleId: 'h1', datagramsConsumed: 2, bytesConsumed: 8 })
+    // Reports consuming one of the two delivered so far -- a delta the
+    // window ceiling (2) can actually accommodate, unlike a renderer
+    // claiming to have consumed more than it was ever sent.
+    pump.handleCredit({ kind: 'datagram-credit', handleId: 'h1', datagramsConsumed: 1, bytesConsumed: 4 })
     await settle()
 
     expect(sent).toHaveLength(3)
+  })
+
+  it('clamps an over-reported credit delta to each counter\'s own window ceiling', async () => {
+    const sent: BrokerToRendererMessage[] = []
+    const source = manualReadable()
+    const pump = createDatagramPump({
+      handleId: 'h1',
+      readable: source.readable,
+      send: (m) => { sent.push(m) },
+      initialCredit: 2,
+      initialCreditBytes: 20,
+      droppedInbound: () => 0
+    })
+
+    for (let i = 0; i < 2; i += 1) source.push(datagram(4))
+    await settle()
+    expect(sent).toHaveLength(2)
+
+    // An absurd self-reported delta. Without the clamp this would push
+    // credit/creditBytes to roughly 1e9 and every one of the ten datagrams
+    // below would be delivered; with it, at most `initialCredit` more can
+    // go through no matter how large the reported delta is.
+    pump.handleCredit({
+      kind: 'datagram-credit', handleId: 'h1', datagramsConsumed: 1e9, bytesConsumed: 1e9
+    })
+    for (let i = 0; i < 10; i += 1) source.push(datagram(4))
+    await settle()
+
+    expect(sent).toHaveLength(4)
+  })
+
+  it('ignores a credit message addressed to a different handle', async () => {
+    const sent: BrokerToRendererMessage[] = []
+    const source = manualReadable()
+    const pump = createDatagramPump({
+      handleId: 'h1',
+      readable: source.readable,
+      send: (m) => { sent.push(m) },
+      initialCredit: 2,
+      initialCreditBytes: 1_000_000,
+      droppedInbound: () => 0
+    })
+
+    for (let i = 0; i < 3; i += 1) source.push(datagram())
+    await settle()
+    expect(sent).toHaveLength(2)
+
+    // A legitimate-looking credit for a DIFFERENT handle. If this pump
+    // applied it anyway, the third queued datagram would be delivered too.
+    pump.handleCredit({ kind: 'datagram-credit', handleId: 'h2', datagramsConsumed: 1, bytesConsumed: 4 })
+    await settle()
+
+    expect(sent).toHaveLength(2)
   })
 
   it('ignores a credit message with a nonsense count rather than trusting it', async () => {

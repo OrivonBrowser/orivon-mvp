@@ -162,11 +162,25 @@ describe('createDatagramPort -- outbound', () => {
     dp.onDropped((inbound, outbound) => { seen.push([inbound, outbound]) })
 
     await dp.send(datagram())
-    port.emit({ kind: 'send-failed', handleId: 'h1', code: 'denied', dropped: 1 })
+    port.emit({ kind: 'send-failed', handleId: 'h1', code: 'denied', dropped: 1, address: '93.184.216.34', port: 6881 })
     await dp.send(datagram())
 
     expect(seen).toEqual([[0, 1]])
     expect(port.sent.filter((m) => (m as { kind?: string }).kind === 'send')).toHaveLength(2)
+  })
+
+  // A87: the counter above tells a developer who thinks to check it; this is
+  // what actually tells the app which of its own writes was refused and why.
+  it('fires onRefusal with the destination and code the broker refused', async () => {
+    const port = fakePort()
+    const dp = createDatagramPort({ handleId: 'h1', port, windowDatagrams: 1 })
+    const refusals: Array<{ address: string, port: number, code: string }> = []
+    dp.onRefusal((r) => { refusals.push(r) })
+
+    await dp.send(datagram())
+    port.emit({ kind: 'send-failed', handleId: 'h1', code: 'denied', dropped: 1, address: '10.0.0.5', port: 4321 })
+
+    expect(refusals).toEqual([{ address: '10.0.0.5', port: 4321, code: 'denied' }])
   })
 })
 
@@ -225,6 +239,54 @@ describe('createDatagramPort -- terminal states', () => {
     await settle()
 
     expect(port.sent).toHaveLength(0)
+  })
+
+  // D3: releaseAll() wakes every waiting send() at once via a single loop,
+  // so each one's post-await check must see every termination reason, not
+  // just dispose() -- otherwise a send queued behind a full window posts to
+  // a port that has already gone silent.
+  it('does not post queued sends once the silence timeout fires', async () => {
+    const port = fakePort()
+    const dp = createDatagramPort({ handleId: 'h1', port, windowDatagrams: 1, silenceTimeoutMs: 10 })
+
+    await dp.send(datagram())
+    let secondSettled = false
+    let thirdSettled = false
+    const second = dp.send(datagram()).then(() => { secondSettled = true })
+    const third = dp.send(datagram()).then(() => { thirdSettled = true })
+    await settle()
+    expect(secondSettled).toBe(false)
+    expect(thirdSettled).toBe(false)
+
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    await second
+    await third
+
+    expect(secondSettled).toBe(true)
+    expect(thirdSettled).toBe(true)
+    expect(port.sent.filter((m) => (m as { kind?: string }).kind === 'send')).toHaveLength(1)
+  })
+
+  it('does not post queued sends once the port ends', async () => {
+    const port = fakePort()
+    const dp = createDatagramPort({ handleId: 'h1', port, windowDatagrams: 1 })
+
+    await dp.send(datagram())
+    let secondSettled = false
+    let thirdSettled = false
+    const second = dp.send(datagram()).then(() => { secondSettled = true })
+    const third = dp.send(datagram()).then(() => { thirdSettled = true })
+    await settle()
+    expect(secondSettled).toBe(false)
+    expect(thirdSettled).toBe(false)
+
+    port.emit({ kind: 'end', handleId: 'h1' })
+    await second
+    await third
+
+    expect(secondSettled).toBe(true)
+    expect(thirdSettled).toBe(true)
+    expect(port.sent.filter((m) => (m as { kind?: string }).kind === 'send')).toHaveLength(1)
   })
 
   it('ignores a byte-path message that lands on a datagram port', () => {
