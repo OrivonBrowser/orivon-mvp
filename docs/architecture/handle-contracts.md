@@ -299,8 +299,11 @@ interface TcpServer extends Handle {
 
 ## §UdpSocket
 
-> **Not implemented.** No UDP/dgram code exists anywhere in `src/` — `UdpSocket` exists only as
-> the contract type. Its build step has not been reached.
+> **Not implemented; the wire it will run on now exists.** No UDP/dgram behaviour exists anywhere
+> in `src/` — no policy check, no `node:dgram` adapter, no relay, nothing on `window.orivon`. What
+> landed 2026-09-07 is the contract half only: `UdpSocket` and `Datagram` in
+> `src/contracts/handles.ts`, and the datagram messages, window and constants in
+> `src/contracts/ipc.ts` / `limits.ts`. Build step 2's UDP work is underway against those.
 
 ```ts
 interface Datagram {
@@ -316,6 +319,7 @@ interface UdpSocket extends Handle {
   readonly localAddress: string
   readonly localPort: number
   readonly droppedInbound: number
+  readonly droppedOutbound: number
 }
 ```
 
@@ -334,6 +338,22 @@ interface UdpSocket extends Handle {
   guarantee, and DHT/tracker traffic is designed to tolerate loss. Buffering to avoid losing a
   datagram would convert a protocol built to tolerate loss into an unbounded memory growth
   path — the exact failure this whole document exists to prevent.
+- **The inbound window has two bounds, and needs both.** A count
+  (`LIMITS.inboundDatagramWindow`) and a byte total (`LIMITS.inboundDatagramWindowBytes`);
+  whichever is exhausted first starts the dropping described above. Added 2026-09-07 with the
+  wire, because this section's original "the `readable` internal queue is full" describes a count
+  alone, and a count large enough for real DHT traffic has a worst case of
+  count x `maxDatagramBytes` — far more memory than a TCP socket may pin. A byte bound alone has
+  the mirror-image worst case: a flood of one-byte datagrams, a million messages inside a
+  megabyte. See `src/contracts/ipc.ts`'s `DatagramCreditMessage`.
+- **Outbound loss is counted too, and this is a deliberate asymmetry with every other failure in
+  this document.** A datagram the broker does not send — a destination the granted `udp.send`
+  patterns do not authorise, an oversized payload, an OS refusal — increments `droppedOutbound`
+  and does **not** reject the write. Rejecting the sink's promise is the only way a
+  `WritableStream` can report one failed write, and it errors the stream permanently; a DHT peer
+  list routinely names addresses outside a grant, so the first excluded peer would kill a working
+  swarm. Counting keeps `denied` uniform as well — the app learns *that* a send was dropped, never
+  which pattern excluded it (§Errors). Owner sign-off pending, `open-questions.md` A87.
 - No multicast support in v0 (`addMembership`/`dropMembership` are not part of this
   contract), matching the recorded v0 limitation that local peer discovery is unavailable.
 
