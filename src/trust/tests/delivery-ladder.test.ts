@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { deliveryLadder } from './delivery-ladder.js'
-import type { DeliveryHistoryInput } from './delivery-ladder.js'
+import { deliveryLadder } from '../delivery-ladder.js'
+import type { DeliveryHistoryInput } from '../delivery-ladder.js'
 
 // THE INVARIANT UNDER TEST, throughout: the result always carries `rungs`
 // (every D1-D4 rung, each independently evaluated) alongside `evidence` (the
