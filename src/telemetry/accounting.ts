@@ -8,26 +8,20 @@
 // state at any point is a deterministic function of the events processed so
 // far, so a caller can replay a persisted event log, or resume from a
 // persisted AccountingState snapshot, and get identical numbers either way.
-// See docs/development/testing.md SS6 and src/telemetry/README.md.
+// See docs/development/testing.md's "6. Telemetry session accounting"
+// section and src/telemetry/README.md, Design notes, for the incremental-
+// reducer architecture this shape is meant to support.
 //
 // THE SPLIT THIS FILE EXISTS FOR: `activeSec` (focused AND interacted with,
 // within an idle timeout) and `backgroundSec` (running but not that) are
 // separate numbers, and the project's success metric is stated on
-// `activeSec` alone (ADR-0004, mvp-scope.md SS"Success metric"). A torrent
-// seeds in the background by design; counting that as "active" is the bug
-// that made the metric satisfiable by a user who left after one magnet
-// link. Every subtlety below exists to not reintroduce that bug in either
-// direction -- undercounting activeSec makes a real success look like a
-// failure, overcounting makes a failure look like a success -- and both
-// directions are covered in accounting.test.ts.
-//
-// ARCHITECTURE: `applyEvent` is an incremental reducer meant to run one event
-// at a time in the real collector, with the caller persisting AccountingState
-// (I/O, deliberately outside this file) periodically -- so a crash loses at
-// most the time since the last processed event. `checkpoint` exists purely to
-// give the caller a place to inject that persistence during otherwise-silent
-// stretches -- e.g. a torrent seeding for hours with no focus change. See the
-// "no checkpoint on crash" tests.
+// `activeSec` alone (ADR-0004, mvp-scope.md's "Success metric" section). A
+// torrent seeds in the background by design; counting that as "active" is
+// the bug that made the metric satisfiable by a user who left after one
+// magnet link. Every subtlety below exists to not reintroduce that bug in
+// either direction -- undercounting activeSec makes a real success look
+// like a failure, overcounting makes a failure look like a success -- and
+// both directions are covered in accounting.test.ts.
 
 export type AppId = string
 
@@ -94,10 +88,7 @@ export const initialState: AccountingState = {
  */
 export const DEFAULT_IDLE_TIMEOUT_MS = 5 * 60 * 1000
 
-// Exported for callers outside this file that need the same 'YYYY-MM' UTC
-// bucketing -- e.g. building a DisclosureMeta.period for "the current
-// period" -- so that logic has exactly one implementation
-// (code-guidelines.md Rule 3), not a second copy next to whoever needs it.
+/** The same 'YYYY-MM' UTC bucketing DisclosureMeta.period uses -- one implementation (code-guidelines.md Rule 3). */
 export function periodOf (ms: number): Period {
   const d = new Date(ms)
   const month = String(d.getUTCMonth() + 1).padStart(2, '0')

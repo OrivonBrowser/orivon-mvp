@@ -1,5 +1,5 @@
-// Capability checking at the call site -- docs/development/testing.md SS1, the
-// first of the six security-critical areas, and security-model.md T12.
+// Capability checking at the call site -- testing.md's six security-critical
+// areas (the first), and security-model.md T12.
 //
 // THE ONE IDEA, stated before anything else, because a perfectly correct
 // pattern matcher placed in the wrong order is worth nothing:
@@ -8,77 +8,21 @@
 //   hostname the app supplied.
 //
 // An app declares `evil.example:443`, the user grants it, the app calls
-// connect('evil.example'), and a TTL-0 nameserver answers 127.0.0.1. A checker
-// that compares the string the app passed against the string in the manifest
-// says yes, and the app is now talking to the user's own machine. The matcher
-// was never wrong. It was asked the wrong question.
+// connect('evil.example'), and a TTL-0 nameserver answers 127.0.0.1. A
+// checker comparing strings says yes, and the app is now talking to the
+// user's own machine. The matcher was never wrong -- it was asked the wrong
+// question.
 //
 // So the order below is fixed and load-bearing: RESOLVE ONCE, check EVERY
-// address that came back, and hand the caller the validated literals to dial.
-// An allow carries those literals precisely so the broker never names the host
-// a second time -- naming it again is a second resolution, and a second
-// resolution can answer differently from the first.
+// address that came back, and hand the caller the validated literals to
+// dial -- see ConnectAllowed.addresses's own comment for why the allow
+// branch carries data instead of a bare boolean.
 //
-// The resolver is INJECTED for the same reason this whole directory is pure
-// (./README.md): no `electron`, no `node:dns`, no `node:net`, no I/O. That is
-// what makes the tests in ./tests/connect.test.ts cheap enough to actually exist,
-// and a security check nobody can afford to test is a security check nobody
-// has.
-//
-// EVERY ADDRESS THAT LEAVES HERE IS A CANONICAL LITERAL. `canonicalAddress`
-// (./address.ts) is what makes the paragraph above true rather than merely
-// intended -- see its own comment. Without it this function can hand the
-// broker a string like `2130706433`, which every stack agrees means
-// 127.0.0.1 but which `net.isIP` rejects, so `net.connect` treats it as a NAME
-// and looks it up again. That is the rebinding window reopened one layer
-// below the check that exists to close it, and whether it bites depends on
-// which numeric parser the dialer happens to use -- exactly the inherited
-// guarantee ./address.ts warns against. Found by review, 2026-08-27.
-//
-// `canonicalAddress` NORMALISES -- it hands back `127.0.0.1` for
-// `2130706433`, not null (docs/open-questions.md A20). This file does not
-// want that leniency: an app or a resolver that spells an address any way
-// other than canonically is denied outright rather than corrected, so every
-// check below reads `canonicalAddress(x) === x`, never just `!== null`.
-//
-// WHAT THIS FUNCTION TAKES -- read this before wiring it up.
-//
-// The GRANTED patterns, not the manifest. The manifest DECLARES what an app
-// may ask for, the user GRANTS what it actually gets
-// (../../contracts/manifest.ts), and the two sets are not the same: a
-// manifest may declare `["*:*", "192.168.1.50:5000"]` while the user granted
-// only the first. This function used to take the whole Manifest and read
-// `capabilities.net.tcp.connect` out of it, which meant a caller that passed
-// the manifest it fetched handed over the DECLARED authority, silently -- the
-// exact failure this subsystem exists to prevent. Resolved 2026-08-27, owner
-// decision (docs/open-questions.md A18): the first parameter is the already-
-// narrowed `readonly Pattern[]` of what was actually granted. The narrowing
-// now has nowhere else to happen, so passing the wrong set is a type error at
-// the call site rather than a silent over-grant -- the same standard
-// ConnectAllowed already holds the output side to, of making "dial the
-// literal you checked" structural rather than documented.
-//
-// The caller (the broker, once it exists) still owns reading the manifest's
-// declaration, running the grant-subset check (capability-api.md A9 SS2), and
-// handing this function only the result. This function no longer parses a
-// Manifest at all, so it has nothing to say about whether a declaration is
-// well-formed -- that shape-defensiveness moved with the parsing to the
-// caller.
-//
-// SCOPE. `tcp.connect` only -- see ./connect-patterns.ts for the grammar this
-// shares with `udp.send`. `tcp.listen` and `udp.bind` are a DIFFERENT decision
-// (bare port ranges, `"*"` rejected, privileged ports denied outright) and get
-// their own function rather than a mode flag on this one, because the two
-// share a grammar and nothing else. Taking a plain pattern list rather than a
-// Manifest is what makes the `udp.send` reuse real: this function no longer
-// reads `net.tcp.connect` by name, so a caller can hand it `net.udp.send`'s
-// granted patterns just as well -- not wired up here, since that is new
-// scope, not part of this signature change.
-//
-// Split into three files (docs/development/code-guidelines.md Rule 2):
-// ./canonical-host.ts (string-level validators, no imports), ./connect-
-// patterns.ts (the pattern grammar and matching), and this file (the result
-// contract and checkConnect's orchestration).
+// Takes the GRANTED patterns only, never the manifest's declared ones (see
+// checkConnect's own comment, A18). SCOPE (tcp.connect vs tcp.listen/
+// udp.bind): see ./connect-patterns.ts's header. Split into three files
+// (Rule 2): ./canonical-host.ts, ./connect-patterns.ts, this file. Pure by
+// construction like the rest of this directory (./README.md).
 
 import type { OrivonErrorCode, Pattern } from '../../contracts/index.js'
 import { canonicalAddress, classifyAddress } from './address.js'
@@ -105,7 +49,7 @@ import { isReservedPort, namesPortExactly } from './reserved-ports.js'
  * distinguishable whatever this function returns. `couldAnyPatternMatch`
  * denies BEFORE resolving whenever no granted pattern could authorise the
  * request however it resolved, so the oracle is reachable only for requests
- * the grant genuinely could have allowed. Found by review, 2026-08-27.
+ * the grant genuinely could have allowed.
  */
 export type Resolver = (host: string) => Promise<readonly string[]>
 
@@ -140,14 +84,10 @@ export interface ConnectAllowed {
  * `{ code: 'denied' }`.
  *
  * It is NOT an argument for the decision function being unable to say what
- * happened. The earlier version of this file returned one shared frozen
- * object and told the broker its denial log "has everything it needs --
- * classifyAddress names the range". That was false twice over: this function
- * owns the resolution, so the broker holds no addresses to classify and would
- * have to resolve a SECOND time to log anything, which is the one thing the
- * header forbids; and most denials have no interesting address anyway. Fixed
- * after review, 2026-08-27, by mirroring ./paths.ts, which faced the same
- * question and answered it this way.
+ * happened: `reason` and `checked` (on ConnectDenied, below) exist precisely
+ * so the broker's local log can say something specific without resolving a
+ * SECOND time to get it -- the one thing the header forbids. Same answer
+ * ./paths.ts gives to the identical question.
  *
  * Closed union rather than a free-form string so the broker's logging switch
  * is exhaustive and a new reason cannot be added without every call site being
@@ -222,7 +162,6 @@ function deny (reason: ConnectDenialReason, checked?: readonly string[]): Connec
  * Both are far above anything real: the flagship declares one pattern, and a
  * round-robin CDN answers with a handful of addresses. Exceeding either
  * denies, which is the same direction everything else here fails.
- * Found by review, 2026-08-27.
  */
 // Exported so a second consumer (../policy/connect-src.ts's CSP `connect-src`
 // derivation) enforces the same bound instead of a second copy of 256 that
@@ -234,10 +173,13 @@ export const MAX_PATTERNS = 256
 export const MAX_ANSWERS = 64
 
 /**
- * Decides whether `patterns` -- the GRANTED pattern list, not the manifest's
- * declared one (see the file header, and docs/open-questions.md A18) --
- * authorises an outbound TCP connection to `hostArg`:`port`, resolving
- * through the injected `resolveFn`.
+ * Decides whether `patterns` -- the GRANTED pattern list, never the
+ * manifest's DECLARED one (the two differ whenever the user granted less
+ * than an app asked for; A18) -- authorises an outbound TCP connection to
+ * `hostArg`:`port`, resolving through the injected `resolveFn`. The caller
+ * owns reading the manifest and running the grant-subset check
+ * (capability-api.md A9's second section); this function only sees the
+ * result and has nothing to say about whether a declaration is well-formed.
  *
  * Resolves once, requires EVERY returned address to pass, and returns the
  * validated canonical literals for the caller to dial. One bad answer denies
@@ -257,12 +199,10 @@ export async function checkConnect (
   // Runtime shape guard, kept for the same reason hostArg and answer each get
   // one below: the type signature is a compile-time promise, not a runtime
   // one. `patterns` is GrantLedger's rehydration of a persisted grant store
-  // (build step 2) -- untrusted JSON shape -- and this function's own doc
-  // comment promises it never throws on its own account. Restored 2026-08-27
-  // after review found A18's signature change had dropped it: passing
-  // anything other than an array (a bare string, null, undefined, or even a
-  // whole Manifest -- the pre-A18 argument) used to deny and started
-  // throwing TypeError out of `.length` or `.map` instead.
+  // -- untrusted JSON shape -- and this function's own doc comment promises
+  // it never throws on its own account, so anything other than a real array
+  // (a bare string, null, undefined, a whole Manifest) denies instead of
+  // throwing out of `.length` or `.map`.
   if (!Array.isArray(patterns)) return deny('not-declared')
 
   // An empty list denies, whether nothing was ever declared or the user

@@ -5,9 +5,9 @@
 // find the real resource that id names -- but only if THIS origin is the one
 // that was handed it. Looking a stale, unknown, or another-origin's id up
 // finds nothing, matching TcpSocket.close()'s own "idempotent, silent no-op"
-// contract (handle-contracts.md SSCommon shape) rather than distinguishing
-// "wrong origin" from "already gone", either of which would let an app probe
-// for handles it does not hold.
+// contract (handle-contracts.md's "Common shape" section) rather than
+// distinguishing "wrong origin" from "already gone", either of which would
+// let an app probe for handles it does not hold.
 
 export interface PortRegistry<T> {
   register: (origin: string, id: string, value: T) => void

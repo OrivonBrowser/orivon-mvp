@@ -1,15 +1,12 @@
 // The per-origin table: the state one origin's handles live in, and the
-// operations that only ever need that one table. Split out of ./handles.ts
-// (docs/development/code-guidelines.md Rule 2) as a real class rather than as
-// free functions taking a table parameter -- the nine operations below used
-// to be HandleTable's own #-private methods, and #-privacy was what stopped
-// anything outside that class from mutating a table without the ownership
-// check HandleTable performs first. A bare exported function taking an
-// OriginTable would have given that up. Giving OriginTable its own methods
-// keeps the state and its mutators in one place instead of splitting an
-// invariant across a file boundary -- see ./handles.ts for two examples
-// (`insert`/`closeTree` here, `record.children` written in ./handles.ts and
-// cleaned up here).
+// operations that only ever need that one table. A real class, not free
+// functions taking a table parameter: a bare exported function would give
+// up the #-privacy that stops anything outside HandleTable from mutating a
+// table without the ownership check HandleTable performs first. Giving
+// OriginTable its own methods keeps the state and its mutators in one
+// place instead of splitting an invariant across a file boundary -- see
+// ./handles.ts for two examples (`insert`/`closeTree` here, `record.
+// children` written in ./handles.ts and cleaned up here).
 //
 // BROKER-INTERNAL. Nothing outside ./handles.ts should construct or hold a
 // bare OriginTable -- HandleTable is the ownership boundary; this class is the
@@ -53,19 +50,20 @@ export const NOT_YOURS = 'no such handle for this origin'
 const CLOSED_ID_MEMORY = LIMITS.concurrentSockets + LIMITS.concurrentFileHandles
 
 /**
- * A budget for IdentityHandles, which SSLimits caps nowhere.
+ * A budget for IdentityHandles, which handle-contracts.md's "Limits" section
+ * caps nowhere.
  *
  * NOT IN THE SPECIFICATION, and flagged as an AI decision. An unbounded row
  * count is T11 whatever the row holds. Derived rather than invented: an origin
  * gets as many identities as files, which is already absurdly generous -- the
  * v0 surface has one identity kind ('nostr') and a real app holds one.
  *
- * A PER-KIND budget, not a cap on total rows. The first version of this was a
- * total-row backstop, which had the failure mode backwards: 576 identity
- * handles -- free to acquire, capped by nothing -- exhausted the total and left
- * the origin unable to open a single socket or file, while counts() truthfully
- * reported zero sockets. A backstop that lets the uncapped kind consume the
- * capped kinds' budgets is not a backstop.
+ * A PER-KIND budget, not a cap on total rows. A total-row backstop has the
+ * failure mode backwards: an uncapped kind (identities, up to 576 of them,
+ * free to acquire) would exhaust the total and leave the origin unable to
+ * open a single socket or file, while counts() truthfully reported zero
+ * sockets. A backstop that lets the uncapped kind consume the capped
+ * kinds' budgets is not a backstop.
  */
 const MAX_IDENTITY_HANDLES = LIMITS.concurrentFileHandles
 
@@ -77,7 +75,7 @@ const MAX_IDENTITY_HANDLES = LIMITS.concurrentFileHandles
  * value. Past the bound the oldest tombstone is forgotten, which fails OPEN --
  * so the bound has to exceed any plausible number of grants one origin holds.
  * It does, by two orders of magnitude: a Grant is keyed on (origin, capability,
- * pattern set) over six capability kinds (manifest.ts SSCapabilityKind).
+ * pattern set) over six capability kinds (manifest.ts's `CapabilityKind`).
  *
  * Exported: revoke() lives on HandleTable (./handles.ts), because it also
  * touches #tables directly, but the bound it tombstones against belongs here
@@ -88,7 +86,7 @@ export const REVOKED_GRANT_MEMORY = LIMITS.concurrentSockets + LIMITS.concurrent
 /**
  * Kinds that consume the socket budget.
  *
- * DEVIATION FROM THE SPECIFICATION, flagged: SSLimits enumerates "TcpSocket +
+ * DEVIATION FROM THE SPECIFICATION, flagged: the "Limits" section enumerates "TcpSocket +
  * UdpSocket + accepted connections", which omits the LISTENING socket of a
  * TcpServer. A listener is an open fd like any other, manifest `listen`
  * patterns are port RANGES rather than single ports, and leaving servers
@@ -138,14 +136,15 @@ export function remember<T> (memory: Set<T>, value: T, bound: number): void {
  * an operation the same way closeTree() below does.
  *
  * DELIBERATELY UNGUARDED, and this was checked rather than assumed. An
- * AbortSignal listener is broker code and may throw; a try/catch here does
+ * AbortSignal listener is broker code and may throw; a try/catch here would
  * not catch it, because EventTarget dispatch routes the throw to Node's
- * emitUncaughtException out of band rather than back through abort(). The
- * wrapper that was here first therefore caught nothing and implied a
- * protection it did not provide. What matters is verified instead: the
- * sweep continues and every remaining handle is still torn down (see the
- * test), and the exception stays loud, which SSWhat the shim must do rule 2
- * requires of anything touching error handling in security-relevant code.
+ * emitUncaughtException out of band rather than back through abort() -- a
+ * wrapper here would catch nothing and imply a protection it does not
+ * provide. What matters is verified instead: the sweep continues and every
+ * remaining handle is still torn down (see the test), and the exception
+ * stays loud, which handle-contracts.md's "What the shim must do" section
+ * rule 2 requires of anything touching error handling in security-relevant
+ * code.
  */
 export function cancelOperation (operation: PendingOperation, error: OrivonError): void {
   // Abort first, so work that checks the signal can start tearing down before
@@ -160,7 +159,7 @@ export function cancelOperation (operation: PendingOperation, error: OrivonError
  * UNGUESSABILITY IS DEFENCE IN DEPTH, NOT THE SECURITY BOUNDARY. The boundary
  * is the per-origin ownership check in `record()` below. If guessing an id
  * were enough to use a handle, a handle would be a bearer capability --
- * exactly what SSCommon shape forbids, and exactly why handles are not
+ * exactly what the "Common shape" section forbids, and exactly why handles are not
  * transferable. A counter or a timestamp would still be refused by the
  * ownership check, but it would also hand an attacker a valid id to present,
  * and every layer above would then be one bug away from honouring it.
@@ -201,7 +200,7 @@ export class OriginTable {
    * flight. Deleting the table synchronously and then awaiting was not enough:
    * a picker callback resolving one tick late simply built a NEW table for a
    * dead origin, and the fs.userSelected handle it registered survived the
-   * session it is specified not to survive (SSFileHandle).
+   * session it is specified not to survive (the "FileHandle" section).
    */
   dropping = false
   inFlight = 0
