@@ -76,6 +76,12 @@ export function stubBroker (
       connect: async (origin, opts) => {
         calls.push({ method: 'net.connect', origin, args: opts })
         return await (overrides.connect?.(origin, opts) ?? notStubbed())
+      },
+      // Present so this stub still satisfies `Broker`; no test here drives it.
+      // The udp control method is a separate change (see the PR stack).
+      udpBind: async (origin, opts) => {
+        calls.push({ method: 'net.udpBind', origin, args: opts })
+        return await notStubbed()
       }
     },
     fs: {

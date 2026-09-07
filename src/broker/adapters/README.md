@@ -1,9 +1,10 @@
 # `src/broker/adapters/` — the seam where a decision becomes real I/O
 
 **What lives here.** The Node implementations injected into `createBroker` — dialling a TCP
-socket, resolving a host, reading and writing files, and tearing a socket down.
+socket, binding a UDP one, resolving a host, reading and writing files, and tearing a socket
+down.
 
-**What it depends on.** `node:net`, `node:dns/promises`, `node:fs`, `node:stream`,
+**What it depends on.** `node:net`, `node:dgram`, `node:dns/promises`, `node:fs`, `node:stream`,
 [`../broker-contracts.ts`](../broker-contracts.ts) and [`../policy/connect.ts`](../policy/connect.ts).
 
 **What it must never import.** `electron` — this layer is the *Node* seam, not the Electron one
@@ -40,3 +41,38 @@ now — but that is an unspecified Node implementation detail, not a guarantee, 
 clone (the path this value takes to the renderer) serialises an `ArrayBufferView`'s whole backing
 `ArrayBuffer`. A pooled view would hand the page bytes it never read. One `memcpy` removes the
 dependence on that detail entirely rather than relying on it holding.
+
+### [`udp-adapter.ts`](udp-adapter.ts) — why one queuing strategy enforces two bounds
+
+The inbound window has a count bound and a byte bound, and needs both
+(`docs/open-questions.md` A86). Checking them separately would mean two numbers that can drift
+apart and two places to get the drop decision right. Instead the readable's high-water mark is
+the **byte** bound, and every datagram is charged at least `window / count` — so a flood of tiny
+datagrams exhausts the byte budget after exactly `LIMITS.inboundDatagramWindow` of them, and the
+count bound falls out of the same arithmetic. One strategy, one drop decision, both bounds.
+
+The bound is approximate by at most one maximum datagram, because WHATWG lets a queue overshoot
+its high-water mark by whatever chunk was last enqueued. Accepted deliberately: refusing a
+datagram that *would* overshoot means a 65507-byte packet becomes undeliverable whenever the
+queue is nearly full, which is a worse failure than 64 KiB of slack.
+
+### Why `send` returns a value and never throws
+
+`BoundUdpSocket.send` resolves to a `SendOutcome` rather than rejecting, including for a
+permission denial. The reason is not style: the app's outbound side is a
+`WritableStream<Datagram>`, a WritableStream reports one failed write only by rejecting its
+sink's promise, and that errors the stream **permanently**. A DHT peer list routinely names
+addresses outside a grant, so the first excluded peer would tear down a working swarm. The
+refusal is counted instead — `docs/open-questions.md` A87 records the decision and its honest
+cost.
+
+`sendOne` therefore also catches `socket.send`'s **synchronous** throw (a closed socket, a
+malformed address), which the callback never sees. A throw escaping there would reach the app's
+writable and do exactly what the value return exists to prevent.
+
+### Why the drop lives here rather than in the relay
+
+`controller.desiredSize` is the only honest reading of how full the queue actually is, and it is
+only available at the point a datagram is either taken or not. Putting a second drop point in
+the transport relay would mean two places deciding the same thing with two different views of
+the queue.
