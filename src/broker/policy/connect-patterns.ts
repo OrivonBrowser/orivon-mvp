@@ -166,7 +166,7 @@ export function hostMatches (spec: string, requested: string, address: string): 
       return isPublicUnicast(address)
     case 'authorises-nothing':
       return false
-    case 'address-literal':
+    case 'address-literal': {
       // An address literal in the manifest is an EXPLICIT declaration of that
       // address, and it is the only way a private range becomes reachable:
       // the user was shown it and granted it. Compared against the resolved
@@ -180,7 +180,19 @@ export function hostMatches (spec: string, requested: string, address: string): 
       // each to compare -- never two different notions of "what an address
       // is" that could point the check and the connect at different hosts. A
       // mismatch DENIES, so the failure direction is safe.
-      return host === address
+      //
+      // EXCEPT multicast/broadcast, denied even on an exact match. The "the
+      // user was shown it and granted it" justification above assumes a
+      // literal names ONE device -- true for a private unicast address, false
+      // for a multicast or broadcast address, which is delivered to every
+      // listener on the segment that joined the group (or, for broadcast,
+      // every host on it). A user approving `224.0.0.251:5353` in a grant
+      // prompt is not approving reach to a device; they are approving reach to
+      // however many devices happen to be listening, which is not a thing
+      // this carve-out was ever meant to authorise.
+      const addressClass = classifyAddress(address)
+      return host === address && addressClass !== 'multicast' && addressClass !== 'broadcast'
+    }
     case 'hostname':
       // A hostname NEVER authorises a private address, even its own. That is
       // not an oversight: "the name resolved there" is the whole of the
