@@ -68,7 +68,43 @@ export const LIMITS = {
    * an oversized chunk is a protocol error the broker may reject outright
    * rather than split, truncate, or buffer itself.
    */
-  writeWindowBytes: 256 * 1024
+  writeWindowBytes: 256 * 1024,
+  /**
+   * Inbound datagrams a UDP socket may hold unacknowledged, as a COUNT. One of
+   * two bounds on the same window -- see ./ipc.js's DatagramCreditMessage for
+   * why neither a count nor a byte bound is sufficient alone.
+   *
+   * Exhausting it DISCARDS further datagrams rather than pausing the OS socket,
+   * which is the opposite of what readWindowBytes does and is deliberate:
+   * handle-contracts.md SSUdpSocket makes loss the specified behaviour, because
+   * UDP has none of TCP's delivery guarantee to preserve and buffering to avoid
+   * a drop is how a loss-tolerant protocol becomes an unbounded memory path.
+   */
+  inboundDatagramWindow: 256,
+  /**
+   * Bytes an inbound UDP socket may hold unacknowledged -- the second bound on
+   * the same window, and the one that makes the count above safe to set for
+   * real traffic rather than for the worst case.
+   *
+   * Deliberately the SAME number as readWindowBytes rather than a second
+   * figure: a UDP socket and a TCP socket then pin the same ceiling, so the
+   * per-origin memory arithmetic on `defaultConcurrentSockets` above holds
+   * whichever kind an app opens, and there is one number to change rather than
+   * two that can drift.
+   */
+  inboundDatagramWindowBytes: 1024 * 1024,
+  /**
+   * The largest single datagram, in bytes -- the maximum UDP payload over
+   * IPv4 (65535 minus the 8-byte UDP and 20-byte IP headers).
+   *
+   * A ceiling, not a recommendation. Anything near it fragments at the IP
+   * layer and is lost if any fragment is; real DHT and tracker traffic is
+   * hundreds of bytes. It exists so an oversized send is a protocol error the
+   * broker rejects outright rather than something it has to split -- and a
+   * datagram cannot be split without ceasing to be the packet the app asked
+   * to send.
+   */
+  maxDatagramBytes: 65507
 } as const
 
 export type Limits = typeof LIMITS

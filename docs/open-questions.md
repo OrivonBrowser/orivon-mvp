@@ -3110,3 +3110,76 @@ would be a third guard on a solo project. The case for building it anyway is the
 that deferral for Rule 1: the rule was being followed and the codebase drifted regardless,
 because a human cannot see an import boundary by reading one file at a time. If `A85` is ever
 resolved by *not* building it, that reasoning is what has to be answered.
+
+---
+
+### A86 — the specified UDP inbound window is a count, and a count alone cannot bound the memory **[AI-REC]**
+
+**Raised 2026-09-07**, writing the datagram wire (`stream/contracts-14-datagram-wire`), build
+step 2's UDP work.
+
+`handle-contracts.md` §UdpSocket specifies inbound backpressure as *"the `readable` internal
+queue is full"* — a WHATWG queue under a `CountQueuingStrategy`, so a **count**. Two things are
+wrong with implementing exactly that sentence, and they pull in opposite directions.
+
+**A count alone does not bound memory.** The worst case is
+`inboundDatagramWindow` x `maxDatagramBytes`. Any count large enough for real DHT traffic — a
+node receives many small packets in a burst — puts that product far above what a TCP socket may
+pin (`readWindowBytes`, 1 MiB). At 256 datagrams it is ~16 MiB per socket, and at the modest
+default of 64 sockets, ~1 GiB for one origin. `LIMITS.defaultConcurrentSockets`' own reasoning
+("the socket count IS the memory ceiling", owner decision 2026-09-06) is computed against the
+TCP windows and would be wrong for any app that opens a UDP socket.
+
+**A byte bound alone does not bound message count.** One megabyte of one-byte datagrams is a
+million messages across the port. Bounding the bytes says nothing about the per-message cost,
+which is the cost the byte windows were introduced to control in the first place.
+
+**What was built:** both, released together — `LIMITS.inboundDatagramWindow` (256) and
+`LIMITS.inboundDatagramWindowBytes` (1 MiB, deliberately the same number as `readWindowBytes` so
+the per-origin arithmetic holds whichever kind of socket an app opens). Whichever is exhausted
+first starts the drop. Same shape as A84's resolution: two mechanisms where either alone leaves
+a real gap.
+
+**Also decided here, and smaller:** the drop happens **in the broker**, not in the renderer's
+readable. The specification's wording implies the renderer, but `MessagePortMain` has no flow
+control (A37's finding), so a renderer-side drop still has the broker posting every datagram to
+a port nobody is draining. The observable behaviour the contract promises — loss, a
+`droppedInbound` count, no error — is identical either way.
+
+**Needed by:** nothing blocks on it; this is a recommendation the owner may overrule cheaply
+while `orivonApiVersion` is 0 and no third-party app exists. If overruled, the count-only
+reading needs an answer to the 1 GiB figure above.
+
+---
+
+### A87 — an outbound datagram that is denied cannot be reported without killing the socket **[AI-REC]**
+
+**Raised 2026-09-07**, same branch as A86.
+
+`orivon.net.udpBind` gives an app a `WritableStream<Datagram>`, and unlike `net.connect` there is
+no single acquisition-time destination to authorise: a UDP socket has no fixed peer, so the
+`udp.send` grant has to be checked **per datagram**. That creates a failure this specification had
+no case for — a send the grant does not authorise.
+
+**Why the obvious answer is wrong.** A `WritableStream` reports one failed write by rejecting the
+sink's promise, and doing so errors the stream **permanently**. A DHT peer list routinely names
+addresses outside what the user granted — private ranges, reserved ports (A82) — so the first
+excluded peer would tear down a working swarm. Denying correctly would break the flagship.
+
+**What was built:** the write is accepted, the datagram is discarded, and a new
+`UdpSocket.droppedOutbound` counter increments — the same treatment `droppedInbound` already gets
+for the direction where this document had already accepted loss as normal. The wire carries the
+reason (`SendFailedMessage.code`) so the broker can log it; the app sees only the count.
+
+**Two properties this deliberately keeps.** Loss stays consistent with UDP's own semantics rather
+than being a special case invented for permissions. And `denied` stays uniform (`errors.ts`): an
+app can learn *that* a send was dropped by comparing the counter, never which pattern excluded
+it, so the counter is not a map of the grant boundary.
+
+**The honest cost, stated rather than buried:** a permission denial is now silent to an app that
+does not read the counter. A developer whose sends vanish has a count and no reason. Mitigated
+only by the counter existing at all — the alternative designs either kill the socket or hand the
+app a probe oracle.
+
+**Needed by:** confirm before the flagship ships, since it decides what a torrent app experiences
+when the user grants a narrow `udp.send` pattern. Nothing before that blocks on it.

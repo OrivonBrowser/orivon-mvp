@@ -160,6 +160,28 @@ export interface UdpSocket extends Handle {
   readonly localPort: number
   /** Count of inbound datagrams discarded because the app was not reading. */
   readonly droppedInbound: number
+  /**
+   * Count of OUTBOUND datagrams the broker did not send -- a destination the
+   * origin's `udp.send` grant does not authorise, an oversized payload, or a
+   * send the OS refused.
+   *
+   * A COUNTER RATHER THAN A REJECTED WRITE, and the asymmetry with every other
+   * failure in this file is deliberate. A denied destination is ORDINARY
+   * traffic for a P2P app: a DHT peer list routinely names addresses outside
+   * what the user granted. A WritableStream can only report one failed write by
+   * rejecting the sink's promise, which errors the stream permanently -- so
+   * reporting the first excluded peer that way would kill a working swarm. The
+   * write is accepted, the datagram is discarded, and this increments, exactly
+   * as `droppedInbound` already does for the direction where the specification
+   * had already accepted loss as normal.
+   *
+   * IT CANNOT BE USED TO MAP A GRANT. It counts; it never says which datagram
+   * or why (../broker/errors.ts on 'denied': a denial that varied by reason
+   * would turn the permission boundary into a probe target). An app that needs
+   * to know a specific send failed compares this before and after -- which
+   * tells it THAT one did, never which pattern excluded it.
+   */
+  readonly droppedOutbound: number
 }
 
 export interface FileStat {
