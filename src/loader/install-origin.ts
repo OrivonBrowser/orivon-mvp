@@ -1,8 +1,7 @@
-// Split out of fetch-bundle.ts (docs/development/code-guidelines.md Rule 2 --
-// adding this pushed that file to 524 lines). Tested through fetch-bundle.ts's
-// own suite, the same way manifest-capabilities.ts is tested through
-// manifest.test.ts rather than a file of its own -- this module has no
-// caller-visible contract beyond what fetchBundle() already exercises.
+// Tested through fetch-bundle.ts's own suite, the same way
+// manifest-capabilities.ts is tested through manifest.test.ts rather than a
+// file of its own -- this module has no caller-visible contract beyond
+// what fetchBundle() already exercises.
 
 import { canonicalAddress, classifyAddress, isPublicUnicast } from '../broker/policy/address.js'
 import { MAX_ANSWERS } from '../broker/policy/connect.js'
@@ -13,20 +12,18 @@ import { isLocalhostName } from '../broker/policy/origin.js'
  * `ensurePublicUnicastOrigin`'s success case: the validated, canonical
  * address literal(s) its resolution actually produced.
  *
- * THE WHOLE POINT OF THIS SHAPE (F2). The previous version of this function
- * resolved, validated every answer, and then returned only `null` --
- * discarding the very addresses it had just checked. `fetchBundle` then had
- * nothing to dial but the HOSTNAME again, so every fetch it made was a
- * SECOND, independent resolution -- by a different resolver
- * (`node:dns/promises` here vs. Chromium's own resolver inside the real
- * `Fetch`), at a different time, free to disagree with this one. That is a
- * TOCTOU/DNS-rebinding hole with no attacker required, only an ordinary
- * low-TTL answer. `connect.ts`'s own header names the fix: "resolve once,
- * validate every returned address, and hand the caller the validated
- * literals to dial" -- never name the host a second time. `addresses` is
- * that hand-off; `fetchBundle` threads it into every fetch this install
- * makes (F5), so the injected `resolveFn` below runs exactly once per
- * install, never once per request.
+ * MUST CARRY THE ADDRESSES, NOT JUST true/false. A version that only
+ * answered whether the origin is valid would force `fetchBundle` to dial
+ * the HOSTNAME again, making every fetch a SECOND, independent resolution
+ * -- by a different resolver (`node:dns/promises` here vs. Chromium's own
+ * resolver inside the real `Fetch`), at a different time, free to disagree
+ * with this one. That is a TOCTOU/DNS-rebinding hole with no attacker
+ * required, only an ordinary low-TTL answer. `connect.ts`'s own header
+ * names the fix: "resolve once, validate every returned address, and hand
+ * the caller the validated literals to dial" -- never name the host a
+ * second time. `addresses` is that hand-off; `fetchBundle` threads it into
+ * every fetch this install makes, so the injected `resolveFn` below runs
+ * exactly once per install, never once per request.
  *
  * A single-element array for a literal host (nothing to resolve) or a
  * literal already-installed origin; the resolver's full, deduplicated,
@@ -70,7 +67,7 @@ export async function ensurePublicUnicastOrigin (canonicalOrigin: string, resolv
   const url = new URL(canonicalOrigin)
   const host = url.hostname
 
-  // F7/T13c: an on-path attacker can substitute the bundle of a cleartext
+  // T13c: an on-path attacker can substitute the bundle of a cleartext
   // install outright, with nothing left to detect it -- there is no TLS
   // certificate to have been wrong. Checked first, and for free: no
   // resolution has happened yet, so refusing here costs nothing beyond the
@@ -78,7 +75,7 @@ export async function ensurePublicUnicastOrigin (canonicalOrigin: string, resolv
   // which refuses `http:` for the same reason (T13c), one layer up.
   if (url.protocol !== 'https:') return { ok: false, reason: `install origin must be https, not ${url.protocol}` }
 
-  // F8: `localhost`/`app.localhost` are names, not address literals, so
+  // `localhost`/`app.localhost` are names, not address literals, so
   // `classifyAddress` below cannot see them -- they would otherwise fall
   // through to `resolveFn`, whose answer is resolver-dependent, while
   // Chromium maps the WHOLE `.localhost` subtree to loopback per RFC 6761
@@ -115,7 +112,7 @@ export async function ensurePublicUnicastOrigin (canonicalOrigin: string, resolv
   // `[].every(...)` is true, and a check built on it would wave through
   // exactly the host whose nameserver returned nothing.
   if (answers.length === 0) return { ok: false, reason: `install origin's host resolved to no addresses: ${host}` }
-  // F9: the answer count is DNS-controlled, not grant-controlled the way
+  // The answer count is DNS-controlled, not grant-controlled the way
   // connect.ts's pattern count is -- reusing its own MAX_ANSWERS (Rule 3)
   // bounds the loop below the same way, against the same T11b class of cost
   // connect.ts's own MAX_ANSWERS comment measured (13.9s of synchronous CPU

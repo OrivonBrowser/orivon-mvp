@@ -1,6 +1,9 @@
 // The capability broker. Everything under ./policy/ is a decision function;
 // this file is what MAKES the decisions and HOLDS the state -- the piece
-// build-plan.md's "Structural decision, day 1" (SSWeek 0) was written for.
+// build-plan.md's "Week 0 -- the gate" section calls the day-1 structural
+// decision. GrantLedger (the per-origin state -- manifest and grants, kept
+// apart on purpose) lives in ./grants/grant-ledger.ts; this file keeps the
+// dependency shape and the five capability entry points that consult it.
 //
 // `createBroker({ dial, resolve, now, fs, keychain })` -- EXACTLY that shape.
 // It is fixed on purpose (build-plan.md, policy/README.md): every capability
@@ -10,25 +13,15 @@
 // it -- a dependency this function reaches for itself is a dependency no
 // stub can intercept.
 //
-// NO ELECTRON, NO IPC, NO MessagePortMain. Wiring this to a renderer over IPC
-// is a separate task (see the PR). This file is constructible and fully
-// testable in a plain Node test with stub dependencies -- if it needs
-// `electron`, it has crossed into that task.
+// NO ELECTRON, NO IPC, NO MessagePortMain -- this file is constructible and
+// fully testable in a plain Node test with stub dependencies. The real IPC
+// wiring is ./transport/ipc.ts; if this file ever needs `electron`, it has
+// crossed into that layer's job.
 //
-// THE FIRST JOB, AND THE POINT OF THIS FILE: hold the grant ledger per
-// origin (GrantLedger, below) and consult IT, never the manifest, when
-// checking a capability. `checkConnect` (./policy/connect.ts) takes the
-// GRANTED pattern list precisely because open-questions.md A18 decided the
-// narrowing from "declared" to "granted" has to happen somewhere, and this is
-// the only layer that has both the manifest and the grant ledger in hand to
-// do it.
-//
-// GrantLedger (the per-origin state -- manifest and grants, kept apart on
-// purpose) split out to ./grants/grant-ledger.ts once this file crossed
-// docs/development/code-guidelines.md's 500-line limit (Rule 2: split by
-// concern -- this was the seam the file's own header had already earmarked).
-// This file keeps the dependency shape and the five capability entry points
-// that consult that ledger.
+// THE FIRST JOB: hold the grant ledger per origin and consult IT, never the
+// manifest, when checking a capability -- open-questions.md A18 decided the
+// narrowing from "declared" to "granted" has to happen somewhere, and this
+// is the only layer with both the manifest and the grant ledger in hand.
 
 import { HandleTable } from './handles/handles.js'
 import type { FailableTcpSocket } from './handles/handle-contracts.js'
@@ -81,10 +74,10 @@ const ERRNO_TO_CODE: Readonly<Record<string, OrivonErrorCode>> = {
 /**
  * Maps a raw rejection from an injected dependency -- `deps.resolve`,
  * `deps.dial`, `deps.fs.readFile`, `deps.fs.writeFile` -- onto the closed
- * OrivonErrorCode enum. Before this fix none of the four was wrapped: an app
- * switching exhaustively on `err.code`, exactly as contracts/errors.ts's own
- * doc says it may, would see a raw Node errno such as 'ENOENT' -- a value
- * that same doc calls a bug to receive.
+ * OrivonErrorCode enum. Without this, an app switching exhaustively on
+ * `err.code`, exactly as contracts/errors.ts's own doc says it may, would
+ * see a raw Node errno such as 'ENOENT' -- a value that same doc calls a
+ * bug to receive.
  *
  * An error this broker already threw (via `fail`, e.g. 'denied' from a
  * failed policy check) passes through unchanged -- mapping it a second time
@@ -142,10 +135,9 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
    * way `connect` already scopes under `current.id`.
    *
    * Synchronous, and stays that way: `confinePath`'s `realpath` parameter is
-   * `policy/paths.ts`'s, declared synchronous, and that file is out of this
-   * PR's scope to change (filed as A28 -- an origin on a slow filesystem can
-   * still block other origins' pending calls through this exact function;
-   * making `realpath` async is the fix, not this one).
+   * `policy/paths.ts`'s, declared synchronous (filed as A28 -- an origin on
+   * a slow filesystem can still block other origins' pending calls through
+   * this exact function; making `realpath` async is the fix, not this one).
    */
   function confineForOrigin (key: string, path: string): { resolved: string, grant: Grant } {
     const grant = ledger.currentGrant(key, 'fs')

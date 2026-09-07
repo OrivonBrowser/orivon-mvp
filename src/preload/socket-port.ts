@@ -54,7 +54,7 @@ export interface SocketPort {
 
   /**
    * Resolves once BOTH directions have reached a clean terminal state
-   * (handle-contracts.md SSCommon shape / SSTcpSocket's close table);
+   * (handle-contracts.md's "Common shape" / "TcpSocket" close table);
    * rejects immediately -- without waiting for the other direction -- the
    * moment either one reaches an ABRUPT one (an errored read end,
    * write-failed, abortWrite, or the silence timeout). Every error row in
@@ -89,8 +89,8 @@ export function createSocketPort (options: SocketPortOptions): SocketPort {
   const closed = new Promise<void>((resolve, reject) => { resolveClosed = resolve; rejectClosed = reject })
   // Handled on THIS reference only, so an app that never touches `closed`
   // itself doesn't produce a Node/V8 unhandled-rejection warning on every
-  // abrupt close (P-F9). main-world-socket.ts derives a fresh promise off
-  // this one for the page, so a real rejection is still observable there.
+  // abrupt close. main-world-socket.ts derives a fresh promise off this
+  // one for the page, so a real rejection is still observable there.
   closed.catch(() => {})
 
   function tryResolveClosed (): void {
@@ -115,7 +115,7 @@ export function createSocketPort (options: SocketPortOptions): SocketPort {
     if (silenceTimer !== undefined) { clearTimeout(silenceTimer); silenceTimer = undefined }
   }
 
-  // Armed only while a write is actually outstanding (P-F1). The broker's
+  // Armed only while a write is actually outstanding. The broker's
   // own heartbeat (port-sink.ts's armHeartbeat) is a no-op on an idle
   // socket, so resetting this on every inbound message -- including a
   // 'data' chunk with no write pending -- would fire 'timeout' on an
@@ -173,7 +173,7 @@ export function createSocketPort (options: SocketPortOptions): SocketPort {
   })
 
   // One outstanding WriteMessage at a time, matching the single-pendingWrite
-  // state machine (P-F8 guards it explicitly rather than only trusting the
+  // state machine (guarded explicitly rather than only trusting the
   // main-world WritableStream's own re-entrancy guarantee -- see the header).
   function sendOneWrite (chunk: Uint8Array): Promise<void> {
     if (disposed) return Promise.reject(toOrivonError('closed'))
@@ -189,7 +189,7 @@ export function createSocketPort (options: SocketPortOptions): SocketPort {
     onData (cb) { dataCb = cb },
     onReadEnd (cb) { readEndCb = cb },
     reportConsumed (bytesConsumed) {
-      if (!Number.isFinite(bytesConsumed) || bytesConsumed < 0) return // P-F13: never credit a malformed report
+      if (!Number.isFinite(bytesConsumed) || bytesConsumed < 0) return // never credit a malformed report
       sinceLastCredit += bytesConsumed
       if (sinceLastCredit >= CREDIT_COALESCE_BYTES) {
         flushCredit()
@@ -239,7 +239,7 @@ export function createSocketPort (options: SocketPortOptions): SocketPort {
     dispose () {
       disposed = true
       clearSilenceTimer()
-      // P-F2: an app-initiated close resolves `closed` (handle-contracts.md's
+      // An app-initiated close resolves `closed` (handle-contracts.md's
       // close table) rather than leaving it, and any write still in flight,
       // hanging forever now that no ack or timeout can ever reach it.
       if (pendingWrite !== undefined) {

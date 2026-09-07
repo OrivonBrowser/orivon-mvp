@@ -3,19 +3,8 @@
 // (see each of their own module comments: "no I/O", "this module makes no
 // electron import"). Shaped after src/main/bookmarks.ts's own idiom:
 // tolerant read on load, in-memory truth the rest of the app reads
-// synchronously, explicit writes.
-//
-// ONE DIVERGENCE FROM bookmarks.ts, DELIBERATE: BookmarkStore debounces
-// every write, because a user can star/unstar rapidly and each click is
-// independently worth persisting soon. Accounting state changes
-// continuously as time passes, not in discrete user actions -- debouncing
-// it would just mean "write shortly after every processed event", which
-// is exactly the write-on-every-tick I/O pattern the checkpoint design
-// (accounting.ts's own module comment) exists to avoid. So accounting/
-// history writes here are explicit (checkpoint()), while country/consent
-// -- genuine discrete user decisions, and ones that must not be lost to a
-// crash right after the click -- persist immediately, same as
-// BookmarkStore's add()/remove().
+// synchronously, explicit writes. See README.md, Design notes, for why
+// this file diverges from bookmarks.ts on debouncing.
 //
 // STORAGE TIER: ADR-0003's "Browser state" row (bookmarks.json's own
 // entry) -- plain JSON under <userData>, no safeStorage. A random install

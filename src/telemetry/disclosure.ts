@@ -124,8 +124,7 @@ export const initialConsentState: ConsentState = 'undecided'
  * separately tracked "has this run before" flag, so there is exactly one
  * source of truth for whether it may appear -- and once a choice lands in
  * either decided state, this is false for good, which is what keeps a
- * revisited choice from resurrecting the first-run screen (task requirement
- * 5).
+ * revisited choice from resurrecting the first-run screen.
  */
 export function shouldPresentDisclosure (state: ConsentState): boolean {
   return state === 'undecided'
@@ -162,9 +161,9 @@ export const DISCLOSURE_OPTIONS: readonly [DisclosureOption, DisclosureOption] =
 /**
  * Applies one of DISCLOSURE_OPTIONS -- first-run or revisited alike, the
  * same function serves both. That symmetry is what makes the choice
- * durable and revisitable (task requirement 5) rather than a one-shot
- * decision: a settings control calling this again later moves directly
- * between 'accepted' and 'declined'. Pure -- the caller persists the result.
+ * durable and revisitable rather than a one-shot decision: a settings
+ * control calling this again later moves directly between 'accepted' and
+ * 'declined'. Pure -- the caller persists the result.
  */
 export function applyDisclosureChoice (option: DisclosureOption): DecidedConsentState {
   return option.resultingState

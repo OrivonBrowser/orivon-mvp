@@ -21,7 +21,7 @@ export type HandleKind = 'tcpSocket' | 'tcpServer' | 'udpSocket' | 'file' | 'ide
  *
  * A DISCRIMINATED UNION rather than `grantId: string | null`, because the
  * `userSelected` case is the one exception to the revocation cascade
- * (handle-contracts.md SSFileHandle) and a nullable field lets a caller fall
+ * (handle-contracts.md's "FileHandle" section) and a nullable field lets a caller fall
  * into it by accident -- a failed grant lookup yielding null would silently
  * mint a handle no revoke can ever reach. Here the exception has to be
  * spelled out in words at the call site.
@@ -38,11 +38,11 @@ export type Authorisation =
 
 /**
  * Why a handle is being torn down. The injected destroy callback decides the
- * WIRE EFFECT from it, per handle-contracts.md SSTcpSocket's close table.
+ * WIRE EFFECT from it, per handle-contracts.md's "TcpSocket" close table.
  *
  *   'closed'       the app called close(). FIN, buffered writes flushed.
  *   'revoked'      the user withdrew the grant. RST, buffered data discarded
- *                  on both sides -- the abruptness SSRevocation requires.
+ *                  on both sides -- the abruptness the "Revocation" section requires.
  *   'sessionEnded' the app navigated away, was closed, or restarted. FIN,
  *                  buffered writes FLUSHED. Distinct from 'revoked' because
  *                  nobody withdrew anything: sending an RST to every peer and
@@ -79,7 +79,7 @@ export type CloseReason = 'closed' | 'revoked' | 'sessionEnded' | 'aborted' | 'f
  * IT MUST SETTLE. The table imposes no timeout on it -- it has no clock policy
  * of its own -- and `release()` waits for it, so a destroy that hangs hangs the
  * app's `close()`. Anything that talks to a MessagePortMain to do its teardown
- * needs its own timeout (handle-contracts.md SSWhat the shim must do, rule 3:
+ * needs its own timeout (handle-contracts.md's "What the shim must do" section, rule 3:
  * that transport's failure mode is silence, not an error). Revocation is not
  * affected either way -- the app is told before any of these run.
  */
@@ -102,7 +102,7 @@ export interface HandleEntry {
   /** The canonical origin, which may differ from the string the caller passed. */
   readonly origin: string
   readonly kind: HandleKind
-  /** Captured at acquisition. This is what SSRevocation walks. */
+  /** Captured at acquisition. This is what the "Revocation" section walks. */
   readonly authorisedBy: Authorisation
   /** The handle this one was derived from, or null if it was acquired directly. */
   readonly parentId: string | null
