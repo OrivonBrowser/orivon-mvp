@@ -24,6 +24,7 @@ export type {
   TcpServer,
   UdpSocket,
   Datagram,
+  SendRefusal,
   FileHandle,
   FileStat,
   IdentityHandle
