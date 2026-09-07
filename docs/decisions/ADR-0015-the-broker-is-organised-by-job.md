@@ -23,6 +23,13 @@ commentary on it:
 `index.ts`, `broker-contracts.ts` and `errors.ts` stay at the top level because they belong to
 no single one of them. Tests live in a `tests/` folder **inside** the directory they cover.
 
+> **Amendment, 2026-09-07.** The test-placement half of this decision was generalised to the
+> whole repository in `stream/backlog-14-test-layout` and now lives in
+> [`code-guidelines.md`](../development/code-guidelines.md) §Where a test file lives, which is
+> the copy that wins. Nothing in this ADR changed; the rule simply stopped being the broker's.
+> The five-directory decomposition below remains broker-specific and is **not** claimed as a
+> template for other directories — most are far too small to want it.
+
 ## Context
 
 `src/broker/` held 83 TypeScript files across two flat directories, 40 of them tests
