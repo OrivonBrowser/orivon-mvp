@@ -1,0 +1,181 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+// orivon-surface.ts imports `contextBridge`/`ipcRenderer` directly from
+// 'electron' at module scope (including a module-load-time
+// `ipcRenderer.on(PORT_CHANNEL, ...)` call in socket-bridge.ts) -- outside a
+// real Electron process, requiring 'electron' from plain Node returns a
+// path string, not this shape, so the module cannot even be imported
+// without mocking it first.
+const invoke = vi.fn()
+const on = vi.fn()
+let executeInMainWorld: ReturnType<typeof vi.fn> | undefined
+const exposeInMainWorld = vi.fn()
+
+vi.mock('electron', () => ({
+  ipcRenderer: { invoke: (...args: unknown[]) => invoke(...args), on: (...args: unknown[]) => on(...args) },
+  contextBridge: {
+    exposeInMainWorld: (...args: unknown[]) => exposeInMainWorld(...args),
+    get executeInMainWorld () { return executeInMainWorld },
+    set executeInMainWorld (fn) { executeInMainWorld = fn }
+  }
+}))
+
+const { exposeOrivon } = await import('../orivon-surface.js')
+
+// socket-bridge.ts registers its PORT_CHANNEL listener exactly ONCE, at
+// module load (orivon-surface.ts's module-level `createSocketBridge(...)`
+// call, above) -- before any test's `beforeEach` runs. Capture it here,
+// once, rather than searching `on.mock.calls` per test: `on.mockReset()`
+// below wipes that call history on every test, but a listener reference
+// captured now survives.
+const portListener = on.mock.calls.find(([channel]) => channel === 'orivon:port')?.[1] as
+  ((event: { ports: unknown[] }, payload: unknown) => void) | undefined
+
+/**
+ * Simulates a real executeInMainWorld: actually calls `installOrivon` (the
+ * real one, via `func`) with a captured plain object as `target`, so the
+ * resulting `orivon.net.connect` is the real wiring under test -- not a
+ * mock standing in for it.
+ */
+function installViaFakeMainWorld (): Record<string, unknown> {
+  const target: Record<string, unknown> = {}
+  executeInMainWorld = vi.fn((opts: { func: (...args: unknown[]) => void, args: unknown[] }) => {
+    opts.func(...opts.args, target)
+  })
+  return target
+}
+
+function okEnvelope (result: unknown): { id: string, ok: true, result: unknown } {
+  return { id: 'r', ok: true, result }
+}
+
+beforeEach(() => {
+  invoke.mockReset()
+  on.mockReset()
+  exposeInMainWorld.mockReset()
+  executeInMainWorld = undefined
+})
+
+describe('exposeOrivon -- P-F10: the fail-closed fallback covers BOTH "absent" and "throws"', () => {
+  it('falls back to exposeInMainWorld (no net) when executeInMainWorld is absent', () => {
+    executeInMainWorld = undefined
+
+    exposeOrivon()
+
+    expect(exposeInMainWorld).toHaveBeenCalledTimes(1)
+    const [name, surface] = exposeInMainWorld.mock.calls[0] as [string, Record<string, unknown>]
+    expect(name).toBe('orivon')
+    expect(surface.net).toBeUndefined()
+    expect(typeof (surface.app as Record<string, unknown>).manifest).toBe('function')
+  })
+
+  it('falls back to the SAME surface when executeInMainWorld exists but throws', () => {
+    executeInMainWorld = vi.fn(() => { throw new Error('CSP refused it') })
+
+    exposeOrivon()
+
+    expect(executeInMainWorld).toHaveBeenCalledTimes(1)
+    expect(exposeInMainWorld).toHaveBeenCalledTimes(1)
+    const [, surface] = exposeInMainWorld.mock.calls[0] as [string, Record<string, unknown>]
+    expect(surface.net).toBeUndefined()
+  })
+
+  it('does NOT fall back when executeInMainWorld exists and succeeds', () => {
+    installViaFakeMainWorld()
+
+    exposeOrivon()
+
+    expect(exposeInMainWorld).not.toHaveBeenCalled()
+  })
+})
+
+describe('exposeOrivon -- P-F4: a failure after net.connect cleans up the broker-side socket', () => {
+  it('fires net.close when waitForPort never delivers (the 35s timeout)', async () => {
+    vi.useFakeTimers()
+    try {
+      const target = installViaFakeMainWorld()
+      invoke.mockImplementation(async (_channel: string, envelope: { method: string, payload: { id?: string } }) => {
+        if (envelope.method === 'net.connect') {
+          return okEnvelope({ id: 'sock-1', remoteAddress: '1.2.3.4', remotePort: 80, localAddress: '10.0.0.1', localPort: 1 })
+        }
+        return okEnvelope(undefined) // net.close and anything else: succeed immediately
+      })
+
+      exposeOrivon()
+      const orivon = target.orivon as { net: { connect: (opts: unknown) => Promise<unknown> } }
+
+      const connecting = orivon.net.connect({ host: 'x.example', port: 80 })
+      const assertion = expect(connecting).rejects.toBeDefined()
+      // socketBridge's own waitForPort timeout is a hardcoded 35s default,
+      // independent of TIMEOUT_MS.net -- advance past both.
+      await vi.advanceTimersByTimeAsync(35_001)
+      await assertion
+
+      const closeCalls = invoke.mock.calls.filter(([, envelope]) => (envelope as { method: string }).method === 'net.close')
+      expect(closeCalls).toHaveLength(1)
+      expect((closeCalls[0]?.[1] as { payload: { id: string } }).payload).toMatchObject({ id: 'sock-1' })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
+describe('exposeOrivon -- P-F5: control-call failures are always OrivonError-shaped', () => {
+  it('call() throws an OrivonError-shaped object (not a raw Error) when ipcRenderer.invoke rejects outright', async () => {
+    const target = installViaFakeMainWorld()
+    invoke.mockRejectedValue(new Error("Error invoking remote method 'orivon:control': something internal"))
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    exposeOrivon()
+    const orivon = target.orivon as { app: { manifest: () => Promise<unknown> } }
+
+    let reason: unknown
+    try { await orivon.app.manifest() } catch (error) { reason = error }
+
+    expect(reason).not.toBeInstanceOf(Error)
+    expect(reason).toMatchObject({ name: 'OrivonError', code: 'internal' })
+    // The real failure is still logged for debugging, just not handed to the page.
+    expect(consoleError).toHaveBeenCalled()
+    consoleError.mockRestore()
+  })
+
+  it('call() throws an OrivonError carrying the broker\'s real code when the broker replies with a failure envelope', async () => {
+    const target = installViaFakeMainWorld()
+    invoke.mockResolvedValue({ id: 'r', ok: false, code: 'denied', message: 'outside the granted pattern' })
+
+    exposeOrivon()
+    const orivon = target.orivon as { app: { manifest: () => Promise<unknown> } }
+
+    await expect(orivon.app.manifest()).rejects.toMatchObject({ name: 'OrivonError', code: 'denied' })
+  })
+})
+
+describe('exposeOrivon -- P-F11: end-to-end wiring smoke, through the real contextBridge shape', () => {
+  it('a successful net.connect resolves a socket with the descriptor fields intact', async () => {
+    const target = installViaFakeMainWorld()
+    invoke.mockImplementation(async (_channel: string, envelope: { method: string }) => {
+      if (envelope.method === 'net.connect') {
+        return okEnvelope({ id: 'sock-2', remoteAddress: '93.184.216.34', remotePort: 443, localAddress: '10.0.0.5', localPort: 4321 })
+      }
+      return okEnvelope(undefined)
+    })
+
+    exposeOrivon()
+    const orivon = target.orivon as { net: { connect: (opts: unknown) => Promise<Record<string, unknown>> } }
+    const connecting = orivon.net.connect({ host: 'x.example', port: 443 })
+
+    // Deliver the port over PORT_CHANNEL -- socket-bridge.ts's own listener.
+    portListener?.({ ports: [fakeMessagePort()] }, { handleId: 'sock-2' })
+
+    const socket = await connecting
+    expect(socket.id).toBe('sock-2')
+    expect(socket.remoteAddress).toBe('93.184.216.34')
+    expect(socket.readable).toBeInstanceOf(ReadableStream)
+    expect(socket.writable).toBeInstanceOf(WritableStream)
+  })
+})
+
+/** A minimal stand-in for the DOM MessagePort wrapPort() adapts -- enough for postMessage/onmessage/close to be exercised without throwing. */
+function fakeMessagePort (): { postMessage: () => void, onmessage: unknown, close: () => void } {
+  return { postMessage: () => {}, onmessage: undefined, close: () => {} }
+}
