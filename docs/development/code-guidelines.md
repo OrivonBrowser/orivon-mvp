@@ -380,11 +380,11 @@ Still true, and still the cost of deferring:
   `stream/packaging-01-build-verify` and is deliberately **not** wired to CI, pending the same
   owner call this correction made for Rule 1.
 
-**Open — the comment-budget baseline.** 16 files listed in
-[`scripts/comment-budget-baseline.txt`](../../scripts/comment-budget-baseline.txt) open over
-budget and were not rewritten, because each is owned by a stream with a live branch. The list is
-a **ratchet**: an entry whose file comes back within budget fails the check, so it can only
-shrink ([`open-questions.md`](../open-questions.md) A54).
+**Resolved — the comment-budget baseline.** The 15 files once listed in
+`scripts/comment-budget-baseline.txt` are all within budget now; the file was deleted in
+`stream/backlog-15-comment-sweep` rather than left empty, since `check-comments.mjs`'s own
+`readBaseline` already treats a missing file as an empty one. See
+[`open-questions.md`](../open-questions.md) A54.
 
 **Open — two Rule-3 duplicates, deliberately unfixed.** A lowercase-hex encoder
 ([`bundle-hash.ts`](../../src/broker/policy/bundle-hash.ts)'s `toLowercaseHex`, inlined again in

@@ -45,3 +45,19 @@ processed event", exactly the write-on-every-tick I/O pattern the checkpoint des
 to avoid. So accounting/history writes are explicit (`checkpoint()`), while country/consent —
 genuine discrete user decisions that must not be lost to a crash right after the click — persist
 immediately, the same as `BookmarkStore`'s `add()`/`remove()`.
+
+**[`transport.ts`](transport.ts)'s "batching" is one aggregate payload per period, never per
+event.** ADR-0004 already settles the wire shape at one object per period
+(installId/country/version/period/perApp), so there is no per-event payload to batch in the
+first place — enforced by the input type itself: `attemptSend` only ever sees a
+`TelemetryPayload` built once from `disclosure.ts`'s `buildDisclosurePayload`, never a raw
+`TelemetryEvent`, so no code path here could fire one request per accounting event even by
+accident. What the module adds on top is a small outbox — `enqueue` stages a period's payload,
+`attemptSend` sends at most one queued payload per call, gated by consent and backoff.
+
+**Why `MAX_QUEUE_SIZE` is 1, an owner decision, not an AI judgment call.** ADR-0004 says "send
+once per period at a randomised offset; do not queue-and-retry into a backlog that reconstructs
+the timeline just removed." Holding at most the single most-recent period's payload cannot be
+called a backlog under any reading of that sentence. Cost: a device offline across a month
+boundary loses the older of the two periods once it reconnects, rather than sending both. A
+caller may still override the cap; see `enqueue`.
