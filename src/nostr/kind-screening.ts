@@ -5,7 +5,7 @@
 // -- a Nostr client that expects silent signing for a kind this table gets
 // wrong is a real product bug, and the failure direction that matters is
 // getting it backwards: an unscreened kind must default to 'prompt', never
-// 'silent' (acceptance criterion 3).
+// 'silent'.
 //
 // NOT THE ENFORCEMENT BOUNDARY. IdentityHandle.signEvent(event: object) is
 // documented (capability-api.ts) as serialising and screening `kind` itself,
@@ -19,10 +19,9 @@
 export type SignPrompt = 'silent' | 'prompt'
 
 /**
- * Exhaustive rather than a computed rule (e.g. "odd kinds prompt") on
- * purpose: a lookup table is auditable at a glance, and adding a new kind
- * later is a one-line, reviewable diff instead of a re-derivation of some
- * clever formula.
+ * Exhaustive rather than a computed rule, on purpose: a lookup table is
+ * auditable at a glance, and adding a new kind later is a one-line,
+ * reviewable diff instead of a re-derivation.
  */
 const SILENT_KINDS: ReadonlySet<number> = new Set([1, 6, 7])
 
