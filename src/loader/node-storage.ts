@@ -1,5 +1,4 @@
-// The real, node:fs-backed LoaderStorage -- storage.ts's own header names
-// this as broker-shaped work that lane did not own; this is that work.
+// The real, node:fs-backed LoaderStorage (see storage.ts's interface).
 //
 // TWO ROOTS PER ORIGIN, sibling to nodeFs's own `files/` (node-adapters.ts):
 // `code/` holds the pinned asset bytes (confined the same way nodeFs

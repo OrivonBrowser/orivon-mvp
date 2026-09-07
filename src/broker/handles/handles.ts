@@ -1,50 +1,15 @@
 // The per-origin handle table and the revocation cascade.
 //
-// Spec: docs/architecture/handle-contracts.md (SSCommon shape, SSRevocation,
-// SSLimits). Where this file deviates, the deviation is recorded in that
-// document and in docs/open-questions.md -- not only here, because a code
-// comment is the one place a reader of the specification will not look
-// (CLAUDE.md rules 1 and 3).
+// Spec: docs/architecture/handle-contracts.md's "Common shape", "Revocation"
+// and "Limits" sections. See README.md, Design notes, for why this file
+// holds state, the five-file split, and where a spec deviation is recorded.
 //
-// THIS FILE HOLDS STATE, deliberately. It is src/broker/, not
-// src/broker/policy/ -- the policy directory is pure by structural rule, and a
-// handle table is by definition the state a capability check is re-run
-// against. It still imports no electron and touches no socket, file or fd:
-// everything that owns a real resource is INJECTED as a `destroy` callback.
-// That is what keeps this testable, and it is why the table itself depends on
-// no engine primitive -- only the destroy callbacks do. (ADR-0002's amendment
-// is explicit that the migration ladder is Node -> Mojo, and that Wasmtime
-// would be a DIFFERENT APP MODEL rather than a swap beneath a stable API. Do
-// not restate a ladder here; the ADR owns it.)
-//
-// Split across five files (Rule 2, docs/development/code-guidelines.md):
-// ./handle-contracts.ts (types), ../errors.ts (OrivonError), ./handle-store.ts
-// (OriginTable, one origin's state), ./origin-registry.ts (the map of
-// origins), and this file (the operations run against that map).
-//
-// THE FOUR PROPERTIES THIS EXISTS TO GUARANTEE, each one a failure that is
-// silent when it goes wrong:
-//
-//   1. EVERY OPERATION RE-CHECKS OWNERSHIP (security-model.md T11c). A handle
-//      id issued to one origin and presented by another is REJECTED, never
-//      ignored. Capability is checked once at acquisition
-//      (capability-api.md design rule 3); ownership is checked every time.
-//
-//   2. EVERY HANDLE RECORDS THE GRANT THAT AUTHORISED IT, captured at
-//      acquisition, because that is what revocation walks. Derived handles --
-//      a socket accepted from a server's `connections` stream -- take their
-//      grant FROM THE PARENT RECORD and cannot be given another by the caller.
-//
-//   3. REVOCATION IS IMMEDIATE AND ABRUPT. Every handle in the grant's set
-//      closes at once and every pending promise rejects with 'revoked',
-//      without waiting for in-flight work. Waiting would make the revoke
-//      button mean "this app can no longer do this, once it finishes what it
-//      is doing", and completion time is entirely under the app's control -- a
-//      hostile app keeps a connection alive indefinitely by never finishing.
-//
-//   4. LIMITS ARE ENFORCED BY REJECTION, NEVER BY QUEUEING (T11, T11b). An
-//      unbounded queue on the broker's UI thread is precisely how one
-//      misbehaving origin freezes every tab.
+// THE FOUR PROPERTIES THIS EXISTS TO GUARANTEE -- see README.md for the full
+// reasoning behind each:
+//   1. Every operation re-checks ownership (security-model.md T11c).
+//   2. Every handle records the grant that authorised it.
+//   3. Revocation is immediate and abrupt.
+//   4. Limits are enforced by rejection, never by queueing (T11, T11b).
 
 import { LIMITS } from '../../contracts/index.js'
 import type { GrantId, OrivonError, OrivonErrorCode } from '../../contracts/index.js'
@@ -120,7 +85,7 @@ export class HandleTable {
       // hang a handle off another origin's server.
       const parent = table.record(request.parentId)
       // Only a socket is ever derived, and only from another socket --
-      // SSTcpServer's accepted connection is the case the specification
+      // handle-contracts.md's "TcpServer" section's accepted connection is the case the specification
       // describes. The rule that matters is the parent's: an unconstrained
       // inherit is how a socket would come to carry `userSelected`, which puts
       // it in no grant's set, where no revoke could ever reach it. Stated as a
@@ -233,20 +198,20 @@ export class HandleTable {
   /**
    * The app closing a handle itself.
    *
-   * IDEMPOTENT WITHOUT QUALIFICATION, per SSCommon shape's `close(): Promise
-   * <void>  // idempotent`. Closing anything this origin does not currently
-   * hold -- an id it closed a moment ago, an id it closed ten thousand handles
-   * ago, an id that was never real, an id belonging to somebody else -- is a
-   * silent no-op.
+   * IDEMPOTENT WITHOUT QUALIFICATION, per handle-contracts.md's "Common
+   * shape" section's `close(): Promise<void>  // idempotent`. Closing
+   * anything this origin does not currently hold -- an id it closed a moment
+   * ago, an id it closed ten thousand handles ago, an id that was never
+   * real, an id belonging to somebody else -- is a silent no-op.
    *
-   * The earlier version answered 'denied' for anything outside a bounded
-   * memory of recently-closed ids, which meant close() started throwing after
-   * roughly 576 open/close cycles. The torrent app reaches that in seconds, and
-   * `orivon-node-shim` has to present Node's `socket.destroy()`, which never
-   * throws and which real BitTorrent code calls defensively on an already-dead
-   * socket. Silence costs nothing here: T11c is about OPERATIONS on a resource
-   * -- read, write, derive, all of which still reject -- and a close that
-   * closes nothing has not given the caller anything.
+   * Real BitTorrent code calls `socket.destroy()` defensively on an
+   * already-dead socket, and `orivon-node-shim` has to present that Node
+   * shape faithfully, so a bounded memory of recently-closed ids answering
+   * 'denied' beyond it would make close() start throwing after the torrent
+   * app's ordinary cycling through peers -- reachable in seconds, not an
+   * edge case. Silence costs nothing here: T11c is about OPERATIONS on a
+   * resource -- read, write, derive, all of which still reject -- and a
+   * close that closes nothing has not given the caller anything.
    *
    * Cascades to derived handles: closing a TcpServer closes every socket it
    * produced that is still open.
@@ -277,11 +242,11 @@ export class HandleTable {
   /**
    * The resource layer reporting that a handle died on its own.
    *
-   * SSTcpSocket's close table requires `closed` to reject with 'reset' when the
+   * handle-contracts.md's "TcpSocket" close table requires `closed` to reject with 'reset' when the
    * peer resets, and every handle-contracts error other than 'denied' to carry
-   * the real `platformCode`. Neither was expressible before: every removal path
-   * was initiated by the app or by the user, so a peer RST was reported to the
-   * app as a CLEAN CLOSE. That is the common way a socket ends.
+   * the real `platformCode`. Without this method, every removal path is
+   * initiated by the app or by the user, so a peer RST would be reported to
+   * the app as a CLEAN CLOSE -- the common way a socket ends.
    *
    * The destroy callback is told 'failed': the fd needs releasing, the wire
    * needs nothing.
@@ -343,7 +308,7 @@ export class HandleTable {
    * Teardown failures are reported through `onFault`.
    *
    * userSelected handles are in no grant's set, so this cannot reach them --
-   * the SSFileHandle exception is structural here, not a special case.
+   * the "FileHandle" exception (handle-contracts.md) is structural here, not a special case.
    */
   async revoke (origin: string, grantId: GrantId): Promise<void> {
     const key = this.#key(origin)
@@ -371,12 +336,12 @@ export class HandleTable {
       }
       // NOTHING IS DELETED HERE. closeTree removes each id from its grant's
       // set as it goes and drops the set once it empties, so by this point the
-      // bucket is already gone if it should be. The earlier version deleted it
-      // wholesale, which orphaned any row registered mid-cascade -- a destroy
-      // callback re-entering acquire -- into no grant's set at all, where not
-      // even a later revoke of the same grant could find it. Re-adding a
-      // delete here is wrong twice over: `ids` is a stale reference by now, so
-      // a guarded version would test the wrong set's size.
+      // bucket is already gone if it should be. Deleting it wholesale here
+      // would orphan any row registered mid-cascade -- a destroy callback
+      // re-entering acquire -- into no grant's set at all, where not even a
+      // later revoke of the same grant could find it. A guarded version is
+      // also wrong: `ids` is a stale reference by now, so it would test the
+      // wrong set's size.
     }
 
     this.#reap(key, table)
@@ -403,7 +368,7 @@ export class HandleTable {
    * Session teardown: the app was closed, navigated away, or restarted.
    *
    * Unlike `revoke` this DOES take userSelected handles, which is the other
-   * half of the SSFileHandle exception -- the picker choice outlives a grant
+   * half of the "FileHandle" exception (handle-contracts.md) -- the picker choice outlives a grant
    * revocation but not the session.
    *
    * The reason reported is 'sessionEnded', not 'revoked'. Nobody withdrew

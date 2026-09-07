@@ -1,13 +1,11 @@
 // The map of per-origin tables HandleTable owns, and the three primitives
 // every HandleTable method needs against it: normalising a key, getting or
-// creating a table, and reaping one that holds nothing at all. Split out of
-// ./handles.ts (docs/development/code-guidelines.md Rule 2) when `abort`
-// pushed that file over its 500-line budget -- this is the seam every
-// acquisition method (acquire/acquireDerived/lookup/run) and every teardown
-// method (release/fail/abort/revoke/dropOrigin) already shared, not a
-// line-count-driven cut. HandleTable keeps the operations; this keeps the
-// map they all operate on, the same division ./handle-store.ts already
-// drew between "one origin's state" and the map of origins.
+// creating a table, and reaping one that holds nothing at all. This is the
+// seam every acquisition method (acquire/acquireDerived/lookup/run) and
+// every teardown method (release/fail/abort/revoke/dropOrigin) shares.
+// HandleTable keeps the operations; this keeps the map they all operate on
+// -- the same division ./handle-store.ts draws between "one origin's state"
+// and the map of origins.
 
 import { originFromUrl } from '../policy/origin.js'
 import { fail } from '../errors.js'

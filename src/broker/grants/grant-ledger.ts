@@ -1,10 +1,7 @@
-// Split out of ../index.ts (docs/development/code-guidelines.md Rule 2 --
-// index.ts crossed its 500-line budget once the fixes in pr-31.md's review
-// landed). This is the seam that file's own header anticipated: GrantLedger
-// is the per-origin state (manifest and grants, kept apart on purpose --
-// see the class doc below), createBroker is the dependency shape and the
-// five capability entry points that consult it. No behaviour changed in
-// this split; only the file it lives in.
+// The per-origin state createBroker (../index.ts) holds: GrantLedger is
+// the manifest and grants, kept apart on purpose -- see the class doc
+// below. createBroker itself is the dependency shape and the five
+// capability entry points that consult this ledger.
 
 import type { CapabilityKind, Grant, GrantId, Manifest, Pattern } from '../../contracts/index.js'
 import { LIMITS } from '../../contracts/index.js'
@@ -71,15 +68,14 @@ interface OriginRecord {
    * d-0017 (owner decision): the SPECIFIC below-floor version this origin's
    * rollback was last accepted for, or `undefined` if never acknowledged.
    *
-   * NOT A BOOLEAN. An earlier version of this field recorded only whether
-   * the origin had EVER been acknowledged -- caught in review: accepting one
-   * real, presumably-safe rollback (`1.2.0` -> `1.1.9`) would then silently
-   * cover any OTHER below-floor version the same origin later chooses to
-   * serve, with no further consent. Recording the specific version lets the
-   * caller (a future UI-wiring PR) compare it against whatever below-floor
-   * version is being offered now and prompt fresh on anything but an exact
-   * match -- this class stores the value, it does not perform that
-   * comparison itself.
+   * NOT A BOOLEAN. A bare "has this origin ever been acknowledged" flag
+   * would let accepting one real, presumably-safe rollback (`1.2.0` ->
+   * `1.1.9`) silently cover any OTHER below-floor version the same origin
+   * later chooses to serve, with no further consent. Recording the specific
+   * version lets the caller (a future UI) compare it against whatever
+   * below-floor version is being offered now and prompt fresh on anything
+   * but an exact match -- this class stores the value, it does not perform
+   * that comparison itself.
    *
    * `acknowledgeRollback` is the only writer; hydration (below) is the only
    * other writer. Persisted the same way `versionFloor` is, for the same
@@ -348,9 +344,8 @@ export class GrantLedger {
    * Records that `origin`'s rollback to `version` has been acknowledged
    * (d-0017) -- called once, when the user actually chooses to accept that
    * specific below-floor version. This class never calls it on its own
-   * initiative; the caller (a future UI-wiring PR, per PR #72's
-   * `rollbackAcknowledged` field and PR #75's `installFromHint`) decides
-   * WHEN that choice was made and WHICH version it was for. Overwrites
+   * initiative; the caller (a future UI) decides WHEN that choice was made
+   * and WHICH version it was for. Overwrites
    * whatever version was previously acknowledged for this origin -- one
    * acknowledgement in force at a time, same shape as `registerApp`
    * replacing a manifest.
