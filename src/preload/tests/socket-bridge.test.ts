@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createSocketBridge } from './socket-bridge.js'
-import type { IpcRendererLike } from './socket-bridge.js'
-import type { PortLike } from './socket-port.js'
+import { createSocketBridge } from '../socket-bridge.js'
+import type { IpcRendererLike } from '../socket-bridge.js'
+import type { PortLike } from '../socket-port.js'
 
 const HANDLE = 'handle-1'
 

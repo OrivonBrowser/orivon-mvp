@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createSocketPort } from './socket-port.js'
-import { CREDIT_COALESCE_BYTES, WRITE_SILENCE_TIMEOUT_MS } from '../contracts/ipc.js'
-import { LIMITS } from '../contracts/limits.js'
+import { createSocketPort } from '../socket-port.js'
+import { CREDIT_COALESCE_BYTES, WRITE_SILENCE_TIMEOUT_MS } from '../../contracts/ipc.js'
+import { LIMITS } from '../../contracts/limits.js'
 
 const HANDLE = 'handle-1'
 
