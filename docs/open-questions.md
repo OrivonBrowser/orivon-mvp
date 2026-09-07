@@ -3166,3 +3166,32 @@ the de-facto, consistent, and more readable convention there, and the contradict
 rule's wording, not with how anyone actually writes) — or sweep `docs/` to remove `§` in favour of
 literal words, matching the ASCII rule as written. **This is a wording call on an owner-authored
 document, not a technical one — owner's decision.**
+
+### A88 — `SHELL_APP_ID` is a placeholder identity for the whole process, not a real app **[STILL OPEN — AI recommendation]**
+
+**Raised 2026-09-07**, by the repo-wide comment sweep, finding `src/telemetry/runner.ts`
+pointing at a "this lane's QUESTION checkpoint (log.md)" that does not exist in this repository.
+
+`runner.ts`'s `SHELL_APP_ID = 'shell'` stands in for the whole Orivon process in every telemetry
+event this file emits, because nothing in the tree yet connects a loaded capability app to a tab
+— there is no real `AppId` to attribute session time to. This is a real gap, not a decided
+design: once an app loader exists (build step 4) and a tab can be asked "which app, if any, is
+running here", telemetry attribution should very likely move to the real per-app id and stop
+lumping everything under one placeholder.
+
+**Needed by:** before telemetry numbers are used to judge per-app engagement rather than
+whole-browser usage. Not blocking today — the MVP's own success metric is stated on
+whole-browser `activeSec`, which this placeholder already measures correctly.
+
+### A89 — `TELEMETRY_INGEST_URL` has no real endpoint **[STILL OPEN]**
+
+**Raised 2026-09-07**, same sweep and same broken pointer as A88.
+
+`src/telemetry/runner.ts`'s `TELEMETRY_INGEST_URL` is an RFC 2606 `.example` address, guaranteed
+never to resolve, so telemetry cannot silently start reaching a real server before one exists.
+`ADR-0004` requires a self-hosted ingest endpoint; none is provisioned anywhere in this
+repository or its docs.
+
+**Needed by:** before telemetry is enabled for real users. Not blocking any build step before
+that — `realSender` already treats every failed send (including one that can never resolve) the
+same way `attemptSend` treats an ordinary network failure.
