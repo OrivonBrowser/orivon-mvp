@@ -10,6 +10,22 @@
 
 export const MAX_PORT = 65535
 
+/**
+ * The lowest port a `tcp.listen` or `udp.bind` grant may ever reach
+ * (capability-api.md A9 SS1: privileged ports are denied outright, at every
+ * tier). Binding one opens a service, which is why this rule exists there and
+ * deliberately does NOT apply to `connect` -- see ./connect-patterns.ts's
+ * `portMatches`, where applying it would deny 80 and 443.
+ *
+ * `src/loader/manifest-capabilities.ts` still keeps a private copy under this
+ * name, enforcing the same rule at manifest-parse time. That file is the
+ * `loader` stream's, so deduplicating it is a one-line import swap left for a
+ * loader PR rather than taken here (parallel-work.md: a change needing another
+ * stream's file is a signal, not an edit). Same family as A26's three port
+ * parsers.
+ */
+export const MIN_UNPRIVILEGED_PORT = 1024
+
 /** RFC 1035's limit on a presentation-format domain name. */
 export const MAX_HOST_LENGTH = 253
 
