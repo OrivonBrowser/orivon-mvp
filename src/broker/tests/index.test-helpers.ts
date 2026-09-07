@@ -4,7 +4,7 @@
 
 import { vi } from 'vitest'
 import { createBroker } from '../index.js'
-import type { Broker, CreateBrokerOptions, DialedSocket } from '../broker-contracts.js'
+import type { BoundUdpSocket, Broker, CreateBrokerOptions, DialedSocket } from '../broker-contracts.js'
 import type { LedgerStorage } from '../grants/ledger-storage.js'
 import type { Capabilities, Manifest } from '../../contracts/index.js'
 
@@ -32,6 +32,19 @@ export function okSocket (overrides: Partial<DialedSocket> = {}): DialedSocket {
     localPort: 54321,
     setNoDelay: async () => {},
     setKeepAlive: async () => {},
+    destroy: vi.fn(),
+    ...overrides
+  }
+}
+
+/** A BoundUdpSocket that touches no real socket -- `readable` is never read from in these tests. */
+export function okUdpSocket (overrides: Partial<BoundUdpSocket> = {}): BoundUdpSocket {
+  return {
+    readable: new ReadableStream(),
+    send: async () => ({ sent: true }),
+    localAddress: '0.0.0.0',
+    localPort: 6881,
+    droppedInbound: 0,
     destroy: vi.fn(),
     ...overrides
   }
@@ -66,6 +79,7 @@ export function stubFs (options: { root?: string, files?: Map<string, Uint8Array
 export function baseDeps (overrides: Partial<CreateBrokerOptions> = {}): CreateBrokerOptions {
   return {
     dial: async () => okSocket(),
+    bind: async () => okUdpSocket(),
     resolve: async () => [],
     now: () => 0,
     fs: stubFs(),
