@@ -4,9 +4,9 @@
 // variables, no imports, no module-level consts. That is what makes
 // `ReadableStream`/`WritableStream`/`ByteLengthQueuingStrategy` inside it
 // the PAGE's own constructors, not the preload's isolated-world ones --
-// the whole reason this exists rather than building streams directly in
-// ./socket-port.ts (contextBridge copies plain values across, but a stream
-// built in the isolated world crosses broken; see the PR body).
+// contextBridge copies plain values across, but a stream built in the
+// isolated world crosses broken, which is the whole reason this exists
+// rather than building streams directly in ./socket-port.ts.
 //
 // `bridge` is a plain object of proxied closures orivon-surface.ts built:
 // one per app.manifest/app.grants/fs.readFile/fs.writeFile, plus

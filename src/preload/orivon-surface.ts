@@ -12,9 +12,9 @@ import type { RequestEnvelope, ResponseEnvelope } from '../contracts/ipc.js'
 import { toOrivonError } from './orivon-error.js'
 
 // The real orivon.* surface, shared by preload/app.ts and preload/newtab.ts's
-// fallback branch. See README.md SSDesign notes for why this file is shaped
-// the way it is (the two-world split, the CONTROL_CHANNEL import source,
-// what is and isn't wired yet).
+// fallback branch. See README.md's Design notes section for why this file
+// is shaped the way it is (the two-world split, the CONTROL_CHANNEL import
+// source, what is and isn't wired yet).
 //
 // Nothing below hands the page anything but a Promise-returning closure --
 // `call()` is the only thing that ever touches `ipcRenderer` (the raw
@@ -179,7 +179,7 @@ function buildBridgeResult (descriptor: SocketDescriptor, port: PortLike): MainW
 // The four closures both exposeFallback (no net) and the executeInMainWorld
 // bridge (with net) need -- one implementation, reused by both, rather than
 // two copies of the same broker call/timeout pair (code-guidelines.md Rule
-// 3, the same reuse fix-80's B-F11 applied to installFromHint).
+// 3).
 async function appManifest (): Promise<Manifest> { return await call('app.manifest', undefined, TIMEOUT_MS.metadata) }
 async function appGrants (): Promise<readonly Grant[]> { return await call('app.grants', undefined, TIMEOUT_MS.metadata) }
 async function fsReadFile (path: string): Promise<Uint8Array> { return await call('fs.readFile', { path }, TIMEOUT_MS.fs) }
@@ -187,7 +187,7 @@ async function fsWriteFile (path: string, data: Uint8Array): Promise<void> {
   await call('fs.writeFile', { path, data }, TIMEOUT_MS.fs)
 }
 
-/** The `net`-less surface: used both when `executeInMainWorld` is absent and when it exists but throws (P-F10) -- one implementation, not two copies quietly drifting apart. */
+/** The `net`-less surface: used both when `executeInMainWorld` is absent and when it exists but throws -- one implementation, not two copies quietly drifting apart. */
 function exposeFallback (): void {
   contextBridge.exposeInMainWorld('orivon', {
     version: 0,

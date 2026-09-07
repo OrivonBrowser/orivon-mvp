@@ -1,20 +1,6 @@
-// Real favicons for the tab strip -- owner override, 2026-08-28 (chrome
-// restyle round 2). v0 previously showed a generic globe for every tab
-// (still the fallback here); src/renderer/README.md and icons.ts's
-// globeIcon doc comment both said so and are now updated.
-//
-// DELIVERY IS MAIN-FETCHES-TO-data:, NOT RENDERER-FETCHES-DIRECTLY.
-// AI-REC, not yet an owner decision -- flagged here rather than chosen
-// silently. The chrome view's CSP (index.html) is a one-line, readable
-// guarantee today that the one privileged view in this app makes zero
-// outbound requests. Having the renderer <img src> an arbitrary,
-// attacker-influenced https:// URL directly would need `img-src 'self'
-// https:` and hands a hostile page a live request from the privileged,
-// cookie-bearing chrome origin -- a new, silent tracking surface exactly
-// where this codebase has been careful before (mvp-scope.md already
-// flags DuckDuckGo search itself as a stated "known limitation" for far
-// less: leaving the machine at all). Fetching here instead keeps that
-// guarantee intact; the CSP only needs `img-src 'self' data:`.
+// Real favicons for the tab strip -- see src/renderer/README.md for the
+// feature, and README.md's Design notes here for why main fetches to
+// data: rather than the renderer fetching directly.
 //
 // Structure mirrors update-check.ts/update-check-runner.ts: pure parts
 // exported and tested (pickFaviconUrl, readCapped, toDataUrl), the one

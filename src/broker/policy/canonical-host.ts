@@ -2,15 +2,11 @@
 // (docs/development/code-guidelines.md Rule 2). Imports nothing -- see
 // ./README.md, this directory is pure by structural rule.
 //
-// Address-LITERAL canonicalisation used to live here too, as a hand-rolled
-// strict-subset validator (`isCanonicalLiteral`) kept in sync with
-// ./address-parse.ts's parsers only by a human noticing both when one
-// changed. That was Rule 3 (docs/development/code-guidelines.md) waiting to
-// happen, and docs/open-questions.md A20 is where it did: retired in favour
-// of `canonicalAddress` (./address.ts), which is built from the same parsers
-// and cannot drift from them. Every former call site here now compares
-// `canonicalAddress(x) === x`, which is exactly what `isCanonicalLiteral(x)`
-// used to mean.
+// Address-LITERAL canonicalisation belongs in ./address.ts's
+// `canonicalAddress`, not here: a second, hand-rolled literal validator in
+// this file could only drift from ./address-parse.ts's parsers over time
+// (docs/open-questions.md A20). A call site that needs to check a literal
+// compares `canonicalAddress(x) === x` instead.
 
 export const MAX_PORT = 65535
 
@@ -56,7 +52,6 @@ export function normalizeHost (value: string): string {
  * Making IDN genuinely work means normalising both sides to A-labels, which
  * needs UTS-46 -- a dependency or a hundred hand-written lines in a directory
  * that is meant to have neither. Recorded in docs/open-questions.md A19.
- * Found by review, 2026-08-27.
  */
 export function isAsciiHost (value: string): boolean {
   return !/[^\x20-\x7e]/.test(value)

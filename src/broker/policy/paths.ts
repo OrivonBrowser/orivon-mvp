@@ -1,55 +1,28 @@
 // Decides whether a path an app asked for is safely inside that app's own
-// directory. T1 and T10 in docs/architecture/security-model.md, and the
-// flagship's happy path rather than an edge case: a .torrent file declares
-// its own file names, and `../../../.ssh/authorized_keys` is an entire CVE
-// class in BitTorrent clients.
+// directory. T1 and T10 in security-model.md, and the flagship's happy path
+// rather than an edge case: a .torrent file declares its own file names, and
+// `../../../.ssh/authorized_keys` is an entire CVE class in BitTorrent
+// clients.
 //
-// handle-contracts.md SSFileHandle: paths are resolved and confined IN THE
-// BROKER, never trusted from the renderer, and an escape is `denied`.
+// handle-contracts.md's "FileHandle" section: paths are resolved and
+// confined IN THE BROKER, never trusted from the renderer, and an escape is
+// `denied`.
 //
-// TWO CHECKS, BOTH NECESSARY. This is the whole content of the file:
+// TWO CHECKS, BOTH NECESSARY -- this is the whole content of the file:
 //
 //   1. `path.relative`, NOT `startsWith`. A string-prefix test accepts
 //      `/apps/foo-evil` against root `/apps/foo` -- same prefix, different
-//      app, full read and write of someone else's files. `relative` answers
-//      the question actually being asked ("how do I get there from here?")
-//      and returns `../foo-evil`, which is visibly an escape.
+//      app. `relative` answers "how do I get there from here?" and returns
+//      `../foo-evil`, visibly an escape.
 //   2. `realpath` on the deepest EXISTING ancestor. `path.resolve` collapses
 //      `..` textually and DOES NOT FOLLOW SYMLINKS, so `root/link/passwd`
 //      where `link -> /etc` sails through check 1 and opens /etc/passwd.
 //
-// Neither check subsumes the other, and each on its own is a full compromise.
-//
-// WHY `realpath` IS A PARAMETER. It is the only I/O this decision needs, and
-// src/broker/policy/README.md forbids I/O in this directory: the broker is
-// built as createBroker({ ..., fs, ... }) so that every security test runs
-// against stubs with no Electron and no filesystem. It also makes the symlink
-// rows in the table testable without planting real symlinks in a temp dir --
-// which is what makes them get written at all.
-//
-// WHY THE VERDICT IS PLATFORM-INDEPENDENT. Windows and macOS are supported
-// run-from-source targets (build-plan.md), but CI runs on Linux only. A
-// confinement rule whose answer depends on the host OS is therefore a rule
-// that ships to two platforms untested. So:
-//
-//   - Path flavour is chosen from the SHAPE OF THE ROOT (`C:\...` or `\\...`
-//     -> win32, otherwise posix), not from `process.platform`. A Windows root
-//     gets Windows separator rules on a Linux test runner.
-//   - Everything Windows-specific about the REQUESTED path -- backslashes,
-//     drive letters, UNC prefixes, reserved device names -- is rejected on
-//     every platform. `..\..\Windows` is a legal single filename on POSIX, but
-//     accepting it here would mean the same input has two different meanings
-//     depending on where the broker happens to be running, and a security
-//     boundary must not have platform-dependent semantics.
-//
-// WHAT THIS FUNCTION DOES NOT DO -- read before using the result:
-//
-//   - It confines the deepest existing ancestor, so a symlink planted at the
-//     LEAF between this check and the open still escapes. The caller must
-//     open with O_NOFOLLOW (or lstat the leaf) for the final component. Pure
-//     path arithmetic cannot close a TOCTOU window; only the open can.
-//   - It does not check the grant, the quota, or the capability. It answers
-//     one question: is this path inside that root.
+// Neither check subsumes the other, and each on its own is a full
+// compromise. `realpath` is INJECTED, the only I/O this decision needs
+// (./README.md's no-I/O rule) -- see README.md's Design notes for why the
+// verdict must also be platform-independent, and confinePath's own comment
+// for what it does not check.
 
 import { posix, win32 } from 'node:path'
 import type { PlatformPath } from 'node:path'
@@ -128,11 +101,12 @@ const WINDOWS_DRIVE_PREFIX = /^[a-zA-Z]:/
 const UNC_PREFIX = /^[\\/]{2}/
 
 /**
- * The flavour is taken from the root's own shape, never from process.platform
- * -- see the header. In production the broker builds the root from the app
- * data directory, so this picks win32 on Windows and posix elsewhere, which
- * is the right answer; in tests it makes a Windows root behave like Windows
- * on a Linux runner, which is the only reason those rows can exist.
+ * The flavour is taken from the root's own shape, never from
+ * process.platform -- see README.md's Design notes for why. In production
+ * the broker builds the root from the app data directory, so this picks
+ * win32 on Windows and posix elsewhere, which is the right answer; in tests
+ * it makes a Windows root behave like Windows on a Linux runner, which is
+ * the only reason those rows can exist.
  */
 function flavourFor (root: string): PlatformPath {
   return WINDOWS_DRIVE_PREFIX.test(root) || UNC_PREFIX.test(root) ? win32 : posix
@@ -167,6 +141,14 @@ function deny (reason: ConfineDenialReason): ConfineResult {
 
 /**
  * Resolve `requested` against `root` and confirm the result cannot leave it.
+ *
+ * WHAT THIS DOES NOT DO -- read before using the result. It confines the
+ * deepest EXISTING ancestor, so a symlink planted at the LEAF between this
+ * check and the open still escapes -- the caller must open with O_NOFOLLOW
+ * (or lstat the leaf); pure path arithmetic cannot close that TOCTOU
+ * window, only the open can. It also does not check the grant, the quota,
+ * or the capability -- it answers exactly one question: is this path
+ * inside that root.
  *
  * @param root Absolute directory the app is confined to. Broker-supplied,
  *   trusted for shape but validated anyway -- a relative root would make
@@ -205,8 +187,9 @@ export function confinePath (
   // strips trailing spaces, so '   ' names the root directory itself.
   if (requested.trim() === '') return deny('empty')
 
-  // The three rejections below are unconditional, on every platform, so that
-  // one input has one verdict everywhere -- see the header.
+  // The three rejections below are unconditional, on every platform, so
+  // that one input has one verdict everywhere -- see README.md's Design
+  // notes.
   if (WINDOWS_DRIVE_PREFIX.test(requested)) return deny('windows-drive')
   if (requested.includes('\\')) return deny('backslash')
 
@@ -244,7 +227,8 @@ export function confinePath (
   // The full path is tried FIRST, which is strictly stronger than starting at
   // the parent: when the leaf already exists and is itself a symlink, this is
   // what catches it. When it does not exist, there is nothing at the leaf to
-  // follow yet -- see the TOCTOU note in the header for what remains.
+  // follow yet -- see confinePath's own comment for the TOCTOU window that
+  // remains after this check.
   //
   // Walking up is required, not an optimisation: a torrent writing
   // `Show/Season 1/ep.mkv` has none of those directories yet, and a check

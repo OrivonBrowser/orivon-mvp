@@ -1,6 +1,6 @@
 // Update check: notifies, never installs.
 //
-// Owner decision (build-plan.md SS"Auto-install is cut", 2026-08-25): unsigned
+// Owner decision (build-plan.md's "Auto-install is cut" note, 2026-08-25): unsigned
 // electron-updater on Linux verifies only a SHA-512 fetched from the SAME
 // HOST that serves the binary, which is a standing remote-code-execution
 // channel keyed to a GitHub token -- weaker than what ADR-0005 demands of
@@ -12,9 +12,10 @@
 // and no install step, anywhere. The only network call it makes is a read of
 // GitHub's "latest release" metadata.
 //
-// STRUCTURE, innermost (pure) to outermost (real I/O): SS1's decision table,
-// then SS2 composing it around an injected fetch -- both here and both
-// tested. The real wiring (persistence, the GitHub fetch, the notification)
+// STRUCTURE, innermost (pure) to outermost (real I/O): this file's own
+// decision table, then its checkForUpdate wrapper composing it around an
+// injected fetch -- both here and both tested. The real wiring
+// (persistence, the GitHub fetch, the notification)
 // is ./update-check-runner.ts, untested by design; the semver subset is
 // ./github-release-version.ts. Split across three files (Rule 2,
 // docs/development/code-guidelines.md).

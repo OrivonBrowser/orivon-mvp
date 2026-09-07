@@ -5,14 +5,13 @@
 // the Manifest.capabilities -> PatternSet mapping is update-patterns.ts, and
 // the storage seam is storage.ts. See src/loader/README.md.
 //
-// THE FIVE OUTCOMES (this lane's acceptance criteria, grown by one
-// 2026-09-04 -- see LoadNeedsRollbackChoice below): `installed` (TOFU, a
-// `silent` decideUpdate() verdict, or an ALREADY-ACKNOWLEDGED rollback --
-// all three mean "ready to run, nothing new to ask the user"),
-// `needs-reconsent`, `needs-capability-prompt`, `needs-rollback-choice`,
-// `rejected`. Showing UI for the middle three, or wiring the broker's grant
-// prompt, is explicitly out of this lane's scope (src/loader/README.md,
-// this lane's brief) -- this function returns the verdict and stops.
+// THE FIVE OUTCOMES (grown by one 2026-09-04 -- see LoadNeedsRollbackChoice
+// below): `installed` (TOFU, a `silent` decideUpdate() verdict, or an
+// ALREADY-ACKNOWLEDGED rollback -- all three mean "ready to run, nothing
+// new to ask the user"), `needs-reconsent`, `needs-capability-prompt`,
+// `needs-rollback-choice`, `rejected`. Showing UI for the middle three, or
+// wiring the broker's grant prompt, is explicitly out of scope here
+// (src/loader/README.md) -- this function returns the verdict and stops.
 //
 // CRITERION 4: decideUpdate() is called with `context.grantedPatterns` --
 // what the grant ledger actually holds -- NEVER `manifest.capabilities`.
@@ -42,7 +41,7 @@ export interface CreateLoaderOptions {
   /** Clock, read once per install/refetch (`PinRecord.pinnedAt`). Injected so a test can freeze it -- matches createBroker's own `now`. */
   readonly now: () => number
   /**
-   * T12/A46/F2: resolves the install origin's hostname before
+   * T12/A46: resolves the install origin's hostname before
    * fetchBundle.ts's first network request -- see that file's own
    * `ensurePublicUnicastOrigin` for why this belongs there, not here. Same
    * `Resolver` shape `policy/connect.ts` already defines; no second type for
@@ -129,7 +128,7 @@ export interface LoadNeedsCapabilityPrompt {
   readonly manifest: Manifest
   readonly tree: BundleTree
   readonly entries: readonly BundleEntry[]
-  /** What the new manifest asks for -- the prompt's own job to render, not this lane's. */
+  /** What the new manifest asks for -- the prompt's own job to render, not this file's. */
   readonly requestedPatterns: PatternSet
 }
 

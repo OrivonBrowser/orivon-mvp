@@ -105,21 +105,17 @@ function renderFavicon (tab: TabState): HTMLSpanElement {
 }
 
 function renderTabs (state: ShellState): void {
-  // Rebuilds the whole strip on every push rather than diffing -- the
-  // same tradeoff the previous version of this file made, unchanged
-  // here: simple, and tab counts in v0 are small enough that this never
-  // shows up as jank.
+  // Rebuilds the whole strip on every push rather than diffing -- simple,
+  // and tab counts in v0 are small enough that this never shows up as jank.
   const items = tabrow.querySelectorAll('.tab')
   items.forEach((el) => { el.remove() })
 
   for (const tab of state.tabs) {
     const el = document.createElement('div')
-    // BUG (found 2026-08-28, real regression): #tabrow is a drag region
-    // (index.html) and this element was missing `no-drag` -- every click
-    // on a tab was consumed by the OS as a window drag instead of
-    // reaching this listener, so the only clickable part of a tab was
-    // the close button. Confirmed against Electron's own docs: a
-    // draggable area "ignores all pointer events" unless excluded.
+    // #tabrow is a drag region (index.html); without `no-drag` here, every
+    // click on a tab is consumed by the OS as a window drag instead of
+    // reaching this listener -- Electron's own docs: a draggable area
+    // "ignores all pointer events" unless excluded.
     el.className = 'tab no-drag'
     el.classList.toggle('active', tab.id === state.activeTabId)
     el.setAttribute('role', 'tab')

@@ -43,6 +43,24 @@ not something that *happened*; it is a standing fact about the grant ("this patt
 appear in `entries`, even if the app tries it"), true for the whole observation window rather
 than at one timestamp ([`open-questions.md`](../../docs/open-questions.md) A43).
 
+**The connection ladder never exports a bare pattern label.**
+[`ADR-0006`](../../docs/decisions/ADR-0006-trust-indicator-from-observed-behaviour.md)'s
+2026-08-25 amendment found the original ladder cheaper to fake than to earn: an app exfiltrating
+a user's files over many short connections to many distinct hosts classified at the *best*
+available grade, earned by the attack itself. The fix the owner accepted is byte accounting per
+endpoint plus a byte-asymmetry signal (real swarm traffic is roughly symmetric, exfiltration is
+not) — so [`connection-ladder.ts`](connection-ladder.ts)'s `connectionLadder` always returns
+`evidence` (the raw counts) and `patternHeuristic` (the label) together, in one object, on every
+path. There is no exported function that returns the label alone, and there must never be one.
+
+**`allAllowedWereGranted` checks granted patterns, not declared ones.**
+[`A18`](../../docs/open-questions.md) resolved this one layer down
+([`connect-src.ts`](../broker/policy/connect-src.ts) derives CSP from what the user actually
+granted, never from the manifest's wider declaration) — the manifest itself may claim far more
+than was approved. This module follows that precedent structurally: it never sees a `Manifest`
+at all, only `ConnectionLogEntry.grantedPattern`, so there is no declared set it could
+accidentally compare against instead.
+
 **`OmittedConnectReason` is deliberately smaller than the broker's own vocabulary.**
 [`connect-src.ts`](../broker/policy/connect-src.ts)'s `ConnectSrcOmissionReason` distinguishes
 reasons an app *author* needs — a malformed pattern is their bug to fix. A trust screen showing
