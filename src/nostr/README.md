@@ -22,3 +22,18 @@ from a mistake here.
 **Verify against real clients early** ([`open-questions.md`](../../docs/open-questions.md) C4).
 The release checklist requires the displayed npub to be **byte-identical across two pinned
 clients**.
+
+## Design notes
+
+Why the code here has the shape it has. This is the destination
+[`code-guidelines.md`](../../docs/development/code-guidelines.md) Rule 1 names for rationale: a
+source comment protects a specific line from a specific mistake; the case for a file's overall
+shape belongs here instead.
+
+**`errors.ts` and `hex.ts` each carry a small local duplicate rather than importing across the
+broker/nostr trust boundary.** This directory may never import
+[`src/broker/`](../broker/) internals, and `src/shared/` — the sanctioned home for a helper
+needed on both sides of a boundary — exists but moving either helper there is its own
+change-controlled PR (`code-guidelines.md` Rule 3), not something this directory can do
+unilaterally. A pure three-line error constructor and a lowercase-hex encoder are cheap enough
+to duplicate once rather than block on that PR landing first.

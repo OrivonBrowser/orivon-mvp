@@ -1,28 +1,16 @@
 // The connection ladder (ADR-0006's C-ladder): what an app has actually
 // reached, built entirely from ConnectionLogInput. Pure, no I/O.
 //
-// THE SHAPE THIS FILE MUST NOT TAKE, per ADR-0006's 2026-08-25 amendment:
-// a single pattern label ("swarm pattern") standing in for a verdict. That
-// amendment exists because the ORIGINAL ladder was cheaper to fake than to
-// earn -- an app exfiltrating a user's files by opening many short
-// connections to many distinct hosts classified as the BEST available
-// grade, earned by the attack itself. The fix the owner accepted: raw counts
-// are the primary display, byte accounting per endpoint, and the one signal
-// that is expensive to fake while actually exfiltrating -- volume sent to
-// endpoints that sent little back, since a real swarm is roughly symmetric
-// and exfiltration is not. `connectionLadder` below returns `evidence`
-// (the raw counts) and `patternHeuristic` (the label, explicitly marked
-// `basis: 'heuristic'`) together, in one object, on every path -- there is
-// no exported function that returns the label alone.
+// THE SHAPE THIS FILE MUST NOT TAKE: a single pattern label ("swarm pattern")
+// standing in for a verdict -- see README.md, Design notes, for why.
+// `connectionLadder` below returns `evidence` (the raw counts) and
+// `patternHeuristic` (the label, explicitly marked `basis: 'heuristic'`)
+// together, in one object, on every path -- there is no exported function
+// that returns the label alone.
 //
-// "CONTACTED ONLY HOSTS DECLARED IN ITS MANIFEST" (ADR-0006's original C2
-// wording) IS STALE. A18 already resolved this one layer down
-// (src/broker/policy/connect-src.ts derives CSP from GRANTED patterns, never
-// the manifest's declared ones, because the manifest may be far wider than
-// what the user actually approved). `allAllowedWereGranted` below follows
-// that precedent: it asks whether every allowed net attempt matched a
-// GRANTED pattern, never a declared one -- this module never sees the
-// manifest at all, only ConnectionLogEntry.grantedPattern.
+// `allAllowedWereGranted` checks the GRANTED pattern list, never the
+// manifest's declared one -- this module never sees the manifest at all,
+// only ConnectionLogEntry.grantedPattern. See README.md, Design notes.
 
 import type { ConnectionLogInput, ConnectionOutcome } from './connection-log.js'
 

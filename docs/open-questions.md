@@ -83,7 +83,7 @@ test, failed it, and were decided as engineering calls. Any of them is reversibl
 | A26 Three port-range parsers | Consolidate into `src/shared/`, which exists for exactly this and is still empty |
 | A39 Two disagreeing `isOrivonError` checks | Unify on the stricter `.name === 'OrivonError'` test, and export `ORIVON_ERROR_CODES` from `errors.ts`. The stricter one is the one that actually means "the broker built this" |
 | A55 Hookify rules that never fired | Add a fixture driving each rule through `posttooluse.py` and asserting it fires. A guard nobody can tell is broken is worse than no guard |
-| A54 16 files over the comment budget | Each stream clears its own files the next time it touches them. A dedicated branch would touch eight streams' paths and reintroduce the conflict the baseline exists to avoid |
+| A54 the comment budget baseline (resolved) / `isTestFile` duplicated (open) | Baseline cleared and deleted on `stream/backlog-15-comment-sweep`. `isTestFile` still needs consolidating into `scripts/cli.mjs` |
 | A31 / A47 May a branch edit a file it does not own | Yes, when the edit keeps that file in step with a change the branch itself owns, and the PR body names the crossing. Extends the existing `backlog-NN` borrow mechanism to code as well as docs, answering both entries with one rule |
 | A21 Grant id stability | Mint a **fresh** `GrantId` per grant event. Tombstones stay harmless forever, and the ledger still calls `HandleTable.grantIssued()` |
 | A44 Where secp256k1 signing lives | The private scalar never leaves the broker. `IdentityHandle.signEvent` does the derivation and signing broker-side; `src/nostr/` never calls `derivePrivateScalar()`. This resolves the conflict in favour of `src/nostr/README.md`'s boundary and `capability-api.ts`'s "the seed is never exposed" rule |
@@ -1912,31 +1912,21 @@ is added to `BookmarkStore` that holds meaningfully more memory than a bookmark 
 
 ---
 
-### A54 — the comment-budget baseline holds 16 files, and `check-size.mjs` duplicates `isTestFile` **[STILL OPEN]**
+### A54 — the comment-budget baseline holds 16 files, and `check-size.mjs` duplicates `isTestFile` **[PARTIALLY RESOLVED]**
 
 Filed 2026-09-03, on `stream/backlog-08-comment-budget`, which added Rule 1's comment budget
 (`scripts/check-comments.mjs`, `code-guidelines.md` §The budget).
 
 Two loose ends, both deliberate, both cheap to close once the branches in flight have merged.
 
-**1. Sixteen files sit in `scripts/comment-budget-baseline.txt`.** Each opens with 26-93 lines
-of comment and would fail the new check. None was fixed on this branch, because every one is
-owned by a stream with a live worktree as this is written — eight under `src/broker/` alone,
-with `broker-15`, `broker-16` and `broker-17` all open. Rewriting a file header from a borrowed
-branch while three others edit the same file is the structural conflict `code-guidelines.md`
-§Status already recorded once, and it was not worth repeating for a comment.
+**1. RESOLVED on `stream/backlog-15-comment-sweep` (2026-09-07).** The 15 files actually in
+`scripts/comment-budget-baseline.txt` (not 16 — that count was already stale when this entry
+was filed) are all within budget now; the file was deleted rather than left empty, since
+`check-comments.mjs`'s own `readBaseline` already treats a missing file as an empty one
+(verified directly before relying on it). The header essays moved to each directory's
+`README.md` under `## Design notes`, per the pattern below.
 
-The baseline is a **ratchet, not an exemption list**: an entry whose file comes back within
-budget fails the check, so the list can only shrink. The work is per-stream and small — move the
-header essay to the directory's `README.md` under `## Design notes`, which
-[`src/trust/`](../src/trust/README.md) demonstrates end to end (29-line header to 7).
-
-Worth deciding: whether clearing it is one backlog branch per stream, or whether each stream
-clears its own files the next time it touches them. **AI recommendation:** the latter. The
-files are not going to get worse (CI now blocks that), and a dedicated branch touching eight
-streams' paths reintroduces exactly the conflict the baseline exists to avoid.
-
-**2. `isTestFile` now exists twice.** `scripts/check-comments.mjs` and
+**2. STILL OPEN. `isTestFile` now exists twice.** `scripts/check-comments.mjs` and
 `scripts/check-size.mjs` — the latter on `main` since `stream/packaging-01-build-verify` merged,
 still not wired into CI or `postinstall` (`code-guidelines.md` §Status) — each define the same
 predicate over `code-guidelines.md`'s own "test file" definition. A textbook Rule 3 duplicate,
@@ -3275,3 +3265,81 @@ the un-mapping work is what makes it more than a one-liner, not the socket type.
 
 **Needed by:** before the flagship's known-limitations text is written (build step 5), so the
 in-product statement and the behaviour agree. Nothing before that blocks on it.
+
+---
+
+### A90 — owner-decision IDs (`d-NNNN`) are cited in source with no register **[STILL OPEN — AI recommendation]**
+
+**Raised 2026-09-07**, by the repo-wide comment sweep (`stream/backlog-15-comment-sweep`). Source
+comments cite `d-0017`, `d-0020`, `d-0021` and `d-0022` as if they named entries in some decision
+log — but no such log exists anywhere in this repository. Each citation currently reads correctly
+only because the comment beside it also spells the decision out in words; the token itself
+resolves to nothing a reader can look up.
+
+**What the sweep did instead of guessing.** Rather than invent a register retroactively — which
+would fabricate provenance for decisions this document did not track at the time — every `d-NNNN`
+citation the sweep touched was left in place with the actual decision restated in the same
+sentence, so the token is a label on a fact already present, not the only carrier of it.
+
+**Shape it would take if built.** Either fold `d-NNNN` into this document's own numbering (every
+citation becomes an `A`-number, closed on the spot as `[RESOLVED — owner]`), or give it its own
+short-lived log the way ADRs get `docs/decisions/` — but a `d-NNNN` is typically smaller and more
+frequent than something that earns a whole ADR file, so a single running table is more likely the
+right shape than one file per decision.
+
+**Needed by:** whenever the next `d-NNNN` is about to be minted. Not blocking anything today —
+existing citations are self-contained now.
+
+### A91 — `§` is used 185 times across 27 docs files; `CLAUDE.md` states docs are ASCII-only prose **[STILL OPEN]**
+
+**Raised 2026-09-07**, by the same sweep, while deciding how to rewrite `src/contracts/`'s
+`document.md SSSection` references (an undocumented ASCII stand-in for `§` used only in `.ts`
+comments — fixed on `stream/contracts-06-doc-gaps` by writing out `"document.md's 'Section'
+section"` instead, needing no legend).
+
+**The contradiction.** `CLAUDE.md` §Conventions states: *"Docs are Markdown, `kebab-case.md`,
+ASCII-only prose."* Measured directly: `§` appears 185 times across 27 files under `docs/`,
+including in section headings (`handle-contracts.md`'s `## §Errors`, `## §TcpSocket`, etc.) and
+in prose cross-references. `src/` itself has never adopted `§` — every comment that needs to name
+a section spells the word "section" out, or now (as of the sweep above) uses a quoted section
+name — so the ASCII rule already holds in source. It does not hold in the docs it is stated for.
+
+**Not resolved by this sweep**, on purpose: `docs/` belongs to the `docs` stream
+(`parallel-work.md`'s ownership map), and rewriting 185 occurrences across 27 files to settle a
+rule this sweep did not need to touch would be exactly the kind of silent scope-widening
+`parallel-work.md` asks a branch to avoid.
+
+**Two ways to close it, both cheap:** relax the stated rule to permit `§` in docs (it is already
+the de-facto, consistent, and more readable convention there, and the contradiction is with the
+rule's wording, not with how anyone actually writes) — or sweep `docs/` to remove `§` in favour of
+literal words, matching the ASCII rule as written. **This is a wording call on an owner-authored
+document, not a technical one — owner's decision.**
+
+### A92 — `SHELL_APP_ID` is a placeholder identity for the whole process, not a real app **[STILL OPEN — AI recommendation]**
+
+**Raised 2026-09-07**, by the repo-wide comment sweep, finding `src/telemetry/runner.ts`
+pointing at a "this lane's QUESTION checkpoint (log.md)" that does not exist in this repository.
+
+`runner.ts`'s `SHELL_APP_ID = 'shell'` stands in for the whole Orivon process in every telemetry
+event this file emits, because nothing in the tree yet connects a loaded capability app to a tab
+— there is no real `AppId` to attribute session time to. This is a real gap, not a decided
+design: once an app loader exists (build step 4) and a tab can be asked "which app, if any, is
+running here", telemetry attribution should very likely move to the real per-app id and stop
+lumping everything under one placeholder.
+
+**Needed by:** before telemetry numbers are used to judge per-app engagement rather than
+whole-browser usage. Not blocking today — the MVP's own success metric is stated on
+whole-browser `activeSec`, which this placeholder already measures correctly.
+
+### A93 — `TELEMETRY_INGEST_URL` has no real endpoint **[STILL OPEN]**
+
+**Raised 2026-09-07**, same sweep and same broken pointer as A92.
+
+`src/telemetry/runner.ts`'s `TELEMETRY_INGEST_URL` is an RFC 2606 `.example` address, guaranteed
+never to resolve, so telemetry cannot silently start reaching a real server before one exists.
+`ADR-0004` requires a self-hosted ingest endpoint; none is provisioned anywhere in this
+repository or its docs.
+
+**Needed by:** before telemetry is enabled for real users. Not blocking any build step before
+that — `realSender` already treats every failed send (including one that can never resolve) the
+same way `attemptSend` treats an ordinary network failure.

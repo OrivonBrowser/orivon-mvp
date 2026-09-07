@@ -1,19 +1,14 @@
 // Icons built at runtime, one per dynamic list item (a tab, a bookmark) --
-// the toolbar's fixed icons live as static inline SVG in index.html
-// instead, the same split the previous version of this file already used
-// for the tab strip's close icon.
+// the toolbar's fixed icons are static inline SVG in index.html instead.
 //
-// Never innerHTML (security-model.md T1/T10/T12/T17) -- every element
-// here is built through createElementNS, even though none of this data
-// is currently attacker-controlled.
+// Never innerHTML (security-model.md T1/T10/T12/T17) -- every element here
+// is built through createElementNS, even though none of this data is
+// currently attacker-controlled.
 //
 // Path data for globeIcon/closeIcon is hand-ported from lucide's `globe`
 // and `x` icons (ISC licence, https://lucide.dev) onto their own default
-// attributes (24x24 viewBox, stroke-width 2, round caps/joins) -- this
-// keeps the exact glyph shape used in orivon-browser-v2 (visual reference
-// only, ADR-0002) without adding lucide-react or any icon library as a
-// dependency (Rule 8; ADR-0002 -- TypeScript only, this renderer has no
-// framework).
+// attributes (24x24 viewBox, stroke-width 2, round caps/joins). See
+// README.md for why no icon library is a dependency here.
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 
@@ -59,8 +54,7 @@ function circle (cx: number, cy: number, r: number): SVGCircleElement {
   return el
 }
 
-/** The tab strip's close (x) button. Ported from main.ts, unchanged --
- * moved here so every runtime-built icon lives in one file. */
+/** The tab strip's close (x) button, shared with the bookmarks bar's remove button. */
 export function closeIcon (): SVGSVGElement {
   const el = svg('0 0 24 24')
   el.append(path('M18 6 6 18', '2.5'), path('m6 6 12 12', '2.5'))

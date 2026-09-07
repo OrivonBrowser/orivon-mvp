@@ -3,15 +3,9 @@
 // src/broker/grants/grant-ledger.ts (in-memory only, no disk I/O anywhere) and
 // src/broker/index.ts's CreateBrokerOptions (dial/resolve/now/fs/keychain --
 // no pin- or manifest-cache member) were both checked, and neither has
-// anything to call. So this interface is defined here, loader-side, the same
-// way this lane's brief explicitly permits.
+// anything to call. So this interface is defined here, loader-side.
 //
-// NO REAL (node:fs-backed) IMPLEMENTATION SHIPS IN THIS LANE. That is a
-// deliberate scope line, not an oversight: building one safely means reusing
-// src/broker/policy/paths.ts's confinePath for the same reason nodeFs
-// (src/broker/adapters/node-adapters.ts) does, and that is broker-shaped work this
-// lane does not own. A real disk-backed LoaderStorage is still needed before
-// any of this can persist for real.
+// The real node:fs-backed implementation is ./node-storage.ts.
 //
 // KEYED ON THE CANONICAL ORIGIN, not a directory name -- matching
 // PinRecord.origin (pin.ts) and BrokerFs.rootFor's own shape
@@ -75,11 +69,7 @@ export interface LoaderStorage {
  * (`partitionFor`) rather than in policy/, and it is the one definition A22
  * requires every future consumer share.
  *
- * This lane is the first CALLER of it for the code-cache/pin-storage
- * purpose (A22's "build step 4 ... writes the first root directory") --
- * proven by storage.test.ts against an independent sha256 computation, not
- * merely assumed correct because the import compiles. What does not exist
- * yet is a real filesystem writing bytes under a directory of this name --
- * see this file's header.
+ * Verified against an independent sha256 computation in storage.test.ts,
+ * not merely assumed correct because the import compiles.
  */
 export { originHash as appRootDirectoryName } from '../broker/grants/origin-hash.js'

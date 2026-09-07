@@ -161,15 +161,14 @@ const UNSAFE_DECODED_CHARS = /[\\:|]/
 /**
  * Is the DECODED path safe to reconstruct as a file under the code cache?
  *
- * THE DECODED FORM IS WHAT THE FILESYSTEM SEES. That is the whole argument
- * collisionKey rests on, and until 2026-08-27 this module made it in one
- * place and not the other: it decoded to detect aliasing, then validated only
- * the encoded string. So `/%00.js` and `/..%2F..%2Fevil.js` were canonical,
- * hashed, and written into the pinned asset set -- which ADR-0009 makes the
- * map the code cache is laid out from. A cache writer must percent-decode to
- * recover a filename (otherwise `/fonts/Inter%20Regular.woff2` lands on disk
- * with a literal `%20`), and decoding those two yields a NUL byte and a
- * traversal out of the app's own cache directory.
+ * THE DECODED FORM IS WHAT THE FILESYSTEM SEES -- validating only the
+ * encoded string would let `/%00.js` and `/..%2F..%2Fevil.js` read as
+ * canonical, get hashed, and land in the pinned asset set, which ADR-0009
+ * makes the map the code cache is laid out from. A cache writer must
+ * percent-decode to recover a filename (otherwise
+ * `/fonts/Inter%20Regular.woff2` lands on disk with a literal `%20`), and
+ * decoding those two yields a NUL byte and a traversal out of the app's own
+ * cache directory.
  *
  * Every rule here is enforced ON EVERY PLATFORM, including ones where the
  * specific hazard does not exist -- the same choice paths.ts makes, for the
@@ -234,11 +233,10 @@ export function foldForIdentity (path: string): string {
  * another one? Used only to decide whether the bundle must be rejected
  * before hashing -- NEVER inside the hash itself.
  *
- * THE DECODE STEP IS THE WHOLE POINT, and its absence made this function
- * inert for every case it was written for (fixed 2026-08-27, before any pin
- * existed). A canonical path is `new URL(...).pathname`, which is ALWAYS pure
- * ASCII -- the parser percent-encodes every non-ASCII byte before this code
- * ever sees it. So on the real inputs:
+ * THE DECODE STEP IS THE WHOLE POINT. A canonical path is
+ * `new URL(...).pathname`, which is ALWAYS pure ASCII -- the parser
+ * percent-encodes every non-ASCII byte before this code ever sees it. So
+ * without decoding first, on the real inputs:
  *
  *   - `.normalize('NFC')` was a no-op on every path that can actually occur,
  *     and the NFC/NFD rule ADR-0009 records as an OWNER DECISION never fired;

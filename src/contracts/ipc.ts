@@ -314,6 +314,13 @@ export interface SendAckMessage {
  * `platformCode` (./errors.js) -- and 'denied' here stays as uniform as it is
  * everywhere else, so it can be counted but never used to map which
  * destinations a grant excludes.
+ *
+ * `address` and `port` are the destination FROM THE SendMessage THIS REFUSES
+ * (open-questions.md A87) -- carried here, not resolved, so the preload can
+ * build the `SendRefusal` the app actually sees on `UdpSocket.refusals`
+ * without a second round trip. The app already named this destination itself;
+ * echoing it back tells the app which of its own writes failed, without
+ * adding anything the app did not already know.
  */
 export interface SendFailedMessage {
   readonly kind: 'send-failed'
@@ -321,6 +328,8 @@ export interface SendFailedMessage {
   readonly code: OrivonErrorCode
   readonly platformCode?: string
   readonly dropped: number
+  readonly address: string
+  readonly port: number
 }
 
 /** Every message the broker ever sends on a socket's dedicated port. */

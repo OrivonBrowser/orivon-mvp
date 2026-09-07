@@ -7,9 +7,7 @@
 // source and assert an exact number, instead of asserting a range and
 // hoping.
 //
-// Every constant below is an AI judgment call, not sized by any document --
-// same status as accounting.ts's DEFAULT_IDLE_TIMEOUT_MS and transport.ts's
-// IN_FLIGHT_STALE_AFTER_MS, flagged here for the same reason.
+// Every constant below is an AI judgment call, not sized by any document.
 
 /** How often the checkpoint timer fires: settle accounting up to now, poll
  *  for interaction/window changes, and persist. Bounds how much activeSec

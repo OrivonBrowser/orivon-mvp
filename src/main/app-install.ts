@@ -12,17 +12,16 @@
 // floor with a fake high version and permanently lock itself (and the user)
 // out of every real, lower-numbered future update.
 //
-// F3 (fleet run review-72-76): both PR #72 and `rollback-ack` are merged, so
-// this now wires for real. `LoadContext.acknowledgedRollbackVersion` (#72)
-// takes the RAW value `Broker.rollbackAcknowledgedVersionFor` (rollback-ack)
-// returns -- a version string or `undefined` -- not a boolean this function
-// would have to compute itself. That is deliberate: this function cannot
-// know which version `Loader.load()` is about to offer until `load()` has
-// already fetched the manifest, so it hands over the acknowledged version
-// unexamined and lets `load()` do the exact-match comparison once it
-// actually knows. See `LoadContext`'s own doc (`src/loader/index.ts`) for
-// why an origin-only "has this origin ever been acknowledged" check would
-// reopen the exact flaw `rollback-ack`'s version-keyed storage closed.
+// `LoadContext.acknowledgedRollbackVersion` takes the RAW value
+// `Broker.rollbackAcknowledgedVersionFor` returns -- a version string or
+// `undefined` -- not a boolean this function would have to compute itself.
+// That is deliberate: this function cannot know which version `Loader.
+// load()` is about to offer until `load()` has already fetched the
+// manifest, so it hands over the acknowledged version unexamined and lets
+// `load()` do the exact-match comparison once it actually knows. See
+// `LoadContext`'s own doc (`src/loader/index.ts`) for why an origin-only
+// "has this origin ever been acknowledged" check would reopen the exact
+// flaw the version-keyed storage closed.
 
 import { originFromUrl } from '../broker/policy/origin.js'
 import { patternSetFromGrants } from '../broker/policy/update.js'
@@ -52,17 +51,16 @@ export interface AppInstallDeps {
  * it, a hostile page could emit a hint for an unrelated origin (its bank,
  * say) and have this read THAT origin's grants and raise its version
  * floor. `hintedUrl` must resolve to EXACTLY `hintingOrigin` or this
- * rejects before the broker is ever touched (F10), matching `Loader.
- * load()`'s own same-origin contract.
+ * rejects before the broker is ever touched, matching `Loader.load()`'s
+ * own same-origin contract.
  *
  * That same-origin check, and `originFromUrl` failing, both run before any
- * broker call (N2/N3): `GrantLedger.versionFloorFor` creates a permanent
- * in-memory record for any origin it is asked about at all, even a bogus
- * one, so validating first is not optional. What this does NOT run is the
- * full T12/SSRF resolution check `Loader.load()` itself applies internally
+ * broker call: `GrantLedger.versionFloorFor` creates a permanent in-memory
+ * record for any origin it is asked about at all, even a bogus one, so
+ * validating first is not optional. What this does NOT run is the full
+ * T12/SSRF resolution check `Loader.load()` itself applies internally
  * (`src/loader/install-origin.ts`) -- this function's own check is cheap
- * same-origin validation only, not a substitute for it; see this lane's PR
- * body for why duplicating that check here was rejected.
+ * same-origin validation only, not a substitute for it.
  *
  * Wrapped in `withOriginQueue` (A62) so two calls for the same origin --
  * two tabs hitting the same manifest hint near-simultaneously -- never
@@ -93,7 +91,7 @@ export async function installFromHint (deps: AppInstallDeps, hintingOrigin: stri
         try {
           await deps.broker.registerApp(result.canonicalOrigin, result.manifest)
         } catch (error) {
-          // F16: the bundle is already on disk and `result` is already a
+          // The bundle is already on disk and `result` is already a
           // genuinely usable LoadInstalled -- registerApp rejects only on a
           // broker-internal fault (broker-contracts.ts's own doc), never on
           // anything the app did. Losing the floor persistence is real, but

@@ -23,7 +23,7 @@ import { fail } from './errors.js'
 
 /**
  * The two labels are different IN KIND, and conflating them is a recorded past
- * error (capability-api.md SSTwo kinds of identity):
+ * error (capability-api.md's "Two kinds of identity" section):
  *
  *   'app'      + origin     -> per-origin, silent. No consent is needed
  *                              precisely because these keys CANNOT link a user
@@ -52,7 +52,7 @@ export type DeriveCurve = 'secp256k1' | 'P-256'
 export interface DeriveRequest {
   /**
    * The user's root secret. Never leaves the broker, and is never exposed to
-   * an app at any tier (capability-api.md SSRules that apply to every app).
+   * an app at any tier (capability-api.md's "Rules that apply to every app" section).
    */
   readonly seed: Uint8Array
   readonly label: DeriveLabel
@@ -95,7 +95,7 @@ export interface DeriveRequest {
 /**
  * Version tag, carried as the HKDF salt so it domain-separates everything
  * derived under it in one place. A v2 changes THIS STRING and adds vectors
- * beside the existing ones (ADR-0010 SSVersioning).
+ * beside the existing ones (ADR-0010's "Versioning" section).
  */
 const KDF_SALT = new TextEncoder().encode('orivon-kdf-v1')
 
@@ -217,7 +217,7 @@ function isDegenerateSeed (seed: Uint8Array): boolean {
  *
  * NOT CONSTANT TIME. The reduction below uses BigInt arithmetic, whose timing
  * varies with the values involved, and the scalar is secret. Accepted risk,
- * recorded in ADR-0010 SSAccepted risks rather than left implicit: the fix is
+ * recorded in ADR-0010's "Accepted risks" section rather than left implicit: the fix is
  * an audited constant-time curve library, and hand-rolling one here would be
  * the same hazard this file refuses in derivePublicKey. Do not attempt a
  * hand-written constant-time reduction to close it.

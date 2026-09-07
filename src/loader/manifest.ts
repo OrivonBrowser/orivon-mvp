@@ -1,6 +1,6 @@
 // Manifest parsing and validation -- pure, no I/O, no fetching, no caching.
-// Transcribed from docs/architecture/capability-api.md SSManifest, which is
-// the specification. This is deliberately narrower than "the app loader":
+// Transcribed from docs/architecture/capability-api.md's "Manifest" section,
+// which is the specification. This is deliberately narrower than "the app loader":
 // fetch, hash-pinning and the update decision (src/broker/policy/update.ts)
 // depend on broker storage that does not exist yet (src/loader/README.md).
 //
@@ -20,11 +20,8 @@
 //
 // The `capabilities` sub-tree (net/fs/id/protocols and the pattern grammars
 // they are built from) lives in ./manifest-capabilities.ts -- split out so
-// this file stays under the 500-line limit (code-guidelines.md Rule 2) once
-// the PR-29 review's five findings were fixed. Several helpers below
-// (reject, describeValue, isRecord, isAny, extraKey, optionalStringArray,
-// UNSAFE_TEXT_CHARS) are exported for that file's use, not for any consumer
-// outside this directory.
+// this file stays under the 500-line limit (Rule 2). Several helpers below
+// are exported for that file's use only, not for any outside consumer.
 
 import type { Manifest } from '../contracts/index.js'
 import { MAX_BUNDLE_ENTRIES, collisionKey, isValidCanonicalPath } from '../broker/policy/canonical-path.js'
@@ -50,10 +47,9 @@ export type ManifestResult = ManifestOk | ManifestRejected
  * from /.well-known/orivon.json, or an already-parsed value -- both untrusted
  * either way.
  *
- * THE BYTE BOUND ONLY COVERS THE STRING PATH (a known gap, not fixed here --
- * see this PR's body under "Decisions and open questions"). A caller that
- * parses JSON itself and passes the resulting object owns the size bound on
- * that path; nothing in this codebase does that yet.
+ * THE BYTE BOUND ONLY COVERS THE STRING PATH -- a known, undocumented gap.
+ * A caller that parses JSON itself and passes the resulting object owns the
+ * size bound on that path; nothing in this codebase does that yet.
  */
 export function parseManifest (input: unknown): ManifestResult {
   try {
@@ -112,10 +108,10 @@ export const UNSAFE_TEXT_CHARS = /[\x00-\x1f\x7f-\x9f\u200b-\u200f\u2028\u2029\u
 
 /**
  * A high surrogate not followed by its low half, or a low surrogate not
- * preceded by its high half -- minor finding 8. An unpaired surrogate
- * encodes inconsistently across storage and display, a risk for the T18
- * collision-surfacing requirement this file's `id` checks already exist for
- * (finding 1): two ids that are "the same" at one layer and not at another.
+ * preceded by its high half. An unpaired surrogate encodes inconsistently
+ * across storage and display, a risk for the T18 collision-surfacing
+ * requirement this file's `id` checks already exist for: two ids that are
+ * "the same" at one layer and not at another.
  * `id` only, not `name` -- name is free-form display text where an unpaired
  * surrogate is merely a rendering glitch, not an identity collision risk.
  */
@@ -171,7 +167,7 @@ export function describeValue (value: unknown): string {
   // JSON.stringify(NaN) and JSON.stringify(Infinity) both return the STRING
   // "null" -- checked before the general number/boolean/null branch below,
   // or a rejection reason for "must be a finite number" would tell the
-  // developer the value was null when it was NaN or Infinity (finding 5).
+  // developer the value was null when it was NaN or Infinity.
   if (typeof value === 'number' && !Number.isFinite(value)) return String(value)
   if (value === null || typeof value === 'number' || typeof value === 'boolean') return JSON.stringify(value)
   if (Array.isArray(value)) return `an array of length ${value.length}`
@@ -248,9 +244,9 @@ export function optionalStringArray (
  * Full membership -- "does the bundle actually have a leaf at this path" --
  * is explicitly NOT this file's job: ADR-0009's amendment assigns that check
  * to the app loader's fetch step, which needs the fetched asset tree this
- * file never sees (see this file's header and the PR description).
+ * file never sees (see this file's header).
  *
- * PERCENT-ENCODED FIRST (finding 3). isValidCanonicalPath is built to check
+ * PERCENT-ENCODED FIRST. isValidCanonicalPath is built to check
  * `URL.pathname` output, which is ALWAYS already percent-encoded -- but a
  * manifest author writes a plain filename. Feeding the raw text straight in
  * made `isValidCanonicalPath`'s own re-derivation check ("does re-deriving
@@ -365,18 +361,17 @@ function readManifest (value: unknown): Manifest {
   if (name.trim().length === 0) reject('name must contain a non-whitespace character')
 
   const version = requireString(value, 'version', 1, MAX_VERSION_LENGTH)
-  // Finding 4: previously only compareVersions(version, version) === null was
-  // checked. update.ts's OWN parseVersion trims before parsing, so
-  // "1.2.3\n" and "1.2.3" compare EQUAL despite being different strings --
-  // two spellings of one version, exactly the ambiguity this file refuses
-  // for every other field. Checked here, before the orderability check,
-  // rather than folded into it, because "\n" alone still parses as orderable
-  // semver (it is trimmed away) and would never trip that check at all.
+  // update.ts's OWN parseVersion trims before parsing, so "1.2.3\n" and
+  // "1.2.3" compare EQUAL despite being different strings -- two spellings
+  // of one version, exactly the ambiguity this file refuses for every
+  // other field. Checked here, before the orderability check, rather than
+  // folded into it, because "\n" alone still parses as orderable semver
+  // (it is trimmed away) and would never trip that check at all.
   if (UNSAFE_TEXT_CHARS.test(version)) {
     reject('version contains an unsafe character (a control code, bidi override or zero-width character)')
   }
   if (version.trim() !== version) reject(`version has leading or trailing whitespace: ${describeValue(version)}`)
-  // capability-api.md SSversion / update.ts's isAtOrAboveFloor: a version that
+  // capability-api.md's "version" section / update.ts's isAtOrAboveFloor: a version that
   // does not parse as orderable semver fails closed on every future update
   // anyway, stuck below a floor it can never reach -- so the publisher must
   // find out at install, not on their first update. Reuses update.ts's OWN
