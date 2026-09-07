@@ -22,3 +22,10 @@ made the daily-use hypothesis unfalsifiable in the direction that flatters it.
 **This is the number the project is judged on, and its likeliest bug biases it downward** —
 making a succeeding product look like a failing one. Hence the pure-fold unit test over an
 event stream, including month rollover and abnormal termination.
+
+## Design notes
+
+Why the code here has the shape it has. This is the destination
+[`code-guidelines.md`](../../docs/development/code-guidelines.md) Rule 1 names for rationale: a
+source comment protects a specific line from a specific mistake; the case for a file's overall
+shape belongs here instead.

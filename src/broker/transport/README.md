@@ -29,3 +29,10 @@ so neither side can outrun the other. Per-message IPC is far too slow for torren
 
 See [`../README.md`](../README.md)'s design notes for the socket-teardown rationale, which spans
 this directory and [`../adapters/`](../adapters/).
+
+## Design notes
+
+Why the code here has the shape it has. This is the destination
+[`code-guidelines.md`](../../../docs/development/code-guidelines.md) Rule 1 names for rationale: a
+source comment protects a specific line from a specific mistake; the case for a file's overall
+shape belongs here instead.

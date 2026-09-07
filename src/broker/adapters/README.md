@@ -20,3 +20,10 @@ opened, so an auditor asking "where does this program touch the network or the d
 answer. It is also the layer `ADR-0002` calls disposable — a different engine replaces this
 directory and leaves [`../handles/`](../handles/) and [`../policy/`](../policy/) untouched.
 `udp.send`, `tcp.listen` and the fs quota reconciliation all land here when they are built.
+
+## Design notes
+
+Why the code here has the shape it has. This is the destination
+[`code-guidelines.md`](../../../docs/development/code-guidelines.md) Rule 1 names for rationale: a
+source comment protects a specific line from a specific mistake; the case for a file's overall
+shape belongs here instead.

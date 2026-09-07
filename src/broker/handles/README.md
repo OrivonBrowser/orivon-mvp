@@ -28,3 +28,10 @@ Each is a failure that is silent when it goes wrong — see
    button mean "once the app finishes", and completion time is under the app's control.
 4. **Limits are enforced by rejection, never by queueing.** An unbounded queue on the broker's
    thread is how one misbehaving origin freezes every tab.
+
+## Design notes
+
+Why the code here has the shape it has. This is the destination
+[`code-guidelines.md`](../../../docs/development/code-guidelines.md) Rule 1 names for rationale: a
+source comment protects a specific line from a specific mistake; the case for a file's overall
+shape belongs here instead.

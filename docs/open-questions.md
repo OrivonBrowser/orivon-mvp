@@ -3119,3 +3119,50 @@ lives). It is unenforced for the same reason and in the same way as the import b
 by directory, so a test file left beside its source still receives the 800-line budget and still
 passes CI. Whatever eventually closes this entry should cover both rules; they are one gap with
 two faces, not two entries.
+
+### A86 — owner-decision IDs (`d-NNNN`) are cited in source with no register **[STILL OPEN — AI recommendation]**
+
+**Raised 2026-09-07**, by the repo-wide comment sweep (`stream/backlog-15-comment-sweep`). Source
+comments cite `d-0017`, `d-0020`, `d-0021` and `d-0022` as if they named entries in some decision
+log — but no such log exists anywhere in this repository. Each citation currently reads correctly
+only because the comment beside it also spells the decision out in words; the token itself
+resolves to nothing a reader can look up.
+
+**What the sweep did instead of guessing.** Rather than invent a register retroactively — which
+would fabricate provenance for decisions this document did not track at the time — every `d-NNNN`
+citation the sweep touched was left in place with the actual decision restated in the same
+sentence, so the token is a label on a fact already present, not the only carrier of it.
+
+**Shape it would take if built.** Either fold `d-NNNN` into this document's own numbering (every
+citation becomes an `A`-number, closed on the spot as `[RESOLVED — owner]`), or give it its own
+short-lived log the way ADRs get `docs/decisions/` — but a `d-NNNN` is typically smaller and more
+frequent than something that earns a whole ADR file, so a single running table is more likely the
+right shape than one file per decision.
+
+**Needed by:** whenever the next `d-NNNN` is about to be minted. Not blocking anything today —
+existing citations are self-contained now.
+
+### A87 — `§` is used 185 times across 27 docs files; `CLAUDE.md` states docs are ASCII-only prose **[STILL OPEN]**
+
+**Raised 2026-09-07**, by the same sweep, while deciding how to rewrite `src/contracts/`'s
+`document.md SSSection` references (an undocumented ASCII stand-in for `§` used only in `.ts`
+comments — fixed on `stream/contracts-06-doc-gaps` by writing out `"document.md's 'Section'
+section"` instead, needing no legend).
+
+**The contradiction.** `CLAUDE.md` §Conventions states: *"Docs are Markdown, `kebab-case.md`,
+ASCII-only prose."* Measured directly: `§` appears 185 times across 27 files under `docs/`,
+including in section headings (`handle-contracts.md`'s `## §Errors`, `## §TcpSocket`, etc.) and
+in prose cross-references. `src/` itself has never adopted `§` — every comment that needs to name
+a section spells the word "section" out, or now (as of the sweep above) uses a quoted section
+name — so the ASCII rule already holds in source. It does not hold in the docs it is stated for.
+
+**Not resolved by this sweep**, on purpose: `docs/` belongs to the `docs` stream
+(`parallel-work.md`'s ownership map), and rewriting 185 occurrences across 27 files to settle a
+rule this sweep did not need to touch would be exactly the kind of silent scope-widening
+`parallel-work.md` asks a branch to avoid.
+
+**Two ways to close it, both cheap:** relax the stated rule to permit `§` in docs (it is already
+the de-facto, consistent, and more readable convention there, and the contradiction is with the
+rule's wording, not with how anyone actually writes) — or sweep `docs/` to remove `§` in favour of
+literal words, matching the ASCII rule as written. **This is a wording call on an owner-authored
+document, not a technical one — owner's decision.**
