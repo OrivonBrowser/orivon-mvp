@@ -20,7 +20,7 @@ vi.mock('electron', () => ({
   }
 }))
 
-const { exposeOrivon } = await import('./orivon-surface.js')
+const { exposeOrivon } = await import('../orivon-surface.js')
 
 // socket-bridge.ts registers its PORT_CHANNEL listener exactly ONCE, at
 // module load (orivon-surface.ts's module-level `createSocketBridge(...)`

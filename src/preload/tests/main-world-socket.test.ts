@@ -2,8 +2,8 @@ import { execSync } from 'node:child_process'
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { installOrivon } from './main-world-socket.js'
-import type { OrivonErrorCode } from '../contracts/errors.js'
+import { installOrivon } from '../main-world-socket.js'
+import type { OrivonErrorCode } from '../../contracts/errors.js'
 
 const LIMITS = { readWindowBytes: 1_000, writeWindowBytes: 1_000 }
 
