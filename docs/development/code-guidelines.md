@@ -74,6 +74,19 @@ this rule and 7 after. Its rationale now lives in
 justifying the shape against alternatives, pre-empting an objection. That is PR-body content,
 and it ages badly in a file.
 
+### Test 3 — could a name carry it instead? **AI recommendation, not an owner decision.**
+
+Before writing a comment, try to make it unnecessary: a named constant instead of a magic number,
+a named predicate instead of a commented condition, a named helper instead of a narrated block.
+If the rename lands, delete the comment it replaced.
+
+**One exception.** Keep a trap comment even after a good name, when the mistake it guards
+against is *deleting or "simplifying" the code*, not misreading it. Worked case:
+[`bundle-hash.ts`](../../src/broker/policy/bundle-hash.ts)'s `compareUtf8Bytes` — the name
+already says what the function does; the comment survives because a default
+`Array.prototype.sort()` would pass the entire test suite, and only the comment stops someone
+"simplifying" it away.
+
 ### Describe the code, not the change that produced it
 
 Git history holds the change. A comment that names a branch, a PR or a moment cannot be resolved
@@ -106,6 +119,11 @@ Only the *leading* block is measured — comment density is not.
 | Write a long narrating comment inside a function body | **No, nowhere** | Not exempt anywhere, contracts included. Split the function |
 | Open a file with more than 25 lines of comment | **Only with a written reason** | `// orivon:comment-budget -- <why>` (below) |
 | Reference a PR, branch or commit | **No** | Write the constraint, not the episode |
+| Cite a per-review finding ID (`F2`, `B-F8`, `P-F13`) | **No** | Same problem as a PR/branch/commit reference — it resolves to nothing once the review round that produced it closes |
+
+**The finding-ID row is an AI recommendation, not an owner decision** — added because the sweep
+that produced this table found ~25 such citations in one directory alone, all as unresolvable as
+the PR/branch/commit references the row above already bans, for the identical reason.
 
 **Long comments stay possible. They stop being free.** If a block genuinely cannot be shortened,
 say why, in the file:
