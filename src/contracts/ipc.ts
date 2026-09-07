@@ -188,11 +188,159 @@ export interface WriteAbortMessage {
   readonly handleId: string
 }
 
+// THE DATAGRAM DIRECTION (udp.bind / udp.send). Deliberately NOT the byte
+// messages above with a different name: a UDP socket is message-oriented, so
+// one message here is exactly one packet, and the broker never splits or
+// coalesces one (handle-contracts.md SSUdpSocket).
+//
+// THE ONE THING THAT MAKES THIS DIFFERENT FROM EVERY OTHER FLOW IN THIS FILE:
+// exhausting the inbound window DISCARDS datagrams rather than slowing the
+// sender down. UDP has no delivery guarantee and DHT/tracker traffic is built
+// to tolerate loss, so buffering to avoid a drop would convert a loss-tolerant
+// protocol into unbounded memory growth -- the exact failure the byte windows
+// above exist to prevent. Loss is reported as a COUNT, never as an error.
+
+/**
+ * One inbound packet, flowing broker -> renderer.
+ *
+ * Always a copy. Never a transfer. See rule 1 above.
+ *
+ * `dropped` is the broker's RUNNING TOTAL of inbound datagrams discarded for
+ * this handle, not a per-message delta -- so a renderer that missed a
+ * DatagramDropMessage still converges on the right number, and
+ * `UdpSocket.droppedInbound` never goes backwards.
+ */
+export interface DatagramMessage {
+  readonly kind: 'datagram'
+  readonly handleId: string
+  readonly data: Uint8Array
+  readonly address: string
+  readonly port: number
+  readonly family: 'IPv4' | 'IPv6'
+  readonly dropped: number
+}
+
+/**
+ * The running inbound-drop total on its own, flowing broker -> renderer.
+ *
+ * Exists because DatagramMessage cannot carry it in the one case that matters:
+ * when the window is exhausted, EVERY datagram is being dropped, so no
+ * DatagramMessage is being sent to piggyback the count on. Without this the
+ * app's `droppedInbound` would freeze at its last delivered value during
+ * exactly the overload it exists to report. Rate-limited to at most one per
+ * DROP_REPORT_MS -- a drop storm must not become its own message storm.
+ */
+export interface DatagramDropMessage {
+  readonly kind: 'datagram-dropped'
+  readonly handleId: string
+  readonly dropped: number
+}
+
+/**
+ * The renderer acknowledging consumption, flowing renderer -> broker. The
+ * inbound counterpart of CreditMessage above, and it carries BOTH units on
+ * purpose.
+ *
+ * Two bounds, because either alone has a real failure mode. A count-only
+ * window is what handle-contracts.md's "the readable internal queue is full"
+ * describes, and it bounds message overhead -- but its worst case is
+ * `inboundDatagramWindow` x `maxDatagramBytes` of pinned memory, which at any
+ * count large enough for real DHT traffic is far more than a TCP socket may
+ * pin. A byte-only window bounds that memory, but its worst case is a flood of
+ * one-byte datagrams: a million messages inside one megabyte. Releasing both
+ * is what makes neither reachable.
+ */
+export interface DatagramCreditMessage {
+  readonly kind: 'datagram-credit'
+  readonly handleId: string
+  /** Datagrams consumed since the last credit message. */
+  readonly datagramsConsumed: number
+  /** Bytes those datagrams carried, summed. */
+  readonly bytesConsumed: number
+}
+
+/**
+ * An app sending one packet out, flowing renderer -> broker.
+ *
+ * `address` and `port` are the DESTINATION, and they are checked against the
+ * origin's granted `udp.send` patterns FOR EVERY DATAGRAM -- unlike
+ * `net.connect`, where capability is checked once at acquisition. A UDP socket
+ * has no fixed peer, so there is no single acquisition-time destination to
+ * check; the check moves to the send.
+ *
+ * `data.byteLength` MUST NOT exceed `LIMITS.maxDatagramBytes`. Same obligation
+ * on the sender as WriteMessage's, and for the same reason: the broker does
+ * not split, truncate or buffer an oversized one on the caller's behalf. A
+ * datagram cannot be split anyway without ceasing to be the packet the app
+ * asked to send.
+ */
+export interface SendMessage {
+  readonly kind: 'send'
+  readonly handleId: string
+  readonly data: Uint8Array
+  readonly address: string
+  readonly port: number
+}
+
+/**
+ * The broker accepting outbound packets, flowing broker -> renderer.
+ * WriteAckMessage's counterpart, counted in datagrams rather than bytes.
+ *
+ * This exists for the same T11b reason the write window does: a
+ * MessagePortMain has no flow control of its own, so nothing else stops a
+ * renderer posting SendMessages faster than the broker can hand them to the
+ * OS. A `datagramsAccepted: 0` message is a valid heartbeat.
+ */
+export interface SendAckMessage {
+  readonly kind: 'send-ack'
+  readonly handleId: string
+  readonly datagramsAccepted: number
+}
+
+/**
+ * One outbound datagram was not sent, flowing broker -> renderer.
+ *
+ * IT DOES NOT ERROR THE STREAM, and that is the whole point of it being a
+ * counted report rather than a rejected write. A denied destination is
+ * ORDINARY traffic for a P2P app: a DHT peer list routinely contains addresses
+ * outside what the user granted, and erroring the socket on the first one
+ * would kill a working swarm. Rejecting the sink's promise is the only way a
+ * WritableStream can report a single failed write, and doing so errors the
+ * stream permanently -- so this reports out of band instead, and the app reads
+ * the total from `UdpSocket.droppedOutbound`.
+ *
+ * `code` is the closed-enum reason for THIS datagram; `dropped` is the running
+ * total, same convention as DatagramMessage's. `code: 'denied'` never carries
+ * `platformCode` (./errors.js) -- and 'denied' here stays as uniform as it is
+ * everywhere else, so it can be counted but never used to map which
+ * destinations a grant excludes.
+ *
+ * `address` and `port` are the destination FROM THE SendMessage THIS REFUSES
+ * (open-questions.md A87) -- carried here, not resolved, so the preload can
+ * build the `SendRefusal` the app actually sees on `UdpSocket.refusals`
+ * without a second round trip. The app already named this destination itself;
+ * echoing it back tells the app which of its own writes failed, without
+ * adding anything the app did not already know.
+ */
+export interface SendFailedMessage {
+  readonly kind: 'send-failed'
+  readonly handleId: string
+  readonly code: OrivonErrorCode
+  readonly platformCode?: string
+  readonly dropped: number
+  readonly address: string
+  readonly port: number
+}
+
 /** Every message the broker ever sends on a socket's dedicated port. */
-export type BrokerToRendererMessage = DataMessage | StreamEndMessage | WriteAckMessage | WriteFailedMessage
+export type BrokerToRendererMessage =
+  | DataMessage | StreamEndMessage | WriteAckMessage | WriteFailedMessage
+  | DatagramMessage | DatagramDropMessage | SendAckMessage | SendFailedMessage
 
 /** Every message the renderer ever sends on a socket's dedicated port. */
-export type RendererToBrokerMessage = CreditMessage | WriteMessage | WriteEndMessage | WriteAbortMessage
+export type RendererToBrokerMessage =
+  | CreditMessage | WriteMessage | WriteEndMessage | WriteAbortMessage
+  | DatagramCreditMessage | SendMessage
 
 /**
  * Every message either side of a socket's dedicated port can send, in
@@ -252,3 +400,34 @@ export const WRITE_HEARTBEAT_MS = 5_000
  * before this fires -- see ipc.test.ts for the assertion.
  */
 export const WRITE_SILENCE_TIMEOUT_MS = 15_000
+
+/**
+ * Datagram credit updates are COALESCED the same way byte credit is, but
+ * counted in datagrams: at most one DatagramCreditMessage per this many
+ * consumed.
+ *
+ * MUST STAY WELL BELOW `LIMITS.inboundDatagramWindow`. If it ever reached the
+ * window, the renderer would not send its first credit until the window was
+ * already exhausted, and the socket would fall into permanent drop -- every
+ * datagram discarded, no credit ever released, no error anywhere. That failure
+ * is silent and looks exactly like a quiet peer, which is why ./ipc.test.ts
+ * asserts the relationship rather than leaving it to whoever edits the numbers.
+ */
+export const DATAGRAM_CREDIT_COALESCE = 32
+
+/**
+ * The floor on the interval between DatagramDropMessages for one handle.
+ *
+ * A drop storm is precisely when the app most wants the count and precisely
+ * when it can least afford a message per event -- an unrated report would send
+ * one message per DISCARDED datagram, which is more traffic than delivering
+ * them would have been.
+ *
+ * There is deliberately no separate heartbeat or silence timeout for the
+ * outbound direction. `WRITE_SILENCE_TIMEOUT_MS` covers an outstanding
+ * SendMessage unchanged: unlike a TCP write, which can legitimately stall for
+ * minutes against a choked peer, handing a datagram to the OS never blocks on
+ * the network -- so silence on a send genuinely is a dead transport, and the
+ * distinction WRITE_HEARTBEAT_MS exists to draw has nothing to draw.
+ */
+export const DROP_REPORT_MS = 1_000

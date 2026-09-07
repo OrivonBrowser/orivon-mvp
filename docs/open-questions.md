@@ -3110,6 +3110,96 @@ by directory, so a test file left beside its source still receives the 800-line 
 passes CI. Whatever eventually closes this entry should cover both rules; they are one gap with
 two faces, not two entries.
 
+---
+
+### A86 — the specified UDP inbound window is a count, and a count alone cannot bound the memory **[AI-REC]**
+
+**Raised 2026-09-07**, writing the datagram wire (`stream/contracts-14-datagram-wire`), build
+step 2's UDP work.
+
+`handle-contracts.md` §UdpSocket specifies inbound backpressure as *"the `readable` internal
+queue is full"* — a WHATWG queue under a `CountQueuingStrategy`, so a **count**. Two things are
+wrong with implementing exactly that sentence, and they pull in opposite directions.
+
+**A count alone does not bound memory.** The worst case is
+`inboundDatagramWindow` x `maxDatagramBytes`. Any count large enough for real DHT traffic — a
+node receives many small packets in a burst — puts that product far above what a TCP socket may
+pin (`readWindowBytes`, 1 MiB). At 256 datagrams it is ~16 MiB per socket, and at the modest
+default of 64 sockets, ~1 GiB for one origin. `LIMITS.defaultConcurrentSockets`' own reasoning
+("the socket count IS the memory ceiling", owner decision 2026-09-06) is computed against the
+TCP windows and would be wrong for any app that opens a UDP socket.
+
+**A byte bound alone does not bound message count.** One megabyte of one-byte datagrams is a
+million messages across the port. Bounding the bytes says nothing about the per-message cost,
+which is the cost the byte windows were introduced to control in the first place.
+
+**What was built:** both, released together — `LIMITS.inboundDatagramWindow` (256) and
+`LIMITS.inboundDatagramWindowBytes` (1 MiB, deliberately the same number as `readWindowBytes` so
+the per-origin arithmetic holds whichever kind of socket an app opens). Whichever is exhausted
+first starts the drop. Same shape as A84's resolution: two mechanisms where either alone leaves
+a real gap.
+
+**Also decided here, and smaller:** the drop happens **in the broker**, not in the renderer's
+readable. The specification's wording implies the renderer, but `MessagePortMain` has no flow
+control (A37's finding), so a renderer-side drop still has the broker posting every datagram to
+a port nobody is draining. The observable behaviour the contract promises — loss, a
+`droppedInbound` count, no error — is identical either way.
+
+**Needed by:** nothing blocks on it; this is a recommendation the owner may overrule cheaply
+while `orivonApiVersion` is 0 and no third-party app exists. If overruled, the count-only
+reading needs an answer to the 1 GiB figure above.
+
+---
+
+### A87 — an outbound datagram that is denied cannot be reported without killing the socket **[RESOLVED 2026-09-07, owner]**
+
+**Raised 2026-09-07**, same branch as A86.
+
+`orivon.net.udpBind` gives an app a `WritableStream<Datagram>`, and unlike `net.connect` there is
+no single acquisition-time destination to authorise: a UDP socket has no fixed peer, so the
+`udp.send` grant has to be checked **per datagram**. That creates a failure this specification had
+no case for — a send the grant does not authorise.
+
+**Why rejecting the write is wrong.** A `WritableStream` reports one failed write by rejecting the
+sink's promise, and doing so errors the stream **permanently**. A DHT peer list routinely names
+addresses outside what the user granted — private ranges, reserved ports (A82) — so the first
+excluded peer would tear down a working swarm. Denying correctly by that route would break the
+flagship.
+
+**What was first built, and why it did not stand.** The write was accepted, the datagram
+discarded, and `UdpSocket.droppedOutbound` incremented silently — the wire already carried the
+reason (`SendFailedMessage.code`), but nothing surfaced it to the app. **Owner's decision,
+2026-09-07: a blocked send must tell the app.** Every other denial path in this codebase does;
+a bare counter a developer has to think to check is not that, and the owner was explicit that
+if this permission boundary does not visibly exist to an app, the enforcement model built around
+it does not hold together.
+
+**What was built instead — a second, non-terminal stream.**
+
+```ts
+// src/contracts/handles.ts, on UdpSocket
+readonly refusals: ReadableStream<SendRefusal>   // { address, port, code }
+```
+
+Stream-shaped, matching `ADR-0008`'s ban on `EventEmitter`s; drop-on-full under the same
+backpressure discipline as `readable`, so a socket that never reads `refusals` behaves exactly as
+before — nothing about the transport half changes. `write()` itself still never rejects. An app
+that ignores the stream loses nothing over the original design; an app that reads it is told
+plainly which of its own writes were refused and why, matching every other capability's denial
+surface instead of being the one silent exception.
+
+**What it deliberately still does not carry.** Only the destination the app itself already named,
+plus the bare `code` — no resolved address, no which-pattern-excluded-it. Handing back more would
+turn the boundary into a probe oracle for the grant's own shape, the same reasoning `errors.ts`
+already applies to every other `denied`.
+
+**Needed by:** lands in the contracts PR (`stream/contracts-14-datagram-wire`, #95) that already
+carries this entry, since `refusals` is a contract addition, not an implementation detail; the
+sink (`datagram-sink.ts`) and preload (`datagram-port.ts`, `main-world-socket.ts`) changes that
+populate it follow in the PRs that already touch those files.
+
+---
+
 ### A90 — owner-decision IDs (`d-NNNN`) are cited in source with no register **[STILL OPEN — AI recommendation]**
 
 **Raised 2026-09-07**, by the repo-wide comment sweep (`stream/backlog-15-comment-sweep`). Source
