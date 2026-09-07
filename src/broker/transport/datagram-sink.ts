@@ -54,11 +54,19 @@ export function createDatagramSink (options: DatagramSinkOptions): DatagramSink 
     })
   }
 
-  function reportRefusal (outcome: Extract<SendOutcome, { sent: false }>): void {
+  // `address`/`port` are the destination from the SendMessage this refuses --
+  // not the outcome, which never carried them -- so the preload can build the
+  // SendRefusal the app sees on `UdpSocket.refusals` (open-questions.md A87)
+  // without a second round trip.
+  function reportRefusal (
+    outcome: Extract<SendOutcome, { sent: false }>,
+    address: string,
+    port: number
+  ): void {
     dropped += 1
     const message: SendFailedMessage = outcome.platformCode === undefined
-      ? { kind: 'send-failed', handleId, code: outcome.code, dropped }
-      : { kind: 'send-failed', handleId, code: outcome.code, platformCode: outcome.platformCode, dropped }
+      ? { kind: 'send-failed', handleId, code: outcome.code, dropped, address, port }
+      : { kind: 'send-failed', handleId, code: outcome.code, platformCode: outcome.platformCode, dropped, address, port }
     send(message)
   }
 
@@ -93,7 +101,7 @@ export function createDatagramSink (options: DatagramSinkOptions): DatagramSink 
             pendingAcks += 1
             scheduleAck()
           } else {
-            reportRefusal(outcome)
+            reportRefusal(outcome, message.address, message.port)
           }
         },
         (error: unknown) => {
@@ -103,7 +111,7 @@ export function createDatagramSink (options: DatagramSinkOptions): DatagramSink 
           // which on the Electron main process takes the whole browser down.
           inFlight -= 1
           if (stopped) return
-          reportRefusal({ sent: false, code: 'internal' })
+          reportRefusal({ sent: false, code: 'internal' }, message.address, message.port)
           console.error('[broker] a udp send rejected, which it must not', error)
         }
       )
