@@ -6,8 +6,9 @@
 // presented by orivon-node-shim one layer ABOVE this one, not here.
 //
 // ReadableStream, WritableStream and Uint8Array are ambient globals, available
-// via tsconfig.json's lib: ["ES2023", "DOM", "DOM.Iterable"]. This file
-// imports nothing; see scripts/check-contracts-pure.mjs.
+// via tsconfig.json's lib: ["ES2023", "DOM", "DOM.Iterable"]. The only import
+// below is OrivonErrorCode from ./errors.js -- a sibling, which
+// scripts/check-contracts-pure.mjs treats as fine and necessary.
 //
 // FOUR RULES THAT APPLY TO EVERYTHING BELOW. Each is a contract a future
 // implementer will otherwise violate:
@@ -34,6 +35,8 @@
 //    boundary nothing can be. There is no 'connect' event and no observable
 //    "connecting" state -- the resolution of the acquisition promise IS the
 //    connect event. The shim reconciles this by buffering.
+
+import type { OrivonErrorCode } from './errors.js'
 
 /** The base every handle returned by `orivon.*` shares. */
 export interface Handle {
@@ -130,6 +133,24 @@ export interface Datagram {
 }
 
 /**
+ * One outbound datagram the broker did not send, delivered on
+ * `UdpSocket.refusals` (open-questions.md A87).
+ *
+ * `address` and `port` are exactly what the app passed to the write that
+ * produced this refusal -- never a resolved form, and never anything about
+ * WHICH granted pattern excluded it. Handing back more would let an app map
+ * the shape of its own grant by probing addresses and reading the reason,
+ * which is the same hazard `errors.ts` already avoids by keeping every
+ * 'denied' uniform. `code` is that same closed enum, so 'denied' here never
+ * carries a `platformCode` either.
+ */
+export interface SendRefusal {
+  readonly address: string
+  readonly port: number
+  readonly code: OrivonErrorCode
+}
+
+/**
  * A bound UDP socket.
  *
  * Message-oriented, not byte-oriented -- this mirrors WebTransport.datagrams
@@ -162,6 +183,46 @@ export interface UdpSocket extends Handle {
   readonly localPort: number
   /** Count of inbound datagrams discarded because the app was not reading. */
   readonly droppedInbound: number
+  /**
+   * Count of OUTBOUND datagrams the broker did not send -- a destination the
+   * origin's `udp.send` grant does not authorise, an oversized payload, or a
+   * send the OS refused.
+   *
+   * A COUNTER RATHER THAN A REJECTED WRITE, and the asymmetry with every other
+   * failure in this file is deliberate. A denied destination is ORDINARY
+   * traffic for a P2P app: a DHT peer list routinely names addresses outside
+   * what the user granted. A WritableStream can only report one failed write by
+   * rejecting the sink's promise, which errors the stream permanently -- so
+   * reporting the first excluded peer that way would kill a working swarm. The
+   * write is accepted, the datagram is discarded, and this increments, exactly
+   * as `droppedInbound` already does for the direction where the specification
+   * had already accepted loss as normal.
+   *
+   * IT CANNOT BE USED TO MAP A GRANT. It counts; it never says which datagram
+   * or why (../broker/errors.ts on 'denied': a denial that varied by reason
+   * would turn the permission boundary into a probe target). An app that needs
+   * to know a specific send failed compares this before and after -- which
+   * tells it THAT one did, never which pattern excluded it.
+   */
+  readonly droppedOutbound: number
+  /**
+   * Every REFUSED outbound datagram, one SendRefusal per write the broker did
+   * not send (open-questions.md A87). This is how a blocked send is reported
+   * to the app -- `droppedOutbound` above is a count for code that never
+   * thought to check it; this is the same visible-denial treatment every
+   * other capability in this file already gets.
+   *
+   * NON-TERMINAL AND DROP-ON-FULL, matching `readable`'s own discipline
+   * exactly: `write()` on `writable` still never rejects, so one address
+   * outside the grant can never tear down a working socket, and an app that
+   * never reads this stream loses nothing it had before -- `droppedOutbound`
+   * still increments regardless. If the app is not reading fast enough and
+   * this stream's internal queue is full, a new refusal is DISCARDED, not
+   * queued, for the same reason DATAGRAM LOSS IS EXPECTED above: buffering
+   * refusals the app is not consuming would just move the unbounded-memory
+   * problem this file already refuses to accept elsewhere.
+   */
+  readonly refusals: ReadableStream<SendRefusal>
 }
 
 export interface FileStat {
