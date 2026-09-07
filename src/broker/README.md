@@ -134,6 +134,24 @@ what `socket.closed` already did: it resolves for `'closed'` and rejects
 otherwise, so the relay sent a bare `end` for a clean close and a coded one
 for everything else. Passing the reason through the hook keeps the wire
 identical -- only the timing changed, never the message.
+### `transport/datagram-relay.ts` -- why its unlink teardown is NOT conditional
+
+`socket-relay.ts` branches on the close reason at unlink, and the section above explains at length
+why that branch is load-bearing: `stop()` cancels the read stream, cancelling the readable half of
+a `Duplex.toWeb` destroys the socket, and destroying it drops everything still in its write queue
+(8 MiB queued, 8 MiB lost, measured). So a flushing reason must be left to settle through `closed`.
+
+`datagram-relay.ts` tears down on **every** reason, and the asymmetry is deliberate rather than an
+oversight in either file. A UDP socket has no write queue to lose: `send` hands a datagram to the
+OS or refuses it, and nothing is ever buffered for later delivery. There is therefore nothing a
+teardown here can truncate, and waiting would only hold the registry slot and the port open longer
+than the grant that authorised them.
+
+Anyone tempted to "fix" the inconsistency in either direction should read this paragraph and the
+one above it as a pair. Both branches are pinned by tests (`datagram-relay.test.ts` asserts
+teardown for all five reasons; `socket-relay.test.ts` and `adapters/tests/socket-drain.test.ts`
+assert the opposite for TCP), so neither can be simplified away silently.
+
 ### `policy/reserved-ports.ts` -- what a blanket grant does not reach
 
 Owner decision, 2026-09-06 (`open-questions.md` A82). A grant of `*:*` is

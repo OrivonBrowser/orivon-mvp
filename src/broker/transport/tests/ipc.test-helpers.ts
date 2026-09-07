@@ -8,8 +8,8 @@ import { vi } from 'vitest'
 import type { ControlEvent, PortLike, PortPair, PortTransport } from '../ipc.js'
 import type { Broker } from '../../broker-contracts.js'
 import { createPortRegistry } from '../port-registry.js'
-import type { Grant, Manifest, OrivonError, OrivonErrorCode } from '../../../contracts/index.js'
-import type { CloseReason, FailableTcpSocket } from '../../handles/handle-contracts.js'
+import type { Datagram, Grant, Manifest, OrivonError, OrivonErrorCode } from '../../../contracts/index.js'
+import type { CloseReason, FailableTcpSocket, FailableUdpSocket } from '../../handles/handle-contracts.js'
 import type { RequestEnvelope } from '../../../contracts/ipc.js'
 
 export const APP = 'https://app.example'
@@ -52,6 +52,7 @@ export function stubBroker (
     manifest: (origin: string) => Promise<Manifest>
     grants: (origin: string) => Promise<readonly Grant[]>
     connect: (origin: string, opts: { host: string, port: number }) => Promise<FailableTcpSocket>
+    udpBind: (origin: string, opts: { port: number }) => Promise<FailableUdpSocket>
     readFile: (origin: string, path: string) => Promise<Uint8Array>
     writeFile: (origin: string, path: string, data: Uint8Array) => Promise<void>
     registerApp: (origin: string, manifest: Manifest) => Promise<void>
@@ -81,7 +82,7 @@ export function stubBroker (
       // The udp control method is a separate change (see the PR stack).
       udpBind: async (origin, opts) => {
         calls.push({ method: 'net.udpBind', origin, args: opts })
-        return await notStubbed()
+        return await (overrides.udpBind?.(origin, opts) ?? notStubbed())
       }
     },
     fs: {
@@ -223,4 +224,53 @@ export function fakeTcpSocket (
 /** Lets a fire-and-forget pump/wiring chain progress before assertions run. */
 export async function tick (times = 5): Promise<void> {
   for (let i = 0; i < times; i++) await Promise.resolve()
+}
+
+export interface FakeUdpSocket {
+  readonly socket: FailableUdpSocket
+  readonly closeSpy: ReturnType<typeof vi.fn>
+  readonly failSpy: ReturnType<typeof vi.fn>
+  readonly settleClosed: (error?: OrivonError) => void
+  readonly unlink: (reason: CloseReason, code?: OrivonErrorCode) => void
+}
+
+/** ./fakeTcpSocket's counterpart. `send` resolves `{ sent: true }` unless overridden. */
+export function fakeUdpSocket (
+  readable: ReadableStream<Datagram> = new ReadableStream({ start: (c) => { c.close() } }),
+  send: FailableUdpSocket['send'] = async () => ({ sent: true })
+): FakeUdpSocket {
+  let settle: (error?: OrivonError) => void = () => {}
+  let settled = false
+  let unlinkListener: ((reason: CloseReason, code?: OrivonErrorCode) => void) | undefined
+  const closed = new Promise<void>((resolve, reject) => {
+    settle = (error) => {
+      if (settled) return
+      settled = true
+      if (error === undefined) resolve(); else reject(error)
+    }
+  })
+  const closeSpy = vi.fn(async () => { settle() })
+  const failSpy = vi.fn((code: OrivonErrorCode, platformCode?: string) => {
+    settle({ name: 'OrivonError', message: 'the handle failed', code, platformCode } as OrivonError)
+  })
+  const socket: FailableUdpSocket = {
+    id: 'handle-udp-1',
+    closed,
+    close: closeSpy,
+    fail: failSpy,
+    abort: vi.fn(),
+    readable,
+    send,
+    localAddress: '0.0.0.0',
+    localPort: 6881,
+    droppedInbound: 0,
+    onUnlink: (listener) => { unlinkListener = listener }
+  }
+  return {
+    socket,
+    closeSpy,
+    failSpy,
+    settleClosed: settle,
+    unlink: (reason, code) => { unlinkListener?.(reason, code) }
+  }
 }
