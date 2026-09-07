@@ -29,6 +29,26 @@ Why the code here has the shape it has. This is the destination
 source comment protects a specific line from a specific mistake; the case for a file's overall
 shape belongs here instead.
 
+**[`bind.ts`](bind.ts) — why it is not a mode flag on `connect.ts`.** The two share the word
+"capability check" and nothing else. `checkConnect` resolves a hostname, because its whole reason
+for existing is that patterns must be matched against resolved addresses (T12); a bind names a
+local port, so there is no name to resolve, no rebinding window, and no reason to be async.
+The grammars are opposites too: `"*"` is legitimate for `connect` and rejected for `bind`, and
+ports below 1024 must work for `connect` and are denied outright for `bind`
+(`capability-api.md` A9 §1). `connect.ts`'s own header asked for this split in advance — "a
+DIFFERENT decision ... and gets its own function rather than a mode flag on this one, because the
+two share a grammar and nothing else."
+
+**Why `bind(0)` returns ranges rather than a yes.** An app asking for port 0 is asking the OS to
+pick, and there is no port to check. Answering `true` would mean the OS picks freely, which makes
+the sentence the person granting the capability actually read — "listen for messages on ports
+6881-6889" — false, without anybody deciding it should be. So the allow branch hands back the
+granted ranges and the caller picks from them. It is the same structural trick `ConnectAllowed.
+addresses` uses: a caller physically cannot proceed without destructuring what was checked, so
+"bind only inside what was granted" is enforced by the shape of the return value instead of by a
+comment somebody has to remember. Recommendation, not yet owner-confirmed —
+`docs/open-questions.md` A88.
+
 **[`derive-p256.ts`](derive-p256.ts) — why secp256k1 isn't served here.** WebCrypto has no
 secp256k1 at all, so serving it would mean either hand-rolling scalar multiplication — variable-
 time, over a secret scalar, in the file that holds every user's identity — or reaching for a curve
