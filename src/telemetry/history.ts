@@ -51,9 +51,7 @@ export const MAX_HISTORY_ENTRIES = 36
  * same reason (bound retained data against an unbounded offline stretch
  * or a long-lived install), so this is code-guidelines.md Rule 3's
  * "extract when the reason is shared" case, not two snippets that merely
- * look alike. It lives here rather than in a third file only because this
- * task's file list does not include one; see the PR for that tradeoff
- * made explicit.
+ * look alike.
  */
 export function keepNewest<T> (items: readonly T[], max: number): readonly T[] {
   return items.length <= max ? items : items.slice(items.length - max)

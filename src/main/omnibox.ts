@@ -1,6 +1,6 @@
 // Classifies address-bar input. Pure function, no Electron/Node dependency --
 // this is the one genuinely unit-testable piece of build step 1
-// (build-plan.md SS Testing: security-critical logic only).
+// (build-plan.md's "Testing" section: security-critical logic only).
 //
 // Security-critical rows: `javascript:`, `data:`, `file:` and `about:` must
 // NEVER resolve to { kind: 'url' }. The address bar is chrome-privileged

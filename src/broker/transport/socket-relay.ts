@@ -16,12 +16,10 @@ import { errnoOf, isOrivonErrorLike } from '../errors.js'
 
 /**
  * Maps a raw error off `socket.readable`/`socket.writable` to a closed-enum
- * code. Deliberately narrow (this is the ONE place that needs it, now
- * shared by both directions): a real Node stream wrapping a TCP socket
+ * code. Deliberately narrow: a real Node stream wrapping a TCP socket
  * (node-adapters.ts's dialOne, via Duplex.toWeb) surfaces the underlying
  * socket's own errors here, and ECONNRESET/EPIPE are the only ones with a
- * sharper code than 'internal' worth naming. Moved from ./ipc.ts with the
- * pump it used to be private to. Exported so a real-socket test
+ * sharper code than 'internal' worth naming. Exported so a real-socket test
  * (port-sink-real-socket.test.ts) can prove the write direction's actual
  * mapping rather than a mocked one, without a second copy of this logic
  * (code-guidelines.md Rule 3 -- the reason is shared, not just the shape).

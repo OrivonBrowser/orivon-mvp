@@ -1,9 +1,8 @@
 import type { Bookmark } from '../../main/bookmarks.js'
 import { globeIcon } from '../icons.js'
 
-// The dashboard's whole job: a search box and real bookmark tiles.
-// Owner override, 2026-08-28 -- see index.html's own header for the
-// scope note (grid layout matching the vision, real content only).
+// The dashboard's whole job: a search box and real bookmark tiles -- see
+// index.html's own header for the scope note.
 
 interface OrivonNewTab {
   getBookmarks: () => Promise<Bookmark[]>

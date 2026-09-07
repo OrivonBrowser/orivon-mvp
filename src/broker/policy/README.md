@@ -100,3 +100,46 @@ now a warned, explicit choice — proceed with the older version, or keep what i
 time this happens for a given origin. Once acknowledged, `rollbackAcknowledged` never expires on
 its own; the owner's framing was "warn every time, but never require a click" for everything after
 that first choice.
+
+**[`address.ts`](address.ts) is tested exhaustively, not with a handful of examples, because of
+two properties.** (1) The failure is silent: a missed encoding does not throw or log, it answers
+`'public'` for an address that actually reaches localhost, and the connection succeeds — nothing
+downstream re-checks. (2) It fails closed: anything unparseable is blocked, never allowed, because
+an unparseable string is either a caller bug or someone hunting for an encoding the table doesn't
+know. `classifyAddress` and `canonicalAddress` share one file on purpose even though they answer
+different questions — the DENY side ("what range is this in", staying permissive so it can
+recognise `2130706433` in order to block it) and the ALLOW side ("will everything downstream read
+this string as the same address", docs/open-questions.md A20) — because both are built from the
+same [`address-parse.ts`](address-parse.ts) parsers and so can never disagree about what an
+address *is*, only about how it should be spelled.
+
+**[`connect-src.ts`](connect-src.ts)'s CSP `connect-src` derivation is pure; wiring it via
+`session.webRequest.onHeadersReceived` is build step 4's job.** Four things that step still needs
+to check, recorded here because nothing else in the corpus does: (1) ADD this header to the
+response, never REPLACE — multiple CSP headers intersect, which is what makes "the app cannot
+relax it" true without stripping the app's own document's CSP. (2) Verify whether
+`onHeadersReceived` fires for `protocol.handle`-served responses at all — ADR-0007 serves the
+cached bundle that way, and nothing in the corpus confirms `webRequest` sees those responses; set
+the header on the protocol handler's own `Response` too, just in case, since a worker script
+served the same way inherits its own response's CSP, not the document's. (3) It is per-partition,
+per-origin, and must be recomputed whenever a grant changes. (4) A live `context7` check is
+required before writing the actual Electron wiring. Two scope gaps, both filed rather than
+silently accepted: CSP bounds *names*, `connect.ts`'s `checkConnect` bounds *resolved addresses* —
+for a hostname pattern the two diverge exactly on DNS rebinding, and no CSP construction closes
+that (A42, also noting `img-src`/`form-action`/`script-src`/`frame-src`/navigation/
+`<link rel=prefetch>` stay open channels this header never touches). And the emitted list is the
+app's *entire* `connect-src` allowlist, so an omitted pattern is not "uncovered", it is blocked —
+the flagship's `tcp.connect: ["*:*"]` has no CSP equivalent at all and is reported via `omitted`
+rather than widened to CSP's bare `*` (owner decision, A43: widening is the bigger bug). An IPv6
+literal is the same story: CSP's host grammar has no `[`, `]` or `:`, confirmed in Electron
+44.0.0/Chrome 152 that Chromium drops such a source outright — `host-ipv6-literal` exists so
+`omitted` stays honest about that gap instead of silently claiming coverage a grant doesn't have.
+
+**Why [`paths.ts`](paths.ts)'s confinement verdict must be platform-independent.** Windows and
+macOS are supported run-from-source targets, but CI runs on Linux only, so a rule whose answer
+depends on the host OS ships to two platforms untested. Path flavour is chosen from the shape of
+the root (`C:\...` or `\\...` → win32, otherwise posix) rather than from `process.platform`, so a
+Windows root gets Windows separator rules even on a Linux test runner. And everything
+Windows-specific about the *requested* path — backslashes, drive letters, UNC prefixes, reserved
+device names — is rejected on every platform: `..\..\Windows` is a legal filename on POSIX, but a
+security boundary cannot have an answer that depends on where the broker happens to be running.

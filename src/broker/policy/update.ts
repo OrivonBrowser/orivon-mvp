@@ -119,16 +119,12 @@ function ordinaryEscalation (update: UpdateInput): 'capability-prompt' | 'recons
   if (widensAuthority(update.grantedPatterns, update.newPatterns)) return 'capability-prompt'
 
   // Deliberately checked AFTER the pattern check and not folded into it.
-  //
-  // CORRECTED 2026-08-27. This previously read "the manifest is served
-  // separately from the bundle (/.well-known/orivon.json), so a host can widen
-  // the manifest while serving byte-identical code" -- true when written, false
-  // since ADR-0009: the manifest is a hashed LEAF, so a manifest-only change
-  // does move the bundle hash. The ordering is unaffected and stays for a
-  // stronger reason: a widened pattern set must produce 'capability-prompt',
-  // never the weaker 'reconsent', and folding the checks together would let
-  // whichever ran first decide. The severity order is the rule; the hash is
-  // not a short-circuit for it.
+  // Since ADR-0009 the manifest is a hashed LEAF, so a manifest-only change
+  // already moves the bundle hash -- but the ordering stays regardless: a
+  // widened pattern set must produce 'capability-prompt', never the weaker
+  // 'reconsent', and folding the checks together would let whichever ran
+  // first decide. The severity order is the rule; the hash is not a
+  // short-circuit for it.
   if (!isSameBundle(update.pinnedHash, update.newHash)) return 'reconsent'
 
   return null
@@ -145,10 +141,10 @@ export function decideUpdate (update: UpdateInput): UpdateDecision {
   if (!isAtOrAboveFloor(update.version, update.versionFloor)) {
     if (!update.rollbackAcknowledged) return 'rollback-choice'
 
-    // FIXED 2026-09-05 (ADR-0013's own amendment): acknowledging a rollback
-    // settles only the rollback question -- it is a fact about the origin,
-    // not a blank cheque for whatever that origin serves under an
-    // already-forgiven version number. See ordinaryEscalation's own comment.
+    // ADR-0013: acknowledging a rollback settles only the rollback question
+    // -- it is a fact about the origin, not a blank cheque for whatever that
+    // origin serves under an already-forgiven version number. See
+    // ordinaryEscalation's own comment.
     return ordinaryEscalation(update) ?? 'rollback-notice'
   }
 
@@ -234,7 +230,7 @@ function parseVersion (raw: string): ParsedVersion | null {
   return { release, prerelease }
 }
 
-/** Semver SS11.3-11.4: a prerelease sorts BELOW its release, numeric identifiers below alphanumeric. */
+/** Semver's sections 11.3-11.4: a prerelease sorts BELOW its release, numeric identifiers below alphanumeric. */
 function comparePrerelease (a: readonly string[], b: readonly string[]): number {
   if (a.length === 0 && b.length === 0) return 0
   if (a.length === 0) return 1
