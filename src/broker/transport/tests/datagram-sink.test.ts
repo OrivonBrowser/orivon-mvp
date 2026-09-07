@@ -123,6 +123,17 @@ describe('createDatagramSink -- a refused datagram (A87)', () => {
     expect(sent.filter((m) => m.kind === 'send-failed').map((m) => m.kind === 'send-failed' ? m.dropped : 0))
       .toEqual([1, 2])
   })
+
+  it('carries the destination the app named, so the preload can build a SendRefusal', async () => {
+    const { sent, sink } = harness(async () => ({ sent: false, code: 'denied' }))
+
+    sink.handleSend(sendMessage({ address: '10.0.0.5', port: 4321 }))
+    await settle()
+
+    expect(sent).toContainEqual(expect.objectContaining({
+      kind: 'send-failed', address: '10.0.0.5', port: 4321
+    }))
+  })
 })
 
 describe('createDatagramSink -- a renderer that ignores its window', () => {
