@@ -3,7 +3,7 @@ import {
   isOffsetStale,
   pickSendOffsetMs,
   SEND_OFFSET_WINDOW_MS
-} from './schedule.js'
+} from '../schedule.js'
 
 describe('pickSendOffsetMs', () => {
   it('scales the injected [0,1) random source into [0, windowMs)', () => {

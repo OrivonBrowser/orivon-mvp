@@ -5,9 +5,9 @@ import {
   recordSent,
   MAX_HISTORY_ENTRIES,
   type HistoryEntry
-} from './history.js'
-import type { TelemetryPayload } from './disclosure.js'
-import { attemptSend, enqueue, initialTransportState, type Clock, type Sender } from './transport.js'
+} from '../history.js'
+import type { TelemetryPayload } from '../disclosure.js'
+import { attemptSend, enqueue, initialTransportState, type Clock, type Sender } from '../transport.js'
 
 // A payload shape stays fixed across a test; only the period usually
 // varies, the way a real caller would advance from month to month.

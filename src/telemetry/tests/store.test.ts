@@ -2,15 +2,15 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { initialState, type AccountingState } from './accounting.js'
-import { initialConsentState } from './disclosure.js'
-import { initialHistoryState } from './history.js'
+import { initialState, type AccountingState } from '../accounting.js'
+import { initialConsentState } from '../disclosure.js'
+import { initialHistoryState } from '../history.js'
 import {
   parseTelemetryFile,
   serializeTelemetryFile,
   TelemetryStore,
   type TelemetryDisk
-} from './store.js'
+} from '../store.js'
 
 const FIXED_ID = '4c2f2f3a-1111-4444-8888-abcde1234567'
 const nextFixedId = (): string => FIXED_ID
