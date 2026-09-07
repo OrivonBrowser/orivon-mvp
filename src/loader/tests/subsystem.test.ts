@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { loaderSubsystem } from './subsystem.js'
-import { createSubsystemContext } from '../main/registry.js'
+import { loaderSubsystem } from '../subsystem.js'
+import { createSubsystemContext } from '../../main/registry.js'
 import type { App } from 'electron'
 
 // A fake App, not a real one -- getPath is the only method afterReady

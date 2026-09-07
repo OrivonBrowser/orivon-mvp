@@ -8,10 +8,10 @@
 // own -- only fixtures.
 
 import { vi } from 'vitest'
-import type { Resolver } from '../broker/policy/connect.js'
-import type { PinRecord } from '../broker/policy/pin.js'
-import type { Fetch, FetchResponse } from './fetch-budget.js'
-import type { LoaderStorage } from './storage.js'
+import type { Resolver } from '../../broker/policy/connect.js'
+import type { PinRecord } from '../../broker/policy/pin.js'
+import type { Fetch, FetchResponse } from '../fetch-budget.js'
+import type { LoaderStorage } from '../storage.js'
 
 export const ORIGIN = 'https://app.example.com'
 export const MANIFEST_URL = `${ORIGIN}/.well-known/orivon.json`

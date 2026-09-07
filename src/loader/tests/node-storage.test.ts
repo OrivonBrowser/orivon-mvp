@@ -2,11 +2,11 @@ import { chmod, mkdir, mkdtemp, readdir as fsReaddir, readFile as fsReadFile, sy
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { nodeLoaderStorage } from './node-storage.js'
-import { appRootDirectoryName } from './storage.js'
+import { nodeLoaderStorage } from '../node-storage.js'
+import { appRootDirectoryName } from '../storage.js'
 import { utf8 } from './test-helpers.js'
-import { parsePinRecord } from '../broker/policy/pin.js'
-import type { PinRecord } from '../broker/policy/pin.js'
+import { parsePinRecord } from '../../broker/policy/pin.js'
+import type { PinRecord } from '../../broker/policy/pin.js'
 
 // Real temp directory, no mocking -- the same discipline
 // broker/node-adapters.test.ts already established for nodeFs, and for the

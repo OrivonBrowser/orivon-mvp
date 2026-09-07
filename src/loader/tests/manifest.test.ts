@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseManifest, type ManifestResult } from './manifest.js'
+import { parseManifest, type ManifestResult } from '../manifest.js'
 
 // The input is adversarial by construction (manifest.ts's own header): any
 // origin can serve this JSON, and every field is self-asserted. So this
