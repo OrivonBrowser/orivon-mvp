@@ -674,3 +674,68 @@ describe('GrantLedger.socketAllowance (open-questions.md A80)', () => {
     expect(ledger.socketAllowance(APP)).toBe(300)
   })
 })
+
+// Defect 2: policy/connect.ts's checkConnect parses every pattern afresh on
+// every call, which is fine once per TCP connection but ran once per UDP
+// PACKET when reused verbatim for udp.send (../../index.ts's authorisedSend)
+// -- real, uncapped CPU work on the broker's single UI thread for ordinary
+// DHT/tracker traffic. Cached HERE, keyed by the Grant object itself, because
+// a grant is REPLACED wholesale, never mutated (`grant()`'s own doc) -- so a
+// re-grant or a revoke both mean a caller is holding a different (or absent)
+// Grant object, and the cache below simply misses. Nothing has to invalidate
+// it on purpose.
+describe('GrantLedger -- parsedPatternsFor caches per Grant object', () => {
+  it('returns the same array reference on a second call for the same live grant', () => {
+    const ledger = new GrantLedger()
+    const { record } = ledger.grant(APP, 'udp.send', ['93.184.216.34:6881'], 0)
+
+    const first = ledger.parsedPatternsFor(record)
+    const second = ledger.parsedPatternsFor(record)
+
+    // Reference equality, not just equal content: a fresh `.map(parsePattern)`
+    // would always produce a NEW array, so `toBe` is what actually proves the
+    // second call reused the first call's work instead of redoing it.
+    expect(second).toBe(first)
+  })
+
+  it('parses a grant\'s own patterns correctly', () => {
+    const ledger = new GrantLedger()
+    const { record } = ledger.grant(APP, 'udp.send', ['93.184.216.34:6881', '*'], 0)
+
+    expect(ledger.parsedPatternsFor(record)).toEqual([
+      { host: '93.184.216.34', port: '6881' },
+      null // '*' has no ':', which parsePattern reads as a bare listen/bind pattern, not a connect one
+    ])
+  })
+
+  it('does not share a cache entry between two different grants with identical pattern text', () => {
+    const ledger = new GrantLedger()
+    const { record: first } = ledger.grant(APP, 'udp.send', ['93.184.216.34:6881'], 0)
+    const { record: second } = ledger.grant('https://other.example', 'udp.send', ['93.184.216.34:6881'], 0)
+
+    expect(ledger.parsedPatternsFor(second)).not.toBe(ledger.parsedPatternsFor(first))
+  })
+
+  // The invalidation property this cache exists to get right (per this
+  // repository's own A70 lesson, recorded on authorisedSend): a re-grant
+  // mints a brand new Grant object, so the CURRENT grant's parsed patterns
+  // must always reflect what was just granted, never whatever the grant it
+  // replaced had cached.
+  it('a re-grant with different patterns is never served the replaced grant\'s cached parse', () => {
+    const ledger = new GrantLedger()
+    const { record: original } = ledger.grant(APP, 'udp.send', ['93.184.216.34:6881'], 0)
+    ledger.parsedPatternsFor(original) // populates the cache for the grant about to be replaced
+
+    const { record: replacement } = ledger.grant(APP, 'udp.send', ['10.0.0.5:9999'], 1)
+
+    expect(ledger.parsedPatternsFor(replacement)).toEqual([{ host: '10.0.0.5', port: '9999' }])
+  })
+
+  it('a revoked grant\'s own object still parses to its own patterns -- the cache is not keyed by (origin, capability)', () => {
+    const ledger = new GrantLedger()
+    const { record } = ledger.grant(APP, 'udp.send', ['93.184.216.34:6881'], 0)
+    ledger.revoke(APP, record.id)
+
+    expect(ledger.parsedPatternsFor(record)).toEqual([{ host: '93.184.216.34', port: '6881' }])
+  })
+})

@@ -8,6 +8,9 @@ import { LIMITS } from '../../contracts/index.js'
 import type { LedgerStorage } from './ledger-storage.js'
 import { isPersistableOrigin } from '../policy/origin.js'
 import { compareVersions } from '../policy/update.js'
+import type { ParsedPattern } from '../policy/connect-patterns.js'
+import type { ParsedPatternsCache } from './parsed-patterns-cache.js'
+import { createParsedPatternsCache } from './parsed-patterns-cache.js'
 
 /**
  * 128 bits from the platform CSPRNG, as hex -- the same construction
@@ -103,6 +106,8 @@ interface OriginRecord {
 export class GrantLedger {
   readonly #origins = new Map<string, OriginRecord>()
   readonly #storage: LedgerStorage | undefined
+  /** See ./parsed-patterns-cache.ts for what this caches and why keying by the Grant object needs no separate invalidation. */
+  readonly #parsedPatterns: ParsedPatternsCache = createParsedPatternsCache()
 
   /**
    * `storage` is optional so every existing caller (every test in this
@@ -378,6 +383,20 @@ export class GrantLedger {
   /** The live grant for one capability kind, or undefined if none was ever issued or it was revoked. */
   currentGrant (origin: string, capability: CapabilityKind): Grant | undefined {
     return this.#origins.get(origin)?.grants.get(capability)
+  }
+
+  /**
+   * `grant.patterns`, already split into ParsedPattern (./parsed-patterns-cache.ts).
+   *
+   * TAKES A Grant, NOT A GrantId. The id alone cannot answer this once a
+   * grant has been revoked or replaced, and re-deriving "the current grant
+   * for this id" would just be `currentGrant` again -- the caller already
+   * has the Grant it wants patterns for (typically straight out of
+   * `currentGrant`), so this only ever adds a cache lookup, never a second
+   * ledger read.
+   */
+  parsedPatternsFor (grant: Grant): ReadonlyArray<ParsedPattern | null> {
+    return this.#parsedPatterns.get(grant)
   }
 
   /**

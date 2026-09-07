@@ -6,15 +6,18 @@
 // See ./index.ts's header for what createBroker actually does, why its
 // dependency shape is fixed, and what `Broker` is for.
 
-import type { DestroyResource, FailableTcpSocket } from './handles/handle-contracts.js'
+import type { DestroyResource, FailableTcpSocket, FailableUdpSocket } from './handles/handle-contracts.js'
 import type { LedgerStorage } from './grants/ledger-storage.js'
+import type { PortRange } from './policy/bind.js'
 import type { Resolver } from './policy/connect.js'
 import type {
   CapabilityKind,
+  Datagram,
   Grant,
   GrantId,
   Handle,
   Manifest,
+  OrivonErrorCode,
   Pattern,
   TcpSocket
 } from '../contracts/index.js'
@@ -52,6 +55,57 @@ export interface DialedSocket extends Omit<TcpSocket, keyof Handle> {
 export type Dial = (addresses: readonly string[], port: number, signal: AbortSignal) => Promise<DialedSocket>
 
 /**
+ * One outbound datagram's fate.
+ *
+ * NEVER A REJECTION, and that is the point of it being a value. A caller's
+ * only way to report a rejected send is to error the app's
+ * `WritableStream<Datagram>`, which errors it PERMANENTLY -- and a denied
+ * destination is ordinary traffic for a P2P app, so the first DHT peer outside
+ * the granted patterns would tear down a working swarm
+ * (docs/open-questions.md A87). The send is absorbed, the datagram is
+ * discarded, and the caller counts it.
+ */
+export type SendOutcome =
+  | { readonly sent: true }
+  | { readonly sent: false, readonly code: OrivonErrorCode, readonly platformCode?: string }
+
+/**
+ * What `orivon.net.udpBind` needs from a bound UDP socket, minus the handle
+ * bookkeeping (`id`/`closed`/`close()`) `createBroker` supplies.
+ *
+ * NOT `Omit<UdpSocket, keyof Handle>`, unlike DialedSocket above, and the
+ * difference is deliberate rather than an oversight: the contract's
+ * `writable: WritableStream<Datagram>` CANNOT express the specified behaviour
+ * on this side of the boundary, because a WritableStream sink reports a single
+ * failed write only by rejecting, and that errors the stream. `send` returning
+ * a SendOutcome is what lets a refusal be counted instead. The app still gets
+ * a real `WritableStream<Datagram>`; it is built in the main world over the
+ * port (src/preload/), the same way its TCP counterpart is.
+ */
+export interface BoundUdpSocket {
+  readonly readable: ReadableStream<Datagram>
+  readonly send: (datagram: Datagram) => Promise<SendOutcome>
+  readonly localAddress: string
+  /** Resolved BEFORE this object exists -- handle-contracts.md SSUdpSocket. */
+  readonly localPort: number
+  /** Live, not a snapshot: implementations expose it as a getter. */
+  readonly droppedInbound: number
+  readonly destroy: DestroyResource
+}
+
+/**
+ * Binds a UDP socket to a free port inside `ranges` -- every range already
+ * returned by `checkBind` (policy/bind.ts), which is what makes "an ephemeral
+ * port still lands inside what the user approved" structural rather than
+ * remembered. An implementation MUST NOT bind outside them, and MUST fail with
+ * 'limit' rather than widening when every port in them is taken.
+ *
+ * `signal` fires the instant the grant authorising this bind is revoked while
+ * the bind is still in flight, exactly as `Dial`'s does.
+ */
+export type Bind = (ranges: readonly PortRange[], signal: AbortSignal) => Promise<BoundUdpSocket>
+
+/**
  * What `orivon.fs` needs from the real filesystem. `policy/paths.ts` stays
  * pure; this is the one seam where confinement's decision touches disk.
  */
@@ -84,6 +138,7 @@ export interface Keychain {
 
 export interface CreateBrokerOptions {
   readonly dial: Dial
+  readonly bind: Bind
   readonly resolve: Resolver
   /** Clock, read once per grant -- `Grant.grantedAt`. Injected so a test can freeze it. */
   readonly now: () => number
@@ -122,6 +177,17 @@ export interface Broker {
     /** Returns a `FailableTcpSocket` -- a `TcpSocket` plus one broker-internal
      * escape hatch, see handle-contracts.ts. */
     connect(origin: string, opts: { host: string, port: number }): Promise<FailableTcpSocket>
+    /**
+     * `port: 0` means "any free port", and it still binds only inside the
+     * granted ranges (policy/bind.ts, docs/open-questions.md A88).
+     *
+     * The returned socket's `send` is ALREADY AUTHORISED PER DATAGRAM against
+     * this origin's live `udp.send` grant -- the caller cannot reach an
+     * unchecked send path, because there is not one. Re-read live rather than
+     * captured at bind, so a revoke stops the next datagram rather than the
+     * next bind (the lesson A70 recorded for `net.close`).
+     */
+    udpBind(origin: string, opts: { port: number }): Promise<FailableUdpSocket>
   }
   readonly fs: {
     readFile(origin: string, path: string): Promise<Uint8Array>

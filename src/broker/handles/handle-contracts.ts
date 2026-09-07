@@ -5,7 +5,7 @@
 // Spec: docs/architecture/handle-contracts.md. See ./handles.ts's header for
 // why this directory holds state at all and what it may and may not import.
 
-import type { GrantId, OrivonErrorCode, TcpSocket } from '../../contracts/index.js'
+import type { Datagram, GrantId, Handle, OrivonErrorCode, TcpSocket } from '../../contracts/index.js'
 
 /**
  * What kind of resource a handle names.
@@ -259,5 +259,33 @@ export interface FailableTcpSocket extends TcpSocket {
    * app had queued. Measured, not theorised -- see socket-relay.ts's own note
    * and ../adapters/tests/socket-drain.test.ts's truncation case.
    */
+  onUnlink: (listener: (reason: CloseReason, code?: OrivonErrorCode) => void) => void
+}
+
+/**
+ * The UDP counterpart of `FailableTcpSocket`: everything a bound socket
+ * exposes to the broker's own transport layer, and nothing an app sees.
+ *
+ * It is NOT `UdpSocket` widened, the way FailableTcpSocket widens TcpSocket.
+ * The contract's `writable: WritableStream<Datagram>` is replaced by `send`,
+ * because a WritableStream cannot report one refused datagram without erroring
+ * the whole stream -- see `SendOutcome` in ../broker-contracts.ts, and A87. The
+ * app's real `WritableStream<Datagram>` is built over the port in the main
+ * world, not here.
+ *
+ * `fail`, `abort` and `onUnlink` mean exactly what they mean on
+ * FailableTcpSocket; their docs are not repeated. `abort` is the odd one out
+ * and worth a line: a UDP socket has no wire state to reset, so 'aborted' and
+ * 'revoked' produce the same close, and it exists only so the two stay
+ * distinguishable in a fault log.
+ */
+export interface FailableUdpSocket extends Handle {
+  readonly readable: ReadableStream<Datagram>
+  readonly send: (datagram: Datagram) => Promise<import('../broker-contracts.js').SendOutcome>
+  readonly localAddress: string
+  readonly localPort: number
+  readonly droppedInbound: number
+  fail: (code: OrivonErrorCode, platformCode?: string) => void
+  abort: () => void
   onUnlink: (listener: (reason: CloseReason, code?: OrivonErrorCode) => void) => void
 }
