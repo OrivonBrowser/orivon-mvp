@@ -216,11 +216,11 @@ export function installOrivon (
         })
         u.onReadEnd((code) => {
           if (code === undefined) {
-            controller.close()
+            try { controller.close() } catch { /* already settled */ }
             try { refusalController.close() } catch { /* already settled */ }
           } else {
             const error = toOrivonError(code)
-            controller.error(error)
+            try { controller.error(error) } catch { /* already settled */ }
             try { writeController.error(error) } catch { /* already settled */ }
             try { refusalController.error(error) } catch { /* already settled */ }
           }
@@ -269,7 +269,7 @@ export function installOrivon (
           controller.enqueue(refusal)
         })
       }
-    }, new CountQueuingStrategy({ highWaterMark: limits.inboundDatagramWindow }))
+    }, new CountQueuingStrategy({ highWaterMark: limits.outboundDatagramWindow }))
 
     u.onFatal((code) => {
       const error = toOrivonError(code)

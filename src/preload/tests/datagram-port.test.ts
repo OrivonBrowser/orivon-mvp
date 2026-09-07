@@ -289,6 +289,44 @@ describe('createDatagramPort -- terminal states', () => {
     expect(port.sent.filter((m) => (m as { kind?: string }).kind === 'send')).toHaveLength(1)
   })
 
+  it('does not re-fire onReadEnd if a genuine end arrives after the silence timeout already terminated the port', async () => {
+    // A local silence timeout and a genuine 'end' racing describe the same
+    // socket reaching a terminal state twice from two different sources --
+    // onReadEnd promises to fire once, and settleClosed's own outcome (here,
+    // the timeout's rejection) must not be overwritten by whichever arrives second.
+    const port = fakePort()
+    const onReadEnd = vi.fn()
+    const dp = createDatagramPort({ handleId: 'h1', port, silenceTimeoutMs: 10 })
+    dp.onReadEnd(onReadEnd)
+
+    await dp.send(datagram())
+    await new Promise((resolve) => setTimeout(resolve, 40))
+
+    port.emit({ kind: 'end', handleId: 'h1' })
+
+    expect(onReadEnd).not.toHaveBeenCalled()
+    await expect(dp.closed).rejects.toMatchObject({ code: 'timeout' })
+  })
+
+  it('resolves closed once dispose() runs, even with nothing else having happened', async () => {
+    const port = fakePort()
+    const dp = createDatagramPort({ handleId: 'h1', port })
+
+    dp.dispose()
+
+    await expect(dp.closed).resolves.toBeUndefined()
+  })
+
+  it('is idempotent -- disposing twice does not throw', async () => {
+    const port = fakePort()
+    const dp = createDatagramPort({ handleId: 'h1', port })
+
+    dp.dispose()
+    expect(() => { dp.dispose() }).not.toThrow()
+
+    await expect(dp.closed).resolves.toBeUndefined()
+  })
+
   it('ignores a byte-path message that lands on a datagram port', () => {
     const port = fakePort()
     const received: WireDatagram[] = []

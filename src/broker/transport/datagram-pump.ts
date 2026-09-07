@@ -149,7 +149,7 @@ export function createDatagramPump (options: DatagramPumpOptions): DatagramPump 
       // Wake a blocked loop so it observes `stopped` and returns, rather than
       // sitting on a promise nothing will ever resolve.
       waiting?.()
-      if (code !== undefined) endOnce(code)
+      endOnce(code)
       reader.cancel().catch(() => {
         // The stream is already errored or the socket is gone. Nothing further
         // to do on a teardown path, and a rejection here would be unhandled.
