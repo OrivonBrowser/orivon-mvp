@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { checkNoSecrets } from './check-no-secrets.mjs'
+import { checkNoSecrets } from '../check-no-secrets.mjs'
 
 /** A git repo whose tracked files are exactly those given. */
 const repo = (files: Record<string, string>): string => {

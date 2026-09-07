@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { checkNoNativeModules } from './check-no-native-modules.mjs'
+import { checkNoNativeModules } from '../check-no-native-modules.mjs'
 
 const fixture = (): string => mkdtempSync(join(tmpdir(), 'orivon-guard-'))
 
