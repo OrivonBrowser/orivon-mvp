@@ -91,6 +91,7 @@ regardless of the others.
 | **Capability broker** — manifest, grants, per-origin enforcement | This *is* the product. `ADR-0002` |
 | **`orivon-node-shim`** | Load-bearing: without it the flagship cannot be a URL-delivered app. `ADR-0005` |
 | URL-addressed app fetch + cache + integrity check | The "apps are URLs" claim. `ADR-0005` |
+| **UDP sockets** (`net.udpBind`) | The flagship's DHT and peer exchange need real UDP, not just TCP. `ADR-0001`'s own Consequences section names this directly: choosing the flagship "commits the MVP to real TCP/UDP sockets and a listening socket in month 1" |
 | **Torrent app with streaming** | The flagship and the only tier-4 app. `ADR-0001` |
 | Nostr via injected NIP-07 over `orivon.id` | ~1 day, proves the identity model, zero frontend written |
 | Per-app storage isolation + disk usage UI | Follows directly from the flagship. `ADR-0003` |
