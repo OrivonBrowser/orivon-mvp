@@ -4,20 +4,19 @@
 // under the default session: net.fetch never specifies one, and
 // net.resolveHost's own doc says it resolves "using the default session").
 //
-// WHY THIS, NOT node-adapters.ts's resolveHost (F2). That function is
+// WHY THIS, NOT node-adapters.ts's resolveHost. That function is
 // node:dns/promises-based -- correct for the BROKER's outbound tcp.connect,
 // which dials with real node:net sockets (also node:dns-resolved, so guard
 // and dial agree there). The loader's install-origin guard is checking
 // something different: what a Chromium-mediated fetch will do. Backing the
-// guard with node:dns instead of Chromium's own resolver was exactly install-
-// origin.ts's original F2 defect restated one level down -- a correct guard
-// answering a question the real request never asks. This resolver and
-// electron-fetch.ts's own immediate pre-fetch re-check (see its comment) now
-// both go through the identical resolver/cache; the two Resolver
-// implementations differ because the two things they validate genuinely
-// differ (a raw socket dial vs. what a browser-grade fetch does), not because
-// Rule 3 was skipped -- see docs/development/code-guidelines.md Rule 3's own
-// "extract when the reason is shared, not when the shape is".
+// guard with node:dns instead of Chromium's own resolver would let the
+// guard and the real fetch disagree about what a hostname resolves to -- a
+// correct guard answering a question the real request never asks. This
+// resolver and electron-fetch.ts's own immediate pre-fetch re-check (see
+// its comment) now both go through the identical resolver/cache; the two
+// Resolver implementations differ because the two things they validate
+// genuinely differ (a raw socket dial vs. what a browser-grade fetch does),
+// not because Rule 3 was skipped.
 
 import type { Resolver } from '../broker/policy/connect.js'
 

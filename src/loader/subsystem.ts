@@ -31,7 +31,7 @@ export const loaderSubsystem: Subsystem = {
       fetch: electronFetch,
       storage: nodeLoaderStorage(ctx.app.getPath('userData')),
       now: () => Date.now(),
-      // T12/A46/F2: Chromium's OWN resolver (net.resolveHost), the SAME one
+      // T12/A46: Chromium's OWN resolver (net.resolveHost), the SAME one
       // electronFetch's net.fetch will consult -- deliberately NOT
       // node-adapters.ts's node:dns-based resolveHost (the broker's own
       // outbound tcp.connect uses that one correctly, because it dials with

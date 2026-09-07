@@ -8,15 +8,13 @@
 // grant is persisted" -- so one frozen construction, in one file, is what
 // keeps that warning from drifting into two.
 //
-// NOT IN src/broker/policy/, on purpose. The two existing hashing modules
-// there (derive.ts, bundle-hash.ts) both use globalThis.crypto.subtle --
-// async-only, so that layer outlives the engine underneath it (ADR-0002).
-// BrokerFs.rootFor and session.fromPartition are both synchronous, and
-// node:crypto's sync createHash is the only fit for that -- CLAUDE.md Rule
-// 6 (prefer mature components) rules out hand-rolling SHA-256 instead. A
-// hash construction is an encoding, not a security decision, so it belongs
-// beside its two callers in src/broker/, the same place token-bucket.ts and
-// port-registry.ts (also pure, also not a policy/ decision) already live.
+// NOT IN src/broker/policy/: the two hashing modules there (derive.ts,
+// bundle-hash.ts) use globalThis.crypto.subtle, async-only, so that layer
+// outlives the engine underneath it (ADR-0002). BrokerFs.rootFor and
+// session.fromPartition are both synchronous, and node:crypto's sync
+// createHash is the only fit (CLAUDE.md Rule 6). A hash construction is an
+// encoding, not a security decision, so it belongs beside its two callers
+// in src/broker/, alongside token-bucket.ts and port-registry.ts.
 //
 // PRECONDITION, ENFORCED ONLY AT THE CALL SITE: `canonicalOrigin` must
 // already be canonical. Neither function here canonicalizes, and neither
@@ -32,10 +30,8 @@ export function originHash (canonicalOrigin: string): string {
   return createHash('sha256').update(canonicalOrigin, 'utf8').digest('hex')
 }
 
-// AI RECOMMENDATION, NOT AN OWNER DECISION -- flagged here and in the PR
-// body, not silently chosen. No document specifies the partition string's
-// format at all (grep confirms zero occurrences of "persist:" anywhere in
-// this repo before this file).
+// AI RECOMMENDATION, NOT AN OWNER DECISION, flagged rather than silently
+// chosen. No document specifies the partition string's format at all.
 //
 // `persist:`, not a bare partition name: ADR-0003 puts localStorage,
 // IndexedDB, cookies and cache in this partition and is titled "local-first
@@ -60,7 +56,7 @@ export function originHash (canonicalOrigin: string): string {
 // plain-http origins. The same reasoning arguably extends to web storage --
 // a dev `http://localhost:3000` partition is inherited by whatever
 // unrelated server occupies that port next -- but this function ships
-// uniform `persist:` for every origin. Raised, not resolved, in the PR body.
+// uniform `persist:` for every origin. Raised here, not resolved.
 const PARTITION_PREFIX = 'persist:app-'
 
 /** An Electron `session.fromPartition(...)` argument for this origin's app. */

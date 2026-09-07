@@ -45,14 +45,10 @@ const OVERLAY_LIGHT = { color: '#e4e4eb', symbolColor: '#202124' }
 
 export function createShellWindow (ctx: SubsystemContext): BaseWindow {
   // Centers on the OS's primary display -- no explicit x/y. A cursor-based
-  // "open on whichever display has the pointer" variant was tried here
-  // (2026-08-26) on a wrong diagnosis (a report of "no window appears" was
-  // misread as the window opening on the wrong monitor). It wasn't: the
-  // display this resolves to on that machine already *is* the user's real
-  // main monitor, confirmed by the user directly, and Wayland doesn't let
-  // an app control its own window position anyway (confirmed separately --
-  // an explicit requested x/y was silently discarded by the compositor).
-  // The actual bug was ready-to-show, below. Reverted to the simple form.
+  // "open on whichever display has the pointer" variant was tried here and
+  // reverted: it did not fix the "no window appears" report it was
+  // chasing (Wayland does not let an app control its own window position
+  // anyway), because the real bug was ready-to-show, below.
   const { workArea } = screen.getPrimaryDisplay()
   const winWidth = Math.min(1280, workArea.width)
   const winHeight = Math.min(800, workArea.height)
@@ -165,14 +161,14 @@ export function createShellWindow (ctx: SubsystemContext): BaseWindow {
   // slow disk beats delaying the whole window on a non-essential feature.
   void bookmarks.load().then(pushState)
 
-  // Real race, found by end-to-end verification (2026-08-26): tabs.createTab()
-  // below pushes state before the chrome page has loaded far enough to
-  // register its ipcRenderer listener (shell.ts's contextBridge exposure
-  // runs, but main.ts's shell.onState() call hasn't executed yet), so the
-  // very first tab silently failed to render until some later event
-  // happened to trigger a second push. did-finish-load fires after the
-  // page's module script has run (main.ts registers onState before that),
-  // so this re-sync is guaranteed to land, not timing-dependent.
+  // Without this, tabs.createTab() below pushes state before the chrome
+  // page has loaded far enough to register its ipcRenderer listener
+  // (shell.ts's contextBridge exposure runs, but main.ts's shell.onState()
+  // call hasn't executed yet), so the very first tab silently fails to
+  // render until some later event happens to trigger a second push.
+  // did-finish-load fires after the page's module script has run (main.ts
+  // registers onState before that), so this re-sync is guaranteed to
+  // land, not timing-dependent.
   chrome.webContents.on('did-finish-load', pushState)
 
   registerShellIpc(chrome.webContents, tabs, bookmarks)
@@ -189,7 +185,6 @@ export function createShellWindow (ctx: SubsystemContext): BaseWindow {
     ipcMain.removeHandler(NEWTAB_COMMAND_CHANNEL)
   })
 
-  // Found while verifying maximize/resize for this restyle (2026-08-28):
   // win.getContentBounds() read SYNCHRONOUSLY inside 'resize' returns the
   // PRE-resize bounds under this X11 window manager -- confirmed
   // empirically. maximize() fires 'resize' immediately, but
@@ -214,19 +209,17 @@ export function createShellWindow (ctx: SubsystemContext): BaseWindow {
 
   // Electron's type declarations only put 'ready-to-show' on BrowserWindow's
   // typed event union; BaseWindow's own doc doesn't enumerate it either.
-  // Verified empirically (2026-08-26) that it fires on BaseWindow all the
-  // same -- a type-declaration gap, not a runtime one. Narrow cast, not a
-  // cast of `win` to the wrong class.
+  // Verified empirically that it fires on BaseWindow all the same -- a
+  // type-declaration gap, not a runtime one. Narrow cast, not a cast of
+  // `win` to the wrong class.
   //
-  // The real bug this session (root-caused 2026-08-26 with a user directly
-  // running `npm run dev` and sharing the traced output): 'ready-to-show'
-  // does not fire reliably -- or fires very late -- when the chrome view
-  // loads from electron-vite's dev server (`loadURL(devServerUrl)`) rather
-  // than the built file. A user report of "no window ever appears" traced
-  // to this exactly: the window existed the whole time, `show()` was just
-  // never called. A short fallback timer closes the gap; `shown` guards
-  // against calling `show()` twice if 'ready-to-show' fires late, after
-  // the fallback already ran.
+  // 'ready-to-show' does not fire reliably -- or fires very late -- when
+  // the chrome view loads from electron-vite's dev server
+  // (`loadURL(devServerUrl)`) rather than the built file, which reads as
+  // "no window ever appears": the window exists the whole time, `show()`
+  // is just never called. A short fallback timer closes the gap; `shown`
+  // guards against calling `show()` twice if 'ready-to-show' fires late,
+  // after the fallback already ran.
   let shown = false
   function showOnce (): void {
     if (shown) return
