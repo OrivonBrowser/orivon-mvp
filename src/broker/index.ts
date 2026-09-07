@@ -23,90 +23,36 @@
 // the only layer that has both the manifest and the grant ledger in hand to
 // do it.
 //
-// GrantLedger (the per-origin state -- manifest and grants, kept apart on
-// purpose) split out to ./grants/grant-ledger.ts once this file crossed
-// docs/development/code-guidelines.md's 500-line limit (Rule 2: split by
-// concern -- this was the seam the file's own header had already earmarked).
-// This file keeps the dependency shape and the five capability entry points
-// that consult that ledger.
+// TWO SPLITS OUT OF THIS FILE SO FAR, both at Rule 2's 500-line limit and
+// both by concern: ./grants/grant-ledger.ts (the per-origin state) and
+// ./io-errors.ts (translating an injected dependency's raw error). What
+// stays is the dependency shape and the capability entry points themselves.
+//
+// THE NEXT ONE HAS TO BE BIGGER. There is roughly one entry point of
+// headroom left here, and `fs` is still missing everything below
+// readFile/writeFile while `id` has nothing at all. Whoever adds either
+// should lift `connect`/`udpBind`/`authorisedSend` into a net-capability
+// file rather than shaving another helper off the top -- that is the seam
+// with room behind it.
 
 import { HandleTable } from './handles/handles.js'
-import type { FailableTcpSocket } from './handles/handle-contracts.js'
+import type { FailableTcpSocket, FailableUdpSocket } from './handles/handle-contracts.js'
 import { errnoOf, fail } from './errors.js'
+import { mapIoError } from './io-errors.js'
 import { GrantLedger } from './grants/grant-ledger.js'
+import { checkBind } from './policy/bind.js'
 import { checkConnect } from './policy/connect.js'
 import { CONFINEMENT_ERROR_CODE, confinePath } from './policy/paths.js'
 import { originFromUrl } from './policy/origin.js'
 import type {
   CapabilityKind,
+  Datagram,
   Grant,
   GrantId,
   Manifest,
-  OrivonError,
-  OrivonErrorCode,
   Pattern
 } from '../contracts/index.js'
-import type { Broker, CreateBrokerOptions, DialedSocket } from './broker-contracts.js'
-
-/** Every value OrivonErrorCode actually has -- see contracts/errors.ts. Used to recognise an error this broker already produced, not one still raw from an injected dependency. */
-const ORIVON_ERROR_CODES: ReadonlySet<OrivonErrorCode> = new Set<OrivonErrorCode>([
-  'denied', 'revoked', 'unreachable', 'timeout', 'reset', 'closed', 'limit', 'invalid', 'notFound', 'exists', 'internal'
-])
-
-function isOrivonError (error: unknown): error is OrivonError {
-  return error instanceof Error && error.name === 'OrivonError' &&
-    ORIVON_ERROR_CODES.has((error as { code?: OrivonErrorCode }).code as OrivonErrorCode)
-}
-
-/** Node errno -> OrivonErrorCode. Anything not listed here fails closed as 'internal'. */
-const ERRNO_TO_CODE: Readonly<Record<string, OrivonErrorCode>> = {
-  ENOENT: 'notFound',
-  EEXIST: 'exists',
-  ECONNREFUSED: 'unreachable',
-  EHOSTUNREACH: 'unreachable',
-  ENETUNREACH: 'unreachable',
-  ENOTFOUND: 'unreachable',
-  EAI_AGAIN: 'unreachable',
-  ETIMEDOUT: 'timeout',
-  ECONNRESET: 'reset',
-  EPIPE: 'reset',
-  EMFILE: 'limit',
-  ENFILE: 'limit',
-  ENOSPC: 'limit',
-  EDQUOT: 'limit',
-  EACCES: 'denied',
-  EPERM: 'denied'
-}
-
-/**
- * Maps a raw rejection from an injected dependency -- `deps.resolve`,
- * `deps.dial`, `deps.fs.readFile`, `deps.fs.writeFile` -- onto the closed
- * OrivonErrorCode enum. Before this fix none of the four was wrapped: an app
- * switching exhaustively on `err.code`, exactly as contracts/errors.ts's own
- * doc says it may, would see a raw Node errno such as 'ENOENT' -- a value
- * that same doc calls a bug to receive.
- *
- * An error this broker already threw (via `fail`, e.g. 'denied' from a
- * failed policy check) passes through unchanged -- mapping it a second time
- * would be a no-op at best and a lie at worst if two enum members ever
- * collided as strings.
- *
- * WRITES A FRESH MESSAGE, NEVER FORWARDS THE ORIGINAL. A raw fs error
- * message carries the confined absolute path (e.g. "ENOENT: ... open
- * '/apps/<sha256>/missing.txt'") -- handing that to the app tells it exactly
- * where its own confinement root sits (security-model.md T13b), the first
- * thing anything attacking policy/paths.ts wants to know. Only the errno
- * itself survives, as `platformCode` -- and errors.ts's own BrokerError
- * constructor already strips that for 'denied', so it does not need
- * repeating here.
- */
-function mapIoError (error: unknown, kind: 'net' | 'fs'): OrivonError {
-  if (isOrivonError(error)) return error
-  const errno = errnoOf(error)
-  const code = errno === undefined ? 'internal' : (ERRNO_TO_CODE[errno] ?? 'internal')
-  const message = kind === 'net' ? 'the network operation failed' : 'the filesystem operation failed'
-  return fail(code, message, undefined, errno)
-}
+import type { BoundUdpSocket, Broker, CreateBrokerOptions, DialedSocket, SendOutcome } from './broker-contracts.js'
 
 export function createBroker (deps: CreateBrokerOptions): Broker {
   const handleTable = new HandleTable()
@@ -222,6 +168,110 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
       // behaviour by landing later in the spread.
       return {
         ...socketFields,
+        id: entry.id,
+        closed: entry.closed,
+        close: async (): Promise<void> => { await handleTable.release(key, entry.id) },
+        fail: (code, platformCode) => { handleTable.fail(key, entry.id, code, platformCode) },
+        abort: () => { handleTable.abort(key, entry.id) },
+        onUnlink: (listener) => { handleTable.onUnlink(key, entry.id, listener) }
+      }
+    })
+  }
+
+  /**
+   * Authorises ONE outbound datagram, then sends it.
+   *
+   * READ LIVE, NOT CAPTURED AT BIND. A UDP socket has no fixed peer, so unlike
+   * `connect` there is no single acquisition-time destination to check once --
+   * the check has to happen per datagram, and once it does, reading the grant
+   * fresh each time is what makes a revoke stop the NEXT DATAGRAM rather than
+   * only the next bind. That is the lesson A70 recorded for net.close, applied
+   * before it could recur here.
+   *
+   * NEVER REJECTS, on any path. Its caller's only way to report a rejection is
+   * to error the app's WritableStream, which errors it permanently, and a
+   * denied destination is ordinary traffic for a P2P app (A87). A resolver
+   * failure is 'unreachable' and a denial is 'denied', both as values.
+   */
+  async function authorisedSend (
+    key: string,
+    rawSend: BoundUdpSocket['send'],
+    datagram: Datagram
+  ): Promise<SendOutcome> {
+    const grant = ledger.currentGrant(key, 'udp.send')
+    if (grant === undefined) return { sent: false, code: 'denied' }
+
+    let decision: Awaited<ReturnType<typeof checkConnect>>
+    try {
+      decision = await checkConnect(grant.patterns, datagram.address, datagram.port, deps.resolve)
+    } catch (error) {
+      const mapped = mapIoError(error, 'net')
+      // The key is omitted, not set to undefined: exactOptionalPropertyTypes
+      // is on, and the two are different values across structured clone.
+      return mapped.platformCode === undefined
+        ? { sent: false, code: mapped.code }
+        : { sent: false, code: mapped.code, platformCode: mapped.platformCode }
+    }
+    if (!decision.allowed) return { sent: false, code: 'denied' }
+
+    // The FIRST checked literal, not the address the app named. checkConnect
+    // requires EVERY answer to pass, so any of them is safe to use, and
+    // sending to the name a second time would be a second resolution that
+    // could answer differently from the one just checked (policy/connect.ts's
+    // header -- the same T12 rule dial() follows).
+    const [address] = decision.addresses
+    if (address === undefined) return { sent: false, code: 'denied' }
+    return await rawSend({ ...datagram, address })
+  }
+
+  async function udpBind (origin: string, opts: { port: number }): Promise<FailableUdpSocket> {
+    const key = canonical(origin)
+
+    // The narrowing, exactly as `connect` does it: what the user GRANTED, never
+    // what the manifest declared. `udp.bind` and `udp.send` are separate
+    // grants, and this one authorises only the bind -- an app that binds
+    // successfully still sends nothing until `udp.send` is granted too.
+    const current = ledger.currentGrant(key, 'udp.bind')
+    if (current === undefined) throw fail('denied', 'udp.bind is not granted to this origin')
+
+    return await handleTable.run(key, { on: 'grant', grantId: current.id }, async (signal) => {
+      let bound: BoundUdpSocket
+      try {
+        const decision = checkBind(current.patterns, opts.port)
+        if (!decision.allowed) throw fail('denied', 'the bind was not authorised')
+        if (signal.aborted) throw fail('revoked', 'the grant authorising this bind was withdrawn')
+        bound = await deps.bind(decision.ranges, signal)
+      } catch (error) {
+        throw mapIoError(error, 'net')
+      }
+
+      if (signal.aborted) {
+        // Same reasoning as `connect`'s: `acquire` would refuse this, but its
+        // cleanup releases with 'failed' -- silent, and wrong for a socket
+        // that is actually bound and holding a port.
+        await bound.destroy('revoked')
+        throw fail('revoked', 'the grant authorising this bind was withdrawn')
+      }
+
+      const entry = handleTable.acquire({
+        origin: key,
+        kind: 'udpSocket',
+        authorisedBy: { by: 'grant', grantId: current.id },
+        destroy: bound.destroy,
+        socketLimit: ledger.socketAllowance(key)
+      })
+
+      // BUILT FIELD BY FIELD, NOT SPREAD, unlike `connect`'s socketFields.
+      // `droppedInbound` is a GETTER on the adapter's object, and spreading
+      // copies its value at spread time -- which is zero, forever. The app
+      // would read a counter that never moves and conclude it had lost
+      // nothing.
+      return {
+        readable: bound.readable,
+        localAddress: bound.localAddress,
+        localPort: bound.localPort,
+        get droppedInbound () { return bound.droppedInbound },
+        send: async (datagram: Datagram) => await authorisedSend(key, bound.send, datagram),
         id: entry.id,
         closed: entry.closed,
         close: async (): Promise<void> => { await handleTable.release(key, entry.id) },
@@ -392,7 +442,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
 
   return {
     app: { manifest, grants },
-    net: { connect },
+    net: { connect, udpBind },
     fs: { readFile, writeFile },
     registerApp,
     versionFloorFor,

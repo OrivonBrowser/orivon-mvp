@@ -36,9 +36,17 @@ Five directories, one per job. The name of the directory is the question it answ
 
 Three files stay at the top level because they belong to no single directory:
 
-- [`index.ts`](index.ts) — `createBroker`, the five capability entry points that consult all five
+- [`index.ts`](index.ts) — `createBroker` and the capability entry points that consult all five
 - [`broker-contracts.ts`](broker-contracts.ts) — the `Broker` interface and its fixed dependency shape
 - [`errors.ts`](errors.ts) — `OrivonError` construction, used by every directory above
+- [`io-errors.ts`](io-errors.ts) — the other half of that: translating a raw errno from an
+  injected dependency into the closed enum. Split out of `index.ts` on 2026-09-07 when
+  `udpBind` pushed it past 500 lines. A fourth top-level file where
+  [`ADR-0015`](../../docs/decisions/ADR-0015-the-broker-is-organised-by-job.md) records three —
+  same test as the other three: it belongs to no single directory. Kept apart from `errors.ts`
+  because that file *constructs* and this one *translates*, and because merging them would
+  quietly settle [`A39`](../../docs/open-questions.md), which is a behavioural question nobody
+  has answered yet
 
 The decomposition and the import boundaries are recorded in
 [`ADR-0015`](../../docs/decisions/ADR-0015-the-broker-is-organised-by-job.md), including the two

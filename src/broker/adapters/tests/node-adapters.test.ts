@@ -245,6 +245,7 @@ describe('the fs capability works end to end for an origin that has never writte
     const userData = await mkdtemp(join(tmpdir(), 'orivon-nodefs-'))
     const broker = createBroker({
       dial: async () => { throw new Error('not used by this test') },
+      bind: async () => { throw new Error('not used by this test') },
       resolve: async () => [],
       now: () => Date.now(),
       fs: nodeFs(userData),

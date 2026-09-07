@@ -3219,3 +3219,32 @@ adapter PR, not part of this decision.
 
 **Needed by:** before the user-facing grant prompt is written (build step 4), because the prompt's
 wording and this behaviour have to agree. Nothing before that blocks on it.
+
+---
+
+### A89 — `udp.bind` is IPv4-only in v0, and nothing in the corpus says which family it should be **[AI-REC]**
+
+**Raised 2026-09-07**, building the dgram adapter (`stream/broker-31-udp-bind`).
+
+`bindUdp` creates a `udp4` socket bound to `0.0.0.0`. Nothing specifies this — `capability-api.md`,
+`handle-contracts.md` §UdpSocket and the manifest grammar all describe ports and say nothing about
+address families.
+
+**Why `udp4` rather than dual-stack `udp6`.** A Node `udp6` socket on `::` does receive IPv4
+traffic, but it reports those peers as **IPv4-mapped** addresses (`::ffff:93.184.216.34`). Those
+would then have to be un-mapped before being matched against a `udp.send` pattern or classified by
+`address.ts` — and "an address that means one thing but is spelled another way, which the checker
+must normalise first" is precisely the shape of bug `policy/address.ts`'s canonicalisation exists
+to close, and precisely the shape `connect.ts`'s header warns about. Taking that on for no v0
+benefit was the wrong trade.
+
+**The cost, stated plainly:** on an IPv6-only network the DHT does not work at all, and a peer
+reachable only over IPv6 is unreachable. That is a real product limitation, not a technicality —
+it belongs in `build-plan.md`'s known-limitations list alongside "no UPnP" and "no multicast" if
+the owner confirms it.
+
+**Reversible cheaply.** It is one `createSocket` option plus a family field on the bind path;
+the un-mapping work is what makes it more than a one-liner, not the socket type.
+
+**Needed by:** before the flagship's known-limitations text is written (build step 5), so the
+in-product statement and the behaviour agree. Nothing before that blocks on it.
