@@ -21,7 +21,7 @@
 // shares.
 
 import type { OrivonErrorCode } from '../contracts/errors.js'
-import type { UdpSocket } from '../contracts/handles.js'
+import type { SendRefusal, UdpSocket } from '../contracts/handles.js'
 
 export interface OrivonLimits {
   readonly readWindowBytes: number
@@ -55,6 +55,8 @@ export interface MainWorldUdpBridge {
   readonly onDatagram: (cb: (datagram: MainWorldDatagram) => void) => void
   readonly onReadEnd: (cb: (code: OrivonErrorCode | undefined) => void) => void
   readonly onDropped: (cb: (inbound: number, outbound: number) => void) => void
+  /** Fires once per refused outbound datagram (A87), feeding buildUdpSocket's `refusals` stream. */
+  readonly onRefusal: (cb: (refusal: SendRefusal) => void) => void
   readonly onFatal: (cb: (code: OrivonErrorCode) => void) => void
   readonly reportConsumed: (datagrams: number, bytes: number) => void
   readonly send: (datagram: MainWorldDatagram) => Promise<void>
@@ -188,6 +190,7 @@ export function installOrivon (
     let droppedOutbound = 0
     let readController: ReadableStreamDefaultController<MainWorldDatagram>
     let writeController: WritableStreamDefaultController
+    let refusalController: ReadableStreamDefaultController<SendRefusal>
 
     // Enqueued but not yet drained, oldest first. A CountQueuingStrategy makes
     // the QUEUE's length recoverable from desiredSize, but the broker's credit
@@ -214,10 +217,12 @@ export function installOrivon (
         u.onReadEnd((code) => {
           if (code === undefined) {
             controller.close()
+            try { refusalController.close() } catch { /* already settled */ }
           } else {
             const error = toOrivonError(code)
             controller.error(error)
             try { writeController.error(error) } catch { /* already settled */ }
+            try { refusalController.error(error) } catch { /* already settled */ }
           }
         })
       },
@@ -248,10 +253,29 @@ export function installOrivon (
       abort: async () => { await u.close() }
     }, new CountQueuingStrategy({ highWaterMark: limits.outboundDatagramWindow }))
 
+    // Fed by u.onRefusal (A87): every outbound datagram the broker refused,
+    // reported here instead of by rejecting `writable`'s sink -- a refused
+    // destination is ordinary P2P traffic and must not error the socket.
+    // Unlike `readable`, no wire-level credit window paces this: the broker
+    // reports a refusal as soon as it happens, with nothing pacing it against
+    // what this stream has drained. `droppedOutbound` above already counts
+    // every refusal regardless, so once the queue is full a new one is
+    // DROPPED here rather than queued without bound.
+    const refusals = new ReadableStream<SendRefusal>({
+      start (controller) {
+        refusalController = controller
+        u.onRefusal((refusal) => {
+          if ((controller.desiredSize ?? 0) <= 0) return
+          controller.enqueue(refusal)
+        })
+      }
+    }, new CountQueuingStrategy({ highWaterMark: limits.inboundDatagramWindow }))
+
     u.onFatal((code) => {
       const error = toOrivonError(code)
       try { readController.error(error) } catch { /* already settled */ }
       try { writeController.error(error) } catch { /* already settled */ }
+      try { refusalController.error(error) } catch { /* already settled */ }
     })
 
     return Object.freeze({
@@ -260,6 +284,7 @@ export function installOrivon (
       localPort: u.localPort,
       readable,
       writable,
+      refusals,
       // GETTERS, not values: these move for the life of the socket, and a
       // number copied once at acquisition would read zero forever. Object.freeze
       // prevents redefinition, not invocation, so both survive it.
@@ -270,6 +295,7 @@ export function installOrivon (
         await u.close()
         try { readController.close() } catch { /* already closed or errored */ }
         try { writeController.error(toOrivonError('closed')) } catch { /* already settled */ }
+        try { refusalController.close() } catch { /* already closed or errored */ }
       }
     })
   }
