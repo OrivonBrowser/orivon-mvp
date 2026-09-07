@@ -7,7 +7,7 @@ import { originHash } from '../origin-hash.js'
 import { compareVersions } from '../../policy/update.js'
 
 // Real temp directory, no mocking -- the same discipline
-// src/loader/node-storage.test.ts already established, for the same reason:
+// src/loader/tests/node-storage.test.ts already established, for the same reason:
 // this file has no `electron` import.
 
 const APP = 'https://app.example'
