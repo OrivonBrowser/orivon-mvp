@@ -1,34 +1,28 @@
 #!/usr/bin/env node
 // Independently recomputes every row of src/broker/policy/derive-vectors.json.
 //
-// THIS IS A VERIFIER, NOT A GENERATOR. It has no mode that writes the table.
-// That is deliberate: a generator can be pointed at a failing row and re-run,
-// which is precisely the move derive.test.ts's header forbids. This script can
-// only ever say "the table matches an independent implementation" or "it does
-// not".
-//
-// WHY IT EXISTS. The frozen table's whole value is that it was computed by
-// something other than the code under test -- otherwise it records this
-// implementation's bugs rather than catching them. Before this script that
-// independence was a claim in a comment, referring to a reference
-// implementation that lived on someone's disk and was never checked in. A
-// prose assertion of independence is unfalsifiable, and because the table is
-// frozen forever, its provenance could never be re-established later.
+// THIS IS A VERIFIER, NOT A GENERATOR -- no mode writes the table. A
+// generator could be pointed at a failing row and re-run, which is
+// precisely the move derive.test.ts's header forbids; this script can only
+// say "the table matches an independent implementation" or "it does not".
+// The frozen table's whole value is that it was computed by something
+// other than the code under test, and that independence has to be
+// enforced here rather than claimed in a comment, because the table is
+// frozen forever and its provenance could never be re-established later.
 //
 // INDEPENDENCE RULES, enforced by the self-check at the bottom of this file:
 //   - node:crypto only. `hkdfSync`, plus PKCS#8 import for point derivation.
 //     derive.ts uses WebCrypto (globalThis.crypto.subtle). Two stacks.
 //   - This file must never import src/broker/policy/derive.ts, directly or
-//     transitively. If it did, it would be checking the code against itself.
+//     transitively -- that would be checking the code against itself.
 //
-// WHAT IT DOES NOT CATCH, stated plainly: a change made consistently to
-// derive.ts, this file and the table at once. Nothing automated can catch that.
-// The controls for it are human -- the header in derive.test.ts, ADR-0010, and
-// the fact that such a change shows up in review as an edit to the frozen
-// table, which is the one edit a reviewer is told to reject.
+// WHAT IT DOES NOT CATCH: a change made consistently to derive.ts, this
+// file and the table at once. Nothing automated can; the controls are
+// human (derive.test.ts's header, ADR-0010, and review rejecting any edit
+// to the frozen table).
 //
-// The construction implemented below is transcribed from ADR-0010, not from
-// derive.ts. If the two disagree, that disagreement is the point of this file.
+// The construction below is transcribed from ADR-0010, not from derive.ts
+// -- if the two disagree, that disagreement is the point of this file.
 
 import { createPrivateKey, createPublicKey, hkdfSync } from 'node:crypto'
 import { readFileSync } from 'node:fs'

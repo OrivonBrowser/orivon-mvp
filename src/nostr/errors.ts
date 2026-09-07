@@ -1,11 +1,10 @@
 // A local copy of src/broker/policy/errors.ts's fail() helper, not a shared
 // import: src/nostr/ must never import src/broker/ internals (README.md,
 // "What it must never import"), so a pure three-line constructor for the same
-// OrivonError shape has nowhere legal to live except here too. This is the
-// same case docs/development/code-guidelines.md Rule 3 already names as the
-// reason src/shared/ exists -- two callers on opposite sides of a trust
-// boundary -- but moving it there is a separate, change-controlled PR outside
-// this lane's owned paths.
+// OrivonError shape has nowhere legal to live except here too. Same case
+// code-guidelines.md Rule 3 names as the reason src/shared/ exists -- two
+// callers on opposite sides of a trust boundary -- but moving it there is a
+// separate, change-controlled PR.
 
 import type { OrivonError, OrivonErrorCode } from '../contracts/index.js'
 

@@ -11,8 +11,8 @@ import { BookmarkStore } from './bookmarks.js'
 // Subsystems register in subsystems.ts (the append point), never here.
 function report (failures: SubsystemFailure[]): void {
   // Loud, never silent. A subsystem that failed to start may be a capability
-  // that is now enforcing nothing, and handle-contracts.md SSWhat the shim
-  // must do (rule 2) makes it binding that error visibility in
+  // that is now enforcing nothing, and handle-contracts.md's "What the shim
+  // must do" section (rule 2) makes it binding that error visibility in
   // security-relevant code is HIGHER than the default, not lower.
   for (const { name, phase, error } of failures) {
     console.error(`[orivon] subsystem "${name}" failed during ${phase}:`, error)

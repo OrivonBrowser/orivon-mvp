@@ -1,96 +1,20 @@
 // T22's CSP `connect-src` derivation (security-model.md, ADR-0006), pure and
-// side-effect-free -- computes the header VALUE only. Actually calling
-// `session.webRequest.onHeadersReceived` with it is build step 4's job, the
-// same "pure value now, wiring deferred" pattern as the rest of build step
-// 2. Four things whoever wires it needs to know, recorded here because
-// nothing else in the corpus does:
-//
-//   1. ADD this header to the response, never REPLACE the existing ones --
-//      multiple CSP headers are enforced as an intersection, which is what
-//      makes T22's "the app cannot relax it" true without stripping
-//      anything the app's own document sent.
-//   2. VERIFY WHETHER `onHeadersReceived` FIRES FOR `protocol.handle`-SERVED
-//      RESPONSES AT ALL. ADR-0007 serves the cached bundle through
-//      `session.fromPartition(...).protocol.handle('https', ...)`, and
-//      nothing in the corpus confirms `webRequest` sees those responses --
-//      set the header on the protocol handler's own `Response` too, just in
-//      case. A worker script served the same way inherits ITS OWN response's
-//      CSP, not the document's -- if this gap is real, a worker's `fetch`
-//      bypasses T22 entirely, silently.
-//   3. It is per-partition, per-origin, and must be recomputed whenever a
-//      grant changes.
-//   4. A live `context7` check is required before writing the actual
-//      Electron wiring (`onHeadersReceived`, `protocol.handle`,
-//      `fromPartition` all qualify, per CLAUDE.md's tooling table).
+// side-effect-free -- computes the header VALUE only. Wiring it via
+// `session.webRequest.onHeadersReceived` is build step 4's job; see
+// README.md's Design notes for what that step still needs to verify and for
+// this file's two scope gaps (A42, A43).
 //
 // THE SECURITY INVARIANT: every emitted source names a (host, port) pair a
-// SINGLE granted pattern names LITERALLY. Nothing here generalises a
-// pattern -- no port wildcard standing in for a range, no `*` standing in
-// for public-unicast, no subdomain wildcard, no invented scheme. Being
-// WIDER than the grant costs the user the grant they refused; that is the
-// only one of the two directions that is a security bug.
+// SINGLE granted pattern names LITERALLY -- no port wildcard standing in
+// for a range, no `*` standing in for public-unicast, no subdomain
+// wildcard, no invented scheme. Being WIDER than the grant costs the user
+// the grant they refused; that is the only one of the two directions that
+// is a security bug. Being narrower is not free either -- see `omitted` on
+// `ConnectSrcPolicy`, below, and README.md's Design notes.
 //
-// BEING NARROWER IS NOT FREE, THOUGH -- say so plainly, because the emitted
-// list is the app's ENTIRE `connect-src` allowlist. An omitted pattern is
-// not "uncovered by CSP"; it is BLOCKED. The flagship torrent app holds
-// `tcp.connect: ["*:*"]` (capability-api.md), which has no CSP equivalent
-// (below) and is therefore omitted outright -- once build step 4 wires this
-// header in, that app's ordinary `fetch`/WebSocket calls get
-// `connect-src 'self'` and nothing else, even though the broker itself
-// would allow any public address reached through `orivon.net.connect`.
-// Owner decision, 2026-09-02 (open-questions.md A43): the header stays this
-// strict rather than widening to CSP's bare `*` -- widening is the bigger
-// bug (see "HOST: `*` HAS NO CSP EQUIVALENT" below). `omitted`, on
-// `ConnectSrcPolicy`, is what lets a later trust screen tell a user WHY a
-// feature broke instead of leaving it silent -- every unrepresentable
-// pattern is reported there, on every return path this file has.
-//
-// HOST: AN IPv6 LITERAL HAS NO CSP EQUIVALENT EITHER. CSP's host-source
-// grammar is `host-char = ALPHA / DIGIT / "-"` (w3c/webappsec-csp) --
-// brackets and colons are not in it, and Chromium enforces this: a source
-// list containing `[::1]:443` logs "contains an invalid source... It will
-// be ignored" and the source is dropped outright, never partially honoured
-// (confirmed in Electron 44.0.0 / Chrome 152, 2026-09-02, alongside IPv4
-// literals -- both loopback and LAN -- being accepted and enforced
-// correctly). An earlier version of this file re-bracketed IPv6 literals
-// and emitted them; that was wrong twice over -- the token was invalid CSP,
-// so it never widened anything, but `omitted` stayed empty for it, which
-// means the file was CLAIMING coverage a grant did not actually have.
-// `host-ipv6-literal` (below) exists to keep that claim honest.
-//
-// THE HONEST LIMIT, stated rather than hidden: CSP bounds NAMES; checkConnect
-// (./connect.ts) bounds RESOLVED ADDRESSES. For a hostname pattern the two
-// diverge exactly on DNS rebinding (security-model.md T12) -- a name this
-// grants CSP reach to can still resolve privately, reachable by `fetch`
-// though not by `orivon.net.connect`. No CSP construction closes that; it is
-// Chromium's Private Network Access problem, not this function's. What T22
-// actually closes is narrower than ADR-0006's own wording claims: this
-// bounds `fetch`/WebSocket, nothing else. `img-src`, `form-action`,
-// `script-src`, `frame-src`, navigation and `<link rel=prefetch>` remain
-// open channels -- filed as open-questions.md A42.
-//
-// DERIVES FROM THE GRANTED PATTERNS, NEVER THE MANIFEST'S DECLARED ONES.
-// T22's own wording says "manifest-declared hosts", which predates A18's
-// resolution -- ../index.ts's own connect() already establishes the
-// precedent this file follows: "nothing below ever reads
-// manifest.capabilities.net.tcp.connect, which is what the app DECLARED and
-// may be far wider." Using the manifest here would let CSP permit reach the
-// user explicitly refused.
-//
-// WHY EVERY OUTPUT TOKEN IS RE-VALIDATED, INDEPENDENT OF THE TRANSLATION
-// RULES BELOW: `isAsciiHost` (./canonical-host.ts) permits any printable
-// ASCII, including space and `;`. A pattern host containing either, emitted
-// verbatim, either reads as TWO CSP sources (a space splits a source list)
-// or terminates the directive early and injects a second one (a `;` closes
-// it). The allowlist regexes below are the only thing standing between a
-// user-granted host and a CSP-injection bug -- mandatory, not defence in
-// depth. `hostToken` also bounds every host to `MAX_HOST_LENGTH` -- the same
-// bound `checkConnect` enforces, not `connect-patterns.ts`'s wider
-// `MAX_PATTERN_LENGTH` (300, sized for a host plus a port range). Without
-// that bound a 254-298 character host would pass the charset allowlist and
-// be emitted here while `checkConnect` denies the identical host with
-// `bad-host` -- the one place this file would have been WIDER than the
-// broker's own check.
+// DERIVES FROM THE GRANTED PATTERNS, NEVER THE MANIFEST'S DECLARED ONES
+// (../index.ts's own connect() precedent, A18): using the manifest here
+// would let CSP permit reach the user explicitly refused.
 
 import type { Pattern } from '../../contracts/index.js'
 import { MAX_HOST_LENGTH, normalizeHost } from './canonical-host.js'
@@ -108,7 +32,7 @@ export type ConnectSrcOmissionReason =
   | 'host-authorises-nothing'
   /** `*`. CSP's bare `*` would also permit loopback and the LAN, which a `*` grant explicitly does not. */
   | 'host-any-public-unicast'
-  /** An IPv6 literal. CSP's host grammar has no `[`, `]` or `:` in it -- Chromium drops the source. */
+  /** An IPv6 literal. CSP's host grammar has no `[`, `]` or `:` in it -- confirmed in Electron 44.0.0/Chrome 152 (2026-09-02) that Chromium drops such a source outright rather than partially honouring it. */
   | 'host-ipv6-literal'
   /** The host is over `MAX_HOST_LENGTH`, or otherwise fails the output allowlist. */
   | 'bad-host'
@@ -154,11 +78,24 @@ const IPV4_RE = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/
 
 /**
  * The host half of an emitted source, or `null` if it fails the allowlist.
+ *
+ * MANDATORY, NOT DEFENCE IN DEPTH: `isAsciiHost` (./canonical-host.ts)
+ * permits any printable ASCII, including space and `;`, and either one
+ * emitted verbatim either reads as TWO CSP sources (a space splits a source
+ * list) or terminates the directive early and injects a second one (a `;`
+ * closes it). These regexes are the only thing standing between a
+ * user-granted host and a CSP-injection bug. Also bounds every host to
+ * `MAX_HOST_LENGTH`, not connect-patterns.ts's wider `MAX_PATTERN_LENGTH`
+ * (300, sized for a host plus a port range) -- without that, a 254-298
+ * character host would pass here while checkConnect denies the identical
+ * host with `bad-host`, the one place this file would have been WIDER than
+ * the broker's own check.
+ *
  * `kind` is already narrowed to the two shapes that ever reach here --
  * `'any-public-unicast'` and `'authorises-nothing'` are filtered out by the
  * caller, and an address literal containing a colon is filtered out too
- * (`host-ipv6-literal`, see this file's header), so an address literal
- * reaching this function is always IPv4.
+ * (`host-ipv6-literal`), so an address literal reaching this function is
+ * always IPv4.
  */
 function hostToken (normalizedHost: string, kind: Exclude<HostSpecKind, 'any-public-unicast' | 'authorises-nothing'>): string | null {
   if (normalizedHost.length > MAX_HOST_LENGTH) return null

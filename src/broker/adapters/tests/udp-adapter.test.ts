@@ -76,6 +76,21 @@ describe('bindUdp -- where it lands', () => {
     expect(socket.localPort).toBe(41501)
   })
 
+  // D4 regression: a real occupied port sits inside a wider range of free
+  // ones, so this only passes if the retry loop actually moves past a real
+  // EADDRINUSE from a real socket -- a mock would happily lie about it.
+  it('lands on a real free port when a real port in the range is occupied', async () => {
+    const occupiedPort = 41520
+    const blocker = createSocket('udp4')
+    opened.push(blocker)
+    await new Promise<void>((resolve) => { blocker.bind(occupiedPort, '0.0.0.0', resolve) })
+
+    const socket = await bindIn(41518, 41524)
+    expect(socket.localPort).not.toBe(occupiedPort)
+    expect(socket.localPort).toBeGreaterThanOrEqual(41518)
+    expect(socket.localPort).toBeLessThanOrEqual(41524)
+  })
+
   it('refuses a bind whose grant was withdrawn before it started', async () => {
     const controller = new AbortController()
     controller.abort()
@@ -190,5 +205,31 @@ describe('bindUdp -- the inbound window drops rather than grows', () => {
     expect(value?.data).toEqual(new Uint8Array([7]))
     expect(socket.droppedInbound).toBe(0)
     reader.releaseLock()
+  })
+})
+
+describe('bindUdp -- an abort landing mid-bind', () => {
+  // D4 regression. Aborting here, before the first await, lands while
+  // socket.bind() is genuinely pending: real Node dgram sockets emit neither
+  // 'error' nor the bind callback when closed in that window, only 'close' --
+  // so this used to hang forever instead of rejecting. A raw socket.close()
+  // in the abort handler is also reachable a second time once the retry loop
+  // closes the same socket again, which throws ERR_SOCKET_DGRAM_NOT_RUNNING
+  // synchronously inside an AbortSignal listener -- uncaught there, not
+  // caught by this async function's own try/catch.
+  it('settles instead of hanging, and never reaches the process as an uncaught exception', async () => {
+    const uncaught: unknown[] = []
+    const onUncaughtException = (error: unknown): void => { uncaught.push(error) }
+    process.on('uncaughtException', onUncaughtException)
+
+    try {
+      const controller = new AbortController()
+      const promise = bindUdp([{ lo: 43000, hi: 43010 }], controller.signal)
+      controller.abort()
+      await expect(promise).rejects.toMatchObject({ code: 'revoked' })
+    } finally {
+      process.removeListener('uncaughtException', onUncaughtException)
+    }
+    expect(uncaught).toEqual([])
   })
 })

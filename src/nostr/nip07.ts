@@ -1,6 +1,6 @@
 // The window.nostr surface (NIP-07), built against a STUBBED signer by
-// owner's explicit decision -- see the open question this lane files in
-// docs/open-questions.md for the secp256k1/BIP-340 gap this defers.
+// owner's explicit decision -- see docs/open-questions.md A44 for the
+// secp256k1/BIP-340 gap this defers.
 //
 // SIGNER BOUNDARY. `sign` is injected, never implemented here: this file
 // contains no secp256k1 or Schnorr math, only structured calls to whatever
@@ -19,9 +19,9 @@
 // requestIdentity calls for it without re-prompting -- consistent with
 // capability-api.ts's Design Rule 3 ("checked ONCE, at acquisition") and
 // with requestIdentity's own doc comment ("triggers the connect prompt",
-// not "always prompts"). Not re-verified against a running broker in this
-// lane (nothing wires window.nostr into a page yet) -- worth confirming
-// against the real implementation once it exists.
+// not "always prompts"). Not re-verified against a running broker --
+// nothing wires window.nostr into a page yet -- worth confirming against
+// the real implementation once it exists.
 
 import type { IdentityHandle, Orivon } from '../contracts/index.js'
 import { fail } from './errors.js'
@@ -65,10 +65,9 @@ async function requestNostrIdentity (orivon: Orivon): Promise<IdentityHandle> {
 }
 
 /**
- * createNostrProvider(orivon, { sign }) -- the exact shape acceptance
- * criterion 1 specifies. `sign` is the only injected dependency: getPublicKey
- * reaches `orivon.id` directly because reading a public key involves no
- * signature, only IdentityHandle.publicKey().
+ * `sign` is the only injected dependency: getPublicKey reaches `orivon.id`
+ * directly because reading a public key involves no signature, only
+ * IdentityHandle.publicKey().
  */
 export function createNostrProvider (orivon: Orivon, deps: { sign: NostrSigner }): WindowNostr {
   return {

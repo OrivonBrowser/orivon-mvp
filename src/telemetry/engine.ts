@@ -1,19 +1,15 @@
 // Composes accounting.ts, disclosure.ts, transport.ts and history.ts into
 // the one send cycle runner.ts's timer drives -- pure aside from the
-// injected Sender/Clock, exactly transport.test.ts's own testing idiom
-// (a fake Sender and Clock, exact assertions on the returned state), so
-// the rule this whole lane exists to protect -- nothing transmits without
-// disclosure.ts reporting live consent AT THIS CALL, never a cached
-// boot-time flag -- is provable without a real network or a real Electron
-// process.
+// injected Sender/Clock, so the rule this module exists to protect --
+// nothing transmits without disclosure.ts reporting live consent AT THIS
+// CALL, never a cached boot-time flag -- is provable without a real
+// network or a real Electron process.
 //
 // runner.ts is the only caller, and it is what makes "live": it re-reads
 // the store's current ConsentState fresh on every timer tick and passes
-// that value in here as `consentState`. This function itself has no
-// memory of a previous call's consent -- there is nothing here THAT COULD
-// cache it, which is what makes "never cached" true by construction
-// rather than by discipline at the call site (the same shape transport.ts
-// itself uses for attemptSend).
+// that value in here as `consentState`. There is nothing in this function
+// that COULD cache a previous call's consent, which is what makes "never
+// cached" true by construction, not by discipline at the call site.
 import { buildDisclosurePayload, type ConsentState, type DisclosureMeta } from './disclosure.js'
 import { recordSent, type HistoryState } from './history.js'
 import type { AccountingState } from './accounting.js'
