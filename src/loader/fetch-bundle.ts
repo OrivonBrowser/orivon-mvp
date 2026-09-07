@@ -39,9 +39,9 @@ export type FetchBundleResult = FetchBundleOk | FetchBundleRejected
 /**
  * `new URL(path, base)`, guarded. `URL`'s constructor throws `TypeError` on
  * a malformed `path` (confirmed live: `new URL('http://[not-valid-ipv6/x.js',
- * 'https://good.example/')`) -- this file's own header promises exactly four
- * outcomes and never a fifth, so nothing here may let that escape as an
- * uncaught exception. Both callers below resolve caller-supplied path
+ * 'https://good.example/')`) -- nothing here may let that escape as an
+ * uncaught exception; every rejection must come back as a
+ * `FetchBundleResult`. Both callers below resolve caller-supplied path
  * strings this way; neither may trust the input is well-formed.
  */
 function resolveUrl (path: string, base: string): string | null {
@@ -81,7 +81,7 @@ export async function fetchBundle (
   const canonicalOrigin = originFromUrl(hintedUrl)
   if (canonicalOrigin === null) return rejected(`hintedUrl is not a valid app origin: ${hintedUrl}`)
 
-  // F6: BUNDLE_TIMEOUT_MS's one clock for the WHOLE operation, including the
+  // BUNDLE_TIMEOUT_MS's one clock for the WHOLE operation, including the
   // install-origin guard's own resolution below -- started here, BEFORE that
   // `await`, not after it. `resolveFn` carries no timeout of its own
   // (Resolver's own doc comment), so a guard call started outside this
@@ -95,7 +95,7 @@ export async function fetchBundle (
   const bundleTimer = setTimeout(() => { bundleController.abort() }, BUNDLE_TIMEOUT_MS)
   try {
     // T12/A46, install-origin.ts -- checked before any network request
-    // below, and (F6, above) already inside the bundle's own deadline.
+    // below, and already inside the bundle's own deadline (above).
     // raceAbort gives up waiting once the deadline fires; it cannot force an
     // uncooperative `resolveFn` to actually stop (raceAbort's own comment on
     // what it does not close), the same residual raceAbort already carries
@@ -111,7 +111,7 @@ export async function fetchBundle (
       return rejected(error instanceof Error ? error.message : String(error))
     }
     if (!originResult.ok) return rejected(originResult.reason)
-    // F2/F5: the ONLY resolution this whole install ever performs. Every
+    // The ONLY resolution this whole install ever performs. Every
     // fetch below -- the manifest and every declared asset -- is handed
     // these SAME validated literals, never a fresh, unguarded re-resolution
     // of the hostname; see InstallOriginOk's and Fetch's own comments for
@@ -192,11 +192,11 @@ export async function fetchBundle (
         return rejected(`asset ${assetPath} resolves to a different origin (${requestedOrigin ?? 'invalid'}) than the app's (${canonicalOrigin})`)
       }
 
-      // F5: the SAME `pinnedAddresses` the manifest fetch above used --
-      // never a fresh resolution per asset. Without this, the up-to-
-      // BUNDLE_TIMEOUT_MS (10 minute) asset loop would be exactly the
-      // re-resolution window F2 closes for the manifest fetch alone, just
-      // moved one loop iteration later.
+      // The SAME `pinnedAddresses` the manifest fetch above used -- never a
+      // fresh resolution per asset. Without this, the up-to-BUNDLE_TIMEOUT_MS
+      // (10 minute) asset loop would reopen the exact re-resolution window
+      // closed for the manifest fetch alone, just moved one loop iteration
+      // later.
       const assetFetch = await fetchWithBudget(fetchFn, assetUrl, pinnedAddresses, MAX_ASSET_BYTES, MAX_BUNDLE_BYTES - bytesUsed, `asset ${assetPath}`, bundleController.signal)
       if ('ok' in assetFetch) return assetFetch
 
