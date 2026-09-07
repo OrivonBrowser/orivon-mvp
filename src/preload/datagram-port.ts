@@ -75,6 +75,12 @@ export function createDatagramPort (options: DatagramPortOptions): DatagramPort 
   let outstanding = 0
   const waiting: Array<() => void> = []
   let silenceTimer: ReturnType<typeof setTimeout> | undefined
+  // Separate from `disposed`: dispose() is local-only cleanup, but a queued
+  // send must also stop resuming once the port ends remotely or goes silent
+  // -- releaseAll() below wakes every waiting send() at once, and each one's
+  // post-await check needs to see every one of those three reasons, not just
+  // a local dispose().
+  let terminated = false
 
   let closedSettled = false
   let resolveClosed: () => void = () => {}
@@ -113,6 +119,7 @@ export function createDatagramPort (options: DatagramPortOptions): DatagramPort 
       // network -- so silence with sends outstanding is a dead transport, not
       // a slow peer (contracts/ipc.ts's DROP_REPORT_MS note).
       const error = toOrivonError('timeout', { message: 'the datagram port went silent' })
+      terminated = true
       fatalCb?.('timeout')
       settleClosed(error)
       releaseAll()
@@ -169,6 +176,7 @@ export function createDatagramPort (options: DatagramPortOptions): DatagramPort 
         settleOutstanding(1)
         break
       case 'end':
+        terminated = true
         readEndCb?.(message.code)
         settleClosed(message.code === undefined
           ? undefined
@@ -204,10 +212,10 @@ export function createDatagramPort (options: DatagramPortOptions): DatagramPort 
       queueMicrotask(flushCredit)
     },
     async send (datagram) {
-      if (disposed) return
+      if (terminated) return
       if (outstanding >= windowDatagrams) {
         await new Promise<void>((resolve) => { waiting.push(resolve) })
-        if (disposed) return
+        if (terminated) return
       }
       outstanding += 1
       armSilence()
@@ -218,6 +226,7 @@ export function createDatagramPort (options: DatagramPortOptions): DatagramPort 
     dispose () {
       if (disposed) return
       disposed = true
+      terminated = true
       disarmSilence()
       releaseAll()
     }
