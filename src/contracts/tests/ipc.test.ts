@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { WRITE_HEARTBEAT_MS, WRITE_SILENCE_TIMEOUT_MS } from './ipc.js'
+import { WRITE_HEARTBEAT_MS, WRITE_SILENCE_TIMEOUT_MS } from '../ipc.js'
 
 // The one runtime-checkable claim about the write-side timing constants
 // (open-questions.md A37's resolution): a heartbeat distinguishes peer
