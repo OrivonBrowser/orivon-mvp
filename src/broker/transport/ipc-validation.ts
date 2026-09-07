@@ -12,24 +12,36 @@
 
 import type { RequestEnvelope } from '../../contracts/index.js'
 
-/** The eight wired control operations. Anything else is 'invalid'. */
+/** The nine wired control operations. Anything else is 'invalid'. */
 export type ControlMethod =
   | 'app.manifest' | 'app.grants' | 'fs.readFile' | 'fs.writeFile'
-  | 'net.connect' | 'net.close' | 'net.setNoDelay' | 'net.setKeepAlive'
+  | 'net.connect' | 'net.udpBind' | 'net.close' | 'net.setNoDelay' | 'net.setKeepAlive'
 
 export function isControlMethod (method: string): method is ControlMethod {
   return method === 'app.manifest' || method === 'app.grants' ||
     method === 'fs.readFile' || method === 'fs.writeFile' ||
-    method === 'net.connect' || method === 'net.close' ||
+    method === 'net.connect' || method === 'net.udpBind' || method === 'net.close' ||
     method === 'net.setNoDelay' || method === 'net.setKeepAlive'
 }
 
 export interface FsReadFileParams { readonly path: string }
 export interface FsWriteFileParams { readonly path: string, readonly data: Uint8Array }
 export interface NetConnectParams { readonly host: string, readonly port: number }
+/**
+ * `port` of 0 is LEGAL here and means "any free port" -- the one place in this
+ * file where zero is not a shape error. policy/bind.ts decides what it is
+ * allowed to resolve to; this only checks it is an integer in range.
+ */
+export interface NetUdpBindParams { readonly port: number }
 export interface NetCloseParams { readonly id: string }
 export interface NetSetNoDelayParams { readonly id: string, readonly on: boolean }
 export interface NetSetKeepAliveParams { readonly id: string, readonly on: boolean, readonly initialDelayMs?: number }
+
+export function isNetUdpBindParams (payload: unknown): payload is NetUdpBindParams {
+  if (typeof payload !== 'object' || payload === null) return false
+  const port = (payload as { port?: unknown }).port
+  return typeof port === 'number' && Number.isInteger(port) && port >= 0 && port <= 65535
+}
 
 export function isFsReadFileParams (payload: unknown): payload is FsReadFileParams {
   return typeof payload === 'object' && payload !== null &&

@@ -24,6 +24,21 @@ export interface SocketDescriptor {
 }
 
 /**
+ * What `orivon.net.udpBind` resolves to over CONTROL_CHANNEL. Deliberately not
+ * a `UdpSocket`, for the same reason SocketDescriptor is not a `TcpSocket`.
+ *
+ * `droppedInbound`/`droppedOutbound` are absent on purpose: they are LIVE
+ * counters, and a number cloned once at acquisition would be zero forever.
+ * They reach the page over the port instead, on every DatagramMessage and
+ * SendFailedMessage.
+ */
+export interface UdpSocketDescriptor {
+  readonly id: string
+  readonly localAddress: string
+  readonly localPort: number
+}
+
+/**
  * The shape of a real `MessagePortMain` this module needs, structurally --
  * a fake stands in for it in tests the same way `SenderFrameLike` lets a
  * literal stand in for `WebFrameMain`.
@@ -51,18 +66,32 @@ export interface PortPair {
 }
 
 /**
- * What `net.close`, `net.setNoDelay` and `net.setKeepAlive` (`./ipc.ts`) and
- * `./socket-relay.ts`'s registry entry need beyond the raw socket: enough to
- * release it and to answer the other two operations declared on `TcpSocket`
- * (`handles.ts`) -- all three dispatch through this same per-origin lookup,
- * the same ownership check `close` relies on (T11c: a handle id from one
- * origin means nothing presented by another).
+ * What `net.close`, `net.setNoDelay` and `net.setKeepAlive` (`./ipc.ts`) need
+ * beyond the raw socket: enough to release it and to answer the other two
+ * operations declared on `TcpSocket` (`handles.ts`) -- all three dispatch
+ * through this same per-origin lookup, the same ownership check `close`
+ * relies on (T11c: a handle id from one origin means nothing presented by
+ * another). Registered by ./socket-relay.ts and ./datagram-relay.ts.
  */
-export interface RegisteredSocket {
-  readonly close: () => Promise<void>
-  readonly setNoDelay: (on: boolean) => Promise<void>
-  readonly setKeepAlive: (on: boolean, initialDelayMs?: number) => Promise<void>
-}
+export type RegisteredSocket =
+  | {
+    readonly kind: 'tcp'
+    readonly close: () => Promise<void>
+    readonly setNoDelay: (on: boolean) => Promise<void>
+    readonly setKeepAlive: (on: boolean, initialDelayMs?: number) => Promise<void>
+  }
+  /**
+   * A UDP socket answers `net.close` and nothing else -- `setNoDelay` and
+   * `setKeepAlive` are Nagle and TCP keepalive, which have no meaning for a
+   * connectionless socket.
+   *
+   * A DISCRIMINATED UNION rather than optional methods, for the reason
+   * `Authorisation` in ../handles/handle-contracts.ts gives for the same
+   * choice: with optional methods, `entry.setNoDelay?.(on)` on a UDP handle
+   * silently does nothing, and a real bug in an app looks exactly like
+   * success. Here the caller has to say which kind it is holding.
+   */
+  | { readonly kind: 'udp', readonly close: () => Promise<void> }
 
 /**
  * Everything net.connect/net.close need beyond `broker` itself: a way to

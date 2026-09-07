@@ -65,6 +65,7 @@ export function createSocketRelay (options: SocketRelayOptions): SocketRelay {
   const { origin, socket, port, registry, readWindowBytes, writeWindowBytes } = options
 
   registry.register(origin, socket.id, {
+    kind: 'tcp',
     close: socket.close,
     setNoDelay: socket.setNoDelay,
     setKeepAlive: socket.setKeepAlive
