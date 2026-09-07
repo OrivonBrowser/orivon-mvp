@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { installOrivon } from '../main-world-socket.js'
 import type { MainWorldDatagram, MainWorldUdpBridge } from '../main-world-socket.js'
 import type { OrivonErrorCode } from '../../contracts/errors.js'
+import type { SendRefusal } from '../../contracts/handles.js'
 
 const LIMITS = {
   readWindowBytes: 1_000, writeWindowBytes: 1_000,
@@ -96,12 +97,14 @@ function fakeBridge (
 export function fakeUdpBridgeResult (): MainWorldUdpBridge & {
   emit: (datagram: MainWorldDatagram) => void
   emitDropped: (inbound: number, outbound: number) => void
+  emitRefusal: (refusal: SendRefusal) => void
   emitEnd: (code?: OrivonErrorCode) => void
   readonly sent: MainWorldDatagram[]
   readonly consumed: Array<{ datagrams: number, bytes: number }>
 } {
   let onDatagram: (d: MainWorldDatagram) => void = () => {}
   let onDropped: (i: number, o: number) => void = () => {}
+  let onRefusal: (r: SendRefusal) => void = () => {}
   let onReadEnd: (code: OrivonErrorCode | undefined) => void = () => {}
   const sent: MainWorldDatagram[] = []
   const consumed: Array<{ datagrams: number, bytes: number }> = []
@@ -112,6 +115,7 @@ export function fakeUdpBridgeResult (): MainWorldUdpBridge & {
     onDatagram: (cb) => { onDatagram = cb },
     onReadEnd: (cb) => { onReadEnd = cb },
     onDropped: (cb) => { onDropped = cb },
+    onRefusal: (cb) => { onRefusal = cb },
     onFatal: () => {},
     reportConsumed: (datagrams, bytes) => { consumed.push({ datagrams, bytes }) },
     send: async (datagram) => { sent.push(datagram) },
@@ -119,6 +123,7 @@ export function fakeUdpBridgeResult (): MainWorldUdpBridge & {
     close: async () => {},
     emit: (datagram) => { onDatagram(datagram) },
     emitDropped: (inbound, outbound) => { onDropped(inbound, outbound) },
+    emitRefusal: (refusal) => { onRefusal(refusal) },
     emitEnd: (code) => { onReadEnd(code) },
     sent,
     consumed
@@ -519,5 +524,39 @@ describe('installOrivon -- net.udpBind', () => {
     await expect(reader.read()).rejects.toMatchObject({ code: 'reset' })
     await expect((socket.writable as WritableStream<MainWorldDatagram>).getWriter().closed)
       .rejects.toMatchObject({ code: 'reset' })
+  })
+
+  // A87: a refused send never rejects `writable` -- this is how the app
+  // actually learns which of its own writes was refused and why.
+  it('delivers a refused send on `refusals`, carrying its destination and code', async () => {
+    const { orivon, udp } = bindTarget()
+    const socket = await orivon.net.udpBind({ port: 6881 })
+    const reader = (socket.refusals as ReadableStream<SendRefusal>).getReader()
+
+    udp.emitRefusal({ address: '10.0.0.5', port: 4321, code: 'denied' })
+    const { value } = await reader.read()
+
+    expect(value).toEqual({ address: '10.0.0.5', port: 4321, code: 'denied' })
+    reader.releaseLock()
+  })
+
+  it('drops a refusal rather than growing the queue once it is full', async () => {
+    // LIMITS.inboundDatagramWindow is 8 -- no wire-level credit window paces
+    // refusals the way it paces inbound datagrams, so an app that never reads
+    // `refusals` must not let the broker's refusals pin unbounded memory here.
+    // Nine refusals fired at an unread stream must leave exactly eight
+    // queued, the ninth dropped rather than growing the queue past the mark.
+    const { orivon, udp } = bindTarget()
+    const socket = await orivon.net.udpBind({ port: 6881 })
+
+    for (let i = 0; i < 9; i += 1) udp.emitRefusal({ address: '10.0.0.5', port: 4321 + i, code: 'denied' })
+
+    const reader = (socket.refusals as ReadableStream<SendRefusal>).getReader()
+    const drained: SendRefusal[] = []
+    for (let i = 0; i < 8; i += 1) drained.push((await reader.read()).value as SendRefusal)
+
+    expect(drained).toHaveLength(8)
+    expect(drained.map((r) => r.port)).toEqual([4321, 4322, 4323, 4324, 4325, 4326, 4327, 4328])
+    reader.releaseLock()
   })
 })
