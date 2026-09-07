@@ -25,7 +25,7 @@ seconds, and a test would be paying rent to tell you something you already know.
 | `npm run typecheck` | `tsc --noEmit`. Strict mode with `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes` — the compiler is doing a lot of the work a test suite would elsewhere. `tsconfig.json`'s `include` covers `test/**/*.ts`, so this also type-checks `test/e2e-capability-boundary.test.ts` — a type error there fails this always-on check even on a push that never runs the separate `e2e` job below |
 | `npm test` | Vitest. `environment: 'node'`, no DOM. Picks up `src/**/*.test.ts` and `scripts/**/*.test.ts` |
 | `npm run smoke` | Builds and drives the real shell with real clicks. The only check that proves a window appears |
-| `npm run test:e2e` | Builds, then runs [`test/e2e-capability-boundary.test.ts`](../../test/e2e-capability-boundary.test.ts) via [`test/vitest.e2e.config.ts`](../../test/vitest.e2e.config.ts) — see §The end-to-end test below. Runs automatically in CI's `e2e` job on every push and pull request; needs a display, so run it locally under `xvfb-run -a npm run test:e2e` if there is none |
+| `npm run test:e2e` | Builds, then runs [`test/e2e-capability-boundary.test.ts`](../../test/e2e-capability-boundary.test.ts) (TCP) and [`test/e2e-udp-capability.test.ts`](../../test/e2e-udp-capability.test.ts) (UDP) via [`test/vitest.e2e.config.ts`](../../test/vitest.e2e.config.ts) — see §The end-to-end test below. Runs automatically in CI's `e2e` job on every push and pull request; needs a display, so run it locally under `xvfb-run -a npm run test:e2e` if there is none |
 
 Unit tests are **colocated** with what they test: `src/main/omnibox.test.ts` sits beside
 `src/main/omnibox.ts`.
@@ -178,17 +178,25 @@ automatically**: `.github/workflows/ci.yml`'s `e2e` job runs it on every push an
 runner.
 
 It is **not yet the single ideal test described above** — stated as an omission, not an error.
-`window.orivon.net` is not wired onto the real contextBridge yet, and nothing on `main` calls
-`broker.registerApp()`/`broker.grant()` for a real origin yet; both are the app loader's and the
-permission-prompt UI's seams, and neither exists yet (the test file's own header has the current,
-verified-by-reading-the-code accounting). So the file is two independent checks rather than one:
-**Phase 1** launches the real shell and asserts that gap honestly, by name, rather than assuming
-it; **Phase 2** builds its own `Broker` directly against real Node I/O and real granted/denied
-enforcement — real bytes over a real spawned echo server, real denial of an out-of-manifest
-connect — without going through Electron IPC, because nothing on the other side of that bridge
-accepts the call yet. **The highest-value assertion two paragraphs up is Phase 2's, today.**
-Closing the gap Phase 1 documents is what turns this into the one test described above; that is
-future work, not something dropped.
+The remaining gap is one thing, not two: **nothing on `main` calls `broker.grant()` for a real
+origin**, because that is the permission prompt's seam and the prompt is build step 4. (The
+earlier version of this paragraph also said `window.orivon.net` was unwired; that stopped being
+true with PR #81, and this is the correction.) So each file is two independent checks rather than
+one: **Phase 1** launches the real shell and drives a real `window.orivon` call through real
+Electron IPC into the real broker, asserting the denial that gap produces — by name, rather than
+assuming it; **Phase 2** builds its own `Broker` directly against real Node I/O and a test-only
+grant, and takes the allow path as far as it can go. **The highest-value assertion two paragraphs
+up is Phase 2's, today.** Closing the gap Phase 1 documents is what turns these into the one test
+described above; that is future work, not something dropped.
+
+**Two files as of 2026-09-07**, one per transport, because Rule 2 caps a test at 800 lines and one
+suite covering both was over it: `e2e-capability-boundary.test.ts` (TCP — `net.connect`, byte
+round trip, out-of-pattern denial) and `e2e-udp-capability.test.ts` (UDP — `net.udpBind`, datagram
+round trip, out-of-pattern refusal, and the two properties UDP has that TCP does not: a refused
+datagram must not kill the socket, and revoking `udp.send` must stop the *next datagram* on an
+already-bound socket). The shared harness — the fixture-server children, the address-bar
+navigation dance, the per-phase reporter — lives in
+[`test/e2e-helpers.ts`](../../test/e2e-helpers.ts).
 
 ### Known risk, resolved for this shell's shape
 
