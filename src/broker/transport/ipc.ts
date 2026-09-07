@@ -1,12 +1,13 @@
 // Wires createBroker (../index.ts) to a real renderer over Electron IPC.
 //
 // SCOPE: app.manifest, app.grants, fs.readFile, fs.writeFile, net.connect,
-// net.close, net.setNoDelay, net.setKeepAlive. See ./README.md for the two
-// rules every method here enforces (origin attribution off the sending
-// frame, bytes never over request/response IPC) and ../../contracts/ipc.ts
-// for the timeout and no-transferables rules withTimeout() and dispatch()
-// apply below. net.connect's port delivery is the one transferable this
-// file ever sends; everything else on CONTROL_CHANNEL is plain cloned data.
+// net.udpBind, net.close, net.setNoDelay, net.setKeepAlive. See ./README.md
+// for the two rules every method here enforces (origin attribution off the
+// sending frame, bytes never over request/response IPC) and
+// ../../contracts/ipc.ts for the timeout and no-transferables rules
+// withTimeout() and dispatch() apply below. net.connect's and net.udpBind's
+// port delivery are the only transferables this file ever sends; everything
+// else on CONTROL_CHANNEL is plain cloned data.
 //
 // TESTABLE WITHOUT ELECTRON, the way src/main/registry.ts is:
 // `handleControlRequest`, `dispatch` and `registerBrokerIpc` take a
@@ -26,24 +27,31 @@ import { bindUdp } from '../adapters/udp-adapter.js'
 import { nodeLedgerStorage } from '../grants/node-ledger-storage.js'
 import { createPortRegistry } from './port-registry.js'
 import { createSocketRelay } from './socket-relay.js'
+import { createDatagramRelay } from './datagram-relay.js'
+import { deliverPort } from './deliver-port.js'
 import { createTokenBucketLimiter } from './token-bucket.js'
 import type { RateLimiter } from './token-bucket.js'
 import { originFromSenderFrame } from '../policy/origin.js'
 import { fail, isOrivonErrorLike } from '../errors.js'
 import {
   envelopeId, isControlMethod, isFsReadFileParams, isFsWriteFileParams,
-  isNetCloseParams, isNetConnectParams, isNetSetKeepAliveParams, isNetSetNoDelayParams, isRequestEnvelope
+  isNetCloseParams, isNetConnectParams, isNetSetKeepAliveParams, isNetSetNoDelayParams,
+  isNetUdpBindParams, isRequestEnvelope
 } from './ipc-validation.js'
-import type { PortDeliveryFrame, PortLike, PortPair, PortTransport, SocketDescriptor } from './port-transport.js'
+import type {
+  PortDeliveryFrame, PortLike, PortPair, PortTransport, SocketDescriptor, UdpSocketDescriptor
+} from './port-transport.js'
 import type { RequestEnvelope, ResponseEnvelope } from '../../contracts/index.js'
 import { LIMITS } from '../../contracts/index.js'
 
 export { CONTROL_CHANNEL, PORT_CHANNEL }
 export type {
   ControlMethod, FsReadFileParams, FsWriteFileParams, NetConnectParams, NetCloseParams,
-  NetSetKeepAliveParams, NetSetNoDelayParams
+  NetSetKeepAliveParams, NetSetNoDelayParams, NetUdpBindParams
 } from './ipc-validation.js'
-export type { PortDeliveryFrame, PortLike, PortPair, PortTransport, SocketDescriptor } from './port-transport.js'
+export type {
+  PortDeliveryFrame, PortLike, PortPair, PortTransport, SocketDescriptor, UdpSocketDescriptor
+} from './port-transport.js'
 
 export interface ControlEvent {
   readonly senderFrame: PortDeliveryFrame | null
@@ -104,53 +112,72 @@ async function dispatch (
       // attacker can hit in a loop". A frame that navigated or was disposed
       // between this request and this line is ordinary, not adversarial.
       const abandon = async (reason: string): Promise<never> => {
-        // stop(), not the bare cleanup() this used to call: cleanup() alone
-        // unregisters and closes the port but leaves the pump free to still
-        // be mid-pumpLoop, reading the OS socket and posting to a port that
-        // was just closed. stop() halts the pump and sink first.
+        // stop(), not a bare cleanup(): cleanup() alone unregisters and closes
+        // the port but leaves the pump free to still be mid-pumpLoop, reading
+        // the OS socket and posting to a port that was just closed.
         relay.stop('internal')
         try {
           await socket.close()
         } catch {
-          // The handle table is the owner of record and has already been
-          // told to release; a failure here leaves nothing further to do.
+          // The handle table is the owner of record and has already been told
+          // to release; a failure here leaves nothing further to do.
         }
         throw fail('internal', reason)
       }
 
-      if (event.senderFrame === null) {
-        // Unreachable in practice: handleControlRequest already denied a
-        // null senderFrame before dispatch() ever runs. Guarded anyway
-        // rather than asserted, since a thrown 'internal' here is a far
-        // better failure mode than a crash if that ordering ever changes.
-        return await abandon('no frame to deliver the port to')
-      }
-      // RE-DERIVE, never reuse the origin from the top of this request.
-      // dispatch() has awaited a DNS lookup and a dial since then, and
-      // `senderFrame` is a live getter, so the frame this port is about to be
-      // handed to is not necessarily the frame that was authorised. T17's
-      // whole point is that a MessagePort carries NO sender identity -- once
-      // delivered it is a bearer capability, and delivering one across an
-      // origin change would hand it to a page that never asked for it and
-      // holds no grant. policy/origin.ts's own rule is to re-derive on every
-      // call; this is the second point in this request where that applies.
-      //
-      // Electron documents senderFrame as null once a frame has navigated,
-      // which the guard above would also catch -- but that is an undocumented
-      // lifetime detail to lean on, and this check does not depend on it.
-      if (originFromSenderFrame(event.senderFrame) !== origin) {
-        return await abandon('the calling frame changed origin before its socket port could be delivered')
-      }
-      try {
-        event.senderFrame.postMessage(PORT_CHANNEL, { handleId: socket.id }, [pair.port2])
-      } catch {
-        return await abandon('the calling frame went away before its socket port could be delivered')
-      }
+      await deliverPort({
+        origin,
+        handleId: socket.id,
+        frame: event.senderFrame,
+        port2: pair.port2,
+        abandon
+      })
 
       const descriptor: SocketDescriptor = {
         id: socket.id,
         remoteAddress: socket.remoteAddress,
         remotePort: socket.remotePort,
+        localAddress: socket.localAddress,
+        localPort: socket.localPort
+      }
+      return descriptor
+    }
+    case 'net.udpBind': {
+      if (!isNetUdpBindParams(payload)) throw fail('invalid', 'net.udpBind requires { port: number }')
+      if (transport === undefined) throw fail('internal', 'no port transport configured for this broker')
+      const socket = await broker.net.udpBind(origin, { port: payload.port })
+
+      const pair = transport.createPortPair()
+      const relay = createDatagramRelay({
+        origin,
+        socket,
+        port: pair.port1,
+        registry: transport.registry,
+        inboundWindow: LIMITS.inboundDatagramWindow,
+        inboundWindowBytes: LIMITS.inboundDatagramWindowBytes,
+        outboundWindow: LIMITS.outboundDatagramWindow
+      })
+
+      const abandon = async (reason: string): Promise<never> => {
+        relay.stop('internal')
+        try {
+          await socket.close()
+        } catch {
+          // As net.connect's: the handle table already owns the release.
+        }
+        throw fail('internal', reason)
+      }
+
+      await deliverPort({
+        origin,
+        handleId: socket.id,
+        frame: event.senderFrame,
+        port2: pair.port2,
+        abandon
+      })
+
+      const descriptor: UdpSocketDescriptor = {
+        id: socket.id,
         localAddress: socket.localAddress,
         localPort: socket.localPort
       }
@@ -173,12 +200,17 @@ async function dispatch (
       // net.close above, over the same registry -- a handle id from one
       // origin means nothing presented by another.
       const entry = transport?.registry.get(origin, payload.id)
+      // 'invalid', not the silent no-op an unknown id gets: the app HOLDS this
+      // handle, so calling a TCP-only option on it is its own bug rather than
+      // a probe for handles it does not have, and telling it so leaks nothing.
+      if (entry?.kind === 'udp') throw fail('invalid', 'setNoDelay is not available on a UDP socket')
       if (entry !== undefined) await entry.setNoDelay(payload.on)
       return undefined
     }
     case 'net.setKeepAlive': {
       if (!isNetSetKeepAliveParams(payload)) throw fail('invalid', 'net.setKeepAlive requires { id: string, on: boolean }')
       const entry = transport?.registry.get(origin, payload.id)
+      if (entry?.kind === 'udp') throw fail('invalid', 'setKeepAlive is not available on a UDP socket')
       if (entry !== undefined) await entry.setKeepAlive(payload.on, payload.initialDelayMs)
       return undefined
     }
