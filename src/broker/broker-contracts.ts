@@ -116,8 +116,8 @@ export interface BrokerFs {
    * `sha256(canonical origin)` under the app data directory, and that
    * directory lives outside anything this pure-orchestration layer knows --
    * there is no `electron`, and no user-data path, in createBroker's fixed
-   * dependency shape. Flagged as an AI recommendation in the PR body: nothing
-   * in the corpus specifies which side of this seam computes the root.
+   * dependency shape. AI recommendation, not an owner decision: nothing in
+   * the corpus specifies which side of this seam computes the root.
    */
   rootFor(origin: string): string
   /** `confinePath`'s `realpath` parameter (policy/paths.ts). Synchronous, matching node:fs's `realpathSync`. */
@@ -128,10 +128,9 @@ export interface BrokerFs {
 
 /**
  * Backs `orivon.id` -- key derivation from a locked seed (ADR-0010,
- * policy/derive.ts). OUT OF SCOPE for this task (see the PR body):
- * `createBroker` accepts it only because build-plan.md fixes the
- * constructor's shape once, for every capability that eventually needs a
- * piece of it. Nothing below calls it yet.
+ * policy/derive.ts). Not yet used: `createBroker` accepts it because
+ * build-plan.md fixes the constructor's shape once, for every capability
+ * that eventually needs a piece of it. Nothing below calls it yet.
  */
 export interface Keychain {
   getSeed(): Promise<Uint8Array>
@@ -233,12 +232,10 @@ export interface Broker {
   rollbackAcknowledgedVersionFor(origin: string): Promise<string | undefined>
   /**
    * Records that `origin`'s rollback to `version` has been acknowledged
-   * (d-0017) -- meant to be called once, at the point a future UI-wiring PR
-   * (per PR #72's `rollbackAcknowledged` field and PR #75's
-   * `installFromHint`) determines the user actually chose to accept that
-   * specific below-floor version. This broker never calls it on its own
-   * initiative, the same way it never grants a capability on its own
-   * initiative.
+   * (d-0017) -- meant to be called once, at the point a future UI
+   * determines the user actually chose to accept that specific below-floor
+   * version. This broker never calls it on its own initiative, the same
+   * way it never grants a capability on its own initiative.
    */
   acknowledgeRollback(origin: string, version: string): Promise<void>
   /**
@@ -259,7 +256,7 @@ export interface Broker {
   grant(origin: string, capability: CapabilityKind, patterns: readonly Pattern[]): Promise<Grant>
   /**
    * Withdraws one grant. Delegates the cascade to the handle table --
-   * (handle-contracts.md SSRevocation) -- rather than reimplementing it: every
+   * (handle-contracts.md's "Revocation" section) -- rather than reimplementing it: every
    * handle the grant authorised closes at once, abruptly, and every promise
    * the app is awaiting on one of them rejects with 'revoked'.
    */

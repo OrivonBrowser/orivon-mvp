@@ -1,60 +1,19 @@
 // Wires createBroker (../index.ts) to a real renderer over Electron IPC.
 //
 // SCOPE: app.manifest, app.grants, fs.readFile, fs.writeFile, net.connect,
-// net.close, net.setNoDelay, net.setKeepAlive. net.connect returns a plain
-// descriptor over CONTROL_CHANNEL -- never the socket, its streams, or its
-// close function, which is exactly what a structured-clone response can't
-// carry anyway -- and separately delivers a dedicated MessageChannelMain
-// port to the calling frame over PORT_CHANNEL (../main/channels.js), tagged
-// with the same handle id. Bytes then relay over THAT port via
-// ./socket-relay.js's read and write pumps, never through
-// ipcMain.handle/ipcRenderer.invoke: contracts/ipc.ts's own header says
-// per-message IPC is too slow for torrent-rate data.
+// net.close, net.setNoDelay, net.setKeepAlive. See ./README.md for the two
+// rules every method here enforces (origin attribution off the sending
+// frame, bytes never over request/response IPC) and ../../contracts/ipc.ts
+// for the timeout and no-transferables rules withTimeout() and dispatch()
+// apply below. net.connect's port delivery is the one transferable this
+// file ever sends; everything else on CONTROL_CHANNEL is plain cloned data.
 //
-// THE RULE THIS FILE EXISTS TO ENFORCE (src/preload/README.md, T3, T13b):
-// every call is attributed to the ORIGIN OF THE SENDING FRAME, derived via
-// policy/origin.ts's originFromSenderFrame, NEVER to anything the renderer
-// put in the message payload. A compromised renderer can still reach this
-// channel directly (contextBridge only gates what a PAGE's JS can construct,
-// not what a compromised renderer PROCESS can send over the underlying
-// Chromium IPC pipe), so the envelope's `method` and `payload` are validated
-// here defensively rather than trusted because the preload is well-behaved.
-// net.close leans on the SAME derived origin for a second thing: ./port-
-// registry.js only ever hands a socket back to the origin that opened it,
-// so a renderer that learns another origin's handle id cannot close it
-// (T11c).
-//
-// A SECOND, INDEPENDENT LIMIT GATES ALL EIGHT METHODS UNIFORMLY, before any
-// of them runs (open-questions.md A38): a per-origin token bucket
-// (./token-bucket.js), bounding call FREQUENCY rather than concurrency.
-// HandleTable's inFlight cap never engages for app.manifest/app.grants --
-// neither has a handle, a grant, or I/O to scope -- so nothing bounded how
-// often an origin could call them at all; 5,000 concurrent app.grants()
-// calls were answered in full before this existed. NO EXEMPTION FOR
-// net.close: it needs no grant, so exempting it would just move the same
-// unthrottled DoS onto a different, permanently-open method -- the
-// in-flight cap's own release-paths-bypass-the-limit asymmetry does not
-// transfer here, because releasing a handle at 100/sec is a trivial delay
-// next to leaving a method with no bound at all.
-//
-
-// TWO RULES FROM SPIKE GATE 0 (../../contracts/ipc.ts's header), both honoured
-// below: every reply carries an explicit timeout (`withTimeout`, keyed off
-// the envelope's required `timeoutMs`), and nothing on CONTROL_CHANNEL is a
-// transferable -- every value there is plain data, structurally cloned. The
-// one transferable in this file is PORT_CHANNEL's MessagePortMain itself,
-// which is what that channel exists for.
-//
-// TESTABLE WITHOUT ELECTRON, the way src/main/registry.ts is: the functions
-// that matter for correctness -- `handleControlRequest`, `dispatch`,
-// `registerBrokerIpc` -- take a `Broker`, a structurally-typed event/ipcMain,
-// and a structurally-typed `PortTransport` rather than reaching for
-// `electron` themselves. Only `brokerIpcSubsystem`, which nothing in
-// ipc.test.ts calls, touches the real `ipcMain`/`MessageChannelMain` value
-// imports below -- confirmed safe to import at module scope under plain
-// Node/vitest (electron resolves to a harmless string outside a real
-// Electron process; destructuring a value from it yields `undefined`, which
-// only breaks if actually called).
+// TESTABLE WITHOUT ELECTRON, the way src/main/registry.ts is:
+// `handleControlRequest`, `dispatch` and `registerBrokerIpc` take a
+// `Broker` and structurally-typed event/ipcMain/`PortTransport` rather than
+// reaching for `electron` themselves -- see README.md's Design notes for
+// why. Only `brokerIpcSubsystem`, which nothing in ipc.test.ts calls,
+// touches the real `ipcMain`/`MessageChannelMain` value imports below.
 
 import { ipcMain, MessageChannelMain } from 'electron'
 import { CONTROL_CHANNEL, PORT_CHANNEL } from '../../main/channels.js'
@@ -200,10 +159,10 @@ async function dispatch (
     case 'net.close': {
       if (!isNetCloseParams(payload)) throw fail('invalid', 'net.close requires { id: string }')
       // Idempotent, silent no-op for an id this origin was never handed --
-      // matching TcpSocket.close()'s own contract (handle-contracts.md
-      // SSCommon shape) -- rather than distinguishing "wrong origin" from
-      // "already gone", either of which would let an app probe for handles
-      // it does not hold.
+      // matching TcpSocket.close()'s own contract (handle-contracts.md's
+      // "Common shape" section) -- rather than distinguishing "wrong origin"
+      // from "already gone", either of which would let an app probe for
+      // handles it does not hold.
       const entry = transport?.registry.get(origin, payload.id)
       if (entry !== undefined) await entry.close()
       return undefined
@@ -360,28 +319,9 @@ function realPortPair (): PortPair {
   return { port1: wrapped, port2 }
 }
 
-// AI recommendation (open-questions.md A38), NOT an owner decision --
-// flagged in the PR body, not silently chosen. No measured CONTROL_CHANNEL
-// dispatch-rate data exists anywhere in the corpus: spike gate 4 measured
-// socket BYTE throughput over the dedicated port (port-pump.ts), never this
-// channel's call frequency, and by design it never will -- fs.readFile/
-// writeFile and net.connect are each one dispatch per operation, not per
-// byte (this file's own header: "per-message IPC is too slow for
-// torrent-rate data"). Sized against the two things A38 names: the
-// empirical attack (5,000 concurrent app.grants() calls, all answered
-// before this existed -- this cuts that to ~200 admitted, the rest
-// rejected before dispatch()) and the realistic legitimate trigger (an app
-// polling app.grants() to react live to a revocation -- two orders of
-// magnitude of headroom below this budget for any sane polling interval).
-//
-// SHARED ACROSS ALL EIGHT METHODS, DELIBERATELY LOOSE: fs/net dispatch is
-// real I/O already (not stubs), and no measured call-rate data exists for
-// it either -- an unnecessarily tight shared limit risks 'limit' becoming
-// a routine error for a legitimately busy app well before any evidence
-// exists to size against. This is a genuine, unresolved fairness risk once
-// fs/net see real traffic (a burst of small file reads could starve an
-// unrelated app.grants() poll) -- named in open-questions.md A38's
-// resolution note, not solved here.
+// AI recommendation (open-questions.md A38), not an owner decision, and
+// shared across all eight methods on purpose. See README.md's Design notes
+// for the incident this replaced and the fairness risk it leaves open.
 const CONTROL_RATE_LIMIT_CAPACITY = 200
 const CONTROL_RATE_LIMIT_REFILL_PER_SECOND = 100
 
@@ -407,9 +347,9 @@ export const brokerIpcSubsystem: Subsystem = {
       now: realNow,
       fs: nodeFs(ctx.app.getPath('userData')),
       ledgerStorage: nodeLedgerStorage(ctx.app.getPath('userData')),
-      // ADR-0010 key derivation is out of scope for this task (broker/
-      // index.ts's own header: "nothing below calls it yet") -- none of the
-      // six wired control operations reach `orivon.id`.
+      // ADR-0010 key derivation is not implemented yet (broker/index.ts's
+      // own header: "nothing below calls it yet") -- none of the six wired
+      // control operations reach `orivon.id`.
       keychain: {
         getSeed: async () => { throw fail('internal', 'identity key derivation is not implemented yet (ADR-0010)') }
       }

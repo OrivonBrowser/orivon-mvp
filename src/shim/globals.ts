@@ -72,11 +72,8 @@ export interface ShimProcess {
    * Always true, and NOT optional -- a dependency that reads this must get
    * an answer, never `undefined`.
    *
-   * Found by grepping the spike's shipped bundles (the ones that made gates
-   * 1a/1b pass) rather than by anticipating a surface, per
-   * src/shim/README.md requirement 1: `process.browser` is read 4 times in
-   * gate1a's graph and 6 times in gate1b's, and the npm `process` polyfill
-   * those bundles carried sets it to true. The readers are
+   * Found by grepping the spike's shipped bundles (per src/shim/README.md
+   * requirement 1) rather than by anticipating a surface. Real readers:
    * `bittorrent-tracker` (`if (!process.browser && !opts.port) throw`, in
    * both Client and Server), `crypto-browserify`'s `checkNative()` and
    * default-encoding selection, and webtorrent's `FILESYSTEM_CONCURRENCY`.
@@ -142,11 +139,10 @@ export function installGlobals (target: GlobalsTarget, options: InstallGlobalsOp
 
   // THE RULE THIS FILE EXISTS FOR. Node's real process.nextTick surfaces an
   // exception escaping its callback to the process, loudly. A bare
-  // `queueMicrotask(() => fn(...args))` does not reproduce that -- but
-  // verified directly (`node -e`, 2026-08-26) that Node itself in fact
-  // treats an uncaught queueMicrotask exception as fatal too (exit code 1),
-  // same as a bare setTimeout callback. So the failure this guards against
-  // is not "Node silently drops it" -- Node doesn't, anywhere. It is that a
+  // `queueMicrotask(() => fn(...args))` does not reproduce that -- but Node
+  // itself treats an uncaught queueMicrotask exception as fatal too (exit
+  // code 1), same as a bare setTimeout callback. So the failure this guards
+  // against is not "Node silently drops it" -- Node doesn't, anywhere. It is that a
   // browser renderer's ambient handling of the identical throw is quiet by
   // comparison: logged to a devtools console nobody is watching in a
   // packaged app, never reaching whatever this project's operator actually
@@ -178,7 +174,7 @@ export function installGlobals (target: GlobalsTarget, options: InstallGlobalsOp
   // Same rule, same fix, different primitive -- setImmediate gets the
   // identical explicit try/catch, so a fix proven on nextTick cannot regress
   // here just because the bug happened to be found on nextTick first
-  // (handle-contracts.md SSWhat the shim must do, rule 2: "any polyfilled
+  // (handle-contracts.md's "What the shim must do" section, rule 2: "any polyfilled
   // Node timing primitive", not just the one that failed once).
   //
   // setTimeout(fn, 0) rather than a MessageChannel-based scheduler: Node

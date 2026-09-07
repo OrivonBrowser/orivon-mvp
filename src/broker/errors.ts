@@ -1,6 +1,5 @@
-// The concrete OrivonError, moved unchanged out of ./handles/handles.ts (that file's
-// own note asked for this) so it can be shared by every broker module that
-// throws one instead of each defining its own copy.
+// The concrete OrivonError -- shared by every broker module that throws
+// one instead of each defining its own copy.
 
 import type { OrivonError, OrivonErrorCode } from '../contracts/index.js'
 

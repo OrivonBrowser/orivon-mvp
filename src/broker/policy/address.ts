@@ -1,53 +1,25 @@
 // The blocked-address-range table -- security-model.md T12.
 //
-// This is what stops an app holding `tcp.connect: ["*:*"]` from reaching the
-// user's router, printer, NAS, or a cloud metadata endpoint at
-// 169.254.169.254. The flagship genuinely declares `"*:*"`, so `*` has to be
-// specified rather than inferred: capability-api.md and security-model.md T12
-// both say it means PUBLIC UNICAST ONLY. Loopback, private, link-local,
-// broadcast, multicast and reserved ranges are denied unless the manifest
-// declares them separately and the user grants them.
+// Stops an app holding `tcp.connect: ["*:*"]` from reaching the user's
+// router, printer, NAS, or 169.254.169.254: `*` means PUBLIC UNICAST ONLY
+// (capability-api.md, T12), and every loopback/private/link-local/
+// broadcast/multicast/reserved range is denied unless the manifest declares
+// it separately and the user grants it. See README.md's Design notes for
+// why this file is tested exhaustively and why classification and
+// canonicalisation share one file on purpose.
 //
-// Two properties matter more than range coverage.
-//
-// 1. THE FAILURE IS SILENT. A missed encoding does not throw and does not log
-//    -- it answers "public" for an address that reaches localhost, and the
-//    connection succeeds. Nothing downstream re-checks. That is why this file
-//    gets an exhaustive table test rather than a handful of examples.
-//
-// 2. IT FAILS CLOSED. Anything unparseable is blocked, never allowed. An
-//    unparseable string is either a caller bug or someone hunting for an
-//    encoding the table does not know, and neither earns the benefit of the
-//    doubt.
-//
-// WHAT THIS DOES NOT DO. It classifies an ADDRESS, never a hostname. T12 is
-// defeated outright by checking `example.com` and then dialling that name: a
-// TTL-0 server re-resolves it to 127.0.0.1 between the check and the connect.
-// The broker must resolve once, pass EVERY returned address through here, and
-// then connect to the IP literal it validated. Node 24 defaults
+// CLASSIFIES AN ADDRESS, NEVER A HOSTNAME, and takes a bare address, never
+// `host:port` (the caller splits the pattern first). T12 is defeated
+// outright by checking `example.com` and then dialling that name: the
+// broker must resolve once, pass EVERY returned address through here, then
+// connect to the IP literal it validated -- Node 24 defaults
 // `autoSelectFamily: true`, so "every returned address" is not optional.
 //
-// It also takes a bare address, never `host:port` -- the caller splits the
-// pattern first. A string with a port fails to parse, so the failure direction
-// is safe, but it is not the intended input.
-//
-// Pure by construction: no `electron`, no `node:net`, no `node:dns`, no I/O of
-// any kind (./README.md). That is why the address is parsed here by hand
-// instead of being handed to `net.isIP`.
-//
-// Split into three files (Rule 2, docs/development/code-guidelines.md):
-// ./address-ranges.ts (the RFC 6890/4291 tables), ./address-parse.ts (the
-// literal parsers), and this file (classification, canonicalisation, and the
-// public API).
-//
-// TWO PUBLIC ANSWERS SHARE THIS FILE ON PURPOSE. `classifyAddress` answers
-// "what range is this in" for the DENY side and stays permissive -- it has to
-// recognise `2130706433` in order to block it. `canonicalAddress`, below,
-// answers a different question for the ALLOW side: "will everything
-// downstream read this string as the same address" (docs/open-questions.md
-// A20). Both are built from the same ./address-parse.ts parsers, so they
-// cannot disagree about what an address IS -- only about how it should be
-// spelled.
+// Split into three files (Rule 2): ./address-ranges.ts (the RFC 6890/4291
+// tables), ./address-parse.ts (the literal parsers), this file
+// (classification, canonicalisation, the public API). Pure by construction
+// like the rest of this directory (./README.md) -- that is why the address
+// is parsed here by hand instead of being handed to `net.isIP`.
 
 import { type AddressClass, IPV4_BLOCKED, IPV4_MAX, IPV6_BLOCKED, MAX_LENGTH } from './address-ranges.js'
 import { parseIpv4, parseIpv6 } from './address-parse.js'
@@ -253,12 +225,12 @@ function formatIpv6 (bytes: Uint8Array): string {
  * return `'127.0.0.1'`; asking which spelling was "the real" address is the
  * wrong question; they were always the same one.
  *
- * WHY THIS EXISTS ALONGSIDE classifyAddress. See this file's header. In
- * short: `connect.ts` needs an IDENTITY answer that `classifyAddress`'s
+ * WHY THIS EXISTS ALONGSIDE classifyAddress (also see README.md's Design
+ * notes): `connect.ts` needs an IDENTITY answer that `classifyAddress`'s
  * permissiveness cannot give it. `net.isIP` rejects `2130706433`, so
  * `net.connect` treats it as a NAME and looks it up again -- the rebinding
  * window this whole directory exists to close, reopened one layer below the
- * check (docs/open-questions.md A20, found by review 2026-08-27).
+ * check (docs/open-questions.md A20).
  *
  * BUILT FROM THE SAME PARSERS classifyAddress uses (./address-parse.ts), not
  * a second grammar. The stopgap this replaces, `isCanonicalLiteral`
