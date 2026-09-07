@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { Capabilities } from '../contracts/index.js'
-import { patternSetFromCapabilities } from './update-patterns.js'
+import type { Capabilities } from '../../contracts/index.js'
+import { patternSetFromCapabilities } from '../update-patterns.js'
 
 // update.ts's PatternSet convention (its own header): a capability KIND
 // present with an EMPTY array means "requested, carries no patterns" (fs,

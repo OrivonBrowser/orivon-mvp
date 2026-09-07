@@ -3,7 +3,7 @@
 // new field rather than growing it past 800 lines.
 
 import { describe, expect, it } from 'vitest'
-import { parseManifest } from './manifest.js'
+import { parseManifest } from '../manifest.js'
 
 function manifestWith (net: unknown): unknown {
   return {

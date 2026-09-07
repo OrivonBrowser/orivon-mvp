@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import { appRootDirectoryName } from './storage.js'
+import { appRootDirectoryName } from '../storage.js'
 
 // A22 (docs/open-questions.md): the app's on-disk root directory name is
 // sha256(canonical_origin), lowercase hex, single-case -- load-bearing for
