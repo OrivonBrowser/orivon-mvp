@@ -1,4 +1,4 @@
-// Transcribed from docs/architecture/handle-contracts.md SSLimits.
+// Transcribed from docs/architecture/handle-contracts.md's "Limits" section.
 //
 // This is the one file in src/contracts/ that emits runtime code -- a frozen
 // object literal. It still references no module, so the purity guard is
@@ -37,7 +37,9 @@ export const LIMITS = {
    * no statement by anyone.
    */
   defaultConcurrentSockets: 64,
+  /** Open FileHandles per origin. */
   concurrentFileHandles: 64,
+  /** Operations awaiting a broker response, per origin. See this object's own doc on what happens beyond it. */
   inFlightOperations: 256,
   /**
    * Per-socket read credit window, in bytes. The broker sends at most this
@@ -57,10 +59,8 @@ export const LIMITS = {
    * aggregate an origin can pin is (its socket allowance) * (readWindowBytes
    * + writeWindowBytes), so this number is a multiplier on every socket the
    * origin holds: at the default allowance of 64 that is ~80 MiB, and at the
-   * 512 ceiling ~640 MiB. Doubling it for a write window nobody asked for
-   * would raise both figures for no stated need (open-questions.md A80,
-   * whose "no combined cap exists" reading is answered by the declared
-   * allowance above rather than by a second runtime check).
+   * 512 ceiling ~640 MiB. A symmetric window would raise both figures for no
+   * stated need.
    *
    * This is also the hard ceiling on a SINGLE WriteMessage.chunk (owner
    * decision d-0021, see ./ipc.js's WriteMessage): a caller with a larger
