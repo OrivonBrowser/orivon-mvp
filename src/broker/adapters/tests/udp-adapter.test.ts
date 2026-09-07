@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createSocket } from 'node:dgram'
 import type { Socket as DgramSocket } from 'node:dgram'
-import { bindUdp } from '../udp-adapter.js'
+import { EventEmitter } from 'node:events'
+import { bindUdp, readableOf } from '../udp-adapter.js'
 import type { BoundUdpSocket } from '../../broker-contracts.js'
 import { LIMITS } from '../../../contracts/index.js'
 
@@ -221,6 +222,58 @@ describe('bindUdp -- the inbound window drops rather than grows', () => {
     expect(value?.data).toEqual(new Uint8Array([7]))
     expect(socket.droppedInbound).toBe(0)
     reader.releaseLock()
+  })
+})
+
+// D5 (defect 1): a single async OS error on the shared dgram socket used to
+// end the readable unconditionally, which tears down every OTHER peer's
+// traffic on the same handle -- the exact shape A87 already fixed for a
+// policy-denied send, never extended to an OS-reported error. A real Linux
+// socket will not reliably reproduce a peer-shaped async error on demand (a
+// throwaway probe found that an unconnected, bind()-only socket's 'error'
+// event does not even fire for the obvious trigger -- see the commit
+// message), so this drives `readableOf` directly against a fake emitter that
+// stands in for a real DgramSocket, which only ever calls `.on(...)` on it.
+describe('readableOf -- classifying a socket-level error', () => {
+  function fakeSocket (): DgramSocket {
+    return new EventEmitter() as unknown as DgramSocket
+  }
+
+  it('does not end the stream for a peer-shaped error -- later datagrams still arrive', async () => {
+    const socket = fakeSocket()
+    const readable = readableOf(socket, { count: 0 }, 1024)
+    const reader = readable.getReader()
+
+    socket.emit('error', Object.assign(new Error('refused'), { code: 'ECONNREFUSED' }))
+    socket.emit('message', Buffer.from([9]), { address: '127.0.0.1', port: 1234, family: 'IPv4' })
+
+    const { value, done } = await reader.read()
+    expect(done).toBe(false)
+    expect(value?.data).toEqual(new Uint8Array([9]))
+    reader.releaseLock()
+  })
+
+  it('does not end the stream for an error the OS gave no errno at all', async () => {
+    const socket = fakeSocket()
+    const readable = readableOf(socket, { count: 0 }, 1024)
+    const reader = readable.getReader()
+
+    socket.emit('error', new Error('unattributed'))
+    socket.emit('message', Buffer.from([1]), { address: '127.0.0.1', port: 1, family: 'IPv4' })
+
+    const { value } = await reader.read()
+    expect(value?.data).toEqual(new Uint8Array([1]))
+    reader.releaseLock()
+  })
+
+  it('ends the stream for a genuinely fd-fatal error', async () => {
+    const socket = fakeSocket()
+    const readable = readableOf(socket, { count: 0 }, 1024)
+    const reader = readable.getReader()
+
+    socket.emit('error', Object.assign(new Error('bad fd'), { code: 'EBADF' }))
+
+    await expect(reader.read()).rejects.toMatchObject({ code: 'internal', platformCode: 'EBADF' })
   })
 })
 
