@@ -47,22 +47,6 @@ const runningChain = new AsyncLocalStorage<readonly string[]>()
  * Throws, rather than deadlocking, if `task` calls back into
  * `withOriginQueue` for this same origin -- directly or transitively --
  * while still running. See `runningChain`, above.
- *
- * What's stored back into `queues` is deliberately NOT `chained` itself, but
- * a version that never rejects (`.then(ok, ok)`) -- `prior` is therefore
- * always a resolving promise, which is what makes a failed task unable to
- * wedge the next one: there is nothing here for the next call's `.then` to
- * reject FROM. Without this, a rejected `chained` left in the map would
- * also become an unhandled rejection the moment nothing else still held a
- * reference to it, once whatever queued after it moved the map entry along.
- * The real result or error still reaches this call's own caller via
- * `chained` itself, returned/awaited below, never swallowed by any of this.
- *
- * Once this call's own chain settles, its entry is removed from `queues` --
- * but only if it is STILL the current entry for `origin`. A later call may
- * already have replaced it by the time this runs, and deleting
- * unconditionally would drop that still-in-flight replacement, reopening
- * this file's own interleaving bug for whatever calls next.
  */
 export async function withOriginQueue<T> (origin: string, task: () => Promise<T>): Promise<T> {
   const chain = runningChain.getStore() ?? []
@@ -76,9 +60,20 @@ export async function withOriginQueue<T> (origin: string, task: () => Promise<T>
 
   const prior = queues.get(origin) ?? Promise.resolve()
   const chained = prior.then(async () => await runningChain.run([...chain, origin], task))
+  // NOT `chained` itself, but a version that never rejects -- `prior` is
+  // therefore always a resolving promise, which is what makes a failed task
+  // unable to wedge the next one: there is nothing here for the next call's
+  // `.then` to reject FROM. Without this, a rejected `chained` left in the
+  // map would also become an unhandled rejection once nothing else still
+  // held a reference to it. The real result or error still reaches this
+  // call's own caller via `chained` itself, returned/awaited below.
   const settled = chained.then(() => undefined, () => undefined)
   queues.set(origin, settled)
   void settled.then(() => {
+    // Only if `settled` is STILL the current entry for `origin`. A later
+    // call may already have replaced it by the time this runs, and
+    // deleting unconditionally would drop that still-in-flight
+    // replacement, reopening this file's own interleaving bug.
     if (queues.get(origin) === settled) queues.delete(origin)
   })
   return await chained
