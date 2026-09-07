@@ -176,6 +176,14 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
    * only the next bind. That is the lesson A70 recorded for net.close, applied
    * before it could recur here.
    *
+   * `ledger.parsedPatternsFor(grant)` -- not `grant.patterns` a second time --
+   * is what stops checkConnect's own `patterns.map(parsePattern)` running once
+   * per PACKET: ordinary DHT/tracker traffic calls this hundreds of times a
+   * second, which made that parse real, avoidable work on the broker's single
+   * UI thread. Safe to reuse across calls for exactly as long as `grant`
+   * itself is: see GrantLedger's own doc on why a revoke or a re-grant always
+   * hands back a DIFFERENT Grant object, never this same one mutated.
+   *
    * NEVER REJECTS, on any path. Its caller's only way to report a rejection is
    * to error the app's WritableStream, which errors it permanently, and a
    * denied destination is ordinary traffic for a P2P app (A87). A resolver
@@ -191,7 +199,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
 
     let decision: Awaited<ReturnType<typeof checkConnect>>
     try {
-      decision = await checkConnect(grant.patterns, datagram.address, datagram.port, deps.resolve)
+      decision = await checkConnect(grant.patterns, datagram.address, datagram.port, deps.resolve, ledger.parsedPatternsFor(grant))
     } catch (error) {
       const mapped = mapIoError(error, 'net')
       // The key is omitted, not set to undefined: exactOptionalPropertyTypes
