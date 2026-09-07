@@ -51,21 +51,11 @@ export interface LedgerStorage {
    * acknowledged for (owner decision d-0017: T19 warns and lets the user
    * accept a below-floor version rather than only ever blocking it).
    * `undefined` for an origin never acknowledged, AND for a corrupt or
-   * unreadable record.
+   * unreadable record. NOT A BOOLEAN -- see GrantLedger's own
+   * `rollbackAcknowledgedVersion` field doc (grant-ledger.ts) for why.
    *
-   * NOT A BOOLEAN, on purpose -- an earlier version of this file stored a
-   * bare "has this origin ever been acknowledged" flag, and a review caught
-   * the escalation it opens: accepting one real, presumably-safe rollback
-   * (say `1.2.0` -> `1.1.9`) would permanently mark the ORIGIN as
-   * acknowledged, silently waving through any later, unrelated below-floor
-   * version the same host chooses to serve (`0.0.1`, or anything else) with
-   * no new prompt and no further consent. Storing the specific version the
-   * user actually agreed to lets the caller (a future UI-wiring PR) compare
-   * it against whatever below-floor version is being offered NOW, and
-   * prompt fresh on anything but an exact match.
-   *
-   * The fail-closed direction is simpler than the boolean's was: a corrupt
-   * read collapsing to `undefined` is indistinguishable from "never
+   * The fail-closed direction here is simpler than a boolean's would be: a
+   * corrupt read collapsing to `undefined` is indistinguishable from "never
    * acknowledged" to every future comparison, which is exactly correct --
    * there is no valid version string a corrupt read could produce that
    * would coincidentally equal a real offered version and skip a prompt it

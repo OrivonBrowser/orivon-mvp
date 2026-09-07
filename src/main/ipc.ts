@@ -2,9 +2,9 @@
 // other way via a direct webContents.send push (see window.ts), not IPC
 // request/response, so this file is one-directional by construction.
 //
-// Sender check (this session's plan, rule 2; same pattern as the
-// senderFrame -> origin check build-plan.md SS Testing requires for the
-// broker's T3 defense): every handler verifies event.senderFrame is
+// Sender check, same pattern as the senderFrame -> origin check
+// build-plan.md's "Testing" section requires for the broker's T3 defense:
+// every handler verifies event.senderFrame is
 // EXACTLY the chrome view's top frame before doing anything. Without this,
 // any web page loaded in a tab could reach this channel too, if it were
 // ever exposed more broadly than the chrome preload by accident -- object

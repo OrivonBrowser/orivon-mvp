@@ -1,22 +1,14 @@
 import type { Bookmark } from '../main/bookmarks.js'
 import { closeIcon, globeIcon } from './icons.js'
 
-// Renders the bookmarks bar's dynamic half -- the "Other Bookmarks"
-// folder and the apps-grid button are static markup in index.html;
-// this only builds the list of actual bookmarks. Owner override,
-// 2026-08-28 (mvp-scope.md, ADR-0003) -- not in the original scope pass.
+// Renders the bookmarks bar's dynamic list; the "Other Bookmarks" folder and
+// apps-grid button are static markup in index.html. See README.md for why
+// bookmarks are a real feature here.
 //
-// orivon-browser-v2's bookmarks bar (visual reference only, ADR-0002)
-// is static decoration with no data model -- unlike its apps-grid and
-// folder icons, these items are real and interactive, matching the tab
-// strip's own div-plus-nested-close-button shape (main.ts) rather than
-// a single <button>: a bookmark needed a second, independent click
-// target (remove) added 2026-08-28, and a <button> cannot contain
-// another <button> per the HTML content model -- the browser would
-// implicitly close the outer one the moment it saw the inner tag.
-//
-// Not in a drag region (only #tabrow is, index.html) -- no `no-drag`
-// class needed here, unlike the tab strip's own interactive elements.
+// A div with a nested <button>, not a single <button>: each item needs two
+// independent click targets (open, remove), and a <button> cannot contain
+// another <button> -- the browser would implicitly close the outer one the
+// moment it saw the inner tag.
 
 export interface BookmarksView {
   render: (bookmarks: Bookmark[]) => void
