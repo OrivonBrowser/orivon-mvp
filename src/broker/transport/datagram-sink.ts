@@ -66,6 +66,12 @@ export function createDatagramSink (options: DatagramSinkOptions): DatagramSink 
     handleSend (message) {
       if (stopped) return
       if (inFlight >= windowDatagrams) {
+        // Terminal, matching ../port-sink.ts's own window-violation branch:
+        // without this, every further handleSend() call re-enters this same
+        // branch and re-fires onSinkFailed (which calls socket.fail()) once
+        // per message for as long as a broken or hostile renderer keeps
+        // sending, instead of failing the handle exactly once.
+        stopped = true
         onSinkFailed?.('limit', new Error(`more than ${String(windowDatagrams)} datagrams in flight`))
         return
       }

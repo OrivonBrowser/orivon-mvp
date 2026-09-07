@@ -140,6 +140,18 @@ describe('createDatagramSink -- a renderer that ignores its window', () => {
     expect(onSinkFailed).toHaveBeenCalledWith('limit', expect.anything())
   })
 
+  it('fails the handle only once, even if the renderer keeps sending past the window', async () => {
+    const { sink, onSinkFailed } = harness(() => new Promise<SendOutcome>(() => {}), 2)
+
+    sink.handleSend(sendMessage())
+    sink.handleSend(sendMessage())
+    sink.handleSend(sendMessage()) // exceeds the window -- the one violation
+    sink.handleSend(sendMessage()) // must not re-fire onSinkFailed a second time
+    await settle()
+
+    expect(onSinkFailed).toHaveBeenCalledTimes(1)
+  })
+
   it('releases the window as sends complete', async () => {
     const sendDatagram = vi.fn(async () => ({ sent: true as const }))
     const { sink, onSinkFailed } = harness(sendDatagram, 2)
