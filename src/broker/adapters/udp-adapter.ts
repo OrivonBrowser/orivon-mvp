@@ -36,6 +36,19 @@ function countPorts (ranges: readonly PortRange[]): number {
   return ranges.reduce((total, range) => total + (range.hi - range.lo + 1), 0)
 }
 
+/**
+ * A starting offset in `[0, total)` from the platform CSPRNG -- the same
+ * source handle-store.ts's `newHandleId` and grant-ledger.ts's `newGrantId`
+ * use, and for the same reason picking the port at random exists at all
+ * (A88): `Math.random` is not required to be unpredictable, and this value's
+ * whole purpose is being unpredictable across runs.
+ */
+function randomStart (total: number): number {
+  const value = new Uint32Array(1)
+  crypto.getRandomValues(value)
+  return value[0]! % total
+}
+
 /** The `offset`-th port across `ranges`, treating them as one concatenated list. */
 function portAt (ranges: readonly PortRange[], offset: number): number {
   let remaining = offset
@@ -160,7 +173,7 @@ export async function bindUdp (
   signal.addEventListener('abort', onAbort, { once: true })
 
   let lastError: unknown
-  const start = Math.floor(Math.random() * total)
+  const start = randomStart(total)
   for (let attempt = 0; attempt < Math.min(BIND_ATTEMPTS, total); attempt += 1) {
     try {
       await bindOne(socket, portAt(ranges, (start + attempt) % total))
