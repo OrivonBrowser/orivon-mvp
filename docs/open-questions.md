@@ -83,7 +83,7 @@ test, failed it, and were decided as engineering calls. Any of them is reversibl
 | A26 Three port-range parsers | Consolidate into `src/shared/`, which exists for exactly this and is still empty |
 | A39 Two disagreeing `isOrivonError` checks | Unify on the stricter `.name === 'OrivonError'` test, and export `ORIVON_ERROR_CODES` from `errors.ts`. The stricter one is the one that actually means "the broker built this" |
 | A55 Hookify rules that never fired | Add a fixture driving each rule through `posttooluse.py` and asserting it fires. A guard nobody can tell is broken is worse than no guard |
-| A54 16 files over the comment budget | Each stream clears its own files the next time it touches them. A dedicated branch would touch eight streams' paths and reintroduce the conflict the baseline exists to avoid |
+| A54 the comment budget baseline (resolved) / `isTestFile` duplicated (open) | Baseline cleared and deleted on `stream/backlog-15-comment-sweep`. `isTestFile` still needs consolidating into `scripts/cli.mjs` |
 | A31 / A47 May a branch edit a file it does not own | Yes, when the edit keeps that file in step with a change the branch itself owns, and the PR body names the crossing. Extends the existing `backlog-NN` borrow mechanism to code as well as docs, answering both entries with one rule |
 | A21 Grant id stability | Mint a **fresh** `GrantId` per grant event. Tombstones stay harmless forever, and the ledger still calls `HandleTable.grantIssued()` |
 | A44 Where secp256k1 signing lives | The private scalar never leaves the broker. `IdentityHandle.signEvent` does the derivation and signing broker-side; `src/nostr/` never calls `derivePrivateScalar()`. This resolves the conflict in favour of `src/nostr/README.md`'s boundary and `capability-api.ts`'s "the seed is never exposed" rule |
@@ -1912,31 +1912,21 @@ is added to `BookmarkStore` that holds meaningfully more memory than a bookmark 
 
 ---
 
-### A54 — the comment-budget baseline holds 16 files, and `check-size.mjs` duplicates `isTestFile` **[STILL OPEN]**
+### A54 — the comment-budget baseline holds 16 files, and `check-size.mjs` duplicates `isTestFile` **[PARTIALLY RESOLVED]**
 
 Filed 2026-09-03, on `stream/backlog-08-comment-budget`, which added Rule 1's comment budget
 (`scripts/check-comments.mjs`, `code-guidelines.md` §The budget).
 
 Two loose ends, both deliberate, both cheap to close once the branches in flight have merged.
 
-**1. Sixteen files sit in `scripts/comment-budget-baseline.txt`.** Each opens with 26-93 lines
-of comment and would fail the new check. None was fixed on this branch, because every one is
-owned by a stream with a live worktree as this is written — eight under `src/broker/` alone,
-with `broker-15`, `broker-16` and `broker-17` all open. Rewriting a file header from a borrowed
-branch while three others edit the same file is the structural conflict `code-guidelines.md`
-§Status already recorded once, and it was not worth repeating for a comment.
+**1. RESOLVED on `stream/backlog-15-comment-sweep` (2026-09-07).** The 15 files actually in
+`scripts/comment-budget-baseline.txt` (not 16 — that count was already stale when this entry
+was filed) are all within budget now; the file was deleted rather than left empty, since
+`check-comments.mjs`'s own `readBaseline` already treats a missing file as an empty one
+(verified directly before relying on it). The header essays moved to each directory's
+`README.md` under `## Design notes`, per the pattern below.
 
-The baseline is a **ratchet, not an exemption list**: an entry whose file comes back within
-budget fails the check, so the list can only shrink. The work is per-stream and small — move the
-header essay to the directory's `README.md` under `## Design notes`, which
-[`src/trust/`](../src/trust/README.md) demonstrates end to end (29-line header to 7).
-
-Worth deciding: whether clearing it is one backlog branch per stream, or whether each stream
-clears its own files the next time it touches them. **AI recommendation:** the latter. The
-files are not going to get worse (CI now blocks that), and a dedicated branch touching eight
-streams' paths reintroduces exactly the conflict the baseline exists to avoid.
-
-**2. `isTestFile` now exists twice.** `scripts/check-comments.mjs` and
+**2. STILL OPEN. `isTestFile` now exists twice.** `scripts/check-comments.mjs` and
 `scripts/check-size.mjs` — the latter on `main` since `stream/packaging-01-build-verify` merged,
 still not wired into CI or `postinstall` (`code-guidelines.md` §Status) — each define the same
 predicate over `code-guidelines.md`'s own "test file" definition. A textbook Rule 3 duplicate,
