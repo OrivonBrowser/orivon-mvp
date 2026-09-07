@@ -72,7 +72,7 @@ export function createDatagramSink (options: DatagramSinkOptions): DatagramSink 
 
   return {
     handleSend (message) {
-      if (stopped) return
+      if (stopped || message.handleId !== handleId) return
       if (inFlight >= windowDatagrams) {
         // Terminal, matching ../port-sink.ts's own window-violation branch:
         // without this, every further handleSend() call re-enters this same

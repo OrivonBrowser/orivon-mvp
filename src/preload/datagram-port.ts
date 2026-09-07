@@ -182,6 +182,11 @@ export function createDatagramPort (options: DatagramPortOptions): DatagramPort 
         settleOutstanding(1)
         break
       case 'end':
+        // A genuine 'end' can arrive after the silence timeout already
+        // terminated the port (armSilence's own callback), racing it -- the
+        // terminal state and its onReadEnd firing belong to whichever
+        // reason got there first, not both.
+        if (terminated) break
         terminated = true
         readEndCb?.(message.code)
         settleClosed(message.code === undefined
@@ -236,6 +241,10 @@ export function createDatagramPort (options: DatagramPortOptions): DatagramPort 
       terminated = true
       disarmSilence()
       releaseAll()
+      // An app-initiated close resolves `closed` (handle-contracts.md's close
+      // table) rather than leaving it hanging forever now that no 'end'
+      // message can ever arrive to settle it locally.
+      settleClosed()
     }
   }
 }
