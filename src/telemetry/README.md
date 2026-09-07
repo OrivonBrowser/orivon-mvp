@@ -29,3 +29,19 @@ Why the code here has the shape it has. This is the destination
 [`code-guidelines.md`](../../docs/development/code-guidelines.md) Rule 1 names for rationale: a
 source comment protects a specific line from a specific mistake; the case for a file's overall
 shape belongs here instead.
+
+**`accounting.ts`'s `applyEvent` is an incremental reducer, meant to run one event at a time in
+the real collector** ([`runner.ts`](runner.ts)), with the caller persisting `AccountingState` —
+I/O, deliberately kept outside `accounting.ts` itself — periodically, so a crash loses at most
+the time since the last processed event. The `'checkpoint'` event kind exists purely to give the
+caller a place to inject that persistence during an otherwise-silent stretch, such as a torrent
+seeding for hours with no focus change.
+
+**`store.ts` diverges from [`src/main/bookmarks.ts`](../main/bookmarks.ts) on debouncing, on
+purpose.** `BookmarkStore` debounces every write because a user can star/unstar rapidly and each
+click is independently worth persisting soon. Accounting state changes continuously as time
+passes, not in discrete user actions — debouncing it would just mean "write shortly after every
+processed event", exactly the write-on-every-tick I/O pattern the checkpoint design above exists
+to avoid. So accounting/history writes are explicit (`checkpoint()`), while country/consent —
+genuine discrete user decisions that must not be lost to a crash right after the click — persist
+immediately, the same as `BookmarkStore`'s `add()`/`remove()`.

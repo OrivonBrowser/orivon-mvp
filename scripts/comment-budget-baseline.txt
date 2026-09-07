@@ -23,6 +23,4 @@ src/broker/policy/paths.ts
 src/loader/manifest.ts
 src/main/favicon.ts
 src/main/newtab-ipc.ts
-src/telemetry/accounting.ts
-src/telemetry/runner.ts
 src/telemetry/transport.ts

@@ -26,15 +26,9 @@
 //
 // WHY MAX_QUEUE_SIZE IS 1: ADR-0004 says "send once per period at a
 // randomised offset; do not queue-and-retry into a backlog that
-// reconstructs the timeline just removed." An earlier version of this
-// module read "backlog" as being about per-session granularity only and
-// kept three periods queued on that reading -- a unilateral
-// reinterpretation of an accepted ADR, whose own Reversibility section
-// requires a new ADR for any addition. The owner decided (PR #24,
-// 2026-09-01) to drop the cap to one period instead of writing that ADR:
-// holding at most the single most-recent period's payload cannot be
-// called a backlog under any reading of the sentence above, so no
-// reinterpretation is needed. Cost: a device offline across a month
+// reconstructs the timeline just removed." Holding at most the single
+// most-recent period's payload cannot be called a backlog under any
+// reading of that sentence. Cost: a device offline across a month
 // boundary loses the older of the two periods once it reconnects, rather
 // than sending both. A caller may still override the cap; see enqueue.
 
@@ -90,13 +84,9 @@ export const initialTransportState: TransportState = {
 
 /**
  * How many periods' worth of unsent payload the queue holds before the
- * oldest is dropped. Set to 1 by owner decision (PR #24, 2026-09-01; see
- * the file header) rather than left as an AI-judgment figure like
- * accounting.ts's DEFAULT_IDLE_TIMEOUT_MS: the module previously kept
- * three periods queued on a reinterpretation of ADR-0004's backlog ban,
- * and one period needs no such reading -- there is nothing left that
- * could be called a backlog. A caller may still override it; see
- * enqueue.
+ * oldest is dropped. Owner decision -- see the file header for why 1, not
+ * an AI-judgment figure like accounting.ts's DEFAULT_IDLE_TIMEOUT_MS. A
+ * caller may still override it; see enqueue.
  */
 export const MAX_QUEUE_SIZE = 1
 
