@@ -16,16 +16,12 @@
 // independently, before exposing anything at all -- neither layer
 // trusts the other.
 //
-// Untested by design, matching ipc.ts (see update-check-runner.ts's own
-// header for the stated reasoning): this file is Electron wiring with no
-// decision logic pure enough to extract on its own terms
-// (`isFromDashboard`'s signature is tied to `IpcMainInvokeEvent`, same as
-// `ipc.ts`'s `isFromChrome`) -- adding a unit test here and not to its
-// sibling would be an inconsistency, not a gap. `findTabIdByWebContents()`
-// (tabs.ts) has no unit coverage of its own either, for the same reason
-// (tabs.ts has no test file at all) -- both it and this file's own
-// refusal path are exercised by scripts/smoke.mjs's dashboard scenario
-// instead, against the real running app.
+// Untested by design, matching ipc.ts: this file is Electron wiring with no
+// decision logic pure enough to extract (`isFromDashboard`'s signature is
+// tied to `IpcMainInvokeEvent`, same as `ipc.ts`'s `isFromChrome`).
+// Exercised instead by scripts/smoke.mjs's dashboard scenario, against the
+// real running app -- same as tabs.ts's findTabIdByWebContents(), which
+// has no test file either.
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
 import type { Bookmark, BookmarkStore } from './bookmarks.js'
 import { NEWTAB_COMMAND_CHANNEL } from './channels.js'

@@ -124,8 +124,8 @@ export function createPortSink (options: PortSinkOptions): PortSink {
       armHeartbeat()
     }, heartbeatMs)
     // Self-re-arming and otherwise unbounded: an orphaned socket nobody
-    // ever stops (B-F8) would keep this timer -- and with it the whole
-    // process -- alive on its own without this.
+    // ever stops would keep this timer -- and with it the whole process --
+    // alive on its own without this.
     heartbeatTimer.unref()
   }
 

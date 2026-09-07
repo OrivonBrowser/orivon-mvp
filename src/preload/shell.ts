@@ -38,8 +38,8 @@ contextBridge.exposeInMainWorld('orivonShell', {
 
   /** A read-only value, not a command -- lets the chrome view reserve
    * space for Electron's native window buttons without a round trip.
-   * Available even under sandbox: true (process.md SS Sandbox). Needed
-   * because env(titlebar-area-*) and navigator.windowControlsOverlay
+   * Available even under sandbox: true (Electron's own process.md,
+   * "Sandbox" section). Needed because env(titlebar-area-*) and navigator.windowControlsOverlay
    * both report empty/false for this shell's BaseWindow + WebContentsView
    * composition -- confirmed empirically, open-questions.md A34. */
   platform: process.platform
