@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { screenEvent } from './kind-screening.js'
+import { screenEvent } from '../kind-screening.js'
 
 function event (kind: number, tags: readonly (readonly string[])[] = []) {
   return { kind, tags }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { computeEventId, validateUnsignedEvent } from './nip01.js'
+import { computeEventId, validateUnsignedEvent } from '../nip01.js'
 
 // A key reused across every vector below purely so the vectors read
 // consistently -- it carries no other significance and is not a real key.

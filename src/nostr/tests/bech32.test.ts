@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { bech32Encode, npubEncode } from './bech32.js'
-import { hexToBytes } from './hex.js'
+import { bech32Encode, npubEncode } from '../bech32.js'
+import { hexToBytes } from '../hex.js'
 
 // ===========================================================================
 // FROZEN GOLDEN VECTORS -- both taken VERBATIM from NIP-19's own published
