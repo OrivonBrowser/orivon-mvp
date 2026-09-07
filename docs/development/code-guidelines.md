@@ -423,3 +423,4 @@ inspection; two were untested ([`open-questions.md`](../open-questions.md) A55).
 | [`parallel-work.md`](parallel-work.md) | Who owns which paths — a split under Rule 2 must respect it |
 | [`testing.md`](testing.md) | What is tested here, and why so little is |
 | [`CLAUDE.md`](../../CLAUDE.md) | §Rules 6 and 7: prefer mature components, and no abstractions for elegance alone |
+| [`.claude/skills/orivon-comments/`](../../.claude/skills/orivon-comments/SKILL.md) | The working method for applying Rule 1 while writing code — this document is the policy, that skill is how |
