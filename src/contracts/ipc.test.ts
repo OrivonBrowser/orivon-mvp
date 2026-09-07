@@ -32,6 +32,14 @@ describe('datagram window constants', () => {
     expect(LIMITS.maxDatagramBytes).toBeLessThan(LIMITS.inboundDatagramWindowBytes)
   })
 
+  it('bounds the outbound backlog more tightly than the inbound one', () => {
+    // Inbound arrival is paced by the network, where a burst is normal.
+    // Outbound is paced by the app, where a deep backlog already means it is
+    // outrunning the OS. A larger outbound window would just delay the point
+    // at which that becomes visible.
+    expect(LIMITS.outboundDatagramWindow).toBeLessThan(LIMITS.inboundDatagramWindow)
+  })
+
   it('pins no more memory per UDP socket than per TCP socket', () => {
     // The per-origin ceiling in LIMITS.defaultConcurrentSockets is computed
     // against the TCP windows. A UDP socket that could pin more would make that

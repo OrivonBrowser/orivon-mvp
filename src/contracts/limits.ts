@@ -94,6 +94,22 @@ export const LIMITS = {
    */
   inboundDatagramWindowBytes: 1024 * 1024,
   /**
+   * Outbound datagrams one socket may have posted-but-not-yet-accepted.
+   *
+   * The mirror of the inbound window, and a SEPARATE number rather than a
+   * reuse of `inboundDatagramWindow`: it bounds a different resource (sends
+   * the broker is holding on the app's behalf, not receives it is holding for
+   * the app), and the two would be free to diverge. Reusing one constant for
+   * both would couple them by accident and read as deliberate.
+   *
+   * Smaller than the inbound window, because the asymmetry is real: inbound
+   * arrival is paced by the network and a burst is normal, while outbound is
+   * paced by the app and a backlog this deep already means the app is
+   * outrunning the OS. Exceeding it is a protocol violation by the renderer,
+   * not backpressure -- see ./ipc.js's SendAckMessage.
+   */
+  outboundDatagramWindow: 64,
+  /**
    * The largest single datagram, in bytes -- the maximum UDP payload over
    * IPv4 (65535 minus the 8-byte UDP and 20-byte IP headers).
    *
