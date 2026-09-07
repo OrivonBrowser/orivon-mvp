@@ -7,11 +7,12 @@
 >
 > **Reachable from an actual page today**, via `window.orivon` (`src/preload/orivon-surface.ts`,
 > wired to `src/broker/index.ts` over `src/broker/transport/ipc.ts`'s control channel): `app.manifest`,
-> `app.grants`, `fs.readFile`, `fs.writeFile`. **Implemented in the broker and Electron's
-> main-process IPC layer, but not yet exposed to a page**: `net.connect` (TCP only) —
-> `orivon-surface.ts`'s own header explains why it stops there: nothing yet lands a socket back
-> in a shape a page could ever close. **Named here with no control method wired**:
-> `app.requestGrant`, `net.listen`, `net.udpBind`, every `fs.*` method below `readFile`/
+> `app.grants`, `fs.readFile`, `fs.writeFile`, `net.connect` and — since 2026-09-07 —
+> **`net.udpBind`**, which returns a real `UdpSocket` whose datagrams cross a dedicated
+> `MessagePortMain`. Reachable does not mean usable in production: no origin holds a `udp.bind`
+> grant yet, because nothing grants anything until build step 4's permission prompt exists, so a
+> real page's call correctly answers `'denied'`. **Named here with no control method wired**:
+> `app.requestGrant`, `net.listen`, every `fs.*` method below `readFile`/
 > `writeFile` (`open`, `mkdir`, `readdir`, `stat`, `rm`, `rename`, `userSelected`) — none of these
 > has any related code anywhere in `src/broker/`. `orivon.id` is a partial exception: no `'id.'`
 > case exists in `src/broker/transport/ipc.ts`'s control dispatch, so none of `orivon.id.*` is callable, but
