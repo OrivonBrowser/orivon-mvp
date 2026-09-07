@@ -60,7 +60,6 @@
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { spawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
-import { connect as netConnect } from 'node:net'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { DEFAULT_ACTION_TIMEOUT_MS, launchElectron } from './launch-electron.mjs'
