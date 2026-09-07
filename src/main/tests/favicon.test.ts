@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MAX_FAVICON_BYTES, pickFaviconUrl, readCapped, shouldClearFavicon, toDataUrl } from './favicon.js'
+import { MAX_FAVICON_BYTES, pickFaviconUrl, readCapped, shouldClearFavicon, toDataUrl } from '../favicon.js'
 
 describe('pickFaviconUrl', () => {
   it('returns null for an empty list', () => {

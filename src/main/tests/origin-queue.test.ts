@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { hasQueuedOrigin, withOriginQueue } from './origin-queue.js'
+import { hasQueuedOrigin, withOriginQueue } from '../origin-queue.js'
 
 /** A deferred promise -- lets a test control exactly when a queued task settles, so it can prove ordering rather than merely observing whatever the event loop happens to do. */
 function deferred<T> (): { promise: Promise<T>, resolve: (value: T) => void, reject: (error: unknown) => void } {

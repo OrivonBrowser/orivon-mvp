@@ -2,10 +2,10 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   createSubsystemContext, criticalFailureMessage, publishBroker, publishLoader, runAfterReady, runBeforeReady,
   type Subsystem
-} from './registry.js'
+} from '../registry.js'
 import type { App } from 'electron'
-import type { Broker } from '../broker/broker-contracts.js'
-import type { Loader } from '../loader/index.js'
+import type { Broker } from '../../broker/broker-contracts.js'
+import type { Loader } from '../../loader/index.js'
 
 // SubsystemContext's App and Broker fields are both type-only imports,
 // erased by verbatimModuleSyntax, so plain objects stand in for both below.
