@@ -162,11 +162,25 @@ describe('createDatagramPort -- outbound', () => {
     dp.onDropped((inbound, outbound) => { seen.push([inbound, outbound]) })
 
     await dp.send(datagram())
-    port.emit({ kind: 'send-failed', handleId: 'h1', code: 'denied', dropped: 1 })
+    port.emit({ kind: 'send-failed', handleId: 'h1', code: 'denied', dropped: 1, address: '93.184.216.34', port: 6881 })
     await dp.send(datagram())
 
     expect(seen).toEqual([[0, 1]])
     expect(port.sent.filter((m) => (m as { kind?: string }).kind === 'send')).toHaveLength(2)
+  })
+
+  // A87: the counter above tells a developer who thinks to check it; this is
+  // what actually tells the app which of its own writes was refused and why.
+  it('fires onRefusal with the destination and code the broker refused', async () => {
+    const port = fakePort()
+    const dp = createDatagramPort({ handleId: 'h1', port, windowDatagrams: 1 })
+    const refusals: Array<{ address: string, port: number, code: string }> = []
+    dp.onRefusal((r) => { refusals.push(r) })
+
+    await dp.send(datagram())
+    port.emit({ kind: 'send-failed', handleId: 'h1', code: 'denied', dropped: 1, address: '10.0.0.5', port: 4321 })
+
+    expect(refusals).toEqual([{ address: '10.0.0.5', port: 4321, code: 'denied' }])
   })
 })
 

@@ -212,6 +212,7 @@ function buildUdpBridgeResult (descriptor: UdpSocketDescriptor, port: PortLike):
     onDatagram: datagramPort.onDatagram,
     onReadEnd: datagramPort.onReadEnd,
     onDropped: datagramPort.onDropped,
+    onRefusal: datagramPort.onRefusal,
     onFatal: datagramPort.onFatal,
     reportConsumed: datagramPort.reportConsumed,
     send: datagramPort.send,

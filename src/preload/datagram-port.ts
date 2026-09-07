@@ -1,4 +1,5 @@
 import type { OrivonError, OrivonErrorCode } from '../contracts/errors.js'
+import type { SendRefusal } from '../contracts/handles.js'
 import type { BrokerToRendererMessage } from '../contracts/ipc.js'
 import { DATAGRAM_CREDIT_COALESCE, WRITE_SILENCE_TIMEOUT_MS } from '../contracts/ipc.js'
 import { LIMITS } from '../contracts/limits.js'
@@ -36,6 +37,8 @@ export interface DatagramPort {
   onDatagram: (cb: (datagram: WireDatagram) => void) => void
   /** Fires once when the read side reaches a terminal state. */
   onReadEnd: (cb: (code: OrivonErrorCode | undefined) => void) => void
+  /** Fires once per refused outbound datagram (A87), alongside `onDropped`'s running count. */
+  onRefusal: (cb: (refusal: SendRefusal) => void) => void
   /** The consumer reports what it drained; coalesced into DatagramCreditMessages. */
   reportConsumed: (datagrams: number, bytes: number) => void
   /**
@@ -62,6 +65,7 @@ export function createDatagramPort (options: DatagramPortOptions): DatagramPort 
   let datagramCb: ((datagram: WireDatagram) => void) | undefined
   let readEndCb: ((code: OrivonErrorCode | undefined) => void) | undefined
   let droppedCb: ((inbound: number, outbound: number) => void) | undefined
+  let refusalCb: ((refusal: SendRefusal) => void) | undefined
   let fatalCb: ((code: OrivonErrorCode) => void) | undefined
 
   let disposed = false
@@ -171,8 +175,10 @@ export function createDatagramPort (options: DatagramPortOptions): DatagramPort 
       case 'send-failed':
         // COUNTED, NOT THROWN (A87). The send that was refused has already
         // resolved from the app's point of view; all that is left is to
-        // release its window slot and move the counter.
+        // release its window slot, move the counter, and tell whoever is
+        // listening on `refusals` which destination it was.
         if (message.dropped > droppedOutbound) { droppedOutbound = message.dropped; noteDrops() }
+        refusalCb?.({ address: message.address, port: message.port, code: message.code })
         settleOutstanding(1)
         break
       case 'end':
@@ -194,6 +200,7 @@ export function createDatagramPort (options: DatagramPortOptions): DatagramPort 
     onDatagram (cb) { datagramCb = cb },
     onReadEnd (cb) { readEndCb = cb },
     onDropped (cb) { droppedCb = cb },
+    onRefusal (cb) { refusalCb = cb },
     onFatal (cb) { fatalCb = cb },
     closed,
     reportConsumed (datagrams, bytes) {
