@@ -66,7 +66,7 @@ validation (`readAssets`/`validateRelativePath`/`MAX_ASSETS`) already rejects ev
 shapes before `fetchBundle` ever sees them -- one layer earlier than before. Those checks are
 still in `fetch-bundle.ts`, kept as defence in depth rather than removed (this function must not
 quietly start trusting that `manifest.ts`'s validation is airtight), but their dedicated test
-coverage moved to [`manifest.test.ts`](manifest.test.ts), which already exercised the same input
+coverage moved to [`manifest.test.ts`](./tests/manifest.test.ts), which already exercised the same input
 shapes independently. What `manifest.ts` cannot see -- a *redirect* landing two distinct declared
 names, or a redirected entry, at the same or a different canonical path than declared -- remains
 directly tested here, since only a real fetch can produce it.
