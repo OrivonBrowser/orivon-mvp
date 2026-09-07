@@ -36,3 +36,25 @@ Why the code here has the shape it has. This is the destination
 [`code-guidelines.md`](../../../docs/development/code-guidelines.md) Rule 1 names for rationale: a
 source comment protects a specific line from a specific mistake; the case for a file's overall
 shape belongs here instead.
+
+**Why [`ipc.ts`](ipc.ts)'s dispatch functions take structural types, not `electron`'s real
+ones.** `handleControlRequest`, `dispatch` and `registerBrokerIpc` take a `Broker` and
+structurally-typed `event`/`ipcMain`/`PortTransport`, so `ipc.test.ts` exercises the whole
+control-channel logic under plain Node/vitest with no Electron process running — the same
+pattern [`src/main/registry.ts`](../../main/registry.ts) uses. Only `brokerIpcSubsystem`, which
+nothing in that test file calls, touches the real `ipcMain`/`MessageChannelMain` value imports;
+importing `electron` at module scope is still safe outside a real Electron process (it resolves
+to a harmless string, so destructuring a value from it yields `undefined`, which only breaks if
+actually called).
+
+**The per-origin call-rate limit (`CONTROL_RATE_LIMIT_CAPACITY`/`_REFILL_PER_SECOND` in
+[`ipc.ts`](ipc.ts)) is an AI recommendation (open-questions.md A38), not an owner decision.**
+Before it existed, HandleTable's in-flight cap did nothing to stop `app.grants()` — it has no
+handle, grant, or I/O to scope — and 5,000 concurrent calls to it were all answered in full. The
+chosen numbers cut that to roughly 200 admitted calls, sized against that attack and against an
+app polling `app.grants()` to react to a live revocation. The limit is shared across all eight
+control methods deliberately: `fs`/`net` dispatch is real I/O with no measured call-rate data
+either, so a tighter, method-specific limit risks `'limit'` becoming a routine error for a busy
+app before any evidence justifies it. This leaves a fairness risk A38 names but does not solve: a
+burst of small file reads could still starve an unrelated `app.grants()` poll once `fs`/`net` see
+real traffic.
