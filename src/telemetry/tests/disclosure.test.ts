@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fold, type TelemetryEvent } from './accounting.js'
+import { fold, type TelemetryEvent } from '../accounting.js'
 import {
   buildDisclosurePayload,
   DISCLOSURE_OPTIONS,
@@ -8,7 +8,7 @@ import {
   shouldPresentDisclosure,
   mayTransmit,
   type DisclosureMeta
-} from './disclosure.js'
+} from '../disclosure.js'
 
 // Fixed metadata reused across the payload tests. installId is just a
 // plausible-looking string here -- this module never generates one (no

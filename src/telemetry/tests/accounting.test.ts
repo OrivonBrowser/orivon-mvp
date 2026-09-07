@@ -7,7 +7,7 @@ import {
   DEFAULT_IDLE_TIMEOUT_MS,
   type AccountingState,
   type TelemetryEvent
-} from './accounting.js'
+} from '../accounting.js'
 
 // Every scenario below picks a fixed UTC instant with Date.UTC(...) rather
 // than Date.now() -- the whole point of the fold is that it needs no clock,

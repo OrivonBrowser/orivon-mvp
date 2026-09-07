@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { reconcileWindowFocus, type TrackedWindow } from './window-focus.js'
+import { reconcileWindowFocus, type TrackedWindow } from '../window-focus.js'
 
 describe('reconcileWindowFocus', () => {
   it('reports "gained-focus" the first time any window is focused', () => {

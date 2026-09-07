@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { fold, type TelemetryEvent } from './accounting.js'
-import type { DisclosureMeta } from './disclosure.js'
-import { initialHistoryState } from './history.js'
-import { initialTransportState, type Sender } from './transport.js'
-import { runSendCycle, type SendCycleState } from './engine.js'
+import { fold, type TelemetryEvent } from '../accounting.js'
+import type { DisclosureMeta } from '../disclosure.js'
+import { initialHistoryState } from '../history.js'
+import { initialTransportState, type Sender } from '../transport.js'
+import { runSendCycle, type SendCycleState } from '../engine.js'
 
 const meta: DisclosureMeta = {
   installId: '4c2f2f3a-1111-4444-8888-abcde1234567',

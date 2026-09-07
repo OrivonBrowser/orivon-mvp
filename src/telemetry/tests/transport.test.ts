@@ -12,8 +12,8 @@ import {
   type Clock,
   type Sender,
   type TransportState
-} from './transport.js'
-import type { TelemetryPayload } from './disclosure.js'
+} from '../transport.js'
+import type { TelemetryPayload } from '../disclosure.js'
 
 function payloadFor (period: string): TelemetryPayload {
   return {
