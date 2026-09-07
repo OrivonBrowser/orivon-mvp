@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createDatagramPump } from '../datagram-pump.js'
-import type { BrokerToRendererMessage, Datagram } from '../../../contracts/index.js'
+import type { BrokerToRendererMessage, Datagram, StreamEndMessage } from '../../../contracts/index.js'
 
 // The inbound half of the datagram relay. Pure and Electron-free like
 // ../port-pump.ts, which is what lets these run under plain vitest with a
@@ -304,6 +304,32 @@ describe('createDatagramPump', () => {
 
     expect(sent).toEqual([{ kind: 'end', handleId: 'h1', code: 'reset' }])
     expect(onStreamFailed).toHaveBeenCalledTimes(1)
+  })
+
+  it('stop() with no argument still sends a clean end, matching an app-initiated close', async () => {
+    // ../port-pump.ts's sibling test: stop(undefined) is the ordinary
+    // app-called close() path, and it must send 'end' just as surely as a
+    // stop(code) revocation does -- the renderer's `closed` promise has no
+    // other way to learn the socket is gone.
+    const sent: BrokerToRendererMessage[] = []
+    const source = manualReadable()
+    const pump = createDatagramPump({
+      handleId: 'h1',
+      readable: source.readable,
+      send: (m) => { sent.push(m) },
+      initialCredit: 8,
+      initialCreditBytes: 4096,
+      droppedInbound: () => 0
+    })
+
+    pump.stop()
+    await settle()
+
+    const ends = sent.filter((m) => m.kind === 'end')
+    expect(ends).toHaveLength(1)
+    const end = ends[0] as StreamEndMessage
+    expect(end).toEqual({ kind: 'end', handleId: 'h1' })
+    expect(Object.hasOwn(end, 'code')).toBe(false)
   })
 
   it('stops posting after stop(), even with a datagram already queued', async () => {
