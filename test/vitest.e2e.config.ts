@@ -31,6 +31,21 @@ export default defineConfig({
     // that it reports what happened without anyone having to remember a
     // flag, so 'verbose' is set here rather than documented as a thing to
     // pass.
-    reporters: ['verbose']
+    reporters: ['verbose'],
+    // THE E2E SUITES CANNOT RUN CONCURRENTLY, and vitest's default is that
+    // they do. Each one spawns its own fixture servers on FIXED ports
+    // (apps/fixture/config.mjs) and launches a real Electron binary; two
+    // files doing that at once collide three ways, all of them observed on
+    // CI in one run: the second `serve.mjs` cannot bind STATIC_PORT, the
+    // first suite's own fetch of the fixture manifest then fails, and the
+    // two simultaneous `electron.launch()` calls fail with `spawn ETXTBSY`.
+    //
+    // It passed locally and failed on CI, which is exactly the shape of a
+    // scheduling race -- the ports and the binary are shared whatever the
+    // machine, only the interleaving differs. Serialising is the fix rather
+    // than assigning each suite its own port range: two Electron launches at
+    // once would still be a race, and an e2e that drives a real GUI has no
+    // business running in parallel with another one anyway.
+    fileParallelism: false
   }
 })
