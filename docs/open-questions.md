@@ -3200,6 +3200,45 @@ populate it follow in the PRs that already touch those files.
 
 ---
 
+### A88 — `bind(0)` asks the OS to pick a port, and nothing says whether it may pick outside the granted range **[AI-REC]**
+
+**Raised 2026-09-07**, building `checkBind` (`stream/broker-30-bind-policy`), build step 2's UDP
+work.
+
+An app may call `orivon.net.udpBind({ port: 0 })`, which in every Node/POSIX API means *any free
+port the OS picks*. Real DHT clients do this routinely. But `udp.bind` grants are **declared port
+ranges** — `capability-api.md` A9 §1 rejects `"*"` precisely so that a person approving one reads
+a specific range — and a port of 0 has no port to check against that range.
+
+Nothing in the corpus covers the case. `capability-api.md`, `handle-contracts.md` §UdpSocket and
+the manifest grammar all describe the declared-range rule; none of them mentions port 0.
+
+**Three answers, and why the third was built:**
+
+1. **Deny `bind(0)` outright.** Safe, and wrong: it breaks the ordinary way a DHT client binds, so
+   every app would hard-code a port instead — which is worse for the user, not better.
+2. **Allow it and let the OS pick anywhere.** This is what a naive implementation does, and it
+   quietly makes the grant prompt a lie. The user read "listen for messages on ports 6881-6889";
+   the app ends up on 51413. Nobody decided that; it would just happen.
+3. **Allow it, and pick from inside the granted ranges.** `checkBind`'s allow branch returns the
+   surviving `PortRange[]` rather than a bare yes, and the adapter tries free ports from them,
+   failing with `'limit'` if none is free. The sentence the user approved stays literally true.
+
+**Cost of (3), stated rather than buried:** a bind can now fail for a reason POSIX has no
+equivalent of — "your range is full" — and the adapter needs a retry loop over the range rather
+than one `bind(0)` syscall. Both are small; the alternative is a prompt that does not describe
+what happens.
+
+**A second-order effect worth naming:** picking sequentially from `lo` makes an app's port
+predictable across runs, which is a mild fingerprinting signal for a privacy-branded browser. The
+adapter should pick at random within the range instead. That is an implementation note for the
+adapter PR, not part of this decision.
+
+**Needed by:** before the user-facing grant prompt is written (build step 4), because the prompt's
+wording and this behaviour have to agree. Nothing before that blocks on it.
+
+---
+
 ### A90 — owner-decision IDs (`d-NNNN`) are cited in source with no register **[STILL OPEN — AI recommendation]**
 
 **Raised 2026-09-07**, by the repo-wide comment sweep (`stream/backlog-15-comment-sweep`). Source
