@@ -21,6 +21,7 @@
 // shares.
 
 import type { OrivonErrorCode } from '../contracts/errors.js'
+import type { UdpSocket } from '../contracts/handles.js'
 
 export interface OrivonLimits {
   readonly readWindowBytes: number
@@ -182,7 +183,7 @@ export function installOrivon (
     })
   }
 
-  function buildUdpSocket (u: Awaited<ReturnType<typeof bridge.netUdpBind>>): unknown {
+  function buildUdpSocket (u: Awaited<ReturnType<typeof bridge.netUdpBind>>): UdpSocket {
     let droppedInbound = 0
     let droppedOutbound = 0
     let readController: ReadableStreamDefaultController<MainWorldDatagram>
