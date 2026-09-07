@@ -1,10 +1,9 @@
 // bech32 (BIP-173, the ORIGINAL variant -- not bech32m) encode-only. NIP-19
 // specifies npub as "bech32-(not-m)" over a raw 32-byte public key, with no
 // TLV metadata -- that is the only encoding this file needs to produce, so
-// decoding and the TLV-bearing formats (nprofile/nevent/naddr/nrelay) are not
-// implemented; nothing in this lane's scope calls for them, and nsec
-// (private key) handling is explicitly excluded by the brief (private key
-// material never leaves the broker, capability-api.ts's rules).
+// decoding and the TLV-bearing formats (nprofile/nevent/naddr/nrelay) are
+// not implemented. nsec (private key) handling is excluded entirely: private
+// key material never leaves the broker (capability-api.ts's rules).
 //
 // CLAUDE.md Rule 6 (prefer mature components) does not apply here the way it
 // would for Schnorr signing: this repo ships zero runtime dependencies today

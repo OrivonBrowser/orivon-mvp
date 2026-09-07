@@ -1,7 +1,6 @@
 // The `capabilities` sub-tree of a manifest -- split out of ./manifest.ts
-// (docs/development/code-guidelines.md Rule 2: manifest.ts was approaching
-// the 500-line limit once findings 1-5 of the PR-29 review were fixed).
-// Owns net/fs/id/protocols shape validation and the pattern grammars
+// (docs/development/code-guidelines.md Rule 2). Owns net/fs/id/protocols
+// shape validation and the pattern grammars
 // (host:port, port range, URI scheme, curve name) those fields are built
 // from. Top-level manifest fields (id, name, version, entry) stay in
 // manifest.ts -- this file is specifically the "per-capability read*
@@ -39,7 +38,7 @@ const MAX_PATTERNS = 256
 const MAX_PROTOCOLS = 32
 const MAX_CURVES = 8
 
-/** capability-api.md A9 SS1: privileged ports denied outright, at every tier. */
+/** capability-api.md's open item A9, point 1: privileged ports denied outright, at every tier. */
 const MIN_UNPRIVILEGED_PORT = 1024
 
 const CAPABILITIES_KEYS = ['net', 'fs', 'id', 'protocols']
@@ -57,7 +56,8 @@ const PORT_RANGE_PATTERN = /^([1-9][0-9]{0,4})(?:-([1-9][0-9]{0,4}))?$/
 /**
  * Bare `lo-hi` or a single port, MAX_PORT-bounded, no leading zeros, no `"*"`.
  * `"*"` is handled by the caller with its own message -- it is a distinct
- * rejection reason (A9 SS1), not a parse failure.
+ * rejection reason (capability-api.md's open item A9, point 1), not a
+ * parse failure.
  *
  * A THIRD implementation of this exact grammar, alongside the regex inside
  * connect-patterns.ts's exported `portMatches` and update.ts's PRIVATE
@@ -66,7 +66,8 @@ const PORT_RANGE_PATTERN = /^([1-9][0-9]{0,4})(?:-([1-9][0-9]{0,4}))?$/
  * accepts `"*"`, because it represents an ALREADY-GRANTED pattern set for a
  * coverage check -- the opposite of what a fresh manifest declaration must
  * accept -- and neither exposes the `{lo, hi}` shape this rejection message
- * needs). Flagged rather than silently duplicated -- see the PR description.
+ * needs). A known Rule-3 duplicate, not fixed here because doing so would
+ * need a signature change to a file this one may not restructure alone.
  */
 function parsePortRange (spec: string): { readonly lo: number, readonly hi: number } | null {
   const match = PORT_RANGE_PATTERN.exec(spec)
@@ -79,17 +80,17 @@ function parsePortRange (spec: string): { readonly lo: number, readonly hi: numb
   return { lo, hi }
 }
 
-/** `tcp.listen` / `udp.bind`: capability-api.md A9 SS1 -- declared range required, no privileged ports. */
+/** `tcp.listen` / `udp.bind`: capability-api.md's open item A9, point 1 -- declared range required, no privileged ports. */
 function validatePortRangePattern (pattern: string, field: string): void {
   if (pattern === '*') {
-    reject(`${field}: "*" is rejected -- a declared port range is required (capability-api.md A9 SS1)`)
+    reject(`${field}: "*" is rejected -- a declared port range is required (capability-api.md's open item A9, point 1)`)
   }
   const range = parsePortRange(pattern)
   if (range === null) reject(`${field} is not a valid port or port range: ${describeValue(pattern)}`)
   if (range.lo < MIN_UNPRIVILEGED_PORT) {
     reject(
       `${field}: privileged ports below ${MIN_UNPRIVILEGED_PORT} are denied at every tier ` +
-      `(capability-api.md A9 SS1) -- lowest requested port is ${range.lo}`
+      `(capability-api.md's open item A9, point 1) -- lowest requested port is ${range.lo}`
     )
   }
 }

@@ -57,9 +57,9 @@ export const BUNDLE_HASH_VERSION = 'orivon-bundle-v1'
  * memory while its leaf is computed. Fine at ADR-0005's stated 2-4 MB
  * frontend; torrent payloads live in files/, never in the pinned set.
  *
- * AI RECOMMENDATION, NOT AN OWNER DECISION (ADR-0009 SSConsequences) -- these
- * numbers are a starting point, not a confirmed limit. Revisit before this
- * ships in the loader.
+ * AI RECOMMENDATION, NOT AN OWNER DECISION (ADR-0009's "Consequences"
+ * section) -- these numbers are a starting point, not a confirmed limit.
+ * Revisit before this ships in the loader.
  */
 export const MAX_ASSET_BYTES = 16 * 1024 * 1024
 export const MAX_BUNDLE_BYTES = 64 * 1024 * 1024
