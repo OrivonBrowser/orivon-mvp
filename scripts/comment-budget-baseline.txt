@@ -12,8 +12,4 @@
 # Nothing may be ADDED here. New code meets the budget. Tracked as A54.
 # Written 2026-09-03, against these files' state at that date.
 scripts/check-vectors.mjs
-src/broker/policy/address.ts
-src/broker/policy/connect-src.ts
-src/broker/policy/connect.ts
-src/broker/policy/paths.ts
 src/telemetry/transport.ts

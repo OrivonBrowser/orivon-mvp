@@ -197,8 +197,7 @@ export function hostMatches (spec: string, requested: string, address: string): 
  * The tempting wrong shape is `patterns.some(hostOk) && patterns.some(portOk)`,
  * which reads identically and grants the cross product: a manifest declaring
  * `["a.example:443", "b.example:8080"]` would authorise `a.example:8080`,
- * which the user granted for neither host. It passed the entire suite before
- * ./tests/connect.test.ts grew a test for it. Found by review, 2026-08-27.
+ * which the user granted for neither host.
  */
 export function patternAuthorises (
   parsed: ParsedPattern | null,
@@ -224,7 +223,7 @@ export function patternAuthorises (
  * makes the two failure paths distinguishable -- a name that does not exist
  * throws out of `resolveFn`, a name that does returns a denial -- which is a
  * clean existence oracle over arbitrary names, and precisely the LAN mapping
- * the uniform denial exists to prevent. Found by review, 2026-08-27.
+ * the uniform denial exists to prevent.
  *
  * DELIBERATELY WEAK, and it must stay that way. It answers "could this
  * possibly be allowed", never "is this allowed": a `*` pattern or an
