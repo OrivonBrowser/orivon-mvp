@@ -189,6 +189,27 @@ describe('udpBind -- every datagram is authorised on the way out', () => {
     expect(send).toHaveBeenCalledTimes(1)
   })
 
+  // Defect 2's regression test: authorisedSend now reuses
+  // ledger.parsedPatternsFor(grant) across calls instead of handing
+  // checkConnect a fresh parse every datagram. A re-grant mints a brand new
+  // Grant object (GrantLedger.grant's own doc), so this proves that reuse
+  // never serves the NEXT datagram an authorisation decision built from the
+  // grant it replaced.
+  it('a re-grant with different patterns governs the very next datagram, not the one it replaced', async () => {
+    const send = vi.fn(async () => ({ sent: true as const }))
+    const broker = await boundBroker(baseDeps({ bind: async () => okUdpSocket({ send }) }))
+    await broker.grant(APP, 'udp.send', ['93.184.216.34:6881'])
+    const socket = await broker.net.udpBind(APP, { port: 6881 })
+
+    expect(await socket.send(datagram({ address: '93.184.216.34' }))).toEqual({ sent: true })
+
+    await broker.grant(APP, 'udp.send', ['10.0.0.5:6881']) // replaces the grant above
+
+    expect(await socket.send(datagram({ address: '93.184.216.34' }))).toEqual({ sent: false, code: 'denied' })
+    expect(await socket.send(datagram({ address: '10.0.0.5' }))).toEqual({ sent: true })
+    expect(send).toHaveBeenCalledTimes(2)
+  })
+
   // A87: the caller's only way to report a rejection is to error the app's
   // WritableStream, which errors it permanently. Nothing here may reject.
   it('reports a resolver failure as a value rather than rejecting', async () => {
