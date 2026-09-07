@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { connectionLadder } from './connection-ladder.js'
-import type { ConnectionLogEntry, ConnectionLogInput, OmittedConnectPattern } from './connection-log.js'
+import { connectionLadder } from '../connection-ladder.js'
+import type { ConnectionLogEntry, ConnectionLogInput, OmittedConnectPattern } from '../connection-log.js'
 
 // THE INVARIANT UNDER TEST, throughout: the raw evidence (counts, bytes,
 // blocked attempts) is never absent, and the pattern classification never

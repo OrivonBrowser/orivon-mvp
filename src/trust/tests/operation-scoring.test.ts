@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { scoreOperations } from './operation-scoring.js'
-import type { ConnectionLogEntry } from './connection-log.js'
+import { scoreOperations } from '../operation-scoring.js'
+import type { ConnectionLogEntry } from '../connection-log.js'
 
 // THE INVARIANT UNDER TEST: this module counts and classifies -- it never
 // returns a single number, and it never pre-computes a narrative claim
