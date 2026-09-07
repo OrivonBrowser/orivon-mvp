@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
-import { installFromHint } from './app-install.js'
-import type { AppInstallDeps } from './app-install.js'
-import { APP, OTHER, stubBroker } from '../broker/transport/tests/ipc.test-helpers.js'
-import type { BrokerCall } from '../broker/transport/tests/ipc.test-helpers.js'
-import type { Broker } from '../broker/broker-contracts.js'
-import type { LoadResult, Loader } from '../loader/index.js'
-import type { Grant, Manifest } from '../contracts/index.js'
+import { installFromHint } from '../app-install.js'
+import type { AppInstallDeps } from '../app-install.js'
+import { APP, OTHER, stubBroker } from '../../broker/transport/tests/ipc.test-helpers.js'
+import type { BrokerCall } from '../../broker/transport/tests/ipc.test-helpers.js'
+import type { Broker } from '../../broker/broker-contracts.js'
+import type { LoadResult, Loader } from '../../loader/index.js'
+import type { Grant, Manifest } from '../../contracts/index.js'
 
 function manifestWith (version = '1.0.0'): Manifest {
   return { orivonApiVersion: 0, id: 'app.test', name: 'Test', version, entry: 'index.html', capabilities: {} }

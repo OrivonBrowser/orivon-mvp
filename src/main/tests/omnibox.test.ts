@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseOmniboxInput, sanitizeDirectUrl } from './omnibox.js'
+import { parseOmniboxInput, sanitizeDirectUrl } from '../omnibox.js'
 
 // Security-critical: the four rows under "dangerous schemes never navigate"
 // are what stop the address bar from being a script-injection or local-file

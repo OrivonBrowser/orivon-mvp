@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import { checkForUpdate, decideUpdateNotice, DEFAULT_CHECK_INTERVAL_MS } from './update-check.js'
-import type { ReleaseInfo } from './update-check.js'
+import { checkForUpdate, decideUpdateNotice, DEFAULT_CHECK_INTERVAL_MS } from '../update-check.js'
+import type { ReleaseInfo } from '../update-check.js'
 
 // Fixed instant, not Date.now() -- the whole point of decideUpdateNotice is
 // that it is pure. A real clock read here would make failures flaky and

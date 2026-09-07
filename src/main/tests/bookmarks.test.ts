@@ -11,7 +11,7 @@ import {
   serializeBookmarksFile,
   WRITE_DEBOUNCE_MS,
   type Bookmark
-} from './bookmarks.js'
+} from '../bookmarks.js'
 
 // BookmarkStore imports writeFile straight from node:fs/promises, so mocking
 // the module is the only way to hold one specific write open from outside

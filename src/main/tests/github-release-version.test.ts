@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { compareVersions, parseVersion } from './github-release-version.js'
+import { compareVersions, parseVersion } from '../github-release-version.js'
 
-// Direct tests for the semver subset in ./github-release-version.ts.
+// Direct tests for the semver subset in ../github-release-version.ts.
 //
 // Previously exercised only indirectly, through update-check.test.ts's
 // decideUpdateNotice cases -- real coverage of the outcome, but none of it
@@ -10,7 +10,7 @@ import { compareVersions, parseVersion } from './github-release-version.js'
 // src/broker/policy/update.ts's: a leading "v" is accepted here (the GitHub
 // tag convention) and rejected there, and this file requires exactly three
 // numeric components where that one accepts a partial version. See
-// ./github-release-version.ts's header for why the two must not be merged.
+// ../github-release-version.ts's header for why the two must not be merged.
 
 describe('parseVersion', () => {
   it('parses a plain release version', () => {
