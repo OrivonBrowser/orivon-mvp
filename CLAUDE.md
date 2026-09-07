@@ -37,8 +37,9 @@ pattern names the exact port (A82), and an app's simultaneous-socket allowance i
 in its manifest, clamped, and enforced, with a modest default so anything needing the ceiling
 has to ask in a number the user sees (A80). A48 was found stale -- both credit-window halves
 have existed since the preload pump landed -- and `handle-contracts.md` corrected to match.
-**Note for whoever edits next: `src/broker/handles/handles.ts` is at 491 lines against Rule 2's 500;
-the next addition to it needs a split, not another method.**
+**The line-count note that used to live here is obsolete:** `stream/backlog-15-comment-sweep`'s
+header trim brought `src/broker/handles/handles.ts` from 491 to 456 lines, so there is real
+headroom against Rule 2's 500 again -- no split is imminent.
 
 Last updated 2026-09-06 (two rounds: the write-pump landing across #79-#82, then the step-2
 defect closeout in #89-#92; see PR bodies for the full verification trail; prior pass:

@@ -284,3 +284,15 @@ free the SAME registry slot, and keeping both ends in one file is what makes tha
 Split out of `ipc.ts`'s inline credit-message check once a second and third message kind joined
 it -- one job (shape validation at this trust boundary), the same way `ipc-validation.ts` owns it
 for `CONTROL_CHANNEL`.
+
+### `index.ts` -- two splits so far, and where the next one goes
+
+Two pieces have already moved out of this file, both at Rule 2's 500-line limit and both by
+concern: `grants/grant-ledger.ts` (the per-origin state) and `io-errors.ts` (translating an
+injected dependency's raw error). What stays is the dependency shape `createBroker` fixes and the
+capability entry points themselves.
+
+**The next split has to be bigger.** There is roughly one entry point of headroom left, and `fs`
+is still missing everything below `readFile`/`writeFile` while `id` has nothing at all. Whoever
+adds either should lift `connect`/`udpBind`/`authorisedSend` into a net-capability file rather
+than shaving another helper off the top -- that is the seam with room behind it.

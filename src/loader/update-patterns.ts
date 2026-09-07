@@ -1,11 +1,11 @@
 // Manifest.capabilities -> update.ts's PatternSet, the shape decideUpdate()
 // needs for its `newPatterns` argument. Small enough to earn its own file
 // rather than crowd index.ts (docs/development/code-guidelines.md Rule 2),
-// and it is the one place this lane translates the manifest's DECLARED
-// authority into the same shape the GRANTED pattern set already has --
-// worth keeping separate from where decideUpdate is actually called, so the
-// two are never accidentally swapped at the call site (A18/A27's failure
-// class: this file produces `newPatterns`, never `grantedPatterns`).
+// and it is the one place the manifest's DECLARED authority is translated
+// into the same shape the GRANTED pattern set already has -- worth keeping
+// separate from where decideUpdate is actually called, so the two are
+// never accidentally swapped at the call site (A18/A27's failure class:
+// this file produces `newPatterns`, never `grantedPatterns`).
 
 import type { Capabilities, CapabilityKind, Pattern } from '../contracts/index.js'
 import type { PatternSet } from '../broker/policy/update.js'

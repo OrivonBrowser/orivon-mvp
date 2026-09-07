@@ -1,8 +1,6 @@
 // Real wiring for accounting.ts/disclosure.ts/transport.ts/history.ts via
 // engine.ts/store.ts/window-focus.ts/schedule.ts: persistence, real main-
-// process lifecycle events, and the real HTTP send. Split out the same way
-// src/main/update-check-runner.ts splits from update-check.ts (Rule 2) --
-// untested by design, same reasoning as that file's own header states:
+// process lifecycle events, and the real HTTP send. Untested by design:
 // every decision worth getting right lives in the pure/injected functions
 // this file composes, and THOSE are tested (engine.test.ts, window-
 // focus.test.ts, schedule.test.ts, store.test.ts, checkpoint-recovery.test.ts).
@@ -16,15 +14,14 @@
 // has no test importing it, so a dynamic import inside each function body
 // is never reached at all while other tests merely import sibling files.
 //
-// TWO REAL DECISIONS THIS FILE MAKES THAT THE OWNER HAS NOT CONFIRMED --
-// see this lane's QUESTION checkpoint (log.md) for the full reasoning:
+// TWO REAL DECISIONS THIS FILE MAKES THAT THE OWNER HAS NOT CONFIRMED:
 //   1. SHELL_APP_ID below is a placeholder AppId representing the whole
-//      Orivon process, standing in until a future lane gives a real
+//      Orivon process, standing in until a future app loader gives a real
 //      capability-app's identity a source (nothing in this tree connects
-//      a loaded app to a tab yet).
+//      a loaded app to a tab yet). docs/open-questions.md A92.
 //   2. TELEMETRY_INGEST_URL is unprovisioned -- ADR-0004 requires a
 //      self-hosted ingest endpoint that does not exist yet anywhere in
-//      this repository or its docs.
+//      this repository or its docs. docs/open-questions.md A93.
 import type { App } from 'electron'
 import { join } from 'node:path'
 import type { Subsystem } from '../main/registry.js'
@@ -51,12 +48,13 @@ import { initialTransportState, type Sender, type TransportState } from './trans
 import { TelemetryStore } from './store.js'
 import { reconcileWindowFocus, type TrackedWindow } from './window-focus.js'
 
-/** See the file header's QUESTION note. */
+/** See the file header's note and docs/open-questions.md A92. */
 export const SHELL_APP_ID = 'shell'
 
-/** See the file header's QUESTION note. RFC 2606 `.example` -- guaranteed
- *  never to resolve, so this placeholder cannot silently start receiving
- *  real user data before the owner replaces it with a real endpoint. */
+/** See the file header's note and docs/open-questions.md A93. RFC 2606
+ *  `.example` -- guaranteed never to resolve, so this placeholder cannot
+ *  silently start receiving real user data before the owner replaces it
+ *  with a real endpoint. */
 export const TELEMETRY_INGEST_URL = 'https://telemetry.orivonstack.example/v1/ingest'
 
 const FETCH_TIMEOUT_MS = 10_000
@@ -147,9 +145,8 @@ async function startTelemetry (app: App): Promise<void> {
       if (reconciled.transition === 'gained-focus') applyAndStore({ kind: 'focus', atMs: now, app: SHELL_APP_ID })
       else if (reconciled.transition === 'lost-focus') applyAndStore({ kind: 'blur', atMs: now })
 
-      // Real, OS-level input signal -- see this lane's QUESTION checkpoint
-      // for why this replaces any window.ts/tabs.ts-sourced interaction
-      // event (none exists).
+      // Real, OS-level input signal, chosen because no window.ts/tabs.ts-
+      // sourced interaction event exists to feed here instead.
       if (powerMonitor.getSystemIdleState(IDLE_INTERACTION_THRESHOLD_SEC) === 'active') {
         applyAndStore({ kind: 'interaction', atMs: now })
       }
@@ -219,8 +216,8 @@ export const telemetrySubsystem: Subsystem = {
 }
 
 // Read/decide functions for a future disclosure screen and "what has been
-// sent" page (deliberately not built by this lane -- see src/telemetry/
-// README.md and this lane's PR). Each falls back to loading its own copy
+// sent" page (deliberately not built here -- see src/telemetry/README.md).
+// Each falls back to loading its own copy
 // of the store if the subsystem has not started yet (should not happen in
 // practice, since runAfterReady always runs before any UI could call
 // these, but a future UI subsystem should not have to know that).

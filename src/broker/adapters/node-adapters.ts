@@ -1,16 +1,9 @@
-// Real, minimal Node adapters for createBroker's injected dependencies.
-// src/broker/README.md: "Anything with an import of electron belongs one
-// level up [from policy/], in src/broker/" -- this file has no `electron`
-// import at all (dialTcp/dialOne/resolveHost need only node:net/node:dns;
-// nodeFs needs only node:fs), so every one of these stays testable against
-// a real temp directory and a real local TCP server, with no Electron and
-// no mocking.
-//
-// Split out of ../transport/ipc.ts (docs/development/code-guidelines.md Rule 2) when
-// the byte-pump task's net.connect/net.close wiring pushed that file over
-// its 500-line budget. No behaviour changed by the split itself; dialOne's
-// destroy became reason-aware in the same commit -- that IS new behaviour,
-// covered by this file's own tests, not carried over silently.
+// Real, minimal Node adapters for createBroker's injected dependencies. No
+// `electron` import anywhere here (dialTcp/dialOne/resolveHost need only
+// node:net/node:dns; nodeFs needs only node:fs) -- src/broker/README.md's
+// rule for this layer -- so every one of these is testable against a real
+// temp directory and a real local TCP server, with no Electron and no
+// mocking.
 
 import { lookup } from 'node:dns/promises'
 import { mkdirSync, realpathSync } from 'node:fs'
@@ -44,20 +37,16 @@ export function nodeFs (userDataPath: string): BrokerFs {
     // CREATES the root, it does not merely name it. confinePath's very first
     // act is realpath(root), and its own doc calls a root that will not
     // resolve "a broker bug, not an app's" -- so a root that has never been
-    // created denies every path the app ever asks for. Nothing else in the
-    // tree creates it: writeFile's own mkdir runs on the confined path, which
-    // is only reached after confinement has already refused.
-    //
-    // Without this the fs capability is inert end to end -- an origin's very
-    // first writeFile answers 'denied', with the same message a real
-    // traversal attempt gets. It fails closed, which is why nothing caught
-    // it; it also fails always.
+    // created denies every path the app ever asks for, silently and always
+    // (it fails closed, the same as a real traversal attempt, which is why
+    // nothing catches it by symptom). Nothing else in the tree creates it:
+    // writeFile's own mkdir runs on the confined path, only reached after
+    // confinement has already refused.
     //
     // recursive: true makes this a no-op once the directory exists. It is a
     // blocking syscall on the broker's thread, in a function that already
-    // hands confinePath a synchronous realpath -- the same cost A28 is open
-    // about, not a new class of it. Whoever makes realpath async should take
-    // this with it.
+    // hands confinePath a synchronous realpath (A28) -- whoever makes
+    // realpath async should take this with it.
     rootFor: (origin) => {
       const root = join(userDataPath, 'apps', originHash(origin), 'files')
       mkdirSync(root, { recursive: true })
@@ -65,35 +54,22 @@ export function nodeFs (userDataPath: string): BrokerFs {
     },
     realpathSync,
     // NEITHER readFile NOR writeFile CATCHES. index.ts's `mapIoError` is the
-    // one place an errno becomes an OrivonError, and it only rewrites errors
-    // it maps ITSELF -- `isOrivonError(error) return error` passes an
-    // already-shaped one straight through. So a catch here that produced an
-    // OrivonError did not add mapping, it BYPASSED it: the message this file
-    // built (which named the confined absolute path, and through it the OS
-    // account name and the sha256 confinement root -- T13b, exactly what
-    // mapIoError's own doc comment says it exists to withhold) was forwarded
-    // to the app verbatim, and EACCES/EPERM never reached
-    // ERRNO_TO_CODE's 'denied' mapping, crossing instead as
-    // 'internal' + platformCode: 'EACCES' -- the permission-probe oracle
-    // errors.ts's uniformity rule exists to close.
-    //
-    // Two implementations of one idea, and the wrong one won
-    // (code-guidelines.md Rule 3). This is now the only one.
+    // one place an errno becomes an OrivonError; a catch here that produced
+    // one instead would BYPASS that mapping, forwarding the confined
+    // absolute path -- and through it the OS account name and the sha256
+    // confinement root (T13b) -- to the app verbatim as an 'internal' error
+    // rather than 'denied': the exact permission-probe oracle errors.ts's
+    // uniformity rule exists to close. One implementation of this idea
+    // (code-guidelines.md Rule 3).
     readFile: async (path) => {
       const buffer = await fsReadFile(path)
       // A COPY, not a zero-copy view over `buffer.buffer`. A Node Buffer is
       // a Uint8Array, but it can be a window into Node's shared allocation
       // pool (an 8KB slab holding unrelated data), and structured clone --
       // the path this value takes to the renderer -- serialises an
-      // ArrayBufferView by serialising its WHOLE backing ArrayBuffer. A
-      // pooled view would therefore hand the page bytes it never read,
-      // recoverable as `new Uint8Array(result.buffer)`.
-      //
-      // fs/promises.readFile happens to allocate exact-size today, so the
-      // view was not actually leaking; that is an unspecified Node
-      // implementation detail, not a guarantee, and readFileSync and
-      // Buffer.allocUnsafe both pool at this size. Copying costs one memcpy
-      // and removes the dependence entirely.
+      // ArrayBufferView by serialising its WHOLE backing ArrayBuffer. See
+      // README.md, Design notes, for why this is worth the memcpy even
+      // though nothing observable leaks today.
       return new Uint8Array(buffer)
     },
     writeFile: async (path, data) => {
@@ -135,9 +111,7 @@ export const resolveHost: Resolver = async (host) => {
 export const CLOSE_DRAIN_TIMEOUT_MS = 30_000
 
 /**
- * Releases a real Node socket per handle-contracts.ts's CloseReason table --
- * the table this file's own dialOne doc comment used to say was not yet
- * implemented ("the byte-pump task owns the real table"). This is that task.
+ * Releases a real Node socket per handle-contracts.ts's CloseReason table:
  *
  *   'closed'/'sessionEnded'  FIN, buffered writes flushed -- socket.end()
  *                            waits for the flush before resolving.
@@ -262,9 +236,8 @@ function dialOne (address: string, port: number, signal: AbortSignal): Promise<D
  * connect.ts hands over more than one literal so the caller can implement
  * its own fallback strategy across them (its header, and Node 24's default
  * `autoSelectFamily: true`). A SEQUENTIAL fallback rather than a parallel
- * happy-eyeballs race: simpler, and correct for the control-channel wiring
- * this task is about. Flagged in the PR as a simplification worth revisiting
- * if connect latency to dual-stack hosts ever matters.
+ * happy-eyeballs race: simpler, and worth revisiting if connect latency to
+ * dual-stack hosts ever matters.
  */
 export const dialTcp: Dial = async (addresses, port, signal) => {
   if (signal.aborted) throw fail('revoked', 'the grant authorising this connection was withdrawn')
