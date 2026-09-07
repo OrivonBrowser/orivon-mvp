@@ -3120,7 +3120,7 @@ by directory, so a test file left beside its source still receives the 800-line 
 passes CI. Whatever eventually closes this entry should cover both rules; they are one gap with
 two faces, not two entries.
 
-### A86 — owner-decision IDs (`d-NNNN`) are cited in source with no register **[STILL OPEN — AI recommendation]**
+### A90 — owner-decision IDs (`d-NNNN`) are cited in source with no register **[STILL OPEN — AI recommendation]**
 
 **Raised 2026-09-07**, by the repo-wide comment sweep (`stream/backlog-15-comment-sweep`). Source
 comments cite `d-0017`, `d-0020`, `d-0021` and `d-0022` as if they named entries in some decision
@@ -3142,7 +3142,7 @@ right shape than one file per decision.
 **Needed by:** whenever the next `d-NNNN` is about to be minted. Not blocking anything today —
 existing citations are self-contained now.
 
-### A87 — `§` is used 185 times across 27 docs files; `CLAUDE.md` states docs are ASCII-only prose **[STILL OPEN]**
+### A91 — `§` is used 185 times across 27 docs files; `CLAUDE.md` states docs are ASCII-only prose **[STILL OPEN]**
 
 **Raised 2026-09-07**, by the same sweep, while deciding how to rewrite `src/contracts/`'s
 `document.md SSSection` references (an undocumented ASCII stand-in for `§` used only in `.ts`
@@ -3167,7 +3167,7 @@ rule's wording, not with how anyone actually writes) — or sweep `docs/` to rem
 literal words, matching the ASCII rule as written. **This is a wording call on an owner-authored
 document, not a technical one — owner's decision.**
 
-### A88 — `SHELL_APP_ID` is a placeholder identity for the whole process, not a real app **[STILL OPEN — AI recommendation]**
+### A92 — `SHELL_APP_ID` is a placeholder identity for the whole process, not a real app **[STILL OPEN — AI recommendation]**
 
 **Raised 2026-09-07**, by the repo-wide comment sweep, finding `src/telemetry/runner.ts`
 pointing at a "this lane's QUESTION checkpoint (log.md)" that does not exist in this repository.
@@ -3183,9 +3183,9 @@ lumping everything under one placeholder.
 whole-browser usage. Not blocking today — the MVP's own success metric is stated on
 whole-browser `activeSec`, which this placeholder already measures correctly.
 
-### A89 — `TELEMETRY_INGEST_URL` has no real endpoint **[STILL OPEN]**
+### A93 — `TELEMETRY_INGEST_URL` has no real endpoint **[STILL OPEN]**
 
-**Raised 2026-09-07**, same sweep and same broken pointer as A88.
+**Raised 2026-09-07**, same sweep and same broken pointer as A92.
 
 `src/telemetry/runner.ts`'s `TELEMETRY_INGEST_URL` is an RFC 2606 `.example` address, guaranteed
 never to resolve, so telemetry cannot silently start reaching a real server before one exists.
