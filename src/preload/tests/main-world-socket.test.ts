@@ -99,6 +99,7 @@ export function fakeUdpBridgeResult (): MainWorldUdpBridge & {
   emitDropped: (inbound: number, outbound: number) => void
   emitRefusal: (refusal: SendRefusal) => void
   emitEnd: (code?: OrivonErrorCode) => void
+  emitFatal: (code: OrivonErrorCode) => void
   readonly sent: MainWorldDatagram[]
   readonly consumed: Array<{ datagrams: number, bytes: number }>
 } {
@@ -106,6 +107,7 @@ export function fakeUdpBridgeResult (): MainWorldUdpBridge & {
   let onDropped: (i: number, o: number) => void = () => {}
   let onRefusal: (r: SendRefusal) => void = () => {}
   let onReadEnd: (code: OrivonErrorCode | undefined) => void = () => {}
+  let onFatal: (code: OrivonErrorCode) => void = () => {}
   const sent: MainWorldDatagram[] = []
   const consumed: Array<{ datagrams: number, bytes: number }> = []
   return {
@@ -116,7 +118,7 @@ export function fakeUdpBridgeResult (): MainWorldUdpBridge & {
     onReadEnd: (cb) => { onReadEnd = cb },
     onDropped: (cb) => { onDropped = cb },
     onRefusal: (cb) => { onRefusal = cb },
-    onFatal: () => {},
+    onFatal: (cb) => { onFatal = cb },
     reportConsumed: (datagrams, bytes) => { consumed.push({ datagrams, bytes }) },
     send: async (datagram) => { sent.push(datagram) },
     closed: new Promise<void>(() => {}),
@@ -125,6 +127,7 @@ export function fakeUdpBridgeResult (): MainWorldUdpBridge & {
     emitDropped: (inbound, outbound) => { onDropped(inbound, outbound) },
     emitRefusal: (refusal) => { onRefusal(refusal) },
     emitEnd: (code) => { onReadEnd(code) },
+    emitFatal: (code) => { onFatal(code) },
     sent,
     consumed
   }
@@ -526,6 +529,21 @@ describe('installOrivon -- net.udpBind', () => {
       .rejects.toMatchObject({ code: 'reset' })
   })
 
+  it('does not throw when a genuine read-end arrives after onFatal already errored the controllers', async () => {
+    // onFatal's own controller calls are all try/catch-guarded for exactly
+    // this race; onReadEnd's were not, so a belated 'end' after a silence
+    // timeout already errored the stream would throw on an already-errored
+    // controller instead of being a harmless no-op.
+    const { orivon, udp } = bindTarget()
+    const socket = await orivon.net.udpBind({ port: 6881 })
+    const reader = (socket.readable as ReadableStream<MainWorldDatagram>).getReader()
+
+    udp.emitFatal('timeout')
+
+    expect(() => { udp.emitEnd() }).not.toThrow()
+    await expect(reader.read()).rejects.toMatchObject({ code: 'timeout' })
+  })
+
   // A87: a refused send never rejects `writable` -- this is how the app
   // actually learns which of its own writes was refused and why.
   it('delivers a refused send on `refusals`, carrying its destination and code', async () => {
@@ -541,22 +559,29 @@ describe('installOrivon -- net.udpBind', () => {
   })
 
   it('drops a refusal rather than growing the queue once it is full', async () => {
-    // LIMITS.inboundDatagramWindow is 8 -- no wire-level credit window paces
-    // refusals the way it paces inbound datagrams, so an app that never reads
-    // `refusals` must not let the broker's refusals pin unbounded memory here.
-    // Nine refusals fired at an unread stream must leave exactly eight
-    // queued, the ninth dropped rather than growing the queue past the mark.
+    // `refusals` reports OUTBOUND send refusals, so it is sized off
+    // LIMITS.outboundDatagramWindow (4), not the inbound window -- no
+    // wire-level credit window paces refusals the way it paces inbound
+    // datagrams, so an app that never reads `refusals` must not let the
+    // broker's refusals pin unbounded memory here. Five refusals fired at an
+    // unread stream must leave exactly four queued, the fifth dropped rather
+    // than growing the queue past the mark.
     const { orivon, udp } = bindTarget()
     const socket = await orivon.net.udpBind({ port: 6881 })
-
-    for (let i = 0; i < 9; i += 1) udp.emitRefusal({ address: '10.0.0.5', port: 4321 + i, code: 'denied' })
-
     const reader = (socket.refusals as ReadableStream<SendRefusal>).getReader()
-    const drained: SendRefusal[] = []
-    for (let i = 0; i < 8; i += 1) drained.push((await reader.read()).value as SendRefusal)
 
-    expect(drained).toHaveLength(8)
-    expect(drained.map((r) => r.port)).toEqual([4321, 4322, 4323, 4324, 4325, 4326, 4327, 4328])
+    for (let i = 0; i < 5; i += 1) udp.emitRefusal({ address: '10.0.0.5', port: 4321 + i, code: 'denied' })
+
+    const drained: SendRefusal[] = []
+    for (let i = 0; i < 4; i += 1) drained.push((await reader.read()).value as SendRefusal)
+    expect(drained.map((r) => r.port)).toEqual([4321, 4322, 4323, 4324])
+
+    // The fifth refusal (port 4325) must have been dropped outright rather
+    // than merely left queued behind the four already drained -- a sentinel
+    // enqueued now lands in the read right after them only if the queue was
+    // actually empty, which is what distinguishes "dropped" from "unread".
+    udp.emitRefusal({ address: '10.0.0.5', port: 9999, code: 'denied' })
+    expect((await reader.read()).value).toEqual({ address: '10.0.0.5', port: 9999, code: 'denied' })
     reader.releaseLock()
   })
 })
