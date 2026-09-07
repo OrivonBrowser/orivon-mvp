@@ -20,7 +20,7 @@
 //
 // 2. EVERY HANDLE RECORDS THE GRANT THAT AUTHORISED IT, captured at
 //    acquisition. That is what the revocation cascade walks
-//    (handle-contracts.md SSRevocation): on revoke, every handle in the
+//    (handle-contracts.md's "Revocation" section): on revoke, every handle in the
 //    grant's set closes immediately and abruptly -- RST, not FIN -- and every
 //    promise the app is awaiting on it rejects with 'revoked'.
 //
@@ -48,7 +48,7 @@ export interface Handle {
 /**
  * A connected TCP socket.
  *
- * CLOSE AND HALF-CLOSE (handle-contracts.md SSTcpSocket):
+ * CLOSE AND HALF-CLOSE (handle-contracts.md's "TcpSocket" section):
  *
  * | action              | wire | readable      | writable | closed         |
  * |---------------------|------|---------------|----------|----------------|
@@ -88,7 +88,9 @@ export interface TcpSocket extends Handle {
   readonly remotePort: number
   readonly localAddress: string
   readonly localPort: number
+  /** Toggles Nagle's algorithm. `on: true` disables it, sending small writes immediately. */
   setNoDelay(on: boolean): Promise<void>
+  /** Enables TCP keepalive probes; `initialDelayMs` is the delay before the first one. */
   setKeepAlive(on: boolean, initialDelayMs?: number): Promise<void>
 }
 
@@ -205,10 +207,14 @@ export interface FileHandle extends Handle {
   read(opts: { position: number, length: number }): Promise<Uint8Array>
   /** Returns bytes written. */
   write(opts: { position: number, data: Uint8Array }): Promise<number>
+  /** A stream over `[start, end)`, or the whole file when omitted. For bulk reads; see this interface's own doc. */
   readable(opts?: { start?: number, end?: number }): ReadableStream<Uint8Array>
+  /** A stream that writes starting at `start` (default 0). For bulk writes; see this interface's own doc. */
   writable(opts?: { start?: number }): WritableStream<Uint8Array>
   stat(): Promise<FileStat>
+  /** Sets the file's length, extending with zeros or discarding trailing bytes. */
   truncate(length: number): Promise<void>
+  /** Flushes to durable storage. */
   sync(): Promise<void>
 }
 
