@@ -3,9 +3,10 @@ import { CONTROL_CHANNEL, PORT_CHANNEL } from '../main/channels.js'
 import { createSocketBridge } from './socket-bridge.js'
 import type { IpcRendererLike } from './socket-bridge.js'
 import { createSocketPort } from './socket-port.js'
+import { createDatagramPort } from './datagram-port.js'
 import type { PortLike } from './socket-port.js'
 import { installOrivon } from './main-world-socket.js'
-import type { MainWorldSocketBridge } from './main-world-socket.js'
+import type { MainWorldSocketBridge, MainWorldUdpBridge } from './main-world-socket.js'
 import type { Grant, Manifest, OrivonErrorCode } from '../contracts/index.js'
 import { LIMITS } from '../contracts/index.js'
 import type { RequestEnvelope, ResponseEnvelope } from '../contracts/ipc.js'
@@ -104,6 +105,13 @@ interface SocketDescriptor {
   readonly localPort: number
 }
 
+/** `net.udpBind`'s reply. Repeated at this trust boundary for the same reason SocketDescriptor is. */
+interface UdpSocketDescriptor {
+  readonly id: string
+  readonly localAddress: string
+  readonly localPort: number
+}
+
 /** Adapts a real (DOM) `MessagePort` -- Electron's own conversion of the transferred `MessagePortMain` -- to ./socket-port.ts's PortLike. */
 function wrapPort (raw: unknown): PortLike {
   const port = raw as MessagePort
@@ -176,6 +184,46 @@ function buildBridgeResult (descriptor: SocketDescriptor, port: PortLike): MainW
   }
 }
 
+/**
+ * `net.udpBind`'s counterpart to netConnectBridge, and it correlates the same
+ * two channels the same way -- ./socket-bridge.ts is kind-agnostic, so the
+ * caller is what knows which kind of port it asked for.
+ */
+async function netUdpBindBridge (opts: { port: number }): Promise<MainWorldUdpBridge> {
+  const descriptor = await call<UdpSocketDescriptor>('net.udpBind', opts, TIMEOUT_MS.net)
+  try {
+    return buildUdpBridgeResult(descriptor, await socketBridge.waitForPort(descriptor.id))
+  } catch (error) {
+    // Same reasoning as netConnectBridge's: the broker counted this socket
+    // against concurrentSockets the instant it replied, and nothing else on
+    // this side would ever release the slot.
+    call('net.close', { id: descriptor.id }, TIMEOUT_MS.net).catch(() => {})
+    throw error
+  }
+}
+
+function buildUdpBridgeResult (descriptor: UdpSocketDescriptor, port: PortLike): MainWorldUdpBridge {
+  const datagramPort = createDatagramPort({ handleId: descriptor.id, port })
+
+  return {
+    id: descriptor.id,
+    localAddress: descriptor.localAddress,
+    localPort: descriptor.localPort,
+    onDatagram: datagramPort.onDatagram,
+    onReadEnd: datagramPort.onReadEnd,
+    onDropped: datagramPort.onDropped,
+    onRefusal: datagramPort.onRefusal,
+    onFatal: datagramPort.onFatal,
+    reportConsumed: datagramPort.reportConsumed,
+    send: datagramPort.send,
+    closed: datagramPort.closed,
+    close: async () => {
+      await call('net.close', { id: descriptor.id }, TIMEOUT_MS.net)
+      datagramPort.dispose()
+    }
+  }
+}
+
 // The four closures both exposeFallback (no net) and the executeInMainWorld
 // bridge (with net) need -- one implementation, reused by both, rather than
 // two copies of the same broker call/timeout pair (code-guidelines.md Rule
@@ -224,12 +272,18 @@ export function exposeOrivon (): void {
     appGrants,
     fsReadFile,
     fsWriteFile,
-    netConnect: netConnectBridge
+    netConnect: netConnectBridge,
+    netUdpBind: netUdpBindBridge
   }
   try {
     contextBridge.executeInMainWorld({
       func: installOrivon,
-      args: [bridge, { readWindowBytes: LIMITS.readWindowBytes, writeWindowBytes: LIMITS.writeWindowBytes }]
+      args: [bridge, {
+        readWindowBytes: LIMITS.readWindowBytes,
+        writeWindowBytes: LIMITS.writeWindowBytes,
+        inboundDatagramWindow: LIMITS.inboundDatagramWindow,
+        outboundDatagramWindow: LIMITS.outboundDatagramWindow
+      }]
     })
   } catch (error) {
     console.error('[orivon] executeInMainWorld failed; falling back without net', error)

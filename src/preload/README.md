@@ -4,9 +4,11 @@
 `newtab.ts`, added 2026-08-28 for the new-tab dashboard), plus `orivon-surface.ts` — not a
 preload entry itself, but the `orivon.*` exposure both `app.ts` and `newtab.ts`'s fallback
 branch share (build step 2's IPC task; §The rule that governs this directory still applies to
-it) — and three files it depends on: `socket-bridge.ts` (the only file touching
-`ipcRenderer.on(PORT_CHANNEL)`), `socket-port.ts` (the isolated-world per-socket state machine,
-Electron-free), and `main-world-socket.ts` (the one function serialised into the main world via
+it) — and four files it depends on: `socket-bridge.ts` (the only file touching
+`ipcRenderer.on(PORT_CHANNEL)`, and deliberately kind-agnostic — it maps a handle id to a port and
+does not care what kind of socket it belongs to), `socket-port.ts` and `datagram-port.ts` (the
+isolated-world per-socket state machines for TCP and UDP, both Electron-free), and
+`main-world-socket.ts` (the one function serialised into the main world via
 `contextBridge.executeInMainWorld` — see its own header before touching it). This is the
 narrowest and most security-critical surface in the repository.
 
@@ -21,13 +23,14 @@ neutral place a channel name shared across this trust boundary can live — `she
 `newtab.ts` already relied on this before `orivon-surface.ts` did too. Nothing else under
 `src/main/` is fair game.
 
-**Owner stream.** `app.ts`, `orivon-surface.ts`, `socket-bridge.ts`, `socket-port.ts` and
-`main-world-socket.ts` belong to `broker` (build step 2); `shell.ts` and `newtab.ts` belong to
+**Owner stream.** `app.ts`, `orivon-surface.ts`, `socket-bridge.ts`, `socket-port.ts`,
+`datagram-port.ts` and `main-world-socket.ts` belong to `broker` (build step 2); `shell.ts` and
+`newtab.ts` belong to
 `shell` (build step 1, done).
 
 | File | Loaded by | Exposes |
 |---|---|---|
-| `app.ts` | **every ordinary tab** | `orivon-surface.ts`'s `exposeOrivon()`: `orivon.version`, `orivon.app.manifest`/`grants`, `orivon.fs.readFile`/`writeFile`, `orivon.net.connect` (a real `TcpSocket`, built in the main world by `main-world-socket.ts`) |
+| `app.ts` | **every ordinary tab** | `orivon-surface.ts`'s `exposeOrivon()`: `orivon.version`, `orivon.app.manifest`/`grants`, `orivon.fs.readFile`/`writeFile`, `orivon.net.connect` (a real `TcpSocket`) and `orivon.net.udpBind` (a real `UdpSocket`), both built in the main world by `main-world-socket.ts` |
 | `shell.ts` | **only** the chrome view | Tab commands |
 | `newtab.ts` | **only** a genuinely fresh tab (`src/main/tabs.ts`'s `createTab()`, no `url` argument) | Read-only bookmark access, navigate-this-tab-only — but only after checking `location.href` against its own expected URL first, since (unlike the chrome view) a dashboard tab is ordinary and navigable; falls back to the SAME `exposeOrivon()` `app.ts` uses otherwise, not a second copy |
 
@@ -40,8 +43,8 @@ each preload a single, fully self-contained bundle.
 
 ## The rule that governs this directory
 
-**The raw `MessagePortMain` never crosses into the main world.** `socket-bridge.ts`/
-`socket-port.ts` hold it in the isolated world and expose only plain closures over it —
+**The raw `MessagePortMain` never crosses into the main world.** `socket-bridge.ts`,
+`socket-port.ts` and `datagram-port.ts` hold it in the isolated world and expose only plain closures over it —
 `write(chunk)`, `onData(cb)`, and so on (`socket-port.ts`'s own `SocketPort`). Transferring the
 port to the page is the obvious move when optimising for throughput, and it hands a raw socket
 to anything the page can reach ([`security-model.md`](../../docs/architecture/security-model.md)

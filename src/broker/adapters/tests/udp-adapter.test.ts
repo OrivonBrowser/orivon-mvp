@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createSocket } from 'node:dgram'
 import type { Socket as DgramSocket } from 'node:dgram'
 import { EventEmitter } from 'node:events'
@@ -97,6 +97,22 @@ describe('bindUdp -- where it lands', () => {
     controller.abort()
     await expect(bindUdp([{ lo: 41600, hi: 41600 }], controller.signal))
       .rejects.toMatchObject({ code: 'revoked' })
+  })
+
+  // A88: sequential picking would make an app's port the same on every run,
+  // a cheap cross-session fingerprint -- so the starting offset must come
+  // from the platform CSPRNG, matching handle-store.ts's and
+  // grant-ledger.ts's own id generation, not Math.random.
+  it('picks its starting port from the platform CSPRNG, not Math.random', async () => {
+    const randomSpy = vi.spyOn(Math, 'random')
+    const cryptoSpy = vi.spyOn(crypto, 'getRandomValues')
+
+    await bindIn(42200, 42210)
+
+    expect(cryptoSpy).toHaveBeenCalled()
+    expect(randomSpy).not.toHaveBeenCalled()
+    randomSpy.mockRestore()
+    cryptoSpy.mockRestore()
   })
 })
 

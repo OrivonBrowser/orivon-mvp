@@ -21,10 +21,47 @@
 // shares.
 
 import type { OrivonErrorCode } from '../contracts/errors.js'
+import type { SendRefusal, UdpSocket } from '../contracts/handles.js'
 
 export interface OrivonLimits {
   readonly readWindowBytes: number
   readonly writeWindowBytes: number
+  readonly inboundDatagramWindow: number
+  readonly outboundDatagramWindow: number
+}
+
+/** One UDP packet, as the page sees it. Mirrors contracts/handles.ts's Datagram. */
+export interface MainWorldDatagram {
+  readonly data: Uint8Array
+  readonly address: string
+  readonly port: number
+  readonly family: 'IPv4' | 'IPv6'
+}
+
+/**
+ * What orivon-surface.ts's netUdpBind closure resolves to -- ./datagram-port.ts's
+ * DatagramPort plus the bind descriptor and the one control-channel operation
+ * a UDP socket has (close).
+ *
+ * `onDropped` is PUSH-BASED rather than a pair of getters, and that is not a
+ * style choice: a value returned synchronously across contextBridge's proxy is
+ * unproven on this path, while sync-void calls with callbacks are exactly what
+ * the rest of this bridge already does and what the 2026-09-05 probe confirmed.
+ */
+export interface MainWorldUdpBridge {
+  readonly id: string
+  readonly localAddress: string
+  readonly localPort: number
+  readonly onDatagram: (cb: (datagram: MainWorldDatagram) => void) => void
+  readonly onReadEnd: (cb: (code: OrivonErrorCode | undefined) => void) => void
+  readonly onDropped: (cb: (inbound: number, outbound: number) => void) => void
+  /** Fires once per refused outbound datagram (A87), feeding buildUdpSocket's `refusals` stream. */
+  readonly onRefusal: (cb: (refusal: SendRefusal) => void) => void
+  readonly onFatal: (cb: (code: OrivonErrorCode) => void) => void
+  readonly reportConsumed: (datagrams: number, bytes: number) => void
+  readonly send: (datagram: MainWorldDatagram) => Promise<void>
+  readonly closed: Promise<void>
+  readonly close: () => Promise<void>
 }
 
 /** The shape ./socket-port.ts's SocketPort plus a connection descriptor and the three control-channel operations net.connect doesn't otherwise expose -- what orivon-surface.ts's netConnect bridge closure resolves to. */
@@ -55,6 +92,7 @@ export function installOrivon (
     fsReadFile: (path: string) => Promise<Uint8Array>
     fsWriteFile: (path: string, data: Uint8Array) => Promise<void>
     netConnect: (opts: { host: string, port: number }) => Promise<MainWorldSocketBridge>
+    netUdpBind: (opts: { port: number }) => Promise<MainWorldUdpBridge>
   },
   limits: OrivonLimits,
   target: { orivon?: unknown } = typeof window === 'undefined' ? {} : window as unknown as { orivon?: unknown }
@@ -147,6 +185,121 @@ export function installOrivon (
     })
   }
 
+  function buildUdpSocket (u: Awaited<ReturnType<typeof bridge.netUdpBind>>): UdpSocket {
+    let droppedInbound = 0
+    let droppedOutbound = 0
+    let readController: ReadableStreamDefaultController<MainWorldDatagram>
+    let writeController: WritableStreamDefaultController
+    let refusalController: ReadableStreamDefaultController<SendRefusal>
+
+    // Enqueued but not yet drained, oldest first. A CountQueuingStrategy makes
+    // the QUEUE's length recoverable from desiredSize, but the broker's credit
+    // window is denominated in both datagrams AND bytes -- so the byte figure
+    // has to come from somewhere, and the sizes of the datagrams that actually
+    // left the queue is the only honest source for it.
+    const queuedSizes: number[] = []
+    let enqueued = 0
+    let consumedTotal = 0
+
+    u.onDropped((inbound, outbound) => {
+      droppedInbound = inbound
+      droppedOutbound = outbound
+    })
+
+    const readable = new ReadableStream<MainWorldDatagram>({
+      start (controller) {
+        readController = controller
+        u.onDatagram((datagram) => {
+          enqueued += 1
+          queuedSizes.push(datagram.data.byteLength)
+          controller.enqueue(datagram)
+        })
+        u.onReadEnd((code) => {
+          if (code === undefined) {
+            try { controller.close() } catch { /* already settled */ }
+            try { refusalController.close() } catch { /* already settled */ }
+          } else {
+            const error = toOrivonError(code)
+            try { controller.error(error) } catch { /* already settled */ }
+            try { writeController.error(error) } catch { /* already settled */ }
+            try { refusalController.error(error) } catch { /* already settled */ }
+          }
+        })
+      },
+      pull (controller) {
+        // Same derivation as buildSocket's, counted rather than measured:
+        // desiredSize is null once the controller is no longer readable, and
+        // falling back to 0 credits NOTHING rather than the whole window.
+        const desiredSize = controller.desiredSize ?? 0
+        const queueLength = limits.inboundDatagramWindow - desiredSize
+        const delta = (enqueued - queueLength) - consumedTotal
+        if (delta > 0) {
+          consumedTotal += delta
+          let bytes = 0
+          for (const size of queuedSizes.splice(0, delta)) bytes += size
+          u.reportConsumed(delta, bytes)
+        }
+      }
+    }, new CountQueuingStrategy({ highWaterMark: limits.inboundDatagramWindow }))
+
+    const writable = new WritableStream<MainWorldDatagram>({
+      start (controller) { writeController = controller },
+      // A datagram the broker REFUSED still resolves here. Rejecting would
+      // error this stream permanently, and a peer list outside the grant is
+      // ordinary traffic for a P2P app -- the refusal shows up in
+      // droppedOutbound instead (open-questions.md A87).
+      write: async (datagram) => { await u.send(datagram) },
+      close: async () => { await u.close() },
+      abort: async () => { await u.close() }
+    }, new CountQueuingStrategy({ highWaterMark: limits.outboundDatagramWindow }))
+
+    // Fed by u.onRefusal (A87): every outbound datagram the broker refused,
+    // reported here instead of by rejecting `writable`'s sink -- a refused
+    // destination is ordinary P2P traffic and must not error the socket.
+    // Unlike `readable`, no wire-level credit window paces this: the broker
+    // reports a refusal as soon as it happens, with nothing pacing it against
+    // what this stream has drained. `droppedOutbound` above already counts
+    // every refusal regardless, so once the queue is full a new one is
+    // DROPPED here rather than queued without bound.
+    const refusals = new ReadableStream<SendRefusal>({
+      start (controller) {
+        refusalController = controller
+        u.onRefusal((refusal) => {
+          if ((controller.desiredSize ?? 0) <= 0) return
+          controller.enqueue(refusal)
+        })
+      }
+    }, new CountQueuingStrategy({ highWaterMark: limits.outboundDatagramWindow }))
+
+    u.onFatal((code) => {
+      const error = toOrivonError(code)
+      try { readController.error(error) } catch { /* already settled */ }
+      try { writeController.error(error) } catch { /* already settled */ }
+      try { refusalController.error(error) } catch { /* already settled */ }
+    })
+
+    return Object.freeze({
+      id: u.id,
+      localAddress: u.localAddress,
+      localPort: u.localPort,
+      readable,
+      writable,
+      refusals,
+      // GETTERS, not values: these move for the life of the socket, and a
+      // number copied once at acquisition would read zero forever. Object.freeze
+      // prevents redefinition, not invocation, so both survive it.
+      get droppedInbound () { return droppedInbound },
+      get droppedOutbound () { return droppedOutbound },
+      closed: new Promise<void>((resolve, reject) => { u.closed.then(resolve, reject) }),
+      close: async () => {
+        await u.close()
+        try { readController.close() } catch { /* already closed or errored */ }
+        try { writeController.error(toOrivonError('closed')) } catch { /* already settled */ }
+        try { refusalController.close() } catch { /* already closed or errored */ }
+      }
+    })
+  }
+
   const api = {
     version: 0,
     app: Object.freeze({
@@ -158,7 +311,8 @@ export function installOrivon (
       writeFile: async (path: string, data: Uint8Array) => { await bridge.fsWriteFile(path, data) }
     }),
     net: Object.freeze({
-      connect: async (opts: { host: string, port: number }) => buildSocket(await bridge.netConnect(opts))
+      connect: async (opts: { host: string, port: number }) => buildSocket(await bridge.netConnect(opts)),
+      udpBind: async (opts: { port: number }) => buildUdpSocket(await bridge.netUdpBind(opts))
     })
   }
   // A plain assignment here would let any page script (or a compromised
