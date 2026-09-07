@@ -6,8 +6,9 @@
 // presented by orivon-node-shim one layer ABOVE this one, not here.
 //
 // ReadableStream, WritableStream and Uint8Array are ambient globals, available
-// via tsconfig.json's lib: ["ES2023", "DOM", "DOM.Iterable"]. This file
-// imports nothing; see scripts/check-contracts-pure.mjs.
+// via tsconfig.json's lib: ["ES2023", "DOM", "DOM.Iterable"]. The only import
+// below is OrivonErrorCode from ./errors.js -- a sibling, which
+// scripts/check-contracts-pure.mjs treats as fine and necessary.
 //
 // FOUR RULES THAT APPLY TO EVERYTHING BELOW. Each is a contract a future
 // implementer will otherwise violate:
@@ -34,6 +35,8 @@
 //    boundary nothing can be. There is no 'connect' event and no observable
 //    "connecting" state -- the resolution of the acquisition promise IS the
 //    connect event. The shim reconciles this by buffering.
+
+import type { OrivonErrorCode } from './errors.js'
 
 /** The base every handle returned by `orivon.*` shares. */
 export interface Handle {
@@ -130,6 +133,24 @@ export interface Datagram {
 }
 
 /**
+ * One outbound datagram the broker did not send, delivered on
+ * `UdpSocket.refusals` (open-questions.md A87).
+ *
+ * `address` and `port` are exactly what the app passed to the write that
+ * produced this refusal -- never a resolved form, and never anything about
+ * WHICH granted pattern excluded it. Handing back more would let an app map
+ * the shape of its own grant by probing addresses and reading the reason,
+ * which is the same hazard `errors.ts` already avoids by keeping every
+ * 'denied' uniform. `code` is that same closed enum, so 'denied' here never
+ * carries a `platformCode` either.
+ */
+export interface SendRefusal {
+  readonly address: string
+  readonly port: number
+  readonly code: OrivonErrorCode
+}
+
+/**
  * A bound UDP socket.
  *
  * Message-oriented, not byte-oriented -- this mirrors WebTransport.datagrams
@@ -184,6 +205,24 @@ export interface UdpSocket extends Handle {
    * tells it THAT one did, never which pattern excluded it.
    */
   readonly droppedOutbound: number
+  /**
+   * Every REFUSED outbound datagram, one SendRefusal per write the broker did
+   * not send (open-questions.md A87). This is how a blocked send is reported
+   * to the app -- `droppedOutbound` above is a count for code that never
+   * thought to check it; this is the same visible-denial treatment every
+   * other capability in this file already gets.
+   *
+   * NON-TERMINAL AND DROP-ON-FULL, matching `readable`'s own discipline
+   * exactly: `write()` on `writable` still never rejects, so one address
+   * outside the grant can never tear down a working socket, and an app that
+   * never reads this stream loses nothing it had before -- `droppedOutbound`
+   * still increments regardless. If the app is not reading fast enough and
+   * this stream's internal queue is full, a new refusal is DISCARDED, not
+   * queued, for the same reason DATAGRAM LOSS IS EXPECTED above: buffering
+   * refusals the app is not consuming would just move the unbounded-memory
+   * problem this file already refuses to accept elsewhere.
+   */
+  readonly refusals: ReadableStream<SendRefusal>
 }
 
 export interface FileStat {
