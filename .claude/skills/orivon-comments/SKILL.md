@@ -50,7 +50,7 @@ per-review finding IDs).
 
 | Instead of | Write |
 |---|---|
-| `SS<Word>` (an ASCII stand-in for `§`, common in older source) | `"<Word>" section` — spell it out, do not introduce a literal `§` into `src/` (ASCII-only prose; `docs/open-questions.md` A87 is the filed contradiction between that rule and the docs corpus's own 185 real `§` characters) |
+| `SS<Word>` (an ASCII stand-in for `§`, common in older source) | `"<Word>" section` — spell it out, do not introduce a literal `§` into `src/` (ASCII-only prose; `docs/open-questions.md` A91 is the filed contradiction between that rule and the docs corpus's own 185 real `§` characters) |
 | A bare per-review finding ID (`F2`, `B-F8`, `P-F13`) | The actual constraint the finding was about. It resolves to nothing once the review round closes — `code-guidelines.md`'s comment-budget table bans it outright |
 | A PR/branch/commit reference | The constraint, not the episode — already banned in `code-guidelines.md` §Describe the code, not the change that produced it |
 | "Fixed 2026-08-27", "found by review, 2026-08-27" | Nothing, once the fix itself is what the surrounding comment already states. Keep the date only when the *history itself* is the load-bearing fact (a frozen-vector one-way door, a revised owner decision) |
