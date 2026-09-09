@@ -34,6 +34,13 @@ MIT-licensed Electron with a working player UI whose components can be lifted.
 **Bisq is tier 3** and is out of the MVP. Its UI is JavaFX, so nothing is reusable: it needs
 both a new frontend *and* a bundled JVM, for an app used episodically rather than daily.
 
+> **Note, 2026-09-09.** A fourth path for tier 3 was explored and parked:
+> [`../planning/container-apps-opportunity.md`](../planning/container-apps-opportunity.md).
+> Run the app unmodified inside a Linux container and stream its windows into a tab, so tier 3
+> costs an image build instead of a rewrite. It would also reach the tier-2 wallet cluster the
+> correction below blocks on `hid`. Post-MVP, unverified, and it reopens `subprocess` -- but the
+> "must rewrite" column above is not the only option, and that document says what it would cost.
+
 > **Correction, 2026-08-25.** The tier-2 examples above overstate what v0 reaches. Ledger Live,
 > Trezor Suite and Frame are **hardware-wallet applications requiring `hid`/USB**, which
 > `capability-api.md` excludes from v0 entirely — for every tier. MyCrypto is archived. Of the
