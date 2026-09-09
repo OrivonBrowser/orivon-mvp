@@ -1,11 +1,11 @@
 import { statSync } from 'node:fs'
 import { mkdtemp, readFile as fsReadFile } from 'node:fs/promises'
-import { createServer, type Server, type Socket } from 'node:net'
+import { connect as netConnect, createServer, type Server, type Socket } from 'node:net'
 import { createBroker } from '../../index.js'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { dialTcp, nodeFs, resolveHost } from '../node-adapters.js'
+import { dialTcp, listenTcp, nodeFs, resolveHost } from '../node-adapters.js'
 import { originHash } from '../../grants/origin-hash.js'
 
 /** A once-only AbortController's signal -- dialTcp/dialOne need one, and none of these tests abort mid-dial. */
@@ -246,6 +246,7 @@ describe('the fs capability works end to end for an origin that has never writte
     const broker = createBroker({
       dial: async () => { throw new Error('not used by this test') },
       bind: async () => { throw new Error('not used by this test') },
+      listen: async () => { throw new Error('not used by this test') },
       resolve: async () => [],
       now: () => Date.now(),
       fs: nodeFs(userData),
@@ -259,5 +260,176 @@ describe('the fs capability works end to end for an origin that has never writte
     await broker.fs.writeFile('https://app.example', 'hello.txt', new Uint8Array([1, 2, 3]))
 
     expect(Array.from(await broker.fs.readFile('https://app.example', 'hello.txt'))).toEqual([1, 2, 3])
+  })
+})
+
+/** Connects a real client socket to `port` and waits for it to establish. */
+async function connectClient (port: number): Promise<Socket> {
+  const client = netConnect({ host: '127.0.0.1', port })
+  await new Promise<void>((resolve, reject) => {
+    client.once('connect', resolve)
+    client.once('error', reject)
+  })
+  return client
+}
+
+describe('listenTcp against a real TCP client', () => {
+  it('binds inside the granted range and reports the real bound port', async () => {
+    const listened = await listenTcp([{ lo: 30000, hi: 30010 }], neverAborts())
+
+    expect(listened.localPort).toBeGreaterThanOrEqual(30000)
+    expect(listened.localPort).toBeLessThanOrEqual(30010)
+    expect(listened.localAddress).toBe('0.0.0.0')
+
+    await listened.destroy('closed')
+  })
+
+  it('accept() resolves with a real connection once a client connects', async () => {
+    const listened = await listenTcp([{ lo: 30000, hi: 30010 }], neverAborts())
+    const acceptPromise = listened.accept()
+
+    const client = await connectClient(listened.localPort)
+    const accepted = await acceptPromise
+
+    expect(accepted).not.toBeNull()
+    expect(accepted?.remoteAddress).toBe('127.0.0.1')
+
+    client.destroy()
+    await accepted?.destroy('closed')
+    await listened.destroy('closed')
+  })
+
+  it('a second accept() waits until a second client connects -- no pre-accepting ahead of demand', async () => {
+    const listened = await listenTcp([{ lo: 30000, hi: 30010 }], neverAborts())
+
+    const first = await (async () => {
+      const p = listened.accept()
+      const client = await connectClient(listened.localPort)
+      const accepted = await p
+      return { client, accepted }
+    })()
+
+    let secondSettled = false
+    const secondPromise = listened.accept().then((value) => { secondSettled = true; return value })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(secondSettled).toBe(false)
+
+    const secondClient = await connectClient(listened.localPort)
+    const second = await secondPromise
+    expect(second).not.toBeNull()
+
+    first.client.destroy()
+    secondClient.destroy()
+    await first.accepted?.destroy('closed')
+    await second?.destroy('closed')
+    await listened.destroy('closed')
+  })
+
+  it("destroy('closed') ends the server gracefully -- a still-pending accept() resolves null, not an error", async () => {
+    const listened = await listenTcp([{ lo: 30000, hi: 30010 }], neverAborts())
+    const pending = listened.accept()
+
+    await listened.destroy('closed')
+
+    expect(await pending).toBeNull()
+  })
+
+  it("destroy('revoked') rejects a still-pending accept() with 'revoked', not a silent null", async () => {
+    const listened = await listenTcp([{ lo: 30000, hi: 30010 }], neverAborts())
+    const pending = listened.accept()
+
+    await listened.destroy('revoked')
+
+    await expect(pending).rejects.toMatchObject({ code: 'revoked' })
+  })
+
+  it('destroy() resets every accepted-but-unclaimed connection still queued', async () => {
+    const listened = await listenTcp([{ lo: 30000, hi: 30010 }], neverAborts())
+    const client = await connectClient(listened.localPort)
+    const clientErrored = new Promise<NodeJS.ErrnoException>((resolve) => client.once('error', resolve))
+    // Give the server's 'connection' handler a tick to run and queue it --
+    // nothing has called accept() yet, so it lands in the internal queue.
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    await listened.destroy('revoked')
+
+    const error = await clientErrored
+    expect(error.code).toBe('ECONNRESET')
+  })
+
+  it('rejects a listen with no free port in the granted range', async () => {
+    const first = await listenTcp([{ lo: 30020, hi: 30020 }], neverAborts())
+
+    await expect(listenTcp([{ lo: 30020, hi: 30020 }], neverAborts())).rejects.toMatchObject({ code: 'limit' })
+
+    await first.destroy('closed')
+  })
+})
+
+describe('net.listen end to end: a real accepted connection, a real denial, a real revocation cascade', () => {
+  // The lane's own exit criterion (unattended-build-queue.md item 2.4), pinned
+  // against REAL sockets rather than stubs: an inbound connection is accepted
+  // under a grant, refused without one, and revoking the grant tears down
+  // both the listening server and every socket it had already accepted.
+
+  const APP = 'https://app.example'
+
+  function realBroker (): ReturnType<typeof createBroker> {
+    return createBroker({
+      dial: async () => { throw new Error('not used by this test') },
+      bind: async () => { throw new Error('not used by this test') },
+      listen: listenTcp,
+      resolve: async () => [],
+      now: () => Date.now(),
+      fs: nodeFs('/tmp/orivon-listen-e2e-unused'),
+      keychain: { getSeed: async () => { throw new Error('not used by this test') } }
+    })
+  }
+
+  it('denies net.listen outright when tcp.listen was never granted', async () => {
+    const broker = realBroker()
+    broker.registerApp(APP, {
+      orivonApiVersion: 0, id: 'org.orivon.test', name: 'Test', version: '1.0.0', entry: '/index.html',
+      capabilities: { net: { tcp: { listen: ['30030-30040'] } } }
+    })
+
+    await expect(broker.net.listen(APP, { port: 30030 })).rejects.toMatchObject({ code: 'denied' })
+  })
+
+  it('accepts a real inbound connection under a grant, and revocation tears down the server and the accepted socket', async () => {
+    const broker = realBroker()
+    broker.registerApp(APP, {
+      orivonApiVersion: 0, id: 'org.orivon.test', name: 'Test', version: '1.0.0', entry: '/index.html',
+      capabilities: { net: { tcp: { listen: ['30030-30040'] } } }
+    })
+    const grant = await broker.grant(APP, 'tcp.listen', ['30030-30040'])
+
+    const server = await broker.net.listen(APP, { port: 0 })
+    expect(server.localPort).toBeGreaterThanOrEqual(30030)
+    expect(server.localPort).toBeLessThanOrEqual(30040)
+
+    const reader = server.connections.getReader()
+    const readPromise = reader.read()
+    const client = await connectClient(server.localPort)
+    const { value: socket, done } = await readPromise
+
+    expect(done).toBe(false)
+    expect(socket).toBeDefined()
+    expect(socket?.remoteAddress).toBe('127.0.0.1')
+
+    const clientErrored = new Promise<NodeJS.ErrnoException>((resolve) => client.once('error', resolve))
+    const socketClosedRejection = socket?.closed.catch((error: unknown) => error)
+
+    await broker.revoke(APP, grant.id)
+
+    // The accepted socket's own handle rejects 'revoked' -- the derived-
+    // handle half of the cascade (handle-contracts.md's "Revocation"
+    // section: "closing the server closes every socket it produced").
+    await expect(socketClosedRejection).resolves.toMatchObject({ code: 'revoked' })
+    // And the real wire effect: an RST reaches the client, not a clean FIN.
+    const clientError = await clientErrored
+    expect(clientError.code).toBe('ECONNRESET')
+    // The server's own handle is gone too, not just the socket it produced.
+    await expect(server.closed).rejects.toMatchObject({ code: 'revoked' })
   })
 })

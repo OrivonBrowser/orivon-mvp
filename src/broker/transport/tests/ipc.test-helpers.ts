@@ -9,7 +9,7 @@ import type { ControlEvent, PortLike, PortPair, PortTransport } from '../ipc.js'
 import type { Broker } from '../../broker-contracts.js'
 import { createPortRegistry } from '../port-registry.js'
 import type { Datagram, Grant, Manifest, OrivonError, OrivonErrorCode } from '../../../contracts/index.js'
-import type { CloseReason, FailableTcpSocket, FailableUdpSocket } from '../../handles/handle-contracts.js'
+import type { CloseReason, FailableTcpServer, FailableTcpSocket, FailableUdpSocket } from '../../handles/handle-contracts.js'
 import type { RequestEnvelope } from '../../../contracts/ipc.js'
 
 export const APP = 'https://app.example'
@@ -53,6 +53,7 @@ export function stubBroker (
     grants: (origin: string) => Promise<readonly Grant[]>
     connect: (origin: string, opts: { host: string, port: number }) => Promise<FailableTcpSocket>
     udpBind: (origin: string, opts: { port: number }) => Promise<FailableUdpSocket>
+    listen: (origin: string, opts: { port: number }) => Promise<FailableTcpServer>
     readFile: (origin: string, path: string) => Promise<Uint8Array>
     writeFile: (origin: string, path: string, data: Uint8Array) => Promise<void>
     registerApp: (origin: string, manifest: Manifest) => Promise<void>
@@ -83,6 +84,13 @@ export function stubBroker (
       udpBind: async (origin, opts) => {
         calls.push({ method: 'net.udpBind', origin, args: opts })
         return await (overrides.udpBind?.(origin, opts) ?? notStubbed())
+      },
+      // Same story as `udpBind` above: satisfies `Broker`, unused by any IPC
+      // test here -- net.listen has no control-channel wiring yet (see this
+      // lane's own PR body for why that is out of scope).
+      listen: async (origin, opts) => {
+        calls.push({ method: 'net.listen', origin, args: opts })
+        return await (overrides.listen?.(origin, opts) ?? notStubbed())
       }
     },
     fs: {

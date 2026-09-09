@@ -22,7 +22,7 @@ import { publishBroker } from '../../main/registry.js'
 import type { Subsystem, SubsystemContext } from '../../main/registry.js'
 import { createBroker } from '../index.js'
 import type { Broker, CreateBrokerOptions } from '../broker-contracts.js'
-import { dialTcp, nodeFs, resolveHost } from '../adapters/node-adapters.js'
+import { dialTcp, listenTcp, nodeFs, resolveHost } from '../adapters/node-adapters.js'
 import { bindUdp } from '../adapters/udp-adapter.js'
 import { nodeLedgerStorage } from '../grants/node-ledger-storage.js'
 import { createPortRegistry } from './port-registry.js'
@@ -374,7 +374,8 @@ export const brokerIpcSubsystem: Subsystem = {
     const realNow = (): number => Date.now()
     const deps: CreateBrokerOptions = {
       dial: dialTcp,
-    bind: bindUdp,
+      bind: bindUdp,
+      listen: listenTcp,
       resolve: resolveHost,
       now: realNow,
       fs: nodeFs(ctx.app.getPath('userData')),

@@ -36,7 +36,7 @@ import {
 import { HOST, STATIC_PORT } from '../apps/fixture/config.mjs'
 import { createBroker } from '../src/broker/index.js'
 import type { BrokerFs, CreateBrokerOptions, Keychain } from '../src/broker/broker-contracts.js'
-import { dialTcp, resolveHost } from '../src/broker/adapters/node-adapters.js'
+import { dialTcp, listenTcp, resolveHost } from '../src/broker/adapters/node-adapters.js'
 import { bindUdp } from '../src/broker/adapters/udp-adapter.js'
 import type { Datagram } from '../src/contracts/index.js'
 
@@ -193,6 +193,7 @@ it('Phase 2: the real broker binds a real UDP socket, round-trips a datagram, an
     const deps: CreateBrokerOptions = {
       dial: dialTcp,
       bind: bindUdp,
+      listen: listenTcp,
       resolve: resolveHost,
       now: () => Date.now(),
       fs: fsStub,
