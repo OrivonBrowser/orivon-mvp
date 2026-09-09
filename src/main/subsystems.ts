@@ -23,11 +23,13 @@
 // Which stream owns which entry: docs/development/parallel-work.md.
 import type { Subsystem } from './registry.js'
 import { brokerIpcSubsystem } from '../broker/transport/ipc.js'
+import { devGrantSubsystem } from './dev-grant.js'
 import { loaderSubsystem } from '../loader/subsystem.js'
 import { telemetrySubsystem } from '../telemetry/runner.js'
 
 export const subsystems: Subsystem[] = [
   brokerIpcSubsystem, // build step 2: broker -> src/broker/. Writes ctx.broker -- anything reading it must be listed below this line.
+  devGrantSubsystem, // queue item 0.3: dev-only grant hook -> src/main/dev-grant.ts. Reads ctx.broker -- must stay below brokerIpcSubsystem.
   // build step 3: shim      -> src/shim/
   loaderSubsystem, // build step 4: loader -> src/loader/
   // build step 6: trust     -> src/trust/
