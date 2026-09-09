@@ -1,0 +1,7 @@
+{
+  "name": "orivon-spike-adr7-probe",
+  "version": "0.0.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "main.cjs"
+}
