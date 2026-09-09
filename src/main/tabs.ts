@@ -11,6 +11,8 @@
 // do not exist until build step 4, and ordinary tabs must browse freely.
 import { WebContentsView, type View } from 'electron'
 import { join } from 'node:path'
+import { partitionFor } from '../broker/grants/origin-hash.js'
+import { originFromUrl } from '../broker/policy/origin.js'
 import type { Bookmark } from './bookmarks.js'
 import { fetchFaviconDataUrlCached, pickFaviconUrl, shouldClearFavicon } from './favicon.js'
 import { parseOmniboxInput, sanitizeDirectUrl } from './omnibox.js'
@@ -89,6 +91,18 @@ const MAX_TABS = 100
 let nextId = 1
 function makeTabId (): string {
   return `tab-${nextId++}`
+}
+
+/** `partitionFor`/`originFromUrl` are the SAME functions the broker uses to
+ * key its grant ledger and (ADR-0007) to register a cached bundle's own
+ * protocol interception -- so a tab and its eventual grant always agree on
+ * which Electron session an origin means. Returns undefined for anything
+ * with no derivable origin (about:blank, a rejected navigation), which
+ * keeps that tab on the shell's own default session -- there is no app
+ * storage to isolate for a page the user never reached. */
+function partitionForTarget (target: string): string | undefined {
+  const origin = originFromUrl(target)
+  return origin === null ? undefined : partitionFor(origin)
 }
 
 interface TabRecord {
@@ -194,6 +208,13 @@ export class TabManager {
     const isDashboard = url === undefined
     const target = isDashboard ? this.dashboardUrl : (sanitizeDirectUrl(url) ?? BLANK_URL)
 
+    // Excluded even though the dashboard's own URL is occasionally a real
+    // http(s) address (electron-vite's dev server) -- `partitionForTarget`
+    // cannot tell that apart from a real app on scheme alone, but the
+    // dashboard is shell UI (ADR-0003's "browser state" tier), never app
+    // content, and must never be isolated as if it were an app's own origin.
+    const partition = isDashboard ? undefined : partitionForTarget(target)
+
     const id = makeTabId()
     const view = new WebContentsView({
       webPreferences: {
@@ -204,6 +225,7 @@ export class TabManager {
         // is an ordinary, navigable tab (unlike the chrome view), and
         // preload cannot be un-set if the user later navigates away.
         ...(isDashboard ? { additionalArguments: [`--orivon-newtab-url=${this.dashboardUrl}`] } : {}),
+        ...(partition !== undefined ? { partition } : {}),
         contextIsolation: true,
         sandbox: true,
         nodeIntegration: false,
@@ -341,6 +363,12 @@ export class TabManager {
     const record = this.tabs.get(id)
     if (record === undefined || record.view.webContents.isDestroyed()) return
     const target = this.resolveTarget(rawInput)
+    // Session partition is fixed at WebContentsView construction
+    // (createTab(), above) and cannot change here -- an Electron
+    // constraint, not a choice made in this file. A tab navigated to a
+    // different origin via the omnibox keeps whichever partition it was
+    // CREATED with; only a genuinely new tab gets the new origin's own
+    // partition. Flagged to the owner (open-questions.md, see this PR).
     void record.view.webContents.loadURL(target)
   }
 
