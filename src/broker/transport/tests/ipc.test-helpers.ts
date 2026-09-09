@@ -56,6 +56,8 @@ export function stubBroker (
     listen: (origin: string, opts: { port: number }) => Promise<FailableTcpServer>
     readFile: (origin: string, path: string) => Promise<Uint8Array>
     writeFile: (origin: string, path: string, data: Uint8Array) => Promise<void>
+    idPublicKey: (origin: string, opts: { curve: string }) => Promise<Uint8Array>
+    idSign: (origin: string, opts: { curve: string, payload: Uint8Array }) => Promise<Uint8Array>
     registerApp: (origin: string, manifest: Manifest) => Promise<void>
     versionFloorFor: (origin: string) => Promise<string>
     rollbackAcknowledgedVersionFor: (origin: string) => Promise<string | undefined>
@@ -101,6 +103,16 @@ export function stubBroker (
       writeFile: async (origin, path, data) => {
         calls.push({ method: 'fs.writeFile', origin, args: { path, data } })
         await (overrides.writeFile?.(origin, path, data) ?? notStubbed())
+      }
+    },
+    id: {
+      publicKey: async (origin, opts) => {
+        calls.push({ method: 'id.publicKey', origin, args: opts })
+        return await (overrides.idPublicKey?.(origin, opts) ?? notStubbed())
+      },
+      sign: async (origin, opts) => {
+        calls.push({ method: 'id.sign', origin, args: opts })
+        return await (overrides.idSign?.(origin, opts) ?? notStubbed())
       }
     },
     registerApp: async (origin, manifest) => {

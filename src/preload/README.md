@@ -30,7 +30,7 @@ neutral place a channel name shared across this trust boundary can live — `she
 
 | File | Loaded by | Exposes |
 |---|---|---|
-| `app.ts` | **every ordinary tab** | `orivon-surface.ts`'s `exposeOrivon()`: `orivon.version`, `orivon.app.manifest`/`grants`, `orivon.fs.readFile`/`writeFile`, `orivon.net.connect` (a real `TcpSocket`) and `orivon.net.udpBind` (a real `UdpSocket`), both built in the main world by `main-world-socket.ts` |
+| `app.ts` | **every ordinary tab** | `orivon-surface.ts`'s `exposeOrivon()`: `orivon.version`, `orivon.app.manifest`/`grants`, `orivon.fs.readFile`/`writeFile`, `orivon.id.publicKey`/`sign`, `orivon.net.connect` (a real `TcpSocket`) and `orivon.net.udpBind` (a real `UdpSocket`), both built in the main world by `main-world-socket.ts` |
 | `shell.ts` | **only** the chrome view | Tab commands |
 | `newtab.ts` | **only** a genuinely fresh tab (`src/main/tabs.ts`'s `createTab()`, no `url` argument) | Read-only bookmark access, navigate-this-tab-only — but only after checking `location.href` against its own expected URL first, since (unlike the chrome view) a dashboard tab is ordinary and navigable; falls back to the SAME `exposeOrivon()` `app.ts` uses otherwise, not a second copy |
 
@@ -74,12 +74,14 @@ the file's overall shape):
   call this file's `exposeOrivon()`, so there is exactly one `orivon.*` object definition, not
   two copies drifting apart (code-guidelines.md Rule 3).
 - **This is build step 2's control surface** -- `../broker/transport/ipc.ts`'s `handleControlRequest`, on
-  the other side of `CONTROL_CHANNEL`. Six methods are wired: `app.manifest`, `app.grants`,
-  `fs.readFile`, `fs.writeFile`, `net.connect`, `net.close` (plus `net.setNoDelay`/
-  `setKeepAlive`). Everything else in `docs/architecture/capability-api.md` (`net.listen`,
-  `udpBind`, `fs.open`/`mkdir`/`readdir`/`stat`/`rm`/`rename`/`userSelected`, `id.*`,
-  `app.requestGrant`) is simply absent -- the broker does not implement the rest yet either, and
-  a method that always threw `'invalid'` would be worse than a method that is not there.
+  the other side of `CONTROL_CHANNEL`. `app.manifest`, `app.grants`, `fs.readFile`,
+  `fs.writeFile`, `id.publicKey`, `id.sign`, `net.connect`, `net.udpBind`, `net.close` (plus
+  `net.setNoDelay`/`setKeepAlive`) are wired. Everything else in
+  `docs/architecture/capability-api.md` (`net.listen`, `fs.open`/`mkdir`/`readdir`/`stat`/`rm`/
+  `rename`/`userSelected`, `id.requestIdentity`, `app.requestGrant`) is simply absent -- the
+  broker does not implement the rest yet either (`id.requestIdentity` specifically needs the
+  connect-prompt UI, a later build step), and a method that always threw `'invalid'` would be
+  worse than a method that is not there.
 - **`net.connect`'s real shape (readable/writable are actual WHATWG streams) cannot be built in
   the isolated world.** `contextBridge` copies plain values into the main world; it does not
   proxy a stream built on this side intact (checked live via context7 against Electron's own
