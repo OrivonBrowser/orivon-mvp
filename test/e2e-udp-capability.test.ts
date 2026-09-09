@@ -18,8 +18,19 @@
 // declares only tcp.connect, and apps/fixture/ belongs to the `fixture-app`
 // stream (parallel-work.md's ownership map). It does not need to change:
 // GrantLedger.grant does not check the manifest declaration -- the subset check
-// is the permission prompt's job -- so Phase 2's test-only grant works without
-// it, and Phase 1's denial does not depend on what the manifest says.
+// is the permission prompt's job -- so Phase 2's grant works without it, and
+// Phase 1's denial does not depend on what the manifest says.
+//
+// UPDATED (docs/planning/unattended-build-queue.md item 0.3): Phase 2 used to
+// call broker.registerApp()/broker.grant() directly, as bespoke test code. It
+// now grants through src/main/dev-grant.ts's hook instead -- the same
+// developer-only path a real launched app exposes only to a debugger attached
+// to its own process (never to IPC or window.orivon), applied here to this
+// test's own locally-constructed Broker. revoke() and app.grants() below stay
+// direct broker calls: neither has a page-facing equivalent (a page must
+// never revoke its own grant), so there is no "test-only API" question for
+// them to raise -- unlike registerApp()/grant(), they are not a stand-in for
+// a production entry point that does not exist yet.
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { spawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
@@ -38,7 +49,9 @@ import { createBroker } from '../src/broker/index.js'
 import type { BrokerFs, CreateBrokerOptions, Keychain } from '../src/broker/broker-contracts.js'
 import { dialTcp, listenTcp, resolveHost } from '../src/broker/adapters/node-adapters.js'
 import { bindUdp } from '../src/broker/adapters/udp-adapter.js'
-import type { Datagram } from '../src/contracts/index.js'
+import { installDevGrantHook } from '../src/main/dev-grant.js'
+import type { DevGrantRequest } from '../src/main/dev-grant.js'
+import type { Datagram, Manifest } from '../src/contracts/index.js'
 
 const TEST_DIR = fileURLToPath(new URL('./', import.meta.url)).replace(/[/\\]$/, '')
 const FIXTURE_DIR = fileURLToPath(new URL('../apps/fixture/', import.meta.url)).replace(/[/\\]$/, '')
@@ -200,16 +213,27 @@ it('Phase 2: the real broker binds a real UDP socket, round-trips a datagram, an
       keychain: keychainStub
     }
     const broker = createBroker(deps)
-    await broker.registerApp(FIXTURE_ORIGIN, {
+    const fixtureManifest: Manifest = {
       orivonApiVersion: 0,
       id: 'app.orivon.fixture.udp',
       name: 'Orivon Fixture (udp)',
       version: '0.1.0',
       entry: 'index.html',
       capabilities: { net: { udp: { bind: [BIND_RANGE], send: [`${HOST}:${String(UDP_ECHO_PORT)}`] } } }
-    })
-    await broker.grant(FIXTURE_ORIGIN, 'udp.bind', [BIND_RANGE])
-    await broker.grant(FIXTURE_ORIGIN, 'udp.send', [`${HOST}:${String(UDP_ECHO_PORT)}`])
+    }
+
+    // THE GRANT ITSELF, through src/main/dev-grant.ts's hook rather than
+    // this test calling registerApp()/grant() directly -- see this file's
+    // header. installDevGrantHook installs onto whatever Broker it is given;
+    // here that is this test's own locally-constructed one.
+    installDevGrantHook(broker)
+    const grant = globalThis.__orivonDevGrant
+    if (grant === undefined) throw new Error('installDevGrantHook did not install globalThis.__orivonDevGrant')
+    const grantUdp = async (capability: DevGrantRequest['capability'], patterns: DevGrantRequest['patterns']): Promise<void> => {
+      await grant({ origin: FIXTURE_ORIGIN, manifest: fixtureManifest, capability, patterns })
+    }
+    await grantUdp('udp.bind', [BIND_RANGE])
+    await grantUdp('udp.send', [`${HOST}:${String(UDP_ECHO_PORT)}`])
 
     // ---- the bind lands inside what was granted
     const socket = await broker.net.udpBind(FIXTURE_ORIGIN, { port: 0 })
