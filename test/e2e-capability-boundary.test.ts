@@ -79,7 +79,7 @@ import {
 import { HOST, ECHO_PORT, STATIC_PORT } from '../apps/fixture/config.mjs'
 import { createBroker } from '../src/broker/index.js'
 import type { BrokerFs, CreateBrokerOptions, Keychain } from '../src/broker/broker-contracts.js'
-import { dialTcp, resolveHost } from '../src/broker/adapters/node-adapters.js'
+import { dialTcp, listenTcp, resolveHost } from '../src/broker/adapters/node-adapters.js'
 import { bindUdp } from '../src/broker/adapters/udp-adapter.js'
 import { isOrivonErrorLike } from '../src/broker/errors.js'
 import { parseManifest } from '../src/loader/manifest.js'
@@ -500,6 +500,7 @@ it('Phase 2: the real broker grants a round trip and denies an out-of-manifest c
         // trip. The UDP one gets its own e2e rather than being bolted on --
         // this file is already at 723 of Rule 2's 800 lines for a test.
         bind: bindUdp,
+        listen: listenTcp,
         resolve: resolveHost,
         now: () => Date.now(),
         fs: fsStub,
