@@ -80,6 +80,7 @@ function fakeBridge (
 ): {
   appManifest: () => Promise<unknown>, appGrants: () => Promise<unknown>
   fsReadFile: (path: string) => Promise<Uint8Array>, fsWriteFile: (path: string, data: Uint8Array) => Promise<void>
+  idPublicKey: (curve: string) => Promise<Uint8Array>, idSign: (curve: string, payload: Uint8Array) => Promise<Uint8Array>
   netConnect: (opts: { host: string, port: number }) => Promise<ReturnType<typeof fakeSocketBridgeResult>>
   netUdpBind: (opts: { port: number }) => Promise<MainWorldUdpBridge>
 } {
@@ -88,6 +89,8 @@ function fakeBridge (
     appGrants: async () => [],
     fsReadFile: async () => new Uint8Array(),
     fsWriteFile: async () => {},
+    idPublicKey: async () => new Uint8Array(),
+    idSign: async () => new Uint8Array(),
     netConnect: async (_opts) => netConnectResult,
     netUdpBind: async (_opts) => udpResult ?? fakeUdpBridgeResult()
   }
@@ -144,7 +147,40 @@ describe('installOrivon', () => {
     expect(orivon.version).toBe(0)
     expect(typeof (orivon.app as Record<string, unknown>).manifest).toBe('function')
     expect(typeof (orivon.fs as Record<string, unknown>).readFile).toBe('function')
+    expect(typeof (orivon.id as Record<string, unknown>).publicKey).toBe('function')
+    expect(typeof (orivon.id as Record<string, unknown>).sign).toBe('function')
     expect(typeof (orivon.net as Record<string, unknown>).connect).toBe('function')
+  })
+
+  it('id.publicKey/sign delegate to the bridge closures with the curve (and payload) unwrapped from opts', async () => {
+    const target: Record<string, unknown> = {}
+    const bridge = fakeBridge(fakeSocketBridgeResult())
+    const publicKeyCalls: string[] = []
+    const signCalls: Array<{ curve: string, payload: Uint8Array }> = []
+    bridge.idPublicKey = async (curve) => { publicKeyCalls.push(curve); return new Uint8Array([1]) }
+    bridge.idSign = async (curve, payload) => { signCalls.push({ curve, payload }); return new Uint8Array([2]) }
+    installOrivon(bridge, LIMITS, target)
+
+    const orivon = target.orivon as {
+      id: {
+        publicKey: (opts: { curve: string }) => Promise<Uint8Array>
+        sign: (opts: { curve: string, payload: Uint8Array }) => Promise<Uint8Array>
+      }
+    }
+    const payload = new Uint8Array([9, 9])
+    const publicKey = await orivon.id.publicKey({ curve: 'P-256' })
+    const signature = await orivon.id.sign({ curve: 'P-256', payload })
+
+    expect(publicKeyCalls).toEqual(['P-256'])
+    expect(signCalls).toEqual([{ curve: 'P-256', payload }])
+    expect(publicKey).toEqual(new Uint8Array([1]))
+    expect(signature).toEqual(new Uint8Array([2]))
+  })
+
+  it('orivon.id is frozen, same as app/fs', () => {
+    const target: Record<string, unknown> = {}
+    installOrivon(fakeBridge(fakeSocketBridgeResult()), LIMITS, target)
+    expect(Object.isFrozen((target.orivon as { id: unknown }).id)).toBe(true)
   })
 
   it('net.connect resolves to a TcpSocket-shaped object with real WHATWG streams', async () => {

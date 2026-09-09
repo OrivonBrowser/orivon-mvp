@@ -9,11 +9,11 @@
 // rather than building streams directly in ./socket-port.ts.
 //
 // `bridge` is a plain object of proxied closures orivon-surface.ts built:
-// one per app.manifest/app.grants/fs.readFile/fs.writeFile, plus
-// `netConnect`, resolving to a per-socket bag shaped like ./socket-port.ts's
-// own SocketPort plus the connection descriptor and the three
-// control-channel operations (close/setNoDelay/setKeepAlive) net.connect
-// doesn't otherwise expose.
+// one per app.manifest/app.grants/fs.readFile/fs.writeFile/id.publicKey/
+// id.sign, plus `netConnect`, resolving to a per-socket bag shaped like
+// ./socket-port.ts's own SocketPort plus the connection descriptor and the
+// three control-channel operations (close/setNoDelay/setKeepAlive)
+// net.connect doesn't otherwise expose.
 //
 // `target` defaults to the real `window` (this runs IN the main world) but
 // is overridable, the same pattern src/shim/globals.ts uses for the same
@@ -91,6 +91,8 @@ export function installOrivon (
     appGrants: () => Promise<unknown>
     fsReadFile: (path: string) => Promise<Uint8Array>
     fsWriteFile: (path: string, data: Uint8Array) => Promise<void>
+    idPublicKey: (curve: string) => Promise<Uint8Array>
+    idSign: (curve: string, payload: Uint8Array) => Promise<Uint8Array>
     netConnect: (opts: { host: string, port: number }) => Promise<MainWorldSocketBridge>
     netUdpBind: (opts: { port: number }) => Promise<MainWorldUdpBridge>
   },
@@ -309,6 +311,10 @@ export function installOrivon (
     fs: Object.freeze({
       readFile: async (path: string) => await bridge.fsReadFile(path),
       writeFile: async (path: string, data: Uint8Array) => { await bridge.fsWriteFile(path, data) }
+    }),
+    id: Object.freeze({
+      publicKey: async (opts: { curve: string }) => await bridge.idPublicKey(opts.curve),
+      sign: async (opts: { curve: string, payload: Uint8Array }) => await bridge.idSign(opts.curve, opts.payload)
     }),
     net: Object.freeze({
       connect: async (opts: { host: string, port: number }) => buildSocket(await bridge.netConnect(opts)),
