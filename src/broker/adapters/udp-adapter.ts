@@ -15,6 +15,7 @@ import type { BoundUdpSocket, SendOutcome } from '../broker-contracts.js'
 import type { PortRange } from '../policy/bind.js'
 import { fail } from '../errors.js'
 import { mapIoError } from '../io-errors.js'
+import { countPorts, portAt, randomStart } from './port-pick.js'
 
 /** How many ports to try inside the granted ranges before giving up. */
 const BIND_ATTEMPTS = 64
@@ -30,36 +31,6 @@ function errnoCode (error: unknown): string | undefined {
  */
 function refused (code: OrivonErrorCode, platformCode?: string): SendOutcome {
   return platformCode === undefined ? { sent: false, code } : { sent: false, code, platformCode }
-}
-
-/** Total ports across `ranges`, as a bound for the random pick below. */
-function countPorts (ranges: readonly PortRange[]): number {
-  return ranges.reduce((total, range) => total + (range.hi - range.lo + 1), 0)
-}
-
-/**
- * A starting offset in `[0, total)` from the platform CSPRNG -- the same
- * source handle-store.ts's `newHandleId` and grant-ledger.ts's `newGrantId`
- * use, and for the same reason picking the port at random exists at all
- * (A88): `Math.random` is not required to be unpredictable, and this value's
- * whole purpose is being unpredictable across runs.
- */
-function randomStart (total: number): number {
-  const value = new Uint32Array(1)
-  crypto.getRandomValues(value)
-  return value[0]! % total
-}
-
-/** The `offset`-th port across `ranges`, treating them as one concatenated list. */
-function portAt (ranges: readonly PortRange[], offset: number): number {
-  let remaining = offset
-  for (const range of ranges) {
-    const width = range.hi - range.lo + 1
-    if (remaining < width) return range.lo + remaining
-    remaining -= width
-  }
-  // Unreachable: callers take `offset` modulo countPorts(ranges).
-  throw fail('internal', 'port offset outside the granted ranges')
 }
 
 /**

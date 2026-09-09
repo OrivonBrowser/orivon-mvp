@@ -4,7 +4,7 @@
 
 import { vi } from 'vitest'
 import { createBroker } from '../index.js'
-import type { BoundUdpSocket, Broker, CreateBrokerOptions, DialedSocket } from '../broker-contracts.js'
+import type { BoundUdpSocket, Broker, CreateBrokerOptions, DialedSocket, ListenedServer } from '../broker-contracts.js'
 import type { LedgerStorage } from '../grants/ledger-storage.js'
 import type { Capabilities, Manifest } from '../../contracts/index.js'
 
@@ -50,6 +50,17 @@ export function okUdpSocket (overrides: Partial<BoundUdpSocket> = {}): BoundUdpS
   }
 }
 
+/** A ListenedServer that never touches a real socket -- `accept()` never resolves unless a test overrides it. */
+export function okListenedServer (overrides: Partial<ListenedServer> = {}): ListenedServer {
+  return {
+    localAddress: '0.0.0.0',
+    localPort: 6881,
+    accept: async () => await new Promise(() => {}),
+    destroy: vi.fn(),
+    ...overrides
+  }
+}
+
 export function stubFs (options: { root?: string, files?: Map<string, Uint8Array> } = {}): CreateBrokerOptions['fs'] {
   const root = options.root ?? '/apps/app'
   const files = options.files ?? new Map<string, Uint8Array>()
@@ -80,6 +91,7 @@ export function baseDeps (overrides: Partial<CreateBrokerOptions> = {}): CreateB
   return {
     dial: async () => okSocket(),
     bind: async () => okUdpSocket(),
+    listen: async () => okListenedServer(),
     resolve: async () => [],
     now: () => 0,
     fs: stubFs(),
