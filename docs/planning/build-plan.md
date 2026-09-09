@@ -148,6 +148,13 @@ and changing it after the first grant is persisted orphans every app (`ADR-0003`
 > on 2026-09-03 — split it, neither document was wrong — but the fix was never actually carried
 > into this file's own wording until now. The user-facing prompt itself moves to step 4 below.
 
+> **Amendment, 2026-09-09 (owner decision `d-0023`).** `net.listen` — accepted-socket handles,
+> teardown and the revocation cascade — is built in this step, not deferred. It is already
+> fully specified, including the unsigned-app port-range rules (`capability-api.md` §1), and is
+> the largest single item in `docs/planning/unattended-build-queue.md` (Phase 2 item 2.4, which
+> that document calls out to start first). It lets the flagship seed as well as download, not
+> receive only. Recorded as decision 5 of thirteen; see `docs/open-questions.md` A97.
+
 **3. `orivon-node-shim`** — `net`, `dgram`, `fs` over `orivon.*`. Depends on the broker.
 Load-bearing for the flagship, not a developer nicety (`ADR-0005`).
 
@@ -158,6 +165,14 @@ every re-fetch. **Also where the user-facing grant prompt is built** (moved from
 amendment there) — the dialog a person actually reads, built once a real manifest exists to
 render in it and `A20`/`A27` are settled. Depends on broker storage. The pinning here is also
 what `ADR-0006` and the future attestation model rest on.
+
+> **Amendment, 2026-09-09 (owner decision `d-0024`).** The permission prompt built here is in
+> scope for this round, not a deferred nicety, and the owner reviews it as it is built —
+> feedback during development, rather than one review once it is finished. This is what lets
+> the platform work above turn into something a person can actually use, and it is why
+> `docs/planning/unattended-build-queue.md` gives it its own phase (Phase 4) with five owner
+> checkpoints rather than one at the end. Recorded as decision 11 of thirteen; see
+> `docs/open-questions.md` A103.
 
 Also where T22's CSP gets wired in: `src/broker/policy/connect-src.ts` computes the
 `connect-src` header value (build step 2), but nothing calls
