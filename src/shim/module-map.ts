@@ -25,7 +25,7 @@ const REVIEW = 'docs/planning/shim-dependency-review.md'
 
 export const SHIM_MODULE_MAP: readonly ShimModuleEntry[] = [
   { specifier: 'util', status: 'ready', kind: 'local', implementation: './node-util.js', note: 'Hand-written, inherits-only -- the only confirmed live caller in the Phase 5 dependency trees. See node-util.ts.' },
-  { specifier: 'electron', status: 'ready', kind: 'local', implementation: '../shim-electron/index.js', note: 'Owned by a sibling stream (src/shim-electron/); this stream owns the alias map, so the entry lives here. Closes A106.' },
+  { specifier: 'electron', status: 'ready', kind: 'local', implementation: '../shim-electron/index.js', note: 'Owned by a sibling stream (src/shim-electron/); this stream owns the alias map, so the entry lives here rather than there.' },
   { specifier: 'buffer', status: 'pending-dependency', note: `Confirmed essential (bencode/safe-buffer). Reviewed in ${REVIEW}, awaiting owner approval.` },
   { specifier: 'events', status: 'pending-dependency', note: `Confirmed essential (k-bucket, k-rpc-socket, webtorrent's own import). Reviewed in ${REVIEW}, awaiting owner approval.` },
   { specifier: 'path', status: 'pending-dependency', note: `Confirmed essential (webtorrent's own \`import path from 'path'\`). Reviewed in ${REVIEW}, awaiting owner approval.` },
