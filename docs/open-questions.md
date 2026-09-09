@@ -100,7 +100,7 @@ None of these block starting the week-0 spike.
 | A7 | **RESOLVED 2026-09-03 (owner): *Domain Data Ownership Confirmation***, canonical everywhere. Already the published spelling, so the live docs need no change; *Certification* was rejected because it implies an authority vouching for the data and none exists — which would oversell exactly the DNS trust root `C1` flags as forgeable | Action outstanding: correct the two internal documents (`glossary.md`) |
 | A8 | **WITHDRAWN 2026-09-03 — not a decision.** `+Privacy` attaches to the top rung of each ladder, and the private website ladder simply has one more rung than the public one. Reinstating that rung (already decided in `ADR-0006`/`B3`) moves it to L5 by itself | Folded into `B3`'s existing public-docs correction |
 | A9 | Three capability-API items. **Defaults now proposed** in `architecture/capability-api.md` — `net.listen` grantable to unsigned apps with a declared port range and no privileged ports · grants keyed on `(origin, capability, pattern set)`, a **subset check** over the pattern set (not a kind comparison), with bundle-hash changes handled by the separate re-consent prompt · `fs.quotaBytes` enforced via a running per-origin counter | **Build proceeds on these unless overruled.** Cheap to change before any third-party app exists |
-| A12 | **`orivon.fs` option bags are unspecified.** `capability-api.md` names the entry points (`readFile(path, opts)`, `writeFile(path, data, opts)`, `mkdir / readdir / stat / rm / rename`) but never says what `opts` contains or what `readFile` returns | **Build step 2.** Provisional signatures are in `src/contracts/capability-api.ts` and marked as such |
+| A12 | **RESOLVED 2026-09-09 (owner): `orivon.fs` stays byte-oriented, no encoding option at the capability layer.** Confirms the provisional reading already in `src/contracts/capability-api.ts`; text decoding belongs to `orivon-node-shim`. See `planning/unattended-build-queue.md` decision 1 | Phase 1 contracts PR removes the PROVISIONAL markers; see below |
 | A14 | **RESOLVED 2026-08-26 (owner):** a trailing DNS dot is stripped, so `https://x.example.` and `https://x.example` are ONE origin. Deliberately deviates from `URL.origin`. Exactly one dot; a host still carrying an empty label is rejected | Implemented in `src/broker/policy/origin.ts` |
 | A13 | **RESOLVED 2026-08-27 (owner): Promises**, per design rule 2. Widening a Promise to a plain value later is a smaller break than the reverse. Original question: `capability-api.md` §v0 surface writes them as `=> Manifest` and `=> Grant[]`, but design rule 2 in the same document says *"All entry points return Promises"* | **Build step 2.** Transcribed as Promises; see below |
 | A15 | **The four bundle-hash caps are guesses, not decisions** — `MAX_PATH_BYTES` 1024, `MAX_ASSET_BYTES` 16 MiB, `MAX_BUNDLE_BYTES` 64 MiB, `MAX_BUNDLE_ENTRIES` 4096 (`src/broker/policy/bundle-hash.ts`, `architecture/bundle-hash.md` §Caps). They are labelled AI-recommendation in the source, but a cap decides which bundles are *refusable*, so two implementations disagreeing on one disagree about whether an app can exist at all. **2026-09-03:** `src/loader/fetch-bundle.ts` (`stream/loader-02-fetch-cache`) is the first real caller of all four, and they are being carried forward uncalibrated | **Before the app loader ships (build step 4).** Needs one real frontend's shape to calibrate against; guessing again now would not be better than the current guess |
@@ -133,7 +133,7 @@ None of these block starting the week-0 spike.
 
 ---
 
-### A12 — what `orivon.fs` actually takes and returns **[AI-REC]**
+### A12 — what `orivon.fs` actually takes and returns **[RESOLVED 2026-09-09 — owner decision]**
 
 Found while transcribing `capability-api.md` into `src/contracts/` (2026-08-26). The
 document specifies the *fs* entry points by name only. Everything else in the v0 surface has a
@@ -148,6 +148,12 @@ the file cursor it already owns (`handle-contracts.md` §FileHandle).
 **Why it is flagged rather than decided:** this is the `fs` half of the durable interface, and
 `ADR-0002` makes that the artefact the whole project is built to outlive. A guess promoted
 silently would be exactly the failure `CLAUDE.md` Rule 1 exists to prevent.
+
+> **Owner decision, 2026-09-09.** `orivon.fs` stays byte-oriented — no encoding option at the
+> capability layer, confirming the provisional reading above exactly as implemented. Text
+> decoding is the shim's job, not the capability's, matching `ADR-0008`'s split. Recorded as
+> decision 1 of thirteen in `planning/unattended-build-queue.md`; the Phase 1 contracts PR
+> removes the PROVISIONAL markers without changing the shape underneath them.
 
 ### A13 — synchronous or async app introspection **[AI-REC]**
 
@@ -3344,7 +3350,7 @@ repository or its docs.
 that — `realSender` already treats every failed send (including one that can never resolve) the
 same way `attemptSend` treats an ordinary network failure.
 
-### A94 — synchronous `fs` was assumed impossible in a renderer; two routes exist and neither has been considered **[STILL OPEN — AI recommendation]**
+### A94 — synchronous `fs` was assumed impossible in a renderer; two routes exist and neither has been considered **[RESOLVED 2026-09-09 — owner decision]**
 
 **Raised 2026-09-09**, while building `planning/compatibility-matrix.md` with the owner. The
 owner refused the "impossible" claim and was right to.
@@ -3403,7 +3409,19 @@ Mojo has synchronous IPC. Whichever engine replaces this one, a sync `fs` surviv
 runs*, which is an architecture question rather than a detail, and any answer that changes rule 2
 is a `src/contracts/` change — own PR, merged first.
 
-### A95 — tier 2 is defined as Electron apps, and nothing accounts for shimming the `electron` module itself **[STILL OPEN — AI recommendation]**
+> **Owner decision, 2026-09-09: Route A (`ipcRenderer.sendSync`), not Route B.** `orivon.fs`
+> gains a synchronous read over the runtime's synchronous renderer-to-main channel, and the page
+> genuinely blocks for the call — correct for a startup config read. This narrows
+> `capability-api.md` design rule 2 to network operations only; `net` stays fully async. It is a
+> `src/contracts/` change, so it lands in its own PR, merged first.
+>
+> Route B is not rejected — it stays available later as a swap for the same mechanism, **with no
+> app-visible difference**: an app calling the synchronous read cannot tell which implementation
+> answered it. Recorded as decision 2 of thirteen in `planning/unattended-build-queue.md`. This
+> is architectural (`CLAUDE.md` Rule 1); an ADR is drafted and awaiting owner authorship through
+> the sanctioned path — not written by an agent.
+
+### A95 — tier 2 is defined as Electron apps, and nothing accounts for shimming the `electron` module itself **[RESOLVED 2026-09-09 — owner decision]**
 
 **Raised 2026-09-09**, alongside A94 and from the same conversation.
 
@@ -3442,3 +3460,150 @@ step 3 with a fixed path list, so this is not purely editorial -- it changes wha
 
 **Needed by:** before build step 3 starts, for the same reason as A94. A step-3 branch that
 discovers it also owes an `electron` shim has already committed to a scope nobody sized.
+
+> **Owner decision, 2026-09-09: the `electron` module gets its own compatibility package**,
+> separate from `orivon-node-shim`. Buildable in parallel with the Node-stdlib shim, and that
+> shim's declared scope (`net`, `dgram`, `fs`) stays exactly as written — it gains no new
+> responsibility. Recorded as decision 3 of thirteen in `planning/unattended-build-queue.md`.
+
+---
+
+## Owner decisions taken 2026-09-09 (unattended-build-queue session)
+
+The remaining ten of the thirteen owner decisions behind `planning/unattended-build-queue.md`,
+recorded here per `CLAUDE.md` Rule 2 — each is the **owner's** decision, not an AI
+recommendation, and each states its own consequence and what it closes. Decisions 1-3 above
+close A12/A94/A95; decisions 4, 6 and 7 are architectural and covered by two ADRs drafted and
+awaiting owner authorship through the sanctioned path (`CLAUDE.md` Rule 1) — an agent may not
+author one.
+
+### A96 — Orivon terminates TLS on the app's behalf **[RESOLVED 2026-09-09 — owner decision]**
+
+Decision 4 of thirteen, `planning/unattended-build-queue.md`. Orivon performs the TLS
+handshake and certificate/hostname verification on the trusted side, using the encryption
+stack already in the shipped runtime, rather than handing an app raw bytes and making it do
+this itself. One new capability; no new dependency, so Rule 8 is unaffected. Because the
+trusted side sees the real hostname, a grant can name it directly.
+
+Architectural (`CLAUDE.md` Rule 1); one half of an ADR covering it together with decisions 6
+and 7 — "Orivon owns the app's HTTP(S) path" — drafted and awaiting owner authorship through
+the sanctioned path.
+
+**Needed by:** Phase 1 (the contracts PR) and Phase 2 item 2.3 (secure connect),
+`planning/unattended-build-queue.md`.
+
+### A97 — `net.listen` is built in this round **[RESOLVED 2026-09-09 — owner decision]**
+
+Decision 5 of thirteen. `net.listen` is not deferred: it is already fully specified, including
+the unsigned-app port-range rules (`capability-api.md` §1, "Is `net.listen` grantable to
+unsigned apps?"), and is the largest single item in `planning/unattended-build-queue.md`
+(Phase 2 item 2.4). It lets the flagship seed as well as download, not receive only.
+
+`build-plan.md` step 2 is amended accordingly (owner decision `d-0023`).
+
+**Needed by:** Phase 2, `planning/unattended-build-queue.md` — item 2.4 is called out there to
+start first.
+
+### A98 — the page's own `fetch()` is routed through the capability for granted hosts **[RESOLVED 2026-09-09 — owner decision]**
+
+Decision 6 of thirteen. An ordinary page's `fetch()` call is routed through the secure-connect
+capability for any host the app has been granted. Not an optimisation: the FreeTube
+reconnaissance (`planning/freetube-port-recon.md`) found its entire network layer is `fetch`,
+so without this routing the app does not function at all.
+
+Architectural (`CLAUDE.md` Rule 1); covered by the same pending ADR as A96 and A99 — "Orivon
+owns the app's HTTP(S) path" — drafted and awaiting owner authorship through the sanctioned
+path.
+
+**Needed by:** Phase 3 item 3.4, `planning/unattended-build-queue.md`.
+
+### A99 — an app may set any request header on a granted host **[RESOLVED 2026-09-09 — owner decision]**
+
+Decision 7 of thirteen. On a granted host, an app may set request headers a page is normally
+forbidden to set, including `Origin` — FreeTube's own main process sets `Origin:
+https://www.youtube.com` today, and real ports need this. Safe because these connections carry
+none of the user's own cookies or sessions: nothing can ride an existing login, since the app
+must supply everything itself.
+
+Architectural (`CLAUDE.md` Rule 1); the third part of the same pending ADR as A96 and A98,
+drafted and awaiting owner authorship through the sanctioned path.
+
+**Needed by:** Phase 3 item 3.4, `planning/unattended-build-queue.md`.
+
+### A100 — network permission is declared in the manifest and granted once at install; no just-in-time prompting **[RESOLVED 2026-09-09 — owner decision]**
+
+Decision 8 of thirteen. A manifest declares its network needs, and may declare unlimited
+HTTPS; the grant happens once, at install. An app that does not know Orivon exists cannot pause
+mid-request to wait on a decision — it fires parallel requests with its own timeouts and
+retries. A host outside the declaration is still denied with no prompt, as today.
+
+**The prompt must make breadth visible:** a narrow declaration and an unlimited one must be
+unmistakably different to look at, or every manifest will simply declare unlimited. This is a
+direct requirement on Phase 4 item 4.2's install prompt, whose own exit criterion already says
+so (`planning/unattended-build-queue.md`).
+
+**Needed by:** Phase 4 item 4.2, `planning/unattended-build-queue.md`.
+
+### A101 — a grant lasts until the user revokes it, visible in a list they can revoke from **[RESOLVED 2026-09-09 — owner decision]**
+
+Decision 9 of thirteen. No grant expiry; a person revokes explicitly, from a list that shows
+what is currently granted. Chosen to keep prompts rare enough that the ones which do appear
+still get read. Direct requirement on Phase 4 item 4.4 (the grant list), whose exit criterion
+already ties to it: revoking from the list must tear down live handles, proven by test.
+
+**Needed by:** Phase 4 item 4.4, `planning/unattended-build-queue.md`.
+
+### A102 — the run builds the platform only; FreeTube and webtorrent are test subjects, not porting projects **[RESOLVED 2026-09-09 — owner decision]**
+
+Decision 10 of thirteen. FreeTube and `webtorrent` exist in this queue to prove the broker and
+shim are built right — they are not being ported as finished products in their own right.
+Porting is per-app work that shifts upstream continuously, and it is exactly the kind of work
+that quietly consumes an unattended run without moving the platform forward.
+
+Stated so it cannot be misread past this build: this bounds *this round of work*, not a
+permanent property of Orivon and not a claim that FreeTube will never run well on it — a real
+port is downstream work for whoever wants that app, once the platform exists.
+
+**Needed by:** every phase; the standing answer whenever "should this go further than proving
+the capability" comes up during Phases 2-5.
+
+### A103 — the permission prompt is in scope, with owner feedback during development rather than a review at the end **[RESOLVED 2026-09-09 — owner decision]**
+
+Decision 11 of thirteen. The prompt is built now, in this round, and the owner gives feedback
+as it is built rather than seeing it only once finished. This is what turns the platform work
+above into something a person can actually use, and it is why Phase 4 exists as its own phase
+with five owner checkpoints (`planning/unattended-build-queue.md`) instead of one review at the
+end.
+
+`build-plan.md` step 4 is amended accordingly (owner decision `d-0024`).
+
+**Needed by:** Phase 4, `planning/unattended-build-queue.md`.
+
+### A104 — a parked question never halts the run **[RESOLVED 2026-09-09 — owner decision]**
+
+Decision 12 of thirteen. An agent needing an owner decision registers the question and moves
+immediately to work that does not depend on the answer; parked questions are put to the owner
+in one batch when they return. Prevents the failure this was written to prevent: the owner
+asleep, and the run idling for hours on one unanswered question.
+
+The full mechanism, and the map of what stays workable when each known question is parked, is
+in `docs/development/unattended-run-protocol.md` — this entry is the index pointer, following
+the same convention the 2026-09-03 backlog session used above (A46/A36/A29/A33/A7): the
+authoritative text lives at the linked document, not duplicated here.
+
+**Needed by:** every phase of this run.
+
+### A105 — a usage limit pauses the run; it never ends it **[RESOLVED 2026-09-09 — owner decision]**
+
+Decision 13 of thirteen. The live 5-hour session window is read at every checkpoint via
+`claude-status-mcp`'s command-line mode (needs no MCP connection, so it works in any
+unattended session); at 90% the run stops dispatching, commits in-flight work, writes its
+resume point and schedules resumption for the known reset time. The 7-day window is logged for
+visibility only and is never a gate. Concurrency stays capped independently, because
+utilization is a level, not a rate.
+
+Full mechanism in `docs/development/unattended-run-protocol.md`, landed the same day as commit
+`a572570` ("Gate the unattended run on the live 5-hour usage window at 90 percent") — this
+entry is the index pointer, per the same convention as A104.
+
+**Needed by:** every phase of this run.
