@@ -1,7 +1,8 @@
 // Wires createBroker (../index.ts) to a real renderer over Electron IPC.
 //
-// SCOPE: app.manifest, app.grants, fs.readFile, fs.writeFile, net.connect,
-// net.udpBind, net.close, net.setNoDelay, net.setKeepAlive. See ./README.md
+// SCOPE: app.manifest, app.grants, fs.readFile, fs.writeFile, id.publicKey,
+// id.sign, net.connect, net.udpBind, net.close, net.setNoDelay,
+// net.setKeepAlive. See ./README.md
 // for the two rules every method here enforces (origin attribution off the
 // sending frame, bytes never over request/response IPC) and
 // ../../contracts/ipc.ts for the timeout and no-transferables rules
@@ -35,6 +36,7 @@ import { originFromSenderFrame } from '../policy/origin.js'
 import { fail, isOrivonErrorLike } from '../errors.js'
 import {
   envelopeId, isControlMethod, isFsReadFileParams, isFsWriteFileParams,
+  isIdPublicKeyParams, isIdSignParams,
   isNetCloseParams, isNetConnectParams, isNetSetKeepAliveParams, isNetSetNoDelayParams,
   isNetUdpBindParams, isRequestEnvelope
 } from './ipc-validation.js'
@@ -46,8 +48,8 @@ import { LIMITS } from '../../contracts/index.js'
 
 export { CONTROL_CHANNEL, PORT_CHANNEL }
 export type {
-  ControlMethod, FsReadFileParams, FsWriteFileParams, NetConnectParams, NetCloseParams,
-  NetSetKeepAliveParams, NetSetNoDelayParams, NetUdpBindParams
+  ControlMethod, FsReadFileParams, FsWriteFileParams, IdPublicKeyParams, IdSignParams,
+  NetConnectParams, NetCloseParams, NetSetKeepAliveParams, NetSetNoDelayParams, NetUdpBindParams
 } from './ipc-validation.js'
 export type {
   PortDeliveryFrame, PortLike, PortPair, PortTransport, SocketDescriptor, UdpSocketDescriptor
@@ -81,6 +83,17 @@ async function dispatch (
       if (!isFsWriteFileParams(payload)) throw fail('invalid', 'fs.writeFile requires { path: string, data: Uint8Array }')
       await broker.fs.writeFile(origin, payload.path, payload.data)
       return undefined
+    }
+    // id.publicKey/sign carry no port transport of their own -- a plain
+    // Uint8Array response, exactly fs.readFile's shape, unlike net.connect's
+    // below.
+    case 'id.publicKey': {
+      if (!isIdPublicKeyParams(payload)) throw fail('invalid', 'id.publicKey requires { curve: string }')
+      return await broker.id.publicKey(origin, { curve: payload.curve })
+    }
+    case 'id.sign': {
+      if (!isIdSignParams(payload)) throw fail('invalid', 'id.sign requires { curve: string, payload: Uint8Array }')
+      return await broker.id.sign(origin, { curve: payload.curve, payload: payload.payload })
     }
     case 'net.connect': {
       if (!isNetConnectParams(payload)) throw fail('invalid', 'net.connect requires { host: string, port: number }')

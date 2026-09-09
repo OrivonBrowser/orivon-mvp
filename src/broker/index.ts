@@ -31,6 +31,7 @@ import { GrantLedger } from './grants/grant-ledger.js'
 import { CONFINEMENT_ERROR_CODE, confinePath } from './policy/paths.js'
 import { originFromUrl } from './policy/origin.js'
 import { createNetCapability } from './net-capability.js'
+import { createIdCapability } from './id-capability.js'
 import type {
   CapabilityKind,
   Grant,
@@ -91,6 +92,11 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
   // `listen` pushed this file past Rule 2's 500 lines -- see that file's own
   // header, and README.md's design notes, for why the split lands here.
   const net = createNetCapability({ deps, handleTable, ledger, canonical })
+
+  // orivon.id's two entry points (publicKey, sign) -- built alongside
+  // net-capability.ts from the start rather than inlined here first, for
+  // the same Rule 2 reason: this file was already 264 lines before `id`.
+  const id = createIdCapability({ deps, ledger, canonical })
 
   /**
    * `fs.readFile` and `fs.writeFile` share this shape: confine the path (see
@@ -253,6 +259,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
   return {
     app: { manifest, grants },
     net,
+    id,
     fs: { readFile, writeFile },
     registerApp,
     versionFloorFor,
