@@ -19,7 +19,36 @@ describe('checkDevGrantAbsent', () => {
   it('passes when the compiled output never mentions the dev-grant marker', () => {
     const root = withOutput({ 'out/main/index.js': 'const devGrantSubsystem = { afterReady: () => { return } };\n' })
     const result = checkDevGrantAbsent(root, { build: () => {} })
-    expect(result).toEqual({ ok: true, offenders: [] })
+    expect(result.ok).toBe(true)
+    expect(result.offenders).toEqual([])
+  })
+
+  // The regression this file exists to prevent a SECOND time. The guard used to
+  // build first and scan only afterwards, so it always inspected an artefact it
+  // had just made ordinarily -- it could not fail, whatever was in out/. A real
+  // `npm run test:e2e` leaves a dev-enabled bundle there, and the guard called
+  // it clean.
+  it('fails on a dev-enabled artefact already in out/, even when the build it runs is clean', () => {
+    const root = withOutput({
+      'out/main/index.js': `globalThis.${DEV_GRANT_MARKER} = async () => {};\n`
+    })
+    // A build that leaves the dev-enabled file exactly as it found it stands in
+    // for an ordinary build that writes elsewhere, or one already up to date.
+    const result = checkDevGrantAbsent(root, { build: () => {} })
+
+    expect(result.ok).toBe(false)
+    expect(result.preExisting).toEqual(['out/main/index.js'])
+  })
+
+  it('does not double-report a file that both the pre-existing scan and the rebuild flag', () => {
+    const root = withOutput({
+      'out/main/index.js': `globalThis.${DEV_GRANT_MARKER} = async () => {};\n`
+    })
+    const result = checkDevGrantAbsent(root, {
+      build: () => { writeFileSync(join(root, 'out/main/index.js'), `globalThis.${DEV_GRANT_MARKER} = async () => {};\n`) }
+    })
+
+    expect(result.offenders).toEqual(['out/main/index.js'])
   })
 
   it('fails when the marker survived into main output -- the exact regression this guards against', () => {
@@ -51,7 +80,9 @@ describe('checkDevGrantAbsent', () => {
 
   it('is a pass, not a crash, when the output directory does not exist yet', () => {
     const root = mkdtempSync(join(tmpdir(), 'orivon-dev-grant-empty-'))
-    expect(checkDevGrantAbsent(root, { build: () => {} })).toEqual({ ok: true, offenders: [] })
+    const result = checkDevGrantAbsent(root, { build: () => {} })
+    expect(result.ok).toBe(true)
+    expect(result.offenders).toEqual([])
   })
 
   it('runs the given build before scanning, so a build that writes output after being called still gets checked', () => {
