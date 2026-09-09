@@ -8,12 +8,14 @@
 import { lookup } from 'node:dns/promises'
 import { mkdirSync, realpathSync } from 'node:fs'
 import { mkdir, readFile as fsReadFile, writeFile as fsWriteFile } from 'node:fs/promises'
-import { connect as netConnect } from 'node:net'
-import type { Socket } from 'node:net'
+import { connect as netConnect, createServer } from 'node:net'
+import type { Server, Socket } from 'node:net'
 import { dirname, join } from 'node:path'
 import { Duplex } from 'node:stream'
 import type { CloseReason } from '../handles/handle-contracts.js'
-import type { BrokerFs, Dial, DialedSocket } from '../broker-contracts.js'
+import type { BrokerFs, Dial, DialedSocket, Listen, ListenedServer } from '../broker-contracts.js'
+import type { PortRange } from '../policy/bind.js'
+import { countPorts, portAt, randomStart } from './port-pick.js'
 import { originHash } from '../grants/origin-hash.js'
 import type { Resolver } from '../policy/connect.js'
 import { fail, isOrivonErrorLike } from '../errors.js'
@@ -252,4 +254,218 @@ export const dialTcp: Dial = async (addresses, port, signal) => {
     }
   }
   throw isOrivonErrorLike(lastError) ? lastError : fail('unreachable', 'could not connect to any resolved address')
+}
+
+/** How many ports to try inside the granted ranges before giving up. Matches bindUdp's own bound. */
+const LISTEN_BIND_ATTEMPTS = 64
+
+/**
+ * How many accepted-but-not-yet-claimed connections one listening socket
+ * holds before it refuses new ones outright, rather than queueing them
+ * without limit.
+ *
+ * NOT THE SPECIFICATION'S OS-LEVEL BACKPRESSURE, and this is a real
+ * deviation, flagged rather than smoothed over. handle-contracts.md's
+ * conformance item 7 wants the OS listen backlog itself to apply pressure
+ * once the app stops reading `connections` -- but vanilla Node `net` accepts
+ * a connection and fires `'connection'` unconditionally the moment the OS
+ * hands one over; there is no public API to defer the `accept()` syscall
+ * itself independent of app readiness (checked against Node's own `lib/
+ * net.js`, not assumed -- `pauseOnConnect` pauses an accepted SOCKET's data
+ * flow, not the listener's accept loop). This bound is the fallback that
+ * keeps an unread `connections` stream from pinning unbounded memory in the
+ * main process regardless: past it, a new arrival is reset rather than
+ * queued -- see ../README.md, Design notes, for the full reasoning and the
+ * open question this is filed under.
+ */
+const LISTEN_ACCEPT_QUEUE_LIMIT = 64
+
+interface AcceptWaiter {
+  readonly resolve: (value: DialedSocket | null) => void
+  readonly reject: (error: unknown) => void
+}
+
+/**
+ * What a pending or future `accept()` resolves to for a given CloseReason --
+ * shared by the waiter-settling code in `destroy()` and by `accept()` itself
+ * for a call arriving after the server is already gone (Rule 3: one
+ * implementation of "what does this reason mean to a caller", not two).
+ *
+ * 'closed'/'sessionEnded' are graceful: the app (or the session) chose to
+ * stop, so `accept()` resolves null, the ReadableStream's own EOF signal.
+ * Everything else is abrupt, and the CloseReason table
+ * (../handles/handle-contracts.ts) requires "every promise the app is
+ * currently awaiting on that handle" to REJECT with the terminal reason --
+ * a pending `accept()` is exactly such a promise, and the generic handle-
+ * table cascade has no reference to this ReadableStream's own pull promise
+ * to reject it any other way.
+ */
+function outcomeFor (reason: CloseReason): { ok: true, value: null } | { ok: false, error: ReturnType<typeof fail> } {
+  if (reason === 'closed' || reason === 'sessionEnded') return { ok: true, value: null }
+  if (reason === 'failed') return { ok: false, error: fail('internal', 'the listening socket failed') }
+  return { ok: false, error: fail('revoked', 'the grant authorising this listen was withdrawn') }
+}
+
+/**
+ * Wraps a just-accepted raw socket the same way `dialOne` wraps a dialled
+ * one -- same `Duplex.toWeb` construction, same `destroySocket` close table,
+ * because an accepted connection and a dialled one are the same kind of
+ * live TCP socket once established (handle-contracts.md's "TcpSocket"
+ * section draws no distinction). Sharing `DialedSocket` as the shape for
+ * both, rather than a second near-identical interface, is Rule 3 applied to
+ * the type as well as the function.
+ */
+function wrapAccepted (socket: Socket): DialedSocket {
+  const { readable, writable } = Duplex.toWeb(socket)
+  return {
+    readable: readable as ReadableStream<Uint8Array>,
+    writable: writable as WritableStream<Uint8Array>,
+    remoteAddress: socket.remoteAddress ?? '',
+    remotePort: socket.remotePort ?? 0,
+    localAddress: socket.localAddress ?? '',
+    localPort: socket.localPort ?? 0,
+    setNoDelay: async (on) => { socket.setNoDelay(on) },
+    setKeepAlive: async (on, initialDelayMs) => { socket.setKeepAlive(on, initialDelayMs) },
+    destroy: async (reason) => { await destroySocket(socket, reason) }
+  }
+}
+
+/**
+ * One listen attempt, on a fresh `net.Server` -- a new instance per attempt
+ * rather than retrying `.listen()` on one, so a failed attempt never leaves
+ * an ambiguous "is this instance still usable" question behind. Resolves
+ * once listening, rejects on any error (including EADDRINUSE, which the
+ * caller retries against a different port) -- same shape as
+ * ./udp-adapter.ts's `bindOne`, and no `server.close()` call on the failure
+ * path to match it: Node's own `_setupListenHandle` already releases the
+ * fd before emitting `'error'` when a listen attempt fails, so this server
+ * never held one to release.
+ */
+function listenOne (server: Server, port: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const cleanup = (): void => { server.removeListener('error', onError) }
+    const onError = (error: Error): void => { cleanup(); reject(error) }
+    server.once('error', onError)
+    server.listen(port, '0.0.0.0', () => { cleanup(); resolve() })
+  })
+}
+
+/**
+ * `Listen` over real TCP. Binds inside `ranges` and nowhere else, and picks
+ * the port at random within them for the same reason `bindUdp` does (A88).
+ *
+ * IPv4 ONLY IN v0, matching `bindUdp`'s own scope note: nothing in the
+ * corpus specifies dual-stack for a listening socket either, and `0.0.0.0`
+ * keeps this half of `net.*` consistent with the other.
+ */
+export const listenTcp: Listen = async (ranges: readonly PortRange[], signal) => {
+  if (signal.aborted) throw fail('revoked', 'the grant authorising this listen was withdrawn')
+  const total = countPorts(ranges)
+  if (total === 0) throw fail('internal', 'no granted port ranges to listen within')
+
+  let server: Server | undefined
+  let lastError: unknown
+  const start = randomStart(total)
+  const attempts = Math.min(LISTEN_BIND_ATTEMPTS, total)
+  for (let attempt = 0; attempt < attempts && !signal.aborted; attempt += 1) {
+    const candidate = createServer()
+    try {
+      await listenOne(candidate, portAt(ranges, (start + attempt) % total))
+      server = candidate
+      lastError = undefined
+      break
+    } catch (error) {
+      lastError = error
+    }
+  }
+
+  if (signal.aborted) {
+    if (server !== undefined) await new Promise<void>((resolve) => { server!.close(() => resolve()) })
+    throw fail('revoked', 'the grant authorising this listen was withdrawn')
+  }
+  if (server === undefined) {
+    // 'limit', not 'unreachable': every port the grant covers is taken,
+    // which is a resource exhaustion the app can act on -- matching
+    // bindUdp's own reasoning for the UDP sibling of this failure.
+    throw fail('limit', 'no free port in the granted range', undefined, errnoCode(lastError))
+  }
+  // A separate `const` from here on: `server` is a `let` narrowed above, and
+  // TypeScript does not carry that narrowing into the closures below, which
+  // may run long after this function returns.
+  const bound = server
+
+  const address = bound.address()
+  if (address === null || typeof address === 'string') {
+    bound.close()
+    throw fail('internal', 'a listening TCP server reported no address')
+  }
+
+  const queue: Socket[] = []
+  const waiters: AcceptWaiter[] = []
+  let destroyed = false
+  let terminalReason: CloseReason | undefined
+
+  // Every not-yet-claimed raw connection below is torn down with the same
+  // guaranteed-RST call `destroySocket`'s own 'revoked'/'aborted' branch
+  // uses, for the same reason: plain `.destroy()` does not guarantee a wire
+  // RST, only `resetAndDestroy()` does -- and a socket the app was never
+  // told about is never worth a graceful FIN.
+  function resetIncoming (socket: Socket): void {
+    if (typeof socket.resetAndDestroy === 'function') socket.resetAndDestroy()
+    else socket.destroy()
+  }
+
+  bound.on('connection', (socket) => {
+    if (destroyed) { resetIncoming(socket); return }
+    const waiter = waiters.shift()
+    if (waiter !== undefined) { waiter.resolve(wrapAccepted(socket)); return }
+    if (queue.length >= LISTEN_ACCEPT_QUEUE_LIMIT) { resetIncoming(socket); return }
+    queue.push(socket)
+  })
+  // The listening socket itself dying underneath us (EMFILE on a later
+  // accept, for instance) must not vanish silently -- every waiter, and
+  // every future accept(), is failed the same way an explicit destroy()
+  // would fail them, per outcomeFor('failed').
+  bound.on('error', () => {
+    if (destroyed) return
+    destroyed = true
+    terminalReason = 'failed'
+    for (const waiter of waiters.splice(0)) waiter.reject(fail('internal', 'the listening socket failed'))
+    for (const queued of queue.splice(0)) resetIncoming(queued)
+  })
+
+  async function destroy (reason: CloseReason): Promise<void> {
+    if (destroyed) return
+    destroyed = true
+    terminalReason = reason
+    const outcome = outcomeFor(reason)
+    for (const waiter of waiters.splice(0)) {
+      if (outcome.ok) waiter.resolve(outcome.value)
+      else waiter.reject(outcome.error)
+    }
+    // Never delivered to the app as a handle, so there is nothing here a
+    // flushing reason could truncate -- unlike an established socket's own
+    // write queue (../README.md's "unlink hook" design note), an unclaimed
+    // raw connection is reset regardless of `reason`.
+    for (const queued of queue.splice(0)) resetIncoming(queued)
+    await new Promise<void>((resolve) => { bound.close(() => resolve()) })
+  }
+
+  function accept (): Promise<DialedSocket | null> {
+    const queued = queue.shift()
+    if (queued !== undefined) return Promise.resolve(wrapAccepted(queued))
+    if (destroyed) {
+      const outcome = outcomeFor(terminalReason ?? 'failed')
+      return outcome.ok ? Promise.resolve(outcome.value) : Promise.reject(outcome.error)
+    }
+    return new Promise((resolve, reject) => { waiters.push({ resolve, reject }) })
+  }
+
+  const listened: ListenedServer = {
+    localAddress: address.address,
+    localPort: address.port,
+    accept,
+    destroy
+  }
+  return listened
 }
