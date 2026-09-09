@@ -89,6 +89,41 @@ that *some* TLS connection succeeded.
   response, and still leave the origin a secure context for service workers, is **assumed, not
   yet confirmed**. Confirm it in the first task of build step 2, and record the result. If it
   cannot be done per-session, this ADR is the thing that has to change.
+
+  > **Confirmed 2026-09-10, by a live probe, against this ADR's own real partition naming
+  > scheme** (`persist:app-<sha256hex(origin)>`, `src/broker/grants/origin-hash.ts`, landed
+  > since this ADR was written) — `spike/adr7-probe/` (throwaway, not shipped), run under
+  > `env -u ELECTRON_RUN_AS_NODE xvfb-run -a electron`, Electron 44.0.0. Full result:
+  > `docs/open-questions.md` A110.
+  >
+  > - **Per-session interception: PASS.** `session.fromPartition(...).protocol.handle('https',
+  >   ...)` served the app's own origin inside that partition; the identical URL loaded on
+  >   `session.defaultSession` (no handler registered there) failed with
+  >   `ERR_CONNECTION_REFUSED` rather than leaking through. Interception is genuinely
+  >   partition-scoped, not global.
+  > - **Streaming, range-capable response: PASS.** A `Range: bytes=100-199` request through the
+  >   handler returned `206`, the correct `Content-Range`, and the correct 100 bytes, served
+  >   from a chunked, pull-based `ReadableStream`, not a single buffered response.
+  > - **Secure context for service workers: PASS.** `window.isSecureContext` was `true` at the
+  >   intercepted origin, and `navigator.serviceWorker.register()` both resolved and reached
+  >   `navigator.serviceWorker.ready`.
+  >
+  > These three are the ones this ADR's own Reversibility section keys on, and all three pass —
+  > **this ADR's decision stands, confirmed rather than merely argued.**
+  >
+  > A fourth question, added by the build queue's own framing rather than by this ADR's original
+  > text (*"does `onHeadersReceived` fire for the `protocol.handle`-served response"*, needed for
+  > how this ADR's CSP/header work would ever reach a cached bundle) was probed the same run and
+  > came back **FALSE**: `session.fromPartition(...).webRequest.onHeadersReceived` never fired
+  > for a response served through `protocol.handle`, and no injected header reached the page.
+  > This matches a confirmed, open Electron defect (`electron/electron#45865`; a fix,
+  > `electron/electron#45915`, merged to Electron's `main` on 2026-03-10 with no stated backport
+  > as of that merge) — not a probe error. **This does not trigger this ADR's own Reversibility
+  > clause**, which names only the interception/secure-context pair above. It is a separate,
+  > real gap for whichever mechanism ends up enforcing CSP or other response headers on a cached
+  > bundle — parked as `docs/open-questions.md` A106 rather than resolved here, per `CLAUDE.md`
+  > Rule 1 (an agent may not amend this ADR's decision or reasoning, only record a result it
+  > asked for).
 - Offline first-run keeps working for pre-cached apps, unchanged from `ADR-0005`.
 
 ## Reversibility

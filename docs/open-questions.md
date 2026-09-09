@@ -1199,6 +1199,16 @@ in `src/nostr/` can sign a real event until this exists. Not blocking this PR: t
 surface is built and tested against an injected stub per the owner's explicit decision (brief's
 Scope, item 6).
 
+**Corroborated 2026-09-10** (lane P2-5, PR #112, open at filing time — "Wire
+`orivon.id.publicKey/sign` to the broker, IPC and the page"): that PR wires the **app-keys**
+half of `orivon.id` end to end (`id-capability.ts`, real broker/IPC/preload callers of
+`derive-p256.ts`'s `derivePublicKey`/`signWithP256`) but its own commit message is explicit that
+`requestIdentity` — the **named-identity** half `nip07.ts`'s real signer actually needs — is
+"deliberately untouched," pending the connect-prompt UI. So this entry's gap is exactly as open
+as before: still zero secp256k1/Schnorr math anywhere, and still no caller for it, because the
+one piece of `orivon.id` this PR completes is not the piece Nostr signing depends on. Recorded
+so a future reader does not mistake #112 for progress on this specific question.
+
 ### A47 — `registry.ts` is shell-owned and "maintenance only"; this branch edited it anyway **[STILL OPEN]**
 
 Found 2026-09-03, fixing `stream/broker-15-reachable`'s `publishBroker` overwrite gap.
@@ -3607,3 +3617,197 @@ Full mechanism in `docs/development/unattended-run-protocol.md`, landed the same
 entry is the index pointer, per the same convention as A104.
 
 **Needed by:** every phase of this run.
+
+---
+
+## Batched from the 2026-09-10 build queue (lanes P2-4, P3-1, P0-4, P0-5)
+
+Six questions parked by five lanes with nowhere of their own to put them, filed together in
+lane P0-5's PR per that lane's brief. None below is an owner decision — each is labelled
+AI recommendation or still open on its own merits, per Rule 2.
+
+### A106 — `net.listen`'s accept backpressure is a bounded fallback queue, not the OS-level mechanism `handle-contracts.md` describes **[AI-REC]**
+
+**Raised 2026-09-10**, lane P2-4, merged as `net.listen`'s implementation (PR #109).
+
+`handle-contracts.md` §Conformance item 7 states: *"A `TcpServer` whose `connections` stream is
+not being read stops accepting new incoming connections at the OS level."* §TcpServer's own
+prose makes the same claim: *"if the app stops reading `connections`, the broker stops
+*accepting* new connections, and the OS listen backlog itself applies pressure back to whoever
+is trying to connect."*
+
+`src/broker/adapters/node-adapters.ts`'s `listenTcp` cannot do this, and says so in its own
+source comment rather than silently falling short: vanilla Node `net` accepts a connection and
+fires `'connection'` unconditionally the instant the OS hands one over, and there is no public
+API to defer the `accept()` syscall independently of app readiness (`pauseOnConnect` pauses an
+already-accepted socket's data flow, not the listener's accept loop — checked against Node's
+own `lib/net.js`, not assumed). What is built instead is `LISTEN_ACCEPT_QUEUE_LIMIT` (64): an
+accepted-but-unclaimed connection is queued in the broker's own process, and past 64 unclaimed
+connections a new arrival is reset (`resetAndDestroy`), not accepted and not queued further.
+
+The observable behaviour an app sees is close — connections stop flowing once it falls behind —
+but the mechanism is different in a way a careful reader would notice: 64 sockets accepted and
+sitting in broker memory is not "the OS listen backlog applies pressure," and the two diverge
+under a fast-connecting, slow-reading peer (the OS's own backlog would fill and start refusing
+far earlier or later than 64, depending on OS tuning `net.listen` does not control).
+
+**What this recommends:** `handle-contracts.md` §Conformance item 7 and §TcpServer's prose both
+currently assert something the shipped implementation does not literally do. Either amend the
+spec to say "approximately, via a bounded broker-side queue" (matching what was built and
+disclosed), or treat this as a real gap to close with an OS-level primitive if one is found.
+The AI recommendation is the former — no such Node primitive exists to reach for — but that is
+a judgment call about how strictly a contract document's own words should be trusted, which is
+exactly what Rule 2 says an agent should not blur into a decision.
+
+**Needed by:** whenever `handle-contracts.md` next gets a conformance-checklist pass; not
+blocking, since the behaviour it describes (bounded, disclosed, reset rather than silent growth)
+is safe today regardless of which reading of the spec is correct.
+
+### A107 — `k-rpc-socket` needs real `dns.lookup`; no pure-JS polyfill answers it, and it is a broker capability question, not shim work **[STILL OPEN]**
+
+**Raised 2026-09-10**, lane P3-1, `docs/planning/shim-dependency-review.md` (now on `main` via
+PR #111).
+
+That review re-derived the shim's dependency floor from webtorrent 3.0.21's real, live tree
+rather than trusting the existing compatibility matrix, and found one gap the matrix never
+named: `bittorrent-dht` → `k-rpc` → `k-rpc-socket@1.11.1` calls `dns.lookup(peer.host, ...)`
+directly (confirmed at that package's `index.js:3,162`) for any DHT peer whose address arrives
+as a hostname rather than an IP literal — a routine case for real DHT traffic, not an edge case.
+
+The review is explicit that this is **not answerable by a pure-JS polyfill** the way `net.isIP`
+was: real DNS resolution needs either the runtime's own resolver or a broker capability, and
+`orivon.net` (`src/contracts/`) has no such entry today. This makes it a question for whoever
+builds `net`/`dgram` (queue item 3.2) or reviews the broker's capability surface, not a shim
+implementation detail — `src/shim/` cannot answer a question that requires new broker authority,
+however it is spelled.
+
+**Needed by:** before DHT peer resolution can work for any hostname-addressed peer — queue item
+3.2, or whichever review of `orivon.net`'s surface comes first.
+
+### A108 — a same-view HTTP redirect to a different origin is not caught by the partition swap **[STILL OPEN]**
+
+**Raised 2026-09-10**, lane P0-4's session-partitions work (PR #110), filed by lane P0-5 per
+that lane's own instruction to record it separately from A109 and order it first as the more
+security-relevant of the two.
+
+**This is a pre-existing gap, not a regression #110 introduced.** Before #110, every tab shared
+one session, so no partition mismatch could exist at all — the gap became *possible* only once
+per-origin partitions did, but the underlying cause is that nothing in `src/main/` ever watches
+for a redirect changing a page's origin mid-navigation (confirmed: no `will-redirect` or
+`did-redirect-navigation` listener anywhere in `src/main/`, grepped directly).
+
+`TabManager.navigate()` (`src/main/tabs.ts`) computes `nextPartition` from the **target URL the
+user or the omnibox supplied**, before that URL is actually fetched, and only repartitions when
+that computed value differs from the tab's current partition. If the server behind that URL
+responds with an HTTP redirect to a different origin, Chromium follows it inside the same
+`WebContentsView` and session — `did-navigate` fires with the final, different-origin URL, but
+nothing calls `repartitionView` again, because the only two places that ever do
+(`createTab`/`navigate`) both compute the partition once, up front, from the pre-redirect target.
+
+The tab ends up showing content from origin B while holding origin A's session partition — its
+storage, cookies and (once grants exist) its capability grant all still key to A. This is more
+than a cosmetic mismatch: `ADR-0003` and `capability-api.md` both treat the partition as the
+isolation boundary a grant is scoped to, and this is a route by which the content actually
+running does not match the origin the isolation was set up for.
+
+**Not proposed here:** a fix shape. This lane's owned paths do not include `src/main/`, and the
+right mechanism (watch `did-navigate`'s own final URL and re-derive/repartition the same way
+`navigate()` does today, versus a narrower check scoped to only same-view redirects) is a design
+call for whoever owns that file next.
+
+**Needed by:** before any origin holds a real capability grant scoped to its partition (build
+step 4) — at that point this is not just a storage mismatch, it is a grant-scope mismatch.
+
+### A109 — a view swapped in for a cross-origin navigation starts with empty navigation history **[AI-REC]**
+
+**Raised 2026-09-10**, lane P0-4's session-partitions work (PR #110), filed by lane P0-5. The
+second, less security-relevant of the two P0-4 items — see A108 for the other.
+
+`TabManager.repartitionView()` (`src/main/tabs.ts`) is the only way to change a tab's Electron
+session partition after creation — Electron fixes `webPreferences.partition` at construction, so
+a cross-origin navigation swaps in a whole new `WebContentsView` rather than reassigning the
+session live. The method's own doc comment already discloses the consequence plainly: the OLD
+view's `navigationHistory` is discarded along with it, so `back()` cannot return to whatever the
+tab showed before the swap — unlike a real browser, where session history survives a cross-site
+renderer swap.
+
+The same comment names the candidate fix and why it was not built under this lane's time
+budget: `NavigationHistory.restore()` exists and could carry the old entries onto the new view,
+but calling it and then still loading `target` risks a genuine double-load, because
+`restore()`'s own promise resolves only once its restored entry finishes loading — and doing
+that silently would mean either a visible flicker or navigating twice for one user action.
+
+**AI recommendation, not proposed as a fix to build without owner sign-off:** capture the old
+view's serialized history (`oldView.webContents.navigationHistory`) before closing it, restore
+it onto the new view, and skip the separate `loadURL(target)` call only when `restore()`'s own
+outcome already lands on `target` — falling back to the current unconditional `loadURL` when it
+does not. This still needs owner review before building: it trades a known, disclosed limitation
+for a more complex code path whose flicker/double-load behavior has not been measured.
+
+**Needed by:** whenever back/forward-through-a-cross-origin-swap is prioritized; not blocking —
+the current behavior is disclosed and safe, only less capable than an ordinary browser.
+
+### A110 — `onHeadersReceived` never fires for a `protocol.handle`-served response, in this Electron version **[STILL OPEN]**
+
+**Raised 2026-09-10**, lane P0-5, probing `ADR-0007`'s own four "assumed, not yet confirmed"
+items (lines 86-92 and Reversibility). Full method and evidence recorded in `ADR-0007` itself,
+under "Verify the mechanism before building on it" — this entry is the index pointer to the
+same result, per the convention A104/A105 already use.
+
+Measured directly (`spike/adr7-probe/`, throwaway, Electron 44.0.0, real launch confirmed via
+`app.getVersion()`/`MessageChannelMain` plus a captured screenshot): `session.fromPartition(
+...).webRequest.onHeadersReceived` never invoked its listener for a response served through
+`session.fromPartition(...).protocol.handle('https', ...)`, and a header the listener would have
+injected never reached the page. This is not a probe bug — it matches a confirmed, open Electron
+defect (`electron/electron#45865`, "webRequest handlers do not run for intercepted protocols"),
+with a fix (`electron/electron#45915`) merged to Electron's own `main` branch 2026-03-10 and, as
+of that merge, not stated as backported to any release branch. This repository runs Electron
+44.0.0.
+
+**Does not trigger `ADR-0007`'s own Reversibility clause** — that clause names only per-session
+interception and secure-context service workers, both of which this same probe confirmed PASS.
+What this blocks is narrower but real: any mechanism that meant to enforce or rewrite response
+headers (CSP, cache-control, or similar) on a cached bundle's own responses via `onHeadersReceived`
+cannot reach those responses at all today. `ADR-0006`'s amendment ("partition CSP so the manifest
+genuinely bounds network reach") is the most likely place this surfaces next.
+
+**What would settle it:** either Electron shipping the `#45915` fix in a version this repo
+upgrades to, or a different mechanism for attaching headers to a `protocol.handle` response —
+the handler already fully controls its own `Response` object and its headers directly, so a
+CSP or similar header can simply be set there instead of relying on `webRequest` at all. That
+substitution is not filed here as a decision, only as the direction the next probe should try
+first.
+
+**Needed by:** whichever build step designs cached-bundle header/CSP enforcement — not before,
+since nothing today relies on `onHeadersReceived` firing for a `protocol.handle` response.
+
+### A111 — `window.nostr` cannot be reached from a real page until the connect prompt exists **[STILL OPEN]**
+
+**Raised 2026-09-10**, lane P2-5's `orivon.id.*` work (PR #112, open at filing time), filed by
+lane P0-5 per the conductor's instruction. Blocked on a build step, not on anything the owner
+needs to decide.
+
+`src/nostr/nip07.ts`'s real wiring, `orivonIdentitySigner`, calls `requestNostrIdentity(orivon)`
+— which calls `orivon.id.requestIdentity({ kind: 'nostr' })` — and then
+`handle.signEvent(...)`. This is the **named-identity** path, not the per-app `id.sign` path,
+and `src/nostr/README.md` explains why that is load-bearing rather than incidental: an npub
+must be the **same across every client site**, which a per-origin app key cannot give.
+
+`requestIdentity` is documented as triggering **the connect prompt** — and that prompt is
+Phase 4 / build step 4 work, explicitly out of scope for queue item 2.5 (the NIP-07 surface
+itself). So `window.nostr` has no real path to reach a page today: it is not that something is
+broken, it is that one of its two required pieces has not been built yet. This is one half of
+item 2.5's own exit criterion going unmet, worth having on the record rather than living only
+inside a merged PR body.
+
+Confirmed this is not a case of stubbing something with a worse, silently-broken method instead:
+`src/preload/README.md`'s own stated rule — *"a method that always threw `'invalid'` would be
+worse than a method that is not there"* — already rules out wiring `window.nostr` onto an `id`
+object with no working `requestIdentity` behind it, so nothing was skipped by oversight.
+
+**AI recommendation:** `window.nostr` should be injected into a page alongside the connect
+prompt landing (build step 4), not stubbed into place earlier just to have something present —
+consistent with the preload rule quoted above.
+
+**Needed by:** build step 4 (the connect prompt). Not blocking queue item 2.5, whose own scope
+was built and tested against an injected stub by design.
