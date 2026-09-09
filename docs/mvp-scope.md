@@ -127,6 +127,12 @@ Chromium fork · mobile · Web3 search · Tor / proxy chains · client profiles 
 wallet Crypto and Address-book layers plus `CapabilityDescriptor` · cross-device sync ·
 Windows and macOS packaging with code signing.
 
+**Native desktop apps rendered in a tab, via Linux containers** -- parked, not scheduled, and
+analysed in [`planning/container-apps-opportunity.md`](planning/container-apps-opportunity.md).
+It would make compatibility tier 3 cost an image build rather than a rewrite. Read that document
+before re-deriving the estimate: the standalone figure that made it look too expensive was
+mostly permission machinery the broker already builds.
+
 ## UNRELATED to the MVP
 
 DAO and tokenomics · advertising and featured placement · governance · community growth
