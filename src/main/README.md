@@ -17,7 +17,9 @@ themselves via `subsystems.ts` rather than editing here.
 | `registry.ts` | `Subsystem`, and the two phase runners. Unit tested, no Electron at runtime |
 | `subsystems.ts` | **The append point.** Adding a subsystem is two lines here |
 | `window.ts` | Composes the frameless `BaseWindow`: chrome view on top, active tab view below |
-| `tabs.ts` | `TabManager` — creating, switching, closing, bounds |
+| `tabs.ts` | `TabManager` — creating, switching, closing, bounds, and deciding when a navigation must repartition a tab |
+| `tab-view.ts` | Pure: builds one tab's `WebContentsView` and derives its session partition from a URL |
+| `tab-types.ts` | The wire-format types (`TabState`, `TabsSnapshot`, `ShellState`, `Bounds`) pushed to the chrome UI |
 | `ipc.ts` | Shell IPC channels between the chrome view and main |
 | `omnibox.ts` | Address-bar input: URL or search. Unit tested |
 
@@ -51,6 +53,29 @@ segfaulted under XWayland on this machine (`exit_code=139`) and the window stopp
 all — and was reverted immediately. The real bug was never about display selection; see
 [`window.ts`](window.ts)'s `showOnce` comment for the actual root cause and fix (`ready-to-show`
 unreliable when loading from the dev server).
+
+**[`tabs.ts`](tabs.ts) split into three files (2026-09-10), along the seam "construct/partition
+a view" vs. "manage the collection of tabs" vs. "the shapes pushed to the chrome UI".** Landed
+alongside the fix for a real bug: per-app `session` partitions (queue item 0.4) originally only
+computed a tab's partition inside `createTab()`, which is not the path a person actually takes
+— typing a URL into the omnibox, or the dashboard's own navigate command, both go through
+`TabManager.navigate()` instead, which never touched partitioning at all. Fixed by having
+`navigate()` swap in a fresh `WebContentsView` (`repartitionView()`, in `tabs.ts`) whenever the
+target's origin differs from the tab's current partition — Electron fixes a partition at
+construction, so a live tab can only change session by replacing its view outright, preserving
+the tab's id/position/active-state while doing so. That swap logic, plus the event-wiring it
+shares with `createTab()` (favicon capture, title/loading pushes, the crash-cleanup listener,
+T18's popup-to-new-tab redirect), pushed `tabs.ts` from 468 to 550 lines — over Rule 2's 500.
+Rather than pad `tabs.ts`'s own header to explain the shape (Rule 1's own test: a maintainer
+editing `navigate()` does not need to know WHY the file is split, only that it is), the pure
+parts were moved out: `tab-view.ts` (view construction and origin→partition derivation, no
+`TabManager` state) and `tab-types.ts` (the wire-format interfaces, no logic at all). Both are
+re-exported from `tabs.ts` where an external file already imported them, so no other file's
+import needed to change. One easy mistake this fix could have made, and did not: a deliberately
+swapped-out OLD view's own `'destroyed'` listener must be stripped *before* `close()` is called,
+or the teardown would incorrectly call `forgetTab()` on a tab that is not actually closing —
+`src/main/tests/tabs.test.ts` exercises this directly with a fake `webContents` that emits
+`'destroyed'` synchronously from `close()`, the same way real Electron destruction can.
 
 **[`favicon.ts`](favicon.ts) — main fetches favicons to a `data:` URL rather than letting the
 renderer fetch directly.** AI recommendation, not yet an owner decision. The chrome view's CSP

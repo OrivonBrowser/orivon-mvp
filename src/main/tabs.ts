@@ -9,65 +9,15 @@
 // wired to open a new tab rather than a popup. will-navigate origin-locking
 // is deliberately NOT added here -- that lock applies to granted apps, which
 // do not exist until build step 4, and ordinary tabs must browse freely.
-import { WebContentsView, type View } from 'electron'
+import type { WebContentsView, View } from 'electron'
 import { join } from 'node:path'
-import { partitionFor } from '../broker/grants/origin-hash.js'
-import { originFromUrl } from '../broker/policy/origin.js'
-import type { Bookmark } from './bookmarks.js'
 import { fetchFaviconDataUrlCached, pickFaviconUrl, shouldClearFavicon } from './favicon.js'
 import { parseOmniboxInput, sanitizeDirectUrl } from './omnibox.js'
 import type { SubsystemContext } from './registry.js'
+import { makeTabView, partitionForTarget } from './tab-view.js'
 
-export interface TabState {
-  id: string
-  url: string
-  title: string
-  canGoBack: boolean
-  canGoForward: boolean
-  loading: boolean
-  /** A data: URL, or null (no real favicon yet -- the chrome renders a
-   * generic globe). Never the source https:// URL directly -- see
-   * favicon.ts's header for why the fetch happens in main. */
-  favicon: string | null
-  /** True for the dashboard (a fresh tab's real content, src/renderer/
-   * newtab/) or the literal about:blank fallback (a rejected navigation
-   * lands here, never the dashboard -- see resolveTarget()) -- both mean
-   * "nothing the user meaningfully typed or navigated to yet". The
-   * chrome renderer uses this to blank the address bar, skip the
-   * secure/insecure dot, and guard the bookmark toggle, replacing what
-   * were literal `tab.url === 'about:blank'` checks before the
-   * dashboard existed.
-   *
-   * NOT simply `url === dashboardUrl` -- found 2026-08-28: in dev mode
-   * `dashboardUrl` is a plain http://localhost:PORT/... address, which
-   * `sanitizeDirectUrl` does not reject, so an ordinary page could steer
-   * an UNRELATED tab's URL to match it (window.open(), or a same-page
-   * redirect) and get "new tab" treatment on content that was never the
-   * dashboard. Gated on TabRecord.isDashboardTab too -- set once, at
-   * creation, from createTab()'s own decision, never from a URL a page
-   * can influence. */
-  isNewTab: boolean
-}
-
-/** What TabManager itself knows. Bookmarks are a separate store
- * (bookmarks.ts) that window.ts composes alongside this into the full
- * ShellState pushed to the chrome view -- TabManager has no reason to
- * know bookmarks exist. */
-export interface TabsSnapshot {
-  tabs: TabState[]
-  activeTabId: string | null
-}
-
-export interface ShellState extends TabsSnapshot {
-  bookmarks: Bookmark[]
-}
-
-export interface Bounds {
-  x: number
-  y: number
-  width: number
-  height: number
-}
+export type { TabState, TabsSnapshot, ShellState, Bounds } from './tab-types.js'
+import type { TabState, TabsSnapshot, Bounds } from './tab-types.js'
 
 /** The safe fallback for a REJECTED navigation (a dangerous typed scheme,
  * a bad window.open() URL, empty input) -- never the dashboard. Keeping
@@ -93,34 +43,32 @@ function makeTabId (): string {
   return `tab-${nextId++}`
 }
 
-/** `partitionFor`/`originFromUrl` are the SAME functions the broker uses to
- * key its grant ledger and (ADR-0007) to register a cached bundle's own
- * protocol interception -- so a tab and its eventual grant always agree on
- * which Electron session an origin means. Returns undefined for anything
- * with no derivable origin (about:blank, a rejected navigation), which
- * keeps that tab on the shell's own default session -- there is no app
- * storage to isolate for a page the user never reached. */
-function partitionForTarget (target: string): string | undefined {
-  const origin = originFromUrl(target)
-  return origin === null ? undefined : partitionFor(origin)
-}
-
 interface TabRecord {
-  readonly view: WebContentsView
+  /** Mutable, not readonly: repartitionView() (see navigate()) replaces
+   * this with a fresh WebContentsView whenever a navigation changes the
+   * tab's origin -- Electron fixes a partition at construction, so
+   * changing it is only possible by swapping the whole view. */
+  view: WebContentsView
   favicon: string | null
   faviconOrigin: string | null
   /** Guards a fetch that resolves after the tab already closed or
    * navigated again -- only the record's own most recent request may
    * write `favicon`. */
   pendingFaviconUrl: string | null
-  /** Set once, at creation, from createTab()'s own `isDashboard` decision
-   * -- never re-derived from a URL afterward. See TabState.isNewTab's
-   * own doc comment for why this matters: `this.dashboardUrl` is a
-   * plain http:// address in dev mode, which an ordinary page's
-   * window.open() (or a same-page redirect) COULD steer an unrelated,
-   * non-dashboard tab's `wc.getURL()` to match -- this flag is what
-   * stops that from also granting it "new tab" treatment. */
-  readonly isDashboardTab: boolean
+  /** The partition currently assigned to `view`, or undefined for the
+   * shell's own default session -- kept alongside `view` so navigate()
+   * can tell "did the origin actually change" without re-deriving it from
+   * `view.webContents.getURL()`, which may still reflect an in-flight
+   * navigation. */
+  partition: string | undefined
+  /** True only for a tab still showing the dashboard. Starts from
+   * createTab()'s own `isDashboard` decision; repartitionView() flips it
+   * to false, ONE-WAY, the moment a navigate() call sends this tab to
+   * real, different-origin content -- never re-derived from a URL a page
+   * could influence (see TabState.isNewTab's own doc comment: `this.
+   * dashboardUrl` is a plain http:// address in dev mode, which a page
+   * could otherwise steer an unrelated tab's `wc.getURL()` to match). */
+  isDashboardTab: boolean
 }
 
 export class TabManager {
@@ -216,31 +164,43 @@ export class TabManager {
     const partition = isDashboard ? undefined : partitionForTarget(target)
 
     const id = makeTabId()
-    const view = new WebContentsView({
-      webPreferences: {
-        preload: isDashboard ? this.newTabPreloadPath : this.preloadPath,
-        // Tells the dashboard's own preload (src/preload/newtab.ts) what
-        // its expected URL is, so it can verify `location.href` matches
-        // before exposing anything -- necessary because a dashboard tab
-        // is an ordinary, navigable tab (unlike the chrome view), and
-        // preload cannot be un-set if the user later navigates away.
-        ...(isDashboard ? { additionalArguments: [`--orivon-newtab-url=${this.dashboardUrl}`] } : {}),
-        ...(partition !== undefined ? { partition } : {}),
-        contextIsolation: true,
-        sandbox: true,
-        nodeIntegration: false,
-        webSecurity: true
-      }
-    })
+    const view = makeTabView(
+      isDashboard ? this.newTabPreloadPath : this.preloadPath,
+      partition,
+      // Tells the dashboard's own preload (src/preload/newtab.ts) what its
+      // expected URL is, so it can verify `location.href` matches before
+      // exposing anything -- necessary because a dashboard tab is an
+      // ordinary, navigable tab (unlike the chrome view), and preload
+      // cannot be un-set if the user later navigates away.
+      isDashboard ? [`--orivon-newtab-url=${this.dashboardUrl}`] : undefined
+    )
     const record: TabRecord = {
       view,
       favicon: null,
       faviconOrigin: null,
       pendingFaviconUrl: null,
+      partition,
       isDashboardTab: isDashboard
     }
+    this.wireView(id, record)
 
-    const wc = view.webContents
+    this.tabs.set(id, record)
+    this.order.push(id)
+
+    void view.webContents.loadURL(target)
+
+    this.activateTab(id)
+    return id
+  }
+
+  /** Every event a tab's WebContentsView needs wired -- shared by
+   * createTab() and repartitionView() (Rule 3): a swapped-in replacement
+   * view gets EXACTLY the same favicon/title/loading/crash handling and
+   * the same popup-to-new-tab redirect (T18) as a freshly created one,
+   * because as far as anything downstream (the chrome UI, a popup) can
+   * tell, it IS one. */
+  private wireView (id: string, record: TabRecord): void {
+    const wc = record.view.webContents
     wc.on('page-title-updated', () => this.emitState())
     wc.on('did-navigate', (_event, navigatedUrl: string) => {
       if (shouldClearFavicon(record.faviconOrigin, navigatedUrl)) {
@@ -266,7 +226,9 @@ export class TabManager {
     // Cleaning the record out here, proactively, is what makes every
     // `!isDestroyed()` guard below actually reachable rather than
     // theatre: by the time anything else runs, a dead tab is already
-    // gone from `this.tabs`.
+    // gone from `this.tabs`. repartitionView() strips this exact listener
+    // from the OLD view before closing it, specifically so this handler
+    // only ever fires for a tab that is GENUINELY gone.
     wc.on('destroyed', () => { this.forgetTab(id, false) })
 
     // T18: never let a tab open a real popup window -- route it to a new
@@ -275,14 +237,53 @@ export class TabManager {
       this.createTab(details.url)
       return { action: 'deny' }
     })
+  }
 
-    this.tabs.set(id, record)
-    this.order.push(id)
+  /** Swaps in a fresh WebContentsView for `record`, replacing whatever it
+   * currently shows -- the ONLY way to change a tab's Electron session
+   * partition after creation (Electron fixes `webPreferences.partition` at
+   * construction; there is no live "reassign session" API). Called from
+   * navigate() exactly when the ORIGIN actually changes; a same-origin
+   * navigation or a rejected/about:blank fallback never reaches here (see
+   * navigate()'s own guard), so this always represents landing on real,
+   * different-origin content -- never the dashboard.
+   *
+   * KNOWN, DISCLOSED LIMITATION: the OLD view's `navigationHistory` is
+   * discarded along with it, so `back()` cannot return to whatever the tab
+   * showed before this swap -- unlike a real browser, where session history
+   * survives a cross-site renderer swap. `NavigationHistory.restore()`
+   * exists and could carry the old entries onto the new view, but doing
+   * that AND landing on `target` risks a real double-load (restore()'s own
+   * promise only resolves once ITS restored entry finishes loading) for a
+   * user-visible flicker this fix does not attempt to solve. Flagged for
+   * the owner rather than built under time pressure -- see this PR/ADR
+   * discussion, not silently accepted. */
+  private repartitionView (id: string, record: TabRecord, target: string, nextPartition: string): void {
+    const oldView = record.view
+    const wasActive = this.activeId === id
 
-    void wc.loadURL(target)
+    if (wasActive) this.contentView.removeChildView(oldView)
 
-    this.activateTab(id)
-    return id
+    // This tab is not closing -- only its content is being replaced -- so
+    // the OLD view's own 'destroyed' listener (wired by wireView() above)
+    // must not reach forgetTab() when close() tears it down. Stripped
+    // BEFORE close(), not after: real Electron destruction, like this
+    // file's own test double, can fire it synchronously.
+    oldView.webContents.removeAllListeners('destroyed')
+    if (!oldView.webContents.isDestroyed()) oldView.webContents.close()
+
+    const newView = makeTabView(this.preloadPath, nextPartition)
+    record.view = newView
+    record.partition = nextPartition
+    record.isDashboardTab = false
+    this.wireView(id, record)
+
+    if (wasActive) {
+      this.contentView.addChildView(newView)
+      newView.setBounds(this.getTabBounds())
+    }
+
+    void newView.webContents.loadURL(target)
   }
 
   closeTab (id: string): void {
@@ -359,16 +360,28 @@ export class TabManager {
     }
   }
 
+  /** THE PRIMARY WAY A TAB EVER REACHES A REAL ORIGIN: the omnibox and the
+   * dashboard's own navigate command both funnel here (ipc.ts, newtab-
+   * ipc.ts) -- a person's very first act in a fresh tab is typing a URL,
+   * not calling createTab(url) directly. Repartitions via repartitionView()
+   * exactly when the target's origin differs from the tab's CURRENT
+   * partition; `partitionForTarget(BLANK_URL)` is always undefined, so a
+   * rejected navigation never swaps and keeps landing in whatever
+   * view/partition the tab already had (BLANK_URL's own doc: "an EXISTING
+   * tab keeps whatever preload it was created with"), and a same-origin
+   * navigation computes the identical partition string and also does not
+   * swap. */
   navigate (id: string, rawInput: string): void {
     const record = this.tabs.get(id)
     if (record === undefined || record.view.webContents.isDestroyed()) return
     const target = this.resolveTarget(rawInput)
-    // Session partition is fixed at WebContentsView construction
-    // (createTab(), above) and cannot change here -- an Electron
-    // constraint, not a choice made in this file. A tab navigated to a
-    // different origin via the omnibox keeps whichever partition it was
-    // CREATED with; only a genuinely new tab gets the new origin's own
-    // partition. Flagged to the owner (open-questions.md, see this PR).
+
+    const nextPartition = partitionForTarget(target)
+    if (nextPartition !== undefined && nextPartition !== record.partition) {
+      this.repartitionView(id, record, target, nextPartition)
+      return
+    }
+
     void record.view.webContents.loadURL(target)
   }
 
