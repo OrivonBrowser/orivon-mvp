@@ -1,9 +1,28 @@
 # `src/shim/` — `orivon-node-shim`
 
-**What lives here.** Node's `net`, `dgram` and `fs` APIs, reconstructed on top of `orivon.*`,
-so that ordinary Node libraries run unmodified inside a renderer. Load-bearing, not a developer
-nicety: without it the flagship cannot be a URL-delivered app
-([`ADR-0005`](../../docs/decisions/ADR-0005-apps-are-url-addressed-not-bundled.md)).
+**What lives here.** Two different kinds of thing, and the distinction matters:
+
+1. Node's `net`, `dgram` and `fs` APIs, reconstructed on top of `orivon.*`, so that ordinary
+   Node libraries run unmodified inside a renderer. Load-bearing, not a developer nicety:
+   without it the flagship cannot be a URL-delivered app
+   ([`ADR-0005`](../../docs/decisions/ADR-0005-apps-are-url-addressed-not-bundled.md)).
+2. **Core polyfills** (queue item 3.1) — the environment-shape modules a dependency graph
+   needs just to *evaluate*, independent of any capability: `Buffer`, `stream`, `events`,
+   `path`, `os`, `crypto`, `zlib`, `util`. `compatibility-matrix.md` Table 3 calls these `dup`
+   rows: closing them is ordinary shim work, no contracts change needed. This directory's own
+   scope statement used to name only the first group — corrected here because Table 3 already
+   called that gap out as "narrower than Table 2's family, and owned by nobody".
+
+`globals.ts` (ambient `process`/`nextTick`/`setImmediate`) and `module-map.ts` (the single table
+`electron.vite.config.ts`'s alias map is generated from — see its own header) belong to neither
+group cleanly; both exist to make the two above reachable at all.
+
+**Dependency status.** Every one of the eight core polyfills needs either a third-party
+package or a hand-written equivalent, and this repository has zero runtime dependencies today
+— see [`docs/planning/shim-dependency-review.md`](../../docs/planning/shim-dependency-review.md)
+for the per-package review and its parked owner question. `util` is answered by a hand-written,
+`inherits`-only file (`node-util.ts`) rather than a dependency — Rule 6 reasoning is in that
+file and the review. Nothing else in this list is built yet, pending that question.
 
 **What it depends on.** [`src/contracts/`](../contracts/).
 
