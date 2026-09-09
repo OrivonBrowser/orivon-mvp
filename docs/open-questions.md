@@ -3428,8 +3428,9 @@ is a `src/contracts/` change — own PR, merged first.
 > Route B is not rejected — it stays available later as a swap for the same mechanism, **with no
 > app-visible difference**: an app calling the synchronous read cannot tell which implementation
 > answered it. Recorded as decision 2 of thirteen in `planning/unattended-build-queue.md`. This
-> is architectural (`CLAUDE.md` Rule 1); an ADR is drafted and awaiting owner authorship through
-> the sanctioned path — not written by an agent.
+> is architectural (`CLAUDE.md` Rule 1), and is now recorded as
+> [`ADR-0016`](decisions/ADR-0016-synchronous-file-reads-are-permitted.md), authored by the owner
+> through the sanctioned path on 2026-09-10.
 
 ### A95 — tier 2 is defined as Electron apps, and nothing accounts for shimming the `electron` module itself **[RESOLVED 2026-09-09 — owner decision]**
 
