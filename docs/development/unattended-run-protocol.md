@@ -6,8 +6,9 @@ or scheduled agent.
 
 1. **A question never halts the run.** An agent that needs an owner decision parks the question
    and immediately moves to work that does not depend on the answer.
-2. **A usage limit pauses the run, it never ends it.** Hitting a limit schedules its own
-   resumption. The owner should never have to restart anything by hand.
+2. **A usage limit pauses the run, it never ends it.** The 5-hour session window is read live at
+   every checkpoint; at 90% the run stops dispatching, writes its resume point and schedules its
+   own resumption. The owner should never have to restart anything by hand.
 
 The failure both rules exist to prevent is the same one: **the owner goes to sleep and the run
 spends ten hours idle**, either waiting on an answer or dead from a limit it never recovered from.
@@ -62,42 +63,60 @@ again is not progress.
 
 ## Rule 2 -- a limit pauses, it never ends
 
-### What is honestly measurable, and what is not
+### It is measurable, and this is the exact gate
 
-**There is no tool that reports "you are at 90% of the account limit".** An agent cannot poll a
-fuel gauge. Pretending otherwise would produce a rule that silently never fires, which is worse
-than no rule. So the outcome the owner asked for is delivered two ways instead, and both are real:
+**Scope: the 5-hour session window only.** Owner's decision, 2026-09-09. The 7-day window is
+recorded for visibility and is **never** a gate.
 
-**Throttle the burn rate rather than measure the remainder.** Concurrency is what sets the rate.
+The `claude-status-mcp` package reports live usage, and it has a **command-line mode** -- so this
+works from any unattended session with no MCP connection required:
 
-- At most **three lanes dispatched at once** by default. The heaviest items -- `net.listen`, the
-  full test suite, any real Electron launch -- run serialised, never two at once.
-- One real Electron e2e at a time, always. Two suites contending for fixture ports and the same
-  binary is already a known failure here, independent of any limit.
+    npx -y claude-status-mcp | jq -r '.usage.five_hour | "\(.utilization) \(.resets_at)"'
+    # -> 10 2026-09-09T21:29:59+00:00
 
-**Recover automatically when a limit does arrive.**
+`--pretty` renders the same thing with progress bars, which is the right form for a ledger line.
+The fields that matter: `.usage.five_hour.utilization` (whole-number percent) and
+`.usage.five_hour.resets_at` (ISO timestamp). `.usage.limits[]` carries the same figure with
+`kind: "session"` and a `severity`.
 
-1. Write the resume point: current lane state, the exact next step, and any half-finished work
-   committed to its branch (never left only in a working tree).
-2. Schedule the resumption. Wakeups are capped at an hour each, and the rolling window is longer
-   than that, so **chain them**: wake, check whether work is possible, and if not, schedule
-   another. A run must never end because a single timer was too short.
-3. Resume by reading `RESUME.md` and continuing. No owner action.
+**The gate, checked before dispatching any lane and at every checkpoint** (it costs about a
+second):
 
-### The owner's override, when they can see the gauge
+| `five_hour.utilization` | Action |
+|---|---|
+| under 75 | Dispatch normally |
+| 75 to 89 | Finish in-flight work; start **no new heavy item** -- no full suite, no Electron launch, no new lane |
+| **90 or above** | **Stop dispatching.** Let in-flight work reach its next checkpoint, commit it to its branch, write the resume point, schedule resumption for `resets_at` plus two minutes, and log the pause with the number that caused it |
 
-The owner *can* see real usage (`/usage`). Two directives are honoured at the next checkpoint:
+### Why throttling stays, even with a real gauge
 
-- `/orivon-tell conductor pace: slow` -- drop to one lane at a time.
-- `/orivon-tell conductor budget: <number>` -- a real ceiling. At **90% of that number** the
-  conductor stops dispatching new work, finishes what is in flight, writes the resume point and
-  schedules resumption. This is the literal 90% rule, and it works the moment there is a number
-  to measure against.
+**Utilization is a level, not a rate.** Reading 60% says nothing about whether the next dispatch
+lands at 65% or 95%. The gauge tells the run where it is; the concurrency cap is what stops it
+crossing the line between two readings. Both, not either:
 
-Absent a number, `pace: normal` with three lanes is the default, chosen so a limit is survivable
-rather than avoided by guesswork.
+- At most **three lanes dispatched at once** by default.
+- The heaviest items -- `net.listen`, the full test suite, any real Electron launch -- serialised,
+  never two at once. One real Electron e2e at a time, always: two suites contending for fixture
+  ports and the same binary is a known failure here, independent of any limit.
 
----
+### Resuming, and the one honest limitation
+
+The reset timestamp is known exactly, so resumption is scheduled *at* it rather than guessed. But
+**an in-session timer dies with the session**, so a timer alone is not a recovery plan. The durable
+path is the one the fleet already has:
+
+1. Write the resume point into the state store -- current lane state, the exact next step, and any
+   half-finished work committed to its branch. **Never left only in a working tree.**
+2. Record the pause and the reset time in `ledger.md`, so a fresh session sees why nothing moved.
+3. Schedule the resumption. Wakeups cap at an hour, so where the reset is further out, **chain
+   them** -- wake, re-read the gauge, and either resume or schedule again.
+4. If the session itself is gone, `/orivon-continue` reads `RESUME.md` and picks up from step 1's
+   record. That is what makes the recovery survive a killed process rather than only a pause.
+
+### The owner's overrides
+
+- `/orivon-tell conductor pace: slow` -- one lane at a time.
+- `/orivon-tell conductor budget: <percent>` -- gate at a different number than 90.
 
 ## Checkpoint discipline, because the dashboard depends on it
 
