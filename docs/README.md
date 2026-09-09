@@ -49,6 +49,7 @@ recorded reasons.**
 | [`ADR-0014`](decisions/ADR-0014-main-world-streams-via-experimental-api.md) | The `window.orivon` net surface depends on `executeInMainWorld`, an experimental Electron API |
 | [`ADR-0015`](decisions/ADR-0015-the-broker-is-organised-by-job.md) | The broker is organised by job; each directory declares what it may not import |
 | [`ADR-0016`](decisions/ADR-0016-synchronous-file-reads-are-permitted.md) | Synchronous file reads are permitted; "everything is async" narrows to the network |
+| [`ADR-0017`](decisions/ADR-0017-orivon-owns-the-app-http-path.md) | Orivon owns the app's HTTP path: it terminates TLS, routes `fetch`, and apps set their own headers |
 
 > **Several carry amendments that supersede parts of their own text.** ADR-0002, ADR-0005
 > and ADR-0009 have inline amendments; ADR-0008 rescopes ADR-0002's mirror-Node's-shapes rule to
