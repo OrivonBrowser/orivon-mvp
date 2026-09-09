@@ -3428,8 +3428,9 @@ is a `src/contracts/` change — own PR, merged first.
 > Route B is not rejected — it stays available later as a swap for the same mechanism, **with no
 > app-visible difference**: an app calling the synchronous read cannot tell which implementation
 > answered it. Recorded as decision 2 of thirteen in `planning/unattended-build-queue.md`. This
-> is architectural (`CLAUDE.md` Rule 1); an ADR is drafted and awaiting owner authorship through
-> the sanctioned path — not written by an agent.
+> is architectural (`CLAUDE.md` Rule 1), and is now recorded as
+> [`ADR-0016`](decisions/ADR-0016-synchronous-file-reads-are-permitted.md), authored by the owner
+> through the sanctioned path on 2026-09-10.
 
 ### A95 — tier 2 is defined as Electron apps, and nothing accounts for shimming the `electron` module itself **[RESOLVED 2026-09-09 — owner decision]**
 
@@ -3483,9 +3484,9 @@ discovers it also owes an `electron` shim has already committed to a scope nobod
 The remaining ten of the thirteen owner decisions behind `planning/unattended-build-queue.md`,
 recorded here per `CLAUDE.md` Rule 2 — each is the **owner's** decision, not an AI
 recommendation, and each states its own consequence and what it closes. Decisions 1-3 above
-close A12/A94/A95; decisions 4, 6 and 7 are architectural and covered by two ADRs drafted and
-awaiting owner authorship through the sanctioned path (`CLAUDE.md` Rule 1) — an agent may not
-author one.
+close A12/A94/A95; decisions 4, 6 and 7 are architectural and are now recorded as
+[`ADR-0017`](decisions/ADR-0017-orivon-owns-the-app-http-path.md), authored by the owner through the sanctioned path on 2026-09-10 — as is
+decision 2's own [`ADR-0016`](decisions/ADR-0016-synchronous-file-reads-are-permitted.md).
 
 ### A96 — Orivon terminates TLS on the app's behalf **[RESOLVED 2026-09-09 — owner decision]**
 
@@ -3495,9 +3496,8 @@ stack already in the shipped runtime, rather than handing an app raw bytes and m
 this itself. One new capability; no new dependency, so Rule 8 is unaffected. Because the
 trusted side sees the real hostname, a grant can name it directly.
 
-Architectural (`CLAUDE.md` Rule 1); one half of an ADR covering it together with decisions 6
-and 7 — "Orivon owns the app's HTTP(S) path" — drafted and awaiting owner authorship through
-the sanctioned path.
+Architectural (`CLAUDE.md` Rule 1); one part of [`ADR-0017`](decisions/ADR-0017-orivon-owns-the-app-http-path.md), which covers it together
+with decisions 6 and 7 and was authored by the owner on 2026-09-10.
 
 **Needed by:** Phase 1 (the contracts PR) and Phase 2 item 2.3 (secure connect),
 `planning/unattended-build-queue.md`.
@@ -3521,9 +3521,8 @@ capability for any host the app has been granted. Not an optimisation: the FreeT
 reconnaissance (`planning/freetube-port-recon.md`) found its entire network layer is `fetch`,
 so without this routing the app does not function at all.
 
-Architectural (`CLAUDE.md` Rule 1); covered by the same pending ADR as A96 and A99 — "Orivon
-owns the app's HTTP(S) path" — drafted and awaiting owner authorship through the sanctioned
-path.
+Architectural (`CLAUDE.md` Rule 1); covered by [`ADR-0017`](decisions/ADR-0017-orivon-owns-the-app-http-path.md), the same ADR as A96 and A99,
+authored by the owner on 2026-09-10.
 
 **Needed by:** Phase 3 item 3.4, `planning/unattended-build-queue.md`.
 
@@ -3535,8 +3534,8 @@ https://www.youtube.com` today, and real ports need this. Safe because these con
 none of the user's own cookies or sessions: nothing can ride an existing login, since the app
 must supply everything itself.
 
-Architectural (`CLAUDE.md` Rule 1); the third part of the same pending ADR as A96 and A98,
-drafted and awaiting owner authorship through the sanctioned path.
+Architectural (`CLAUDE.md` Rule 1); the third part of [`ADR-0017`](decisions/ADR-0017-orivon-owns-the-app-http-path.md), the same ADR as A96
+and A98, authored by the owner on 2026-09-10.
 
 **Needed by:** Phase 3 item 3.4, `planning/unattended-build-queue.md`.
 
