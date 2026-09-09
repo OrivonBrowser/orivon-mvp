@@ -121,7 +121,7 @@ that *some* TLS connection succeeded.
   > as of that merge) — not a probe error. **This does not trigger this ADR's own Reversibility
   > clause**, which names only the interception/secure-context pair above. It is a separate,
   > real gap for whichever mechanism ends up enforcing CSP or other response headers on a cached
-  > bundle — parked as `docs/open-questions.md` A106 rather than resolved here, per `CLAUDE.md`
+  > bundle — parked as `docs/open-questions.md` A110 rather than resolved here, per `CLAUDE.md`
   > Rule 1 (an agent may not amend this ADR's decision or reasoning, only record a result it
   > asked for).
 - Offline first-run keeps working for pre-cached apps, unchanged from `ADR-0005`.
