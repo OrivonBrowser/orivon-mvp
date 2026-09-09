@@ -48,6 +48,7 @@ recorded reasons.**
 | [`ADR-0013`](decisions/ADR-0013-rollback-is-warned-and-chosen-not-blocked.md) | A below-floor version is warned and chosen, never silently blocked |
 | [`ADR-0014`](decisions/ADR-0014-main-world-streams-via-experimental-api.md) | The `window.orivon` net surface depends on `executeInMainWorld`, an experimental Electron API |
 | [`ADR-0015`](decisions/ADR-0015-the-broker-is-organised-by-job.md) | The broker is organised by job; each directory declares what it may not import |
+| [`ADR-0016`](decisions/ADR-0016-synchronous-file-reads-are-permitted.md) | Synchronous file reads are permitted; "everything is async" narrows to the network |
 
 > **Several carry amendments that supersede parts of their own text.** ADR-0002, ADR-0005
 > and ADR-0009 have inline amendments; ADR-0008 rescopes ADR-0002's mirror-Node's-shapes rule to
