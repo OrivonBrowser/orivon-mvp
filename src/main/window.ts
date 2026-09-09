@@ -133,7 +133,16 @@ export function createShellWindow (ctx: SubsystemContext): BaseWindow {
   // app.quit() here -- index.ts's window-all-closed handler already owns
   // whether the whole process then exits (quits on non-darwin, stays
   // resident on macOS per platform convention).
-  const tabs = new TabManager(win.contentView, tabBounds, () => { win.close() }, dashboardUrl, ctx)
+  // The guard is load-bearing, not defensive noise: on teardown the window
+  // is destroyed FIRST, and its child webContents then fire 'destroyed' one
+  // by one, which empties TabManager and reaches this callback. Calling
+  // close() on an already-destroyed BaseWindow throws, and an uncaught throw
+  // in the main process puts up Electron's modal error dialog -- which then
+  // keeps the process alive forever, so the window never goes away and the
+  // process tree orphans. Same class as pushState()'s guard below.
+  const closeWindow = (): void => { if (!win.isDestroyed()) win.close() }
+
+  const tabs = new TabManager(win.contentView, tabBounds, closeWindow, dashboardUrl, ctx)
 
   // Bookmarks: owner override, 2026-08-28 (mvp-scope.md, ADR-0003) -- not
   // in the original scope pass, arrived bundled with the chrome restyle.
