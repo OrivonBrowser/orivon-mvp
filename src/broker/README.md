@@ -47,6 +47,10 @@ Three files stay at the top level because they belong to no single directory:
   because that file *constructs* and this one *translates*, and because merging them would
   quietly settle [`A39`](../../docs/open-questions.md), which is a behavioural question nobody
   has answered yet
+- [`net-capability.ts`](net-capability.ts) — `orivon.net`'s three entry points (`connect`,
+  `udpBind`, `listen`), lifted out of `index.ts` on 2026-09-09 when `net.listen` pushed it past
+  500 lines — this file's own design note below says why it stayed at the top level rather than
+  moving into a directory of its own
 
 The decomposition and the import boundaries are recorded in
 [`ADR-0015`](../../docs/decisions/ADR-0015-the-broker-is-organised-by-job.md), including the two
@@ -285,14 +289,40 @@ Split out of `ipc.ts`'s inline credit-message check once a second and third mess
 it -- one job (shape validation at this trust boundary), the same way `ipc-validation.ts` owns it
 for `CONTROL_CHANNEL`.
 
-### `index.ts` -- two splits so far, and where the next one goes
+### `index.ts` -- three splits so far
 
-Two pieces have already moved out of this file, both at Rule 2's 500-line limit and both by
-concern: `grants/grant-ledger.ts` (the per-origin state) and `io-errors.ts` (translating an
-injected dependency's raw error). What stays is the dependency shape `createBroker` fixes and the
-capability entry points themselves.
+Three pieces have moved out of this file, all at Rule 2's 500-line limit and all by concern:
+`grants/grant-ledger.ts` (the per-origin state), `io-errors.ts` (translating an injected
+dependency's raw error), and -- 2026-09-09, when `net.listen` landed -- `net-capability.ts`
+(`connect`/`authorisedSend`/`udpBind`/`listen`, the whole of `orivon.net`). What stays is the
+dependency shape `createBroker` fixes, the origin-normalising `canonical()` every capability
+shares, and the `fs`/`app`/grant-ledger entry points that do not yet warrant a file of their own.
 
-**The next split has to be bigger.** There is roughly one entry point of headroom left, and `fs`
-is still missing everything below `readFile`/`writeFile` while `id` has nothing at all. Whoever
-adds either should lift `connect`/`udpBind`/`authorisedSend` into a net-capability file rather
-than shaving another helper off the top -- that is the seam with room behind it.
+**`net-capability.ts` stayed at the top level rather than becoming a `net/` directory**, unlike
+`grants/grant-ledger.ts`'s own move. The five directories are organised by JOB (`ADR-0015`:
+decide / remember / hold / do / speak) -- `net-capability.ts` is not a sixth job, it is
+`index.ts`'s own job (the capability entry points) split purely for line count, the same test
+`io-errors.ts` and `broker-contracts.ts` already pass as top-level files. It takes `HandleTable`
+and `GrantLedger` as constructed dependencies rather than building its own, so nothing about
+`createBroker`'s fixed dependency shape or its stub-testability changed in the move -- a pure
+extraction, not a redesign.
+
+**There is headroom left for now.** `fs` is still missing everything below `readFile`/
+`writeFile` and `id` has nothing at all; whoever builds either should check this file's line
+count before adding inline rather than assuming there is room, the same way `net.listen`'s
+author had to.
+
+### `net-capability.ts` -- the accept-queue bound is not the specification's backpressure
+
+`handle-contracts.md`'s conformance item 7 for `TcpServer` wants the OS listen backlog itself to
+apply pressure once an app stops reading `connections` -- but vanilla Node `net` accepts a
+connection and fires `'connection'` unconditionally the instant the OS hands one over; there is
+no public API to defer the `accept()` syscall independent of app readiness (`pauseOnConnect`
+pauses an accepted SOCKET's data flow, not the listener's accept loop). `../adapters/
+node-adapters.ts`'s `listenTcp` is honest about this gap rather than claiming to have closed it:
+`LISTEN_ACCEPT_QUEUE_LIMIT` bounds how many accepted-but-unclaimed connections one listener holds
+before it starts resetting new ones outright, which keeps an unread `connections` stream from
+pinning unbounded memory in the main process (T11b) without pretending to be OS-level
+backpressure. AI recommendation, not an owner decision -- flagged for the same reason the write
+heartbeat and dial timeout are (`transport/port-sink.ts`, `adapters/node-adapters.ts`'s own
+`DIAL_TIMEOUT_MS`): nothing in `contracts/` or `handle-contracts.md` specifies this number.

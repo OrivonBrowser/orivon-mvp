@@ -289,3 +289,28 @@ export interface FailableUdpSocket extends Handle {
   abort: () => void
   onUnlink: (listener: (reason: CloseReason, code?: OrivonErrorCode) => void) => void
 }
+
+/**
+ * The `TcpServer` counterpart of `FailableTcpSocket`/`FailableUdpSocket`:
+ * what `orivon.net.listen` needs from the broker beyond the app-facing
+ * `TcpServer` (contracts/handles.ts). `fail` and `onUnlink` mean exactly
+ * what they mean there; their docs are not repeated.
+ *
+ * NO `abort`, unlike the other two. A `TcpServer` has no writable of its own
+ * to abort -- contracts/handles.ts's own type has only `connections`,
+ * `localAddress` and `localPort`. Only the sockets it PRODUCES have one, and
+ * each of those is its own `FailableTcpSocket` with its own `abort`.
+ *
+ * `connections` yields `FailableTcpSocket`, never the app-facing `TcpSocket`
+ * -- exactly as `net.connect`'s own return widens `TcpSocket` today, each
+ * accepted connection needs the same escape hatch for whichever future
+ * transport layer relays it to a page (not built by this handle-table layer;
+ * see src/broker/README.md).
+ */
+export interface FailableTcpServer extends Handle {
+  readonly connections: ReadableStream<FailableTcpSocket>
+  readonly localAddress: string
+  readonly localPort: number
+  fail: (code: OrivonErrorCode, platformCode?: string) => void
+  onUnlink: (listener: (reason: CloseReason, code?: OrivonErrorCode) => void) => void
+}
