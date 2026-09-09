@@ -25,23 +25,20 @@
 // See README.md's Design notes for this file's split history and the next seam.
 
 import { HandleTable } from './handles/handles.js'
-import type { FailableTcpSocket, FailableUdpSocket } from './handles/handle-contracts.js'
 import { errnoOf, fail } from './errors.js'
 import { mapIoError } from './io-errors.js'
 import { GrantLedger } from './grants/grant-ledger.js'
-import { checkBind } from './policy/bind.js'
-import { checkConnect } from './policy/connect.js'
 import { CONFINEMENT_ERROR_CODE, confinePath } from './policy/paths.js'
 import { originFromUrl } from './policy/origin.js'
+import { createNetCapability } from './net-capability.js'
 import type {
   CapabilityKind,
-  Datagram,
   Grant,
   GrantId,
   Manifest,
   Pattern
 } from '../contracts/index.js'
-import type { BoundUdpSocket, Broker, CreateBrokerOptions, DialedSocket, SendOutcome } from './broker-contracts.js'
+import type { Broker, CreateBrokerOptions } from './broker-contracts.js'
 
 export function createBroker (deps: CreateBrokerOptions): Broker {
   const handleTable = new HandleTable()
@@ -90,193 +87,10 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     return { resolved: confined.resolved, grant }
   }
 
-  async function connect (origin: string, opts: { host: string, port: number }): Promise<FailableTcpSocket> {
-    const key = canonical(origin)
-
-    // THE NARROWING. `current.patterns` is what the user granted; nothing
-    // below ever reads `manifest.capabilities.net.tcp.connect`, which is what
-    // the app DECLARED and may be far wider (open-questions.md A18). An empty
-    // grant answers exactly like no grant at all -- checkConnect's own
-    // `patterns.length === 0` case -- so there is nothing else to special-case
-    // here for "never granted".
-    const current = ledger.currentGrant(key, 'tcp.connect')
-    if (current === undefined) throw fail('denied', 'tcp.connect is not granted to this origin')
-
-    return await handleTable.run(key, { on: 'grant', grantId: current.id }, async (signal) => {
-      // `checkConnect` calls `deps.resolve` internally and does not catch
-      // its rejection (policy/connect.ts is pure, and mapping I/O errors is
-      // not its job), so a raw DNS failure reaches here unmapped. `deps.dial`
-      // rejects raw too. Both need mapIoError; nothing else in this
-      // callback throws anything but an OrivonError already, and mapIoError
-      // passes those through unchanged.
-      let decision: Awaited<ReturnType<typeof checkConnect>>
-      let dialed: DialedSocket
-      try {
-        decision = await checkConnect(current.patterns, opts.host, opts.port, deps.resolve)
-        if (!decision.allowed) throw fail('denied', 'the connection was not authorised')
-        // Checked here too, not only after `dial` resolves below: without
-        // this, a grant revoked while resolve was still pending would still
-        // reach `deps.dial`, and correctness would depend entirely on the
-        // INJECTED dial implementation independently honouring an
-        // already-aborted signal rather than on the broker itself.
-        if (signal.aborted) throw fail('revoked', 'the grant authorising this connection was withdrawn')
-        dialed = await deps.dial(decision.addresses, opts.port, signal)
-      } catch (error) {
-        throw mapIoError(error, 'net')
-      }
-
-      if (signal.aborted) {
-        // The grant was withdrawn while `dial` was in flight. `acquire`
-        // below would still refuse to register this socket, but its own
-        // cleanup path releases it with reason 'failed' -- silent fd
-        // release, the right answer for a registration that never got a
-        // resource, and the WRONG one here: `dialed` is a live, connected
-        // socket that needs a proper revoked-style teardown, not silence.
-        // Handling it here rather than leaning on `acquire`'s refusal is
-        // exactly what HandleTable.run's own note asks the connect path to
-        // do (./handles/handles.ts).
-        await dialed.destroy('revoked')
-        throw fail('revoked', 'the grant authorising this connection was withdrawn')
-      }
-
-      const { destroy, ...socketFields } = dialed
-      const entry = handleTable.acquire({
-        origin: key,
-        kind: 'tcpSocket',
-        authorisedBy: { by: 'grant', grantId: current.id },
-        destroy,
-        socketLimit: ledger.socketAllowance(key)
-      })
-
-      // Spread FIRST, then the broker-assigned fields -- not the other way
-      // round. `socketFields` came from `dialed`, and DialedSocket's own
-      // type forbids it carrying id/closed/close today, but a future dial()
-      // whose result happens to carry same-named fields must not be able to
-      // silently override the broker's own handle identity and close
-      // behaviour by landing later in the spread.
-      return {
-        ...socketFields,
-        id: entry.id,
-        closed: entry.closed,
-        close: async (): Promise<void> => { await handleTable.release(key, entry.id) },
-        fail: (code, platformCode) => { handleTable.fail(key, entry.id, code, platformCode) },
-        abort: () => { handleTable.abort(key, entry.id) },
-        onUnlink: (listener) => { handleTable.onUnlink(key, entry.id, listener) }
-      }
-    })
-  }
-
-  /**
-   * Authorises ONE outbound datagram, then sends it.
-   *
-   * READ LIVE, NOT CAPTURED AT BIND. A UDP socket has no fixed peer, so unlike
-   * `connect` there is no single acquisition-time destination to check once --
-   * the check has to happen per datagram, and once it does, reading the grant
-   * fresh each time is what makes a revoke stop the NEXT DATAGRAM rather than
-   * only the next bind. That is the lesson A70 recorded for net.close, applied
-   * before it could recur here.
-   *
-   * `ledger.parsedPatternsFor(grant)` -- not `grant.patterns` a second time --
-   * is what stops checkConnect's own `patterns.map(parsePattern)` running once
-   * per PACKET: ordinary DHT/tracker traffic calls this hundreds of times a
-   * second, which made that parse real, avoidable work on the broker's single
-   * UI thread. Safe to reuse across calls for exactly as long as `grant`
-   * itself is: see GrantLedger's own doc on why a revoke or a re-grant always
-   * hands back a DIFFERENT Grant object, never this same one mutated.
-   *
-   * NEVER REJECTS, on any path. Its caller's only way to report a rejection is
-   * to error the app's WritableStream, which errors it permanently, and a
-   * denied destination is ordinary traffic for a P2P app (A87). A resolver
-   * failure is 'unreachable' and a denial is 'denied', both as values.
-   */
-  async function authorisedSend (
-    key: string,
-    rawSend: BoundUdpSocket['send'],
-    datagram: Datagram
-  ): Promise<SendOutcome> {
-    const grant = ledger.currentGrant(key, 'udp.send')
-    if (grant === undefined) return { sent: false, code: 'denied' }
-
-    let decision: Awaited<ReturnType<typeof checkConnect>>
-    try {
-      decision = await checkConnect(grant.patterns, datagram.address, datagram.port, deps.resolve, ledger.parsedPatternsFor(grant))
-    } catch (error) {
-      const mapped = mapIoError(error, 'net')
-      // The key is omitted, not set to undefined: exactOptionalPropertyTypes
-      // is on, and the two are different values across structured clone.
-      return mapped.platformCode === undefined
-        ? { sent: false, code: mapped.code }
-        : { sent: false, code: mapped.code, platformCode: mapped.platformCode }
-    }
-    if (!decision.allowed) return { sent: false, code: 'denied' }
-
-    // The FIRST checked literal, not the address the app named. checkConnect
-    // requires EVERY answer to pass, so any of them is safe to use, and
-    // sending to the name a second time would be a second resolution that
-    // could answer differently from the one just checked (policy/connect.ts's
-    // header -- the same T12 rule dial() follows).
-    const [address] = decision.addresses
-    if (address === undefined) return { sent: false, code: 'denied' }
-    return await rawSend({ ...datagram, address })
-  }
-
-  async function udpBind (origin: string, opts: { port: number }): Promise<FailableUdpSocket> {
-    const key = canonical(origin)
-
-    // The narrowing, exactly as `connect` does it: what the user GRANTED, never
-    // what the manifest declared. `udp.bind` and `udp.send` are separate
-    // grants, and this one authorises only the bind -- an app that binds
-    // successfully still sends nothing until `udp.send` is granted too.
-    const current = ledger.currentGrant(key, 'udp.bind')
-    if (current === undefined) throw fail('denied', 'udp.bind is not granted to this origin')
-
-    return await handleTable.run(key, { on: 'grant', grantId: current.id }, async (signal) => {
-      let bound: BoundUdpSocket
-      try {
-        const decision = checkBind(current.patterns, opts.port)
-        if (!decision.allowed) throw fail('denied', 'the bind was not authorised')
-        if (signal.aborted) throw fail('revoked', 'the grant authorising this bind was withdrawn')
-        bound = await deps.bind(decision.ranges, signal)
-      } catch (error) {
-        throw mapIoError(error, 'net')
-      }
-
-      if (signal.aborted) {
-        // Same reasoning as `connect`'s: `acquire` would refuse this, but its
-        // cleanup releases with 'failed' -- silent, and wrong for a socket
-        // that is actually bound and holding a port.
-        await bound.destroy('revoked')
-        throw fail('revoked', 'the grant authorising this bind was withdrawn')
-      }
-
-      const entry = handleTable.acquire({
-        origin: key,
-        kind: 'udpSocket',
-        authorisedBy: { by: 'grant', grantId: current.id },
-        destroy: bound.destroy,
-        socketLimit: ledger.socketAllowance(key)
-      })
-
-      // BUILT FIELD BY FIELD, NOT SPREAD, unlike `connect`'s socketFields.
-      // `droppedInbound` is a GETTER on the adapter's object, and spreading
-      // copies its value at spread time -- which is zero, forever. The app
-      // would read a counter that never moves and conclude it had lost
-      // nothing.
-      return {
-        readable: bound.readable,
-        localAddress: bound.localAddress,
-        localPort: bound.localPort,
-        get droppedInbound () { return bound.droppedInbound },
-        send: async (datagram: Datagram) => await authorisedSend(key, bound.send, datagram),
-        id: entry.id,
-        closed: entry.closed,
-        close: async (): Promise<void> => { await handleTable.release(key, entry.id) },
-        fail: (code, platformCode) => { handleTable.fail(key, entry.id, code, platformCode) },
-        abort: () => { handleTable.abort(key, entry.id) },
-        onUnlink: (listener) => { handleTable.onUnlink(key, entry.id, listener) }
-      }
-    })
-  }
+  // orivon.net's three entry points. Lifted to ./net-capability.ts once
+  // `listen` pushed this file past Rule 2's 500 lines -- see that file's own
+  // header, and README.md's design notes, for why the split lands here.
+  const net = createNetCapability({ deps, handleTable, ledger, canonical })
 
   /**
    * `fs.readFile` and `fs.writeFile` share this shape: confine the path (see
@@ -438,7 +252,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
 
   return {
     app: { manifest, grants },
-    net: { connect, udpBind },
+    net,
     fs: { readFile, writeFile },
     registerApp,
     versionFloorFor,
