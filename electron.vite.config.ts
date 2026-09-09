@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import { defineConfig } from 'electron-vite'
+import { buildAliasEntries } from './src/shim/module-map.js'
 
 const root = dirname(fileURLToPath(import.meta.url))
 
@@ -131,7 +132,15 @@ export default defineConfig({
       //
       // APPEND POINT, owned by the `shim` stream (build step 3). No other
       // stream writes to this map. Ownership: docs/development/parallel-work.md.
-      alias: {}
+      //
+      // Generated from src/shim/module-map.ts's SHIM_MODULE_MAP -- add or
+      // change an entry there, not here. A 'local' entry resolves against
+      // src/shim/ (below); a 'package' entry is an npm specifier, used as
+      // written. See module-map.ts for why the split exists.
+      alias: Object.fromEntries(
+        buildAliasEntries().map(({ specifier, kind, implementation }) =>
+          [specifier, kind === 'package' ? implementation : resolve(root, 'src/shim', implementation)])
+      )
     }
   }
 })
