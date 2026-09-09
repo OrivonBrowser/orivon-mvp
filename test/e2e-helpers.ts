@@ -13,11 +13,15 @@
 import { expect } from 'vitest'
 import type { ChildProcess } from 'node:child_process'
 import { connect as netConnect } from 'node:net'
-import { evaluateRetrying, findChrome, waitFor } from './smoke-helpers.mjs'
+import type { ElectronApplication } from 'playwright'
+import { evaluateRetrying, findChrome, findViewShowing, waitFor, waitForTab } from './smoke-helpers.mjs'
 /** Ceiling for waitForAddressBarStable below. Named so the budget
  * arithmetic beneath it can reuse the real number instead of retyping
  * `8_000` in two places that could quietly drift apart. */
 export const ADDRESS_BAR_STABLE_TIMEOUT_MS = 8_000
+
+/** Same figure and reason across every phase that closes an app it launched -- see closeElectronApp. */
+export const APP_CLOSE_RACE_MS = 8_000
 
 /** Forwards a fixture server child's stdout/stderr, prefixed -- mirrors
  * launch-electron.mjs's own reasoning for the Electron process: Node
@@ -177,5 +181,63 @@ export async function runPhase (
   }
 
   expect(failures).toEqual([])
+}
+
+/**
+ * Launches the real shell, navigates its default tab to `url`, and returns
+ * the fixture tab's own Playwright page -- the mechanics every capability
+ * e2e test's Phase 1 already runs, with one `check()` per step, because
+ * that phase's whole point is proving the UI mechanics themselves work. A
+ * grant test's own real-page phase does not need that granularity a second
+ * time: it needs a page under a real grant, reliably, so a failure here
+ * surfaces as an ordinary thrown error into the calling phase's own
+ * try/catch instead of a named check.
+ */
+export async function navigateToFixture (
+  app: ElectronApplication,
+  url: string,
+  expectedTitle: string
+): Promise<ReturnType<typeof findChrome>> {
+  await waitFor(() => app.windows().length === 2)
+  const chrome = findChrome(app)
+  await waitForAddressBarStable(chrome)
+  await clickAddressBarRetrying(chrome, url)
+  const navigated = await waitForTab(chrome, { address: url, title: expectedTitle })
+  if (!navigated.ok) throw new Error(`fixture tab did not navigate to ${url}: ${JSON.stringify(navigated.info)}`)
+  const view = findViewShowing(app, chrome, url)
+  if (view === undefined) throw new Error(`no view found showing ${url}`)
+  return view
+}
+
+/**
+ * Closes every tab (a real click, the same one a person would use) before
+ * closing `app` itself, with a bounded race against a stuck close.
+ *
+ * WHY: `_electron`'s `app.close()` hangs INDEFINITELY while any tab remains
+ * open (found by direct instrumented reproduction, not the documented C6
+ * attach issue -- a different symptom of the same driver class; reproduced
+ * down to a launch with zero navigation). Closing every tab first fires
+ * src/main/index.ts's window-all-closed -> app.quit(), which makes
+ * app.close() resolve in ~100ms instead. The race + process kill is a
+ * last-resort net for a future regression in the tab-closing step itself
+ * (a selector rename, say) -- so that degrades to a slow, reported failure,
+ * never a second silent hang.
+ */
+export async function closeElectronApp (app: ElectronApplication, raceMs = APP_CLOSE_RACE_MS): Promise<void> {
+  const chrome = app.windows().find((w) => w.url().endsWith('/renderer/index.html'))
+  if (chrome !== undefined) {
+    const ids: string[] = await evaluateRetrying(chrome, () =>
+      Array.from(document.querySelectorAll('.tab')).map((el) => (el as HTMLElement).dataset.id ?? '')
+    ).catch(() => [])
+    for (const id of ids) {
+      await chrome.click(`[data-id="${id}"] .close`).catch(() => {})
+    }
+  }
+  await waitFor(() => app.windows().length === 0)
+  const closed = await Promise.race([
+    app.close().then(() => true),
+    new Promise<boolean>((resolve) => setTimeout(() => resolve(false), raceMs))
+  ])
+  if (!closed) app.process().kill()
 }
 

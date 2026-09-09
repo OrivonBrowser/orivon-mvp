@@ -7,11 +7,10 @@
 // error, not a timeout, a crash, or a silent success.
 //
 // WHY THIS IS A VITEST FILE, NOT A PLAIN .mjs SCRIPT LIKE scripts/smoke.mjs.
-// Phase 2 below imports real src/broker and src/loader TypeScript directly
-// (createBroker, dialTcp/resolveHost, parseManifest) rather than driving the
-// app as a black box -- see the header on Phase 2 for why that is
-// necessary. Plain `node` cannot resolve a `./index.js` specifier to the
-// `index.ts` file that is actually on disk; vitest already does this for
+// Phase 2 below imports real src/loader TypeScript directly (parseManifest)
+// rather than driving the app as a black box -- see the header on Phase 2
+// for why that is necessary. Plain `node` cannot resolve a `./index.js`
+// specifier to the `index.ts` file that is actually on disk; vitest already does this for
 // every other *.test.ts in this repo. Exact precedent for "a *.test.ts
 // under a directory vitest.config.ts's `include` does not cover, run
 // directly rather than via `npm test`": apps/fixture/manifest.test.ts
@@ -21,9 +20,14 @@
 // vitest.config.ts's `include` filter in this version, confirmed
 // empirically ("No test files found"). test/vitest.e2e.config.ts is the
 // other escape hatch that same README names ("a temporary config pointing
-// include at..."), scoped to test/**/*.test.ts. Run this file with:
+// include at..."), scoped to test/**/*.test.ts. Run this file with
+// `npm run test:e2e`, or directly:
 //
-//   npx electron-vite build && npx vitest run --config test/vitest.e2e.config.ts
+//   node scripts/build-e2e.mjs && npx vitest run --config test/vitest.e2e.config.ts
+//
+// NOT a bare `electron-vite build` -- that omits ORIVON_ENABLE_DEV_GRANT=1,
+// so Phase 2's dev-grant hook (below) would be absent and it would fail
+// immediately, by design (docs/planning/unattended-build-queue.md item 0.3).
 //
 // THE GAP THIS TEST WORKS AROUND, READ BEFORE CHANGING THE SHAPE OF THIS
 // FILE. docs/development/testing.md's ideal end-to-end test drives the
@@ -50,13 +54,24 @@
 // broker's real policy check over real Electron IPC, and correctly comes
 // back denied -- not a timeout, not a crash, not a malformed error, not a
 // silent success. That is real, current, observable behaviour, not a
-// stand-in for the ideal test; closing the remaining gap (a real grant) is
-// the app loader's job, build step 4. Phase 2 is "directly exercises...
-// whatever grant mechanism exists" (this lane's original brief, SSScope)
-// taken as far as it can go: the real broker, real Node I/O, real
-// granted-vs-denied enforcement, against a real separate echo-server
-// process -- just not carried over real Electron IPC, because nothing
-// grants the fixture's origin anything on that path either.
+// stand-in for the ideal test. A REAL, PRODUCTION grant -- an app loader and
+// a permission-prompt UI a person actually approved -- is still build step
+// 4's job, not this file's.
+//
+// UPDATED (docs/planning/unattended-build-queue.md item 0.3): Phase 2 used
+// to build its own, separate Broker instance and call its registerApp()/
+// grant() directly from test code, disconnected from the real launched
+// shell -- so it proved the broker's OWN logic under a grant, but never
+// that a grant issued anywhere reaches the real IPC pipe Phase 1 exercises.
+// It now grants through src/main/dev-grant.ts's developer-only hook instead
+// -- reachable only via Playwright's ElectronApplication.evaluate(), never
+// via window.orivon or any renderer-facing surface, and absent entirely
+// from an ordinary build (scripts/check-dev-grant-absent.mjs) -- against
+// the SAME broker instance the real shell's real IPC is wired to. What
+// Phase 2 now proves: a real page's window.orivon.net.connect, over the
+// real IPC pipe Phase 1 shows correctly denies without one, completes a
+// real granted round trip once that same pipe's broker holds a grant, and
+// still denies a connection outside it.
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { spawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
@@ -73,16 +88,13 @@ import {
   waitForTab
 } from './smoke-helpers.mjs'
 import {
-  ADDRESS_BAR_STABLE_TIMEOUT_MS, clickAddressBarRetrying, forwardOutput, killChild, runPhase,
-  waitForAddressBarStable, waitForTcpReady
+  ADDRESS_BAR_STABLE_TIMEOUT_MS, clickAddressBarRetrying, closeElectronApp, forwardOutput, killChild,
+  navigateToFixture, runPhase, waitForAddressBarStable, waitForTcpReady
 } from './e2e-helpers.js'
 import { HOST, ECHO_PORT, STATIC_PORT } from '../apps/fixture/config.mjs'
-import { createBroker } from '../src/broker/index.js'
-import type { BrokerFs, CreateBrokerOptions, Keychain } from '../src/broker/broker-contracts.js'
-import { dialTcp, listenTcp, resolveHost } from '../src/broker/adapters/node-adapters.js'
-import { bindUdp } from '../src/broker/adapters/udp-adapter.js'
-import { isOrivonErrorLike } from '../src/broker/errors.js'
 import { parseManifest } from '../src/loader/manifest.js'
+import type { DevGrantRequest } from '../src/main/dev-grant.js'
+import type { Grant } from '../src/contracts/index.js'
 
 // fileURLToPath on a directory URL keeps the trailing separator (the same
 // gotcha apps/fixture/serve.mjs's own header documents) -- stripped here so
@@ -169,33 +181,6 @@ afterAll(async () => {
   await Promise.all([killChild(echoServer), killChild(staticServer)])
 })
 
-/** Mirrors apps/fixture/app.js's own roundTrip() shape deliberately: this is
- * the exact operation the fixture's frontend performs (write one message,
- * read back exactly as many bytes as were sent -- the echo server has no
- * framing). Phase 2 performs it directly against the broker in place of the
- * page-driven call the gap above rules out. */
-async function roundTripBytes (
-  socket: { readable: ReadableStream<Uint8Array>, writable: WritableStream<Uint8Array> },
-  message: string
-): Promise<string> {
-  const sentBytes = new TextEncoder().encode(message)
-  const writer = socket.writable.getWriter()
-  await writer.write(sentBytes)
-  await writer.close()
-
-  const reader = socket.readable.getReader()
-  let received = new Uint8Array(0)
-  while (received.length < sentBytes.length) {
-    const { value, done } = await reader.read()
-    if (done) break
-    const merged = new Uint8Array(received.length + value.length)
-    merged.set(received)
-    merged.set(value, received.length)
-    received = merged
-  }
-  return new TextDecoder().decode(received)
-}
-
 // Phase 1 and Phase 2 are independent `it()` blocks, not two halves of one
 // test. A single combined test meant a flaky UI click in Phase 1 could red
 // the whole file's one aggregate assertion and bury a Phase 2 that had
@@ -207,11 +192,11 @@ async function roundTripBytes (
 // Phase 1 result and a Phase 2 result are always visible independently.
 //
 // Phase 2 has no dependency on Phase 1 having run, or succeeded, or even
-// existing: it builds its own Broker instance directly against real Node
-// I/O (dialTcp, resolveHost) and never touches the Electron app Phase 1
-// launches -- see this file's header for why the two paths are separate at
-// all. Both phases do share the echo/static servers started in beforeAll
-// above, which is file-level setup independent of either `it()`.
+// existing: it launches its OWN separate Electron app rather than reusing
+// Phase 1's -- see this file's header for why the two paths are kept
+// independent `it()` results. Both phases do share the echo/static servers
+// started in beforeAll above, which is file-level setup independent of
+// either `it()`.
 
 /**
  * The EXACT text `src/broker/index.ts`'s `connect()` throws when
@@ -460,17 +445,20 @@ it('Phase 1: the real shell launches, and a real net.connect through the full IP
   })
 }, TEST_TIMEOUT_MS)
 
-it('Phase 2: the real broker grants a round trip and denies an out-of-manifest connection', async () => {
+it('Phase 2: a real grant, issued through the dev-only path rather than test code calling ' +
+   'broker.grant() itself, lets a real page round-trip bytes and still denies an out-of-manifest connection', async () => {
   await runPhase('Phase 2', async (check) => {
-    // ---- the real broker, real I/O, granted vs. denied
-    // Constructs its OWN Broker instance with REAL dependencies (dialTcp,
-    // resolveHost -- src/broker/adapters/node-adapters.ts, no `electron` import, real
-    // node:net/node:dns) rather than the stubs every unit test in
-    // src/broker/*.test.ts uses. registerApp()/grant() are called exactly as
-    // the (not-yet-built) app loader and permission-prompt UI will call them
-    // -- see this file's header for why nothing today can do that over real
-    // IPC instead. No dependency on Phase 1's Electron app -- see the note
-    // above both `it()` blocks.
+    // ---- a real grant, on the SAME broker the real IPC pipe is wired to
+    // Fetches and parses the fixture's real manifest exactly as its own page
+    // does, then grants it via src/main/dev-grant.ts's hook -- invoked
+    // through Playwright's ElectronApplication.evaluate(), which runs
+    // inside THIS launched app's own main process, never via IPC or
+    // window.orivon. This is queue item 0.3's replacement for this test
+    // calling broker.registerApp()/grant() itself: the grant lands on the
+    // actual running broker, so everything after it goes over the real IPC
+    // pipe Phase 1 shows correctly denies without one, not a second,
+    // disconnected Broker instance. Independent of Phase 1's own app -- see
+    // the note above both `it()` blocks.
     try {
       const manifestResponse = await fetch(MANIFEST_URL)
       const manifestText = await manifestResponse.text()
@@ -485,84 +473,121 @@ it('Phase 2: the real broker grants a round trip and denies an out-of-manifest c
         JSON.stringify(patterns)
       )
 
-      const fsStub: BrokerFs = {
-        rootFor: () => { throw new Error('fs is not exercised by this test') },
-        realpathSync: () => { throw new Error('fs is not exercised by this test') },
-        readFile: async () => { throw new Error('fs is not exercised by this test') },
-        writeFile: async () => { throw new Error('fs is not exercised by this test') }
-      }
-      const keychainStub: Keychain = {
-        getSeed: async () => { throw new Error('identity is not exercised by this test') }
-      }
-      const deps: CreateBrokerOptions = {
-        dial: dialTcp,
-        // Real, but unexercised here: this file's Phase 2 is the TCP round
-        // trip. The UDP one gets its own e2e rather than being bolted on --
-        // this file is already at 723 of Rule 2's 800 lines for a test.
-        bind: bindUdp,
-        listen: listenTcp,
-        resolve: resolveHost,
-        now: () => Date.now(),
-        fs: fsStub,
-        keychain: keychainStub
-      }
-      const broker = createBroker(deps)
-      await broker.registerApp(FIXTURE_ORIGIN, parsed.manifest)
-      await broker.grant(FIXTURE_ORIGIN, 'tcp.connect', patterns)
-
-      // (a) THE GRANTED PATH. Real dial, over real loopback TCP, to the real
-      // echo-server child process started in beforeAll -- a real bytes-out,
-      // bytes-back round trip, not a stub standing in for one.
+      const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
       try {
-        const socket = await broker.net.connect(FIXTURE_ORIGIN, { host: HOST, port: ECHO_PORT })
-        const message = `e2e round trip ${new Date().toISOString()}`
-        const received = await roundTripBytes(socket, message)
-        await socket.close()
-        check(
-          'the granted connection dials the real echo server and round-trips the exact bytes sent',
-          received === message,
-          `sent ${JSON.stringify(message)}, received ${JSON.stringify(received)}`
-        )
-      } catch (e) {
-        check('the granted connection succeeds', false, String((e as Error)?.stack ?? e))
-      }
+        const view = await navigateToFixture(app, FIXTURE_URL, 'Orivon fixture app')
 
-      // (b) THE OUT-OF-MANIFEST PATH. ECHO_PORT + 1: still 127.0.0.1 (an
-      // address literal, so checkConnect never calls resolveFn -- no real DNS
-      // anywhere in this test, keeping it hermetic on loopback alone), and
-      // nothing listens there, but that is not what denies it: the granted
-      // pattern is `HOST:ECHO_PORT` with an exact port, so
-      // connect-patterns.ts's portMatches/couldAnyPatternMatch denies this
-      // BEFORE any dial is attempted -- verified by reading that file, not
-      // assumed. A denial that happened to also be unreachable would prove
-      // nothing about policy; this one is denied on the pattern alone.
-      const deniedPort = ECHO_PORT + 1
-      try {
-        await broker.net.connect(FIXTURE_ORIGIN, { host: HOST, port: deniedPort })
+        const grantOutcome = await app.evaluate(async (_electron, request: DevGrantRequest) => {
+          const hook = (globalThis as unknown as { __orivonDevGrant?: (r: DevGrantRequest) => Promise<Grant> }).__orivonDevGrant
+          if (typeof hook !== 'function') return { installed: false as const }
+          return { installed: true as const, grant: await hook(request) }
+        }, { origin: FIXTURE_ORIGIN, manifest: parsed.manifest, capability: 'tcp.connect', patterns } satisfies DevGrantRequest)
         check(
-          `a connection to ${HOST}:${String(deniedPort)}, outside the granted pattern, is rejected`,
-          false,
-          'the call resolved instead of rejecting -- capability enforcement did not fire'
+          'the developer-only grant hook is installed in this build (npm run test:e2e builds with ' +
+          'ORIVON_ENABLE_DEV_GRANT=1 -- scripts/build-e2e.mjs, electron.vite.config.ts, src/main/dev-grant.ts)',
+          grantOutcome.installed,
+          grantOutcome.installed ? undefined : 'globalThis.__orivonDevGrant was not a function in the main process'
         )
-      } catch (e) {
-        const denied = isOrivonErrorLike(e) && e.code === 'denied'
+        if (!grantOutcome.installed) throw new Error('dev-grant hook missing -- was this built via npm run test:e2e?')
         check(
-          `a connection to ${HOST}:${String(deniedPort)}, outside the granted pattern, is denied ` +
-          "with a real 'denied'-coded OrivonError -- not a timeout, a crash, or silent success",
-          denied,
-          denied ? undefined : String((e as Error)?.stack ?? e)
+          'the grant returned names exactly the capability and patterns requested',
+          grantOutcome.grant.capability === 'tcp.connect' && JSON.stringify(grantOutcome.grant.patterns) === JSON.stringify(patterns),
+          JSON.stringify(grantOutcome.grant)
         )
-        if (denied && isOrivonErrorLike(e)) {
+
+        // (a) THE GRANTED PATH, driven from the real page over the real IPC
+        // pipe: write, then read back exactly as many bytes as were sent
+        // (the echo server carries no framing) -- apps/fixture/app.js's own
+        // roundTrip() shape, exercised here through window.orivon.net.connect
+        // directly. Port 8873 matches ECHO_PORT (apps/fixture/config.mjs) --
+        // hardcoded rather than closed over, the same reason Phase 1 above
+        // hardcodes its own literal port: a value crossing evaluate()'s
+        // serialization boundary as a closure, rather than as an explicit
+        // argument, does not survive it.
+        const roundTrip = await evaluateRetrying(view, async () => {
+          const orivon = (window as unknown as {
+            orivon: { net: { connect: (o: { host: string, port: number }) => Promise<{
+              readable: ReadableStream<Uint8Array>
+              writable: WritableStream<Uint8Array>
+              close: () => Promise<void>
+            }> } }
+          }).orivon
+          const message = `e2e round trip ${new Date().toISOString()}`
+          const sentBytes = new TextEncoder().encode(message)
+          const socket = await orivon.net.connect({ host: '127.0.0.1', port: 8873 })
+          try {
+            const writer = socket.writable.getWriter()
+            await writer.write(sentBytes)
+            await writer.close()
+
+            const reader = socket.readable.getReader()
+            let received = new Uint8Array(0)
+            while (received.length < sentBytes.length) {
+              const { value, done } = await reader.read()
+              if (done) break
+              const merged = new Uint8Array(received.length + value.length)
+              merged.set(received)
+              merged.set(value, received.length)
+              received = merged
+            }
+            return { sent: message, received: new TextDecoder().decode(received) }
+          } finally {
+            await socket.close()
+          }
+        })
+        check(
+          'the granted connection, made from the real page over the real IPC pipe, dials the real ' +
+          'echo server and round-trips the exact bytes sent',
+          roundTrip.received === roundTrip.sent,
+          `sent ${JSON.stringify(roundTrip.sent)}, received ${JSON.stringify(roundTrip.received)}`
+        )
+
+        // (b) THE OUT-OF-MANIFEST PATH, same page, same pipe. 8874 is
+        // ECHO_PORT + 1 (hardcoded for the reason above): still 127.0.0.1
+        // (an address literal, so checkConnect never calls resolveFn -- no
+        // real DNS anywhere in this test), and nothing listens there, but
+        // that is not what denies it -- the granted pattern names ECHO_PORT
+        // exactly, so connect-patterns.ts's portMatches/couldAnyPatternMatch
+        // denies this BEFORE any dial is attempted. A denial that happened
+        // to also be unreachable would prove nothing about policy; this one
+        // is denied on the pattern alone.
+        const deniedState = await evaluateRetrying(view, async () => {
+          const orivon = (window as unknown as {
+            orivon: { net: { connect: (o: { host: string, port: number }) => Promise<{ close?: () => Promise<void> } | undefined> } }
+          }).orivon
+          try {
+            const socket = await orivon.net.connect({ host: '127.0.0.1', port: 8874 })
+            await socket?.close?.()
+            return { rejected: false as const }
+          } catch (e) {
+            const err = e as { code?: unknown, message?: unknown, name?: unknown, platformCode?: unknown }
+            return { rejected: true as const, code: err?.code, message: err?.message, name: err?.name, platformCode: err?.platformCode }
+          }
+        })
+        check(
+          'a connection to 127.0.0.1:8874, outside the granted pattern, is denied over the real IPC ' +
+          "pipe with a real 'denied'-coded OrivonError -- not a timeout, a crash, or silent success",
+          deniedState.rejected && deniedState.name === 'OrivonError' && deniedState.code === 'denied',
+          JSON.stringify(deniedState)
+        )
+        if (deniedState.rejected) {
           check(
             "the denial carries no platformCode -- contracts/errors.ts's uniformity rule " +
             '(a denial that varied by reason would turn the boundary into a probe target)',
-            e.platformCode === undefined,
-            JSON.stringify(e)
+            deniedState.platformCode === undefined,
+            JSON.stringify(deniedState)
           )
         }
+      } finally {
+        await closeElectronApp(app)
       }
     } catch (e) {
-      check('Phase 2 (real broker exercise) ran without an unexpected failure', false, String((e as Error)?.stack ?? e))
+      check(
+        'Phase 2 (a real grant through the dev-only path, exercised over the real IPC pipe) ' +
+        'ran without an unexpected failure',
+        false,
+        String((e as Error)?.stack ?? e)
+      )
     }
   })
 }, TEST_TIMEOUT_MS)

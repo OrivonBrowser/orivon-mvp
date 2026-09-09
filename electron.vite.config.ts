@@ -35,6 +35,16 @@ if (process.stdout.moveCursor === undefined) {
 
 export default defineConfig({
   main: {
+    // Folds src/main/dev-grant.ts's compiled-in flag to a literal boolean --
+    // `false` unless ORIVON_ENABLE_DEV_GRANT=1 was set (scripts/build-e2e.mjs
+    // is the only caller that sets it) -- so the production minifier can
+    // remove that file's contents from an ordinary build entirely, rather
+    // than merely leaving a runtime check unreachable. See dev-grant.ts's own
+    // header and scripts/check-dev-grant-absent.mjs, which proves this
+    // against the actual compiled output.
+    define: {
+      __ORIVON_DEV_GRANT_ENABLED__: JSON.stringify(process.env.ORIVON_ENABLE_DEV_GRANT === '1')
+    },
     build: {
       rollupOptions: { input: resolve(root, 'src/main/index.ts') }
     }

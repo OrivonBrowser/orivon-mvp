@@ -19,8 +19,15 @@
 // different (ungranted) curve is still denied, and that revoking the grant
 // denies a subsequent call.
 //
-// Run with:
-//   npx electron-vite build && npx vitest run --config test/vitest.e2e.config.ts
+// UPDATED (docs/planning/unattended-build-queue.md item 0.3): the grant
+// itself now goes through src/main/dev-grant.ts's hook rather than this file
+// calling broker.registerApp()/grant() directly. revoke() and app.grants()
+// below stay direct broker calls -- neither has a page-facing equivalent (a
+// page must never revoke its own grant), so there is no "test-only API"
+// question for them to raise the way there was for the grant itself.
+//
+// Run with `npm run test:e2e`, or directly:
+//   node scripts/build-e2e.mjs && npx vitest run --config test/vitest.e2e.config.ts
 //
 // NOT RUN AS PART OF THIS LANE'S OWN VERIFICATION -- see the PR body's
 // verification section. The conductor holds the Electron launch token.
@@ -44,6 +51,7 @@ import type { BrokerFs, CreateBrokerOptions, Keychain } from '../src/broker/brok
 import { dialTcp, listenTcp, resolveHost } from '../src/broker/adapters/node-adapters.js'
 import { bindUdp } from '../src/broker/adapters/udp-adapter.js'
 import { isOrivonErrorLike } from '../src/broker/errors.js'
+import { installDevGrantHook } from '../src/main/dev-grant.js'
 import type { Manifest } from '../src/contracts/index.js'
 
 // Trailing separator stripped -- fileURLToPath on a directory URL keeps it
@@ -257,8 +265,15 @@ it('Phase 2: the real broker signs under a real id grant, and denies an ungrante
         keychain
       }
       const broker = createBroker(deps)
-      await broker.registerApp(FIXTURE_ORIGIN, testManifest())
-      await broker.grant(FIXTURE_ORIGIN, 'id', ['P-256'])
+
+      // THE GRANT ITSELF, through src/main/dev-grant.ts's hook rather than
+      // this test calling registerApp()/grant() directly -- see this file's
+      // header. installDevGrantHook installs onto whatever Broker it is
+      // given; here that is this test's own locally-constructed one.
+      installDevGrantHook(broker)
+      const grant = globalThis.__orivonDevGrant
+      if (grant === undefined) throw new Error('installDevGrantHook did not install globalThis.__orivonDevGrant')
+      await grant({ origin: FIXTURE_ORIGIN, manifest: testManifest(), capability: 'id', patterns: ['P-256'] })
 
       // (a) THE GRANTED PATH. A real WebCrypto-derived key, and a real
       // ECDSA signature over it, verified with WebCrypto's own subtle.verify
