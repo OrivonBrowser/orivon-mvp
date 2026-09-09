@@ -6,7 +6,7 @@
 // See ./index.ts's header for what createBroker actually does, why its
 // dependency shape is fixed, and what `Broker` is for.
 
-import type { DestroyResource, FailableTcpSocket, FailableUdpSocket } from './handles/handle-contracts.js'
+import type { DestroyResource, FailableTcpServer, FailableTcpSocket, FailableUdpSocket } from './handles/handle-contracts.js'
 import type { LedgerStorage } from './grants/ledger-storage.js'
 import type { PortRange } from './policy/bind.js'
 import type { Resolver } from './policy/connect.js'
@@ -106,6 +106,46 @@ export interface BoundUdpSocket {
 export type Bind = (ranges: readonly PortRange[], signal: AbortSignal) => Promise<BoundUdpSocket>
 
 /**
+ * A listening TCP server's own side of the `Listen` contract below: what
+ * `orivon.net.listen` needs beyond the handle bookkeeping `createBroker`
+ * supplies once the server is registered.
+ *
+ * `accept()` IS THE PULL. handle-contracts.md's "TcpServer" section specifies
+ * `connections` as a stream created with `highWaterMark: 0` so the broker
+ * never pre-accepts a connection the app has not asked for by reading --
+ * `../index.ts`'s `listen` calls this exactly once per `ReadableStream`
+ * `pull()`, which is exactly once per app `read()`.
+ *
+ * RESOLVES null ONLY FOR A GRACEFUL END ('closed'/'sessionEnded' --
+ * ../handles/handle-contracts.ts's CloseReason), matching `connections`'
+ * own `controller.close()`. It REJECTS for an abrupt one ('revoked'/
+ * 'aborted'/'failed'): a pending `accept()` is exactly the "promise the app
+ * is awaiting on this handle" the "Revocation" section requires to reject,
+ * and the generic handle-table cascade (`HandleTable.revoke`) has no
+ * reference to this bespoke `ReadableStream`'s own pull promise -- only to
+ * `ListenedServer.destroy` below, which is what settles it either way.
+ */
+export interface ListenedServer {
+  readonly localAddress: string
+  /** Resolved BEFORE this object exists -- handle-contracts.md SSTcpServer, same rule as UdpSocket's localPort. */
+  readonly localPort: number
+  accept(): Promise<DialedSocket | null>
+  readonly destroy: DestroyResource
+}
+
+/**
+ * Opens a TCP listening socket inside `ranges` -- every range already
+ * returned by `checkBind` (policy/bind.ts, shared with `Bind` above: its own
+ * header has always anticipated this second caller). An implementation MUST
+ * NOT listen outside them, and MUST fail with 'limit' rather than widening
+ * when every port in them is taken.
+ *
+ * `signal` fires the instant the grant authorising this listen is revoked
+ * while the bind is still in flight, exactly as `Dial`'s and `Bind`'s do.
+ */
+export type Listen = (ranges: readonly PortRange[], signal: AbortSignal) => Promise<ListenedServer>
+
+/**
  * What `orivon.fs` needs from the real filesystem. `policy/paths.ts` stays
  * pure; this is the one seam where confinement's decision touches disk.
  */
@@ -139,6 +179,7 @@ export interface Keychain {
 export interface CreateBrokerOptions {
   readonly dial: Dial
   readonly bind: Bind
+  readonly listen: Listen
   readonly resolve: Resolver
   /** Clock, read once per grant -- `Grant.grantedAt`. Injected so a test can freeze it. */
   readonly now: () => number
@@ -188,6 +229,18 @@ export interface Broker {
      * next bind (the lesson A70 recorded for `net.close`).
      */
     udpBind(origin: string, opts: { port: number }): Promise<FailableUdpSocket>
+    /**
+     * Opens a TCP listening socket on `port`, checked against `tcp.listen`.
+     * `port: 0` asks the OS to pick, same rule as `udpBind`'s (A88).
+     *
+     * Returns a `FailableTcpServer` -- a `TcpServer` plus the broker-internal
+     * escape hatch every handle type gets, see handle-contracts.ts. Each
+     * connection its `connections` stream yields is itself a
+     * `FailableTcpSocket`, a DERIVED handle inheriting this server's grant
+     * (handle-contracts.md's "Revocation" section): closing or revoking the
+     * server tears down every socket it produced that is still open.
+     */
+    listen(origin: string, opts: { port: number }): Promise<FailableTcpServer>
   }
   readonly fs: {
     readFile(origin: string, path: string): Promise<Uint8Array>
