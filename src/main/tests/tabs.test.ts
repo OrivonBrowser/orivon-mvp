@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { EventEmitter } from 'node:events'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { partitionFor } from '../../broker/grants/origin-hash.js'
 import type { SubsystemContext } from '../registry.js'
@@ -6,32 +7,52 @@ import type { SubsystemContext } from '../registry.js'
 // tabs.ts imports WebContentsView directly from 'electron' at module scope --
 // outside a real Electron process this cannot even be imported without
 // mocking it first (same reasoning as src/preload/tests/orivon-surface.test.ts).
-// The fake constructor records every options object it was built with, which
-// is all these tests need to inspect: they never drive a real webContents.
+// The fake webContents is a REAL EventEmitter, not a bag of vi.fn() no-ops:
+// the swap-on-navigate behaviour below depends on exact listener wiring/
+// unwiring (repartitionView() must strip the OLD view's 'destroyed' listener
+// before closing it, or a deliberate view swap would mis-fire forgetTab()),
+// and that is only observable by actually emitting events through it.
+interface FakeWebContents extends EventEmitter {
+  loadURL: ReturnType<typeof vi.fn>
+  isDestroyed: ReturnType<typeof vi.fn>
+  isLoading: ReturnType<typeof vi.fn>
+  getURL: ReturnType<typeof vi.fn>
+  getTitle: ReturnType<typeof vi.fn>
+  navigationHistory: { canGoBack: () => boolean, canGoForward: () => boolean }
+  setWindowOpenHandler: ReturnType<typeof vi.fn>
+  close: ReturnType<typeof vi.fn>
+}
+
 interface RecordedView {
   options: { webPreferences?: Record<string, unknown> }
+  webContents: FakeWebContents
+  setBounds: ReturnType<typeof vi.fn>
 }
 const createdViews: RecordedView[] = []
 
-function makeFakeWebContents (): Record<string, unknown> {
-  return {
-    on: vi.fn(),
-    loadURL: vi.fn(async () => {}),
-    isDestroyed: vi.fn(() => false),
-    isLoading: vi.fn(() => false),
-    getURL: vi.fn(() => ''),
-    getTitle: vi.fn(() => ''),
-    navigationHistory: { canGoBack: () => false, canGoForward: () => false },
-    setWindowOpenHandler: vi.fn(),
-    close: vi.fn()
-  }
+function makeFakeWebContents (): FakeWebContents {
+  const emitter = new EventEmitter() as FakeWebContents
+  let destroyed = false
+  emitter.loadURL = vi.fn(async () => {})
+  emitter.isDestroyed = vi.fn(() => destroyed)
+  emitter.isLoading = vi.fn(() => false)
+  emitter.getURL = vi.fn(() => '')
+  emitter.getTitle = vi.fn(() => '')
+  emitter.navigationHistory = { canGoBack: () => false, canGoForward: () => false }
+  emitter.setWindowOpenHandler = vi.fn()
+  // Real Electron destruction can fire 'destroyed' synchronously from
+  // close() -- mirrored here so a repartitionView() that forgot to strip
+  // the OLD view's listener FIRST would be caught by this test file, not
+  // just in a real launch.
+  emitter.close = vi.fn(() => { destroyed = true; emitter.emit('destroyed') })
+  return emitter
 }
 
 vi.mock('electron', () => ({
   WebContentsView: vi.fn().mockImplementation(function (this: RecordedView, options: RecordedView['options']) {
     this.options = options
-    ;(this as unknown as { webContents: unknown; setBounds: () => void }).webContents = makeFakeWebContents()
-    ;(this as unknown as { setBounds: () => void }).setBounds = vi.fn()
+    this.webContents = makeFakeWebContents()
+    this.setBounds = vi.fn()
     createdViews.push(this)
   })
 }))
@@ -59,9 +80,11 @@ function partitionOf (view: RecordedView): unknown {
 
 beforeEach(() => {
   createdViews.length = 0
+  fakeContentView.addChildView.mockClear()
+  fakeContentView.removeChildView.mockClear()
 })
 
-describe('TabManager -- per-origin session partitions (ADR-0003, ADR-0007)', () => {
+describe('TabManager -- per-origin session partitions at creation (ADR-0003, ADR-0007)', () => {
   it('assigns a real app tab the exact partition partitionFor(originFromUrl(url)) computes', () => {
     const manager = newManager()
     manager.createTab('https://app.example/page')
@@ -113,5 +136,130 @@ describe('TabManager -- per-origin session partitions (ADR-0003, ADR-0007)', () 
     const manager = newManager()
     manager.createTab('not a url at all')
     expect(partitionOf(createdViews[0] as RecordedView)).toBeUndefined()
+  })
+})
+
+// THE PRIMARY USER PATH: a fresh tab (dashboard or otherwise) navigated via
+// the omnibox -- ipc.ts's 'navigate' command and newtab-ipc.ts's dashboard
+// navigate both funnel here. Attempt 1 only wired partitioning into
+// createTab()'s own construction arguments, which a real launch proved is
+// NOT the path an actual person takes: nobody's very first act in a fresh
+// tab is calling createTab(url) directly, they type into the address bar,
+// which is navigate(). These tests exist because the e2e test alone did not
+// catch this fast enough -- it needs a real Electron launch to run at all.
+describe('TabManager -- navigate() repartitions a tab when the ORIGIN changes', () => {
+  it('navigating a fresh dashboard tab to a real origin swaps in a view with that origin\'s partition', () => {
+    const manager = newManager()
+    const id = manager.createTab() // dashboard, no partition
+    manager.navigate(id, 'https://app.example/page')
+
+    expect(createdViews).toHaveLength(2)
+    const expected = partitionFor(originFromUrl('https://app.example/page') as string)
+    expect(partitionOf(createdViews[1] as RecordedView)).toBe(expected)
+  })
+
+  it('navigating an existing app tab to a DIFFERENT origin swaps to a new view with the new partition', () => {
+    const manager = newManager()
+    const id = manager.createTab('https://a.example/')
+    manager.navigate(id, 'https://b.example/')
+
+    expect(createdViews).toHaveLength(2)
+    const expected = partitionFor(originFromUrl('https://b.example/') as string)
+    expect(partitionOf(createdViews[1] as RecordedView)).toBe(expected)
+  })
+
+  it('closes the OLD view\'s webContents on a swap -- no leaked WebContentsView per navigation', () => {
+    const manager = newManager()
+    const id = manager.createTab('https://a.example/')
+    manager.navigate(id, 'https://b.example/')
+
+    expect((createdViews[0] as RecordedView).webContents.close).toHaveBeenCalledTimes(1)
+  })
+
+  it('does NOT forget the tab when the OLD (swapped-out) view is later destroyed -- the tab is not closing', () => {
+    const manager = newManager()
+    const id = manager.createTab('https://a.example/')
+    manager.navigate(id, 'https://b.example/')
+
+    // close() above already emitted 'destroyed' once (see makeFakeWebContents);
+    // if repartitionView() failed to strip that listener FIRST, forgetTab()
+    // already ran by this point and the tab would already be gone.
+    const state = manager.getState()
+    expect(state.tabs.map((t) => t.id)).toContain(id)
+    expect(state.tabs).toHaveLength(1)
+  })
+
+  it('navigating within the SAME origin reuses the existing view -- no swap', () => {
+    const manager = newManager()
+    const id = manager.createTab('https://a.example/one')
+    manager.navigate(id, 'https://a.example/two')
+
+    expect(createdViews).toHaveLength(1)
+    const view = createdViews[0] as RecordedView
+    expect(view.webContents.loadURL).toHaveBeenLastCalledWith('https://a.example/two')
+    expect(view.webContents.close).not.toHaveBeenCalled()
+  })
+
+  it('a rejected navigation on a real app tab does NOT swap -- stays in its own partition, loads about:blank on the SAME view', () => {
+    const manager = newManager()
+    const id = manager.createTab('https://a.example/')
+    const before = partitionOf(createdViews[0] as RecordedView)
+    manager.navigate(id, 'javascript:alert(1)')
+
+    expect(createdViews).toHaveLength(1)
+    expect(partitionOf(createdViews[0] as RecordedView)).toBe(before)
+    expect((createdViews[0] as RecordedView).webContents.loadURL).toHaveBeenLastCalledWith('about:blank')
+  })
+
+  it('a rejected navigation on the dashboard tab does NOT swap', () => {
+    const manager = newManager()
+    const id = manager.createTab()
+    // A genuinely REJECTED omnibox input (parseOmniboxInput's own dangerous-
+    // scheme list), not merely non-URL-shaped text -- plain text like "not a
+    // url" is a legitimate DuckDuckGo SEARCH (a real https:// destination,
+    // correctly not a member of this test), only a dangerous scheme or empty
+    // input is a `reject`.
+    manager.navigate(id, 'javascript:alert(1)')
+
+    expect(createdViews).toHaveLength(1)
+    expect(partitionOf(createdViews[0] as RecordedView)).toBeUndefined()
+  })
+
+  it('the swapped-in view\'s own popup handler (T18) still redirects window.open() to a new tab', () => {
+    const manager = newManager()
+    const id = manager.createTab() // dashboard
+    manager.navigate(id, 'https://app.example/')
+
+    const swappedIn = createdViews[1] as RecordedView
+    const handler = swappedIn.webContents.setWindowOpenHandler.mock.calls[0]?.[0] as
+      ((details: { url: string }) => { action: string }) | undefined
+    expect(handler).toBeTypeOf('function')
+    handler?.({ url: 'https://popup.example/' })
+
+    expect(createdViews).toHaveLength(3)
+    const expected = partitionFor(originFromUrl('https://popup.example/') as string)
+    expect(partitionOf(createdViews[2] as RecordedView)).toBe(expected)
+  })
+
+  it('reattaches the swapped view to the window only when the tab being navigated is the ACTIVE one', () => {
+    const manager = newManager()
+    // Each createTab() call activates itself (TabManager.activateTab), so
+    // after both calls `backgroundTabId` is in the BACKGROUND and
+    // `activeTabId` is the one currently shown.
+    const backgroundTabId = manager.createTab('https://a.example/')
+    const activeTabId = manager.createTab('https://c.example/')
+    fakeContentView.addChildView.mockClear()
+    fakeContentView.removeChildView.mockClear()
+
+    // A background tab's swap must not touch the window's own child views
+    // at all -- it is not currently attached to `contentView`.
+    manager.navigate(backgroundTabId, 'https://b.example/')
+    expect(fakeContentView.addChildView).not.toHaveBeenCalled()
+    expect(fakeContentView.removeChildView).not.toHaveBeenCalled()
+
+    // The ACTIVE tab's swap must remove the old view and attach the new one.
+    manager.navigate(activeTabId, 'https://d.example/')
+    expect(fakeContentView.removeChildView).toHaveBeenCalledTimes(1)
+    expect(fakeContentView.addChildView).toHaveBeenCalledTimes(1)
   })
 })
