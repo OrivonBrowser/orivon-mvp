@@ -27,6 +27,8 @@ const TIMEOUT_MS = {
   metadata: 5_000,
   /** fs.readFile / fs.writeFile: disk I/O, generous for a large file. */
   fs: 15_000,
+  /** id.publicKey / id.sign: WebCrypto plus a keychain read, no network I/O -- metadata's own budget covers it with room to spare. */
+  id: 5_000,
   /**
    * net.connect / net.close / net.setNoDelay / net.setKeepAlive. Must
    * exceed node-adapters.ts's own DIAL_TIMEOUT_MS (30_000) -- otherwise a
@@ -224,15 +226,22 @@ function buildUdpBridgeResult (descriptor: UdpSocketDescriptor, port: PortLike):
   }
 }
 
-// The four closures both exposeFallback (no net) and the executeInMainWorld
+// The six closures both exposeFallback (no net) and the executeInMainWorld
 // bridge (with net) need -- one implementation, reused by both, rather than
 // two copies of the same broker call/timeout pair (code-guidelines.md Rule
-// 3).
+// 3). id.publicKey/sign need no main-world stream wrapping (net.connect's
+// own reason for the executeInMainWorld dance) -- a plain Uint8Array in,
+// Uint8Array out, exactly fs.readFile/writeFile's shape -- so they are wired
+// identically to those two, not to net.
 async function appManifest (): Promise<Manifest> { return await call('app.manifest', undefined, TIMEOUT_MS.metadata) }
 async function appGrants (): Promise<readonly Grant[]> { return await call('app.grants', undefined, TIMEOUT_MS.metadata) }
 async function fsReadFile (path: string): Promise<Uint8Array> { return await call('fs.readFile', { path }, TIMEOUT_MS.fs) }
 async function fsWriteFile (path: string, data: Uint8Array): Promise<void> {
   await call('fs.writeFile', { path, data }, TIMEOUT_MS.fs)
+}
+async function idPublicKey (curve: string): Promise<Uint8Array> { return await call('id.publicKey', { curve }, TIMEOUT_MS.id) }
+async function idSign (curve: string, payload: Uint8Array): Promise<Uint8Array> {
+  return await call('id.sign', { curve, payload }, TIMEOUT_MS.id)
 }
 
 /** The `net`-less surface: used both when `executeInMainWorld` is absent and when it exists but throws -- one implementation, not two copies quietly drifting apart. */
@@ -240,7 +249,11 @@ function exposeFallback (): void {
   contextBridge.exposeInMainWorld('orivon', {
     version: 0,
     app: { manifest: appManifest, grants: appGrants },
-    fs: { readFile: fsReadFile, writeFile: fsWriteFile }
+    fs: { readFile: fsReadFile, writeFile: fsWriteFile },
+    id: {
+      publicKey: async (opts: { curve: string }) => await idPublicKey(opts.curve),
+      sign: async (opts: { curve: string, payload: Uint8Array }) => await idSign(opts.curve, opts.payload)
+    }
   })
 }
 
@@ -272,6 +285,8 @@ export function exposeOrivon (): void {
     appGrants,
     fsReadFile,
     fsWriteFile,
+    idPublicKey,
+    idSign,
     netConnect: netConnectBridge,
     netUdpBind: netUdpBindBridge
   }

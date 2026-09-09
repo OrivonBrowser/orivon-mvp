@@ -67,6 +67,8 @@ describe('exposeOrivon -- P-F10: the fail-closed fallback covers BOTH "absent" a
     expect(name).toBe('orivon')
     expect(surface.net).toBeUndefined()
     expect(typeof (surface.app as Record<string, unknown>).manifest).toBe('function')
+    expect(typeof (surface.id as Record<string, unknown>).publicKey).toBe('function')
+    expect(typeof (surface.id as Record<string, unknown>).sign).toBe('function')
   })
 
   it('falls back to the SAME surface when executeInMainWorld exists but throws', () => {
@@ -172,6 +174,46 @@ describe('exposeOrivon -- P-F11: end-to-end wiring smoke, through the real conte
     expect(socket.remoteAddress).toBe('93.184.216.34')
     expect(socket.readable).toBeInstanceOf(ReadableStream)
     expect(socket.writable).toBeInstanceOf(WritableStream)
+  })
+
+  it('id.publicKey and id.sign round-trip through call() and installOrivon with the real payload shape', async () => {
+    const target = installViaFakeMainWorld()
+    const publicKey = new Uint8Array([4, 1, 2, 3])
+    const signature = new Uint8Array([5, 5, 5])
+    const seenEnvelopes: Array<{ method: string, payload: unknown }> = []
+    invoke.mockImplementation(async (_channel: string, envelope: { method: string, payload: unknown }) => {
+      seenEnvelopes.push({ method: envelope.method, payload: envelope.payload })
+      if (envelope.method === 'id.publicKey') return okEnvelope(publicKey)
+      if (envelope.method === 'id.sign') return okEnvelope(signature)
+      return okEnvelope(undefined)
+    })
+
+    exposeOrivon()
+    const orivon = target.orivon as {
+      id: {
+        publicKey: (opts: { curve: string }) => Promise<Uint8Array>
+        sign: (opts: { curve: string, payload: Uint8Array }) => Promise<Uint8Array>
+      }
+    }
+    const payload = new Uint8Array([9, 9])
+
+    expect(await orivon.id.publicKey({ curve: 'P-256' })).toEqual(publicKey)
+    expect(await orivon.id.sign({ curve: 'P-256', payload })).toEqual(signature)
+    expect(seenEnvelopes).toEqual([
+      { method: 'id.publicKey', payload: { curve: 'P-256' } },
+      { method: 'id.sign', payload: { curve: 'P-256', payload } }
+    ])
+  })
+
+  it('id.sign propagates a real OrivonError (e.g. "denied") rather than a raw rejection', async () => {
+    const target = installViaFakeMainWorld()
+    invoke.mockResolvedValue({ id: 'r', ok: false, code: 'denied', message: 'id is not granted to this origin for this curve' })
+
+    exposeOrivon()
+    const orivon = target.orivon as { id: { sign: (opts: { curve: string, payload: Uint8Array }) => Promise<Uint8Array> } }
+
+    await expect(orivon.id.sign({ curve: 'P-256', payload: new Uint8Array(1) }))
+      .rejects.toMatchObject({ code: 'denied' })
   })
 })
 

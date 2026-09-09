@@ -9,22 +9,21 @@ import type { DeriveRequest } from './derive.js'
 import { fail } from './errors.js'
 
 /**
- * The public key for a derived scalar, as an uncompressed SEC1 point
- * (0x04 || X || Y, 65 bytes). **P-256 only** -- secp256k1 is deliberately
- * not served here; see this directory's README.md, Design notes, for why.
+ * The curve gate every P-256-only entry point in this file shares. Two
+ * different failures, two different codes, and this is the one place that
+ * distinction is made: an unknown curve is the app's doing -- the contract
+ * types `curve` as a free-form string -- so it is 'invalid'. A well-formed
+ * OTHER curve (secp256k1) is the broker's doing: the app never chooses which
+ * layer serves it, so routing it here is a wiring bug, and errors.ts reserves
+ * 'internal' for exactly that. Conflating them would both mislabel an app's
+ * mistake as a broker fault and, since errors.ts says 'internal' is always
+ * logged, let an app fill the log by looping on a misspelled curve.
+ *
+ * `what` names the specific operation for the 'internal' message only --
+ * `derivePublicKey` and `signWithP256` share this reasoning, not merely this
+ * shape (code-guidelines.md Rule 3).
  */
-export async function derivePublicKey (
-  request: DeriveRequest & { readonly curve: 'P-256' }
-): Promise<Uint8Array> {
-  // Two different failures, two different codes. An unknown curve is the app's
-  // doing -- the contract types `curve` as a free-form string -- so it is
-  // 'invalid'. A well-formed secp256k1 request is the broker's doing: the app
-  // never chooses which layer serves it, so routing it here is a wiring bug,
-  // and errors.ts reserves 'internal' for exactly that. Conflating them would
-  // both mislabel an app's mistake as a broker fault and, since errors.ts says
-  // 'internal' is always logged, let an app fill the log by looping on a
-  // misspelled curve.
-  const curve: unknown = request.curve
+function requireP256 (curve: unknown, what: string): asserts curve is 'P-256' {
   if (!isSupportedCurve(curve)) {
     // String() before JSON.stringify: JSON.stringify throws on a BigInt, and a
     // BigInt survives structured clone, so an app could turn this rejection
@@ -34,10 +33,21 @@ export async function derivePublicKey (
   if (curve !== 'P-256') {
     throw fail(
       'internal',
-      `no public-key derivation for ${curve} in the policy layer; ` +
-        'derive the point from derivePrivateScalar() one layer up (src/nostr/)'
+      `no ${what} for ${curve} in the policy layer -- P-256 only; ` +
+        'src/nostr/ is where secp256k1 support for NAMED identities would land (ADR-0010)'
     )
   }
+}
+
+/**
+ * The public key for a derived scalar, as an uncompressed SEC1 point
+ * (0x04 || X || Y, 65 bytes). **P-256 only** -- secp256k1 is deliberately
+ * not served here; see this directory's README.md, Design notes, for why.
+ */
+export async function derivePublicKey (
+  request: DeriveRequest & { readonly curve: 'P-256' }
+): Promise<Uint8Array> {
+  requireP256(request.curve, 'public-key derivation')
 
   const scalar = await derivePrivateScalar(request)
   const subtle = subtleCrypto()
@@ -84,6 +94,42 @@ export async function derivePublicKey (
   return new Uint8Array(
     await viaWebCrypto('public point export', () => subtle.exportKey('raw', publicKey))
   )
+}
+
+/**
+ * ECDSA/SHA-256 over `payload`, using the P-256 scalar derived for `request`.
+ * **P-256 only**, same reason and same gate as `derivePublicKey` above.
+ *
+ * Raw (r || s), 64 bytes -- WebCrypto's own `sign()` output format for
+ * `{ name: 'ECDSA' }`, not DER. No curve arithmetic here either: WebCrypto
+ * supplies the nonce and does the signing math, exactly as it computes the
+ * public point above.
+ *
+ * `extractable: false`, unlike `derivePublicKey`'s `importKey` call -- this
+ * path only ever calls `sign()` with the key, never reads it back out, so
+ * there is nothing here that needs the key extractable.
+ */
+export async function signWithP256 (
+  request: DeriveRequest & { readonly curve: 'P-256' },
+  payload: Uint8Array
+): Promise<Uint8Array> {
+  requireP256(request.curve, 'signing')
+
+  const scalar = await derivePrivateScalar(request)
+  const subtle = subtleCrypto()
+  const privateKey = await viaWebCrypto('P-256 private key import for signing', () =>
+    subtle.importKey('pkcs8', pkcs8P256(scalar), { name: 'ECDSA', namedCurve: 'P-256' }, false, [
+      'sign'
+    ])
+  )
+  const signature = await viaWebCrypto('ECDSA sign', () =>
+    // The cast is the same buffer-provenance point as derivePrivateScalar's
+    // own seed cast: BufferSource excludes SharedArrayBuffer-backed views,
+    // and `payload` reaches this function as a plain Uint8Array off the
+    // contracts surface.
+    subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, privateKey, payload as Uint8Array<ArrayBuffer>)
+  )
+  return new Uint8Array(signature)
 }
 
 /**
