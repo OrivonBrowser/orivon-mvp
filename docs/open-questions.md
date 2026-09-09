@@ -3343,3 +3343,102 @@ repository or its docs.
 **Needed by:** before telemetry is enabled for real users. Not blocking any build step before
 that — `realSender` already treats every failed send (including one that can never resolve) the
 same way `attemptSend` treats an ordinary network failure.
+
+### A94 — synchronous `fs` was assumed impossible in a renderer; two routes exist and neither has been considered **[STILL OPEN — AI recommendation]**
+
+**Raised 2026-09-09**, while building `planning/compatibility-matrix.md` with the owner. The
+owner refused the "impossible" claim and was right to.
+
+**The claim being corrected.** `capability-api.md` design rule 2 states *"Everything is async"*,
+and its stated reason is narrow: *"Node constructs sockets synchronously; across an IPC boundary
+we cannot."* That reasoning is sound for `net` — a dial cannot complete synchronously without
+blocking for a DNS round trip. It was then generalised to `fs`, where it does not follow: a local
+file read is sub-millisecond, and the cost of blocking for it is not the same cost at all.
+
+**Why it matters.** A ported Node app fails at *startup*, not under load. `fs.readFileSync` and
+`fs.existsSync` are how Node programs read their own config, and they usually appear inside a
+dependency the porting developer does not control. An async-only `fs` does not make those calls
+slow; it makes them absent, so the app throws before it renders. This is the difference between
+"most Electron apps port mechanically" (`ADR-0002`'s bet) and "most Electron apps need their
+dependency trees audited first".
+
+**Route A — `ipcRenderer.sendSync`.** Electron ships a synchronous renderer-to-main channel;
+verified in this tree at `node_modules/electron/electron.d.ts:9321`, carrying Electron's own
+warning that it *"will block the whole renderer process until the reply is received"*. That
+blocking is exactly the required behaviour. It works from a sandboxed preload, `Uint8Array`
+survives structured clone, and `contextBridge` can present it to the main world as a plain
+synchronous function.
+
+*Cost:* the UI freezes for the duration of the call. For a handful of config reads at startup
+that is a few milliseconds and invisible. For a chatty workload it is unusable, and nothing would
+stop an app from being chatty.
+
+**Route B — `Atomics.wait` on a `SharedArrayBuffer`, with app code in a Worker.** `Atomics.wait`
+throws on a browser main thread but is permitted in a Worker: the worker blocks, another thread
+services the request through the broker and signals the buffer. This is how StackBlitz
+WebContainers provides synchronous `fs` to Node programs in an ordinary browser tab, so it is
+proven technology rather than a proposal.
+
+*Cost:* `SharedArrayBuffer` requires cross-origin isolation (COOP/COEP). Under `ADR-0007` an app
+is served through an intercepted protocol inside its own partition, so those headers are ours to
+set — **plausible but unverified in this tree; verify before relying on it.**
+
+*Structural consequence, and it is the interesting part:* app backend code would run in a Worker
+with the frontend on the main thread, passing messages between them. That is Electron's own
+main/renderer split, which is the shape the ported app was already written in. It is a larger
+change than Route A and a better fit.
+
+**What is not proposed.** Synchronous `net`. Rule 2's reasoning holds there and should stay.
+
+**Portability, since `ADR-0002` turns on it.** Synchronous capability calls are not an Electron
+trick that would have to be unwound later: a WASM host does synchronous host calls natively and
+Mojo has synchronous IPC. Whichever engine replaces this one, a sync `fs` survives the move.
+
+**Unexplored, not rejected.** `src/`, `docs/` and `.claude/` were grepped for `sendSync`,
+`Atomics` and `SharedArrayBuffer` on 2026-09-09; the only hits are unrelated notes in
+`broker/policy/derive.ts` about `SharedArrayBuffer`-backed views being excluded from
+`BufferSource`. No document weighs this and no decision rejects it.
+
+**Needed by:** before build step 3 designs the shim's `fs` module. Route B decides *where app code
+runs*, which is an architecture question rather than a detail, and any answer that changes rule 2
+is a `src/contracts/` change — own PR, merged first.
+
+### A95 — tier 2 is defined as Electron apps, and nothing accounts for shimming the `electron` module itself **[STILL OPEN — AI recommendation]**
+
+**Raised 2026-09-09**, alongside A94 and from the same conversation.
+
+`src/shim/README.md` scopes `orivon-node-shim` to Node's `net`, `dgram` and `fs`.
+`app-compatibility.md` defines **tier 2** as "Electron / Node desktop app -- reuse the frontend
+as-is, swap Node calls for `orivon-node-shim`". Those two sentences do not meet: an Electron
+app's guaranteed first import is `electron`, not `net`, and no document in this repository says
+who provides it.
+
+**What it actually needs**, and most of it is small:
+
+| Electron API | What backs it |
+|---|---|
+| `app.getPath('userData')` | the app's sandbox directory root |
+| `app.getVersion()` | `orivon.app.manifest()` |
+| `dialog.showOpenDialog` | `orivon.fs.userSelected` |
+| `ipcRenderer.invoke` / `ipcMain.handle` | a purely local message bus -- both halves of the app run inside Orivon, so no capability is involved |
+| `BrowserWindow`, `Menu`, `Tray` | shell-side; largely out of scope, and the honest answer may be "not supported" |
+
+**Why `ipcRenderer` is the interesting row.** An Electron app's own IPC is between *its* main
+process code and *its* renderer code. In Orivon both halves are on our side of the boundary, so
+this shim needs no broker, no grant and no capability -- it is a message bus in plain JS. Under
+A94's Route B (app backend code in a Worker) it maps onto the worker/main-thread split directly,
+which is the same shape the app was already written in.
+
+**Why this was missed.** The `Shim` column of `planning/compatibility-matrix.md` asked "does a
+*Node* shape exist", so `app.*` and `id.*` read as not-applicable. They are not: `id.*` already
+has an adapter in `src/nostr/nip07.ts` presenting `window.nostr` (NIP-07), and `app.*` is
+precisely what an `electron` shim would be built on. There are three adapter families -- Node
+stdlib, the `electron` module, and web-ecosystem standards -- and only the first was named
+anywhere. The matrix was corrected the same day; this entry is the scoping question it exposed.
+
+**The decision needed.** Whether `src/shim/` owns the `electron` family too, or whether it is a
+separate package with its own stream and ownership. `parallel-work.md` gives `shim` to build
+step 3 with a fixed path list, so this is not purely editorial -- it changes what step 3 is.
+
+**Needed by:** before build step 3 starts, for the same reason as A94. A step-3 branch that
+discovers it also owes an `electron` shim has already committed to a scope nobody sized.
