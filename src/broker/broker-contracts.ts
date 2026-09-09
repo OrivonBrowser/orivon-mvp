@@ -247,6 +247,22 @@ export interface Broker {
     writeFile(origin: string, path: string, data: Uint8Array): Promise<void>
   }
   /**
+   * The APP KEYS half of capability-api.ts's "Two kinds of identity" --
+   * per-origin, silent, checked against a live `id` grant whose `patterns`
+   * are the curves that grant actually names (manifest.ts's
+   * `IdCapability.curves`). NOT `requestIdentity` (the NAMED IDENTITIES
+   * half): that one needs the connect-prompt UI, which does not exist yet,
+   * and has no `Broker` entry point here for the same reason
+   * `preload/README.md` gives for leaving a method off `window.orivon`
+   * entirely rather than wiring one that can only ever fail.
+   */
+  readonly id: {
+    /** Silent, no prompt -- checked against the `id` grant only. 'invalid' for an unrecognised curve, 'internal' for a recognised one this policy layer cannot serve yet (id-capability.ts, policy/derive-p256.ts). */
+    publicKey(origin: string, opts: { curve: string }): Promise<Uint8Array>
+    /** Same per-origin key `publicKey` returns for this `curve`. Same error shape as `publicKey`. */
+    sign(origin: string, opts: { curve: string, payload: Uint8Array }): Promise<Uint8Array>
+  }
+  /**
    * Registers -- or replaces -- an origin's manifest. Called once per app
    * session, before any capability call for that origin. Existing grants are
    * left untouched (GrantLedger, below).

@@ -48,7 +48,7 @@ describe('origin derivation (DoD rule 1 -- never the payload)', () => {
   })
 })
 
-describe('the four wired control operations', () => {
+describe('the six wired control operations', () => {
   it('app.manifest calls broker.app.manifest with the derived origin', async () => {
     const calls: BrokerCall[] = []
     const manifest: Manifest = { orivonApiVersion: 0, id: 'org.orivon.test', name: 'Test', version: '1.0.0', entry: '/index.html', capabilities: {} }
@@ -91,6 +91,29 @@ describe('the four wired control operations', () => {
 
     expect(response).toEqual({ id: 'req-1', ok: true, result: undefined })
     expect(calls).toEqual([{ method: 'fs.writeFile', origin: APP, args: { path: '/a/b.txt', data } }])
+  })
+
+  it('id.publicKey passes curve through and returns the bytes', async () => {
+    const calls: BrokerCall[] = []
+    const publicKey = new Uint8Array([4, 1, 2, 3])
+    const broker = stubBroker(calls, { idPublicKey: async () => publicKey })
+
+    const response = await handleControlRequest(broker, frameFor(APP), envelope('id.publicKey', { curve: 'P-256' }))
+
+    expect(response).toEqual({ id: 'req-1', ok: true, result: publicKey })
+    expect(calls).toEqual([{ method: 'id.publicKey', origin: APP, args: { curve: 'P-256' } }])
+  })
+
+  it('id.sign passes curve and payload through and returns the signature', async () => {
+    const calls: BrokerCall[] = []
+    const signature = new Uint8Array([5, 5, 5])
+    const broker = stubBroker(calls, { idSign: async () => signature })
+    const payload = new Uint8Array([1, 2, 3])
+
+    const response = await handleControlRequest(broker, frameFor(APP), envelope('id.sign', { curve: 'P-256', payload }))
+
+    expect(response).toEqual({ id: 'req-1', ok: true, result: signature })
+    expect(calls).toEqual([{ method: 'id.sign', origin: APP, args: { curve: 'P-256', payload } }])
   })
 })
 
@@ -482,6 +505,12 @@ describe('defensive payload validation (a compromised renderer can bypass contex
     ['fs.readFile', { path: 42 }],
     ['fs.writeFile', { path: '/a' }],
     ['fs.writeFile', { path: '/a', data: 'not bytes' }],
+    ['id.publicKey', {}],
+    ['id.publicKey', { curve: 42 }],
+    ['id.sign', {}],
+    ['id.sign', { curve: 'P-256' }],
+    ['id.sign', { curve: 42, payload: new Uint8Array(1) }],
+    ['id.sign', { curve: 'P-256', payload: 'not bytes' }],
     ['net.connect', {}],
     ['net.connect', { host: 'x.example' }],
     ['net.connect', { host: 123, port: 443 }],

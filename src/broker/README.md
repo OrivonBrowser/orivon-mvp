@@ -51,6 +51,11 @@ Three files stay at the top level because they belong to no single directory:
   `udpBind`, `listen`), lifted out of `index.ts` on 2026-09-09 when `net.listen` pushed it past
   500 lines — this file's own design note below says why it stayed at the top level rather than
   moving into a directory of its own
+- [`id-capability.ts`](id-capability.ts) — `orivon.id`'s two entry points (`publicKey`, `sign` —
+  the APP KEYS half of "two kinds of identity"; `requestIdentity`, the NAMED IDENTITIES half,
+  has no `Broker` entry point yet, see the file's own header), built alongside
+  `net-capability.ts` from the start rather than inlined into `index.ts` first, same reason:
+  `index.ts` was already 264 lines before `id`
 
 The decomposition and the import boundaries are recorded in
 [`ADR-0015`](../../docs/decisions/ADR-0015-the-broker-is-organised-by-job.md), including the two
