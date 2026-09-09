@@ -8,6 +8,24 @@ import { BookmarkStore } from './bookmarks.js'
 // this machine first -- the window-visibility bug it was chasing is really
 // window.ts's `showOnce` (README.md, Design notes).
 
+// Owner's decision, 2026-09-09: an uncaught main-process error is LOGGED and
+// exits. Electron's default is a modal error dialog, and a modal dialog keeps
+// its process alive until a human clicks it -- so on an unattended run every
+// crash became a window left on the developer's screen and an Electron
+// process tree that never exited, accumulating overnight. Registered here,
+// above every other statement, because a throw before this line still gets
+// the dialog.
+//
+// This moves where a crash is REPORTED, and hides nothing: the error is
+// printed in full and the non-zero exit is what a test runner reads.
+function exitOnUncaught (kind: string, error: unknown): void {
+  console.error(`[orivon] ${kind} in the main process:`, error)
+  app.exit(1)
+}
+
+process.on('uncaughtException', (error) => { exitOnUncaught('uncaught exception', error) })
+process.on('unhandledRejection', (reason) => { exitOnUncaught('unhandled promise rejection', reason) })
+
 // Subsystems register in subsystems.ts (the append point), never here.
 function report (failures: SubsystemFailure[]): void {
   // Loud, never silent. A subsystem that failed to start may be a capability
