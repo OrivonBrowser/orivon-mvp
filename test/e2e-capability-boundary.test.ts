@@ -77,7 +77,7 @@ import { spawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
-import { DEFAULT_ACTION_TIMEOUT_MS, launchElectron } from './launch-electron.mjs'
+import { assertNoElectronSurvivors, DEFAULT_ACTION_TIMEOUT_MS, launchElectron } from './launch-electron.mjs'
 import {
   evaluateRetrying,
   findChrome,
@@ -88,8 +88,8 @@ import {
   waitForTab
 } from './smoke-helpers.mjs'
 import {
-  ADDRESS_BAR_STABLE_TIMEOUT_MS, clickAddressBarRetrying, closeElectronApp, forwardOutput, killChild,
-  navigateToFixture, runPhase, waitForAddressBarStable, waitForTcpReady
+  ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, forwardOutput,
+  killChild, navigateToFixture, runPhase, waitForAddressBarStable, waitForTcpReady
 } from './e2e-helpers.js'
 import { HOST, ECHO_PORT, STATIC_PORT } from '../apps/fixture/config.mjs'
 import { parseManifest } from '../src/loader/manifest.js'
@@ -104,11 +104,6 @@ const FIXTURE_DIR = fileURLToPath(new URL('../apps/fixture/', import.meta.url)).
 const FIXTURE_ORIGIN = `http://${HOST}:${STATIC_PORT}`
 const FIXTURE_URL = `${FIXTURE_ORIGIN}/`
 const MANIFEST_URL = `${FIXTURE_URL}.well-known/orivon.json`
-
-
-/** Ceiling on the teardown-time `app.close()` race in Phase 1's `finally`
- * block below. Named for the same reason as ADDRESS_BAR_STABLE_TIMEOUT_MS. */
-const APP_CLOSE_RACE_MS = 8_000
 
 /**
  * Phase 1's own worst-case wait budget, walked in the order its body
@@ -179,6 +174,10 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await Promise.all([killChild(echoServer), killChild(staticServer)])
+  // The suite's own self-check (unattended-run-protocol.md): after every
+  // `it` above has torn its own app down, nothing this file launched may
+  // still be a live Electron process.
+  expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
 // Phase 1 and Phase 2 are independent `it()` blocks, not two halves of one
@@ -402,37 +401,12 @@ it('Phase 1: the real shell launches, and a real net.connect through the full IP
           )
         }
       } finally {
-        // FOUND THIS LANE, by direct instrumented reproduction (not the
-        // documented C6 attach issue -- a different symptom of the same
-        // driver class): `_electron`'s `app.close()` hangs INDEFINITELY here
-        // while any tab remains open, confirmed down to a launch with zero
-        // navigation. scripts/smoke.mjs's own "MUST RUN LAST" comment on its
-        // close-everything check was already the fix for this, just not
-        // stated as one -- closing every tab first (which fires
-        // src/main/index.ts's window-all-closed -> app.quit()) makes
-        // app.close() resolve in ~100ms instead. Reproduced with:
-        // app.windows().length === 2, no navigation, app.close() -- still
-        // hung past 20s. THE FIX, applied here: close every tab via the same
-        // real click smoke.mjs uses, wait for the transition to zero
-        // windows, then close(). A bounded race + process kill is kept as a
-        // last-resort net in case a future regression (a selector rename,
-        // say) silently breaks the tab-closing step -- so a REGRESSION here
-        // degrades to a slow, reported failure, never a second silent hang.
-        const chromeForTeardown = app.windows().find((w) => w.url().endsWith('/renderer/index.html'))
-        if (chromeForTeardown !== undefined) {
-          const ids: string[] = await evaluateRetrying(chromeForTeardown, () =>
-            Array.from(document.querySelectorAll('.tab')).map((el) => (el as HTMLElement).dataset.id ?? '')
-          ).catch(() => [])
-          for (const id of ids) {
-            await chromeForTeardown.click(`[data-id="${id}"] .close`).catch(() => {})
-          }
-        }
-        await waitFor(() => app.windows().length === 0)
-        const closed = await Promise.race([
-          app.close().then(() => true),
-          new Promise<boolean>((resolve) => setTimeout(() => resolve(false), APP_CLOSE_RACE_MS))
-        ])
-        if (!closed) app.process().kill()
+        // Same shared teardown as Phase 2 below -- see closeElectronApp's
+        // own header (test/e2e-helpers.ts) for the close-hang workaround
+        // this performs, and closeElectron's for why it now runs
+        // unconditionally rather than only when this `finally` itself runs
+        // to completion.
+        await closeElectronApp(app)
       }
     } catch (e) {
       check(
