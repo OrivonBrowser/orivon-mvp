@@ -254,6 +254,14 @@ export interface Broker {
     manifest(origin: string): Promise<Manifest>
     /** What was ACTUALLY granted -- read from the ledger, never the manifest. */
     grants(origin: string): Promise<readonly Grant[]>
+    /**
+     * SYNCHRONOUS -- see `../index.ts`'s own doc on `isRegisteredSync` for
+     * why this one method on this interface is not async: an in-process
+     * main-process caller (tab construction) needs an answer before
+     * `WebContentsView` exists, with no IPC round trip to await. Never
+     * throws; an unparseable `origin` is simply "not registered".
+     */
+    isRegisteredSync(origin: string): boolean
   }
   readonly net: {
     /** Returns a `FailableTcpSocket` -- a `TcpSocket` plus one broker-internal
