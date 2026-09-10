@@ -37,13 +37,13 @@ import { spawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
-import { DEFAULT_ACTION_TIMEOUT_MS, launchElectron } from './launch-electron.mjs'
+import { assertNoElectronSurvivors, DEFAULT_ACTION_TIMEOUT_MS, launchElectron } from './launch-electron.mjs'
 import {
   evaluateRetrying, findChrome, findViewShowing, HERMETIC_RESOLVER, WAIT_TIMEOUT_MS, waitFor, waitForTab
 } from './smoke-helpers.mjs'
 import {
-  ADDRESS_BAR_STABLE_TIMEOUT_MS, clickAddressBarRetrying, forwardOutput, killChild, runPhase,
-  waitForAddressBarStable, waitForTcpReady
+  ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, forwardOutput,
+  killChild, runPhase, waitForAddressBarStable, waitForTcpReady
 } from './e2e-helpers.js'
 import { HOST, STATIC_PORT } from '../apps/fixture/config.mjs'
 import { createBroker } from '../src/broker/index.js'
@@ -61,9 +61,6 @@ import type { Manifest } from '../src/contracts/index.js'
 const FIXTURE_DIR = fileURLToPath(new URL('../apps/fixture/', import.meta.url)).replace(/[/\\]$/, '')
 const FIXTURE_ORIGIN = `http://${HOST}:${STATIC_PORT}`
 const FIXTURE_URL = `${FIXTURE_ORIGIN}/`
-
-/** Ceiling on the teardown-time `app.close()` race in Phase 1's `finally` block -- same figure and reason as e2e-capability-boundary.test.ts's own. */
-const APP_CLOSE_RACE_MS = 8_000
 
 /** Same walk as e2e-capability-boundary.test.ts's PHASE1_WAIT_BUDGET_MS, for the same real waits this file's Phase 1 makes. */
 const PHASE1_WAIT_BUDGET_MS =
@@ -87,6 +84,10 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await killChild(staticServer)
+  // The suite's own self-check (unattended-run-protocol.md): after Phase
+  // 1's own app has torn itself down, nothing this file launched may still
+  // be a live Electron process.
+  expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
 it('Phase 1: the real shell launches, and a real id.publicKey/sign through the full IPC pipe are correctly denied (no grant exists)', async () => {
@@ -199,21 +200,10 @@ it('Phase 1: the real shell launches, and a real id.publicKey/sign through the f
           )
         }
       } finally {
-        const chromeForTeardown = app.windows().find((w) => w.url().endsWith('/renderer/index.html'))
-        if (chromeForTeardown !== undefined) {
-          const ids: string[] = await evaluateRetrying(chromeForTeardown, () =>
-            Array.from(document.querySelectorAll('.tab')).map((el) => (el as HTMLElement).dataset.id ?? '')
-          ).catch(() => [])
-          for (const id of ids) {
-            await chromeForTeardown.click(`[data-id="${id}"] .close`).catch(() => {})
-          }
-        }
-        await waitFor(() => app.windows().length === 0)
-        const closed = await Promise.race([
-          app.close().then(() => true),
-          new Promise<boolean>((resolve) => setTimeout(() => resolve(false), APP_CLOSE_RACE_MS))
-        ])
-        if (!closed) app.process().kill()
+        // Shared teardown -- see e2e-helpers.ts's closeElectronApp for the
+        // close-hang workaround this performs, and launch-electron.mjs's
+        // closeElectron for why it now runs unconditionally.
+        await closeElectronApp(app)
       }
     } catch (e) {
       check(
