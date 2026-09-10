@@ -49,6 +49,7 @@ import { HOST, STATIC_PORT } from '../apps/fixture/config.mjs'
 import { createBroker } from '../src/broker/index.js'
 import type { BrokerFs, CreateBrokerOptions, Keychain } from '../src/broker/broker-contracts.js'
 import { dialTcp, listenTcp, resolveHost } from '../src/broker/adapters/node-adapters.js'
+import { dialTls } from '../src/broker/adapters/tls-adapter.js'
 import { bindUdp } from '../src/broker/adapters/udp-adapter.js'
 import { isOrivonErrorLike } from '../src/broker/errors.js'
 import { installDevGrantHook } from '../src/main/dev-grant.js'
@@ -247,6 +248,7 @@ it('Phase 2: the real broker signs under a real id grant, and denies an ungrante
       const keychain: Keychain = { getSeed: async () => TEST_SEED }
       const deps: CreateBrokerOptions = {
         dial: dialTcp,
+        dialSecure: dialTls,
         bind: bindUdp,
         listen: listenTcp,
         resolve: resolveHost,

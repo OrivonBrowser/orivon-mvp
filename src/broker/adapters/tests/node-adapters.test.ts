@@ -245,6 +245,7 @@ describe('the fs capability works end to end for an origin that has never writte
     const userData = await mkdtemp(join(tmpdir(), 'orivon-nodefs-'))
     const broker = createBroker({
       dial: async () => { throw new Error('not used by this test') },
+      dialSecure: async () => { throw new Error('not used by this test') },
       bind: async () => { throw new Error('not used by this test') },
       listen: async () => { throw new Error('not used by this test') },
       resolve: async () => [],
@@ -377,6 +378,7 @@ describe('net.listen end to end: a real accepted connection, a real denial, a re
   function realBroker (): ReturnType<typeof createBroker> {
     return createBroker({
       dial: async () => { throw new Error('not used by this test') },
+      dialSecure: async () => { throw new Error('not used by this test') },
       bind: async () => { throw new Error('not used by this test') },
       listen: listenTcp,
       resolve: async () => [],

@@ -90,6 +90,7 @@ export function stubFs (options: { root?: string, files?: Map<string, Uint8Array
 export function baseDeps (overrides: Partial<CreateBrokerOptions> = {}): CreateBrokerOptions {
   return {
     dial: async () => okSocket(),
+    dialSecure: async () => okSocket(),
     bind: async () => okUdpSocket(),
     listen: async () => okListenedServer(),
     resolve: async () => [],
@@ -121,5 +122,13 @@ export async function brokerWithConnectGrant (deps: Partial<CreateBrokerOptions>
   const broker = createBroker(baseDeps(deps))
   broker.registerApp(APP, manifestWith({ net: { tcp: { connect: ['93.184.216.34:443'] } } }))
   await broker.grant(APP, 'tcp.connect', ['93.184.216.34:443'])
+  return broker
+}
+
+/** `brokerWithConnectGrant`'s https.connect sibling -- a SEPARATE grant, matched by hostname (ADR-0017). */
+export async function brokerWithConnectSecureGrant (deps: Partial<CreateBrokerOptions> = {}): Promise<Broker> {
+  const broker = createBroker(baseDeps(deps))
+  broker.registerApp(APP, manifestWith({ net: { https: { connect: ['api.example.com:443'] } } }))
+  await broker.grant(APP, 'https.connect', ['api.example.com:443'])
   return broker
 }
