@@ -86,3 +86,38 @@ request from the privileged, cookie-bearing chrome origin — a new, silent trac
 exactly where this codebase has been careful before (`mvp-scope.md` already flags DuckDuckGo
 search itself as a stated "known limitation" for far less: leaving the machine at all). Fetching
 in main instead keeps the guarantee intact; the CSP only needs `img-src 'self' data:`.
+
+**[`favicon.ts`](favicon.ts) — the fetch is T12-gated (`isSafeFaviconUrl`), added after review found
+it was not.** This fetch fires on ordinary browsing, on every tab, with no manifest and no grant --
+unlike every other main-process network call in this codebase, which is either fixed
+(`update-check-runner.ts`'s `RELEASES_API`) or gated behind an app install
+(`loader/install-origin.ts`, `loader/electron-fetch.ts`). A page's own `<link rel="icon">` is fully
+attacker-controlled, so without a check `pickFaviconUrl` would hand `fetchFaviconDataUrl` a URL
+pointing anywhere -- `169.254.169.254`, a LAN admin panel, a localhost service -- and the main
+process would issue a real GET to it. `isSafeFaviconUrl` closes this the same way
+`install-origin.ts` closes the equivalent gap for an app install: reuse `policy/address.ts`'s
+`classifyAddress`/`isPublicUnicast` and `policy/origin.ts`'s `isLocalhostName` directly, and
+`loader/electron-resolve.ts`'s `electronResolveHost` for the one case those cannot answer alone (a
+hostname, which needs resolving before it can be classified) -- never a second implementation of
+any of the three (code-guidelines.md Rule 3).
+
+Three follow-on questions the review raised, and what this fix does about each:
+
+- **Accept `http://` for a favicon at all?** No. `isSafeFaviconUrl` refuses it outright --
+  refusing plaintext costs a real favicon nothing and closes a downgrade path from an https page.
+  This lives in the fetch path, not in `pickFaviconUrl`: that function's own test asserts it still
+  *selects* an `http://` candidate (picking a URL is not fetching one), so the refusal has to sit
+  where the fetch actually happens or it would force rewriting an assertion the fix has no
+  security reason to touch.
+- **Bound the number of favicon fetches one tab can drive?** Not in this fix. `page-favicon-
+  updated` can fire repeatedly and nothing caps it, but that is a resource-exhaustion question
+  (T11b's shape) against whatever `isSafeFaviconUrl` still allows through -- i.e. only *public*
+  hosts, once this fix lands -- not a T12 address-reach question. Bounding it well needs new
+  per-tab state in `tabs.ts` (which favicon.ts deliberately has no dependency on, so it stays
+  importable under plain vitest), which is a real design decision on its own, not a one-line
+  addition to a security fix already in flight.
+- **Bound `faviconCache`?** Not in this fix. Its own comment already calls the unbounded,
+  process-lifetime cache a deliberate "v0, revisit later" choice, made before this review and
+  orthogonal to it -- reaching a private address was never something the cache made worse or
+  better. Revisiting a sizing decision inside a branch whose job is a security fix is exactly the
+  scope creep `CLAUDE.md` Rule 4 warns about.
