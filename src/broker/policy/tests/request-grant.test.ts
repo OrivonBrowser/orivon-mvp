@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { decideGrantRequest } from '../request-grant.js'
+import { decideGrantRequest, isCapabilityKind } from '../request-grant.js'
 import type { Manifest } from '../../../contracts/index.js'
 
 // app.requestGrant's own security shape (queue item 4.1): "resolves false if
@@ -92,4 +92,21 @@ describe('decideGrantRequest', () => {
     const decision = decideGrantRequest(manifest, 'id', undefined)
     expect(decision).toEqual({ allowed: false, patterns: [] })
   })
+})
+
+// Shared by main/request-grant.ts (an app's raw IPC payload) and
+// grants/grant-persistence.ts (a JSON property name read off disk) -- both
+// need the same "is this untrusted string one of the seven real
+// CapabilityKind literals" check, moved here so a third copy is never
+// tempting.
+describe('isCapabilityKind', () => {
+  it.each(['tcp.connect', 'tcp.listen', 'udp.bind', 'udp.send', 'https.connect', 'fs', 'id'])(
+    'accepts %s',
+    (kind) => { expect(isCapabilityKind(kind)).toBe(true) }
+  )
+
+  it.each(['net.connect', 'TCP.CONNECT', '', 'tcp.connect ', 'websocket'])(
+    'refuses %j',
+    (value) => { expect(isCapabilityKind(value)).toBe(false) }
+  )
 })
