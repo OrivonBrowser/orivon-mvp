@@ -24,15 +24,15 @@ export interface ShimModuleEntry {
 const REVIEW = 'docs/planning/shim-dependency-review.md'
 
 export const SHIM_MODULE_MAP: readonly ShimModuleEntry[] = [
-  { specifier: 'util', status: 'ready', kind: 'local', implementation: './node-util.js', note: 'Hand-written, inherits-only -- the only confirmed live caller in the Phase 5 dependency trees. See node-util.ts.' },
+  { specifier: 'util', status: 'ready', kind: 'local', implementation: './node-util.js', note: `Hand-written, inherits-only -- the only confirmed live caller in the Phase 5 dependency trees. The npm \`util\` package was approved alongside the other seven (owner decision, 2026-09-10) but deliberately left unused: it would pull four more packages to reach a function this file already implements in ten lines against a frozen API. Extend this file, not the package, if a real caller needs more of \`util\`. See node-util.ts and ${REVIEW}.` },
   { specifier: 'electron', status: 'ready', kind: 'local', implementation: '../shim-electron/index.js', note: 'Owned by a sibling stream (src/shim-electron/); this stream owns the alias map, so the entry lives here rather than there.' },
-  { specifier: 'buffer', status: 'pending-dependency', note: `Confirmed essential (bencode/safe-buffer). Reviewed in ${REVIEW}, awaiting owner approval.` },
-  { specifier: 'events', status: 'pending-dependency', note: `Confirmed essential (k-bucket, k-rpc-socket, webtorrent's own import). Reviewed in ${REVIEW}, awaiting owner approval.` },
-  { specifier: 'path', status: 'pending-dependency', note: `Confirmed essential (webtorrent's own \`import path from 'path'\`). Reviewed in ${REVIEW}, awaiting owner approval.` },
-  { specifier: 'stream', status: 'pending-dependency', note: `Confirmed essential, transitively (crypto-browserify's Hash extends stream.Transform). Reviewed in ${REVIEW}, awaiting owner approval.` },
-  { specifier: 'crypto', status: 'pending-dependency', note: `Confirmed essential (bittorrent-protocol's mse.js: DH key exchange, sha1). Reviewed in ${REVIEW}, awaiting owner approval.` },
-  { specifier: 'os', status: 'pending-dependency', note: `On the compatibility-matrix.md floor; no live caller confirmed in this pass. Reviewed in ${REVIEW}, recommends deferring.` },
-  { specifier: 'zlib', status: 'pending-dependency', note: `Recon-flagged (FreeTube's main process, brotli); no live caller confirmed in the Node lane, and no mature pure-JS brotli codec exists. Reviewed in ${REVIEW}, recommends deferring.` }
+  { specifier: 'buffer', status: 'ready', kind: 'package', implementation: 'buffer', note: `Confirmed essential (bencode/safe-buffer). Approved by the owner 2026-09-10; see ${REVIEW}.` },
+  { specifier: 'events', status: 'ready', kind: 'package', implementation: 'events', note: `Confirmed essential (k-bucket, k-rpc-socket, webtorrent's own import). Approved by the owner 2026-09-10; see ${REVIEW}.` },
+  { specifier: 'path', status: 'ready', kind: 'package', implementation: 'path-browserify', note: `Confirmed essential (webtorrent's own \`import path from 'path'\`). Approved by the owner 2026-09-10; see ${REVIEW}.` },
+  { specifier: 'stream', status: 'ready', kind: 'package', implementation: 'stream-browserify', note: `Confirmed essential, transitively (crypto-browserify's Hash extends stream.Transform). Approved by the owner 2026-09-10; see ${REVIEW}.` },
+  { specifier: 'crypto', status: 'ready', kind: 'package', implementation: 'crypto-browserify', note: `Confirmed essential (bittorrent-protocol's mse.js: DH key exchange, sha1). Approved by the owner 2026-09-10; see ${REVIEW}.` },
+  { specifier: 'os', status: 'ready', kind: 'package', implementation: 'os-browserify', note: `On the compatibility-matrix.md floor; no live caller confirmed in the review's pass, but approved anyway (owner decision, 2026-09-10) to avoid an unattended run stalling on a 3am gap. See ${REVIEW}.` },
+  { specifier: 'zlib', status: 'ready', kind: 'package', implementation: 'browserify-zlib', note: `Recon-flagged (FreeTube's main process, brotli); no live caller confirmed in the Node lane. Approved anyway (owner decision, 2026-09-10), same reasoning as 'os'. IMPORTANT: this does NOT close the brotli gap -- browserify-zlib predates Node's own brotli support and supplies gzip/deflate only (via its pinned \`pako\` dependency); a real brotli need is a separate WASM-codec decision, not a consequence of this row. See ${REVIEW}.` }
 ]
 
 export interface ShimAliasEntry {

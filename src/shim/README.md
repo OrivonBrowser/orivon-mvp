@@ -17,12 +17,16 @@
 `electron.vite.config.ts`'s alias map is generated from — see its own header) belong to neither
 group cleanly; both exist to make the two above reachable at all.
 
-**Dependency status.** Every one of the eight core polyfills needs either a third-party
-package or a hand-written equivalent, and this repository has zero runtime dependencies today
-— see [`docs/planning/shim-dependency-review.md`](../../docs/planning/shim-dependency-review.md)
-for the per-package review and its parked owner question. `util` is answered by a hand-written,
-`inherits`-only file (`node-util.ts`) rather than a dependency — Rule 6 reasoning is in that
-file and the review. Nothing else in this list is built yet, pending that question.
+**Dependency status.** All eight core polyfills are wired up. The owner approved the full set
+2026-09-10 (the wider set, not the review's own five-package recommendation — see
+[`docs/planning/shim-dependency-review.md`](../../docs/planning/shim-dependency-review.md)'s
+`## Status` for why), and this repository's first runtime dependencies now live in
+`package.json`. `util` is the one exception worth knowing about: the `util` package is installed
+and approved, but `module-map.ts` still points `util` at a hand-written, `inherits`-only file
+(`node-util.ts`) rather than the package — Rule 6 reasoning is in that file and the review, and
+it did not change just because the package cleared the dependency gate. The `zlib` row is
+gzip/deflate only (`browserify-zlib` predates Node's brotli support) — see the review before
+assuming brotli works.
 
 **What it depends on.** [`src/contracts/`](../contracts/).
 
