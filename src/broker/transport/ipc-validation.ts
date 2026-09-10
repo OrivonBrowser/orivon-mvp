@@ -12,17 +12,19 @@
 
 import type { RequestEnvelope } from '../../contracts/index.js'
 
-/** The eleven wired control operations. Anything else is 'invalid'. */
+/** The twelve wired control operations. Anything else is 'invalid'. */
 export type ControlMethod =
   | 'app.manifest' | 'app.grants' | 'fs.readFile' | 'fs.writeFile'
   | 'id.publicKey' | 'id.sign'
-  | 'net.connect' | 'net.udpBind' | 'net.close' | 'net.setNoDelay' | 'net.setKeepAlive'
+  | 'net.connect' | 'net.connectSecure' | 'net.udpBind' | 'net.close'
+  | 'net.setNoDelay' | 'net.setKeepAlive'
 
 export function isControlMethod (method: string): method is ControlMethod {
   return method === 'app.manifest' || method === 'app.grants' ||
     method === 'fs.readFile' || method === 'fs.writeFile' ||
     method === 'id.publicKey' || method === 'id.sign' ||
-    method === 'net.connect' || method === 'net.udpBind' || method === 'net.close' ||
+    method === 'net.connect' || method === 'net.connectSecure' ||
+    method === 'net.udpBind' || method === 'net.close' ||
     method === 'net.setNoDelay' || method === 'net.setKeepAlive'
 }
 
@@ -30,6 +32,7 @@ export interface FsReadFileParams { readonly path: string }
 export interface FsWriteFileParams { readonly path: string, readonly data: Uint8Array }
 export interface IdPublicKeyParams { readonly curve: string }
 export interface IdSignParams { readonly curve: string, readonly payload: Uint8Array }
+/** Shared by net.connect and net.connectSecure -- both take exactly { host, port }, and isNetConnectParams below validates either call's payload (code-guidelines.md Rule 3: same shape, same reason). */
 export interface NetConnectParams { readonly host: string, readonly port: number }
 /**
  * `port` of 0 is LEGAL here and means "any free port" -- the one place in this

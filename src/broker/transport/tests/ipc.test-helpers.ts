@@ -84,9 +84,6 @@ export function stubBroker (
         calls.push({ method: 'net.connect', origin, args: opts })
         return await (overrides.connect?.(origin, opts) ?? notStubbed())
       },
-      // Present so this stub still satisfies `Broker`; no test here drives it.
-      // net.connectSecure has no control-channel case yet, same as net.listen
-      // just below (queue item 2.3's own PR body has the reasoning).
       connectSecure: async (origin, opts) => {
         calls.push({ method: 'net.connectSecure', origin, args: opts })
         return await (overrides.connectSecure?.(origin, opts) ?? notStubbed())

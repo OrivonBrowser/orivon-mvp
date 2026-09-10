@@ -105,6 +105,8 @@ export function installOrivon (
     idPublicKey: (curve: string) => Promise<Uint8Array>
     idSign: (curve: string, payload: Uint8Array) => Promise<Uint8Array>
     netConnect: (opts: { host: string, port: number }) => Promise<MainWorldSocketBridge>
+    /** net.connectSecure's own closure -- resolves to the identical bridge shape netConnect does; buildSocket below is shared by both (Rule 3). */
+    netConnectSecure: (opts: { host: string, port: number }) => Promise<MainWorldSocketBridge>
     netUdpBind: (opts: { port: number }) => Promise<MainWorldUdpBridge>
   },
   limits: OrivonLimits,
@@ -356,6 +358,7 @@ export function installOrivon (
     }),
     net: Object.freeze({
       connect: async (opts: { host: string, port: number }) => buildSocket(await bridge.netConnect(opts)),
+      connectSecure: async (opts: { host: string, port: number }) => buildSocket(await bridge.netConnectSecure(opts)),
       udpBind: async (opts: { port: number }) => buildUdpSocket(await bridge.netUdpBind(opts))
     })
   }
