@@ -55,6 +55,27 @@ export interface DialedSocket extends Omit<TcpSocket, keyof Handle> {
 export type Dial = (addresses: readonly string[], port: number, signal: AbortSignal) => Promise<DialedSocket>
 
 /**
+ * Opens a TLS-secured connection to `host`:`port` -- the handshake,
+ * certificate chain validation and hostname verification all happen inside
+ * this call, on the trusted side (ADR-0017, ../adapters/tls-adapter.ts).
+ *
+ * TAKES THE HOSTNAME DIRECTLY, unlike `Dial`'s pre-resolved `addresses`
+ * array, and that difference is the point: `checkConnectSecure`
+ * (policy/connect-secure.ts) authorises by hostname, never by resolved
+ * address, because THIS call's own certificate/hostname check is what binds
+ * the hostname to whoever answered -- there is no separate resolve-then-
+ * check step upstream to hand this a validated address list. `host` is
+ * exactly `ConnectSecureAllowed.host` -- already normalised, already
+ * checked against the grant -- and is used for both the DNS lookup and the
+ * certificate/SNI hostname check, so nothing here can dial one name while
+ * verifying another.
+ *
+ * `signal` fires the instant the grant authorising this connection is
+ * revoked while the handshake is still in flight, exactly as `Dial`'s does.
+ */
+export type DialSecure = (host: string, port: number, signal: AbortSignal) => Promise<DialedSocket>
+
+/**
  * One outbound datagram's fate.
  *
  * NEVER A REJECTION, and that is the point of it being a value. A caller's
@@ -178,6 +199,7 @@ export interface Keychain {
 
 export interface CreateBrokerOptions {
   readonly dial: Dial
+  readonly dialSecure: DialSecure
   readonly bind: Bind
   readonly listen: Listen
   readonly resolve: Resolver
@@ -218,6 +240,15 @@ export interface Broker {
     /** Returns a `FailableTcpSocket` -- a `TcpSocket` plus one broker-internal
      * escape hatch, see handle-contracts.ts. */
     connect(origin: string, opts: { host: string, port: number }): Promise<FailableTcpSocket>
+    /**
+     * TLS terminated on the trusted side (ADR-0017) -- checked against
+     * `https.connect`, a SEPARATE grant from `tcp.connect` above, matched by
+     * the hostname itself rather than a resolved address (policy/connect-
+     * secure.ts's own header explains why that is safe here). Returns the
+     * same `FailableTcpSocket` shape `connect` does; nothing about the
+     * connection being TLS is visible on the handle itself.
+     */
+    connectSecure(origin: string, opts: { host: string, port: number }): Promise<FailableTcpSocket>
     /**
      * `port: 0` means "any free port", and it still binds only inside the
      * granted ranges (policy/bind.ts, docs/open-questions.md A88).

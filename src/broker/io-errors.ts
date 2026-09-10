@@ -73,3 +73,33 @@ export function mapIoError (error: unknown, kind: 'net' | 'fs'): OrivonError {
   return fail(code, message, undefined, errno)
 }
 
+/**
+ * net.connectSecure's OWN error mapping, kept as its own function rather than
+ * a branch inside `mapIoError` (../contracts/capability-api.ts's doc on
+ * `connectSecure`, handle-contracts.md's Errors-section owner decision,
+ * 2026-08-26): a failed handshake and a certificate/hostname mismatch are
+ * 'unreachable' with the real platformCode, exactly like a raw dial failure
+ * -- the attempt was one the app was permitted to make, so it gets the true,
+ * specific reason, never a generic denial.
+ *
+ * NOT FOLDED INTO ERRNO_TO_CODE. Node's TLS/OpenSSL binding reports a failed
+ * handshake as a `.code` string -- 'CERT_HAS_EXPIRED',
+ * 'ERR_TLS_CERT_ALTNAME_INVALID', 'DEPTH_ZERO_SELF_SIGNED_CERT', and more --
+ * that is not a POSIX errno and does not belong in that table. Everything
+ * else about the shape is identical to `mapIoError`'s: pass an already-
+ * mapped OrivonError through unchanged, keep the platformCode, write a fresh
+ * message rather than forwarding OpenSSL's own text (which is not shaped to
+ * be handed to an app).
+ *
+ * THE ONE PLACE THIS TRANSLATION HAPPENS, on purpose: the conductor has
+ * raised a live concern with the owner about whether 'unreachable' is the
+ * right code for what may be an active interception rather than an ordinary
+ * network failure (an app branching on the closed enum cannot tell the two
+ * apart, and platformCode is all that carries the difference today).
+ * Whichever way that lands, this is the only function that needs to change.
+ */
+export function mapTlsError (error: unknown): OrivonError {
+  if (isOrivonError(error)) return error
+  return fail('unreachable', 'the secure connection failed', undefined, errnoOf(error))
+}
+
