@@ -4205,3 +4205,47 @@ vectors checked in CI against an independent implementation. That separation is 
 app authors. An app that signs something with `crypto.createSign()` believing it has the same footing
 as `orivon.id.sign()` has been misled by a naming choice, not by a bug — and a documentation fix is
 the whole remedy.
+
+### A133 — the grant prompt's "and N other sites" summary has no cap **[STILL OPEN]**
+
+**Raised 2026-09-10**, post-merge audit; carried over from PR #130's own review, where it was
+raised with the owner and then recorded only in a fleet ledger outside this repository. Filed here
+at the owner's explicit request, because a finding that exists only in a run's working notes is not
+filed at all.
+
+`namedHostsPhrase` (`src/main/grant-prompt-render.ts`) names the first host and counts the rest:
+*"Connect to youtube.com and 3 other sites."* There is **no upper bound on that count.** At three it
+reads as intended. At forty-nine — *"Connect to youtube.com and 48 other sites"* — the summary has
+become the thing owner decision D-0004 rejected a details-expander for: breadth acknowledged in a
+number rather than shown.
+
+The owner's stated requirement is that a narrow declaration and a broad one be *unmistakably
+different at a glance*. A single line whose only signal of breadth is an integer the reader must
+notice and weigh does not obviously meet that, and the point at which it stops meeting it is a
+product judgement rather than an engineering one.
+
+**Not proposed here:** a threshold. Whether the answer is a cap that flips to a warning, a different
+sentence above some N, or something else is the owner's call, in the same register as D-0004 itself.
+
+**Related:** A115 (a confusable in the same title), and the port-breadth gap fixed in PR #143 — which
+was the *other* axis of the same problem and is why this one is now the remaining half.
+
+### A134 — `manifest.ts` promises a "distinct, more serious prompt" for listening that does not exist **[STILL OPEN]**
+
+**Raised 2026-09-10**, post-merge audit; same provenance as A133 — raised during PR #130's review,
+recorded only in a fleet ledger, filed here at the owner's request.
+
+`src/contracts/manifest.ts`'s own doc comment tells an app author that declaring a listening socket
+draws a distinct, more serious consent prompt than an outbound connection does. **No such prompt is
+implemented.** `describeCapabilityGrant` renders `tcp.listen` and `udp.bind` with `warning: false`
+and a plain sentence naming the ports — the same visual weight as any ordinary grant.
+
+Two reasons this is worth more than a comment fix. First, **`src/contracts/` is the durable asset**
+(ADR-0002): a promise made there is the product's documentation, and an app author reading it forms
+an expectation about what their users will see. Second, the underlying claim is probably right —
+accepting inbound connections *is* a different kind of act from making outbound ones, and A114 means
+`net.listen` cannot reach a page yet, so there is time to decide deliberately rather than under
+pressure.
+
+**Either the prompt gets built or the promise comes out of the contract.** Both are small; leaving
+them disagreeing is the bad outcome, because the contract is what an app author trusts.
