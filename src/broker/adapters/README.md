@@ -13,14 +13,16 @@ decision; it performs one already taken.
 
 **Owner stream.** `broker` — build step 2.
 
-## Why a directory for one file
+## Why a directory for two files
 
-`node-adapters.ts` is the whole of it today, and that is the point rather than an oversight:
-this is the **only** place in the broker where a real address is dialled or a real path is
-opened, so an auditor asking "where does this program touch the network or the disk?" has one
-answer. It is also the layer `ADR-0002` calls disposable — a different engine replaces this
+`node-adapters.ts` (the network half) and `node-fs-adapter.ts` (the filesystem half, split out
+2026-09-10 once queue item 2.1's five new fs operations pushed the combined file past 500
+lines) are the whole of it, and that is the point rather than an oversight: this is the
+**only** place in the broker where a real address is dialled or a real path is opened, so an
+auditor asking "where does this program touch the network or the disk?" has two files, not a
+search. It is also the layer `ADR-0002` calls disposable — a different engine replaces this
 directory and leaves [`../handles/`](../handles/) and [`../policy/`](../policy/) untouched.
-`udp.send`, `tcp.listen` and the fs quota reconciliation all land here when they are built.
+`udp.send` and the fs quota reconciliation land here when they are built.
 
 ## Design notes
 
