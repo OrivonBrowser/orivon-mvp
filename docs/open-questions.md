@@ -3869,3 +3869,37 @@ narrower.
 **Still open.** Options not evaluated here: give the fallback a minimal main-world constructor
 of its own, return a result envelope and have callers unwrap it, or accept the divergence and
 document it as a known property of running without `executeInMainWorld`.
+
+### A114 — delivering `TcpServer.connections` to a page needs a nested-port shape the IPC contract has no room for **[STILL OPEN]**
+
+**Raised 2026-09-10**, lane P2-6wire (PR #126), filed by the conductor. **Architectural, so the
+lane correctly parked it rather than choosing** — it needs a `src/contracts/` change and an owner
+decision.
+
+`net.listen` is built at the broker layer (PR #109) with real accepted-socket handles, teardown
+and a revocation cascade proven against real sockets. It is **not** reachable from a page, and the
+reason is a shape problem rather than missing plumbing: `TcpServer.connections` must hand the
+renderer **a fresh port per accepted socket, nested inside the server's own port.**
+
+None of the three delivery mechanisms that exist today covers that:
+
+- `CONTROL_CHANNEL`'s reply is a structured clone and carries no transferable.
+- `PORT_CHANNEL`'s `deliverPort` hands over a port only *in response to* a control-channel
+  request — there is no broker-initiated delivery.
+- A socket's own dedicated port carries `BrokerToRendererMessage`, a **closed union** in
+  `src/contracts/ipc.ts` (`DataMessage | StreamEndMessage | WriteAckMessage | WriteFailedMessage |
+  DatagramMessage | DatagramDropMessage | SendAckMessage | SendFailedMessage`) with no "here is a
+  new handle and its port" member — and `PortLike.postMessage` takes no transfer list either.
+
+**Two shapes were named but neither was chosen**, deliberately: deliver each accepted socket's
+port over the *server's own* port (needs a new `BrokerToRendererMessage` member and a transfer
+list on `PortLike`), or have the renderer make a second `PORT_CHANNEL` round trip per accepted
+connection (keeps the contract as it stands, at the cost of a round trip per accept and a window
+where an accepted socket exists in the broker with no renderer end).
+
+**Consequences while it stays open:** `net.listen` is Broker ✅ / Page ❌ — a legal prefix, but it
+means the flagship can download and not seed, which is one of the reasons `net.listen` was pulled
+into this round at all. Queue item 5.1's exit criterion (a real torrent from a non-WebRTC TCP
+peer) does not strictly require inbound listening, but the seeding half of the flagship does.
+
+**Still open.** Needs the owner to pick a delivery shape before a contracts PR can be written.

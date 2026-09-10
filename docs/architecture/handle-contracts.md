@@ -14,16 +14,25 @@
 > `destroySocket`) — exercised by `handles.test.ts`, `handles-limits.test.ts` and
 > `node-adapters.test.ts`.
 >
-> **Specified here but not implemented anywhere in the tree**, each an omission of sequencing
-> rather than of attention — `build-plan.md`'s own build-step order has not reached them yet,
-> not a change of mind about the spec below: `TcpServer` (no accept/listen), `UdpSocket` (no
-> UDP/dgram at all), and `IdentityHandle` (no `publicKey()`/`signEvent()`, no `orivon.id.*`
-> control method wired — see §IdentityHandle for the P-256 key-derivation code that does exist)
-> exist only as the contract types in `src/contracts/handles.ts`. `FileHandle` is further along only
-> in that `src/broker/index.ts` exposes flat, whole-file `fs.readFile`/`writeFile` (checked
-> against path confinement and the per-origin quota) — the positional `read`/`write`, `stat`,
-> `truncate`, `sync` and `userSelected` shape below does not exist yet. See each section's own
-> marker.
+> **Corrected 2026-09-10.** The version of this banner replaced here listed `TcpServer`,
+> `UdpSocket` and `IdentityHandle` as existing only as contract types. All three have since been
+> built, and a banner that says otherwise sends a reader looking for code they will not find —
+> or, worse, stops them looking for code that is there. Current state, per handle:
+>
+> - **`TcpSocket`** — built and page-reachable, as before, including the close/half-close wire
+>   table (`node-adapters.ts`'s `destroySocket`).
+> - **`UdpSocket`** — built and page-reachable. See §UdpSocket's own correction below.
+> - **`TcpServer`** — **built at the broker layer, not reachable from a page.** See §TcpServer.
+> - **`IdentityHandle`** — `orivon.id.publicKey`/`sign` are built and page-reachable
+>   (`src/broker/id-capability.ts`, wired through the control channel and the preload surface).
+>   `requestIdentity` and the named-identity `signEvent` shape below are **not** built: they need
+>   the connect prompt, which is build step 4 (`docs/open-questions.md` A111).
+> - **`FileHandle`** — still the exception. `src/broker/index.ts` exposes flat, whole-file
+>   `fs.readFile`/`writeFile`/`readFileSync` (path-confined and quota-checked), but the positional
+>   `read`/`write`, `stat`, `truncate`, `sync` and `userSelected` shape below does not exist.
+>
+> Each section's own marker is the authority for that handle; this list is a summary and will go
+> stale before they do.
 >
 > This document defines the five handle types named but not specified in
 > `capability-api.md` §v0 surface: `TcpSocket`, `TcpServer`, `UdpSocket`, `FileHandle`,
@@ -266,11 +275,26 @@ particular broker or preload implements them.
 
 ## §TcpServer
 
-> **Not implemented.** No accept/listen and no `connections` stream anywhere in `src/broker/` —
-> `TcpServer` exists only as the contract type in `src/contracts/handles.ts`. Its build step has
-> not been reached; the handle-table mechanics below (`HandleKind: 'tcpServer'` in
-> `src/broker/handles/handle-contracts.ts`) already account for it, ahead of the actual socket-accept
-> code.
+> **Built at the broker layer, correcting the "not implemented" banner this replaced.** That
+> version described the state before 2026-09-09. `listen()` is `src/broker/net-capability.ts`;
+> the real `node:net` server adapter is `listenTcp` in `src/broker/adapters/node-adapters.ts`;
+> bind policy is `src/broker/policy/bind.ts`. Accepted connections arrive as derived handles and
+> the revocation cascade below is exercised against **real sockets**: revoking the grant makes the
+> accepted socket's handle and the server's handle both reject `'revoked'` and puts a real RST on
+> the wire (the client sees `ECONNRESET`).
+>
+> **It is NOT reachable from a page, and that gap is a design question rather than unfinished
+> plumbing.** `TcpServer.connections` has to hand the renderer a fresh port *per accepted socket*,
+> nested inside the server's own port. None of the three delivery mechanisms that exist covers
+> that: the control channel's structured-clone reply carries no transferable, `deliverPort` only
+> answers a control-channel request, and a socket's dedicated port carries
+> `BrokerToRendererMessage` — a **closed union** in `src/contracts/ipc.ts` with no
+> "here is a new handle and its port" shape, whose `postMessage` takes no transfer list either.
+> Closing it needs a `src/contracts/` change (own PR, merges first) and an owner decision on the
+> delivery shape. Filed as `docs/open-questions.md` A114.
+>
+> The handle-table mechanics below (`HandleKind: 'tcpServer'`) were written ahead of the accept
+> code and are unchanged by it.
 
 ```ts
 interface TcpServer extends Handle {
