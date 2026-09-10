@@ -118,6 +118,64 @@ path is the one the fleet already has:
 - `/orivon-tell conductor pace: slow` -- one lane at a time.
 - `/orivon-tell conductor budget: <percent>` -- gate at a different number than 90.
 
+## Which model runs what
+
+**Owner's decision, 2026-09-09.** Written down here because the run was already doing it by habit
+and habit does not survive a handoff -- a conductor resuming after a pause inherits the parent
+model by default, and every lane silently becomes Opus.
+
+- **Opus plans.** The conductor's own work: planning the queue, deciding dispatch order, reviewing
+  diffs, judging the gate, and merging.
+- **Sonnet executes.** Every lane agent, without exception.
+
+Two boundaries on it:
+
+- **In-flight lanes keep the model they were spawned with.** A subagent's model is fixed at spawn,
+  so never re-dispatch work purely to apply this.
+- **This does not weaken review.** Diffs touching `src/broker/` or `src/main/` are hand-reviewed by
+  the conductor personally, never delegated to a lane. "Sonnet for execution" means execution only.
+
+## Every Electron launch, and what "the run finished" is allowed to mean
+
+**Owner's decision, 2026-09-09. A machine-health constraint, not a preference.** Leftover Electron
+windows accumulated overnight until the machine slowed and the desktop filled with dialogs. The
+cause was measured, not guessed: an orphaned process tree whose runner had exited, no `Xvfb`
+process at all (so that launch painted on the owner's real display), and 77 abandoned
+`/tmp/orivon-test-*` profiles totalling 105 MB.
+
+1. **Every launch goes through `xvfb-run`, without exception** --
+   `env -u ELECTRON_RUN_AS_NODE xvfb-run -a ...`. The `-u` guards the ambient-env trap; the
+   `xvfb-run` half is equally binding, and it is what makes it impossible to paint on a real
+   display.
+2. **Teardown must run on the failure path too.** A bounded `app.close()` race is not enough: use a
+   `finally`/`afterAll` that always runs, SIGKILL the whole process tree after the bounded wait,
+   and reap the child so no zombie is left.
+3. **Verify, do not assume.** After *any* launch, passing or failing, confirm no Electron process
+   survived before reporting the run. **A run that leaves a process is not a finished run**, and
+   reporting it as one is the same defect class as a silently omitted check.
+4. **Remove the `--user-data-dir` temp profile** the run created.
+
+Checking for survivors has one trap worth naming, because it costs a session to notice: matching on
+the command string (`pgrep -f node_modules/electron/dist/electron`) also matches *the checking
+command itself*, so it reports live processes that do not exist. Resolve `/proc/<pid>/exe` instead,
+or match the binary rather than the argument text.
+
+## Read the INBOX on a schedule, not at startup
+
+**`INBOX.md` is read at session start, before spawning any agent, when collecting any agent's
+result, before any push/PR/merge, and whenever a lane blocks.** That list is the rule; a resume
+document's numbered "read the INBOX" step is only its first instance.
+
+This is written as its own section because the failure already happened. A conductor read the
+INBOX once, at session start, found it empty, and never read it again -- across ten merges, seven
+dispatches and a documented pause. Nine directives went unseen for up to four and a half hours,
+including two marked `priority: now` and one that pointed out the missed reads directly. Nothing
+wrong was built, but the run spent an hour telling the owner a gate was still closed that the owner
+had opened.
+
+**`inboxAcked` in the state store is the check.** If it has not moved while directives have arrived,
+the channel is not being read -- and a durable channel that is not read is not durable.
+
 ## Checkpoint discipline, because the dashboard depends on it
 
 Every lane writes a checkpoint at least every ~30 minutes of work, with `NEXT:` on every one.
