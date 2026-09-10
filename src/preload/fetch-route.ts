@@ -1,28 +1,19 @@
 // `installFetchRoute` below is handed to `contextBridge.executeInMainWorld`
 // (see ./main-world-socket.ts's own header for why: SERIALISED via
-// Function.prototype.toString() and re-run fresh in the main world, so it
-// may reference only its own parameter and true globals -- no imports, no
-// module-level consts, no closures over anything outside its own body).
-// `exposeFetchRoute` at the bottom of this file is the ordinary,
-// non-serialised wiring, shared by preload/app.ts and preload/newtab.ts's
-// fallback branch (Rule 3) -- its own `contextBridge` import never touches
-// `installFetchRoute`'s body, so it does not affect what gets serialised.
+// Function.prototype.toString() and re-run fresh in the main world -- no
+// imports, no module-level consts, no closures over anything outside its
+// own body). `exposeFetchRoute` at the bottom is the ordinary,
+// non-serialised wiring shared by preload/app.ts and preload/newtab.ts.
 //
 // ADR-0017: an app's own `fetch()` is routed through `window.orivon.net`
-// (already real -- ./main-world-socket.ts's `installOrivon`) for any
-// cross-origin http(s) request, carrying whatever headers the app set,
-// including ones a page is normally forbidden to set (`Origin`, `Cookie`,
-// ...) -- there is no browser-fetch pipeline underneath this to filter
-// them. Nothing here reads a cookie jar or any ambient credential; every
-// byte on the wire comes from what the app itself passed in.
+// for any cross-origin http(s) request, carrying whatever headers the app
+// set -- including ones a page normally cannot (`Origin`, `Cookie`, ...).
+// No cookie jar, no ambient credential: every byte comes from the app.
 //
-// GATED ON `orivon.app.manifest()` RESOLVING, not merely on `orivon.net`
-// existing: `window.orivon` is exposed to EVERY ordinary tab (an app is
-// discovered via a `<link>` hint, not installed up front), so an ordinary
-// website with no registered manifest must keep plain, unrouted `fetch` --
-// otherwise every cross-origin call on the open web starts failing the
-// moment this ships. See README.md's Design notes for why this check is
-// asynchronous and what that costs.
+// GATED ON `isAppTab`, decided SYNCHRONOUSLY in main before this ever runs
+// -- see this directory's README.md's Design notes for why, and why it is
+// not enough that `orivon.net` merely exists (it does, on every ordinary
+// tab, registered app or not).
 import { contextBridge } from 'electron'
 
 /** The one shape this file needs from `window.orivon` -- a subset of `../contracts/capability-api.js`'s `Orivon`, repeated here because a serialised main-world function cannot import that type's runtime companions across the boundary (only used for typechecking; erased at compile time). */
@@ -34,7 +25,6 @@ export interface FetchRouteSocket {
 
 export interface FetchRouteTarget {
   orivon?: {
-    app?: { manifest: () => Promise<unknown> }
     net?: {
       connect: (opts: { host: string, port: number }) => Promise<FetchRouteSocket>
       connectSecure: (opts: { host: string, port: number }) => Promise<FetchRouteSocket>
@@ -45,11 +35,12 @@ export interface FetchRouteTarget {
 }
 
 export function installFetchRoute (
+  isAppTab: boolean,
   target: FetchRouteTarget = typeof window === 'undefined' ? {} : window as unknown as FetchRouteTarget
 ): void {
+  if (!isAppTab) return
   const netOrUndefined = target.orivon?.net
-  const appApi = target.orivon?.app
-  if (netOrUndefined === undefined || appApi === undefined) return
+  if (netOrUndefined === undefined) return
   // Re-bound to its own const so its non-undefined type is fixed here --
   // TypeScript does not carry a narrowing of a captured variable into a
   // nested function declared below (routedFetch), only a fresh binding's
@@ -322,28 +313,39 @@ export function installFetchRoute (
     return response
   }
 
-  // PROVISIONAL (see this file's own header and README.md's Design notes):
-  // installs only once the broker confirms this origin is a REGISTERED
-  // app, never merely because `orivon.net` exists. The check is async, so a
-  // page script that runs before it resolves still sees native `fetch` --
-  // a real, named gap, not an oversight.
-  appApi.manifest().then(
-    () => {
-      Object.defineProperty(target, 'fetch', { value: routedFetch, writable: false, configurable: false, enumerable: true })
-    },
-    () => { /* not a registered Orivon app -- ordinary browsing keeps native fetch untouched */ }
-  )
+  // SYNCHRONOUS, no round trip -- `isAppTab` was already decided in main
+  // before this function ever ran (this file's own header). A page script
+  // that runs immediately cannot outrun this the way it could outrun the
+  // async `orivon.app.manifest()` check this replaced.
+  Object.defineProperty(target, 'fetch', { value: routedFetch, writable: false, configurable: false, enumerable: true })
 }
+
+/** The literal `webPreferences.additionalArguments` flag `src/main/
+ * tab-view.ts`'s `appTabArgsFor` sets -- duplicated here rather than
+ * imported (src/preload/README.md forbids importing anything under
+ * src/main/ except ./channels.ts, and this is not a channel), the same
+ * choice `newtab.ts`'s own `--orivon-newtab-url=` flag already made. */
+const APP_TAB_FLAG = '--orivon-app-tab'
 
 /**
  * Fail-open, same shape as orivon-surface.ts's own `exposeOrivon()`:
  * `contextBridge.executeInMainWorld` is `@experimental` and may be absent
  * or throw, in which case this leaves the page's native `fetch` alone
- * rather than abort the rest of preload.
+ * rather than abort the rest of preload. Reads `isAppTab` synchronously off
+ * `process.argv` -- available here (the isolated world), unlike inside
+ * `installFetchRoute` itself, which runs in the main world and has no
+ * `process` -- so it crosses as a plain boolean argument instead.
+ *
+ * `args` carries ONLY `isAppTab` -- `installFetchRoute`'s `target` parameter
+ * is deliberately left OMITTED, not passed as an explicit `undefined`, so
+ * its own default (the real main-world `window`) applies -- the exact
+ * pattern `orivon-surface.ts`'s own `exposeOrivon()` already uses for
+ * `installOrivon`'s trailing `target` parameter.
  */
 export function exposeFetchRoute (): void {
+  const isAppTab = process.argv.includes(APP_TAB_FLAG)
   try {
-    contextBridge.executeInMainWorld({ func: installFetchRoute })
+    contextBridge.executeInMainWorld({ func: installFetchRoute, args: [isAppTab] })
   } catch (error) {
     console.error('[orivon] fetch routing not installed', error)
   }

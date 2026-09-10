@@ -93,6 +93,31 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
   }
 
   /**
+   * SYNCHRONOUS, unlike every other `app.*` method -- `main.ts`'s tab
+   * construction (`src/main/tabs.ts`) runs in the SAME process as this
+   * broker, with no IPC round trip to await, and needs an answer before
+   * `WebContentsView` construction so it can hand a fixed, preload-readable
+   * flag over via `webPreferences.additionalArguments` (the same mechanism
+   * `newtab.ts` already uses for its own dashboard-URL check). `confineSync`
+   * (`./fs-capability.ts`) is the precedent for a synchronous sibling of an
+   * already-async method answering the same in-memory ledger state.
+   *
+   * Reads `ledger.manifestFor` directly, exactly what the async `manifest`
+   * above does before it throws -- "registered" means exactly "has a
+   * manifest", nothing more (a registered app may still hold zero grants).
+   * Never throws: an invalid origin string is simply "not registered",
+   * because the caller here is UI plumbing deciding whether to route
+   * `fetch()`, not a capability check standing between an app and a
+   * resource -- a wrong answer costs a preload's own async fallback path,
+   * never a security boundary.
+   */
+  function isRegisteredSync (origin: string): boolean {
+    const key = originFromUrl(origin)
+    if (key === null) return false
+    return ledger.manifestFor(key) !== undefined
+  }
+
+  /**
    * Re-throws the version-floor write failure (the one thing
    * `GrantLedger.registerApp` throws) rather than swallowing it, but as an
    * OrivonError: `canonical` above already rejects with one, and one method
@@ -203,7 +228,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
   }
 
   return {
-    app: { manifest, grants },
+    app: { manifest, grants, isRegisteredSync },
     net,
     id,
     fs,

@@ -64,18 +64,30 @@ const fakeBounds = { x: 0, y: 0, width: 800, height: 600 }
 const fakeCtx = {} as SubsystemContext
 const DASHBOARD_URL = 'http://localhost:5999/newtab/'
 
-function newManager (): InstanceType<typeof TabManager> {
+function newManager (ctx: SubsystemContext = fakeCtx): InstanceType<typeof TabManager> {
   return new TabManager(
     fakeContentView as never,
     () => fakeBounds,
     vi.fn(),
     DASHBOARD_URL,
-    fakeCtx
+    ctx
   )
 }
 
 function partitionOf (view: RecordedView): unknown {
   return view.options.webPreferences?.['partition']
+}
+
+function additionalArgumentsOf (view: RecordedView): string[] | undefined {
+  return view.options.webPreferences?.['additionalArguments'] as string[] | undefined
+}
+
+/** A fake `SubsystemContext` whose `broker.app.isRegisteredSync` answers from a caller-supplied set of registered origins -- everything else throws if touched, since no test here needs it. */
+function ctxWithRegisteredOrigins (...origins: string[]): SubsystemContext {
+  const registered = new Set(origins)
+  return {
+    broker: { app: { isRegisteredSync: (origin: string) => registered.has(origin) } }
+  } as unknown as SubsystemContext
 }
 
 beforeEach(() => {
@@ -147,6 +159,51 @@ describe('TabManager -- per-origin session partitions at creation (ADR-0003, ADR
 // tab is calling createTab(url) directly, they type into the address bar,
 // which is navigate(). These tests exist because the e2e test alone did not
 // catch this fast enough -- it needs a real Electron launch to run at all.
+describe("TabManager -- ADR-0017's synchronous fetch()-routing flag (appTabArgsFor)", () => {
+  it('a fresh tab whose origin is a registered app gets the --orivon-app-tab additionalArgument', () => {
+    const manager = newManager(ctxWithRegisteredOrigins('https://app.example'))
+    manager.createTab('https://app.example/page')
+
+    expect(additionalArgumentsOf(createdViews[0] as RecordedView)).toEqual(['--orivon-app-tab'])
+  })
+
+  it('a fresh tab whose origin is NOT a registered app gets no such argument', () => {
+    const manager = newManager(ctxWithRegisteredOrigins('https://other.example'))
+    manager.createTab('https://app.example/page')
+
+    expect(additionalArgumentsOf(createdViews[0] as RecordedView)).toBeUndefined()
+  })
+
+  it('a tab with no broker at all (ctx.broker undefined) gets no argument -- never throws', () => {
+    const manager = newManager({} as SubsystemContext)
+    expect(() => { manager.createTab('https://app.example/page') }).not.toThrow()
+    expect(additionalArgumentsOf(createdViews[0] as RecordedView)).toBeUndefined()
+  })
+
+  it('the fresh-tab dashboard never gets the flag, even if its own URL happened to be a registered origin', () => {
+    const manager = newManager(ctxWithRegisteredOrigins(originFromUrl(DASHBOARD_URL) as string))
+    manager.createTab() // dashboard
+
+    expect(additionalArgumentsOf(createdViews[0] as RecordedView)).toEqual([`--orivon-newtab-url=${DASHBOARD_URL}`])
+  })
+
+  it('navigating an existing tab TO a registered app\'s origin swaps in a view carrying the flag', () => {
+    const manager = newManager(ctxWithRegisteredOrigins('https://app.example'))
+    const id = manager.createTab('https://a.example/')
+    manager.navigate(id, 'https://app.example/page')
+
+    expect(additionalArgumentsOf(createdViews[1] as RecordedView)).toEqual(['--orivon-app-tab'])
+  })
+
+  it('navigating away FROM a registered app\'s origin to an unregistered one drops the flag on the new view', () => {
+    const manager = newManager(ctxWithRegisteredOrigins('https://app.example'))
+    const id = manager.createTab('https://app.example/page')
+    manager.navigate(id, 'https://plain-website.example/')
+
+    expect(additionalArgumentsOf(createdViews[1] as RecordedView)).toBeUndefined()
+  })
+})
+
 describe('TabManager -- navigate() repartitions a tab when the ORIGIN changes', () => {
   it('navigating a fresh dashboard tab to a real origin swaps in a view with that origin\'s partition', () => {
     const manager = newManager()
