@@ -36,6 +36,7 @@ export type {
   NetCapability,
   TcpCapability,
   UdpCapability,
+  HttpsCapability,
   FsCapability,
   IdCapability,
   Grant,
