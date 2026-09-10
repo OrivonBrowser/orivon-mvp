@@ -131,6 +131,33 @@ describe('exposeOrivon -- P-F4: a failure after net.connect cleans up the broker
       vi.useRealTimers()
     }
   })
+
+  it('the same cleanup fires for net.connectSecure -- netConnectSecureBridge is not a second, divergent copy', async () => {
+    vi.useFakeTimers()
+    try {
+      const target = installViaFakeMainWorld()
+      invoke.mockImplementation(async (_channel: string, envelope: { method: string, payload: { id?: string } }) => {
+        if (envelope.method === 'net.connectSecure') {
+          return okEnvelope({ id: 'sock-secure-1', remoteAddress: '1.2.3.4', remotePort: 443, localAddress: '10.0.0.1', localPort: 1 })
+        }
+        return okEnvelope(undefined)
+      })
+
+      exposeOrivon()
+      const orivon = target.orivon as { net: { connectSecure: (opts: unknown) => Promise<unknown> } }
+
+      const connecting = orivon.net.connectSecure({ host: 'x.example', port: 443 })
+      const assertion = expect(connecting).rejects.toBeDefined()
+      await vi.advanceTimersByTimeAsync(35_001)
+      await assertion
+
+      const closeCalls = invoke.mock.calls.filter(([, envelope]) => (envelope as { method: string }).method === 'net.close')
+      expect(closeCalls).toHaveLength(1)
+      expect((closeCalls[0]?.[1] as { payload: { id: string } }).payload).toMatchObject({ id: 'sock-secure-1' })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
 
 describe('exposeOrivon -- P-F5: control-call failures are always OrivonError-shaped', () => {
@@ -185,6 +212,42 @@ describe('exposeOrivon -- P-F11: end-to-end wiring smoke, through the real conte
     expect(socket.remoteAddress).toBe('93.184.216.34')
     expect(socket.readable).toBeInstanceOf(ReadableStream)
     expect(socket.writable).toBeInstanceOf(WritableStream)
+  })
+
+  it('a successful net.connectSecure calls the "net.connectSecure" method, not "net.connect", and resolves a socket with the descriptor fields intact', async () => {
+    const target = installViaFakeMainWorld()
+    const seenMethods: string[] = []
+    invoke.mockImplementation(async (_channel: string, envelope: { method: string }) => {
+      seenMethods.push(envelope.method)
+      if (envelope.method === 'net.connectSecure') {
+        return okEnvelope({ id: 'sock-3', remoteAddress: '93.184.216.34', remotePort: 443, localAddress: '10.0.0.5', localPort: 4322 })
+      }
+      return okEnvelope(undefined)
+    })
+
+    exposeOrivon()
+    const orivon = target.orivon as { net: { connectSecure: (opts: unknown) => Promise<Record<string, unknown>> } }
+    const connecting = orivon.net.connectSecure({ host: 'x.example', port: 443 })
+
+    portListener?.({ ports: [fakeMessagePort()] }, { handleId: 'sock-3' })
+
+    const socket = await connecting
+    expect(socket.id).toBe('sock-3')
+    expect(socket.readable).toBeInstanceOf(ReadableStream)
+    expect(socket.writable).toBeInstanceOf(WritableStream)
+    expect(seenMethods).toContain('net.connectSecure')
+    expect(seenMethods).not.toContain('net.connect')
+  })
+
+  it('net.connectSecure propagates a real OrivonError (e.g. "denied") rather than a raw rejection', async () => {
+    const target = installViaFakeMainWorld()
+    invoke.mockResolvedValue({ id: 'r', ok: false, code: 'denied', message: 'https.connect is not granted to this origin' })
+
+    exposeOrivon()
+    const orivon = target.orivon as { net: { connectSecure: (opts: unknown) => Promise<unknown> } }
+
+    await expect(orivon.net.connectSecure({ host: 'x.example', port: 443 }))
+      .rejects.toMatchObject({ name: 'OrivonError', code: 'denied' })
   })
 
   it('id.publicKey and id.sign round-trip through call() and installOrivon with the real payload shape', async () => {
