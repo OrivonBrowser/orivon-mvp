@@ -25,12 +25,14 @@ function fakeOrivon (requestIdentity: Orivon['id']['requestIdentity']): Orivon {
     },
     net: {
       connect: notImplemented('net.connect'),
+      connectSecure: notImplemented('net.connectSecure'),
       listen: notImplemented('net.listen'),
       udpBind: notImplemented('net.udpBind')
     },
     fs: {
       readFile: notImplemented('fs.readFile'),
       writeFile: notImplemented('fs.writeFile'),
+      readFileSync: notImplemented('fs.readFileSync'),
       open: notImplemented('fs.open'),
       mkdir: notImplemented('fs.mkdir'),
       readdir: notImplemented('fs.readdir'),
