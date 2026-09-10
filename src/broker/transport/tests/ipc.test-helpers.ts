@@ -6,7 +6,7 @@
 
 import { vi } from 'vitest'
 import type { ControlEvent, PortLike, PortPair, PortTransport } from '../ipc.js'
-import type { Broker } from '../../broker-contracts.js'
+import type { Broker, RawFileStat } from '../../broker-contracts.js'
 import { createPortRegistry } from '../port-registry.js'
 import type { Datagram, Grant, Manifest, OrivonError, OrivonErrorCode } from '../../../contracts/index.js'
 import type { CloseReason, FailableTcpServer, FailableTcpSocket, FailableUdpSocket } from '../../handles/handle-contracts.js'
@@ -65,6 +65,11 @@ export function stubBroker (
     writeFile: (origin: string, path: string, data: Uint8Array) => Promise<void>
     /** SYNCHRONOUS, unlike every other override here (ADR-0016's Broker.fs.confineSync) -- no test in this suite calls it via handleControlRequest, since it has no CONTROL_CHANNEL method of its own (sync-fs.ts's own channel), but the stub still needs to satisfy Broker's shape. */
     confineSync: (origin: string, path: string) => string
+    mkdir: (origin: string, path: string, opts?: { recursive?: boolean }) => Promise<void>
+    readdir: (origin: string, path: string) => Promise<readonly string[]>
+    stat: (origin: string, path: string) => Promise<RawFileStat>
+    rm: (origin: string, path: string, opts?: { recursive?: boolean }) => Promise<void>
+    rename: (origin: string, from: string, to: string) => Promise<void>
     idPublicKey: (origin: string, opts: { curve: string }) => Promise<Uint8Array>
     idSign: (origin: string, opts: { curve: string, payload: Uint8Array }) => Promise<Uint8Array>
     registerApp: (origin: string, manifest: Manifest) => Promise<void>
@@ -123,6 +128,26 @@ export function stubBroker (
         calls.push({ method: 'fs.confineSync', origin, args: path })
         if (overrides.confineSync !== undefined) return overrides.confineSync(origin, path)
         throw new Error('this stub method was not configured for this test')
+      },
+      mkdir: async (origin, path, opts) => {
+        calls.push({ method: 'fs.mkdir', origin, args: { path, opts } })
+        await (overrides.mkdir?.(origin, path, opts) ?? notStubbed())
+      },
+      readdir: async (origin, path) => {
+        calls.push({ method: 'fs.readdir', origin, args: path })
+        return await (overrides.readdir?.(origin, path) ?? notStubbed())
+      },
+      stat: async (origin, path) => {
+        calls.push({ method: 'fs.stat', origin, args: path })
+        return await (overrides.stat?.(origin, path) ?? notStubbed())
+      },
+      rm: async (origin, path, opts) => {
+        calls.push({ method: 'fs.rm', origin, args: { path, opts } })
+        await (overrides.rm?.(origin, path, opts) ?? notStubbed())
+      },
+      rename: async (origin, from, to) => {
+        calls.push({ method: 'fs.rename', origin, args: { from, to } })
+        await (overrides.rename?.(origin, from, to) ?? notStubbed())
       }
     },
     id: {

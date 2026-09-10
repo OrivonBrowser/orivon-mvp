@@ -40,7 +40,8 @@ import { originFromSenderFrame } from '../policy/origin.js'
 import { fail } from '../errors.js'
 import { toFailureResponse } from './response-envelope.js'
 import {
-  envelopeId, isControlMethod, isFsReadFileParams, isFsWriteFileParams,
+  envelopeId, isControlMethod, isFsPathWithRecursiveParams, isFsReaddirParams,
+  isFsReadFileParams, isFsRenameParams, isFsStatParams, isFsWriteFileParams,
   isIdPublicKeyParams, isIdSignParams,
   isNetCloseParams, isNetConnectParams, isNetSetKeepAliveParams, isNetSetNoDelayParams,
   isNetUdpBindParams, isRequestEnvelope
@@ -54,7 +55,8 @@ import { LIMITS } from '../../contracts/index.js'
 
 export { CONTROL_CHANNEL, PORT_CHANNEL }
 export type {
-  ControlMethod, FsReadFileParams, FsWriteFileParams, IdPublicKeyParams, IdSignParams,
+  ControlMethod, FsPathWithRecursiveParams, FsReaddirParams, FsReadFileParams, FsRenameParams,
+  FsStatParams, FsWriteFileParams, IdPublicKeyParams, IdSignParams,
   NetConnectParams, NetCloseParams, NetSetKeepAliveParams, NetSetNoDelayParams, NetUdpBindParams
 } from './ipc-validation.js'
 export type {
@@ -160,6 +162,29 @@ async function dispatch (
     case 'fs.writeFile': {
       if (!isFsWriteFileParams(payload)) throw fail('invalid', 'fs.writeFile requires { path: string, data: Uint8Array }')
       await broker.fs.writeFile(origin, payload.path, payload.data)
+      return undefined
+    }
+    case 'fs.mkdir': {
+      if (!isFsPathWithRecursiveParams(payload)) throw fail('invalid', 'fs.mkdir requires { path: string, recursive?: boolean }')
+      await broker.fs.mkdir(origin, payload.path, payload.recursive === undefined ? undefined : { recursive: payload.recursive })
+      return undefined
+    }
+    case 'fs.readdir': {
+      if (!isFsReaddirParams(payload)) throw fail('invalid', 'fs.readdir requires { path: string }')
+      return await broker.fs.readdir(origin, payload.path)
+    }
+    case 'fs.stat': {
+      if (!isFsStatParams(payload)) throw fail('invalid', 'fs.stat requires { path: string }')
+      return await broker.fs.stat(origin, payload.path)
+    }
+    case 'fs.rm': {
+      if (!isFsPathWithRecursiveParams(payload)) throw fail('invalid', 'fs.rm requires { path: string, recursive?: boolean }')
+      await broker.fs.rm(origin, payload.path, payload.recursive === undefined ? undefined : { recursive: payload.recursive })
+      return undefined
+    }
+    case 'fs.rename': {
+      if (!isFsRenameParams(payload)) throw fail('invalid', 'fs.rename requires { from: string, to: string }')
+      await broker.fs.rename(origin, payload.from, payload.to)
       return undefined
     }
     // id.publicKey/sign carry no port transport of their own -- a plain
