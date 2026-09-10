@@ -11,10 +11,16 @@
 > **`net.udpBind`**, which returns a real `UdpSocket` whose datagrams cross a dedicated
 > `MessagePortMain`. Reachable does not mean usable in production: no origin holds a `udp.bind`
 > grant yet, because nothing grants anything until build step 4's permission prompt exists, so a
-> real page's call correctly answers `'denied'`. **Named here with no control method wired**:
-> `app.requestGrant`, `net.listen`, every `fs.*` method below `readFile`/
-> `writeFile` (`open`, `mkdir`, `readdir`, `stat`, `rm`, `rename`, `userSelected`) — none of these
-> has any related code anywhere in `src/broker/`. `orivon.id` is a partial exception: no `'id.'`
+> real page's call correctly answers `'denied'`.
+>
+> **Named here with no control method wired**:
+> `app.requestGrant`, `net.listen`, `net.connectSecure`, `fs.readFileSync`, every other `fs.*`
+> method below `readFile`/`writeFile` (`open`, `mkdir`, `readdir`, `stat`, `rm`, `rename`,
+> `userSelected`) -- none of these has any related code anywhere in `src/broker/`.
+> `net.connectSecure` and `fs.readFileSync` are new to this document as of 2026-09-10
+> (`ADR-0016`, `ADR-0017`): specified here and in `src/contracts/`, with no broker or shim
+> code yet -- that is Phase 2 of `planning/unattended-build-queue.md`, not this change.
+> `orivon.id` is a partial exception: no `'id.'`
 > case exists in `src/broker/transport/ipc.ts`'s control dispatch, so none of `orivon.id.*` is callable, but
 > the P-256 half of the key math it would need is real and tested (`src/broker/policy/derive.ts`'s
 > `derivePrivateScalar`, `derive-p256.ts`'s `derivePublicKey`, exercised by `derive.test.ts`'s
@@ -73,8 +79,36 @@
    backwards from what a security-relevant shim needs — a broker-side error should be *louder*
    than Node's default, not quieter. **Both traps are now binding requirements, not just
    anecdotes — see `handle-contracts.md` §What the shim must do.**
-2. **Everything is async.** Node constructs sockets synchronously; across an IPC boundary we
-   cannot. All entry points return Promises. The shim reconciles this by buffering.
+2. **Network operations are async, with no exception. `fs` gets exactly one narrow,
+   deliberate synchronous exception.**
+   > **Narrowed 2026-09-10, owner decision (`ADR-0016`), amended here rather than
+   > contradicted elsewhere -- a rule that says two things is worse than either
+   > (`ADR-0016`'s own Consequences section states this explicitly).** This rule originally
+   > read "Everything is async," full stop, reasoned entirely from `net`: Node constructs
+   > sockets synchronously, and across an IPC boundary we cannot, because a dial cannot
+   > complete without a DNS round trip that has no honest synchronous answer. That reasoning
+   > was then generalised to `fs`, where it does not hold -- the owner refused the
+   > "impossible" framing (`open-questions.md` A94) -- and the corrected text below draws the
+   > boundary the original sentence blurred.
+
+   **`net` stays exactly as before: every `orivon.net.*` entry point returns a Promise, no
+   exception.** There is no `connect` event and no observable "connecting" state -- the
+   resolution of the acquisition promise *is* the connect event. The shim reconciles this by
+   buffering.
+
+   **`fs` gains one synchronous entry point, `readFileSync`.** Permitted because what an
+   async-only `fs` costs is not speed but presence: `readFileSync`/`existsSync`-shaped calls
+   are how a ported Node program reads its own configuration, typically from inside a
+   dependency the porting developer does not control, and the app throws before it ever
+   renders rather than merely running a few milliseconds slower. The mechanism is the
+   runtime's synchronous renderer-to-main channel today; an `Atomics.wait`-in-a-Worker route
+   is deferred, not rejected, as a future swap for the identical interface -- an app calling
+   `readFileSync` cannot tell which one answered it, and never will be able to.
+
+   This is not a general licence to add more synchronous calls where they would be
+   convenient. `readFileSync` is the one call a ported app cannot do without at startup; the
+   blocking cost is bounded and visible there, and a chatty use of it is the app's own cost
+   to pay, not a reason to widen the exception further.
 3. **Handles, not ambient authority.** `connect()` returns a handle; later operations
    reference the handle. Capability is checked once, at acquisition. This avoids TOCTOU and
    avoids re-authorising on every call.
@@ -122,7 +156,10 @@ Served alongside the app's frontend assets and fetched before first run.
         "connect": ["*:*"],           // host:port patterns, "*" wildcard
         "listen":  ["6881-6889"]      // port ranges
       },
-      "udp": { "bind": ["6881-6889"], "send": ["*:*"] }
+      "udp": { "bind": ["6881-6889"], "send": ["*:*"] },
+      "https": { "connect": ["*:*"] }   // TLS terminated by the broker (ADR-0017); "*:*" is
+                                         // UNLIMITED HTTPS and must render as visibly wide as
+                                         // tcp.connect's own "*:*" does (A100)
     },
     "fs": { "quotaBytes": 53687091200 },
     "id": { "curves": ["secp256k1"] },
@@ -185,13 +222,17 @@ orivon.app.grants()                  // => Grant[]  (what was actually granted)
 orivon.app.requestGrant(cap)         // => Promise<boolean>  (may prompt the user)
 
 // --- net ---
-orivon.net.connect({ host, port })   // => Promise<TcpSocket>
+orivon.net.connect({ host, port })       // => Promise<TcpSocket>
+orivon.net.connectSecure({ host, port }) // => Promise<TcpSocket>  TLS terminated in the broker
+                                          //   (ADR-0017); same handle shape as connect(), a
+                                          //   SEPARATE grant (https.connect, not tcp.connect)
 orivon.net.listen({ port })          // => Promise<TcpServer>   // .connections: ReadableStream<TcpSocket>
 orivon.net.udpBind({ port })         // => Promise<UdpSocket>
 
 // --- fs, rooted at the app's files directory ---
-orivon.fs.readFile(path, opts)
-orivon.fs.writeFile(path, data, opts)
+orivon.fs.readFile(path)             // => Promise<Uint8Array>  byte-oriented, no encoding option (A12)
+orivon.fs.writeFile(path, data)      // => Promise<void>
+orivon.fs.readFileSync(path)         // => Uint8Array  the one synchronous call (ADR-0016); genuinely blocks
 orivon.fs.open(path, flags)          // => Promise<FileHandle>
 orivon.fs.mkdir / readdir / stat / rm / rename
 orivon.fs.userSelected(opts)         // => OS file picker; user's choice IS the consent
@@ -215,6 +256,32 @@ orivon.id.requestIdentity({ kind })  // => Promise<IdentityHandle | null> — co
 > Decrypt (`nip04`/`nip44`), if offered at all, is a **separate grant** from signing.
 > Derive a distinct secret per `(label, curve)` with length-prefixed HKDF: one scalar reused
 > across two schemes voids the security argument for both.
+
+### Secure connect, and why routed `fetch` needs no capability of its own
+
+`net.connectSecure` above is the whole of ADR-0017's capability surface. The other two parts
+of that decision -- the page's own `fetch()` reaching a granted host, and an app being able to
+set headers a page normally cannot -- are **compatibility-layer work, not a new capability**,
+confirmed rather than assumed:
+
+- The FreeTube reconnaissance (`planning/freetube-port-recon.md`) found that app's entire
+  network layer is 32 ordinary `fetch(` call sites, made to work only because its Electron
+  main process rewrites outgoing headers (`Origin`, `Referer`) before they leave the process.
+  That rewriting has to happen somewhere trusted; it does not need a new grantable capability
+  to do it, because the trust boundary it needs already exists at `net.connectSecure` -- an
+  HTTP/1.1 client built over that byte-oriented socket can set any header on the request it
+  constructs, the same way `orivon-node-shim`'s `http`/`https` modules will (Phase 3.3,
+  `planning/unattended-build-queue.md`).
+- Routing the page's global `fetch` to that HTTP client for granted hosts, and reconstructing
+  a `Response` from what comes back, is `orivon-node-shim`/the compatibility layer's job
+  (Phase 3.4) -- the same "bytes and streams underneath, familiar shapes one layer up" split
+  ADR-0008 already draws for `net` and `fs`. Nothing about *routing* `fetch` or *choosing a
+  header* needs the broker to know what HTTP is; it only needs to hand back a plaintext
+  duplex for a hostname it has already verified, which `connectSecure` already does.
+
+**So: no `orivon.*` entry point for `fetch` or for HTTP headers, and none is missing.** This
+is a confirmed finding for Phase 1, not an oversight -- see this repository's build queue,
+Phase 3 items 3.3-3.4, for where the HTTP client and the `fetch` routing are actually built.
 
 ### Two kinds of identity — correction found in validation
 

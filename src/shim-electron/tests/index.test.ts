@@ -14,13 +14,15 @@ const MANIFEST: Manifest = {
 /** A full Orivon fake -- index.ts wires the real global, so this test exercises that wiring, not a Pick<>. */
 function fakeOrivon (): Orivon {
   const unused = async (): Promise<never> => { throw new Error('unused in this test') }
+  const unusedSync = (): never => { throw new Error('unused in this test') }
   return {
     version: 0,
     app: { manifest: async () => MANIFEST, grants: async () => [], requestGrant: async () => false },
-    net: { connect: unused, listen: unused, udpBind: unused },
+    net: { connect: unused, connectSecure: unused, listen: unused, udpBind: unused },
     fs: {
       readFile: async () => new Uint8Array(),
       writeFile: async () => {},
+      readFileSync: unusedSync,
       open: unused,
       mkdir: async () => {},
       readdir: async () => [],
