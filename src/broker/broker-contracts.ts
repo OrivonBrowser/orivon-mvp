@@ -166,9 +166,22 @@ export interface ListenedServer {
  */
 export type Listen = (ranges: readonly PortRange[], signal: AbortSignal) => Promise<ListenedServer>
 
+/** What `fs.stat` reports. Mirrors `contracts/handles.ts`'s `FileStat` exactly -- one shape, not redeclared. */
+export interface RawFileStat {
+  size: number
+  isFile: boolean
+  isDirectory: boolean
+  mtimeMs: number
+}
+
 /**
  * What `orivon.fs` needs from the real filesystem. `policy/paths.ts` stays
  * pure; this is the one seam where confinement's decision touches disk.
+ *
+ * Every method below receives an ALREADY-CONFINED absolute path (or two, for
+ * `rename`) -- `./fs-capability.ts` is the only caller, and it never hands
+ * this interface anything that has not already passed `confinePath`. This
+ * layer's job is raw I/O, nothing else.
  */
 export interface BrokerFs {
   /**
@@ -185,6 +198,12 @@ export interface BrokerFs {
   realpathSync(path: string): string
   readFile(path: string): Promise<Uint8Array>
   writeFile(path: string, data: Uint8Array): Promise<void>
+  mkdir(path: string, opts?: { recursive?: boolean }): Promise<void>
+  readdir(path: string): Promise<readonly string[]>
+  stat(path: string): Promise<RawFileStat>
+  /** `force` is never exposed above this layer -- a missing path surfaces ENOENT, mapped to `notFound`, the same as every other fs call. */
+  rm(path: string, opts?: { recursive?: boolean }): Promise<void>
+  rename(from: string, to: string): Promise<void>
 }
 
 /**
@@ -288,6 +307,34 @@ export interface Broker {
      * is `async`-shaped and this call, by ADR-0016's own design, is not.
      */
     confineSync(origin: string, path: string): string
+    /**
+     * Confined the same way `readFile`/`writeFile` are (`../fs-capability.ts`'s
+     * `confineForOrigin`) and run under the same per-origin in-flight budget
+     * (`runFsIo`). `recursive: true` matches `node:fs/promises.mkdir`'s own
+     * flag; omitted or `false`, a missing parent yields `notFound` (mapped
+     * ENOENT), the same failure shape every other fs call already produces.
+     */
+    mkdir(origin: string, path: string, opts?: { recursive?: boolean }): Promise<void>
+    /** Confined and budgeted like `readFile`. Entry NAMES only, never full paths -- matching `contracts/capability-api.ts`'s `Promise<readonly string[]>`. */
+    readdir(origin: string, path: string): Promise<readonly string[]>
+    /** Confined and budgeted like `readFile`. Mirrors `contracts/handles.ts`'s `FileStat` shape exactly. */
+    stat(origin: string, path: string): Promise<RawFileStat>
+    /**
+     * Confined and budgeted like `writeFile`, but reserves no quota: quota
+     * tracks bytes WRITTEN (`fs.writeFile`'s own doc), and deleting is never
+     * a write. `recursive: true` matches `node:fs/promises.rm`; `force` is
+     * never exposed -- a missing path yields `notFound`, same as every other
+     * fs call.
+     */
+    rm(origin: string, path: string, opts?: { recursive?: boolean }): Promise<void>
+    /**
+     * BOTH `from` AND `to` are independently confined before anything on
+     * disk moves -- see `../fs-capability.ts`'s own doc for why a check on
+     * `from` alone would turn this into an arbitrary-write primitive. Runs
+     * under `from`'s in-flight budget slot (the same grant authorises both
+     * paths, so either would do).
+     */
+    rename(origin: string, from: string, to: string): Promise<void>
   }
   /**
    * The APP KEYS half of capability-api.ts's "Two kinds of identity" --

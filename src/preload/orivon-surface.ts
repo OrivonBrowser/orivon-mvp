@@ -7,7 +7,7 @@ import { createDatagramPort } from './datagram-port.js'
 import type { PortLike } from './socket-port.js'
 import { installOrivon } from './main-world-socket.js'
 import type { MainWorldSocketBridge, MainWorldUdpBridge } from './main-world-socket.js'
-import type { Grant, Manifest, OrivonErrorCode } from '../contracts/index.js'
+import type { FileStat, Grant, Manifest, OrivonErrorCode } from '../contracts/index.js'
 import { LIMITS } from '../contracts/index.js'
 import type { RequestEnvelope, ResponseEnvelope } from '../contracts/ipc.js'
 import { toOrivonError } from './orivon-error.js'
@@ -275,6 +275,28 @@ async function fsWriteFile (path: string, data: Uint8Array): Promise<void> {
   await call('fs.writeFile', { path, data }, TIMEOUT_MS.fs)
 }
 
+// The extended fs surface (queue item 2.1). No main-world stream wrapping
+// needed -- exactly fs.readFile/writeFile's own reasoning above -- so these
+// four are wired the same way, reaching `call()` directly rather than
+// through the executeInMainWorld dance net.connect needs.
+//
+// `opts?.recursive` is flattened to a bare `recursive` field (never an
+// object holding it) on the wire: `exactOptionalPropertyTypes` treats an
+// explicit `recursive: undefined` as different from omitting the key
+// entirely, exactly like `setKeepAlive`'s `initialDelayMs` above -- so the
+// key is included only when the caller actually passed one.
+async function fsMkdir (path: string, opts?: { recursive?: boolean }): Promise<void> {
+  const payload = opts?.recursive === undefined ? { path } : { path, recursive: opts.recursive }
+  await call('fs.mkdir', payload, TIMEOUT_MS.fs)
+}
+async function fsReaddir (path: string): Promise<readonly string[]> { return await call('fs.readdir', { path }, TIMEOUT_MS.fs) }
+async function fsStat (path: string): Promise<FileStat> { return await call('fs.stat', { path }, TIMEOUT_MS.fs) }
+async function fsRm (path: string, opts?: { recursive?: boolean }): Promise<void> {
+  const payload = opts?.recursive === undefined ? { path } : { path, recursive: opts.recursive }
+  await call('fs.rm', payload, TIMEOUT_MS.fs)
+}
+async function fsRename (from: string, to: string): Promise<void> { await call('fs.rename', { from, to }, TIMEOUT_MS.fs) }
+
 /**
  * ADR-0016's one synchronous call. `ipcRenderer.sendSync` blocks THIS
  * RENDERER until ../broker/transport/sync-fs.ts's main-process handler
@@ -328,7 +350,16 @@ function exposeFallback (): void {
   contextBridge.exposeInMainWorld('orivon', {
     version: 0,
     app: { manifest: appManifest, grants: appGrants },
-    fs: { readFile: fsReadFile, writeFile: fsWriteFile, readFileSync: fsReadFileSyncThrowing },
+    fs: {
+      readFile: fsReadFile,
+      writeFile: fsWriteFile,
+      readFileSync: fsReadFileSyncThrowing,
+      mkdir: fsMkdir,
+      readdir: fsReaddir,
+      stat: fsStat,
+      rm: fsRm,
+      rename: fsRename
+    },
     id: {
       publicKey: async (opts: { curve: string }) => await idPublicKey(opts.curve),
       sign: async (opts: { curve: string, payload: Uint8Array }) => await idSign(opts.curve, opts.payload)
@@ -365,6 +396,11 @@ export function exposeOrivon (): void {
     fsReadFile,
     fsWriteFile,
     fsReadFileSync: fsReadFileSyncEnvelope,
+    fsMkdir,
+    fsReaddir,
+    fsStat,
+    fsRm,
+    fsRename,
     idPublicKey,
     idSign,
     netConnect: netConnectBridge,
