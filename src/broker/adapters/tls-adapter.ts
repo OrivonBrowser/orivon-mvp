@@ -18,9 +18,12 @@ import { DIAL_TIMEOUT_MS, destroySocket } from './node-adapters.js'
 import { fail } from '../errors.js'
 
 /**
- * Extra trust anchors for the handshake, ON TOP of the runtime's own default
- * certificate store -- Node merges `ca` with the built-in roots rather than
- * replacing them.
+ * Trust anchors for the handshake. **Supplying this REPLACES the runtime's
+ * built-in root store; it does not add to it.** Measured, not assumed: a real
+ * public host that handshakes fine with no `ca` fails with
+ * `UNABLE_TO_GET_ISSUER_CERT_LOCALLY` the moment an unrelated CA is passed.
+ * So anything that reached this option in production would not be widening
+ * trust, it would be switching every public certificate off.
  *
  * A TESTING SEAM ONLY. `DialSecure` (../broker-contracts.ts) takes no such
  * option, so nothing between an app and this file can ever reach it: not
