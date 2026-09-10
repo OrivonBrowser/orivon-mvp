@@ -1,7 +1,11 @@
 # `src/broker/transport/` — how a page reaches the broker, and how bytes move
 
 **What lives here.** The Electron IPC front door, its message validation, the per-origin rate
-limiter, and the credit-window byte pumps that relay a socket over a dedicated `MessagePortMain`.
+limiter, the credit-window byte pumps that relay a socket over a dedicated `MessagePortMain`, and
+`orivon.fs.readFileSync`'s synchronous sibling to all of that (`sync-fs.ts`, `sync-fs-grants.ts`,
+`sync-fs-policy.ts`, ADR-0016) — a second, `ipcMain.on`/`event.returnValue` channel
+(`SYNC_CONTROL_CHANNEL`) rather than a method on `CONTROL_CHANNEL`, because it never returns a
+Promise the way every `ipcMain.handle` method here does.
 
 **What it depends on.** `electron`, [`../index.ts`](../index.ts), [`../handles/`](../handles/),
 [`../adapters/`](../adapters/), [`../grants/`](../grants/), [`../policy/origin.ts`](../policy/origin.ts)
@@ -57,4 +61,23 @@ control methods deliberately: `fs`/`net` dispatch is real I/O with no measured c
 either, so a tighter, method-specific limit risks `'limit'` becoming a routine error for a busy
 app before any evidence justifies it. This leaves a fairness risk A38 names but does not solve: a
 burst of small file reads could still starve an unrelated `app.grants()` poll once `fs`/`net` see
-real traffic.
+real traffic. `registerSyncFsIpc` shares this SAME limiter instance rather than a second one, so
+`fs.readFileSync` cannot be used to dodge it by moving traffic to a channel with no budget of its
+own.
+
+**`sync-fs.ts`/`sync-fs-grants.ts`/`sync-fs-policy.ts` exist because `../index.ts`'s own
+`confineForOrigin` (the grant check plus path confinement `fs.readFile`/`writeFile` share) has no
+exported hook, and `../index.ts` was a concurrently-edited, unmergeable file when this landed
+(`stream/broker-37-secure-connect`, `docs/development/parallel-work.md`) — see `sync-fs.ts`'s own
+header.** `sync-fs-policy.ts` reuses `../policy/paths.ts`'s `confinePath` directly (zero
+duplication: it is the exact function `confineForOrigin` calls) and reads real bytes via
+`node:fs`'s own `readFileSync`, since the async `BrokerFs.readFile` this directory's `deps.fs`
+already builds has no synchronous counterpart to reuse either. The one piece that could not be
+reused by import is `GrantLedger.currentGrant` — private inside `../index.ts`'s closure — so
+`sync-fs-grants.ts`'s `wrapBrokerForSyncFsGrants` mirrors "does this origin hold a live `fs`
+grant" from `Broker.grant`/`revoke`'s own already-public, already-resolved return values instead;
+that file's header has the full argument for why this is a safe passive mirror rather than a
+second, independently-decided source of grant truth. **The intended fix, once the concurrent lane
+merges, is a small additive method on `Broker` (or on `../index.ts`'s private
+`confineForOrigin`, exported) that this mirror can then be deleted in favour of** — flagged in
+this lane's own PR body, not filed here as a fresh A-number.

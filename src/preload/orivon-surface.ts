@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { CONTROL_CHANNEL, PORT_CHANNEL } from '../main/channels.js'
+import { CONTROL_CHANNEL, PORT_CHANNEL, SYNC_CONTROL_CHANNEL } from '../main/channels.js'
 import { createSocketBridge } from './socket-bridge.js'
 import type { IpcRendererLike } from './socket-bridge.js'
 import { createSocketPort } from './socket-port.js'
@@ -17,11 +17,15 @@ import { toOrivonError } from './orivon-error.js'
 // is shaped the way it is (the two-world split, the CONTROL_CHANNEL import
 // source, what is and isn't wired yet).
 //
-// Nothing below hands the page anything but a Promise-returning closure --
-// `call()` is the only thing that ever touches `ipcRenderer` (the raw
+// Nothing below hands the page anything but a Promise-returning closure,
+// with ONE exception -- `fsReadFileSync`, ADR-0016's deliberately narrow
+// synchronous call, still never touches `ipcRenderer` directly from the page
+// (it stays a plain proxied closure, exactly like every other method here).
+// `call()` is the only thing that touches `ipcRenderer.invoke` (the raw
 // MessagePortMain/ipcRenderer never crossing into the main world is this
-// whole directory's rule, not just this file's). Every call carries an
-// explicit timeout (../contracts/ipc.ts's rule 2) -- see each budget below.
+// whole directory's rule, not just this file's). Every call through `call()`
+// carries an explicit timeout (../contracts/ipc.ts's rule 2) -- see each
+// budget below; `fsReadFileSync` carries none, by design (see its own doc).
 const TIMEOUT_MS = {
   /** app.manifest / app.grants: broker-local reads, no I/O of their own. */
   metadata: 5_000,
@@ -232,13 +236,39 @@ function buildUdpBridgeResult (descriptor: UdpSocketDescriptor, port: PortLike):
 // 3). id.publicKey/sign need no main-world stream wrapping (net.connect's
 // own reason for the executeInMainWorld dance) -- a plain Uint8Array in,
 // Uint8Array out, exactly fs.readFile/writeFile's shape -- so they are wired
-// identically to those two, not to net.
+// identically to those two, not to net. fsReadFileSync just below is a
+// seventh, wired the same way into both exposure sites, but built
+// differently: it is the one call() cannot serve, since call() always
+// returns a Promise (../../contracts/ipc.ts's rule 2, a required timeout on
+// every reply) and this one, by design, never does.
 async function appManifest (): Promise<Manifest> { return await call('app.manifest', undefined, TIMEOUT_MS.metadata) }
 async function appGrants (): Promise<readonly Grant[]> { return await call('app.grants', undefined, TIMEOUT_MS.metadata) }
 async function fsReadFile (path: string): Promise<Uint8Array> { return await call('fs.readFile', { path }, TIMEOUT_MS.fs) }
 async function fsWriteFile (path: string, data: Uint8Array): Promise<void> {
   await call('fs.writeFile', { path, data }, TIMEOUT_MS.fs)
 }
+
+/**
+ * ADR-0016's one synchronous call. `ipcRenderer.sendSync` blocks THIS
+ * RENDERER until ../broker/transport/sync-fs.ts's main-process handler
+ * replies -- the required behaviour, not a bug, so this deliberately has no
+ * timeout wrapper the way `call()` above does: a timeout on a call that
+ * cannot be cancelled could only ever lie about a reply that has not
+ * arrived yet, and `sync-fs.ts`'s own header explains why nothing on this
+ * path may suspend in the first place.
+ *
+ * Throws an OrivonError-shaped object rather than rejecting -- there is no
+ * Promise on this path to reject -- built the same way `call()` builds one,
+ * so an app's `catch` sees an identical shape whichever `fs` method failed.
+ */
+function fsReadFileSync (path: string): Uint8Array {
+  const response = ipcRenderer.sendSync(SYNC_CONTROL_CHANNEL, { path }) as ResponseEnvelope<Uint8Array>
+  if (response.ok) return response.result
+  throw toOrivonError(response.code, response.platformCode === undefined
+    ? { message: response.message }
+    : { message: response.message, platformCode: response.platformCode })
+}
+
 async function idPublicKey (curve: string): Promise<Uint8Array> { return await call('id.publicKey', { curve }, TIMEOUT_MS.id) }
 async function idSign (curve: string, payload: Uint8Array): Promise<Uint8Array> {
   return await call('id.sign', { curve, payload }, TIMEOUT_MS.id)
@@ -249,7 +279,7 @@ function exposeFallback (): void {
   contextBridge.exposeInMainWorld('orivon', {
     version: 0,
     app: { manifest: appManifest, grants: appGrants },
-    fs: { readFile: fsReadFile, writeFile: fsWriteFile },
+    fs: { readFile: fsReadFile, writeFile: fsWriteFile, readFileSync: fsReadFileSync },
     id: {
       publicKey: async (opts: { curve: string }) => await idPublicKey(opts.curve),
       sign: async (opts: { curve: string, payload: Uint8Array }) => await idSign(opts.curve, opts.payload)
@@ -285,6 +315,7 @@ export function exposeOrivon (): void {
     appGrants,
     fsReadFile,
     fsWriteFile,
+    fsReadFileSync,
     idPublicKey,
     idSign,
     netConnect: netConnectBridge,
