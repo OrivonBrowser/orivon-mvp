@@ -38,13 +38,19 @@ export interface BrokerCall { readonly method: string, readonly origin: string, 
  * deferring to `overrides` (or rejecting "not stubbed" if the test never
  * asked for that method to succeed). `grant`/`revoke` are unused by ipc.ts
  * -- see broker/index.ts's own doc on why they have no orivon.*
- * counterpart -- and are never expected to be called here.
+ * counterpart -- and are never expected to be called by anything ipc.ts
+ * itself drives.
  *
  * `registerApp`/`versionFloorFor`/`rollbackAcknowledgedVersionFor`/
  * `acknowledgeRollback` are ALSO unreachable via orivon.* (same reason), but
  * app-install.test.ts's `installFromHint` calls all four directly as the
  * app loader's own seam into the broker -- stubbable here rather than a
- * second full fake Broker (code-guidelines.md Rule 3).
+ * second full fake Broker (code-guidelines.md Rule 3). `grant`/`revoke`
+ * default to throwing (unchanged), but are now ALSO overridable: request-
+ * grant.test.ts's `requestGrant` (../../../main/request-grant.ts) is the
+ * app loader's own seam's sibling -- item 4.1's "the app loader and the
+ * permission-prompt UI" this file's own doc on `Broker.grant` names as its
+ * only legitimate callers.
  */
 export function stubBroker (
   calls: BrokerCall[],
@@ -65,6 +71,8 @@ export function stubBroker (
     versionFloorFor: (origin: string) => Promise<string>
     rollbackAcknowledgedVersionFor: (origin: string) => Promise<string | undefined>
     acknowledgeRollback: (origin: string, version: string) => Promise<void>
+    grant: Broker['grant']
+    revoke: Broker['revoke']
   }> = {}
 ): Broker {
   const notStubbed = async (): Promise<never> => { throw new Error('this stub method was not configured for this test') }
@@ -143,8 +151,16 @@ export function stubBroker (
       calls.push({ method: 'acknowledgeRollback', origin, args: version })
       await (overrides.acknowledgeRollback?.(origin, version) ?? notStubbed())
     },
-    grant: () => { throw new Error('grant is not reachable via orivon.* and should never be called here') },
-    revoke: async () => { throw new Error('revoke is not reachable via orivon.* and should never be called here') }
+    grant: async (origin, capability, patterns) => {
+      calls.push({ method: 'grant', origin, args: { capability, patterns } })
+      if (overrides.grant !== undefined) return await overrides.grant(origin, capability, patterns)
+      throw new Error('grant is not reachable via orivon.* and this stub was not configured for a test that calls it directly')
+    },
+    revoke: async (origin, grantId) => {
+      calls.push({ method: 'revoke', origin, args: grantId })
+      if (overrides.revoke !== undefined) { await overrides.revoke(origin, grantId); return }
+      throw new Error('revoke is not reachable via orivon.* and this stub was not configured for a test that calls it directly')
+    }
   }
 }
 

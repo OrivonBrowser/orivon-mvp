@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
-  createSubsystemContext, criticalFailureMessage, publishBroker, publishLoader, runAfterReady, runBeforeReady,
+  createSubsystemContext, criticalFailureMessage, publishBroker, publishLoader, publishRequestGrant, runAfterReady, runBeforeReady,
   type Subsystem
 } from '../registry.js'
 import type { App } from 'electron'
 import type { Broker } from '../../broker/broker-contracts.js'
 import type { Loader } from '../../loader/index.js'
+import type { CapabilityRequest } from '../../contracts/index.js'
 
 // SubsystemContext's App and Broker fields are both type-only imports,
 // erased by verbatimModuleSyntax, so plain objects stand in for both below.
@@ -15,6 +16,7 @@ const fakeApp = {} as unknown as App
 const ctx = createSubsystemContext(fakeApp)
 const fakeBroker = { marker: 'the-one-broker' } as unknown as Broker
 const fakeLoader = { marker: 'the-one-loader' } as unknown as Loader
+const fakeRequestGrant = async (_origin: string, _request: CapabilityRequest): Promise<boolean> => true
 
 describe('runBeforeReady', () => {
   it('runs every beforeReady in list order', () => {
@@ -205,6 +207,41 @@ describe('publishLoader', () => {
     publishLoader(fresh, fakeLoader)
     expect(fresh.broker).toBe(fakeBroker)
     expect(fresh.loader).toBe(fakeLoader)
+  })
+})
+
+// Same guarantee as publishBroker/publishLoader, same reason: two
+// independently-published requestGrant functions could close over two
+// different Broker instances, splitting "what was actually granted" the
+// same way a second Broker would.
+describe('publishRequestGrant', () => {
+  it('sets ctx.requestGrant so a later reader sees it', () => {
+    const fresh = createSubsystemContext(fakeApp)
+    publishRequestGrant(fresh, fakeRequestGrant)
+    expect(fresh.requestGrant).toBe(fakeRequestGrant)
+  })
+
+  it('throws if a requestGrant function was already published, naming the hazard', () => {
+    const fresh = createSubsystemContext(fakeApp)
+    publishRequestGrant(fresh, fakeRequestGrant)
+    const second = async (): Promise<boolean> => false
+    expect(() => publishRequestGrant(fresh, second)).toThrow(/Broker instance/)
+    expect(fresh.requestGrant).toBe(fakeRequestGrant)
+  })
+
+  it('leaves ctx.requestGrant undefined when nothing ever publishes', () => {
+    const fresh = createSubsystemContext(fakeApp)
+    expect(fresh.requestGrant).toBeUndefined()
+  })
+
+  it('is independent of the broker and loader slots', () => {
+    const fresh = createSubsystemContext(fakeApp)
+    publishBroker(fresh, fakeBroker)
+    publishLoader(fresh, fakeLoader)
+    publishRequestGrant(fresh, fakeRequestGrant)
+    expect(fresh.broker).toBe(fakeBroker)
+    expect(fresh.loader).toBe(fakeLoader)
+    expect(fresh.requestGrant).toBe(fakeRequestGrant)
   })
 })
 
