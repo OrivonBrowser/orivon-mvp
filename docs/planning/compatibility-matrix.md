@@ -1,25 +1,37 @@
 # App compatibility matrix
 
-**What is wired up right now, and the cheapest next lever.** Derived 2026-09-10 by reading the
-tree (queue item 5.4, following seven merged PRs, #107 and #108-#113).
+**What is wired up right now, and the cheapest next lever.** Derived 2026-09-10 (second pass of
+the day) by reading the tree at `61fcfca`, after eighteen further merged PRs (#118-#135).
 [`../architecture/app-compatibility.md`](../architecture/app-compatibility.md) owns *why the
 tiers exist*; this file owns *what works today*. If they disagree, that one is the design and
 this one is stale.
 
-**What changed since the 2026-09-09 derivation, cell by cell:** Table 1 -- `net.listen`'s
-Broker cell (❌->✅, #109) and `id.publicKey`/`id.sign`'s Broker and Page cells (❌❌->✅✅,
-#112). Table 2 -- the Node-stdlib row's Status (a hand-written `util` and the alias map now
-exist, #111); the `electron` row and its explainer table rewritten now that
-[`src/shim-electron/`](../../src/shim-electron/) exists (#108, closes A95); the web-ecosystem
-row's note sharpened (A111). Table 3 -- the "owned by nobody" framing on the polyfill row is
-gone now that the shim README claims that scope; a new `util` row (✅, split out of the
-polyfill row rather than marked done); the `electron module` row now ⚠️ partial; the
-synchronous-`fs` and TLS/`https` rows move from "undecided"/"unfiled" to "decided, not yet
-built" (A94, A96, both resolved 2026-09-09 but their ADR is still unwritten). Table 4 -- rows
-2, 4, 5, 6, 7 replaced with closure notes naming their PRs; row 3's lever changed to match A98;
-row 8 moved out of "still unfiled" now that A96 resolved it. **Also found and fixed while
-re-deriving, unrelated to tonight's PRs:** Table 1's `app.manifest`/`grants` Page cell was
-mislabeled ❌ -- the call is wired and e2e-proven reachable from a real page.
+**What changed since this morning's derivation, cell by cell.** The two ADRs the previous pass
+kept calling "drafted, awaiting owner authorship" were authored and merged
+([ADR-0016](../decisions/ADR-0016-synchronous-file-reads-are-permitted.md),
+[ADR-0017](../decisions/ADR-0017-orivon-owns-the-app-http-path.md), #117), and almost every row
+that was blocked behind them moved:
+
+- **Table 1.** Three new rows -- `net.connectSecure` (✅✅✅✅, #126), `fs.readFileSync`
+  (✅✅✅✅, #124) and `dns.lookup` (decided, refusing shim only, A107). `fs.mkdir/readdir/stat/
+  rm/rename` ❌❌❌ -> ✅✅✅ (#132) and the PROVISIONAL markers are gone; `fs.open` split out of
+  that row because it alone is still unbuilt. The whole **Node shim column** filled in for
+  `net.connect`, `net.connectSecure`, `net.udpBind` and every `fs` row (#135, #131).
+  `app.requestGrant` ❌ -> ⚠️: the mechanism and the prompt exist (#127, #130), nothing calls
+  them. `net.listen`'s Page ❌ now has a filed reason rather than a deferral -- A114.
+- **Table 2.** The Node-stdlib family ❌ -> ⚠️: `net` (client), `dgram`, `fs`, `http`, `https`
+  and the eight core polyfill packages are in, `net.createServer` refuses.
+- **Table 3.** Four rows closed: the polyfill row (the owner approved all eight packages, and
+  `package.json` now carries them -- it had zero runtime dependencies this morning), the
+  `net`/`dgram`/`fs` shapes row, synchronous `fs`, and both HTTP rows. Two `needs T1` rows are
+  now built rather than merely decided.
+- **Table 4.** Rows 3, 5, 6 and 8 closed; row 1 rewritten, because the blocker is no longer the
+  absence of a prompt but the absence of a caller.
+
+**Three fresh gaps this pass found, none of them regressions:** A112 (the synchronous `fs` path
+does not share the async path's per-origin fairness budget), A113 (a thrown `OrivonError` loses
+its `code` on the `exposeFallback` path, so apps cannot branch on the failure enum) and A114
+(`net.listen` cannot reach a page without a nested-port IPC shape).
 
 Two axes, and they fail in completely different ways:
 
@@ -46,29 +58,33 @@ every `dup` row automatically**; six rows survive it, and four of those were nev
 
 | Capability | Spec'd | Broker | Page | Node shim | Note |
 |---|:--:|:--:|:--:|:--:|---|
-| `net.connect` (TCP out) | ✅ | ✅ | ✅ | ❌ | Both stream halves wired, e2e-verified |
-| `net.udpBind` + send/recv | ✅ | ✅ | ✅ | ❌ | Landed most recently |
-| `net.listen` (TCP in) | ✅ | ✅ | ❌ | ❌ | Broker built with real accepted-socket handles, the unsigned-app port rules and a revocation cascade, unit-tested (`src/broker/tests/index-listen.test.ts`) -- #109. Deliberately not wired to the page pending a nested-port-delivery design: no `call('net.listen', ...)` exists in `orivon-surface.ts` |
-| `fs.readFile` / `writeFile` | ✅ | ✅ | ✅ | ❌ | Confined to app dir |
-| `fs.open/mkdir/readdir/stat/rm/rename` | ⚠️ | ❌ | ❌ | ❌ | Signatures still marked PROVISIONAL in `capability-api.ts`. **A12 resolved 2026-09-09** (owner: byte-oriented, no encoding option -- exactly the reading already implemented), but the Phase 1 contracts PR that removes the markers has not landed in this tree, and `open`/`mkdir`/`readdir`/`stat`/`rm`/`rename` themselves remain unbuilt |
-| `fs.userSelected` (picker) | ✅ | ❌ | ❌ | ➖ | The only route outside the app dir. Backs `dialog.*`, not a Node API |
-| `id.publicKey` / `sign` | ✅ | ✅ | ✅ | ➖ | Broker (`src/broker/id-capability.ts`), transport and preload (`orivon-surface.ts`, `main-world-socket.ts`) wired end to end, e2e-verified (`test/e2e-id-capability.test.ts`) -- #112. P-256 ECDSA only; secp256k1/Schnorr is the separate A44 question |
-| `id.requestIdentity` | ✅ | ❌ | ❌ | ➖ | Needs the connect prompt (build step 4). `src/nostr/nip07.ts`'s real wiring calls this and cannot reach a page until it exists -- A111 |
-| `app.manifest` / `grants` | ✅ | ✅ | ✅ | ➖ | **Mislabel found and corrected 2026-09-10:** the previous Page cell (❌) was wrong -- `call('app.manifest', ...)`/`call('app.grants', ...)` are wired and exposed on `window.orivon` in both `orivon-surface.ts` code paths, and a real page calling `orivon.app.grants()` is e2e-proven (`test/e2e-capability-boundary.test.ts`). Backs Electron's `app.*` -- see Table 2 |
-| `app.requestGrant` | ✅ | ❌ | ❌ | ➖ | **Step 4.** No production caller of `broker.grant()` exists |
+| `net.connect` (TCP out) | ✅ | ✅ | ✅ | ✅ | Both stream halves wired, e2e-verified. Node shape in [`node-net-socket.ts`](../../src/shim/node-net-socket.ts) (#135) |
+| `net.connectSecure` (TLS out) | ✅ | ✅ | ✅ | ✅ | TLS terminated on the trusted side per [ADR-0017](../decisions/ADR-0017-orivon-owns-the-app-http-path.md). Broker + IPC + page (#126); Node `https`/`http` clients on top (#131) |
+| `net.udpBind` + send/recv | ✅ | ✅ | ✅ | ✅ | Node shape in [`node-dgram-socket.ts`](../../src/shim/node-dgram-socket.ts) (#135) |
+| `net.listen` (TCP in) | ✅ | ✅ | ❌ | ❌ | Broker built with real accepted-socket handles, unsigned-app port rules and a revocation cascade (#109). **Still not on the page**, and now with a filed reason: delivering `TcpServer.connections` needs a nested-port shape the IPC contract has no room for -- A114. `net.createServer` in the shim routes to [`node-net-unsupported.ts`](../../src/shim/node-net-unsupported.ts) and fails loudly |
+| `fs.readFile` / `writeFile` | ✅ | ✅ | ✅ | ✅ | Confined to the app dir. Node shape in [`node-fs.ts`](../../src/shim/node-fs.ts) (#135) |
+| `fs.readFileSync` | ✅ | ✅ | ✅ | ✅ | [ADR-0016](../decisions/ADR-0016-synchronous-file-reads-are-permitted.md), built end to end over `ipcRenderer.sendSync` (#124). Grant check and path confinement are shared with the async path; **the per-origin in-flight budget is not** -- A112 |
+| `fs.mkdir` / `readdir` / `stat` / `rm` / `rename` | ✅ | ✅ | ✅ | ✅ | PROVISIONAL markers removed by the Phase 1 contracts PR; built in #132 |
+| `fs.open` (`FileHandle`) | ✅ | ❌ | ❌ | ❌ | The one `fs` entry point still unbuilt anywhere in the broker. It is what blocks `fs.userSelected` below, and with it the folder picker |
+| `fs.userSelected` (picker) | ✅ | ❌ | ❌ | ➖ | The only route outside the app dir. **Blocked twice:** no `FileHandle` above, and the picked-path persistence the owner decided on (`D-0007`: remembered, and revocable from the permissions list) shares a surface with the grant list |
+| `id.publicKey` / `sign` | ✅ | ✅ | ✅ | ➖ | Wired end to end, e2e-verified (#112). P-256 ECDSA only; secp256k1/Schnorr is the separate A44 question |
+| `id.requestIdentity` | ✅ | ❌ | ❌ | ➖ | The last lane of Phase 4, ready to dispatch. `src/nostr/nip07.ts`'s real wiring calls this and cannot reach a page until it exists -- A111 |
+| `app.manifest` / `grants` | ✅ | ✅ | ✅ | ➖ | Backs Electron's `app.*` -- see Table 2 |
+| `app.requestGrant` | ✅ | ⚠️ | ❌ | ➖ | **The mechanism now exists** -- policy in [`request-grant.ts`](../../src/broker/policy/request-grant.ts), the prompt in `src/main/request-grant-prompt.ts` and `grant-prompt-render.ts`, registered as a subsystem (#127, #130). It is not on `window.orivon`, and `src/main/permissions.ts`'s own header still records that nothing calls `ctx.requestGrant` yet |
+| `dns.lookup` | ❌ | ❌ | ❌ | ⚠️ | **Decided, not built.** The owner ruled (`D-0006`) that Orivon resolves names itself as part of the network permission. [`node-dns.ts`](../../src/shim/node-dns.ts) exists and fails loudly with a named error rather than hanging -- A107 |
 | `hid` / USB | 🚫 | 🚫 | 🚫 | 🚫 | Cut from v0 for every tier, by owner decision |
 | `subprocess` | 🚫 | 🚫 | 🚫 | 🚫 | Cut from v0 as largest attack surface |
 
 **Only prefixes of ✅ are legal.** A call travels Spec'd -> Broker -> Page, so the valid shapes
 are ❌❌❌, ✅❌❌, ✅✅❌, ✅✅✅. Anything else is a defect or a mislabel -- Broker ✅ with
 Spec'd ❌ means implementation ran ahead of the contract, which is what `ADR-0002` exists to
-prevent.
+prevent. `dns.lookup`'s ⚠️ in the shim column with ❌ everywhere left of it is the one legal
+exception in spirit: the shim entry exists **to refuse**, not to work.
 
-**The single biggest gap is `app.requestGrant`:** nothing in production grants anything yet,
-which is why a real page's `net.connect` correctly answers `'denied'`.
-
-**➖ means "no Node equivalent"**  
-So implementing means create your own implementation of it
+**The single biggest gap has moved.** It is no longer "nothing grants anything" -- `requestGrant`
+and the prompt are built. It is that **nothing calls them**: no page-facing entry point, so a real
+app still cannot ask, and `net.connect` from a page still answers `'denied'` for want of a grant.
+That is one wiring job, not a design one.
 
 ## Table 2 -- the three adapter families (shim families structure)
 
@@ -77,9 +93,9 @@ present a familiar interface on top. There are three such layers, and each now h
 
 | Family | What it presents | Backed by | Status |
 |---|---|---|:--:|
-| **Node stdlib** | `net`, `dgram`, `fs`, `Buffer`, `stream`... | `net.*`, `fs.*` | ❌ build step 3, started but not the family itself -- an alias table and a hand-written `util` exist ([`module-map.ts`](../../src/shim/module-map.ts), #111); `net`/`dgram`/`fs` shapes and the other core polyfills are not begun |
+| **Node stdlib** | `net`, `dgram`, `fs`, `http`, `https`, `Buffer`, `stream`... | `net.*`, `fs.*` | ⚠️ built, one gap -- `net` (client), `dgram` and `fs` over the capabilities (#135), Node's `http`/`https` clients over `net.connectSecure` (#131), and all eight core polyfill packages installed after the owner approved them. **`net.createServer` refuses** ([`node-net-unsupported.ts`](../../src/shim/node-net-unsupported.ts)) pending A114, and `dns` refuses pending its own capability (A107) |
 | **`electron` module** | `app`, `ipcRenderer`/`ipcMain`, `dialog` | `app.*`, `fs.userSelected` | ⚠️ built, partial -- [`src/shim-electron/`](../../src/shim-electron/) (#108, closes A95) |
-| **Web ecosystem** | `window.nostr` (NIP-07); later `window.ethereum` | `id.*` | ✅ built ([`nip07.ts`](../../src/nostr/nip07.ts)), not wired into a page -- blocked on `id.requestIdentity` plus the connect prompt (build step 4), not merely on wiring (A111) |
+| **Web ecosystem** | `window.nostr` (NIP-07); later `window.ethereum` | `id.*` | ✅ built ([`nip07.ts`](../../src/nostr/nip07.ts)), still not wired into a page -- blocked on `id.requestIdentity`, which is the last unstarted lane of Phase 4 (A111) |
 
 **The `electron` family now has an owner.** `src/shim-electron/` (#108) closes A95: `app`,
 `dialog`, `ipcRenderer`/`ipcMain` and `BrowserWindow`/`Menu`/`Tray`, reconstructed or explicitly
@@ -120,29 +136,31 @@ matching Table 2's `net, dgram, fs, Buffer, stream...` rather than falling short
 |---|:--:|---|:--:|---|
 | `process`, `nextTick`, `setImmediate` | `dup` | everything | ✅ built | `shim/globals.ts` |
 | `util` | `dup` | any dependency using `inherits` | ✅ built | Hand-written, `inherits`-only, no dependency (`src/shim/node-util.ts`, #111) |
-| `Buffer`, `stream`, `events`, `path`, `os`, `crypto`, `zlib` | `dup` | everything | ❌ missing | Standard browser polyfills; pure JS, cheap. Reviewed against webtorrent's real dependency tree (`shim-dependency-review.md`, #111): each is `pending-dependency`, awaiting owner approval -- no dependency has actually been added, `package.json` still has zero runtime deps |
-| `net` / `dgram` / `fs` Node shapes | `dup` | every ported app | ❌ missing | Step 3 -- the shim proper, over Table 1 |
-| Synchronous `fs` (`readFileSync`) | **`needs T1`** | ported apps, at startup | ❌ **decided, not yet built** | **A94 resolved 2026-09-09** (owner: Route A, `ipcRenderer.sendSync`, narrowing `capability-api.md` design rule 2 to network operations only). The ADR is drafted, awaiting owner authorship through the sanctioned path; no sync entry point exists in `capability-api.ts` yet |
-| `electron` module | `dup` | every tier-2 app | ⚠️ partial | Table 2, family 2 -- `src/shim-electron/` built (#108, closes A95): `app.*`/`ipcRenderer`/`ipcMain` work, `dialog.showOpenDialog` throws (`fs.userSelected` unimplemented), `BrowserWindow`/`Menu`/`Tray` refuse by design |
-| HTTP client | `dup` | trackers, web seeds, any REST | ❌ missing | Renderer `fetch` is **CORS-bound**. **A98 resolved 2026-09-09**: the page's own `fetch()` is to be routed through the secure-connect capability for granted hosts, superseding the earlier "HTTP over `net.connect`" lever -- but the ADR is unwritten and nothing is built yet |
-| TLS / `https` | **`needs T1`** | nearly every app | ❌ **decided, not yet built** | `orivon.net` gives raw TCP only. **A96 resolved 2026-09-09**: Orivon terminates TLS itself, on the trusted side, via a new capability -- not a JS TLS stack over `net.connect`, so this row stays `needs T1` rather than reclassifying `dup`. The ADR ("Orivon owns the app's HTTP(S) path", covering A96/A98/A99) is drafted, awaiting owner authorship; still absent from `src/contracts/` in this tree |
+| `Buffer`, `stream`, `events`, `path`, `os`, `crypto`, `zlib` | `dup` | everything | ✅ built | **The owner approved all eight** on 2026-09-10, deliberately wider than the review's own recommendation of five, so an unattended run could not stall overnight on a missing module (`shim-dependency-review.md`; INBOX `D-0005`). `package.json` carried zero runtime dependencies that morning and now carries nine |
+| `net` / `dgram` / `fs` Node shapes | `dup` | every ported app | ⚠️ built, client-side | #135. `net.connect`, `dgram` and `fs` (async and sync) present real Node shapes over the capabilities; `net.createServer` refuses loudly pending A114 |
+| Synchronous `fs` (`readFileSync`) | **`needs T1`** | ported apps, at startup | ✅ built | [ADR-0016](../decisions/ADR-0016-synchronous-file-reads-are-permitted.md) authored and merged (#117), then built end to end over `ipcRenderer.sendSync` (#124). Design rule 2 now narrows to network operations only. One filed gap: the sync path does not share the async path's per-origin fairness budget -- A112 |
+| `electron` module | `dup` | every tier-2 app | ⚠️ partial | Unchanged this pass. `src/shim-electron/` built (#108, closes A95): `app.*`/`ipcRenderer`/`ipcMain` work, `dialog.showOpenDialog` still throws (`fs.open`/`fs.userSelected` unimplemented -- Table 1), `BrowserWindow`/`Menu`/`Tray` refuse by design |
+| HTTP client | `dup` | trackers, web seeds, any REST | ✅ built | Two halves, both landed. The page's own `fetch()` is routed through the secure-connect capability for granted hosts ([`fetch-route.ts`](../../src/preload/fetch-route.ts), #133), and Node's `http`/`https` clients sit on the same capability (#131). **The second half matters less than expected:** #131's lane checked the real sources and found neither webtorrent nor bittorrent-tracker still uses Node's HTTP client -- the tracker client calls `fetch`. With FreeTube already on record as 32 `fetch` calls and zero Node builtins, routed `fetch` is the confirmed path for **both** Phase 5 lanes |
+| TLS / `https` | **`needs T1`** | nearly every app | ✅ built | [ADR-0017](../decisions/ADR-0017-orivon-owns-the-app-http-path.md) authored and merged (#117); `net.connectSecure` built in the broker and wired through IPC to a real page (#126). Orivon terminates the handshake on the trusted side, so a grant and a prompt can name the true hostname |
 | `worker_threads` | `dup` | validation-heavy work | ❌ missing | Web Workers are already in the renderer, so the substrate exists and no Table 1 entry is needed; the shape does not match and a shim cannot fully fake it. A fidelity problem, not a substrate one |
 | Background lifetime | **`outside`** | seeding, syncing, pinning | ⚠️ **unspecified** | Nothing in Node, `electron` or the web platform means "keep running once the tab is gone". Shell holds the process, contracts describe it, UI shows it. `mvp-scope.md` counts `backgroundSec` in the metric but nothing grants it |
 | Ambient FS (`~/.bitcoin`) | **`outside`** | migrating an installed app | 🚫 excluded by design | A refusal, not a gap. `fs` is rooted; `userSelected` is a picker, not a mount. `src/shim-electron/app.ts`'s `getPath` enforces the identical boundary for any name but `'userData'` |
 | Desktop shell (tray, autostart, protocol handlers, hotkeys) | **`outside`** | Electron apps' outer half | ⚠️ partial | `BrowserWindow`/`Menu`/`Tray` are now explicit, tested named refusals (`src/shim-electron/desktop-shell.ts`, #108); autostart, protocol handlers and hotkeys remain simply absent |
 | Native addon in the dep tree | **`outside`** | see Table 5 | ❌ missing | Per-library substitution, not a platform feature. Pure-JS/WASM substitute, or a helper process |
 
-**Seven `dup` rows, one of them now closed (`util`); two `needs T1`, both now decided but
-unbuilt; four `outside`.** Completing Tables 1 and 2 still leaves the same six rows open that
-it always did -- `needs T1` and `outside` are unaffected by the polyfill split -- and only two
-of them are anywhere near the shim.
+**Seven `dup` rows, five of them now closed; two `needs T1`, both now BUILT rather than merely
+decided; four `outside`, all unchanged.** This is the pass where the ability axis stopped being
+the bottleneck: what remains on it is `worker_threads` (a fidelity problem, not a substrate one)
+and the four `outside` rows, which no amount of shim work reaches.
 
 **Synchronous `fs` was the one to settle first, and `needs T1` is why:** it is not a missing
 function, it is a missing mechanism, so no amount of shim effort reaches it. A ported app fails
 at *startup*, not under load -- `readFileSync` is how Node programs read their own config,
-usually inside a dependency the porting developer does not control. **A94 is now resolved**
-(Route A, `ipcRenderer.sendSync`) -- what is left is landing it: the ADR and the Phase 1
-contracts PR, neither of which has reached this tree yet.
+usually inside a dependency the porting developer does not control. **It is now built** (#124,
+over [ADR-0016](../decisions/ADR-0016-synchronous-file-reads-are-permitted.md)). The residual is
+narrow and filed: the sync path shares the grant check and the path confinement with the async
+path, but not the per-origin in-flight budget, so one origin can monopolise sync reads -- A112,
+a fairness gap rather than a confinement one.
 
 **Of the four `outside` rows, background lifetime is still the one open gap.** Ambient FS is a
 deliberate boundary and native addons are per-library (Table 5). The desktop shell is now a
@@ -158,23 +176,25 @@ only rows 1 and 9 are owned by anything today.
 
 | # | Blocker | Cheapest lever | Cost shape |
 |---|---|---|---|
-| 1 | No grant exists in production | Build step 4's prompt | Already scheduled; unblocks *everything* |
-| 2 | ~~No `orivon.id.*` entry point~~ -- **closed by #112**: broker, transport and preload wired, e2e-verified (`test/e2e-id-capability.test.ts`) | `id.requestIdentity` (named identities, `window.nostr`) is separate and still open | A111 |
-| 3 | CORS blocks tier-1 and tier-2 HTTP | **Superseded by A98 (resolved):** route the page's own `fetch()` through the secure-connect capability for granted hosts, rather than reimplementing HTTP in the shim | Contracts change, decided; same unwritten ADR as row 8 -- ordering unaffected until it lands |
-| 4 | ~~No `net.listen`~~ (broker) -- **closed by #109**: real accepted-socket handles, the unsigned-app port rules and a revocation cascade, unit-tested | **Still open: no page wiring**, deliberately deferred pending a nested-port-delivery design | Small -- wire `orivon-surface.ts`/`main-world-socket.ts` the way `net.connect`/`udpBind` already are, once that design exists |
-| 5 | ~~Provisional `fs.*` signatures~~ -- **A12 resolved 2026-09-09** (owner: byte-oriented, no encoding option, exactly as implemented) | Land the Phase 1 contracts PR that removes the PROVISIONAL markers | Contracts change, decided; not yet landed in this tree |
-| 6 | ~~Sync `fs` undecided~~ -- **A94 resolved 2026-09-09** (owner: Route A, `ipcRenderer.sendSync`) | Land the ADR, then the contracts PR, before step 3 designs `fs` | Contracts rule 2 narrowed to `net` only; decided, not yet built |
-| 7 | ~~No `electron` module shim~~ -- **closed by #108**: `src/shim-electron/` built as its own package (A95's resolution) | `dialog.showOpenDialog` still refuses pending `fs.userSelected` (row 5-adjacent) | See Table 2 and Table 3's `electron module` row |
-| 8 | ~~TLS absent from contracts~~ -- **A96 resolved 2026-09-09**: Orivon terminates TLS itself via a new capability, not a JS TLS stack over `net.connect` | Land the same unwritten ADR as row 3 ("Orivon owns the app's HTTP(S) path") | Contracts change, decided; blocked only on ADR authorship |
-| 9 | No background lifetime | Unfiled; needs a decision first | Contracts + shell; touches the metric directly |
+| 1 | **Nothing calls `app.requestGrant`.** The mechanism, the policy and the prompt all exist (#127, #130); no page-facing entry point does, so a real app still cannot ask for anything | Wire `requestGrant` onto `window.orivon` the way `fs.*` and `id.*` already are | Small, and it unblocks *everything* -- this is the row that was "no grant exists in production" for the whole project until now |
+| 2 | ~~No `orivon.id.*` entry point~~ -- **closed by #112** | `id.requestIdentity` (named identities, `window.nostr`) is the last unstarted Phase 4 lane | A111 |
+| 3 | ~~CORS blocks tier-1 and tier-2 HTTP~~ -- **closed by #133**: the page's own `fetch()` is routed through the secure-connect capability for granted hosts | -- | [ADR-0017](../decisions/ADR-0017-orivon-owns-the-app-http-path.md) |
+| 4 | ~~No `net.listen`~~ (broker) -- **closed by #109**. **Still open: no page wiring**, and now with a filed cause rather than a deferral | Design the nested-port IPC shape -- one port carrying further port descriptors, one per accepted connection | A114. Bigger than "wire it like `net.connect`" was assumed to be: the IPC contract has no room for the shape |
+| 5 | ~~Provisional `fs.*` signatures~~ -- **closed**: the Phase 1 contracts PR landed and #132 built the six methods | `fs.open`/`FileHandle` is the one entry point still unbuilt, and it blocks the folder picker | See row 6 |
+| 6 | **No `FileHandle`, so no folder picker** | Build `fs.open` in the broker, then `fs.userSelected` on top | The owner has already decided the UX (`D-0007`: a picked folder is remembered and revocable from the permissions list), so this is build work, not a decision. Shares a persisted surface with the grant list |
+| 7 | ~~No `electron` module shim~~ -- **closed by #108** | `dialog.showOpenDialog` still refuses, pending row 6 | See Table 2 |
+| 8 | ~~TLS absent from contracts~~ -- **closed by #126**, over [ADR-0017](../decisions/ADR-0017-orivon-owns-the-app-http-path.md) | -- | -- |
+| 9 | No background lifetime | Unfiled; needs a decision first | Contracts + shell; touches the metric directly. **Unchanged, and now the oldest open row here** |
 | 10 | `hid`/USB -- wallet cluster | `orivon.hid.*` + device chooser | Contracts + prompt UX + security argument |
 | 11 | Native addons in dep trees | Substitute per library -- Table 5 | Per-app, not per-platform |
 | 12 | Tier 3 -- no HTML frontend | Container + xpra ([doc](container-apps-opportunity.md)) | Parked; reopens `subprocess` in a narrow shape |
 | 13 | App logic is not JavaScript | Nothing works today, WASM included | Blocked upstream: Go has no wasip2, wasi-sdk has no target with threads AND sockets |
 
-Rows 1-4 are where the reach is. **Still unfiled** as of 2026-09-10: rows 9 and 11, plus
-declarability (what a grant prompt can honestly say for runtime-chosen hosts) and per-syscall
-IPC cost on a chatty workload. Row 8 is filed and resolved (A96) since the last pass.
+**Rows 1 and 6 are where the reach is now**, and both are build work rather than decisions --
+which is a different situation from every prior pass of this table, where the top rows were
+waiting on the owner. **Still unfiled** as of this pass: rows 9 and 11, plus declarability (what
+a grant prompt can honestly say for runtime-chosen hosts) and per-syscall IPC cost on a chatty
+workload. Rows 3, 5, 6 and 8 of the previous pass are closed.
 
 ## Table 5 -- the native-module question, per library
 
