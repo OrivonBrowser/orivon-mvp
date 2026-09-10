@@ -24,6 +24,7 @@ import type { Subsystem, SubsystemContext } from '../../main/registry.js'
 import { createBroker } from '../index.js'
 import type { Broker, CreateBrokerOptions } from '../broker-contracts.js'
 import { dialTcp, listenTcp, nodeFs, resolveHost } from '../adapters/node-adapters.js'
+import { dialTls } from '../adapters/tls-adapter.js'
 import { bindUdp } from '../adapters/udp-adapter.js'
 import { nodeLedgerStorage } from '../grants/node-ledger-storage.js'
 import { createPortRegistry } from './port-registry.js'
@@ -386,6 +387,14 @@ export const brokerIpcSubsystem: Subsystem = {
     const realNow = (): number => Date.now()
     const deps: CreateBrokerOptions = {
       dial: dialTcp,
+      // `dialTls` -- ADR-0017's real node:tls stack, no override, no new
+      // dependency. `CreateBrokerOptions` requires `dialSecure` unconditionally,
+      // matching `dial`/`bind`/`listen`'s own always-required shape, so this
+      // is wired here even though net.connectSecure has no control-channel
+      // case yet: see this file's own header note above `brokerIpcSubsystem`
+      // (mirrors `net.listen`'s own precedent of a broker capability landing
+      // ahead of its IPC wiring -- queue item 2.3's PR body has the reasoning).
+      dialSecure: dialTls,
       bind: bindUdp,
       listen: listenTcp,
       resolve: resolveHost,

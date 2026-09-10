@@ -52,6 +52,7 @@ export function stubBroker (
     manifest: (origin: string) => Promise<Manifest>
     grants: (origin: string) => Promise<readonly Grant[]>
     connect: (origin: string, opts: { host: string, port: number }) => Promise<FailableTcpSocket>
+    connectSecure: (origin: string, opts: { host: string, port: number }) => Promise<FailableTcpSocket>
     udpBind: (origin: string, opts: { port: number }) => Promise<FailableUdpSocket>
     listen: (origin: string, opts: { port: number }) => Promise<FailableTcpServer>
     readFile: (origin: string, path: string) => Promise<Uint8Array>
@@ -80,6 +81,13 @@ export function stubBroker (
       connect: async (origin, opts) => {
         calls.push({ method: 'net.connect', origin, args: opts })
         return await (overrides.connect?.(origin, opts) ?? notStubbed())
+      },
+      // Present so this stub still satisfies `Broker`; no test here drives it.
+      // net.connectSecure has no control-channel case yet, same as net.listen
+      // just below (queue item 2.3's own PR body has the reasoning).
+      connectSecure: async (origin, opts) => {
+        calls.push({ method: 'net.connectSecure', origin, args: opts })
+        return await (overrides.connectSecure?.(origin, opts) ?? notStubbed())
       },
       // Present so this stub still satisfies `Broker`; no test here drives it.
       // The udp control method is a separate change (see the PR stack).

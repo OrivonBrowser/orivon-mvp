@@ -16,9 +16,10 @@ import type { HandleTable } from './handles/handles.js'
 import type { FailableTcpServer, FailableTcpSocket, FailableUdpSocket, HandleEntry } from './handles/handle-contracts.js'
 import type { GrantLedger } from './grants/grant-ledger.js'
 import { fail } from './errors.js'
-import { mapIoError } from './io-errors.js'
+import { mapIoError, mapTlsError } from './io-errors.js'
 import { checkBind } from './policy/bind.js'
 import { checkConnect } from './policy/connect.js'
+import { checkConnectSecure } from './policy/connect-secure.js'
 import type { BoundUdpSocket, Broker, CreateBrokerOptions, DialedSocket, ListenedServer, SendOutcome } from './broker-contracts.js'
 import type { Datagram } from '../contracts/index.js'
 
@@ -100,6 +101,70 @@ export function createNetCapability ({ deps, handleTable, ledger, canonical }: N
         // Handling it here rather than leaning on `acquire`'s refusal is
         // exactly what HandleTable.run's own note asks the connect path to
         // do (./handles/handles.ts).
+        await dialed.destroy('revoked')
+        throw fail('revoked', 'the grant authorising this connection was withdrawn')
+      }
+
+      const { destroy, ...socketFields } = dialed
+      const entry = handleTable.acquire({
+        origin: key,
+        kind: 'tcpSocket',
+        authorisedBy: { by: 'grant', grantId: current.id },
+        destroy,
+        socketLimit: ledger.socketAllowance(key)
+      })
+
+      return toFailableSocket(key, entry, socketFields)
+    })
+  }
+
+  /**
+   * `orivon.net.connectSecure` (ADR-0017). A SIBLING of `connect` above, not
+   * a variant of it -- checked against `https.connect`, a SEPARATE grant
+   * from `tcp.connect`, and dialled through `deps.dialSecure`
+   * (../adapters/tls-adapter.ts) rather than `deps.dial`.
+   *
+   * THE ONE STRUCTURAL DIFFERENCE from `connect`, beyond which grant and
+   * which dial function: `checkConnectSecure` is SYNCHRONOUS and takes the
+   * hostname directly rather than a resolver -- see that function's own
+   * header for why there is no resolve-then-check step here at all. Every
+   * other shape -- the in-flight scope, the revoked-while-dialling race, the
+   * handle acquisition -- is identical to `connect`'s on purpose (Rule 3:
+   * this is the same idea, "authorise, dial, register, wrap", applied with a
+   * different check and a different dialler).
+   */
+  async function connectSecure (origin: string, opts: { host: string, port: number }): Promise<FailableTcpSocket> {
+    const key = canonical(origin)
+
+    const current = ledger.currentGrant(key, 'https.connect')
+    if (current === undefined) throw fail('denied', 'https.connect is not granted to this origin')
+
+    return await handleTable.run(key, { on: 'grant', grantId: current.id }, async (signal) => {
+      let dialed: DialedSocket
+      try {
+        const decision = checkConnectSecure(current.patterns, opts.host, opts.port)
+        if (!decision.allowed) throw fail('denied', 'the secure connection was not authorised')
+        // Same reasoning as `connect`'s own mid-check abort guard: without
+        // this, a grant revoked between the (synchronous) policy check and
+        // the handshake completing would still let `deps.dialSecure` run to
+        // completion for a capability the app no longer holds.
+        if (signal.aborted) throw fail('revoked', 'the grant authorising this connection was withdrawn')
+        dialed = await deps.dialSecure(decision.host, opts.port, signal)
+      } catch (error) {
+        // mapTlsError, NOT mapIoError: a failed handshake or a certificate/
+        // hostname mismatch is 'unreachable' with a real platformCode
+        // (../../contracts/capability-api.ts's own doc on `connectSecure`),
+        // and Node's TLS error codes are not POSIX errnos -- see
+        // io-errors.ts's own doc on why that mapping is its own function.
+        // An OrivonError already thrown above (the two `fail()` calls) passes
+        // through mapTlsError unchanged, same as mapIoError does for `connect`.
+        throw mapTlsError(error)
+      }
+
+      if (signal.aborted) {
+        // Same reasoning as `connect`'s: `acquire` would refuse this, but its
+        // cleanup releases with 'failed' -- silent, and wrong for a socket
+        // that is actually connected and holding a live TLS session.
         await dialed.destroy('revoked')
         throw fail('revoked', 'the grant authorising this connection was withdrawn')
       }
@@ -328,5 +393,5 @@ export function createNetCapability ({ deps, handleTable, ledger, canonical }: N
     })
   }
 
-  return { connect, udpBind, listen }
+  return { connect, connectSecure, udpBind, listen }
 }
