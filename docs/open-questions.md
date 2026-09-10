@@ -3810,3 +3810,62 @@ consistent with the preload rule quoted above.
 
 **Needed by:** build step 4 (the connect prompt). Not blocking queue item 2.5, whose own scope
 was built and tested against an injected stub by design.
+
+### A112 — the synchronous `fs` path does not share the per-origin in-flight budget the async path uses **[STILL OPEN]**
+
+**Raised 2026-09-10**, lane P2-2's synchronous read path (PR #124), filed by the conductor.
+Reported by the lane as a security-relevant tradeoff it deliberately did not close alone.
+
+`fs.readFile`/`writeFile` run through `HandleTable`'s per-origin in-flight budget, so one origin
+cannot monopolise filesystem I/O. `fs.readFileSync` does not: it goes over
+`ipcRenderer.sendSync` to `registerSyncFsIpc`, checks the shared rate limiter, and then reads.
+The grant check and the path confinement **are** shared — `sync-fs-policy.ts` calls
+`broker.fs.confineSync`, which is the same `confineForOrigin` the async path uses, so this is a
+fairness gap and not a confinement gap.
+
+**Why it is not merely "not done here":** `HandleTable.run`'s budget is `async`-shaped by
+construction — it awaits a slot. A synchronous reply cannot await one without blocking the
+main process, which would turn a per-origin fairness mechanism into a way for one origin to
+stall every origin, including the shell. So this needs a design, not an afternoon: either a
+synchronous admission counter alongside the async budget, or an argument that the sync path's
+own rate limiter is sufficient because a blocked renderer is self-limiting in a way an async
+caller is not.
+
+The exposure is bounded by the fact that the renderer making the call is itself blocked for the
+duration, so an app cannot issue concurrent synchronous reads from one frame — but it says
+nothing about many frames, or about one frame in a tight loop.
+
+**Still open.** Needs an owner decision on whether the sync path needs its own admission control
+before any app depends on `readFileSync` under load.
+
+### A113 — on the `exposeFallback` path, a thrown `OrivonError` reaches a page without its `code` **[STILL OPEN]**
+
+**Raised 2026-09-10**, found by the conductor while verifying lane P2-2 (PR #124). **Pre-existing
+and not introduced by that PR** — it affects every method on that path, not only the new one.
+
+Measured, not reasoned: a real page calling `orivon.fs.readFileSync` without a grant received
+`{name: "Error", message: "fs is not granted to this origin"}` — no `code`. `contextBridge`
+flattens a custom error thrown from the isolated world into a plain `Error`, dropping
+non-standard properties, so an app cannot branch on the closed enum
+(`src/contracts/errors.ts`) at all.
+
+On the **`executeInMainWorld` path this is now fixed** (PR #124): the boundary is crossed as
+plain data carrying the code, and `main-world-socket.ts`'s `installOrivon` constructs and
+throws the real `OrivonError` inside the main world. A page now receives
+`{code: "denied", name: "OrivonError"}`, verified by e2e.
+
+**`exposeFallback()` cannot use that fix**, and this is the open part: it is the path taken when
+`executeInMainWorld` is absent or throws, and in that case there is no main-world code running
+at all — `installOrivon` never runs, which is the whole reason the fallback exists. So every
+throw on that path happens in the isolated world and loses its `code`.
+
+Scope worth stating precisely, because it is wider than the method that exposed it: this is a
+property of the fallback path, so it applies to every `orivon.*` method there, not just
+`readFileSync`. `ADR-0014` accepted `executeInMainWorld` (marked `@experimental`) as the primary
+mechanism, which makes the fallback the degraded path rather than the common one — but a
+degraded path that silently changes the error contract is worse than one that is merely
+narrower.
+
+**Still open.** Options not evaluated here: give the fallback a minimal main-world constructor
+of its own, return a result envelope and have callers unwrap it, or accept the divergence and
+document it as a known property of running without `executeInMainWorld`.
