@@ -163,6 +163,26 @@ async function netConnectBridge (opts: { host: string, port: number }): Promise<
   }
 }
 
+/**
+ * net.connectSecure's own bridge closure -- a SIBLING of netConnectBridge
+ * above, not a second implementation: the CONTROL_CHANNEL method name is
+ * the only difference. `net.connectSecure` resolves to the exact same
+ * SocketDescriptor shape net.connect does (ipc.ts's deliverTcpSocket is
+ * shared by both on the broker side), so buildBridgeResult below is reused
+ * unchanged rather than copied (code-guidelines.md Rule 3).
+ */
+async function netConnectSecureBridge (opts: { host: string, port: number }): Promise<MainWorldSocketBridge> {
+  const descriptor = await call<SocketDescriptor>('net.connectSecure', opts, TIMEOUT_MS.net)
+  try {
+    return buildBridgeResult(descriptor, await socketBridge.waitForPort(descriptor.id))
+  } catch (error) {
+    // Same reasoning as netConnectBridge's own catch: release the slot the
+    // broker already counted this socket against.
+    call('net.close', { id: descriptor.id }, TIMEOUT_MS.net).catch(() => {})
+    throw error
+  }
+}
+
 function buildBridgeResult (descriptor: SocketDescriptor, port: PortLike): MainWorldSocketBridge {
   const socketPort = createSocketPort({ handleId: descriptor.id, port })
 
@@ -348,6 +368,7 @@ export function exposeOrivon (): void {
     idPublicKey,
     idSign,
     netConnect: netConnectBridge,
+    netConnectSecure: netConnectSecureBridge,
     netUdpBind: netUdpBindBridge
   }
   try {

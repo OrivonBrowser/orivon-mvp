@@ -102,7 +102,13 @@ if (isInvokedDirectly(import.meta.url)) {
       console.error(`  ${file} -- ${where}`)
     }
     if (preExisting.length > 0 && rebuilt.length === 0) {
-      console.error('\nThe ordinary build itself is clean. What is flagged is the artefact already in out/.')
+      console.error(
+        '\nThe ordinary build itself is clean. What is flagged is the artefact that was already in' +
+        '\nout/ -- typically left by `npm run test:e2e`, which builds with the dev grant enabled.' +
+        '\n\nThis run has ALREADY replaced out/ with a clean ordinary build, so re-running this' +
+        '\ncommand will pass. That is expected and is not a flaky check: the first result was' +
+        '\ntrue when it was reported, and acting on it is what made the second one true.'
+      )
     }
     console.error(
       '\nsrc/main/dev-grant.ts must be compiled out unless ORIVON_ENABLE_DEV_GRANT=1 was set' +
