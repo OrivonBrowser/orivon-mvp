@@ -5,10 +5,13 @@
 //
 // SAME SHAPE AS ./e2e-connect-secure-capability.test.ts's Phase 2: grants
 // through src/main/dev-grant.ts's hook, BEFORE navigating rather than after
-// -- src/preload/fetch-route.ts's install gate (`orivon.app.manifest()`
-// resolving) runs ONCE, synchronously with page load, so the origin must
-// already be registered by the time this tab's preload runs, unlike
-// net.connect/connectSecure's own per-call check which works either order.
+// -- src/main/tab-view.ts's `appTabArgsFor` decides, SYNCHRONOUSLY, whether
+// this tab's WebContentsView carries the ADR-0017 fetch-routing flag, at
+// the moment `TabManager.navigate()` swaps in a new view for this origin.
+// That decision reads `Broker.app.isRegisteredSync` once, right then -- so
+// the origin must already be registered before THIS navigation happens,
+// unlike net.connect/connectSecure's own per-call grant check, which works
+// either order.
 //
 // Uses PLAIN HTTP (net.connect), not net.connectSecure: e2e-connect-secure-
 // capability.test.ts's own header explains why a real byte round trip over
