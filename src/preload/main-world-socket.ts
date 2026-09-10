@@ -21,7 +21,7 @@
 // shares.
 
 import type { OrivonErrorCode } from '../contracts/errors.js'
-import type { SendRefusal, UdpSocket } from '../contracts/handles.js'
+import type { FileStat, SendRefusal, UdpSocket } from '../contracts/handles.js'
 import type { ResponseEnvelope } from '../contracts/ipc.js'
 
 export interface OrivonLimits {
@@ -102,6 +102,14 @@ export function installOrivon (
      * function, from data that crossed intact instead.
      */
     fsReadFileSync: (path: string) => ResponseEnvelope<Uint8Array>
+    // The extended fs surface (queue item 2.1) -- no main-world stream
+    // wrapping needed, exactly like fsReadFile/fsWriteFile above, so these
+    // four are plain proxied closures too.
+    fsMkdir: (path: string, opts?: { recursive?: boolean }) => Promise<void>
+    fsReaddir: (path: string) => Promise<readonly string[]>
+    fsStat: (path: string) => Promise<FileStat>
+    fsRm: (path: string, opts?: { recursive?: boolean }) => Promise<void>
+    fsRename: (from: string, to: string) => Promise<void>
     idPublicKey: (curve: string) => Promise<Uint8Array>
     idSign: (curve: string, payload: Uint8Array) => Promise<Uint8Array>
     netConnect: (opts: { host: string, port: number }) => Promise<MainWorldSocketBridge>
@@ -350,7 +358,12 @@ export function installOrivon (
         throw toOrivonError(response.code, response.platformCode === undefined
           ? { message: response.message }
           : { message: response.message, platformCode: response.platformCode })
-      }
+      },
+      mkdir: async (path: string, opts?: { recursive?: boolean }) => { await bridge.fsMkdir(path, opts) },
+      readdir: async (path: string) => await bridge.fsReaddir(path),
+      stat: async (path: string) => await bridge.fsStat(path),
+      rm: async (path: string, opts?: { recursive?: boolean }) => { await bridge.fsRm(path, opts) },
+      rename: async (from: string, to: string) => { await bridge.fsRename(from, to) }
     }),
     id: Object.freeze({
       publicKey: async (opts: { curve: string }) => await bridge.idPublicKey(opts.curve),

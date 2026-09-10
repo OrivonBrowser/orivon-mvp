@@ -203,7 +203,12 @@ it('Phase 2: the real broker binds a real UDP socket, round-trips a datagram, an
       rootFor: () => { throw new Error('fs is not exercised by this test') },
       realpathSync: () => { throw new Error('fs is not exercised by this test') },
       readFile: async () => { throw new Error('fs is not exercised by this test') },
-      writeFile: async () => { throw new Error('fs is not exercised by this test') }
+      writeFile: async () => { throw new Error('fs is not exercised by this test') },
+      mkdir: async () => { throw new Error('fs is not exercised by this test') },
+      readdir: async () => { throw new Error('fs is not exercised by this test') },
+      stat: async () => { throw new Error('fs is not exercised by this test') },
+      rm: async () => { throw new Error('fs is not exercised by this test') },
+      rename: async () => { throw new Error('fs is not exercised by this test') }
     }
     const keychainStub: Keychain = {
       getSeed: async () => { throw new Error('identity is not exercised by this test') }

@@ -80,6 +80,13 @@ describe('exposeOrivon -- P-F10: the fail-closed fallback covers BOTH "absent" a
     // window.orivon is worse than one that is not there does not apply here:
     // this method is genuinely wired either way, unlike net.
     expect(typeof (surface.fs as Record<string, unknown>).readFileSync).toBe('function')
+    // The extended fs surface (queue item 2.1) is not net -- it needs no
+    // main-world stream wrapping, so it is wired identically in both the
+    // fallback and the executeInMainWorld path, exactly like readFile/
+    // writeFile above it.
+    for (const method of ['mkdir', 'readdir', 'stat', 'rm', 'rename']) {
+      expect(typeof (surface.fs as Record<string, unknown>)[method]).toBe('function')
+    }
   })
 
   it('falls back to the SAME surface when executeInMainWorld exists but throws', () => {
@@ -288,6 +295,54 @@ describe('exposeOrivon -- P-F11: end-to-end wiring smoke, through the real conte
 
     await expect(orivon.id.sign({ curve: 'P-256', payload: new Uint8Array(1) }))
       .rejects.toMatchObject({ code: 'denied' })
+  })
+
+  it('fs.mkdir/readdir/stat/rm/rename round-trip through call() and installOrivon with the real payload shape', async () => {
+    const target = installViaFakeMainWorld()
+    const entries = ['a.txt', 'sub']
+    const stat = { size: 3, isFile: true, isDirectory: false, mtimeMs: 123 }
+    const seenEnvelopes: Array<{ method: string, payload: unknown }> = []
+    invoke.mockImplementation(async (_channel: string, envelope: { method: string, payload: unknown }) => {
+      seenEnvelopes.push({ method: envelope.method, payload: envelope.payload })
+      if (envelope.method === 'fs.readdir') return okEnvelope(entries)
+      if (envelope.method === 'fs.stat') return okEnvelope(stat)
+      return okEnvelope(undefined)
+    })
+
+    exposeOrivon()
+    const orivon = target.orivon as {
+      fs: {
+        mkdir: (path: string, opts?: { recursive?: boolean }) => Promise<void>
+        readdir: (path: string) => Promise<readonly string[]>
+        stat: (path: string) => Promise<unknown>
+        rm: (path: string, opts?: { recursive?: boolean }) => Promise<void>
+        rename: (from: string, to: string) => Promise<void>
+      }
+    }
+
+    await orivon.fs.mkdir('a/b', { recursive: true })
+    expect(await orivon.fs.readdir('a')).toEqual(entries)
+    expect(await orivon.fs.stat('a/b.txt')).toEqual(stat)
+    await orivon.fs.rm('a/b', { recursive: true })
+    await orivon.fs.rename('old.txt', 'new.txt')
+
+    expect(seenEnvelopes).toEqual([
+      { method: 'fs.mkdir', payload: { path: 'a/b', recursive: true } },
+      { method: 'fs.readdir', payload: { path: 'a' } },
+      { method: 'fs.stat', payload: { path: 'a/b.txt' } },
+      { method: 'fs.rm', payload: { path: 'a/b', recursive: true } },
+      { method: 'fs.rename', payload: { from: 'old.txt', to: 'new.txt' } }
+    ])
+  })
+
+  it('fs.rm propagates a real OrivonError (e.g. "denied") rather than a raw rejection', async () => {
+    const target = installViaFakeMainWorld()
+    invoke.mockResolvedValue({ id: 'r', ok: false, code: 'denied', message: "the path is outside this app's files directory" })
+
+    exposeOrivon()
+    const orivon = target.orivon as { fs: { rm: (path: string) => Promise<void> } }
+
+    await expect(orivon.fs.rm('../../etc/passwd')).rejects.toMatchObject({ code: 'denied' })
   })
 })
 

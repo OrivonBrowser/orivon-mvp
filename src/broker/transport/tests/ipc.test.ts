@@ -48,7 +48,7 @@ describe('origin derivation (DoD rule 1 -- never the payload)', () => {
   })
 })
 
-describe('the six wired control operations', () => {
+describe('the app/id control operations', () => {
   it('app.manifest calls broker.app.manifest with the derived origin', async () => {
     const calls: BrokerCall[] = []
     const manifest: Manifest = { orivonApiVersion: 0, id: 'org.orivon.test', name: 'Test', version: '1.0.0', entry: '/index.html', capabilities: {} }
@@ -69,28 +69,6 @@ describe('the six wired control operations', () => {
 
     expect(response).toEqual({ id: 'req-1', ok: true, result: grants })
     expect(calls).toEqual([{ method: 'app.grants', origin: APP, args: undefined }])
-  })
-
-  it('fs.readFile passes path through and returns the bytes', async () => {
-    const calls: BrokerCall[] = []
-    const bytes = new Uint8Array([9, 8, 7])
-    const broker = stubBroker(calls, { readFile: async () => bytes })
-
-    const response = await handleControlRequest(broker, frameFor(APP), envelope('fs.readFile', { path: '/a/b.txt' }))
-
-    expect(response).toEqual({ id: 'req-1', ok: true, result: bytes })
-    expect(calls).toEqual([{ method: 'fs.readFile', origin: APP, args: '/a/b.txt' }])
-  })
-
-  it('fs.writeFile passes path and data through and resolves undefined', async () => {
-    const calls: BrokerCall[] = []
-    const broker = stubBroker(calls, { writeFile: async () => {} })
-    const data = new Uint8Array([1, 2, 3])
-
-    const response = await handleControlRequest(broker, frameFor(APP), envelope('fs.writeFile', { path: '/a/b.txt', data }))
-
-    expect(response).toEqual({ id: 'req-1', ok: true, result: undefined })
-    expect(calls).toEqual([{ method: 'fs.writeFile', origin: APP, args: { path: '/a/b.txt', data } }])
   })
 
   it('id.publicKey passes curve through and returns the bytes', async () => {
@@ -594,10 +572,6 @@ describe('the request envelope itself is untrusted (a compromised renderer reach
 
 describe('defensive payload validation (a compromised renderer can bypass contextBridge entirely)', () => {
   it.each<[string, unknown]>([
-    ['fs.readFile', {}],
-    ['fs.readFile', { path: 42 }],
-    ['fs.writeFile', { path: '/a' }],
-    ['fs.writeFile', { path: '/a', data: 'not bytes' }],
     ['id.publicKey', {}],
     ['id.publicKey', { curve: 42 }],
     ['id.sign', {}],

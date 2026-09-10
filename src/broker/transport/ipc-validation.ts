@@ -12,9 +12,10 @@
 
 import type { RequestEnvelope } from '../../contracts/index.js'
 
-/** The twelve wired control operations. Anything else is 'invalid'. */
+/** The seventeen wired control operations. Anything else is 'invalid'. */
 export type ControlMethod =
   | 'app.manifest' | 'app.grants' | 'fs.readFile' | 'fs.writeFile'
+  | 'fs.mkdir' | 'fs.readdir' | 'fs.stat' | 'fs.rm' | 'fs.rename'
   | 'id.publicKey' | 'id.sign'
   | 'net.connect' | 'net.connectSecure' | 'net.udpBind' | 'net.close'
   | 'net.setNoDelay' | 'net.setKeepAlive'
@@ -22,6 +23,8 @@ export type ControlMethod =
 export function isControlMethod (method: string): method is ControlMethod {
   return method === 'app.manifest' || method === 'app.grants' ||
     method === 'fs.readFile' || method === 'fs.writeFile' ||
+    method === 'fs.mkdir' || method === 'fs.readdir' || method === 'fs.stat' ||
+    method === 'fs.rm' || method === 'fs.rename' ||
     method === 'id.publicKey' || method === 'id.sign' ||
     method === 'net.connect' || method === 'net.connectSecure' ||
     method === 'net.udpBind' || method === 'net.close' ||
@@ -30,6 +33,11 @@ export function isControlMethod (method: string): method is ControlMethod {
 
 export interface FsReadFileParams { readonly path: string }
 export interface FsWriteFileParams { readonly path: string, readonly data: Uint8Array }
+/** Shared shape for fs.mkdir and fs.rm -- both take just a path and an optional recursive flag. */
+export interface FsPathWithRecursiveParams { readonly path: string, readonly recursive?: boolean }
+export interface FsReaddirParams { readonly path: string }
+export interface FsStatParams { readonly path: string }
+export interface FsRenameParams { readonly from: string, readonly to: string }
 export interface IdPublicKeyParams { readonly curve: string }
 export interface IdSignParams { readonly curve: string, readonly payload: Uint8Array }
 /** Shared by net.connect and net.connectSecure -- both take exactly { host, port }, and isNetConnectParams below validates either call's payload (code-guidelines.md Rule 3: same shape, same reason). */
@@ -59,6 +67,34 @@ export function isFsWriteFileParams (payload: unknown): payload is FsWriteFilePa
   return typeof payload === 'object' && payload !== null &&
     typeof (payload as { path?: unknown }).path === 'string' &&
     (payload as { data?: unknown }).data instanceof Uint8Array
+}
+
+/**
+ * `recursive` is OPTIONAL, matching `capability-api.ts`'s
+ * `opts?: { recursive?: boolean }` on both `mkdir` and `rm` -- an
+ * `exactOptionalPropertyTypes`-safe check, so a payload that omits the key
+ * entirely is just as valid as one carrying `recursive: false`.
+ */
+export function isFsPathWithRecursiveParams (payload: unknown): payload is FsPathWithRecursiveParams {
+  if (typeof payload !== 'object' || payload === null) return false
+  const { path, recursive } = payload as { path?: unknown, recursive?: unknown }
+  return typeof path === 'string' && (recursive === undefined || typeof recursive === 'boolean')
+}
+
+export function isFsReaddirParams (payload: unknown): payload is FsReaddirParams {
+  return typeof payload === 'object' && payload !== null &&
+    typeof (payload as { path?: unknown }).path === 'string'
+}
+
+export function isFsStatParams (payload: unknown): payload is FsStatParams {
+  return typeof payload === 'object' && payload !== null &&
+    typeof (payload as { path?: unknown }).path === 'string'
+}
+
+export function isFsRenameParams (payload: unknown): payload is FsRenameParams {
+  return typeof payload === 'object' && payload !== null &&
+    typeof (payload as { from?: unknown }).from === 'string' &&
+    typeof (payload as { to?: unknown }).to === 'string'
 }
 
 export function isIdPublicKeyParams (payload: unknown): payload is IdPublicKeyParams {
