@@ -274,8 +274,13 @@ function splitOnce (text: string, separator: string): [string, string | undefine
  * covered by some GRANTED pattern. `granted ⊇ requested`. The reverse test
  * ("is every granted pattern still requested") passes happily for
  * `["api.example.com:443"] -> ["*:*"]`.
+ *
+ * EXPORTED as of 2026-09-10 (P4-1): ./request-grant.ts's decideGrantRequest
+ * reuses this exact function as its subset check -- "declared" standing in
+ * for `granted` -- rather than writing a second copy of the one idea this
+ * file's own header calls out (docs/development/code-guidelines.md Rule 3).
  */
-function widensAuthority (granted: PatternSet, requested: PatternSet): boolean {
+export function widensAuthority (granted: PatternSet, requested: PatternSet): boolean {
   // Iterating the REQUESTED keys rather than a hardcoded list of capability
   // kinds means a kind added to contracts/manifest.ts later is checked here
   // with no edit, and an unrecognised kind arriving from a parsed manifest is
