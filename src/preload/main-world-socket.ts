@@ -91,6 +91,8 @@ export function installOrivon (
     appGrants: () => Promise<unknown>
     fsReadFile: (path: string) => Promise<Uint8Array>
     fsWriteFile: (path: string, data: Uint8Array) => Promise<void>
+    /** ADR-0016's one synchronous call -- see orivon-surface.ts's own fsReadFileSync for the mechanism. Deliberately NOT `Promise<Uint8Array>` like every other bridge closure here. */
+    fsReadFileSync: (path: string) => Uint8Array
     idPublicKey: (curve: string) => Promise<Uint8Array>
     idSign: (curve: string, payload: Uint8Array) => Promise<Uint8Array>
     netConnect: (opts: { host: string, port: number }) => Promise<MainWorldSocketBridge>
@@ -310,7 +312,13 @@ export function installOrivon (
     }),
     fs: Object.freeze({
       readFile: async (path: string) => await bridge.fsReadFile(path),
-      writeFile: async (path: string, data: Uint8Array) => { await bridge.fsWriteFile(path, data) }
+      writeFile: async (path: string, data: Uint8Array) => { await bridge.fsWriteFile(path, data) },
+      // NOT wrapped in `async` -- whether this stays synchronous once
+      // proxied through `contextBridge.executeInMainWorld` is exactly the
+      // thing only a real launch can settle (see this lane's PR body); an
+      // `async` wrapper here would force a Promise even if the proxy itself
+      // preserved a synchronous return, hiding the answer either way.
+      readFileSync: (path: string) => bridge.fsReadFileSync(path)
     }),
     id: Object.freeze({
       publicKey: async (opts: { curve: string }) => await bridge.idPublicKey(opts.curve),
