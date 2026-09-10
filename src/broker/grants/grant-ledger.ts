@@ -11,17 +11,15 @@ import { compareVersions } from '../policy/update.js'
 import type { ParsedPattern } from '../policy/connect-patterns.js'
 import type { ParsedPatternsCache } from './parsed-patterns-cache.js'
 import { createParsedPatternsCache } from './parsed-patterns-cache.js'
+import { hydrateGrants, persistGrants } from './grant-persistence.js'
 
 /**
- * 128 bits from the platform CSPRNG, as hex -- the same construction
- * handle-store.ts's private `newHandleId()` uses, for the same reason
- * (unguessability is defence in depth; the boundary is the per-origin
- * lookup, not the id's secrecy).
- *
- * NOT DEDUPLICATED with that function, or with policy/bundle-hash.ts's
- * private `toLowercaseHex` -- three copies of the same hex encoding. A known,
- * deliberate Rule 3 violation, tracked in code-guidelines.md's open point 3
- * along with the pair it belongs to, and not a silent shortcut.
+ * 128 bits from the platform CSPRNG, as hex -- same construction as
+ * handle-store.ts's private `newHandleId()` (unguessability is defence in
+ * depth; the boundary is the per-origin lookup, not the id's secrecy). NOT
+ * DEDUPLICATED with that function or policy/bundle-hash.ts's `toLowercaseHex`
+ * -- a known, tracked Rule 3 violation (code-guidelines.md's open point 3),
+ * not a silent shortcut.
  */
 function newGrantId (): GrantId {
   const bytes = new Uint8Array(16)
@@ -35,8 +33,12 @@ interface OriginRecord {
    * At most one LIVE grant per capability kind. Granting again replaces it --
    * see `createBroker`'s `grant()` on why the replacement mints a fresh
    * GrantId rather than reusing the old one (open-questions.md A21).
+   * Persisted via `LedgerStorage` (A23) -- see README.md's grant-persistence
+   * design note for the hydration/re-validation rule.
    */
   readonly grants: Map<CapabilityKind, Grant>
+  /** Set once this origin's persisted grants have been checked against its manifest and merged into `grants` -- the first `registerApp` call only, never again (a manifest is required to re-validate against, unlike `versionFloor`'s hydration). */
+  grantsHydrated: boolean
   /**
    * Bytes written so far against `manifest.capabilities.fs.quotaBytes`.
    *
@@ -56,15 +58,11 @@ interface OriginRecord {
    * is the only writer of a RAISED value; hydration (below) is the only
    * other writer, and only ever raises it too.
    *
-   * Persisted via an injected `LedgerStorage` (A57, `docs/open-questions.md`)
-   * so it survives a browser restart -- but deliberately NOT a full "remove
-   * this app" action, which is meant to forget the origin completely
-   * (`ADR-0009`'s 2026-09-04 amendment corrects its own earlier claim that
-   * the floor must survive that too). Deliberately NOT persisted the rest of
-   * `OriginRecord` (`manifest`, `grants`, `fsBytesWritten`): full ledger
-   * persistence is separate, larger, not-yet-built work (A23's own "when the
-   * code that persists grants exists"); this closes only the specific T19
-   * replay-guard gap A57 is about.
+   * Persisted via an injected `LedgerStorage` (A57) so it survives a browser
+   * restart -- but deliberately NOT a full "remove this app" action, which
+   * forgets the origin completely (`ADR-0009`'s 2026-09-04 amendment).
+   * `grants` (above) is now ALSO persisted (A23); `fsBytesWritten` still is
+   * not (A29).
    */
   versionFloor: string
   /**
@@ -92,16 +90,15 @@ interface OriginRecord {
  * has actually been granted, kept apart on purpose -- see ../index.ts's file
  * header.
  *
- * DOES NOT ENFORCE that a grant is a subset of what the manifest declares.
- * That check belongs to whoever ISSUES the grant (the permission-prompt UI, a
- * later build step) and to policy/update.ts's re-consent decision. This class
- * only remembers what it is told, the same way HandleTable trusts the
- * ownership its caller asserts rather than re-deriving it.
+ * DOES NOT ENFORCE that a live `grant()` call is a subset of what the
+ * manifest declares -- that is whoever ISSUES the grant's job (the
+ * permission prompt, policy/update.ts's re-consent decision). The one
+ * exception is a grant RESTORED from disk (A23): `registerApp` re-validates
+ * those against the current manifest before they ever reach `grants`.
  *
- * BROKER-INTERNAL, the same way OriginTable (../handles/handle-store.ts) is private to
- * HandleTable. Nothing outside `createBroker` should hold a bare
- * GrantLedger; `canonical()` in index.ts is the boundary that normalises an
- * origin before this class ever sees one.
+ * BROKER-INTERNAL, the same way OriginTable (../handles/handle-store.ts) is
+ * private to HandleTable -- `canonical()` in index.ts normalises an origin
+ * before this class ever sees one.
  */
 export class GrantLedger {
   readonly #origins = new Map<string, OriginRecord>()
@@ -109,12 +106,7 @@ export class GrantLedger {
   /** See ./parsed-patterns-cache.ts for what this caches and why keying by the Grant object needs no separate invalidation. */
   readonly #parsedPatterns: ParsedPatternsCache = createParsedPatternsCache()
 
-  /**
-   * `storage` is optional so every existing caller (every test in this
-   * codebase constructs `GrantLedger()`/`createBroker()` with no persistence
-   * in mind) keeps working unchanged -- omitting it is exactly today's
-   * in-memory-only behaviour, not a degraded mode.
-   */
+  /** Optional so every existing caller (every test constructs `GrantLedger()`/`createBroker()` with no persistence in mind) keeps working unchanged -- omitting it is today's in-memory-only behaviour, not a degraded mode. */
   constructor (storage?: LedgerStorage) {
     this.#storage = storage
   }
@@ -122,7 +114,7 @@ export class GrantLedger {
   #record (origin: string): OriginRecord {
     const existing = this.#origins.get(origin)
     if (existing !== undefined) return existing
-    const created: OriginRecord = { manifest: undefined, grants: new Map(), fsBytesWritten: 0, versionFloor: '0.0.0', rollbackAcknowledgedVersion: undefined }
+    const created: OriginRecord = { manifest: undefined, grants: new Map(), grantsHydrated: false, fsBytesWritten: 0, versionFloor: '0.0.0', rollbackAcknowledgedVersion: undefined }
     this.#origins.set(origin, created)
     this.#hydrateFloor(origin, created)
     this.#hydrateRollbackAcknowledgedVersion(origin, created)
@@ -234,6 +226,17 @@ export class GrantLedger {
   registerApp (origin: string, manifest: Manifest): void {
     const record = this.#record(origin)
     record.manifest = manifest
+
+    // First registration this session only -- see `grantsHydrated`'s doc.
+    if (!record.grantsHydrated) {
+      record.grantsHydrated = true
+      if (this.#storage !== undefined && isPersistableOrigin(origin)) {
+        for (const [capability, grant] of hydrateGrants(this.#storage, origin, manifest, newGrantId)) {
+          record.grants.set(capability, grant)
+        }
+      }
+    }
+
     if (compareVersions(manifest.version, record.versionFloor) !== 1) return
 
     record.versionFloor = manifest.version
@@ -274,38 +277,31 @@ export class GrantLedger {
    * in-memory record -- there is simply no disk half to clear. For an origin
    * the ledger holds nothing for it is a no-op both halves.
    *
-   * NOT AN "UNINSTALL THIS APP" PRIMITIVE, and it should not be mistaken for
-   * one when the UI action that drives it is eventually built. It is correct
-   * and complete for the version floor, which is what A60 needs. It also
-   * drops the origin's `manifest`, `grants` and `fsBytesWritten`, and those
-   * three it does NOT finish:
-   *   - dropping a grant here does not revoke the handles it authorised.
-   *     This class has no reference to `HandleTable` (it is broker-internal,
-   *     see the class doc), so that cascade belongs one layer up, in
-   *     `createBroker`, next to the one `revoke` already performs.
+   * NOT AN "UNINSTALL THIS APP" PRIMITIVE. It is correct and complete for the
+   * version floor and the persisted grants (A23) -- `deleteGrants` below
+   * closes that half, matching `ADR-0009`'s 2026-09-04 amendment that a full
+   * removal forgets everything. In-memory `manifest` and `fsBytesWritten` are
+   * also dropped, and two gaps remain open, neither reachable today since
+   * NOTHING CALLS THIS YET (docs/open-questions.md A60):
+   *   - dropping a grant here does not revoke the handles it authorised --
+   *     that cascade belongs one layer up, in `createBroker`, next to the one
+   *     `revoke` already performs (this class has no `HandleTable` reference).
    *   - resetting `fsBytesWritten` to zero frees no bytes on disk, so
    *     forget-then-re-register is a way around the fs quota until the
    *     confinement directory is actually sized (A29).
-   *
-   * NOTHING CALLS THIS YET (docs/open-questions.md A60), so neither gap is
-   * reachable today.
    */
   forgetOrigin (origin: string): void {
     if (this.#storage !== undefined) {
       try {
-        // Both persisted pieces of this origin's grant-ledger state go
-        // together, same reasoning as the floor's own disk-then-memory
-        // order above: if EITHER delete throws, the in-memory record is
-        // left completely intact rather than half-forgotten. This is still
-        // best-effort across the two files, not a filesystem transaction --
-        // the class doc's own "not an uninstall primitive" caveat already
-        // says this forgets what A60/d-0017 need, not everything origin-
-        // scoped, and a partially-deleted disk state on a genuine mid-loop
-        // crash is no worse than the single-file version already accepted.
+        // All three persisted pieces go together, disk-then-memory as above:
+        // if ANY delete throws, the in-memory record is left completely
+        // intact rather than half-forgotten -- best-effort across the three
+        // files, not a filesystem transaction.
         this.#storage.deleteVersionFloor(origin)
         this.#storage.deleteAcknowledgedRollbackVersion(origin)
+        this.#storage.deleteGrants(origin)
       } catch (error) {
-        console.error('[broker] failed to delete a persisted version floor or rollback acknowledgement; the in-memory record was left intact so nothing is half-forgotten', error)
+        console.error('[broker] failed to delete a persisted version floor, rollback acknowledgement or grant set; the in-memory record was left intact so nothing is half-forgotten', error)
         return
       }
     }
@@ -404,17 +400,21 @@ export class GrantLedger {
    * kind. Returns the replaced record too -- the ledger is the only thing
    * that ever held it, so a caller that needs to revoke it (createBroker's
    * `grant`, in index.ts) has no other way to find it once this returns.
+   * Persists via `persistGrants` (A23, ./grant-persistence.ts) -- see its doc.
    */
   grant (origin: string, capability: CapabilityKind, patterns: readonly Pattern[], grantedAt: number): { record: Grant, replaced: Grant | undefined } {
     const record: Grant = { id: newGrantId(), origin, capability, patterns, grantedAt }
     const originRecord = this.#record(origin)
     const replaced = originRecord.grants.get(capability)
     originRecord.grants.set(capability, record)
+    persistGrants(this.#storage, origin, originRecord.grants)
     return { record, replaced }
   }
 
   /**
-   * Removes one grant, by id, from whichever capability slot holds it.
+   * Removes one grant, by id, from whichever capability slot holds it, and
+   * persists the removal via `persistGrants` (A23) -- which DOES throw on a
+   * write failure, unlike the no-op contract below.
    *
    * A NO-OP, never a throw, for an origin or id the ledger does not hold --
    * revoking twice, or revoking an id that already lapsed, must behave the
@@ -427,6 +427,7 @@ export class GrantLedger {
     for (const [capability, grant] of record.grants) {
       if (grant.id === grantId) {
         record.grants.delete(capability)
+        persistGrants(this.#storage, origin, record.grants)
         return
       }
     }

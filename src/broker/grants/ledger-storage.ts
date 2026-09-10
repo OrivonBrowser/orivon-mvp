@@ -1,28 +1,32 @@
 // Where GrantLedger's own state that must survive a process restart gets
-// persisted -- currently just the T19 version floor (docs/open-questions.md
-// A57). Broker-owned, the same way src/loader/storage.ts's LoaderStorage is
-// loader-owned: this file's real implementation puts the version floor
-// under its own `grants/` root, never the loader's `apps/`.
-//
-// NOT A CLEAN SEPARATION EVERYWHERE, THOUGH: node-adapters.ts's `nodeFs`
-// (the OTHER piece of broker state, the `fs` capability's confined bytes)
-// already writes under `apps/<hash>/files`, inside the loader's own root --
-// that predates this file and is unchanged by it. So "one root per
-// subsystem" holds for the version floor specifically, not as a whole-tree
-// guarantee; whoever eventually builds app removal has to know about both
-// roots either way.
+// persisted -- the T19 version floor (A57), d-0017's rollback acknowledgement,
+// and now the grants themselves (A23). Broker-owned, the same way
+// src/loader/storage.ts's LoaderStorage is loader-owned: this file's real
+// implementation puts all of it under its own `grants/` root, never the
+// loader's `apps/` (node-adapters.ts's `nodeFs` is the one exception, writing
+// under `apps/<hash>/files` -- predates this file, see README.md).
 //
 // SYNCHRONOUS, not Promise-based like LoaderStorage -- deliberately.
 // GrantLedger's own registerApp/versionFloorFor are relied on throughout
-// this codebase's own tests (src/broker/tests/index.test.ts) as effectively
-// synchronous: dozens of call sites invoke Broker.registerApp without
-// awaiting its Promise<void>, which only ever worked because nothing inside
-// it actually yielded. Making persistence genuinely async would turn every
-// one of those into a real race (the next line could run before the write
-// landed) -- a correctness regression, not just a test-fixup exercise. A
-// tiny per-origin JSON file is exactly the class of operation node-storage.ts
-// already chose sync fs APIs for (codeRoot's mkdirSync, resolveAssetPath's
-// realpathSync), for the same reason.
+// this codebase's own tests as effectively synchronous: dozens of call sites
+// invoke Broker.registerApp without awaiting its Promise<void>, which only
+// ever worked because nothing inside it actually yielded. Making persistence
+// genuinely async would turn every one of those into a real race -- a
+// correctness regression, not just a test-fixup exercise. See README.md for
+// the full reasoning.
+
+import type { Pattern } from '../../contracts/index.js'
+
+/**
+ * One capability's persisted authority. NO `id` and NO `origin`: hydration
+ * (`grant-persistence.ts`) always mints a fresh GrantId (`GrantLedger.grant`'s
+ * own rule -- an id is never derived from a grant's content) and already
+ * knows which origin's file it read, so neither belongs in what disk holds.
+ */
+export interface PersistedGrant {
+  readonly patterns: readonly Pattern[]
+  readonly grantedAt: number
+}
 
 export interface LedgerStorage {
   /**
@@ -73,4 +77,35 @@ export interface LedgerStorage {
    * persisted for.
    */
   deleteAcknowledgedRollbackVersion(origin: string): void
+
+  /**
+   * Every grant persisted for `origin`, keyed by capability kind AS A PLAIN
+   * STRING -- untrusted disk content, not yet known to be one of the seven
+   * real `CapabilityKind` literals; the caller (`grant-persistence.ts`) is the
+   * one that checks. `undefined` for an origin never persisted, AND for a
+   * file that exists but cannot be parsed as the expected shape.
+   *
+   * UNLIKE `readVersionFloor`, collapsing a corrupt read to "nothing" is the
+   * SAFE direction here, not the dangerous one: the floor's replay guard gets
+   * WEAKER at its default ('0.0.0'), but a grant that fails to restore only
+   * costs a re-prompt -- it can never mint authority nobody has, which is the
+   * one thing this whole feature must never do. Same reasoning
+   * `readAcknowledgedRollbackVersion`'s own doc gives for its `undefined`
+   * collapse.
+   */
+  readGrants(origin: string): Readonly<Record<string, PersistedGrant>> | undefined
+  /**
+   * Persists the FULL set of `origin`'s current grants, replacing whatever
+   * was there before -- one file, written whole, so a reader never observes
+   * a set with one grant added but another not yet removed.
+   */
+  writeGrants(origin: string, grants: Readonly<Record<string, PersistedGrant>>): void
+  /**
+   * Deletes whatever grants were persisted for `origin`, if any -- called
+   * from `GrantLedger.forgetOrigin` alongside the floor and acknowledgement
+   * deletes, so a fully forgotten origin does not have its capabilities
+   * reappear on the next restart. A no-op, never a throw, for an origin
+   * nothing was ever persisted for.
+   */
+  deleteGrants(origin: string): void
 }
