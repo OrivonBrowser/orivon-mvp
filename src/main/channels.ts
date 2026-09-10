@@ -43,3 +43,10 @@ export const PORT_CHANNEL = 'orivon:port'
  * only thing distinguishing which shape a given message expects). See
  * ../broker/transport/sync-fs.ts. */
 export const SYNC_CONTROL_CHANNEL = 'orivon:control-sync'
+
+/** The settings window's own single WebContentsView -> main: list/revoke
+ * (queue item 4.4). A separate channel from COMMAND_CHANNEL: this is a
+ * different top-level BaseWindow, not the chrome view, so its sender check
+ * is against ITS OWN webContents identity, never chrome's. See
+ * ./settings-ipc.ts. */
+export const SETTINGS_COMMAND_CHANNEL = 'orivon-settings:command'

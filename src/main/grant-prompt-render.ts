@@ -59,7 +59,17 @@ function portsPhrase (patterns: readonly Pattern[]): string {
   return patterns.length === 1 ? `port ${patterns[0]}` : `ports ${patterns.join(', ')}`
 }
 
-interface Rendered {
+/**
+ * One already-granted capability's plain-language summary -- exported for
+ * the permissions list (queue item 4.4, `../permissions.ts`), which renders
+ * one row per live `Grant` and needs exactly this fact, not a whole request
+ * dialog's title/detail. `describeGrantRequest` below is this function plus
+ * the claim/explanation framing a REQUEST prompt needs; the two must never
+ * drift into two separate wordings for the same capability
+ * (code-guidelines.md Rule 3), so the list reuses this directly rather than
+ * re-deriving its own copy of the switch below.
+ */
+export interface CapabilityGrantSummary {
   readonly warning: boolean
   readonly message: string
   /** Present only alongside `warning: true` -- the sentence explaining
@@ -70,7 +80,7 @@ interface Rendered {
 // `tcp.listen`/`udp.bind` never reach the unlimited branch: the contract
 // itself rejects a bare `"*"` port range (manifest.ts), so there is no
 // breadth case here to render -- only which ports.
-function render (capability: CapabilityKind, patterns: readonly Pattern[]): Rendered {
+export function describeCapabilityGrant (capability: CapabilityKind, patterns: readonly Pattern[]): CapabilityGrantSummary {
   switch (capability) {
     case 'tcp.connect':
       return isUnlimited(patterns)
@@ -114,7 +124,7 @@ export function describeGrantRequest (
   capability: CapabilityKind,
   patterns: readonly Pattern[]
 ): GrantPromptContent {
-  const { warning, message, explanation } = render(capability, patterns)
+  const { warning, message, explanation } = describeCapabilityGrant(capability, patterns)
   const claim = `Claims to be "${manifest.name}".`
   return {
     warning,
