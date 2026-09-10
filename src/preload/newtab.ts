@@ -3,6 +3,7 @@ import type { Bookmark } from '../main/bookmarks.js'
 import { NEWTAB_COMMAND_CHANNEL } from '../main/channels.js'
 import type { NewTabCommand } from '../main/newtab-ipc.js'
 import { exposeOrivon } from './orivon-surface.js'
+import { exposeFetchRoute } from './fetch-route.js'
 
 // Loaded ONLY for a genuinely fresh tab (src/main/tabs.ts's createTab(),
 // `url === undefined`) -- the dashboard's own page (src/renderer/newtab/).
@@ -46,5 +47,9 @@ if (expectedUrl !== undefined && location.href === expectedUrl) {
     navigate: (input: string): void => { send({ type: 'navigate', input }) }
   })
 } else {
+  // ADR-0017: the SAME fetch routing preload/app.ts's ordinary tabs get --
+  // this branch means the dashboard tab was navigated away, and is now an
+  // ordinary tab too (see this file's own header above).
   exposeOrivon()
+  exposeFetchRoute()
 }
