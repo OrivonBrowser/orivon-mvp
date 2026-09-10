@@ -82,10 +82,14 @@ export interface Capabilities {
 export interface NetCapability {
   readonly tcp?: TcpCapability
   readonly udp?: UdpCapability
+  readonly https?: HttpsCapability
   /**
    * How many sockets this app may hold open at once -- TcpSocket, UdpSocket
    * and accepted connections combined, the same total `LIMITS.concurrentSockets`
-   * bounds.
+   * bounds. A TLS-terminated socket from `net.connectSecure` counts here too:
+   * it is the same handle shape, the same read/write credit windows, and the
+   * same OS socket underneath -- ADR-0017 changes who does the handshake, not
+   * what the socket costs.
    *
    * DECLARED BY THE APP, SHOWN AT GRANT TIME, ENFORCED BY THE BROKER, exactly
    * as `FsCapability.quotaBytes` already is (owner decision, 2026-09-06). The
@@ -112,6 +116,11 @@ export interface TcpCapability {
    * must say so in plain words ("connect to any computer on the internet"),
    * not hide it behind a pattern string. Understating it would be exactly the
    * dishonesty ADR-0006 exists to prevent.
+   *
+   * Matched against the RESOLVED address, same as every pattern in this
+   * interface (T12) -- unaffected by `HttpsCapability` below, which is a
+   * separate grant with a different, and differently justified, matching
+   * rule.
    */
   readonly connect?: readonly Pattern[]
   /**
@@ -128,6 +137,46 @@ export interface UdpCapability {
   readonly bind?: readonly Pattern[]
   /** host:port patterns, same rules as tcp.connect. */
   readonly send?: readonly Pattern[]
+}
+
+/**
+ * TLS terminated on the trusted side (ADR-0017): the broker performs the
+ * handshake, certificate chain validation and hostname verification, using
+ * the encryption stack already in the shipped runtime -- no new dependency
+ * (Rule 8 unaffected). `net.connectSecure` hands the app back the same
+ * `TcpSocket` shape `net.connect` does, carrying plaintext bytes; nothing
+ * about the connection being TLS is visible on the handle itself.
+ *
+ * A SEPARATE GRANT FROM `TcpCapability`, deliberately -- `net.tcp.connect`'s
+ * raw path is unaffected by this capability's existence. Two apps that both
+ * declare network access can present very differently to the person
+ * granting it: "connect to any computer on the internet" (raw TCP) reads as
+ * a materially different, scarier claim than "reach any HTTPS website"
+ * (this capability), and collapsing them into one grant would either
+ * understate the first or overstate the second.
+ */
+export interface HttpsCapability {
+  /**
+   * host:port patterns, same syntax as `TcpCapability.connect` -- including
+   * `"*:*"` for unlimited HTTPS, which a manifest may legitimately declare
+   * (ADR-0017). **The prompt must render this breadth as visibly as
+   * `tcp.connect: ["*:*"]` already must** (`open-questions.md` A100): the
+   * widest permission in the system must not look identical to a narrow
+   * one just because its name sounds tamer.
+   *
+   * MATCHED AGAINST THE HOSTNAME THE APP ASKED FOR, not the resolved
+   * address -- the one deliberate departure from every other pattern list
+   * in this file, and it is safe rather than a regression of T12.
+   * `tcp.connect` matches on the resolved address because nothing else ties
+   * a hostname to who actually answered; here, the broker's own certificate
+   * and hostname verification already does that binding cryptographically
+   * -- an attacker who controls DNS still cannot present a certificate a
+   * trusted root signed for that hostname. Matching on the verified
+   * hostname is what lets the grant prompt name the real site the app is
+   * talking to (ADR-0017's "the trusted side sees the real hostname, so a
+   * grant can name it directly").
+   */
+  readonly connect?: readonly Pattern[]
 }
 
 export interface FsCapability {
@@ -174,5 +223,6 @@ export type CapabilityKind =
   | 'tcp.listen'
   | 'udp.bind'
   | 'udp.send'
+  | 'https.connect'
   | 'fs'
   | 'id'
