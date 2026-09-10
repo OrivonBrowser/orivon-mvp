@@ -318,6 +318,99 @@ describe("net.connect / net.close (the byte pump's control-channel wiring)", () 
   })
 })
 
+describe('net.connectSecure (a sibling of net.connect, over deliverTcpSocket)', () => {
+  it('calls broker.net.connectSecure, NOT broker.net.connect, and returns a plain descriptor', async () => {
+    const calls: BrokerCall[] = []
+    const { socket } = fakeTcpSocket()
+    const broker = stubBroker(calls, { connectSecure: async () => socket })
+    const { pair } = fakePortPair()
+
+    const response = await handleControlRequest(
+      broker, frameFor(APP), envelope('net.connectSecure', { host: 'x.example', port: 443 }), fakeTransport(pair)
+    )
+
+    expect(response).toEqual({
+      id: 'req-1',
+      ok: true,
+      result: { id: 'handle-1', remoteAddress: '93.184.216.34', remotePort: 443, localAddress: '10.0.0.5', localPort: 54321 }
+    })
+    expect(calls).toEqual([{ method: 'net.connectSecure', origin: APP, args: { host: 'x.example', port: 443 } }])
+  })
+
+  it('delivers a port to the CALLING FRAME, tagged with the handle id, over the delivery channel', async () => {
+    const calls: BrokerCall[] = []
+    const { socket } = fakeTcpSocket()
+    const broker = stubBroker(calls, { connectSecure: async () => socket })
+    const { pair } = fakePortPair()
+    const frame = frameFor(APP)
+
+    await handleControlRequest(broker, frame, envelope('net.connectSecure', { host: 'x.example', port: 443 }), fakeTransport(pair))
+
+    expect(frame.senderFrame?.postMessage).toHaveBeenCalledWith(
+      expect.any(String), { handleId: 'handle-1' }, [pair.port2]
+    )
+  })
+
+  it("relays the socket's bytes to the delivered port exactly as net.connect's own wiring does -- deliverTcpSocket is shared, not reimplemented", async () => {
+    const calls: BrokerCall[] = []
+    const chunk = new Uint8Array([9, 8, 7])
+    const readable = new ReadableStream<Uint8Array>({
+      start (controller) { controller.enqueue(chunk); controller.close() }
+    })
+    const { socket } = fakeTcpSocket(readable)
+    const broker = stubBroker(calls, { connectSecure: async () => socket })
+    const { pair, port1 } = fakePortPair()
+
+    await handleControlRequest(broker, frameFor(APP), envelope('net.connectSecure', { host: 'x.example', port: 443 }), fakeTransport(pair))
+    await tick(10)
+
+    expect(port1.sent).toEqual([
+      { kind: 'data', handleId: 'handle-1', chunk },
+      { kind: 'end', handleId: 'handle-1' }
+    ])
+  })
+
+  it('net.close closes a socket net.connectSecure registered -- the same registry as net.connect', async () => {
+    const calls: BrokerCall[] = []
+    const { socket, closeSpy } = fakeTcpSocket()
+    const broker = stubBroker(calls, { connectSecure: async () => socket })
+    const transport = fakeTransport(fakePortPair().pair)
+
+    const connectResponse = await handleControlRequest(
+      broker, frameFor(APP), envelope('net.connectSecure', { host: 'x.example', port: 443 }), transport
+    )
+    const id = connectResponse.ok ? (connectResponse.result as { id: string }).id : ''
+
+    await handleControlRequest(broker, frameFor(APP), envelope('net.close', { id }), transport)
+
+    expect(closeSpy).toHaveBeenCalledOnce()
+  })
+
+  it('a socket abandoned before its port reaches the frame is closed and unregistered, same as net.connect (handle-contracts.ts\'s release-exactly-once rule)', async () => {
+    const calls: BrokerCall[] = []
+    const { socket, closeSpy } = fakeTcpSocket()
+    const transport = fakeTransport(fakePortPair().pair)
+    const disposedFrame: ControlEvent = {
+      senderFrame: {
+        url: `${APP}/index.html`,
+        origin: APP,
+        postMessage: () => { throw new Error('Render frame was disposed before WebFrameMain could be accessed') }
+      }
+    }
+
+    const response = await handleControlRequest(
+      stubBroker(calls, { connectSecure: async () => socket }),
+      disposedFrame, envelope('net.connectSecure', { host: 'x.example', port: 443 }), transport
+    )
+    await tick(10)
+
+    expect(response.ok).toBe(false)
+    expect((response as { code: string }).code).toBe('internal')
+    expect(closeSpy).toHaveBeenCalledOnce()
+    expect(transport.registry.get(APP, 'handle-1')).toBeUndefined()
+  })
+})
+
 describe('a socket whose port never reaches its frame is released, not leaked', () => {
   // handle-contracts.ts's destroy rule: released exactly once, ALWAYS,
   // "including when the acquisition that would have registered the handle is
@@ -514,6 +607,9 @@ describe('defensive payload validation (a compromised renderer can bypass contex
     ['net.connect', {}],
     ['net.connect', { host: 'x.example' }],
     ['net.connect', { host: 123, port: 443 }],
+    ['net.connectSecure', {}],
+    ['net.connectSecure', { host: 'x.example' }],
+    ['net.connectSecure', { host: 123, port: 443 }],
     ['net.close', {}],
     ['net.close', { id: 42 }],
     ['net.setNoDelay', {}],

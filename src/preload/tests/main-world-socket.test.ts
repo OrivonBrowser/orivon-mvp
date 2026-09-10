@@ -78,13 +78,15 @@ function fakeSocketBridgeResult (): {
 function fakeBridge (
   netConnectResult: ReturnType<typeof fakeSocketBridgeResult>,
   udpResult?: ReturnType<typeof fakeUdpBridgeResult>,
-  fsReadFileSync: (path: string) => ResponseEnvelope<Uint8Array> = () => ({ id: '', ok: true, result: new Uint8Array() })
+  fsReadFileSync: (path: string) => ResponseEnvelope<Uint8Array> = () => ({ id: '', ok: true, result: new Uint8Array() }),
+  netConnectSecureResult: ReturnType<typeof fakeSocketBridgeResult> = fakeSocketBridgeResult()
 ): {
   appManifest: () => Promise<unknown>, appGrants: () => Promise<unknown>
   fsReadFile: (path: string) => Promise<Uint8Array>, fsWriteFile: (path: string, data: Uint8Array) => Promise<void>
   fsReadFileSync: (path: string) => ResponseEnvelope<Uint8Array>
   idPublicKey: (curve: string) => Promise<Uint8Array>, idSign: (curve: string, payload: Uint8Array) => Promise<Uint8Array>
   netConnect: (opts: { host: string, port: number }) => Promise<ReturnType<typeof fakeSocketBridgeResult>>
+  netConnectSecure: (opts: { host: string, port: number }) => Promise<ReturnType<typeof fakeSocketBridgeResult>>
   netUdpBind: (opts: { port: number }) => Promise<MainWorldUdpBridge>
 } {
   return {
@@ -96,6 +98,11 @@ function fakeBridge (
     idPublicKey: async () => new Uint8Array(),
     idSign: async () => new Uint8Array(),
     netConnect: async (_opts) => netConnectResult,
+    // A SEPARATE fake result by default (its own fakeSocketBridgeResult(),
+    // not netConnectResult) -- reusing the same one would let a bug that
+    // called bridge.netConnect instead of bridge.netConnectSecure pass
+    // silently, since both fields would then resolve to an identical object.
+    netConnectSecure: async (_opts) => netConnectSecureResult,
     netUdpBind: async (_opts) => udpResult ?? fakeUdpBridgeResult()
   }
 }
@@ -266,6 +273,26 @@ describe('installOrivon', () => {
     expect(socket.readable).toBeInstanceOf(ReadableStream)
     expect(socket.writable).toBeInstanceOf(WritableStream)
     expect(socket.closed).toBeInstanceOf(Promise)
+    expect(typeof socket.close).toBe('function')
+  })
+
+  it('net.connectSecure resolves through the SAME buildSocket path as net.connect, via its own bridge closure', async () => {
+    const target: Record<string, unknown> = {}
+    const secureResult = fakeSocketBridgeResult()
+    secureResult.id = 'h-secure'
+    secureResult.remotePort = 443
+    // A DIFFERENT default net.connect result, so a bug wiring connectSecure
+    // to bridge.netConnect instead of bridge.netConnectSecure would return
+    // this ('h1') rather than the fixture below and fail the id assertion.
+    const bridge = fakeBridge(fakeSocketBridgeResult(), undefined, undefined, secureResult)
+    installOrivon(bridge, LIMITS, target)
+
+    const orivon = target.orivon as { net: { connectSecure: (opts: unknown) => Promise<Record<string, unknown>> } }
+    const socket = await orivon.net.connectSecure({ host: 'x.example', port: 443 })
+
+    expect(socket.id).toBe('h-secure')
+    expect(socket.readable).toBeInstanceOf(ReadableStream)
+    expect(socket.writable).toBeInstanceOf(WritableStream)
     expect(typeof socket.close).toBe('function')
   })
 

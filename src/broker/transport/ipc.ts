@@ -1,14 +1,14 @@
 // Wires createBroker (../index.ts) to a real renderer over Electron IPC.
 //
 // SCOPE: app.manifest, app.grants, fs.readFile, fs.writeFile, id.publicKey,
-// id.sign, net.connect, net.udpBind, net.close, net.setNoDelay,
-// net.setKeepAlive. See ./README.md
+// id.sign, net.connect, net.connectSecure, net.udpBind, net.close,
+// net.setNoDelay, net.setKeepAlive. See ./README.md
 // for the two rules every method here enforces (origin attribution off the
 // sending frame, bytes never over request/response IPC) and
 // ../../contracts/ipc.ts for the timeout and no-transferables rules
-// withTimeout() and dispatch() apply below. net.connect's and net.udpBind's
-// port delivery are the only transferables this file ever sends; everything
-// else on CONTROL_CHANNEL is plain cloned data.
+// withTimeout() and dispatch() apply below. net.connect's, net.connectSecure's
+// and net.udpBind's port delivery are the only transferables this file ever
+// sends; everything else on CONTROL_CHANNEL is plain cloned data.
 //
 // TESTABLE WITHOUT ELECTRON, the way src/main/registry.ts is:
 // `handleControlRequest`, `dispatch` and `registerBrokerIpc` take a
@@ -48,6 +48,7 @@ import {
 import type {
   PortDeliveryFrame, PortLike, PortPair, PortTransport, SocketDescriptor, UdpSocketDescriptor
 } from './port-transport.js'
+import type { FailableTcpSocket } from '../handles/handle-contracts.js'
 import type { RequestEnvelope, ResponseEnvelope } from '../../contracts/index.js'
 import { LIMITS } from '../../contracts/index.js'
 
@@ -62,6 +63,78 @@ export type {
 
 export interface ControlEvent {
   readonly senderFrame: PortDeliveryFrame | null
+}
+
+/**
+ * Everything net.connect and net.connectSecure share once the broker has
+ * already handed back an acquired `FailableTcpSocket`: mint a port pair,
+ * wire the byte-pump relay, deliver the port to the calling frame (or
+ * abandon and release the handle if that fails), and return the plain
+ * descriptor. The two control methods differ only in WHICH broker method
+ * produced `socket` and which grant authorised it -- both dead ends by the
+ * time this runs -- so this is one implementation of "wire an acquired TCP
+ * socket to the renderer", not two copies drifting apart
+ * (code-guidelines.md Rule 3).
+ */
+async function deliverTcpSocket (
+  origin: string,
+  socket: FailableTcpSocket,
+  event: ControlEvent,
+  transport: PortTransport
+): Promise<SocketDescriptor> {
+  const pair = transport.createPortPair()
+  // Owns everything mechanical about relaying this socket's bytes in
+  // both directions, registering it for net.close, and releasing it
+  // exactly once -- see ./socket-relay.ts. What stays here is only
+  // what is security-relevant: the transport check above, the origin
+  // re-derivation below, and the port delivery itself.
+  const relay = createSocketRelay({
+    origin,
+    socket,
+    port: pair.port1,
+    registry: transport.registry,
+    readWindowBytes: LIMITS.readWindowBytes,
+    writeWindowBytes: LIMITS.writeWindowBytes
+  })
+
+  // If the port never reaches the frame, the app never learns this
+  // socket's id -- the descriptor below is not returned -- so it can
+  // never call net.close for it either. Releasing it here is the only
+  // remaining chance: handle-contracts.ts's destroy rule is that a
+  // resource is released exactly once, ALWAYS, "including when the
+  // acquisition that would have registered the handle is itself
+  // refused... otherwise one fd leaks per attempt against a limit an
+  // attacker can hit in a loop". A frame that navigated or was disposed
+  // between this request and this line is ordinary, not adversarial.
+  const abandon = async (reason: string): Promise<never> => {
+    // stop(), not a bare cleanup(): cleanup() alone unregisters and closes
+    // the port but leaves the pump free to still be mid-pumpLoop, reading
+    // the OS socket and posting to a port that was just closed.
+    relay.stop('internal')
+    try {
+      await socket.close()
+    } catch {
+      // The handle table is the owner of record and has already been told
+      // to release; a failure here leaves nothing further to do.
+    }
+    throw fail('internal', reason)
+  }
+
+  await deliverPort({
+    origin,
+    handleId: socket.id,
+    frame: event.senderFrame,
+    port2: pair.port2,
+    abandon
+  })
+
+  return {
+    id: socket.id,
+    remoteAddress: socket.remoteAddress,
+    remotePort: socket.remotePort,
+    localAddress: socket.localAddress,
+    localPort: socket.localPort
+  }
 }
 
 /** One request, dispatched to `broker` with the origin THIS FUNCTION derived -- never one from `payload`. */
@@ -104,61 +177,20 @@ async function dispatch (
       if (!isNetConnectParams(payload)) throw fail('invalid', 'net.connect requires { host: string, port: number }')
       if (transport === undefined) throw fail('internal', 'no port transport configured for this broker')
       const socket = await broker.net.connect(origin, { host: payload.host, port: payload.port })
-
-      const pair = transport.createPortPair()
-      // Owns everything mechanical about relaying this socket's bytes in
-      // both directions, registering it for net.close, and releasing it
-      // exactly once -- see ./socket-relay.ts. What stays here is only
-      // what is security-relevant: the transport check above, the origin
-      // re-derivation below, and the port delivery itself.
-      const relay = createSocketRelay({
-        origin,
-        socket,
-        port: pair.port1,
-        registry: transport.registry,
-        readWindowBytes: LIMITS.readWindowBytes,
-        writeWindowBytes: LIMITS.writeWindowBytes
-      })
-
-      // If the port never reaches the frame, the app never learns this
-      // socket's id -- the descriptor below is not returned -- so it can
-      // never call net.close for it either. Releasing it here is the only
-      // remaining chance: handle-contracts.ts's destroy rule is that a
-      // resource is released exactly once, ALWAYS, "including when the
-      // acquisition that would have registered the handle is itself
-      // refused... otherwise one fd leaks per attempt against a limit an
-      // attacker can hit in a loop". A frame that navigated or was disposed
-      // between this request and this line is ordinary, not adversarial.
-      const abandon = async (reason: string): Promise<never> => {
-        // stop(), not a bare cleanup(): cleanup() alone unregisters and closes
-        // the port but leaves the pump free to still be mid-pumpLoop, reading
-        // the OS socket and posting to a port that was just closed.
-        relay.stop('internal')
-        try {
-          await socket.close()
-        } catch {
-          // The handle table is the owner of record and has already been told
-          // to release; a failure here leaves nothing further to do.
-        }
-        throw fail('internal', reason)
-      }
-
-      await deliverPort({
-        origin,
-        handleId: socket.id,
-        frame: event.senderFrame,
-        port2: pair.port2,
-        abandon
-      })
-
-      const descriptor: SocketDescriptor = {
-        id: socket.id,
-        remoteAddress: socket.remoteAddress,
-        remotePort: socket.remotePort,
-        localAddress: socket.localAddress,
-        localPort: socket.localPort
-      }
-      return descriptor
+      return await deliverTcpSocket(origin, socket, event, transport)
+    }
+    // A SIBLING of net.connect above, not a variant: the broker method
+    // (checked against the separate https.connect grant and dialled via
+    // node:tls -- ../net-capability.ts's own connectSecure) is the only
+    // thing that differs. `broker.net.connectSecure` resolves to the exact
+    // same FailableTcpSocket shape net.connect does, so everything past
+    // that call -- the port pair, the byte-pump relay, the port delivery,
+    // the descriptor -- is deliverTcpSocket, unchanged.
+    case 'net.connectSecure': {
+      if (!isNetConnectParams(payload)) throw fail('invalid', 'net.connectSecure requires { host: string, port: number }')
+      if (transport === undefined) throw fail('internal', 'no port transport configured for this broker')
+      const socket = await broker.net.connectSecure(origin, { host: payload.host, port: payload.port })
+      return await deliverTcpSocket(origin, socket, event, transport)
     }
     case 'net.udpBind': {
       if (!isNetUdpBindParams(payload)) throw fail('invalid', 'net.udpBind requires { port: number }')
@@ -387,12 +419,9 @@ export const brokerIpcSubsystem: Subsystem = {
     const deps: CreateBrokerOptions = {
       dial: dialTcp,
       // `dialTls` -- ADR-0017's real node:tls stack, no override, no new
-      // dependency. `CreateBrokerOptions` requires `dialSecure` unconditionally,
-      // matching `dial`/`bind`/`listen`'s own always-required shape, so this
-      // is wired here even though net.connectSecure has no control-channel
-      // case yet: see this file's own header note above `brokerIpcSubsystem`
-      // (mirrors `net.listen`'s own precedent of a broker capability landing
-      // ahead of its IPC wiring -- queue item 2.3's PR body has the reasoning).
+      // dependency. net.connectSecure now has a control-channel case too
+      // (dispatch()'s 'net.connectSecure', via deliverTcpSocket) -- this
+      // stays the one place that real dialler is wired in.
       dialSecure: dialTls,
       bind: bindUdp,
       listen: listenTcp,
