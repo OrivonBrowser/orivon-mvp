@@ -32,6 +32,44 @@ const isReal = await app.evaluate(({ app, MessageChannelMain }) =>
 if (!isReal) throw new Error('not real Electron — refuse to trust any result from this run')
 ```
 
+## A launch that leaves anything behind is not a finished launch
+
+**Owner's decision, 2026-09-09, after the machine filled with windows overnight.** This is the
+companion to the section above: that one stops a launch being fake, this one stops a launch being
+permanent. Both were measured on this machine, not reasoned about.
+
+What was found, at one moment, after a *failed* e2e run: seven orphaned Electron processes
+reparented to `systemd --user` (the runner had exited and left the tree alive), one already
+`<defunct>`, **no `Xvfb` process at all** — so that launch had painted on the real display — and 77
+abandoned `/tmp/orivon-test-*` profile directories totalling 105 MB.
+
+Four rules, and they are part of the test contract rather than cleanup hygiene:
+
+1. **`xvfb-run` on every launch, no exceptions.** `env -u ELECTRON_RUN_AS_NODE xvfb-run -a ...`.
+   The `-u` is the trap above; `xvfb-run -a` is what makes painting on a real display impossible.
+2. **Teardown must run on the failure path.** This is where it actually breaks. A bounded
+   `app.close()` race works when the test passes and silently does not when it throws — put the
+   teardown in a `finally`/`afterAll` that always runs, SIGKILL the process tree after the bounded
+   wait, and reap the child so no zombie survives. `app.close()` hanging indefinitely is already
+   documented in this repo's own e2e helpers; the workaround for it was never wired to the failure
+   path.
+3. **Check for survivors before reporting the run.** Zero Electron processes, zero zombies, zero
+   stray `Xvfb`. A run that leaves a process is not a finished run.
+4. **Delete the `--user-data-dir` temp profile** the run created.
+
+**The trap inside the check itself:** `pgrep -f node_modules/electron/dist/electron` matches *the
+command doing the checking*, because that string is in its own argv. It reports processes that do
+not exist, which reads as a leak and sends you hunting for nothing. Resolve `/proc/<pid>/exe` and
+compare the real binary path instead:
+
+```sh
+for p in /proc/[0-9]*; do
+  case "$(readlink "$p/exe" 2>/dev/null)" in
+    *node_modules/electron/dist/electron*) echo "survivor: $(basename "$p")" ;;
+  esac
+done
+```
+
 ## The renderer bundling recipe
 
 webtorrent's `browser` field maps `net`, `bittorrent-dht`, `ut_pex`, `conn-pool`, `crypto`,
