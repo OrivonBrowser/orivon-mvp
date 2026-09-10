@@ -33,6 +33,7 @@ neutral place a channel name shared across this trust boundary can live — `she
 | `app.ts` | **every ordinary tab** | `orivon-surface.ts`'s `exposeOrivon()`: `orivon.version`, `orivon.app.manifest`/`grants`, `orivon.fs.readFile`/`writeFile`/`readFileSync` (the last one ADR-0016's synchronous exception -- see `orivon-surface.ts`'s own `fsReadFileSync`), `orivon.id.publicKey`/`sign`, `orivon.net.connect` (a real `TcpSocket`) and `orivon.net.udpBind` (a real `UdpSocket`), both built in the main world by `main-world-socket.ts` |
 | `shell.ts` | **only** the chrome view | Tab commands |
 | `newtab.ts` | **only** a genuinely fresh tab (`src/main/tabs.ts`'s `createTab()`, no `url` argument) | Read-only bookmark access, navigate-this-tab-only — but only after checking `location.href` against its own expected URL first, since (unlike the chrome view) a dashboard tab is ordinary and navigable; falls back to the SAME `exposeOrivon()` `app.ts` uses otherwise, not a second copy |
+| `fetch-route.ts` | `app.ts` and `newtab.ts`'s fallback branch, via `exposeFetchRoute()` | ADR-0017: routes `window.fetch` through `orivon.net` for a registered app's granted hosts, when the tab's `--orivon-app-tab` flag says so (`src/main/tab-view.ts`'s `appTabArgsFor`) -- a plain website keeps native `fetch`, untouched |
 
 **Preload builds are isolated per entry (`electron.vite.config.ts`'s `isolatedEntries: true`).**
 Found 2026-08-28: the moment a second preload (`newtab.ts`) shared a local import with `shell.ts`
@@ -99,3 +100,33 @@ the file's overall shape):
   a renderer process at all -- `channels.ts` is a zero-dependency leaf of plain string constants,
   safe in either process, and the one neutral place a channel name shared across this trust
   boundary can live.
+
+**Why `fetch-route.ts`'s `isAppTab` gate is a synchronous main-process decision, not an async
+check inside the main world (ADR-0017, queue item 3.4):**
+
+- **`window.orivon` (hence `orivon.net`) is exposed to EVERY ordinary tab**, registered app or
+  not -- an app is discovered via a `<link>` hint, not installed up front. Routing `fetch()`
+  unconditionally the instant `orivon.net` exists would deny every cross-origin `fetch()` call on
+  the open web the moment this shipped, since an ordinary website has no grant for anything.
+- **A first version of this file gated on `orivon.app.manifest()` resolving, awaited from INSIDE
+  the main-world `installFetchRoute` function.** That check answers the identical question
+  (`Broker`'s `GrantLedger.manifestFor`) but over a real IPC round trip -- so it is asynchronous,
+  and a page's own first script (a FreeTube-class app fires requests immediately at startup, per
+  A100's own reasoning against just-in-time prompting) could run and capture the native `fetch`
+  reference before that promise ever settled. A first call racing ahead of the gate is the single
+  most likely call in an app's life to hit this window, and it would succeed or fail
+  nondeterministically depending on load timing -- worse than either outcome being consistent.
+- **The fix moves the decision to where a synchronous answer is actually available: `src/main/
+  tabs.ts`, in the SAME process as the broker.** `Broker.app.isRegisteredSync` (`../broker/
+  index.ts`) reads the identical in-memory ledger state `orivon.app.manifest()` answers, with no
+  IPC round trip -- `Broker.fs.confineSync` (ADR-0016) is the precedent for a synchronous sibling
+  of an already-async method for exactly this reason. `src/main/tab-view.ts`'s `appTabArgsFor`
+  calls it once, at `WebContentsView` construction (`tabs.ts`'s `createTab()`/`repartitionView()`),
+  and hands the answer over as a `webPreferences.additionalArguments` flag
+  (`'--orivon-app-tab'`) -- the exact mechanism `newtab.ts` already uses for its own
+  dashboard-URL check, read synchronously off `process.argv` in `fetch-route.ts`'s
+  `exposeFetchRoute()` before `installFetchRoute` ever runs. No promise, no race.
+- **A known, remaining limitation:** the decision is fixed for the life of one `WebContentsView`.
+  An origin registered AFTER a tab already showing it was created keeps that tab's ORIGINAL
+  answer until the next navigation swaps in a fresh view -- the same lifetime `additionalArguments`
+  already has for every other flag on this list, not a new gap this feature introduces.

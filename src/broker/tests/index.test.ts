@@ -248,6 +248,27 @@ describe('orivon.app.manifest() and orivon.app.grants() (open-questions.md A13)'
   })
 })
 
+describe('orivon.app.isRegisteredSync -- the synchronous, in-process sibling tab construction reads', () => {
+  it('is false before registerApp, true immediately after -- no await, no IPC', () => {
+    const broker = createBroker(baseDeps())
+    expect(broker.app.isRegisteredSync(APP)).toBe(false)
+
+    broker.registerApp(APP, manifestWith({}))
+    expect(broker.app.isRegisteredSync(APP)).toBe(true)
+  })
+
+  it('never throws for a string that is not an origin -- "not registered", not a broker fault', () => {
+    const broker = createBroker(baseDeps())
+    expect(broker.app.isRegisteredSync('not a url at all')).toBe(false)
+  })
+
+  it('is false for an unrelated origin, even once another origin is registered', () => {
+    const broker = createBroker(baseDeps())
+    broker.registerApp(APP, manifestWith({}))
+    expect(broker.app.isRegisteredSync(OTHER)).toBe(false)
+  })
+})
+
 describe('orivon.fs reads and writes, confined via policy/paths.ts (T1/T10)', () => {
   it('denies reads and writes when fs was never granted', async () => {
     const broker = createBroker(baseDeps())

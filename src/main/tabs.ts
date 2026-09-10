@@ -14,7 +14,7 @@ import { join } from 'node:path'
 import { fetchFaviconDataUrlCached, pickFaviconUrl, shouldClearFavicon } from './favicon.js'
 import { parseOmniboxInput, sanitizeDirectUrl } from './omnibox.js'
 import type { SubsystemContext } from './registry.js'
-import { makeTabView, partitionForTarget } from './tab-view.js'
+import { appTabArgsFor, makeTabView, partitionForTarget } from './tab-view.js'
 
 export type { TabState, TabsSnapshot, ShellState, Bounds } from './tab-types.js'
 import type { TabState, TabsSnapshot, Bounds } from './tab-types.js'
@@ -106,17 +106,20 @@ export class TabManager {
      * BLANK_URL and resolveTarget(). */
     private readonly dashboardUrl: string,
     /**
-     * Read-only plumbing, unused today: `ctx.broker`/`ctx.loader` are what
-     * the not-yet-built discovery-trigger hint listener needs to install an
-     * app the moment a tab's own page shows the `<link rel="orivon-manifest">`
-     * hint (A60/A61, `docs/open-questions.md`). Threaded through now, on its
-     * own, deliberately separate from that behavior -- see
-     * `docs/development/parallel-work.md`'s append-only-first discipline,
-     * applied here to a constructor parameter rather than a registry array.
-     * `ctx.loader` may be `undefined` (`loaderSubsystem` is not `critical`,
-     * unlike the broker) -- whoever reads it here later must treat an
-     * absent loader as "the discovery trigger is disabled this run", never
-     * assume it is always present.
+     * `ctx.broker` is read by every `makeTabView` call site now
+     * (`appTabArgsFor`, ADR-0017) to decide the fetch()-routing flag --
+     * still `Broker | undefined`, so a run where the broker subsystem is
+     * absent simply never sets the flag, same fallback shape
+     * `partitionForTarget` already has. `ctx.loader` remains unused: it is
+     * what the not-yet-built discovery-trigger hint listener needs to
+     * install an app the moment a tab's own page shows the
+     * `<link rel="orivon-manifest">` hint (A60/A61, `docs/open-
+     * questions.md`) -- threaded through on its own, deliberately separate
+     * from that behavior, per `docs/development/parallel-work.md`'s
+     * append-only-first discipline. `ctx.loader` may be `undefined`
+     * (`loaderSubsystem` is not `critical`, unlike the broker) -- whoever
+     * reads it later must treat an absent loader as "the discovery trigger
+     * is disabled this run", never assume it is always present.
      */
     private readonly ctx: SubsystemContext
   ) {
@@ -171,8 +174,10 @@ export class TabManager {
       // expected URL is, so it can verify `location.href` matches before
       // exposing anything -- necessary because a dashboard tab is an
       // ordinary, navigable tab (unlike the chrome view), and preload
-      // cannot be un-set if the user later navigates away.
-      isDashboard ? [`--orivon-newtab-url=${this.dashboardUrl}`] : undefined
+      // cannot be un-set if the user later navigates away. A non-dashboard
+      // tab instead gets appTabArgsFor's ADR-0017 flag, if this origin is
+      // already a registered app.
+      isDashboard ? [`--orivon-newtab-url=${this.dashboardUrl}`] : appTabArgsFor(target, this.ctx.broker)
     )
     const record: TabRecord = {
       view,
@@ -272,7 +277,7 @@ export class TabManager {
     oldView.webContents.removeAllListeners('destroyed')
     if (!oldView.webContents.isDestroyed()) oldView.webContents.close()
 
-    const newView = makeTabView(this.preloadPath, nextPartition)
+    const newView = makeTabView(this.preloadPath, nextPartition, appTabArgsFor(target, this.ctx.broker))
     record.view = newView
     record.partition = nextPartition
     record.isDashboardTab = false
