@@ -53,6 +53,11 @@ Mark anything that must not leave the team draft as `(Keep private)`.
   the permission prompt; the architecture docs said four of the six capability kinds had no code
   at all. The docs were right. UDP was the first of the four; `tcp.listen`, the rest of `fs` and
   `id` are still empty.
+- 2026-09-10: **A real grant can now exist in production, for the first time.** `app.requestGrant`
+  checks a request against the manifest, prompts, and calls `broker.grant()` for real on
+  acceptance -- proven against a live broker, not a mock. Not reachable from a page yet (that
+  wiring belongs to a parallel lane this batch); still the plumbing that makes every other
+  capability's `'denied'` eventually turn into something that actually works.
 
 ### In my head
 
