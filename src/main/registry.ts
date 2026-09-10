@@ -23,6 +23,7 @@
 import type { App } from 'electron'
 import type { Broker } from '../broker/broker-contracts.js'
 import type { Loader } from '../loader/index.js'
+import type { CapabilityRequest } from '../contracts/index.js'
 
 export interface SubsystemContext {
   readonly app: App
@@ -54,6 +55,20 @@ export interface SubsystemContext {
    * after `loaderSubsystem` in `subsystems.ts`.
    */
   readonly loader: Loader | undefined
+  /**
+   * OrivonApp.requestGrant's mechanism (`../request-grant.js`'s `requestGrant`,
+   * closed over this process's one `Broker` and its consent surface) --
+   * queue item 4.1's "whatever eventually issues a real grant" that
+   * `broker`'s own doc comment above already anticipated. Published here
+   * rather than constructed ad hoc by whichever caller eventually needs it
+   * (a future control-channel case in `../broker/transport/ipc.ts`), for the
+   * same one-instance reason `broker`/`loader` are: it must close over THIS
+   * process's one `Broker`, never a second one built for convenience.
+   * Undefined until `requestGrantSubsystem`'s `afterReady` runs; a subsystem
+   * reading this must be listed after it in `subsystems.ts`, which itself
+   * must be listed after `brokerIpcSubsystem`.
+   */
+  readonly requestGrant: ((origin: string, request: CapabilityRequest) => Promise<boolean>) | undefined
 }
 
 /**
@@ -82,6 +97,7 @@ function createPublishedSlot<T> (label: string, hazard: string): {
 
 const brokerSlot = createPublishedSlot<Broker>('broker', 'a second Broker would create two disagreeing grant ledgers for one running app')
 const loaderSlot = createPublishedSlot<Loader>('loader', 'a second Loader would create two disagreeing ideas of what is installed for one running app')
+const requestGrantSlot = createPublishedSlot<(origin: string, request: CapabilityRequest) => Promise<boolean>>('requestGrant', 'a second one could close over a different Broker instance than the one every other subsystem reads')
 
 class SubsystemContextImpl implements SubsystemContext {
   readonly app: App
@@ -96,6 +112,10 @@ class SubsystemContextImpl implements SubsystemContext {
 
   get loader (): Loader | undefined {
     return loaderSlot.get(this)
+  }
+
+  get requestGrant (): ((origin: string, request: CapabilityRequest) => Promise<boolean>) | undefined {
+    return requestGrantSlot.get(this)
   }
 }
 
@@ -123,6 +143,11 @@ export function publishBroker (ctx: SubsystemContext, broker: Broker): void {
 /** The one sanctioned way to set `ctx.loader` -- see `publishBroker`'s own doc; same guarantee, same reason. */
 export function publishLoader (ctx: SubsystemContext, loader: Loader): void {
   loaderSlot.publish(ctx, loader)
+}
+
+/** The one sanctioned way to set `ctx.requestGrant` -- see `publishBroker`'s own doc; same guarantee, same reason. */
+export function publishRequestGrant (ctx: SubsystemContext, requestGrant: (origin: string, request: CapabilityRequest) => Promise<boolean>): void {
+  requestGrantSlot.publish(ctx, requestGrant)
 }
 
 export interface Subsystem {
