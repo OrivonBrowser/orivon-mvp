@@ -22,6 +22,7 @@
 
 import type { OrivonErrorCode } from '../contracts/errors.js'
 import type { SendRefusal, UdpSocket } from '../contracts/handles.js'
+import type { ResponseEnvelope } from '../contracts/ipc.js'
 
 export interface OrivonLimits {
   readonly readWindowBytes: number
@@ -91,6 +92,16 @@ export function installOrivon (
     appGrants: () => Promise<unknown>
     fsReadFile: (path: string) => Promise<Uint8Array>
     fsWriteFile: (path: string, data: Uint8Array) => Promise<void>
+    /**
+     * ADR-0016's one synchronous call. Returns the raw envelope, NEVER
+     * throws -- a value THROWN by this closure would cross the
+     * contextBridge proxy boundary back into this main-world code stripped
+     * of everything but `.message` (found live; see orivon-surface.ts's own
+     * `fsReadFileSyncEnvelope` for the full argument), so the failure shape
+     * is built and thrown below, entirely inside this already-main-world
+     * function, from data that crossed intact instead.
+     */
+    fsReadFileSync: (path: string) => ResponseEnvelope<Uint8Array>
     idPublicKey: (curve: string) => Promise<Uint8Array>
     idSign: (curve: string, payload: Uint8Array) => Promise<Uint8Array>
     netConnect: (opts: { host: string, port: number }) => Promise<MainWorldSocketBridge>
@@ -99,8 +110,20 @@ export function installOrivon (
   limits: OrivonLimits,
   target: { orivon?: unknown } = typeof window === 'undefined' ? {} : window as unknown as { orivon?: unknown }
 ): void {
-  function toOrivonError (code: OrivonErrorCode): { name: string, message: string, code: OrivonErrorCode } {
-    return { name: 'OrivonError', message: `orivon: ${code}`, code }
+  /**
+   * `options` mirrors ../orivon-error.ts's isolated-world twin exactly --
+   * this file cannot import that one (this whole function is serialised and
+   * re-run fresh in the main world; see the file header), so the shape is
+   * repeated here rather than shared across the boundary it crosses.
+   */
+  function toOrivonError (
+    code: OrivonErrorCode,
+    options: { message?: string, platformCode?: string } = {}
+  ): { name: string, message: string, code: OrivonErrorCode, platformCode?: string } {
+    const { message = `orivon: ${code}`, platformCode } = options
+    return platformCode === undefined
+      ? { name: 'OrivonError', message, code }
+      : { name: 'OrivonError', message, code, platformCode }
   }
 
   function buildSocket (s: Awaited<ReturnType<typeof bridge.netConnect>>): unknown {
@@ -310,7 +333,22 @@ export function installOrivon (
     }),
     fs: Object.freeze({
       readFile: async (path: string) => await bridge.fsReadFile(path),
-      writeFile: async (path: string, data: Uint8Array) => { await bridge.fsWriteFile(path, data) }
+      writeFile: async (path: string, data: Uint8Array) => { await bridge.fsWriteFile(path, data) },
+      // NOT wrapped in `async` -- confirmed live (a real Electron launch)
+      // to stay genuinely synchronous once proxied through
+      // `contextBridge.executeInMainWorld`; an `async` wrapper here would
+      // force a Promise even though the proxy itself does not.
+      // `bridge.fsReadFileSync` never throws (see its own doc on why); the
+      // failure branch is built and thrown HERE instead, entirely inside
+      // this main-world function, so the throw itself never has to cross
+      // the proxy boundary that strips a thrown value's shape.
+      readFileSync: (path: string) => {
+        const response = bridge.fsReadFileSync(path)
+        if (response.ok) return response.result
+        throw toOrivonError(response.code, response.platformCode === undefined
+          ? { message: response.message }
+          : { message: response.message, platformCode: response.platformCode })
+      }
     }),
     id: Object.freeze({
       publicKey: async (opts: { curve: string }) => await bridge.idPublicKey(opts.curve),

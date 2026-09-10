@@ -1,7 +1,11 @@
 # `src/broker/transport/` — how a page reaches the broker, and how bytes move
 
 **What lives here.** The Electron IPC front door, its message validation, the per-origin rate
-limiter, and the credit-window byte pumps that relay a socket over a dedicated `MessagePortMain`.
+limiter, the credit-window byte pumps that relay a socket over a dedicated `MessagePortMain`, and
+`orivon.fs.readFileSync`'s synchronous sibling to all of that (`sync-fs.ts`, `sync-fs-policy.ts`,
+ADR-0016) — a second, `ipcMain.on`/`event.returnValue` channel
+(`SYNC_CONTROL_CHANNEL`) rather than a method on `CONTROL_CHANNEL`, because it never returns a
+Promise the way every `ipcMain.handle` method here does.
 
 **What it depends on.** `electron`, [`../index.ts`](../index.ts), [`../handles/`](../handles/),
 [`../adapters/`](../adapters/), [`../grants/`](../grants/), [`../policy/origin.ts`](../policy/origin.ts)
@@ -57,4 +61,21 @@ control methods deliberately: `fs`/`net` dispatch is real I/O with no measured c
 either, so a tighter, method-specific limit risks `'limit'` becoming a routine error for a busy
 app before any evidence justifies it. This leaves a fairness risk A38 names but does not solve: a
 burst of small file reads could still starve an unrelated `app.grants()` poll once `fs`/`net` see
-real traffic.
+real traffic. `registerSyncFsIpc` shares this SAME limiter instance rather than a second one, so
+`fs.readFileSync` cannot be used to dodge it by moving traffic to a channel with no budget of its
+own.
+
+**`sync-fs.ts`/`sync-fs-policy.ts` reuse `../index.ts`'s own `Broker.fs.confineSync`** — ADR-0016's
+synchronous grant-check/confinement entry point, added alongside them and built entirely from
+`confineForOrigin`'s existing logic (`../index.ts`'s own doc), so a missing grant or a
+traversal/symlink escape is refused by the SAME check `fs.readFile`/`writeFile` use, never a
+second implementation of it (code-guidelines.md Rule 3). `sync-fs-policy.ts`'s
+`createSyncFsPolicy` is a thin pass-through onto that method plus `node:fs`'s own `readFileSync`
+for the raw disk I/O, which the async `BrokerFs.readFile` adapter has no synchronous counterpart
+for. (An earlier revision of this lane mirrored the grant check separately, in a now-deleted
+`sync-fs-grants.ts`, because `../index.ts` was owned by a concurrent, unmerged lane at the time --
+see that PR's history if the reasoning behind the mirror is ever relevant again.) **Deliberately
+outside the per-origin in-flight budget (`HandleTable.run`) `readFile`/`writeFile` run under** --
+that budget is `async`-shaped by construction and a synchronous IPC reply cannot await a slot
+becoming free, so this is a genuinely open design question, not merely a deferred one; see
+`../index.ts`'s own doc on `confineSync` and `open-questions.md`.

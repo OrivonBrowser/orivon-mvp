@@ -8,11 +8,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 // without mocking it first.
 const invoke = vi.fn()
 const on = vi.fn()
+const sendSync = vi.fn()
 let executeInMainWorld: ReturnType<typeof vi.fn> | undefined
 const exposeInMainWorld = vi.fn()
 
 vi.mock('electron', () => ({
-  ipcRenderer: { invoke: (...args: unknown[]) => invoke(...args), on: (...args: unknown[]) => on(...args) },
+  ipcRenderer: {
+    invoke: (...args: unknown[]) => invoke(...args),
+    on: (...args: unknown[]) => on(...args),
+    sendSync: (...args: unknown[]) => sendSync(...args)
+  },
   contextBridge: {
     exposeInMainWorld: (...args: unknown[]) => exposeInMainWorld(...args),
     get executeInMainWorld () { return executeInMainWorld },
@@ -52,6 +57,7 @@ function okEnvelope (result: unknown): { id: string, ok: true, result: unknown }
 beforeEach(() => {
   invoke.mockReset()
   on.mockReset()
+  sendSync.mockReset()
   exposeInMainWorld.mockReset()
   executeInMainWorld = undefined
 })
@@ -69,6 +75,11 @@ describe('exposeOrivon -- P-F10: the fail-closed fallback covers BOTH "absent" a
     expect(typeof (surface.app as Record<string, unknown>).manifest).toBe('function')
     expect(typeof (surface.id as Record<string, unknown>).publicKey).toBe('function')
     expect(typeof (surface.id as Record<string, unknown>).sign).toBe('function')
+    // ADR-0016's sync call is present even in the net-less fallback --
+    // ../preload/README.md's rule that a method always absent from
+    // window.orivon is worse than one that is not there does not apply here:
+    // this method is genuinely wired either way, unlike net.
+    expect(typeof (surface.fs as Record<string, unknown>).readFileSync).toBe('function')
   })
 
   it('falls back to the SAME surface when executeInMainWorld exists but throws', () => {
@@ -214,6 +225,72 @@ describe('exposeOrivon -- P-F11: end-to-end wiring smoke, through the real conte
 
     await expect(orivon.id.sign({ curve: 'P-256', payload: new Uint8Array(1) }))
       .rejects.toMatchObject({ code: 'denied' })
+  })
+})
+
+describe('exposeOrivon -- fs.readFileSync (ADR-0016)', () => {
+  it('calls ipcRenderer.sendSync, not .invoke, and returns the bytes synchronously on success', () => {
+    const target = installViaFakeMainWorld()
+    const bytes = new Uint8Array([7, 7, 7])
+    sendSync.mockReturnValue({ id: '', ok: true, result: bytes })
+
+    exposeOrivon()
+    const orivon = target.orivon as { fs: { readFileSync: (path: string) => Uint8Array } }
+    const result = orivon.fs.readFileSync('/a/b.txt')
+
+    expect(result).toBe(bytes)
+    expect(invoke).not.toHaveBeenCalled()
+    expect(sendSync).toHaveBeenCalledWith('orivon:control-sync', { path: '/a/b.txt' })
+  })
+
+  it('throws an OrivonError-shaped object (not a rejection) on a denial, with no platformCode', () => {
+    const target = installViaFakeMainWorld()
+    sendSync.mockReturnValue({ id: '', ok: false, code: 'denied', message: 'fs is not granted to this origin' })
+
+    exposeOrivon()
+    const orivon = target.orivon as { fs: { readFileSync: (path: string) => Uint8Array } }
+
+    let caught: unknown
+    try {
+      orivon.fs.readFileSync('/a/b.txt')
+    } catch (e) {
+      caught = e
+    }
+    expect(caught).toMatchObject({ name: 'OrivonError', code: 'denied' })
+    expect((caught as { platformCode?: unknown }).platformCode).toBeUndefined()
+  })
+
+  it('a traversal attempt is refused the same way a legal path succeeds is proven -- as a denial, not a crash or a silent bypass', () => {
+    const target = installViaFakeMainWorld()
+    sendSync.mockReturnValue({ id: '', ok: false, code: 'denied', message: "the path is outside this app's files directory" })
+
+    exposeOrivon()
+    const orivon = target.orivon as { fs: { readFileSync: (path: string) => Uint8Array } }
+
+    let caught: unknown
+    try {
+      orivon.fs.readFileSync('../../../etc/passwd')
+    } catch (e) {
+      caught = e
+    }
+    expect(sendSync).toHaveBeenCalledWith('orivon:control-sync', { path: '../../../etc/passwd' })
+    expect(caught).toMatchObject({ name: 'OrivonError', code: 'denied' })
+  })
+
+  it('a notFound failure carries the errno as platformCode, matching the async fs.readFile shape', () => {
+    const target = installViaFakeMainWorld()
+    sendSync.mockReturnValue({ id: '', ok: false, code: 'notFound', message: 'the filesystem operation failed', platformCode: 'ENOENT' })
+
+    exposeOrivon()
+    const orivon = target.orivon as { fs: { readFileSync: (path: string) => Uint8Array } }
+
+    let caught: unknown
+    try {
+      orivon.fs.readFileSync('/missing.txt')
+    } catch (e) {
+      caught = e
+    }
+    expect(caught).toMatchObject({ name: 'OrivonError', code: 'notFound', platformCode: 'ENOENT' })
   })
 })
 

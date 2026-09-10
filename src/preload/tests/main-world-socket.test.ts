@@ -6,6 +6,7 @@ import { installOrivon } from '../main-world-socket.js'
 import type { MainWorldDatagram, MainWorldUdpBridge } from '../main-world-socket.js'
 import type { OrivonErrorCode } from '../../contracts/errors.js'
 import type { SendRefusal } from '../../contracts/handles.js'
+import type { ResponseEnvelope } from '../../contracts/ipc.js'
 
 const LIMITS = {
   readWindowBytes: 1_000, writeWindowBytes: 1_000,
@@ -76,10 +77,12 @@ function fakeSocketBridgeResult (): {
 
 function fakeBridge (
   netConnectResult: ReturnType<typeof fakeSocketBridgeResult>,
-  udpResult?: ReturnType<typeof fakeUdpBridgeResult>
+  udpResult?: ReturnType<typeof fakeUdpBridgeResult>,
+  fsReadFileSync: (path: string) => ResponseEnvelope<Uint8Array> = () => ({ id: '', ok: true, result: new Uint8Array() })
 ): {
   appManifest: () => Promise<unknown>, appGrants: () => Promise<unknown>
   fsReadFile: (path: string) => Promise<Uint8Array>, fsWriteFile: (path: string, data: Uint8Array) => Promise<void>
+  fsReadFileSync: (path: string) => ResponseEnvelope<Uint8Array>
   idPublicKey: (curve: string) => Promise<Uint8Array>, idSign: (curve: string, payload: Uint8Array) => Promise<Uint8Array>
   netConnect: (opts: { host: string, port: number }) => Promise<ReturnType<typeof fakeSocketBridgeResult>>
   netUdpBind: (opts: { port: number }) => Promise<MainWorldUdpBridge>
@@ -89,6 +92,7 @@ function fakeBridge (
     appGrants: async () => [],
     fsReadFile: async () => new Uint8Array(),
     fsWriteFile: async () => {},
+    fsReadFileSync,
     idPublicKey: async () => new Uint8Array(),
     idSign: async () => new Uint8Array(),
     netConnect: async (_opts) => netConnectResult,
@@ -181,6 +185,71 @@ describe('installOrivon', () => {
     const target: Record<string, unknown> = {}
     installOrivon(fakeBridge(fakeSocketBridgeResult()), LIMITS, target)
     expect(Object.isFrozen((target.orivon as { id: unknown }).id)).toBe(true)
+  })
+
+  describe('fs.readFileSync (ADR-0016)', () => {
+    it('delegates to bridge.fsReadFileSync with the path unwrapped, and returns the ok envelope\'s result WITHOUT a Promise wrapper', () => {
+      const target: Record<string, unknown> = {}
+      const calls: string[] = []
+      const bytes = new Uint8Array([1, 2, 3])
+      const bridge = fakeBridge(fakeSocketBridgeResult(), undefined, (path) => {
+        calls.push(path)
+        return { id: '', ok: true, result: bytes }
+      })
+      installOrivon(bridge, LIMITS, target)
+
+      const orivon = target.orivon as { fs: { readFileSync: (path: string) => Uint8Array } }
+      const result = orivon.fs.readFileSync('/a/b.txt')
+
+      expect(calls).toEqual(['/a/b.txt'])
+      expect(result).toBe(bytes)
+      // Not a thenable -- api.fs.readFileSync is deliberately not `async`
+      // (see installOrivon's own comment on this closure). Whether the
+      // surrounding contextBridge proxy preserves that synchronicity too is
+      // unproven here; this only proves this file's own wiring does not
+      // introduce a Promise that was not already there.
+      expect(typeof (result as unknown as { then?: unknown }).then).not.toBe('function')
+    })
+
+    // bridge.fsReadFileSync itself NEVER throws (see its own doc): a real
+    // Electron launch found that a value thrown across contextBridge's
+    // function-proxy boundary loses everything but `.message`. This test
+    // proves installOrivon builds the real OrivonError from the RETURNED
+    // failure envelope instead, entirely on this side of that boundary.
+    it('builds and throws a real OrivonError from a failure envelope, synchronously, never a rejection', () => {
+      const target: Record<string, unknown> = {}
+      const bridge = fakeBridge(fakeSocketBridgeResult(), undefined, () => (
+        { id: '', ok: false, code: 'denied', message: 'fs is not granted to this origin' }
+      ))
+      installOrivon(bridge, LIMITS, target)
+
+      const orivon = target.orivon as { fs: { readFileSync: (path: string) => Uint8Array } }
+      let caught: unknown
+      try {
+        orivon.fs.readFileSync('/a/b.txt')
+      } catch (e) {
+        caught = e
+      }
+      expect(caught).toMatchObject({ name: 'OrivonError', code: 'denied' })
+      expect((caught as { platformCode?: unknown }).platformCode).toBeUndefined()
+    })
+
+    it('carries platformCode through for a non-denied failure, matching the async fs.readFile shape', () => {
+      const target: Record<string, unknown> = {}
+      const bridge = fakeBridge(fakeSocketBridgeResult(), undefined, () => (
+        { id: '', ok: false, code: 'notFound', message: 'the filesystem operation failed', platformCode: 'ENOENT' }
+      ))
+      installOrivon(bridge, LIMITS, target)
+
+      const orivon = target.orivon as { fs: { readFileSync: (path: string) => Uint8Array } }
+      let caught: unknown
+      try {
+        orivon.fs.readFileSync('/missing.txt')
+      } catch (e) {
+        caught = e
+      }
+      expect(caught).toMatchObject({ name: 'OrivonError', code: 'notFound', platformCode: 'ENOENT' })
+    })
   })
 
   it('net.connect resolves to a TcpSocket-shaped object with real WHATWG streams', async () => {

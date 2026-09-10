@@ -18,7 +18,7 @@
 // touches the real `ipcMain`/`MessageChannelMain` value imports below.
 
 import { ipcMain, MessageChannelMain } from 'electron'
-import { CONTROL_CHANNEL, PORT_CHANNEL } from '../../main/channels.js'
+import { CONTROL_CHANNEL, PORT_CHANNEL, SYNC_CONTROL_CHANNEL } from '../../main/channels.js'
 import { publishBroker } from '../../main/registry.js'
 import type { Subsystem, SubsystemContext } from '../../main/registry.js'
 import { createBroker } from '../index.js'
@@ -33,8 +33,12 @@ import { createDatagramRelay } from './datagram-relay.js'
 import { deliverPort } from './deliver-port.js'
 import { createTokenBucketLimiter } from './token-bucket.js'
 import type { RateLimiter } from './token-bucket.js'
+import { createSyncFsPolicy } from './sync-fs-policy.js'
+import { handleSyncFsReadRequest } from './sync-fs.js'
+import type { SyncControlEvent, SyncFsPolicy } from './sync-fs.js'
 import { originFromSenderFrame } from '../policy/origin.js'
-import { fail, isOrivonErrorLike } from '../errors.js'
+import { fail } from '../errors.js'
+import { toFailureResponse } from './response-envelope.js'
 import {
   envelopeId, isControlMethod, isFsReadFileParams, isFsWriteFileParams,
   isIdPublicKeyParams, isIdSignParams,
@@ -253,32 +257,6 @@ async function withTimeout<T> (promise: Promise<T>, timeoutMs: number): Promise<
   })
 }
 
-/**
- * Maps a thrown value to the failure branch of a `ResponseEnvelope`.
- *
- * DoD rule 4: a 'denied' crosses with no `platformCode`, whatever threw it.
- * `../errors.ts`'s `fail()` already enforces that at construction, but this
- * is the boundary the app actually crosses, so it is re-checked here rather
- * than trusted from upstream -- the same defence-in-depth reasoning as
- * dispatch()'s own payload validation.
- *
- * Anything that is not a recognised `OrivonError` is a BUG, not a capability
- * decision, and its message is never forwarded: it may name a file path, a
- * stack frame, or another internal detail an app has no business seeing
- * (mirrors errors.ts's own 'internal' contract -- "always logged", never
- * described to the caller beyond that).
- */
-function toFailureResponse (id: string, error: unknown): ResponseEnvelope<never> {
-  if (isOrivonErrorLike(error)) {
-    const base = { id, ok: false as const, code: error.code, message: error.message }
-    if (error.code !== 'denied' && error.platformCode !== undefined) {
-      return { ...base, platformCode: error.platformCode }
-    }
-    return base
-  }
-  return { id, ok: false, code: 'internal', message: 'an internal error occurred' }
-}
-
 /** Default for a caller (chiefly tests) that passes no real limiter. Never rejects; holds no state. */
 const ALLOW_ALL_LIMITER: RateLimiter = { tryConsume: () => true }
 
@@ -352,6 +330,26 @@ export function registerBrokerIpc (ipc: IpcMainLike, broker: Broker, transport: 
   ipc.handle(CONTROL_CHANNEL, async (event, envelope) => await handleControlRequest(broker, event, envelope, transport, limiter))
 }
 
+/**
+ * The one method this module needs from `electron`'s real `IpcMain` for the
+ * SYNCHRONOUS half, distinct from `IpcMainLike` above: `on`, not `handle`,
+ * and the listener sets `event.returnValue` rather than returning a Promise
+ * -- `ipcRenderer.sendSync`'s counterpart, never awaited on either side.
+ */
+export interface IpcMainOnLike {
+  on (
+    channel: string,
+    listener: (event: SyncControlEvent & { returnValue: unknown }, payload: unknown) => void
+  ): void
+}
+
+/** Thin wiring over `handleSyncFsReadRequest`, sharing `limiter` with `registerBrokerIpc` so this channel cannot be used to dodge CONTROL_CHANNEL's rate limit. */
+export function registerSyncFsIpc (ipc: IpcMainOnLike, policy: SyncFsPolicy, limiter?: RateLimiter): void {
+  ipc.on(SYNC_CONTROL_CHANNEL, (event, payload) => {
+    event.returnValue = handleSyncFsReadRequest(policy, event, payload, limiter)
+  })
+}
+
 /** A real `PortPair`, backed by an actual `MessageChannelMain`. The one place this module constructs one. */
 function realPortPair (): PortPair {
   const { port1, port2 } = new MessageChannelMain()
@@ -422,5 +420,13 @@ export const brokerIpcSubsystem: Subsystem = {
     // instance rather than a second, disagreeing one.
     publishBroker(ctx, broker)
     registerBrokerIpc(ipcMain, broker, transport, limiter)
+
+    // ./sync-fs-policy.ts's createSyncFsPolicy calls straight through to
+    // broker.fs.confineSync -- ADR-0016's synchronous grant-check/
+    // confinement entry point on the SAME broker instance registerBrokerIpc
+    // just wired, so a grant issued through any route (the app loader's
+    // permission prompt later, src/main/dev-grant.ts's hook today) is live
+    // for this channel the instant it lands on that one instance.
+    registerSyncFsIpc(ipcMain, createSyncFsPolicy(broker), limiter)
   }
 }

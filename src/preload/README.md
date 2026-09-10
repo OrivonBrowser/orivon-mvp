@@ -30,7 +30,7 @@ neutral place a channel name shared across this trust boundary can live — `she
 
 | File | Loaded by | Exposes |
 |---|---|---|
-| `app.ts` | **every ordinary tab** | `orivon-surface.ts`'s `exposeOrivon()`: `orivon.version`, `orivon.app.manifest`/`grants`, `orivon.fs.readFile`/`writeFile`, `orivon.id.publicKey`/`sign`, `orivon.net.connect` (a real `TcpSocket`) and `orivon.net.udpBind` (a real `UdpSocket`), both built in the main world by `main-world-socket.ts` |
+| `app.ts` | **every ordinary tab** | `orivon-surface.ts`'s `exposeOrivon()`: `orivon.version`, `orivon.app.manifest`/`grants`, `orivon.fs.readFile`/`writeFile`/`readFileSync` (the last one ADR-0016's synchronous exception -- see `orivon-surface.ts`'s own `fsReadFileSync`), `orivon.id.publicKey`/`sign`, `orivon.net.connect` (a real `TcpSocket`) and `orivon.net.udpBind` (a real `UdpSocket`), both built in the main world by `main-world-socket.ts` |
 | `shell.ts` | **only** the chrome view | Tab commands |
 | `newtab.ts` | **only** a genuinely fresh tab (`src/main/tabs.ts`'s `createTab()`, no `url` argument) | Read-only bookmark access, navigate-this-tab-only — but only after checking `location.href` against its own expected URL first, since (unlike the chrome view) a dashboard tab is ordinary and navigable; falls back to the SAME `exposeOrivon()` `app.ts` uses otherwise, not a second copy |
 
@@ -76,7 +76,10 @@ the file's overall shape):
 - **This is build step 2's control surface** -- `../broker/transport/ipc.ts`'s `handleControlRequest`, on
   the other side of `CONTROL_CHANNEL`. `app.manifest`, `app.grants`, `fs.readFile`,
   `fs.writeFile`, `id.publicKey`, `id.sign`, `net.connect`, `net.udpBind`, `net.close` (plus
-  `net.setNoDelay`/`setKeepAlive`) are wired. Everything else in
+  `net.setNoDelay`/`setKeepAlive`) are wired there; `fs.readFileSync` is wired the same way but
+  over its OWN channel (`SYNC_CONTROL_CHANNEL`, `../broker/transport/sync-fs.ts`'s
+  `handleSyncFsReadRequest`), never as a twelfth `CONTROL_CHANNEL` method, because it replies via
+  `event.returnValue`, not a resolved `Promise`. Everything else in
   `docs/architecture/capability-api.md` (`net.listen`, `fs.open`/`mkdir`/`readdir`/`stat`/`rm`/
   `rename`/`userSelected`, `id.requestIdentity`, `app.requestGrant`) is simply absent -- the
   broker does not implement the rest yet either (`id.requestIdentity` specifically needs the
