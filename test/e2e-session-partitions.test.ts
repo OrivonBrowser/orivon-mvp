@@ -30,13 +30,16 @@
 // lane that built this had no Electron launch token (another lane held it),
 // so this file is written and reasoned through as if it were about to run,
 // never executed locally.
-import { afterAll, it } from 'vitest'
+import { afterAll, expect, it } from 'vitest'
 import { createServer, type Server } from 'node:http'
-import { launchElectron } from './launch-electron.mjs'
+import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
 import {
   evaluateRetrying, findChrome, findViewShowing, HERMETIC_RESOLVER, tabIds, waitFor, waitForTab
 } from './smoke-helpers.mjs'
-import { ADDRESS_BAR_STABLE_TIMEOUT_MS, clickAddressBarRetrying, runPhase, waitForAddressBarStable } from './e2e-helpers.js'
+import {
+  ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, runPhase,
+  waitForAddressBarStable
+} from './e2e-helpers.js'
 import { DEFAULT_ACTION_TIMEOUT_MS } from './launch-electron.mjs'
 import { originFromUrl } from '../src/broker/policy/origin.js'
 import { partitionFor } from '../src/broker/grants/origin-hash.js'
@@ -67,6 +70,10 @@ let serverB: Server | undefined
 
 afterAll(async () => {
   await Promise.all([serverA, serverB].map(async (server) => { if (server !== undefined) await stopServer(server) }))
+  // The suite's own self-check (unattended-run-protocol.md): after the
+  // test's own app has torn itself down, nothing this file launched may
+  // still be a live Electron process.
+  expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
 /** Sum of every wait this test's real path can hit, walked in call order --
@@ -79,7 +86,7 @@ const WAIT_BUDGET_MS =
   8_000 * 2 + // two waitForTab confirmations
   8_000 + // new-tab-becomes-active wait
   8_000 + // teardown: windows -> 0
-  8_000 // teardown: app.close() race
+  APP_CLOSE_RACE_MS // teardown: app.close() race
 const TEST_TIMEOUT_MS = WAIT_BUDGET_MS + 20_000
 
 it('two tabs opened against two different origins use two different, correctly-named Electron session partitions, and wiping one leaves the other\'s storage untouched', async () => {
@@ -197,26 +204,10 @@ it('two tabs opened against two different origins use two different, correctly-n
         `saw ${JSON.stringify(probeBAfterClear)}`
       )
     } finally {
-      // Same close-hang workaround as e2e-capability-boundary.test.ts's Phase
-      // 1: `_electron`'s app.close() hangs indefinitely while any tab remains
-      // open. Close every tab via a real click first.
-      if (app !== undefined) {
-        const chromeForTeardown = app.windows().find((w) => w.url().endsWith('/renderer/index.html'))
-        if (chromeForTeardown !== undefined) {
-          const idsToClose: string[] = await evaluateRetrying(chromeForTeardown, () =>
-            Array.from(document.querySelectorAll('.tab')).map((el) => (el as HTMLElement).dataset.id ?? '')
-          ).catch(() => [])
-          for (const id of idsToClose) {
-            await chromeForTeardown.click(`[data-id="${id}"] .close`).catch(() => {})
-          }
-        }
-        await waitFor(() => (app as NonNullable<typeof app>).windows().length === 0)
-        const closed = await Promise.race([
-          app.close().then(() => true),
-          new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 8_000))
-        ])
-        if (!closed) app.process().kill()
-      }
+      // Shared teardown -- see e2e-helpers.ts's closeElectronApp for the
+      // close-hang workaround this performs, and launch-electron.mjs's
+      // closeElectron for why it now runs unconditionally.
+      if (app !== undefined) await closeElectronApp(app)
     }
   })
 }, TEST_TIMEOUT_MS)
