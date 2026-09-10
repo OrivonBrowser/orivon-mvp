@@ -34,3 +34,12 @@ export const CONTROL_CHANNEL = 'orivon:control'
  * that cannot travel over ipcMain.handle/ipcRenderer.invoke. See
  * ../broker/transport/ipc.ts and ../broker/transport/port-pump.ts. */
 export const PORT_CHANNEL = 'orivon:port'
+
+/** Ordinary tab -> broker: orivon.fs.readFileSync (ADR-0016), over
+ * ipcRenderer.sendSync/ipcMain.on's event.returnValue -- never
+ * ipcMain.handle/ipcRenderer.invoke's Promise, so this stays a separate
+ * channel from CONTROL_CHANNEL rather than a method name on it (mixing the
+ * two reply mechanisms on one channel would make a handler's own code the
+ * only thing distinguishing which shape a given message expects). See
+ * ../broker/transport/sync-fs.ts. */
+export const SYNC_CONTROL_CHANNEL = 'orivon:control-sync'

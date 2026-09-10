@@ -57,6 +57,8 @@ export function stubBroker (
     listen: (origin: string, opts: { port: number }) => Promise<FailableTcpServer>
     readFile: (origin: string, path: string) => Promise<Uint8Array>
     writeFile: (origin: string, path: string, data: Uint8Array) => Promise<void>
+    /** SYNCHRONOUS, unlike every other override here (ADR-0016's Broker.fs.confineSync) -- no test in this suite calls it via handleControlRequest, since it has no CONTROL_CHANNEL method of its own (sync-fs.ts's own channel), but the stub still needs to satisfy Broker's shape. */
+    confineSync: (origin: string, path: string) => string
     idPublicKey: (origin: string, opts: { curve: string }) => Promise<Uint8Array>
     idSign: (origin: string, opts: { curve: string, payload: Uint8Array }) => Promise<Uint8Array>
     registerApp: (origin: string, manifest: Manifest) => Promise<void>
@@ -111,6 +113,11 @@ export function stubBroker (
       writeFile: async (origin, path, data) => {
         calls.push({ method: 'fs.writeFile', origin, args: { path, data } })
         await (overrides.writeFile?.(origin, path, data) ?? notStubbed())
+      },
+      confineSync: (origin, path) => {
+        calls.push({ method: 'fs.confineSync', origin, args: path })
+        if (overrides.confineSync !== undefined) return overrides.confineSync(origin, path)
+        throw new Error('this stub method was not configured for this test')
       }
     },
     id: {
