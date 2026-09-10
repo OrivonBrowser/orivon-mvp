@@ -22,6 +22,7 @@ import { HeaderBag, type HeaderValue, serializeRequestHead, defaultHostHeader } 
 import { HttpResponseParser, concatBytes } from './node-http-parser.js'
 import { IncomingMessage } from './node-http-message.js'
 import { toNodeError } from './node-http-errors.js'
+import { toBytes } from './node-stream-bytes.js'
 
 export type ConnectFn = (opts: { host: string, port: number }) => Promise<TcpSocket>
 
@@ -44,12 +45,6 @@ interface ResolvedOptions {
 
 /** A body written before Content-Length is required to carry one, matching common REST convention. */
 const BODYFUL_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
-
-function toBytes (chunk: unknown): Uint8Array {
-  if (chunk instanceof Uint8Array) return chunk
-  if (typeof chunk === 'string') return new TextEncoder().encode(chunk)
-  throw new TypeError('orivon-node-shim: http request body chunks must be a string or Uint8Array')
-}
 
 export class ClientRequest extends Writable {
   readonly method: string
