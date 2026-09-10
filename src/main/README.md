@@ -77,6 +77,37 @@ or the teardown would incorrectly call `forgetTab()` on a tab that is not actual
 `src/main/tests/tabs.test.ts` exercises this directly with a fake `webContents` that emits
 `'destroyed'` synchronously from `close()`, the same way real Electron destruction can.
 
+**[`tabs.ts`](tabs.ts) — a redirect, clicked link, form submission or script navigation now
+repartitions a tab too, not only a typed cross-origin navigation (A108/A109,
+`docs/open-questions.md`; owner decision D-0010 item 2).** `navigate()` was the only code path
+that ever computed a partition, and it is reached only from the omnibox and the dashboard's own
+navigate command — every other way a tab reaches a new origin bypassed it. Fixed by having
+`wireView()`'s existing `did-navigate` handler also call `repartitionView()`, the same swap
+`navigate()` already used, whenever the *committed* URL's origin differs from the tab's current
+partition (`tab-view.ts`'s new `partitionChanged`, factored out so `navigate()` and this handler
+can never compute the comparison two different ways). The file's own header previously justified
+the absence of any origin-locking with "that lock applies to granted apps, which do not exist
+until build step 4" — stale since #127/#129 made grants real and persisted; corrected as part of
+this fix rather than left to mislead the next reader.
+
+**The residual this leaves, deliberately not papered over.** `did-navigate` fires only once a
+navigation has already committed — by then the new origin's page has already rendered once
+inside the OLD partition and may already have read from it. This swap corrects the partition
+going forward; it does not undo an early read. The stronger shape, `will-navigate`/`will-redirect`
+with `preventDefault()` and a re-entry through the partition-aware path, catches it before commit
+— but costs a fresh view and a lost navigation-history entry on every ordinary cross-origin link
+click, not only a redirect, which is why A109 exists as its own tracked item rather than being
+folded into this fix. Built the owner-specified shape (reuse `repartitionView`, do not invent a
+second mechanism); the earlier-interception alternative is registered as an open question for the
+owner, not chosen silently either way.
+
+One thing this fix must not get wrong, and the dashboard tab in particular tests for it: the
+dashboard's own dev-mode URL is a real `http(s)` address, so treating its OWN first `did-navigate`
+the same as an ordinary tab's would see partition `undefined` -> a real partition as an "origin
+change" and repartition the dashboard into an app partition on its very first load. The handler
+excludes `record.isDashboardTab` explicitly rather than relying on `partitionChanged` alone to
+catch this case.
+
 **[`favicon.ts`](favicon.ts) — main fetches favicons to a `data:` URL rather than letting the
 renderer fetch directly.** AI recommendation, not yet an owner decision. The chrome view's CSP
 (`index.html`) is a one-line, readable guarantee today that the one privileged view in this app
