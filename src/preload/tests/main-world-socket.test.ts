@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { installOrivon } from '../main-world-socket.js'
 import type { MainWorldDatagram, MainWorldUdpBridge } from '../main-world-socket.js'
 import type { OrivonErrorCode } from '../../contracts/errors.js'
-import type { SendRefusal } from '../../contracts/handles.js'
+import type { FileStat, SendRefusal } from '../../contracts/handles.js'
 import type { ResponseEnvelope } from '../../contracts/ipc.js'
 
 const LIMITS = {
@@ -84,6 +84,11 @@ function fakeBridge (
   appManifest: () => Promise<unknown>, appGrants: () => Promise<unknown>
   fsReadFile: (path: string) => Promise<Uint8Array>, fsWriteFile: (path: string, data: Uint8Array) => Promise<void>
   fsReadFileSync: (path: string) => ResponseEnvelope<Uint8Array>
+  fsMkdir: (path: string, opts?: { recursive?: boolean }) => Promise<void>
+  fsReaddir: (path: string) => Promise<readonly string[]>
+  fsStat: (path: string) => Promise<FileStat>
+  fsRm: (path: string, opts?: { recursive?: boolean }) => Promise<void>
+  fsRename: (from: string, to: string) => Promise<void>
   idPublicKey: (curve: string) => Promise<Uint8Array>, idSign: (curve: string, payload: Uint8Array) => Promise<Uint8Array>
   netConnect: (opts: { host: string, port: number }) => Promise<ReturnType<typeof fakeSocketBridgeResult>>
   netConnectSecure: (opts: { host: string, port: number }) => Promise<ReturnType<typeof fakeSocketBridgeResult>>
@@ -95,6 +100,11 @@ function fakeBridge (
     fsReadFile: async () => new Uint8Array(),
     fsWriteFile: async () => {},
     fsReadFileSync,
+    fsMkdir: async () => {},
+    fsReaddir: async () => [],
+    fsStat: async () => ({ size: 0, isFile: true, isDirectory: false, mtimeMs: 0 }),
+    fsRm: async () => {},
+    fsRename: async () => {},
     idPublicKey: async () => new Uint8Array(),
     idSign: async () => new Uint8Array(),
     netConnect: async (_opts) => netConnectResult,
@@ -186,6 +196,42 @@ describe('installOrivon', () => {
     expect(signCalls).toEqual([{ curve: 'P-256', payload }])
     expect(publicKey).toEqual(new Uint8Array([1]))
     expect(signature).toEqual(new Uint8Array([2]))
+  })
+
+  it('fs.mkdir/readdir/stat/rm/rename delegate to the matching bridge closures, args intact', async () => {
+    const target: Record<string, unknown> = {}
+    const bridge = fakeBridge(fakeSocketBridgeResult())
+    const calls: unknown[] = []
+    bridge.fsMkdir = async (path, opts) => { calls.push(['mkdir', path, opts]) }
+    bridge.fsReaddir = async (path) => { calls.push(['readdir', path]); return ['a.txt'] }
+    bridge.fsStat = async (path) => { calls.push(['stat', path]); return { size: 1, isFile: true, isDirectory: false, mtimeMs: 1 } }
+    bridge.fsRm = async (path, opts) => { calls.push(['rm', path, opts]) }
+    bridge.fsRename = async (from, to) => { calls.push(['rename', from, to]) }
+    installOrivon(bridge, LIMITS, target)
+
+    const orivon = target.orivon as {
+      fs: {
+        mkdir: (path: string, opts?: { recursive?: boolean }) => Promise<void>
+        readdir: (path: string) => Promise<readonly string[]>
+        stat: (path: string) => Promise<FileStat>
+        rm: (path: string, opts?: { recursive?: boolean }) => Promise<void>
+        rename: (from: string, to: string) => Promise<void>
+      }
+    }
+
+    await orivon.fs.mkdir('a', { recursive: true })
+    expect(await orivon.fs.readdir('a')).toEqual(['a.txt'])
+    expect(await orivon.fs.stat('a/f.txt')).toEqual({ size: 1, isFile: true, isDirectory: false, mtimeMs: 1 })
+    await orivon.fs.rm('a', { recursive: true })
+    await orivon.fs.rename('old', 'new')
+
+    expect(calls).toEqual([
+      ['mkdir', 'a', { recursive: true }],
+      ['readdir', 'a'],
+      ['stat', 'a/f.txt'],
+      ['rm', 'a', { recursive: true }],
+      ['rename', 'old', 'new']
+    ])
   })
 
   it('orivon.id is frozen, same as app/fs', () => {

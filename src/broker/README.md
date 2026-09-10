@@ -56,6 +56,12 @@ Three files stay at the top level because they belong to no single directory:
   has no `Broker` entry point yet, see the file's own header), built alongside
   `net-capability.ts` from the start rather than inlined into `index.ts` first, same reason:
   `index.ts` was already 264 lines before `id`
+- [`fs-capability.ts`](fs-capability.ts) — `orivon.fs`'s eight entry points (`readFile`,
+  `writeFile`, `confineSync` plus queue item 2.1's `mkdir`/`readdir`/`stat`/`rm`/`rename`),
+  lifted out of `index.ts` on 2026-09-10 under the same Rule 2 seam `net-capability.ts` and
+  `id-capability.ts` already established — every method routes through this file's own
+  `confineForOrigin`, the one call into `policy/paths.ts`'s `confinePath`. `orivon.fs.open`
+  (`FileHandle`) is deliberately not here — parked, see that lane's own PR body
 
 The decomposition and the import boundaries are recorded in
 [`ADR-0015`](../../docs/decisions/ADR-0015-the-broker-is-organised-by-job.md), including the two

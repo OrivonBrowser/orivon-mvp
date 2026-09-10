@@ -1,85 +1,23 @@
 // Real, minimal Node adapters for createBroker's injected dependencies. No
 // `electron` import anywhere here (dialTcp/dialOne/resolveHost need only
-// node:net/node:dns; nodeFs needs only node:fs) -- src/broker/README.md's
-// rule for this layer -- so every one of these is testable against a real
-// temp directory and a real local TCP server, with no Electron and no
-// mocking.
+// node:net/node:dns) -- src/broker/README.md's rule for this layer -- so
+// every one of these is testable against a real local TCP server, with no
+// Electron and no mocking. The filesystem half (`nodeFs`, needing only
+// node:fs) is ./node-fs-adapter.ts, split out under code-guidelines.md
+// Rule 2 -- see that file's own header.
 
 import { lookup } from 'node:dns/promises'
-import { mkdirSync, realpathSync } from 'node:fs'
-import { mkdir, readFile as fsReadFile, writeFile as fsWriteFile } from 'node:fs/promises'
 import { connect as netConnect, createServer } from 'node:net'
 import type { Server, Socket } from 'node:net'
-import { dirname, join } from 'node:path'
 import { Duplex } from 'node:stream'
 import type { CloseReason } from '../handles/handle-contracts.js'
-import type { BrokerFs, Dial, DialedSocket, Listen, ListenedServer } from '../broker-contracts.js'
+import type { Dial, DialedSocket, Listen, ListenedServer } from '../broker-contracts.js'
 import type { PortRange } from '../policy/bind.js'
 import { countPorts, portAt, randomStart } from './port-pick.js'
-import { originHash } from '../grants/origin-hash.js'
 import type { Resolver } from '../policy/connect.js'
 import { fail, isOrivonErrorLike } from '../errors.js'
 
-/**
- * `BrokerFs` over the real filesystem. `rootFor` is `./origin-hash.js`'s
- * `originHash(origin)` under `<userData>/apps/`, per ADR-0003 and
- * security-model.md T13b -- directory names must never be the literal
- * origin string, or `https://Example.com` and `https://example.com`
- * collide on a case-insensitive filesystem. `./origin-hash.js`'s own header
- * explains why this construction is shared with `partitionFor` rather than
- * inlined here.
- *
- * Takes `userDataPath` as a plain string rather than reaching for Electron's
- * `app` itself, so this adapter -- like `dialTcp`/`resolveHost`, which need
- * no Electron at all -- stays testable against a real temp directory without
- * needing Electron either.
- */
-export function nodeFs (userDataPath: string): BrokerFs {
-  return {
-    // CREATES the root, it does not merely name it. confinePath's very first
-    // act is realpath(root), and its own doc calls a root that will not
-    // resolve "a broker bug, not an app's" -- so a root that has never been
-    // created denies every path the app ever asks for, silently and always
-    // (it fails closed, the same as a real traversal attempt, which is why
-    // nothing catches it by symptom). Nothing else in the tree creates it:
-    // writeFile's own mkdir runs on the confined path, only reached after
-    // confinement has already refused.
-    //
-    // recursive: true makes this a no-op once the directory exists. It is a
-    // blocking syscall on the broker's thread, in a function that already
-    // hands confinePath a synchronous realpath (A28) -- whoever makes
-    // realpath async should take this with it.
-    rootFor: (origin) => {
-      const root = join(userDataPath, 'apps', originHash(origin), 'files')
-      mkdirSync(root, { recursive: true })
-      return root
-    },
-    realpathSync,
-    // NEITHER readFile NOR writeFile CATCHES. index.ts's `mapIoError` is the
-    // one place an errno becomes an OrivonError; a catch here that produced
-    // one instead would BYPASS that mapping, forwarding the confined
-    // absolute path -- and through it the OS account name and the sha256
-    // confinement root (T13b) -- to the app verbatim as an 'internal' error
-    // rather than 'denied': the exact permission-probe oracle errors.ts's
-    // uniformity rule exists to close. One implementation of this idea
-    // (code-guidelines.md Rule 3).
-    readFile: async (path) => {
-      const buffer = await fsReadFile(path)
-      // A COPY, not a zero-copy view over `buffer.buffer`. A Node Buffer is
-      // a Uint8Array, but it can be a window into Node's shared allocation
-      // pool (an 8KB slab holding unrelated data), and structured clone --
-      // the path this value takes to the renderer -- serialises an
-      // ArrayBufferView by serialising its WHOLE backing ArrayBuffer. See
-      // README.md, Design notes, for why this is worth the memcpy even
-      // though nothing observable leaks today.
-      return new Uint8Array(buffer)
-    },
-    writeFile: async (path, data) => {
-      await mkdir(dirname(path), { recursive: true })
-      await fsWriteFile(path, data)
-    }
-  }
-}
+export { nodeFs } from './node-fs-adapter.js'
 
 function errnoCode (error: unknown): string | undefined {
   return error instanceof Error && 'code' in error ? String((error as NodeJS.ErrnoException).code) : undefined
