@@ -331,3 +331,42 @@ pinning unbounded memory in the main process (T11b) without pretending to be OS-
 backpressure. AI recommendation, not an owner decision -- flagged for the same reason the write
 heartbeat and dial timeout are (`transport/port-sink.ts`, `adapters/node-adapters.ts`'s own
 `DIAL_TIMEOUT_MS`): nothing in `contracts/` or `handle-contracts.md` specifies this number.
+
+### `policy/manifest-patterns.ts` -- moved here from `src/loader/`, and a gap it closed
+
+`patternSetFromCapabilities` (Manifest.capabilities -> `update.ts`'s `PatternSet`) used to live
+in `src/loader/update-patterns.ts`, the only place that needed it until `app.requestGrant`'s
+policy (`policy/request-grant.ts`, queue item 4.1) needed the exact same conversion for its own
+subset check. This file may never import `src/loader/` (this README's own "what it must never
+import"), so the function moved here instead, with `src/loader/update-patterns.ts` reduced to a
+re-export of it -- `src/loader/index.ts`'s import needed no change.
+
+**The move surfaced a real gap, not a style issue: the function never mapped
+`capabilities.net?.https?.connect` to `'https.connect'`.** Concretely, this meant a manifest
+update that ADDED `https.connect` (ADR-0017) installed SILENTLY -- `decideUpdate`'s subset check
+never saw the new key, so `widensAuthority` could not fire -- and a `requestGrant` call for a
+declared `https.connect` would have been refused as "not declared". Fixed as part of the move,
+with a regression test (`policy/tests/manifest-patterns.test.ts`) rather than left for a separate
+change, because leaving it broken would have made `request-grant.ts`'s own "never exceeds the
+manifest" guarantee false for exactly the one capability ADR-0017 added most recently.
+
+### `policy/request-grant.ts` and `../main/request-grant.ts` -- what a persisted grant may trust
+
+Queue item 4.1's own security shape asks: "if grants are read back from storage at startup, a
+tampered store must not be able to mint authority the user never gave -- what is trusted on that
+read path?" As of this change **there is no such read path to secure**: `grants/grant-ledger.ts`'s
+`OriginRecord.grants` is never written to `LedgerStorage` at all (only `versionFloor` and
+`rollbackAcknowledgedVersion` are, per that file's own doc) -- every grant is in-memory only and
+does not survive a restart. That is a real, separate, already-filed gap (A23) against decision 9
+("a grant lasts until revoked"), not something this change fixes.
+
+The conclusion for whoever builds that persistence: it must not become a second place authority
+can be minted. `versionFloor`'s own hydration is the model to copy -- it only ever RAISES a
+value the write side already computed under real user action (`registerApp`), never derives a
+new one from the read bytes, and a corrupt/unparseable record fails closed (`update.ts`'s
+`compareVersions` returning `null`) rather than being interpreted charitably. A future grant
+hydration must do the same: restore exactly the `(origin, capability, patterns)` tuple a real,
+accepted `requestGrant`/install-time `broker.grant()` call already wrote, re-validate it against
+the origin's CURRENT manifest the same way `decideGrantRequest` validates a live request (a
+manifest can narrow between sessions), and never synthesize a `Grant` from a shape the read path
+merely finds plausible.
