@@ -2,8 +2,8 @@
 
 **What lives here.** The Electron IPC front door, its message validation, the per-origin rate
 limiter, the credit-window byte pumps that relay a socket over a dedicated `MessagePortMain`, and
-`orivon.fs.readFileSync`'s synchronous sibling to all of that (`sync-fs.ts`, `sync-fs-grants.ts`,
-`sync-fs-policy.ts`, ADR-0016) — a second, `ipcMain.on`/`event.returnValue` channel
+`orivon.fs.readFileSync`'s synchronous sibling to all of that (`sync-fs.ts`, `sync-fs-policy.ts`,
+ADR-0016) — a second, `ipcMain.on`/`event.returnValue` channel
 (`SYNC_CONTROL_CHANNEL`) rather than a method on `CONTROL_CHANNEL`, because it never returns a
 Promise the way every `ipcMain.handle` method here does.
 
@@ -65,19 +65,17 @@ real traffic. `registerSyncFsIpc` shares this SAME limiter instance rather than 
 `fs.readFileSync` cannot be used to dodge it by moving traffic to a channel with no budget of its
 own.
 
-**`sync-fs.ts`/`sync-fs-grants.ts`/`sync-fs-policy.ts` exist because `../index.ts`'s own
-`confineForOrigin` (the grant check plus path confinement `fs.readFile`/`writeFile` share) has no
-exported hook, and `../index.ts` was a concurrently-edited, unmergeable file when this landed
-(`stream/broker-37-secure-connect`, `docs/development/parallel-work.md`) — see `sync-fs.ts`'s own
-header.** `sync-fs-policy.ts` reuses `../policy/paths.ts`'s `confinePath` directly (zero
-duplication: it is the exact function `confineForOrigin` calls) and reads real bytes via
-`node:fs`'s own `readFileSync`, since the async `BrokerFs.readFile` this directory's `deps.fs`
-already builds has no synchronous counterpart to reuse either. The one piece that could not be
-reused by import is `GrantLedger.currentGrant` — private inside `../index.ts`'s closure — so
-`sync-fs-grants.ts`'s `wrapBrokerForSyncFsGrants` mirrors "does this origin hold a live `fs`
-grant" from `Broker.grant`/`revoke`'s own already-public, already-resolved return values instead;
-that file's header has the full argument for why this is a safe passive mirror rather than a
-second, independently-decided source of grant truth. **The intended fix, once the concurrent lane
-merges, is a small additive method on `Broker` (or on `../index.ts`'s private
-`confineForOrigin`, exported) that this mirror can then be deleted in favour of** — flagged in
-this lane's own PR body, not filed here as a fresh A-number.
+**`sync-fs.ts`/`sync-fs-policy.ts` reuse `../index.ts`'s own `Broker.fs.confineSync`** — ADR-0016's
+synchronous grant-check/confinement entry point, added alongside them and built entirely from
+`confineForOrigin`'s existing logic (`../index.ts`'s own doc), so a missing grant or a
+traversal/symlink escape is refused by the SAME check `fs.readFile`/`writeFile` use, never a
+second implementation of it (code-guidelines.md Rule 3). `sync-fs-policy.ts`'s
+`createSyncFsPolicy` is a thin pass-through onto that method plus `node:fs`'s own `readFileSync`
+for the raw disk I/O, which the async `BrokerFs.readFile` adapter has no synchronous counterpart
+for. (An earlier revision of this lane mirrored the grant check separately, in a now-deleted
+`sync-fs-grants.ts`, because `../index.ts` was owned by a concurrent, unmerged lane at the time --
+see that PR's history if the reasoning behind the mirror is ever relevant again.) **Deliberately
+outside the per-origin in-flight budget (`HandleTable.run`) `readFile`/`writeFile` run under** --
+that budget is `async`-shaped by construction and a synchronous IPC reply cannot await a slot
+becoming free, so this is a genuinely open design question, not merely a deferred one; see
+`../index.ts`'s own doc on `confineSync` and `open-questions.md`.

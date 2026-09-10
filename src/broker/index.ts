@@ -128,6 +128,29 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     })
   }
 
+  /**
+   * ADR-0016's synchronous entry point: `orivon.fs.readFileSync` needs the
+   * SAME grant check and path confinement `readFile`/`writeFile` use, over
+   * `ipcRenderer.sendSync` rather than the async control channel -- see
+   * `../transport/sync-fs.ts`'s own header for the caller and why it cannot
+   * simply call `readFile` above instead (a synchronous IPC reply has no
+   * way to await one). Reuses `confineForOrigin` itself, so a traversal or
+   * symlink escape is refused by the exact same check on both paths, never
+   * a second implementation of it.
+   *
+   * DELIBERATELY OUTSIDE `runFsIo`'s per-origin in-flight budget
+   * (`handleTable.run`, above) -- that budget is `async`-shaped by
+   * construction (`work: (signal) => Promise<T>`), and a synchronous IPC
+   * reply cannot await a slot becoming free without turning ADR-0016's
+   * "the renderer genuinely blocks" into "the renderer blocks on a queue it
+   * cannot see the position of". Filed rather than fixed here -- see
+   * open-questions.md.
+   */
+  function confineSync (origin: string, path: string): string {
+    const key = canonical(origin)
+    return confineForOrigin(key, path).resolved
+  }
+
   async function readFile (origin: string, path: string): Promise<Uint8Array> {
     const key = canonical(origin)
     const { resolved, grant } = confineForOrigin(key, path)
@@ -260,7 +283,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     app: { manifest, grants },
     net,
     id,
-    fs: { readFile, writeFile },
+    fs: { readFile, writeFile, confineSync },
     registerApp,
     versionFloorFor,
     rollbackAcknowledgedVersionFor,

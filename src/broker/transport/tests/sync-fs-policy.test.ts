@@ -3,23 +3,47 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createSyncFsPolicy } from '../sync-fs-policy.js'
+import { createBroker } from '../../index.js'
 import { nodeFs } from '../../adapters/node-adapters.js'
 import { isOrivonErrorLike } from '../../errors.js'
+import type { Broker, CreateBrokerOptions } from '../../broker-contracts.js'
+import type { Manifest } from '../../../contracts/index.js'
 
-// Real disk, real confinePath, real fs.rootFor/realpathSync (via ../../
-// adapters/node-adapters.ts's nodeFs, imported read-only -- this lane may
-// not edit that file, only use its exports) -- proving the PRODUCTION
-// policy enforces the same confinement ../index.ts's own confineForOrigin
-// does, not just that ./sync-fs.ts's pure handler routes correctly to
-// whatever policy it is given.
+// A REAL Broker (createBroker over the real nodeFs adapter, imported
+// read-only) -- proving createSyncFsPolicy's production wiring reuses
+// ../index.ts's actual Broker.fs.confineSync (ADR-0016), backed by a real
+// GrantLedger and real disk confinement, not merely that ./sync-fs.ts's
+// pure handler routes correctly to whatever policy it is given.
 
 const APP = 'https://app.example'
 const tempDirs: string[] = []
 
-async function tempUserData (): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), 'orivon-syncfs-policy-'))
-  tempDirs.push(dir)
-  return dir
+function testManifest (): Manifest {
+  return {
+    orivonApiVersion: 0,
+    id: 'org.orivon.test',
+    name: 'Test',
+    version: '1.0.0',
+    entry: '/index.html',
+    capabilities: { fs: { quotaBytes: 1_048_576 } }
+  }
+}
+
+async function realBroker (): Promise<{ broker: Broker, userData: string }> {
+  const userData = await mkdtemp(join(tmpdir(), 'orivon-syncfs-policy-'))
+  tempDirs.push(userData)
+  const notUsed = async (): Promise<never> => { throw new Error('not exercised by this suite') }
+  const deps: CreateBrokerOptions = {
+    dial: notUsed,
+    dialSecure: notUsed,
+    bind: notUsed,
+    listen: notUsed,
+    resolve: notUsed,
+    now: () => Date.now(),
+    fs: nodeFs(userData),
+    keychain: { getSeed: notUsed }
+  }
+  return { broker: createBroker(deps), userData }
 }
 
 afterEach(() => {
@@ -29,11 +53,10 @@ afterEach(() => {
   tempDirs.length = 0
 })
 
-describe('createSyncFsPolicy', () => {
-  it('denies with no platformCode when hasFsGrant reports no grant, before any disk access', async () => {
-    const userData = await tempUserData()
-    const fs = nodeFs(userData)
-    const policy = createSyncFsPolicy({ hasFsGrant: () => false, rootFor: fs.rootFor, realpathSync: fs.realpathSync })
+describe('createSyncFsPolicy (real Broker.fs.confineSync)', () => {
+  it('denies with no platformCode when the origin holds no fs grant, before any disk access', async () => {
+    const { broker } = await realBroker()
+    const policy = createSyncFsPolicy(broker)
 
     let caught: unknown
     try {
@@ -47,24 +70,27 @@ describe('createSyncFsPolicy', () => {
   })
 
   it('confines and reads a real file under a real grant', async () => {
-    const userData = await tempUserData()
-    const fs = nodeFs(userData)
-    const root = fs.rootFor(APP)
-    const filePath = join(root, 'a.txt')
-    await fs.writeFile(filePath, new Uint8Array([1, 2, 3]))
-    const policy = createSyncFsPolicy({ hasFsGrant: () => true, rootFor: fs.rootFor, realpathSync: fs.realpathSync })
+    const { broker } = await realBroker()
+    await broker.registerApp(APP, testManifest())
+    await broker.grant(APP, 'fs', [])
+    // Written through the broker's own async fs.writeFile -- the same
+    // production path an app actually uses -- so the file this test reads
+    // back is exactly what ends up on disk in practice, not a fixture this
+    // test staged some other way.
+    await broker.fs.writeFile(APP, 'a.txt', new Uint8Array([1, 2, 3]))
+    const policy = createSyncFsPolicy(broker)
 
     const resolved = policy.confine(APP, 'a.txt')
     const bytes = policy.readFileSync(resolved)
 
-    expect(resolved).toBe(filePath)
     expect(Array.from(bytes)).toEqual([1, 2, 3])
   })
 
   it('refuses a traversal attempt with \'denied\', identically to a missing grant -- never a distinguishable reason', async () => {
-    const userData = await tempUserData()
-    const fs = nodeFs(userData)
-    const policy = createSyncFsPolicy({ hasFsGrant: () => true, rootFor: fs.rootFor, realpathSync: fs.realpathSync })
+    const { broker } = await realBroker()
+    await broker.registerApp(APP, testManifest())
+    await broker.grant(APP, 'fs', [])
+    const policy = createSyncFsPolicy(broker)
 
     let caught: unknown
     try {
@@ -77,15 +103,35 @@ describe('createSyncFsPolicy', () => {
     expect(isOrivonErrorLike(caught) ? caught.platformCode : 'not-orivon-error').toBeUndefined()
   })
 
+  it('is refused again once the fs grant is revoked', async () => {
+    const { broker } = await realBroker()
+    await broker.registerApp(APP, testManifest())
+    const record = await broker.grant(APP, 'fs', [])
+    const policy = createSyncFsPolicy(broker)
+    // Proves the grant is live before revoking, so the assertion below is
+    // about revocation specifically, not a grant that never took.
+    expect(() => policy.confine(APP, 'a.txt')).not.toThrow()
+
+    await broker.revoke(APP, record.id)
+
+    let caught: unknown
+    try {
+      policy.confine(APP, 'a.txt')
+    } catch (e) {
+      caught = e
+    }
+    expect(isOrivonErrorLike(caught) && caught.code === 'denied').toBe(true)
+  })
+
   it('readFileSync throws a raw Node error for a confined path that does not exist on disk (mapped by the caller, not this file)', async () => {
-    const userData = await tempUserData()
-    const fs = nodeFs(userData)
+    const { broker, userData } = await realBroker()
+    await broker.registerApp(APP, testManifest())
+    await broker.grant(APP, 'fs', [])
+    const policy = createSyncFsPolicy(broker)
     // The root must exist for confinePath's own realpath walk to succeed --
-    // an app's files directory is created on first write in production
-    // (node-adapters.ts's own writeFile); this test only needs the
-    // directory, not any file in it.
-    await mkdir(fs.rootFor(APP), { recursive: true })
-    const policy = createSyncFsPolicy({ hasFsGrant: () => true, rootFor: fs.rootFor, realpathSync: fs.realpathSync })
+    // an app's files directory is created on first write in production;
+    // this test only needs the directory, not any file in it.
+    await mkdir(nodeFs(userData).rootFor(APP), { recursive: true })
 
     const resolved = policy.confine(APP, 'missing.txt')
 

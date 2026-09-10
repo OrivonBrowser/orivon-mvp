@@ -18,14 +18,20 @@ import { toOrivonError } from './orivon-error.js'
 // source, what is and isn't wired yet).
 //
 // Nothing below hands the page anything but a Promise-returning closure,
-// with ONE exception -- `fsReadFileSync`, ADR-0016's deliberately narrow
-// synchronous call, still never touches `ipcRenderer` directly from the page
-// (it stays a plain proxied closure, exactly like every other method here).
-// `call()` is the only thing that touches `ipcRenderer.invoke` (the raw
-// MessagePortMain/ipcRenderer never crossing into the main world is this
-// whole directory's rule, not just this file's). Every call through `call()`
-// carries an explicit timeout (../contracts/ipc.ts's rule 2) -- see each
-// budget below; `fsReadFileSync` carries none, by design (see its own doc).
+// with ONE exception -- ADR-0016's deliberately narrow synchronous call,
+// still never touching `ipcRenderer` directly from the page (it stays a
+// plain proxied closure, exactly like every other method here). It is
+// SPLIT INTO TWO FUNCTIONS, `fsReadFileSyncEnvelope`/`fsReadFileSyncThrowing`
+// -- see their own docs -- because a THROWN value does not survive
+// `contextBridge`'s function-proxy boundary intact (found live, not in a
+// unit test); a RETURNED one does, so the envelope crosses as data and the
+// real `OrivonError` is thrown on whichever side of the boundary the call
+// already ends up on. `call()` is the only thing that touches
+// `ipcRenderer.invoke` (the raw MessagePortMain/ipcRenderer never crossing
+// into the main world is this whole directory's rule, not just this
+// file's). Every call through `call()` carries an explicit timeout
+// (../contracts/ipc.ts's rule 2) -- see each budget below; the synchronous
+// call carries none, by design (see its own doc).
 const TIMEOUT_MS = {
   /** app.manifest / app.grants: broker-local reads, no I/O of their own. */
   metadata: 5_000,
@@ -236,11 +242,12 @@ function buildUdpBridgeResult (descriptor: UdpSocketDescriptor, port: PortLike):
 // 3). id.publicKey/sign need no main-world stream wrapping (net.connect's
 // own reason for the executeInMainWorld dance) -- a plain Uint8Array in,
 // Uint8Array out, exactly fs.readFile/writeFile's shape -- so they are wired
-// identically to those two, not to net. fsReadFileSync just below is a
-// seventh, wired the same way into both exposure sites, but built
-// differently: it is the one call() cannot serve, since call() always
-// returns a Promise (../../contracts/ipc.ts's rule 2, a required timeout on
-// every reply) and this one, by design, never does.
+// identically to those two, not to net. The synchronous call just below is
+// wired into both exposure sites too, but as TWO functions, not one --
+// see fsReadFileSyncEnvelope's own doc for why -- because it is the one
+// call() cannot serve: call() always returns a Promise (../../contracts/
+// ipc.ts's rule 2, a required timeout on every reply) and this one, by
+// design, never does.
 async function appManifest (): Promise<Manifest> { return await call('app.manifest', undefined, TIMEOUT_MS.metadata) }
 async function appGrants (): Promise<readonly Grant[]> { return await call('app.grants', undefined, TIMEOUT_MS.metadata) }
 async function fsReadFile (path: string): Promise<Uint8Array> { return await call('fs.readFile', { path }, TIMEOUT_MS.fs) }
@@ -257,12 +264,34 @@ async function fsWriteFile (path: string, data: Uint8Array): Promise<void> {
  * arrived yet, and `sync-fs.ts`'s own header explains why nothing on this
  * path may suspend in the first place.
  *
- * Throws an OrivonError-shaped object rather than rejecting -- there is no
- * Promise on this path to reject -- built the same way `call()` builds one,
- * so an app's `catch` sees an identical shape whichever `fs` method failed.
+ * RETURNS THE ENVELOPE, NEVER THROWS -- unlike every other method here.
+ * Found live (a real Electron launch, not a unit test): a plain object
+ * THROWN across `contextBridge`'s function-proxy boundary crosses back as a
+ * generic `Error` with only `.message` intact, `.code` silently dropped --
+ * a resolved return value does not go through that same handling and
+ * crosses as plain data, intact (confirmed by the same launch: a successful
+ * read's bytes arrived correctly before this fix). So this function crosses
+ * the envelope as data, and whichever caller sits on the SAME side the
+ * throw needs to happen on builds the real `OrivonError` there:
+ * `../main-world-socket.ts`'s `installOrivon` does this for the
+ * `executeInMainWorld` path (see its own `readFileSync`, reusing its own
+ * `toOrivonError`); `fsReadFileSyncThrowing` below does it for
+ * `exposeFallback`.
  */
-function fsReadFileSync (path: string): Uint8Array {
-  const response = ipcRenderer.sendSync(SYNC_CONTROL_CHANNEL, { path }) as ResponseEnvelope<Uint8Array>
+function fsReadFileSyncEnvelope (path: string): ResponseEnvelope<Uint8Array> {
+  return ipcRenderer.sendSync(SYNC_CONTROL_CHANNEL, { path }) as ResponseEnvelope<Uint8Array>
+}
+
+/**
+ * `exposeFallback`'s own `readFileSync`: throws in the isolated world, built
+ * the same way `call()` builds one, so an app's `catch` sees an identical
+ * shape whichever `fs` method failed. Only used when `executeInMainWorld` is
+ * absent or throws -- there is no main-world code running in that case (that
+ * is the whole reason `installOrivon` never runs) for the throw to happen
+ * inside instead, unlike `fsReadFileSyncEnvelope`'s other caller.
+ */
+function fsReadFileSyncThrowing (path: string): Uint8Array {
+  const response = fsReadFileSyncEnvelope(path)
   if (response.ok) return response.result
   throw toOrivonError(response.code, response.platformCode === undefined
     ? { message: response.message }
@@ -279,7 +308,7 @@ function exposeFallback (): void {
   contextBridge.exposeInMainWorld('orivon', {
     version: 0,
     app: { manifest: appManifest, grants: appGrants },
-    fs: { readFile: fsReadFile, writeFile: fsWriteFile, readFileSync: fsReadFileSync },
+    fs: { readFile: fsReadFile, writeFile: fsWriteFile, readFileSync: fsReadFileSyncThrowing },
     id: {
       publicKey: async (opts: { curve: string }) => await idPublicKey(opts.curve),
       sign: async (opts: { curve: string, payload: Uint8Array }) => await idSign(opts.curve, opts.payload)
@@ -315,7 +344,7 @@ export function exposeOrivon (): void {
     appGrants,
     fsReadFile,
     fsWriteFile,
-    fsReadFileSync,
+    fsReadFileSync: fsReadFileSyncEnvelope,
     idPublicKey,
     idSign,
     netConnect: netConnectBridge,

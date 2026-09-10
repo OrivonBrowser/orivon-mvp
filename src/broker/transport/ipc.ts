@@ -33,7 +33,6 @@ import { createDatagramRelay } from './datagram-relay.js'
 import { deliverPort } from './deliver-port.js'
 import { createTokenBucketLimiter } from './token-bucket.js'
 import type { RateLimiter } from './token-bucket.js'
-import { wrapBrokerForSyncFsGrants } from './sync-fs-grants.js'
 import { createSyncFsPolicy } from './sync-fs-policy.js'
 import { handleSyncFsReadRequest } from './sync-fs.js'
 import type { SyncControlEvent, SyncFsPolicy } from './sync-fs.js'
@@ -415,26 +414,19 @@ export const brokerIpcSubsystem: Subsystem = {
       now: realNow
     })
     const broker = createBroker(deps)
-    // Wrapped BEFORE anything else can reach `broker` -- ./sync-fs-grants.ts's
-    // own header explains why publishing (and registering IPC against) only
-    // this wrapped object, never the raw one, is what makes its fs-grant
-    // mirror race-free: every future grant()/revoke() call, from the app
-    // loader's permission prompt or (today) src/main/dev-grant.ts's hook,
-    // then goes through the same wrapper that keeps ./sync-fs-policy.ts's
-    // synchronous grant check in step.
-    const syncFsGrants = wrapBrokerForSyncFsGrants(broker)
     // publishBroker (src/main/registry.ts) is the one sanctioned way to set
     // ctx.broker -- it throws instead of silently overwriting if this ever
     // runs twice, so a later subsystem is guaranteed to read this same
     // instance rather than a second, disagreeing one.
-    publishBroker(ctx, syncFsGrants.broker)
-    registerBrokerIpc(ipcMain, syncFsGrants.broker, transport, limiter)
+    publishBroker(ctx, broker)
+    registerBrokerIpc(ipcMain, broker, transport, limiter)
 
-    const syncFsPolicy = createSyncFsPolicy({
-      hasFsGrant: syncFsGrants.hasFsGrant,
-      rootFor: deps.fs.rootFor,
-      realpathSync: deps.fs.realpathSync
-    })
-    registerSyncFsIpc(ipcMain, syncFsPolicy, limiter)
+    // ./sync-fs-policy.ts's createSyncFsPolicy calls straight through to
+    // broker.fs.confineSync -- ADR-0016's synchronous grant-check/
+    // confinement entry point on the SAME broker instance registerBrokerIpc
+    // just wired, so a grant issued through any route (the app loader's
+    // permission prompt later, src/main/dev-grant.ts's hook today) is live
+    // for this channel the instant it lands on that one instance.
+    registerSyncFsIpc(ipcMain, createSyncFsPolicy(broker), limiter)
   }
 }

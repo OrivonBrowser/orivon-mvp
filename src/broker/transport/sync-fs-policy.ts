@@ -1,41 +1,28 @@
-// The production SyncFsPolicy (./sync-fs.ts). The confinement half reuses
-// ../policy/paths.ts's `confinePath` directly -- the exact function
-// ../index.ts's own `confineForOrigin` calls -- so a traversal or symlink
-// escape is refused by the SAME check on both the sync and async paths,
-// never a second copy that could drift from it (code-guidelines.md Rule 3).
-// The grant-presence half comes from ./sync-fs-grants.ts's mirror, injected
-// as `hasFsGrant` rather than read from ../index.ts's own ledger, which has
-// no exported hook this lane may add -- see ./sync-fs.ts's header.
+// The production SyncFsPolicy (./sync-fs.ts). Both halves are ../index.ts's
+// own `Broker.fs.confineSync` -- the SAME grant check and path confinement
+// `fs.readFile`/`writeFile` use (`confineForOrigin`), exposed synchronously
+// for exactly this caller -- so a missing grant or a traversal/symlink
+// escape is refused by the ONE check, never a second implementation of it
+// (code-guidelines.md Rule 3). Earlier revisions of this lane mirrored the
+// grant check separately (`sync-fs-grants.ts`, since removed) because
+// `../index.ts` was owned by a concurrent, unmerged lane at the time; that
+// constraint expired when `stream/broker-37-secure-connect` merged, and
+// `confineSync` is the real thing that mirror stood in for.
 //
 // The raw read is node:fs's own `readFileSync`: genuinely synchronous disk
-// I/O, which ../broker-contracts.ts's `BrokerFs` (the async `fs.readFile`
-// `deps.fs` adapter) has no equivalent for, and which this lane may not add
-// one for either (`../adapters/` is the same excluded lane as `../index.ts`).
-// Confinement already proves `resolved` is inside this origin's root and
-// free of `..`/symlink escapes; this call is the one remaining step,
-// matching ../index.ts's own `deps.fs.readFile(resolved)` line for line.
+// I/O, which `../broker-contracts.ts`'s `BrokerFs` (the async `fs.readFile`
+// `deps.fs` adapter) has no equivalent for. Confinement already proves the
+// resolved path is inside this origin's root and free of `..`/symlink
+// escapes; this call is the one remaining step, matching ../index.ts's own
+// `deps.fs.readFile(resolved)` line for line.
 
 import { readFileSync as nodeReadFileSync } from 'node:fs'
-import { CONFINEMENT_ERROR_CODE, confinePath } from '../policy/paths.js'
-import { fail } from '../errors.js'
+import type { Broker } from '../broker-contracts.js'
 import type { SyncFsPolicy } from './sync-fs.js'
 
-export interface SyncFsPolicyDeps {
-  readonly hasFsGrant: (origin: string) => boolean
-  /** Same two `BrokerFs` members ../index.ts's `confineForOrigin` calls -- reused, not reimplemented. */
-  readonly rootFor: (origin: string) => string
-  readonly realpathSync: (path: string) => string
-}
-
-export function createSyncFsPolicy (deps: SyncFsPolicyDeps): SyncFsPolicy {
+export function createSyncFsPolicy (broker: Pick<Broker, 'fs'>): SyncFsPolicy {
   return {
-    confine (origin, path) {
-      if (!deps.hasFsGrant(origin)) throw fail('denied', 'fs is not granted to this origin')
-      const root = deps.rootFor(origin)
-      const confined = confinePath(root, path, deps.realpathSync)
-      if (!confined.ok) throw fail(CONFINEMENT_ERROR_CODE, "the path is outside this app's files directory")
-      return confined.resolved
-    },
+    confine: (origin, path) => broker.fs.confineSync(origin, path),
     readFileSync: (resolvedPath) => nodeReadFileSync(resolvedPath)
   }
 }
