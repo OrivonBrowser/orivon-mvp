@@ -3903,3 +3903,305 @@ into this round at all. Queue item 5.1's exit criterion (a real torrent from a n
 peer) does not strictly require inbound listening, but the seeding half of the flagship does.
 
 **Still open.** Needs the owner to pick a delivery shape before a contracts PR can be written.
+
+---
+
+## Post-merge audit of #89-#136 (2026-09-10)
+
+Everything from **A115** down was raised by the post-merge audit of PRs #89-#94, #101-#104 and
+#105-#136 — the step-2 defect closeout, the broker reorg, the test/comment/contracts housekeeping,
+and the whole unattended build run. Review coverage for that block had been recorded nowhere except
+prose in archived fleet ledgers, which is itself worth fixing; see A126.
+
+Findings that were **fixed** in that audit's own PRs (#137 the reserved-port cross-pattern bypass,
+#138 the favicon address check, #139 routed fetch's bounds/abort/decompression, and the others in
+that wave) carry no A-number by design: the rule is fixed **or** filed, never silently dropped. The
+entries below are the ones filed rather than fixed, plus two structural constraints discovered while
+fixing.
+
+### A115 — a subdomain-prefix confusable survives in the grant prompt's title **[STILL OPEN]**
+
+**Raised 2026-09-10**, post-merge audit (lane R2, T25 follow-up to #130/#134).
+
+T25 is **more mitigated than #130's and #134's own bodies describe** — IDN is punycoded and
+userinfo is stripped before the origin is rendered, both already true and both worth knowing before
+anyone "fixes" them again. What survives is the subdomain-prefix confusable:
+`accounts.google.com.attacker.example` renders with the reassuring part leftmost and the part that
+decides authority at the far right, where a truncated or narrow dialog is least likely to show it.
+
+Related but distinct from **A127**, which is about the origin not being reliably displayed at all.
+
+**Needed by:** before an untrusted app can trigger a grant prompt from a page — i.e. as soon as
+`app.requestGrant` has a caller.
+
+### A116 — routed `fetch()` never follows redirects **[STILL OPEN]**
+
+**Raised 2026-09-10**, post-merge audit (lane R3, PR #133).
+
+Real `fetch()` follows redirects by default (`redirect: 'follow'`). `routedFetch` does not follow
+them at all, and this is written down nowhere — not in the file, not in `src/preload/README.md`, and
+not in #133's own "deliberately not done" list, which names response streaming and non-buffer bodies
+but not this. **ADR-0017's Consequences section warns in its own words that a silent divergence in a
+web platform API is a trap**, so this is an alignment gap against that ADR rather than only a
+missing feature.
+
+Following them is not a small addition: a redirect to a host outside the grant must be refused, a
+redirect from https to http must not silently downgrade, and an app's own headers — which owner
+decision 7 lets it set freely — must not be replayed to a new host. Each of those is a policy
+decision, which is why this is filed rather than fixed.
+
+**Needed by:** whenever a real app is ported. Most real HTTP APIs redirect somewhere.
+
+### A117 — routed `fetch()` bypasses mixed-content enforcement as well as CORS and CSP **[AI-REC]**
+
+**Raised 2026-09-10**, post-merge audit (lane R3, PR #133).
+
+The CORS/CSP bypass is intended and documented — it is most of the point of routing. The
+mixed-content half is not documented anywhere: a page served over https can reach an `http://`
+granted host through the routed path, which its own renderer would have blocked.
+
+**AI recommendation:** document it in the same place as the CORS/CSP note rather than change the
+behaviour. An app that declared an `http://` host in its manifest and had a person approve it has
+been through more scrutiny than the browser's blanket rule provides. But it must be *written down*,
+by the same argument A116 makes.
+
+### A118 — an app that bypasses the real `Headers` class can put conflicting framing headers on a routed request **[STILL OPEN]**
+
+**Raised 2026-09-10**, post-merge audit (lane R3, PR #131/#133).
+
+CRLF injection is guarded (#131 added guards on header names, values and the request line,
+unprompted). What is not guarded is *semantic* framing conflict: an app supplying its own
+header-pair list rather than a `Headers` instance can set both `Content-Length` and
+`Transfer-Encoding`, or duplicate `Content-Length`, which is the classic request-smuggling shape if
+anything downstream disagrees about which wins.
+
+Bounded by the fact that these connections carry no ambient credentials and reach only granted
+hosts, so the app is smuggling to a server it was already authorised to talk to. Filed rather than
+fixed for that reason.
+
+### A119 — `app.requestGrant`'s `patterns` array has no size bound **[STILL OPEN]**
+
+**Raised 2026-09-10**, post-merge audit (lane R2, PR #127).
+
+`decideGrantRequest` runs a caller-supplied array through the subset check with no length bound
+first. `MAX_PATTERNS` bounds what a *manifest* may declare; this path does not reuse it. Same shape
+as **A120**: a bound that exists elsewhere in the codebase was not applied here.
+
+### A120 — persisted grant, floor and acknowledgement files have no size bound before `readFileSync` + `JSON.parse` **[STILL OPEN]**
+
+**Raised 2026-09-10**, post-merge audit (lane R2, PR #129).
+
+`node-ledger-storage.ts` reads each file whole and parses it, with no size check, on the main
+process's thread. `MAX_MANIFEST_BYTES` (64 KiB) is the precedent for the bound that is missing.
+The threat is narrow — these files are ours, under `userData` — but "narrow" is the argument that
+was also available for the sync `fs` path, and that turned out to freeze the whole browser (see
+A121's neighbour, and the sync-read cap that came out of this audit).
+
+### A121 — no CI gate checks dependency advisories, and the repo now has runtime dependencies **[NEEDS OWNER DECISION]**
+
+**Raised 2026-09-10**, post-merge audit (conductor, PR #120).
+
+`check:natives` enforces Rule 8. **Nothing checks whether a dependency has a published advisory.**
+That was defensible while the repo had zero runtime dependencies; #120 added nine. `npm audit`
+reports **4 low** today, all reaching `elliptic` through `crypto-browserify`:
+
+    GHSA-848j-6mx2-7j84  "Elliptic Uses a Cryptographic Primitive with a Risky Implementation"
+    CWE-1240 · severity low · affects <=6.6.1 · installed 6.6.1
+
+The reach is real rather than theoretical: `src/shim/module-map.ts` wires `crypto-browserify` in as
+the `crypto` implementation **presented to apps**, so an app doing ECDH or signature verification
+through the shim gets that implementation. Orivon's own identity cryptography is separate
+(`policy/derive.ts`, WebCrypto, golden vectors checked in CI) and is unaffected.
+
+`npm audit`'s only offered fix is a semver-major downgrade of `crypto-browserify`, which is why it
+was not applied. **The finding is the missing gate, not this advisory.**
+
+**Owner decision needed, two parts:** what threshold fails CI (`--audit-level=moderate` passes today
+and would catch the next real one), and whether the four current lows are baselined or accepted.
+The owner's standing preference is that exceptions stay possible but never silent, so whichever is
+chosen wants a documented escape hatch rather than a suppression.
+
+### A122 — `ShimProcess` has no `cwd()`, while `path-browserify`'s `resolve()` calls it **[STILL OPEN]**
+
+**Raised 2026-09-10**, post-merge audit (`/code-review` over `src/shim`, PRs #111/#120).
+
+`src/shim/globals.ts`'s `ShimProcess` provides no `cwd()`. `path` is aliased to `path-browserify`,
+whose `resolve()` calls `process.cwd()` (confirmed at `node_modules/path-browserify/index.js:124`).
+Any relative `path.resolve` from app code therefore throws `TypeError: process.cwd is not a
+function`.
+
+Not simply a missing stub: **what a working directory means for a sandboxed app is a design
+question.** The app's own confined root is the obvious answer and probably the right one, but it
+should be chosen deliberately and written down, because every relative path an app resolves will
+key off it.
+
+### A123 — `IncomingMessage` never gets `.socket`, though `node-https.ts` is written as if it does **[STILL OPEN]**
+
+**Raised 2026-09-10**, post-merge audit (`/code-review` over `src/shim`, PR #131).
+
+`src/shim/node-http-client.ts` builds an `IncomingMessage` with no `.socket`, so `res.socket.<anything>`
+throws. `node-https.ts`'s own header describes behaviour that assumes it is present. Either provide
+it or correct the header — the two disagreeing is the actual defect, since a reader trusts the header.
+
+### A124 — the favicon address check does not pin the resolved address, unlike the loader's fetch **[STILL OPEN]**
+
+**Raised 2026-09-10**, post-merge audit (conductor hand-review of PR #138).
+
+#138 gates the favicon fetch behind the T12 address check. The guard resolves the host and then
+`net.fetch` resolves it again independently — **there is no pinning.**
+`src/loader/electron-fetch.ts` *does* pin (`electronFetch(url, pinnedAddresses, signal)`), so the
+favicon path is deliberately weaker than the install path.
+
+Using Chromium's own `net.resolveHost` for the guard — the same resolver and cache `net.fetch`
+consults — narrows the window to a cache expiry between the two, but does not close it. Filed rather
+than fixed because pinning through `net.fetch` needs the loader's own mechanism, and #138 was scoped
+to the address check.
+
+Recorded specifically so that **a reader comparing `favicon.ts` to `install-origin.ts` finds the
+difference already accounted for** rather than concluding one of them is wrong.
+
+### A125 — `fetch-route.ts` cannot be split, and is now at 492 of Rule 2's 500 lines **[STILL OPEN]**
+
+**Raised 2026-09-10**, post-merge audit (conductor, PR #139).
+
+`installFetchRoute` is serialised with `Function.prototype.toString()` and re-executed in the main
+world (ADR-0014's mechanism). Every helper and constant it uses must therefore live **physically
+inside its body** — it cannot be split into sibling files, which is the remedy code-guidelines
+Rule 2 assumes is always available.
+
+The file reached **492 of 500 lines by absorbing one fix** (#139). It cannot take another feature,
+and the usual escape is closed to it.
+
+**This is a structural constraint on a trust-boundary file, not a style problem.** It needs a
+decision before the next change to that file, not during one. Options that exist: raise the limit
+for this file with a recorded reason (the `orivon:comment-budget` precedent shows the project
+accepts justified, non-silent exceptions), move work out of the main world, or change how the
+main-world installer is delivered.
+
+### A126 — review coverage is recorded nowhere **[AI-REC]**
+
+**Raised 2026-09-10**, post-merge audit (conductor, process).
+
+Which PRs have been independently reviewed, and by what, is recorded in **no label, no field and no
+document** — only in prose inside archived fleet ledgers outside the repository. This audit existed
+because the owner had to reconstruct the gap by hand and hand the list over; it could not be derived
+from the repository at all.
+
+**AI recommendation:** a `reviewed:` label, or one line per PR in a checked-in ledger. Cheap, and it
+is the difference between "we think #105-#136 were never reviewed" and knowing.
+
+### A127 — the consent prompt shows the origin only in a field Electron says some platforms drop **[STILL OPEN]**
+
+**Raised 2026-09-10**, post-merge audit (adversarial review of the consent path, PRs #130/#134).
+
+`describeGrantRequest` puts the origin in `title` and nowhere else. `message` carries the capability
+sentence and contains no origin; `detail` carries `Claims to be "<name>"`, which is the app's own
+assertion about itself. Electron's own declaration for `MessageBoxOptions`:
+
+    /** Title of the message box, some platforms will not show it. */
+    title?: string;
+
+**Where the title is dropped, the prompt identifies the requesting app solely by a string the app
+chose** — the exact inversion `grant-prompt-render.ts`'s own doc comment says it exists to prevent.
+Run-from-source on macOS is an `mvp-scope.md` IN-table item, and macOS is the platform historically
+documented as ignoring message-box titles.
+
+**The fix — render the origin somewhere always shown — is correct regardless of which platforms drop
+the title, and is being made.** What stays open is the measurement: *no macOS machine was available
+to this audit*, so the platform claim is reasoned from Electron's declaration and not observed.
+Recorded rather than asserted, so nobody later cites it as measured.
+
+**Needed by:** confirmation needs one run of the prompt on a real macOS build. Until then, treat
+"the title is not reliably displayed" as the operating assumption, since the fix costs nothing on
+platforms that do show it.
+
+### A128 — `pako` is a direct dependency nothing imports, while the live gzip path uses a different, nested copy **[STILL OPEN]**
+
+**Raised 2026-09-10**, post-merge audit (lane R4, PR #120).
+
+`package.json` carries **nine** direct dependencies; `shim-dependency-review.md` records **eight** as
+approved. The ninth, `pako@3.0.1`, is imported by nothing. Meanwhile the code path that actually runs
+gzip/deflate reaches `browserify-zlib`'s own nested `pako@1.0.11` (2020), which was never
+independently reviewed — the review approved `browserify-zlib`+`pako` as a pair and the pair that
+actually runs is a different version.
+
+Two separate things to settle: remove the unused direct dependency, and decide whether the nested
+copy that does the work needs its own review. Neither is urgent; both are the kind of drift that is
+cheap now and confusing later.
+
+### A129 — `check-no-native-modules.mjs` cannot detect an install-script network download **[STILL OPEN]**
+
+**Raised 2026-09-10**, post-merge audit (lane R4, Rule 8).
+
+Rule 8's guard matches compiler-toolchain keywords. It does not detect a package whose `postinstall`
+**downloads a prebuilt binary**, which reaches the same end — a native artefact on disk that breaks
+run-from-source on a platform with no build for it — by a route the check does not look at.
+Demonstrated live against `esbuild`'s own `postinstall`. **All nine runtime dependencies were
+confirmed free of install scripts**, so nothing is wrong today; the gap is in what the guard can see.
+
+### A130 — two parallel authorisation pipelines in the broker **[AI-REC]**
+
+**Raised 2026-09-10**, post-merge audit (named-persona review; Brooks' essential-vs-accidental
+complexity lens).
+
+`checkConnectSecure` (`policy/connect-secure.ts`) reimplements `checkConnect`'s
+(`policy/connect.ts`) authorisation pipeline: **six of nine deny reasons are duplicated** —
+`bad-host`, `bad-port`, `non-canonical-host`, `not-declared`, `reserved-port`, `too-many-patterns`.
+
+The complexity in address canonicalisation, rebinding resistance and path confinement is *essential*
+— inherent to the problem, and handled seriously. The second copy is *accidental*: TLS termination is
+orthogonal to whether an address is authorised, and nothing about "this connection will be encrypted"
+changes which host a pattern permits. The split came from ADR-0015's organise-by-job structure, which
+is a good instinct that here produced two answers to one question.
+
+**The cost has already been paid.** The reserved-port cross-pattern bypass fixed in #137 existed
+identically in both files and had to be fixed twice — and was nearly missed the second time, because
+the lane that found it reasoned that `connectSecure` "uses a separate synchronous check" and was
+therefore unaffected. A fix built to that boundary would have passed its own tests and left the TLS
+path open. The forward cost is the same shape: every future policy change must be made twice,
+correctly, by someone who does not know that.
+
+**AI recommendation:** extract the shared authorisation decision so there is one implementation with
+TLS as a parameter. A refactor with a security payoff rather than a tidiness exercise, and one that
+wants its own PR with no other content.
+
+### A131 — the compatibility matrix cannot show that nobody can use the product **[AI-REC]**
+
+**Raised 2026-09-10**, post-merge audit (named-persona review; Cagan's problem-vs-solution lens).
+
+`compatibility-matrix.md` scores capability cells. Its Table 1 can approach all-green while the
+number of people who can use Orivon is **zero** — which is the state today: `app.requestGrant` has no
+page-reachable caller, `installFromHint` has no caller, and the settings permissions list is empty by
+construction.
+
+The owner already identified the gap (owner decision **D-0010** item 4, 2026-09-10: *"the highest-reach
+item is wiring `app.requestGrant` to the page ... until a page can ask, everything built last night is
+invisible"*). The point of this entry is different: **the instrument that steers the work cannot show
+it.** The matrix's own most recent pass *promoted* `app.requestGrant` from ❌ to ⚠️ for a mechanism
+nothing calls. A run steered by a completeness scoreboard will keep making that trade, because the
+scoreboard rewards it.
+
+**AI recommendation, and it costs a documentation edit rather than engineering:** give Table 1 a first
+row that is not a capability — *"a person can install an app and grant it something"* — and leave it
+❌ until it is true. One honest row above the scoreboard changes what the next round optimises for.
+
+### A132 — apps cannot tell Orivon-grade primitives from polyfill-grade ones **[AI-REC]**
+
+**Raised 2026-09-10**, post-merge audit (named-persona review; Thompson's trusting-trust lens).
+
+**The structural decision here is right and should be recorded as such before the gap:** the shim runs
+*inside the untrusted renderer*, so the nine polyfill packages are app-facing and on the far side of
+the broker's boundary. A backdoored `crypto-browserify` cannot reach a socket the broker did not
+authorise. **That placement is what makes admitting nine third-party packages survivable at all**, and
+a future reviewer reading "nine dependencies, one with an advisory" should find that reasoning here
+rather than reach for the wrong lever.
+
+The gap is the label. `module-map.ts` presents `crypto-browserify` to applications **as `crypto`**. An
+app author writing `require('crypto')` is not told they are getting a browserify polyfill (whose
+`elliptic` carries A121's advisory), while Orivon's own identity cryptography is WebCrypto with golden
+vectors checked in CI against an independent implementation. That separation is correct and invisible.
+
+**AI recommendation:** say so in `src/shim/README.md` and in whatever documentation eventually faces
+app authors. An app that signs something with `crypto.createSign()` believing it has the same footing
+as `orivon.id.sign()` has been misled by a naming choice, not by a bug — and a documentation fix is
+the whole remedy.
