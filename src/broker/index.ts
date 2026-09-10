@@ -26,12 +26,11 @@
 
 import { HandleTable } from './handles/handles.js'
 import { errnoOf, fail } from './errors.js'
-import { mapIoError } from './io-errors.js'
 import { GrantLedger } from './grants/grant-ledger.js'
-import { CONFINEMENT_ERROR_CODE, confinePath } from './policy/paths.js'
 import { originFromUrl } from './policy/origin.js'
 import { createNetCapability } from './net-capability.js'
 import { createIdCapability } from './id-capability.js'
+import { createFsCapability } from './fs-capability.js'
 import type {
   CapabilityKind,
   Grant,
@@ -63,31 +62,6 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     return key
   }
 
-  /**
-   * The `fs` capability check plus path confinement, shared by readFile and
-   * writeFile (Rule 3 -- the two were byte-for-byte the same logic before
-   * this was pulled out).
-   *
-   * `fs` carries no patterns (manifest.ts's FsCapability), so the capability
-   * check here is presence-only: does this origin hold ANY live `fs` grant.
-   * Returns the `Grant` itself, not only the confined path -- the caller
-   * needs its id to scope the actual I/O under `handleTable.run`, the same
-   * way `connect` already scopes under `current.id`.
-   *
-   * Synchronous, and stays that way: `confinePath`'s `realpath` parameter is
-   * `policy/paths.ts`'s, declared synchronous (filed as A28 -- an origin on
-   * a slow filesystem can still block other origins' pending calls through
-   * this exact function; making `realpath` async is the fix, not this one).
-   */
-  function confineForOrigin (key: string, path: string): { resolved: string, grant: Grant } {
-    const grant = ledger.currentGrant(key, 'fs')
-    if (grant === undefined) throw fail('denied', 'fs is not granted to this origin')
-    const root = deps.fs.rootFor(key)
-    const confined = confinePath(root, path, deps.fs.realpathSync)
-    if (!confined.ok) throw fail(CONFINEMENT_ERROR_CODE, "the path is outside this app's files directory")
-    return { resolved: confined.resolved, grant }
-  }
-
   // orivon.net's three entry points. Lifted to ./net-capability.ts once
   // `listen` pushed this file past Rule 2's 500 lines -- see that file's own
   // header, and README.md's design notes, for why the split lands here.
@@ -98,102 +72,11 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
   // the same Rule 2 reason: this file was already 264 lines before `id`.
   const id = createIdCapability({ deps, ledger, canonical })
 
-  /**
-   * `fs.readFile` and `fs.writeFile` share this shape: confine the path (see
-   * `confineForOrigin`), then run the actual I/O under the same per-origin
-   * in-flight budget `connect` uses (`{ on: 'grant' }` -- handle-contracts.ts
-   * on that scope: "without it those calls would escape the in-flight cap
-   * entirely, which is the cap that keeps the broker responsive"). Before
-   * this, `fs` called `deps.fs.*` directly and was subject to no cap at all
-   * -- T11b by name, and a second, distinct T11b path through the confined
-   * path leaving no room for cancellation either.
-   *
-   * `signal.aborted` is checked on both sides of the raw call: before, in
-   * case the grant was already gone by the time a slot freed up; after,
-   * because revoking mid-write must not let the app receive confirmation for
-   * an operation performed after its grant was withdrawn -- the write can
-   * already be on disk by then, but the app is never told it succeeded.
-   */
-  async function runFsIo<T> (key: string, grant: Grant, io: () => Promise<T>): Promise<T> {
-    return await handleTable.run(key, { on: 'grant', grantId: grant.id }, async (signal) => {
-      if (signal.aborted) throw fail('revoked', 'the grant authorising this fs operation was withdrawn')
-      let result: T
-      try {
-        result = await io()
-      } catch (error) {
-        throw mapIoError(error, 'fs')
-      }
-      if (signal.aborted) throw fail('revoked', 'the grant authorising this fs operation was withdrawn')
-      return result
-    })
-  }
-
-  /**
-   * ADR-0016's synchronous entry point: `orivon.fs.readFileSync` needs the
-   * SAME grant check and path confinement `readFile`/`writeFile` use, over
-   * `ipcRenderer.sendSync` rather than the async control channel -- see
-   * `../transport/sync-fs.ts`'s own header for the caller and why it cannot
-   * simply call `readFile` above instead (a synchronous IPC reply has no
-   * way to await one). Reuses `confineForOrigin` itself, so a traversal or
-   * symlink escape is refused by the exact same check on both paths, never
-   * a second implementation of it.
-   *
-   * DELIBERATELY OUTSIDE `runFsIo`'s per-origin in-flight budget
-   * (`handleTable.run`, above) -- that budget is `async`-shaped by
-   * construction (`work: (signal) => Promise<T>`), and a synchronous IPC
-   * reply cannot await a slot becoming free without turning ADR-0016's
-   * "the renderer genuinely blocks" into "the renderer blocks on a queue it
-   * cannot see the position of". Filed rather than fixed here -- see
-   * open-questions.md.
-   */
-  function confineSync (origin: string, path: string): string {
-    const key = canonical(origin)
-    return confineForOrigin(key, path).resolved
-  }
-
-  async function readFile (origin: string, path: string): Promise<Uint8Array> {
-    const key = canonical(origin)
-    const { resolved, grant } = confineForOrigin(key, path)
-    return await runFsIo(key, grant, async () => await deps.fs.readFile(resolved))
-  }
-
-  /**
-   * manifest.ts's FsCapability.quotaBytes: "ENFORCED, not advisory ... The
-   * broker maintains a running per-origin byte counter, checks it on write,
-   * and yields 'limit' when exceeded." `ledger.reserveFsBytes` checks AND
-   * reserves in one synchronous step, before this function's first `await`
-   * -- concurrent callers cannot all read the same pre-write counter and
-   * all pass (see that method's own doc). Undeclared quota means unlimited.
-   * `started` below distinguishes "never touched disk" (refund) from
-   * "touched disk, then told 'revoked' anyway" (do not); session-lifetime
-   * only, A29 tracks reconciling against disk on startup.
-   */
-  async function writeFile (origin: string, path: string, data: Uint8Array): Promise<void> {
-    const key = canonical(origin)
-    const { resolved, grant } = confineForOrigin(key, path)
-    if (!ledger.reserveFsBytes(key, data.length)) {
-      throw fail('limit', "this write would exceed the app's declared storage quota")
-    }
-    let started = false
-    try {
-      await runFsIo(key, grant, async () => {
-        started = true
-        try {
-          await deps.fs.writeFile(resolved, data)
-        } catch (error) {
-          ledger.releaseFsBytes(key, data.length) // nothing landed -- unmapped, runFsIo maps it below
-          throw error
-        }
-      })
-    } catch (error) {
-      // False only when deps.fs.writeFile was never called (in-flight cap,
-      // or an already-revoked grant) -- refund there too. deps.fs.writeFile
-      // takes no AbortSignal, so once called it lands regardless of
-      // revocation -- only the catch above may refund after that point.
-      if (!started) ledger.releaseFsBytes(key, data.length)
-      throw error
-    }
-  }
+  // orivon.fs's eight entry points -- readFile, writeFile, confineSync
+  // (ADR-0016) plus queue item 2.1's mkdir/readdir/stat/rm/rename. Lifted to
+  // ./fs-capability.ts for the same Rule 2 reason net/id were: see that
+  // file's own header for the confinement guarantee every one of them shares.
+  const fs = createFsCapability({ deps, handleTable, ledger, canonical })
 
   async function manifest (origin: string): Promise<Manifest> {
     const found = ledger.manifestFor(canonical(origin))
@@ -323,7 +206,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     app: { manifest, grants },
     net,
     id,
-    fs: { readFile, writeFile, confineSync },
+    fs,
     registerApp,
     versionFloorFor,
     rollbackAcknowledgedVersionFor,
