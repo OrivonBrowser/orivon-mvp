@@ -276,6 +276,18 @@ export interface Broker {
   readonly fs: {
     readFile(origin: string, path: string): Promise<Uint8Array>
     writeFile(origin: string, path: string, data: Uint8Array): Promise<void>
+    /**
+     * ADR-0016's synchronous entry point: the SAME grant check and path
+     * confinement `readFile`/`writeFile` use (`../index.ts`'s
+     * `confineForOrigin`), exposed synchronously for `orivon.fs.
+     * readFileSync`'s main-process handler (`../transport/sync-fs.ts`),
+     * which cannot await a Promise on this path. Returns the confined
+     * absolute path; throws an OrivonError ('denied') on refusal. Does NOT
+     * run under the per-origin in-flight budget `readFile`/`writeFile` do
+     * -- see `../index.ts`'s own doc on `confineSync` for why that budget
+     * is `async`-shaped and this call, by ADR-0016's own design, is not.
+     */
+    confineSync(origin: string, path: string): string
   }
   /**
    * The APP KEYS half of capability-api.ts's "Two kinds of identity" --

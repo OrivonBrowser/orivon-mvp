@@ -4,15 +4,15 @@
 // nothing on this path may suspend -- see ADR-0016 for why that block is the
 // required behaviour, not a cost to hide.
 //
-// WHY THE POLICY CHECK IS INJECTED (`SyncFsPolicy`), NOT A DIRECT CALL ONTO
-// `Broker`: the grant check and path confinement ../index.ts's private
-// `confineForOrigin` already does for fs.readFile has no exported hook, and
-// `../index.ts` belongs to a concurrent, unmerged lane
-// (stream/broker-37-secure-connect, docs/development/parallel-work.md) this
-// one may not edit. `SyncFsPolicy` is the seam a small, additive change to
-// `Broker` can fill in directly once that lane merges; ./sync-fs-policy.ts's
-// `createSyncFsPolicy` is this lane's own stand-in -- see that file's header
-// for what it reuses and what it cannot.
+// WHY THE POLICY CHECK IS INJECTED (`SyncFsPolicy`) RATHER THAN A DIRECT
+// CALL ONTO `Broker` HERE: this file stays Electron-free and testable with a
+// fake policy (below), the same reason `./ipc.ts`'s `handleControlRequest`
+// takes a structural `Broker`/`event`/`transport` instead of reaching for
+// `electron` itself. `./sync-fs-policy.ts`'s `createSyncFsPolicy` is the
+// production implementation, and it is a thin pass-through onto
+// `../index.ts`'s own `Broker.fs.confineSync` -- ADR-0016's synchronous
+// grant-check/confinement entry point, added alongside this file, reusing
+// `confineForOrigin` itself rather than a second implementation of it.
 //
 // TESTABLE WITHOUT ELECTRON, same reason and same shape as
 // ./ipc.ts's handleControlRequest: `SyncControlEvent`, `SyncFsPolicy` and
