@@ -29,7 +29,7 @@ import { canonicalAddress, classifyAddress } from './address.js'
 import { MAX_HOST_LENGTH, isAsciiHost, isValidPort, normalizeHost } from './canonical-host.js'
 import { couldAnyPatternMatch, parsePattern, patternAuthorises } from './connect-patterns.js'
 import type { ParsedPattern } from './connect-patterns.js'
-import { isReservedPort, namesPortExactly } from './reserved-ports.js'
+import { isReservedPort, patternNamesPortExactly } from './reserved-ports.js'
 
 /**
  * Resolves a hostname to every address it currently answers with.
@@ -242,7 +242,17 @@ export async function checkConnect (
   // port is never a name-existence oracle (the same reason
   // couldAnyPatternMatch denies early); after, because the answer depends on
   // whether any pattern NAMED this port, which needs them parsed.
-  if (isReservedPort(port) && !namesPortExactly(parsed, port)) return deny('reserved-port')
+  //
+  // NARROWS the pattern set rather than merely gating on it: every downstream
+  // check below uses `eligible`, not `parsed`, so a reserved port can only be
+  // authorised by the SAME pattern that named it -- never by pairing that
+  // naming with a different, broader pattern's host match (A82's
+  // cross-pattern bypass; see reserved-ports.ts's own doc comment).
+  const reserved = isReservedPort(port)
+  const eligible = reserved
+    ? parsed.map((pattern) => (patternNamesPortExactly(pattern, port) ? pattern : null))
+    : parsed
+  if (reserved && eligible.every((pattern) => pattern === null)) return deny('reserved-port')
 
   // An address literal is already the thing patterns are matched against, so
   // there is nothing to resolve -- and not calling out means not depending on
@@ -265,7 +275,7 @@ export async function checkConnect (
   // not merely "did it parse" -- see this file's header.
   if (isLiteral && canonicalAddress(requested) !== requested) return deny('non-canonical-host')
 
-  if (!couldAnyPatternMatch(parsed, requested, port)) return deny('no-pattern-possible')
+  if (!couldAnyPatternMatch(eligible, requested, port)) return deny('no-pattern-possible')
 
   const answers = isLiteral ? [requested] : await resolveFn(requested)
 
@@ -290,7 +300,7 @@ export async function checkConnect (
     // that assumption. See address.ts's canonicalAddress.
     if (canonicalAddress(address) !== address) return deny('bad-answer', [...addresses, address])
 
-    if (!parsed.some((pattern) => patternAuthorises(pattern, requested, address, port))) {
+    if (!eligible.some((pattern) => patternAuthorises(pattern, requested, address, port))) {
       return deny('no-pattern-match', [...addresses, address])
     }
 
