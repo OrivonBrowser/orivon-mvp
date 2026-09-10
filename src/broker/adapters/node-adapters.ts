@@ -177,8 +177,11 @@ export function destroySocket (
  * AI recommendation, not an owner decision: the value is not specified
  * anywhere in contracts/ or handle-contracts.md, and putting it in LIMITS
  * would be a src/contracts/ change that has to merge on its own.
+ *
+ * EXPORTED so ./tls-adapter.ts's own dial-and-handshake attempt reuses this
+ * exact bound rather than a second copy of 30_000 that could drift from it.
  */
-const DIAL_TIMEOUT_MS = 30_000
+export const DIAL_TIMEOUT_MS = 30_000
 
 /**
  * One dial attempt. `readable`/`writable` are real WHATWG streams

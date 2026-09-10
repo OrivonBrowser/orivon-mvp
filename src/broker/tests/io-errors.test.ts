@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isOrivonError, mapIoError } from '../io-errors.js'
+import { isOrivonError, mapIoError, mapTlsError } from '../io-errors.js'
 import { fail } from '../errors.js'
 
 describe('isOrivonError', () => {
@@ -82,5 +82,42 @@ describe('mapIoError', () => {
   it('writes a fresh message rather than forwarding the raw one, per kind', () => {
     expect(mapIoError({ code: 'ENOENT' }, 'fs').message).toBe('the filesystem operation failed')
     expect(mapIoError({ code: 'ECONNRESET' }, 'net').message).toBe('the network operation failed')
+  })
+})
+
+describe('mapTlsError', () => {
+  // net.connectSecure's own contract (src/contracts/capability-api.ts): a
+  // failed handshake or a certificate/hostname mismatch is 'unreachable'
+  // with a real platformCode, never 'denied' -- the attempt was one the app
+  // was permitted to make.
+  it.each([
+    'ERR_TLS_CERT_ALTNAME_INVALID',
+    'CERT_HAS_EXPIRED',
+    'DEPTH_ZERO_SELF_SIGNED_CERT',
+    'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+    'ECONNREFUSED'
+  ])('maps %s to unreachable, keeping it as platformCode', (code) => {
+    const mapped = mapTlsError({ code })
+
+    expect(mapped.code).toBe('unreachable')
+    expect(mapped.platformCode).toBe(code)
+  })
+
+  it('falls back to \'unreachable\' with no platformCode for a value carrying no code at all', () => {
+    const mapped = mapTlsError(new Error('no code here'))
+
+    expect(mapped.code).toBe('unreachable')
+    expect(mapped.platformCode).toBeUndefined()
+  })
+
+  it('lets an error this broker already produced pass through unchanged -- a revoked grant mid-handshake is not a TLS failure', () => {
+    const original = fail('revoked', 'the grant was revoked mid-flight')
+
+    expect(mapTlsError(original)).toBe(original)
+  })
+
+  it('writes a fresh message rather than forwarding the raw TLS error text', () => {
+    expect(mapTlsError({ code: 'CERT_HAS_EXPIRED', message: 'raw openssl text' }).message)
+      .not.toContain('raw openssl text')
   })
 })
