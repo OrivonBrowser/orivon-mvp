@@ -354,19 +354,21 @@ manifest" guarantee false for exactly the one capability ADR-0017 added most rec
 
 Queue item 4.1's own security shape asks: "if grants are read back from storage at startup, a
 tampered store must not be able to mint authority the user never gave -- what is trusted on that
-read path?" As of this change **there is no such read path to secure**: `grants/grant-ledger.ts`'s
-`OriginRecord.grants` is never written to `LedgerStorage` at all (only `versionFloor` and
-`rollbackAcknowledgedVersion` are, per that file's own doc) -- every grant is in-memory only and
-does not survive a restart. That is a real, separate, already-filed gap (A23) against decision 9
-("a grant lasts until revoked"), not something this change fixes.
+read path?" At the time this section was first written **there was no such read path to
+secure**: `grants/grant-ledger.ts`'s `OriginRecord.grants` was never written to `LedgerStorage` at
+all (only `versionFloor` and `rollbackAcknowledgedVersion` were) -- every grant was in-memory only
+and did not survive a restart. That was a real, separate, filed gap (A23) against decision 9 ("a
+grant lasts until revoked").
 
-The conclusion for whoever builds that persistence: it must not become a second place authority
-can be minted. `versionFloor`'s own hydration is the model to copy -- it only ever RAISES a
-value the write side already computed under real user action (`registerApp`), never derives a
-new one from the read bytes, and a corrupt/unparseable record fails closed (`update.ts`'s
-`compareVersions` returning `null`) rather than being interpreted charitably. A future grant
-hydration must do the same: restore exactly the `(origin, capability, patterns)` tuple a real,
-accepted `requestGrant`/install-time `broker.grant()` call already wrote, re-validate it against
-the origin's CURRENT manifest the same way `decideGrantRequest` validates a live request (a
-manifest can narrow between sessions), and never synthesize a `Grant` from a shape the read path
-merely finds plausible.
+**A23 is now closed** (`grants/grant-persistence.ts`, `grants/grant-ledger.ts`). The read path this
+paragraph worried about now exists, and the conclusion it drew is exactly what got built: hydration
+never becomes a second place authority can be minted. `hydrateGrants` (`grant-persistence.ts`)
+restores exactly the `(origin, capability, patterns)` tuple a real, accepted `requestGrant`/
+install-time `broker.grant()` call already wrote, re-validates it against the origin's CURRENT
+manifest via `decideGrantRequest` -- the same check a live request gets, reused rather than
+reimplemented -- and mints a fresh `GrantId` rather than trusting one read off disk (there is not
+one to trust: `PersistedGrant` carries no `id` field at all). A grant a live request could no
+longer obtain is silently dropped, never restored. See `grants/README.md`'s own design note for
+the full mechanism, including why hydration runs from `registerApp` rather than `versionFloor`'s
+own earlier-touch hook (it needs a manifest to re-validate against), and the T13c exclusion for
+loopback/plain-http origins.

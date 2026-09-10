@@ -19,17 +19,9 @@
 //      header for what is trusted on the read-back path; this file never
 //      reads a grant back, only ever writes one forward via broker.grant().
 
-import { decideGrantRequest } from '../broker/policy/request-grant.js'
+import { decideGrantRequest, isCapabilityKind } from '../broker/policy/request-grant.js'
 import type { Broker } from '../broker/broker-contracts.js'
-import type { CapabilityKind, CapabilityRequest, Pattern } from '../contracts/index.js'
-
-const CAPABILITY_KINDS: readonly CapabilityKind[] = [
-  'tcp.connect', 'tcp.listen', 'udp.bind', 'udp.send', 'https.connect', 'fs', 'id'
-]
-
-function isCapabilityKind (value: string): value is CapabilityKind {
-  return (CAPABILITY_KINDS as readonly string[]).includes(value)
-}
+import type { CapabilityRequest, Pattern, CapabilityKind } from '../contracts/index.js'
 
 /**
  * Asks a person whether `origin` may hold `capability` over `patterns` --

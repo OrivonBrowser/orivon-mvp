@@ -5,7 +5,7 @@
 import { closeSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { originHash } from './origin-hash.js'
-import type { LedgerStorage } from './ledger-storage.js'
+import type { LedgerStorage, PersistedGrant } from './ledger-storage.js'
 
 /**
  * Never valid semver (no digits, no dots) -- returned for anything that
@@ -26,6 +26,10 @@ function floorPath (userDataPath: string, origin: string): string {
 
 function rollbackAckPath (userDataPath: string, origin: string): string {
   return join(originGrantsDir(userDataPath, origin), 'rollback-ack.json')
+}
+
+function grantsPath (userDataPath: string, origin: string): string {
+  return join(originGrantsDir(userDataPath, origin), 'grants.json')
 }
 
 /**
@@ -100,6 +104,19 @@ function isAcknowledgedVersionShape (value: unknown): value is { acknowledgedVer
     typeof (value as { acknowledgedVersion?: unknown }).acknowledgedVersion === 'string'
 }
 
+function isPersistedGrant (value: unknown): value is PersistedGrant {
+  return typeof value === 'object' && value !== null &&
+    Array.isArray((value as { patterns?: unknown }).patterns) &&
+    (value as { patterns: unknown[] }).patterns.every((p) => typeof p === 'string') &&
+    typeof (value as { grantedAt?: unknown }).grantedAt === 'number'
+}
+
+/** A plain object (not an array, not null) whose every own value is a well-formed `PersistedGrant`. Keys are not checked here -- they are untrusted `CapabilityKind` candidates, and `grant-persistence.ts` is what validates them. */
+function isGrantsShape (value: unknown): value is Record<string, PersistedGrant> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value) &&
+    Object.values(value).every(isPersistedGrant)
+}
+
 export function nodeLedgerStorage (userDataPath: string): LedgerStorage {
   return {
     readVersionFloor: (origin) => {
@@ -163,6 +180,36 @@ export function nodeLedgerStorage (userDataPath: string): LedgerStorage {
     deleteAcknowledgedRollbackVersion: (origin) => {
       try {
         unlinkSync(rollbackAckPath(userDataPath, origin))
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      }
+    },
+
+    readGrants: (origin) => {
+      let text: string
+      try {
+        text = readFileSync(grantsPath(userDataPath, origin), 'utf8')
+      } catch {
+        // ENOENT and any other read failure both collapse here -- unlike the
+        // floor, "nothing to restore" is the SAFE direction for grants (see
+        // LedgerStorage.readGrants's own doc).
+        return undefined
+      }
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(text)
+      } catch {
+        return undefined
+      }
+      return isGrantsShape(parsed) ? parsed : undefined
+    },
+    writeGrants: (origin, grants) => {
+      mkdirSync(originGrantsDir(userDataPath, origin), { recursive: true })
+      writeFileAtomic(grantsPath(userDataPath, origin), JSON.stringify(grants))
+    },
+    deleteGrants: (origin) => {
+      try {
+        unlinkSync(grantsPath(userDataPath, origin))
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
       }

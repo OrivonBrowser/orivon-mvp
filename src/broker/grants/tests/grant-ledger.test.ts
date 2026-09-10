@@ -20,7 +20,10 @@ function throwingLedgerStorage (): LedgerStorage {
     deleteVersionFloor: () => {},
     readAcknowledgedRollbackVersion: () => undefined,
     writeAcknowledgedRollbackVersion: () => { throw Object.assign(new Error('ENOSPC'), { code: 'ENOSPC' }) },
-    deleteAcknowledgedRollbackVersion: () => {}
+    deleteAcknowledgedRollbackVersion: () => {},
+    readGrants: () => undefined,
+    writeGrants: () => { throw Object.assign(new Error('ENOSPC'), { code: 'ENOSPC' }) },
+    deleteGrants: () => {}
   }
 }
 
@@ -739,3 +742,4 @@ describe('GrantLedger -- parsedPatternsFor caches per Grant object', () => {
     expect(ledger.parsedPatternsFor(record)).toEqual([{ host: '93.184.216.34', port: '6881' }])
   })
 })
+

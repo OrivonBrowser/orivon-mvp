@@ -5,7 +5,7 @@
 import { vi } from 'vitest'
 import { createBroker } from '../index.js'
 import type { BoundUdpSocket, Broker, CreateBrokerOptions, DialedSocket, ListenedServer } from '../broker-contracts.js'
-import type { LedgerStorage } from '../grants/ledger-storage.js'
+import type { LedgerStorage, PersistedGrant } from '../grants/ledger-storage.js'
 import type { Capabilities, Manifest } from '../../contracts/index.js'
 
 export const APP = 'https://app.example'
@@ -102,18 +102,27 @@ export function baseDeps (overrides: Partial<CreateBrokerOptions> = {}): CreateB
 }
 
 /** A Map-backed LedgerStorage double -- real behaviour, no disk, matching grant-ledger.test.ts's own local copy of the same idiom. */
-export function memoryLedgerStorage (): LedgerStorage & { readonly floors: Map<string, string>, readonly rollbackAcks: Map<string, string> } {
+export function memoryLedgerStorage (): LedgerStorage & {
+  readonly floors: Map<string, string>
+  readonly rollbackAcks: Map<string, string>
+  readonly grants: Map<string, Readonly<Record<string, PersistedGrant>>>
+} {
   const floors = new Map<string, string>()
   const rollbackAcks = new Map<string, string>()
+  const grants = new Map<string, Readonly<Record<string, PersistedGrant>>>()
   return {
     floors,
     rollbackAcks,
+    grants,
     readVersionFloor: (origin) => floors.get(origin),
     writeVersionFloor: (origin, versionFloor) => { floors.set(origin, versionFloor) },
     deleteVersionFloor: (origin) => { floors.delete(origin) },
     readAcknowledgedRollbackVersion: (origin) => rollbackAcks.get(origin),
     writeAcknowledgedRollbackVersion: (origin, version) => { rollbackAcks.set(origin, version) },
-    deleteAcknowledgedRollbackVersion: (origin) => { rollbackAcks.delete(origin) }
+    deleteAcknowledgedRollbackVersion: (origin) => { rollbackAcks.delete(origin) },
+    readGrants: (origin) => grants.get(origin),
+    writeGrants: (origin, originGrants) => { grants.set(origin, originGrants) },
+    deleteGrants: (origin) => { grants.delete(origin) }
   }
 }
 

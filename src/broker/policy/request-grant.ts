@@ -11,6 +11,24 @@ import { widensAuthority } from './update.js'
 import { patternSetFromCapabilities } from './manifest-patterns.js'
 import type { CapabilityKind, Manifest, Pattern } from '../../contracts/index.js'
 
+const CAPABILITY_KINDS: readonly CapabilityKind[] = [
+  'tcp.connect', 'tcp.listen', 'udp.bind', 'udp.send', 'https.connect', 'fs', 'id'
+]
+
+/**
+ * True for exactly the seven `CapabilityKind` literals -- the guard an
+ * UNTRUSTED string needs before it may be treated as one. Two independent
+ * callers need it: `../../main/request-grant.ts`'s `request.capability` (an
+ * app's raw IPC payload) and `../grants/grant-persistence.ts`'s hydration
+ * path (a JSON property name read off disk). Moved here, out of
+ * `main/request-grant.ts` where it first shipped (queue item 4.1), once the
+ * second caller made it a shared idea rather than that file's own private
+ * check (code-guidelines.md Rule 3).
+ */
+export function isCapabilityKind (value: string): value is CapabilityKind {
+  return (CAPABILITY_KINDS as readonly string[]).includes(value)
+}
+
 export interface GrantRequestDecision {
   readonly allowed: boolean
   /**

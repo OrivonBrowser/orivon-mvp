@@ -253,30 +253,70 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     }
   }
 
+  /**
+   * `GrantLedger.grant` (A23) can throw when persisting the new grant set
+   * fails, AFTER its in-memory mutation has already landed (that method's own
+   * doc). The handle-table bookkeeping below -- clearing this id's tombstone,
+   * revoking whatever this grant replaced -- must run REGARDLESS of that
+   * persistence outcome: it is what keeps `HandleTable` in step with the
+   * ledger's own in-memory truth, and a disk failure must never be the reason
+   * a superseded grant's handles are left running past the ledger's own
+   * decision to drop them (see the interface doc on `grant`). So the write is
+   * attempted, its outcome remembered, the handle-table work always
+   * performed, and only THEN, if the write failed, is the OrivonError thrown
+   * -- same rethrow shape `registerApp`/`acknowledgeRollback` use, just
+   * deferred past this method's own required side effects.
+   */
   async function grant (origin: string, capability: CapabilityKind, patterns: readonly Pattern[]): Promise<Grant> {
     const key = canonical(origin)
-    const { record, replaced } = ledger.grant(key, capability, patterns, deps.now())
+    // Captured BEFORE the call below: GrantLedger.grant's own Map.set already
+    // drops this from the ledger, so this is the only chance to learn it.
+    const replaced = ledger.currentGrant(key, capability)
+    let persistError: unknown
+    try {
+      ledger.grant(key, capability, patterns, deps.now())
+    } catch (error) {
+      persistError = error
+    }
+    // Re-read rather than trust the (possibly-thrown-away) return value: the
+    // mutation above lands unconditionally even when the try/catch caught a
+    // persistence failure, so the ledger's own map is the source of truth.
+    const record = ledger.currentGrant(key, capability)
+    if (record === undefined) throw fail('internal', 'the grant did not take effect')
     // Clears a stale revoked-tombstone under THIS id. A freshly minted id
     // makes this a no-op today, but the handle table is correct either way,
     // and open-questions.md A21 says the ledger must call it regardless of
     // how GrantId reuse across a revoke-then-re-grant is eventually decided.
     handleTable.grantIssued(key, record.id)
-    // The ledger has already dropped `replaced` (GrantLedger.grant's Map.set
-    // above), so this is the only remaining place anything still knows its
-    // id. Revoking it here, before returning, is what stops a superseded
-    // grant staying live forever -- see the interface doc on `grant`.
+    // Revoking the superseded grant's handles, before returning, is what
+    // stops it staying live forever -- see the interface doc on `grant`.
     if (replaced !== undefined) await handleTable.revoke(key, replaced.id)
+    if (persistError !== undefined) throw fail('internal', 'the grant could not be persisted', undefined, errnoOf(persistError))
     return record
   }
 
+  /**
+   * Same deferred-throw shape as `grant` above, for the same reason:
+   * `GrantLedger.revoke` (A23) can throw when persisting the removal fails,
+   * after applying it in memory, but `handleTable.revoke` below must still
+   * run regardless -- a disk failure must never be the reason a REVOKED
+   * grant's handles (an open socket, a listener) are left running. The
+   * ledger's own OrivonError is thrown only after that teardown completes.
+   */
   async function revoke (origin: string, grantId: GrantId): Promise<void> {
     const key = canonical(origin)
-    // Ledger first, synchronously: a grants()/connect() call racing the
-    // cascade must never observe a grant whose handles are already mid-
-    // teardown. Mirrors HandleTable.revoke's own "tell the app before any
-    // teardown runs" ordering, one layer up.
-    ledger.revoke(key, grantId)
+    let persistError: unknown
+    try {
+      // Ledger first, synchronously: a grants()/connect() call racing the
+      // cascade must never observe a grant whose handles are already mid-
+      // teardown. Mirrors HandleTable.revoke's own "tell the app before any
+      // teardown runs" ordering, one layer up.
+      ledger.revoke(key, grantId)
+    } catch (error) {
+      persistError = error
+    }
     await handleTable.revoke(key, grantId)
+    if (persistError !== undefined) throw fail('internal', 'the revocation could not be persisted', undefined, errnoOf(persistError))
   }
 
   return {

@@ -294,6 +294,179 @@ describe('nodeLedgerStorage', () => {
     })
   })
 
+  // A23: the grants themselves, stored alongside the version floor and the
+  // rollback acknowledgement (same `grants/<hash>/` directory, same atomic-
+  // write discipline) -- one file per origin holding every capability it
+  // currently holds, keyed by capability kind as a plain JSON property name.
+  // Unlike the version floor, a corrupt or unparseable file reads as
+  // `undefined` (== "nothing to restore"), the SAFE direction here: this
+  // state can only ever authorise something, never gate a replay the way
+  // the floor does, so losing it to corruption costs a re-prompt, not a
+  // reopened hole.
+  describe('readGrants / writeGrants / deleteGrants (A23)', () => {
+    it('readGrants returns undefined for an origin never persisted', () => {
+      const userData = mkdtempSync(join(tmpdir(), 'orivon-ledger-storage-'))
+      const storage = nodeLedgerStorage(userData)
+
+      expect(storage.readGrants(APP)).toBeUndefined()
+    })
+
+    it('writeGrants then readGrants round-trips the exact set', () => {
+      const userData = mkdtempSync(join(tmpdir(), 'orivon-ledger-storage-'))
+      const storage = nodeLedgerStorage(userData)
+
+      storage.writeGrants(APP, { 'tcp.connect': { patterns: ['api.example.com:443'], grantedAt: 1000 } })
+
+      expect(storage.readGrants(APP)).toEqual({ 'tcp.connect': { patterns: ['api.example.com:443'], grantedAt: 1000 } })
+    })
+
+    it('writeGrants overwrites the whole set, including dropping a capability no longer present', () => {
+      const userData = mkdtempSync(join(tmpdir(), 'orivon-ledger-storage-'))
+      const storage = nodeLedgerStorage(userData)
+
+      storage.writeGrants(APP, {
+        'tcp.connect': { patterns: ['api.example.com:443'], grantedAt: 1000 },
+        fs: { patterns: [], grantedAt: 1000 }
+      })
+      storage.writeGrants(APP, { fs: { patterns: [], grantedAt: 2000 } })
+
+      expect(storage.readGrants(APP)).toEqual({ fs: { patterns: [], grantedAt: 2000 } })
+    })
+
+    it('an empty set round-trips as an empty object, not undefined', () => {
+      const userData = mkdtempSync(join(tmpdir(), 'orivon-ledger-storage-'))
+      const storage = nodeLedgerStorage(userData)
+
+      storage.writeGrants(APP, {})
+
+      expect(storage.readGrants(APP)).toEqual({})
+    })
+
+    it('two different origins get two different grant sets', () => {
+      const userData = mkdtempSync(join(tmpdir(), 'orivon-ledger-storage-'))
+      const storage = nodeLedgerStorage(userData)
+
+      storage.writeGrants(APP, { fs: { patterns: [], grantedAt: 1 } })
+      storage.writeGrants('https://other.example', { id: { patterns: [], grantedAt: 2 } })
+
+      expect(storage.readGrants(APP)).toEqual({ fs: { patterns: [], grantedAt: 1 } })
+      expect(storage.readGrants('https://other.example')).toEqual({ id: { patterns: [], grantedAt: 2 } })
+    })
+
+    it('lives under the same grants/<hash> directory as the version floor, not a separate root', () => {
+      const userData = mkdtempSync(join(tmpdir(), 'orivon-ledger-storage-'))
+      const storage = nodeLedgerStorage(userData)
+
+      storage.writeGrants(APP, { fs: { patterns: [], grantedAt: 1 } })
+
+      const dir = join(userData, 'grants', originHash(APP))
+      expect(readdirSync(dir)).toEqual(['grants.json'])
+    })
+
+    // Real bytes, written directly -- what a crash mid-write, or a hand-edit,
+    // would leave behind. Reads as undefined, matching "nothing to restore".
+    it('a grants file that exists but is not valid JSON reads as undefined', () => {
+      const userData = mkdtempSync(join(tmpdir(), 'orivon-ledger-storage-'))
+      const storage = nodeLedgerStorage(userData)
+      const dir = join(userData, 'grants', originHash(APP))
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, 'grants.json'), '{"fs": {"patterns": []')
+
+      expect(storage.readGrants(APP)).toBeUndefined()
+    })
+
+    it('a grants file that is valid JSON but not an object (an array) reads as undefined', () => {
+      const userData = mkdtempSync(join(tmpdir(), 'orivon-ledger-storage-'))
+      const storage = nodeLedgerStorage(userData)
+      const dir = join(userData, 'grants', originHash(APP))
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, 'grants.json'), '["fs"]')
+
+      expect(storage.readGrants(APP)).toBeUndefined()
+    })
+
+    it('a grants file whose entry is missing patterns or grantedAt reads as undefined', () => {
+      const userData = mkdtempSync(join(tmpdir(), 'orivon-ledger-storage-'))
+      const storage = nodeLedgerStorage(userData)
+      const dir = join(userData, 'grants', originHash(APP))
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, 'grants.json'), '{"fs": {"patterns": []}}')
+
+      expect(storage.readGrants(APP)).toBeUndefined()
+    })
+
+    it('a normal write leaves no temp file behind -- it lands via rename, not a truncate in place', () => {
+      const userData = mkdtempSync(join(tmpdir(), 'orivon-ledger-storage-'))
+      const storage = nodeLedgerStorage(userData)
+
+      storage.writeGrants(APP, { fs: { patterns: [], grantedAt: 1 } })
+
+      const dir = join(userData, 'grants', originHash(APP))
+      expect(readdirSync(dir)).toEqual(['grants.json'])
+    })
+
+    it.skipIf(isRoot)('a write that cannot create its temp file leaves the previously-persisted set untouched', () => {
+      const userData = mkdtempSync(join(tmpdir(), 'orivon-ledger-storage-'))
+      const storage = nodeLedgerStorage(userData)
+      storage.writeGrants(APP, { fs: { patterns: [], grantedAt: 1 } })
+
+      const dir = join(userData, 'grants', originHash(APP))
+      chmodSync(dir, 0o555)
+      try {
+        expect(() => { storage.writeGrants(APP, { id: { patterns: [], grantedAt: 2 } }) }).toThrow()
+      } finally {
+        chmodSync(dir, 0o755)
+      }
+
+      expect(storage.readGrants(APP)).toEqual({ fs: { patterns: [], grantedAt: 1 } })
+    })
+
+    describe('deleteGrants', () => {
+      it('removes the file, so a later read returns undefined again', () => {
+        const userData = mkdtempSync(join(tmpdir(), 'orivon-ledger-storage-'))
+        const storage = nodeLedgerStorage(userData)
+        storage.writeGrants(APP, { fs: { patterns: [], grantedAt: 1 } })
+
+        storage.deleteGrants(APP)
+
+        expect(storage.readGrants(APP)).toBeUndefined()
+      })
+
+      it('is a silent no-op for an origin never persisted', () => {
+        const userData = mkdtempSync(join(tmpdir(), 'orivon-ledger-storage-'))
+        const storage = nodeLedgerStorage(userData)
+
+        expect(() => { storage.deleteGrants(APP) }).not.toThrow()
+      })
+
+      it('does not disturb the version floor or rollback acknowledgement persisted for the same origin', () => {
+        const userData = mkdtempSync(join(tmpdir(), 'orivon-ledger-storage-'))
+        const storage = nodeLedgerStorage(userData)
+        storage.writeVersionFloor(APP, '1.0.0')
+        storage.writeAcknowledgedRollbackVersion(APP, '1.1.9')
+        storage.writeGrants(APP, { fs: { patterns: [], grantedAt: 1 } })
+
+        storage.deleteGrants(APP)
+
+        expect(storage.readGrants(APP)).toBeUndefined()
+        expect(storage.readVersionFloor(APP)).toBe('1.0.0')
+        expect(storage.readAcknowledgedRollbackVersion(APP)).toBe('1.1.9')
+      })
+
+      it('does not disturb a different origin\'s grants', () => {
+        const userData = mkdtempSync(join(tmpdir(), 'orivon-ledger-storage-'))
+        const storage = nodeLedgerStorage(userData)
+        storage.writeGrants(APP, { fs: { patterns: [], grantedAt: 1 } })
+        storage.writeGrants('https://other.example', { id: { patterns: [], grantedAt: 2 } })
+
+        storage.deleteGrants(APP)
+
+        expect(storage.readGrants(APP)).toBeUndefined()
+        expect(storage.readGrants('https://other.example')).toEqual({ id: { patterns: [], grantedAt: 2 } })
+      })
+    })
+  })
+
   // A60's escape hatch: GrantLedger.forgetOrigin needs a real on-disk
   // delete, or a "forgotten" origin's poisoned floor would silently
   // resurrect itself the next time this origin is hydrated.
