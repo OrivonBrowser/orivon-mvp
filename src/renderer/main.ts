@@ -1,4 +1,5 @@
 import type { Bookmark } from '../main/bookmarks.js'
+import type { AppPermissions } from '../main/permissions.js'
 import type { ShellState, TabState } from '../main/tabs.js'
 import { createBookmarksView } from './bookmarks-view.js'
 import { closeIcon, globeIcon } from './icons.js'
@@ -19,6 +20,12 @@ interface OrivonShell {
   addBookmark: (url: string, title: string) => void
   removeBookmark: (url: string) => void
   openBookmark: (url: string) => void
+  /** Queue item 4.4: the active tab's own grants, for the address-bar
+   * icon -- `null` for an ordinary website (never registered as an app). */
+  appPermissionsFor: (url: string) => Promise<AppPermissions | null>
+  /** Opens the settings window -- `url`, when given, is the tab whose
+   * card it should scroll to. */
+  openSettings: (url?: string) => void
   onState: (listener: (state: ShellState) => void) => () => void
   /** Read-only -- see preload/shell.ts for why this exists instead of
    * env(titlebar-area-*) or navigator.windowControlsOverlay. */
@@ -58,6 +65,8 @@ const bookmarkToggle = must(document.querySelector<HTMLButtonElement>('#bookmark
 const addressForm = must(document.querySelector<HTMLFormElement>('#address-form'), '#address-form missing')
 const addressInput = must(document.querySelector<HTMLInputElement>('#address'), '#address missing')
 const addressDot = must(document.querySelector<HTMLSpanElement>('#address-dot'), '#address-dot missing')
+const addressPermissionsBtn = must(document.querySelector<HTMLButtonElement>('#address-permissions-btn'), '#address-permissions-btn missing')
+const permissionsBtn = must(document.querySelector<HTMLButtonElement>('#permissions-btn'), '#permissions-btn missing')
 const bookmarksList = must(document.querySelector<HTMLDivElement>('#bookmarks-list'), '#bookmarks-list missing')
 
 const bookmarksView = createBookmarksView(
@@ -177,6 +186,37 @@ function renderToolbar (state: ShellState): void {
   const bookmarked = active !== undefined && isBookmarked(state.bookmarks, active.url)
   bookmarkToggle.classList.toggle('active', bookmarked)
   bookmarkToggle.setAttribute('aria-pressed', String(bookmarked))
+
+  updateAddressPermissionsBadge(active)
+}
+
+/** Queue item 4.4's address-bar icon: what the active tab's app can do, at
+ * a glance. `permissionsRequestUrl` guards against a slow response for a
+ * tab that is no longer active landing after a newer request already
+ * started -- the same stale-response shape tabs.ts's own captureFavicon
+ * guards against, one layer up. */
+let permissionsRequestUrl: string | null = null
+
+function updateAddressPermissionsBadge (active: TabState | undefined): void {
+  const url = active === undefined || active.isNewTab ? null : active.url
+  permissionsRequestUrl = url
+  if (url === null) {
+    applyPermissionsBadge(null)
+    return
+  }
+  void shell.appPermissionsFor(url).then((app) => {
+    if (permissionsRequestUrl === url) applyPermissionsBadge(app)
+  })
+}
+
+function applyPermissionsBadge (app: AppPermissions | null): void {
+  const hasRows = app !== null && app.rows.length > 0
+  const hasWarning = hasRows && app.rows.some((row) => row.warning)
+  addressPermissionsBtn.classList.toggle('has-app', hasRows)
+  addressPermissionsBtn.classList.toggle('has-warning', hasWarning)
+  const label = hasRows ? `${app.appName} — click to view or revoke its permissions` : 'This site has no Orivon permissions'
+  addressPermissionsBtn.title = label
+  addressPermissionsBtn.setAttribute('aria-label', label)
 }
 
 function render (state: ShellState): void {
@@ -211,6 +251,15 @@ bookmarkToggle.addEventListener('click', () => {
   } else {
     shell.addBookmark(active.url, active.title.length > 0 ? active.title : active.url)
   }
+})
+
+// Queue item 4.4: the toolbar's own "Permissions" button opens the full
+// list; the address-bar icon opens the same window scoped to whichever
+// app the CURRENT tab is (or an ordinary open, for an ordinary website).
+permissionsBtn.addEventListener('click', () => { shell.openSettings() })
+addressPermissionsBtn.addEventListener('click', () => {
+  const active = activeTab(currentState)
+  shell.openSettings(active === undefined || active.isNewTab ? undefined : active.url)
 })
 
 addressInput.addEventListener('focus', () => { addressFocused = true })

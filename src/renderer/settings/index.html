@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- Same shape as newtab/index.html's CSP: no network requests of its
+         own -- every fact on this page comes over IPC (orivonSettings.*),
+         never a fetch. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'none'"
+    />
+    <title>Permissions</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <!-- The settings window's own single WebContentsView
+         (src/main/settings-window.ts) -- queue item 4.4's "full
+         permissions page" half of d-0027: every installed app, and what
+         each one can do, with revoke. Not part of the chrome view or any
+         tab; see this lane's PR body for why it is a separate window. -->
+    <main class="page">
+      <header class="page-header">
+        <h1>Permissions</h1>
+        <p class="subtitle">Every app you've used, and what it can do. Revoking takes effect immediately.</p>
+      </header>
+
+      <p id="empty-state" class="empty-state" hidden>
+        Nothing here yet — an app's permissions appear once you've opened it and granted it something.
+      </p>
+
+      <div id="apps-list" class="apps-list" role="list"></div>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
