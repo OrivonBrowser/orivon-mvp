@@ -15,13 +15,16 @@
 // rather than assumed.
 import { app, BaseWindow, ipcMain, nativeTheme, WebContentsView, screen } from 'electron'
 import { join } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { originFromUrl } from '../broker/policy/origin.js'
 import { BookmarkStore } from './bookmarks.js'
 import { COMMAND_CHANNEL, NEWTAB_COMMAND_CHANNEL, STATE_CHANNEL } from './channels.js'
 import { registerNewTabIpc } from './newtab-ipc.js'
+import { createPermissionsController } from './permissions.js'
+import { rendererEntryUrl } from './renderer-entry.js'
 import type { SubsystemContext } from './registry.js'
 import { TabManager, type Bounds } from './tabs.js'
 import { registerShellIpc } from './ipc.js'
+import { openSettingsWindow } from './settings-window.js'
 
 // Chrome restyle, 2026-08-28 (owner: match a reference screenshot that
 // turned out to be the prior prototype's chrome pixel-for-pixel --
@@ -114,9 +117,7 @@ export function createShellWindow (ctx: SubsystemContext): BaseWindow {
   // source, since this is the second entry added to a config that
   // previously only had one); the built path matches
   // electron.vite.config.ts's `newtab` entry.
-  const dashboardUrl = devServerUrl !== undefined
-    ? `${devServerUrl}/newtab/`
-    : pathToFileURL(join(import.meta.dirname, '../renderer/newtab/index.html')).href
+  const dashboardUrl = rendererEntryUrl(import.meta.dirname, devServerUrl, '/newtab/', '../renderer/newtab/index.html')
 
   function layoutChrome (): void {
     const bounds = win.getContentBounds()
@@ -152,6 +153,12 @@ export function createShellWindow (ctx: SubsystemContext): BaseWindow {
   // chrome view receives.
   const bookmarks = new BookmarkStore(join(app.getPath('userData'), 'bookmarks.json'))
 
+  // Queue item 4.4: the permissions settings page and the address-bar icon
+  // both read/revoke through this one controller, closing over `ctx` so it
+  // always sees whichever broker is currently published (permissions.ts's
+  // own doc).
+  const permissions = createPermissionsController(ctx)
+
   function pushState (): void {
     // A16 makes this reachable routinely now, not just via an OS-level
     // window close: closing the last tab calls win.close() above, which
@@ -180,7 +187,15 @@ export function createShellWindow (ctx: SubsystemContext): BaseWindow {
   // land, not timing-dependent.
   chrome.webContents.on('did-finish-load', pushState)
 
-  registerShellIpc(chrome.webContents, tabs, bookmarks)
+  registerShellIpc(chrome.webContents, tabs, bookmarks, permissions, (url) => {
+    // The address-bar icon sends the active TAB's url, not an origin --
+    // same `originFromUrl` tab-view.ts's own appTabArgsFor already uses
+    // for the identical derivation. undefined (the toolbar's own
+    // "Permissions" button) and an unparseable url both mean "no
+    // particular app to scroll to", not an error.
+    const focusOrigin = url === undefined ? undefined : originFromUrl(url) ?? undefined
+    openSettingsWindow(permissions, focusOrigin)
+  })
   registerNewTabIpc(dashboardUrl, tabs, bookmarks)
   // A16 makes createShellWindow() re-run routinely now (close the last
   // tab, then reopen from the macOS dock via app.on('activate')), and

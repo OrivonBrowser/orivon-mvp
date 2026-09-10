@@ -115,6 +115,19 @@
   color: var(--wink);
   background: var(--whover-soft);
 }
+/* Queue item 4.4: the active tab's app currently holds at least one
+   capability -- the same visual family the omnibox's own secure/insecure
+   dot uses (toolbar.css above), applied to this icon instead of a second,
+   separate indicator. */
+.pillbtn.has-app {
+  color: var(--wok);
+}
+/* One of those capabilities is an UNLIMITED grant (grant-prompt-render.ts's
+   `warning`) -- takes precedence over .has-app's colour, matching the
+   install prompt's own "never look the same as narrow" rule. */
+.pillbtn.has-warning {
+  color: var(--winsecure);
+}
 .mark-badge {
   width: 16px;
   height: 16px;

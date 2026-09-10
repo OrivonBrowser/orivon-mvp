@@ -80,7 +80,8 @@ export default defineConfig({
         input: {
           app: resolve(root, 'src/preload/app.ts'),
           shell: resolve(root, 'src/preload/shell.ts'),
-          newtab: resolve(root, 'src/preload/newtab.ts')
+          newtab: resolve(root, 'src/preload/newtab.ts'),
+          settings: resolve(root, 'src/preload/settings.ts')
         }
       },
       // BUG (found 2026-08-28, real regression): `shell.ts` and
@@ -123,7 +124,8 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve(root, 'src/renderer/index.html'),
-          newtab: resolve(root, 'src/renderer/newtab/index.html')
+          newtab: resolve(root, 'src/renderer/newtab/index.html'),
+          settings: resolve(root, 'src/renderer/settings/index.html')
         }
       }
     },

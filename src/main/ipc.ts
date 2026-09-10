@@ -17,6 +17,7 @@ import { ipcMain, type IpcMainInvokeEvent, type WebContents } from 'electron'
 import type { BookmarkStore } from './bookmarks.js'
 import { COMMAND_CHANNEL } from './channels.js'
 import type { TabManager } from './tabs.js'
+import type { AppPermissions, PermissionsController } from './permissions.js'
 
 export type ShellCommand =
   | { type: 'newTab'; url?: string }
@@ -29,14 +30,32 @@ export type ShellCommand =
   | { type: 'addBookmark'; url: string; title: string }
   | { type: 'removeBookmark'; url: string }
   | { type: 'openBookmark'; url: string }
+  /** Queue item 4.4: the address-bar icon's own state, from the active
+   * tab's url -- what it can do, at a glance. Listing every app and
+   * revoking both happen in the settings window instead (its own
+   * SETTINGS_COMMAND_CHANNEL, ./settings-ipc.ts), not here: this channel
+   * is chrome-only, and the chrome view itself never needs the full list. */
+  | { type: 'appPermissionsFor'; url: string }
+  /** Opens (or focuses) the settings window -- see ./settings-window.ts.
+   * `url` (the active TAB's url, not yet an origin -- window.ts derives
+   * one via originFromUrl before this reaches openSettingsWindow) is set
+   * only by the address-bar icon, never the toolbar's own "Permissions"
+   * button. */
+  | { type: 'openSettings'; url?: string }
 
 function isFromChrome (event: IpcMainInvokeEvent, chromeWebContents: WebContents): boolean {
   return event.senderFrame !== null &&
     event.senderFrame === chromeWebContents.mainFrame
 }
 
-export function registerShellIpc (chromeWebContents: WebContents, tabs: TabManager, bookmarks: BookmarkStore): void {
-  ipcMain.handle(COMMAND_CHANNEL, (event: IpcMainInvokeEvent, command: ShellCommand) => {
+export function registerShellIpc (
+  chromeWebContents: WebContents,
+  tabs: TabManager,
+  bookmarks: BookmarkStore,
+  permissions: PermissionsController,
+  openSettings: (url?: string) => void
+): void {
+  ipcMain.handle(COMMAND_CHANNEL, (event: IpcMainInvokeEvent, command: ShellCommand): void | Promise<void | AppPermissions | null> => {
     if (!isFromChrome(event, chromeWebContents)) {
       // Not the chrome view's top frame -- refuse silently rather than
       // throwing a message back that confirms the channel exists.
@@ -86,6 +105,11 @@ export function registerShellIpc (chromeWebContents: WebContents, tabs: TabManag
         }
         return
       }
+      case 'appPermissionsFor':
+        return permissions.forUrl(command.url)
+      case 'openSettings':
+        openSettings(command.url)
+        return
     }
   })
 }
