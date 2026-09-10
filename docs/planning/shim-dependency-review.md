@@ -125,7 +125,33 @@ proposing a fix, only recording where the real call graph actually leads.
 
 ## Status
 
-Parked in lane P3-1's log as a single batched question (`docs/development/parallel-work.md`'s
-"a question never halts the run" protocol). Nothing above is added to `package.json` pending an
-answer. The alias-map plumbing this decision hangs off (`src/shim/module-map.ts`) is built and
-tested regardless, so approving a row here becomes a one-line data change, not a redesign.
+**Resolved 2026-09-10.** The owner approved all eight packages in the table above -- the wider
+set, not this review's own five-package recommendation. The reason is continuity of an
+unattended overnight run, not a disagreement with the evidence above: a lane discovering at 3am
+that it needs `os` or `zlib` would otherwise stop and wait for an owner who is asleep. Paying for
+two dependencies with no confirmed caller (`os-browserify`, `browserify-zlib` + `pako`) is judged
+cheaper than losing a night. This review's tracing of the real `webtorrent@3.0.21` dependency
+tree stands unchanged -- the owner weighed the same evidence and chose differently on Rule 6,
+not different evidence.
+
+Landed in `stream/shim-03-approved-deps`: all eight added to `package.json`'s `dependencies`
+(previously `null`) at the versions in the table above, `src/shim/module-map.ts`'s rows flipped
+from `pending-dependency` to `ready`. Two riders survive the approval and are recorded where a
+future reader will actually hit them, not just here:
+
+- **The `zlib` row's approval does not close the brotli gap.** `browserify-zlib` predates Node's
+  own brotli support and supplies gzip/deflate only, via its pinned `pako` dependency. A real
+  brotli need is still a separate WASM-codec decision (`brotli-wasm` is the concrete answer this
+  review recorded above) -- see `module-map.ts`'s `zlib` row for the same note in the place a
+  contributor is more likely to read it.
+- **The `util` package is approved but deliberately not wired in.** `src/shim/node-util.ts`'s
+  hand-written `inherits`-only implementation stays -- it is already tested against real Node's
+  `util.inherits`, this review's own Rule 6 reasoning for writing it by hand did not change just
+  because the package cleared the dependency gate, and running both would be a second
+  implementation of the same idea (`code-guidelines.md` Rule 3). The `util` package sits in
+  `package.json` unused for now; extend `node-util.ts`, not the package, if a real caller needs
+  more of `util` later.
+
+`dns` is unchanged by this approval -- still a broker-capability question
+(`k-rpc-socket` needs real `dns.lookup`), not a package this review could answer, and not
+addressed in this lane.
