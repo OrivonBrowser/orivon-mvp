@@ -14,14 +14,19 @@ import { expect } from 'vitest'
 import type { ChildProcess } from 'node:child_process'
 import { connect as netConnect } from 'node:net'
 import type { ElectronApplication } from 'playwright'
+import { closeElectron, APP_CLOSE_RACE_MS } from './launch-electron.mjs'
 import { evaluateRetrying, findChrome, findViewShowing, waitFor, waitForTab } from './smoke-helpers.mjs'
 /** Ceiling for waitForAddressBarStable below. Named so the budget
  * arithmetic beneath it can reuse the real number instead of retyping
  * `8_000` in two places that could quietly drift apart. */
 export const ADDRESS_BAR_STABLE_TIMEOUT_MS = 8_000
 
-/** Same figure and reason across every phase that closes an app it launched -- see closeElectronApp. */
-export const APP_CLOSE_RACE_MS = 8_000
+/** Re-exported so every e2e file can import the app-close race ceiling from
+ * here alongside the rest of this shared harness, without also reaching
+ * into launch-electron.mjs directly -- the canonical value lives there now
+ * (launchElectron and closeElectron are the same module), see its own doc
+ * comment. */
+export { APP_CLOSE_RACE_MS }
 
 /** Forwards a fixture server child's stdout/stderr, prefixed -- mirrors
  * launch-electron.mjs's own reasoning for the Electron process: Node
@@ -210,34 +215,46 @@ export async function navigateToFixture (
 }
 
 /**
- * Closes every tab (a real click, the same one a person would use) before
- * closing `app` itself, with a bounded race against a stuck close.
+ * Closes every tab (a real click, the same one a person would use), waits
+ * for the shell to reach zero windows, then hands off to closeElectron()
+ * for the part that must never depend on this succeeding: the bounded
+ * `app.close()` race, an unconditional SIGKILL of whatever is left of the
+ * process tree, and always removing the launch's `--user-data-dir` temp
+ * profile, whether this function's own steps above threw or not
+ * (closeElectron's own `beforeClose` runs inside a try/catch for exactly
+ * that reason).
  *
- * WHY: `_electron`'s `app.close()` hangs INDEFINITELY while any tab remains
- * open (found by direct instrumented reproduction, not the documented C6
- * attach issue -- a different symptom of the same driver class; reproduced
- * down to a launch with zero navigation). Closing every tab first fires
- * src/main/index.ts's window-all-closed -> app.quit(), which makes
- * app.close() resolve in ~100ms instead. The race + process kill is a
- * last-resort net for a future regression in the tab-closing step itself
- * (a selector rename, say) -- so that degrades to a slow, reported failure,
- * never a second silent hang.
+ * WHY THE TAB-CLOSING DANCE, SPECIFICALLY: `_electron`'s `app.close()` hangs
+ * INDEFINITELY while any tab remains open (found by direct instrumented
+ * reproduction, not the documented C6 attach issue -- a different symptom
+ * of the same driver class; reproduced down to a launch with zero
+ * navigation). Closing every tab first fires src/main/index.ts's
+ * window-all-closed -> app.quit(), which makes app.close() resolve in
+ * ~100ms instead. This is a real, hard-won workaround for THIS shell's own
+ * behaviour -- closeElectron's own SIGKILL fallback is the last-resort net
+ * for a future regression in the tab-closing step itself (a selector
+ * rename, say), so that degrades to a slow, reported failure, never a
+ * second silent hang.
  */
 export async function closeElectronApp (app: ElectronApplication, raceMs = APP_CLOSE_RACE_MS): Promise<void> {
-  const chrome = app.windows().find((w) => w.url().endsWith('/renderer/index.html'))
-  if (chrome !== undefined) {
-    const ids: string[] = await evaluateRetrying(chrome, () =>
-      Array.from(document.querySelectorAll('.tab')).map((el) => (el as HTMLElement).dataset.id ?? '')
-    ).catch(() => [])
-    for (const id of ids) {
-      await chrome.click(`[data-id="${id}"] .close`).catch(() => {})
+  await closeElectron(app, {
+    raceMs,
+    // Ignores the callback's own (deliberately minimal, see TeardownApp's
+    // own header in launch-electron.mjs) parameter and closes over `app`
+    // directly instead -- it is the same object, typed here as the real
+    // ElectronApplication this function's own signature already requires.
+    beforeClose: async () => {
+      const chrome = app.windows().find((w) => w.url().endsWith('/renderer/index.html'))
+      if (chrome !== undefined) {
+        const ids: string[] = await evaluateRetrying(chrome, () =>
+          Array.from(document.querySelectorAll('.tab')).map((el) => (el as HTMLElement).dataset.id ?? '')
+        ).catch(() => [])
+        for (const id of ids) {
+          await chrome.click(`[data-id="${id}"] .close`).catch(() => {})
+        }
+      }
+      await waitFor(() => app.windows().length === 0)
     }
-  }
-  await waitFor(() => app.windows().length === 0)
-  const closed = await Promise.race([
-    app.close().then(() => true),
-    new Promise<boolean>((resolve) => setTimeout(() => resolve(false), raceMs))
-  ])
-  if (!closed) app.process().kill()
+  })
 }
 

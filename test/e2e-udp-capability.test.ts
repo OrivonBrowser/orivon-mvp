@@ -36,9 +36,9 @@ import { spawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
-import { launchElectron } from './launch-electron.mjs'
+import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
 import {
-  ADDRESS_BAR_STABLE_TIMEOUT_MS, clickAddressBarRetrying, forwardOutput, killChild, runPhase,
+  ADDRESS_BAR_STABLE_TIMEOUT_MS, clickAddressBarRetrying, closeElectronApp, forwardOutput, killChild, runPhase,
   waitForAddressBarStable, waitForTcpReady
 } from './e2e-helpers.js'
 import {
@@ -48,6 +48,7 @@ import { HOST, STATIC_PORT } from '../apps/fixture/config.mjs'
 import { createBroker } from '../src/broker/index.js'
 import type { BrokerFs, CreateBrokerOptions, Keychain } from '../src/broker/broker-contracts.js'
 import { dialTcp, listenTcp, resolveHost } from '../src/broker/adapters/node-adapters.js'
+import { dialTls } from '../src/broker/adapters/tls-adapter.js'
 import { bindUdp } from '../src/broker/adapters/udp-adapter.js'
 import { installDevGrantHook } from '../src/main/dev-grant.js'
 import type { DevGrantRequest } from '../src/main/dev-grant.js'
@@ -65,7 +66,6 @@ const UNGRANTED_PORT = 8876
 /** Unprivileged, and deliberately not a range any unit test in this repo binds. */
 const BIND_RANGE = '45000-45100'
 
-const APP_CLOSE_RACE_MS = 8_000
 const READY_TIMEOUT_MS = 10_000
 
 let udpEcho: ChildProcess
@@ -110,6 +110,10 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await Promise.all([killChild(udpEcho), killChild(staticServer)])
+  // The suite's own self-check (unattended-run-protocol.md): after Phase
+  // 1's own app has torn itself down, nothing this file launched may still
+  // be a live Electron process.
+  expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
 /** Reads exactly one datagram off `readable`, or resolves undefined past the deadline. */
@@ -183,11 +187,12 @@ it('Phase 1: window.orivon.net.udpBind exists on a real page and is correctly de
       check('the denial carries no platformCode (errors.ts uniformity rule)',
         outcome.platformCode === undefined, JSON.stringify(outcome))
     } finally {
-      const closed = await Promise.race([
-        app.close().then(() => true),
-        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), APP_CLOSE_RACE_MS))
-      ])
-      if (!closed) console.error('[e2e-udp] app.close() did not settle; the run continues')
+      // Was previously a bare app.close() race that only logged and left the
+      // process running on a hang -- exactly the orphan-leaving shape this
+      // repo's unattended-run-protocol.md was written against. Shared
+      // teardown now SIGKILLs the whole tree unconditionally and always
+      // removes the temp profile -- see closeElectronApp/closeElectron.
+      await closeElectronApp(app)
     }
   })
 }, 140_000)
@@ -205,6 +210,7 @@ it('Phase 2: the real broker binds a real UDP socket, round-trips a datagram, an
     }
     const deps: CreateBrokerOptions = {
       dial: dialTcp,
+      dialSecure: dialTls,
       bind: bindUdp,
       listen: listenTcp,
       resolve: resolveHost,
