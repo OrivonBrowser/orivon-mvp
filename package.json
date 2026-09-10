@@ -34,6 +34,17 @@
     "package:linux": "node scripts/build-ordinary.mjs && electron-builder --linux",
     "postinstall": "node scripts/check-no-native-modules.mjs"
   },
+  "dependencies": {
+    "browserify-zlib": "^0.2.0",
+    "buffer": "^6.0.3",
+    "crypto-browserify": "^3.12.1",
+    "events": "^3.3.0",
+    "os-browserify": "^0.3.0",
+    "pako": "^3.0.1",
+    "path-browserify": "^1.0.1",
+    "stream-browserify": "^3.0.0",
+    "util": "^0.12.5"
+  },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
     "@swc/core": "^1.13.0",
