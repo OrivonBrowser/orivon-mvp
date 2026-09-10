@@ -104,15 +104,20 @@ Strictly dependency-ordered; each step needs the one before it.
 |---|---|---|
 | 0 | Feasibility spike — can a renderer really run a torrent client? | **done** — [verdict](docs/planning/spike-verdict.md) |
 | 1 | **Shell** — tabs, omnibox, back/forward, window chrome | **done** |
-| 2 | **Capability broker** — manifests, grants, per-origin enforcement | next |
-| 3 | **Node shim** — `net`, `dgram`, `fs` over `orivon.*` | |
-| 4 | **App loader** — manifest discovery, fetch, cache, hash-pinning | |
+| 2 | **Capability broker** — manifests, grants, per-origin enforcement | **done** — including per-app session partitions and `net.listen`; one gap, `net.listen` is not reachable from a page ([A114](docs/open-questions.md)) |
+| 3 | **Node shim** — `net`, `dgram`, `fs` over `orivon.*` | **done** — plus `http`/`https` and the core polyfills; `net.createServer` and `dns` refuse loudly, pending A114 and A107 |
+| 4 | **App loader** — manifest discovery, fetch, cache, hash-pinning | **in progress** — loader, grant prompt and permissions list built; nothing calls `app.requestGrant` yet, and the folder picker and identity prompt are unbuilt |
 | 5 | **Torrent app** — the flagship, and the demo clip | |
-| 6 | **Trust indicator** — what an app actually did, not a grade | |
-| 7 | **Nostr identity** — `window.nostr` across every client | |
-| 8 | **Telemetry** — with the first-run disclosure | |
+| 6 | **Trust indicator** — what an app actually did, not a grade | groundwork in [`src/trust/`](src/trust/) |
+| 7 | **Nostr identity** — `window.nostr` across every client | `id.publicKey`/`sign` built; `window.nostr` blocked on the identity prompt |
+| 8 | **Telemetry** — with the first-run disclosure | groundwork in [`src/telemetry/`](src/telemetry/) |
 | 9 | **Developer mode** — load an unpacked app | |
 | 10 | **Packaging** — AppImage and deb | |
+
+**Steps 2 and 3 landed on 2026-09-10**, in one unattended multi-agent run of about eighteen
+hours. [`docs/planning/compatibility-matrix.md`](docs/planning/compatibility-matrix.md) is the
+cell-by-cell record of what that actually made possible, re-derived from the tree rather than
+from the plan.
 
 **Deliberately deferred** — choices, not oversights, and every one of them is still on the
 long-term plan ([`docs/mvp-scope.md`](docs/mvp-scope.md)): trustless name resolution (ENS and
