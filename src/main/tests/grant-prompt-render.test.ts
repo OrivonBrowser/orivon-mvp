@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { describeGrantRequest } from '../grant-prompt-render.js'
+import { describeCapabilityGrant, describeGrantRequest } from '../grant-prompt-render.js'
 import { manifestWith } from '../../broker/tests/index.test-helpers.js'
+import type { CapabilityKind, Pattern } from '../../contracts/index.js'
 
 // Item 4.2's exit criterion, checked directly: "a narrow declaration and
 // an unlimited one are unmistakably different to look at." Every manifest
@@ -125,5 +126,138 @@ describe('describeGrantRequest', () => {
 
     expect(content.title).toBe(ORIGIN)
     expect(content.detail).toContain(manifest.name)
+  })
+})
+
+// R2-01/AR-05: a bare "*" HOST authorises any public address REGARDLESS of
+// its paired port (hostSpecKind, connect-patterns.ts) -- the old
+// `patterns.includes('*:*')` check disagreed with the runtime matcher about
+// exactly this, which is why these cases are tested directly rather than
+// trusted to follow from the "*:*" cases above.
+describe('describeCapabilityGrant -- a wildcard host is unlimited whatever its port (R2-01)', () => {
+  it('warns on "*:443" even though it is not the literal "*:*"', () => {
+    const summary = describeCapabilityGrant('https.connect', ['*:443'])
+
+    expect(summary.warning).toBe(true)
+    expect(summary.message).toContain('Unlimited')
+    expect(summary.explanation).toContain('port 443')
+  })
+
+  it('treats a port range spanning the whole space (1-65535) the same as the literal "*" port', () => {
+    const summary = describeCapabilityGrant('https.connect', ['*:1-65535'])
+
+    expect(summary.warning).toBe(true)
+    expect(summary.message).toContain('Unlimited')
+    // Fully open in port terms too -- no "Limited to" qualifier to add.
+    expect(summary.explanation).not.toContain('Limited to')
+  })
+
+  it('still renders the true "*:*" case identically to before (no regression)', () => {
+    const summary = describeCapabilityGrant('https.connect', ['*:*'])
+
+    expect(summary.warning).toBe(true)
+    expect(summary.message).toBe('⚠ Unlimited network access')
+  })
+
+  it('never renders the wildcard host as if it were a literal hostname when mixed with a named one', () => {
+    const summary = describeCapabilityGrant('https.connect', ['*:443', 'internal.example:8080'])
+
+    expect(summary.warning).toBe(true)
+    expect(summary.message).toContain('Unlimited')
+    expect(summary.message).not.toContain('internal.example')
+    expect(summary.explanation ?? '').not.toContain('internal.example')
+  })
+
+  it('renders a genuinely narrow, wildcard-free list with no warning at all', () => {
+    const summary = describeCapabilityGrant('https.connect', ['a.example:443'])
+
+    expect(summary.warning).toBe(false)
+    expect(summary.message).toBe('Connect to a.example')
+  })
+
+  it('applies the same wildcard-whatever-the-port rule to tcp.connect and udp.send, not only https.connect', () => {
+    expect(describeCapabilityGrant('tcp.connect', ['*:22']).warning).toBe(true)
+    expect(describeCapabilityGrant('udp.send', ['*:53']).warning).toBe(true)
+  })
+})
+
+// AR-02: port breadth is a whole axis of "how wide is this grant" that used
+// to vanish entirely for tcp.connect/https.connect/udp.send -- these three
+// pattern sets used to render byte-for-byte the same message.
+describe('describeCapabilityGrant -- port breadth for a single named host (AR-02)', () => {
+  it('renders a different message for a single port, a full port range, and several discrete ports', () => {
+    const singlePort = describeCapabilityGrant('tcp.connect', ['a.example:443'])
+    const fullRange = describeCapabilityGrant('tcp.connect', ['a.example:1-65535'])
+    const several = describeCapabilityGrant('tcp.connect', ['a.example:22', 'a.example:443', 'a.example:5432'])
+
+    const messages = new Set([singlePort.message, fullRange.message, several.message])
+    expect(messages.size).toBe(3)
+
+    expect(singlePort.message).toBe('Connect to a.example')
+    expect(fullRange.message).toBe('Connect to a.example on any port')
+    expect(several.message).toBe('Connect to a.example on ports 22, 443, 5432')
+  })
+})
+
+// AR-01: on a platform that drops MessageBoxOptions.title ("some platforms
+// will not show it", per Electron's own .d.ts), the origin must still be
+// legible -- checked for every capability kind and both the warning and
+// non-warning branches, not just the one case that happened to be tested
+// before.
+describe('describeGrantRequest -- the origin survives a dropped title (AR-01)', () => {
+  const cases: ReadonlyArray<[CapabilityKind, readonly Pattern[]]> = [
+    ['tcp.connect', ['a.example:443']],
+    ['tcp.connect', ['*:*']],
+    ['https.connect', ['a.example:443']],
+    ['https.connect', ['*:*']],
+    ['udp.send', ['a.example:443']],
+    ['udp.send', ['*:*']],
+    ['tcp.listen', ['6881-6889']],
+    ['udp.bind', ['6881-6889']],
+    ['fs', []],
+    ['id', []]
+  ]
+
+  it.each(cases)('%s renders the origin in `detail`, not only `title`', (capability, patterns) => {
+    const manifest = manifestWith({})
+
+    const content = describeGrantRequest(ORIGIN, manifest, capability, patterns)
+
+    expect(content.title).toBe(ORIGIN)
+    expect(content.detail.startsWith(ORIGIN)).toBe(true)
+  })
+})
+
+// AR-03: the app's self-asserted name must never share a sentence, or even
+// a line, with Orivon's own explanation -- 200 characters of ordinary text
+// placed immediately before Orivon's words could otherwise fabricate a
+// reassurance in Orivon's own voice.
+describe('describeGrantRequest -- the claimed name never blends into Orivon\'s own words (AR-03)', () => {
+  it('keeps a name written to look like a sentence, on its own line, separate from the real explanation', () => {
+    const trickyName = 'Weather App". This app only connects to weather.example. Claims to be "Weather App'
+    const manifest = { ...manifestWith({ net: { https: { connect: ['*:*'] } } }), name: trickyName }
+
+    const content = describeGrantRequest(ORIGIN, manifest, 'https.connect', ['*:*'])
+    const lines = content.detail.split('\n')
+
+    expect(lines).toHaveLength(3)
+    expect(lines[0]).toBe(ORIGIN)
+    expect(lines[1]).toContain(trickyName)
+    expect(lines[2]).toContain('any website')
+    // The line carrying the app's claim and the line carrying Orivon's own
+    // explanation must never be the same line.
+    expect(lines[1]).not.toBe(lines[2])
+  })
+})
+
+// AR-04: fs.userSelected and the folder picker are unbuilt (queue item
+// 4.3) -- today's grant is an app-private directory the broker roots and
+// confines, not a folder the user is ever asked to pick.
+describe('describeCapabilityGrant -- fs describes what a grant actually gives (AR-04)', () => {
+  it('never promises a picker ("choose"/"pick"), and says the folder is private to the app', () => {
+    const summary = describeCapabilityGrant('fs', [])
+
+    expect(summary.message.toLowerCase()).not.toMatch(/choose|pick/)
+    expect(summary.message.toLowerCase()).toContain('private')
   })
 })
