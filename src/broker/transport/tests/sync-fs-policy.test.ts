@@ -137,4 +137,56 @@ describe('createSyncFsPolicy (real Broker.fs.confineSync)', () => {
 
     expect(() => policy.readFileSync(resolved)).toThrow(/ENOENT/)
   })
+
+  // R5-03: the size cap. `maxReadBytes` is injected here rather than relying
+  // on the production default, so these tests do not need to write
+  // megabytes to disk to exercise the boundary.
+  describe('the size cap (R5-03)', () => {
+    it('reads a file exactly at the cap, and refuses one byte over it as \'limit\'', async () => {
+      const { broker } = await realBroker()
+      await broker.registerApp(APP, testManifest())
+      await broker.grant(APP, 'fs', [])
+      await broker.fs.writeFile(APP, 'at-cap.bin', new Uint8Array(10))
+      await broker.fs.writeFile(APP, 'over-cap.bin', new Uint8Array(11))
+      const policy = createSyncFsPolicy(broker, 10)
+
+      const atCap = policy.confine(APP, 'at-cap.bin')
+      expect(policy.readFileSync(atCap).length).toBe(10)
+
+      const overCap = policy.confine(APP, 'over-cap.bin')
+      let caught: unknown
+      try {
+        policy.readFileSync(overCap)
+      } catch (e) {
+        caught = e
+      }
+      expect(isOrivonErrorLike(caught) && caught.code === 'limit').toBe(true)
+      expect(isOrivonErrorLike(caught) ? caught.platformCode : 'not-orivon-error').toBeUndefined()
+    })
+
+    it('checks size before reading, not after: a confined directory is refused via stat, never via an attempted read', async () => {
+      const { broker, userData } = await realBroker()
+      await broker.registerApp(APP, testManifest())
+      await broker.grant(APP, 'fs', [])
+      await mkdir(join(nodeFs(userData).rootFor(APP), 'a-directory'), { recursive: true })
+      // No real size is ever <= -1, so any stat result trips this cap --
+      // makes the assertion below independent of what a directory's own
+      // reported size happens to be on a given filesystem.
+      const policy = createSyncFsPolicy(broker, -1)
+
+      const resolved = policy.confine(APP, 'a-directory')
+      let caught: unknown
+      try {
+        policy.readFileSync(resolved)
+      } catch (e) {
+        caught = e
+      }
+
+      // A check-after-read implementation would instead hit node:fs's own
+      // EISDIR attempting to read a directory's contents -- mapped to
+      // 'internal' by the caller, never 'limit'. Getting 'limit' here is
+      // proof the stat-based cap fired before any read was attempted.
+      expect(isOrivonErrorLike(caught) && caught.code === 'limit').toBe(true)
+    })
+  })
 })
