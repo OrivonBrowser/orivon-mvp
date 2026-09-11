@@ -17,6 +17,13 @@
 const CRLF = [13, 10]
 const CRLFCRLF = [13, 10, 13, 10]
 const MAX_HEAD_BYTES = 32 * 1024
+// Bounds a single chunk-size or trailer line, mirroring Node's own
+// maxHeaderSize guard. Unlike MAX_HEAD_BYTES this is checked against the
+// line itself (see findLineOrFail), never against the whole buffer -- a
+// legitimate large body can sit right behind an already-terminated line in
+// the same write(), and bounding on total buffer length would fail that
+// traffic instead of the runaway line it is meant to catch.
+const MAX_LINE_BYTES = 8 * 1024
 
 export interface ParsedResponseHead {
   readonly httpVersion: string
@@ -193,8 +200,27 @@ export class HttpResponseParser {
     return true
   }
 
-  private tryParseChunkSize (): boolean {
+  /**
+   * Finds a CRLF-terminated line, failing the parser if one grows past
+   * MAX_LINE_BYTES without a terminator ever showing up. Returns -1 both
+   * when more data is needed and when the parser just failed -- callers
+   * only need to bail out on a negative index either way.
+   */
+  private findLineOrFail (label: string): number {
     const idx = indexOfSubarray(this.buf, CRLF)
+    if (idx === -1) {
+      if (this.buf.length > MAX_LINE_BYTES) this.fail(`${label} exceeded ${MAX_LINE_BYTES} bytes without a terminator`)
+      return -1
+    }
+    if (idx > MAX_LINE_BYTES) {
+      this.fail(`${label} exceeded ${MAX_LINE_BYTES} bytes`)
+      return -1
+    }
+    return idx
+  }
+
+  private tryParseChunkSize (): boolean {
+    const idx = this.findLineOrFail('chunk size line')
     if (idx === -1) return false
     const line = new TextDecoder('latin1').decode(this.buf.subarray(0, idx))
     this.buf = this.buf.subarray(idx + 2)
@@ -229,7 +255,7 @@ export class HttpResponseParser {
 
   /** Trailer headers (rare in practice) are read and discarded until the terminating blank line. */
   private tryConsumeTrailerLine (): boolean {
-    const idx = indexOfSubarray(this.buf, CRLF)
+    const idx = this.findLineOrFail('trailer line')
     if (idx === -1) return false
     const isBlank = idx === 0
     this.buf = this.buf.subarray(idx + 2)

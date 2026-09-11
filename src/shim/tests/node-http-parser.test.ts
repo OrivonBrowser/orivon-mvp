@@ -85,6 +85,82 @@ describe('HttpResponseParser -- chunked body', () => {
     expect(h.bodyText()).toBe('hi')
     expect(h.complete).toBe(1)
   })
+
+  it('discards several real trailer headers before the terminating blank line', () => {
+    const h = makeParser()
+    const wire = 'HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n' +
+      '2\r\nhi\r\n0\r\nX-Checksum: abc123\r\nX-Trace-Id: req-42\r\n\r\n'
+    h.parser.write(enc.encode(wire))
+    expect(h.bodyText()).toBe('hi')
+    expect(h.complete).toBe(1)
+    expect(h.errors).toHaveLength(0)
+  })
+
+  it('parses a large but valid chunked body delivered as a single write', () => {
+    const h = makeParser()
+    h.parser.write(enc.encode('HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n'))
+
+    const payload = 'x'.repeat(100 * 1024)
+    const wire = payload.length.toString(16) + '\r\n' + payload + '\r\n0\r\n\r\n'
+    // The chunk-size line itself is tiny, but the whole buffer it arrives in
+    // (line + 100 KiB of body, all one write()) is far bigger than the new
+    // line-length bound -- this is the case a naive "bound the whole buffer"
+    // fix would have broken.
+    h.parser.write(enc.encode(wire))
+
+    expect(h.bodyText()).toBe(payload)
+    expect(h.complete).toBe(1)
+    expect(h.errors).toHaveLength(0)
+  })
+
+  it('parses a large valid chunked body streamed across many small pumps', () => {
+    const h = makeParser()
+    const payload = 'y'.repeat(50 * 1024)
+    const head = enc.encode('HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n')
+    const wire = enc.encode(payload.length.toString(16) + '\r\n' + payload + '\r\n0\r\n\r\n')
+    h.parser.write(head)
+    // Drip the body in 4 KiB pumps, well under the per-line bound each time,
+    // to prove the bound only fires on an unterminated line, not on steady
+    // legitimate growth.
+    for (let i = 0; i < wire.length; i += 4096) h.parser.write(wire.subarray(i, i + 4096))
+
+    expect(h.bodyText()).toBe(payload)
+    expect(h.complete).toBe(1)
+    expect(h.errors).toHaveLength(0)
+  })
+})
+
+describe('HttpResponseParser -- unbounded line guard', () => {
+  it('fails a chunk-size line that never terminates, instead of growing forever', () => {
+    const h = makeParser()
+    h.parser.write(enc.encode('HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n'))
+
+    // Hex-looking bytes with no CRLF, pumped in small writes the way a real
+    // socket read loop would deliver them -- none of them make progress, so
+    // the buffer would grow without bound if the parser did not step in.
+    const junk = enc.encode('a'.repeat(1024))
+    for (let i = 0; i < 12 && h.errors.length === 0; i++) h.parser.write(junk)
+
+    expect(h.errors).toHaveLength(1)
+    expect(h.errors[0]?.message).toMatch(/chunk size line exceeded/)
+    expect(h.complete).toBe(0)
+
+    // The parser is done; further bytes are dropped rather than reopening it.
+    h.parser.write(junk)
+    expect(h.errors).toHaveLength(1)
+  })
+
+  it('fails a trailer line that never terminates, instead of growing forever', () => {
+    const h = makeParser()
+    h.parser.write(enc.encode('HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n'))
+
+    const junk = enc.encode('X-Junk: '.repeat(128))
+    for (let i = 0; i < 12 && h.errors.length === 0; i++) h.parser.write(junk)
+
+    expect(h.errors).toHaveLength(1)
+    expect(h.errors[0]?.message).toMatch(/trailer line exceeded/)
+    expect(h.complete).toBe(0)
+  })
 })
 
 describe('HttpResponseParser -- connection-close-terminated body', () => {
