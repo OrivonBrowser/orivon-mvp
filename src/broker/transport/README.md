@@ -79,3 +79,13 @@ outside the per-origin in-flight budget (`HandleTable.run`) `readFile`/`writeFil
 that budget is `async`-shaped by construction and a synchronous IPC reply cannot await a slot
 becoming free, so this is a genuinely open design question, not merely a deferred one; see
 `../index.ts`'s own doc on `confineSync` and `open-questions.md`.
+
+**`sync-fs-policy.ts`'s `readFileSync` copies before returning, for the same reason
+[`../adapters/node-fs-adapter.ts`](../adapters/node-fs-adapter.ts)'s `readFile` does** — see
+`../adapters/README.md`'s Design notes for the structured-clone/pooled-buffer rationale. Being
+synchronous does not exempt this path from it: `node:fs`'s `readFileSync` pools small allocations
+exactly like its promise-based sibling, so a raw pass-through here would hand the page whatever
+else shares the pool slab. No shared helper: the copy is `new Uint8Array(x)`, a single builtin
+call, and the two sites live in different layers of the trust boundary (`transport/` depends on
+`adapters/`, never the reverse) — a named wrapper for one expression would be indirection without
+reducing what either call site has to get right.

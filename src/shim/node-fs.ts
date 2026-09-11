@@ -39,8 +39,22 @@ function splitTail<Options> (args: readonly unknown[]): { options: Options | und
   return { options, callback }
 }
 
+// hex/base64/base64url are Node's binary-to-text encodings, not character
+// sets -- TextDecoder only knows the latter (WHATWG Encoding Standard) and
+// throws RangeError on these three. Buffer (the `buffer` package) already
+// implements Node's own encoding table, so those three are routed there and
+// everything else keeps going through TextDecoder.
+const BUFFER_TEXT_ENCODINGS = new Set(['hex', 'base64', 'base64url'])
+
 function decode (bytes: Uint8Array, encoding: string | undefined): Uint8Array | string {
-  return encoding === undefined ? Buffer.from(bytes) : new TextDecoder(encoding).decode(bytes)
+  if (encoding === undefined) return Buffer.from(bytes)
+  if (BUFFER_TEXT_ENCODINGS.has(encoding)) return Buffer.from(bytes).toString(encoding as 'hex' | 'base64' | 'base64url')
+  return new TextDecoder(encoding).decode(bytes)
+}
+
+/** writeFile's mirror of decode() above -- Buffer.from already knows every Node encoding, hex/base64/base64url included, so unlike decode() this needs no special-cased subset. */
+function encode (data: unknown, encoding: string | undefined): Uint8Array {
+  return typeof data === 'string' ? Buffer.from(data, (encoding ?? 'utf8') as BufferEncoding) : toBytes(data)
 }
 
 // Every function below is declared with real Node-shaped overloads (options
@@ -54,9 +68,15 @@ export function readFile (path: string, options: ReadFileOptions | string, callb
 export function readFile (path: string, ...args: readonly unknown[]): void {
   const { options, callback } = splitTail<ReadFileOptions | string>(args)
   const encoding = typeof options === 'string' ? options : options?.encoding
-  getOrivon().fs.readFile(path)
-    .then((bytes) => callback(null, decode(bytes, encoding)))
-    .catch((error) => callback(toNodeError(error)))
+  // `.then(onFulfilled, onRejected)`, never `.then(onFulfilled).catch(onRejected)`:
+  // the two-callback form is the only one where a throw INSIDE onFulfilled
+  // (here, inside the user's own callback) does not fall into onRejected and
+  // re-invoke callback a second time. Node calls a callback exactly once --
+  // every wrapper below relies on this same shape for that guarantee.
+  getOrivon().fs.readFile(path).then(
+    (bytes) => callback(null, decode(bytes, encoding)),
+    (error) => callback(toNodeError(error))
+  )
 }
 
 export function readFileSync (path: string, options?: ReadFileOptions | string): Uint8Array | string {
@@ -68,17 +88,19 @@ export function readFileSync (path: string, options?: ReadFileOptions | string):
 export function writeFile (path: string, data: unknown, callback: NodeCallback<void>): void
 export function writeFile (path: string, data: unknown, options: WriteFileOptions | string, callback: NodeCallback<void>): void
 export function writeFile (path: string, data: unknown, ...args: readonly unknown[]): void {
-  const { callback } = splitTail<WriteFileOptions | string>(args)
+  const { options, callback } = splitTail<WriteFileOptions | string>(args)
+  const encoding = typeof options === 'string' ? options : options?.encoding
   let bytes: Uint8Array
   try {
-    bytes = toBytes(data)
+    bytes = encode(data, encoding)
   } catch (error) {
     callback(error as Error)
     return
   }
-  getOrivon().fs.writeFile(path, bytes)
-    .then(() => callback(null))
-    .catch((error) => callback(toNodeError(error)))
+  getOrivon().fs.writeFile(path, bytes).then(
+    () => callback(null),
+    (error) => callback(toNodeError(error))
+  )
 }
 
 export const writeFileSync = syncUnsupported('fs.writeFileSync')
@@ -93,40 +115,45 @@ export function mkdir (path: string, callback: NodeCallback<void>): void
 export function mkdir (path: string, options: MkdirOptions, callback: NodeCallback<void>): void
 export function mkdir (path: string, ...args: readonly unknown[]): void {
   const { options, callback } = splitTail<MkdirOptions>(args)
-  getOrivon().fs.mkdir(path, options)
-    .then(() => callback(null))
-    .catch((error) => callback(toNodeError(error)))
+  getOrivon().fs.mkdir(path, options).then(
+    () => callback(null),
+    (error) => callback(toNodeError(error))
+  )
 }
 
 export function readdir (path: string, callback: NodeCallback<readonly string[]>): void
 export function readdir (path: string, ...args: readonly unknown[]): void {
   const { callback } = splitTail<unknown>(args)
-  getOrivon().fs.readdir(path)
-    .then((entries) => callback(null, entries))
-    .catch((error) => callback(toNodeError(error)))
+  getOrivon().fs.readdir(path).then(
+    (entries) => callback(null, entries),
+    (error) => callback(toNodeError(error))
+  )
 }
 
 export function stat (path: string, callback: NodeCallback<NodeStats>): void
 export function stat (path: string, ...args: readonly unknown[]): void {
   const { callback } = splitTail<unknown>(args)
-  getOrivon().fs.stat(path)
-    .then((result) => callback(null, toNodeStats(result)))
-    .catch((error) => callback(toNodeError(error)))
+  getOrivon().fs.stat(path).then(
+    (result) => callback(null, toNodeStats(result)),
+    (error) => callback(toNodeError(error))
+  )
 }
 
 export function rm (path: string, callback: NodeCallback<void>): void
 export function rm (path: string, options: RmOptions, callback: NodeCallback<void>): void
 export function rm (path: string, ...args: readonly unknown[]): void {
   const { options, callback } = splitTail<RmOptions>(args)
-  getOrivon().fs.rm(path, options)
-    .then(() => callback(null))
-    .catch((error) => callback(toNodeError(error)))
+  getOrivon().fs.rm(path, options).then(
+    () => callback(null),
+    (error) => callback(toNodeError(error))
+  )
 }
 
 export function rename (from: string, to: string, callback: NodeCallback<void>): void {
-  getOrivon().fs.rename(from, to)
-    .then(() => callback(null))
-    .catch((error) => callback(toNodeError(error)))
+  getOrivon().fs.rename(from, to).then(
+    () => callback(null),
+    (error) => callback(toNodeError(error))
+  )
 }
 
 export type { NodeStats }
