@@ -57,7 +57,17 @@ vi.mock('electron', () => ({
   })
 }))
 
+// F35 regression test below needs to force fetchFaviconDataUrlCached to
+// reject on demand -- everything else keeps the real favicon.ts (pure
+// functions like pickFaviconUrl are exercised for real elsewhere in this
+// file's tab-creation flow).
+vi.mock('../favicon.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../favicon.js')>()
+  return { ...actual, fetchFaviconDataUrlCached: vi.fn().mockResolvedValue(null) }
+})
+
 const { TabManager } = await import('../tabs.js')
+const { fetchFaviconDataUrlCached } = await import('../favicon.js')
 
 const fakeContentView = { addChildView: vi.fn(), removeChildView: vi.fn() }
 const fakeBounds = { x: 0, y: 0, width: 800, height: 600 }
@@ -318,5 +328,151 @@ describe('TabManager -- navigate() repartitions a tab when the ORIGIN changes', 
     manager.navigate(activeTabId, 'https://d.example/')
     expect(fakeContentView.removeChildView).toHaveBeenCalledTimes(1)
     expect(fakeContentView.addChildView).toHaveBeenCalledTimes(1)
+  })
+})
+
+// A108/A109: navigate() is only reached via the omnibox or the dashboard's
+// own navigate command -- a same-view HTTP redirect, a clicked link, a form
+// submission or a script setting location.href all reach a new origin
+// WITHOUT ever calling navigate(), and Chromium's did-navigate event is the
+// one thing they all fire in common (electron/web-contents.md's own
+// Navigation Events list). The fake webContents' 'did-navigate' is emitted
+// directly here for exactly the reason the file header above states: this
+// is only observable by actually emitting the event, not by calling a
+// TabManager method.
+describe('TabManager -- did-navigate repartitions a tab for a redirect, link, form submission or script navigation (A108/A109)', () => {
+  it('a same-view redirect to a different origin ends in that origin\'s partition', () => {
+    const manager = newManager()
+    manager.createTab('https://a.example/')
+    const view = createdViews[0] as RecordedView
+
+    // Chromium follows the redirect inside the SAME WebContentsView --
+    // did-navigate fires with the FINAL url, never navigate().
+    view.webContents.emit('did-navigate', {}, 'https://b.example/')
+
+    expect(createdViews).toHaveLength(2)
+    const expected = partitionFor(originFromUrl('https://b.example/') as string)
+    expect(partitionOf(createdViews[1] as RecordedView)).toBe(expected)
+  })
+
+  it('a same-origin redirect does not swap', () => {
+    const manager = newManager()
+    manager.createTab('https://a.example/one')
+    const view = createdViews[0] as RecordedView
+
+    view.webContents.emit('did-navigate', {}, 'https://a.example/two')
+
+    expect(createdViews).toHaveLength(1)
+  })
+
+  it('a clicked link or script-driven navigation to a different origin swaps exactly like a redirect -- TabManager cannot tell them apart, and must not need to', () => {
+    const manager = newManager()
+    manager.createTab('https://a.example/')
+    const view = createdViews[0] as RecordedView
+
+    view.webContents.emit('did-navigate', {}, 'https://attacker.example/')
+
+    expect(createdViews).toHaveLength(2)
+    const expected = partitionFor(originFromUrl('https://attacker.example/') as string)
+    expect(partitionOf(createdViews[1] as RecordedView)).toBe(expected)
+  })
+
+  it('a same-origin navigation (a link to another path on the same origin) does not swap', () => {
+    const manager = newManager()
+    manager.createTab('https://a.example/one')
+    const view = createdViews[0] as RecordedView
+
+    view.webContents.emit('did-navigate', {}, 'https://a.example/two/three')
+
+    expect(createdViews).toHaveLength(1)
+  })
+
+  it('a dashboard tab never repartitions on its own did-navigate, even though its dev-mode URL is a real http(s) address', () => {
+    const manager = newManager()
+    manager.createTab() // dashboard -- no partition
+    const view = createdViews[0] as RecordedView
+
+    // The dashboard's own createTab() already loads DASHBOARD_URL, which
+    // has a real, derivable origin -- without the isDashboardTab guard this
+    // would look exactly like an "origin change" from undefined.
+    view.webContents.emit('did-navigate', {}, DASHBOARD_URL)
+
+    expect(createdViews).toHaveLength(1)
+    expect(partitionOf(createdViews[0] as RecordedView)).toBeUndefined()
+  })
+
+  it('a dashboard tab does not repartition even if its own page navigates itself to a real, different origin outside navigate()', () => {
+    const manager = newManager()
+    manager.createTab() // dashboard
+    const view = createdViews[0] as RecordedView
+
+    view.webContents.emit('did-navigate', {}, 'https://app.example/')
+
+    expect(createdViews).toHaveLength(1)
+  })
+
+  it('a did-navigate landing on about:blank never swaps -- partitionForTarget(BLANK_URL) is always undefined', () => {
+    const manager = newManager()
+    manager.createTab('https://a.example/')
+    const view = createdViews[0] as RecordedView
+
+    view.webContents.emit('did-navigate', {}, 'about:blank')
+
+    expect(createdViews).toHaveLength(1)
+  })
+
+  it('closes the OLD view\'s webContents on a did-navigate-triggered swap -- no leaked WebContentsView', () => {
+    const manager = newManager()
+    manager.createTab('https://a.example/')
+    const view = createdViews[0] as RecordedView
+
+    view.webContents.emit('did-navigate', {}, 'https://b.example/')
+
+    expect(view.webContents.close).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not forget the tab when a did-navigate-triggered swap closes the OLD view', () => {
+    const manager = newManager()
+    const id = manager.createTab('https://a.example/')
+    const view = createdViews[0] as RecordedView
+
+    view.webContents.emit('did-navigate', {}, 'https://b.example/')
+
+    const state = manager.getState()
+    expect(state.tabs.map((t) => t.id)).toContain(id)
+    expect(state.tabs).toHaveLength(1)
+  })
+})
+
+// F35 (CLAUDE-SECURITY-20260910-203341): wireView() used to launch
+// captureFavicon with a bare `void` and no .catch. A visited page's own
+// favicon host could reject that promise (see favicon.test.ts's
+// fetchFaviconDataUrl coverage for how), turning an ordinary page visit
+// into an unhandledRejection -- which index.ts deliberately maps to
+// app.exit(1), killing every open tab. This exercises the wiring in
+// tabs.ts directly, independent of what makes captureFavicon reject.
+describe('TabManager -- a rejecting captureFavicon must not escape as an unhandled rejection (F35)', () => {
+  it('does not fire process "unhandledRejection" when fetchFaviconDataUrlCached rejects', async () => {
+    vi.mocked(fetchFaviconDataUrlCached).mockRejectedValueOnce(new Error('simulated favicon failure'))
+
+    const manager = newManager()
+    manager.createTab('https://app.example/')
+    const view = createdViews[0] as RecordedView
+
+    const onUnhandledRejection = vi.fn()
+    process.once('unhandledRejection', onUnhandledRejection)
+    try {
+      view.webContents.emit('page-favicon-updated', {}, ['https://evil.example/icon.png'])
+      // Give captureFavicon's rejected promise, and Node's own
+      // unhandledRejection detection, a full turn of the event loop to
+      // surface -- a microtask-only wait (a bare `await Promise.resolve()`)
+      // is not enough to reliably observe Node's check.
+      await new Promise((resolve) => setImmediate(resolve))
+      await new Promise((resolve) => setImmediate(resolve))
+    } finally {
+      process.removeListener('unhandledRejection', onUnhandledRejection)
+    }
+
+    expect(onUnhandledRejection).not.toHaveBeenCalled()
   })
 })
