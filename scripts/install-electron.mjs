@@ -11,7 +11,9 @@
  * already expects it, and keeps it idempotent: electron's own install.js exits
  * early once the binary matches the installed version.
  *
- * Set ELECTRON_SKIP_BINARY_DOWNLOAD=1 to opt out -- CI's `check` job does.
+ * Set ELECTRON_SKIP_BINARY_DOWNLOAD=1 to opt out. Nothing in this repo does:
+ * the unit suite reaches Electron's own lazy downloader through
+ * test/launch-electron.mjs, so a skip here only moves the download later.
  */
 import { spawnSync } from 'node:child_process'
 import { createRequire } from 'node:module'

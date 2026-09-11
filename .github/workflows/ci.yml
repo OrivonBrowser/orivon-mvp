@@ -24,12 +24,15 @@ jobs:
       # `npm ci` runs the postinstall guard, so Rule 8 is enforced here too.
       #
       # It now also fetches Electron's ~280 MB binary
-      # (scripts/install-electron.mjs), which this job has no use for: it
-      # typechecks, unit tests and builds, and none of those launch Electron.
-      # The `e2e` job below does launch it, and deliberately leaves this unset.
+      # (scripts/install-electron.mjs). This job never launches Electron, so
+      # skipping that looks free -- it is not, and a first version of this file
+      # set ELECTRON_SKIP_BINARY_DOWNLOAD here before a CI run disproved it.
+      # test/launch-electron.mjs does `await import('electron')`, which is
+      # Electron's own lazy downloader, and the unit suite reaches it: the
+      # binary was already being fetched mid-test, printing "Downloading
+      # Electron binary..." inside the `Unit tests` step. Fetching it during
+      # install costs the same and puts a network failure where it reads as one.
       - run: npm ci
-        env:
-          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
 
       - name: Typecheck
         run: npm run typecheck
