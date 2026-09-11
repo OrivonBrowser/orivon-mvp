@@ -130,3 +130,35 @@ check inside the main world (ADR-0017, queue item 3.4):**
   An origin registered AFTER a tab already showing it was created keeps that tab's ORIGINAL
   answer until the next navigation swaps in a fresh view -- the same lifetime `additionalArguments`
   already has for every other flag on this list, not a new gap this feature introduces.
+
+**`fetch-route.ts`'s known divergences from a real browser's `fetch()`** -- ADR-0017's own
+Consequences section requires these be written down plainly, since "a silent divergence in a web
+platform API is a trap":
+
+- **A routed response is capped at `MAX_BODY_BYTES` (currently 16 MiB, checked against
+  `Content-Length` before reading, and incrementally as bytes actually arrive for a chunked or
+  connection-close-terminated body).** Real `fetch()` has no such cap. This is a conservative
+  PLACEHOLDER, not an owner decision -- the open question (should this instead be a
+  manifest-declared, user-visible limit, the same pattern A80 gave the per-app socket allowance)
+  is tracked in the F2 lane's log, not settled here. The response headers themselves are capped
+  too, at `MAX_HEAD_BYTES` (32 KiB, mirroring `src/shim/node-http-parser.ts`), which real `fetch()`
+  also has no equivalent to, though a real header block this large is not a realistic case.
+- **`Content-Encoding: gzip`/`deflate` is decompressed transparently**, via the platform's own
+  `DecompressionStream` -- matching real `fetch()`. `Content-Encoding: br` (brotli) is NOT
+  decompressed: `DecompressionStream` has no brotli format string in Chromium, so a `br` response
+  fails loudly (naming brotli in the error) rather than handing the app compressed bytes as though
+  they were content. As in a real browser, the `Content-Encoding` header itself stays on the
+  `Response` unstripped even after the body is decompressed -- not a new divergence, a real
+  browser does the same.
+- **Redirects are not followed.** A 3xx response comes back to the app as an ordinary `Response`
+  with that status code; the app must notice and follow it itself. v0 scope cut (PR #133).
+- **Only string/`Uint8Array`/`ArrayBuffer`/`URLSearchParams` request bodies are supported** --
+  `FormData`, `Blob` and a streamed-upload body are not built here. v0 scope cut (PR #133).
+
+**`init.signal` (`AbortController`) IS supported**, matching real `fetch()`: an already-aborted
+signal rejects before any dial happens; aborting mid-flight rejects the pending promise (via a
+`raceAbort` race against every awaited step) AND closes the underlying socket directly, so the
+broker actually tears the connection down rather than leaking it -- `raceAbort` alone cannot force
+a foreign promise to release what it holds, hence the direct `close()`. The rejection value is
+`signal.reason` when the app supplied one, else the same `DOMException('...', 'AbortError')` shape
+a real `fetch()` constructs.
