@@ -232,7 +232,16 @@ export class TabManager {
     wc.on('did-start-loading', () => this.emitState())
     wc.on('did-stop-loading', () => this.emitState())
     wc.on('page-favicon-updated', (_event, favicons: string[]) => {
-      void this.captureFavicon(id, record, favicons)
+      // captureFavicon calls fetchFaviconDataUrl (favicon.ts), whose doc
+      // comment promises it never throws -- but a bare `void` here would
+      // still turn any future break of that promise into an unhandled
+      // rejection, and index.ts deliberately maps that to app.exit(1), so
+      // a favicon host controlled by any visited page could kill the whole
+      // browser. Same defence as update-check-runner.ts's afterReady and
+      // bookmarks.ts's pendingWrite.
+      void this.captureFavicon(id, record, favicons).catch((error) => {
+        console.error('[orivon] favicon capture failed:', error)
+      })
     })
     // A renderer crash or other unexpected teardown destroys the
     // webContents without going through closeTab(). Without this, the
