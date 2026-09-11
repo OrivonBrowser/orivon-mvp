@@ -100,4 +100,54 @@ describe('dgram.Socket over a fake UdpSocket', () => {
     socket.bind(6881)
     expect((await error).code).toBe('denied')
   })
+
+  // The three below came out of the 2026-09-11 post-merge audit of this file
+  // (R8). It had never been assigned to a review lane, and the one test that
+  // exercises it against a real caller -- real-bittorrent-dht.test.ts -- is
+  // skipped in every checkout, so nothing executing would have caught these.
+
+  it('a second bind() is refused, rather than orphaning the first handle -- ERR_SOCKET_ALREADY_BOUND', async () => {
+    const first = createFakeUdpSocket({ localPort: 6881 })
+    const second = createFakeUdpSocket({ localPort: 6882 })
+    const handles = [first.socket, second.socket]
+    const socket = new Socket(async () => handles.shift() as UdpSocket)
+    socket.bind(6881)
+    await new Promise<void>((resolve) => socket.once('listening', resolve))
+
+    expect(() => socket.bind(6882)).toThrow(/already bound/)
+    // The point of the throw: without it the second bind replaced `handle`,
+    // leaving `first` open and unreachable -- nothing could ever close it, and
+    // it kept consuming one of the app's manifest-declared socket slots (A80).
+    expect(first.closed()).toBe(false)
+    expect(socket.address().port).toBe(6881)
+    expect(handles).toHaveLength(1)
+  })
+
+  it('send() accepts Node\'s ARRAY message form, sending the concatenation rather than throwing', async () => {
+    const fake = createFakeUdpSocket()
+    const socket = new Socket(async () => fake.socket)
+    socket.bind(0)
+    await new Promise<void>((resolve) => socket.once('listening', resolve))
+
+    const sent = new Promise<void>((resolve) => { socket.send([new Uint8Array([1, 2]), 'AB'], 9999, '203.0.113.9', () => { resolve() }) })
+    await sent
+    const datagram = fake.sent[0] as Datagram
+    expect(Array.from(datagram.data)).toEqual([1, 2, 0x41, 0x42])
+    expect(datagram.port).toBe(9999)
+  })
+
+  it('close() twice throws ERR_SOCKET_DGRAM_NOT_RUNNING instead of emitting "close" a second time', async () => {
+    const fake = createFakeUdpSocket()
+    const socket = new Socket(async () => fake.socket)
+    socket.bind(0)
+    await new Promise<void>((resolve) => socket.once('listening', resolve))
+
+    const closes = vi.fn()
+    socket.on('close', closes)
+    socket.close()
+    await new Promise<void>((resolve) => setTimeout(resolve, 10))
+    expect(() => socket.close()).toThrow(/not running/)
+    await new Promise<void>((resolve) => setTimeout(resolve, 10))
+    expect(closes).toHaveBeenCalledTimes(1)
+  })
 })
