@@ -166,14 +166,28 @@ export class Socket extends Duplex {
   }
 }
 
-/** net.connect()/net.createConnection(): construct a Socket and connect it in one call, matching real Node's factory. */
+/**
+ * net.connect()/net.createConnection(): construct a Socket and connect it in
+ * one call, matching real Node's factory -- and real Node's overload set:
+ * `(port)`, `(port, host)`, `(port, cb)`, `(port, host, cb)`, `(options)`,
+ * `(options, cb)`. The connect listener is found by scanning from the END
+ * (real Node's own `normalizeArgs`), not by position, which is what lets one
+ * arm cover both `(port, cb)` and `(port, host, cb)` instead of needing two.
+ *
+ * THE BUG THIS REPLACES: `second` was read as the listener only, so
+ * `(port, host)` silently dropped `host` and dialled 'localhost' -- the
+ * overload every torrent/DHT library uses (bittorrent-dht, k-rpc-socket).
+ * The broker then denied the connection against 127.0.0.1, a refusal with no
+ * visible connection to what the app actually asked for.
+ */
 export function createConnectFactory (dial: NetDialFn): (...args: readonly unknown[]) => Socket {
   return function connect (...args: readonly unknown[]): Socket {
     const [first, second] = args
-    const connectListener = typeof second === 'function' ? second as () => void : undefined
+    const last = args[args.length - 1]
+    const connectListener = typeof last === 'function' ? last as () => void : undefined
     const opts = typeof first === 'object' && first !== null
       ? first as { host?: string, port: number, allowHalfOpen?: boolean }
-      : { port: Number(first) }
+      : { port: Number(first), ...(typeof second === 'string' ? { host: second } : {}) }
     const socket = opts.allowHalfOpen !== undefined ? new Socket(dial, { allowHalfOpen: opts.allowHalfOpen }) : new Socket(dial)
     if (connectListener !== undefined) socket.connect(opts, connectListener); else socket.connect(opts)
     return socket

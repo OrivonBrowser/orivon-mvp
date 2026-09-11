@@ -7,6 +7,7 @@
 // import at all.
 
 import { refuse } from './errors.js'
+import { notConsidered, refusingProxy } from './unimplemented.js'
 import type { Orivon } from '../contracts/capability-api.js'
 
 export interface OpenDialogOptions {
@@ -27,10 +28,19 @@ export interface ElectronDialog {
  * `orivon` is accepted, not read, until the broker implements
  * `fs.userSelected` -- taking it now keeps this factory's signature stable
  * across that future change rather than adding a parameter later.
+ *
+ * `showOpenDialog` is the only real Electron dialog method under
+ * consideration at all -- it refuses with its own specific, decided reason
+ * (`'not-built'`, below). Every other real Electron dialog method
+ * (`showMessageBox`, `showSaveDialog`, `showErrorBox`, ...) has never been
+ * considered here one way or the other, so it gets the generic
+ * `'unimplemented'` refusal via the same Proxy this package uses for a
+ * whole missing module -- keeping `dialog` a single mechanism rather than
+ * growing a second, dialog-specific one.
  */
 export function createDialog (orivon: Pick<Orivon, 'fs'>): ElectronDialog {
   void orivon
-  return {
+  const known: ElectronDialog = {
     async showOpenDialog () {
       throw refuse('dialog.showOpenDialog', 'not-built',
         "dialog.showOpenDialog is backed by orivon.fs.userSelected, which the broker does not " +
@@ -39,4 +49,5 @@ export function createDialog (orivon: Pick<Orivon, 'fs'>): ElectronDialog {
         'revisiting rather than simply wiring the call through.')
     }
   }
+  return refusingProxy(known, (prop) => notConsidered(`dialog.${prop}`))
 }

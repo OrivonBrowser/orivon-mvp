@@ -147,10 +147,21 @@ export async function launchElectron ({
   // what "hermetic by construction" (this file's own header, and
   // smoke.mjs's) already promised for the network; it never covered disk.
   const userDataDir = await mkdtemp(join(tmpdir(), 'orivon-test-'))
-  const app = await electron.launch({
-    args: [appPath, `--user-data-dir=${userDataDir}`, ...args],
-    env
-  })
+  let app
+  try {
+    app = await electron.launch({
+      args: [appPath, `--user-data-dir=${userDataDir}`, ...args],
+      env
+    })
+  } catch (error) {
+    // electron.launch() itself threw -- a missing out/ build, a bad
+    // argument, a missing binary. Nothing has been registered for teardown
+    // yet at this point, so this is the only place responsible for the
+    // directory created above (C-12: found via one leftover
+    // /tmp/orivon-test-* whose timestamp matched a launch that had failed).
+    await rmUserDataDir(userDataDir, 'launchElectron')
+    throw error
+  }
 
   // Tied to the launch itself, not left for the caller to remember --
   // closeElectron() below is what actually removes userDataDir and kills
@@ -365,28 +376,58 @@ export async function findLiveElectronPids (pids, { procRoot = DEFAULT_PROC_ROOT
   return survivors
 }
 
+/** Shared by closeElectron's own teardown and launchElectron's failure path
+ * (C-12) -- both need "remove this directory, log rather than throw if
+ * that fails", tagged with which caller attempted it. */
+async function rmUserDataDir (dir, context) {
+  await rm(dir, { recursive: true, force: true }).catch((error) => {
+    console.error(`[${context}] failed to remove ${dir}:`, error)
+  })
+}
+
 async function removeUserDataDirFor (app) {
   const dir = USER_DATA_DIRS.get(app)
   if (dir === undefined) return
   USER_DATA_DIRS.delete(app)
-  await rm(dir, { recursive: true, force: true }).catch((error) => {
-    console.error(`[closeElectron] failed to remove ${dir}:`, error)
-  })
+  await rmUserDataDir(dir, 'closeElectron')
+}
+
+/**
+ * Races `promise` against `ms` -- resolves `true` if `promise` fulfills in
+ * time, `false` if it rejects, or if `ms` elapses before it settles either
+ * way. Backs both halves of closeElectron's teardown race (`beforeClose`
+ * and `app.close()`): neither is trusted to settle on its own, so both get
+ * the same bounded treatment rather than one being able to block the other
+ * (R6-02 -- before this existed, only `app.close()` had this guarantee, and
+ * a hung `beforeClose` could block everything after it, including the
+ * SIGKILL fallback and the temp-profile removal). Not cancellable -- a
+ * `promise` that never settles is simply left running and ignored past its
+ * deadline, which is fine because nothing here ever awaits it again.
+ *
+ * @param {Promise<unknown>} promise
+ * @param {number} ms
+ * @returns {Promise<boolean>}
+ */
+async function settledWithin (promise, ms) {
+  return await Promise.race([
+    promise.then(() => true, () => false),
+    new Promise((resolve) => setTimeout(() => resolve(false), ms))
+  ])
 }
 
 /**
  * The one teardown path every e2e file shares (docs/development/
  * code-guidelines.md Rule 3 -- this used to be reimplemented, slightly
- * differently, in four separate finally blocks). Always: runs
+ * differently, in four separate finally blocks). Always: races
  * `beforeClose` (a caller's own graceful UI steps, e.g. closing tabs before
- * `app.close()` -- see e2e-helpers.ts's closeElectronApp), races
- * `app.close()` against `raceMs`, then UNCONDITIONALLY SIGKILLs whatever is
- * left of the process tree and waits for the root pid to be reaped --
- * killing an already-dead tree is a harmless no-op (ESRCH, swallowed in
- * killProcessTree), so there is no reason to branch on whether the graceful
- * path already worked. The temp `--user-data-dir` is always removed in a
- * `finally`, so a thrown `beforeClose` or a hung `app.close()` still leaves
- * nothing behind on disk.
+ * `app.close()` -- see e2e-helpers.ts's closeElectronApp) against `raceMs`,
+ * races `app.close()` against `raceMs` too, then UNCONDITIONALLY SIGKILLs
+ * whatever is left of the process tree and waits for the root pid to be
+ * reaped -- killing an already-dead tree is a harmless no-op (ESRCH,
+ * swallowed in killProcessTree), so there is no reason to branch on whether
+ * either graceful step already worked. The temp `--user-data-dir` is always
+ * removed in a `finally`, so a thrown OR HUNG `beforeClose`, or a hung
+ * `app.close()`, still leaves nothing behind on disk.
  *
  * @param {TeardownApp} app
  * @param {{ raceMs?: number, beforeClose?: (app: TeardownApp) => Promise<void> }} [options]
@@ -396,14 +437,17 @@ export async function closeElectron (app, { raceMs = APP_CLOSE_RACE_MS, beforeCl
   const pid = app.process().pid
   try {
     if (typeof beforeClose === 'function') {
-      await beforeClose(app).catch((error) => {
-        console.error('[closeElectron] beforeClose step threw; tearing down anyway:', error)
-      })
+      const beforeCloseSettled = await settledWithin(
+        beforeClose(app).catch((error) => {
+          console.error('[closeElectron] beforeClose step threw; tearing down anyway:', error)
+        }),
+        raceMs
+      )
+      if (!beforeCloseSettled) {
+        console.error(`[closeElectron] beforeClose did not settle within ${raceMs}ms -- tearing down anyway`)
+      }
     }
-    const closed = await Promise.race([
-      app.close().then(() => true),
-      new Promise((resolve) => setTimeout(() => resolve(false), raceMs))
-    ]).catch(() => false)
+    const closed = await settledWithin(app.close(), raceMs)
     if (!closed) {
       console.error(`[closeElectron] app.close() did not settle within ${raceMs}ms -- killing the process tree`)
     }

@@ -17,6 +17,13 @@
 const CRLF = [13, 10]
 const CRLFCRLF = [13, 10, 13, 10]
 const MAX_HEAD_BYTES = 32 * 1024
+// Bounds a single chunk-size or trailer line, mirroring Node's own
+// maxHeaderSize guard. Unlike MAX_HEAD_BYTES this is checked against the
+// line itself (see findLineOrFail), never against the whole buffer -- a
+// legitimate large body can sit right behind an already-terminated line in
+// the same write(), and bounding on total buffer length would fail that
+// traffic instead of the runaway line it is meant to catch.
+const MAX_LINE_BYTES = 8 * 1024
 
 export interface ParsedResponseHead {
   readonly httpVersion: string
@@ -109,12 +116,21 @@ export class HttpResponseParser {
   }
 
   private tryParseHead (): boolean {
-    if (this.buf.length > MAX_HEAD_BYTES) {
+    // Measured against the TERMINATOR'S POSITION, not `this.buf.length`: a
+    // small head can share one `write()` chunk with a large body (both land
+    // in the same accumulated buffer before the head is stripped off below),
+    // and the cap must not fire on bytes that are body, never head.
+    const idx = indexOfSubarray(this.buf, CRLFCRLF)
+    if (idx === -1) {
+      if (this.buf.length > MAX_HEAD_BYTES) {
+        this.fail(`response head exceeded ${MAX_HEAD_BYTES} bytes without a terminator`)
+      }
+      return false
+    }
+    if (idx > MAX_HEAD_BYTES) {
       this.fail(`response head exceeded ${MAX_HEAD_BYTES} bytes without a terminator`)
       return false
     }
-    const idx = indexOfSubarray(this.buf, CRLFCRLF)
-    if (idx === -1) return false
 
     const headText = new TextDecoder('latin1').decode(this.buf.subarray(0, idx))
     this.buf = this.buf.subarray(idx + 4)
@@ -130,8 +146,18 @@ export class HttpResponseParser {
     const httpVersion = match[1] ?? '1.1'
     const statusCode = Number(match[2])
     const statusMessage = match[3] ?? ''
-    const { headers, rawHeaders } = this.combineHeaders(lines.slice(1))
 
+    // 1xx (100 Continue, 103 Early Hints, ...) is an informational prelude,
+    // not the response -- RFC 9110 SS15.2 requires reading past any number of
+    // them for the real final status line. `state` is left at 'head' (never
+    // assigned here) so pump()'s loop immediately retries parsing the rest
+    // of `buf` as the next head. Surfacing a 1xx to onHead would make the
+    // caller treat it as the whole response -- observed as node-http-client.ts
+    // emitting statusCode 103 with an empty body, closing the socket, and
+    // discarding the real 200 that followed on the same connection.
+    if (statusCode >= 100 && statusCode < 200) return true
+
+    const { headers, rawHeaders } = this.combineHeaders(lines.slice(1))
     this.cb.onHead({ httpVersion, statusCode, statusMessage, headers, rawHeaders })
     this.state = this.decideBodyFraming(statusCode, headers)
     if (this.state.kind === 'done') this.cb.onComplete()
@@ -161,7 +187,9 @@ export class HttpResponseParser {
   }
 
   private decideBodyFraming (statusCode: number, headers: Readonly<Record<string, string | readonly string[]>>): ParserState {
-    const noBody = this.method === 'HEAD' || statusCode === 204 || statusCode === 304 || (statusCode >= 100 && statusCode < 200)
+    // 1xx never reaches here -- tryParseHead() consumes it before calling
+    // this method at all (see the comment there).
+    const noBody = this.method === 'HEAD' || statusCode === 204 || statusCode === 304
     if (noBody) return { kind: 'done' }
 
     const transferEncoding = headers['transfer-encoding']
@@ -193,8 +221,27 @@ export class HttpResponseParser {
     return true
   }
 
-  private tryParseChunkSize (): boolean {
+  /**
+   * Finds a CRLF-terminated line, failing the parser if one grows past
+   * MAX_LINE_BYTES without a terminator ever showing up. Returns -1 both
+   * when more data is needed and when the parser just failed -- callers
+   * only need to bail out on a negative index either way.
+   */
+  private findLineOrFail (label: string): number {
     const idx = indexOfSubarray(this.buf, CRLF)
+    if (idx === -1) {
+      if (this.buf.length > MAX_LINE_BYTES) this.fail(`${label} exceeded ${MAX_LINE_BYTES} bytes without a terminator`)
+      return -1
+    }
+    if (idx > MAX_LINE_BYTES) {
+      this.fail(`${label} exceeded ${MAX_LINE_BYTES} bytes`)
+      return -1
+    }
+    return idx
+  }
+
+  private tryParseChunkSize (): boolean {
+    const idx = this.findLineOrFail('chunk size line')
     if (idx === -1) return false
     const line = new TextDecoder('latin1').decode(this.buf.subarray(0, idx))
     this.buf = this.buf.subarray(idx + 2)
@@ -229,7 +276,7 @@ export class HttpResponseParser {
 
   /** Trailer headers (rare in practice) are read and discarded until the terminating blank line. */
   private tryConsumeTrailerLine (): boolean {
-    const idx = indexOfSubarray(this.buf, CRLF)
+    const idx = this.findLineOrFail('trailer line')
     if (idx === -1) return false
     const isBlank = idx === 0
     this.buf = this.buf.subarray(idx + 2)
