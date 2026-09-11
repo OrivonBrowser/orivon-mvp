@@ -86,6 +86,48 @@ describe('createSyncFsPolicy (real Broker.fs.confineSync)', () => {
     expect(Array.from(bytes)).toEqual([1, 2, 3])
   })
 
+  // This file is small enough that node:fs's readFileSync serves it from
+  // Buffer.allocUnsafe's shared 8KiB pool (anything up to 4096 bytes). The
+  // pool is where the defect lived: a pooled view's backing ArrayBuffer is
+  // the WHOLE 8KiB slab, not just this file's bytes, and structured clone --
+  // the path this value takes to ipcRenderer.sendSync's caller -- serialises
+  // that whole backing buffer. `bytes.buffer.byteLength === bytes.byteLength`
+  // is the one property that catches this: it fails whenever the returned
+  // view is a slice of something bigger than itself.
+  it('a pooled (under-4096-byte) read returns a view that owns its buffer exactly', async () => {
+    const { broker } = await realBroker()
+    await broker.registerApp(APP, testManifest())
+    await broker.grant(APP, 'fs', [])
+    const content = new Uint8Array([10, 20, 30, 40, 50])
+    await broker.fs.writeFile(APP, 'small.bin', content)
+    const policy = createSyncFsPolicy(broker)
+
+    const resolved = policy.confine(APP, 'small.bin')
+    const bytes = policy.readFileSync(resolved)
+
+    expect(bytes.buffer.byteLength).toBe(bytes.byteLength)
+    expect(Array.from(bytes)).toEqual(Array.from(content))
+  })
+
+  // Mirrors the test above for a file past the pooling threshold, where
+  // readFileSync already allocates an exact-size buffer -- this path was
+  // never broken, and this test guards against a fix that only handles the
+  // pooled case.
+  it('an unpooled (over-4096-byte) read returns a view that owns its buffer exactly', async () => {
+    const { broker } = await realBroker()
+    await broker.registerApp(APP, testManifest())
+    await broker.grant(APP, 'fs', [])
+    const content = new Uint8Array(5000).map((_, i) => i % 256)
+    await broker.fs.writeFile(APP, 'large.bin', content)
+    const policy = createSyncFsPolicy(broker)
+
+    const resolved = policy.confine(APP, 'large.bin')
+    const bytes = policy.readFileSync(resolved)
+
+    expect(bytes.buffer.byteLength).toBe(bytes.byteLength)
+    expect(Array.from(bytes)).toEqual(Array.from(content))
+  })
+
   it('refuses a traversal attempt with \'denied\', identically to a missing grant -- never a distinguishable reason', async () => {
     const { broker } = await realBroker()
     await broker.registerApp(APP, testManifest())

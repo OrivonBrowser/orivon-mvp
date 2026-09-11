@@ -19,6 +19,19 @@ export function partitionForTarget (target: string): string | undefined {
   return origin === null ? undefined : partitionFor(origin)
 }
 
+/** The one comparison that decides whether a navigation must swap a tab's
+ * view -- shared by navigate()'s own explicit repartition and wireView()'s
+ * did-navigate catch for a redirect, clicked link, form submission or script
+ * navigation that changes origin without ever calling navigate() (Rule 3;
+ * A108/A109, docs/open-questions.md). Returns undefined for "no swap": either
+ * `target` has no derivable origin (about:blank, a rejected navigation) or
+ * its partition already matches `currentPartition`. */
+export function partitionChanged (target: string, currentPartition: string | undefined): string | undefined {
+  const nextPartition = partitionForTarget(target)
+  if (nextPartition === undefined || nextPartition === currentPartition) return undefined
+  return nextPartition
+}
+
 /** ADR-0017's `fetch()`-routing gate: a value fixed at `WebContentsView`
  * construction (via `webPreferences.additionalArguments`, read synchronously
  * off `process.argv` -- the same mechanism `newtab.ts` already uses for its
