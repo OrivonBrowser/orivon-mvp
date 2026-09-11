@@ -89,6 +89,22 @@ describe('installGlobals', () => {
       const { target } = install()
       expect(target.process?.version).toBe('')
     })
+
+    // path-browserify's resolve() calls process.cwd() for any argument list
+    // that is still relative once fully processed (node_modules/path-browserify
+    // /index.js:124) -- before cwd() existed at all, that threw
+    // `TypeError: process.cwd is not a function` for any relative
+    // path.resolve() call, which is most of them.
+    it('exposes cwd() as a function, so path-browserify\'s resolve() does not throw', () => {
+      const { target } = install()
+      expect(typeof target.process?.cwd).toBe('function')
+      expect(typeof target.process?.cwd()).toBe('string')
+    })
+
+    it('cwd() returns "/" -- orivon.fs confines every path to one root, never a tree of directories', () => {
+      const { target } = install()
+      expect(target.process?.cwd()).toBe('/')
+    })
   })
 
   describe('process.nextTick', () => {

@@ -229,6 +229,10 @@ describe('readFile never hands back a window into shared memory', () => {
     expect(result.byteLength).toBe(5)
     expect(result.byteOffset).toBe(0)
     expect(result.buffer.byteLength).toBe(5)
+    // The same property sync-fs-policy.test.ts pins for the synchronous
+    // sibling of this call -- a view that owns its buffer exactly, stated
+    // as one invariant rather than three coincidentally-equal numbers.
+    expect(result.buffer.byteLength).toBe(result.byteLength)
   })
 
   it('round-trips the actual bytes', async () => {

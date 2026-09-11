@@ -154,6 +154,7 @@ export class ClientRequest extends Writable {
 
   private readResponse (socket: TcpSocket): void {
     const res = new IncomingMessage()
+    res._setSocket(socket)
     let headEmitted = false
 
     const parser = new HttpResponseParser({

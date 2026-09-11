@@ -33,18 +33,18 @@ export function relativeToRoot (root, full) {
  * Tracked files are the right scope for a guard whose subject is what reaches
  * GitHub or a reviewer: untracked scratch files and gitignored build output
  * cannot, and scanning them produces false alarms that get the guard switched
- * off. Returns [] outside a git repository -- nothing is tracked, so there is
- * nothing to check.
+ * off.
+ *
+ * THROWS when `root` is not a git working tree, or `git` itself fails --
+ * R-S5-04. This used to swallow every failure into `[]`, which a caller could
+ * not tell apart from "nothing is tracked", and both of today's callers read
+ * that as a clean scan. A guard that scans nothing must fail loudly, not pass.
  */
 export function trackedFiles (root) {
-  try {
-    const out = execFileSync('git', ['ls-files', '-z'], {
-      cwd: root,
-      encoding: 'utf8',
-      maxBuffer: 64 * 1024 * 1024
-    })
-    return out.split('\0').filter(Boolean)
-  } catch {
-    return []
-  }
+  const out = execFileSync('git', ['ls-files', '-z'], {
+    cwd: root,
+    encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024
+  })
+  return out.split('\0').filter(Boolean)
 }

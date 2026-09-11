@@ -116,6 +116,23 @@ describe('createHttpModule -- response handling', () => {
     expect(await collectBody(res)).toBe('hello')
   })
 
+  // node-https.ts's header describes res.socket.getPeerCertificate() as
+  // absent (no TLS-socket API), which implies res.socket itself exists --
+  // before this fix it did not, and `res.socket.anything` threw
+  // "Cannot read properties of null" instead of the documented, narrower gap.
+  it('gives the response a real .socket carrying the connection\'s address fields', async () => {
+    const fake = createFakeTcpSocket()
+    const http = moduleOver(async () => fake.socket)
+    const req = http.get({ host: 'example.com', path: '/' })
+    await vi.waitFor(() => expect(fake.written.length).toBeGreaterThan(0))
+    fake.push(enc.encode('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n'))
+    const res = await new Promise<IncomingMessage>((resolve) => req.once('response', resolve))
+
+    expect(res.socket).not.toBeNull()
+    expect(res.socket?.remoteAddress).toBe(fake.socket.remoteAddress)
+    expect(res.socket?.remotePort).toBe(fake.socket.remotePort)
+  })
+
   it('supports the http.get(url, callback) convenience form', async () => {
     const fake = createFakeTcpSocket()
     const http = moduleOver(async () => fake.socket)
