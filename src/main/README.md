@@ -178,3 +178,18 @@ Three follow-on questions the review raised, and what this fix does about each:
   orthogonal to it -- reaching a private address was never something the cache made worse or
   better. Revisiting a sizing decision inside a branch whose job is a security fix is exactly the
   scope creep `CLAUDE.md` Rule 4 warns about.
+
+**[`grant-prompt-render.ts`](grant-prompt-render.ts) — every pattern is rendered from the parsed
+form, never a second guess at the raw string (R2-01/AR-05).** The original `hostFromPattern` here
+split a pattern on `pattern.lastIndexOf(':')` and treated everything before it as the host --
+a different, weaker set of rules than `hostSpecKind` (`../broker/policy/connect-patterns.ts`),
+the grammar the runtime matcher actually uses to decide what a pattern authorises. The two
+disagreeing was not a style issue: it is why `'*:443'` used to render as a narrow, literal
+hostname called `"*"` (the old `isUnlimited` compared the whole pattern against the literal
+string `"*:*"`) while the matcher itself treated a bare `'*'` host as reachable to any public
+address regardless of its paired port, and why a host declared on several ports rendered
+identically to one declared on a single port (`namedHostsPhrase` discarded the port half of every
+pattern entirely). Parsing every pattern through the real grammar once, here, fixed both
+divergences at their shared root rather than patching `isUnlimited` and `namedHostsPhrase`
+separately, which would have left the underlying two-parsers problem in place for the next
+person to trip over the same way (code-guidelines.md Rule 3).
