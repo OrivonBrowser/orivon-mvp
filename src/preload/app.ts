@@ -1,5 +1,5 @@
 import { exposeOrivon } from './orivon-surface.js'
-import { exposeFetchRoute } from './fetch-route.js'
+import { exposeFetchRoute } from './expose-fetch-route.js'
 
 // Loaded by every ORDINARY TAB (src/main/tabs.ts) -- unprivileged. The
 // chrome view (tab strip + toolbar) loads preload/shell.ts instead, which
