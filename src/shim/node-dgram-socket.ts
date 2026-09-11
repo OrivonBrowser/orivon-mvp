@@ -22,7 +22,7 @@
 import { EventEmitter } from 'events'
 import type { UdpSocket } from '../contracts/handles.js'
 import { toNodeError } from './node-http-errors.js'
-import { toBytes } from './node-stream-bytes.js'
+import { toBytes, toBytesJoined } from './node-stream-bytes.js'
 import { isIP } from './node-net-isip.js'
 // One of the eight approved core-polyfill packages (module-map.ts) --
 // imported directly rather than relying on a global `Buffer`, because
@@ -46,7 +46,7 @@ function parseSendArgs (args: readonly unknown[]): { bytes: Uint8Array, port: nu
   const rest = [...args]
   const callback = typeof rest[rest.length - 1] === 'function' ? rest.pop() as SendCallback : undefined
   const msg = rest.shift()
-  const bytes = toBytes(msg)
+  const bytes = Array.isArray(msg) ? toBytesJoined(msg) : toBytes(msg)
 
   let offset: number | undefined
   let length: number | undefined
@@ -87,6 +87,20 @@ export class Socket extends EventEmitter {
 
   /** bind([port][, address][, callback]) or bind(options[, callback]) -- every real Node overload k-rpc-socket's `bind.apply` can forward. */
   bind (...args: readonly unknown[]): this {
+    // Real Node throws ERR_SOCKET_ALREADY_BOUND here, and the throw is the
+    // point: without it the second bind() overwrote `handle`/`writer` and the
+    // FIRST UdpSocket was left open with nothing able to reach it -- measured
+    // as two handles created, zero closed. That orphan still counts against
+    // the simultaneous-socket allowance the app declared in its manifest and
+    // the user approved (A80), so the leak is spent against a number a person
+    // consented to, and surfaces later as a refusal on a socket the app did
+    // ask for.
+    if (this.handle !== null || this.bindPromise !== null) {
+      throw Object.assign(
+        new Error('orivon-node-shim: dgram socket is already bound'),
+        { code: 'ERR_SOCKET_ALREADY_BOUND' }
+      )
+    }
     const rest = [...args]
     const callback = typeof rest[rest.length - 1] === 'function' ? rest.pop() as () => void : undefined
     const first = rest[0]
@@ -141,6 +155,15 @@ export class Socket extends EventEmitter {
   }
 
   close (callback?: () => void): this {
+    // Node emits 'close' exactly once and throws ERR_SOCKET_DGRAM_NOT_RUNNING
+    // on a second call. Emitting it twice made a caller that releases
+    // resources in its own 'close' handler release them twice -- measured.
+    if (this.closing) {
+      throw Object.assign(
+        new Error('orivon-node-shim: dgram socket is not running'),
+        { code: 'ERR_SOCKET_DGRAM_NOT_RUNNING' }
+      )
+    }
     if (callback !== undefined) this.once('close', callback)
     this.closing = true
     const pending = this.handle !== null
