@@ -1,6 +1,18 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { Resolver } from '../../broker/policy/connect.js'
-import {
+
+// fetchFaviconDataUrl dynamically imports 'electron' for net.fetch (see
+// favicon.ts's file header for why) -- mocked here so the F35 regression
+// test below can hand it a response whose body errors mid-read without a
+// real network call. That mock is also why every symbol below arrives
+// through a dynamic import rather than a static one: it has to be
+// registered before favicon.js is evaluated.
+vi.mock('electron', () => ({
+  net: { fetch: vi.fn() }
+}))
+
+const { net } = await import('electron')
+const {
   MAX_FAVICON_BYTES,
   fetchFaviconDataUrl,
   isSafeFaviconUrl,
@@ -8,7 +20,7 @@ import {
   readCapped,
   shouldClearFavicon,
   toDataUrl
-} from '../favicon.js'
+} = await import('../favicon.js')
 
 describe('pickFaviconUrl', () => {
   it('returns null for an empty list', () => {
@@ -132,6 +144,25 @@ function streamOf (chunks: Uint8Array[]): ReadableStream<Uint8Array> {
   })
 }
 
+// F35: a server that replies 200 OK with a declared Content-Length and then
+// closes the socket errors Chromium's body stream mid-read, so
+// reader.read() rejects on some later call rather than the stream simply
+// ending. streamOf() above can only ever produce a clean close, so this
+// models the failure shape that actually reached production.
+function erroringStream (): ReadableStream<Uint8Array> {
+  let delivered = false
+  return new ReadableStream({
+    pull (controller) {
+      if (!delivered) {
+        delivered = true
+        controller.enqueue(new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]))
+        return
+      }
+      controller.error(new Error('simulated mid-body stream failure'))
+    }
+  })
+}
+
 describe('readCapped', () => {
   it('returns null for a null body', async () => {
     await expect(readCapped(null, 100)).resolves.toBeNull()
@@ -159,6 +190,14 @@ describe('readCapped', () => {
     const stream = streamOf([new Uint8Array(MAX_FAVICON_BYTES + 1)])
     const result = await readCapped(stream, MAX_FAVICON_BYTES)
     expect(result).toBeNull()
+  })
+
+  // F35: readCapped itself still propagates a mid-read stream error as a
+  // rejection -- fetchFaviconDataUrl's own describe block below is what
+  // asserts the caller catches it. This test documents the precondition
+  // that fix depends on.
+  it('rejects when the underlying stream errors mid-read', async () => {
+    await expect(readCapped(erroringStream(), MAX_FAVICON_BYTES)).rejects.toThrow()
   })
 })
 
@@ -217,5 +256,24 @@ describe('shouldClearFavicon', () => {
 
   it('clears for a string that is not a parseable URL at all', () => {
     expect(shouldClearFavicon('https://a.example', 'not a url')).toBe(true)
+  })
+})
+
+describe('fetchFaviconDataUrl', () => {
+  // F35 (CLAUDE-SECURITY-20260910-203341): a favicon host that truncates
+  // its body against a declared Content-Length errors the response stream
+  // mid-read. Before the fix, that rejection escaped this function despite
+  // its own doc comment promising it never throws -- and tabs.ts's bare
+  // `void` turned it into an unhandled rejection that this codebase maps
+  // to app.exit(1), killing every open tab. This asserts the contract
+  // actually holds now.
+  it('resolves null, not a rejection, when the response body errors mid-read', async () => {
+    vi.mocked(net.fetch).mockResolvedValue({
+      ok: true,
+      body: erroringStream(),
+      headers: { get: () => 'image/png' }
+    } as never)
+
+    await expect(fetchFaviconDataUrl('https://attacker.example/boom.png')).resolves.toBeNull()
   })
 })

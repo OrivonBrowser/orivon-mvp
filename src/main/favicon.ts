@@ -199,10 +199,20 @@ export async function fetchFaviconDataUrl (url: string): Promise<string | null> 
   }
   if (!response.ok) return null
 
-  const bytes = await readCapped(response.body, MAX_FAVICON_BYTES)
-  if (bytes === null) return null
+  // A truncated body against a declared Content-Length, or malformed
+  // chunked framing, errors the stream mid-read: reader.read() rejects,
+  // which readCapped propagates. Caught here so this function's own "never
+  // throws" contract (above) actually holds -- without this, an attacker-
+  // controlled favicon host could turn a visited page into an unhandled
+  // rejection at the caller.
+  try {
+    const bytes = await readCapped(response.body, MAX_FAVICON_BYTES)
+    if (bytes === null) return null
 
-  return toDataUrl(bytes, response.headers.get('content-type'))
+    return toDataUrl(bytes, response.headers.get('content-type'))
+  } catch {
+    return null
+  }
 }
 
 /** In-memory only, unbounded for the process's lifetime -- acceptable
