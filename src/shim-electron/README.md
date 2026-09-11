@@ -18,8 +18,11 @@ depends on the other.
 | `app.getPath('userData')` | the app's own confined `fs` root | `app.ts` |
 | `app.getPath(anything else)` | nothing — ambient FS is excluded by design | refuses, named `'ambient-fs'` |
 | `dialog.showOpenDialog` | `orivon.fs.userSelected` | `dialog.ts` — **the broker does not implement this yet**; every call refuses, named `'not-built'` |
+| `dialog.showMessageBox` / `showSaveDialog` / `showErrorBox` / anything else on `dialog` | nothing — never considered | `dialog.ts` — refuses, named `'unimplemented'` |
 | `ipcRenderer.invoke` / `ipcMain.handle`, `.on`/`.send` | a local in-sandbox message bus, no capability, no broker | `ipc.ts` |
 | `BrowserWindow`, `Menu`, `Tray` | nothing — desktop-shell surface, out of scope | `desktop-shell.ts` — every entry point refuses, named `'desktop-shell'` |
+| `shell`, `clipboard`, `session`, `protocol`, `webContents`, `nativeImage`, `screen`, `contextBridge`, `crashReporter`, `powerMonitor`, `systemPreferences`, `globalShortcut`, `nativeTheme`, `webFrame`, `desktopCapturer` | nothing — never considered, in either direction | `unimplemented.ts` — every property access refuses, named `'unimplemented'` |
+| any other real Electron top-level export, read off `import electron from 'electron'` | nothing — never considered | `unimplemented.ts`'s default-export fallback (`index.ts`) — refuses, named `'unimplemented'`, without needing to be listed anywhere first |
 
 **What it depends on.** [`src/contracts/`](../contracts/) (types only — `Manifest`, `Orivon`;
 this package emits no contracts-affecting runtime code) and the real `window.orivon` global a
@@ -88,6 +91,45 @@ statics real code calls before ever constructing one (`Menu.setApplicationMenu`,
 `BrowserWindow.getAllWindows`) — a handful of named entry points that all do the same thing (name
 the boundary, then throw) reads more plainly than a `Proxy` over a constructor doing the
 equivalent through `construct`/`get` traps for a set of methods this small.
+
+**Why an unsupported API throws a named error instead of being absent (and why one Proxy
+mechanism, not several).** This package's own exit criterion, from the build queue item that
+created it, is that an unsupported API throws an error naming why — never a generic
+`TypeError: x is not a function`. Before this file existed, that held for exactly seven names
+(`app`, `dialog.showOpenDialog`, `ipcRenderer`, `ipcMain`, `BrowserWindow`, `Menu`, `Tray`);
+everything else real Electron apps commonly reach for — `shell.openExternal`, `clipboard`,
+`session`, `dialog.showMessageBox` — was simply absent, so it threw the exact bare `TypeError`
+the package exists to prevent. `unimplemented.ts`'s `refusingProxy` closes that gap with one
+mechanism, reused three ways: a whole missing module (`unimplementedMember`, used for `shell`,
+`clipboard`, and the rest of `index.ts`'s curated list), one extra method on an object that
+mostly works (`dialog.ts`'s other methods, alongside `showOpenDialog`'s own decided refusal),
+and the package's whole export surface for default-style consumption
+(`withUnimplementedFallback`, `index.ts`'s default export).
+
+**Three refusal reasons, because they are three different situations for a porting developer.**
+`'desktop-shell'` means refused by design — this will never work, an owner policy decision.
+`'not-built'` means a decision exists and a build path is named (`dialog.showOpenDialog` ->
+`fs.userSelected`) — expected to work later. `'unimplemented'` means neither — nothing has
+decided whether `shell.openExternal` ever will work, and the message says exactly that rather
+than implying a decision was made either way. Conflating the last two would tell a porting
+developer a feature is coming when nobody has agreed it is; conflating either with
+`'desktop-shell'` would tell them something is impossible when it might just not be built yet.
+
+**Why "total" stops short of literally every possible name, and where it stops.** A real ES
+module namespace object — what every named export of this file sits on, and what
+`await import('electron')`/`import * as electron from 'electron'` return — cannot be intercepted:
+reading a property Electron never declared as an export returns `undefined` unconditionally, by
+spec, regardless of anything this package's own code does. Verified directly (a throwaway Node
+script: a Proxy exported as a named binding leaves an undeclared property `undefined` on the
+resulting namespace; the identical Proxy exported as `default` throws correctly, because a
+default export's *value* can be anything). Practical effect: `import { someBrandNewApi } from
+'electron'` for a name this file has never declared fails at the point a bundler resolves that
+import — loud, but not through `ElectronShimError`, and outside this package's control either
+way. The curated list in `index.ts` (15 names, from the audit that found this gap) closes that
+specific failure for the names real ported apps use most; the default export closes it
+completely for `import electron from 'electron'`-style consumption, because that value is one
+we fully control. Nothing analogous exists for the named-export style beyond naming every real
+Electron export explicitly, which is neither realistic nor this lane's job to keep current.
 
 **Alias map coordination.** Wiring the bare specifier `electron` to this package's `index.ts` in
 `electron.vite.config.ts`'s `renderer.resolve.alias` is the `shim` stream's exclusive append
