@@ -30,11 +30,21 @@
 // directory's vitest.e2e.config.ts: `npx vitest run --config
 // test/vitest.e2e.config.ts test/launch-electron-teardown.test.ts`
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdtemp, realpath, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+
+// Hoisted (vitest runs vi.mock/vi.hoisted before every import below) so the
+// mock is in place before launch-electron.mjs's own top-level `import {
+// _electron as electron } from 'playwright'` resolves -- needed only by the
+// C-12 regression test further down, which must prove launchElectron()
+// cleans up after a failed launch WITHOUT ever spawning a real Electron
+// process (this lane holds no launch token; see the file header above).
+const { mockElectronLaunch } = vi.hoisted(() => ({ mockElectronLaunch: vi.fn() }))
+vi.mock('playwright', () => ({ _electron: { launch: mockElectronLaunch } }))
+
 import {
   APP_CLOSE_RACE_MS,
   assertNoElectronSurvivors,
@@ -42,6 +52,7 @@ import {
   collectProcessTree,
   findLiveElectronPids,
   killProcessTree,
+  launchElectron,
   registerLaunchForTeardown,
   resolveExePath,
   waitForPidExit
@@ -102,6 +113,28 @@ function forceKill (pid: number | undefined): void {
   if (pid === undefined) return
   try { process.kill(pid, 'SIGKILL') } catch { /* already gone */ }
 }
+
+describe('launchElectron', () => {
+  it('leaves no orivon-test-* directory behind when electron.launch itself rejects (C-12)', async () => {
+    // electron.launch is fully mocked (see the vi.mock above) -- this never
+    // spawns a real process, so it is safe to run without the conductor's
+    // launch token. The rejection stands in for a missing out/ build, a bad
+    // argument, or a missing binary, which is exactly what C-12 found live.
+    mockElectronLaunch.mockRejectedValueOnce(new Error('injected: launch failure'))
+    await expect(launchElectron({ appPath: 'unused-because-launch-is-mocked' }))
+      .rejects.toThrow('injected: launch failure')
+    expect(mockElectronLaunch).toHaveBeenCalledTimes(1)
+    // The directory launchElectron created is only visible to us via the
+    // args it handed to the (mocked) launch call -- it never got a chance
+    // to return the directory any other way, since the launch itself is
+    // what threw.
+    const [{ args }] = mockElectronLaunch.mock.calls[0] as [{ args: string[] }]
+    const userDataDirArg = args.find((arg) => arg.startsWith('--user-data-dir='))
+    if (userDataDirArg === undefined) throw new Error('launchElectron did not pass --user-data-dir to electron.launch')
+    const userDataDir = userDataDirArg.slice('--user-data-dir='.length)
+    await expect(stat(userDataDir)).rejects.toThrow()
+  })
+})
 
 describe('collectProcessTree', () => {
   it('finds a real child underneath its real parent', async () => {
@@ -257,6 +290,37 @@ describe('closeElectron, against a fake app wrapping a real (non-Electron) proce
         raceMs: 200,
         beforeClose: async () => { throw new Error('a graceful UI step failed') }
       })
+      expect(await waitForPidExit(pid, 2_000)).toBe(true)
+      await expect(stat(userDataDir)).rejects.toThrow()
+    } finally {
+      forceKill(pid)
+      await rm(userDataDir, { recursive: true, force: true })
+    }
+  })
+
+  it('still reaches SIGKILL and removes the temp dir, within budget, when beforeClose itself hangs (R6-02)', async () => {
+    const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'])
+    const pid = child.pid
+    if (pid === undefined) throw new Error('child reported no pid')
+    const userDataDir = await mkdtemp(join(tmpdir(), 'orivon-test-'))
+    // close() itself resolves promptly -- beforeClose is the only thing
+    // hanging here, isolating the defect this test targets. Before the
+    // R6-02 fix, an unbounded `await beforeClose(app)` never returns
+    // control to closeElectron at all, so this test would time out rather
+    // than fail an assertion -- that IS the regression.
+    const app = fakeApp(child, { hangs: false })
+    registerLaunchForTeardown(app, { userDataDir })
+    const start = Date.now()
+    try {
+      await closeElectron(app, {
+        raceMs: 200,
+        beforeClose: async () => { await new Promise(() => {}) }
+      })
+      const elapsedMs = Date.now() - start
+      // Bounded by beforeClose's own raceMs (200ms), not left to whatever
+      // waitForPidExit's default ceiling (5s) alone would allow -- proves
+      // this settles quickly rather than merely "eventually".
+      expect(elapsedMs).toBeLessThan(4_000)
       expect(await waitForPidExit(pid, 2_000)).toBe(true)
       await expect(stat(userDataDir)).rejects.toThrow()
     } finally {
