@@ -22,7 +22,14 @@ jobs:
           cache: npm
 
       # `npm ci` runs the postinstall guard, so Rule 8 is enforced here too.
+      #
+      # It now also fetches Electron's ~280 MB binary
+      # (scripts/install-electron.mjs), which this job has no use for: it
+      # typechecks, unit tests and builds, and none of those launch Electron.
+      # The `e2e` job below does launch it, and deliberately leaves this unset.
       - run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
 
       - name: Typecheck
         run: npm run typecheck
