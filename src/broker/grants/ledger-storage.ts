@@ -15,7 +15,7 @@
 // correctness regression, not just a test-fixup exercise. See README.md for
 // the full reasoning.
 
-import type { Pattern } from '../../contracts/index.js'
+import type { Manifest, Pattern } from '../../contracts/index.js'
 
 /**
  * One capability's persisted authority. NO `id` and NO `origin`: hydration
@@ -131,4 +131,28 @@ export interface LedgerStorage {
    * or the store cannot be read at all.
    */
   listPersistedOrigins(): readonly string[]
+
+  /**
+   * The manifest this origin was last registered with -- WHAT THE USER
+   * APPROVED, kept so the permissions list can name an app after a restart
+   * without asking its server again (owner decision 2026-09-11). A settings
+   * page that needed a network round trip per installed app would be empty
+   * offline, which is the bug this whole area exists to fix.
+   *
+   * NOT AN AUTHORITY RECORD. It is the manifest a restored grant is first
+   * re-validated against, and `GrantLedger.registerApp` re-validates every
+   * live grant AGAIN against the freshly fetched manifest the moment the app
+   * is really opened -- so an app that has since narrowed its declaration
+   * cannot keep authority just because an older manifest sits on disk.
+   *
+   * `undefined` for an origin never registered, and for a record that cannot
+   * be read or parsed -- the same safe collapse `readGrants` makes, and for
+   * the same reason: a missing manifest costs a row in a list, never
+   * authority nobody granted.
+   */
+  readManifest(origin: string): Manifest | undefined
+  /** Persists `manifest` as what this origin was last registered with. Overwrites whatever was there before. */
+  writeManifest(origin: string, manifest: Manifest): void
+  /** Deletes whatever manifest was persisted, alongside the floor/ack/grants deletes in `GrantLedger.forgetOrigin`. A no-op, never a throw. */
+  deleteManifest(origin: string): void
 }

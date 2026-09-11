@@ -262,6 +262,14 @@ export interface Broker {
      * throws; an unparseable `origin` is simply "not registered".
      */
     isRegisteredSync(origin: string): boolean
+    /**
+     * Every origin the broker currently knows an app for, including those
+     * brought back from disk at startup -- what the settings permissions
+     * list enumerates so it is populated before any app is opened.
+     * SYNCHRONOUS for the same reason `isRegisteredSync` is: it reads the
+     * in-memory ledger and cannot fail.
+     */
+    registeredOriginsSync(): readonly string[]
   }
   readonly net: {
     /** Returns a `FailableTcpSocket` -- a `TcpSocket` plus one broker-internal
