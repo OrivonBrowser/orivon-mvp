@@ -144,4 +144,51 @@ describe('checkNoSecrets', () => {
       expect(checkNoSecrets(root).ok).toBe(false)
     })
   })
+
+  // R-S5-04: trackedFiles() used to swallow a git failure into [], which read
+  // as "nothing tracked" -- a scan that found nothing and one that never ran
+  // looked identical. On a public repo, a secrets guard silently scanning
+  // nothing is the worst failure mode available.
+  describe('when the tracked-file list cannot be obtained (R-S5-04)', () => {
+    it('fails loudly on a non-git directory instead of reporting clean', () => {
+      const root = mkdtempSync(join(tmpdir(), 'orivon-secrets-nogit-'))
+      writeFileSync(join(root, 'config.js'), 'TOKEN=ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\n')
+
+      const result = checkNoSecrets(root)
+
+      expect(result.ok).toBe(false)
+      expect(result.findings).toEqual([])
+      expect(result.error).toMatch(/could not list git-tracked files/)
+    })
+  })
+
+  // R-S5-05: DESCRIPTIVE used to be tested against the WHOLE line, so a real
+  // credential sharing a line with an unrelated "for example" was invisible.
+  describe('the descriptive-text exemption is scoped near the match (R-S5-05)', () => {
+    it('still catches a real credential sharing a line with "for example"', () => {
+      const root = repo({
+        'notes.md': 'Our real deploy token, for example, is ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 and must stay secret.\n'
+      })
+
+      const result = checkNoSecrets(root)
+
+      expect(result.ok).toBe(false)
+      expect(result.findings[0]?.kind).toBe('github-token')
+    })
+
+    it('still exempts a shape description with the marker right next to the match', () => {
+      const root = repo({
+        'docs/security.md': 'A github token looks like ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 (placeholder).\n'
+      })
+      expect(checkNoSecrets(root).ok).toBe(true)
+    })
+
+    it('no longer lets a marker far away on the same line exempt an unrelated credential', () => {
+      const filler = 'x'.repeat(80)
+      const root = repo({
+        'notes.md': `${filler} ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ${filler} this looks like nothing special\n`
+      })
+      expect(checkNoSecrets(root).ok).toBe(false)
+    })
+  })
 })
