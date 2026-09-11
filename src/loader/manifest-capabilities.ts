@@ -19,9 +19,8 @@ import type {
   TcpCapability,
   UdpCapability
 } from '../contracts/index.js'
-import { canonicalAddress, classifyAddress } from '../broker/policy/address.js'
-import { MAX_HOST_LENGTH, MAX_PORT, isAsciiHost, normalizeHost } from '../broker/policy/canonical-host.js'
-import { parsePattern as parseConnectPattern } from '../broker/policy/connect-patterns.js'
+import { MAX_HOST_LENGTH, MAX_PORT } from '../broker/policy/canonical-host.js'
+import { declarableConnectHostRejection, parsePattern as parseConnectPattern } from '../broker/policy/connect-patterns.js'
 import { ownProperty } from '../broker/policy/own-property.js'
 import { UNSAFE_TEXT_CHARS, describeValue, extraKey, isAny, isRecord, optionalStringArray, reject } from './manifest.js'
 
@@ -130,66 +129,50 @@ function validateConnectPattern (pattern: string, field: string): void {
 
 /**
  * The host half of a connect/send pattern -- previously unchecked entirely
- * (finding 2). `parseConnectPattern` only splits the string; this validates
- * the host half against the SAME rules connect-patterns.ts's `hostMatches`
- * and connect.ts's `checkConnect` apply at connect time, using that
- * directory's own exports rather than a second notion of "valid host"
- * (Rule 3). A STRICTER SUBSET, same stance as `parsePortRange` above: every
- * host rejected here is one that `hostMatches` would deny on EVERY call, so
- * rejecting it up front can never reject a pattern the runtime would
- * otherwise have honoured -- it only turns a silent dead capability into a
- * loud install-time rejection.
- *
- *   - `"*"` alone matches only when paired with a `"*"` port, i.e. the whole
- *     pattern is `"*:*"` -- capability-api.md's only documented wildcard
- *     form. Any other `"*"` is a sub-glob (`"*.example.com"`):
- *     connect-patterns.ts's own comment says plainly that one "matches
- *     nothing rather than being approximated" (docs/open-questions.md A27).
- *   - non-ASCII and over-length hosts: hostMatches never authorises either
- *     (isAsciiHost, MAX_HOST_LENGTH).
- *   - whitespace ANYWHERE, not only leading/trailing: no real DNS label or
- *     canonical address literal ever contains one, and a padded host is a
- *     UI-truncation spoof once it reaches the grant prompt.
- *   - `normalizeHost(host) !== host`: case variance and a trailing root dot,
- *     the same "write it exactly as it compares" rule canonical-host.ts
- *     states for its own callers.
- *   - an empty label (`"nonexistent..host"`): never a real hostname.
- *   - an address-shaped string that is not already its own `canonicalAddress`
- *     (decimal, octal or hex-encoded IPv4 -- `"2130706433"`, `"0x7f000001"`,
- *     `"017700000001"`): `hostMatches` takes the address-literal branch for
- *     any string `classifyAddress` recognises, and that branch denies
- *     anything that is not canonical rather than falling through to a
- *     hostname comparison -- see address.ts's `canonicalAddress`
- *     (docs/open-questions.md A20).
+ * (finding 2). The DECISION (which hosts a manifest may declare, and why --
+ * every reason here is one `hostMatches` would deny on EVERY call, so
+ * rejecting it up front can never refuse a pattern the runtime would
+ * otherwise have honoured) now lives in `declarableConnectHostRejection`
+ * (`../broker/policy/connect-patterns.js`): `../broker/policy/request-
+ * grant.ts` needs the exact same grammar for its own `requestGrant()` check
+ * (R2-01), and `src/broker/` may never import `src/loader/`
+ * (`../broker/README.md`) -- the same precedent `policy/manifest-
+ * patterns.ts` already set for `patternSetFromCapabilities`. What stays
+ * here is only the developer-facing MESSAGE per rejection reason -- one
+ * implementation of the grammar, one of the wording (code-guidelines.md
+ * Rule 3), never two of either.
  */
 function validateConnectHost (host: string, pattern: string, field: string): void {
-  if (host === '*') {
-    if (pattern !== '*:*') {
+  const rejection = declarableConnectHostRejection(host, pattern)
+  if (rejection === null) return
+  switch (rejection) {
+    case 'wildcard-needs-wildcard-port':
       reject(
         `${field}: the "*" wildcard host is only accepted paired with a "*" port, as "*:*" ` +
         `(capability-api.md's only documented wildcard declaration) -- got ${describeValue(pattern)}`
       )
-    }
-    return
-  }
-  if (host.includes('*')) {
-    reject(
-      `${field}: sub-glob hosts are not supported -- ${describeValue(host)} would match nothing ` +
-      `at connect time (connect-patterns.ts has no sub-glob support); write the literal host instead`
-    )
-  }
-  if (!isAsciiHost(host)) reject(`${field} has a non-ASCII host: ${describeValue(host)}`)
-  if (host.length > MAX_HOST_LENGTH) {
-    reject(`${field} host exceeds ${MAX_HOST_LENGTH} characters: ${describeValue(host)}`)
-  }
-  if (/\s/.test(host) || normalizeHost(host) !== host) {
-    reject(`${field} host is not written canonically (whitespace or case) -- write it exactly as it will be compared: ${describeValue(host)}`)
-  }
-  if (host.split('.').some((label) => label.length === 0)) {
-    reject(`${field} host has an empty label: ${describeValue(host)}`)
-  }
-  if (classifyAddress(host) !== 'unparseable' && canonicalAddress(host) !== host) {
-    reject(`${field} host is address-shaped but not written canonically, so it matches nothing at connect time: ${describeValue(host)}`)
+      break
+    case 'sub-glob':
+      reject(
+        `${field}: sub-glob hosts are not supported -- ${describeValue(host)} would match nothing ` +
+        `at connect time (connect-patterns.ts has no sub-glob support); write the literal host instead`
+      )
+      break
+    case 'non-ascii':
+      reject(`${field} has a non-ASCII host: ${describeValue(host)}`)
+      break
+    case 'too-long':
+      reject(`${field} host exceeds ${MAX_HOST_LENGTH} characters: ${describeValue(host)}`)
+      break
+    case 'not-canonical':
+      reject(`${field} host is not written canonically (whitespace or case) -- write it exactly as it will be compared: ${describeValue(host)}`)
+      break
+    case 'empty-label':
+      reject(`${field} host has an empty label: ${describeValue(host)}`)
+      break
+    case 'address-not-canonical':
+      reject(`${field} host is address-shaped but not written canonically, so it matches nothing at connect time: ${describeValue(host)}`)
+      break
   }
 }
 

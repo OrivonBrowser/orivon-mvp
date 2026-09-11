@@ -206,11 +206,17 @@ function readBaseline (root) {
  *   unjustified: Array<{file: string}>,
  *   exempted: Array<{file: string, reason: string}>,
  *   baselined: string[], stale: string[],
- *   unreadable: Array<{file: string, error: string}> }}
+ *   unreadable: Array<{file: string, error: string}>,
+ *   error?: string }}
  *
  *   `stale` is what makes the baseline a ratchet rather than a hiding place: an
  *   entry whose file is now compliant, or gone, fails the check, so the list
  *   can only ever shrink.
+ *
+ *   `error` is set, with every array empty and `ok` false, when the list of
+ *   tracked files itself could not be obtained (R-S5-04) -- the same "unknown,
+ *   not zero" discipline `unreadable` already applies to one file, applied to
+ *   the scan as a whole.
  */
 export function checkComments (root, opts = {}) {
   const limit = opts.limit ?? PREAMBLE_LIMIT
@@ -222,7 +228,23 @@ export function checkComments (root, opts = {}) {
   const baselined = []
   const unreadable = []
 
-  for (const file of trackedFiles(root)) {
+  let files
+  try {
+    files = trackedFiles(root)
+  } catch (err) {
+    return {
+      ok: false,
+      offenders,
+      unjustified,
+      exempted,
+      baselined,
+      stale: [],
+      unreadable,
+      error: `could not list git-tracked files under ${root}: ${err.message}`
+    }
+  }
+
+  for (const file of files) {
     if (DECLARATION_FILE.test(file) || !SOURCE_EXTENSION.test(file)) continue
     if (isTestFile(file) || EXEMPT_DIRECTORY.test(file)) continue
 
@@ -282,7 +304,7 @@ export function checkComments (root, opts = {}) {
 if (isInvokedDirectly(import.meta.url)) {
   const result = checkComments(process.cwd())
 
-  if (process.argv.includes('--exemptions')) {
+  if (process.argv.includes('--exemptions') && !result.error) {
     console.log(`\nFiles exempt from the ${PREAMBLE_LIMIT}-line comment budget:\n`)
     for (const { file, reason } of result.exempted) console.log(`  ${file}\n    ${reason}`)
     for (const file of result.baselined) console.log(`  ${file}\n    (baselined, not yet justified)`)
@@ -291,6 +313,10 @@ if (isInvokedDirectly(import.meta.url)) {
   }
 
   if (!result.ok) {
+    if (result.error) {
+      console.error(`\n${result.error}\nTreating this as a failed scan, not a clean one.\n`)
+    }
+
     if (result.offenders.length > 0) {
       console.error('\nFiles opening with more comment than the Rule 1 budget allows:\n')
       for (const { file, preamble, limit } of result.offenders) {
