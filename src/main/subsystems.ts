@@ -22,6 +22,7 @@
 //
 // Which stream owns which entry: docs/development/parallel-work.md.
 import type { Subsystem } from './registry.js'
+import { permissionGateSubsystem } from './permission-gate.js'
 import { brokerIpcSubsystem } from '../broker/transport/ipc.js'
 import { devGrantSubsystem } from './dev-grant.js'
 import { requestGrantSubsystem } from './request-grant-subsystem.js'
@@ -29,6 +30,12 @@ import { loaderSubsystem } from '../loader/subsystem.js'
 import { telemetrySubsystem } from '../telemetry/runner.js'
 
 export const subsystems: Subsystem[] = [
+  // Listed first, ahead of everything else here: its beforeReady attaches
+  // a listener that must exist before Electron can create ANY session,
+  // including one a later entry's own beforeReady might trigger. Reads
+  // neither ctx.broker nor ctx.loader, so it has no ordering constraint
+  // from either of those -- only this one, self-imposed.
+  permissionGateSubsystem, // security -> src/main/permission-gate.ts
   brokerIpcSubsystem, // build step 2: broker -> src/broker/. Writes ctx.broker -- anything reading it must be listed below this line.
   devGrantSubsystem, // queue item 0.3: dev-only grant hook -> src/main/dev-grant.ts. Reads ctx.broker -- must stay below brokerIpcSubsystem.
   requestGrantSubsystem, // queue item 4.1: app.requestGrant's mechanism -> src/main/request-grant.ts. Reads ctx.broker -- must stay below brokerIpcSubsystem.
