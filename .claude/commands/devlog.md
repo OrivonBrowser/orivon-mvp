@@ -1,6 +1,6 @@
 ---
 description: Compile the weekly Sunday devlog — paste-ready team message + voice-note cues
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash(git log:*), Bash(git diff:*), Bash(git show:*), Bash(git shortlog:*), Bash(date:*), Bash(ls:*)
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash(git log:*), Bash(date:*), Bash(ls:*)
 ---
 
 # /devlog — weekly devlog compiler
@@ -19,6 +19,12 @@ today. If the directory is empty, use the last 7 days.
 - `devlog/journal.md` — the current week's three buckets (Done / In my head / Non-repo).
 - Anything changed this period in `docs/decisions/` or `docs/open-questions.md`
   (visible from the git log) — decisions made and questions raised are always devlog-worthy.
+
+  `scripts/devlog-cron.sh` (the unattended Sunday run) does not use this step or this file's
+  `git log` grant at all — R-S5-01 found that any `Bash(git log:*)` grant to an unattended,
+  auto-approving agent is an arbitrary-file-write primitive (`--output=<file>`), so that script
+  now runs `git log` itself with fixed arguments and hands the agent the result as files to
+  Read. This step is for an attended run only.
 
 ## 3. Write `devlog/updates/YYYY-MM-DD.md`
 
