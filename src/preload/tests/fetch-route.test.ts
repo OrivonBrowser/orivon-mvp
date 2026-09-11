@@ -14,8 +14,9 @@
 // `target.fetch` existed. If a future change reintroduces that async gate,
 // the very first assertion after `installFetchRoute` below observes
 // `target.fetch` before any such promise could have settled, and fails.
+import { deflateSync, gzipSync } from 'node:zlib'
 import { describe, expect, it } from 'vitest'
-import { installFetchRoute } from '../fetch-route.js'
+import { installFetchRoute, ROUTED_FETCH_MAX_BODY_BYTES, ROUTED_FETCH_MAX_HEAD_BYTES } from '../fetch-route.js'
 import type { FetchRouteSocket, FetchRouteTarget } from '../fetch-route.js'
 
 /** A fake TcpSocket: `responseChunks` is what the "peer" sends back; `written` accumulates every chunk routedFetch wrote to the request side. */
@@ -45,6 +46,28 @@ function bytes (text: string): Uint8Array {
 
 function writtenHead (socket: { written: Uint8Array[] }): string {
   return new TextDecoder().decode(socket.written[0])
+}
+
+function concatUint8 (...parts: Uint8Array[]): Uint8Array {
+  const total = parts.reduce((n, p) => n + p.length, 0)
+  const out = new Uint8Array(total)
+  let offset = 0
+  for (const p of parts) { out.set(p, offset); offset += p.length }
+  return out
+}
+
+/** A socket whose `readable` never emits and never closes -- reads on it hang forever unless something else (an abort) intervenes. Used to prove an in-flight read can actually be cancelled. */
+function stallingSocket (): FetchRouteSocket & { written: Uint8Array[], closed: boolean } {
+  const state = { written: [] as Uint8Array[], closed: false }
+  const readable = new ReadableStream<Uint8Array>({ start () { /* never enqueue, never close */ } })
+  const writable = new WritableStream<Uint8Array>({ write (chunk) { state.written.push(chunk) } })
+  return {
+    readable,
+    writable,
+    close: async () => { state.closed = true },
+    get written () { return state.written },
+    get closed () { return state.closed }
+  }
 }
 
 const CANNED_RESPONSE = bytes(
@@ -243,5 +266,129 @@ describe('installFetchRoute -- response body framing', () => {
     const head = writtenHead(socket!)
     expect(head).toContain('POST /x HTTP/1.1')
     expect(head).toContain('Content-Length: 5')
+  })
+})
+
+describe('installFetchRoute -- response header cap (R3-01)', () => {
+  it('refuses response headers that never terminate, once they exceed MAX_HEAD_BYTES', async () => {
+    const junk = new Uint8Array(ROUTED_FETCH_MAX_HEAD_BYTES + 8 * 1024).fill(65) // no CRLFCRLF anywhere
+    const target = fakeTarget({ connectSecure: async () => fakeSocket([junk]) })
+    installFetchRoute(true, target)
+    await expect(target.fetch!('https://api.example/x')).rejects.toThrow(/MAX_HEAD_BYTES/)
+  })
+
+  it('does NOT trip the header cap when a small head arrives in the SAME read() chunk as a large body -- measured against the head only, not the whole buffer', async () => {
+    const bodyLength = ROUTED_FETCH_MAX_HEAD_BYTES + 16 * 1024 // over the head cap, well under the body cap
+    const head = bytes(`HTTP/1.1 200 OK\r\nContent-Length: ${String(bodyLength)}\r\n\r\n`)
+    const body = new Uint8Array(bodyLength).fill(97)
+    const target = fakeTarget({ connectSecure: async () => fakeSocket([concatUint8(head, body)]) })
+    installFetchRoute(true, target)
+    const response = await target.fetch!('https://api.example/x')
+    expect(response.status).toBe(200)
+    expect((await response.arrayBuffer()).byteLength).toBe(bodyLength)
+  })
+})
+
+describe('installFetchRoute -- response body cap (R3-01)', () => {
+  it('fails closed on a Content-Length larger than the cap, before ever reading a body byte', async () => {
+    const head = bytes(`HTTP/1.1 200 OK\r\nContent-Length: ${String(ROUTED_FETCH_MAX_BODY_BYTES + 1)}\r\n\r\n`)
+    const target = fakeTarget({ connectSecure: async () => fakeSocket([head]) })
+    installFetchRoute(true, target)
+    await expect(target.fetch!('https://api.example/x')).rejects.toThrow(/MAX_BODY_BYTES/)
+  })
+
+  it('fails closed on a chunked body whose running total exceeds the cap, without waiting for that much data to actually arrive', async () => {
+    const massiveChunkSizeHex = (ROUTED_FETCH_MAX_BODY_BYTES + 1).toString(16)
+    // No chunk payload is ever sent -- the cap must fire on the DECLARED
+    // size, before fill() would wait for bytes that never come.
+    const head = bytes(`HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n${massiveChunkSizeHex}\r\n`)
+    const target = fakeTarget({ connectSecure: async () => fakeSocket([head]) })
+    installFetchRoute(true, target)
+    await expect(target.fetch!('https://api.example/x')).rejects.toThrow(/MAX_BODY_BYTES/)
+  })
+
+  it('fails closed on a response with no Content-Length or Transfer-Encoding once real bytes exceed the cap (readUntilClose has no other end)', async () => {
+    const head = bytes('HTTP/1.1 200 OK\r\n\r\n')
+    const big = new Uint8Array(ROUTED_FETCH_MAX_BODY_BYTES + 1)
+    const target = fakeTarget({ connectSecure: async () => fakeSocket([head, big]) })
+    installFetchRoute(true, target)
+    await expect(target.fetch!('https://api.example/x')).rejects.toThrow(/MAX_BODY_BYTES/)
+  }, 15000)
+})
+
+describe('installFetchRoute -- init.signal / AbortController (R3-01)', () => {
+  it('rejects immediately when the signal is already aborted before the call, and never dials', async () => {
+    let dialAttempts = 0
+    const target = fakeTarget({ connectSecure: async () => { dialAttempts++; return fakeSocket(CANNED_RESPONSE_CHUNKS()) } })
+    installFetchRoute(true, target)
+    const controller = new AbortController()
+    controller.abort()
+    await expect(target.fetch!('https://api.example/x', { signal: controller.signal })).rejects.toMatchObject({ name: 'AbortError' })
+    expect(dialAttempts).toBe(0)
+  })
+
+  it('aborting mid-response rejects the fetch promise AND closes the socket', async () => {
+    let socket: ReturnType<typeof stallingSocket> | undefined
+    const target = fakeTarget({ connectSecure: async () => { socket = stallingSocket(); return socket } })
+    installFetchRoute(true, target)
+    const controller = new AbortController()
+    const promise = target.fetch!('https://api.example/x', { signal: controller.signal })
+    // Let the dial/write side actually run so the abort lands mid-read, not mid-dial.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(socket).toBeDefined()
+    expect(socket!.closed).toBe(false)
+    controller.abort()
+    await expect(promise).rejects.toMatchObject({ name: 'AbortError' })
+    expect(socket!.closed).toBe(true)
+  })
+
+  it('rejects with the app\'s own custom abort reason when one was supplied to controller.abort()', async () => {
+    const target = fakeTarget({ connectSecure: async () => stallingSocket() })
+    installFetchRoute(true, target)
+    const controller = new AbortController()
+    const promise = target.fetch!('https://api.example/x', { signal: controller.signal })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const customReason = new Error('custom-abort-reason')
+    controller.abort(customReason)
+    await expect(promise).rejects.toBe(customReason)
+  })
+})
+
+describe('installFetchRoute -- Content-Encoding decompression (R3-02)', () => {
+  it('decodes a gzip response body transparently -- response.json() parses the real content', async () => {
+    const payload = JSON.stringify({ hello: 'world' })
+    const compressed = new Uint8Array(gzipSync(Buffer.from(payload)))
+    const head = bytes(`HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Length: ${String(compressed.length)}\r\n\r\n`)
+    const target = fakeTarget({ connectSecure: async () => fakeSocket([concatUint8(head, compressed)]) })
+    installFetchRoute(true, target)
+    const response = await target.fetch!('https://api.example/x')
+    expect(response.headers.get('content-encoding')).toBe('gzip')
+    await expect(response.json()).resolves.toEqual({ hello: 'world' })
+  })
+
+  it('decodes a deflate response body transparently', async () => {
+    const payload = JSON.stringify({ ok: true })
+    const compressed = new Uint8Array(deflateSync(Buffer.from(payload)))
+    const head = bytes(`HTTP/1.1 200 OK\r\nContent-Encoding: deflate\r\nContent-Length: ${String(compressed.length)}\r\n\r\n`)
+    const target = fakeTarget({ connectSecure: async () => fakeSocket([concatUint8(head, compressed)]) })
+    installFetchRoute(true, target)
+    const response = await target.fetch!('https://api.example/x')
+    await expect(response.json()).resolves.toEqual({ ok: true })
+  })
+
+  it('fails loudly, naming brotli, rather than handing back compressed bytes as though they were content', async () => {
+    const fakeBrotliBytes = new Uint8Array([1, 2, 3, 4])
+    const head = bytes(`HTTP/1.1 200 OK\r\nContent-Encoding: br\r\nContent-Length: ${String(fakeBrotliBytes.length)}\r\n\r\n`)
+    const target = fakeTarget({ connectSecure: async () => fakeSocket([concatUint8(head, fakeBrotliBytes)]) })
+    installFetchRoute(true, target)
+    await expect(target.fetch!('https://api.example/x')).rejects.toThrow(/brotli/i)
+  })
+
+  it('leaves an ordinary uncompressed response completely unaffected', async () => {
+    const target = fakeTarget({ connectSecure: async () => fakeSocket(CANNED_RESPONSE_CHUNKS()) })
+    installFetchRoute(true, target)
+    const response = await target.fetch!('https://api.example/x')
+    expect(response.headers.get('content-encoding')).toBeNull()
+    expect(await response.text()).toBe('hello')
   })
 })
