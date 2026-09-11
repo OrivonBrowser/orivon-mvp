@@ -331,6 +331,119 @@ describe('TabManager -- navigate() repartitions a tab when the ORIGIN changes', 
   })
 })
 
+// A108/A109: navigate() is only reached via the omnibox or the dashboard's
+// own navigate command -- a same-view HTTP redirect, a clicked link, a form
+// submission or a script setting location.href all reach a new origin
+// WITHOUT ever calling navigate(), and Chromium's did-navigate event is the
+// one thing they all fire in common (electron/web-contents.md's own
+// Navigation Events list). The fake webContents' 'did-navigate' is emitted
+// directly here for exactly the reason the file header above states: this
+// is only observable by actually emitting the event, not by calling a
+// TabManager method.
+describe('TabManager -- did-navigate repartitions a tab for a redirect, link, form submission or script navigation (A108/A109)', () => {
+  it('a same-view redirect to a different origin ends in that origin\'s partition', () => {
+    const manager = newManager()
+    manager.createTab('https://a.example/')
+    const view = createdViews[0] as RecordedView
+
+    // Chromium follows the redirect inside the SAME WebContentsView --
+    // did-navigate fires with the FINAL url, never navigate().
+    view.webContents.emit('did-navigate', {}, 'https://b.example/')
+
+    expect(createdViews).toHaveLength(2)
+    const expected = partitionFor(originFromUrl('https://b.example/') as string)
+    expect(partitionOf(createdViews[1] as RecordedView)).toBe(expected)
+  })
+
+  it('a same-origin redirect does not swap', () => {
+    const manager = newManager()
+    manager.createTab('https://a.example/one')
+    const view = createdViews[0] as RecordedView
+
+    view.webContents.emit('did-navigate', {}, 'https://a.example/two')
+
+    expect(createdViews).toHaveLength(1)
+  })
+
+  it('a clicked link or script-driven navigation to a different origin swaps exactly like a redirect -- TabManager cannot tell them apart, and must not need to', () => {
+    const manager = newManager()
+    manager.createTab('https://a.example/')
+    const view = createdViews[0] as RecordedView
+
+    view.webContents.emit('did-navigate', {}, 'https://attacker.example/')
+
+    expect(createdViews).toHaveLength(2)
+    const expected = partitionFor(originFromUrl('https://attacker.example/') as string)
+    expect(partitionOf(createdViews[1] as RecordedView)).toBe(expected)
+  })
+
+  it('a same-origin navigation (a link to another path on the same origin) does not swap', () => {
+    const manager = newManager()
+    manager.createTab('https://a.example/one')
+    const view = createdViews[0] as RecordedView
+
+    view.webContents.emit('did-navigate', {}, 'https://a.example/two/three')
+
+    expect(createdViews).toHaveLength(1)
+  })
+
+  it('a dashboard tab never repartitions on its own did-navigate, even though its dev-mode URL is a real http(s) address', () => {
+    const manager = newManager()
+    manager.createTab() // dashboard -- no partition
+    const view = createdViews[0] as RecordedView
+
+    // The dashboard's own createTab() already loads DASHBOARD_URL, which
+    // has a real, derivable origin -- without the isDashboardTab guard this
+    // would look exactly like an "origin change" from undefined.
+    view.webContents.emit('did-navigate', {}, DASHBOARD_URL)
+
+    expect(createdViews).toHaveLength(1)
+    expect(partitionOf(createdViews[0] as RecordedView)).toBeUndefined()
+  })
+
+  it('a dashboard tab does not repartition even if its own page navigates itself to a real, different origin outside navigate()', () => {
+    const manager = newManager()
+    manager.createTab() // dashboard
+    const view = createdViews[0] as RecordedView
+
+    view.webContents.emit('did-navigate', {}, 'https://app.example/')
+
+    expect(createdViews).toHaveLength(1)
+  })
+
+  it('a did-navigate landing on about:blank never swaps -- partitionForTarget(BLANK_URL) is always undefined', () => {
+    const manager = newManager()
+    manager.createTab('https://a.example/')
+    const view = createdViews[0] as RecordedView
+
+    view.webContents.emit('did-navigate', {}, 'about:blank')
+
+    expect(createdViews).toHaveLength(1)
+  })
+
+  it('closes the OLD view\'s webContents on a did-navigate-triggered swap -- no leaked WebContentsView', () => {
+    const manager = newManager()
+    manager.createTab('https://a.example/')
+    const view = createdViews[0] as RecordedView
+
+    view.webContents.emit('did-navigate', {}, 'https://b.example/')
+
+    expect(view.webContents.close).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not forget the tab when a did-navigate-triggered swap closes the OLD view', () => {
+    const manager = newManager()
+    const id = manager.createTab('https://a.example/')
+    const view = createdViews[0] as RecordedView
+
+    view.webContents.emit('did-navigate', {}, 'https://b.example/')
+
+    const state = manager.getState()
+    expect(state.tabs.map((t) => t.id)).toContain(id)
+    expect(state.tabs).toHaveLength(1)
+  })
+})
+
 // F35 (CLAUDE-SECURITY-20260910-203341): wireView() used to launch
 // captureFavicon with a bare `void` and no .catch. A visited page's own
 // favicon host could reject that promise (see favicon.test.ts's

@@ -6,15 +6,17 @@
 // itself.
 //
 // T18 (security-model.md): every tab WebContents gets setWindowOpenHandler
-// wired to open a new tab rather than a popup. will-navigate origin-locking
-// is deliberately NOT added here -- that lock applies to granted apps, which
-// do not exist until build step 4, and ordinary tabs must browse freely.
+// wired to open a new tab rather than a popup. A redirect, clicked link, form
+// submission or script navigation that changes a tab's origin is caught by
+// wireView()'s own did-navigate handler, which repartitions the same way a
+// typed cross-origin navigation already does (see repartitionView()'s own
+// doc comment for the residual this catches late, not early).
 import type { WebContentsView, View } from 'electron'
 import { join } from 'node:path'
 import { fetchFaviconDataUrlCached, pickFaviconUrl, shouldClearFavicon } from './favicon.js'
 import { parseOmniboxInput, sanitizeDirectUrl } from './omnibox.js'
 import type { SubsystemContext } from './registry.js'
-import { appTabArgsFor, makeTabView, partitionForTarget } from './tab-view.js'
+import { appTabArgsFor, makeTabView, partitionChanged, partitionForTarget } from './tab-view.js'
 
 export type { TabState, TabsSnapshot, ShellState, Bounds } from './tab-types.js'
 import type { TabState, TabsSnapshot, Bounds } from './tab-types.js'
@@ -105,22 +107,9 @@ export class TabManager {
      * below. Never reachable via a rejected navigation -- see
      * BLANK_URL and resolveTarget(). */
     private readonly dashboardUrl: string,
-    /**
-     * `ctx.broker` is read by every `makeTabView` call site now
-     * (`appTabArgsFor`, ADR-0017) to decide the fetch()-routing flag --
-     * still `Broker | undefined`, so a run where the broker subsystem is
-     * absent simply never sets the flag, same fallback shape
-     * `partitionForTarget` already has. `ctx.loader` remains unused: it is
-     * what the not-yet-built discovery-trigger hint listener needs to
-     * install an app the moment a tab's own page shows the
-     * `<link rel="orivon-manifest">` hint (A60/A61, `docs/open-
-     * questions.md`) -- threaded through on its own, deliberately separate
-     * from that behavior, per `docs/development/parallel-work.md`'s
-     * append-only-first discipline. `ctx.loader` may be `undefined`
-     * (`loaderSubsystem` is not `critical`, unlike the broker) -- whoever
-     * reads it later must treat an absent loader as "the discovery trigger
-     * is disabled this run", never assume it is always present.
-     */
+    /** `ctx.broker` may be `undefined` (a run without the broker
+     * subsystem), and `ctx.loader` is deliberately unused so far -- do not
+     * remove either. README.md's design notes say what each is for. */
     private readonly ctx: SubsystemContext
   ) {
     this.preloadPath = join(import.meta.dirname, '../preload/app.js')
@@ -212,6 +201,18 @@ export class TabManager {
         record.favicon = null
         record.faviconOrigin = null
       }
+      // Never for the dashboard: its own dev-mode URL is a real http(s)
+      // address (partitionChanged would otherwise see a "changed" origin on
+      // the dashboard's OWN first load, since its current partition is
+      // undefined) -- see createTab()'s isDashboard branch and this file's
+      // README-linked design notes for why that tab must stay unpartitioned.
+      if (!record.isDashboardTab) {
+        const nextPartition = partitionChanged(navigatedUrl, record.partition)
+        if (nextPartition !== undefined) {
+          this.repartitionView(id, record, navigatedUrl, nextPartition)
+          return
+        }
+      }
       this.emitState()
     })
     wc.on('did-navigate-in-page', () => this.emitState())
@@ -256,22 +257,15 @@ export class TabManager {
   /** Swaps in a fresh WebContentsView for `record`, replacing whatever it
    * currently shows -- the ONLY way to change a tab's Electron session
    * partition after creation (Electron fixes `webPreferences.partition` at
-   * construction; there is no live "reassign session" API). Called from
-   * navigate() exactly when the ORIGIN actually changes; a same-origin
-   * navigation or a rejected/about:blank fallback never reaches here (see
-   * navigate()'s own guard), so this always represents landing on real,
-   * different-origin content -- never the dashboard.
-   *
-   * KNOWN, DISCLOSED LIMITATION: the OLD view's `navigationHistory` is
-   * discarded along with it, so `back()` cannot return to whatever the tab
-   * showed before this swap -- unlike a real browser, where session history
-   * survives a cross-site renderer swap. `NavigationHistory.restore()`
-   * exists and could carry the old entries onto the new view, but doing
-   * that AND landing on `target` risks a real double-load (restore()'s own
-   * promise only resolves once ITS restored entry finishes loading) for a
-   * user-visible flicker this fix does not attempt to solve. Flagged for
-   * the owner rather than built under time pressure -- see this PR/ADR
-   * discussion, not silently accepted. */
+   * construction; there is no live "reassign session" API). Called from two
+   * places, both guarded by `partitionChanged` so neither fires for a same-
+   * origin navigation, a rejected/about:blank fallback or the dashboard:
+   * navigate() (a typed target, pre-fetch) and wireView()'s did-navigate
+   * handler (a redirect, clicked link, form submission or script navigation
+   * -- the target is only known once Chromium has already committed it).
+   * See this directory's README.md, `## Design notes`, for the residual
+   * that late catch leaves open and the KNOWN, DISCLOSED LIMITATION this
+   * swap has always had on `back()`. */
   private repartitionView (id: string, record: TabRecord, target: string, nextPartition: string): void {
     const oldView = record.view
     const wasActive = this.activeId === id
@@ -390,8 +384,8 @@ export class TabManager {
     if (record === undefined || record.view.webContents.isDestroyed()) return
     const target = this.resolveTarget(rawInput)
 
-    const nextPartition = partitionForTarget(target)
-    if (nextPartition !== undefined && nextPartition !== record.partition) {
+    const nextPartition = partitionChanged(target, record.partition)
+    if (nextPartition !== undefined) {
       this.repartitionView(id, record, target, nextPartition)
       return
     }
