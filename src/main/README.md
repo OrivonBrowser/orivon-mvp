@@ -22,6 +22,7 @@ themselves via `subsystems.ts` rather than editing here.
 | `tab-types.ts` | The wire-format types (`TabState`, `TabsSnapshot`, `ShellState`, `Bounds`) pushed to the chrome UI |
 | `ipc.ts` | Shell IPC channels between the chrome view and main |
 | `omnibox.ts` | Address-bar input: URL or search. Unit tested |
+| `permission-gate.ts` | Denies every Chromium permission (camera, clipboard, notifications, …) by default, on every session a tab can reach |
 
 ## Two things not to rediscover
 
@@ -77,6 +78,62 @@ or the teardown would incorrectly call `forgetTab()` on a tab that is not actual
 `src/main/tests/tabs.test.ts` exercises this directly with a fake `webContents` that emits
 `'destroyed'` synchronously from `close()`, the same way real Electron destruction can.
 
+**[`tabs.ts`](tabs.ts) — what `TabManager`'s `ctx: SubsystemContext` is for, and why one half
+of it is unused.** `ctx.broker` is read by every `makeTabView` call site (`appTabArgsFor`,
+ADR-0017) to decide the `fetch()`-routing flag. It stays `Broker | undefined`, so a run where
+the broker subsystem is absent simply never sets the flag — the same fallback shape
+`partitionForTarget` already has. `ctx.loader` is threaded through but read nowhere yet: it is
+what the not-yet-built discovery-trigger listener needs in order to install an app the moment a
+tab's page shows its `<link rel="orivon-manifest">` hint (A60/A61, `docs/open-questions.md`).
+It was threaded through on its own, deliberately ahead of that behaviour, per
+`docs/development/parallel-work.md`'s append-only-first discipline — so do not delete it as dead.
+Whoever wires it must treat an absent loader as "the discovery trigger is disabled this run",
+never assume it is present: `loaderSubsystem` is not `critical`, unlike the broker.
+
+**[`tabs.ts`](tabs.ts) — a redirect, clicked link, form submission or script navigation now
+repartitions a tab too, not only a typed cross-origin navigation (A108/A109,
+`docs/open-questions.md`; owner decision D-0010 item 2).** `navigate()` was the only code path
+that ever computed a partition, and it is reached only from the omnibox and the dashboard's own
+navigate command — every other way a tab reaches a new origin bypassed it. Fixed by having
+`wireView()`'s existing `did-navigate` handler also call `repartitionView()`, the same swap
+`navigate()` already used, whenever the *committed* URL's origin differs from the tab's current
+partition (`tab-view.ts`'s new `partitionChanged`, factored out so `navigate()` and this handler
+can never compute the comparison two different ways). The file's own header previously justified
+the absence of any origin-locking with "that lock applies to granted apps, which do not exist
+until build step 4" — stale since #127/#129 made grants real and persisted; corrected as part of
+this fix rather than left to mislead the next reader.
+
+**The residual this leaves, deliberately not papered over.** `did-navigate` fires only once a
+navigation has already committed — by then the new origin's page has already rendered once
+inside the OLD partition and may already have read from it. This swap corrects the partition
+going forward; it does not undo an early read. The stronger shape, `will-navigate`/`will-redirect`
+with `preventDefault()` and a re-entry through the partition-aware path, catches it before commit
+— but costs a fresh view and a lost navigation-history entry on every ordinary cross-origin link
+click, not only a redirect, which is why A109 exists as its own tracked item rather than being
+folded into this fix. Built the owner-specified shape (reuse `repartitionView`, do not invent a
+second mechanism); the earlier-interception alternative is registered as an open question for the
+owner, not chosen silently either way.
+
+One thing this fix must not get wrong, and the dashboard tab in particular tests for it: the
+dashboard's own dev-mode URL is a real `http(s)` address, so treating its OWN first `did-navigate`
+the same as an ordinary tab's would see partition `undefined` -> a real partition as an "origin
+change" and repartition the dashboard into an app partition on its very first load. The handler
+excludes `record.isDashboardTab` explicitly rather than relying on `partitionChanged` alone to
+catch this case.
+
+**[`permission-gate.ts`](permission-gate.ts) — wired through `app.on('session-created', ...)`,
+not a call inside `tab-view.ts`'s `makeTabView()`.** Electron fires that event exactly once for
+every `Session` it ever instantiates in this process -- `session.defaultSession`'s own creation
+included -- so one listener, attached before anything can create a session, reaches every future
+`session.fromPartition(...)` call too, including ones no code here has written yet. A handler
+installed only at `makeTabView`'s own call site would miss the default session (used by the
+chrome UI and every rejected or dashboard-bound tab) and any session a later stream creates some
+other way; enumerating today's known partitions once at startup would still miss a partition a
+tab opens after that point, which is most of them -- `partitionFor(origin)` sessions come into
+being as tabs open, not at startup. The subsystem is listed first in `subsystems.ts`, ahead of
+everything else, so its `beforeReady` attaches the listener before any other subsystem's own
+`beforeReady` gets a chance to create a session.
+
 **[`favicon.ts`](favicon.ts) — main fetches favicons to a `data:` URL rather than letting the
 renderer fetch directly.** AI recommendation, not yet an owner decision. The chrome view's CSP
 (`index.html`) is a one-line, readable guarantee today that the one privileged view in this app
@@ -86,6 +143,41 @@ request from the privileged, cookie-bearing chrome origin — a new, silent trac
 exactly where this codebase has been careful before (`mvp-scope.md` already flags DuckDuckGo
 search itself as a stated "known limitation" for far less: leaving the machine at all). Fetching
 in main instead keeps the guarantee intact; the CSP only needs `img-src 'self' data:`.
+
+**[`favicon.ts`](favicon.ts) — the fetch is T12-gated (`isSafeFaviconUrl`), added after review found
+it was not.** This fetch fires on ordinary browsing, on every tab, with no manifest and no grant --
+unlike every other main-process network call in this codebase, which is either fixed
+(`update-check-runner.ts`'s `RELEASES_API`) or gated behind an app install
+(`loader/install-origin.ts`, `loader/electron-fetch.ts`). A page's own `<link rel="icon">` is fully
+attacker-controlled, so without a check `pickFaviconUrl` would hand `fetchFaviconDataUrl` a URL
+pointing anywhere -- `169.254.169.254`, a LAN admin panel, a localhost service -- and the main
+process would issue a real GET to it. `isSafeFaviconUrl` closes this the same way
+`install-origin.ts` closes the equivalent gap for an app install: reuse `policy/address.ts`'s
+`classifyAddress`/`isPublicUnicast` and `policy/origin.ts`'s `isLocalhostName` directly, and
+`loader/electron-resolve.ts`'s `electronResolveHost` for the one case those cannot answer alone (a
+hostname, which needs resolving before it can be classified) -- never a second implementation of
+any of the three (code-guidelines.md Rule 3).
+
+Three follow-on questions the review raised, and what this fix does about each:
+
+- **Accept `http://` for a favicon at all?** No. `isSafeFaviconUrl` refuses it outright --
+  refusing plaintext costs a real favicon nothing and closes a downgrade path from an https page.
+  This lives in the fetch path, not in `pickFaviconUrl`: that function's own test asserts it still
+  *selects* an `http://` candidate (picking a URL is not fetching one), so the refusal has to sit
+  where the fetch actually happens or it would force rewriting an assertion the fix has no
+  security reason to touch.
+- **Bound the number of favicon fetches one tab can drive?** Not in this fix. `page-favicon-
+  updated` can fire repeatedly and nothing caps it, but that is a resource-exhaustion question
+  (T11b's shape) against whatever `isSafeFaviconUrl` still allows through -- i.e. only *public*
+  hosts, once this fix lands -- not a T12 address-reach question. Bounding it well needs new
+  per-tab state in `tabs.ts` (which favicon.ts deliberately has no dependency on, so it stays
+  importable under plain vitest), which is a real design decision on its own, not a one-line
+  addition to a security fix already in flight.
+- **Bound `faviconCache`?** Not in this fix. Its own comment already calls the unbounded,
+  process-lifetime cache a deliberate "v0, revisit later" choice, made before this review and
+  orthogonal to it -- reaching a private address was never something the cache made worse or
+  better. Revisiting a sizing decision inside a branch whose job is a security fix is exactly the
+  scope creep `CLAUDE.md` Rule 4 warns about.
 
 **[`grant-prompt-render.ts`](grant-prompt-render.ts) — every pattern is rendered from the parsed
 form, never a second guess at the raw string (R2-01/AR-05).** The original `hostFromPattern` here
