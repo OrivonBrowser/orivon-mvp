@@ -28,7 +28,7 @@ import { MAX_HOST_LENGTH, isAsciiHost, isValidPort, normalizeHost } from './cano
 import { MAX_PATTERNS } from './connect.js'
 import { parsePattern, portMatches } from './connect-patterns.js'
 import type { ParsedPattern } from './connect-patterns.js'
-import { isReservedPort, namesPortExactly } from './reserved-ports.js'
+import { isReservedPort, patternNamesPortExactly } from './reserved-ports.js'
 
 export interface ConnectSecureAllowed {
   readonly allowed: true
@@ -127,10 +127,18 @@ export function checkConnectSecure (
 
   // Checked before matching, exactly where checkConnect checks it: A82's
   // rule applies to https.connect too, and it depends only on `parsed` and
-  // `port`, never on the address side of anything.
-  if (isReservedPort(port) && !namesPortExactly(parsed, port)) return deny('reserved-port')
+  // `port`, never on the address side of anything. NARROWED the same way
+  // checkConnect narrows (see its own comment): the host check below runs
+  // against `eligible`, not `parsed`, so a reserved port can only be
+  // authorised by the SAME pattern that named it, not by pairing that naming
+  // with a different pattern's `'*'` host match.
+  const reserved = isReservedPort(port)
+  const eligible = reserved
+    ? parsed.map((pattern) => (patternNamesPortExactly(pattern, port) ? pattern : null))
+    : parsed
+  if (reserved && eligible.every((pattern) => pattern === null)) return deny('reserved-port')
 
-  if (!parsed.some((pattern) => hostMatchesSecure(pattern, requested, port))) {
+  if (!eligible.some((pattern) => hostMatchesSecure(pattern, requested, port))) {
     return deny('no-pattern-match')
   }
 
