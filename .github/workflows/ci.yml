@@ -66,6 +66,19 @@ jobs:
       - name: Build
         run: npm run build
 
+      # Item 0.3's exit criterion (docs/planning/unattended-build-queue.md)
+      # has two clauses: a developer-only grant path, AND "CI fails if the
+      # path is reachable once packaged." The script has existed and passed
+      # by hand since it landed, but was never wired into CI -- this step is
+      # that second clause. It runs its OWN internal rebuild regardless of
+      # the Build step above (scripts/check-dev-grant-absent.mjs scans out/
+      # before rebuilding too, to catch a dev-enabled artefact already
+      # sitting there -- see that script's header), so placing it after
+      # Build does not avoid a second build; it runs last so the cheaper
+      # checks above fail first.
+      - name: Developer-only grant path is absent from a packaged build
+        run: npm run check:dev-grant-absent
+
   # test/e2e-capability-boundary.test.ts is, in its own header, "the
   # highest-value assertion in the entire plan" (docs/development/testing.md
   # SS"The end-to-end test"): it proves a granted net.connect round-trips

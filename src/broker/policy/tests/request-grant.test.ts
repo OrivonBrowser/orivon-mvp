@@ -94,6 +94,48 @@ describe('decideGrantRequest', () => {
   })
 })
 
+// R2-01, Half 2: a REQUEST must never be able to carry a host:port pattern
+// shape a MANIFEST could never have declared in the first place. Before
+// this fix, `widensAuthority`'s subset check used the runtime's own looser
+// matching grammar (connect-patterns.ts's `covers`), under which a
+// manifest declaring "*:*" appears to "cover" a request for "*:443" -- a
+// shape `declarableConnectHostRejection` (connect-patterns.ts) refuses
+// outright, because the only host-wildcard a manifest may declare directly
+// is the exact literal "*:*". Half 1 (grant-prompt-render.test.ts) is what
+// this would have looked like to a person approving it, had it reached a
+// prompt at all; this suite is the half that keeps it from reaching one.
+describe('decideGrantRequest -- a request may never declare a shape the manifest grammar itself would refuse', () => {
+  it('refuses "*:443" under a "*:*" manifest -- a shape no manifest could ever declare directly', () => {
+    const manifest = manifestWith({ net: { https: { connect: ['*:*'] } } })
+    const decision = decideGrantRequest(manifest, 'https.connect', ['*:443'])
+    expect(decision).toEqual({ allowed: false, patterns: [] })
+  })
+
+  it('still allows a genuinely narrower named-host request under the same "*:*" manifest -- narrowing is the feature, not over-corrected away', () => {
+    const manifest = manifestWith({ net: { https: { connect: ['*:*'] } } })
+    const decision = decideGrantRequest(manifest, 'https.connect', ['youtube.com:443'])
+    expect(decision).toEqual({ allowed: true, patterns: ['youtube.com:443'] })
+  })
+
+  it('still allows the manifest\'s own "*:*" pattern requested back exactly as declared', () => {
+    const manifest = manifestWith({ net: { https: { connect: ['*:*'] } } })
+    const decision = decideGrantRequest(manifest, 'https.connect', ['*:*'])
+    expect(decision).toEqual({ allowed: true, patterns: ['*:*'] })
+  })
+
+  it('applies the same refusal to tcp.connect and udp.send, not only https.connect', () => {
+    const manifest = manifestWith({ net: { tcp: { connect: ['*:*'] }, udp: { send: ['*:*'] } } })
+    expect(decideGrantRequest(manifest, 'tcp.connect', ['*:22'])).toEqual({ allowed: false, patterns: [] })
+    expect(decideGrantRequest(manifest, 'udp.send', ['*:53'])).toEqual({ allowed: false, patterns: [] })
+  })
+
+  it('does not touch tcp.listen/udp.bind -- bare port ranges have no host and no equivalent gap', () => {
+    const manifest = manifestWith({ net: { tcp: { listen: ['6881-6889'] } } })
+    const decision = decideGrantRequest(manifest, 'tcp.listen', ['6881-6889'])
+    expect(decision).toEqual({ allowed: true, patterns: ['6881-6889'] })
+  })
+})
+
 // Shared by main/request-grant.ts (an app's raw IPC payload) and
 // grants/grant-persistence.ts (a JSON property name read off disk) -- both
 // need the same "is this untrusted string one of the seven real
