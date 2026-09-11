@@ -137,6 +137,75 @@ describe('HttpResponseParser -- no-body responses', () => {
   })
 })
 
+describe('HttpResponseParser -- MAX_HEAD_BYTES is measured against the head, not the whole buffer', () => {
+  it('does not fail a small head sharing one write() with a body over 32 KiB', () => {
+    const h = makeParser()
+    const body = 'x'.repeat(40 * 1024) // well over MAX_HEAD_BYTES (32 KiB)
+    const wire = `HTTP/1.1 200 OK\r\nContent-Length: ${body.length}\r\n\r\n${body}`
+    h.parser.write(enc.encode(wire))
+
+    expect(h.errors).toHaveLength(0)
+    expect(h.complete).toBe(1)
+    expect(h.bodyText()).toBe(body)
+  })
+
+  it('still fails when the head itself, not the body, exceeds the cap with no terminator', () => {
+    const h = makeParser()
+    // No CRLFCRLF anywhere in this chunk -- an ever-growing, unterminated head.
+    h.parser.write(enc.encode('HTTP/1.1 200 OK\r\n' + 'X-Pad: '.repeat(6000)))
+    expect(h.errors).toHaveLength(1)
+    expect(h.errors[0]?.message).toMatch(/exceeded 32768 bytes/)
+  })
+})
+
+describe('HttpResponseParser -- 1xx informational responses', () => {
+  it('consumes a 100 Continue prelude and keeps reading for the real response', () => {
+    const h = makeParser()
+    h.parser.write(enc.encode(
+      'HTTP/1.1 100 Continue\r\n\r\n' +
+      'HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok'
+    ))
+    expect(h.heads).toHaveLength(1)
+    expect(h.heads[0]?.statusCode).toBe(200)
+    expect(h.bodyText()).toBe('ok')
+    expect(h.complete).toBe(1)
+  })
+
+  it('consumes a 103 Early Hints prelude rather than treating it as the whole response', () => {
+    const h = makeParser()
+    h.parser.write(enc.encode(
+      'HTTP/1.1 103 Early Hints\r\nLink: </style.css>; rel=preload\r\n\r\n' +
+      'HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello'
+    ))
+    expect(h.heads).toHaveLength(1)
+    expect(h.heads[0]?.statusCode).toBe(200)
+    expect(h.bodyText()).toBe('hello')
+    expect(h.complete).toBe(1)
+  })
+
+  it('consumes multiple stacked 1xx preludes before the real response', () => {
+    const h = makeParser()
+    h.parser.write(enc.encode(
+      'HTTP/1.1 103 Early Hints\r\n\r\n' +
+      'HTTP/1.1 103 Early Hints\r\n\r\n' +
+      'HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n'
+    ))
+    expect(h.heads).toHaveLength(1)
+    expect(h.heads[0]?.statusCode).toBe(200)
+    expect(h.complete).toBe(1)
+  })
+
+  it('consumes a 1xx prelude split across multiple writes, same as any other framing', () => {
+    const h = makeParser()
+    const wire = enc.encode('HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok')
+    h.parser.write(wire.subarray(0, 15))
+    h.parser.write(wire.subarray(15))
+    expect(h.heads).toHaveLength(1)
+    expect(h.heads[0]?.statusCode).toBe(200)
+    expect(h.bodyText()).toBe('ok')
+  })
+})
+
 describe('HttpResponseParser -- malformed input and premature EOF', () => {
   it('reports an error on an unparseable status line', () => {
     const h = makeParser()
