@@ -111,3 +111,47 @@ describe('createTokenBucketLimiter', () => {
     expect(limiter.tryConsume(APP)).toBe(false)
   })
 })
+
+// R1-02: without this, an origin that calls once and never returns keeps a
+// permanent row in `buckets` forever -- see ../token-bucket.ts's `reapIdle`.
+describe('createTokenBucketLimiter -- reaping an idle origin (R1-02)', () => {
+  it('an idle origin\'s bucket is eventually reaped once another call ticks the clock past its full refill', () => {
+    const clock = fakeClock()
+    const limiter = createTokenBucketLimiter({ capacity: 2, refillPerSecond: 1, now: clock.now })
+    limiter.tryConsume(APP) // APP now holds a row (1 of 2 tokens spent), and never calls again
+    expect(limiter.size()).toBe(1)
+
+    clock.advance(5000) // far more than enough time for APP's bucket to fully recover
+    limiter.tryConsume(OTHER) // any call ticks the sweep, not only one from APP itself
+
+    // APP's stale row is gone; only OTHER's fresh one remains -- if it were
+    // never reaped, size would be 2 here.
+    expect(limiter.size()).toBe(1)
+  })
+
+  it('a reaped origin\'s next call behaves exactly like a first-ever call -- no free burst, no leftover throttle', () => {
+    const clock = fakeClock()
+    const limiter = createTokenBucketLimiter({ capacity: 1, refillPerSecond: 1, now: clock.now })
+    limiter.tryConsume(APP) // spends APP's only token
+    expect(limiter.tryConsume(APP)).toBe(false) // confirmed throttled before any reap
+
+    clock.advance(10_000) // long enough to fully refill, and to be swept
+    limiter.tryConsume(OTHER) // ticks the sweep; APP's now-recovered bucket is reaped
+
+    // Same shape as a never-seen origin: succeeds once, then throttles --
+    // not two-in-a-row (a free burst) and not still-false (leftover state).
+    expect(limiter.tryConsume(APP)).toBe(true)
+    expect(limiter.tryConsume(APP)).toBe(false)
+  })
+
+  it('an origin with an active, not-yet-refilled bucket is never reaped, however many other calls tick the sweep', () => {
+    const clock = fakeClock()
+    const limiter = createTokenBucketLimiter({ capacity: 5, refillPerSecond: 1, now: clock.now })
+    limiter.tryConsume(APP) // 4 of 5 tokens left -- short of full capacity
+    clock.advance(500) // half a token's worth refills; still short of capacity
+
+    limiter.tryConsume(OTHER) // ticks the sweep
+
+    expect(limiter.size()).toBe(2) // APP's still-partial bucket survives alongside OTHER's
+  })
+})
