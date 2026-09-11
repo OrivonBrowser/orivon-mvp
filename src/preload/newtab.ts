@@ -3,7 +3,7 @@ import type { Bookmark } from '../main/bookmarks.js'
 import { NEWTAB_COMMAND_CHANNEL } from '../main/channels.js'
 import type { NewTabCommand } from '../main/newtab-ipc.js'
 import { exposeOrivon } from './orivon-surface.js'
-import { exposeFetchRoute } from './fetch-route.js'
+import { exposeFetchRoute } from './expose-fetch-route.js'
 
 // Loaded ONLY for a genuinely fresh tab (src/main/tabs.ts's createTab(),
 // `url === undefined`) -- the dashboard's own page (src/renderer/newtab/).
