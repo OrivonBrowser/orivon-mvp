@@ -1,9 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
+import type { Resolver } from '../../broker/policy/connect.js'
 
 // fetchFaviconDataUrl dynamically imports 'electron' for net.fetch (see
 // favicon.ts's file header for why) -- mocked here so the F35 regression
 // test below can hand it a response whose body errors mid-read without a
-// real network call.
+// real network call. That mock is also why every symbol below arrives
+// through a dynamic import rather than a static one: it has to be
+// registered before favicon.js is evaluated.
 vi.mock('electron', () => ({
   net: { fetch: vi.fn() }
 }))
@@ -12,6 +15,7 @@ const { net } = await import('electron')
 const {
   MAX_FAVICON_BYTES,
   fetchFaviconDataUrl,
+  isSafeFaviconUrl,
   pickFaviconUrl,
   readCapped,
   shouldClearFavicon,
@@ -36,6 +40,98 @@ describe('pickFaviconUrl', () => {
 
   it('returns null when nothing is http(s)', () => {
     expect(pickFaviconUrl(['data:image/png;base64,AAA=', 'javascript:alert(1)'])).toBeNull()
+  })
+})
+
+/** Fails the test if called -- proves a literal-address candidate never reaches resolution. */
+const unreachableResolver: Resolver = async () => {
+  throw new Error('resolveHost must not be called for a literal address')
+}
+
+function resolverReturning (...addresses: string[]): Resolver {
+  return async () => addresses
+}
+
+// T12 (security-model.md): every case from the brief's own test list, plus
+// the scheme and localhost restrictions layered on top of it.
+describe('isSafeFaviconUrl', () => {
+  it.each([
+    ['127.0.0.1', 'loopback'],
+    ['::1', 'loopback, IPv6'],
+    ['10.0.0.1', 'RFC 1918'],
+    ['172.16.0.1', 'RFC 1918, 172.16-31 range'],
+    ['192.168.1.1', 'RFC 1918'],
+    ['169.254.169.254', 'link-local / cloud metadata'],
+    ['0.0.0.0', 'unspecified'],
+    ['2130706433', 'loopback as one decimal integer'],
+    ['0177.0.0.1', 'loopback with an octal first octet'],
+    ['0x7f000001', 'loopback as one hex integer'],
+    ['::ffff:127.0.0.1', 'IPv4-mapped IPv6 loopback -- the classic bypass']
+  ])('refuses a literal %s (%s) without ever resolving', async (literal) => {
+    await expect(isSafeFaviconUrl(`https://${literal}/icon.png`, unreachableResolver)).resolves.toBe(false)
+  })
+
+  it('refuses a hostname that resolves to a private address', async () => {
+    await expect(isSafeFaviconUrl('https://rebind.example/icon.png', resolverReturning('127.0.0.1')))
+      .resolves.toBe(false)
+  })
+
+  it('refuses a hostname where only ONE of several resolved addresses is private', async () => {
+    await expect(
+      isSafeFaviconUrl('https://rebind.example/icon.png', resolverReturning('93.184.216.34', '127.0.0.1'))
+    ).resolves.toBe(false)
+  })
+
+  it('refuses a hostname that resolves to no addresses', async () => {
+    await expect(isSafeFaviconUrl('https://nowhere.example/icon.png', resolverReturning()))
+      .resolves.toBe(false)
+  })
+
+  it('refuses a hostname whose resolution throws', async () => {
+    const throwing: Resolver = async () => { throw new Error('NXDOMAIN') }
+    await expect(isSafeFaviconUrl('https://nowhere.example/icon.png', throwing)).resolves.toBe(false)
+  })
+
+  it('refuses http:// even for an otherwise-public host', async () => {
+    await expect(isSafeFaviconUrl('http://93.184.216.34/icon.png', unreachableResolver)).resolves.toBe(false)
+  })
+
+  it('refuses the .localhost namespace without ever resolving (RFC 6761)', async () => {
+    await expect(isSafeFaviconUrl('https://localhost/icon.png', unreachableResolver)).resolves.toBe(false)
+    await expect(isSafeFaviconUrl('https://app.localhost/icon.png', unreachableResolver)).resolves.toBe(false)
+  })
+
+  it('refuses a string that does not parse as a URL', async () => {
+    await expect(isSafeFaviconUrl('not a url', unreachableResolver)).resolves.toBe(false)
+  })
+
+  it('accepts an ordinary public literal address without resolving', async () => {
+    await expect(isSafeFaviconUrl('https://93.184.216.34/icon.png', unreachableResolver)).resolves.toBe(true)
+  })
+
+  it('accepts an ordinary public hostname once every resolved address is public', async () => {
+    await expect(
+      isSafeFaviconUrl('https://example.com/icon.png', resolverReturning('93.184.216.34', '2606:2800:220:1:248:1893:25c8:1946'))
+    ).resolves.toBe(true)
+  })
+})
+
+describe('fetchFaviconDataUrl', () => {
+  // Every literal case is denied inside isSafeFaviconUrl before this
+  // function ever reaches its `import('electron')` line, so these run
+  // safely under plain vitest -- no Electron mock needed, and the
+  // resolution never happens for a literal address.
+  it.each([
+    '127.0.0.1',
+    '::1',
+    '169.254.169.254',
+    '2130706433'
+  ])('never fetches a favicon at the literal address %s', async (literal) => {
+    await expect(fetchFaviconDataUrl(`https://${literal}/icon.png`)).resolves.toBeNull()
+  })
+
+  it('never fetches an http:// favicon candidate', async () => {
+    await expect(fetchFaviconDataUrl('http://93.184.216.34/icon.png')).resolves.toBeNull()
   })
 })
 
