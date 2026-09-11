@@ -29,4 +29,20 @@ describe('createDialog', () => {
     expect(synchronous).toBeUndefined()
     await expect(result).rejects.toThrow(ElectronShimError)
   })
+
+  it.each(['showMessageBox', 'showSaveDialog', 'showErrorBox', 'somethingNotRealEither'])(
+    'dialog.%s throws a named, not-yet-considered error rather than a bare TypeError',
+    (method) => {
+      const orivon = { fs: {} } as unknown as Pick<Orivon, 'fs'>
+      const dialog = createDialog(orivon) as unknown as Record<string, unknown>
+      expect(() => dialog[method]).toThrow(ElectronShimError)
+      try {
+        void dialog[method]
+      } catch (error) {
+        expect((error as Error).name).not.toBe('TypeError')
+        expect((error as ElectronShimError).reason).toBe('unimplemented')
+        expect((error as ElectronShimError).api).toBe(`dialog.${method}`)
+      }
+    }
+  )
 })

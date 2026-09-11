@@ -31,7 +31,7 @@ export function isReservedPort (port: number): boolean {
 }
 
 /**
- * Whether any pattern gives `port` as a single literal -- `:25`, never `:*`
+ * Whether ONE pattern gives `port` as a single literal -- `:25`, never `:*`
  * and never a range that happens to contain it.
  *
  * A RANGE IS NOT A NAMING, and that is the whole distinction this function
@@ -40,13 +40,17 @@ export function isReservedPort (port: number): boolean {
  * port is reachable only when an app author typed it and a person approved
  * that exact line.
  *
- * Says nothing about the host half, on purpose: `hostMatches` still has to
- * agree separately, so a naming here can never widen authority by itself.
+ * PER-PATTERN, deliberately, and this used to be a grant-wide scan of the
+ * whole pattern list instead. That shape let a naming in one pattern stand in
+ * for a completely different pattern's host authorisation -- a grant of
+ * `['mail.example.com:25', '*:*']` reached an unrelated host at port 25,
+ * because "the grant contains a naming" and "this host is authorised" were
+ * checked against two different patterns rather than the same one
+ * (docs/open-questions.md A82). A caller must call this once per pattern and
+ * only rely on a `true` result for authorising that SAME pattern.
  */
-export function namesPortExactly (parsed: readonly (ParsedPattern | null)[], port: number): boolean {
-  return parsed.some((pattern) => {
-    if (pattern === null) return false
-    const spec = parsePortSpec(pattern.port)
-    return spec !== null && spec !== 'any' && spec.lo === port && spec.hi === port
-  })
+export function patternNamesPortExactly (pattern: ParsedPattern | null, port: number): boolean {
+  if (pattern === null) return false
+  const spec = parsePortSpec(pattern.port)
+  return spec !== null && spec !== 'any' && spec.lo === port && spec.hi === port
 }
