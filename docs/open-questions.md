@@ -4249,3 +4249,64 @@ pressure.
 
 **Either the prompt gets built or the promise comes out of the contract.** Both are small; leaving
 them disagreeing is the bad outcome, because the contract is what an app author trusts.
+
+### A135
+
+**The shim refuses an unimplemented member by absence, not by name.** `src/shim/`'s module
+targets export only what is built: `dns` exports `lookup` alone, `dgram.Socket` implements six
+methods. A caller reaching anything else -- `dns.resolve4(...)`, `socket.setBroadcast(...)` --
+gets `undefined is not a function`: no name, no reason, and no pointer to the
+compatibility-matrix row that would explain whether it is unbuilt, refused by design, or a gap
+nobody noticed.
+
+**This is a solved problem one directory away.** PR #151 built exactly this machinery for the
+`electron` compatibility package -- `src/shim-electron/unimplemented.ts`'s `refusingProxy` and
+`unimplementedMember` -- under a title the owner accepted: *"Refuse unsupported electron APIs by
+name and reason, not by absence"*. `grep -rn "unimplemented\|refusingProxy" src/shim/*.ts`
+returns nothing, so the same reasoning has not been applied to the much larger Node surface.
+
+*Still open.* Not fixed with the R8 dgram defects (PR for A136 below) because it is a
+cross-cutting change to every module target in `src/shim/`, not a dgram bug, and because there
+is a real design question underneath it: an ESM module namespace object cannot throw for an
+undeclared name (#151's own finding), so `dns.resolve4` can only be made to refuse by name if
+each module target exports a default whose value is a Proxy -- which changes how every
+`module-map.ts` entry is consumed. That is an architectural choice, not a bug fix, so it is the
+owner's.
+
+### A136
+
+**The flagship's UDP transport has no verification that executes anywhere.** Unattended build
+queue item 5.1's exit criterion is *"A real torrent fetches from a non-WebRTC TCP peer and a DHT
+lookup completes."* Exactly one test in the repository exercises the dgram shim against a real
+caller -- `src/shim/tests/real-bittorrent-dht.test.ts`, driving a real unmodified
+`bittorrent-dht` Client and a real `k-rpc-socket` -- and it is skipped in every checkout and in
+CI. Its three cases are **the only three skipped tests in the whole 3741-test suite**.
+
+The skip is structural, not incidental:
+- the fixture it needs is `spike/app/node_modules/k-rpc-socket`
+- `.gitignore:10` ignores `spike/app/node_modules`
+- `.github/workflows/ci.yml` never installs it -- `grep -n "spike\|k-rpc"` finds only three
+  comment lines, all about the unrelated Playwright attach issue
+
+So the test cannot run in CI, and cannot run in a fresh clone. The suite is honest about the
+skip -- there is a passing guard case that asserts *"is skipped: spike/app/node_modules/
+k-rpc-socket is not present in this checkout"* -- but a green run still reads as "verified".
+
+**Why this is filed rather than fixed.** The 2026-09-11 post-merge audit found three real
+defects in `node-dgram-socket.ts` (a second `bind()` orphaning the first handle, the documented
+array `send()` form throwing, `close()` emitting twice) that a real k-rpc-socket run would very
+likely have surfaced. They survived a whole unattended build run AND a verified
+`/claude-security` scan because the one test that exercises a real caller cannot execute. The
+fix is a decision the owner owns, because each option costs something real:
+
+1. **Vendor the fixture** -- commit `k-rpc-socket` (and `bencode`) under a tracked path. Makes
+   the test run everywhere. Costs a vendored dependency in the tree, which Rule 8 and the
+   supply-chain posture both have opinions about.
+2. **Install it in CI** -- one `npm install` step scoped to `spike/app`. Cheap, but makes CI
+   depend on the npm registry for a test the local developer still never runs.
+3. **Accept it and say so louder** -- leave the skip, and make the compatibility matrix state
+   plainly that the dgram row's real-caller evidence does not execute in CI.
+
+*Still open. AI recommendation: option 2*, because it is the only one that turns a green CI run
+into evidence about the flagship's transport without adding anything to the shipped tree. The
+owner decides.
