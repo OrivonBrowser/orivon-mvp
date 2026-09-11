@@ -169,4 +169,18 @@ describe('handleSyncFsReadRequest -- disk errors are mapped through the same clo
     expect((response as { code: string }).code).toBe('internal')
     expect((response as { message: string }).message).not.toContain('secret detail')
   })
+
+  // R5-03: ./sync-fs-policy.ts's production readFileSync throws an already-
+  // mapped OrivonError ('limit') when a file exceeds the size cap.
+  // mapIoError's isOrivonError passthrough must hand that through unchanged
+  // rather than re-wrapping it as 'internal'.
+  it('a \'limit\' OrivonError from policy.readFileSync (the size cap) passes through unchanged', () => {
+    const { policy } = fakePolicy({
+      readFileSync: () => { throw fail('limit', 'the file exceeds the synchronous read size cap') }
+    })
+
+    const response = handleSyncFsReadRequest(policy, frameFor(APP), { path: 'huge.bin' })
+
+    expect(response).toEqual({ id: '', ok: false, code: 'limit', message: expect.any(String) })
+  })
 })
