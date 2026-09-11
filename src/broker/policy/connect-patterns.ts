@@ -13,7 +13,7 @@
 
 import type { Pattern } from '../../contracts/index.js'
 import { canonicalAddress, classifyAddress, isPublicUnicast } from './address.js'
-import { MAX_PORT, isAsciiHost, normalizeHost } from './canonical-host.js'
+import { MAX_HOST_LENGTH, MAX_PORT, isAsciiHost, normalizeHost } from './canonical-host.js'
 
 /** A host at the limit, a colon, and the widest port range. */
 const MAX_PATTERN_LENGTH = 300
@@ -261,4 +261,65 @@ export function couldAnyPatternMatch (
     if (host === requested) return true
   }
   return false
+}
+
+/** Why a host may not be DECLARED (in a manifest, or requested via
+ * `app.requestGrant`) -- narrower than what `hostMatches` will authorise at
+ * connect time, matching `src/loader/manifest-capabilities.ts`'s own
+ * doc: every reason below is one where `hostMatches` would deny on EVERY
+ * call, so rejecting it up front can never refuse a pattern the runtime
+ * would otherwise have honoured. */
+export type ConnectHostRejection =
+  | 'wildcard-needs-wildcard-port'
+  | 'sub-glob'
+  | 'non-ascii'
+  | 'too-long'
+  | 'not-canonical'
+  | 'empty-label'
+  | 'address-not-canonical'
+
+/**
+ * `null` means `host` may be declared as-is. Shared by two callers on
+ * opposite sides of a boundary neither may cross to reach the other's file
+ * directly (`src/broker/README.md`: `src/broker/` may never import
+ * `src/loader/`): `src/loader/manifest-capabilities.ts`'s `validateConnectHost`
+ * wraps this in the developer-facing `reject(...)` messages a manifest author
+ * sees, and `./request-grant.ts`'s `isDeclarableConnectPattern` (below) uses
+ * it to refuse an `app.requestGrant` call asking for a pattern shape no
+ * manifest could ever have declared (R2-01) -- one implementation of the
+ * grammar, not two (code-guidelines.md Rule 3).
+ *
+ * `wholePattern` is needed, not just `host`, because the one wildcard rule
+ * is about the PAIR: `"*"` is only declarable paired with a `"*"` port, as
+ * the exact literal `"*:*"` (capability-api.md's only documented wildcard
+ * form).
+ */
+export function declarableConnectHostRejection (host: string, wholePattern: string): ConnectHostRejection | null {
+  if (host === '*') return wholePattern === '*:*' ? null : 'wildcard-needs-wildcard-port'
+  if (host.includes('*')) return 'sub-glob'
+  if (!isAsciiHost(host)) return 'non-ascii'
+  if (host.length > MAX_HOST_LENGTH) return 'too-long'
+  if (/\s/.test(host) || normalizeHost(host) !== host) return 'not-canonical'
+  if (host.split('.').some((label) => label.length === 0)) return 'empty-label'
+  if (classifyAddress(host) !== 'unparseable' && canonicalAddress(host) !== host) return 'address-not-canonical'
+  return null
+}
+
+/**
+ * True only for a `host:port` pattern a manifest could legally declare --
+ * the full grammar (whitespace, the host half via `declarableConnectHostRejection`,
+ * and a real port or port range), not merely the loose split `parsePattern`
+ * performs. `./request-grant.ts`'s `decideGrantRequest` (Half 2 of R2-01)
+ * runs every `app.requestGrant`-supplied pattern through this before the
+ * subset check, so a request can never carry authority a manifest was never
+ * allowed to declare in the first place -- see `declarableConnectHostRejection`'s
+ * own doc for why this lives here rather than duplicating
+ * `src/loader/manifest-capabilities.ts`'s `validateConnectPattern`.
+ */
+export function isDeclarableConnectPattern (pattern: Pattern): boolean {
+  if (typeof pattern !== 'string' || pattern !== pattern.trim()) return false
+  const parsed = parsePattern(pattern)
+  if (parsed === null) return false
+  if (parsed.port !== '*' && parsePortSpec(parsed.port) === null) return false
+  return declarableConnectHostRejection(parsed.host, pattern) === null
 }

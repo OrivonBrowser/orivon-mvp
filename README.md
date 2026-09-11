@@ -16,13 +16,17 @@ native helper. Paste a magnet link, approve one prompt, watch the video.
 
 > ### Status: pre-alpha. Nothing is released.
 >
-> **Build step 1 of 10 is done** — the browser shell: tabs, omnibox, back/forward, window
-> chrome. It runs, and you can browse with it.
+> **Build steps 1 to 3 of 10 are done** — the browser shell, the capability broker, and the
+> Node shim. Orivon can hold per-app permissions and enforce them over network, TLS and
+> filesystem access, and it can run Node programs inside a tab.
 >
-> **The capability broker — the actual product — is not written yet.** Neither is the Node
-> shim, the app loader, or the torrent app. There is no packaged build, no installer, and no
-> release. See [`docs/planning/build-plan.md`](docs/planning/build-plan.md) for the order of
-> work, and [`CHANGELOG.md`](CHANGELOG.md) for what has actually landed.
+> **No app can ask for a permission yet**, so in practice nothing is granted. The prompt, the
+> policy and the storage all exist; nothing on a page can trigger them. That is the app
+> loader's remaining job (step 4), and it is why the torrent app does not run yet. There is no
+> packaged build, no installer, and no release. See
+> [`docs/planning/build-plan.md`](docs/planning/build-plan.md) for the order of work,
+> [`docs/planning/compatibility-matrix.md`](docs/planning/compatibility-matrix.md) for what
+> works cell by cell, and [`CHANGELOG.md`](CHANGELOG.md) for what has landed.
 
 ## Try it
 
@@ -113,11 +117,6 @@ Strictly dependency-ordered; each step needs the one before it.
 | 8 | **Telemetry** — with the first-run disclosure | groundwork in [`src/telemetry/`](src/telemetry/) |
 | 9 | **Developer mode** — load an unpacked app | |
 | 10 | **Packaging** — AppImage and deb | |
-
-**Steps 2 and 3 landed on 2026-09-10**, in one unattended multi-agent run of about eighteen
-hours. [`docs/planning/compatibility-matrix.md`](docs/planning/compatibility-matrix.md) is the
-cell-by-cell record of what that actually made possible, re-derived from the tree rather than
-from the plan.
 
 **Deliberately deferred** — choices, not oversights, and every one of them is still on the
 long-term plan ([`docs/mvp-scope.md`](docs/mvp-scope.md)): trustless name resolution (ENS and

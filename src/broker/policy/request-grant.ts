@@ -9,11 +9,20 @@
 
 import { widensAuthority } from './update.js'
 import { patternSetFromCapabilities } from './manifest-patterns.js'
+import { isDeclarableConnectPattern } from './connect-patterns.js'
 import type { CapabilityKind, Manifest, Pattern } from '../../contracts/index.js'
 
 const CAPABILITY_KINDS: readonly CapabilityKind[] = [
   'tcp.connect', 'tcp.listen', 'udp.bind', 'udp.send', 'https.connect', 'fs', 'id'
 ]
+
+/** The three `host:port` capability kinds -- the only ones
+ * `isDeclarableConnectPattern` (`./connect-patterns.js`) knows how to judge.
+ * `tcp.listen`/`udp.bind` are bare port ranges with a different grammar
+ * (no host, `"*"` rejected outright) and carry no equivalent gap: nothing
+ * about R2-01 concerns a port-range pattern shape a manifest could not have
+ * declared. */
+const CONNECT_SHAPED_CAPABILITIES: ReadonlySet<CapabilityKind> = new Set(['tcp.connect', 'https.connect', 'udp.send'])
 
 /**
  * True for exactly the seven `CapabilityKind` literals -- the guard an
@@ -56,6 +65,20 @@ export interface GrantRequestDecision {
  * guidelines.md Rule 3 exists to prevent, and this is security-critical
  * enough that reuse also means it inherits update.ts's own mutation-tested
  * coverage rather than starting from zero.
+ *
+ * THE SUBSET CHECK IS NOT ENOUGH ON ITS OWN (R2-01). `widensAuthority` uses
+ * `covers()`, which is the RUNTIME's own matching grammar
+ * (`./connect-patterns.js`'s `hostSpecKind`) -- the one where a bare `"*"`
+ * host authorises any public address REGARDLESS of its paired port. A
+ * manifest declaring `"*:*"` therefore "covers" a requested pattern like
+ * `"*:443"` under that grammar, even though no manifest could ever have
+ * declared `"*:443"` directly: `declarableConnectHostRejection` (the same
+ * file) requires the wildcard host be paired with a wildcard port,
+ * specifically to close this shape off. Without the check below, `app.
+ * requestGrant` could hand a person a consent prompt for a pattern shape
+ * their own manifest review process would have refused outright at
+ * install. Checked BEFORE the subset check, not after: a shape the manifest
+ * grammar itself rejects should never reach `widensAuthority` at all.
  */
 export function decideGrantRequest (
   manifest: Manifest,
@@ -67,6 +90,18 @@ export function decideGrantRequest (
   // Absent means "not declared" -- capability-api.ts's own wording, and the
   // one branch that must never fall through to a prompt.
   if (declaredForKind === undefined) return { allowed: false, patterns: [] }
+
+  // requestedPatterns === undefined means "whatever the manifest already
+  // declares" (this function's own doc above) -- already manifest-grammar-
+  // legal by construction, so only an EXPLICIT request needs re-checking
+  // against that grammar here.
+  if (
+    requestedPatterns !== undefined &&
+    CONNECT_SHAPED_CAPABILITIES.has(capability) &&
+    requestedPatterns.some((pattern) => !isDeclarableConnectPattern(pattern))
+  ) {
+    return { allowed: false, patterns: [] }
+  }
 
   const wanted = requestedPatterns ?? declaredForKind
   const declaredSet = { [capability]: declaredForKind } as Partial<Record<CapabilityKind, readonly Pattern[]>>

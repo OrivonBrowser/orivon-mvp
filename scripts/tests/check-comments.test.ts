@@ -293,5 +293,20 @@ describe('checkComments', () => {
       expect(result.ok).toBe(false)
       expect(result.unreadable.map((u) => u.file)).toEqual(['src/gone.ts'])
     })
+
+    // R-S5-04: trackedFiles() used to swallow a git failure into [], which
+    // this guard read the same as "nothing to check" -- a 90-line header in a
+    // git-less copy (a packaging step, a stripped image) would pass clean.
+    it('fails loudly on a non-git directory instead of reporting clean', () => {
+      const root = mkdtempSync(join(tmpdir(), 'orivon-comments-nogit-'))
+      mkdirSync(join(root, 'src'), { recursive: true })
+      writeFileSync(join(root, 'src/a.ts'), preamble(80))
+
+      const result = checkComments(root)
+
+      expect(result.ok).toBe(false)
+      expect(result.offenders).toEqual([])
+      expect(result.error).toMatch(/could not list git-tracked files/)
+    })
   })
 })

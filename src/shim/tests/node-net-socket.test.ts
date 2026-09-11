@@ -120,3 +120,64 @@ describe('net.Socket over a fake TcpSocket', () => {
     expect(setNoDelay).toHaveBeenCalledWith(true)
   })
 })
+
+// Defect #1: `(port, host)` silently dropped `host` and dialled 'localhost',
+// which is the overload every torrent/DHT library calls net.connect with
+// (bittorrent-dht, k-rpc-socket). Every real Node form is exercised here so
+// a future change cannot narrow the parsing back to one or two shapes.
+describe('createConnectFactory -- Node\'s real net.connect overloads', () => {
+  function factory (): { connect: ReturnType<typeof createConnectFactory>, calls: Array<{ host: string, port: number }> } {
+    const fake = createFakeTcpSocket()
+    const calls: Array<{ host: string, port: number }> = []
+    const connect = createConnectFactory(async (opts) => { calls.push(opts); return fake.socket })
+    return { connect, calls }
+  }
+
+  it('(port) dials the given port against the default host', async () => {
+    const { connect, calls } = factory()
+    connect(6881)
+    await vi.waitFor(() => expect(calls).toHaveLength(1))
+    expect(calls[0]).toEqual({ host: 'localhost', port: 6881 })
+  })
+
+  it('(port, host) dials the given host, not "localhost"', async () => {
+    const { connect, calls } = factory()
+    connect(6881, 'router.bittorrent.com')
+    await vi.waitFor(() => expect(calls).toHaveLength(1))
+    expect(calls[0]).toEqual({ host: 'router.bittorrent.com', port: 6881 })
+  })
+
+  it('(port, cb) dials the default host and still fires the connect listener', async () => {
+    const { connect, calls } = factory()
+    const onConnect = vi.fn()
+    connect(6881, onConnect)
+    await vi.waitFor(() => expect(calls).toHaveLength(1))
+    expect(calls[0]).toEqual({ host: 'localhost', port: 6881 })
+    await vi.waitFor(() => expect(onConnect).toHaveBeenCalledOnce())
+  })
+
+  it('(port, host, cb) dials the given host AND fires the connect listener', async () => {
+    const { connect, calls } = factory()
+    const onConnect = vi.fn()
+    connect(6881, 'router.bittorrent.com', onConnect)
+    await vi.waitFor(() => expect(calls).toHaveLength(1))
+    expect(calls[0]).toEqual({ host: 'router.bittorrent.com', port: 6881 })
+    await vi.waitFor(() => expect(onConnect).toHaveBeenCalledOnce())
+  })
+
+  it('(options) dials host/port read from the options object', async () => {
+    const { connect, calls } = factory()
+    connect({ host: 'example.com', port: 80 })
+    await vi.waitFor(() => expect(calls).toHaveLength(1))
+    expect(calls[0]).toEqual({ host: 'example.com', port: 80 })
+  })
+
+  it('(options, cb) dials from the options object AND fires the connect listener', async () => {
+    const { connect, calls } = factory()
+    const onConnect = vi.fn()
+    connect({ host: 'example.com', port: 80 }, onConnect)
+    await vi.waitFor(() => expect(calls).toHaveLength(1))
+    expect(calls[0]).toEqual({ host: 'example.com', port: 80 })
+    await vi.waitFor(() => expect(onConnect).toHaveBeenCalledOnce())
+  })
+})

@@ -99,6 +99,140 @@ describe('fs.readFile / fs.writeFile', () => {
   })
 })
 
+// hex/base64/base64url are Node's binary-to-text encodings, not character
+// sets TextDecoder understands -- readFile('x', 'hex', cb) threw RangeError
+// before this fix, in place of ever calling back with data.
+describe('fs.readFile -- binary-to-text encodings', () => {
+  it('decodes hex', async () => {
+    const { files } = installFakeOrivon()
+    files.set('/x', new Uint8Array([0xde, 0xad, 0xbe, 0xef]))
+    const fs = await import('../node-fs.js')
+    const text = await new Promise<string>((resolve, reject) => {
+      fs.readFile('/x', 'hex', (err, result) => (err !== null ? reject(err) : resolve(result as string)))
+    })
+    expect(text).toBe('deadbeef')
+  })
+
+  it('decodes base64', async () => {
+    const { files } = installFakeOrivon()
+    files.set('/x', new TextEncoder().encode('hello'))
+    const fs = await import('../node-fs.js')
+    const text = await new Promise<string>((resolve, reject) => {
+      fs.readFile('/x', 'base64', (err, result) => (err !== null ? reject(err) : resolve(result as string)))
+    })
+    expect(text).toBe('aGVsbG8=')
+  })
+
+  it('decodes base64url', async () => {
+    const { files } = installFakeOrivon()
+    files.set('/x', new TextEncoder().encode('hello'))
+    const fs = await import('../node-fs.js')
+    const text = await new Promise<string>((resolve, reject) => {
+      fs.readFile('/x', 'base64url', (err, result) => (err !== null ? reject(err) : resolve(result as string)))
+    })
+    expect(text).toBe('aGVsbG8')
+  })
+})
+
+// Before this fix, writeFile's overload accepted an `options` argument but
+// never read it back out of splitTail's result -- every string write landed
+// as UTF-8 regardless of what the caller asked for, corrupting hex/base64
+// payloads silently (no error, just wrong bytes on disk).
+describe('fs.writeFile -- respects options.encoding', () => {
+  it('writes hex-encoded string data as the decoded bytes, not its literal UTF-8 text', async () => {
+    const { files } = installFakeOrivon()
+    const fs = await import('../node-fs.js')
+    await new Promise<void>((resolve, reject) => {
+      fs.writeFile('/x', 'deadbeef', { encoding: 'hex' }, (err) => (err !== null ? reject(err) : resolve()))
+    })
+    // Compared as a plain byte array, not via toEqual against a literal
+    // Uint8Array: encode() returns a `buffer`-package Buffer, whose own
+    // toJSON() makes vitest's structural equality see a mismatched shape
+    // even though the underlying bytes are identical.
+    expect([...(files.get('/x') ?? [])]).toEqual([0xde, 0xad, 0xbe, 0xef])
+  })
+
+  it('accepts the encoding-as-string shorthand, matching readFile\'s own overload', async () => {
+    const { files } = installFakeOrivon()
+    const fs = await import('../node-fs.js')
+    await new Promise<void>((resolve, reject) => {
+      fs.writeFile('/x', 'aGVsbG8=', 'base64', (err) => (err !== null ? reject(err) : resolve()))
+    })
+    expect([...(files.get('/x') ?? [])]).toEqual([...new TextEncoder().encode('hello')])
+  })
+})
+
+// A user callback that throws must be called exactly once, matching real
+// Node. Before this fix, every wrapper chained `.then(cb).catch(...)`, so a
+// throw INSIDE the .then() handler (i.e. inside the user's own callback) was
+// caught by the trailing .catch() and re-delivered to the same callback a
+// second time, now wrapped as an error.
+describe('fs.* -- a throwing callback is invoked exactly once', () => {
+  async function countCallsWhenCallbackThrows (run: (cb: (err: Error | null, ...rest: readonly unknown[]) => void) => void): Promise<number> {
+    let calls = 0
+    // The throw is expected to escape as an unhandled rejection now that it
+    // is no longer swallowed by a `.catch()` -- matching real Node, where an
+    // exception escaping an I/O completion callback is never re-delivered.
+    // Silenced here (socket-port.test.ts's P-F9 uses the same pattern) so
+    // this test's own deliberate throw does not fail the run; the assertion
+    // below is what actually proves the fix.
+    const onUnhandled = (): void => {}
+    process.on('unhandledRejection', onUnhandled)
+    try {
+      run(() => { calls++; throw new Error('user callback blew up') })
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    } finally {
+      process.off('unhandledRejection', onUnhandled)
+    }
+    return calls
+  }
+
+  it('readFile', async () => {
+    const { files } = installFakeOrivon()
+    files.set('/x', new Uint8Array([1]))
+    const fs = await import('../node-fs.js')
+    expect(await countCallsWhenCallbackThrows((cb) => fs.readFile('/x', cb))).toBe(1)
+  })
+
+  it('writeFile', async () => {
+    installFakeOrivon()
+    const fs = await import('../node-fs.js')
+    expect(await countCallsWhenCallbackThrows((cb) => fs.writeFile('/x', 'data', cb))).toBe(1)
+  })
+
+  it('mkdir', async () => {
+    installFakeOrivon()
+    const fs = await import('../node-fs.js')
+    expect(await countCallsWhenCallbackThrows((cb) => fs.mkdir('/x', cb))).toBe(1)
+  })
+
+  it('readdir', async () => {
+    installFakeOrivon()
+    const fs = await import('../node-fs.js')
+    expect(await countCallsWhenCallbackThrows((cb) => fs.readdir('/torrents', cb))).toBe(1)
+  })
+
+  it('stat', async () => {
+    const { stats } = installFakeOrivon()
+    stats.set('/x', { size: 1, isFile: true, isDirectory: false, mtimeMs: 0 })
+    const fs = await import('../node-fs.js')
+    expect(await countCallsWhenCallbackThrows((cb) => fs.stat('/x', cb))).toBe(1)
+  })
+
+  it('rm', async () => {
+    installFakeOrivon()
+    const fs = await import('../node-fs.js')
+    expect(await countCallsWhenCallbackThrows((cb) => fs.rm('/x', cb))).toBe(1)
+  })
+
+  it('rename', async () => {
+    installFakeOrivon()
+    const fs = await import('../node-fs.js')
+    expect(await countCallsWhenCallbackThrows((cb) => fs.rename('/a', '/b', cb))).toBe(1)
+  })
+})
+
 describe('fs.readFileSync', () => {
   it('is the one real synchronous call (ADR-0016)', async () => {
     const { files } = installFakeOrivon()
