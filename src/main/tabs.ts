@@ -107,22 +107,9 @@ export class TabManager {
      * below. Never reachable via a rejected navigation -- see
      * BLANK_URL and resolveTarget(). */
     private readonly dashboardUrl: string,
-    /**
-     * `ctx.broker` is read by every `makeTabView` call site now
-     * (`appTabArgsFor`, ADR-0017) to decide the fetch()-routing flag --
-     * still `Broker | undefined`, so a run where the broker subsystem is
-     * absent simply never sets the flag, same fallback shape
-     * `partitionForTarget` already has. `ctx.loader` remains unused: it is
-     * what the not-yet-built discovery-trigger hint listener needs to
-     * install an app the moment a tab's own page shows the
-     * `<link rel="orivon-manifest">` hint (A60/A61, `docs/open-
-     * questions.md`) -- threaded through on its own, deliberately separate
-     * from that behavior, per `docs/development/parallel-work.md`'s
-     * append-only-first discipline. `ctx.loader` may be `undefined`
-     * (`loaderSubsystem` is not `critical`, unlike the broker) -- whoever
-     * reads it later must treat an absent loader as "the discovery trigger
-     * is disabled this run", never assume it is always present.
-     */
+    /** `ctx.broker` may be `undefined` (a run without the broker
+     * subsystem), and `ctx.loader` is deliberately unused so far -- do not
+     * remove either. README.md's design notes say what each is for. */
     private readonly ctx: SubsystemContext
   ) {
     this.preloadPath = join(import.meta.dirname, '../preload/app.js')
