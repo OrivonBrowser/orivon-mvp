@@ -45,7 +45,10 @@ export function createSyncFsPolicy (
       if (size > maxReadBytes) {
         throw fail('limit', 'the file exceeds the synchronous read size cap')
       }
-      return nodeReadFileSync(resolvedPath)
+      // A copy, not a view into node:fs's pool-backed Buffer -- see
+      // ../adapters/README.md's Design notes for why this one memcpy is
+      // load-bearing here too.
+      return new Uint8Array(nodeReadFileSync(resolvedPath))
     }
   }
 }

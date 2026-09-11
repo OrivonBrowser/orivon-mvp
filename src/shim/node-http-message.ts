@@ -13,6 +13,7 @@
 
 import { Readable } from 'stream'
 import type { ParsedResponseHead } from './node-http-parser.js'
+import type { TcpSocket } from '../contracts/handles.js'
 
 export class IncomingMessage extends Readable {
   statusCode: number | null = null
@@ -21,9 +22,23 @@ export class IncomingMessage extends Readable {
   headers: Readonly<Record<string, string | readonly string[]>> = {}
   rawHeaders: readonly string[] = []
   complete = false
+  /**
+   * The real TcpSocket this response arrived over -- not a fake, and not a
+   * Node net.Socket lookalike. node-https.ts's header already documents the
+   * gap this implies: `res.socket.getPeerCertificate()` and friends are not
+   * here, because the broker terminates TLS and there is no certificate to
+   * hand back. What IS real: `remoteAddress`/`remotePort`/etc, the same
+   * fields every caller reading `res.socket` for connection info wants.
+   */
+  socket: TcpSocket | null = null
 
   override _read (): void {
     // Intentionally empty -- see this file's header.
+  }
+
+  /** node-http-client.ts calls this once, when the socket that will carry the response is known -- before any bytes have necessarily arrived. */
+  _setSocket (socket: TcpSocket): void {
+    this.socket = socket
   }
 
   /** node-http-client.ts calls this once, when the parser finishes the status line and headers. */

@@ -87,6 +87,21 @@ export interface ShimProcess {
 
   readonly nextTick: <Args extends readonly unknown[]>(callback: (...args: Args) => void, ...args: Args) => void
   readonly emitWarning: (warning: string | Error, typeOrOptions?: string | EmitWarningOptions, code?: string) => void
+
+  /**
+   * Always '/', never a real filesystem path -- there is no ambient Node
+   * process to read one from (same reasoning as `platform` above), and
+   * ADR-0003's storage model gives an app exactly one root, not a tree of
+   * directories it navigates between. `orivon.fs`'s own confinement
+   * (`policy/paths.ts`'s `confinePath`) rejects an ABSOLUTE path outright --
+   * "always rejected, never re-rooted" -- so every path an app is meant to
+   * pass `orivon.fs.*` is relative already, and this value exists only so
+   * `path.resolve()` (see below) has something to prefix instead of
+   * throwing. Chosen over a fabricated app-specific string for the same
+   * reason `version` above is '': a value that looks meaningful invites a
+   * library to branch on it in a way this shim cannot actually back.
+   */
+  readonly cwd: () => string
 }
 
 /**
@@ -236,7 +251,8 @@ export function installGlobals (target: GlobalsTarget, options: InstallGlobalsOp
     version: '',
     browser: true,
     nextTick,
-    emitWarning
+    emitWarning,
+    cwd: () => '/'
   }
   target.setImmediate = shimSetImmediate
   target.clearImmediate = shimClearImmediate

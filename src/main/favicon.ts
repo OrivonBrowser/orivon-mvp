@@ -1,15 +1,21 @@
 // Real favicons for the tab strip -- see src/renderer/README.md for the
 // feature, and README.md's Design notes here for why main fetches to
-// data: rather than the renderer fetching directly.
+// data: rather than the renderer fetching directly, and for why this
+// file's own fetch must clear T12 before it runs.
 //
 // Structure mirrors update-check.ts/update-check-runner.ts: pure parts
-// exported and tested (pickFaviconUrl, readCapped, toDataUrl), the one
-// real network call (fetchFaviconDataUrl) thin and defensive around it.
-// net.fetch (Electron's own, session-aware) rather than Node's global
-// fetch, imported dynamically -- same reasoning as
+// exported and tested (pickFaviconUrl, isSafeFaviconUrl, readCapped,
+// toDataUrl), the one real network call (fetchFaviconDataUrl) thin and
+// defensive around it. net.fetch (Electron's own, session-aware) rather
+// than Node's global fetch, imported dynamically -- same reasoning as
 // update-check-runner.ts's file header: outside a real Electron process
 // (i.e. under vitest), `electron`'s entry point is a path STRING, and a
 // top-level import would silently bind `undefined` rather than throw.
+
+import { classifyAddress, isPublicUnicast } from '../broker/policy/address.js'
+import type { Resolver } from '../broker/policy/connect.js'
+import { isLocalhostName } from '../broker/policy/origin.js'
+import { electronResolveHost } from '../loader/electron-resolve.js'
 
 export const MAX_FAVICON_BYTES = 32 * 1024
 export const FAVICON_TIMEOUT_MS = 5_000
@@ -123,11 +129,63 @@ export function toDataUrl (bytes: Uint8Array, contentType: string | null): strin
 }
 
 /**
+ * T12 (security-model.md): true only if `url` is safe for the main
+ * process to fetch unprompted -- no manifest, no grant, no app involved,
+ * so a favicon candidate is held to the same "public unicast only" bar
+ * as every other unprompted main-process reach. Reuses the exact
+ * classification loader/install-origin.ts and loader/electron-fetch.ts
+ * already apply (classifyAddress/isPublicUnicast/isLocalhostName) and
+ * the same resolver they use for a live Electron net.fetch
+ * (loader/electron-resolve.ts's electronResolveHost, Chromium's own --
+ * the one net.fetch itself will consult) rather than a second
+ * implementation of either (code-guidelines.md Rule 3).
+ *
+ * https only: an http candidate would let a page served over https force
+ * a plaintext request from the main process, outside the renderer's own
+ * mixed-content rules.
+ *
+ * A LITERAL address (including every decimal/octal/hex/IPv4-mapped-IPv6
+ * spelling classifyAddress already normalises) is judged directly. A
+ * HOSTNAME is resolved, and EVERY returned address must be public -- a
+ * name that resolves to a private address is DNS rebinding
+ * (policy/connect.ts's own resolver handling is the worked example), not
+ * merely a private literal spelled as a name. No loopback carve-out,
+ * matching install-origin.ts: nothing here is a user-initiated
+ * developer-mode action, so there is no case where reaching loopback is
+ * the intended outcome.
+ */
+export async function isSafeFaviconUrl (url: string, resolveHost: Resolver): Promise<boolean> {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return false
+  }
+  if (parsed.protocol !== 'https:') return false
+
+  const host = parsed.hostname
+  if (isLocalhostName(host)) return false
+  if (classifyAddress(host) !== 'unparseable') return isPublicUnicast(host)
+
+  let answers: readonly string[]
+  try {
+    answers = await resolveHost(host)
+  } catch {
+    return false // could not resolve -- fails closed, same as a fetch failure
+  }
+  if (answers.length === 0) return false
+  return answers.every((answer) => isPublicUnicast(answer))
+}
+
+/**
  * The one function here that touches the network. Returns null on any
- * failure (offline, timeout, oversized, wrong type) -- never throws by
- * contract, matching update-check-runner.ts's fetchLatestGithubRelease.
+ * failure (offline, timeout, oversized, wrong type, or T12 refusal) --
+ * never throws by contract, matching update-check-runner.ts's
+ * fetchLatestGithubRelease.
  */
 export async function fetchFaviconDataUrl (url: string): Promise<string | null> {
+  if (!(await isSafeFaviconUrl(url, electronResolveHost))) return null
+
   const { net } = await import('electron')
 
   let response: Awaited<ReturnType<typeof net.fetch>>
@@ -141,10 +199,20 @@ export async function fetchFaviconDataUrl (url: string): Promise<string | null> 
   }
   if (!response.ok) return null
 
-  const bytes = await readCapped(response.body, MAX_FAVICON_BYTES)
-  if (bytes === null) return null
+  // A truncated body against a declared Content-Length, or malformed
+  // chunked framing, errors the stream mid-read: reader.read() rejects,
+  // which readCapped propagates. Caught here so this function's own "never
+  // throws" contract (above) actually holds -- without this, an attacker-
+  // controlled favicon host could turn a visited page into an unhandled
+  // rejection at the caller.
+  try {
+    const bytes = await readCapped(response.body, MAX_FAVICON_BYTES)
+    if (bytes === null) return null
 
-  return toDataUrl(bytes, response.headers.get('content-type'))
+    return toDataUrl(bytes, response.headers.get('content-type'))
+  } catch {
+    return null
+  }
 }
 
 /** In-memory only, unbounded for the process's lifetime -- acceptable
