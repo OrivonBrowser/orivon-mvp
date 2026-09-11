@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { checkConnect, type ConnectDecision, type Resolver } from '../connect.js'
+import { RESERVED_PORTS } from '../reserved-ports.js'
 import type { Pattern } from '../../../contracts/index.js'
 import {
   PUBLIC_A,
@@ -708,9 +709,12 @@ describe('checkConnect -- reserved ports (open-questions.md A82)', () => {
   })
 
   it('the naming still does not bypass the host check', async () => {
-    // A pattern naming :25 for one host must not open :25 everywhere. This is
-    // why namesPortExactly deliberately ignores the host half -- the host
-    // rules run unchanged afterwards, rather than being folded into it.
+    // A pattern naming :25 for one host must not open :25 everywhere. Only
+    // one pattern is granted here, so it is also the only one `eligible` can
+    // contain -- the host rules below still deny it. See the
+    // 'A82 must be decided per pattern' block below for the case this guards
+    // that a SECOND, unrelated pattern is what makes interesting: naming the
+    // port in one pattern must not borrow a different pattern's host match.
     const decision = await checkConnect(
       ['other.example:25'], 'mail.example', 25, resolverFor({ 'mail.example': [PUBLIC_A] })
     )
@@ -730,5 +734,64 @@ describe('checkConnect -- reserved ports (open-questions.md A82)', () => {
     const counting: Resolver = async (host) => { resolverCalls++; return await resolverFor({ 'mail.example': [PUBLIC_A] })(host) }
     await checkConnect(['*:*'], 'mail.example', 25, counting)
     expect(resolverCalls).toBe(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// A82 must be decided per pattern, not per grant.
+// ---------------------------------------------------------------------------
+
+// Regression coverage for the cross-pattern bypass: a blanket `*:*` grant
+// plus an UNRELATED pattern that happens to name a reserved port exactly used
+// to authorise that port for every host, not just the one the naming was
+// about. Measured on the pre-fix code: `checkConnect(['mail.example.com:25',
+// '*:*'], 'attacker.example.net', 25, ...)` returned `allowed: true`.
+describe('checkConnect -- A82 must be decided per pattern, not per grant', () => {
+  it('the bypass itself: a blanket grant plus an unrelated exact naming does not open a third host', async () => {
+    const decision = await checkConnect(
+      ['mail.example.com:25', '*:*'], 'attacker.example.net', 25, noResolution
+    )
+    expect(decision.allowed).toBe(false)
+  })
+
+  it('control: the blanket grant alone still denies the reserved port', async () => {
+    const decision = await checkConnect(['*:*'], 'attacker.example.net', 25, noResolution)
+    expect(decision.allowed).toBe(false)
+  })
+
+  it('control: the narrow grant alone still denies a different host', async () => {
+    const decision = await checkConnect(['mail.example.com:25'], 'attacker.example.net', 25, noResolution)
+    expect(decision.allowed).toBe(false)
+  })
+
+  it('the legitimate case A82 deliberately permits still works', async () => {
+    const decision = await checkConnect(
+      ['mail.example.com:25'], 'mail.example.com', 25, resolverFor({ 'mail.example.com': [PUBLIC_A] })
+    )
+    expect(allowedAddresses(decision)).toStrictEqual([PUBLIC_A])
+  })
+
+  it('a range does not count as a naming, even paired with a blanket grant', async () => {
+    const decision = await checkConnect(
+      ['mail.example.com:20-30', '*:*'], 'attacker.example.net', 25, noResolution
+    )
+    expect(decision.allowed).toBe(false)
+  })
+
+  it.each([...RESERVED_PORTS])(
+    'port %d: a blanket grant plus an unrelated exact naming still denies a third host',
+    async (port) => {
+      const decision = await checkConnect(
+        [`mail.example.com:${port}`, '*:*'], 'attacker.example.net', port, noResolution
+      )
+      expect(decision.allowed).toBe(false)
+    }
+  )
+
+  it('leaves a non-reserved port completely unaffected by narrowing', async () => {
+    const decision = await checkConnect(
+      ['a.example:25', '*:*'], 'somewhere.example', 8080, resolverFor({ 'somewhere.example': [PUBLIC_A] })
+    )
+    expect(allowedAddresses(decision)).toStrictEqual([PUBLIC_A])
   })
 })

@@ -57,7 +57,17 @@ vi.mock('electron', () => ({
   })
 }))
 
+// F35 regression test below needs to force fetchFaviconDataUrlCached to
+// reject on demand -- everything else keeps the real favicon.ts (pure
+// functions like pickFaviconUrl are exercised for real elsewhere in this
+// file's tab-creation flow).
+vi.mock('../favicon.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../favicon.js')>()
+  return { ...actual, fetchFaviconDataUrlCached: vi.fn().mockResolvedValue(null) }
+})
+
 const { TabManager } = await import('../tabs.js')
+const { fetchFaviconDataUrlCached } = await import('../favicon.js')
 
 const fakeContentView = { addChildView: vi.fn(), removeChildView: vi.fn() }
 const fakeBounds = { x: 0, y: 0, width: 800, height: 600 }
@@ -434,3 +444,35 @@ describe('TabManager -- did-navigate repartitions a tab for a redirect, link, fo
   })
 })
 
+// F35 (CLAUDE-SECURITY-20260910-203341): wireView() used to launch
+// captureFavicon with a bare `void` and no .catch. A visited page's own
+// favicon host could reject that promise (see favicon.test.ts's
+// fetchFaviconDataUrl coverage for how), turning an ordinary page visit
+// into an unhandledRejection -- which index.ts deliberately maps to
+// app.exit(1), killing every open tab. This exercises the wiring in
+// tabs.ts directly, independent of what makes captureFavicon reject.
+describe('TabManager -- a rejecting captureFavicon must not escape as an unhandled rejection (F35)', () => {
+  it('does not fire process "unhandledRejection" when fetchFaviconDataUrlCached rejects', async () => {
+    vi.mocked(fetchFaviconDataUrlCached).mockRejectedValueOnce(new Error('simulated favicon failure'))
+
+    const manager = newManager()
+    manager.createTab('https://app.example/')
+    const view = createdViews[0] as RecordedView
+
+    const onUnhandledRejection = vi.fn()
+    process.once('unhandledRejection', onUnhandledRejection)
+    try {
+      view.webContents.emit('page-favicon-updated', {}, ['https://evil.example/icon.png'])
+      // Give captureFavicon's rejected promise, and Node's own
+      // unhandledRejection detection, a full turn of the event loop to
+      // surface -- a microtask-only wait (a bare `await Promise.resolve()`)
+      // is not enough to reliably observe Node's check.
+      await new Promise((resolve) => setImmediate(resolve))
+      await new Promise((resolve) => setImmediate(resolve))
+    } finally {
+      process.removeListener('unhandledRejection', onUnhandledRejection)
+    }
+
+    expect(onUnhandledRejection).not.toHaveBeenCalled()
+  })
+})

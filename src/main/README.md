@@ -22,6 +22,7 @@ themselves via `subsystems.ts` rather than editing here.
 | `tab-types.ts` | The wire-format types (`TabState`, `TabsSnapshot`, `ShellState`, `Bounds`) pushed to the chrome UI |
 | `ipc.ts` | Shell IPC channels between the chrome view and main |
 | `omnibox.ts` | Address-bar input: URL or search. Unit tested |
+| `permission-gate.ts` | Denies every Chromium permission (camera, clipboard, notifications, …) by default, on every session a tab can reach |
 
 ## Two things not to rediscover
 
@@ -108,6 +109,19 @@ change" and repartition the dashboard into an app partition on its very first lo
 excludes `record.isDashboardTab` explicitly rather than relying on `partitionChanged` alone to
 catch this case.
 
+**[`permission-gate.ts`](permission-gate.ts) — wired through `app.on('session-created', ...)`,
+not a call inside `tab-view.ts`'s `makeTabView()`.** Electron fires that event exactly once for
+every `Session` it ever instantiates in this process -- `session.defaultSession`'s own creation
+included -- so one listener, attached before anything can create a session, reaches every future
+`session.fromPartition(...)` call too, including ones no code here has written yet. A handler
+installed only at `makeTabView`'s own call site would miss the default session (used by the
+chrome UI and every rejected or dashboard-bound tab) and any session a later stream creates some
+other way; enumerating today's known partitions once at startup would still miss a partition a
+tab opens after that point, which is most of them -- `partitionFor(origin)` sessions come into
+being as tabs open, not at startup. The subsystem is listed first in `subsystems.ts`, ahead of
+everything else, so its `beforeReady` attaches the listener before any other subsystem's own
+`beforeReady` gets a chance to create a session.
+
 **[`favicon.ts`](favicon.ts) — main fetches favicons to a `data:` URL rather than letting the
 renderer fetch directly.** AI recommendation, not yet an owner decision. The chrome view's CSP
 (`index.html`) is a one-line, readable guarantee today that the one privileged view in this app
@@ -117,3 +131,38 @@ request from the privileged, cookie-bearing chrome origin — a new, silent trac
 exactly where this codebase has been careful before (`mvp-scope.md` already flags DuckDuckGo
 search itself as a stated "known limitation" for far less: leaving the machine at all). Fetching
 in main instead keeps the guarantee intact; the CSP only needs `img-src 'self' data:`.
+
+**[`favicon.ts`](favicon.ts) — the fetch is T12-gated (`isSafeFaviconUrl`), added after review found
+it was not.** This fetch fires on ordinary browsing, on every tab, with no manifest and no grant --
+unlike every other main-process network call in this codebase, which is either fixed
+(`update-check-runner.ts`'s `RELEASES_API`) or gated behind an app install
+(`loader/install-origin.ts`, `loader/electron-fetch.ts`). A page's own `<link rel="icon">` is fully
+attacker-controlled, so without a check `pickFaviconUrl` would hand `fetchFaviconDataUrl` a URL
+pointing anywhere -- `169.254.169.254`, a LAN admin panel, a localhost service -- and the main
+process would issue a real GET to it. `isSafeFaviconUrl` closes this the same way
+`install-origin.ts` closes the equivalent gap for an app install: reuse `policy/address.ts`'s
+`classifyAddress`/`isPublicUnicast` and `policy/origin.ts`'s `isLocalhostName` directly, and
+`loader/electron-resolve.ts`'s `electronResolveHost` for the one case those cannot answer alone (a
+hostname, which needs resolving before it can be classified) -- never a second implementation of
+any of the three (code-guidelines.md Rule 3).
+
+Three follow-on questions the review raised, and what this fix does about each:
+
+- **Accept `http://` for a favicon at all?** No. `isSafeFaviconUrl` refuses it outright --
+  refusing plaintext costs a real favicon nothing and closes a downgrade path from an https page.
+  This lives in the fetch path, not in `pickFaviconUrl`: that function's own test asserts it still
+  *selects* an `http://` candidate (picking a URL is not fetching one), so the refusal has to sit
+  where the fetch actually happens or it would force rewriting an assertion the fix has no
+  security reason to touch.
+- **Bound the number of favicon fetches one tab can drive?** Not in this fix. `page-favicon-
+  updated` can fire repeatedly and nothing caps it, but that is a resource-exhaustion question
+  (T11b's shape) against whatever `isSafeFaviconUrl` still allows through -- i.e. only *public*
+  hosts, once this fix lands -- not a T12 address-reach question. Bounding it well needs new
+  per-tab state in `tabs.ts` (which favicon.ts deliberately has no dependency on, so it stays
+  importable under plain vitest), which is a real design decision on its own, not a one-line
+  addition to a security fix already in flight.
+- **Bound `faviconCache`?** Not in this fix. Its own comment already calls the unbounded,
+  process-lifetime cache a deliberate "v0, revisit later" choice, made before this review and
+  orthogonal to it -- reaching a private address was never something the cache made worse or
+  better. Revisiting a sizing decision inside a branch whose job is a security fix is exactly the
+  scope creep `CLAUDE.md` Rule 4 warns about.
