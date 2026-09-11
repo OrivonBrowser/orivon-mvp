@@ -78,6 +78,49 @@ or the teardown would incorrectly call `forgetTab()` on a tab that is not actual
 `src/main/tests/tabs.test.ts` exercises this directly with a fake `webContents` that emits
 `'destroyed'` synchronously from `close()`, the same way real Electron destruction can.
 
+**[`tabs.ts`](tabs.ts) — what `TabManager`'s `ctx: SubsystemContext` is for, and why one half
+of it is unused.** `ctx.broker` is read by every `makeTabView` call site (`appTabArgsFor`,
+ADR-0017) to decide the `fetch()`-routing flag. It stays `Broker | undefined`, so a run where
+the broker subsystem is absent simply never sets the flag — the same fallback shape
+`partitionForTarget` already has. `ctx.loader` is threaded through but read nowhere yet: it is
+what the not-yet-built discovery-trigger listener needs in order to install an app the moment a
+tab's page shows its `<link rel="orivon-manifest">` hint (A60/A61, `docs/open-questions.md`).
+It was threaded through on its own, deliberately ahead of that behaviour, per
+`docs/development/parallel-work.md`'s append-only-first discipline — so do not delete it as dead.
+Whoever wires it must treat an absent loader as "the discovery trigger is disabled this run",
+never assume it is present: `loaderSubsystem` is not `critical`, unlike the broker.
+
+**[`tabs.ts`](tabs.ts) — a redirect, clicked link, form submission or script navigation now
+repartitions a tab too, not only a typed cross-origin navigation (A108/A109,
+`docs/open-questions.md`; owner decision D-0010 item 2).** `navigate()` was the only code path
+that ever computed a partition, and it is reached only from the omnibox and the dashboard's own
+navigate command — every other way a tab reaches a new origin bypassed it. Fixed by having
+`wireView()`'s existing `did-navigate` handler also call `repartitionView()`, the same swap
+`navigate()` already used, whenever the *committed* URL's origin differs from the tab's current
+partition (`tab-view.ts`'s new `partitionChanged`, factored out so `navigate()` and this handler
+can never compute the comparison two different ways). The file's own header previously justified
+the absence of any origin-locking with "that lock applies to granted apps, which do not exist
+until build step 4" — stale since #127/#129 made grants real and persisted; corrected as part of
+this fix rather than left to mislead the next reader.
+
+**The residual this leaves, deliberately not papered over.** `did-navigate` fires only once a
+navigation has already committed — by then the new origin's page has already rendered once
+inside the OLD partition and may already have read from it. This swap corrects the partition
+going forward; it does not undo an early read. The stronger shape, `will-navigate`/`will-redirect`
+with `preventDefault()` and a re-entry through the partition-aware path, catches it before commit
+— but costs a fresh view and a lost navigation-history entry on every ordinary cross-origin link
+click, not only a redirect, which is why A109 exists as its own tracked item rather than being
+folded into this fix. Built the owner-specified shape (reuse `repartitionView`, do not invent a
+second mechanism); the earlier-interception alternative is registered as an open question for the
+owner, not chosen silently either way.
+
+One thing this fix must not get wrong, and the dashboard tab in particular tests for it: the
+dashboard's own dev-mode URL is a real `http(s)` address, so treating its OWN first `did-navigate`
+the same as an ordinary tab's would see partition `undefined` -> a real partition as an "origin
+change" and repartition the dashboard into an app partition on its very first load. The handler
+excludes `record.isDashboardTab` explicitly rather than relying on `partitionChanged` alone to
+catch this case.
+
 **[`permission-gate.ts`](permission-gate.ts) — wired through `app.on('session-created', ...)`,
 not a call inside `tab-view.ts`'s `makeTabView()`.** Electron fires that event exactly once for
 every `Session` it ever instantiates in this process -- `session.defaultSession`'s own creation
