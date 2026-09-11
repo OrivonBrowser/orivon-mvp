@@ -51,6 +51,18 @@ function parseSendArgs (args: readonly unknown[]): { bytes: Uint8Array, port: nu
   let offset: number | undefined
   let length: number | undefined
   if (typeof rest[0] === 'number' && typeof rest[1] === 'number') {
+    // Node refuses offset/length paired with the ARRAY message form --
+    // ERR_INVALID_ARG_TYPE, because the array is a list of whole buffers and
+    // a byte range across their concatenation is not a thing it offers.
+    // Refusing here too, rather than silently slicing the join, which is what
+    // this did before and would hand the broker a truncated datagram the
+    // caller never asked for.
+    if (Array.isArray(msg)) {
+      throw Object.assign(
+        new TypeError('orivon-node-shim: dgram.send() does not accept offset/length with an array message'),
+        { code: 'ERR_INVALID_ARG_TYPE' }
+      )
+    }
     offset = rest.shift() as number
     length = rest.shift() as number
   }
@@ -119,6 +131,16 @@ export class Socket extends EventEmitter {
       this._pumpMessages(handle)
       this.emit('listening')
     }).catch((error) => {
+      // A FAILED bind leaves the socket UNBOUND, so it has to stay
+      // re-bindable -- real Node resets its own bind state on failure for
+      // exactly that reason, and the retry-on-another-port-after-EADDRINUSE
+      // pattern depends on it. Without this reset the guard above bricks the
+      // Socket permanently on the commonest path there is: udpBind denied
+      // because the origin holds no grant yet, the user then approves one,
+      // and the app's retry throws ERR_SOCKET_ALREADY_BOUND forever.
+      // Compared against `promise` rather than cleared outright so a stale
+      // rejection cannot wipe out a newer bind's own in-flight promise.
+      if (this.bindPromise === promise) this.bindPromise = null
       this.emit('error', toNodeError(error))
     })
     return this
