@@ -23,6 +23,11 @@ import type { SyncFsPolicy } from './sync-fs.js'
 export function createSyncFsPolicy (broker: Pick<Broker, 'fs'>): SyncFsPolicy {
   return {
     confine: (origin, path) => broker.fs.confineSync(origin, path),
-    readFileSync: (resolvedPath) => nodeReadFileSync(resolvedPath)
+    readFileSync: (resolvedPath) => {
+      // A copy, not a view into node:fs's pool-backed Buffer -- see
+      // ../adapters/README.md's Design notes for why this one memcpy is
+      // load-bearing here too.
+      return new Uint8Array(nodeReadFileSync(resolvedPath))
+    }
   }
 }
