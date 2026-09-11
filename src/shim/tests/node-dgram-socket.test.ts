@@ -150,4 +150,42 @@ describe('dgram.Socket over a fake UdpSocket', () => {
     await new Promise<void>((resolve) => setTimeout(resolve, 10))
     expect(closes).toHaveBeenCalledTimes(1)
   })
+
+  // Both below came out of the adversarial security-review pass over the PR
+  // that added the bind guard directly above (#154). The guard was right about
+  // a bind that SUCCEEDED and wrong about one that FAILED.
+
+  it('a bind that FAILED leaves the socket re-bindable -- a denial must not brick it permanently', async () => {
+    let attempt = 0
+    const second = createFakeUdpSocket({ localPort: 6882 })
+    const socket = new Socket(async () => {
+      attempt++
+      if (attempt === 1) throw Object.assign(new Error('no udp.bind grant'), { code: 'denied' })
+      return second.socket
+    })
+
+    const denial = new Promise<Error & { code?: string }>((resolve) => socket.once('error', resolve))
+    socket.bind(6881)
+    expect((await denial).code).toBe('denied')
+
+    // The path this protects is the ordinary one once the grant prompt exists:
+    // udpBind is denied, the user approves, the app retries. Before this, the
+    // retry threw ERR_SOCKET_ALREADY_BOUND forever with nothing bound at all.
+    const listening = new Promise<void>((resolve) => socket.once('listening', resolve))
+    expect(() => socket.bind(6882)).not.toThrow()
+    await listening
+    expect(socket.address().port).toBe(6882)
+  })
+
+  it('send() refuses offset/length paired with an array message, as Node does, instead of slicing the join', async () => {
+    const fake = createFakeUdpSocket()
+    const socket = new Socket(async () => fake.socket)
+    socket.bind(0)
+    await new Promise<void>((resolve) => socket.once('listening', resolve))
+
+    expect(() => {
+      socket.send([new Uint8Array([1, 2, 3, 4]), new Uint8Array([5, 6])], 0, 2, 9999, '203.0.113.9', () => {})
+    }).toThrow(/offset\/length with an array message/)
+    expect(fake.sent).toHaveLength(0)
+  })
 })
