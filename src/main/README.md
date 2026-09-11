@@ -22,6 +22,7 @@ themselves via `subsystems.ts` rather than editing here.
 | `tab-types.ts` | The wire-format types (`TabState`, `TabsSnapshot`, `ShellState`, `Bounds`) pushed to the chrome UI |
 | `ipc.ts` | Shell IPC channels between the chrome view and main |
 | `omnibox.ts` | Address-bar input: URL or search. Unit tested |
+| `permission-gate.ts` | Denies every Chromium permission (camera, clipboard, notifications, …) by default, on every session a tab can reach |
 
 ## Two things not to rediscover
 
@@ -76,6 +77,19 @@ swapped-out OLD view's own `'destroyed'` listener must be stripped *before* `clo
 or the teardown would incorrectly call `forgetTab()` on a tab that is not actually closing —
 `src/main/tests/tabs.test.ts` exercises this directly with a fake `webContents` that emits
 `'destroyed'` synchronously from `close()`, the same way real Electron destruction can.
+
+**[`permission-gate.ts`](permission-gate.ts) — wired through `app.on('session-created', ...)`,
+not a call inside `tab-view.ts`'s `makeTabView()`.** Electron fires that event exactly once for
+every `Session` it ever instantiates in this process -- `session.defaultSession`'s own creation
+included -- so one listener, attached before anything can create a session, reaches every future
+`session.fromPartition(...)` call too, including ones no code here has written yet. A handler
+installed only at `makeTabView`'s own call site would miss the default session (used by the
+chrome UI and every rejected or dashboard-bound tab) and any session a later stream creates some
+other way; enumerating today's known partitions once at startup would still miss a partition a
+tab opens after that point, which is most of them -- `partitionFor(origin)` sessions come into
+being as tabs open, not at startup. The subsystem is listed first in `subsystems.ts`, ahead of
+everything else, so its `beforeReady` attaches the listener before any other subsystem's own
+`beforeReady` gets a chance to create a session.
 
 **[`favicon.ts`](favicon.ts) — main fetches favicons to a `data:` URL rather than letting the
 renderer fetch directly.** AI recommendation, not yet an owner decision. The chrome view's CSP
