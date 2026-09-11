@@ -78,6 +78,18 @@ or the teardown would incorrectly call `forgetTab()` on a tab that is not actual
 `src/main/tests/tabs.test.ts` exercises this directly with a fake `webContents` that emits
 `'destroyed'` synchronously from `close()`, the same way real Electron destruction can.
 
+**[`tabs.ts`](tabs.ts) — what `TabManager`'s `ctx: SubsystemContext` is for, and why one half
+of it is unused.** `ctx.broker` is read by every `makeTabView` call site (`appTabArgsFor`,
+ADR-0017) to decide the `fetch()`-routing flag. It stays `Broker | undefined`, so a run where
+the broker subsystem is absent simply never sets the flag — the same fallback shape
+`partitionForTarget` already has. `ctx.loader` is threaded through but read nowhere yet: it is
+what the not-yet-built discovery-trigger listener needs in order to install an app the moment a
+tab's page shows its `<link rel="orivon-manifest">` hint (A60/A61, `docs/open-questions.md`).
+It was threaded through on its own, deliberately ahead of that behaviour, per
+`docs/development/parallel-work.md`'s append-only-first discipline — so do not delete it as dead.
+Whoever wires it must treat an absent loader as "the discovery trigger is disabled this run",
+never assume it is present: `loaderSubsystem` is not `critical`, unlike the broker.
+
 **[`tabs.ts`](tabs.ts) — a redirect, clicked link, form submission or script navigation now
 repartitions a tab too, not only a typed cross-origin navigation (A108/A109,
 `docs/open-questions.md`; owner decision D-0010 item 2).** `navigate()` was the only code path
