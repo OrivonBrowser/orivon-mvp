@@ -12,6 +12,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Added
 
+- **The capability broker** (build step 2). Manifest parsing, a grant ledger that survives a
+  restart, per-origin enforcement, and per-app `session` partitions so two origins never share
+  storage. Outbound TCP, TLS, UDP and a rooted filesystem are reachable from a real page under
+  a grant; inbound TCP is built in the broker but cannot yet reach a page. An identity that can
+  sign is wired end to end.
+- **`orivon-node-shim`** (build step 3). `net` (client), `dgram` and `fs` present real Node
+  shapes over the capabilities, with Node's `http`/`https` clients on top of the TLS one, and
+  the core browser polyfills. `net.createServer` and `dns` are present but refuse loudly rather
+  than failing silently — each has a filed reason.
+- **The page's own `fetch()` is routed** through the capability for granted hosts, carrying
+  app-chosen headers. This is what lets an ordinary web frontend reach hosts a browser's
+  same-origin rules would refuse.
+- **The permission prompt and the permissions list.** A real manifest is rendered at install
+  with breadth visible — an app asking for unlimited network access does not look like one
+  asking for two sites — and grants are listed and revocable.
 - **The browser shell** (build step 1). A frameless `BaseWindow` composing a chrome
   `WebContentsView` over per-tab views: tab strip, toolbar, address bar, back/forward,
   window controls. Two preloads at two privilege levels — `app.ts` for ordinary tabs,
