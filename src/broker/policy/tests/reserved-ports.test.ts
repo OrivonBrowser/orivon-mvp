@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { parsePattern } from '../connect-patterns.js'
-import { RESERVED_PORTS, isReservedPort, namesPortExactly } from '../reserved-ports.js'
-
-function parse (patterns: readonly string[]): ReturnType<typeof parsePattern>[] {
-  return patterns.map(parsePattern)
-}
+import { RESERVED_PORTS, isReservedPort, patternNamesPortExactly } from '../reserved-ports.js'
 
 describe('isReservedPort', () => {
   it('covers the mail submission ports', () => {
@@ -25,44 +21,50 @@ describe('isReservedPort', () => {
   })
 })
 
-describe('namesPortExactly', () => {
+describe('patternNamesPortExactly', () => {
   it('is true when a pattern gives the port as a single literal', () => {
-    expect(namesPortExactly(parse(['smtp.example.com:25']), 25)).toBe(true)
+    expect(patternNamesPortExactly(parsePattern('smtp.example.com:25'), 25)).toBe(true)
   })
 
   it('is false for a wildcard port -- the case this rule exists for', () => {
-    expect(namesPortExactly(parse(['*:*']), 25)).toBe(false)
-    expect(namesPortExactly(parse(['mail.example.com:*']), 25)).toBe(false)
+    expect(patternNamesPortExactly(parsePattern('*:*'), 25)).toBe(false)
+    expect(patternNamesPortExactly(parsePattern('mail.example.com:*'), 25)).toBe(false)
   })
 
   it('is false for a range that merely contains the port', () => {
     // A range is not a naming. `20-30` covers 25 without anyone having read
-    // the number, which is exactly the blanket this rule is about.
-    expect(namesPortExactly(parse(['host.example:20-30']), 25)).toBe(false)
-    expect(namesPortExactly(parse(['host.example:1-65535']), 25)).toBe(false)
+    // the number, which is exactly the blanket `*` is.
+    expect(patternNamesPortExactly(parsePattern('host.example:20-30'), 25)).toBe(false)
+    expect(patternNamesPortExactly(parsePattern('host.example:1-65535'), 25)).toBe(false)
   })
 
   it('is false for a single-port pattern naming a DIFFERENT port', () => {
-    expect(namesPortExactly(parse(['host.example:587']), 25)).toBe(false)
+    expect(patternNamesPortExactly(parsePattern('host.example:587'), 25)).toBe(false)
   })
 
-  it('is true when any one pattern in the list names it, not only the first', () => {
-    expect(namesPortExactly(parse(['*:*', 'a.example:80', 'smtp.example:25']), 25)).toBe(true)
-  })
-
-  it('ignores unparseable patterns rather than treating them as a naming', () => {
-    expect(namesPortExactly(parse(['', 'not-a-pattern', '::1:25']), 25)).toBe(false)
+  it('is false for an unparseable or null pattern rather than treating it as a naming', () => {
+    expect(patternNamesPortExactly(parsePattern('not-a-pattern'), 25)).toBe(false)
+    expect(patternNamesPortExactly(parsePattern('::1:25'), 25)).toBe(false)
+    expect(patternNamesPortExactly(null, 25)).toBe(false)
   })
 
   it('reads the port out of a bracketed IPv6 pattern too', () => {
-    expect(namesPortExactly(parse(['[2606:4700::1111]:53']), 53)).toBe(true)
+    expect(patternNamesPortExactly(parsePattern('[2606:4700::1111]:53'), 53)).toBe(true)
   })
 
-  it('does not care about the host half -- that is hostMatches\' job', () => {
-    // Deliberate: this answers "did anyone name this port", nothing else. The
-    // host still has to match separately, so a naming here cannot widen
-    // authority on its own.
-    expect(namesPortExactly(parse(['unrelated.example:25']), 25)).toBe(true)
+  it('says nothing about the host -- it is decided per pattern, never across a set', () => {
+    // The function this replaced scanned a WHOLE pattern list and answered
+    // "did ANY pattern name this port", independently of which pattern went
+    // on to match the host. That let a naming in one pattern authorise a
+    // completely different pattern's host match -- a grant of
+    // `['mail.example.com:25', '*:*']` reached an unrelated host at port 25
+    // (docs/open-questions.md A82, the cross-pattern bypass). Being
+    // per-pattern removes the seam: this only ever answers for the ONE
+    // pattern handed to it, so a caller can no longer mix the naming from one
+    // pattern with the host authorisation from another. See
+    // ../tests/connect.test.ts and ../tests/connect-secure.test.ts for the
+    // caller-level regression coverage of that bypass.
+    expect(patternNamesPortExactly(parsePattern('unrelated.example:25'), 25)).toBe(true)
   })
 })
 

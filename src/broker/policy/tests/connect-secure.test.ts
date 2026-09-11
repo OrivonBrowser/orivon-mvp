@@ -9,6 +9,7 @@
 import { describe, expect, it } from 'vitest'
 import { checkConnectSecure } from '../connect-secure.js'
 import { MAX_PATTERNS } from '../connect.js'
+import { RESERVED_PORTS } from '../reserved-ports.js'
 
 describe('checkConnectSecure authorises by hostname, never by resolved address', () => {
   it('denies when nothing was granted', () => {
@@ -96,5 +97,51 @@ describe('checkConnectSecure authorises by hostname, never by resolved address',
   it('A82: a blanket "*:*" grant does not reach a reserved port unless a pattern names it exactly', () => {
     expect(checkConnectSecure(['*:*'], 'mail.example.com', 25)).toEqual({ allowed: false, code: 'denied', reason: 'reserved-port' })
     expect(checkConnectSecure(['*:25'], 'mail.example.com', 25)).toEqual({ allowed: true, host: 'mail.example.com' })
+  })
+})
+
+// Regression coverage for the cross-pattern bypass -- the ConnectSecure twin
+// of ./connect.test.ts's identically named block. Measured on the pre-fix
+// code: `checkConnectSecure(['mail.example.com:25', '*:*'],
+// 'attacker.example.net', 25)` returned `{ allowed: true, host:
+// 'attacker.example.net' }`, because the '*' pattern's own host match was
+// authorised by an entirely different pattern's port naming.
+describe('checkConnectSecure -- A82 must be decided per pattern, not per grant', () => {
+  it('the bypass itself: a blanket grant plus an unrelated exact naming does not open a third host', () => {
+    const decision = checkConnectSecure(['mail.example.com:25', '*:*'], 'attacker.example.net', 25)
+    expect(decision).toEqual({ allowed: false, code: 'denied', reason: 'no-pattern-match' })
+  })
+
+  it('control: the blanket grant alone still denies the reserved port', () => {
+    const decision = checkConnectSecure(['*:*'], 'attacker.example.net', 25)
+    expect(decision).toEqual({ allowed: false, code: 'denied', reason: 'reserved-port' })
+  })
+
+  it('control: the narrow grant alone still denies a different host', () => {
+    const decision = checkConnectSecure(['mail.example.com:25'], 'attacker.example.net', 25)
+    expect(decision).toEqual({ allowed: false, code: 'denied', reason: 'no-pattern-match' })
+  })
+
+  it('the legitimate case A82 deliberately permits still works', () => {
+    const decision = checkConnectSecure(['mail.example.com:25'], 'mail.example.com', 25)
+    expect(decision).toEqual({ allowed: true, host: 'mail.example.com' })
+  })
+
+  it('a range does not count as a naming, even paired with a blanket grant', () => {
+    const decision = checkConnectSecure(['mail.example.com:20-30', '*:*'], 'attacker.example.net', 25)
+    expect(decision).toEqual({ allowed: false, code: 'denied', reason: 'reserved-port' })
+  })
+
+  it.each([...RESERVED_PORTS])(
+    'port %d: a blanket grant plus an unrelated exact naming still denies a third host',
+    (port) => {
+      const decision = checkConnectSecure([`mail.example.com:${port}`, '*:*'], 'attacker.example.net', port)
+      expect(decision.allowed).toBe(false)
+    }
+  )
+
+  it('leaves a non-reserved port completely unaffected by narrowing', () => {
+    const decision = checkConnectSecure(['a.example:25', '*:*'], 'somewhere.example', 8080)
+    expect(decision).toEqual({ allowed: true, host: 'somewhere.example' })
   })
 })
