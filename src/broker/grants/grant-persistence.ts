@@ -71,3 +71,59 @@ export function persistGrants (storage: LedgerStorage | undefined, origin: strin
   if (storage === undefined || !isPersistableOrigin(origin)) return
   storage.writeGrants(origin, grantsToPersist(grants))
 }
+
+/**
+ * Drops every RESTORED grant the given manifest would no longer authorise,
+ * and narrows any it only partly covers. `decideGrantRequest` is the same
+ * function a live `requestGrant` is decided by, reused rather than
+ * reimplemented (Rule 3), so "what a restored grant may hold" and "what a
+ * fresh request may obtain" cannot drift apart.
+ *
+ * ONLY the capabilities in `restored`. `Broker.grant` is the trusted-side
+ * call -- the consent prompt and the developer grant -- and is deliberately
+ * not manifest-bound; A13 records that re-registering a manifest must leave
+ * what it granted alone. A grant read off disk is different: it was validated
+ * against a manifest that was also read off disk, so when the app is really
+ * opened and its freshly fetched manifest arrives, that check has to run
+ * again or an app that narrowed its declaration would keep authority nothing
+ * currently asks for.
+ */
+export function revalidateRestored (
+  grants: Map<CapabilityKind, Grant>,
+  restored: ReadonlySet<CapabilityKind>,
+  manifest: Manifest
+): void {
+  for (const [capability, grant] of [...grants]) {
+    if (!restored.has(capability)) continue
+    const decision = decideGrantRequest(manifest, capability, grant.patterns)
+    if (!decision.allowed) {
+      grants.delete(capability)
+      continue
+    }
+    if (decision.patterns.length !== grant.patterns.length) {
+      grants.set(capability, { ...grant, patterns: decision.patterns })
+    }
+  }
+}
+
+/**
+ * Reads every origin that has grants persisted and hands each one's manifest
+ * and restored grants to `adopt`. Pure reading -- it never writes, which is
+ * why `GrantLedger.hydratePersisted` can call it during construction:
+ * `registerApp` would also persist the version floor and the manifest, and
+ * throws when that write fails, so doing it once per installed app while the
+ * broker is still being built would turn a full disk into a browser that
+ * cannot start. An origin whose manifest is missing or unparseable is skipped
+ * rather than failing the rest.
+ */
+export function restorePersistedOrigins (
+  storage: LedgerStorage,
+  newId: () => GrantId,
+  adopt: (origin: string, manifest: Manifest, grants: ReadonlyMap<CapabilityKind, Grant>) => void
+): void {
+  for (const origin of storage.listPersistedOrigins()) {
+    const manifest = storage.readManifest(origin)
+    if (manifest === undefined) continue
+    adopt(origin, manifest, hydrateGrants(storage, origin, manifest, newId))
+  }
+}

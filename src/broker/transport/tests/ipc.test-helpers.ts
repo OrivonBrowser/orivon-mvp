@@ -58,7 +58,8 @@ export function stubBroker (
     manifest: (origin: string) => Promise<Manifest>
     grants: (origin: string) => Promise<readonly Grant[]>
     /** SYNCHRONOUS, same reasoning as `confineSync` below -- Broker.app.isRegisteredSync has no CONTROL_CHANNEL method (it's an in-process, main-only call from tab construction), but the stub still needs to satisfy Broker's shape. */
-    isRegisteredSync: (origin: string) => boolean
+    isRegisteredSync: (origin: string) => boolean,
+    registeredOriginsSync: () => []
     connect: (origin: string, opts: { host: string, port: number }) => Promise<FailableTcpSocket>
     connectSecure: (origin: string, opts: { host: string, port: number }) => Promise<FailableTcpSocket>
     udpBind: (origin: string, opts: { port: number }) => Promise<FailableUdpSocket>
@@ -96,7 +97,8 @@ export function stubBroker (
       isRegisteredSync: (origin) => {
         calls.push({ method: 'app.isRegisteredSync', origin, args: undefined })
         return overrides.isRegisteredSync?.(origin) ?? false
-      }
+      },
+      registeredOriginsSync: () => []
     },
     net: {
       connect: async (origin, opts) => {

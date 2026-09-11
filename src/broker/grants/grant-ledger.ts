@@ -7,11 +7,12 @@ import type { CapabilityKind, Grant, GrantId, Manifest, Pattern } from '../../co
 import { LIMITS } from '../../contracts/index.js'
 import type { LedgerStorage } from './ledger-storage.js'
 import { isPersistableOrigin } from '../policy/origin.js'
+import { decideGrantRequest } from '../policy/request-grant.js'
 import { compareVersions } from '../policy/update.js'
 import type { ParsedPattern } from '../policy/connect-patterns.js'
 import type { ParsedPatternsCache } from './parsed-patterns-cache.js'
 import { createParsedPatternsCache } from './parsed-patterns-cache.js'
-import { hydrateGrants, persistGrants } from './grant-persistence.js'
+import { hydrateGrants, persistGrants, restorePersistedOrigins, revalidateRestored } from './grant-persistence.js'
 
 /**
  * 128 bits from the platform CSPRNG, as hex -- same construction as
@@ -39,6 +40,11 @@ interface OriginRecord {
   readonly grants: Map<CapabilityKind, Grant>
   /** Set once this origin's persisted grants have been checked against its manifest and merged into `grants` -- the first `registerApp` call only, never again (a manifest is required to re-validate against, unlike `versionFloor`'s hydration). */
   grantsHydrated: boolean
+  /** The capabilities in `grants` that came from DISK rather than from a
+   * `grant()` this session -- the only ones `registerApp` re-checks against a
+   * later manifest. The distinction is load-bearing; README.md's
+   * grant-persistence design note says why. */
+  hydratedCapabilities: Set<CapabilityKind>
   /**
    * Bytes written so far against `manifest.capabilities.fs.quotaBytes`.
    *
@@ -114,7 +120,7 @@ export class GrantLedger {
   #record (origin: string): OriginRecord {
     const existing = this.#origins.get(origin)
     if (existing !== undefined) return existing
-    const created: OriginRecord = { manifest: undefined, grants: new Map(), grantsHydrated: false, fsBytesWritten: 0, versionFloor: '0.0.0', rollbackAcknowledgedVersion: undefined }
+    const created: OriginRecord = { manifest: undefined, grants: new Map(), grantsHydrated: false, hydratedCapabilities: new Set(), fsBytesWritten: 0, versionFloor: '0.0.0', rollbackAcknowledgedVersion: undefined }
     this.#origins.set(origin, created)
     this.#hydrateFloor(origin, created)
     this.#hydrateRollbackAcknowledgedVersion(origin, created)
@@ -202,26 +208,14 @@ export class GrantLedger {
    * already persisted); T19's replay guard depends on every registration
    * going through here.
    *
-   * THE IN-MEMORY RAISE HAPPENS FIRST, AND IS UNCONDITIONAL. Nothing about
-   * persistence may delay or skip it. A ledger with no `LedgerStorage` at
-   * all already guarantees that much, and a ledger WITH one must never be
-   * weaker: hold the raise back until a write succeeds, and a failed write
-   * leaves this session's floor at the superseded version -- so the same
-   * session accepts a replay of it, with no restart involved and nothing
-   * visible. That is a worse hole than the one persistence closes.
+   * THE IN-MEMORY RAISE HAPPENS FIRST, AND IS UNCONDITIONAL -- nothing about
+   * persistence may delay or skip it, or a failed write leaves this session
+   * accepting a replay of the superseded version.
    *
-   * Persists the raised value afterward via `LedgerStorage` (A57) so it
-   * survives a restart -- only when the floor actually moves, so an ordinary
-   * page reload that re-declares the same version never touches disk, and
-   * never at all for an origin `isPersistableOrigin` refuses (A23/T13c:
-   * loopback and plain-http origins are session-scoped only).
-   *
-   * THROWS if that write fails (EACCES, ENOSPC, EROFS), after the raise has
-   * already landed. The residual risk is then A57's original one and no
-   * worse -- a restart while writes keep failing hydrates the older on-disk
-   * value -- but it is reported instead of silent. `Broker.registerApp`
-   * (../index.ts) turns this into the rejected promise every other method on
-   * that surface already produces.
+   * Persists afterward (A57), only when the floor actually moves, and never
+   * for an origin `isPersistableOrigin` refuses (A23/T13c). THROWS if that
+   * write fails, after the raise has already landed -- reported rather than
+   * silent. README.md's design notes carry the reasoning for both.
    */
   registerApp (origin: string, manifest: Manifest): void {
     const record = this.#record(origin)
@@ -233,8 +227,14 @@ export class GrantLedger {
       if (this.#storage !== undefined && isPersistableOrigin(origin)) {
         for (const [capability, grant] of hydrateGrants(this.#storage, origin, manifest, newGrantId)) {
           record.grants.set(capability, grant)
+          record.hydratedCapabilities.add(capability)
         }
       }
+    } else {
+      // Restored grants only -- see `hydratedCapabilities`. Startup hydration
+      // validates against the manifest on disk; this is where that decision
+      // gets re-taken against the one the app actually serves.
+      revalidateRestored(record.grants, record.hydratedCapabilities, manifest)
     }
 
     if (compareVersions(manifest.version, record.versionFloor) !== 1) return
@@ -243,69 +243,68 @@ export class GrantLedger {
 
     if (this.#storage !== undefined && isPersistableOrigin(origin)) {
       this.#storage.writeVersionFloor(origin, manifest.version)
+      // What the user approved, kept so the permissions list can name this
+      // app after a restart without asking its server again.
+      this.#storage.writeManifest(origin, manifest)
     }
   }
 
+
+  /** Brings back every origin with grants persisted, so the settings
+   * permissions list is populated at launch rather than only after an app is
+   * opened (C-01/C-02). Called once, from `createBroker`. */
+  hydratePersisted (): void {
+    if (this.#storage === undefined) return
+    restorePersistedOrigins(this.#storage, newGrantId, (origin, manifest, restored) => {
+      const record = this.#record(origin)
+      if (record.grantsHydrated) return
+      record.manifest = manifest
+      record.grantsHydrated = true
+      for (const [capability, grant] of restored) {
+        record.grants.set(capability, grant)
+        record.hydratedCapabilities.add(capability)
+      }
+    })
+  }
+
   /**
-   * A60's escape hatch. `registerApp` raises the floor unconditionally, even
-   * for a manifest that was only ever FETCHED, never actually installed --
-   * so a hostile origin can poison the floor with a fake high version and
-   * lock the user out of every real, lower-numbered future update from it.
-   * Nothing else in this class lowers, resets or clears a floor once raised.
-   * This is the only way back: it clears the in-memory record and deletes
-   * whatever `LedgerStorage` persisted, so a subsequent registration for
-   * this origin starts at '0.0.0' again, on disk as well as in memory.
-   *
-   * BOTH have to go together. Clearing only memory would let the next
-   * hydration read the poisoned value straight back off disk; clearing only
-   * disk would leave the poisoned value live for the rest of this session.
-   * DISK FIRST, then memory, and memory is left untouched if the delete
-   * fails: clearing memory first means a failed delete leaves the poisoned
-   * floor on disk with nothing in memory to compare it against -- a state
-   * strictly worse than never having called this at all. A failed forget
-   * must change nothing.
-   *
-   * The delete failing is LOGGED, NOT THROWN, unlike `registerApp`'s write
-   * above. The two are not held to one standard because they carry different
-   * risk: `registerApp`'s write is the security-critical half of a raise that
-   * already happened, so hiding its failure hides a real weakening. This is
-   * best-effort cleanup, and its failure leaves the ledger exactly as it was
-   * -- still safe, just still poisoned, which is the state the caller was
-   * already in.
-   *
-   * Never a throw. With no `LedgerStorage` injected it still clears the
-   * in-memory record -- there is simply no disk half to clear. For an origin
-   * the ledger holds nothing for it is a no-op both halves.
-   *
-   * NOT AN "UNINSTALL THIS APP" PRIMITIVE. It is correct and complete for the
-   * version floor and the persisted grants (A23) -- `deleteGrants` below
-   * closes that half, matching `ADR-0009`'s 2026-09-04 amendment that a full
-   * removal forgets everything. In-memory `manifest` and `fsBytesWritten` are
-   * also dropped, and two gaps remain open, neither reachable today since
-   * NOTHING CALLS THIS YET (docs/open-questions.md A60):
-   *   - dropping a grant here does not revoke the handles it authorised --
-   *     that cascade belongs one layer up, in `createBroker`, next to the one
-   *     `revoke` already performs (this class has no `HandleTable` reference).
-   *   - resetting `fsBytesWritten` to zero frees no bytes on disk, so
-   *     forget-then-re-register is a way around the fs quota until the
-   *     confinement directory is actually sized (A29).
+   * A60's escape hatch: the only way a poisoned version floor comes back
+   * down. Three rules a maintainer must not reorder -- DISK FIRST, then
+   * memory; memory left untouched if any delete fails, so a failed forget
+   * changes nothing; and never a throw, the delete failure is logged
+   * instead. README.md's grant-persistence design note carries the
+   * reasoning for each, and what this deliberately is NOT.
    */
   forgetOrigin (origin: string): void {
     if (this.#storage !== undefined) {
       try {
         // All three persisted pieces go together, disk-then-memory as above:
         // if ANY delete throws, the in-memory record is left completely
-        // intact rather than half-forgotten -- best-effort across the three
+        // intact rather than half-forgotten -- best-effort across the four
         // files, not a filesystem transaction.
         this.#storage.deleteVersionFloor(origin)
         this.#storage.deleteAcknowledgedRollbackVersion(origin)
         this.#storage.deleteGrants(origin)
+        // Last, and it matters that it is last: while the manifest is still
+        // on disk the origin can be listed in settings, which is the only
+        // place a person can see that a forget half-failed.
+        this.#storage.deleteManifest(origin)
       } catch (error) {
-        console.error('[broker] failed to delete a persisted version floor, rollback acknowledgement or grant set; the in-memory record was left intact so nothing is half-forgotten', error)
+        console.error('[broker] failed to delete a persisted version floor, rollback acknowledgement, grant set or manifest; the in-memory record was left intact so nothing is half-forgotten', error)
         return
       }
     }
     this.#origins.delete(origin)
+  }
+
+  /** Every origin this ledger has a manifest for -- what the settings
+   * permissions list enumerates. */
+  registeredOrigins (): readonly string[] {
+    const found: string[] = []
+    for (const [origin, record] of this.#origins) {
+      if (record.manifest !== undefined) found.push(origin)
+    }
+    return found
   }
 
   manifestFor (origin: string): Manifest | undefined {
