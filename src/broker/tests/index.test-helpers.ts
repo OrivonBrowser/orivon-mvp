@@ -208,7 +208,6 @@ export function memoryLedgerStorage (): LedgerStorage & {
   const floors = new Map<string, string>()
   const rollbackAcks = new Map<string, string>()
   const grants = new Map<string, Readonly<Record<string, PersistedGrant>>>()
-  const manifests = new Map<string, Manifest>()
   return {
     floors,
     rollbackAcks,
@@ -222,10 +221,7 @@ export function memoryLedgerStorage (): LedgerStorage & {
     readGrants: (origin) => grants.get(origin),
     writeGrants: (origin, originGrants) => { grants.set(origin, originGrants) },
     deleteGrants: (origin) => { grants.delete(origin) },
-    listPersistedOrigins: () => [...grants.keys()],
-    readManifest: (origin: string) => manifests.get(origin),
-    writeManifest: (origin: string, manifest: Manifest) => { manifests.set(origin, manifest) },
-    deleteManifest: (origin: string) => { manifests.delete(origin) }
+    listPersistedOrigins: () => [...grants.keys()]
   }
 }
 

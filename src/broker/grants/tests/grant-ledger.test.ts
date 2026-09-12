@@ -24,10 +24,7 @@ function throwingLedgerStorage (): LedgerStorage {
     readGrants: () => undefined,
     writeGrants: () => { throw Object.assign(new Error('ENOSPC'), { code: 'ENOSPC' }) },
     deleteGrants: () => {},
-    listPersistedOrigins: () => [],
-    readManifest: () => undefined,
-    writeManifest: () => {},
-    deleteManifest: () => {}
+    listPersistedOrigins: () => []
   }
 }
 

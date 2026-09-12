@@ -43,13 +43,6 @@ import type { Broker, CreateBrokerOptions } from './broker-contracts.js'
 export function createBroker (deps: CreateBrokerOptions): Broker {
   const handleTable = new HandleTable()
   const ledger = new GrantLedger(deps.ledgerStorage)
-  // Bring back what is already on disk before anything can ask. Without this
-  // the settings permissions list is empty on every launch until an app
-  // happens to be opened, while its grants are still live and rehydrate the
-  // moment it is (C-01/C-02, docs/open-questions.md) -- which is exactly the
-  // shape owner decision D-0004 item 2 rejected when it turned down an
-  // address-bar icon with no full list behind it.
-  ledger.hydratePersisted()
 
   /**
    * The isolation key, through the one definition of it (policy/origin.ts) --
@@ -118,10 +111,6 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
    * resource -- a wrong answer costs a preload's own async fallback path,
    * never a security boundary.
    */
-  function registeredOriginsSync (): readonly string[] {
-    return ledger.registeredOrigins()
-  }
-
   function isRegisteredSync (origin: string): boolean {
     const key = originFromUrl(origin)
     if (key === null) return false
@@ -239,7 +228,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
   }
 
   return {
-    app: { manifest, grants, isRegisteredSync, registeredOriginsSync },
+    app: { manifest, grants, isRegisteredSync },
     net,
     id,
     fs,

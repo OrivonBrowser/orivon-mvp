@@ -9,13 +9,6 @@ import { GrantLedger } from '../grant-ledger.js'
 import { memoryLedgerStorage } from '../../tests/index.test-helpers.js'
 import type { LedgerStorage } from '../ledger-storage.js'
 import type { Manifest } from '../../../contracts/index.js'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { createBroker } from '../../index.js'
-import { nodeLedgerStorage } from '../node-ledger-storage.js'
-import { originHash } from '../origin-hash.js'
-import { baseDeps } from '../../tests/index.test-helpers.js'
 
 const APP = 'https://app.example'
 
@@ -36,10 +29,7 @@ function throwingLedgerStorage (): LedgerStorage {
     readGrants: () => undefined,
     writeGrants: () => { throw Object.assign(new Error('ENOSPC'), { code: 'ENOSPC' }) },
     deleteGrants: () => {},
-    listPersistedOrigins: () => [],
-    readManifest: () => undefined,
-    writeManifest: () => {},
-    deleteManifest: () => {}
+    listPersistedOrigins: () => []
   }
 }
 
@@ -342,61 +332,5 @@ describe('GrantLedger -- forgetOrigin also deletes persisted grants (A23/ADR-000
     ledger.forgetOrigin(APP)
 
     expect(ledger.grantsFor(APP)).toHaveLength(1)
-  })
-})
-
-// C-01/C-02 (docs/open-questions.md): the whole point of persisting the
-// origin and the manifest. Before this, a grant survived a restart but was
-// INVISIBLE -- the on-disk key is sha256(origin), one-way, and nothing could
-// turn the set of grant directories back into a set of origins. The settings
-// permissions list was therefore empty on every launch until the app happened
-// to be opened, while the grant was live the whole time.
-describe('a persisted grant is visible to a brand-new broker, before any app is opened', () => {
-  it('survives a restart AND can be enumerated and named', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'orivon-grants-'))
-    try {
-      const manifest: Manifest = { ...manifestWith('1.0.0'), capabilities: { net: { tcp: { connect: ['a.example:443'] } } } }
-
-      const first = createBroker({ ...baseDeps(), ledgerStorage: nodeLedgerStorage(dir) })
-      first.registerApp(APP, manifest)
-      await first.grant(APP, 'tcp.connect', ['a.example:443'])
-
-      // A genuinely separate broker over the same directory -- the restart.
-      const second = createBroker({ ...baseDeps(), ledgerStorage: nodeLedgerStorage(dir) })
-
-      // Nothing has opened the app. This is the assertion that used to fail.
-      expect(second.app.registeredOriginsSync()).toContain(APP)
-      expect(second.app.isRegisteredSync(APP)).toBe(true)
-      await expect(second.app.manifest(APP)).resolves.toMatchObject({ name: manifest.name })
-      const restored = await second.app.grants(APP)
-      expect(restored.map((g) => g.capability)).toEqual(['tcp.connect'])
-      expect(restored[0]?.patterns).toEqual(['a.example:443'])
-    } finally {
-      rmSync(dir, { recursive: true, force: true })
-    }
-  })
-
-  it('a tampered grants.json naming a DIFFERENT origin is not listed -- the stored name must re-hash to its own directory', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'orivon-grants-'))
-    try {
-      const manifest: Manifest = { ...manifestWith('1.0.0'), capabilities: { net: { tcp: { connect: ['a.example:443'] } } } }
-      const first = createBroker({ ...baseDeps(), ledgerStorage: nodeLedgerStorage(dir) })
-      first.registerApp(APP, manifest)
-      await first.grant(APP, 'tcp.connect', ['a.example:443'])
-
-      // Rewrite the record to claim someone else's origin, leaving it in the
-      // directory named for the real one. Naming a directory that matches the
-      // claim would need a sha256 preimage.
-      const dirName = originHash(APP)
-      const file = join(dir, 'grants', dirName, 'grants.json')
-      const onDisk = JSON.parse(readFileSync(file, 'utf8')) as { origin: string }
-      writeFileSync(file, JSON.stringify({ ...onDisk, origin: 'https://bank.example' }))
-
-      const storage = nodeLedgerStorage(dir)
-      expect(storage.listPersistedOrigins()).not.toContain('https://bank.example')
-      expect(storage.listPersistedOrigins()).not.toContain(APP)
-    } finally {
-      rmSync(dir, { recursive: true, force: true })
-    }
   })
 })
