@@ -2,7 +2,7 @@
 // explains why this is synchronous rather than following LoaderStorage's
 // async, node:fs/promises pattern.
 
-import { closeSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
+import { closeSync, fsyncSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { originHash } from './origin-hash.js'
 import type { LedgerStorage, PersistedGrant } from './ledger-storage.js'
@@ -117,6 +117,29 @@ function isGrantsShape (value: unknown): value is Record<string, PersistedGrant>
     Object.values(value).every(isPersistedGrant)
 }
 
+/**
+ * The current file shape: the origin alongside its own grants, so the set of
+ * origins can be enumerated from a directory whose NAME is a one-way hash
+ * (`LedgerStorage.listPersistedOrigins`). Owner decision: shape (b) of the
+ * two considered -- the origin inside each record rather than a separate
+ * hash-to-origin index file, because an index is a second thing that can
+ * drift out of sync, and losing it re-creates the very bug this fixes.
+ *
+ * Discriminating this from the OLD bare-record shape needs no version tag:
+ * `isGrantsShape` requires every value to be a PersistedGrant, and `origin`
+ * is a string, so the two are mutually exclusive by construction.
+ */
+interface GrantsFile {
+  readonly origin: string
+  readonly grants: Record<string, PersistedGrant>
+}
+
+function isGrantsFileShape (value: unknown): value is GrantsFile {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const candidate = value as { origin?: unknown, grants?: unknown }
+  return typeof candidate.origin === 'string' && isGrantsShape(candidate.grants)
+}
+
 export function nodeLedgerStorage (userDataPath: string): LedgerStorage {
   return {
     readVersionFloor: (origin) => {
@@ -201,11 +224,21 @@ export function nodeLedgerStorage (userDataPath: string): LedgerStorage {
       } catch {
         return undefined
       }
+      // The origin field is NOT consulted here, on purpose. This function was
+      // handed the origin it is reading for and already derived the path from
+      // it, so the stored name adds nothing a caller could act on -- only
+      // listPersistedOrigins, which starts from a directory instead, needs it,
+      // and that is where the re-hash check lives.
+      if (isGrantsFileShape(parsed)) return parsed.grants
+      // A file written before the origin field existed. Still honoured, so an
+      // upgrade does not silently drop grants a user really made; it simply
+      // cannot be enumerated until something rewrites it in the new shape.
       return isGrantsShape(parsed) ? parsed : undefined
     },
     writeGrants: (origin, grants) => {
       mkdirSync(originGrantsDir(userDataPath, origin), { recursive: true })
-      writeFileAtomic(grantsPath(userDataPath, origin), JSON.stringify(grants))
+      const file: GrantsFile = { origin, grants }
+      writeFileAtomic(grantsPath(userDataPath, origin), JSON.stringify(file))
     },
     deleteGrants: (origin) => {
       try {
@@ -213,6 +246,38 @@ export function nodeLedgerStorage (userDataPath: string): LedgerStorage {
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
       }
+    },
+
+    listPersistedOrigins: () => {
+      let entries: string[]
+      try {
+        entries = readdirSync(join(userDataPath, 'grants'))
+      } catch {
+        // Nothing persisted yet, or the store is unreadable. Both are "no
+        // origins to show", never a throw -- a settings page that cannot
+        // render is worse than one that renders empty.
+        return []
+      }
+      const origins: string[] = []
+      for (const entry of entries) {
+        let parsed: unknown
+        try {
+          parsed = JSON.parse(readFileSync(join(userDataPath, 'grants', entry, 'grants.json'), 'utf8'))
+        } catch {
+          continue
+        }
+        if (!isGrantsFileShape(parsed)) continue
+        // THE CHECK THAT MAKES THE STORED ORIGIN SAFE TO REPORT. The name in
+        // the file is the only place an origin survives a one-way hash, so it
+        // has to earn being believed: it is reported only if it re-hashes to
+        // the directory it was found in. A hand-edited or planted file
+        // claiming some other origin names a directory it cannot produce --
+        // that would need a sha256 preimage -- so it is skipped entirely
+        // rather than listed.
+        if (originHash(parsed.origin) !== entry) continue
+        origins.push(parsed.origin)
+      }
+      return origins
     }
   }
 }

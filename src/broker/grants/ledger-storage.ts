@@ -108,4 +108,27 @@ export interface LedgerStorage {
    * nothing was ever persisted for.
    */
   deleteGrants(origin: string): void
+
+  /**
+   * Every origin that currently has grants persisted, in no particular
+   * order -- what makes the settings permissions list survive a restart
+   * (C-01/C-02, `docs/open-questions.md`). Before this existed, the on-disk
+   * key was `sha256(origin)` and nothing anywhere could turn that back into
+   * an origin, so `PermissionsController.list()` returned `[]` for every
+   * grant made before the current session while the grant itself stayed
+   * live and rehydrated the moment the app was reopened.
+   *
+   * AN ORIGIN HERE IS A CLAIM THE IMPLEMENTATION HAS ALREADY CHECKED, not
+   * one the caller must re-check: whatever is on disk names its own origin,
+   * so an implementation MUST verify that name against the location it was
+   * read from and omit it otherwise (see `nodeLedgerStorage`). Listing an
+   * origin still grants nothing -- `hydrateGrants` re-validates every
+   * restored capability against that origin's CURRENT manifest -- but an
+   * unverified name would let a tampered file put an origin the user never
+   * installed into a list they revoke from, which is its own kind of lie.
+   *
+   * Returns an empty array, never a throw, when nothing has been persisted
+   * or the store cannot be read at all.
+   */
+  listPersistedOrigins(): readonly string[]
 }

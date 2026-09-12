@@ -220,7 +220,8 @@ export function memoryLedgerStorage (): LedgerStorage & {
     deleteAcknowledgedRollbackVersion: (origin) => { rollbackAcks.delete(origin) },
     readGrants: (origin) => grants.get(origin),
     writeGrants: (origin, originGrants) => { grants.set(origin, originGrants) },
-    deleteGrants: (origin) => { grants.delete(origin) }
+    deleteGrants: (origin) => { grants.delete(origin) },
+    listPersistedOrigins: () => [...grants.keys()]
   }
 }
 

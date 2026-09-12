@@ -15,7 +15,8 @@ function throwingLedgerStorage (): LedgerStorage {
     deleteAcknowledgedRollbackVersion: () => {},
     readGrants: () => undefined,
     writeGrants: () => { throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' }) },
-    deleteGrants: () => {}
+    deleteGrants: () => {},
+    listPersistedOrigins: () => []
   }
 }
 
