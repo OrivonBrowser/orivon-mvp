@@ -24,6 +24,7 @@
 // is the only layer with both the manifest and the grant ledger in hand.
 // See README.md's Design notes for this file's split history and the next seam.
 
+import type { PersistedApp } from './grants/ledger-storage.js'
 import { HandleTable } from './handles/handles.js'
 import { errnoOf, fail } from './errors.js'
 import { GrantLedger } from './grants/grant-ledger.js'
@@ -111,6 +112,17 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
    * resource -- a wrong answer costs a preload's own async fallback path,
    * never a security boundary.
    */
+  function registeredOriginsSync (): readonly string[] {
+    return ledger.registeredOrigins()
+  }
+
+  /** Display only -- see Broker.app.persistedAppsSync and A137. No canonicalisation
+   * needed or wanted: these origins come back from storage having already been
+   * checked to re-hash to their own directory, and nothing here authorises. */
+  function persistedAppsSync (): readonly PersistedApp[] {
+    return ledger.persistedApps()
+  }
+
   function isRegisteredSync (origin: string): boolean {
     const key = originFromUrl(origin)
     if (key === null) return false
@@ -175,6 +187,13 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
    * -- same rethrow shape `registerApp`/`acknowledgeRollback` use, just
    * deferred past this method's own required side effects.
    */
+  /** Revokes by (origin, capability) so the settings list can revoke an app
+   * that is not loaded. Mirrors `revoke`'s own canonicalisation, and returns
+   * whether anything was removed rather than resolving silently either way. */
+  async function revokePersisted (origin: string, capability: CapabilityKind): Promise<boolean> {
+    return ledger.revokePersisted(canonical(origin), capability)
+  }
+
   async function grant (origin: string, capability: CapabilityKind, patterns: readonly Pattern[]): Promise<Grant> {
     const key = canonical(origin)
     // Captured BEFORE the call below: GrantLedger.grant's own Map.set already
@@ -228,7 +247,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
   }
 
   return {
-    app: { manifest, grants, isRegisteredSync },
+    app: { manifest, grants, isRegisteredSync, registeredOriginsSync, persistedAppsSync },
     net,
     id,
     fs,
@@ -237,6 +256,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     rollbackAcknowledgedVersionFor,
     acknowledgeRollback,
     grant,
-    revoke
+    revoke,
+    revokePersisted
   }
 }

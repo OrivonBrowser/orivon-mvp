@@ -9,6 +9,12 @@ import { GrantLedger } from '../grant-ledger.js'
 import { memoryLedgerStorage } from '../../tests/index.test-helpers.js'
 import type { LedgerStorage } from '../ledger-storage.js'
 import type { Manifest } from '../../../contracts/index.js'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { createBroker } from '../../index.js'
+import { nodeLedgerStorage } from '../node-ledger-storage.js'
+import { baseDeps } from '../../tests/index.test-helpers.js'
 
 const APP = 'https://app.example'
 
@@ -29,7 +35,8 @@ function throwingLedgerStorage (): LedgerStorage {
     readGrants: () => undefined,
     writeGrants: () => { throw Object.assign(new Error('ENOSPC'), { code: 'ENOSPC' }) },
     deleteGrants: () => {},
-    listPersistedOrigins: () => []
+    listPersistedOrigins: () => [],
+    readPersistedApp: () => undefined
   }
 }
 
@@ -332,5 +339,91 @@ describe('GrantLedger -- forgetOrigin also deletes persisted grants (A23/ADR-000
     ledger.forgetOrigin(APP)
 
     expect(ledger.grantsFor(APP)).toHaveLength(1)
+  })
+})
+
+// C-01/C-02/A137: the settings list must show and revoke an app that has not
+// been opened this session -- WITHOUT any of it becoming live authority.
+describe('the settings permissions list, for an app never opened this session', () => {
+  function freshBroker (dir: string): ReturnType<typeof createBroker> {
+    return createBroker({ ...baseDeps(), ledgerStorage: nodeLedgerStorage(dir) })
+  }
+
+  it('shows a persisted app by NAME across a restart, with its granted capability', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'orivon-perm-'))
+    try {
+      const manifest: Manifest = { ...manifestWith('1.0.0'), name: 'Example App', capabilities: { net: { tcp: { connect: ['a.example:443'] } } } }
+      const first = freshBroker(dir)
+      first.registerApp(APP, manifest)
+      await first.grant(APP, 'tcp.connect', ['a.example:443'])
+
+      // A genuinely separate broker over the same directory: the restart.
+      const second = freshBroker(dir)
+      const apps = second.app.persistedAppsSync()
+      expect(apps.map((a) => a.origin)).toEqual([APP])
+      expect(apps[0]?.appName).toBe('Example App')
+      expect(Object.keys(apps[0]?.grants ?? {})).toEqual(['tcp.connect'])
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('THE SAFETY PROPERTY: none of it is live authority until the app is opened', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'orivon-perm-'))
+    try {
+      const manifest: Manifest = { ...manifestWith('1.0.0'), capabilities: { net: { tcp: { connect: ['a.example:443'] } } } }
+      const first = freshBroker(dir)
+      first.registerApp(APP, manifest)
+      await first.grant(APP, 'tcp.connect', ['a.example:443'])
+
+      const second = freshBroker(dir)
+      // Listed for display...
+      expect(second.app.persistedAppsSync()).toHaveLength(1)
+      // ...and yet the ledger holds NOTHING. This is the whole difference
+      // between this and the withdrawn first attempt, which hydrated these
+      // into live grants against a manifest also read off disk.
+      expect(second.app.isRegisteredSync(APP)).toBe(false)
+      expect(second.app.registeredOriginsSync()).toEqual([])
+      await expect(second.app.grants(APP)).resolves.toEqual([])
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('revokes by (origin, capability) for an app that is not loaded, and it stays revoked', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'orivon-perm-'))
+    try {
+      const manifest: Manifest = { ...manifestWith('1.0.0'), capabilities: { net: { tcp: { connect: ['a.example:443'] } } } }
+      const first = freshBroker(dir)
+      first.registerApp(APP, manifest)
+      await first.grant(APP, 'tcp.connect', ['a.example:443'])
+
+      const second = freshBroker(dir)
+      await expect(second.revokePersisted(APP, 'tcp.connect')).resolves.toBe(true)
+      expect(Object.keys(second.app.persistedAppsSync()[0]?.grants ?? {})).toEqual([])
+
+      // And a third broker agrees -- it went to disk, not just to memory.
+      expect(Object.keys(freshBroker(dir).app.persistedAppsSync()[0]?.grants ?? {})).toEqual([])
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('revoking a capability that is not there is a no-op, reported as one', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'orivon-perm-'))
+    try {
+      await expect(freshBroker(dir).revokePersisted(APP, 'tcp.connect')).resolves.toBe(false)
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('keeps the app NAME when a revoke rewrites the file -- revoking one capability must not blank the list', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'orivon-perm-'))
+    try {
+      const manifest: Manifest = { ...manifestWith('1.0.0'), name: 'Keeps Its Name', capabilities: { net: { tcp: { connect: ['a.example:443'], listen: ['*:8080'] } } } }
+      const first = freshBroker(dir)
+      first.registerApp(APP, manifest)
+      await first.grant(APP, 'tcp.connect', ['a.example:443'])
+      await first.grant(APP, 'tcp.listen', ['*:8080'])
+
+      const second = freshBroker(dir)
+      await second.revokePersisted(APP, 'tcp.connect')
+      const app = freshBroker(dir).app.persistedAppsSync()[0]
+      expect(app?.appName).toBe('Keeps Its Name')
+      expect(Object.keys(app?.grants ?? {})).toEqual(['tcp.listen'])
+    } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 })

@@ -6,6 +6,7 @@
 // See ./index.ts's header for what createBroker actually does, why its
 // dependency shape is fixed, and what `Broker` is for.
 
+import type { PersistedApp } from './grants/ledger-storage.js'
 import type { DestroyResource, FailableTcpServer, FailableTcpSocket, FailableUdpSocket } from './handles/handle-contracts.js'
 import type { LedgerStorage } from './grants/ledger-storage.js'
 import type { PortRange } from './policy/bind.js'
@@ -262,6 +263,18 @@ export interface Broker {
      * throws; an unparseable `origin` is simply "not registered".
      */
     isRegisteredSync(origin: string): boolean
+    /** Every origin the broker has an app loaded for this session. Synchronous
+     * for the same reason `isRegisteredSync` is: it reads the in-memory ledger
+     * and cannot fail. */
+    registeredOriginsSync(): readonly string[]
+    /**
+     * The settings permissions list for apps NOT loaded this session, read off
+     * disk. DISPLAY ONLY -- nothing here is a live grant, and no capability
+     * call can be served from it (docs/open-questions.md A137). The app name
+     * arrives as a plain string rather than a manifest, so there is nothing a
+     * caller could mistake for an authority declaration.
+     */
+    persistedAppsSync(): readonly PersistedApp[]
   }
   readonly net: {
     /** Returns a `FailableTcpSocket` -- a `TcpSocket` plus one broker-internal
@@ -428,4 +441,11 @@ export interface Broker {
    * the app is awaiting on one of them rejects with 'revoked'.
    */
   revoke(origin: string, grantId: GrantId): Promise<void>
+  /**
+   * Revokes one capability from an app that may not be loaded, addressed by
+   * `(origin, capability)` because a not-yet-loaded app has no live GrantId.
+   * Resolves to whether anything was actually removed. See
+   * `GrantLedger.revokePersisted`.
+   */
+  revokePersisted(origin: string, capability: CapabilityKind): Promise<boolean>
 }

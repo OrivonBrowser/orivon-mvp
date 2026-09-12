@@ -1,5 +1,5 @@
-import type { AppPermissions } from '../../main/permissions.js'
-import type { GrantId } from '../../contracts/index.js'
+import type { AppPermissions, PermissionRow } from '../../main/permissions.js'
+import type { CapabilityKind, GrantId } from '../../contracts/index.js'
 import { createPermissionsListView } from './permissions-view.js'
 
 // The settings window's whole job: fetch the list, render it, revoke on
@@ -13,6 +13,8 @@ import { createPermissionsListView } from './permissions-view.js'
 interface OrivonSettings {
   list: () => Promise<readonly AppPermissions[]>
   revoke: (origin: string, grantId: GrantId) => Promise<void>
+  /** For a row whose app is not loaded this session -- see revokeAndRefresh. */
+  revokeCapability: (origin: string, capability: CapabilityKind) => Promise<void>
   focusOrigin: string | null
 }
 
@@ -36,8 +38,8 @@ const settings = must(window.orivonSettings, 'orivonSettings not exposed -- prel
 const list = must(document.querySelector<HTMLDivElement>('#apps-list'), '#apps-list missing')
 const emptyState = must(document.querySelector<HTMLElement>('#empty-state'), '#empty-state missing')
 
-const view = createPermissionsListView(list, emptyState, (origin, grantId) => {
-  void revokeAndRefresh(origin, grantId)
+const view = createPermissionsListView(list, emptyState, (origin, row) => {
+  void revokeAndRefresh(origin, row)
 })
 
 /** Scrolls to `settings.focusOrigin`'s card once, the first time it
@@ -58,8 +60,17 @@ async function refresh (): Promise<void> {
   scrollToFocusOriginOnce()
 }
 
-async function revokeAndRefresh (origin: string, grantId: GrantId): Promise<void> {
-  await settings.revoke(origin, grantId)
+/** Two revoke paths, one button. A row for an app loaded this session carries
+ * a live grant id; a row for an app that only exists on disk does not, and is
+ * revoked by its capability instead (docs/open-questions.md A137). The button
+ * looks and behaves identically either way -- a person should not have to know
+ * or care whether the app happens to be open. */
+async function revokeAndRefresh (origin: string, row: PermissionRow): Promise<void> {
+  if (row.grantId === null) {
+    await settings.revokeCapability(origin, row.capability)
+  } else {
+    await settings.revoke(origin, row.grantId)
+  }
   await refresh()
 }
 

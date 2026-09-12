@@ -28,6 +28,8 @@ import type { CapabilityKind, Grant, GrantId, Manifest } from '../contracts/inde
 import type { Broker } from '../broker/broker-contracts.js'
 import { originFromUrl } from '../broker/policy/origin.js'
 import { describeCapabilityGrant } from './grant-prompt-render.js'
+import { isCapabilityKind } from '../broker/policy/request-grant.js'
+import type { PersistedApp } from '../broker/grants/ledger-storage.js'
 import type { SubsystemContext } from './registry.js'
 
 /** One granted capability, rendered in the install prompt's own words
@@ -35,7 +37,11 @@ import type { SubsystemContext } from './registry.js'
  * surfaces is the point, not a coincidence. */
 export interface PermissionRow {
   readonly capability: CapabilityKind
-  readonly grantId: GrantId
+  /** `null` for an app that is not loaded this session: its grants exist only
+   * on disk, and a persisted grant has no live id. Revoke such a row through
+   * `revokeCapability` instead, which addresses `(origin, capability)` --
+   * unique, since an origin holds at most one grant per capability. */
+  readonly grantId: GrantId | null
   readonly warning: boolean
   readonly message: string
 }
@@ -60,6 +66,28 @@ export function buildAppPermissions (origin: string, manifest: Manifest, grants:
 }
 
 /**
+ * The same rows, for an app that has NOT been opened this session -- built
+ * from what is on disk, with no manifest and no live grant involved (A137).
+ *
+ * The app's name is a plain string here rather than being read off a manifest,
+ * and that is deliberate: there is no `Manifest` anywhere on this path, so
+ * nothing on it can be mistaken for a declaration of what the app may do. An
+ * origin with no saved name shows as its origin alone, which is honest and is
+ * what a record written before the name was saved will do.
+ */
+export function buildPersistedAppPermissions (app: PersistedApp): AppPermissions {
+  const rows: PermissionRow[] = []
+  for (const [capability, grant] of Object.entries(app.grants)) {
+    // UNTRUSTED disk content: a key here is not yet known to be one of the
+    // seven real capability kinds, the same check hydration applies.
+    if (!isCapabilityKind(capability)) continue
+    const { warning, message } = describeCapabilityGrant(capability, grant.patterns)
+    rows.push({ capability, grantId: null, warning, message })
+  }
+  return { origin: app.origin, appName: app.appName ?? app.origin, rows }
+}
+
+/**
  * Session-only registry of origins the settings page's full list knows
  * about -- see this file's own header for why it exists and why it starts
  * empty. `forOrigin` does not consult it: an address-bar icon already knows
@@ -80,7 +108,15 @@ export class PermissionsRegistry {
    * row -- there is nothing a person could do with a card for an app that
    * no longer exists. */
   async list (broker: Broker): Promise<readonly AppPermissions[]> {
+    // THE BROKER IS THE SOURCE, not this set. `#origins` was once the only
+    // input and `noteOrigin` never acquired a production caller, so the list
+    // was empty for every grant made before the current session -- a person
+    // granted an app four hosts, quit, and found Settings empty next launch
+    // while the grant was still live (C-01/C-02).
+    for (const origin of broker.app.registeredOriginsSync()) this.#origins.add(origin)
+
     const results: AppPermissions[] = []
+    const loaded = new Set<string>()
     for (const origin of this.#origins) {
       // TWO DIFFERENT CONDITIONS, and conflating them used to lose an app
       // permanently (C-04, docs/open-questions.md). `describeOrigin` returns
@@ -94,12 +130,24 @@ export class PermissionsRegistry {
       const app = await describeOrigin(broker, origin)
       if (app !== null) {
         results.push(app)
+        loaded.add(origin)
       } else if (!broker.app.isRegisteredSync(origin)) {
         this.#origins.delete(origin)
       }
       // Registered but undescribable: keep it and try again next time. The
       // row is missing from THIS render, which is visible and recoverable --
       // unlike a silent delete, which is neither.
+    }
+
+    // Then the apps that exist only on disk -- installed, granted, and not
+    // opened this session. Read for DISPLAY, never hydrated into the ledger:
+    // these rows describe what is persisted, and a capability call is still
+    // decided by the in-memory ledger alone (A137). An origin already rendered
+    // above is skipped, so a loaded app is described from live state rather
+    // than from whatever disk last recorded.
+    for (const app of broker.app.persistedAppsSync()) {
+      if (loaded.has(app.origin)) continue
+      results.push(buildPersistedAppPermissions(app))
     }
     return results
   }
@@ -138,6 +186,9 @@ export interface PermissionsController {
   forUrl: (url: string) => Promise<AppPermissions | null>
   /** REVOKES ONE CAPABILITY, never the whole app -- see this file's header. */
   revoke: (origin: string, grantId: GrantId) => Promise<void>
+  /** REVOKES ONE CAPABILITY from an app that may not be loaded, addressed by
+   * `(origin, capability)` because a persisted grant has no live id. */
+  revokeCapability: (origin: string, capability: CapabilityKind) => Promise<void>
 }
 
 /** The one way to build a `PermissionsController`, closing over `ctx`
@@ -162,6 +213,15 @@ export function createPermissionsController (ctx: SubsystemContext): Permissions
       const broker = ctx.broker
       if (broker === undefined) return
       await broker.revoke(origin, grantId)
+    },
+
+    /** The persisted-app path: `(origin, capability)` rather than an id. Goes
+     * to the broker's own `revokePersisted`, which also drops the capability in
+     * memory when the app IS loaded, so disk and ledger cannot disagree. */
+    async revokeCapability (origin, capability) {
+      const broker = ctx.broker
+      if (broker === undefined) return
+      await broker.revokePersisted(origin, capability)
     }
   }
 }
