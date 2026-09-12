@@ -34,11 +34,52 @@ jobs:
       # install costs the same and puts a network failure where it reads as one.
       - run: npm ci
 
+      # The real-peer UDP tests (src/shim/tests/real-bittorrent-dht.test.ts)
+      # drive a real, unmodified bittorrent-dht client and its real
+      # k-rpc-socket transport through the shim's dgram implementation. They
+      # need webtorrent's dependency tree, which lives in spike/app and is
+      # gitignored, so before this step they were SKIPPED on every runner and
+      # in every fresh clone -- the only three skipped tests in the suite, and
+      # the ones covering the flagship's transport. Three real dgram defects
+      # reached main in 2026-09 because nothing executing exercised that path
+      # (docs/open-questions.md A136; owner decision: install here rather than
+      # vendor the package into the tree).
+      #
+      # `npm install`, NOT `npm ci`, and that is deliberate -- both flags here
+      # were arrived at by CI failing, not by guessing.
+      #
+      # `npm ci` fails on this runner and passes locally, for the same tree and
+      # the same committed lock: `ws` declares bufferutil and utf-8-validate as
+      # optional native accelerators, and npm decides per-platform whether they
+      # belong in the tree. The runner says they are missing from the lock; this
+      # machine says the lock needs no change at all (verified with
+      # `npm install --package-lock-only`: zero packages added, removed or
+      # changed). `npm ci` treats that disagreement as a hard error BEFORE
+      # `--omit=optional` can filter anything, so the flag does not rescue it.
+      # `npm install` honours the committed lock where it can and tolerates that
+      # one platform-conditional difference. The lock is still tracked, so the
+      # fixture is still pinned in practice -- what is given up is `ci`'s refusal
+      # to proceed, which for a TEST FIXTURE is the right thing to give up.
+      #
+      # `--omit=optional` stays on its own merits: those two are native modules,
+      # Rule 8 wants none of them, and the DHT tests do not use them (ws works
+      # without them and only runs slower).
+      #
+      # What this DOES still pull is node-datachannel, which ships a PREBUILT
+      # .node binary for webtorrent's WebRTC path -- no compiler at install
+      # time, so it is the category check:natives already accepts, and it lands
+      # in the fixture tree, never in what ships.
+      - name: Install the real-peer UDP test fixture
+        run: npm install --prefix spike/app --omit=optional --no-audit --no-fund
+
       - name: Typecheck
         run: npm run typecheck
 
       - name: Unit tests
         run: npm test
+
+      - name: No dependency carries a high or critical advisory
+        run: npm run check:advisories
 
       - name: No dependency requires a compiler (Rule 8)
         run: npm run check:natives

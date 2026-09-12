@@ -4060,7 +4060,7 @@ to the address check.
 Recorded specifically so that **a reader comparing `favicon.ts` to `install-origin.ts` finds the
 difference already accounted for** rather than concluding one of them is wrong.
 
-### A125 — `fetch-route.ts` cannot be split, and is now at 492 of Rule 2's 500 lines **[STILL OPEN]**
+### A125 — `installFetchRoute` cannot be split, and it dominates its file **[PARTLY RESOLVED 2026-09-12]**
 
 **Raised 2026-09-10**, post-merge audit (conductor, PR #139).
 
@@ -4077,6 +4077,25 @@ decision before the next change to that file, not during one. Options that exist
 for this file with a recorded reason (the `orivon:comment-budget` precedent shows the project
 accepts justified, non-silent exceptions), move work out of the main world, or change how the
 main-world installer is delivered.
+
+**CORRECTION, 2026-09-12.** The headline above was too strong and this entry misled as written.
+`installFetchRoute` itself genuinely cannot be split -- that part stands, and it is the real
+constraint -- but the FILE could be, and was: PR #157 moved `exposeFetchRoute`, the ordinary
+preload wiring, into `src/preload/expose-fetch-route.ts`, leaving `fetch-route.ts` at 491 lines
+with real headroom. The seam is the one the file's own header already named: a payload serialised
+into the main world that may reference no import, versus preload code that imports freely.
+
+That split was itself load-bearing, not cosmetic. While fixing the decompression cap in the same
+PR I twice wrote code that passed every unit test and would have broken in a real page -- once by
+extracting a helper into a module the serialised function cannot import, once by referencing the
+module-level `ROUTED_FETCH_MAX_BODY_BYTES`, which is only a MIRROR of a literal kept inside the
+function body. Having the two kinds of code adjacent in one file is what made both mistakes easy.
+`src/preload/tests/fetch-route.test.ts` now carries a guard that fails if `installFetchRoute`'s
+source text references any module-level identifier.
+
+**What is still open** is narrower than the original entry: the serialised function is ~440 lines
+and cannot be divided, so it sets a floor under its file that no further splitting reduces. The
+options listed above remain the options, minus the one already taken.
 
 ### A126 — review coverage is recorded nowhere **[AI-REC]**
 
