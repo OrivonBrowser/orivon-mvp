@@ -98,8 +98,14 @@ export interface LedgerStorage {
    * Persists the FULL set of `origin`'s current grants, replacing whatever
    * was there before -- one file, written whole, so a reader never observes
    * a set with one grant added but another not yet removed.
+   *
+   * `appName` is the app's own declared name, for the settings list to show
+   * when that app has not been opened this session. Omitted by callers that
+   * have no manifest to hand -- notably `revoke` -- and an implementation
+   * MUST then preserve whatever name it already holds, or revoking one
+   * capability would erase the app's name from the list.
    */
-  writeGrants(origin: string, grants: Readonly<Record<string, PersistedGrant>>): void
+  writeGrants(origin: string, grants: Readonly<Record<string, PersistedGrant>>, appName?: string): void
   /**
    * Deletes whatever grants were persisted for `origin`, if any -- called
    * from `GrantLedger.forgetOrigin` alongside the floor and acknowledgement
@@ -131,4 +137,40 @@ export interface LedgerStorage {
    * or the store cannot be read at all.
    */
   listPersistedOrigins(): readonly string[]
+
+  /**
+   * Everything the settings permissions list needs about ONE origin, read
+   * straight off disk, for an app that has not been opened this session
+   * (C-01/C-02, A137).
+   *
+   * DISPLAY ONLY, AND THE RETURN TYPE IS WHAT ENFORCES THAT. It hands back the
+   * app's NAME AS A STRING, never a `Manifest` -- so there is nothing here a
+   * caller could pass to `decideGrantRequest`, and the display path physically
+   * cannot become an authority path. That is not stylistic: the first attempt
+   * at this feature persisted a whole manifest and validated restored grants
+   * against it, which meant both halves of the check came off disk and anyone
+   * who could write into the userData directory could mint a consistent pair
+   * and grant themselves anything (A137). `policy/pin.ts` states the rule this
+   * broke -- a value read off disk must not be trusted more than the same
+   * value arriving fresh.
+   *
+   * The patterns come back as the raw strings that were persisted, for
+   * rendering. Nothing may authorise a connection from them: a live capability
+   * call still gates on the in-memory ledger, which is populated only by
+   * `registerApp` with a freshly fetched manifest.
+   *
+   * `undefined` when this origin has nothing persisted, and for a record that
+   * cannot be read or parsed -- a missing row in a list, never authority.
+   */
+  readPersistedApp(origin: string): PersistedApp | undefined
+}
+
+/** One app as the settings list sees it before that app has ever been opened. See `LedgerStorage.readPersistedApp`. */
+export interface PersistedApp {
+  readonly origin: string
+  /** The app's own declared name, as of the last time it was registered. A
+   * string and nothing more -- see `readPersistedApp` for why this is not a
+   * `Manifest`. Absent if the record predates this field. */
+  readonly appName: string | undefined
+  readonly grants: Readonly<Record<string, PersistedGrant>>
 }

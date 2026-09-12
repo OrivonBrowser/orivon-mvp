@@ -96,7 +96,9 @@ export function stubBroker (
       isRegisteredSync: (origin) => {
         calls.push({ method: 'app.isRegisteredSync', origin, args: undefined })
         return overrides.isRegisteredSync?.(origin) ?? false
-      }
+      },
+      registeredOriginsSync: () => [],
+      persistedAppsSync: () => []
     },
     net: {
       connect: async (origin, opts) => {
@@ -191,6 +193,9 @@ export function stubBroker (
       calls.push({ method: 'revoke', origin, args: grantId })
       if (overrides.revoke !== undefined) { await overrides.revoke(origin, grantId); return }
       throw new Error('revoke is not reachable via orivon.* and this stub was not configured for a test that calls it directly')
+    },
+    revokePersisted: async () => {
+      throw new Error('revokePersisted is not reachable via orivon.* and this stub was not configured for a test that calls it directly')
     }
   }
 }

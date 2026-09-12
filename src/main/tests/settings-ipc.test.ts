@@ -30,6 +30,7 @@ function fakePermissions (overrides: Partial<PermissionsController> = {}): Permi
     list: vi.fn(async () => []),
     forUrl: vi.fn(async () => null),
     revoke: vi.fn(async () => {}),
+    revokeCapability: vi.fn(async () => {}),
     ...overrides
   }
 }

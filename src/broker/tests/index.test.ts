@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { never, outcomeNow, rejection } from '../handles/tests/handles.test-helpers.js'
-import { APP, baseDeps, manifestWith, okSocket, stubFs, unusedFsExtras } from './index.test-helpers.js'
+import { APP, baseDeps, brokerWithConnectGrant, manifestWith, okSocket, stubFs, unusedFsExtras } from './index.test-helpers.js'
 import { createBroker } from '../index.js'
 import type { CreateBrokerOptions, Dial, DialedSocket } from '../broker-contracts.js'
 import type { Manifest } from '../../contracts/index.js'
@@ -719,3 +719,35 @@ describe('registerApp rejects like every other Broker method, rather than throwi
   })
 })
 
+// The CRITICAL an adversarial review of PR #161 found: revokePersisted dropped
+// the capability from the ledger and from disk but never ran the handle
+// revocation cascade, so a socket the app ALREADY held kept working after the
+// user clicked Revoke. `revoke(origin, grantId)` had always cascaded; the new
+// capability-addressed sibling shipped without it, and no test reached the
+// "origin IS loaded" branch, so nothing caught it.
+describe('revokePersisted tears down the handles the revoked grant authorised', () => {
+  it('destroys a socket the app already had open, with reason "revoked"', async () => {
+    const destroy = vi.fn()
+    const broker = await brokerWithConnectGrant({ dial: async () => okSocket({ destroy }) })
+    const socket = await broker.net.connect(APP, { host: '93.184.216.34', port: 443 })
+    expect(socket.id).toEqual(expect.any(String))
+
+    await broker.revokePersisted(APP, 'tcp.connect')
+
+    // Before the fix this was never called: the ledger forgot the grant while
+    // the socket stayed live, so a person could revoke network access, watch
+    // the row disappear, and leave the page reading from its open connection.
+    expect(destroy).toHaveBeenCalledWith('revoked')
+  })
+
+  it('still reports the removal, and blocks the next connect', async () => {
+    const broker = await brokerWithConnectGrant()
+    await expect(broker.revokePersisted(APP, 'tcp.connect')).resolves.toBe(true)
+    await expect(broker.net.connect(APP, { host: '93.184.216.34', port: 443 })).rejects.toMatchObject({ code: 'denied' })
+  })
+
+  it('is a no-op, reported as one, for a capability the origin never held', async () => {
+    const broker = await brokerWithConnectGrant()
+    await expect(broker.revokePersisted(APP, 'udp.bind')).resolves.toBe(false)
+  })
+})
