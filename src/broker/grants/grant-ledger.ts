@@ -7,7 +7,7 @@ import type { CapabilityKind, Grant, GrantId, Manifest, Pattern } from '../../co
 import { LIMITS } from '../../contracts/index.js'
 import type { LedgerStorage } from './ledger-storage.js'
 import { isPersistableOrigin } from '../policy/origin.js'
-import { compareVersions } from '../policy/update.js'
+import { acknowledgeRollback, hydrateFloor, hydrateRollbackAcknowledgedVersion, raiseFloor } from './update-safety.js'
 import type { ParsedPattern } from '../policy/connect-patterns.js'
 import type { ParsedPatternsCache } from './parsed-patterns-cache.js'
 import { createParsedPatternsCache } from './parsed-patterns-cache.js'
@@ -116,91 +116,21 @@ export class GrantLedger {
     if (existing !== undefined) return existing
     const created: OriginRecord = { manifest: undefined, grants: new Map(), grantsHydrated: false, fsBytesWritten: 0, versionFloor: '0.0.0', rollbackAcknowledgedVersion: undefined }
     this.#origins.set(origin, created)
-    this.#hydrateFloor(origin, created)
-    this.#hydrateRollbackAcknowledgedVersion(origin, created)
+    hydrateFloor(this.#storage, origin, created)
+    hydrateRollbackAcknowledgedVersion(this.#storage, origin, created)
     return created
   }
 
-  /**
-   * Loads `origin`'s persisted floor into a freshly created record -- called
-   * from `#record`'s create branch only, so BOTH `registerApp` and
-   * `versionFloorFor` pick it up on an origin's first touch this session,
-   * regardless of which one runs first (`Loader.load()` reads
-   * `versionFloorFor` before any registration decision, so hydration must
-   * not depend on `registerApp` having already run).
-   *
-   * Runs at most once per record instance: a record already in `#origins`
-   * short-circuits `#record` before this is ever called again for it. The
-   * one exception is `forgetOrigin` deleting the record outright, in which
-   * case re-hydrating on the origin's next touch is exactly correct -- the
-   * whole point of forgetting an origin is to let it compare against
-   * whatever is actually on disk afterward, not against a stale in-memory
-   * decision from before the forget.
-   *
-   * A no-op when no `LedgerStorage` was injected, and for an origin
-   * `isPersistableOrigin` refuses -- the same gate the write side applies, so
-   * T13c holds in both directions. Nothing writes a floor for such an origin
-   * today, so this reads as belt-and-braces; it is what stops a floor file
-   * that got there some other way (a bug, a hand-edit, a future code path)
-   * being honoured for a loopback origin anyway. It also spares a pointless
-   * disk read for every localhost origin, which is what this repo's own e2e
-   * tests and fixture app run on.
-   */
-  #hydrateFloor (origin: string, record: OriginRecord): void {
-    if (this.#storage === undefined || !isPersistableOrigin(origin)) return
-    const persisted = this.#storage.readVersionFloor(origin)
-    if (persisted === undefined) return
-
-    if (compareVersions(persisted, persisted) === null) {
-      // Corrupt/unparseable (LedgerStorage's own doc contract): applied
-      // AS-IS, bypassing the raise-only comparison below entirely, rather
-      // than left at '0.0.0'. update.ts's own isAtOrAboveFloor fails closed
-      // on a pair compareVersions cannot order -- this is what makes that
-      // fire for every future update against this origin, rather than
-      // silently reopening T19 by looking identical to "never installed".
-      record.versionFloor = persisted
-      return
-    }
-    // Raise only, never lower -- same rule registerApp enforces below. A
-    // freshly created record's default ('0.0.0') is always at or below any
-    // valid persisted floor, so this only ever raises in practice; written
-    // as a real comparison anyway rather than an unconditional assignment,
-    // so it can never regress if that default ever changes.
-    if (compareVersions(persisted, record.versionFloor) === 1) record.versionFloor = persisted
-  }
-
-  /**
-   * d-0017's counterpart to `#hydrateFloor`, same call site and same reason:
-   * a record created for an origin queried before `acknowledgeRollback` ever
-   * ran this session must still see what a previous session persisted.
-   *
-   * A read of `undefined` (never persisted, or a corrupt record --
-   * `LedgerStorage.readAcknowledgedRollbackVersion`'s own contract collapses
-   * both to the same value) leaves the freshly-created record's default
-   * `undefined` untouched. There is no raise-only comparison needed the way
-   * the floor's does: unlike a version ordering, there is no "lower" value
-   * than "never acknowledged" to protect against, and this class does not
-   * itself judge whether one acknowledged version is more or less permissive
-   * than another -- it only remembers the one most recently accepted.
-   */
-  #hydrateRollbackAcknowledgedVersion (origin: string, record: OriginRecord): void {
-    if (this.#storage === undefined || !isPersistableOrigin(origin)) return
-    const persisted = this.#storage.readAcknowledgedRollbackVersion(origin)
-    if (persisted !== undefined) record.rollbackAcknowledgedVersion = persisted
-  }
 
   /**
    * Registers -- or replaces -- an origin's manifest. Existing grants are
    * left untouched: a page reload re-declares the same manifest and must not
    * silently revoke what the user already granted it.
    *
-   * RAISES THE VERSION FLOOR to `manifest.version`, never lowers it --
-   * `compareVersions` returning anything but 1 (including null, an
-   * unparseable version `parseManifest` should already have refused
-   * upstream) leaves the floor exactly where it was. This is the only writer
-   * of a raised `versionFloor` (hydration above only ever applies what was
-   * already persisted); T19's replay guard depends on every registration
-   * going through here.
+   * RAISES THE VERSION FLOOR, never lowers it, and is the only caller that
+   * does -- T19's replay guard depends on every registration coming through
+   * here. The rule itself, and what it does with an unorderable version,
+   * lives in ./update-safety.ts's `raiseFloor`.
    *
    * THE IN-MEMORY RAISE HAPPENS FIRST, AND IS UNCONDITIONAL. Nothing about
    * persistence may delay or skip it. A ledger with no `LedgerStorage` at
@@ -237,13 +167,10 @@ export class GrantLedger {
       }
     }
 
-    if (compareVersions(manifest.version, record.versionFloor) !== 1) return
-
-    record.versionFloor = manifest.version
-
-    if (this.#storage !== undefined && isPersistableOrigin(origin)) {
-      this.#storage.writeVersionFloor(origin, manifest.version)
-    }
+    // One writer for the raise-only rule and its persistence, shared with
+    // nothing else -- see ./update-safety.ts. Returns false when the floor did
+    // not move, which is the ordinary page-reload case and must not touch disk.
+    raiseFloor(this.#storage, origin, record, manifest.version)
   }
 
   /**
@@ -312,62 +239,25 @@ export class GrantLedger {
     return this.#origins.get(origin)?.manifest
   }
 
-  /**
-   * T19: the highest version ever installed for this origin. `'0.0.0'` for
-   * one never registered NOR ever persisted. Routes through `#record`
-   * (rather than a plain `#origins.get`) so an origin queried for the first
-   * time this session -- before `registerApp` has run at all -- still
-   * hydrates from `LedgerStorage` first; the only externally visible effect
-   * of that is an in-memory record now existing for a merely-queried
-   * origin, which every other method already treats identically to "no
-   * record at all" (empty grants, undefined manifest).
-   */
+
+  /** T19's floor: the highest version ever installed for this origin, `'0.0.0'`
+   * if never registered nor persisted. The rules live in ./update-safety.ts. */
   versionFloorFor (origin: string): string {
     return this.#record(origin).versionFloor
   }
 
-  /**
-   * d-0017: the SPECIFIC below-floor version this origin's rollback was
-   * last accepted for, or `undefined` if never acknowledged (or if the
-   * persisted record was corrupt -- `LedgerStorage.
-   * readAcknowledgedRollbackVersion`'s own doc explains why that collapse is
-   * the only safe one). Routes through `#record` for the same reason
-   * `versionFloorFor` does: a first-ever query must hydrate before the
-   * caller (a future UI-wiring PR) decides whether to prompt. The caller is
-   * responsible for the actual "is this the version I am about to offer"
-   * comparison -- this class only remembers the value.
-   */
+  /** The specific below-floor version this origin's rollback was last
+   * acknowledged for (d-0017), or undefined. NOT a boolean -- a corrupt read
+   * collapsing to undefined must read as "never acknowledged". */
   rollbackAcknowledgedVersionFor (origin: string): string | undefined {
     return this.#record(origin).rollbackAcknowledgedVersion
   }
 
-  /**
-   * Records that `origin`'s rollback to `version` has been acknowledged
-   * (d-0017) -- called once, when the user actually chooses to accept that
-   * specific below-floor version. This class never calls it on its own
-   * initiative; the caller (a future UI) decides WHEN that choice was made
-   * and WHICH version it was for. Overwrites
-   * whatever version was previously acknowledged for this origin -- one
-   * acknowledgement in force at a time, same shape as `registerApp`
-   * replacing a manifest.
-   *
-   * Mirrors `registerApp`'s ordering exactly, for the same reason: the
-   * in-memory value is set FIRST and unconditionally, and persistence is
-   * attempted only after -- so a failed write still leaves this session not
-   * re-prompting for the version just accepted, matching a no-persistence
-   * ledger's own behaviour, rather than regressing to "prompt again" the
-   * moment disk trouble strikes. THROWS if the write fails, same shape as
-   * `registerApp`'s own throw; `Broker.acknowledgeRollback` (../index.ts)
-   * turns that into the same rejected-promise shape every other Broker
-   * method already uses.
-   */
+  /** Records that the user accepted a below-floor version (d-0017). Throws if
+   * the write fails, after the in-memory change has landed -- same shape as
+   * `registerApp`. */
   acknowledgeRollback (origin: string, version: string): void {
-    const record = this.#record(origin)
-    record.rollbackAcknowledgedVersion = version
-
-    if (this.#storage !== undefined && isPersistableOrigin(origin)) {
-      this.#storage.writeAcknowledgedRollbackVersion(origin, version)
-    }
+    acknowledgeRollback(this.#storage, origin, this.#record(origin), version)
   }
 
   /** What was ACTUALLY granted. Empty for an origin the ledger has no record of. */
