@@ -27,9 +27,9 @@
 import type { OrivonErrorCode, Pattern } from '../../contracts/index.js'
 import { canonicalAddress, classifyAddress } from './address.js'
 import { MAX_HOST_LENGTH, isAsciiHost, isValidPort, normalizeHost } from './canonical-host.js'
-import { couldAnyPatternMatch, parsePattern, patternAuthorises } from './connect-patterns.js'
+import { couldAnyPatternMatch, patternAuthorises } from './connect-patterns.js'
 import type { ParsedPattern } from './connect-patterns.js'
-import { isReservedPort, patternNamesPortExactly } from './reserved-ports.js'
+import { preflightConnect } from './connect-preflight.js'
 
 /**
  * Resolves a hostname to every address it currently answers with.
@@ -167,7 +167,8 @@ function deny (reason: ConnectDenialReason, checked?: readonly string[]): Connec
 // Exported so a second consumer (../policy/connect-src.ts's CSP `connect-src`
 // derivation) enforces the same bound instead of a second copy of 256 that
 // can drift from this one.
-export const MAX_PATTERNS = 256
+/** Re-exported from ./connect-preflight.ts, where the bound is applied, so every importer keeps one name for it (Rule 3). */
+export { MAX_PATTERNS } from './connect-preflight.js'
 // Exported so a second consumer (../../loader/install-origin.ts's T12 guard,
 // which resolves once against the same kind of untrusted answer count) shares
 // this bound instead of a second copy that can drift from it (Rule 3).
@@ -214,66 +215,12 @@ export async function checkConnect (
   // it never throws on its own account, so anything other than a real array
   // (a bare string, null, undefined, a whole Manifest) denies instead of
   // throwing out of `.length` or `.map`.
-  if (!Array.isArray(patterns)) return deny('not-declared')
-
-  // An empty list denies, whether nothing was ever declared or the user
-  // granted none of what was declared -- absence means absence, never
-  // default-allow (capability-api.md design rules 4 and 5). Which of those
-  // it was is the caller's concern, not this function's: it no longer parses
-  // a Manifest, so it cannot and does not distinguish them.
-  if (patterns.length === 0) return deny('not-declared')
-  if (patterns.length > MAX_PATTERNS) return deny('too-many-patterns')
-
-  if (typeof hostArg !== 'string') return deny('bad-host')
-  if (!isValidPort(port)) return deny('bad-port')
-
-  const requested = normalizeHost(hostArg)
-  if (requested.length === 0 || requested.length > MAX_HOST_LENGTH) return deny('bad-host')
-  if (!isAsciiHost(requested)) return deny('bad-host')
-
-  // Parsed ONCE, not per address. The loop below is O(answers x patterns) and
-  // both counts are chosen by somebody else; re-splitting every pattern inside
-  // it made a single call cost seconds. See MAX_PATTERNS.
-  const parsed = parsedPatterns !== undefined && parsedPatterns.length === patterns.length
-    ? parsedPatterns
-    : patterns.map(parsePattern)
-
-  // Checked HERE -- after parsing, before resolving. Before, so a reserved
-  // port is never a name-existence oracle (the same reason
-  // couldAnyPatternMatch denies early); after, because the answer depends on
-  // whether any pattern NAMED this port, which needs them parsed.
-  //
-  // NARROWS the pattern set rather than merely gating on it: every downstream
-  // check below uses `eligible`, not `parsed`, so a reserved port can only be
-  // authorised by the SAME pattern that named it -- never by pairing that
-  // naming with a different, broader pattern's host match (A82's
-  // cross-pattern bypass; see reserved-ports.ts's own doc comment).
-  const reserved = isReservedPort(port)
-  const eligible = reserved
-    ? parsed.map((pattern) => (patternNamesPortExactly(pattern, port) ? pattern : null))
-    : parsed
-  if (reserved && eligible.every((pattern) => pattern === null)) return deny('reserved-port')
-
-  // An address literal is already the thing patterns are matched against, so
-  // there is nothing to resolve -- and not calling out means not depending on
-  // how a resolver treats a literal. It is still checked identically below;
-  // the shortcut skips the lookup, never the policy.
-  //
-  // classifyAddress, not canonicalAddress, decides isLiteral: classifyAddress
-  // still recognises a zone-scoped literal (`fe80::1%eth0`) as an address --
-  // permissive on purpose, so it can be denied as one -- while
-  // canonicalAddress returns null for it (see address.ts). Deciding isLiteral
-  // from canonicalAddress instead would make that null fall through to the
-  // resolver, demoting a recognised, malformed address to a hostname lookup:
-  // exactly the fallthrough the next line exists to rule out.
-  const isLiteral = classifyAddress(requested) !== 'unparseable'
-  // An address this file will not hand onward is one it will not accept as an
-  // argument either. Denying rather than falling through to the resolver
-  // matters: `2130706433` is a perfectly good DNS label, so treating it as a
-  // name would send it to the nameserver. canonicalAddress NORMALISES
-  // (docs/open-questions.md A20), so the check is equality with the input,
-  // not merely "did it parse" -- see this file's header.
-  if (isLiteral && canonicalAddress(requested) !== requested) return deny('non-canonical-host')
+  // Every check this shares with checkConnectSecure lives in one place now --
+  // see ./connect-preflight.ts for why that matters, what stays split, and the
+  // ordering contract (request validation before anything grant-dependent).
+  const pre = preflightConnect(patterns, hostArg, port, parsedPatterns)
+  if (!pre.ok) return deny(pre.reason)
+  const { requested, eligible, isLiteral } = pre
 
   if (!couldAnyPatternMatch(eligible, requested, port)) return deny('no-pattern-possible')
 

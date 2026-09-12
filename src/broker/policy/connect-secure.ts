@@ -23,12 +23,10 @@
 // same rules, same reasons, applied to a different comparison.
 
 import type { OrivonErrorCode, Pattern } from '../../contracts/index.js'
-import { canonicalAddress, classifyAddress } from './address.js'
-import { MAX_HOST_LENGTH, isAsciiHost, isValidPort, normalizeHost } from './canonical-host.js'
-import { MAX_PATTERNS } from './connect.js'
-import { parsePattern, portMatches } from './connect-patterns.js'
+import { normalizeHost } from './canonical-host.js'
+import { portMatches } from './connect-patterns.js'
 import type { ParsedPattern } from './connect-patterns.js'
-import { isReservedPort, patternNamesPortExactly } from './reserved-ports.js'
+import { preflightConnect } from './connect-preflight.js'
 
 export interface ConnectSecureAllowed {
   readonly allowed: true
@@ -104,39 +102,13 @@ export function checkConnectSecure (
   hostArg: string,
   port: number
 ): ConnectSecureDecision {
-  if (!Array.isArray(patterns)) return deny('not-declared')
-  if (patterns.length === 0) return deny('not-declared')
-  if (patterns.length > MAX_PATTERNS) return deny('too-many-patterns')
-
-  if (typeof hostArg !== 'string') return deny('bad-host')
-  if (!isValidPort(port)) return deny('bad-port')
-
-  const requested = normalizeHost(hostArg)
-  if (requested.length === 0 || requested.length > MAX_HOST_LENGTH) return deny('bad-host')
-  if (!isAsciiHost(requested)) return deny('bad-host')
-
-  // An address literal must be written canonically -- same reasoning as
-  // checkConnect's own guard on `hostArg`: `203.000.113.5` is not the
-  // literal a manifest pattern would have been shown as, and accepting it
-  // here would let a caller name one address two different ways.
-  if (classifyAddress(requested) !== 'unparseable' && canonicalAddress(requested) !== requested) {
-    return deny('non-canonical-host')
-  }
-
-  const parsed = patterns.map(parsePattern)
-
-  // Checked before matching, exactly where checkConnect checks it: A82's
-  // rule applies to https.connect too, and it depends only on `parsed` and
-  // `port`, never on the address side of anything. NARROWED the same way
-  // checkConnect narrows (see its own comment): the host check below runs
-  // against `eligible`, not `parsed`, so a reserved port can only be
-  // authorised by the SAME pattern that named it, not by pairing that naming
-  // with a different pattern's `'*'` host match.
-  const reserved = isReservedPort(port)
-  const eligible = reserved
-    ? parsed.map((pattern) => (patternNamesPortExactly(pattern, port) ? pattern : null))
-    : parsed
-  if (reserved && eligible.every((pattern) => pattern === null)) return deny('reserved-port')
+  // Identical to checkConnect's, because it IS checkConnect's -- one copy of
+  // the shared prologue, which is the point of ./connect-preflight.ts. The
+  // reserved-port narrowing in particular was fixed on the plain path while
+  // this one kept the hole; that cannot happen to one copy.
+  const pre = preflightConnect(patterns, hostArg, port)
+  if (!pre.ok) return deny(pre.reason)
+  const { requested, eligible } = pre
 
   if (!eligible.some((pattern) => hostMatchesSecure(pattern, requested, port))) {
     return deny('no-pattern-match')
