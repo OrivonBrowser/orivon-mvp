@@ -67,7 +67,12 @@ export function grantsToPersist (grants: ReadonlyMap<CapabilityKind, Grant>): Re
  * by the time a caller reaches this, so silence here would let a
  * just-revoked grant reappear after a restart with nothing reported.
  */
-export function persistGrants (storage: LedgerStorage | undefined, origin: string, grants: ReadonlyMap<CapabilityKind, Grant>): void {
+export function persistGrants (
+  storage: LedgerStorage | undefined,
+  origin: string,
+  grants: ReadonlyMap<CapabilityKind, Grant>,
+  appName?: string
+): void {
   if (storage === undefined || !isPersistableOrigin(origin)) return
-  storage.writeGrants(origin, grantsToPersist(grants))
+  storage.writeGrants(origin, grantsToPersist(grants), appName)
 }

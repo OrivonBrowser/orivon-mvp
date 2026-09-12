@@ -5,7 +5,7 @@
 import { closeSync, fsyncSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { originHash } from './origin-hash.js'
-import type { LedgerStorage, PersistedGrant } from './ledger-storage.js'
+import type { LedgerStorage, PersistedApp, PersistedGrant } from './ledger-storage.js'
 
 /**
  * Never valid semver (no digits, no dots) -- returned for anything that
@@ -131,13 +131,33 @@ function isGrantsShape (value: unknown): value is Record<string, PersistedGrant>
  */
 interface GrantsFile {
   readonly origin: string
+  /** The app's declared name, kept so the settings list can name an app that
+   * has not been opened this session. Optional: a file written before this
+   * field existed still loads, and simply shows the origin alone. */
+  readonly appName?: string
   readonly grants: Record<string, PersistedGrant>
 }
 
 function isGrantsFileShape (value: unknown): value is GrantsFile {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
   const candidate = value as { origin?: unknown, grants?: unknown }
-  return typeof candidate.origin === 'string' && isGrantsShape(candidate.grants)
+  if (typeof candidate.origin !== 'string' || !isGrantsShape(candidate.grants)) return false
+  // appName is optional, but if present it must be a string -- a number or an
+  // object reaching the renderer as an app's name is a rendering bug waiting
+  // to happen, and this is untrusted disk content.
+  const named = value as { appName?: unknown }
+  return named.appName === undefined || typeof named.appName === 'string'
+}
+
+/** The parsed grants file for `origin`, or null for absent/unreadable/not-the-expected-shape. Shared by readGrants, writeGrants and readPersistedApp (Rule 3). */
+function readGrantsFile (userDataPath: string, origin: string): GrantsFile | null {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(readFileSync(grantsPath(userDataPath, origin), 'utf8'))
+  } catch {
+    return null
+  }
+  return isGrantsFileShape(parsed) ? parsed : null
 }
 
 export function nodeLedgerStorage (userDataPath: string): LedgerStorage {
@@ -235,10 +255,21 @@ export function nodeLedgerStorage (userDataPath: string): LedgerStorage {
       // cannot be enumerated until something rewrites it in the new shape.
       return isGrantsShape(parsed) ? parsed : undefined
     },
-    writeGrants: (origin, grants) => {
+    writeGrants: (origin, grants, appName) => {
       mkdirSync(originGrantsDir(userDataPath, origin), { recursive: true })
-      const file: GrantsFile = { origin, grants }
+      // The name is preserved across writes it was not given: revoking one
+      // capability must not erase the app's name from the settings list, and
+      // the revoke path has no manifest to hand over.
+      const existing = appName ?? readGrantsFile(userDataPath, origin)?.appName
+      const file: GrantsFile = existing === undefined ? { origin, grants } : { origin, appName: existing, grants }
       writeFileAtomic(grantsPath(userDataPath, origin), JSON.stringify(file))
+    },
+
+    readPersistedApp: (origin) => {
+      const file = readGrantsFile(userDataPath, origin)
+      if (file === null) return undefined
+      const app: PersistedApp = { origin, appName: file.appName, grants: file.grants }
+      return app
     },
     deleteGrants: (origin) => {
       try {
