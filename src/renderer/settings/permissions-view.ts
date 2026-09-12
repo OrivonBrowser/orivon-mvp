@@ -22,7 +22,7 @@ export interface PermissionsListView {
 export function createPermissionsListView (
   list: HTMLDivElement,
   emptyState: HTMLElement,
-  onRevoke: (origin: string, grantId: GrantId) => void
+  onRevoke: (origin: string, row: PermissionRow) => void
 ): PermissionsListView {
   function render (apps: readonly AppPermissions[]): void {
     list.replaceChildren()
@@ -35,7 +35,7 @@ export function createPermissionsListView (
   return { render }
 }
 
-function renderCard (app: AppPermissions, onRevoke: (origin: string, grantId: GrantId) => void): HTMLElement {
+function renderCard (app: AppPermissions, onRevoke: (origin: string, row: PermissionRow) => void): HTMLElement {
   const card = document.createElement('section')
   card.className = 'app-card'
   card.setAttribute('role', 'listitem')
@@ -66,7 +66,7 @@ function renderCard (app: AppPermissions, onRevoke: (origin: string, grantId: Gr
   return card
 }
 
-function renderRow (origin: string, row: PermissionRow, onRevoke: (origin: string, grantId: GrantId) => void): HTMLElement {
+function renderRow (origin: string, row: PermissionRow, onRevoke: (origin: string, row: PermissionRow) => void): HTMLElement {
   const li = document.createElement('li')
   li.className = 'permission-row'
   li.classList.toggle('warning', row.warning)
@@ -80,7 +80,10 @@ function renderRow (origin: string, row: PermissionRow, onRevoke: (origin: strin
   revoke.className = 'revoke-btn'
   revoke.textContent = 'Revoke'
   revoke.setAttribute('aria-label', `Revoke: ${row.message}`)
-  revoke.addEventListener('click', () => { onRevoke(origin, row.grantId) })
+  // The whole row, not just an id: a row for an app that is not loaded has
+  // no live grant id, and choosing between the two revoke paths is the
+  // caller's job rather than this view's.
+  revoke.addEventListener('click', () => { onRevoke(origin, row) })
 
   li.append(message, revoke)
   return li

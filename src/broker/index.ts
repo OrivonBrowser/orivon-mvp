@@ -24,6 +24,7 @@
 // is the only layer with both the manifest and the grant ledger in hand.
 // See README.md's Design notes for this file's split history and the next seam.
 
+import type { PersistedApp } from './grants/ledger-storage.js'
 import { HandleTable } from './handles/handles.js'
 import { errnoOf, fail } from './errors.js'
 import { GrantLedger } from './grants/grant-ledger.js'
@@ -111,6 +112,17 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
    * resource -- a wrong answer costs a preload's own async fallback path,
    * never a security boundary.
    */
+  function registeredOriginsSync (): readonly string[] {
+    return ledger.registeredOrigins()
+  }
+
+  /** Display only -- see Broker.app.persistedAppsSync and A137. No canonicalisation
+   * needed or wanted: these origins come back from storage having already been
+   * checked to re-hash to their own directory, and nothing here authorises. */
+  function persistedAppsSync (): readonly PersistedApp[] {
+    return ledger.persistedApps()
+  }
+
   function isRegisteredSync (origin: string): boolean {
     const key = originFromUrl(origin)
     if (key === null) return false
@@ -175,6 +187,41 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
    * -- same rethrow shape `registerApp`/`acknowledgeRollback` use, just
    * deferred past this method's own required side effects.
    */
+  /** Revokes by (origin, capability) so the settings list can revoke an app
+   * that is not loaded. Mirrors `revoke`'s own canonicalisation, and returns
+   * whether anything was removed rather than resolving silently either way. */
+  async function revokePersisted (origin: string, capability: CapabilityKind): Promise<boolean> {
+    const key = canonical(origin)
+    // CAPTURED BEFORE THE DELETE, because after it `currentGrant` is undefined
+    // and the id needed to tear down this grant's handles is gone with it.
+    //
+    // WITHOUT THIS CASCADE THE REVOKE BUTTON LIES. Dropping the capability from
+    // the ledger only blocks FUTURE calls; a socket or listener the app already
+    // holds lives in `handleTable`, whose ongoing reads and writes are scoped to
+    // the HANDLE and never re-checked against the ledger. So a user could revoke
+    // network access, see the row disappear, and leave the page reading from its
+    // open socket indefinitely. `revoke` above has always done this; this method
+    // shipped without it and an adversarial review of the PR caught it.
+    const live = ledger.currentGrant(key, capability)
+    let persistError: unknown
+    let removed = false
+    try {
+      // Ledger first, synchronously, then the cascade -- the same ordering
+      // `revoke` documents: a grants()/connect() call racing the teardown must
+      // never observe a grant whose handles are already going away.
+      removed = ledger.revokePersisted(key, capability)
+    } catch (error) {
+      persistError = error
+    }
+    // UNCONDITIONAL, exactly as in `revoke`: a disk failure must never be the
+    // reason a revoked grant's handles are left running.
+    if (live !== undefined) await handleTable.revoke(key, live.id)
+    if (persistError !== undefined) {
+      throw fail('internal', 'the revocation could not be persisted', undefined, errnoOf(persistError))
+    }
+    return removed
+  }
+
   async function grant (origin: string, capability: CapabilityKind, patterns: readonly Pattern[]): Promise<Grant> {
     const key = canonical(origin)
     // Captured BEFORE the call below: GrantLedger.grant's own Map.set already
@@ -228,7 +275,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
   }
 
   return {
-    app: { manifest, grants, isRegisteredSync },
+    app: { manifest, grants, isRegisteredSync, registeredOriginsSync, persistedAppsSync },
     net,
     id,
     fs,
@@ -237,6 +284,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     rollbackAcknowledgedVersionFor,
     acknowledgeRollback,
     grant,
-    revoke
+    revoke,
+    revokePersisted
   }
 }

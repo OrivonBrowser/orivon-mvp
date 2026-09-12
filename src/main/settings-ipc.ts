@@ -8,11 +8,15 @@
 import { ipcMain, type IpcMainInvokeEvent, type WebContents } from 'electron'
 import { SETTINGS_COMMAND_CHANNEL } from './channels.js'
 import type { AppPermissions, PermissionsController } from './permissions.js'
-import type { GrantId } from '../contracts/index.js'
+import type { CapabilityKind, GrantId } from '../contracts/index.js'
 
 export type SettingsCommand =
   | { type: 'list' }
-  | { type: 'revoke'; origin: string; grantId: GrantId }
+  | { type: 'revoke', origin: string, grantId: GrantId }
+  /** For an app that is not loaded this session: its grants live only on disk
+   * and have no live id, so the capability itself is the address. An origin
+   * holds at most one grant per capability, so this is not ambiguous. */
+  | { type: 'revokeCapability', origin: string, capability: CapabilityKind }
 
 function isFromSettingsWindow (event: IpcMainInvokeEvent, settingsWebContents: WebContents): boolean {
   return event.senderFrame !== null && event.senderFrame === settingsWebContents.mainFrame
@@ -27,6 +31,8 @@ export function registerSettingsIpc (settingsWebContents: WebContents, permissio
         return permissions.list()
       case 'revoke':
         return permissions.revoke(command.origin, command.grantId)
+      case 'revokeCapability':
+        return permissions.revokeCapability(command.origin, command.capability)
     }
   })
 }
