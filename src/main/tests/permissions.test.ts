@@ -4,7 +4,7 @@ import { APP, baseDeps, manifestWith } from '../../broker/tests/index.test-helpe
 import { rejection } from '../../broker/handles/tests/handles.test-helpers.js'
 import type { Broker } from '../../broker/broker-contracts.js'
 import type { Grant } from '../../contracts/index.js'
-import { buildAppPermissions, createPermissionsController, PermissionsRegistry } from '../permissions.js'
+import { buildAppPermissions, createPermissionsController, PermissionsRegistry, buildPersistedAppPermissions } from '../permissions.js'
 import type { SubsystemContext } from '../registry.js'
 
 // Item 4.4's exit criterion, checked directly: "revoking from the list
@@ -55,12 +55,23 @@ describe('buildAppPermissions', () => {
 })
 
 describe('PermissionsRegistry', () => {
-  it('lists nothing until an origin has been noted -- the empty-by-default state today\'s production browsing is actually in', async () => {
+  // WAS: "lists nothing until an origin has been noted -- the empty-by-default
+  // state today's production browsing is actually in". That test passed by
+  // asserting the DEFECT (C-01/C-02): noteOrigin never acquired a production
+  // caller, so the settings list was empty for every grant made before the
+  // current session while the grant itself stayed live. The registry now asks
+  // the broker, so a registered app appears without anyone having noted it.
+  it('lists a registered app without it having been noted -- the broker is the source, not the session set', async () => {
     const broker = createBroker(baseDeps())
     broker.registerApp(APP, manifestWith({ fs: {} }))
     const registry = new PermissionsRegistry()
 
-    expect(await registry.list(broker)).toEqual([])
+    expect((await registry.list(broker)).map((a) => a.origin)).toEqual([APP])
+  })
+
+  it('still lists nothing when the broker knows no app at all', async () => {
+    const broker = createBroker(baseDeps())
+    expect(await new PermissionsRegistry().list(broker)).toEqual([])
   })
 
   it('lists a noted origin\'s current grants, and drops it once the broker no longer recognises it', async () => {
@@ -155,6 +166,8 @@ describe('createPermissionsController', () => {
     const broker = {
       app: {
         isRegisteredSync: () => true,
+        registeredOriginsSync: () => [],
+        persistedAppsSync: () => [],
         manifest: async () => {
           if (failNext) throw new Error('transient')
           return { name: 'Example App', version: '1.0.0', capabilities: {} }
@@ -180,6 +193,8 @@ describe('createPermissionsController', () => {
     const broker = {
       app: {
         isRegisteredSync: () => false,
+        registeredOriginsSync: () => [],
+        persistedAppsSync: () => [],
         manifest: async () => { throw new Error('no manifest registered for this origin') },
         grants: async () => []
       }
@@ -190,7 +205,51 @@ describe('createPermissionsController', () => {
     expect(await registry.list(broker)).toHaveLength(0)
     // Proven dropped rather than merely absent: a broker that would now
     // succeed must not resurrect it, because nothing re-noted it.
-    const revived = { app: { isRegisteredSync: () => true, manifest: async () => ({ name: 'Back', version: '1.0.0', capabilities: {} }), grants: async () => [] } } as unknown as Broker
+    const revived = { app: { isRegisteredSync: () => true, registeredOriginsSync: () => [], persistedAppsSync: () => [], manifest: async () => ({ name: 'Back', version: '1.0.0', capabilities: {} }), grants: async () => [] } } as unknown as Broker
     expect(await registry.list(revived)).toHaveLength(0)
+  })
+})
+
+// From the same adversarial review: `readPersistedApp` only checks that the
+// saved name is a STRING. manifest.ts rejects control codes, bidi overrides
+// and zero-width characters at parse time -- so a name that reached disk
+// normally is clean, but a hand-edited or corrupted grants.json has not been
+// through that check, and that file is in this feature's threat model.
+describe('buildPersistedAppPermissions -- a saved name is re-checked before it is shown', () => {
+  const oneGrant = { 'tcp.connect': { patterns: ['a.example:443'], grantedAt: 0 } }
+
+  it('shows an ordinary saved name', () => {
+    const app = buildPersistedAppPermissions({ origin: 'https://app.example', appName: 'Example App', grants: oneGrant })
+    expect(app.appName).toBe('Example App')
+  })
+
+  it('falls back to the origin for a name carrying a bidi override -- the filename-spoof trick', () => {
+    const app = buildPersistedAppPermissions({ origin: 'https://app.example', appName: 'safe\u202egnp.exe', grants: oneGrant })
+    expect(app.appName).toBe('https://app.example')
+  })
+
+  it('falls back to the origin for a zero-width character', () => {
+    const app = buildPersistedAppPermissions({ origin: 'https://app.example', appName: 'app\u200b.example', grants: oneGrant })
+    expect(app.appName).toBe('https://app.example')
+  })
+
+  it('falls back to the origin for an oversized name, and accepts one exactly at the bound', () => {
+    const atBound = 'a'.repeat(200)
+    expect(buildPersistedAppPermissions({ origin: 'https://app.example', appName: atBound, grants: oneGrant }).appName).toBe(atBound)
+    expect(buildPersistedAppPermissions({ origin: 'https://app.example', appName: 'a'.repeat(201), grants: oneGrant }).appName).toBe('https://app.example')
+  })
+
+  it('skips a disk key that is not one of the real capability kinds', () => {
+    const app = buildPersistedAppPermissions({
+      origin: 'https://app.example',
+      appName: 'X',
+      grants: { 'not.a.capability': { patterns: ['a:1'], grantedAt: 0 }, ...oneGrant }
+    })
+    expect(app.rows.map((r) => r.capability)).toEqual(['tcp.connect'])
+  })
+
+  it('gives every persisted row a null grantId, so the caller routes to the capability-addressed revoke', () => {
+    const app = buildPersistedAppPermissions({ origin: 'https://app.example', appName: 'X', grants: oneGrant })
+    expect(app.rows.every((r) => r.grantId === null)).toBe(true)
   })
 })

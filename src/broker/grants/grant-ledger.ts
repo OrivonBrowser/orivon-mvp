@@ -5,7 +5,7 @@
 
 import type { CapabilityKind, Grant, GrantId, Manifest, Pattern } from '../../contracts/index.js'
 import { LIMITS } from '../../contracts/index.js'
-import type { LedgerStorage } from './ledger-storage.js'
+import type { LedgerStorage, PersistedApp, PersistedGrant } from './ledger-storage.js'
 import { isPersistableOrigin } from '../policy/origin.js'
 import { acknowledgeRollback, hydrateFloor, hydrateRollbackAcknowledgedVersion, raiseFloor } from './update-safety.js'
 import type { ParsedPattern } from '../policy/connect-patterns.js'
@@ -260,6 +260,71 @@ export class GrantLedger {
     acknowledgeRollback(this.#storage, origin, this.#record(origin), version)
   }
 
+  /** Every origin this ledger has a manifest for -- the apps that ARE loaded
+   * this session. The settings list unions these with `persistedApps`. */
+  registeredOrigins (): readonly string[] {
+    const found: string[] = []
+    for (const [origin, record] of this.#origins) {
+      if (record.manifest !== undefined) found.push(origin)
+    }
+    return found
+  }
+
+  /**
+   * The settings permissions list, for apps NOT opened this session -- read
+   * straight off disk and never merged into this class's own records (A137).
+   *
+   * DELIBERATELY NOT HYDRATION. Nothing here becomes a live `Grant`, nothing
+   * is validated against a manifest read off disk, and no capability call can
+   * be served from it: a live call gates on `currentGrant`, which only
+   * `registerApp` fills, with a freshly fetched manifest. That separation is
+   * the point -- the withdrawn first attempt made restored grants live and
+   * checked them against a disk manifest, so both halves came off disk.
+   */
+  persistedApps (): readonly PersistedApp[] {
+    if (this.#storage === undefined) return []
+    const apps: PersistedApp[] = []
+    for (const origin of this.#storage.listPersistedOrigins()) {
+      const app = this.#storage.readPersistedApp(origin)
+      if (app !== undefined) apps.push(app)
+    }
+    return apps
+  }
+
+  /**
+   * Revokes one capability from an app that may not be loaded, by deleting it
+   * from what is persisted -- the settings list's revoke button for an app
+   * that is not currently open.
+   *
+   * ADDRESSED BY (origin, capability), not a GrantId, because a not-yet-loaded
+   * app has no live grant and so no id. Not a weaker address: `grants` is
+   * keyed by capability, so one origin holds at most one grant per capability.
+   *
+   * Also drops it in memory when this origin IS loaded, so the two cannot
+   * disagree. Returns whether anything was actually removed, so a caller can
+   * tell a real revoke from a no-op.
+   */
+  revokePersisted (origin: string, capability: CapabilityKind): boolean {
+    const record = this.#origins.get(origin)
+    // No hydration bookkeeping to keep in step, because nothing here hydrates:
+    // the display path never turns a persisted grant into a live one, so there
+    // is no "was this restored from disk" flag that could fall out of sync with
+    // `grants` (A137's findings 1 and 2, now structurally impossible).
+    const wasLive = record?.grants.delete(capability) ?? false
+    if (this.#storage === undefined) return wasLive
+    const persisted = this.#storage.readPersistedApp(origin)
+    if (persisted === undefined || !(capability in persisted.grants)) return wasLive
+    const remaining: Record<string, PersistedGrant> = { ...persisted.grants }
+    delete remaining[capability]
+    // The name is passed when it is known, rather than leaving `writeGrants`
+    // to recover it by re-reading: if the file is unparseable at exactly this
+    // moment the re-read yields nothing and the app silently loses its name in
+    // the settings list, even though the correct name was in memory all along.
+    // `grant()` sets the same precedent one method up.
+    this.#storage.writeGrants(origin, remaining, record?.manifest?.name)
+    return true
+  }
+
   /** What was ACTUALLY granted. Empty for an origin the ledger has no record of. */
   grantsFor (origin: string): readonly Grant[] {
     const record = this.#origins.get(origin)
@@ -297,7 +362,11 @@ export class GrantLedger {
     const originRecord = this.#record(origin)
     const replaced = originRecord.grants.get(capability)
     originRecord.grants.set(capability, record)
-    persistGrants(this.#storage, origin, originRecord.grants)
+    // The app's own name travels with the write, so the settings list can
+    // name this app after a restart without asking its server again. `revoke`
+    // below deliberately does NOT pass one -- it has no manifest to hand, and
+    // the storage layer preserves whatever name it already holds.
+    persistGrants(this.#storage, origin, originRecord.grants, originRecord.manifest?.name)
     return { record, replaced }
   }
 
