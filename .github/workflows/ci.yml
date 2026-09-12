@@ -24,11 +24,30 @@ jobs:
       # `npm ci` runs the postinstall guard, so Rule 8 is enforced here too.
       - run: npm ci
 
+      # The real-peer UDP tests (src/shim/tests/real-bittorrent-dht.test.ts)
+      # drive a real, unmodified bittorrent-dht client and its real
+      # k-rpc-socket transport through the shim's dgram implementation. They
+      # need webtorrent's dependency tree, which lives in spike/app and is
+      # gitignored, so before this step they were SKIPPED on every runner and
+      # in every fresh clone -- the only three skipped tests in the suite, and
+      # the ones covering the flagship's transport. Three real dgram defects
+      # reached main in 2026-09 because nothing executing exercised that path
+      # (docs/open-questions.md A136; owner decision: install here rather than
+      # vendor the package into the tree).
+      #
+      # `npm ci` and not `npm install`: spike/app/package-lock.json is tracked,
+      # so the fixture is pinned rather than whatever resolves today.
+      - name: Install the real-peer UDP test fixture
+        run: npm ci --prefix spike/app
+
       - name: Typecheck
         run: npm run typecheck
 
       - name: Unit tests
         run: npm test
+
+      - name: No dependency carries a high or critical advisory
+        run: npm run check:advisories
 
       - name: No dependency requires a compiler (Rule 8)
         run: npm run check:natives
