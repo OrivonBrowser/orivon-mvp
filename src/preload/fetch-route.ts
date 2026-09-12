@@ -290,6 +290,11 @@ export function installFetchRoute (
     return status === 101 || status === 103 || status === 204 || status === 205 || status === 304
   }
 
+  /** Kept distinct so the catch below can re-throw it untouched. */
+  class DecompressedTooLarge extends TypeError {
+    constructor () { super(`orivon: fetch response decompressed past the ${MAX_BODY_BYTES}-byte limit`) }
+  }
+
   /** Real fetch() transparently decompresses gzip/deflate/br (ADR-0017: "a silent divergence... is a trap"). Uses the platform's own DecompressionStream -- native in Chromium, no dependency, Rule 8 unaffected. `br` has no DecompressionStream format in Chromium, so decompressBody below fails loudly rather than pass compressed bytes through as content. Content-Encoding is left on the Response unstripped, matching a real browser's own behaviour here. */
   async function decompress (bytes: Uint8Array, format: 'gzip' | 'deflate'): Promise<Uint8Array> {
     const source = new ReadableStream<Uint8Array>({
@@ -300,9 +305,34 @@ export function installFetchRoute (
       // not <Uint8Array> -- a real mismatch in the .d.ts, not this code; the
       // runtime pair is exactly what pipeThrough needs.
       const pair = new DecompressionStream(format) as unknown as ReadableWritablePair<Uint8Array, Uint8Array>
-      const buffer = await new Response(source.pipeThrough(pair)).arrayBuffer()
-      return new Uint8Array(buffer)
+      // Read and count, never `new Response(...).arrayBuffer()`: the wire cap
+      // stops being the same number once bytes are decompressed (about 1000:1
+      // for a run of repeated bytes, measured), and arrayBuffer() has already
+      // allocated everything before it could be asked for a size. Cancel
+      // rather than abandon -- an abandoned reader leaves the stream inflating.
+      const reader = source.pipeThrough(pair).getReader()
+      const chunks: Uint8Array[] = []
+      let total = 0
+      try {
+        for (;;) {
+          const { done, value } = await reader.read()
+          if (done) break
+          total += value.length
+          if (total > MAX_BODY_BYTES) {
+            await reader.cancel()
+            throw new DecompressedTooLarge()
+          }
+          chunks.push(value)
+        }
+      } finally { reader.releaseLock() }
+      const out = new Uint8Array(total)
+      let at = 0
+      for (const chunk of chunks) { out.set(chunk, at); at += chunk.length }
+      return out
     } catch (error) {
+      // Unwrapped: hitting the cap is not a decode failure, and rewrapping it
+      // would blame the server for what this browser refused to hold.
+      if (error instanceof DecompressedTooLarge) throw error
       throw new TypeError(`orivon: fetch response claimed Content-Encoding: ${format} but failed to decompress (${error instanceof Error ? error.message : String(error)})`)
     }
   }
@@ -458,35 +488,4 @@ export function installFetchRoute (
   // that runs immediately cannot outrun this the way it could outrun the
   // async `orivon.app.manifest()` check this replaced.
   Object.defineProperty(target, 'fetch', { value: routedFetch, writable: false, configurable: false, enumerable: true })
-}
-
-/** The literal `webPreferences.additionalArguments` flag `src/main/
- * tab-view.ts`'s `appTabArgsFor` sets -- duplicated here rather than
- * imported (src/preload/README.md forbids importing anything under
- * src/main/ except ./channels.ts, and this is not a channel), the same
- * choice `newtab.ts`'s own `--orivon-newtab-url=` flag already made. */
-const APP_TAB_FLAG = '--orivon-app-tab'
-
-/**
- * Fail-open, same shape as orivon-surface.ts's own `exposeOrivon()`:
- * `contextBridge.executeInMainWorld` is `@experimental` and may be absent
- * or throw, in which case this leaves the page's native `fetch` alone
- * rather than abort the rest of preload. Reads `isAppTab` synchronously off
- * `process.argv` -- available here (the isolated world), unlike inside
- * `installFetchRoute` itself, which runs in the main world and has no
- * `process` -- so it crosses as a plain boolean argument instead.
- *
- * `args` carries ONLY `isAppTab` -- `installFetchRoute`'s `target` parameter
- * is deliberately left OMITTED, not passed as an explicit `undefined`, so
- * its own default (the real main-world `window`) applies -- the exact
- * pattern `orivon-surface.ts`'s own `exposeOrivon()` already uses for
- * `installOrivon`'s trailing `target` parameter.
- */
-export function exposeFetchRoute (): void {
-  const isAppTab = process.argv.includes(APP_TAB_FLAG)
-  try {
-    contextBridge.executeInMainWorld({ func: installFetchRoute, args: [isAppTab] })
-  } catch (error) {
-    console.error('[orivon] fetch routing not installed', error)
-  }
 }
