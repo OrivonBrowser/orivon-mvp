@@ -55,12 +55,23 @@ describe('buildAppPermissions', () => {
 })
 
 describe('PermissionsRegistry', () => {
-  it('lists nothing until an origin has been noted -- the empty-by-default state today\'s production browsing is actually in', async () => {
+  // WAS: "lists nothing until an origin has been noted -- the empty-by-default
+  // state today's production browsing is actually in". That test passed by
+  // asserting the DEFECT (C-01/C-02): noteOrigin never acquired a production
+  // caller, so the settings list was empty for every grant made before the
+  // current session while the grant itself stayed live. The registry now asks
+  // the broker, so a registered app appears without anyone having noted it.
+  it('lists a registered app without it having been noted -- the broker is the source, not the session set', async () => {
     const broker = createBroker(baseDeps())
     broker.registerApp(APP, manifestWith({ fs: {} }))
     const registry = new PermissionsRegistry()
 
-    expect(await registry.list(broker)).toEqual([])
+    expect((await registry.list(broker)).map((a) => a.origin)).toEqual([APP])
+  })
+
+  it('still lists nothing when the broker knows no app at all', async () => {
+    const broker = createBroker(baseDeps())
+    expect(await new PermissionsRegistry().list(broker)).toEqual([])
   })
 
   it('lists a noted origin\'s current grants, and drops it once the broker no longer recognises it', async () => {
@@ -155,6 +166,8 @@ describe('createPermissionsController', () => {
     const broker = {
       app: {
         isRegisteredSync: () => true,
+        registeredOriginsSync: () => [],
+        persistedAppsSync: () => [],
         manifest: async () => {
           if (failNext) throw new Error('transient')
           return { name: 'Example App', version: '1.0.0', capabilities: {} }
@@ -180,6 +193,8 @@ describe('createPermissionsController', () => {
     const broker = {
       app: {
         isRegisteredSync: () => false,
+        registeredOriginsSync: () => [],
+        persistedAppsSync: () => [],
         manifest: async () => { throw new Error('no manifest registered for this origin') },
         grants: async () => []
       }
@@ -190,7 +205,7 @@ describe('createPermissionsController', () => {
     expect(await registry.list(broker)).toHaveLength(0)
     // Proven dropped rather than merely absent: a broker that would now
     // succeed must not resurrect it, because nothing re-noted it.
-    const revived = { app: { isRegisteredSync: () => true, manifest: async () => ({ name: 'Back', version: '1.0.0', capabilities: {} }), grants: async () => [] } } as unknown as Broker
+    const revived = { app: { isRegisteredSync: () => true, registeredOriginsSync: () => [], persistedAppsSync: () => [], manifest: async () => ({ name: 'Back', version: '1.0.0', capabilities: {} }), grants: async () => [] } } as unknown as Broker
     expect(await registry.list(revived)).toHaveLength(0)
   })
 })
