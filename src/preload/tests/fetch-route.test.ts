@@ -354,6 +354,30 @@ describe('installFetchRoute -- init.signal / AbortController (R3-01)', () => {
   })
 })
 
+describe('installFetchRoute -- serialisation safety', () => {
+  // THE GUARD THIS FILE DID NOT HAVE, and the reason it now does. main-world-
+  // socket.test.ts has one for installOrivon, but nothing checked
+  // installFetchRoute -- and its hazard is sharper, because the module
+  // exports ROUTED_FETCH_MAX_* constants that MIRROR literals kept inside the
+  // function body. Referencing the exported mirror from inside the function
+  // compiles, typechecks, and passes every test in this file (Node resolves
+  // the module const), then throws ReferenceError in a real page, where
+  // executeInMainWorld has re-evaluated the function's source text alone.
+  // That exact mistake was made while fixing the decompression cap below.
+  const source = installFetchRoute.toString()
+
+  it('references no module-level identifier -- only what it defines itself', () => {
+    for (const name of ['ROUTED_FETCH_MAX_HEAD_BYTES', 'ROUTED_FETCH_MAX_BODY_BYTES']) {
+      expect(source).not.toContain(name)
+    }
+  })
+
+  it('pulls in nothing at runtime', () => {
+    expect(source).not.toMatch(/\brequire\s*\(/)
+    expect(source).not.toMatch(/\bimport\s*\(/)
+  })
+})
+
 describe('installFetchRoute -- Content-Encoding decompression (R3-02)', () => {
   it('decodes a gzip response body transparently -- response.json() parses the real content', async () => {
     const payload = JSON.stringify({ hello: 'world' })
@@ -364,6 +388,34 @@ describe('installFetchRoute -- Content-Encoding decompression (R3-02)', () => {
     const response = await target.fetch!('https://api.example/x')
     expect(response.headers.get('content-encoding')).toBe('gzip')
     await expect(response.json()).resolves.toEqual({ hello: 'world' })
+  })
+
+  it('refuses a gzip bomb: a body inside the WIRE cap that decompresses past it is rejected, not buffered', async () => {
+    // The defect this catches: ROUTED_FETCH_MAX_BODY_BYTES bounded the bytes
+    // read off the socket, and decompression was then collected with an
+    // unbounded `new Response(...).arrayBuffer()`. Measured expansion for a
+    // run of repeated bytes is about 1000:1, so a response comfortably inside
+    // the wire cap could still exhaust the renderer.
+    const raw = new Uint8Array(ROUTED_FETCH_MAX_BODY_BYTES + 1024)
+    const compressed = new Uint8Array(gzipSync(Buffer.from(raw)))
+    // The premise of the test, asserted rather than assumed: if this ever
+    // stopped being true the test would pass for the wrong reason.
+    expect(compressed.length).toBeLessThan(ROUTED_FETCH_MAX_BODY_BYTES)
+
+    const head = bytes(`HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Length: ${String(compressed.length)}\r\n\r\n`)
+    const target = fakeTarget({ connectSecure: async () => fakeSocket([concatUint8(head, compressed)]) })
+    installFetchRoute(true, target)
+    await expect(target.fetch!('https://api.example/x')).rejects.toThrow(/decompressed past the/)
+  })
+
+  it('still decodes a body that decompresses to just UNDER the cap -- the bound is not off by one in the refusing direction', async () => {
+    const raw = new Uint8Array(1024).fill(65)
+    const compressed = new Uint8Array(gzipSync(Buffer.from(raw)))
+    const head = bytes(`HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Length: ${String(compressed.length)}\r\n\r\n`)
+    const target = fakeTarget({ connectSecure: async () => fakeSocket([concatUint8(head, compressed)]) })
+    installFetchRoute(true, target)
+    const response = await target.fetch!('https://api.example/x')
+    expect((await response.arrayBuffer()).byteLength).toBe(1024)
   })
 
   it('decodes a deflate response body transparently', async () => {

@@ -143,4 +143,54 @@ describe('createPermissionsController', () => {
 
     expect(await registry.list(broker)).toEqual([{ origin: APP, appName: manifestWith({}).name, rows: [] }])
   })
+
+  // C-04 (docs/open-questions.md): describeOrigin catches everything and
+  // returns null, and list() used to read that as "the broker forgot this
+  // origin" and delete it. A transient fault therefore removed an app from
+  // the settings list permanently, for the whole session, while its grants
+  // stayed live and rehydrated the moment it was reopened.
+
+  it('keeps an origin whose describe TRANSIENTLY fails, and shows it again once the fault clears', async () => {
+    let failNext = true
+    const broker = {
+      app: {
+        isRegisteredSync: () => true,
+        manifest: async () => {
+          if (failNext) throw new Error('transient')
+          return { name: 'Example App', version: '1.0.0', capabilities: {} }
+        },
+        grants: async () => []
+      }
+    } as unknown as Broker
+
+    const registry = new PermissionsRegistry()
+    registry.noteOrigin('https://app.example')
+
+    expect(await registry.list(broker)).toHaveLength(0)
+
+    // The origin must still be known -- before this fix it was deleted here
+    // and no later call could ever bring it back.
+    failNext = false
+    const second = await registry.list(broker)
+    expect(second).toHaveLength(1)
+    expect(second[0]?.appName).toBe('Example App')
+  })
+
+  it('still drops an origin the broker genuinely no longer recognises', async () => {
+    const broker = {
+      app: {
+        isRegisteredSync: () => false,
+        manifest: async () => { throw new Error('no manifest registered for this origin') },
+        grants: async () => []
+      }
+    } as unknown as Broker
+
+    const registry = new PermissionsRegistry()
+    registry.noteOrigin('https://gone.example')
+    expect(await registry.list(broker)).toHaveLength(0)
+    // Proven dropped rather than merely absent: a broker that would now
+    // succeed must not resurrect it, because nothing re-noted it.
+    const revived = { app: { isRegisteredSync: () => true, manifest: async () => ({ name: 'Back', version: '1.0.0', capabilities: {} }), grants: async () => [] } } as unknown as Broker
+    expect(await registry.list(revived)).toHaveLength(0)
+  })
 })

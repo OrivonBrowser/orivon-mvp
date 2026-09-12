@@ -82,12 +82,24 @@ export class PermissionsRegistry {
   async list (broker: Broker): Promise<readonly AppPermissions[]> {
     const results: AppPermissions[] = []
     for (const origin of this.#origins) {
+      // TWO DIFFERENT CONDITIONS, and conflating them used to lose an app
+      // permanently (C-04, docs/open-questions.md). `describeOrigin` returns
+      // null for BOTH "the broker has forgotten this origin" and "something
+      // transiently failed while asking" -- and dropping the origin on the
+      // second means one bad moment removes that app from the settings list
+      // for the rest of the session, while its grants stay live. The
+      // authoritative question is asked separately, of the one call that
+      // cannot fail transiently: isRegisteredSync reads an in-memory map and
+      // never throws or awaits.
       const app = await describeOrigin(broker, origin)
       if (app !== null) {
         results.push(app)
-      } else {
+      } else if (!broker.app.isRegisteredSync(origin)) {
         this.#origins.delete(origin)
       }
+      // Registered but undescribable: keep it and try again next time. The
+      // row is missing from THIS render, which is visible and recoverable --
+      // unlike a silent delete, which is neither.
     }
     return results
   }
