@@ -37,8 +37,22 @@ jobs:
       #
       # `npm ci` and not `npm install`: spike/app/package-lock.json is tracked,
       # so the fixture is pinned rather than whatever resolves today.
+      #
+      # `--omit=optional` is load-bearing twice over, and a plain `npm ci` FAILS
+      # here without it (proven on this PR's first CI run). First, `ws` declares
+      # bufferutil and utf-8-validate as optional native accelerators, and the
+      # committed lock does not carry them -- optional entries are resolved
+      # per-platform, so a lock written on one machine can be judged out of sync
+      # on another. Second, and the better reason: they are native modules, and
+      # Rule 8 wants none of them. The DHT tests do not use them; ws works
+      # without them and only runs slower.
+      #
+      # What this DOES still pull is node-datachannel, which ships a PREBUILT
+      # .node binary for webtorrent's WebRTC path -- no compiler at install
+      # time, so it is the category check:natives already accepts, and it lands
+      # in the fixture tree, never in what ships.
       - name: Install the real-peer UDP test fixture
-        run: npm ci --prefix spike/app
+        run: npm ci --prefix spike/app --omit=optional
 
       - name: Typecheck
         run: npm run typecheck
