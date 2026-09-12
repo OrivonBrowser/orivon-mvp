@@ -6,7 +6,6 @@ import { closeSync, fsyncSync, mkdirSync, openSync, readdirSync, readFileSync, r
 import { dirname, join } from 'node:path'
 import { originHash } from './origin-hash.js'
 import type { LedgerStorage, PersistedGrant } from './ledger-storage.js'
-import type { Manifest } from '../../contracts/index.js'
 
 /**
  * Never valid semver (no digits, no dots) -- returned for anything that
@@ -31,10 +30,6 @@ function rollbackAckPath (userDataPath: string, origin: string): string {
 
 function grantsPath (userDataPath: string, origin: string): string {
   return join(originGrantsDir(userDataPath, origin), 'grants.json')
-}
-
-function manifestPath (userDataPath: string, origin: string): string {
-  return join(originGrantsDir(userDataPath, origin), 'manifest.json')
 }
 
 /**
@@ -248,35 +243,6 @@ export function nodeLedgerStorage (userDataPath: string): LedgerStorage {
     deleteGrants: (origin) => {
       try {
         unlinkSync(grantsPath(userDataPath, origin))
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-      }
-    },
-
-    readManifest: (origin) => {
-      let parsed: unknown
-      try {
-        parsed = JSON.parse(readFileSync(manifestPath(userDataPath, origin), 'utf8'))
-      } catch {
-        return undefined
-      }
-      // Shape-checked only as far as "an object with the fields the caller
-      // reads". It is NOT re-validated as a trustworthy declaration here and
-      // must not be treated as one: GrantLedger.registerApp re-validates every
-      // grant against whichever manifest it is handed, so a tampered file can
-      // at worst put a wrong NAME in a list, never widen an authority.
-      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return undefined
-      const candidate = parsed as { name?: unknown, version?: unknown }
-      if (typeof candidate.name !== 'string' || typeof candidate.version !== 'string') return undefined
-      return parsed as Manifest
-    },
-    writeManifest: (origin, manifest) => {
-      mkdirSync(originGrantsDir(userDataPath, origin), { recursive: true })
-      writeFileAtomic(manifestPath(userDataPath, origin), JSON.stringify(manifest))
-    },
-    deleteManifest: (origin) => {
-      try {
-        unlinkSync(manifestPath(userDataPath, origin))
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
       }

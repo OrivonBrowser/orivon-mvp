@@ -80,16 +80,6 @@ export class PermissionsRegistry {
    * row -- there is nothing a person could do with a card for an app that
    * no longer exists. */
   async list (broker: Broker): Promise<readonly AppPermissions[]> {
-    // THE BROKER IS THE SOURCE, not this set. `#origins` began as the only
-    // input and `noteOrigin` never acquired a production caller, so the full
-    // list was empty for every grant made before the current session -- the
-    // user granted an app four hosts, quit, and found Settings empty next
-    // launch while the grant was still live (C-01/C-02). The broker now
-    // brings back every persisted origin at startup, so asking it is both
-    // correct and enough; the noted set is unioned in so an origin learned
-    // some other way still shows up.
-    for (const origin of broker.app.registeredOriginsSync()) this.#origins.add(origin)
-
     const results: AppPermissions[] = []
     for (const origin of this.#origins) {
       // TWO DIFFERENT CONDITIONS, and conflating them used to lose an app

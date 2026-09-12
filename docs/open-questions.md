@@ -4310,3 +4310,80 @@ fix is a decision the owner owns, because each option costs something real:
 *Still open. AI recommendation: option 2*, because it is the only one that turns a green CI run
 into evidence about the flagship's transport without adding anything to the shipped tree. The
 owner decides.
+
+### A137
+
+**Making a persisted grant visible in settings needs a DISPLAY-ONLY path, not startup
+hydration.** C-01/C-02 are half-fixed: PR #158 persists each grant's origin, so the set of
+origins that hold grants can now be enumerated (owner decision: shape (b), with the stored name
+required to re-hash to the directory it was read from). What is still missing is the other half
+-- the settings permissions list needs an app's NAME, and nothing persists a manifest, so the
+list is still empty until an app happens to be opened.
+
+The obvious completion was tried, built, tested, and then WITHDRAWN before merge: persist the
+manifest in `registerApp`, and have `createBroker` call a `hydratePersisted()` that restores
+every persisted origin's grants at startup. An adversarial review of that branch found three
+defects and one design problem, all verified against the real code. They are recorded here
+because the next attempt must not rediscover them.
+
+**The design problem, and the reason the whole shape is wrong.** Startup hydration validates
+restored grants against a manifest read off DISK, so both halves of the check come from the same
+place. `decideGrantRequest` derives authority from `manifest.capabilities`
+(`policy/request-grant.ts`), so an attacker who can write into the userData directory can create
+a directory named `originHash(their-own-origin)` and place in it both a `grants.json` and a
+`manifest.json` that agree with each other -- and hydration will make those grants live. The
+re-hash check does NOT stop this: it prevents a file from claiming a DIFFERENT origin than its
+directory, not an attacker from minting a consistent pair for an origin they choose. Before that
+change, a planted `grants.json` was refused, because the manifest it was checked against was the
+app's real, freshly fetched one. This is the discipline `policy/pin.ts` already states for itself
+-- a value read off disk must not be trusted more than the same value arriving fresh -- and
+startup hydration breaks it.
+
+**What the list actually needs is narrower than what was built.** A settings page has to SHOW an
+app and let a person REVOKE it. It does not need live grants. So the persisted manifest should be
+read for DISPLAY ONLY (the app's name), the rows should be built from what is on disk, and
+nothing should become live authority until the app is really opened and `registerApp` arrives
+with its fetched manifest. That also means revocation for a not-yet-opened app cannot use a live
+`GrantId` -- there is not one -- so it needs addressing by `(origin, capability)` instead. That
+is the piece of new surface this needs, and it is why this is filed rather than finished.
+
+**The three defects found in the withdrawn attempt**, each reproduced:
+
+1. `hydratedCapabilities` was only ever added to. `GrantLedger.grant` replaces an entry in
+   `grants` without clearing the flag, so a capability that had ever been disk-hydrated stayed
+   flagged forever -- and the next `registerApp` re-validated a fresh, TRUSTED-SIDE grant against
+   the manifest, deleting it if the app had since narrowed its declaration. That is precisely the
+   A13 invariant `hydratedCapabilities` was introduced to protect, broken by the mechanism meant
+   to protect it. Any future attempt must clear the flag in `grant()`.
+2. **The A13 regression test cannot catch that.** `re-registering a manifest leaves existing
+   grants untouched` (`broker/tests/index.test.ts`) builds its broker with
+   `createBroker(baseDeps())` -- NO `ledgerStorage` -- so `hydratedCapabilities` is never
+   populated and the faulty branch is structurally unreachable from it. The test passes whether
+   or not the bug exists. A13 is currently unexercised under persistence, which is worth fixing
+   on its own merits, independent of this item.
+3. `readManifest` shape-checked only `name` and `version` and then cast to `Manifest`.
+   `patternSetFromCapabilities` dereferences `capabilities.net?.tcp?.connect` -- guarded against a
+   missing `net`, NOT against a missing `capabilities` -- so a `manifest.json` of
+   `{"name":"x","version":"1.0.0"}` threw `TypeError` out of `hydratePersisted`, which
+   `createBroker` calls unguarded during construction. A partial write or an unmigrated schema
+   would have bricked startup permanently. Two lessons: a record read off disk must be validated
+   as strictly as fresh input (the `isGrantsFileShape` discipline applied in the same PR, and not
+   applied here), and one bad origin's record must never fail every other origin's hydration.
+
+**A fourth item, latent, worth carrying:** `hydratePersisted` took its origin straight from
+storage and used it as a `#origins` map key without passing it through `originFromUrl`.
+`GrantLedger` canonicalizes nowhere internally and documents that `canonical()` in `index.ts`
+does it for every entry point; that path was the first exception. Inert today only because the
+re-hash check happens to imply canonicality, which stops being true the moment `originFromUrl`'s
+rules are ever revised.
+
+**And a requirement for build step 4, which nothing currently records.** Every capability call
+gates purely on `ledger.currentGrant(...)` -- there is no separate check that `registerApp` ran
+this session with a freshly fetched manifest. Whoever wires the app loader must call
+`registerApp` with a fresh manifest before allowing any capability call, and must never read
+`isRegisteredSync`/`registeredOriginsSync` returning true as evidence that a live check already
+happened.
+
+*Still open.* AI recommendation: the display-only path above. The owner already chose the input
+to it -- save what was installed rather than re-fetching at launch (2026-09-11) -- and that
+choice stands; what changes is that the saved manifest informs the LIST, never the authority.
