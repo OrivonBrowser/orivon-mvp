@@ -191,7 +191,35 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
    * that is not loaded. Mirrors `revoke`'s own canonicalisation, and returns
    * whether anything was removed rather than resolving silently either way. */
   async function revokePersisted (origin: string, capability: CapabilityKind): Promise<boolean> {
-    return ledger.revokePersisted(canonical(origin), capability)
+    const key = canonical(origin)
+    // CAPTURED BEFORE THE DELETE, because after it `currentGrant` is undefined
+    // and the id needed to tear down this grant's handles is gone with it.
+    //
+    // WITHOUT THIS CASCADE THE REVOKE BUTTON LIES. Dropping the capability from
+    // the ledger only blocks FUTURE calls; a socket or listener the app already
+    // holds lives in `handleTable`, whose ongoing reads and writes are scoped to
+    // the HANDLE and never re-checked against the ledger. So a user could revoke
+    // network access, see the row disappear, and leave the page reading from its
+    // open socket indefinitely. `revoke` above has always done this; this method
+    // shipped without it and an adversarial review of the PR caught it.
+    const live = ledger.currentGrant(key, capability)
+    let persistError: unknown
+    let removed = false
+    try {
+      // Ledger first, synchronously, then the cascade -- the same ordering
+      // `revoke` documents: a grants()/connect() call racing the teardown must
+      // never observe a grant whose handles are already going away.
+      removed = ledger.revokePersisted(key, capability)
+    } catch (error) {
+      persistError = error
+    }
+    // UNCONDITIONAL, exactly as in `revoke`: a disk failure must never be the
+    // reason a revoked grant's handles are left running.
+    if (live !== undefined) await handleTable.revoke(key, live.id)
+    if (persistError !== undefined) {
+      throw fail('internal', 'the revocation could not be persisted', undefined, errnoOf(persistError))
+    }
+    return removed
   }
 
   async function grant (origin: string, capability: CapabilityKind, patterns: readonly Pattern[]): Promise<Grant> {

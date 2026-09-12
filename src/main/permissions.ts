@@ -29,6 +29,7 @@ import type { Broker } from '../broker/broker-contracts.js'
 import { originFromUrl } from '../broker/policy/origin.js'
 import { describeCapabilityGrant } from './grant-prompt-render.js'
 import { isCapabilityKind } from '../broker/policy/request-grant.js'
+import { UNSAFE_TEXT_CHARS } from '../loader/manifest.js'
 import type { PersistedApp } from '../broker/grants/ledger-storage.js'
 import type { SubsystemContext } from './registry.js'
 
@@ -84,8 +85,34 @@ export function buildPersistedAppPermissions (app: PersistedApp): AppPermissions
     const { warning, message } = describeCapabilityGrant(capability, grant.patterns)
     rows.push({ capability, grantId: null, warning, message })
   }
-  return { origin: app.origin, appName: app.appName ?? app.origin, rows }
+  return { origin: app.origin, appName: displayableName(app.appName) ?? app.origin, rows }
 }
+
+/**
+ * The saved name, or `undefined` if it is not safe to render.
+ *
+ * `manifest.ts` enforces a length bound and rejects control codes, bidi
+ * overrides and zero-width characters on `name` AT PARSE TIME, precisely
+ * because a bidi override renders as a spoof. So a name that reached disk
+ * normally has already passed that check -- but a hand-edited or corrupted
+ * `grants.json` has not, and that is a file this feature's own design treats
+ * as in scope. `readPersistedApp` only checks that the field is a string.
+ *
+ * Re-checked here rather than in the broker's storage layer for two reasons:
+ * `src/broker/` imports nothing from `src/loader/` today and this is not worth
+ * inverting that, and display safety is the display layer's own concern -- the
+ * storage layer's job is the shape. Failing it falls back to showing the
+ * origin, exactly as a missing name does, so the row stays useful.
+ */
+function displayableName (name: string | undefined): string | undefined {
+  if (name === undefined) return undefined
+  if (name.length === 0 || name.length > MAX_DISPLAYED_NAME_LENGTH) return undefined
+  if (UNSAFE_TEXT_CHARS.test(name)) return undefined
+  return name
+}
+
+/** Matches `manifest.ts`'s own MAX_NAME_LENGTH. Not imported because that constant is private to it; kept equal deliberately, and the test asserts the boundary. */
+const MAX_DISPLAYED_NAME_LENGTH = 200
 
 /**
  * Session-only registry of origins the settings page's full list knows
@@ -147,7 +174,15 @@ export class PermissionsRegistry {
     // than from whatever disk last recorded.
     for (const app of broker.app.persistedAppsSync()) {
       if (loaded.has(app.origin)) continue
-      results.push(buildPersistedAppPermissions(app))
+      const described = buildPersistedAppPermissions(app)
+      // An app whose last capability was revoked leaves an empty record behind
+      // (`revoke` does not delete the file when the set empties). Showing that
+      // as a card with no rows and no revoke button would be a permanent piece
+      // of furniture a person cannot act on or dismiss -- so a persisted app
+      // with nothing left to revoke is not listed. A LOADED app with zero
+      // grants still is, above, because it is genuinely installed and running.
+      if (described.rows.length === 0) continue
+      results.push(described)
     }
     return results
   }

@@ -316,7 +316,12 @@ export class GrantLedger {
     if (persisted === undefined || !(capability in persisted.grants)) return wasLive
     const remaining: Record<string, PersistedGrant> = { ...persisted.grants }
     delete remaining[capability]
-    this.#storage.writeGrants(origin, remaining)
+    // The name is passed when it is known, rather than leaving `writeGrants`
+    // to recover it by re-reading: if the file is unparseable at exactly this
+    // moment the re-read yields nothing and the app silently loses its name in
+    // the settings list, even though the correct name was in memory all along.
+    // `grant()` sets the same precedent one method up.
+    this.#storage.writeGrants(origin, remaining, record?.manifest?.name)
     return true
   }
 
