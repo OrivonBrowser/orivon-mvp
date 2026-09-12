@@ -10,7 +10,8 @@ stream rather than `packaging` ([`parallel-work.md`](../docs/development/paralle
 It lives here because `npm run smoke` is where people look for it.
 
 **What it depends on.** `node:*` builtins — plus, for `smoke.mjs` only, `playwright` via
-[`test/launch-electron.mjs`](../test/launch-electron.mjs).
+[`test/launch-electron.mjs`](../test/launch-electron.mjs), and, for `install-electron.mjs`
+only, the `electron` package's own `install.js`.
 
 **What it must never import.** Anything under [`src/`](../src/). A guard that depended on the
 code it guards could be disabled by the change it exists to catch.
@@ -22,6 +23,7 @@ code it guards could be disabled by the change it exists to catch.
 | `check-no-secrets.mjs` | No credentials in git-tracked files |
 | `check-size.mjs` | **Rule 2.** No source file over 500 lines, no test file over 800. Not wired into `postinstall` or CI -- code-guidelines.md's own §Status leaves that to the owner |
 | `check-comments.mjs` | **Rule 1.** No source file opens with more than 25 lines of comment. `--exemptions` lists every file that opted out and why |
+| `install-electron.mjs` | **Not a guard.** Fetches Electron's binary on `postinstall`, because electron 44 no longer ships a postinstall hook of its own and electron-vite fails with a bare `Electron uninstall` without it. `ELECTRON_SKIP_BINARY_DOWNLOAD=1` opts out; `npm run install:electron` re-runs it alone |
 | `smoke.mjs` | The shell actually launches and works, driven with real clicks |
 | `devlog-cron.sh` | The Sunday devlog job |
 
