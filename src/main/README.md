@@ -252,7 +252,7 @@ duplicate this codebase keeps naming and then finding later.
 visit.** All-or-nothing (`A138`) means declining creates no grant at all, and the ledger has no
 concept of "asked, and the answer was no" -- only of what was actually granted. So a declined
 origin looks identical to a never-visited one on the next visit, and is asked again. Filed as
-`A144` (`docs/open-questions.md`) rather than fixed here: closing it needs either a new persisted
+`A145` (`docs/open-questions.md`) rather than fixed here: closing it needs either a new persisted
 "decision made" marker (a real addition to `LedgerStorage`'s shape, which touches every
 implementation of it) or an owner decision that repeated friction for a repeatedly-declined app is
 acceptable, or even desirable -- neither is this lane's call to make alone.
