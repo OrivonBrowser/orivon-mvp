@@ -169,7 +169,20 @@ describe('exposeOrivon -- P-F4: a failure after net.connect cleans up the broker
 })
 
 describe('exposeOrivon -- P-F5: control-call failures are always OrivonError-shaped', () => {
-  it('call() throws an OrivonError-shaped object (not a raw Error) when ipcRenderer.invoke rejects outright', async () => {
+  // UPDATED FOR A152 (docs/open-questions.md): this used to assert
+  // `not.toBeInstanceOf(Error)`, matching ../orivon-error.ts's own
+  // isolated-world `call()` throwing a plain object -- correct as far as
+  // it went, but `installViaFakeMainWorld` above calls installOrivon's
+  // `func` directly, in this SAME realm, with no real contextBridge
+  // crossing to lose or restore an Error's prototype. A152 fixed
+  // installOrivon (../main-world-socket.ts's `callRevived`) to rebuild a
+  // real Error from any OrivonError-shaped rejection a `bridge.*` call
+  // produces, precisely so a page sees a real Error whether or not the
+  // crossing that ran ahead of it happened to preserve one -- so a page
+  // now DOES see `instanceof Error` here too, restoring the contract
+  // (`OrivonError extends Error`, ../../contracts/errors.ts) for every
+  // orivon.* consumer, not only src/shim/.
+  it('call()\'s failure is OrivonError-shaped, and installOrivon hands the page a real Error built from it', async () => {
     const target = installViaFakeMainWorld()
     invoke.mockRejectedValue(new Error("Error invoking remote method 'orivon:control': something internal"))
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
@@ -180,7 +193,7 @@ describe('exposeOrivon -- P-F5: control-call failures are always OrivonError-sha
     let reason: unknown
     try { await orivon.app.manifest() } catch (error) { reason = error }
 
-    expect(reason).not.toBeInstanceOf(Error)
+    expect(reason).toBeInstanceOf(Error)
     expect(reason).toMatchObject({ name: 'OrivonError', code: 'internal' })
     // The real failure is still logged for debugging, just not handed to the page.
     expect(consoleError).toHaveBeenCalled()

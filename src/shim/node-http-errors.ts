@@ -1,22 +1,23 @@
 // Maps an OrivonError (src/contracts/errors.ts) onto the Error shape Node
 // HTTP client code actually branches on: `err.code`.
 //
-// TWO DELIBERATE CHOICES, both because a Node app inspects `.code`, never a
+// THREE DELIBERATE CHOICES, because a Node app inspects `.code`, never a
 // closed-enum field it has never heard of:
 //
-// 1. 'denied' never becomes a fake errno. Node code commonly retries on
-//    ECONNREFUSED/ETIMEDOUT; handing back one of those for a permission
-//    refusal would make a developer "fix" it by retrying forever, or filing
-//    a bug against the wrong layer. `.code` stays the literal string
-//    'denied' -- unfamiliar, but honest, and `.orivonCode` carries the same
-//    value for anyone branching on it deliberately.
-// 2. Every other code prefers `platformCode` (a real Node errno from the
-//    broker, e.g. ECONNREFUSED, CERT_HAS_EXPIRED) when present, and falls
-//    back to the OrivonErrorCode string otherwise. This repo's own open
-//    question about whether TLS failures should keep sharing 'unreachable'
-//    is still open (docs/open-questions.md) -- this file does not guess at
-//    a resolution, it just forwards whatever platformCode the broker sent,
-//    so a future change to that mapping needs no change here.
+// 1. 'denied' never becomes a fake errno -- Node code commonly retries on
+//    ECONNREFUSED/ETIMEDOUT, and a permission refusal disguised as one
+//    gets "fixed" by retrying forever. `.code` stays 'denied'; `.orivonCode`
+//    carries the same value for anyone branching on it deliberately.
+// 2. Every other code prefers `platformCode` (a real Node errno) when
+//    present, falling back to the OrivonErrorCode string otherwise --
+//    forwarded as-is, never reinterpreted (docs/open-questions.md has the
+//    open TLS-mapping question this file does not need to answer).
+// 3. `isOrivonError` is STRUCTURAL, never `instanceof Error` -- A152: a
+//    real denial crossing back from the main world
+//    (../preload/main-world-socket.ts) can carry every field correctly
+//    while never being `instanceof Error` here. Still fails closed:
+//    `code` must be one of the closed enum's own values, or toNodeError's
+//    'internal' fallback fires instead.
 
 import type { OrivonError, OrivonErrorCode } from '../contracts/errors.js'
 
@@ -26,8 +27,26 @@ export interface NodeShapedError extends Error {
   orivonCode: OrivonErrorCode
 }
 
+/**
+ * Every value OrivonErrorCode actually has -- see contracts/errors.ts.
+ * Duplicated from src/broker/errors.ts's own identical set rather than
+ * imported: that file is on the other side of the broker/shim trust
+ * boundary (src/shim/README.md forbids importing src/broker/), and
+ * contracts/errors.ts itself emits no runtime code to import instead (its
+ * own header) -- so each side that needs to validate a code at runtime
+ * keeps its own copy of the same eleven literals.
+ */
+const ORIVON_ERROR_CODES: ReadonlySet<OrivonErrorCode> = new Set<OrivonErrorCode>([
+  'denied', 'revoked', 'unreachable', 'timeout', 'reset', 'closed', 'limit', 'invalid', 'notFound', 'exists', 'internal'
+])
+
 function isOrivonError (value: unknown): value is OrivonError {
-  return value instanceof Error && typeof (value as { code?: unknown }).code === 'string'
+  if (typeof value !== 'object' || value === null) return false
+  const candidate = value as { name?: unknown, message?: unknown, code?: unknown }
+  return typeof candidate.name === 'string' &&
+    typeof candidate.message === 'string' &&
+    typeof candidate.code === 'string' &&
+    ORIVON_ERROR_CODES.has(candidate.code as OrivonErrorCode)
 }
 
 /** Node-http client code only ever sees errors through this: never a raw OrivonError. */

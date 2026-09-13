@@ -36,17 +36,16 @@
 // separately, honestly, in ./e2e-install-consent-journey.test.ts, which
 // names its own, narrower substitution for the same underlying reason.
 //
-// TWO PRODUCTION GAPS FOUND WRITING THIS FILE, NEITHER FIXED HERE (this
-// lane's boundary is test/ -- see the PR body), both filed rather than
-// smoothed over: A151, src/shim/globals.ts's installGlobals() has no
+// TWO PRODUCTION GAPS FOUND WRITING THIS FILE (S4-7-e2e), BOTH CLOSED BY
+// S4-X-shimfix: A151, src/shim/globals.ts's installGlobals() had no
 // production call site anywhere, so any real app requiring a Node library
-// that touches `stream` fails immediately with `process is not defined`
-// (worked around in ./app-loader-journey-shim-entry.ts, which calls it
-// itself, exactly as a real entry point will eventually need to). A152, the
-// refusal checks below pin an ACTUAL, currently-wrong error code the shim
-// reports for every real denial -- see those checks' own comments for the
-// full explanation; the refusal itself is correct, only its reported code
-// is not.
+// that touches `stream` failed immediately with `process is not defined`
+// (this file used to work around it in ./app-loader-journey-shim-entry.ts,
+// which called it directly; that workaround is gone -- see this file's own
+// registration-before-navigation ordering below for why the fixture's tab
+// now gets the same production wiring a real app tab does). A152, the
+// refusal checks below used to pin an ACTUAL, currently-wrong error code
+// the shim reported for every real denial; they now pin the fixed one.
 //
 // RUN THIS WITH: npm run test:e2e, or directly:
 //   node scripts/build-e2e.mjs && npx vitest run --config test/vitest.e2e.config.ts test/e2e-app-loader-journey.test.ts
@@ -203,7 +202,53 @@ it(
       try {
         const fixtureOrigin = `http://127.0.0.1:${String(staticPort)}`
         const fixtureUrl = `${fixtureOrigin}/`
+        const manifest = manifestFor(echoPort)
+
+        // ---- A151: register this origin BEFORE navigating, granting
+        // NOTHING yet -- src/main/tab-view.ts's appTabArgsFor decides,
+        // SYNCHRONOUSLY, at WebContentsView construction, whether this
+        // tab carries the --orivon-app-tab flag production preload code
+        // gates shim-globals installation and fetch routing on, by
+        // reading Broker.app.isRegisteredSync -- true the moment a
+        // manifest is registered, independent of any grant
+        // (net-capability.ts's own connect(): "an empty grant answers
+        // exactly like no grant at all"). Registering here, with an EMPTY
+        // pattern list, gets this fixture's tab flagged for its very
+        // first navigation while keeping tcp.connect denied -- the same
+        // grant-before-navigate ordering test/e2e-fetch-routing.test.ts
+        // already uses, for the identical reason (a flag fixed at tab
+        // construction cannot retroactively apply to an already-created
+        // tab; src/preload/README.md's own Design notes name this as a
+        // known, permanent limitation of the mechanism, not new here).
+        const registerOutcome = await app.evaluate(async (_electron, request: DevGrantRequest) => {
+          const hook = (globalThis as unknown as { __orivonDevGrant?: (r: DevGrantRequest) => Promise<Grant> }).__orivonDevGrant
+          if (typeof hook !== 'function') return { installed: false as const }
+          return { installed: true as const, grant: await hook(request) }
+        }, { origin: fixtureOrigin, manifest, capability: 'tcp.connect', patterns: [] } satisfies DevGrantRequest)
+        check(
+          'the developer-only grant hook is installed in this build (npm run test:e2e builds with ' +
+          'ORIVON_ENABLE_DEV_GRANT=1)',
+          registerOutcome.installed,
+          registerOutcome.installed ? undefined : 'globalThis.__orivonDevGrant was not a function in the main process'
+        )
+        if (!registerOutcome.installed) throw new Error('dev-grant hook missing -- was this built via npm run test:e2e?')
+
         const view = await navigateToFixture(app, fixtureUrl, 'app loader journey fixture')
+
+        // ---- A151, CLOSED: production preload wiring installed the
+        // shim's Node globals for THIS tab, not this fixture's own former
+        // workaround (see this file's own header, and
+        // ./app-loader-journey-shim-entry.ts's) -- proven before the
+        // round trips below, which would fail at Duplex construction with
+        // `process is not defined` if it had not.
+        const globalsInstalled = await view.evaluate(() =>
+          typeof (window as unknown as { process?: unknown }).process === 'object')
+        check(
+          'A151 (docs/open-questions.md), CLOSED: src/preload/expose-shim-globals.ts installs ' +
+          'process/setImmediate/clearImmediate onto a real, registered app tab before its own script runs',
+          globalsInstalled,
+          String(globalsInstalled)
+        )
 
         // ---- the real discovery-hint listener, observed for real --------
         // Fires automatically on load (src/preload/app.ts's fallback branch
@@ -240,31 +285,31 @@ it(
           JSON.stringify(beforeGrant)
         )
         check(
-          'KNOWN GAP, PINNED RATHER THAN HIDDEN (A152, docs/open-questions.md): the shim currently ' +
-          'reports this refusal as a generic `internal` code, not `denied`. Found by this file: a ' +
-          'diagnostic against the RAW window.orivon.net.connect() rejection showed it is a plain ' +
-          '{name, message, code} object once it has crossed back from the main world to the page -- ' +
-          'correctly shaped, but never `instanceof Error` -- and src/shim/node-http-errors.ts\'s ' +
-          'isOrivonError() requires exactly that, so toNodeError\'s fallback branch fires and discards ' +
-          'the real code. The connection is still correctly refused (the check above is what would ' +
-          'catch an allow-all regression); a real Node app branching on `err.code === \'denied\'` ' +
-          'through this shim cannot see that today. Flip this to `orivonCode === \'denied\'` once fixed',
-          isShimFailure(beforeGrant) && beforeGrant.orivonCode === 'internal',
+          'A152 (docs/open-questions.md), CLOSED: the shim reports this refusal as `denied`, its real ' +
+          'code -- previously the generic `internal` fallback, because the RAW window.orivon.net.connect() ' +
+          'rejection is a plain {name, message, code} object once it has crossed back from the main world ' +
+          'to the page, correctly shaped but never `instanceof Error`, and src/shim/node-http-errors.ts\'s ' +
+          'isOrivonError() used to require exactly that. It is now structural (still validated against ' +
+          'the closed OrivonErrorCode enum, so a malformed value still fails closed to `internal`), and ' +
+          'src/preload/main-world-socket.ts also revives the crossed value into a real Error before the ' +
+          'page ever sees it, restoring `OrivonError extends Error` for every consumer, not just this shim',
+          isShimFailure(beforeGrant) && beforeGrant.orivonCode === 'denied',
           JSON.stringify(beforeGrant)
         )
 
-        // ---- grant it, through the real dev-only hook, on the SAME broker
-        // the real IPC pipe above is wired to (this file's header explains
-        // why this substitution, not a real install, is what enables this).
-        const manifest = manifestFor(echoPort)
+        // ---- grant the real capability, through the same dev-only hook --
+        // registerApp is safe to call again (installDevGrantHook's own
+        // doc); this replaces the empty-pattern grant made before
+        // navigation with the real one, on the SAME broker the real IPC
+        // pipe above is wired to (this file's header explains why this
+        // substitution, not a real install, is what enables this).
         const grantOutcome = await app.evaluate(async (_electron, request: DevGrantRequest) => {
           const hook = (globalThis as unknown as { __orivonDevGrant?: (r: DevGrantRequest) => Promise<Grant> }).__orivonDevGrant
           if (typeof hook !== 'function') return { installed: false as const }
           return { installed: true as const, grant: await hook(request) }
         }, { origin: fixtureOrigin, manifest, capability: 'tcp.connect', patterns: [`127.0.0.1:${String(echoPort)}`] } satisfies DevGrantRequest)
         check(
-          'the developer-only grant hook is installed in this build (npm run test:e2e builds with ' +
-          'ORIVON_ENABLE_DEV_GRANT=1)',
+          'the developer-only grant hook is still installed for the real-capability grant',
           grantOutcome.installed,
           grantOutcome.installed ? undefined : 'globalThis.__orivonDevGrant was not a function in the main process'
         )
@@ -305,9 +350,9 @@ it(
           JSON.stringify(denied)
         )
         check(
-          'the same already-filed gap (A152) applies here too: the refusal is real, its reported code ' +
-          'is the same pinned `internal` value as the before-grant check above, for the identical reason',
-          isShimFailure(denied) && denied.orivonCode === 'internal',
+          'A152, CLOSED, applies here too: the refusal is real, and its reported code is `denied`, the ' +
+          'same as the before-grant check above, for the identical reason',
+          isShimFailure(denied) && denied.orivonCode === 'denied',
           JSON.stringify(denied)
         )
       } finally {
