@@ -200,9 +200,17 @@ the real backstop, which Orivon's MVP does not attempt to build its own version 
 "gap 1 deferred again" -- it is closed, on the merits, as a considered choice rather than an
 unexamined one. `docs/open-questions.md` A58 carries the full record.
 
-Gap 2 (superseded-version cleanup) was not part of that question and remains open -- it is not a
-quota decision, it is plain hygiene independent of whether any ceiling exists -- and **still must
-be closed before the discovery trigger is wired**, per this ADR's own condition above.
+Gap 2 (superseded-version cleanup) was not part of that question, and this paragraph previously
+said it remained open -- stale: `docs/open-questions.md` A58 was corrected 2026-09-04 (fix-67,
+`stream/loader-07-prune-superseded-assets`) to record gap 2 as resolved in the same PR that
+already fixed gap 1's own follow-up. See that entry for the two real defects review caught in the
+first `pruneAssets` implementation before calling it done.
+
+**Both gaps closed, and this ADR's own condition satisfied: the discovery trigger was wired
+2026-09-13 (S4-2, `src/main/manifest-hint.ts`, `src/preload/manifest-hint.ts`).** A `<link
+rel="orivon-manifest">` hint seen in a real page now reaches `installFromHint`
+(`src/main/app-install.ts`) for real, rate-limited per origin so a page reloading itself cannot
+turn one visit into an unbounded stream of fetches.
 
 ## Reversibility
 - **Cost to reverse:** moderate. Reverting to "prompt before fetch" is a design and UX change, not

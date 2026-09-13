@@ -50,3 +50,11 @@ export const SYNC_CONTROL_CHANNEL = 'orivon:control-sync'
  * is against ITS OWN webContents identity, never chrome's. See
  * ./settings-ipc.ts. */
 export const SETTINGS_COMMAND_CHANNEL = 'orivon-settings:command'
+
+/** Ordinary tab -> main: reports a `<link rel="orivon-manifest">` hint's
+ * href, seen at most once per navigation (src/preload/manifest-hint.ts).
+ * One-way, fire-and-forget, like PORT_CHANNEL -- main derives the origin
+ * from event.senderFrame itself (../broker/policy/origin.ts), never from
+ * this payload, and decides independently whether to install anything
+ * (src/main/manifest-hint.ts, src/main/app-install.ts). */
+export const MANIFEST_HINT_CHANNEL = 'orivon-loader:manifest-hint'

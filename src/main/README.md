@@ -261,14 +261,19 @@ acceptable, or even desirable -- neither is this lane's call to make alone.
 here, stated precisely because the two readings differ.** `requestInstallConsent` is awaited
 inside `installFromHint`'s own `'installed'` branch, so the dialog is fully resolved -- shown,
 answered, every accepted capability granted -- before `installFromHint`'s promise ever resolves.
-That is the strongest guarantee this lane can make on its own: nothing downstream of this
-function's return can observe an unconsented app. It is NOT the same as "before this page's
-scripts execute" in the stronger sense a reader might assume: `installFromHint` has no caller in
-production yet (S4-2's discovery trigger, S4-3's serve-from-cache), so whether a real tab's
-navigation genuinely waits on this promise before the app's own HTML/JS ever loads is a property
-of *that* future wiring, not of this file. Whoever wires S4-2/S4-3 must await `ctx.installApp(...)`
-to completion before navigating a tab to the served bundle, or routing its fetches to it -- this
-lane could not verify that half because the other half does not exist yet.
+That is the strongest guarantee available here: nothing downstream of this function's return can
+observe an unconsented app. **It is NOT "before this page's scripts execute", and the difference
+matters more than it first looks** -- see `open-questions.md` A146.
+
+The production caller now exists ([`manifest-hint.ts`](manifest-hint.ts), the discovery trigger).
+It fires when the page's own delivered HTML is parsed, which means **the page is already running
+by the time consent is asked.** An app's first-visit script can therefore call a capability while
+the dialog is still on screen, and get `'denied'` -- which is precisely the race owner decision
+`d-0025` exists to remove. On every later visit there is no race at all: the grant is already
+held, so the app starts with a decided answer. The gap is first visit only, and it is real.
+
+Closing it properly means holding the page before its scripts run, which is a change to how a
+tab navigates rather than anything this file can do. Filed rather than improvised.
 
 **[`app-install-subsystem.ts`](app-install-subsystem.ts) — published even though nothing calls it,
 same honest state as `request-grant-subsystem.ts`'s own `ctx.requestGrant`.** Building the
