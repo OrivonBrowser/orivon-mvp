@@ -3941,6 +3941,14 @@ narrower.
 of its own, return a result envelope and have callers unwrap it, or accept the divergence and
 document it as a known property of running without `executeInMainWorld`.
 
+**Checked again 2026-09-13, S4-X-shimfix, while resolving the same-family A152: left alone, not
+closed and not narrowed.** A152 fixed the `executeInMainWorld` path further (a page now gets a
+real `Error` instance there, not only the right `.code`) and hardened `src/shim/`'s own
+`isOrivonError` to recognise an OrivonError structurally -- but `exposeFallback()` never runs
+`installOrivon` at all, so neither change touches it, and a value missing `.code` entirely (this
+entry's own failure mode) is not something a structural shape check can recover regardless. See
+A152's own resolution note for the full reasoning.
+
 ### A114 — delivering `TcpServer.connections` to a page needs a nested-port shape the IPC contract has no room for **[STILL OPEN]**
 
 **Raised 2026-09-10**, lane P2-6wire (PR #126), filed by the conductor. **Architectural, so the
@@ -5090,7 +5098,7 @@ or needs to flag further.
 
 ---
 
-### A151 -- `src/shim/globals.ts`'s `installGlobals()` has no production call site anywhere **[STILL OPEN]**
+### A151 -- `src/shim/globals.ts`'s `installGlobals()` has no production call site anywhere **[RESOLVED 2026-09-13 -- S4-X-shimfix]**
 
 **Raised 2026-09-13**, `S4-7-e2e` lane, while building the end-to-end app-loader journey test
 (`test/e2e-app-loader-journey.test.ts`). The first test to bundle a real `src/shim/` module
@@ -5133,9 +5141,34 @@ in the app page's own global scope rather than the preload's isolated one.
 **Needed by:** before any real app whose dependency graph touches `stream` (or anything shimmed
 on top of it) is expected to load successfully.
 
+> **Resolved 2026-09-13, S4-X-shimfix.** The call site this entry asked for:
+> `src/preload/expose-shim-globals.ts`'s `exposeShimGlobals()`, called from both `src/preload/
+> app.ts` and `src/preload/newtab.ts`'s fallback branch, right alongside `exposeFetchRoute()`.
+> It calls `installGlobals` (now `(options, target?)` -- `target` moved to a trailing, defaulted
+> parameter, matching `installOrivon`'s own pattern, so a production caller can hand
+> `contextBridge.executeInMainWorld` the bare function and let the default resolve to that
+> call's own real main-world `window`) via the exact `executeInMainWorld` mechanism this entry's
+> own AI recommendation named as "the natural fit."
+>
+> **Gated on the identical `--orivon-app-tab` flag `fetch-route.ts` already reads**
+> (`src/main/tab-view.ts`'s `appTabArgsFor`) -- CLAUDE.md's own instruction on this exact defect
+> is that shimmed Node globals must never reach an ordinary browsing tab. `window.orivon` itself
+> is exposed to every tab regardless (an ungranted caller only ever sees denials through it),
+> but `process`/`stream` are ambient globals a plain page's own script could stumble into --
+> already a wider surface, so it gets the narrower gate.
+>
+> **Proven end to end, not just at the unit level** (the whole reason this was invisible to 3993
+> unit tests to begin with): `test/app-loader-journey-shim-entry.ts`'s own `installGlobals()`
+> workaround call is gone, and `test/e2e-app-loader-journey.test.ts` now registers its fixture's
+> origin (via `src/main/dev-grant.ts`'s hook, with an empty pattern list -- "an empty grant
+> answers exactly like no grant at all," `src/broker/net-capability.ts`'s own `connect()`)
+> BEFORE navigating, so the fixture's tab is flagged for its very first load exactly like a real
+> registered app's tab would be, then asserts `window.process` is installed before exercising
+> the shim at all. See that test's own new checks for the real-launch evidence.
+
 ---
 
-### A152 -- the shim's `toNodeError` cannot recognise a real cross-world `orivon.net.connect()` denial, and reports every one as a generic `internal` code **[AI-REC]**
+### A152 -- the shim's `toNodeError` cannot recognise a real cross-world `orivon.net.connect()` denial, and reports every one as a generic `internal` code **[RESOLVED 2026-09-13 -- S4-X-shimfix]**
 
 **Raised 2026-09-13**, `S4-7-e2e` lane, same test as A151. Measured, not reasoned: a real page's
 `window.orivon.net.connect()` call, denied for want of a grant, rejects with a value that is
@@ -5181,3 +5214,51 @@ rather than a shim-side workaround for a value that never was one.
 
 **Needed by:** before any real ported app is expected to distinguish a capability denial from any
 other failure through `require('net')`/`require('http')`/`require('https')`.
+
+> **Resolved 2026-09-13, S4-X-shimfix. Both layers this entry named, not one or the other.**
+>
+> **Producer (`src/preload/main-world-socket.ts`):** every `bridge.*` call `installOrivon`
+> makes -- not only `netConnect`, every one that can reject with something the isolated world
+> built via `../orivon-error.ts`'s own plain-object `toOrivonError` -- is now wrapped in a new
+> local `callRevived`, which rebuilds a real `Error` from any rejection shaped like one of ours
+> before the page ever sees it. This is the correctness fix: `OrivonError extends Error`
+> (`src/contracts/errors.ts`) is a promise made to every `orivon.*` consumer, not only the Node
+> shim, and a page calling `orivon.net.connect()` directly now gets a real `Error` too. The
+> file's own LOCAL `toOrivonError` (used for stream errors and `readFileSync`'s throw) was
+> ALSO upgraded to build a real `Error` rather than a plain object -- it never needed to survive
+> a second crossing (everything it feeds is already past one), so nothing was lost by fixing it
+> alongside the entry that was actually measured.
+>
+> **Consumer (`src/shim/node-http-errors.ts`):** kept, as defence in depth, not dropped once the
+> producer fix landed. `isOrivonError` is now structural (`name`/`message`/`code` all present and
+> typed right) rather than `instanceof Error`, exactly as this entry's own AI recommendation
+> said -- but with the closed-enum check this entry's recommendation did NOT include: `code`
+> must be one of the eleven real `OrivonErrorCode` values (a set duplicated from
+> `src/broker/errors.ts`'s own, the same duplication that file's `ORIVON_ERROR_CODES` already
+> accepts, since `src/shim/` may not import `src/broker/` and `contracts/errors.ts` emits no
+> runtime code to import instead). A value shaped like an `OrivonError` but carrying an
+> unrecognised code still fails closed to `internal` -- the "attacker-influenced value" concern
+> this entry raised is answered by that check, not by requiring `instanceof Error` again.
+>
+> **Why both, when the producer fix alone would have closed the specific measured case:** the
+> producer fix only reaches values that cross through `installOrivon`'s own `bridge.*` calls. A
+> future boundary this lane did not touch (or `exposeFallback`'s own path -- see this entry's own
+> A113 note below) could still hand the shim something OrivonError-shaped but not
+> `instanceof Error`; the consumer fix means that shim keeps reporting the right code instead of
+> silently regressing to `internal` again.
+>
+> **Proven end to end**: `test/e2e-app-loader-journey.test.ts`'s two refusal checks, which used
+> to pin `orivonCode === 'internal'` deliberately (so a fix here would be a visible, intended test
+> change, not a silent behaviour shift), now pin `orivonCode === 'denied'` and pass against a
+> real Electron launch -- see this PR's own verification output for the actual before/after
+> values from that launch, not just the unit tests added alongside (`src/shim/tests/
+> node-http-errors.test.ts`, `src/preload/tests/main-world-socket.test.ts`).
+>
+> **A113 (`docs/open-questions.md`), the same family, explicitly NOT touched by this fix, and
+> not narrowed by it either.** A113 is about `orivon-surface.ts`'s `exposeFallback()` path --
+> taken only when `contextBridge.executeInMainWorld` is absent or throws, so `installOrivon`
+> never runs at all on that path, and neither `callRevived` nor the local `toOrivonError` this
+> entry fixed ever sees anything on it. On that path a thrown `OrivonError` loses its `.code`
+> entirely (not merely its `instanceof Error`-ness) when `contextBridge` flattens it crossing the
+> isolated world -- a stricter loss than A152's, and the structural `isOrivonError` fix does
+> nothing for a value with no `.code` at all. A113 remains fully open, exactly as it was found.
