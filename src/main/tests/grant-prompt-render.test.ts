@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { describeCapabilityGrant, describeGrantRequest, formatOriginForDisplay } from '../grant-prompt-render.js'
+import { describeCapabilityGrant, describeGrantRequest, describeInstallConsent, formatOriginForDisplay } from '../grant-prompt-render.js'
 import { manifestWith } from '../../broker/tests/index.test-helpers.js'
 import type { CapabilityKind, Pattern } from '../../contracts/index.js'
 
@@ -353,5 +353,76 @@ describe('describeGrantRequest -- the confusable is elided everywhere the origin
 
     expect(content.title).toBe(ORIGIN)
     expect(content.detail.startsWith(ORIGIN)).toBe(true)
+  })
+})
+
+// d-0025 (ADR-0012's 2026-09-13 amendment) / queue item S4-4: one dialog for
+// the WHOLE declared set, never describeGrantRequest's one-capability shape
+// repeated in a loop. The two cases below are the literal worked examples
+// pasted into this lane's own PR body -- the owner reviews the exact words,
+// so the strings here are load-bearing, not incidental.
+describe('describeInstallConsent', () => {
+  it('worked example 1: a single narrow host reads as one plain line, no warning anywhere', () => {
+    const manifest = manifestWith({ net: { https: { connect: ['weather.example:443'] } } })
+
+    const content = describeInstallConsent(ORIGIN, manifest, ['https.connect'])
+
+    expect(content.warning).toBe(false)
+    expect(content.title).toBe(ORIGIN)
+    expect(content.message).toBe('This app wants to:')
+    expect(content.detail).toBe(
+      'https://app.example\nClaims to be "Test app".\n- Connect to weather.example'
+    )
+  })
+
+  it('worked example 2: unlimited network next to a narrow filesystem row -- breadth stays visible per row', () => {
+    const manifest = manifestWith({ net: { https: { connect: ['*:*'] } }, fs: { quotaBytes: 1024 } })
+
+    const content = describeInstallConsent(ORIGIN, manifest, ['https.connect', 'fs'])
+
+    // The dialog's own icon flips to warning the moment ANY row is
+    // unlimited (A100) -- but each row's own line is what actually says
+    // which one, checked below.
+    expect(content.warning).toBe(true)
+    expect(content.title).toBe(ORIGIN)
+    expect(content.message).toBe('This app wants to:')
+    expect(content.detail).toBe(
+      'https://app.example\n' +
+      'Claims to be "Test app".\n' +
+      '- ⚠ Unlimited network access\n' +
+      '  This app can connect to any website, not just specific ones.\n' +
+      '- Store files in a private folder for this app on this device'
+    )
+  })
+
+  it('reuses describeCapabilityGrant per row rather than a second vocabulary (Rule 3)', () => {
+    const manifest = manifestWith({ net: { tcp: { connect: ['a.example:443'] } }, id: { curves: ['secp256k1'] } })
+
+    const content = describeInstallConsent(ORIGIN, manifest, ['tcp.connect', 'id'])
+    const tcpRow = describeCapabilityGrant('tcp.connect', ['a.example:443'])
+    const idRow = describeCapabilityGrant('id', [])
+
+    expect(content.detail).toContain(tcpRow.message)
+    expect(content.detail).toContain(idRow.message)
+  })
+
+  it('elides a confusable origin the same way describeGrantRequest does (A115), never the raw string', () => {
+    const confusable = 'https://accounts.google.com.attacker.example'
+    const manifest = manifestWith({ fs: {} })
+
+    const content = describeInstallConsent(confusable, manifest, ['fs'])
+
+    expect(content.title).not.toBe(confusable)
+    expect(content.title.includes('accounts.google.com')).toBe(false)
+    expect(content.detail.startsWith(content.title)).toBe(true)
+  })
+
+  it('never asks about nothing -- an empty capability list still renders (defensive; the caller is what actually skips it)', () => {
+    const manifest = manifestWith({})
+
+    const content = describeInstallConsent(ORIGIN, manifest, [])
+
+    expect(content.warning).toBe(false)
+    expect(content.detail).toBe('https://app.example\nClaims to be "Test app".')
   })
 })
