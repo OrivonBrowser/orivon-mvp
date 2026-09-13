@@ -1,8 +1,7 @@
 // Wires createBroker (../index.ts) to a real renderer over Electron IPC.
 //
-// SCOPE: app.manifest, app.grants, fs.readFile, fs.writeFile, id.publicKey,
-// id.sign, net.connect, net.connectSecure, net.udpBind, net.close,
-// net.setNoDelay, net.setKeepAlive. See ./README.md
+// SCOPE: app.manifest, app.grants, app.requestGrant, fs.readFile, fs.writeFile, id.publicKey,
+// id.sign, net.connect, net.connectSecure, net.udpBind, net.close, net.setNoDelay, net.setKeepAlive. See ./README.md
 // for the two rules every method here enforces (origin attribution off the
 // sending frame, bytes never over request/response IPC) and
 // ../../contracts/ipc.ts for the timeout and no-transferables rules
@@ -40,24 +39,24 @@ import { originFromSenderFrame } from '../policy/origin.js'
 import { fail } from '../errors.js'
 import { toFailureResponse } from './response-envelope.js'
 import {
-  envelopeId, isControlMethod, isFsPathWithRecursiveParams, isFsReaddirParams,
+  envelopeId, isAppRequestGrantParams, isControlMethod, isFsPathWithRecursiveParams, isFsReaddirParams,
   isFsReadFileParams, isFsRenameParams, isFsStatParams, isFsWriteFileParams,
   isIdPublicKeyParams, isIdSignParams,
   isNetCloseParams, isNetConnectParams, isNetSetKeepAliveParams, isNetSetNoDelayParams,
-  isNetUdpBindParams, isRequestEnvelope
+  isNetUdpBindParams, isRequestEnvelope, type RequestGrantCtx
 } from './ipc-validation.js'
 import type {
   PortDeliveryFrame, PortLike, PortPair, PortTransport, SocketDescriptor, UdpSocketDescriptor
 } from './port-transport.js'
 import type { FailableTcpSocket } from '../handles/handle-contracts.js'
-import type { RequestEnvelope, ResponseEnvelope } from '../../contracts/index.js'
+import type { CapabilityRequest, RequestEnvelope, ResponseEnvelope } from '../../contracts/index.js'
 import { LIMITS } from '../../contracts/index.js'
 
 export { CONTROL_CHANNEL, PORT_CHANNEL }
 export type {
-  ControlMethod, FsPathWithRecursiveParams, FsReaddirParams, FsReadFileParams, FsRenameParams,
+  AppRequestGrantParams, ControlMethod, FsPathWithRecursiveParams, FsReaddirParams, FsReadFileParams, FsRenameParams,
   FsStatParams, FsWriteFileParams, IdPublicKeyParams, IdSignParams,
-  NetConnectParams, NetCloseParams, NetSetKeepAliveParams, NetSetNoDelayParams, NetUdpBindParams
+  NetConnectParams, NetCloseParams, NetSetKeepAliveParams, NetSetNoDelayParams, NetUdpBindParams, RequestGrantCtx
 } from './ipc-validation.js'
 export type {
   PortDeliveryFrame, PortLike, PortPair, PortTransport, SocketDescriptor, UdpSocketDescriptor
@@ -146,7 +145,8 @@ async function dispatch (
   method: string,
   payload: unknown,
   event: ControlEvent,
-  transport: PortTransport | undefined
+  transport: PortTransport | undefined,
+  requestGrantCtx: RequestGrantCtx | undefined
 ): Promise<unknown> {
   if (!isControlMethod(method)) throw fail('invalid', `unknown control method: ${method}`)
 
@@ -155,6 +155,17 @@ async function dispatch (
       return await broker.app.manifest(origin)
     case 'app.grants':
       return await broker.app.grants(origin)
+    // `capability` is not re-validated here (Rule 3: request-grant.ts's
+    // isCapabilityKind is the one check). Only capability/patterns cross,
+    // never the rest of `payload`, even one naming its own `origin` (T3).
+    case 'app.requestGrant': {
+      if (!isAppRequestGrantParams(payload)) throw fail('invalid', 'app.requestGrant requires { capability: string, patterns?: string[] }')
+      if (requestGrantCtx?.requestGrant === undefined) throw fail('internal', 'requestGrant is not available -- request-grant subsystem failed to start')
+      const request: CapabilityRequest = payload.patterns === undefined
+        ? { capability: payload.capability }
+        : { capability: payload.capability, patterns: payload.patterns }
+      return await requestGrantCtx.requestGrant(origin, request)
+    }
     case 'fs.readFile': {
       if (!isFsReadFileParams(payload)) throw fail('invalid', 'fs.readFile requires { path: string }')
       return await broker.fs.readFile(origin, payload.path)
@@ -331,17 +342,17 @@ const ALLOW_ALL_LIMITER: RateLimiter = { tryConsume: () => true }
  * one; dispatch() throws 'internal' if a call that needs it is ever made
  * without one, which is a wiring bug, not a capability decision.
  *
- * `limiter` is optional the same way: a caller that passes none is never
- * throttled (`ALLOW_ALL_LIMITER` below), so the whole pre-existing test
- * suite keeps working unmodified. Real production wiring always supplies
- * one -- see `brokerIpcSubsystem`.
+ * `limiter` and `requestGrantCtx` are optional the same way (never
+ * throttled; 'internal' from dispatch() if app.requestGrant runs without
+ * one) -- real wiring always supplies both, see `brokerIpcSubsystem`.
  */
 export async function handleControlRequest (
   broker: Broker,
   event: ControlEvent,
   envelope: RequestEnvelope<unknown>,
   transport?: PortTransport,
-  limiter?: RateLimiter
+  limiter?: RateLimiter,
+  requestGrantCtx?: RequestGrantCtx
 ): Promise<ResponseEnvelope<unknown>> {
   // The envelope itself is untrusted, not just its payload. Reading
   // `envelope.id` off a null or non-object value throws a TypeError straight
@@ -367,7 +378,7 @@ export async function handleControlRequest (
   }
 
   try {
-    const result = await withTimeout(dispatch(broker, origin, envelope.method, envelope.payload, event, transport), envelope.timeoutMs)
+    const result = await withTimeout(dispatch(broker, origin, envelope.method, envelope.payload, event, transport, requestGrantCtx), envelope.timeoutMs)
     return { id: envelope.id, ok: true, result }
   } catch (error) {
     return toFailureResponse(envelope.id, error)
@@ -383,8 +394,8 @@ export interface IpcMainLike {
 }
 
 /** Thin wiring: one `ipcMain.handle` registration over `handleControlRequest`, sharing one `PortTransport` and `RateLimiter` across every call. */
-export function registerBrokerIpc (ipc: IpcMainLike, broker: Broker, transport: PortTransport, limiter?: RateLimiter): void {
-  ipc.handle(CONTROL_CHANNEL, async (event, envelope) => await handleControlRequest(broker, event, envelope, transport, limiter))
+export function registerBrokerIpc (ipc: IpcMainLike, broker: Broker, transport: PortTransport, limiter?: RateLimiter, requestGrantCtx?: RequestGrantCtx): void {
+  ipc.handle(CONTROL_CHANNEL, async (event, envelope) => await handleControlRequest(broker, event, envelope, transport, limiter, requestGrantCtx))
 }
 
 /**
@@ -473,7 +484,8 @@ export const brokerIpcSubsystem: Subsystem = {
     // runs twice, so a later subsystem is guaranteed to read this same
     // instance rather than a second, disagreeing one.
     publishBroker(ctx, broker)
-    registerBrokerIpc(ipcMain, broker, transport, limiter)
+    // `ctx` itself, not a captured `ctx.requestGrant` -- see RequestGrantCtx's own doc (ipc-validation.ts) for why.
+    registerBrokerIpc(ipcMain, broker, transport, limiter, ctx)
 
     // ./sync-fs-policy.ts's createSyncFsPolicy calls straight through to
     // broker.fs.confineSync -- ADR-0016's synchronous grant-check/

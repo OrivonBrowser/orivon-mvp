@@ -14,12 +14,20 @@ import type { PinRecord } from '../../broker/policy/pin.js'
 
 const APP = 'https://app.example'
 
+// Includes a manifest leaf (bundle-hash.ts's own reserved MANIFEST_PATH) so
+// this is a genuinely valid PinRecord per parsePinRecord's own rules, not
+// only a plausible-looking one -- listPinnedOrigins below round-trips every
+// record through parsePinRecord, unlike the older readPin/writePin tests
+// that only ever compared raw JSON.
 function pinRecord (overrides: Partial<PinRecord> = {}): PinRecord {
   return {
     schema: 1,
     origin: APP,
     bundleHash: 'sha256:' + 'a'.repeat(64),
-    assets: [{ path: '/index.html', leaf: 'sha256:' + 'b'.repeat(64) }],
+    assets: [
+      { path: '/.well-known/orivon.json', leaf: 'sha256:' + 'c'.repeat(64) },
+      { path: '/index.html', leaf: 'sha256:' + 'b'.repeat(64) }
+    ],
     version: '1.0.0',
     pinnedAt: 0,
     ...overrides
@@ -390,5 +398,99 @@ describe('nodeLoaderStorage', () => {
     const rootB = join(userData, 'apps', appRootDirectoryName('https://other.example'), 'code', 'index.html')
     expect(await fsReadFile(rootA, 'utf8')).toBe('a')
     expect(await fsReadFile(rootB, 'utf8')).toBe('b')
+  })
+
+  describe('readAsset', () => {
+    it('round-trips exactly what writeAsset wrote', async () => {
+      const userData = await mkdtemp(join(tmpdir(), 'orivon-loader-storage-'))
+      const storage = nodeLoaderStorage(userData)
+      await storage.writeAsset(APP, '/index.html', utf8('hello'))
+
+      expect(await storage.readAsset(APP, '/index.html')).toEqual(utf8('hello'))
+    })
+
+    it('returns undefined for a path never written', async () => {
+      const userData = await mkdtemp(join(tmpdir(), 'orivon-loader-storage-'))
+      const storage = nodeLoaderStorage(userData)
+
+      expect(await storage.readAsset(APP, '/never-written.js')).toBeUndefined()
+    })
+
+    it('returns undefined for an origin with no code root at all yet', async () => {
+      const userData = await mkdtemp(join(tmpdir(), 'orivon-loader-storage-'))
+      const storage = nodeLoaderStorage(userData)
+
+      expect(await storage.readAsset(APP, '/index.html')).toBeUndefined()
+    })
+
+    it('never reads the pin record, even when asked for it by its on-disk name', async () => {
+      const userData = await mkdtemp(join(tmpdir(), 'orivon-loader-storage-'))
+      const storage = nodeLoaderStorage(userData)
+      await storage.writePin(APP, pinRecord())
+
+      // '/pin.json' resolves under the CODE root ("<app>/code/pin.json"),
+      // a different file than the real pin at "<app>/pin.json" -- node-
+      // storage.ts's own header explains why the pin record lives outside
+      // code/ specifically so it can never become a servable leaf.
+      expect(await storage.readAsset(APP, '/pin.json')).toBeUndefined()
+    })
+
+    it('rejects a structurally invalid path the same way writeAsset does, rather than throwing', async () => {
+      const userData = await mkdtemp(join(tmpdir(), 'orivon-loader-storage-'))
+      const storage = nodeLoaderStorage(userData)
+
+      await expect(storage.readAsset(APP, '/../../etc/passwd')).resolves.toBeUndefined()
+    })
+  })
+
+  describe('listPinnedOrigins', () => {
+    it('is empty when nothing has ever been installed (no apps/ directory at all)', async () => {
+      const userData = await mkdtemp(join(tmpdir(), 'orivon-loader-storage-'))
+      const storage = nodeLoaderStorage(userData)
+
+      expect(await storage.listPinnedOrigins()).toEqual([])
+    })
+
+    it('lists every origin with a valid, self-consistent pin', async () => {
+      const userData = await mkdtemp(join(tmpdir(), 'orivon-loader-storage-'))
+      const storage = nodeLoaderStorage(userData)
+      await storage.writePin(APP, pinRecord())
+      await storage.writePin('https://other.example', pinRecord({ origin: 'https://other.example' }))
+
+      const origins = await storage.listPinnedOrigins()
+      expect([...origins].sort()).toEqual([APP, 'https://other.example'].sort())
+    })
+
+    it('skips a directory whose pin.json fails to parse as a valid PinRecord', async () => {
+      const userData = await mkdtemp(join(tmpdir(), 'orivon-loader-storage-'))
+      const appDir = join(userData, 'apps', appRootDirectoryName(APP))
+      await mkdir(appDir, { recursive: true })
+      await fsWriteFile(join(appDir, 'pin.json'), '{ not valid json')
+      const storage = nodeLoaderStorage(userData)
+
+      expect(await storage.listPinnedOrigins()).toEqual([])
+    })
+
+    it('skips a pin.json whose claimed origin does not hash to the directory it was read from -- a copied or hand-edited record naming a different origin', async () => {
+      const userData = await mkdtemp(join(tmpdir(), 'orivon-loader-storage-'))
+      // Written under APP's own directory, but claims to be a DIFFERENT
+      // origin -- exactly what copying another app's pin.json here, or
+      // hand-editing this one's `origin` field, would produce.
+      const appDir = join(userData, 'apps', appRootDirectoryName(APP))
+      await mkdir(appDir, { recursive: true })
+      await fsWriteFile(join(appDir, 'pin.json'), JSON.stringify(pinRecord({ origin: 'https://impersonated.example' })))
+      const storage = nodeLoaderStorage(userData)
+
+      expect(await storage.listPinnedOrigins()).toEqual([])
+    })
+
+    it('skips a plain file sitting in apps/ (not a directory) without throwing', async () => {
+      const userData = await mkdtemp(join(tmpdir(), 'orivon-loader-storage-'))
+      await mkdir(join(userData, 'apps'), { recursive: true })
+      await fsWriteFile(join(userData, 'apps', 'stray-file.txt'), 'not an app directory')
+      const storage = nodeLoaderStorage(userData)
+
+      expect(await storage.listPinnedOrigins()).toEqual([])
+    })
   })
 })

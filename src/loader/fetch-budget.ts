@@ -14,9 +14,14 @@ export interface FetchResponse {
   readonly ok: boolean
   readonly status: number
   /**
-   * The RESOLVED url, after any redirect. `fetchBundle()`'s origin and
-   * canonical-path checks are derived from this, never from the url that was
-   * requested -- see those checks for why.
+   * The RESOLVED url, after any redirect -- per a real `fetch()` Response's
+   * own contract. NOT what `fetchBundle()` actually trusts, though: measured
+   * against real Electron (docs/open-questions.md A59/A141), this reads as
+   * the empty string on every ordinary, non-redirected response, so
+   * fetch-bundle.ts derives its origin/canonical-path checks from the url it
+   * REQUESTED instead -- see `Fetch`'s own doc comment below for the
+   * requirement that makes that safe. Kept in this structural type because a
+   * real `fetch()` Response always carries it; not read by fetch-bundle.ts.
    */
   readonly url: string
   /**
@@ -54,6 +59,19 @@ export interface FetchResponse {
  * }` option. fetchWithBudget below does not rely on a caller actually
  * honouring it, though: it races its own wait on top, so a `Fetch` that
  * ignores the signal still cannot hang the loader forever.
+ *
+ * MUST REFUSE TO FOLLOW A REDIRECT (A141). fetch-bundle.ts's same-origin and
+ * canonical-path checks trust the url they REQUESTED, never `response.url`
+ * (see that field's own doc comment above for why) -- which is safe only
+ * because a followed redirect response can never reach fetch-bundle.ts to be
+ * inspected in the first place. An implementation that follows a redirect
+ * (resolves with a Response whose bytes actually came from somewhere other
+ * than `url`) silently defeats fetch-bundle.ts's origin confinement, with
+ * nothing left downstream to catch it. electron-fetch.ts's `netFetch` passes
+ * `redirect: 'error'` for exactly this reason, on top of the reason it was
+ * originally added for -- proven against a real redirecting server in
+ * test/e2e-loader-adapter.test.ts, which fails if that guarantee ever
+ * breaks.
  */
 export type Fetch = (url: string, pinnedAddresses: readonly string[], signal: AbortSignal) => Promise<FetchResponse>
 

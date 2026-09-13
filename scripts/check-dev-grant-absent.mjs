@@ -20,8 +20,21 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { isInvokedDirectly, relativeToRoot } from './cli.mjs'
 
-/** The dev-grant hook's global name -- present in compiled output only if the path survived into it. */
-export const DEV_GRANT_MARKER = '__orivonDevGrant'
+/**
+ * Every dev-only global gated behind `__ORIVON_DEV_GRANT_ENABLED__` -- each
+ * present in compiled output only if its path survived into it.
+ *
+ * A LIST, not one constant, and that is the point: this guard was written
+ * against a single hook and silently stopped covering the whole flag the
+ * moment a second one was added behind it. **Add the global's name here in
+ * the same change that adds the global**, or the build proves nothing about
+ * it. The flag they share is what makes one list correct -- anything gated
+ * on a different flag needs its own reasoning, not an extra entry here.
+ */
+export const DEV_MARKERS = ['__orivonDevGrant', '__orivonDevRegisterServing']
+
+/** Retained as the single-marker name earlier callers import. */
+export const DEV_GRANT_MARKER = DEV_MARKERS[0]
 
 /** Where `electron-vite build` writes compiled output (electron.vite.config.ts has no `outDir` override). */
 const OUTPUT_DIR = 'out'
@@ -53,10 +66,13 @@ export function checkDevGrantAbsent (root, opts = {}) {
   return { ok: offenders.length === 0, offenders, preExisting, rebuilt }
 }
 
-/** Every .js file under `dir` whose text carries the marker, root-relative and sorted. */
+/** Every .js file under `dir` carrying ANY marker in DEV_MARKERS, root-relative and sorted. */
 function scanFor (root, dir) {
   return collectJsFiles(dir)
-    .filter((file) => readSafe(file).includes(DEV_GRANT_MARKER))
+    .filter((file) => {
+      const text = readSafe(file)
+      return DEV_MARKERS.some((marker) => text.includes(marker))
+    })
     .map((file) => relativeToRoot(root, file))
     .sort()
 }

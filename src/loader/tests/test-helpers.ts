@@ -9,7 +9,9 @@
 
 import { vi } from 'vitest'
 import type { Resolver } from '../../broker/policy/connect.js'
+import { parsePinRecord } from '../../broker/policy/pin.js'
 import type { PinRecord } from '../../broker/policy/pin.js'
+import { appRootDirectoryName } from '../storage.js'
 import type { Fetch, FetchResponse } from '../fetch-budget.js'
 import type { LoaderStorage } from '../storage.js'
 
@@ -37,7 +39,12 @@ export function utf8 (text: string): Uint8Array {
 
 export interface RouteSpec {
   readonly status?: number
-  /** Final response.url, defaults to the requested url -- set to something else to simulate a redirect. */
+  /**
+   * `response.url`. Defaults to the requested url, but fetch-bundle.ts no
+   * longer reads this field at all (A141: real Electron's net.fetch reports
+   * it as '' unconditionally) -- set here only so a test can assert the
+   * field is genuinely inert, e.g. the A141 suite below setting it to ''.
+   */
   readonly url?: string
   readonly body: Uint8Array
   readonly headers?: Record<string, string>
@@ -161,6 +168,20 @@ export function memoryStorage (): MemoryStorage {
       for (const path of forOrigin.keys()) {
         if (!keepSet.has(path)) forOrigin.delete(path)
       }
+    }),
+    // The two serve.ts-era methods, added alongside src/loader/serve.ts --
+    // matching the SAME never-throws, undefined-on-anything-else contract
+    // node-storage.ts's real implementation follows (storage.ts's own doc).
+    readAsset: vi.fn(async (origin: string, path: string) => assets.get(origin)?.get(path)),
+    listPinnedOrigins: vi.fn(async () => {
+      const origins: string[] = []
+      for (const [origin, raw] of pins) {
+        const record = parsePinRecord(raw)
+        if (record !== null && appRootDirectoryName(record.origin) === appRootDirectoryName(origin)) {
+          origins.push(origin)
+        }
+      }
+      return origins
     })
   }
 }
