@@ -30,7 +30,10 @@ export interface GrantPromptContent {
    * name is merely claimed). Electron's own `MessageBoxOptions.title` doc
    * says plainly "some platforms will not show it" -- so the origin is
    * ALSO the first line of `detail` (AR-01), which carries no such
-   * caveat. A platform that drops the title still shows who is asking. */
+   * caveat. A platform that drops the title still shows who is asking.
+   * Passed through `formatOriginForDisplay` first (A115) -- the SAME
+   * string `detail`'s first line uses, so whichever field a platform
+   * actually renders says the same thing. */
   readonly title: string
   /** The one-line headline a person reads first. */
   readonly message: string
@@ -43,6 +46,58 @@ export interface GrantPromptContent {
 }
 
 const WARNING_HEADLINE = '⚠ Unlimited network access'
+
+// ASCII, not the Unicode ellipsis glyph -- guaranteed to render identically
+// under whatever font a native dialog falls back to, where a missing glyph
+// could otherwise leave a blank box exactly where "text was cut here" needs
+// to be unambiguous.
+const ELISION_MARKER = '...'
+
+// Longest host[:port] shown in full before `formatOriginForDisplay` elides
+// it -- see this directory's README (Design notes) for why 24, and why
+// eliding at all rather than relying on the dialog to wrap.
+const MAX_DISPLAYED_HOST_LENGTH = 24
+
+/**
+ * The origin, formatted for a person rather than for an exact match --
+ * A115/T25: `accounts.google.com.attacker.example` reads reassuringly
+ * left-to-right while `attacker.example`, the label that actually decides
+ * authority, sits at the far right, exactly where a narrow or truncated
+ * dialog is least likely to show it. Elides the HOST[:port] from the LEFT
+ * once it passes `MAX_DISPLAYED_HOST_LENGTH`, so the authority-deciding end
+ * always survives; the scheme is never touched. Full reasoning, including
+ * why this is a plain character count and not a public-suffix-aware
+ * computation, is in the README (Design notes), not repeated here.
+ *
+ * Never throws: a value `new URL` cannot parse is returned unchanged rather
+ * than propagating out of what is otherwise a pure formatting function with
+ * no failure mode of its own.
+ */
+export function formatOriginForDisplay (origin: string): string {
+  let parsed: URL
+  try {
+    parsed = new URL(origin)
+  } catch {
+    return origin
+  }
+
+  const hostAndPort = parsed.host
+  if (hostAndPort.length <= MAX_DISPLAYED_HOST_LENGTH) return origin
+
+  const tailLength = MAX_DISPLAYED_HOST_LENGTH - ELISION_MARKER.length
+  const rawTail = hostAndPort.slice(hostAndPort.length - tailLength)
+  // A tail landing mid-label (e.g. "ogle.example") is expected and fine --
+  // this is a character count, not a DNS parser. The one case worth
+  // cleaning up is a tail starting with the dot that used to separate it
+  // from the elided part, which reads as a stray leading dot for no
+  // reason. Deliberately NOT "skip forward to the next label boundary"
+  // instead: that was tried and rejected, because how far it skips depends
+  // on incidental length (a port suffix was enough to make it skip an
+  // entire label), which can silently hide the very label a person most
+  // needs to see. A single conditional character strip cannot do that.
+  const tail = rawTail.startsWith('.') ? rawTail.slice(1) : rawTail
+  return `${parsed.protocol}//${ELISION_MARKER}${tail}`
+}
 
 /** One parsed `host:port` pattern, via the SAME grammar the runtime
  * matcher uses -- never `grant-prompt-render.ts`'s own guess at the string.
@@ -243,6 +298,10 @@ export function describeGrantRequest (
   patterns: readonly Pattern[]
 ): GrantPromptContent {
   const { warning, message, explanation } = describeCapabilityGrant(capability, patterns)
+  // A115: rendered once here, reused for both `title` and `detail`'s first
+  // line below -- never the raw origin twice over, which is how a
+  // subdomain-prefix confusable used to survive.
+  const displayOrigin = formatOriginForDisplay(origin)
   // AR-01: the origin, again, in a field Electron never drops (unlike
   // `title`). AR-03: the app's claimed name gets its OWN line, never
   // concatenated into the same sentence as Orivon's explanation -- a
@@ -254,11 +313,11 @@ export function describeGrantRequest (
   // control characters, including `\n`/`\r`, at parse time), so only this
   // template -- never the app -- can introduce a line break here.
   const claim = `Claims to be "${manifest.name}".`
-  const detailLines = [origin, claim]
+  const detailLines = [displayOrigin, claim]
   if (explanation !== undefined) detailLines.push(explanation)
   return {
     warning,
-    title: origin,
+    title: displayOrigin,
     message,
     detail: detailLines.join('\n')
   }
