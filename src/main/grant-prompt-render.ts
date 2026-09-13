@@ -20,6 +20,7 @@
 import type { CapabilityKind, Manifest, Pattern } from '../contracts/index.js'
 import { MAX_PORT } from '../broker/policy/canonical-host.js'
 import { hostSpecKind, parsePattern as parseConnectPattern, parsePortSpec } from '../broker/policy/connect-patterns.js'
+import { patternSetFromCapabilities } from '../broker/policy/manifest-patterns.js'
 
 export interface GrantPromptContent {
   /** Drives `dialog.showMessageBox`'s own `type` -- a second, non-text
@@ -320,5 +321,45 @@ export function describeGrantRequest (
     title: displayOrigin,
     message,
     detail: detailLines.join('\n')
+  }
+}
+
+/**
+ * d-0025 (ADR-0012's 2026-09-13 amendment) / queue item S4-4: one dialog for
+ * the WHOLE set a manifest declares, asked once before the app's own code
+ * runs -- never `describeGrantRequest`'s one-capability shape shown once per
+ * declared capability, which is the fatigue that amendment exists to remove.
+ *
+ * REUSES `describeCapabilityGrant` PER ROW, never a second vocabulary (Rule
+ * 3) -- the same words a person sees later in the permissions list
+ * (`../main/permissions.ts`) for the identical grant. `formatOriginForDisplay`
+ * and the origin/claim lines are exactly `describeGrantRequest`'s own (A115,
+ * AR-01, AR-03), so the two dialogs read as one family, not two designs.
+ *
+ * BREADTH STAYS VISIBLE PER ROW, not only once for the whole dialog: `warning`
+ * (this dialog's own icon) is true the moment ANY row is unlimited, but each
+ * unlimited row's own line still carries `describeCapabilityGrant`'s literal
+ * "Unlimited" marker and explanation -- so a narrow row sitting next to a
+ * wide one still reads as narrow, and the wide one still stands out on its
+ * own line, not only through an icon a person may not consciously register.
+ */
+export function describeInstallConsent (
+  origin: string,
+  manifest: Manifest,
+  capabilities: readonly CapabilityKind[]
+): GrantPromptContent {
+  const declared = patternSetFromCapabilities(manifest.capabilities)
+  const rows = capabilities.map((capability) => describeCapabilityGrant(capability, declared[capability] ?? []))
+  const warning = rows.some((row) => row.warning)
+
+  const displayOrigin = formatOriginForDisplay(origin)
+  const claim = `Claims to be "${manifest.name}".`
+  const rowLines = rows.map((row) => row.explanation === undefined ? `- ${row.message}` : `- ${row.message}\n  ${row.explanation}`)
+
+  return {
+    warning,
+    title: displayOrigin,
+    message: 'This app wants to:',
+    detail: [displayOrigin, claim, ...rowLines].join('\n')
   }
 }

@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
-  createSubsystemContext, criticalFailureMessage, publishBroker, publishLoader, publishRequestGrant, runAfterReady, runBeforeReady,
+  createSubsystemContext, criticalFailureMessage, publishBroker, publishInstallApp, publishLoader, publishRequestGrant, runAfterReady, runBeforeReady,
   type Subsystem
 } from '../registry.js'
 import type { App } from 'electron'
 import type { Broker } from '../../broker/broker-contracts.js'
-import type { Loader } from '../../loader/index.js'
+import type { Loader, LoadResult } from '../../loader/index.js'
 import type { CapabilityRequest } from '../../contracts/index.js'
 
 // SubsystemContext's App and Broker fields are both type-only imports,
@@ -17,6 +17,7 @@ const ctx = createSubsystemContext(fakeApp)
 const fakeBroker = { marker: 'the-one-broker' } as unknown as Broker
 const fakeLoader = { marker: 'the-one-loader' } as unknown as Loader
 const fakeRequestGrant = async (_origin: string, _request: CapabilityRequest): Promise<boolean> => true
+const fakeInstallApp = async (_hintingOrigin: string, _hintedUrl: string): Promise<LoadResult> => ({ outcome: 'rejected', reason: 'unused' })
 
 describe('runBeforeReady', () => {
   it('runs every beforeReady in list order', () => {
@@ -242,6 +243,43 @@ describe('publishRequestGrant', () => {
     expect(fresh.broker).toBe(fakeBroker)
     expect(fresh.loader).toBe(fakeLoader)
     expect(fresh.requestGrant).toBe(fakeRequestGrant)
+  })
+})
+
+// Same guarantee, same reason as publishRequestGrant: two independently-
+// published installApp functions could close over two different Broker or
+// Loader instances -- S4-4's own seam for whoever wires the discovery
+// trigger (S4-2) to call.
+describe('publishInstallApp', () => {
+  it('sets ctx.installApp so a later reader sees it', () => {
+    const fresh = createSubsystemContext(fakeApp)
+    publishInstallApp(fresh, fakeInstallApp)
+    expect(fresh.installApp).toBe(fakeInstallApp)
+  })
+
+  it('throws if an installApp function was already published, naming the hazard', () => {
+    const fresh = createSubsystemContext(fakeApp)
+    publishInstallApp(fresh, fakeInstallApp)
+    const second = async (): Promise<LoadResult> => ({ outcome: 'rejected', reason: 'unused' })
+    expect(() => publishInstallApp(fresh, second)).toThrow(/installApp/)
+    expect(fresh.installApp).toBe(fakeInstallApp)
+  })
+
+  it('leaves ctx.installApp undefined when nothing ever publishes', () => {
+    const fresh = createSubsystemContext(fakeApp)
+    expect(fresh.installApp).toBeUndefined()
+  })
+
+  it('is independent of every other slot', () => {
+    const fresh = createSubsystemContext(fakeApp)
+    publishBroker(fresh, fakeBroker)
+    publishLoader(fresh, fakeLoader)
+    publishRequestGrant(fresh, fakeRequestGrant)
+    publishInstallApp(fresh, fakeInstallApp)
+    expect(fresh.broker).toBe(fakeBroker)
+    expect(fresh.loader).toBe(fakeLoader)
+    expect(fresh.requestGrant).toBe(fakeRequestGrant)
+    expect(fresh.installApp).toBe(fakeInstallApp)
   })
 })
 

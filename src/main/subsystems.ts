@@ -27,6 +27,7 @@ import { brokerIpcSubsystem } from '../broker/transport/ipc.js'
 import { devGrantSubsystem } from './dev-grant.js'
 import { requestGrantSubsystem } from './request-grant-subsystem.js'
 import { loaderSubsystem } from '../loader/subsystem.js'
+import { appInstallSubsystem } from './app-install-subsystem.js'
 import { telemetrySubsystem } from '../telemetry/runner.js'
 
 export const subsystems: Subsystem[] = [
@@ -41,6 +42,7 @@ export const subsystems: Subsystem[] = [
   requestGrantSubsystem, // queue item 4.1: app.requestGrant's mechanism -> src/main/request-grant.ts. Reads ctx.broker -- must stay below brokerIpcSubsystem.
   // build step 3: shim      -> src/shim/
   loaderSubsystem, // build step 4: loader -> src/loader/
+  appInstallSubsystem, // queue item S4-4: install-time consent -> src/main/app-install.ts. Reads ctx.broker AND ctx.loader -- must stay below both brokerIpcSubsystem and loaderSubsystem.
   // build step 6: trust     -> src/trust/
   // build step 7: nostr     -> src/nostr/
   telemetrySubsystem // build step 8: telemetry -> src/telemetry/
