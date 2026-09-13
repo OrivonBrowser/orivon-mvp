@@ -80,8 +80,39 @@ export function canonicalAssetPath (assetUrl: string): string | null {
   }
 
   if (!ASSET_SCHEMES.has(parsed.protocol)) return null
+  // Checked against the ORIGINAL string, before isValidCanonicalPath ever
+  // sees `parsed.pathname` -- see rawPathHasDotSegment's own comment for why.
+  if (rawPathHasDotSegment(assetUrl)) return null
 
   return isValidCanonicalPath(parsed.pathname) ? parsed.pathname : null
+}
+
+/**
+ * True if `assetUrl`'s path, AS WRITTEN, carries a `.`/`..` segment (encoded
+ * or not) -- checked against the raw string, never `parsed.pathname`. The
+ * WHATWG URL parser collapses a dot segment while building `pathname`
+ * (including its percent-encoded spelling: `new
+ * URL('https://x/%2e%2e/y').pathname === '/y'`), so by the time
+ * isValidCanonicalPath's own re-derivation check runs on that field the
+ * traversal is already gone rather than rejected -- manifest.ts's
+ * validateRelativePath hit the identical hazard first and is why it never
+ * joins a whole path through a base either (see its own comment).
+ *
+ * Finding the path needs no authority parsing: an unescaped '/' cannot occur
+ * in an http(s) authority (userinfo/host/port), so the first '/' after '://'
+ * is always where the path starts, for every URL ASSET_SCHEMES admits.
+ */
+function rawPathHasDotSegment (assetUrl: string): boolean {
+  const authorityStart = assetUrl.indexOf('://')
+  if (authorityStart === -1) return false
+  const pathStart = assetUrl.indexOf('/', authorityStart + 3)
+  if (pathStart === -1) return false
+
+  const rawPath = assetUrl.slice(pathStart).split(/[?#]/)[0]!
+  return rawPath.split('/').some((segment) => {
+    const decoded = decodePercentEscapes(segment)
+    return decoded === '.' || decoded === '..'
+  })
 }
 
 /**
@@ -114,8 +145,17 @@ export function isValidCanonicalPath (path: string): boolean {
   // that asks for it, so the asset is pinned and permanently denied. Fail-
   // closed, so not a serving bypass, but the app simply does not work.
   //
-  // It also subsumes the '.'/'..' segment rule below, which URL normalisation
-  // collapses, and the U+2028/U+2029 gap the C0/C1 class does not cover.
+  // It also subsumes the '.'/'..' segment rule below and the U+2028/U+2029
+  // gap the C0/C1 class does not cover -- but ONLY for a caller (bundle-
+  // hash.ts, pin.ts, manifest.ts) that hands this function a raw path
+  // string, where re-deriving through the URL parser is what catches a dot
+  // segment in the first place. canonicalAssetPath below calls `new
+  // URL(assetUrl)` on the FULL url before this function ever runs, and that
+  // parse has ALREADY collapsed any dot segment -- literal or percent-
+  // encoded -- while building `pathname`, so re-deriving `pathname` from
+  // itself here is a no-op regardless. For that caller, a dot segment is
+  // caught earlier, by canonicalAssetPath's own rawPathHasDotSegment check
+  // on the un-parsed string -- not by anything below.
   let reDerived: string
   try {
     reDerived = new URL(path, CANONICALISATION_BASE).pathname
