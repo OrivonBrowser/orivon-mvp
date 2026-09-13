@@ -27,9 +27,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 - **The permission prompt and the permissions list.** A real manifest is rendered at install
   with breadth visible — an app asking for unlimited network access does not look like one
   asking for two sites — and grants are listed and revocable.
-- **`window.orivon.app.requestGrant` reaches a page.** A page can ask for a capability and get
-  a real prompt; discovering and registering an app from a page is a separate, still-unwired
-  step, so nothing is granted in practice yet.
+- **`window.orivon.app.requestGrant` reaches a page, and a real page can now hold a real
+  grant.** A page can ask for a capability and get a real prompt, and accepting it persists
+  a grant a later capability call actually uses.
+- **The app loader.** Visiting a page that declares itself an app now triggers the whole
+  pipeline automatically: a discovery hint in the page's own HTML, fetching and hash-pinning
+  its declared files, and caching them locally. A person is asked once, in plain language, for
+  everything the app's manifest declares, before the app's own code runs; accepting installs it.
+  Later visits are served from local cache, with the network unplugged for anything not part of
+  the pinned bundle, and the served page's own content-security policy narrowed to exactly what
+  was granted. A first-ever visit can still see an early permission check denied before that
+  one-time dialog resolves — every later visit is unaffected.
 - **The browser shell** (build step 1). A frameless `BaseWindow` composing a chrome
   `WebContentsView` over per-tab views: tab strip, toolbar, address bar, back/forward,
   window controls. Two preloads at two privilege levels — `app.ts` for ordinary tabs,
