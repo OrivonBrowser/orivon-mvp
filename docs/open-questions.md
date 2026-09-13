@@ -5478,3 +5478,75 @@ different door.
 > residual inference is an acceptable floor. Not this lane's call -- parked alongside `A145` for
 > whoever settles both at once, since they are now provably the same shape from two different
 > doors.
+
+### A158 -- a restored app's first document is served with a CSP narrower than its real grant, and cannot self-correct **[STILL OPEN]**
+
+**Raised 2026-09-14**, adversarial review of the whole S4-6/S4-7 landing (lane ADV-fix3),
+verified directly against the real `GrantLedger`/`createBroker` mechanism rather than assumed.
+
+**What a real person experiences.** Someone installs an app, grants it network access, and it
+works. They quit Orivon and reopen it later. The app opens from its own local cache instantly
+(that part is correct and offline-first, `ADR-0007`) -- but its network calls now fail as though
+the grant never happened. Reloading the tab fixes it completely and permanently for the rest of
+that session. Nothing in the UI says to reload, or that anything is wrong at all; the app just
+looks broken until the person happens to refresh it.
+
+**The mechanism, confirmed with a real ledger, not a stub.** `loaderSubsystem.afterReady` calls
+`restorePinnedServing` before any window exists, registering `protocol.handle` for every pinned
+origin. That handler closes over `grantedConnectPatternsFor`, which reads
+`broker.app.grants(origin)` fresh on every request -- and `GrantLedger.grantsFor` returns `[]`
+for an origin whose persisted grants have not yet been hydrated. Hydration only happens on the
+first `registerApp` call for that origin (`grantsHydrated`'s own doc: re-validating a restored
+grant needs a manifest), and `registerApp`'s only production callers run after a page has
+already loaded and reported its manifest hint -- which cannot happen before that first document
+is already served with whatever CSP `connectSrcFor` computes from an empty grant list.
+`src/loader/tests/electron-serve.test.ts`'s new "restorePinnedServing across a restart" suite
+proves both halves against a real `createBroker`/`GrantLedger`/`LedgerStorage`: the first
+request truly is `'self'`-only despite a real persisted grant, and the SAME already-registered
+handler correctly reflects the grant on its very next request once `registerApp` runs -- so "a
+reload fixes it" is a verified property of the code, not an assumption.
+
+**Why this is not fixed here, and why widening the fallback is the wrong direction.**
+`grantedConnectPatternsFor` returning `[]` on anything short of a confirmed grant is deliberate
+and correct (`connect-src.ts`'s own invariant: being wider than the real grant is the one
+direction that is a security bug, never the narrower one). The three ways to close the gap
+instead of just observing it were each considered and rejected or deferred:
+
+1. **Hydrate at startup from a manifest read off local disk** (the loader's own pinned,
+   hash-verified `MANIFEST_PATH` asset, already read by `createAppRequestHandler` for content
+   resolution). Rejected: `A137` established that re-validating a restored grant against a
+   manifest that is not independently, freshly obtained collapses the precondition for forging a
+   grant from "control of the real origin's server" down to "local write access to this
+   machine's profile directory" -- a real weakening, not merely an unproven one, regardless of
+   the local copy's own hash-tree integrity (that hash tree only proves internal
+   self-consistency of what is on disk, never that it reflects the real origin's current
+   wishes). `A137`'s own conclusion is directly on point: a value read off disk must not be
+   trusted more than the same value arriving fresh.
+2. **Fetch a fresh manifest over the network at startup, before serving.** Rejected as
+   architecturally wrong, not merely out of scope: `restorePinnedServing` exists specifically so
+   a previously-installed app keeps working **offline**, across a restart
+   (`src/loader/subsystem.ts`'s own header). Requiring a network round trip before the first
+   document can be served correctly would trade a CSP correctness bug for breaking the offline
+   guarantee outright.
+3. **Hold the first navigation until install and consent settle, then load from cache.** This is
+   exactly `A146`'s option 1, already filed as an owner-level UX decision (a page that visibly
+   pauses before running vs. one that runs and might be corrected) rather than something an
+   automated lane should decide. **`A146` and this entry are the same underlying architecture
+   gap** -- the first document is delivered before the app's true state (consent, and here,
+   grants) is settled -- so resolving `A146` in favour of holding the navigation would close this
+   gap too, as a side effect, since `registerApp` would then run with a fresh manifest before any
+   response is served. Whoever decides `A146` should see this entry.
+
+**What this lane did instead.** `restorePinnedServing` now logs a diagnostic
+(`console.warn`, naming the origin) whenever it restores serving for an origin that holds a
+real, persisted capability grant not yet reflected in what it just served -- computed from
+`isRegisteredSync`/`persistedAppsSync`, the exact pair `src/main/permissions.ts`'s settings list
+already reads off disk for **display only**, never as live authority (`A137`), so this adds
+nothing to what is actually served or authorised. It converts a silent degradation into a
+detectable one (a support session or a developer reading the log can see it happening); it does
+not tell the affected person anything, because no UI reads this signal yet. That is the honest
+extent of what this lane closed -- see `src/loader/electron-serve.ts`'s `hasUnhydratedPersistedGrant`.
+
+**AI recommendation, not an owner decision:** resolve this alongside `A146`, since fixing one all
+but fixes the other, rather than building a second, narrower "reload this one tab" mechanism
+just for grants.

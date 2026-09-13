@@ -115,6 +115,27 @@ export interface RestoredOrigin {
 }
 
 /**
+ * A158 (docs/open-questions.md): true when `origin` holds a real, persisted
+ * capability grant from a prior session that THIS run's ledger has not yet
+ * re-validated. `registerServingFor`'s handler reads `broker.app.grants`
+ * fresh per request (its own doc), and that stays empty until `registerApp`
+ * hydrates it -- which only happens once this origin's page has loaded and
+ * reported its manifest hint. Until then, this origin's served CSP is
+ * `'self'`-only even though the person already approved more.
+ *
+ * READS ONLY ALREADY-SANCTIONED DISPLAY DATA. `isRegisteredSync` and
+ * `persistedAppsSync` are the exact pair `src/main/permissions.ts`'s
+ * settings list already reads off disk for display without treating it as
+ * live authority (A137) -- this function does the same, purely to decide
+ * whether to log, and never feeds the answer back into what is served.
+ */
+function hasUnhydratedPersistedGrant (broker: Broker, origin: string): boolean {
+  if (broker.app.isRegisteredSync(origin)) return false
+  const persisted = broker.app.persistedAppsSync().find((app) => app.origin === origin)
+  return persisted !== undefined && Object.keys(persisted.grants).length > 0
+}
+
+/**
  * For every origin `storage` holds a pin for, registers its serving (via
  * `registerServingFor` above). Called once, at startup, so a previously-
  * installed app is served from cache again without waiting for anything to
@@ -124,6 +145,13 @@ export interface RestoredOrigin {
  * does not stop the rest -- the same "one bad entry does not take down
  * everything else" stance `runAfterReady` (main/registry.ts) already takes
  * for subsystems, applied here per app instead of per subsystem.
+ *
+ * A158: an origin restored here with a real, not-yet-hydrated grant is
+ * logged rather than left silent -- the CSP itself must still start narrow
+ * (widening it from unvalidated disk state is the exact mistake A137
+ * rejected), so this is the honest half of that tradeoff: the person is not
+ * told directly yet (no UI reads this today), but the condition is no
+ * longer invisible to anyone looking at this app's own log.
  */
 export async function restorePinnedServing (storage: LoaderStorage, broker?: Broker): Promise<readonly RestoredOrigin[]> {
   const origins = await storage.listPinnedOrigins()
@@ -132,6 +160,12 @@ export async function restorePinnedServing (storage: LoaderStorage, broker?: Bro
   for (const origin of origins) {
     try {
       await registerServingFor(storage, origin, broker)
+      if (broker !== undefined && hasUnhydratedPersistedGrant(broker, origin)) {
+        console.warn(
+          '[loader]', origin, 'has a real, persisted capability grant not yet reflected in its served CSP --',
+          'it will apply once this app reports its manifest hint (A158, docs/open-questions.md)'
+        )
+      }
       results.push({ origin, ok: true })
     } catch (error) {
       console.error('[loader] failed to restore cache-serving for', origin, error)

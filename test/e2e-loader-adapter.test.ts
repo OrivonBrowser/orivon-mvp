@@ -162,3 +162,65 @@ it('the real electron-fetch.ts adapter, against a real local server, inside a re
     await closeElectron(app)
   }
 }, TEST_TIMEOUT_MS)
+
+// Finding 2 (adversarial review, 2026-09-13): electronResolveHost had zero
+// real-execution coverage -- every existing test injects a fake `Resolver`,
+// so nothing ever proved `net.resolveHost`'s real `endpoints[].address`
+// shape actually maps the way electron-resolve.ts assumes, in the same
+// codebase already bitten once by a real Electron behaviour only a live
+// probe caught (response.url === '', A59/A141 above). `--host-resolver-
+// rules` (Chromium's own DNS-faking switch, already relied on by
+// smoke-helpers.mjs's HERMETIC_RESOLVER) makes this deterministic and
+// network-free: a specific hostname is mapped to a literal address inside
+// Chromium's resolver itself, no real DNS query ever leaves the process.
+const MAPPED_HOST = 'orivon-resolve-probe.invalid'
+const MAPPED_ADDRESS = '93.184.216.34'
+const RESOLVE_HOST_RULES =
+  `--host-resolver-rules=MAP ${MAPPED_HOST} ${MAPPED_ADDRESS}, MAP * ~NOTFOUND, EXCLUDE 127.0.0.1`
+
+it('the real electron-resolve.ts adapter, against Chromium\'s own resolver, hermetically', async () => {
+  const app = await launchElectron({ appPath: bundlePath, args: [RESOLVE_HOST_RULES] })
+  try {
+    const hookInstalled = await waitFor(async () =>
+      await app.evaluate(() => typeof globalThis.__orivonLoaderAdapterProbe !== 'undefined'), 10_000)
+    expect(hookInstalled).toBe(true)
+
+    // (1) A hostname Chromium's own resolver actually answers -- the real
+    // `endpoints[].address` -> `string[]` mapping electron-resolve.ts's
+    // own `map()` does, which install-origin.ts's whole guard depends on
+    // reading correctly.
+    const mapped = await app.evaluate(
+      async (_electron, host: string) => await globalThis.__orivonLoaderAdapterProbe!.callResolveHost(host),
+      MAPPED_HOST
+    )
+    expect(mapped.threw).toBe(false)
+    expect(mapped.addresses).toEqual([MAPPED_ADDRESS])
+
+    // (2) A hostname the rules above deliberately give no answer to -- the
+    // shape install-origin.ts's own resolveFn-catch branch depends on: a
+    // REJECTION, not a silently empty array standing in for "not found".
+    const unresolved = await app.evaluate(
+      async (_electron, host: string) => await globalThis.__orivonLoaderAdapterProbe!.callResolveHost(host),
+      'definitely-unmapped.invalid'
+    )
+    expect(unresolved.threw).toBe(true)
+
+    // (3) An address literal resolves to itself -- Chromium's resolver (and
+    // this adapter's mapping over it) round-trips a literal unchanged,
+    // never rewriting it to an IPv4-mapped IPv6 spelling or similar that
+    // install-origin.ts's canonical-literal check would reject. Loopback is
+    // reachable here only because RESOLVE_HOST_RULES's own EXCLUDE keeps it
+    // off the catch-all -- production callers never resolve a literal at
+    // all (install-origin.ts short-circuits before ever calling resolveFn
+    // on one), so this is a structural check on the adapter's own contract,
+    // not a claim about a real call site.
+    const literal = await app.evaluate(
+      async (_electron, host: string) => await globalThis.__orivonLoaderAdapterProbe!.callResolveHost(host),
+      '127.0.0.1'
+    )
+    expect(literal.threw).toBe(false)
+    expect(literal.addresses).toEqual(['127.0.0.1'])
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)

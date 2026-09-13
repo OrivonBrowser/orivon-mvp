@@ -13,16 +13,15 @@
 // -- adding one is a `src/broker/` change, out of this lane's paths. Filing
 // that gap rather than reaching past the boundary to build it.
 //
-// A SECOND, SEPARATE GAP THIS FILE WORKS AROUND: `Broker` has no way to
-// enumerate registered origins (`app.manifest`/`app.grants` both take one
-// origin already known to the caller). `PermissionsRegistry.noteOrigin` is
-// the seam for whoever learns of an origin becoming a real app. Installs
-// now happen in production (`app-install.ts`, from the discovery trigger),
-// so an origin CAN become a real app without this registry hearing about
-// it -- nothing calls `noteOrigin` yet, so the settings page's full list
-// can under-report. The address-bar icon does not depend on this registry:
-// `forOrigin` asks the broker about one already-known origin directly, so
-// the surface a person actually revokes from is unaffected.
+// A GAP `PermissionsRegistry.noteOrigin` WAS ONCE WORKING AROUND, NOW CLOSED
+// A DIFFERENT WAY: `noteOrigin` still has no production caller anywhere in
+// this tree, but `list()` below no longer depends on one having ever fired.
+// It sources the settings page's full list straight from
+// `broker.app.registeredOriginsSync()` and `persistedAppsSync()`, so an
+// origin installed without ever calling `noteOrigin` is still shown. The
+// address-bar icon never depended on this registry either way: `forOrigin`
+// asks the broker about one already-known origin directly, so the surface a
+// person actually revokes from was never affected.
 
 import type { CapabilityKind, Grant, GrantId, Manifest } from '../contracts/index.js'
 import type { Broker } from '../broker/broker-contracts.js'
