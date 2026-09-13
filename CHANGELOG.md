@@ -27,6 +27,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 - **The permission prompt and the permissions list.** A real manifest is rendered at install
   with breadth visible — an app asking for unlimited network access does not look like one
   asking for two sites — and grants are listed and revocable.
+- **`window.orivon.app.requestGrant` reaches a page.** A page can ask for a capability and get
+  a real prompt; discovering and registering an app from a page is a separate, still-unwired
+  step, so nothing is granted in practice yet.
 - **The browser shell** (build step 1). A frameless `BaseWindow` composing a chrome
   `WebContentsView` over per-tab views: tab strip, toolbar, address bar, back/forward,
   window controls. Two preloads at two privilege levels — `app.ts` for ordinary tabs,
