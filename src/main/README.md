@@ -193,3 +193,47 @@ pattern entirely). Parsing every pattern through the real grammar once, here, fi
 divergences at their shared root rather than patching `isUnlimited` and `namedHostsPhrase`
 separately, which would have left the underlying two-parsers problem in place for the next
 person to trip over the same way (code-guidelines.md Rule 3).
+
+**[`grant-prompt-render.ts`](grant-prompt-render.ts) — `formatOriginForDisplay` elides a long
+host from the LEFT, and deliberately never tries to compute the registrable domain (A115,
+T25).** `accounts.google.com.attacker.example` reads reassuringly left-to-right; the label that
+actually decides authority, `attacker.example`, sits at the far right, exactly where a narrow or
+truncated dialog is least likely to show it. The obvious-looking fix — show the registrable
+domain (eTLD+1) prominently — needs a public suffix list this repo does not depend on, and a
+naive "last two labels" guess is wrong for `example.co.uk` in the direction that matters (it
+would emphasise `co.uk` and hide the real registrant). Adding that dependency is a stop
+condition for this run, so it is parked as **A142** rather than added; this fix is the no-
+dependency floor instead.
+
+- **A plain character count, not a DNS-aware truncation.** `MAX_DISPLAYED_HOST_LENGTH` is 24 --
+  roughly the length of a short, ordinary hostname (`accounts.google.com` itself is 20
+  characters) plus a small margin, so an app's real host is essentially never elided on its own
+  account. Padding a real brand name into a longer confusable is what pushes the total past 24,
+  not anything about the shape of the string. The `example.co.uk`/bare-`example.com` test cases
+  exist specifically to prove the rule is not accidentally tuned to `.com` or to any particular
+  label count -- it never looks at labels at all, only length.
+- **Elide the HOST[:port] only; the scheme is never touched or counted.** The scheme carries no
+  authority information (it cannot be misread as a brand), so spending elision budget on it
+  would only shorten the part that matters. `https://` always survives intact.
+- **A naive forward-to-the-next-dot "clean label boundary" idea was tried and rejected.**
+  Snapping the cut point to the next `.` after the raw character count reads better when nothing
+  else changes, but the distance it skips depends on incidental length elsewhere in the string --
+  appending a port was enough, in testing, to make it skip an entire label it should have kept
+  visible. A plain character-count cut, with only a single conditional strip of one leading dot
+  for cosmetics, cannot do that: it always keeps exactly the tail it is told to keep.
+- **The same elided string is used for BOTH `title` and `detail`'s first line, not a fuller
+  string in one and a shorter one in the other.** `detail` wraps in a native message box; `title`
+  does not, and per A127 may not render at all on some platforms. Showing the full,
+  un-elided origin in `detail` and relying on wrapping was considered and rejected for exactly
+  that asymmetry -- it would leave `title`, wherever it *does* render, showing a different (and
+  unprotected) string from `detail`. Using one function for both keeps them saying the same
+  thing on every platform, whichever field survives.
+- **A127's core fix -- the origin duplicated into `detail`, a field Electron does not document as
+  ever being dropped -- predates this lane** (already present as `AR-01` before A115 was filed).
+  This change does not alter that mechanism; it only hardens the string both fields now show.
+  A127 stays open on its own remaining term: no macOS machine has confirmed the platform claim
+  that motivated it, so "the title is not reliably shown" remains reasoned, not measured.
+- **Not done, and named so nobody re-derives it as new:** no attempt to mark the origin line as
+  "not a name you typed" beyond the contrast already created by the very next line (`Claims to
+  be "<name>"`). A dedicated label (`Website: ...`) was considered; left out as presentation
+  polish outside this lane's security floor, not as an oversight.
