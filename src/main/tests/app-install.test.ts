@@ -25,15 +25,27 @@ function grant (overrides: Partial<Grant> = {}): Grant {
  * every test that isn't specifically about rollback acknowledgement.
  */
 function fakeBroker (
-  overrides: Partial<{ grants: readonly Grant[], versionFloor: string, acknowledgedRollback: string | undefined, registerApp: Broker['registerApp'] }> = {},
+  overrides: Partial<{ grants: readonly Grant[], versionFloor: string, acknowledgedRollback: string | undefined, registerApp: Broker['registerApp'], grant: Broker['grant'] }> = {},
   calls: BrokerCall[] = []
 ): Broker {
   return stubBroker(calls, {
     grants: async () => overrides.grants ?? [],
     versionFloorFor: async () => overrides.versionFloor ?? '0.0.0',
     rollbackAcknowledgedVersionFor: async () => overrides.acknowledgedRollback,
-    registerApp: overrides.registerApp ?? (async () => {})
+    registerApp: overrides.registerApp ?? (async () => {}),
+    grant: overrides.grant ?? (async (origin, capability, patterns) => ({ id: 'g1', origin, capability, patterns, grantedAt: 0 }))
   })
+}
+
+/** `manifestWith`, but declaring a real capability -- S4-4's consent-wiring
+ * tests below need a manifest that is actually something to ask about;
+ * every other test in this file relies on `manifestWith`'s empty default. */
+function manifestWithCapabilities (): Manifest {
+  return { orivonApiVersion: 0, id: 'app.test', name: 'Test', version: '1.0.0', entry: 'index.html', capabilities: { net: { tcp: { connect: ['api.example.com:443'] } } } }
+}
+
+function installedResult (manifest: Manifest): LoadResult {
+  return { outcome: 'installed', canonicalOrigin: APP, manifest, pin: { schema: 1, origin: APP, bundleHash: 'sha256:' + 'a'.repeat(64), assets: [], version: manifest.version, pinnedAt: 0 } }
 }
 
 function fakeLoader (result: LoadResult): Loader & { load: ReturnType<typeof vi.fn> } {
@@ -182,5 +194,105 @@ describe('installFromHint', () => {
     await call2
 
     expect(order).toEqual(['1 start', '1 end', '2 start'])
+  })
+
+  // d-0025 (ADR-0012's 2026-09-13 amendment) / S4-4: consent is asked once,
+  // after a successful install, before installFromHint's own promise
+  // resolves -- see app-install.ts's header on exactly what guarantee that
+  // is and is not. Four behaviours, matching the queue item's own exit
+  // criterion verbatim.
+  describe('install-time consent (S4-4)', () => {
+    it('never invokes consent for a manifest declaring no capabilities', async () => {
+      const consent = vi.fn(async () => true)
+      const broker = fakeBroker()
+      const loader = fakeLoader(installedResult(manifestWith()))
+
+      await installFromHint({ broker, loader, consent }, APP, APP)
+
+      expect(consent).not.toHaveBeenCalled()
+    })
+
+    it('a first visit asks once and grants what was accepted', async () => {
+      const calls: BrokerCall[] = []
+      const consent = vi.fn(async () => true)
+      const manifest = manifestWithCapabilities()
+      const broker = fakeBroker({ grants: [] }, calls)
+      const loader = fakeLoader(installedResult(manifest))
+
+      const result = await installFromHint({ broker, loader, consent }, APP, APP)
+
+      expect(result.outcome).toBe('installed')
+      expect(consent).toHaveBeenCalledExactlyOnceWith(APP, manifest, ['tcp.connect'])
+      expect(calls).toContainEqual({ method: 'grant', origin: APP, args: { capability: 'tcp.connect', patterns: ['api.example.com:443'] } })
+    })
+
+    it('a second visit -- the origin already holding the grant -- is silent', async () => {
+      const consent = vi.fn(async () => true)
+      const manifest = manifestWithCapabilities()
+      const broker = fakeBroker({ grants: [grant()] })
+      const loader = fakeLoader(installedResult(manifest))
+
+      await installFromHint({ broker, loader, consent }, APP, APP)
+
+      expect(consent).not.toHaveBeenCalled()
+    })
+
+    it('a declined dialog leaves the app installed with every capability denied', async () => {
+      const calls: BrokerCall[] = []
+      const consent = vi.fn(async () => false)
+      const manifest = manifestWithCapabilities()
+      const broker = fakeBroker({ grants: [] }, calls)
+      const loader = fakeLoader(installedResult(manifest))
+
+      const result = await installFromHint({ broker, loader, consent }, APP, APP)
+
+      expect(result.outcome).toBe('installed')
+      expect(consent).toHaveBeenCalledOnce()
+      expect(calls.some((call) => call.method === 'grant')).toBe(false)
+    })
+
+    it('still runs the consent step when registerApp itself rejected (F16\'s own case)', async () => {
+      const consent = vi.fn(async () => true)
+      const manifest = manifestWithCapabilities()
+      const registerApp = vi.fn(async () => { throw new Error('ENOSPC') })
+      const broker = fakeBroker({ registerApp, grants: [] })
+      const loader = fakeLoader(installedResult(manifest))
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      await installFromHint({ broker, loader, consent }, APP, APP)
+
+      expect(consent).toHaveBeenCalledOnce()
+      consoleError.mockRestore()
+    })
+
+    it('does not invoke consent for any non-installed outcome', async () => {
+      const consent = vi.fn(async () => true)
+      const broker = fakeBroker()
+      const loader = fakeLoader({ outcome: 'rejected', reason: 'malformed manifest' })
+
+      await installFromHint({ broker, loader, consent }, APP, APP)
+
+      expect(consent).not.toHaveBeenCalled()
+    })
+
+    it('omitting deps.consent entirely still installs an app declaring no capabilities, unchanged from before this lane', async () => {
+      const broker = fakeBroker()
+      const loader = fakeLoader(installedResult(manifestWith()))
+
+      const result = await installFromHint({ broker, loader }, APP, APP)
+
+      expect(result.outcome).toBe('installed')
+    })
+
+    it('omitting deps.consent fails closed -- grants nothing, never throws -- for a manifest that does declare capabilities', async () => {
+      const calls: BrokerCall[] = []
+      const broker = fakeBroker({ grants: [] }, calls)
+      const loader = fakeLoader(installedResult(manifestWithCapabilities()))
+
+      const result = await installFromHint({ broker, loader }, APP, APP)
+
+      expect(result.outcome).toBe('installed')
+      expect(calls.some((call) => call.method === 'grant')).toBe(false)
+    })
   })
 })

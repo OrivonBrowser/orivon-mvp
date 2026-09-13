@@ -6,49 +6,66 @@ import { describe, expect, it, vi } from 'vitest'
 vi.mock('electron', () => ({ ipcMain: { on: vi.fn() } }))
 
 const { manifestHintSubsystem } = await import('../manifest-hint.js')
-const { createSubsystemContext, publishBroker, publishLoader } = await import('../registry.js')
-const { stubBroker } = await import('../../broker/transport/tests/ipc.test-helpers.js')
+const { createSubsystemContext, publishInstallApp } = await import('../registry.js')
 
 import type { App } from 'electron'
-import type { Broker } from '../../broker/broker-contracts.js'
-import type { Loader } from '../../loader/index.js'
+import type { LoadResult } from '../../loader/index.js'
 
 const fakeApp = {} as unknown as App
-const fakeLoaderInstance: Loader = { load: async () => ({ outcome: 'rejected', reason: 'unused' }) }
+const REJECTED: LoadResult = { outcome: 'rejected', reason: 'unused' }
+
+async function ipcOnSpy (): Promise<ReturnType<typeof vi.fn>> {
+  const { ipcMain } = await import('electron') as unknown as { ipcMain: { on: ReturnType<typeof vi.fn> } }
+  ipcMain.on.mockClear()
+  return ipcMain.on
+}
 
 describe('manifestHintSubsystem', () => {
-  it('throws when ctx.broker is undefined -- must be listed after brokerIpcSubsystem', () => {
+  // It reads ONLY ctx.installApp now, not ctx.broker/ctx.loader. That is the
+  // point: appInstallSubsystem publishes one install entry point already
+  // closing over the real consent prompt, so this subsystem cannot assemble
+  // an install path that skips consent (d-0025). See manifest-hint.ts's own
+  // doc on createManifestHintListener for the defect that shape prevents.
+  it('does not throw, and registers nothing, when ctx.installApp is undefined', async () => {
     const ctx = createSubsystemContext(fakeApp)
-    expect(() => manifestHintSubsystem.afterReady?.(ctx)).toThrow(/ctx\.broker/)
-  })
-
-  // src/loader/README.md and this lane's own brief: loaderSubsystem is NOT
-  // critical, so ctx.loader may legitimately be undefined -- that means
-  // "the discovery trigger is disabled this run", never a thrown error.
-  it('does not throw, and registers nothing, when ctx.loader is undefined', async () => {
-    const ctx = createSubsystemContext(fakeApp)
-    publishBroker(ctx, stubBroker([]) as unknown as Broker)
-    const { ipcMain } = await import('electron') as unknown as { ipcMain: { on: ReturnType<typeof vi.fn> } }
-    ipcMain.on.mockClear()
+    const on = await ipcOnSpy()
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
     await manifestHintSubsystem.afterReady?.(ctx)
 
     expect(warnSpy).toHaveBeenCalled()
-    expect(ipcMain.on).not.toHaveBeenCalled()
+    expect(on).not.toHaveBeenCalled()
     warnSpy.mockRestore()
   })
 
-  it('registers the ipc listener once both ctx.broker and ctx.loader are present', async () => {
+  it('registers the ipc listener once ctx.installApp is published', async () => {
     const ctx = createSubsystemContext(fakeApp)
-    publishBroker(ctx, stubBroker([]) as unknown as Broker)
-    publishLoader(ctx, fakeLoaderInstance)
-    const { ipcMain } = await import('electron') as unknown as { ipcMain: { on: ReturnType<typeof vi.fn> } }
-    ipcMain.on.mockClear()
+    publishInstallApp(ctx, async () => REJECTED)
+    const on = await ipcOnSpy()
 
     await manifestHintSubsystem.afterReady?.(ctx)
 
-    expect(ipcMain.on).toHaveBeenCalled()
+    expect(on).toHaveBeenCalled()
+  })
+
+  // The regression this shape exists to prevent: the listener must invoke
+  // the PUBLISHED install function -- the one carrying consent -- and not a
+  // path of its own. Asserted by driving the registered handler and checking
+  // the published function is what ran.
+  it('routes a hint through the published install function, not a locally built one', async () => {
+    const ctx = createSubsystemContext(fakeApp)
+    const installApp = vi.fn(async () => REJECTED)
+    publishInstallApp(ctx, installApp)
+    const on = await ipcOnSpy()
+
+    await manifestHintSubsystem.afterReady?.(ctx)
+    const firstCall = on.mock.calls[0]
+    expect(firstCall).toBeDefined()
+    const handler = firstCall?.[1] as (event: unknown, hintedUrl: unknown) => void
+    handler({ senderFrame: { url: 'https://app.example/page', origin: 'https://app.example' } }, 'https://app.example/manifest.json')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(installApp).toHaveBeenCalledWith('https://app.example', 'https://app.example/manifest.json')
   })
 
   it('is not marked critical -- an unwired discovery trigger must never take the real browser down', () => {

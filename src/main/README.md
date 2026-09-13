@@ -237,3 +237,48 @@ dependency floor instead.
   "not a name you typed" beyond the contrast already created by the very next line (`Claims to
   be "<name>"`). A dedicated label (`Website: ...`) was considered; left out as presentation
   polish outside this lane's security floor, not as an oversight.
+
+**[`install-consent.ts`](install-consent.ts) — "once per origin, ever" (A139) is derived from the
+grant ledger's own hydration, not tracked as a second piece of state.** `requestInstallConsent`
+could have kept its own persisted "was this origin ever asked" flag. It does not, because
+`GrantLedger.registerApp`'s existing `grantsHydrated` mechanism already restores every still-valid
+persisted grant into the live ledger, checked against the manifest `app-install.ts` just fetched,
+before this function ever runs -- so an origin accepted on any earlier visit, this session or a
+past one, already holds a live grant for its declared capabilities by the time this checks
+`broker.app.grants(origin)`. A second flag recording the same fact would be exactly the Rule-3
+duplicate this codebase keeps naming and then finding later.
+
+**The one case that derivation cannot cover, named rather than quietly accepted: a fully DECLINED
+visit.** All-or-nothing (`A138`) means declining creates no grant at all, and the ledger has no
+concept of "asked, and the answer was no" -- only of what was actually granted. So a declined
+origin looks identical to a never-visited one on the next visit, and is asked again. Filed as
+`A145` (`docs/open-questions.md`) rather than fixed here: closing it needs either a new persisted
+"decision made" marker (a real addition to `LedgerStorage`'s shape, which touches every
+implementation of it) or an owner decision that repeated friction for a repeatedly-declined app is
+acceptable, or even desirable -- neither is this lane's call to make alone.
+
+**[`app-install.ts`](app-install.ts) — what "before the app's own scripts run" actually means
+here, stated precisely because the two readings differ.** `requestInstallConsent` is awaited
+inside `installFromHint`'s own `'installed'` branch, so the dialog is fully resolved -- shown,
+answered, every accepted capability granted -- before `installFromHint`'s promise ever resolves.
+That is the strongest guarantee available here: nothing downstream of this function's return can
+observe an unconsented app. **It is NOT "before this page's scripts execute", and the difference
+matters more than it first looks** -- see `open-questions.md` A146.
+
+The production caller now exists ([`manifest-hint.ts`](manifest-hint.ts), the discovery trigger).
+It fires when the page's own delivered HTML is parsed, which means **the page is already running
+by the time consent is asked.** An app's first-visit script can therefore call a capability while
+the dialog is still on screen, and get `'denied'` -- which is precisely the race owner decision
+`d-0025` exists to remove. On every later visit there is no race at all: the grant is already
+held, so the app starts with a decided answer. The gap is first visit only, and it is real.
+
+Closing it properly means holding the page before its scripts run, which is a change to how a
+tab navigates rather than anything this file can do. Filed rather than improvised.
+
+**[`app-install-subsystem.ts`](app-install-subsystem.ts) — published even though nothing calls it,
+same honest state as `request-grant-subsystem.ts`'s own `ctx.requestGrant`.** Building the
+subsystem now, rather than leaving it for S4-2 to construct its own `AppInstallDeps`, keeps one
+definition of "how installFromHint is wired for real" (the broker, the loader, and the real
+dialog together) instead of two call sites that could quietly drift -- e.g. one remembering to
+pass `consent` and one forgetting it, silently degrading to "every app installs with nothing
+granted" with no error anywhere.
