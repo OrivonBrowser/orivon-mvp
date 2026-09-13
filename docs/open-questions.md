@@ -5362,3 +5362,119 @@ own real-Electron, real-redirecting-server proof of `redirect: 'error'` stays ex
 valuable as it already was for the one thing only a real process can prove (a real
 `net.fetch`/`Duplex` rejection on a real redirect). The new unit suite is a structural backstop
 underneath it, not a replacement for it.
+
+### A153 -- a grant could be committed against a manifest the consent dialog never actually reviewed **[RESOLVED 2026-09-14 -- stream/main-11-grant-revalidation]**
+
+**Raised 2026-09-14**, `ADV-fix` lane, an adversarial review of the step-4 app-loader landing,
+confirmed by the conductor reading `src/main/request-grant.ts` directly.
+
+**The gap.** `requestGrant` fetched the manifest, ran `decideGrantRequest`, then awaited
+`consent(...)` -- a real native dialog, up to 120 seconds (`A140`) -- and only then called
+`broker.grant()`, using the decision computed BEFORE the dialog. Nothing re-checked the manifest
+between computing that decision and committing it. Meanwhile `installFromHint`
+(`./app-install.ts`) can re-register a narrower, or entirely different, manifest for the SAME
+origin at any point -- a page can re-trigger its own `<link rel="orivon-manifest">` hint by
+reloading itself (`src/preload/manifest-hint.ts`'s own "first hint wins per navigation" doc), and
+`installFromHint` is serialised per origin via `withOriginQueue` while `requestGrant` was not. So
+a grant dialog open against one manifest could commit after a different manifest was already in
+force, and `GrantLedger.grant()` writes whatever patterns it is handed unconditionally -- the
+manifest invariant (`docs/architecture/capability-api.md` design rule 4: "an app can never obtain
+a capability absent from its manifest") was enforced only by the caller, only once, before the
+dialog.
+
+**Impact.** An origin could end up holding a grant wider than, or simply disagreeing with, its
+currently-registered manifest, and every later surface that reads the manifest (the permissions
+list, the update decision in `update.ts`) would disagree with the authority actually in force.
+
+> **Resolved 2026-09-14, stream/main-11-grant-revalidation.** `requestGrant` re-reads the
+> manifest and re-runs `decideGrantRequest` -- against the SAME patterns the person already saw
+> and accepted (`decision.patterns`), never a freshly recomputed request -- immediately after
+> `consent()` resolves and before `broker.grant()` runs. If the manifest in force right now no
+> longer allows exactly what was approved, this fails closed: no grant, `requestGrant` resolves
+> `false`. Proven with a test that fails before the fix:
+> `src/main/tests/request-grant.test.ts`'s "re-reads the manifest after consent and fails closed
+> if it no longer allows what was approved" swaps the manifest a stub `broker.app.manifest`
+> returns between the pre-dialog read and the post-consent re-read.
+>
+> **`requestGrant` was deliberately NOT also serialised through `withOriginQueue`.**
+> Re-validation alone already closes the security hole -- a grant can never commit against a
+> stale manifest, full stop -- and a queue would only additionally change TIMING: two calls for
+> one origin would no longer be allowed to overlap at all. The cost of that is concrete and worse
+> for a real person: an app install triggered by a manifest hint (`installFromHint`, already
+> wrapped in `withOriginQueue`) can itself show a dialog and wait up to 120 seconds, so queuing
+> `requestGrant` behind it would make an unrelated grant request wait out someone else's decision
+> before its own dialog even opens. AI recommendation, not an owner decision -- flagging in case
+> the owner weighs the timing question differently once a real person's install/grant dialogs
+> actually overlap.
+
+### A156 -- accepting a capability-widening update revoked live handles for capabilities the update never touched **[RESOLVED 2026-09-14 -- stream/main-11-grant-revalidation]**
+
+**Raised 2026-09-14**, `ADV-fix` lane, adversarial review, confirmed by the conductor reading
+`src/main/update-outcomes.ts` and `src/broker/index.ts` directly.
+
+**The gap.** `driveLoadResult`'s `needs-capability-prompt` branch called `grantDeclared`, which
+looped over EVERY capability in `Object.keys(result.requestedPatterns)` -- the manifest's whole
+declared set, not the delta the update actually asked for -- and called `broker.grant()` for
+every one of them, unconditionally, once the person accepted. `broker.grant()`
+(`src/broker/index.ts`) always mints a fresh `GrantId` and then `await handleTable.revoke(key,
+replaced.id)`, tearing down every live handle under whatever grant it replaces. That cascade is
+correct and deliberately tested for a REAL authority change (`A84`); it was never bounded to
+capabilities that actually changed.
+
+**Concrete result, in plain terms.** An app already holding `tcp.connect` with an open, streaming
+socket ships an update that only adds `fs`. The person reads a dialog that names file access,
+accepts it, and their live, completely unrelated socket is torn down with `'revoked'` -- something
+they had no way to anticipate from what the dialog told them.
+
+**Why the existing suite could not see it.** `update-outcomes.test.ts` stubbed `broker.grant`
+entirely (never inspecting how many times, or for which capabilities, it fired), and every
+capability-prompt test used a manifest declaring exactly one capability -- so "already-held,
+unrelated, unchanged" was structurally never exercised.
+
+> **Resolved 2026-09-14, stream/main-11-grant-revalidation.** Extracted `grantChangedCapabilities`
+> (`src/main/grant-changed-capabilities.ts`, shared with A155's fix below) -- it reads the
+> origin's currently-held grants first, and skips `broker.grant()` for any capability whose
+> decided patterns are IDENTICAL (order-independent) to what is already held. A capability that
+> is new, or whose pattern set genuinely narrowed or widened, is still granted -- and still
+> triggers the teardown cascade, which is correct for those. Proven with three tests that fail
+> before the fix, in `src/main/tests/update-outcomes.test.ts`: unchanged-and-held is skipped
+> while a genuinely new capability in the same update still grants; the same two patterns in
+> reversed order are not mistaken for a change; a genuinely narrowed pattern set still re-grants.
+
+### A157 -- install-time consent could be permanently skipped via a second door to a grant **[PARTIALLY RESOLVED 2026-09-14 -- stream/main-11-grant-revalidation]**
+
+**Raised 2026-09-14**, `ADV-fix` lane, adversarial review, confirmed by the conductor reading
+`src/main/install-consent.ts` and `src/main/app-install.ts` directly.
+
+**The gap.** `requestInstallConsent`'s "already asked" derivation (`A139`) skipped the WHOLE
+all-or-nothing dialog -- for every capability the manifest declares, not just the ones already
+held -- the moment the origin held a live grant for ANY declared capability:
+`held.some((existing) => capabilities.includes(existing.capability))`. That is sound only if this
+function is the sole door to a grant. It is not: `app.requestGrant` (`./request-grant.ts`) is a
+second one, and `registerApp` runs BEFORE `requestInstallConsent` in `app-install.ts`'s own
+`finishInstall` -- so a page already running (`A146`: install-time consent is asked after the
+page's own scripts start) can call `app.requestGrant` for exactly ONE of its declared capabilities
+in that window, and permanently suppress the dialog for every OTHER capability it ever declares.
+The result: the app silently never receives the rest of what it asked for, the person is never
+shown the dialog, and nothing on disk or in memory distinguishes that state from "never
+installed" -- the same underlying gap `A145` already named for the declined-visit case, from a
+different door.
+
+> **Partially resolved 2026-09-14, stream/main-11-grant-revalidation.** The bound is now
+> `capabilities.every(...)`, not `.some(...)` -- the dialog is skipped only once nothing declared
+> is left unheld, so a single out-of-band grant for one capability no longer masks the rest. The
+> final grant loop was also moved to the shared `grantChangedCapabilities` (`A154`), so an
+> already-held, unchanged capability inside an otherwise-shown dialog is not re-granted either --
+> reusing that fix rather than reintroducing its exact bug on this second call site. Proven with a
+> test that fails before the fix: `src/main/tests/install-consent.test.ts`'s "A155: still prompts
+> when only SOME declared capabilities are already held".
+>
+> **What this does NOT fix, and is parked rather than decided here.** `.every` is still an
+> INFERENCE from held grants, not a record of "we asked, and here is the answer" -- the same
+> honest gap `A145` already named for the decline case. It is the best narrowing available
+> without adding new persisted state: closing it for real needs either a new persisted "consent
+> decision" marker in `LedgerStorage` (touching every implementation of it, exactly the
+> real-engineering option `A145` already declined to choose alone) or an owner decision that this
+> residual inference is an acceptable floor. Not this lane's call -- parked alongside `A145` for
+> whoever settles both at once, since they are now provably the same shape from two different
+> doors.

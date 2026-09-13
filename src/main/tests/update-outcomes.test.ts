@@ -4,6 +4,7 @@ import type { UpdateOutcomeDeps } from '../update-outcomes.js'
 import { APP } from '../../broker/transport/tests/ipc.test-helpers.js'
 import type { BrokerCall } from '../../broker/transport/tests/ipc.test-helpers.js'
 import type { LoadContext, LoadNeedsCapabilityPrompt, LoadNeedsReconsent, LoadNeedsRollbackChoice, LoadResult } from '../../loader/index.js'
+import type { Grant, Manifest } from '../../contracts/index.js'
 import { fakeBroker, fakeLoader, manifestWith, manifestWithCapabilities } from './app-install.test-helpers.js'
 
 // S4-5 (docs/planning/step-4-app-loader-plan.md): driveLoadResult drives
@@ -214,6 +215,90 @@ describe('driveLoadResult: needs-capability-prompt', () => {
     // refuses it outright -- no grant call for it, however requestedPatterns
     // was built.
     expect(grantCalls.some((call) => (call.args as { capability: string }).capability === 'fs')).toBe(false)
+  })
+
+  // Finding 2 (A156, docs/open-questions.md): grantDeclared used to call
+  // broker.grant() for EVERY capability in requestedPatterns unconditionally
+  // -- the manifest's whole declared set, not the delta. broker.grant()
+  // mints a fresh GrantId and tears down every live handle under whatever
+  // grant it replaces (broker/index.ts's own grant()), so re-granting a
+  // capability whose authority did not actually change kills a real,
+  // unrelated, in-progress connection for no reason the person could see:
+  // they accepted a dialog about fs, and their open tcp.connect socket died.
+  it('does not re-grant a capability the origin already holds unchanged, but still grants a genuinely new one', async () => {
+    const calls: BrokerCall[] = []
+    const manifest: Manifest = {
+      orivonApiVersion: 0,
+      id: 'app.test',
+      name: 'Test',
+      version: '1.0.0',
+      entry: 'index.html',
+      capabilities: { net: { tcp: { connect: ['api.example.com:443'] } }, fs: { quotaBytes: 1024 } }
+    }
+    const requestedPatterns = { 'tcp.connect': ['api.example.com:443'], fs: [] } as const
+    const pending = capabilityPromptResult(manifest, requestedPatterns)
+    const installed: LoadResult = { outcome: 'installed', canonicalOrigin: APP, manifest, pin: { schema: 1, origin: APP, bundleHash: pending.tree.root, assets: [], version: manifest.version, pinnedAt: 0 } }
+    const loader = fakeLoader({ outcome: 'rejected', reason: 'unused' }, { installFetched: vi.fn(async () => installed) })
+    const capabilityPrompt = vi.fn(async () => true)
+    // Already held, with EXACTLY the manifest's own declared pattern -- an
+    // existing, live grant this update never touches.
+    const existingGrant: Grant = { id: 'g0', origin: APP, capability: 'tcp.connect', patterns: ['api.example.com:443'], grantedAt: 0 }
+
+    await driveLoadResult({ broker: fakeBroker({ grants: [existingGrant] }, calls), loader, capabilityPrompt }, pending, NO_GRANTS)
+
+    const grantCalls = calls.filter((call) => call.method === 'grant')
+    expect(grantCalls.some((call) => (call.args as { capability: string }).capability === 'tcp.connect')).toBe(false)
+    // fs is a genuinely new capability and must still be granted.
+    expect(grantCalls).toContainEqual({ method: 'grant', origin: APP, args: { capability: 'fs', patterns: [] } })
+  })
+
+  it('treats the same patterns in a different order as unchanged -- no re-grant', async () => {
+    const calls: BrokerCall[] = []
+    const manifest: Manifest = {
+      orivonApiVersion: 0,
+      id: 'app.test',
+      name: 'Test',
+      version: '1.0.0',
+      entry: 'index.html',
+      capabilities: { net: { tcp: { connect: ['a.example.com:443', 'b.example.com:443'] } } }
+    }
+    const requestedPatterns = { 'tcp.connect': ['a.example.com:443', 'b.example.com:443'] } as const
+    const pending = capabilityPromptResult(manifest, requestedPatterns)
+    const installed: LoadResult = { outcome: 'installed', canonicalOrigin: APP, manifest, pin: { schema: 1, origin: APP, bundleHash: pending.tree.root, assets: [], version: manifest.version, pinnedAt: 0 } }
+    const loader = fakeLoader({ outcome: 'rejected', reason: 'unused' }, { installFetched: vi.fn(async () => installed) })
+    const capabilityPrompt = vi.fn(async () => true)
+    // Same two patterns, reverse order -- must still read as "unchanged", not
+    // as a widening that happens to net out to the same set.
+    const existingGrant: Grant = { id: 'g0', origin: APP, capability: 'tcp.connect', patterns: ['b.example.com:443', 'a.example.com:443'], grantedAt: 0 }
+
+    await driveLoadResult({ broker: fakeBroker({ grants: [existingGrant] }, calls), loader, capabilityPrompt }, pending, NO_GRANTS)
+
+    expect(calls.some((call) => call.method === 'grant')).toBe(false)
+  })
+
+  it('still re-grants a capability whose pattern set actually narrowed', async () => {
+    const calls: BrokerCall[] = []
+    const manifest: Manifest = {
+      orivonApiVersion: 0,
+      id: 'app.test',
+      name: 'Test',
+      version: '1.0.0',
+      entry: 'index.html',
+      capabilities: { net: { tcp: { connect: ['a.example.com:443'] } } }
+    }
+    const requestedPatterns = { 'tcp.connect': ['a.example.com:443'] } as const
+    const pending = capabilityPromptResult(manifest, requestedPatterns)
+    const installed: LoadResult = { outcome: 'installed', canonicalOrigin: APP, manifest, pin: { schema: 1, origin: APP, bundleHash: pending.tree.root, assets: [], version: manifest.version, pinnedAt: 0 } }
+    const loader = fakeLoader({ outcome: 'rejected', reason: 'unused' }, { installFetched: vi.fn(async () => installed) })
+    const capabilityPrompt = vi.fn(async () => true)
+    // The origin previously held BOTH hosts; the manifest now declares only
+    // one -- a genuine authority change, which must still re-grant (and
+    // therefore still tear down whatever the wider grant authorised).
+    const existingGrant: Grant = { id: 'g0', origin: APP, capability: 'tcp.connect', patterns: ['a.example.com:443', 'b.example.com:443'], grantedAt: 0 }
+
+    await driveLoadResult({ broker: fakeBroker({ grants: [existingGrant] }, calls), loader, capabilityPrompt }, pending, NO_GRANTS)
+
+    expect(calls).toContainEqual({ method: 'grant', origin: APP, args: { capability: 'tcp.connect', patterns: ['a.example.com:443'] } })
   })
 })
 

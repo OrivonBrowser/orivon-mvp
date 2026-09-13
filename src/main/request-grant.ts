@@ -70,6 +70,26 @@ export async function requestGrant (
   const accepted = await consent(origin, request.capability, decision.patterns)
   if (!accepted) return false
 
-  await broker.grant(origin, request.capability, decision.patterns)
+  // A153 (docs/open-questions.md): `consent` above can await a real dialog
+  // for up to 120 seconds, and installFromHint (./app-install.ts) can
+  // re-register a narrower -- or entirely different -- manifest for this
+  // same origin at any point while it is open, via a page re-triggering its
+  // own <link rel="orivon-manifest"> hint by reloading itself. `decision`
+  // was computed against whatever the manifest said BEFORE the dialog,
+  // so it can no longer be trusted at commit time. Re-running
+  // decideGrantRequest against a freshly read manifest, with the EXACT
+  // patterns the person already saw and accepted as the request, answers
+  // "does the manifest in force right now still allow what was approved" --
+  // fail closed rather than commit a decision the current manifest disowns.
+  let currentManifest
+  try {
+    currentManifest = await broker.app.manifest(origin)
+  } catch {
+    return false
+  }
+  const revalidated = decideGrantRequest(currentManifest, request.capability, decision.patterns)
+  if (!revalidated.allowed) return false
+
+  await broker.grant(origin, request.capability, revalidated.patterns)
   return true
 }
