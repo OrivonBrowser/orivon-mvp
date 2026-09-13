@@ -181,6 +181,20 @@ facts whoever does this needs to read first — including whether `onHeadersRece
 all for the `protocol.handle`-served cached bundle (ADR-0007), which is unconfirmed anywhere in
 the corpus and needs a live `context7` check before writing the wiring.
 
+> **Corrected 2026-09-13.** `onHeadersReceived` does not fire for a `protocol.handle` response
+> in Electron 44 — confirmed live during this step, not merely "unconfirmed" as above (`A110`).
+> The CSP is set on the handler's own `Response` instead, computed fresh per request so a grant
+> change narrows or widens the very next request without the app needing to be reinstalled.
+> Built; see `src/loader/README.md` and `src/broker/policy/connect-src.ts`.
+
+> **Status note, 2026-09-13.** Every deliverable this step names is now built and reachable from
+> a real page: discovery, fetch, hash-pinning, cache, the update decision, the consent dialog,
+> and the CSP wiring above. See `docs/planning/compatibility-matrix.md` for the cell-by-cell
+> detail and `docs/planning/step-4-app-loader-plan.md` for the work log this pass followed. One
+> design change since this paragraph was first written: the consent dialog now fires once,
+> before the app's own code runs, for its whole declared capability set — not deferred to first
+> capability use, as originally specified. See `ADR-0012`'s own 2026-09-13 amendment.
+
 > **Correction, 2026-08-26.** This item previously said *"pin the publisher key and record
 > per-version hashes; silent update on same key + unchanged capabilities (`ADR-0005`
 > amendment)"* — the publisher-key continuity amendment. `ADR-0005`'s **evening** amendment

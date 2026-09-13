@@ -44,6 +44,24 @@
 > 2026-09-03; nothing keeps it in sync automatically, so it can go stale silently the next time
 > the code it describes changes — re-check before trusting it.
 >
+> **Correction, 2026-09-13.** That warning has since come true: several methods this header
+> still lists above as unwired (`net.connectSecure`, `fs.readFileSync`, most of `fs.*`) were
+> built between 2026-09-07 and 2026-09-10. **This document is no longer where per-method status
+> is tracked cell by cell — `docs/planning/compatibility-matrix.md` is**, and it is re-derived
+> from the tree far more often than this header is re-verified. Treat the paragraphs above as
+> history for anything except the two points this correction updates directly:
+>
+> - **`app.requestGrant` is now reachable from a page**, wired through
+>   `src/broker/transport/ipc.ts`'s control dispatch to the real consent dialog
+>   (`src/main/request-grant.ts`), the same as every other method named above.
+> - **"No origin holds a `udp.bind` grant yet, because nothing grants anything until build step
+>   4's permission prompt exists" is no longer true of any capability.** Build step 4 (the app
+>   loader) now registers an app from a real page's own discovery hint, asks once for its whole
+>   declared capability set before the app's own code runs, and persists what is accepted — so a
+>   real page, installed through the real flow, can hold a real grant today. One gap, bounded to
+>   a first visit: the app's own scripts can start running before that one dialog resolves, so an
+>   early call can still see `'denied'` before consent settles (`docs/open-questions.md` A146).
+>
 > Per ADR-0002 this is the highest-care artefact in the repository. The Electron shell is
 > disposable; **this interface is not.** Every app ever written for Orivon codes against it,
 > and it must survive the swap from Node → Wasmtime → Chromium/Mojo underneath.

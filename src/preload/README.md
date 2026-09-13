@@ -13,7 +13,10 @@ isolated-world per-socket state machines for TCP and UDP, both Electron-free), a
 narrowest and most security-critical surface in the repository.
 
 **What it depends on.** `electron` (via `require` — these are CommonJS),
-[`src/contracts/`](../contracts/) for types.
+[`src/contracts/`](../contracts/) for types, and (as of A151, `expose-shim-globals.ts` only)
+[`src/shim/globals.ts`](../shim/globals.ts) — the one shim file with no `electron` import and no
+free identifier of its own, so it is safe to run inside a preload and to hand to
+`contextBridge.executeInMainWorld` unchanged.
 
 **What it must never import.** [`src/broker/`](../broker/) — a preload runs in the renderer
 process, and importing broker LOGIC there would either fail or, worse, appear to work. **One
@@ -34,6 +37,7 @@ neutral place a channel name shared across this trust boundary can live — `she
 | `shell.ts` | **only** the chrome view | Tab commands |
 | `newtab.ts` | **only** a genuinely fresh tab (`src/main/tabs.ts`'s `createTab()`, no `url` argument) | Read-only bookmark access, navigate-this-tab-only — but only after checking `location.href` against its own expected URL first, since (unlike the chrome view) a dashboard tab is ordinary and navigable; falls back to the SAME `exposeOrivon()` `app.ts` uses otherwise, not a second copy |
 | `fetch-route.ts` | `app.ts` and `newtab.ts`'s fallback branch, via `exposeFetchRoute()` | ADR-0017: routes `window.fetch` through `orivon.net` for a registered app's granted hosts, when the tab's `--orivon-app-tab` flag says so (`src/main/tab-view.ts`'s `appTabArgsFor`) -- a plain website keeps native `fetch`, untouched |
+| `expose-shim-globals.ts` | `app.ts` and `newtab.ts`'s fallback branch, via `exposeShimGlobals()` | A151: installs `src/shim/globals.ts`'s `process`/`setImmediate`/`clearImmediate` into the main world, gated on the SAME `--orivon-app-tab` flag `fetch-route.ts` reads -- an ordinary tab never receives shimmed Node globals just because it loaded before this preload ran |
 
 **Preload builds are isolated per entry (`electron.vite.config.ts`'s `isolatedEntries: true`).**
 Found 2026-08-28: the moment a second preload (`newtab.ts`) shared a local import with `shell.ts`
@@ -130,6 +134,10 @@ check inside the main world (ADR-0017, queue item 3.4):**
   An origin registered AFTER a tab already showing it was created keeps that tab's ORIGINAL
   answer until the next navigation swaps in a fresh view -- the same lifetime `additionalArguments`
   already has for every other flag on this list, not a new gap this feature introduces.
+  `expose-shim-globals.ts` (A151) reads the identical flag for the identical reason, and inherits
+  this exact limitation: a page discovered and installed during its OWN first visit does not get
+  shimmed Node globals until the next navigation to it, once `appTabArgsFor` can answer `true` at
+  `WebContentsView` construction.
 
 **`fetch-route.ts`'s known divergences from a real browser's `fetch()`** -- ADR-0017's own
 Consequences section requires these be written down plainly, since "a silent divergence in a web

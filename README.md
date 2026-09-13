@@ -20,11 +20,13 @@ native helper. Paste a magnet link, approve one prompt, watch the video.
 > Node shim. Orivon can hold per-app permissions and enforce them over network, TLS and
 > filesystem access, and it can run Node programs inside a tab.
 >
-> **A page can now ask for a permission** — `window.orivon.app.requestGrant` reaches the real
-> prompt, policy and storage. Nothing is registered as an installed app yet, though: discovering
-> an app from a page is a separate, still-unwired step, so nothing is actually granted in
-> practice today. That, and the rest of the app loader, is why the torrent app does not run yet.
-> There is no packaged build, no installer, and no release. See
+> **Build step 4, the app loader, now runs end to end.** Visiting a page that declares itself an
+> app triggers discovery, fetch, hash-pinning and caching automatically; a person is asked once,
+> in plain words, what the app may do; accepting installs it, and later visits are served from
+> local cache with the network unplugged. A first visit can still see an early permission check
+> denied before that one-time dialog has been answered — bounded to the first visit only, and
+> not yet closed. There is no packaged build, no installer, and no release, and the torrent app
+> itself has not been built yet. See
 > [`docs/planning/build-plan.md`](docs/planning/build-plan.md) for the order of work,
 > [`docs/planning/compatibility-matrix.md`](docs/planning/compatibility-matrix.md) for what
 > works cell by cell, and [`CHANGELOG.md`](CHANGELOG.md) for what has landed.
@@ -111,7 +113,7 @@ Strictly dependency-ordered; each step needs the one before it.
 | 1 | **Shell** — tabs, omnibox, back/forward, window chrome | **done** |
 | 2 | **Capability broker** — manifests, grants, per-origin enforcement | **done** — including per-app session partitions and `net.listen`; one gap, `net.listen` is not reachable from a page ([A114](docs/open-questions.md)) |
 | 3 | **Node shim** — `net`, `dgram`, `fs` over `orivon.*` | **done** — plus `http`/`https` and the core polyfills; `net.createServer` and `dns` refuse loudly, pending A114 and A107 |
-| 4 | **App loader** — manifest discovery, fetch, cache, hash-pinning | **in progress** — loader, grant prompt and permissions list built; `app.requestGrant` now reaches a page. Discovering an app from a page, the folder picker and the identity prompt are unbuilt |
+| 4 | **App loader** — manifest discovery, fetch, cache, hash-pinning | **done** — discovery, fetch, caching, hash-pinning, the update decision and the served bundle's CSP are all reachable from a real page behind a real, one-time consent dialog. The folder picker (`fs.userSelected`) is a separate, still-unbuilt capability — see the compatibility matrix |
 | 5 | **Torrent app** — the flagship, and the demo clip | |
 | 6 | **Trust indicator** — what an app actually did, not a grade | groundwork in [`src/trust/`](src/trust/) |
 | 7 | **Nostr identity** — `window.nostr` across every client | `id.publicKey`/`sign` built; `window.nostr` blocked on the identity prompt |
@@ -179,6 +181,10 @@ Stated here rather than discovered later. All of these are real and none is a bu
 - **Local peer discovery is unavailable.** The manifest grammar has no multicast bind.
 - **Text typed in the address bar that isn't an address goes to DuckDuckGo.** Your search text
   leaves your machine. A privacy-branded browser should say that out loud rather than bury it.
+- **A first-ever visit to an app can see an early permission check answered "no" before you've
+  answered the one-time install prompt.** The app's own code can start running before that
+  dialog resolves. Every visit after the first is unaffected — the grant is already held, and
+  nothing is asked again ([A146](docs/open-questions.md)).
 
 ## Licence
 
