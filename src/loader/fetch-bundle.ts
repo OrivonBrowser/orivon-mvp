@@ -62,8 +62,13 @@ function resolveUrl (path: string, base: string): string | null {
  * own encoding walks `entry` one path segment at a time, a different
  * algorithm from resolving the whole string as a relative reference here --
  * a string that survives one is not proven to survive the other.
+ *
+ * Exported for serve.ts's use (Rule 3): it needs this identical
+ * `manifest.entry` -> canonical-path resolution to decide what a request
+ * for `/` serves, and a second implementation of it is exactly the kind of
+ * near-miss Rule 3 exists to prevent.
  */
-function entryCanonicalPath (canonicalOrigin: string, entry: string): string | null {
+export function entryCanonicalPath (canonicalOrigin: string, entry: string): string | null {
   const resolved = resolveUrl(entry, `${canonicalOrigin}/`)
   return resolved === null ? null : canonicalAssetPath(resolved)
 }

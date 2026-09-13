@@ -9,7 +9,9 @@
 
 import { vi } from 'vitest'
 import type { Resolver } from '../../broker/policy/connect.js'
+import { parsePinRecord } from '../../broker/policy/pin.js'
 import type { PinRecord } from '../../broker/policy/pin.js'
+import { appRootDirectoryName } from '../storage.js'
 import type { Fetch, FetchResponse } from '../fetch-budget.js'
 import type { LoaderStorage } from '../storage.js'
 
@@ -166,6 +168,20 @@ export function memoryStorage (): MemoryStorage {
       for (const path of forOrigin.keys()) {
         if (!keepSet.has(path)) forOrigin.delete(path)
       }
+    }),
+    // The two serve.ts-era methods, added alongside src/loader/serve.ts --
+    // matching the SAME never-throws, undefined-on-anything-else contract
+    // node-storage.ts's real implementation follows (storage.ts's own doc).
+    readAsset: vi.fn(async (origin: string, path: string) => assets.get(origin)?.get(path)),
+    listPinnedOrigins: vi.fn(async () => {
+      const origins: string[] = []
+      for (const [origin, raw] of pins) {
+        const record = parsePinRecord(raw)
+        if (record !== null && appRootDirectoryName(record.origin) === appRootDirectoryName(origin)) {
+          origins.push(origin)
+        }
+      }
+      return origins
     })
   }
 }

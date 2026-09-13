@@ -73,6 +73,7 @@ describe('exposeOrivon -- P-F10: the fail-closed fallback covers BOTH "absent" a
     expect(name).toBe('orivon')
     expect(surface.net).toBeUndefined()
     expect(typeof (surface.app as Record<string, unknown>).manifest).toBe('function')
+    expect(typeof (surface.app as Record<string, unknown>).requestGrant).toBe('function')
     expect(typeof (surface.id as Record<string, unknown>).publicKey).toBe('function')
     expect(typeof (surface.id as Record<string, unknown>).sign).toBe('function')
     // ADR-0016's sync call is present even in the net-less fallback --
@@ -295,6 +296,37 @@ describe('exposeOrivon -- P-F11: end-to-end wiring smoke, through the real conte
 
     await expect(orivon.id.sign({ curve: 'P-256', payload: new Uint8Array(1) }))
       .rejects.toMatchObject({ code: 'denied' })
+  })
+
+  it('app.requestGrant round-trips through call() and installOrivon, with patterns present or omitted', async () => {
+    const target = installViaFakeMainWorld()
+    const seenEnvelopes: Array<{ method: string, payload: unknown }> = []
+    invoke.mockImplementation(async (_channel: string, envelope: { method: string, payload: unknown }) => {
+      seenEnvelopes.push({ method: envelope.method, payload: envelope.payload })
+      return okEnvelope(true)
+    })
+
+    exposeOrivon()
+    const orivon = target.orivon as {
+      app: { requestGrant: (request: { capability: string, patterns?: readonly string[] }) => Promise<boolean> }
+    }
+
+    expect(await orivon.app.requestGrant({ capability: 'tcp.connect', patterns: ['*:443'] })).toBe(true)
+    expect(await orivon.app.requestGrant({ capability: 'fs' })).toBe(true)
+    expect(seenEnvelopes).toEqual([
+      { method: 'app.requestGrant', payload: { capability: 'tcp.connect', patterns: ['*:443'] } },
+      { method: 'app.requestGrant', payload: { capability: 'fs' } }
+    ])
+  })
+
+  it('app.requestGrant resolves false rather than throwing when the broker declines (its own contract, not an error)', async () => {
+    const target = installViaFakeMainWorld()
+    invoke.mockResolvedValue(okEnvelope(false))
+
+    exposeOrivon()
+    const orivon = target.orivon as { app: { requestGrant: (request: { capability: string }) => Promise<boolean> } }
+
+    expect(await orivon.app.requestGrant({ capability: 'fs' })).toBe(false)
   })
 
   it('fs.mkdir/readdir/stat/rm/rename round-trip through call() and installOrivon with the real payload shape', async () => {
