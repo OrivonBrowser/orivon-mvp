@@ -187,4 +187,16 @@ describe('rejected before hashing (bundle structure, not path validity)', () => 
     }
     await expect(bundleHash(entries)).rejects.toMatchObject({ code: 'invalid' })
   })
+
+  // Direct coverage of bundleTree()'s own collision check, independent of
+  // fetch-bundle.ts -- see src/loader/README.md, Design notes, for why that
+  // file can no longer exercise this path itself (A141).
+  it('two paths that collide under case-folding', async () => {
+    const entries: BundleEntry[] = [
+      manifestEntry(),
+      { path: '/App.js', content: utf8('a') },
+      { path: '/app.js', content: utf8('b') }
+    ]
+    await expect(bundleHash(entries)).rejects.toMatchObject({ code: 'invalid' })
+  })
 })

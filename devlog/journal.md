@@ -58,6 +58,12 @@ Mark anything that must not leave the team draft as `(Keep private)`.
   acceptance -- proven against a live broker, not a mock. Not reachable from a page yet (that
   wiring belongs to a parallel lane this batch); still the plumbing that makes every other
   capability's `'denied'` eventually turn into something that actually works.
+- 2026-09-13: **The app loader could not install anything, at all -- fixed.** A same-day probe
+  found real Electron's `net.fetch` reports `response.url` as empty on every ordinary response,
+  which made the loader reject every fetch including honest ones. Fixed by trusting the requested
+  URL instead, safe because a redirect can never produce a Response to inspect in the first
+  place -- and, for the first time, a test now drives the real fetch adapter against a real
+  server in a real Electron process, not a stub.
 
 ### In my head
 
