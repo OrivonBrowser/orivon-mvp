@@ -14,6 +14,7 @@
 
 import { app } from 'electron'
 import { electronFetch, netFetch } from '../src/loader/electron-fetch.js'
+import { electronResolveHost } from '../src/loader/electron-resolve.js'
 import { fetchWithBudget } from '../src/loader/fetch-budget.js'
 import type { Fetch, FetchResponse } from '../src/loader/fetch-budget.js'
 
@@ -41,10 +42,17 @@ export interface BudgetProbeResult {
   readonly contentUtf8?: string
 }
 
+export interface ResolveHostProbeResult {
+  readonly threw: boolean
+  readonly errorMessage?: string
+  readonly addresses?: readonly string[]
+}
+
 export interface LoaderAdapterProbe {
   callElectronFetch: (url: string, pinnedAddresses: readonly string[]) => Promise<NetFetchProbeResult>
   callNetFetch: (url: string) => Promise<NetFetchProbeResult>
   callNetFetchThroughBudget: (url: string, assetCap: number) => Promise<BudgetProbeResult>
+  callResolveHost: (host: string) => Promise<ResolveHostProbeResult>
 }
 
 declare global {
@@ -99,6 +107,19 @@ async function callNetFetchThroughBudget (url: string, assetCap: number): Promis
   return { ok: true, contentUtf8: new TextDecoder('utf-8', { fatal: false }).decode(result.content) }
 }
 
+/** `electronResolveHost` directly -- A141's own gap, left open for this
+ * adapter's resolver half (Finding 2): every existing test injects a fake
+ * `Resolver`, so nothing here proved `net.resolveHost`'s real
+ * `endpoints[].address` shape actually maps the way electron-resolve.ts
+ * assumes, or what it does when Chromium's own resolver has no answer. */
+async function callResolveHost (host: string): Promise<ResolveHostProbeResult> {
+  try {
+    return { threw: false, addresses: await electronResolveHost(host) }
+  } catch (error) {
+    return { threw: true, errorMessage: error instanceof Error ? error.message : String(error) }
+  }
+}
+
 void app.whenReady().then(() => {
-  globalThis.__orivonLoaderAdapterProbe = { callElectronFetch, callNetFetch, callNetFetchThroughBudget }
+  globalThis.__orivonLoaderAdapterProbe = { callElectronFetch, callNetFetch, callNetFetchThroughBudget, callResolveHost }
 })
