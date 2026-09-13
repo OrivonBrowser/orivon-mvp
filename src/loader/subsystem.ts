@@ -2,15 +2,21 @@
 // file's header (append-only, one import + one array entry) and
 // docs/development/parallel-work.md.
 //
-// BUILDS AND PUBLISHES A REAL LOADER, and restores ADR-0007 cache-serving
-// for every app already pinned on this machine. NOTHING IN PRODUCTION CALLS
-// load() YET -- the discovery trigger (the `<link rel="orivon-manifest">`
-// hint listener, src/loader/README.md) is deliberately separate work, since
-// it is shell UI, not loader construction. `dev-serve.ts`'s hook is the one
-// e2e-only exception -- reachable only from Playwright's `evaluate()`,
-// never from a real page -- and it drives serving directly, not load(),
-// because install-origin.ts's https/public-unicast-only rule (A46) has no
-// exception a hermetic loopback e2e suite could ever satisfy.
+// BUILDS AND PUBLISHES A REAL LOADER, and restores ADR-0007 cache-serving for
+// every app already pinned on this machine.
+//
+// load() now has a real caller: the discovery trigger -- the `<link
+// rel="orivon-manifest">` hint listener -- is wired in src/main/
+// manifest-hint.ts, a separate subsystem listed after this one, since it is
+// shell UI rather than loader construction. It is the ONLY trigger: there is
+// no "Open as app" action, because a Web3site is the URL, not a thing a user
+// converts a website into (capability-api.md's 2026-09-03 correction).
+//
+// dev-serve.ts's hook is the one e2e-only exception -- reachable from
+// Playwright's evaluate(), never from a real page -- and it drives serving
+// directly rather than load(), because install-origin.ts's
+// https/public-unicast-only rule (A46) has no exception a hermetic loopback
+// suite could satisfy.
 //
 // MUST BE LISTED AFTER brokerIpcSubsystem in subsystems.ts (that file's own
 // header says so) -- not because this loader reads ctx.broker itself today,
