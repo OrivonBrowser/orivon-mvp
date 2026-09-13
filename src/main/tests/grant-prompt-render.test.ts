@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { describeCapabilityGrant, describeGrantRequest } from '../grant-prompt-render.js'
+import { describeCapabilityGrant, describeGrantRequest, formatOriginForDisplay } from '../grant-prompt-render.js'
 import { manifestWith } from '../../broker/tests/index.test-helpers.js'
 import type { CapabilityKind, Pattern } from '../../contracts/index.js'
 
@@ -259,5 +259,99 @@ describe('describeCapabilityGrant -- fs describes what a grant actually gives (A
 
     expect(summary.message.toLowerCase()).not.toMatch(/choose|pick/)
     expect(summary.message.toLowerCase()).toContain('private')
+  })
+})
+
+// A115: a subdomain-prefix confusable survives in the grant prompt's title.
+// `accounts.google.com.attacker.example` reads reassuringly left-to-right
+// while `attacker.example` -- the label that actually decides authority --
+// sits at the far right, where a narrow or truncated dialog is least
+// likely to show it. The test that matters is not "does the string contain
+// the origin" (it always did, and that is exactly how the confusable
+// survived): it is whether the rendered text can be mistaken for the
+// brand it is impersonating.
+describe('formatOriginForDisplay -- eliding a confusable subdomain prefix (A115)', () => {
+  it('elides a subdomain-prefix confusable from the LEFT, so the reassuring prefix does not survive alone', () => {
+    const confusable = 'https://accounts.google.com.attacker.example'
+
+    const displayed = formatOriginForDisplay(confusable)
+
+    // The whole point of the attack: read in isolation, the reassuring
+    // prefix must not be mistakable for the real accounts.google.com.
+    expect(displayed).not.toBe('https://accounts.google.com')
+    expect(displayed.includes('accounts.google.com')).toBe(false)
+    expect(displayed.includes('google.com')).toBe(false)
+    // The authority-deciding end must survive intact.
+    expect(displayed.endsWith('attacker.example')).toBe(true)
+    // Elision actually happened, and happened from the left: the string
+    // is shorter than the original and no longer starts with the
+    // reassuring prefix.
+    expect(displayed).not.toBe(confusable)
+    expect(displayed.startsWith('https://accounts')).toBe(false)
+    expect(displayed.length).toBeLessThan(confusable.length)
+  })
+
+  it('marks the elision visibly rather than silently dropping characters', () => {
+    const displayed = formatOriginForDisplay('https://accounts.google.com.attacker.example')
+
+    expect(displayed).toContain('...')
+  })
+
+  it('leaves a short, ordinary origin completely unchanged', () => {
+    expect(formatOriginForDisplay('https://example.com')).toBe('https://example.com')
+  })
+
+  it('does not misjudge a real multi-label public suffix as needing special handling (example.co.uk)', () => {
+    // No public-suffix-list dependency exists here (A141, parked) -- the
+    // fix must not accidentally rely on "last two labels" reasoning, which
+    // would be wrong for .co.uk in the direction that matters (hiding the
+    // real registrant behind "co.uk"). A plain length check never makes
+    // that mistake because it never looks at labels at all.
+    expect(formatOriginForDisplay('https://example.co.uk')).toBe('https://example.co.uk')
+  })
+
+  it('elides a long host with no attacker framing too -- this is a length rule, not a blocklist', () => {
+    const long = 'https://a-perfectly-ordinary-but-very-long-subdomain.example.com'
+
+    const displayed = formatOriginForDisplay(long)
+
+    expect(displayed.endsWith('example.com')).toBe(true)
+    expect(displayed).not.toBe(long)
+  })
+
+  it('keeps the scheme intact even when the host is elided', () => {
+    const displayed = formatOriginForDisplay('https://accounts.google.com.attacker.example')
+
+    expect(displayed.startsWith('https://')).toBe(true)
+  })
+
+  it('never throws on a value that is not a well-formed origin, and returns it unchanged', () => {
+    expect(formatOriginForDisplay('not a url')).toBe('not a url')
+  })
+})
+
+describe('describeGrantRequest -- the confusable is elided everywhere the origin appears (A115)', () => {
+  it('renders title and detail with the SAME elided, safe string -- never the raw confusable', () => {
+    const confusable = 'https://accounts.google.com.attacker.example'
+    const manifest = manifestWith({ fs: {} })
+
+    const content = describeGrantRequest(confusable, manifest, 'fs', [])
+
+    expect(content.title).not.toBe(confusable)
+    expect(content.title.includes('accounts.google.com')).toBe(false)
+    expect(content.title.endsWith('attacker.example')).toBe(true)
+    // Consistency: whichever field a platform actually shows, it must say
+    // the same thing -- a title that renders a different truncation than
+    // detail would be its own small confusable.
+    expect(content.detail.split('\n')[0]).toBe(content.title)
+  })
+
+  it('still renders an ordinary short origin exactly as before (no regression for the common case)', () => {
+    const manifest = manifestWith({ fs: {} })
+
+    const content = describeGrantRequest(ORIGIN, manifest, 'fs', [])
+
+    expect(content.title).toBe(ORIGIN)
+    expect(content.detail.startsWith(ORIGIN)).toBe(true)
   })
 })
