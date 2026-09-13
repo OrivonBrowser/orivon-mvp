@@ -54,7 +54,7 @@ const TIMEOUT_MS = {
    * ipc.ts) never cancels the underlying prompt when this fires, so a
    * person who takes longer than this still gets their grant, just not
    * this call's own resolved value -- see that function's own doc. AI
-   * recommendation, not an owner decision -- open-questions.md A138.
+   * recommendation, not an owner decision -- open-questions.md A140.
    */
   grant: 120_000
 } as const
