@@ -4985,3 +4985,54 @@ nothing.
 
 **Needed by:** whenever `A143` is decided, and before any app renders remote content it does not
 author.
+
+### A149 -- `scripts/smoke.mjs`'s favicon scenario cannot pass under both T12 and "hermetic by construction" at once **[NEEDS OWNER DECISION]**
+
+**Raised 2026-09-13**, `S4-S-smoke` lane, while fixing the dashboard-navigate self-destroy race
+below (the actual defect this lane was dispatched to investigate). That fix let the smoke script
+run far enough to reach the favicon scenario for the first time in a while -- the dashboard bug
+aborted every prior run before this section ever executed, so this is newly EXPOSED, not newly
+INTRODUCED, and unrelated to `tabs.ts`/`tab-view.ts`.
+
+**The two checks that now fail, deterministically, every run:** "the real favicon renders as a
+data: URL" and "the favicon still renders correctly right after a cross-origin navigation."
+`favicon.ts`'s `isSafeFaviconUrl` (landed after this scenario was written, `f5cc3a9`/`301c72f`)
+refuses any candidate that is not `https:` outright, and separately refuses any literal address
+that is not `isPublicUnicast` -- `127.0.0.1` fails both independently. The smoke script's own
+fixture server (`startFixtureServer`, this file) only ever serves plain `http://127.0.0.1:<port>`,
+so `fetchFaviconDataUrl` returns `null` every time, and the tab correctly falls back to the globe.
+This is `isSafeFaviconUrl` working exactly as designed (T12, `security-model.md`) -- not a product
+bug.
+
+**Why this cannot be fixed by adjusting the fixture.** `isSafeFaviconUrl` resolves a HOSTNAME and
+checks every answer, so aliasing a friendlier-looking hostname to `127.0.0.1` via
+`HERMETIC_RESOLVER`'s `MAP` rule does not help -- the resolved address is still loopback, and the
+check is exactly right to refuse it. Serving over `https:` would still fail the same
+`isPublicUnicast` check on the literal address. There is no fixture shape that is both "a real
+network fetch this script can hit without leaving the machine" and "an address T12 accepts" --
+those two requirements are mutually exclusive by the security control's own design, not by an
+accident of test setup.
+
+**What this actually is:** a real conflict between two of this codebase's own standing
+commitments -- `scripts/smoke.mjs`'s header promise ("HERMETIC BY CONSTRUCTION... passes on an
+air-gapped machine") and this scenario's own stated goal ("exercises the actual fetch/cap/encode
+path... rather than a stub"). T12 makes both true at once impossible for exactly this one
+scenario now that the gate exists.
+
+**AI recommendation, not implemented here (out of this lane's scope -- `favicon.ts` is not an
+owned path for this fix, and the right shape is a real design call):** rescope the two failing
+checks to assert the CORRECT, T12-compliant outcome instead of a successful fetch -- a loopback
+favicon candidate is refused and the tab shows the generic globe, the same shape the "dangerous
+schemes are refused" scenario already uses elsewhere in this file for an analogous "prove the
+refusal, not a completed round trip" case. That drops real coverage of the success path
+(`toDataUrl`/`readCapped` are still unit-tested directly, but the wiring from a page's own
+`<link rel="icon">` through to a rendered `data:` `<img>` would then have no integration coverage
+at all under `npm run smoke`) -- worth the owner deciding is an acceptable trade, not assuming it.
+
+**Still open, owner's call:** (1) accept the coverage loss and assert refusal instead; (2) find
+some other integration-test vehicle for the success path that is not `npm run smoke` (a
+narrower vitest-level test against a fake `net.fetch`, closer to `favicon.test.ts`'s own existing
+style, rather than a real Electron launch); or (3) something else not considered here.
+
+**Needed by:** before this entry's two failing checks are removed, rewritten, or silently marked
+`skip()` by a future lane that reaches them without knowing why they fail.

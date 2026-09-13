@@ -200,6 +200,41 @@ export async function waitForTab (chrome, expected) {
   return { ok, info }
 }
 
+/**
+ * Presses `key` on `selector` inside `view` to trigger a same-tab navigation
+ * that is expected to DESTROY `view` itself, then returns whether the
+ * chrome's own address bar reached `expectedAddress` and the tab's CURRENT
+ * view (a new Playwright object, or undefined if none is open).
+ *
+ * The dashboard's search box (src/renderer/newtab/main.ts) is the one place
+ * in this app where an input lives INSIDE a tab's own content view rather
+ * than the persistent chrome view -- so pressing Enter there triggers a
+ * chain that tears down the very view Playwright is mid-command against:
+ * the 'submit' handler calls shell.navigate() (a fire-and-forget IPC send,
+ * preload/newtab.ts), newtab-ipc.ts's handler calls TabManager.navigate(),
+ * and since the dashboard's partition is always undefined while any real
+ * http(s) target gets a real one (src/main/tabs.ts), that always
+ * repartitions -- closing this view and swapping in a new one -- before
+ * Playwright's own press() finishes its round trip against the page it
+ * just closed. Confirmed by a standalone probe (not kept in this repo)
+ * that the navigation itself completes correctly regardless: the chrome's
+ * address bar updates, the new view loads the right page, nothing leaks.
+ * That makes the "Target ... closed" error a Playwright/CDP artifact of
+ * driving a self-navigating page through its own view, not a product bug
+ * -- expected and swallowed here. Any OTHER error still propagates.
+ */
+export async function navigateThroughSelfDestroyingView (app, chrome, view, selector, key, expectedAddress) {
+  await view.press(selector, key).catch((e) => {
+    if (!/Target page, context or browser has been closed/.test(String(e))) throw e
+  })
+  const navigated = await waitFor(async () => {
+    const info = await evaluateRetrying(chrome, () => ({ address: document.querySelector('#address')?.value }))
+    return info.address === expectedAddress
+  })
+  const [current] = tabViews(app, chrome)
+  return { navigated, view: current }
+}
+
 /** Compact "wanted X, saw Y" for a failed check's detail field. */
 export function mismatch (expected, info) {
   const seen = Object.fromEntries(Object.keys(expected).map((field) => [field, info?.[field]]))
