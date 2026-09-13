@@ -1,8 +1,10 @@
 // T22's CSP `connect-src` derivation (security-model.md, ADR-0006), pure and
-// side-effect-free -- computes the header VALUE only. Wiring it via
-// `session.webRequest.onHeadersReceived` is build step 4's job; see
-// README.md's Design notes for what that step still needs to verify and for
-// this file's two scope gaps (A42, A43).
+// side-effect-free -- computes the header VALUE only. Wired onto the served
+// response directly, in src/loader/serve.ts's buildResponse -- NOT via
+// `session.webRequest.onHeadersReceived`, which A110 (docs/open-questions.md)
+// confirmed never fires for a `protocol.handle`-served response in this
+// Electron version. See README.md's Design notes for this file's two scope
+// gaps (A42, A43).
 //
 // THE SECURITY INVARIANT: every emitted source names a (host, port) pair a
 // SINGLE granted pattern names LITERALLY -- no port wildcard standing in

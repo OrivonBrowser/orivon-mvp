@@ -176,3 +176,59 @@ describe('createAppRequestHandler', () => {
     expect(response.status).toBe(404)
   })
 })
+
+const DEFAULT_CSP = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'"
+
+describe('createAppRequestHandler -- CSP (S4-6, ADR-0007/ADR-0006)', () => {
+  it('sets a self-only CSP when no live grant source is given', async () => {
+    const handler = await createAppRequestHandler(await installedStorage(), ORIGIN)
+    const response = await handler(new Request(`${ORIGIN}/`))
+
+    expect(response.headers.get('content-security-policy')).toBe(DEFAULT_CSP)
+  })
+
+  it('widens connect-src to the live granted tcp.connect patterns', async () => {
+    const handler = await createAppRequestHandler(await installedStorage(), ORIGIN, async () => ['api.example.com:443'])
+    const response = await handler(new Request(`${ORIGIN}/`))
+
+    expect(response.headers.get('content-security-policy')).toBe(
+      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' api.example.com:443"
+    )
+  })
+
+  it('reads the grant source fresh on every request -- a revoke narrows the very next request through the SAME already-built handler', async () => {
+    let live: string[] = ['api.example.com:443']
+    const handler = await createAppRequestHandler(await installedStorage(), ORIGIN, async () => live)
+
+    const before = await handler(new Request(`${ORIGIN}/`))
+    expect(before.headers.get('content-security-policy')).toContain('api.example.com:443')
+
+    live = [] // simulates broker.revoke() landing between the two requests
+    const after = await handler(new Request(`${ORIGIN}/`))
+    expect(after.headers.get('content-security-policy')).toBe(DEFAULT_CSP)
+  })
+
+  it('sets the CSP on every served asset, not only the entry document -- a worker script inherits its OWN response\'s CSP', async () => {
+    const handler = await createAppRequestHandler(await installedStorage(), ORIGIN, async () => ['a.example:443'])
+    const response = await handler(new Request(`${ORIGIN}/app.js`))
+
+    expect(response.headers.get('content-security-policy')).toContain('a.example:443')
+  })
+
+  it('sets the CSP on a 206 partial response too', async () => {
+    const handler = await createAppRequestHandler(await installedStorage(), ORIGIN)
+    const response = await handler(new Request(`${ORIGIN}/app.js`, { headers: { range: 'bytes=0-4' } }))
+
+    expect(response.status).toBe(206)
+    expect(response.headers.get('content-security-policy')).toBe(DEFAULT_CSP)
+  })
+
+  it('sets the CSP on a 416 unsatisfiable-range response too', async () => {
+    const handler = await createAppRequestHandler(await installedStorage(), ORIGIN)
+    const total = utf8(APP_JS).length
+    const response = await handler(new Request(`${ORIGIN}/app.js`, { headers: { range: `bytes=${total + 10}-${total + 20}` } }))
+
+    expect(response.status).toBe(416)
+    expect(response.headers.get('content-security-policy')).toBe(DEFAULT_CSP)
+  })
+})

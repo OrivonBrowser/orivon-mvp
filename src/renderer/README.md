@@ -70,6 +70,21 @@ on `null` or a load failure — it never fetches a favicon itself. `src/main/fav
 actual fetching, capped and re-encoded to `data:`, specifically so this privileged view's CSP
 can stay `img-src 'self' data:` rather than opening it to arbitrary third-party hosts.
 
+**The address-bar dot has a third state, `.cached`, for a bundle served from Orivon's own local
+cache (S4-6, `ADR-0007`).** A padlock reading "secure" for bytes read off disk, never touching
+TLS, would be the false claim ADR-0007 names as unacceptable, so the dot cannot simply keep
+guessing from the URL scheme once a tab is a pinned app. `main.ts`'s `updateAddressDot` still
+paints the ordinary secure/insecure read first, synchronously (no page ever shows a blank dot
+while a query is in flight), then asks main — via `shell.deliveryProvenanceFor`, a separate round
+trip from the address-bar permissions badge's `appPermissionsFor`, because the two answer
+different questions (what this app may do, versus where its bytes came from) — and upgrades to
+`.cached` if the answer says so. The tooltip text is `"Running from local cache, pinned"`, quoted
+directly from `ADR-0007`'s own wording rather than paraphrased, so the two can never read
+differently. `src/main/delivery-provenance.ts` is deliberately built on the loader's own
+protocol-handler registry, never the broker's `isRegisteredSync` — the latter means only "a
+manifest is registered," not "this origin's scheme is actually being answered from disk," and
+the difference is exactly the false-claim risk this feature exists to avoid.
+
 **Icons.** Hand-drawn inline SVG, no icon font, no library, no framework — matching the rest of
 this codebase (Rule 8; `ADR-0002`, TypeScript only). Path data for the ones that visually match
 `orivon-browser-v2` is hand-ported from lucide's icon set (ISC licence) onto lucide's own

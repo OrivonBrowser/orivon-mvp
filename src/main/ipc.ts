@@ -18,6 +18,7 @@ import type { BookmarkStore } from './bookmarks.js'
 import { COMMAND_CHANNEL } from './channels.js'
 import type { TabManager } from './tabs.js'
 import type { AppPermissions, PermissionsController } from './permissions.js'
+import type { DeliveryProvenance } from './delivery-provenance.js'
 
 export type ShellCommand =
   | { type: 'newTab'; url?: string }
@@ -36,6 +37,11 @@ export type ShellCommand =
    * SETTINGS_COMMAND_CHANNEL, ./settings-ipc.ts), not here: this channel
    * is chrome-only, and the chrome view itself never needs the full list. */
   | { type: 'appPermissionsFor'; url: string }
+  /** S4-6, ADR-0007: whether the active tab's URL is currently being
+   * answered from Orivon's own pinned local cache -- the address-bar dot's
+   * one truthful provenance signal, queried the same lagging, per-active-tab
+   * way `appPermissionsFor` already is (see ./delivery-provenance.ts). */
+  | { type: 'deliveryProvenanceFor'; url: string }
   /** Opens (or focuses) the settings window -- see ./settings-window.ts.
    * `url` (the active TAB's url, not yet an origin -- window.ts derives
    * one via originFromUrl before this reaches openSettingsWindow) is set
@@ -53,9 +59,15 @@ export function registerShellIpc (
   tabs: TabManager,
   bookmarks: BookmarkStore,
   permissions: PermissionsController,
-  openSettings: (url?: string) => void
+  openSettings: (url?: string) => void,
+  /** Injected, matching `permissions` above -- ipc.test.ts stubs this rather
+   * than reaching through to a real Electron `session`, the same reason
+   * `permissions` is a `PermissionsController` object rather than an
+   * imported broker call. Defaults to `deliveryProvenanceFor` in
+   * window.ts's real construction. */
+  deliveryProvenance: (url: string) => Promise<DeliveryProvenance> = async () => ({ servedFromPinnedCache: false })
 ): void {
-  ipcMain.handle(COMMAND_CHANNEL, (event: IpcMainInvokeEvent, command: ShellCommand): void | Promise<void | AppPermissions | null> => {
+  ipcMain.handle(COMMAND_CHANNEL, (event: IpcMainInvokeEvent, command: ShellCommand): void | Promise<void | AppPermissions | DeliveryProvenance | null> => {
     if (!isFromChrome(event, chromeWebContents)) {
       // Not the chrome view's top frame -- refuse silently rather than
       // throwing a message back that confirms the channel exists.
@@ -107,6 +119,8 @@ export function registerShellIpc (
       }
       case 'appPermissionsFor':
         return permissions.forUrl(command.url)
+      case 'deliveryProvenanceFor':
+        return deliveryProvenance(command.url)
       case 'openSettings':
         openSettings(command.url)
         return
