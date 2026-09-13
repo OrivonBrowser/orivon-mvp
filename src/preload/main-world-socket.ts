@@ -23,6 +23,7 @@
 import type { OrivonErrorCode } from '../contracts/errors.js'
 import type { FileStat, SendRefusal, UdpSocket } from '../contracts/handles.js'
 import type { ResponseEnvelope } from '../contracts/ipc.js'
+import type { CapabilityRequest } from '../contracts/capability-api.js'
 
 export interface OrivonLimits {
   readonly readWindowBytes: number
@@ -90,6 +91,7 @@ export function installOrivon (
   bridge: {
     appManifest: () => Promise<unknown>
     appGrants: () => Promise<unknown>
+    appRequestGrant: (request: CapabilityRequest) => Promise<boolean>
     fsReadFile: (path: string) => Promise<Uint8Array>
     fsWriteFile: (path: string, data: Uint8Array) => Promise<void>
     /**
@@ -339,7 +341,8 @@ export function installOrivon (
     version: 0,
     app: Object.freeze({
       manifest: async () => await bridge.appManifest(),
-      grants: async () => await bridge.appGrants()
+      grants: async () => await bridge.appGrants(),
+      requestGrant: async (request: CapabilityRequest) => await bridge.appRequestGrant(request)
     }),
     fs: Object.freeze({
       readFile: async (path: string) => await bridge.fsReadFile(path),

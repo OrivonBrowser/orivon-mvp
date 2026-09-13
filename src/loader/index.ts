@@ -51,6 +51,20 @@ export interface CreateLoaderOptions {
    * loader needs Chromium's own resolver instead.
    */
   readonly resolve: Resolver
+  /**
+   * Called after a bundle is actually persisted (TOFU, `silent`, or
+   * `rollback-notice` -- every path that reaches `installOrReject` below),
+   * never on `rejected` or a still-pending prompt outcome. `electron-
+   * serve.ts`'s `registerServingFor` is the real implementation this closes
+   * over (`subsystem.ts`) -- ADR-0007's serving mechanism, so an app already
+   * works from cache within the SAME run it was installed in, not only
+   * after a restart (`electron-serve.ts`'s own `restorePinnedServing`
+   * covers that second case). A failure here is logged and does not fail
+   * the install it followed -- the same "one thing going wrong here must
+   * not undo a bundle that is genuinely, correctly on disk" stance
+   * `installOrReject` itself already takes for storage failures.
+   */
+  readonly onInstalled?: (origin: string) => Promise<void>
 }
 
 /**
@@ -250,6 +264,32 @@ async function installOrReject (
   }
 }
 
+/**
+ * Wraps `installOrReject` with `options.onInstalled`'s notification --
+ * every call site in `load()` below that actually persists a bundle goes
+ * through this, so the hook fires exactly once per real install and never
+ * on a path that only returns a prompt outcome. See `CreateLoaderOptions
+ * .onInstalled`'s own doc for why a failure here is logged, not thrown.
+ */
+async function installAndNotify (
+  options: CreateLoaderOptions,
+  canonicalOrigin: string,
+  manifest: Manifest,
+  tree: BundleTree,
+  entries: readonly BundleEntry[],
+  replacesAPin: boolean
+): Promise<LoadResult> {
+  const result = await installOrReject(options.storage, canonicalOrigin, manifest, tree, entries, options.now(), replacesAPin)
+  if (result.outcome === 'installed' && options.onInstalled !== undefined) {
+    try {
+      await options.onInstalled(canonicalOrigin)
+    } catch (error) {
+      console.error('[loader] onInstalled hook failed', canonicalOrigin, error)
+    }
+  }
+  return result
+}
+
 export function createLoader (options: CreateLoaderOptions): Loader {
   async function load (hintedUrl: string, context: LoadContext): Promise<LoadResult> {
     const fetched = await fetchBundle(options.fetch, hintedUrl, options.resolve)
@@ -260,7 +300,7 @@ export function createLoader (options: CreateLoaderOptions): Loader {
     if (rawPin === undefined) {
       // TOFU (ADR-0005): nothing was ever pinned for this origin, so there
       // is no continuity to protect and nothing to prompt for.
-      return await installOrReject(options.storage, canonicalOrigin, manifest, tree, entries, options.now(), false)
+      return await installAndNotify(options, canonicalOrigin, manifest, tree, entries, false)
     }
 
     // A pin record exists but fails to parse (corrupt bytes, a schema this
@@ -302,9 +342,9 @@ export function createLoader (options: CreateLoaderOptions): Loader {
       case 'reconsent':
         return { outcome: 'needs-reconsent', canonicalOrigin, manifest, tree, entries }
       case 'silent':
-        return await installOrReject(options.storage, canonicalOrigin, manifest, tree, entries, options.now(), true)
+        return await installAndNotify(options, canonicalOrigin, manifest, tree, entries, true)
       case 'rollback-notice': {
-        const result = await installOrReject(options.storage, canonicalOrigin, manifest, tree, entries, options.now(), true)
+        const result = await installAndNotify(options, canonicalOrigin, manifest, tree, entries, true)
         return result.outcome === 'installed' ? { ...result, rollbackNotice: true } : result
       }
       default: {

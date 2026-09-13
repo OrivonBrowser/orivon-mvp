@@ -3972,7 +3972,7 @@ that wave) carry no A-number by design: the rule is fixed **or** filed, never si
 entries below are the ones filed rather than fixed, plus two structural constraints discovered while
 fixing.
 
-### A115 — a subdomain-prefix confusable survives in the grant prompt's title **[STILL OPEN]**
+### A115 — a subdomain-prefix confusable survives in the grant prompt's title **[PARTIALLY RESOLVED 2026-09-13]**
 
 **Raised 2026-09-10**, post-merge audit (lane R2, T25 follow-up to #130/#134).
 
@@ -3986,6 +3986,23 @@ Related but distinct from **A127**, which is about the origin not being reliably
 
 **Needed by:** before an untrusted app can trigger a grant prompt from a page — i.e. as soon as
 `app.requestGrant` has a caller.
+
+**RESOLVED, to the no-dependency floor, 2026-09-13** (lane `stream/shell-04-origin-confusable`,
+ahead of PR #165 giving `app.requestGrant` its first caller). `formatOriginForDisplay`
+(`src/main/grant-prompt-render.ts`) elides an overlong host from the LEFT by plain character
+count, so `attacker.example` always survives at the visible end and the reassuring prefix never
+survives alone. **Partial, by design and named as such:** this is a length rule, not a
+registrable-domain (eTLD+1) computation — that needs a public suffix list this repo does not
+depend on, and is parked as **A142** rather than built, per this run's stop condition on new
+dependencies. The floor is real (the confusable string a person reads can no longer be mistaken
+for `accounts.google.com`) but a person still is not shown "this is/is not google.com" directly;
+A142 is what would close that remaining gap.
+
+**Trigger fired, 2026-09-13.** `app.requestGrant` is now wired onto `window.orivon` (the control
+channel case in `src/broker/transport/ipc.ts`, the preload surface in
+`src/preload/orivon-surface.ts`) — a real page can reach the grant prompt today, even though no
+production caller registers an app yet (a separate, still-unwired gap). The confusable this entry
+names is unfixed; it is simply no longer theoretical.
 
 ### A116 — routed `fetch()` never follows redirects **[STILL OPEN]**
 
@@ -4032,13 +4049,20 @@ Bounded by the fact that these connections carry no ambient credentials and reac
 hosts, so the app is smuggling to a server it was already authorised to talk to. Filed rather than
 fixed for that reason.
 
-### A119 — `app.requestGrant`'s `patterns` array has no size bound **[STILL OPEN]**
+### A119 — `app.requestGrant`'s `patterns` array has no size bound **[PARTIALLY RESOLVED]**
 
 **Raised 2026-09-10**, post-merge audit (lane R2, PR #127).
 
 `decideGrantRequest` runs a caller-supplied array through the subset check with no length bound
 first. `MAX_PATTERNS` bounds what a *manifest* may declare; this path does not reuse it. Same shape
 as **A120**: a bound that exists elsewhere in the codebase was not applied here.
+
+**Narrowed 2026-09-13.** `isAppRequestGrantParams` (`src/broker/transport/ipc-validation.ts`)
+now rejects a `patterns` array longer than `MAX_PATTERNS` before `app.requestGrant`'s
+control-channel case ever calls into `decideGrantRequest` — the only production path to it,
+wired to a page for the first time in the same change. `decideGrantRequest` itself is still
+unbounded internally, so a future direct caller (bypassing the control channel) would reopen
+this; left that way deliberately, as a pure policy function outside this change's own scope.
 
 ### A120 — persisted grant, floor and acknowledgement files have no size bound before `readFileSync` + `JSON.parse` **[STILL OPEN]**
 
@@ -4162,7 +4186,7 @@ from the repository at all.
 **AI recommendation:** a `reviewed:` label, or one line per PR in a checked-in ledger. Cheap, and it
 is the difference between "we think #105-#136 were never reviewed" and knowing.
 
-### A127 — the consent prompt shows the origin only in a field Electron says some platforms drop **[STILL OPEN]**
+### A127 — the consent prompt shows the origin only in a field Electron says some platforms drop **[PARTIALLY RESOLVED]**
 
 **Raised 2026-09-10**, post-merge audit (adversarial review of the consent path, PRs #130/#134).
 
@@ -4182,6 +4206,16 @@ documented as ignoring message-box titles.
 the title, and is being made.** What stays open is the measurement: *no macOS machine was available
 to this audit*, so the platform claim is reasoned from Electron's declaration and not observed.
 Recorded rather than asserted, so nobody later cites it as measured.
+
+**The mechanism half is confirmed landed, verified directly 2026-09-13** (lane
+`stream/shell-04-origin-confusable`, fixing A115): `describeGrantRequest` already puts the origin
+as `detail`'s first line, ahead of the `Claims to be "<name>"` line, on `main` as of `9b8d871` —
+this predates that lane and was not built by it. That lane's own fix (A115) builds directly on
+top of this field, passing the same rendered origin string through both `title` and `detail` so
+neither can show a different, unprotected string from the other. **What stays open is exactly
+what this entry already named as open: the macOS measurement.** Nothing since has run this dialog
+on a real macOS build; treat "the title is not reliably shown" as reasoned, not measured, until
+one does.
 
 **Needed by:** confirmation needs one run of the prompt on a real macOS build. Until then, treat
 "the title is not reliably displayed" as the operating assumption, since the fix costs nothing on
@@ -4615,3 +4649,107 @@ succeed today.
 > `vite`) rather than declared in `package.json`, because this worktree's `node_modules` is a
 > symlink into a tree shared with a live parallel-fleet run, and `npm install` against it mid-run
 > is unsafe. A follow-up should decide whether to formally declare it as a devDependency.
+
+---
+
+### A142 -- the grant prompt shows a host, not a registrable domain, for lack of a public suffix list **[PARKED -- needs owner decision]**
+
+**Raised 2026-09-13**, fixing A115 (subdomain-prefix confusable in the grant prompt).
+
+A115's fix (`formatOriginForDisplay`, `src/main/grant-prompt-render.ts`) elides an overlong host
+from the left by plain character count, so the label that decides authority always survives at
+the visible end. That is the floor this lane could build with no new dependency. It is not the
+same thing as showing the actual **registrable domain** (eTLD+1) -- the fact a person really
+wants ("this is google.com" / "this is not google.com") -- which needs a public suffix list to
+compute correctly. `example.co.uk`'s registrable domain is `example.co.uk`, not `co.uk`; a naive
+"last two labels" guess gets this backwards, in the direction that hides the real registrant, so
+it is worse than not computing it at all. This repo has no such dependency, and adding one is a
+stop condition for the current run (`docs/planning/unattended-build-queue.md` stop condition 4:
+license, provenance and pure-JS status reviewed by the owner first) -- so it is parked here
+rather than added.
+
+**Two candidates, checked against Rule 8 (pure-JS, no native modules) so the owner can decide
+cheaply:**
+
+- **`psl`** (`lupomontero/psl`) -- MIT license, latest `1.15.0`. One dependency, `punycode@^2.3.1`
+  (also pure JS). Widely used (it is the PSL parser inside `request`/`superagent`'s cookie
+  handling historically). Simpler API, slower per its own maintainer's benchmark against `tldts`.
+- **`tldts`** (`remusao/tldts`) -- MIT license, latest `7.4.12`. One dependency, `tldts-core`
+  (same author, same license, zero dependencies of its own). Used by several browser
+  privacy/ad-blocking projects (its own comparison doc claims roughly 1000x `psl`'s throughput).
+  Ships the suffix list baked into the package rather than fetched at runtime.
+
+Both are pure JavaScript with no native bindings or install-time compilation, so `npm run
+check:natives` should pass for either -- not run here, since neither is actually being added.
+Whichever is preferred, the update would replace `formatOriginForDisplay`'s length-based elision
+with rendering the registrable domain distinctly (e.g. bolded, or on its own line, ahead of the
+rest of the host) -- an improvement on this fix's floor, not a correction of it: the length-based
+elision remains correct (if blunter) even after a PSL is available, since it is the fallback for
+whatever a chosen library cannot classify.
+
+**Needed by:** whenever the owner is ready to review a new dependency; not blocking A115, whose
+fix does not need one.
+
+### A140 — `app.requestGrant`'s own IPC timeout (120s) has no natural bound to derive it from **[AI-REC]**
+
+**Raised 2026-09-13**, while wiring `app.requestGrant` onto `window.orivon` for the first time
+(compatibility-matrix.md Table 4 row 1). `contracts/ipc.ts`'s rule 2 requires every control call
+to carry an explicit `timeoutMs`, and every existing budget in `orivon-surface.ts`'s `TIMEOUT_MS`
+table is sized against real I/O it bounds (a dial, a disk read). This call waits on a native
+`dialog.showMessageBox`, i.e. a person, which has no such bound -- 120 seconds is a guess, not a
+measurement.
+
+**Consequence if the guess is wrong.** `handleControlRequest`'s `withTimeout` (`../broker/
+transport/ipc.ts`) never cancels the underlying prompt when its own timer fires -- the doc
+comment on that function is explicit that the broker call is left to settle on its own and its
+result is discarded. So a person who takes longer than 120s to decide still produces a real
+grant (or a real denial) once they click, but the page's own `requestGrant()` call already
+resolved `'timeout'` and cannot see that outcome -- it would have to poll `app.grants()` to
+notice. This is the same fail-by-silence shape every other timeout in this file already accepts;
+what is new is that the wait this one bounds is a HUMAN decision, not I/O, so 120s trading off
+against "how long is a normal person expected to take to read a prompt and click a button" is a
+product judgement, not an engineering one.
+
+**AI recommendation:** ship the 120s guess rather than block this PR on it -- the alternative
+(no timeout at all) is not available under the existing contract, and a wrong guess degrades to
+"the page has to poll," not to an incorrect grant. **Still open:** whether 120s is the right
+number, and whether the page-visible failure mode (a `'timeout'` rejection racing an eventual
+real answer) is acceptable at all, or whether `app.requestGrant` needs a way to observe the
+prompt settling late -- e.g. a `app.grants()` change event -- instead.
+
+### A143 -- a cross-origin request inside an app's own partition is denied, not proxied to the real network **[STILL OPEN]**
+
+**Raised 2026-09-13**, lane S4-3-serve, build step 4's serve-from-cache item
+(`ADR-0007`'s other half: `src/loader/serve.ts`, `src/loader/electron-serve.ts`).
+
+`session.fromPartition(...).protocol.handle('https', handler)` intercepts the WHOLE `https`
+scheme for that session -- not merely requests addressed to the app's own host. Confirmed against
+`electron/electron`'s own protocol registration code, and consistent with `spike/adr7-probe/`'s
+own results (which never exercised a second host inside the probed partition). So a page running
+inside its own app partition that fetches a THIRD-PARTY `https://` URL -- a font from a CDN, an
+`<img src>` pointing elsewhere, anything not part of the pinned bundle -- reaches this SAME
+handler, not the real network.
+
+`serve.ts`'s handler answers that case by denying it (`originFromUrl(request.url) !== origin` ->
+404), never proxying it through to Electron's real network stack. This is the fail-closed choice,
+consistent with `ADR-0007`'s "a same-origin request whose path is not in the pinned set is denied,
+not fetched" extended to the scheme-wide reality of how `protocol.handle` actually intercepts --
+but it is a genuine behavioural choice ADR-0007's own text never resolves, because ADR-0007 was
+written before `protocol.handle`'s per-scheme (not per-host) interception scope was confirmed
+(A110, the 2026-09-10 probe).
+
+**What this means in practice:** an Orivon app that references ANY resource outside its own
+pinned, hashed bundle -- from its own partition, once serving is registered -- gets a silent
+404 for that resource today, not a live fetch. `ADR-0005` already assumes a fully self-contained
+bundle (everything the app needs is declared and hashed), so this may simply be correct and
+permanent; it has not been decided as such.
+
+**What would settle it:** an owner decision on whether an installed app may ever reference a
+live, non-pinned, third-party resource from its own origin's partition, and if so, whether that
+should be a full network passthrough (Electron's `net.fetch`, session-scoped, for any request
+whose origin does not match the app's own) or a narrower allowlisted case. AI recommendation, not
+an owner decision: leave it denied until a real app design needs otherwise -- broadening a fail-
+closed default is reversible; the reverse is not.
+
+**Needed by:** whichever future app actually needs an external resource from inside its own
+partition -- not before, since nothing in this MVP's own fixture/flagship apps does today.

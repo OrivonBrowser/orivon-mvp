@@ -114,6 +114,14 @@ jobs:
       - name: No source file over the 500/800-line limit
         run: npm run check:size
 
+      # Two branches opened at the same time both read main's highest
+      # open-questions.md number and both take the next one -- the PR
+      # blueprint's "take it from main's highest" rule cannot prevent that by
+      # itself. Caught by hand three times in one evening (PRs #163/#165,
+      # #166/#167, #168); this is the mechanical guard against a fourth.
+      - name: No duplicate entry number in docs/open-questions.md
+        run: npm run check:questions
+
       - name: Build
         run: npm run build
 
