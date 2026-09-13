@@ -10,18 +10,19 @@
 // trusted because the preload is well-behaved -- not the payload, and not
 // the envelope carrying it.
 
-import type { RequestEnvelope } from '../../contracts/index.js'
+import type { CapabilityRequest, Pattern, RequestEnvelope } from '../../contracts/index.js'
+import { MAX_PATTERNS } from '../policy/connect.js'
 
-/** The seventeen wired control operations. Anything else is 'invalid'. */
+/** The eighteen wired control operations. Anything else is 'invalid'. */
 export type ControlMethod =
-  | 'app.manifest' | 'app.grants' | 'fs.readFile' | 'fs.writeFile'
+  | 'app.manifest' | 'app.grants' | 'app.requestGrant' | 'fs.readFile' | 'fs.writeFile'
   | 'fs.mkdir' | 'fs.readdir' | 'fs.stat' | 'fs.rm' | 'fs.rename'
   | 'id.publicKey' | 'id.sign'
   | 'net.connect' | 'net.connectSecure' | 'net.udpBind' | 'net.close'
   | 'net.setNoDelay' | 'net.setKeepAlive'
 
 export function isControlMethod (method: string): method is ControlMethod {
-  return method === 'app.manifest' || method === 'app.grants' ||
+  return method === 'app.manifest' || method === 'app.grants' || method === 'app.requestGrant' ||
     method === 'fs.readFile' || method === 'fs.writeFile' ||
     method === 'fs.mkdir' || method === 'fs.readdir' || method === 'fs.stat' ||
     method === 'fs.rm' || method === 'fs.rename' ||
@@ -51,6 +52,23 @@ export interface NetUdpBindParams { readonly port: number }
 export interface NetCloseParams { readonly id: string }
 export interface NetSetNoDelayParams { readonly id: string, readonly on: boolean }
 export interface NetSetKeepAliveParams { readonly id: string, readonly on: boolean, readonly initialDelayMs?: number }
+/** The wire shape of `CapabilityRequest` (capability-api.ts) -- untrusted, including `capability`, which `main/request-grant.ts` narrows against the manifest; this file only checks shape. */
+export interface AppRequestGrantParams { readonly capability: string, readonly patterns?: readonly Pattern[] }
+
+/**
+ * The one field of `SubsystemContext` (../../main/registry.js) `ipc.ts`'s
+ * 'app.requestGrant' case needs, read via THIS object's own live getter on
+ * every call rather than captured once: `registerBrokerIpc` runs before
+ * request-grant-subsystem publishes it (subsystems.ts's own ordering
+ * comment), so grabbing the value at wiring time would freeze it at
+ * `undefined` forever. A real `SubsystemContext` satisfies this shape
+ * structurally; ipc.test.ts needs only a plain object with this one field.
+ * Lives here, alongside the payload shape it pairs with, rather than in
+ * ipc.ts itself, which is at Rule 2's own limit.
+ */
+export interface RequestGrantCtx {
+  readonly requestGrant: ((origin: string, request: CapabilityRequest) => Promise<boolean>) | undefined
+}
 
 export function isNetUdpBindParams (payload: unknown): payload is NetUdpBindParams {
   if (typeof payload !== 'object' || payload === null) return false
@@ -131,6 +149,22 @@ export function isNetSetKeepAliveParams (payload: unknown): payload is NetSetKee
 export function isNetCloseParams (payload: unknown): payload is NetCloseParams {
   return typeof payload === 'object' && payload !== null &&
     typeof (payload as { id?: unknown }).id === 'string'
+}
+
+/**
+ * `patterns` bounded by `MAX_PATTERNS` (A119) -- the same ceiling a
+ * manifest's own declared patterns are held to (`loader/manifest-
+ * capabilities.ts`), reused rather than reimplemented (Rule 3) so a caller
+ * cannot run `decideGrantRequest`'s subset check against an array sized to
+ * cost CPU rather than to ever plausibly be approved.
+ */
+export function isAppRequestGrantParams (payload: unknown): payload is AppRequestGrantParams {
+  if (typeof payload !== 'object' || payload === null) return false
+  const { capability, patterns } = payload as { capability?: unknown, patterns?: unknown }
+  if (typeof capability !== 'string') return false
+  if (patterns === undefined) return true
+  return Array.isArray(patterns) && patterns.length <= MAX_PATTERNS &&
+    patterns.every((pattern) => typeof pattern === 'string')
 }
 
 /**

@@ -20,10 +20,11 @@ native helper. Paste a magnet link, approve one prompt, watch the video.
 > Node shim. Orivon can hold per-app permissions and enforce them over network, TLS and
 > filesystem access, and it can run Node programs inside a tab.
 >
-> **No app can ask for a permission yet**, so in practice nothing is granted. The prompt, the
-> policy and the storage all exist; nothing on a page can trigger them. That is the app
-> loader's remaining job (step 4), and it is why the torrent app does not run yet. There is no
-> packaged build, no installer, and no release. See
+> **A page can now ask for a permission** — `window.orivon.app.requestGrant` reaches the real
+> prompt, policy and storage. Nothing is registered as an installed app yet, though: discovering
+> an app from a page is a separate, still-unwired step, so nothing is actually granted in
+> practice today. That, and the rest of the app loader, is why the torrent app does not run yet.
+> There is no packaged build, no installer, and no release. See
 > [`docs/planning/build-plan.md`](docs/planning/build-plan.md) for the order of work,
 > [`docs/planning/compatibility-matrix.md`](docs/planning/compatibility-matrix.md) for what
 > works cell by cell, and [`CHANGELOG.md`](CHANGELOG.md) for what has landed.
@@ -110,7 +111,7 @@ Strictly dependency-ordered; each step needs the one before it.
 | 1 | **Shell** — tabs, omnibox, back/forward, window chrome | **done** |
 | 2 | **Capability broker** — manifests, grants, per-origin enforcement | **done** — including per-app session partitions and `net.listen`; one gap, `net.listen` is not reachable from a page ([A114](docs/open-questions.md)) |
 | 3 | **Node shim** — `net`, `dgram`, `fs` over `orivon.*` | **done** — plus `http`/`https` and the core polyfills; `net.createServer` and `dns` refuse loudly, pending A114 and A107 |
-| 4 | **App loader** — manifest discovery, fetch, cache, hash-pinning | **in progress** — loader, grant prompt and permissions list built; nothing calls `app.requestGrant` yet, and the folder picker and identity prompt are unbuilt |
+| 4 | **App loader** — manifest discovery, fetch, cache, hash-pinning | **in progress** — loader, grant prompt and permissions list built; `app.requestGrant` now reaches a page. Discovering an app from a page, the folder picker and the identity prompt are unbuilt |
 | 5 | **Torrent app** — the flagship, and the demo clip | |
 | 6 | **Trust indicator** — what an app actually did, not a grade | groundwork in [`src/trust/`](src/trust/) |
 | 7 | **Nostr identity** — `window.nostr` across every client | `id.publicKey`/`sign` built; `window.nostr` blocked on the identity prompt |

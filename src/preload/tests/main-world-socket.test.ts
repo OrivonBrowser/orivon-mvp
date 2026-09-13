@@ -82,6 +82,7 @@ function fakeBridge (
   netConnectSecureResult: ReturnType<typeof fakeSocketBridgeResult> = fakeSocketBridgeResult()
 ): {
   appManifest: () => Promise<unknown>, appGrants: () => Promise<unknown>
+  appRequestGrant: (request: { capability: string, patterns?: readonly string[] }) => Promise<boolean>
   fsReadFile: (path: string) => Promise<Uint8Array>, fsWriteFile: (path: string, data: Uint8Array) => Promise<void>
   fsReadFileSync: (path: string) => ResponseEnvelope<Uint8Array>
   fsMkdir: (path: string, opts?: { recursive?: boolean }) => Promise<void>
@@ -97,6 +98,7 @@ function fakeBridge (
   return {
     appManifest: async () => ({ orivonApiVersion: 0 }),
     appGrants: async () => [],
+    appRequestGrant: async () => true,
     fsReadFile: async () => new Uint8Array(),
     fsWriteFile: async () => {},
     fsReadFileSync,
@@ -196,6 +198,20 @@ describe('installOrivon', () => {
     expect(signCalls).toEqual([{ curve: 'P-256', payload }])
     expect(publicKey).toEqual(new Uint8Array([1]))
     expect(signature).toEqual(new Uint8Array([2]))
+  })
+
+  it('app.requestGrant delegates to bridge.appRequestGrant with the request unwrapped, and returns whatever it resolves', async () => {
+    const target: Record<string, unknown> = {}
+    const bridge = fakeBridge(fakeSocketBridgeResult())
+    const calls: unknown[] = []
+    bridge.appRequestGrant = async (request) => { calls.push(request); return false }
+    installOrivon(bridge, LIMITS, target)
+
+    const orivon = target.orivon as { app: { requestGrant: (request: { capability: string, patterns?: readonly string[] }) => Promise<boolean> } }
+    const granted = await orivon.app.requestGrant({ capability: 'fs' })
+
+    expect(granted).toBe(false)
+    expect(calls).toEqual([{ capability: 'fs' }])
   })
 
   it('fs.mkdir/readdir/stat/rm/rename delegate to the matching bridge closures, args intact', async () => {
