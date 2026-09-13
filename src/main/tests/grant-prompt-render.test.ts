@@ -302,7 +302,7 @@ describe('formatOriginForDisplay -- eliding a confusable subdomain prefix (A115)
   })
 
   it('does not misjudge a real multi-label public suffix as needing special handling (example.co.uk)', () => {
-    // No public-suffix-list dependency exists here (A141, parked) -- the
+    // No public-suffix-list dependency exists here (A142, parked) -- the
     // fix must not accidentally rely on "last two labels" reasoning, which
     // would be wrong for .co.uk in the direction that matters (hiding the
     // real registrant behind "co.uk"). A plain length check never makes

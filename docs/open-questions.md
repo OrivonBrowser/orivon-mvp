@@ -2183,6 +2183,55 @@ first principles.
 **Needed by:** before the loader's discovery trigger is wired to anything live. See
 `electron-fetch.ts`'s `redirect: 'error'` comment, which cites this entry.
 
+**Measured 2026-09-13 (lane S4-A59-probe, `spike/a59-response-url/`, throwaway, Electron 44.0.0,
+Chrome 152.0.7977.54; real launch confirmed via `app.getVersion()`/`MessageChannelMain`).** The
+answer is not "sometimes wrong" — `net.fetch`'s `Response.url` was the **empty string on every
+single ordinary, non-redirected, 200 OK response observed, with no exception found.** Measured
+against two real local servers (`node:http`, and `node:https` with a throwaway, freshly-generated
+self-signed cert, trusted narrowly by its exact SPKI hash via Chromium's own
+`--ignore-certificate-errors-spki-list` rather than by disabling certificate verification
+outright), called from a real Electron main process with
+`electron-fetch.ts`'s own options (`credentials: 'omit', redirect: 'error'`), across 20 distinct
+request shapes: plain path, trailing slash, no trailing slash, a query string, a percent-encoded
+path segment (`/a%2Fb/c%20d`), a duplicate slash (`/a//b//c`), a fragment (correctly stripped
+before the network request — standard Fetch-spec behaviour, not an Electron quirk), combined
+query+fragment, a non-ASCII query value, an uppercase host (`LOCALHOST`), an IDN host given both
+as punycode (`xn--caf-dma.localhost`) and as the raw Unicode label, and an IPv6 literal (`[::1]`)
+— each repeated over both `http:` and `https:`. All 20 came back `status: 200`,
+`redirected: false`, `type: 'default'`, `ok: true`, `url: ''`. A 21st case (embedded userinfo,
+`http://user:pass@host/...`) never produced a `Response` at all — `net.fetch` throws
+`TypeError: Request cannot be constructed from a URL that includes credentials`, standard
+Fetch-spec behaviour, unrelated to this entry. Confirmed this is not an artefact of the probe's
+own harness with a second, minimal, options-free isolation script
+(`spike/a59-response-url/isolate.cjs`): a bare `net.fetch(url)`, no request-init object at all,
+against a fresh `node:http` server, still returned `url: ''`. `response.type` is also confirmed
+wrong exactly as `electron.d.ts` warns — always `'default'`, never `'basic'`.
+
+**What this means for `fetch-bundle.ts`.** `originFromUrl('')` is `null` (`new URL('')` throws
+with no base — confirmed), so `manifestOrigin !== canonicalOrigin` (`null !== canonicalOrigin`)
+is true on every call, and `fetchBundle` rejects **every** manifest fetch with "manifest was
+served from a different origin (invalid) than requested" — before ever reaching the asset loop,
+which has the identical shape and would reject the same way. This is fail-closed, not a security
+hole: nothing is tricked into passing the check. But it means `fetchBundle` cannot succeed
+against a real `net.fetch` call as currently written, at all, regardless of which origin is being
+fetched — a correctness defect, not a narrow edge case. **Filed as A141, not fixed here**
+(`fetch-bundle.ts`/`electron-fetch.ts` are another lane's paths; the fix needs its own branch and
+review).
+
+**Residual, not measured:** a real (CA-signed) HTTPS certificate chain — the SPKI allowlist
+above bypasses every certificate error (including a hostname/SAN mismatch) for the one exact
+generated key, so hostname-vs-certificate mismatch behaviour was not exercised, though nothing
+else was trusted by it; a true default port (`:80`/`:443`
+— this environment's `ip_unprivileged_port_start=1024` refused the bind with `EACCES`, confirmed,
+so the port axis was tested only at non-default, dynamically-assigned ports); a non-loopback
+host; a proxied connection; non-GET methods; any Electron version other than 44.0.0.
+
+**This half of A59 can close on this evidence** — "can `.url` be wrong on an ordinary fetch" is
+now answered directly, by measurement, rather than left to reasoning from a one-line doc warning.
+**PR #164 is not unblocked by this measurement** — it is blocked on the newly-filed A141 instead,
+which is worse than what this entry originally worried about (a silently wrong origin) and
+simpler to act on (the field is unusable outright, not subtly misleading).
+
 ---
 
 ### A60 — `GrantLedger.registerApp` unconditionally raises `versionFloor`; calling it on every FETCHED manifest, not only an ACCEPTED install, is a self-inflicted-DoS risk **[STILL OPEN]**
@@ -3940,10 +3989,10 @@ ahead of PR #165 giving `app.requestGrant` its first caller). `formatOriginForDi
 count, so `attacker.example` always survives at the visible end and the reassuring prefix never
 survives alone. **Partial, by design and named as such:** this is a length rule, not a
 registrable-domain (eTLD+1) computation — that needs a public suffix list this repo does not
-depend on, and is parked as **A141** rather than built, per this run's stop condition on new
+depend on, and is parked as **A142** rather than built, per this run's stop condition on new
 dependencies. The floor is real (the confusable string a person reads can no longer be mistaken
 for `accounts.google.com`) but a person still is not shown "this is/is not google.com" directly;
-A141 is what would close that remaining gap.
+A142 is what would close that remaining gap.
 
 ### A116 — routed `fetch()` never follows redirects **[STILL OPEN]**
 
@@ -4486,7 +4535,49 @@ is for, so this is filed as the thing to look at there rather than as an open de
 
 **Needed by:** Phase 4 item 4.2's owner checkpoint.
 
-### A141 -- the grant prompt shows a host, not a registrable domain, for lack of a public suffix list **[PARKED -- needs owner decision]**
+### A141 -- `net.fetch`'s `Response.url` is the empty string on every ordinary fetch; `fetchBundle` cannot succeed against it as written **[STILL OPEN]**
+
+**Raised 2026-09-13**, lane S4-A59-probe, answering A59's own recommended measurement
+(`spike/a59-response-url/`, throwaway, Electron 44.0.0, real launch confirmed via
+`app.getVersion()`/`MessageChannelMain`). Full method and every measured case are in A59's
+2026-09-13 update block, above — this entry is the actionable defect that measurement found,
+not a duplicate of it.
+
+`fetch-bundle.ts`'s same-origin and canonical-path checks (`fetchBundle`'s manifest and
+asset-loop checks alike) read `response.url` as their sole source of truth for where fetched
+bytes actually came from. Measured directly: `net.fetch`'s `Response.url` is `''` on every
+ordinary, non-redirected, 200 OK response — not sometimes wrong, not wrong only for a narrow
+input shape, unconditionally empty across 20 varied request shapes and both `http:`/`https:`,
+using `electron-fetch.ts`'s own fetch options. `originFromUrl('')` is `null` (`new URL('')`
+throws with no base, confirmed), so `manifestOrigin !== canonicalOrigin`
+(`src/loader/fetch-bundle.ts`'s manifest check) is always true, and `fetchBundle` rejects every
+manifest with "manifest was served from a different origin (invalid) than requested" before
+ever reaching the asset loop — which has the identical shape and would reject the same way.
+
+**Why this is not a security hole.** The check fails closed: nothing here lets a wrong origin's
+bytes through, it simply refuses every origin's bytes, including a completely honest one. The
+defect is availability, not confinement — but it is total: as written, `fetchBundle` cannot
+ever return `ok: true` against a real `net.fetch` call, which is exactly the path PR #164's
+discovery trigger is about to make reachable from live browsing.
+
+**AI recommendation, not a decision, and not attempted here** (`src/loader/` is another lane's
+paths): the same-origin and canonical-path checks do not need `response.url` at all. The URL
+actually fetched is already known-safe at the call site — `ensurePublicUnicastOrigin` validated
+the manifest URL's origin before `fetchBundle` ever calls `fetch(manifestUrl, ...)`, and
+`resolveUrl(assetPath, canonicalOrigin)` is what built each asset URL in the first place.
+`redirect: 'error'` (already shipped) is what makes trusting the REQUESTED url, rather than the
+response's, safe against the one thing that could make them diverge: `net-client-request.ts`
+hard-rejects the promise before a followed `Response` exists, so there is never a case where a
+`net.fetch` call that returns an ok `Response` actually came from somewhere other than the URL
+passed in. Whoever owns `src/loader/` should confirm that reasoning independently before relying
+on it, and should also check whether `response.type` (measured `'default'`, always — also
+confirmed wrong, per `electron.d.ts`) is depended on anywhere.
+
+**Needed by:** before PR #164 (or any other path wiring `fetchBundle` to live, un-curated
+content) merges — this is not a latent risk to plan around, it is a function that cannot
+succeed today.
+
+### A142 -- the grant prompt shows a host, not a registrable domain, for lack of a public suffix list **[PARKED -- needs owner decision]**
 
 **Raised 2026-09-13**, fixing A115 (subdomain-prefix confusable in the grant prompt).
 
