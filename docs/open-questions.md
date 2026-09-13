@@ -3934,6 +3934,12 @@ Related but distinct from **A127**, which is about the origin not being reliably
 **Needed by:** before an untrusted app can trigger a grant prompt from a page — i.e. as soon as
 `app.requestGrant` has a caller.
 
+**Trigger fired, 2026-09-13.** `app.requestGrant` is now wired onto `window.orivon` (the control
+channel case in `src/broker/transport/ipc.ts`, the preload surface in
+`src/preload/orivon-surface.ts`) — a real page can reach the grant prompt today, even though no
+production caller registers an app yet (a separate, still-unwired gap). The confusable this entry
+names is unfixed; it is simply no longer theoretical.
+
 ### A116 — routed `fetch()` never follows redirects **[STILL OPEN]**
 
 **Raised 2026-09-10**, post-merge audit (lane R3, PR #133).
@@ -3979,13 +3985,20 @@ Bounded by the fact that these connections carry no ambient credentials and reac
 hosts, so the app is smuggling to a server it was already authorised to talk to. Filed rather than
 fixed for that reason.
 
-### A119 — `app.requestGrant`'s `patterns` array has no size bound **[STILL OPEN]**
+### A119 — `app.requestGrant`'s `patterns` array has no size bound **[PARTIALLY RESOLVED]**
 
 **Raised 2026-09-10**, post-merge audit (lane R2, PR #127).
 
 `decideGrantRequest` runs a caller-supplied array through the subset check with no length bound
 first. `MAX_PATTERNS` bounds what a *manifest* may declare; this path does not reuse it. Same shape
 as **A120**: a bound that exists elsewhere in the codebase was not applied here.
+
+**Narrowed 2026-09-13.** `isAppRequestGrantParams` (`src/broker/transport/ipc-validation.ts`)
+now rejects a `patterns` array longer than `MAX_PATTERNS` before `app.requestGrant`'s
+control-channel case ever calls into `decideGrantRequest` — the only production path to it,
+wired to a page for the first time in the same change. `decideGrantRequest` itself is still
+unbounded internally, so a future direct caller (bypassing the control channel) would reopen
+this; left that way deliberately, as a pure policy function outside this change's own scope.
 
 ### A120 — persisted grant, floor and acknowledgement files have no size bound before `readFileSync` + `JSON.parse` **[STILL OPEN]**
 
@@ -4406,3 +4419,30 @@ happened.
 *Still open.* AI recommendation: the display-only path above. The owner already chose the input
 to it -- save what was installed rather than re-fetching at launch (2026-09-11) -- and that
 choice stands; what changes is that the saved manifest informs the LIST, never the authority.
+
+### A138 — `app.requestGrant`'s own IPC timeout (120s) has no natural bound to derive it from **[AI-REC]**
+
+**Raised 2026-09-13**, while wiring `app.requestGrant` onto `window.orivon` for the first time
+(compatibility-matrix.md Table 4 row 1). `contracts/ipc.ts`'s rule 2 requires every control call
+to carry an explicit `timeoutMs`, and every existing budget in `orivon-surface.ts`'s `TIMEOUT_MS`
+table is sized against real I/O it bounds (a dial, a disk read). This call waits on a native
+`dialog.showMessageBox`, i.e. a person, which has no such bound -- 120 seconds is a guess, not a
+measurement.
+
+**Consequence if the guess is wrong.** `handleControlRequest`'s `withTimeout` (`../broker/
+transport/ipc.ts`) never cancels the underlying prompt when its own timer fires -- the doc
+comment on that function is explicit that the broker call is left to settle on its own and its
+result is discarded. So a person who takes longer than 120s to decide still produces a real
+grant (or a real denial) once they click, but the page's own `requestGrant()` call already
+resolved `'timeout'` and cannot see that outcome -- it would have to poll `app.grants()` to
+notice. This is the same fail-by-silence shape every other timeout in this file already accepts;
+what is new is that the wait this one bounds is a HUMAN decision, not I/O, so 120s trading off
+against "how long is a normal person expected to take to read a prompt and click a button" is a
+product judgement, not an engineering one.
+
+**AI recommendation:** ship the 120s guess rather than block this PR on it -- the alternative
+(no timeout at all) is not available under the existing contract, and a wrong guess degrades to
+"the page has to poll," not to an incorrect grant. **Still open:** whether 120s is the right
+number, and whether the page-visible failure mode (a `'timeout'` rejection racing an eventual
+real answer) is acceptable at all, or whether `app.requestGrant` needs a way to observe the
+prompt settling late -- e.g. a `app.grants()` change event -- instead.
