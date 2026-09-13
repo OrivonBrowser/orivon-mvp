@@ -1,5 +1,6 @@
 import { exposeOrivon } from './orivon-surface.js'
 import { exposeFetchRoute } from './expose-fetch-route.js'
+import { installManifestHintWatcher } from './manifest-hint.js'
 
 // Loaded by every ORDINARY TAB (src/main/tabs.ts) -- unprivileged. The
 // chrome view (tab strip + toolbar) loads preload/shell.ts instead, which
@@ -14,3 +15,7 @@ exposeOrivon()
 // registered app's granted hosts. Must run AFTER exposeOrivon() -- it
 // depends on window.orivon already existing in the main world.
 exposeFetchRoute()
+// S4-2: the discovery trigger. Order relative to the two calls above does
+// not matter -- this never touches window.orivon, only the DOM and
+// ipcRenderer.
+installManifestHintWatcher()
