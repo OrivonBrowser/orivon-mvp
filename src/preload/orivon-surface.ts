@@ -7,7 +7,7 @@ import { createDatagramPort } from './datagram-port.js'
 import type { PortLike } from './socket-port.js'
 import { installOrivon } from './main-world-socket.js'
 import type { MainWorldSocketBridge, MainWorldUdpBridge } from './main-world-socket.js'
-import type { FileStat, Grant, Manifest, OrivonErrorCode } from '../contracts/index.js'
+import type { CapabilityRequest, FileStat, Grant, Manifest, OrivonErrorCode } from '../contracts/index.js'
 import { LIMITS } from '../contracts/index.js'
 import type { RequestEnvelope, ResponseEnvelope } from '../contracts/ipc.js'
 import { toOrivonError } from './orivon-error.js'
@@ -46,7 +46,17 @@ const TIMEOUT_MS = {
    * real 'timeout' answer, discarding the more specific error for a less
    * useful one.
    */
-  net: 35_000
+  net: 35_000,
+  /**
+   * app.requestGrant: a native dialog awaiting a human decision, not I/O --
+   * no natural bound exists, but contracts/ipc.ts's rule 2 requires one
+   * anyway. Generous rather than tuned: `withTimeout` (../broker/transport/
+   * ipc.ts) never cancels the underlying prompt when this fires, so a
+   * person who takes longer than this still gets their grant, just not
+   * this call's own resolved value -- see that function's own doc. AI
+   * recommendation, not an owner decision -- open-questions.md A140.
+   */
+  grant: 120_000
 } as const
 
 /**
@@ -270,6 +280,19 @@ function buildUdpBridgeResult (descriptor: UdpSocketDescriptor, port: PortLike):
 // design, never does.
 async function appManifest (): Promise<Manifest> { return await call('app.manifest', undefined, TIMEOUT_MS.metadata) }
 async function appGrants (): Promise<readonly Grant[]> { return await call('app.grants', undefined, TIMEOUT_MS.metadata) }
+/**
+ * `request.patterns` is flattened the same way `setKeepAlive`'s
+ * `initialDelayMs` is: `exactOptionalPropertyTypes` treats an explicit
+ * `patterns: undefined` as different from the key being absent, and only
+ * the absent form means "whatever the manifest already declares"
+ * (request-grant.ts's own contract) once it reaches the broker.
+ */
+async function appRequestGrant (request: CapabilityRequest): Promise<boolean> {
+  const payload = request.patterns === undefined
+    ? { capability: request.capability }
+    : { capability: request.capability, patterns: request.patterns }
+  return await call('app.requestGrant', payload, TIMEOUT_MS.grant)
+}
 async function fsReadFile (path: string): Promise<Uint8Array> { return await call('fs.readFile', { path }, TIMEOUT_MS.fs) }
 async function fsWriteFile (path: string, data: Uint8Array): Promise<void> {
   await call('fs.writeFile', { path, data }, TIMEOUT_MS.fs)
@@ -349,7 +372,7 @@ async function idSign (curve: string, payload: Uint8Array): Promise<Uint8Array> 
 function exposeFallback (): void {
   contextBridge.exposeInMainWorld('orivon', {
     version: 0,
-    app: { manifest: appManifest, grants: appGrants },
+    app: { manifest: appManifest, grants: appGrants, requestGrant: appRequestGrant },
     fs: {
       readFile: fsReadFile,
       writeFile: fsWriteFile,
@@ -393,6 +416,7 @@ export function exposeOrivon (): void {
   const bridge = {
     appManifest,
     appGrants,
+    appRequestGrant,
     fsReadFile,
     fsWriteFile,
     fsReadFileSync: fsReadFileSyncEnvelope,
