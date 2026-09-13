@@ -64,6 +64,10 @@ Mark anything that must not leave the team draft as `(Keep private)`.
   URL instead, safe because a redirect can never produce a Response to inspect in the first
   place -- and, for the first time, a test now drives the real fetch adapter against a real
   server in a real Electron process, not a stub.
+- 2026-09-13: **Build step 4 runs end to end for the first time.** A page can now discover
+  itself as an app, get one real consent dialog, and load from local cache with the network
+  unplugged. Two gaps stay open on purpose: a first visit can still race the dialog, and the
+  shim's own globals still don't run in production.
 
 ### In my head
 
@@ -87,5 +91,8 @@ Mark anything that must not leave the team draft as `(Keep private)`.
   The UDP window overshoots by one datagram by design, and the drop timer reports a change rather
   than a total. Both times the tempting fix was to bend the code to the guess. Writing the
   reasoning into the code instead is what turned a wrong assertion into a documented property.
+- **A landing this size needs its docs pass the same night, not as a follow-up.** Thirteen PRs
+  in, six status-bearing documents were already describing a browser that couldn't install
+  anything -- worth building the doc refresh into the same run next time.
 
 ### Non-repo
