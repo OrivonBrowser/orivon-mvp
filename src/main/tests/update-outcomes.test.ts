@@ -217,7 +217,7 @@ describe('driveLoadResult: needs-capability-prompt', () => {
     expect(grantCalls.some((call) => (call.args as { capability: string }).capability === 'fs')).toBe(false)
   })
 
-  // Finding 2 (A154, docs/open-questions.md): grantDeclared used to call
+  // Finding 2 (A156, docs/open-questions.md): grantDeclared used to call
   // broker.grant() for EVERY capability in requestedPatterns unconditionally
   // -- the manifest's whole declared set, not the delta. broker.grant()
   // mints a fresh GrantId and tears down every live handle under whatever

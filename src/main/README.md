@@ -304,7 +304,7 @@ recommendation, not an owner decision; see `A153`.
 
 **[`grant-changed-capabilities.ts`](grant-changed-capabilities.ts) — extracted so
 `./install-consent.ts` and `./update-outcomes.ts` cannot each get "was this capability's
-authority actually different" wrong in a different way (`A154`, `A155`).** `broker.grant()`
+authority actually different" wrong in a different way (`A156`, `A157`).** `broker.grant()`
 (`src/broker/index.ts`) always mints a fresh `GrantId` and tears down every live handle under the
 grant it replaces -- correct, and deliberately tested, for a REAL authority change (`A84`), but
 both call sites used to call it unconditionally for every capability in their own "capabilities
@@ -315,7 +315,7 @@ about it had changed. Comparing pattern sets ORDER-INDEPENDENTLY matters here sp
 a manifest re-declaring the same patterns in a different order must read as unchanged, not as a
 widening that happens to net out to the same set.
 
-**[`install-consent.ts`](install-consent.ts) — bound 2 is now `.every`, not `.some` (`A155`).**
+**[`install-consent.ts`](install-consent.ts) — bound 2 is now `.every`, not `.some` (`A157`).**
 `app.requestGrant` (`./request-grant.ts`) is a second door to a grant, reachable while a page's
 own scripts are already running (`A146`), and `registerApp` runs before this function in
 `app-install.ts`'s own `finishInstall` -- so an app could call `requestGrant` for exactly one of
@@ -325,5 +325,5 @@ everything, but also true after that one out-of-band grant -- and skipping the W
 permanently withheld every other declared capability, silently. `.every` only skips once nothing
 declared is left unheld. This is still an INFERENCE from held grants, not a record of "asked, and
 here is the answer" -- the same honest limit `A145` already named for the decline case -- and
-`A155` parks the real fix (a persisted consent-decision marker, or an owner decision that the
+`A157` parks the real fix (a persisted consent-decision marker, or an owner decision that the
 inference is an acceptable floor) rather than deciding it here.

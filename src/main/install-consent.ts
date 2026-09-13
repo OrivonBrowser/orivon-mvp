@@ -64,7 +64,7 @@ export async function requestInstallConsent (
   if (capabilities.length === 0) return // A139 bound 1: nothing declared, nothing to ask
 
   const held = await broker.app.grants(origin)
-  // A139 bound 2 -- see this file's header. EVERY, not ANY (A155): a second
+  // A139 bound 2 -- see this file's header. EVERY, not ANY (A157): a second
   // door, app.requestGrant, can hold exactly ONE declared capability before
   // this ever runs (README.md, Design notes) -- `.some` would read that as
   // "already asked" and silently withhold every OTHER declared capability

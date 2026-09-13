@@ -1,4 +1,4 @@
-// Shared by ./update-outcomes.ts and ./install-consent.ts (A154, docs/
+// Shared by ./update-outcomes.ts and ./install-consent.ts (A156, docs/
 // open-questions.md): the one place that turns "capabilities the person has
 // now agreed to hold" into actual broker.grant() calls. broker.grant()
 // (src/broker/index.ts) always mints a fresh GrantId and tears down every

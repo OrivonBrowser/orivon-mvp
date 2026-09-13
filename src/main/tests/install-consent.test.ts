@@ -58,7 +58,7 @@ describe('requestInstallConsent (stubbed broker)', () => {
     expect(calls.some((call) => call.method === 'grant')).toBe(false)
   })
 
-  // Finding 3 / A155 (docs/open-questions.md): the old check skipped the
+  // Finding 3 / A157 (docs/open-questions.md): the old check skipped the
   // WHOLE dialog if the origin held a grant for ANY declared capability --
   // sound only if this function is the sole door to a grant. It is not:
   // app.requestGrant (./request-grant.ts) is a second one, and registerApp
@@ -67,7 +67,7 @@ describe('requestInstallConsent (stubbed broker)', () => {
   // declared capabilities in that window and, under the old check,
   // permanently suppress the dialog for every OTHER capability it declared
   // -- silently, with nothing distinguishing that state from "never asked".
-  it('A155: still prompts when only SOME declared capabilities are already held', async () => {
+  it('A157: still prompts when only SOME declared capabilities are already held', async () => {
     const calls: BrokerCall[] = []
     const broker = stubBroker(calls, {
       // tcp.connect only -- as if the page called app.requestGrant for just
@@ -87,7 +87,7 @@ describe('requestInstallConsent (stubbed broker)', () => {
     // tcp.connect is already held with the manifest's own exact pattern --
     // re-granting it would tear down whatever live handle it already
     // authorises for no authority change at all (the same hazard as
-    // Finding 2 / A154).
+    // Finding 2 / A156).
     expect(calls.some((call) => call.method === 'grant' && (call.args as { capability: string }).capability === 'tcp.connect')).toBe(false)
   })
 
