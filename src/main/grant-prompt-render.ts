@@ -21,6 +21,7 @@ import type { CapabilityKind, Manifest, Pattern } from '../contracts/index.js'
 import { MAX_PORT } from '../broker/policy/canonical-host.js'
 import { hostSpecKind, parsePattern as parseConnectPattern, parsePortSpec } from '../broker/policy/connect-patterns.js'
 import { patternSetFromCapabilities } from '../broker/policy/manifest-patterns.js'
+import type { PatternSet } from '../broker/policy/update.js'
 
 export interface GrantPromptContent {
   /** Drives `dialog.showMessageBox`'s own `type` -- a second, non-text
@@ -325,16 +326,12 @@ export function describeGrantRequest (
 }
 
 /**
- * d-0025 (ADR-0012's 2026-09-13 amendment) / queue item S4-4: one dialog for
- * the WHOLE set a manifest declares, asked once before the app's own code
- * runs -- never `describeGrantRequest`'s one-capability shape shown once per
- * declared capability, which is the fatigue that amendment exists to remove.
- *
- * REUSES `describeCapabilityGrant` PER ROW, never a second vocabulary (Rule
- * 3) -- the same words a person sees later in the permissions list
- * (`../main/permissions.ts`) for the identical grant. `formatOriginForDisplay`
- * and the origin/claim lines are exactly `describeGrantRequest`'s own (A115,
- * AR-01, AR-03), so the two dialogs read as one family, not two designs.
+ * The shared body behind `describeInstallConsent` and S4-5's
+ * `describeCapabilityPrompt`: one dialog listing several capabilities at
+ * once, each rendered through `describeCapabilityGrant` -- never a second
+ * vocabulary (Rule 3). Only the headline `message` differs between the two
+ * callers; everything else (the per-row rendering, the origin/claim lines,
+ * the warning icon) is one implementation.
  *
  * BREADTH STAYS VISIBLE PER ROW, not only once for the whole dialog: `warning`
  * (this dialog's own icon) is true the moment ANY row is unlimited, but each
@@ -343,12 +340,13 @@ export function describeGrantRequest (
  * wide one still reads as narrow, and the wide one still stands out on its
  * own line, not only through an icon a person may not consciously register.
  */
-export function describeInstallConsent (
+function describeCapabilitySet (
   origin: string,
   manifest: Manifest,
-  capabilities: readonly CapabilityKind[]
+  declared: PatternSet,
+  capabilities: readonly CapabilityKind[],
+  message: string
 ): GrantPromptContent {
-  const declared = patternSetFromCapabilities(manifest.capabilities)
   const rows = capabilities.map((capability) => describeCapabilityGrant(capability, declared[capability] ?? []))
   const warning = rows.some((row) => row.warning)
 
@@ -359,7 +357,84 @@ export function describeInstallConsent (
   return {
     warning,
     title: displayOrigin,
-    message: 'This app wants to:',
+    message,
     detail: [displayOrigin, claim, ...rowLines].join('\n')
+  }
+}
+
+/**
+ * d-0025 (ADR-0012's 2026-09-13 amendment) / queue item S4-4: one dialog for
+ * the WHOLE set a manifest declares, asked once before the app's own code
+ * runs -- never `describeGrantRequest`'s one-capability shape shown once per
+ * declared capability, which is the fatigue that amendment exists to remove.
+ *
+ * `formatOriginForDisplay` and the origin/claim lines are exactly
+ * `describeGrantRequest`'s own (A115, AR-01, AR-03), so every dialog in this
+ * file reads as one family, not several designs.
+ */
+export function describeInstallConsent (
+  origin: string,
+  manifest: Manifest,
+  capabilities: readonly CapabilityKind[]
+): GrantPromptContent {
+  return describeCapabilitySet(origin, manifest, patternSetFromCapabilities(manifest.capabilities), capabilities, 'This app wants to:')
+}
+
+/**
+ * S4-5's `needs-capability-prompt`: an ALREADY-INSTALLED app's update asks
+ * for more than the person already agreed to. `requestedPatterns` is
+ * `src/loader/index.ts`'s `LoadNeedsCapabilityPrompt.requestedPatterns` --
+ * already the manifest's own full declared set (`update.ts`'s own doc:
+ * capability-prompt "subsumes reconsent... re-establishes consent for the
+ * app as it now is") -- so this renders every currently-declared
+ * capability, the same complete-picture framing `describeInstallConsent`
+ * uses at first install, under a headline that says plainly this is more
+ * than what was already approved rather than reusing "This app wants to:"
+ * unchanged, which would read as a first ask.
+ */
+export function describeCapabilityPrompt (
+  origin: string,
+  manifest: Manifest,
+  requestedPatterns: PatternSet
+): GrantPromptContent {
+  const capabilities = Object.keys(requestedPatterns) as readonly CapabilityKind[]
+  return describeCapabilitySet(origin, manifest, requestedPatterns, capabilities, 'This app wants to do more than you already allowed:')
+}
+
+/**
+ * S4-5's `needs-reconsent`: `decideUpdate()` reached this outcome BECAUSE
+ * the granted pattern set does not change (`widensAuthority` returned
+ * false) -- there is nothing for `describeCapabilityGrant` to render, only
+ * the plain fact that the app's code changed and what it may do did not.
+ */
+export function describeReconsent (origin: string, manifest: Manifest): GrantPromptContent {
+  const displayOrigin = formatOriginForDisplay(origin)
+  const claim = `Claims to be "${manifest.name}".`
+  return {
+    warning: false,
+    title: displayOrigin,
+    message: 'This app has been updated.',
+    detail: [displayOrigin, claim, 'Its code has changed. What it is allowed to do has not.'].join('\n')
+  }
+}
+
+/**
+ * S4-5's `needs-rollback-choice` (`ADR-0013`): the origin is offering a
+ * version below its own floor. `warning: true` unconditionally -- unlike a
+ * capability grant, there is no narrow case here: every below-floor
+ * offering is the same shape of risk (a genuine developer rollback, or old,
+ * less-secure code being replayed) regardless of what the manifest
+ * declares.
+ */
+export function describeRollbackChoice (origin: string, manifest: Manifest, versionFloor: string): GrantPromptContent {
+  const displayOrigin = formatOriginForDisplay(origin)
+  const claim = `Claims to be "${manifest.name}".`
+  const notice = `You've used version ${versionFloor} or newer from this app before. It is now offering version ${manifest.version} -- an older one.`
+  const risk = 'This can be a genuine rollback by the developer, or a sign that something is serving old, less secure code.'
+  return {
+    warning: true,
+    title: displayOrigin,
+    message: 'This app is offering an older version.',
+    detail: [displayOrigin, claim, notice, risk].join('\n')
   }
 }
