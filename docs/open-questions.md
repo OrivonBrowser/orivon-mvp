@@ -5087,3 +5087,97 @@ or needs to flag further.
 
 **Needed by:** before these three dialogs ship to a real user; ideally the same readability pass
 `CLAUDE.md`'s standing rule already requires at the end of a build step.
+
+---
+
+### A151 -- `src/shim/globals.ts`'s `installGlobals()` has no production call site anywhere **[STILL OPEN]**
+
+**Raised 2026-09-13**, `S4-7-e2e` lane, while building the end-to-end app-loader journey test
+(`test/e2e-app-loader-journey.test.ts`). The first test to bundle a real `src/shim/` module
+(`node-net.ts`) with esbuild and run it inside a real browser page, rather than injecting a fake
+`orivon.net.connect` and calling shim internals directly (every existing `src/shim/tests/*`
+suite's own pattern) -- so this is the first place a real dependency of `node-net-socket.ts`'s
+`Duplex` base class (`stream-browserify`, via `module-map.ts`'s own alias) actually ran end to
+end.
+
+**What broke, and why nothing before this caught it.** `stream-browserify`'s `Readable.resume`
+reads `process.nextTick` unconditionally. `src/shim/globals.ts` exists specifically to install a
+polyfilled `process` (plus `setImmediate`/`clearImmediate`) onto a target -- `README.md`'s own
+"Core polyfills (queue item 3.1)" group -- but `grep -rln "installGlobals(" src/` (excluding
+tests) returns nothing: no preload, no renderer entry point, nothing calls it in this tree today.
+Every existing `src/shim/tests/*.test.ts` either avoids anything importing `stream` or installs
+globals onto a throwaway object itself before exercising the code under test, so this gap was
+invisible until something ran the REAL module graph in a REAL browser global scope with nothing
+having called `installGlobals` first: `ReferenceError: process is not defined`, thrown from
+inside `stream-browserify`, several frames below any code this lane owns.
+
+**Impact, stated precisely.** Any real Orivon app whose dependency graph pulls in `stream`
+(confirmed transitively required by this shim's own `net`/`http`/`https` modules, and by
+`crypto-browserify` per `module-map.ts`'s own notes) fails at load time in a real build today,
+not merely in this test's fixture. This is a real product gap, not a test artifact --
+`test/app-loader-journey-shim-entry.ts` works around it by calling `installGlobals(globalThis,
+...)` itself, exactly the call a real production entry point will eventually need to make once,
+early, before any shimmed module runs.
+
+**AI recommendation, not implemented here (out of this lane's scope -- `src/shim/`'s remaining
+wiring is build step 3's own call, and `src/main/`+`src/loader/` are two other lanes' owned paths
+tonight):** call `installGlobals(globalThis, {reportError: ...})` exactly once, as early as
+possible, in whatever the eventual "an app's own page has started running" entry point turns out
+to be -- a main-world script alongside `main-world-socket.ts`'s own `contextBridge.
+executeInMainWorld` dance is the natural fit, since that is already the mechanism that runs code
+in the app page's own global scope rather than the preload's isolated one.
+
+**Still open, needs an owner/shim-stream decision:** exactly where this call belongs, and whether
+`reportError` should feed the same channel a real uncaught exception in an app tab would.
+
+**Needed by:** before any real app whose dependency graph touches `stream` (or anything shimmed
+on top of it) is expected to load successfully.
+
+---
+
+### A152 -- the shim's `toNodeError` cannot recognise a real cross-world `orivon.net.connect()` denial, and reports every one as a generic `internal` code **[AI-REC]**
+
+**Raised 2026-09-13**, `S4-7-e2e` lane, same test as A151. Measured, not reasoned: a real page's
+`window.orivon.net.connect()` call, denied for want of a grant, rejects with a value that is
+`{name: "OrivonError", message: "tcp.connect is not granted to this origin", code: "denied"}` --
+structurally exactly right, and exactly what `test/e2e-capability-boundary.test.ts`'s own Phase 1
+already asserts against the raw capability API. But a diagnostic added to this lane's test (`e instanceof
+Error`, `Object.getPrototypeOf(e)`, `e.constructor.name`) showed that value is a **plain object**
+(`constructor.name === 'Object'`, prototype is `Object.prototype`) once it has crossed back from
+the main world (where `main-world-socket.ts`'s bridge runs, per `A113`'s own account of that path
+constructing a real `OrivonError`) to the page's own promise rejection -- never a real `Error`
+instance, despite carrying every field of one correctly as an own, enumerable property.
+
+**Where this actually breaks.** `src/shim/node-http-errors.ts`'s `isOrivonError` is `value
+instanceof Error && typeof value.code === 'string'` -- the `instanceof Error` half is false for
+EVERY real denial that crosses this specific boundary, so `toNodeError`'s fallback branch always
+fires instead: `code`/`orivonCode` become the generic `'internal'`, and the message becomes
+`String(value)` -- literally the string `"[object Object]"`, since a plain object has no useful
+`toString()`. `src/shim/node-net-socket.ts`'s `Socket` class calls `toNodeError` on every
+`dial()` rejection, so this fires for every real net-shim denial in a real Electron launch, not a
+contrived case -- `test/e2e-app-loader-journey.test.ts`'s two refusal checks pin this exact,
+current value (`orivonCode === 'internal'`) rather than the intended `'denied'`, specifically so
+a fix here is a visible, deliberate test change rather than a silent behaviour shift nobody
+notices.
+
+**This is a fidelity/observability bug, not a security hole.** The connection is still correctly
+refused either way -- confirmed by this lane's own out-of-manifest check, which fails loudly the
+moment the connection resolves instead of rejecting, independent of which code the rejection
+carries. What breaks is a real ported Node app's ability to branch on `err.code === 'denied'`
+(or any other real `OrivonErrorCode`) through this shim -- exactly the kind of silent capability-
+adjacent behaviour change `docs/development/testing.md`'s own testing philosophy is about, just
+one layer higher than a broker regression: not "the wrong thing is allowed," but "the right
+refusal is mislabelled to the app that has to react to it."
+
+**AI recommendation:** `isOrivonError` should recognise this shape structurally --
+`typeof value === 'object' && value !== null && typeof (value as {code?: unknown}).code ===
+'string' && typeof (value as {message?: unknown}).message === 'string'` -- rather than requiring
+`instanceof Error`, mirroring how `src/broker/errors.ts`'s own `isOrivonErrorLike` already
+tolerates a duck-typed shape one layer down (`A39` recorded that same class of two-checks-
+disagree gap once already). Not implemented here: `src/shim/` is outside this lane's owned path
+tonight, and the right fix might instead belong one layer up, wherever the main-world bridge's
+rejection is actually produced, if the goal is a real `Error` instance surviving the crossing
+rather than a shim-side workaround for a value that never was one.
+
+**Needed by:** before any real ported app is expected to distinguish a capability denial from any
+other failure through `require('net')`/`require('http')`/`require('https')`.
