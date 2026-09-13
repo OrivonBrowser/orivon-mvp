@@ -14,7 +14,11 @@ import type { Broker } from '../../broker/broker-contracts.js'
 import type { Loader } from '../../loader/index.js'
 
 const fakeApp = {} as unknown as App
-const fakeLoader: Loader = { load: async () => ({ outcome: 'rejected', reason: 'unused' }) }
+const fakeLoader: Loader = {
+  load: async () => ({ outcome: 'rejected', reason: 'unused' }),
+  installFetched: async () => { throw new Error('installFetched was not stubbed for this test') },
+  reconsider: async () => { throw new Error('reconsider was not stubbed for this test') }
+}
 
 describe('appInstallSubsystem', () => {
   it('throws when ctx.broker is undefined -- must be listed after brokerIpcSubsystem', () => {
