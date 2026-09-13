@@ -11,6 +11,7 @@ import { mkdir, readdir, readFile, rm, rmdir, writeFile } from 'node:fs/promises
 import { dirname, join, sep } from 'node:path'
 import { decodePercentEscapes, foldForIdentity } from '../broker/policy/canonical-path.js'
 import { confinePath } from '../broker/policy/paths.js'
+import { parsePinRecord } from '../broker/policy/pin.js'
 import type { PinRecord } from '../broker/policy/pin.js'
 import type { LoaderStorage } from './storage.js'
 import { appRootDirectoryName } from './storage.js'
@@ -220,6 +221,69 @@ export function nodeLoaderStorage (userDataPath: string): LoaderStorage {
       // so a parent skipped as non-empty is reached again from below once its
       // last subdirectory goes.
       for (const dir of emptied) await removeEmptyAncestors(root, dir)
+    },
+    readAsset: async (origin, path) => {
+      let resolved: string
+      try {
+        resolved = resolveAssetPath(codeRoot(userDataPath, origin), path)
+      } catch {
+        // A path confinement/decode failure here means `path` cannot be a
+        // real file under this origin's code root at all -- not "missing",
+        // structurally impossible. Same fail-closed answer either way.
+        return undefined
+      }
+      try {
+        return new Uint8Array(await readFile(resolved))
+      } catch {
+        // ENOENT (never written, or removed since) and any other read
+        // failure (permissions, a directory where a file was expected)
+        // collapse to the same undefined -- see this method's own doc on
+        // storage.ts for why no caller needs to tell them apart.
+        return undefined
+      }
+    },
+    listPinnedOrigins: async () => {
+      const appsDir = join(userDataPath, 'apps')
+      let entries
+      try {
+        entries = await readdir(appsDir, { withFileTypes: true })
+      } catch (error) {
+        // ENOENT means no app has ever been installed on this machine --
+        // an empty list, not a failure. Anything else is logged: this is a
+        // startup enumeration, not a per-request path, so it can afford to.
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+          console.error('[loader] listPinnedOrigins: failed to list the apps directory', appsDir, error)
+        }
+        return []
+      }
+
+      const origins: string[] = []
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue
+        let raw: string
+        try {
+          raw = await readFile(join(appsDir, entry.name, 'pin.json'), 'utf8')
+        } catch {
+          continue // an install interrupted before writePin ran -- not a pinned app yet
+        }
+        let parsedJson: unknown
+        try {
+          parsedJson = JSON.parse(raw)
+        } catch {
+          continue
+        }
+        const record = parsePinRecord(parsedJson)
+        // The directory name must be exactly the hash of the record's OWN
+        // claimed origin -- without this cross-check, a pin.json copied or
+        // hand-edited into a different app's directory would be handed back
+        // as though it belonged there. The same defence a stored grant's
+        // `origin` field needs against a tampered file naming a directory it
+        // was not read from.
+        if (record !== null && appRootDirectoryName(record.origin) === entry.name) {
+          origins.push(record.origin)
+        }
+      }
+      return origins
     }
   }
 }

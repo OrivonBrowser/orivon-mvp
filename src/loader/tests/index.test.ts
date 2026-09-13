@@ -429,3 +429,82 @@ describe('createLoader: against the real node:fs storage', () => {
     expect(pin.pinnedAt).toBe(1_700_000_009_000)
   })
 })
+
+// src/loader/electron-serve.ts's onInstalled hook: fires exactly on the
+// outcomes that actually persist a bundle, never on one that only returns a
+// prompt to the caller. This is the seam electron-serve.ts's
+// registerServingFor plugs into so an app already works from cache within
+// the SAME run it was installed in.
+describe('createLoader: onInstalled', () => {
+  const ROUTES: Record<string, RouteSpec> = {
+    [MANIFEST_URL]: { body: utf8(manifestJson()) },
+    [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
+  }
+
+  it('fires once, with the canonical origin, on a fresh TOFU install', async () => {
+    const onInstalled = vi.fn(async () => {})
+    const loader = createLoader({ fetch: stubFetch(ROUTES), storage: memoryStorage(), now: fixedNow(), resolve: PUBLIC_RESOLVER, onInstalled })
+
+    const result = await loader.load(ORIGIN, NO_GRANTS)
+
+    expect(result.outcome).toBe('installed')
+    expect(onInstalled).toHaveBeenCalledExactlyOnceWith(ORIGIN)
+  })
+
+  it('fires again on a "silent" re-install of an unchanged, still-in-authority bundle', async () => {
+    const storage = memoryStorage()
+    const onInstalled = vi.fn(async () => {})
+    await createLoader({ fetch: stubFetch(ROUTES), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER, onInstalled }).load(ORIGIN, NO_GRANTS)
+    onInstalled.mockClear()
+
+    const result = await createLoader({ fetch: stubFetch(ROUTES), storage, now: fixedNow(1_700_000_001_000), resolve: PUBLIC_RESOLVER, onInstalled }).load(ORIGIN, NO_GRANTS)
+
+    expect(result.outcome).toBe('installed')
+    expect(onInstalled).toHaveBeenCalledExactlyOnceWith(ORIGIN)
+  })
+
+  it('does NOT fire on needs-reconsent -- nothing was persisted for it to serve', async () => {
+    const storage = memoryStorage()
+    await createLoader({ fetch: stubFetch(ROUTES), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER }).load(ORIGIN, NO_GRANTS)
+    const onInstalled = vi.fn(async () => {})
+    const changedRoutes: Record<string, RouteSpec> = {
+      [MANIFEST_URL]: { body: utf8(manifestJson()) },
+      [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html><!-- changed -->') }
+    }
+
+    const result = await createLoader({ fetch: stubFetch(changedRoutes), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER, onInstalled }).load(ORIGIN, NO_GRANTS)
+
+    expect(result.outcome).toBe('needs-reconsent')
+    expect(onInstalled).not.toHaveBeenCalled()
+  })
+
+  it('does NOT fire on a rejected fetch', async () => {
+    const onInstalled = vi.fn(async () => {})
+    const loader = createLoader({ fetch: stubFetch({}), storage: memoryStorage(), now: fixedNow(), resolve: PUBLIC_RESOLVER, onInstalled })
+
+    const result = await loader.load(ORIGIN, NO_GRANTS)
+
+    expect(result.outcome).toBe('rejected')
+    expect(onInstalled).not.toHaveBeenCalled()
+  })
+
+  it('a throwing onInstalled hook is logged, not left to fail the install it followed', async () => {
+    const onInstalled = vi.fn(async () => { throw new Error('registerServingFor blew up') })
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const loader = createLoader({ fetch: stubFetch(ROUTES), storage: memoryStorage(), now: fixedNow(), resolve: PUBLIC_RESOLVER, onInstalled })
+
+    const result = await loader.load(ORIGIN, NO_GRANTS)
+
+    logged.mockRestore()
+    expect(result.outcome).toBe('installed')
+    expect(onInstalled).toHaveBeenCalledExactlyOnceWith(ORIGIN)
+  })
+
+  it('is entirely optional -- omitting it changes nothing about a normal install', async () => {
+    const loader = createLoader({ fetch: stubFetch(ROUTES), storage: memoryStorage(), now: fixedNow(), resolve: PUBLIC_RESOLVER })
+
+    const result = await loader.load(ORIGIN, NO_GRANTS)
+
+    expect(result.outcome).toBe('installed')
+  })
+})
