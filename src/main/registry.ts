@@ -22,7 +22,7 @@
 // functions below unit testable without launching Electron.
 import type { App } from 'electron'
 import type { Broker } from '../broker/broker-contracts.js'
-import type { Loader } from '../loader/index.js'
+import type { Loader, LoadResult } from '../loader/index.js'
 import type { CapabilityRequest } from '../contracts/index.js'
 
 export interface SubsystemContext {
@@ -69,6 +69,19 @@ export interface SubsystemContext {
    * must be listed after `brokerIpcSubsystem`.
    */
   readonly requestGrant: ((origin: string, request: CapabilityRequest) => Promise<boolean>) | undefined
+  /**
+   * `../app-install.js`'s `installFromHint`, closed over this process's one
+   * `Broker`/`Loader` and the real install-time consent dialog (d-0025,
+   * S4-4) -- `app-install.ts` itself stays free of any Electron import, the
+   * same reason `requestGrant`'s own mechanism does, so this is where the
+   * three come together. Same one-instance guarantee as `broker`/`loader`/
+   * `requestGrant`, for the same reason: whoever wires the discovery
+   * trigger (S4-2) must read this, never construct a second one. Undefined
+   * until this subsystem's `afterReady` runs; a subsystem reading this must
+   * be listed after it, which itself must be listed after both
+   * `brokerIpcSubsystem` and `loaderSubsystem`.
+   */
+  readonly installApp: ((hintingOrigin: string, hintedUrl: string) => Promise<LoadResult>) | undefined
 }
 
 /**
@@ -98,6 +111,7 @@ function createPublishedSlot<T> (label: string, hazard: string): {
 const brokerSlot = createPublishedSlot<Broker>('broker', 'a second Broker would create two disagreeing grant ledgers for one running app')
 const loaderSlot = createPublishedSlot<Loader>('loader', 'a second Loader would create two disagreeing ideas of what is installed for one running app')
 const requestGrantSlot = createPublishedSlot<(origin: string, request: CapabilityRequest) => Promise<boolean>>('requestGrant', 'a second one could close over a different Broker instance than the one every other subsystem reads')
+const installAppSlot = createPublishedSlot<(hintingOrigin: string, hintedUrl: string) => Promise<LoadResult>>('installApp', 'a second one could close over a different Broker or Loader instance than the one every other subsystem reads')
 
 class SubsystemContextImpl implements SubsystemContext {
   readonly app: App
@@ -116,6 +130,10 @@ class SubsystemContextImpl implements SubsystemContext {
 
   get requestGrant (): ((origin: string, request: CapabilityRequest) => Promise<boolean>) | undefined {
     return requestGrantSlot.get(this)
+  }
+
+  get installApp (): ((hintingOrigin: string, hintedUrl: string) => Promise<LoadResult>) | undefined {
+    return installAppSlot.get(this)
   }
 }
 
@@ -148,6 +166,11 @@ export function publishLoader (ctx: SubsystemContext, loader: Loader): void {
 /** The one sanctioned way to set `ctx.requestGrant` -- see `publishBroker`'s own doc; same guarantee, same reason. */
 export function publishRequestGrant (ctx: SubsystemContext, requestGrant: (origin: string, request: CapabilityRequest) => Promise<boolean>): void {
   requestGrantSlot.publish(ctx, requestGrant)
+}
+
+/** The one sanctioned way to set `ctx.installApp` -- see `publishBroker`'s own doc; same guarantee, same reason. */
+export function publishInstallApp (ctx: SubsystemContext, installApp: (hintingOrigin: string, hintedUrl: string) => Promise<LoadResult>): void {
+  installAppSlot.publish(ctx, installApp)
 }
 
 export interface Subsystem {

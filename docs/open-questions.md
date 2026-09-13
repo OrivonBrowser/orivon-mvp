@@ -4691,3 +4691,43 @@ closed default is reversible; the reverse is not.
 
 **Needed by:** whichever future app actually needs an external resource from inside its own
 partition -- not before, since nothing in this MVP's own fixture/flagship apps does today.
+
+### A144 -- a declined install-consent dialog is not remembered across a restart **[AI-REC]**
+
+**Raised 2026-09-13**, lane S4-4-consent, implementing `d-0025` (`ADR-0012`'s 2026-09-13
+amendment): one dialog, once per origin, ever, for the whole set a manifest declares.
+
+**"Once per origin, ever" is derived from the grant ledger's own hydration, not tracked as new
+state** (`src/main/install-consent.ts`). `GrantLedger.registerApp`'s existing `grantsHydrated`
+mechanism already restores every still-valid persisted grant into the live ledger, checked
+against the manifest just fetched, before the consent step ever runs -- so an origin ACCEPTED on
+any earlier visit, this session or a past one, already holds a live grant for its declared
+capabilities and is silently skipped. This is real "once ever" persistence, for free, reusing a
+mechanism that already shipped for an unrelated reason.
+
+**What it does not cover: a fully DECLINED visit.** All-or-nothing (`A138`) means declining
+creates no grant at all, and `LedgerStorage` has no concept of "asked, and the answer was no" --
+only of what was actually granted. A declined origin is therefore indistinguishable, on disk,
+from one never visited, and is asked again on its next visit (a fresh browser launch; a repeat
+visit within one run is remembered in memory via the same live-grant check, so this is narrower
+than it may first sound -- only a RESTART loses it, and only for a decline, never an accept).
+
+**Two ways to close it, and this lane picked neither on its own:**
+
+1. Add a persisted "consent decision" marker to `LedgerStorage` (a fourth file alongside the
+   version floor, rollback acknowledgement and grants), written on every decision -- accept or
+   decline -- and consulted before the dialog is shown. Real engineering, touching every
+   `LedgerStorage` implementation and the settings-list reasoning `A137` already worked through
+   for a similar-shaped problem (display vs. authority).
+2. Accept it as intended, not merely tolerated: a person who declines an app is asked again next
+   time they revisit it, which gives them a natural, no-UI way to reconsider later, symmetrical
+   with the existing settings-list revoke-then-re-grant path (`A101`) for the accepted side.
+
+**AI recommendation, not a decision:** option 2, on the grounds that repeated friction for a
+repeatedly-declined app is a real product property, not obviously a bug -- but this is exactly
+the kind of call `CLAUDE.md` Rule 2 says an agent should label rather than make silently, and this
+lane's own report says so explicitly.
+
+**Needed by:** whenever the owner reviews the S4-4 checkpoint's real dialog (the same moment
+`A139` is settled) -- worth deciding alongside it rather than separately, since both are about
+what "once, ever" should actually mean once a real person is declining a real dialog.

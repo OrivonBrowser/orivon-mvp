@@ -28,10 +28,21 @@ import { patternSetFromGrants } from '../broker/policy/update.js'
 import type { Broker } from '../broker/broker-contracts.js'
 import type { LoadResult, Loader } from '../loader/index.js'
 import { withOriginQueue } from './origin-queue.js'
+import { requestInstallConsent } from './install-consent.js'
+import type { InstallConsentPrompt } from './install-consent.js'
 
 export interface AppInstallDeps {
   readonly broker: Broker
   readonly loader: Loader
+  /**
+   * d-0025 (S4-4): asked once for the app's whole declared capability set,
+   * right after a successful install. Optional so every existing caller of
+   * this function -- every test that predates this lane -- keeps working
+   * unchanged; omitting it fails closed (./install-consent.ts's own doc),
+   * never throws, and is indistinguishable from every declared capability
+   * being declined.
+   */
+  readonly consent?: InstallConsentPrompt
 }
 
 /**
@@ -101,6 +112,14 @@ export async function installFromHint (deps: AppInstallDeps, hintingOrigin: stri
           // as never rejecting, and nothing consumes a side channel yet.
           console.error('[app-install] registerApp failed after a successful install; the bundle is installed but its version floor was not persisted', result.canonicalOrigin, error)
         }
+        // d-0025: asked here, once, for the whole declared set -- AFTER
+        // registerApp (whose hydration this depends on, see
+        // install-consent.ts's header) and BEFORE this function's own
+        // promise resolves. Run regardless of whether registerApp itself
+        // just threw: its in-memory hydration already happened either way
+        // (GrantLedger.registerApp's own doc). See README.md's Design
+        // notes for exactly what guarantee "before the app runs" is here.
+        await requestInstallConsent(deps.broker, deps.consent, result.canonicalOrigin, result.manifest)
         return result
       case 'needs-reconsent':
       case 'needs-capability-prompt':
