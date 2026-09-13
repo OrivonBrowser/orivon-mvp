@@ -1,49 +1,26 @@
 // The loader-to-broker glue that has never existed (A60, A61,
-// docs/open-questions.md). Loader.load()'s own header explains why this
-// cannot live inside src/loader/ itself: LoadContext is caller-supplied
-// specifically because the grant ledger lives in src/broker/, which the
-// loader must not read directly. subsystems.ts's and loaderSubsystem's own
-// headers already point at src/main/ as the intended home for this wiring
-// ("shell UI, not loader construction").
-//
-// A60's own recommendation, followed exactly: registerApp fires ONLY when
-// load() actually accepts the install (outcome 'installed'), never on a
-// bare fetch/parse -- a hostile origin could otherwise poison the version
-// floor with a fake high version and permanently lock itself (and the user)
-// out of every real, lower-numbered future update.
-//
-// `LoadContext.acknowledgedRollbackVersion` takes the RAW value
-// `Broker.rollbackAcknowledgedVersionFor` returns -- a version string or
-// `undefined` -- not a boolean this function would have to compute itself.
-// That is deliberate: this function cannot know which version `Loader.
-// load()` is about to offer until `load()` has already fetched the
-// manifest, so it hands over the acknowledged version unexamined and lets
-// `load()` do the exact-match comparison once it actually knows. See
-// `LoadContext`'s own doc (`src/loader/index.ts`) for why an origin-only
-// "has this origin ever been acknowledged" check would reopen the exact
-// flaw the version-keyed storage closed.
+// docs/open-questions.md). Builds the one LoadContext Loader.load() needs
+// from the broker, then hands whatever it returns to ./update-outcomes.ts's
+// driveLoadResult, which owns registerApp/consent and S4-5's three prompts
+// for every one of the five outcomes -- see that file's own header. Design
+// rationale for the shape of this handoff (why LoadContext is caller-
+// supplied, why registerApp may only fire on an accepted install, why
+// acknowledgedRollbackVersion passes through unexamined) is in this
+// directory's README.md, Design notes -- not repeated here (code-
+// guidelines.md Rule 1).
 
 import { originFromUrl } from '../broker/policy/origin.js'
 import { patternSetFromGrants } from '../broker/policy/update.js'
-import type { Broker } from '../broker/broker-contracts.js'
-import type { LoadResult, Loader } from '../loader/index.js'
+import type { LoadContext, LoadResult } from '../loader/index.js'
 import { withOriginQueue } from './origin-queue.js'
-import { requestInstallConsent } from './install-consent.js'
-import type { InstallConsentPrompt } from './install-consent.js'
+import { driveLoadResult } from './update-outcomes.js'
+import type { UpdateOutcomeDeps } from './update-outcomes.js'
 
-export interface AppInstallDeps {
-  readonly broker: Broker
-  readonly loader: Loader
-  /**
-   * d-0025 (S4-4): asked once for the app's whole declared capability set,
-   * right after a successful install. Optional so every existing caller of
-   * this function -- every test that predates this lane -- keeps working
-   * unchanged; omitting it fails closed (./install-consent.ts's own doc),
-   * never throws, and is indistinguishable from every declared capability
-   * being declined.
-   */
-  readonly consent?: InstallConsentPrompt
-}
+/** Everything installFromHint needs, S4-5's three prompts included -- see
+ * ./update-outcomes.ts's own doc on why each one is optional and fails
+ * closed. Re-exported under this name because every existing caller and
+ * test imports `AppInstallDeps` from here, not from ./update-outcomes.js. */
+export type AppInstallDeps = UpdateOutcomeDeps
 
 /**
  * Installs (or advances the state of) the app at `hintedUrl`, gluing
@@ -92,55 +69,11 @@ export async function installFromHint (deps: AppInstallDeps, hintingOrigin: stri
       deps.broker.rollbackAcknowledgedVersionFor(origin)
     ])
 
-    const result = await deps.loader.load(hintedUrl, {
-      grantedPatterns: patternSetFromGrants(grants),
-      versionFloor,
-      acknowledgedRollbackVersion
-    })
-
-    switch (result.outcome) {
-      case 'installed':
-        try {
-          await deps.broker.registerApp(result.canonicalOrigin, result.manifest)
-        } catch (error) {
-          // The bundle is already on disk and `result` is already a
-          // genuinely usable LoadInstalled -- registerApp rejects only on a
-          // broker-internal fault (broker-contracts.ts's own doc), never on
-          // anything the app did. Losing the floor persistence is real, but
-          // less bad than telling the caller the install itself failed, or
-          // discarding the only reference to what is now on disk. Logged
-          // and swallowed, not rethrown: Promise<LoadResult> is documented
-          // as never rejecting, and nothing consumes a side channel yet.
-          console.error('[app-install] registerApp failed after a successful install; the bundle is installed but its version floor was not persisted', result.canonicalOrigin, error)
-        }
-        // d-0025: asked here, once, for the whole declared set -- AFTER
-        // registerApp (whose hydration this depends on, see
-        // install-consent.ts's header) and BEFORE this function's own
-        // promise resolves. Run regardless of whether registerApp itself
-        // just threw: its in-memory hydration already happened either way
-        // (GrantLedger.registerApp's own doc). See README.md's Design
-        // notes for exactly what guarantee "before the app runs" is here.
-        await requestInstallConsent(deps.broker, deps.consent, result.canonicalOrigin, result.manifest)
-        return result
-      case 'needs-reconsent':
-      case 'needs-capability-prompt':
-      case 'needs-rollback-choice':
-      case 'rejected':
-        // A60: registerApp fires only on an accepted install, never here --
-        // returned exactly as loader.load() produced it. A caller that
-        // drives the 'needs-rollback-choice' prompt to acceptance is
-        // expected to call broker.acknowledgeRollback(origin, version)
-        // itself, then call installFromHint again -- not this function's
-        // job (no UI exists yet to make that choice).
-        return result
-      default: {
-        // Exhaustiveness guard: a compile error at `exhaustive` is how a new
-        // LoadResult outcome added without a case here gets caught, not a
-        // runtime path reachable through the closed union above (matches
-        // src/telemetry/accounting.ts's applyEvent).
-        const exhaustive: never = result
-        throw new Error(`installFromHint: unhandled LoadResult outcome ${JSON.stringify(exhaustive)}`)
-      }
-    }
+    const context: LoadContext = { grantedPatterns: patternSetFromGrants(grants), versionFloor, acknowledgedRollbackVersion }
+    const result = await deps.loader.load(hintedUrl, context)
+    // S4-5: registerApp/consent for an accepted install, and driving each
+    // of the other four outcomes to a decision, all live in
+    // driveLoadResult -- see ./update-outcomes.ts's own header.
+    return await driveLoadResult(deps, result, context)
   })
 }

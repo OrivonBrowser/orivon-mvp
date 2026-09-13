@@ -203,6 +203,43 @@ export interface Loader {
    * anything but `hintedUrl` to start from (docs/open-questions.md A45).
    */
   load(hintedUrl: string, context: LoadContext): Promise<LoadResult>
+
+  /**
+   * S4-5: installs a bundle already fetched and validated by a prior
+   * `load()` call -- the terminal step for an ACCEPTED `needs-reconsent` or
+   * `needs-capability-prompt` outcome (see each one's own doc: approving is
+   * terminal there, because `decideUpdate()`'s widening/bundle-change checks
+   * already ran to produce them).
+   *
+   * NEVER RE-FETCHES, and that is the entire reason this method exists
+   * rather than a caller just calling `load()` again. The person has
+   * already been shown, and approved, exactly `tree`/`entries` -- fetching
+   * again before persisting would give the server a second chance to serve
+   * DIFFERENT bytes than what was approved, which is a correctness defect,
+   * not a missed optimisation.
+   */
+  installFetched(canonicalOrigin: string, manifest: Manifest, tree: BundleTree, entries: readonly BundleEntry[]): Promise<LoadInstalled | LoadRejected>
+
+  /**
+   * S4-5: re-runs the update decision against an ALREADY-FETCHED
+   * `tree`/`entries` -- no network call -- for a caller driving
+   * `needs-rollback-choice` to acceptance (`ADR-0013`,
+   * `LoadNeedsRollbackChoice`'s own doc).
+   *
+   * UNLIKE `needs-reconsent`/`needs-capability-prompt`, approving a
+   * rollback is NOT terminal: `decideUpdate()` returns `'rollback-choice'`
+   * BEFORE its widening/bundle-change checks run, so this same manifest
+   * could also widen capabilities or carry different code than what is
+   * pinned. The caller acknowledges the rollback first
+   * (`Broker.acknowledgeRollback`), then calls this with `context`'s
+   * `acknowledgedRollbackVersion` updated to match `manifest.version` --
+   * `decideAndRoute` (this file) then applies EXACTLY the same escalation
+   * an ordinary update would, and the result can itself be `'installed'`
+   * (with `rollbackNotice: true`), `'needs-reconsent'`, or
+   * `'needs-capability-prompt'` -- never `'needs-rollback-choice'` again,
+   * since the floor check now passes.
+   */
+  reconsider(canonicalOrigin: string, manifest: Manifest, tree: BundleTree, entries: readonly BundleEntry[], context: LoadContext): Promise<LoadResult>
 }
 
 /**
@@ -249,7 +286,7 @@ async function installOrReject (
   entries: readonly BundleEntry[],
   now: number,
   replacesAPin: boolean
-): Promise<LoadResult> {
+): Promise<LoadInstalled | LoadRejected> {
   try {
     const pin = await install(storage, canonicalOrigin, manifest, tree, entries, now, replacesAPin)
     return { outcome: 'installed', canonicalOrigin, manifest, pin }
@@ -278,7 +315,7 @@ async function installAndNotify (
   tree: BundleTree,
   entries: readonly BundleEntry[],
   replacesAPin: boolean
-): Promise<LoadResult> {
+): Promise<LoadInstalled | LoadRejected> {
   const result = await installOrReject(options.storage, canonicalOrigin, manifest, tree, entries, options.now(), replacesAPin)
   if (result.outcome === 'installed' && options.onInstalled !== undefined) {
     try {
@@ -290,73 +327,116 @@ async function installAndNotify (
   return result
 }
 
+/**
+ * Everything `load()` does once a bundle is IN HAND -- read the existing
+ * pin, run `decideUpdate()`, and route to one of the five outcomes.
+ * Factored out of `load()` so `Loader.reconsider` (below) can run this
+ * SAME decision again, against the SAME already-fetched `tree`/`entries`,
+ * with no second network fetch (S4-5, `LoadNeedsRollbackChoice`'s own doc
+ * on why an accepted rollback must re-run this rather than skip straight
+ * to installing).
+ */
+async function decideAndRoute (
+  options: CreateLoaderOptions,
+  canonicalOrigin: string,
+  manifest: Manifest,
+  tree: BundleTree,
+  entries: readonly BundleEntry[],
+  context: LoadContext
+): Promise<LoadResult> {
+  const rawPin = await options.storage.readPin(canonicalOrigin)
+  if (rawPin === undefined) {
+    // TOFU (ADR-0005): nothing was ever pinned for this origin, so there
+    // is no continuity to protect and nothing to prompt for.
+    return await installAndNotify(options, canonicalOrigin, manifest, tree, entries, false)
+  }
+
+  // A pin record exists but fails to parse (corrupt bytes, a schema this
+  // broker no longer recognises) is NOT the same as never having existed --
+  // treating it as fresh TOFU would let local corruption (or tampering)
+  // silently re-install without a prompt. An empty `pinnedHash` routes
+  // through decideUpdate's own "blank counts as changed" rule
+  // (update.ts's isSameBundle), which can never resolve weaker than
+  // `reconsent` -- it still goes through the version-floor and
+  // pattern-widening checks first, exactly like a real hash change would.
+  const existingPin = parsePinRecord(rawPin)
+  const pinnedHash = existingPin?.bundleHash ?? ''
+
+  const decision = decideUpdate({
+    pinnedHash,
+    newHash: tree.root,
+    grantedPatterns: context.grantedPatterns,
+    newPatterns: patternSetFromCapabilities(manifest.capabilities),
+    version: manifest.version,
+    versionFloor: context.versionFloor,
+    // The comparison LoadContext.acknowledgedRollbackVersion's own doc
+    // promises: only NOW is the actual offered version known, so only
+    // now can "was THIS version acknowledged" be answered.
+    rollbackAcknowledged: context.acknowledgedRollbackVersion === manifest.version
+  })
+
+  switch (decision) {
+    case 'rollback-choice':
+      return { outcome: 'needs-rollback-choice', canonicalOrigin, manifest, tree, entries, versionFloor: context.versionFloor }
+    case 'capability-prompt':
+      return {
+        outcome: 'needs-capability-prompt',
+        canonicalOrigin,
+        manifest,
+        tree,
+        entries,
+        requestedPatterns: patternSetFromCapabilities(manifest.capabilities)
+      }
+    case 'reconsent':
+      return { outcome: 'needs-reconsent', canonicalOrigin, manifest, tree, entries }
+    case 'silent':
+      return await installAndNotify(options, canonicalOrigin, manifest, tree, entries, true)
+    case 'rollback-notice': {
+      const result = await installAndNotify(options, canonicalOrigin, manifest, tree, entries, true)
+      return result.outcome === 'installed' ? { ...result, rollbackNotice: true } : result
+    }
+    default: {
+      // Exhaustiveness guard: a compile error at `exhaustive` is how a new
+      // UpdateDecision case added without a branch here gets caught, not a
+      // runtime path reachable through the closed union above (same
+      // pattern as src/telemetry/accounting.ts's applyEvent).
+      const exhaustive: never = decision
+      throw new Error(`loader: unhandled update decision ${JSON.stringify(exhaustive)}`)
+    }
+  }
+}
+
 export function createLoader (options: CreateLoaderOptions): Loader {
   async function load (hintedUrl: string, context: LoadContext): Promise<LoadResult> {
     const fetched = await fetchBundle(options.fetch, hintedUrl, options.resolve)
     if (!fetched.ok) return { outcome: 'rejected', reason: fetched.reason }
-    const { canonicalOrigin, manifest, tree, entries } = fetched
-
-    const rawPin = await options.storage.readPin(canonicalOrigin)
-    if (rawPin === undefined) {
-      // TOFU (ADR-0005): nothing was ever pinned for this origin, so there
-      // is no continuity to protect and nothing to prompt for.
-      return await installAndNotify(options, canonicalOrigin, manifest, tree, entries, false)
-    }
-
-    // A pin record exists but fails to parse (corrupt bytes, a schema this
-    // broker no longer recognises) is NOT the same as never having existed --
-    // treating it as fresh TOFU would let local corruption (or tampering)
-    // silently re-install without a prompt. An empty `pinnedHash` routes
-    // through decideUpdate's own "blank counts as changed" rule
-    // (update.ts's isSameBundle), which can never resolve weaker than
-    // `reconsent` -- it still goes through the version-floor and
-    // pattern-widening checks first, exactly like a real hash change would.
-    const existingPin = parsePinRecord(rawPin)
-    const pinnedHash = existingPin?.bundleHash ?? ''
-
-    const decision = decideUpdate({
-      pinnedHash,
-      newHash: tree.root,
-      grantedPatterns: context.grantedPatterns,
-      newPatterns: patternSetFromCapabilities(manifest.capabilities),
-      version: manifest.version,
-      versionFloor: context.versionFloor,
-      // The comparison LoadContext.acknowledgedRollbackVersion's own doc
-      // promises: only NOW is the actual offered version known, so only
-      // now can "was THIS version acknowledged" be answered.
-      rollbackAcknowledged: context.acknowledgedRollbackVersion === manifest.version
-    })
-
-    switch (decision) {
-      case 'rollback-choice':
-        return { outcome: 'needs-rollback-choice', canonicalOrigin, manifest, tree, entries, versionFloor: context.versionFloor }
-      case 'capability-prompt':
-        return {
-          outcome: 'needs-capability-prompt',
-          canonicalOrigin,
-          manifest,
-          tree,
-          entries,
-          requestedPatterns: patternSetFromCapabilities(manifest.capabilities)
-        }
-      case 'reconsent':
-        return { outcome: 'needs-reconsent', canonicalOrigin, manifest, tree, entries }
-      case 'silent':
-        return await installAndNotify(options, canonicalOrigin, manifest, tree, entries, true)
-      case 'rollback-notice': {
-        const result = await installAndNotify(options, canonicalOrigin, manifest, tree, entries, true)
-        return result.outcome === 'installed' ? { ...result, rollbackNotice: true } : result
-      }
-      default: {
-        // Exhaustiveness guard: a compile error at `exhaustive` is how a new
-        // UpdateDecision case added without a branch here gets caught, not a
-        // runtime path reachable through the closed union above (same
-        // pattern as src/telemetry/accounting.ts's applyEvent).
-        const exhaustive: never = decision
-        throw new Error(`loader: unhandled update decision ${JSON.stringify(exhaustive)}`)
-      }
-    }
+    return await decideAndRoute(options, fetched.canonicalOrigin, fetched.manifest, fetched.tree, fetched.entries, context)
   }
 
-  return { load }
+  async function reconsider (
+    canonicalOrigin: string,
+    manifest: Manifest,
+    tree: BundleTree,
+    entries: readonly BundleEntry[],
+    context: LoadContext
+  ): Promise<LoadResult> {
+    return await decideAndRoute(options, canonicalOrigin, manifest, tree, entries, context)
+  }
+
+  async function installFetched (
+    canonicalOrigin: string,
+    manifest: Manifest,
+    tree: BundleTree,
+    entries: readonly BundleEntry[]
+  ): Promise<LoadInstalled | LoadRejected> {
+    // Always `replacesAPin: true` -- every caller of this method is acting
+    // on an approved needs-reconsent/needs-capability-prompt outcome, and
+    // both can only ever be produced once decideAndRoute has already found
+    // an existing pin for this origin (its own TOFU branch above returns
+    // 'installed' before decideUpdate ever runs) -- so there is always a
+    // previous bundle's assets to prune.
+    return await installAndNotify(options, canonicalOrigin, manifest, tree, entries, true)
+  }
+
+  return { load, reconsider, installFetched }
 }
