@@ -142,10 +142,10 @@ describe('requestInstallConsent (real broker) -- proves "once per origin, ever" 
     expect(await broker.app.grants(APP)).toEqual([])
   })
 
-  // A144 (docs/open-questions.md): known limitation. Nothing on disk
+  // A145 (docs/open-questions.md): known limitation. Nothing on disk
   // distinguishes "asked, and declined" from "never asked" -- a declined
   // origin is asked again on its next visit, unlike an accepted one.
-  it('A144: a declined visit is NOT remembered across a fresh broker -- the next visit asks again', async () => {
+  it('A145: a declined visit is NOT remembered across a fresh broker -- the next visit asks again', async () => {
     const storage = memoryLedgerStorage()
     const manifest = manifestWith({ net: { tcp: { connect: ['api.example.com:443'] } } })
 

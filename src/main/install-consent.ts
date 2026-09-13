@@ -17,7 +17,7 @@
 // exactly the fatigue ADR-0012 exists to prevent. THE ONE CASE THIS DOES
 // NOT REMEMBER: a fully DECLINED visit persists no grant at all, so nothing
 // on disk distinguishes "asked, said no" from "never asked" -- a declined
-// origin is asked again on its next visit. Filed as A144 rather than
+// origin is asked again on its next visit. Filed as A145 rather than
 // silently accepted; see docs/open-questions.md.
 
 import { decideGrantRequest } from '../broker/policy/request-grant.js'
