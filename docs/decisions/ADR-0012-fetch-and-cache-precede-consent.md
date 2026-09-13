@@ -1,6 +1,6 @@
-# ADR-0012: Fetch-and-cache is automatic and silent; consent is deferred to first capability use
+# ADR-0012: Fetch-and-cache is automatic and silent; consent is asked once, before the app runs
 
-- **Status:** accepted
+- **Status:** accepted; second half amended 2026-09-13 (see the amendment below)
 - **Date:** 2026-09-03
 - **Type:** architecture / security
 - **Decided by:** owner
@@ -23,6 +23,49 @@ carrying a manifest hint, nothing more — can have its code written to the user
 explicit consent** at that point. This ADR accepts that consequence deliberately, for the reasons
 in §Reasoning, and states its one currently-unmitigated cost in §Consequences rather than treating
 it as free.
+
+> **Amendment, 2026-09-13 (owner decision `d-0025`). The second half of this decision is
+> reversed; the first half stands.** Consent is no longer deferred to the first capability
+> call. It is asked **once, before the app's own code runs**, for the whole set its manifest
+> declares -- the shape owner decision 8 (`A100`) already required of the install prompt and
+> that this ADR, written six days earlier, contradicted. Where the two disagreed, this is the
+> reading that wins.
+>
+> **What still stands, unchanged:** fetch-and-cache on seeing a `<link rel="orivon-manifest">`
+> hint is automatic and silent, and the uncomfortable consequence this ADR states plainly --
+> that a merely-visited origin's code reaches the user's disk with no explicit consent at that
+> point -- is still accepted, for the reasons in this ADR's own Reasoning. Caching is not the
+> thing being re-decided; only the moment of the ask is.
+>
+> **The owner's reason, in their words:** *"better to grant once at install, to prevent app
+> issues."* That is decision 8's own reasoning arriving from the app's side rather than the
+> user's: an app that does not know Orivon exists cannot pause mid-request for a dialog. It
+> fires parallel requests with its own timeouts and retries, and a capability that answers
+> `'denied'` while a human reads a popup is indistinguishable, to that app, from a capability
+> that is simply absent. Deferred consent made every ported app's first run a race against a
+> dialog. Asking once, up front, removes the race entirely.
+>
+> **What this costs, stated rather than buried.** This ADR rejected "ask before any fetch"
+> partly to avoid prompt fatigue, and asking at install brings part of that cost back: a
+> first visit to a hinted origin can now raise a dialog the user did not initiate. Three
+> things bound it, and they are requirements on the implementation, not hopes:
+>
+> 1. **Only an origin that actually declares capabilities is ever asked about.** A manifest
+>    with an empty `capabilities` block installs silently and shows nothing -- there is no
+>    question to put to the user.
+> 2. **Once per origin, ever.** A grant lasts until revoked (`A101`), so a second visit is
+>    silent. Only a manifest that *widens* what it asks for comes back, through the existing
+>    re-consent path (`decideUpdate`).
+> 3. **One dialog, not one per capability.** The whole declared set is presented together,
+>    with breadth visible (`A100`). Three sequential dialogs for one app is the fatigue this
+>    ADR named, reproduced at a finer grain.
+>
+> **Still open, parked rather than guessed** (`A138`): whether a person may accept *part* of
+> what an app asks for -- allow the network, refuse the filesystem -- or whether the choice is
+> all-or-nothing. All-or-nothing is what is being built, because it is what the grant ledger
+> and `decideGrantRequest` already express and because a partially-granted app hits exactly the
+> mid-flight denial this amendment exists to remove. A per-row choice is a real product
+> question and the owner has not been asked it.
 
 ## Context
 `ADR-0005`'s original "Delivery model" line specified the opposite order: *"fetch → show the
