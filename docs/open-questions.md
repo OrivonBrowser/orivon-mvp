@@ -4406,3 +4406,40 @@ happened.
 *Still open.* AI recommendation: the display-only path above. The owner already chose the input
 to it -- save what was installed rather than re-fetching at launch (2026-09-11) -- and that
 choice stands; what changes is that the saved manifest informs the LIST, never the authority.
+
+### A138 -- a cross-origin request inside an app's own partition is denied, not proxied to the real network **[STILL OPEN]**
+
+**Raised 2026-09-13**, lane S4-3-serve, build step 4's serve-from-cache item
+(`ADR-0007`'s other half: `src/loader/serve.ts`, `src/loader/electron-serve.ts`).
+
+`session.fromPartition(...).protocol.handle('https', handler)` intercepts the WHOLE `https`
+scheme for that session -- not merely requests addressed to the app's own host. Confirmed against
+`electron/electron`'s own protocol registration code, and consistent with `spike/adr7-probe/`'s
+own results (which never exercised a second host inside the probed partition). So a page running
+inside its own app partition that fetches a THIRD-PARTY `https://` URL -- a font from a CDN, an
+`<img src>` pointing elsewhere, anything not part of the pinned bundle -- reaches this SAME
+handler, not the real network.
+
+`serve.ts`'s handler answers that case by denying it (`originFromUrl(request.url) !== origin` ->
+404), never proxying it through to Electron's real network stack. This is the fail-closed choice,
+consistent with `ADR-0007`'s "a same-origin request whose path is not in the pinned set is denied,
+not fetched" extended to the scheme-wide reality of how `protocol.handle` actually intercepts --
+but it is a genuine behavioural choice ADR-0007's own text never resolves, because ADR-0007 was
+written before `protocol.handle`'s per-scheme (not per-host) interception scope was confirmed
+(A110, the 2026-09-10 probe).
+
+**What this means in practice:** an Orivon app that references ANY resource outside its own
+pinned, hashed bundle -- from its own partition, once serving is registered -- gets a silent
+404 for that resource today, not a live fetch. `ADR-0005` already assumes a fully self-contained
+bundle (everything the app needs is declared and hashed), so this may simply be correct and
+permanent; it has not been decided as such.
+
+**What would settle it:** an owner decision on whether an installed app may ever reference a
+live, non-pinned, third-party resource from its own origin's partition, and if so, whether that
+should be a full network passthrough (Electron's `net.fetch`, session-scoped, for any request
+whose origin does not match the app's own) or a narrower allowlisted case. AI recommendation, not
+an owner decision: leave it denied until a real app design needs otherwise -- broadening a fail-
+closed default is reversible; the reverse is not.
+
+**Needed by:** whichever future app actually needs an external resource from inside its own
+partition -- not before, since nothing in this MVP's own fixture/flagship apps does today.

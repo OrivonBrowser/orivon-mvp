@@ -112,3 +112,71 @@ declared asset, up to `MAX_BUNDLE_ENTRIES` of them. The one state this gives up 
 whose `code/` tree survived while its pin record did not (a crash between the two writes): those
 files are not swept by the re-install that follows, but the re-install does write a pin, so the
 next update prunes them.
+
+**Re-verification cost: whole-tree, once, at handler creation -- not one leaf hash per request.**
+[`ADR-0007`](../../docs/decisions/ADR-0007-cached-bundles-served-at-their-own-origin.md) requires
+the cached tree be "re-verified at every load, not only at fetch," and a large bundle makes that
+sentence a real cost decision, not a formality. [`serve-verify.ts`](serve-verify.ts) re-hashes
+every pinned asset and compares the result against `pin.bundleHash` exactly once, when
+[`serve.ts`](serve.ts)'s `createAppRequestHandler` builds the handler that
+[`electron-serve.ts`](electron-serve.ts) then registers with
+`session.fromPartition(...).protocol.handle(...)` -- not on every individual request that handler
+later answers. Two things make this the right cost to pay, not merely the cheap one: `protocol
+.handle` registrations do not survive an Electron process restart (confirmed against
+`electron/electron`'s `protocol_registry.cc` -- a session's handler map is process-local), so a
+fresh handler, and therefore a fresh whole-tree check, is unavoidable once per app **per launch**
+regardless of how many requests that launch makes; and the ADR's own phrase is "**between runs**",
+which this satisfies exactly. What it does **not** catch is a file rewritten on disk mid-session,
+after the handler for that origin has already been built -- a narrower, TOCTOU-shaped risk this
+lane accepts rather than pays for on every request: a per-leaf hash on every single asset fetch
+would mean re-hashing an app's whole JS bundle on every navigation and every repeated image
+request, for a threat (local write access to a running browser's own profile directory, in a
+window of an already-open app) that has larger consequences than a stale cached file. AI
+recommendation, not an owner decision -- flagged rather than silently chosen, the same as
+`bundle-hash.ts`'s own `MAX_ASSET_BYTES`/`MAX_BUNDLE_BYTES`.
+
+**Why `readAsset` collapses every failure into one `undefined`, unlike `readPin`.** `readPin`'s
+own doc distinguishes "never pinned" from "pinned but unreadable" because `index.ts`'s TOFU-vs-
+reconsent branch genuinely needs to tell them apart. Nothing downstream of `readAsset` needs that:
+`serve-verify.ts`'s whole-tree check denies the ENTIRE bundle the moment any one asset cannot be
+confirmed present with its pinned bytes, regardless of whether the cause was a missing file, a
+permissions error, or a directory where a file was expected. One contract, not two, because there
+is only one caller-visible outcome.
+
+**Why `/` maps to `manifest.entry` and nothing else does.** A pinned bundle is a fixed, hashed
+asset map, not a filesystem with directory listings -- `isValidCanonicalPath` already refuses
+every path ending in `/` except the bare root (a trailing empty segment fails `isSafeDecodedPath`),
+so there is no directory-index fallback to design for beyond that one case. `serve.ts`'s
+`resolveRequestPath` special-cases exactly `url.pathname === '/'`; every other request, directory-
+ish or not, is answered by an exact pinned-path lookup or denied.
+
+**Why registering a handler is idempotent, not additive.** Electron's `protocol.handle` throws
+`"The scheme has been registered"` on a second call for a scheme already handled on that session --
+confirmed against `electron/electron`'s own source rather than assumed (`protocol_registry.cc`'s
+`RegisterProtocol` uses `try_emplace`, which only inserts once). Since `partitionFor` keys a
+session to exactly one canonical origin, a second registration on the same session can only mean
+that origin was reinstalled within the same process run; `electron-serve.ts`'s `registerAppOrigin`
+unhandles first so the session always answers with a handler built from the freshly re-verified
+pin.
+
+**Why a cross-origin request inside an app's own partition is denied, not proxied to the real
+network.** `session.fromPartition(...).protocol.handle('https', ...)` intercepts the WHOLE scheme
+for that session, not merely requests to the app's own host -- so a page in its own partition
+fetching a third-party `https://` URL (a CDN font, an `<img>` pointing elsewhere) reaches this same
+handler. `ADR-0005` already assumes a fully self-contained, pre-hashed bundle, and building a live
+passthrough to the real network for everything else is a trust decision this lane does not make
+silently -- denying is the fail-closed answer, consistent with "a same-origin request whose path
+is not in the pinned set is denied, not fetched" extended to the scheme-wide reality of how
+`protocol.handle` actually intercepts. AI recommendation, not an owner decision, filed as
+[`open-questions.md`](../../docs/open-questions.md) A138.
+
+**Why `restorePinnedServing` runs at startup rather than only after a fresh `load()`.** Nothing in
+this codebase yet calls `Loader.load()` in production -- the consent-flow UI that would trigger it
+is a different build-step-4 lane's work. Without a startup pass, "offline first-run keeps working
+for pre-cached apps" (this document's own line, from `ADR-0007`) would be false in practice: an
+app installed in one run would stop being servable from cache the moment the browser restarts,
+since nothing else re-registers its handler. `subsystem.ts`'s `afterReady` calls
+`electron-serve.ts`'s `restorePinnedServing` once, reading every origin `node-storage.ts`'s
+`listPinnedOrigins` finds a self-consistent pin for, and registers each independently -- one
+origin's corrupted pin or unreadable asset is logged and does not stop the rest, the same
+per-item-failure stance `runAfterReady` (`main/registry.ts`) already takes for subsystems.
