@@ -6,7 +6,9 @@ import type { Session } from 'electron'
 import { bundleTree } from '../../broker/policy/bundle-hash.js'
 import { fromBundleTree } from '../../broker/policy/pin.js'
 import { partitionFor } from '../../broker/grants/origin-hash.js'
+import { createBroker } from '../../broker/index.js'
 import type { Broker } from '../../broker/broker-contracts.js'
+import { baseDeps, manifestWith, memoryLedgerStorage } from '../../broker/tests/index.test-helpers.js'
 import type { Grant } from '../../contracts/index.js'
 import { nodeLoaderStorage } from '../node-storage.js'
 import type { AppRequestHandler } from '../serve.js'
@@ -273,6 +275,159 @@ describe('isOriginServedFromCache -- the address bar\'s S4-6 provenance signal',
 
     expect(await isOriginServedFromCache('not a url')).toBe(false)
 
+    vi.doUnmock('electron')
+  })
+})
+
+describe('restorePinnedServing across a restart -- a real, persisted grant is not yet readable (A158)', () => {
+  // A158 (docs/open-questions.md): restorePinnedServing runs in
+  // loaderSubsystem.afterReady BEFORE any window exists, so the ledger it
+  // hands to registerServingFor has never had registerApp called on THIS
+  // origin THIS run -- registerApp's only production callers fire after a
+  // page has already loaded and reported its manifest hint. GrantLedger's
+  // own `grantsHydrated` doc says a persisted grant becomes readable only
+  // on that first registerApp call, because re-validating it needs a
+  // manifest. This suite uses a REAL GrantLedger/createBroker against a
+  // REAL LedgerStorage double, not the fakeBroker stub above, so it proves
+  // the defect against the actual hydration mechanism, not an assumption
+  // about it.
+  const ORIGIN = 'https://app.example'
+  const GRANTED_PATTERNS = ['api.example.com:443']
+
+  async function brokerRestartedWithAPersistedGrant (): Promise<{ ledgerStorage: ReturnType<typeof memoryLedgerStorage>, broker: Broker }> {
+    // Session 1: the app was really installed and really granted, by a
+    // person, and that landed on disk (persistGrants, A23).
+    const ledgerStorage = memoryLedgerStorage()
+    const firstRun = createBroker(baseDeps({ ledgerStorage }))
+    firstRun.registerApp(ORIGIN, manifestWith({ net: { tcp: { connect: GRANTED_PATTERNS } } }))
+    await firstRun.grant(ORIGIN, 'tcp.connect', GRANTED_PATTERNS)
+
+    // Session 2: a restart. A fresh GrantLedger, same persisted storage --
+    // exactly what loaderSubsystem.afterReady constructs before any window
+    // exists (src/broker/transport/ipc.ts wires the real equivalent).
+    return { ledgerStorage, broker: createBroker(baseDeps({ ledgerStorage })) }
+  }
+
+  it('serves the first document with a self-only CSP even though a real, persisted grant exists for this origin', async () => {
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-restart-csp-'))
+    const storage = nodeLoaderStorage(userData)
+    await pinRealOrigin(storage, ORIGIN)
+    const { broker } = await brokerRestartedWithAPersistedGrant()
+
+    const session = fakeSession()
+    vi.doMock('electron', () => ({ session: { fromPartition: () => session } }))
+    const { restorePinnedServing } = await import('../electron-serve.js')
+
+    await restorePinnedServing(storage, broker)
+    const handler = session.handlers.get('https')
+    if (handler === undefined) throw new Error('no handler was registered')
+
+    const response = await handler(new Request(`${ORIGIN}/`))
+
+    // THE DEFECT: connect-src is 'self' only. The grant above is real and
+    // persisted, but broker.app.grants(ORIGIN) reads GrantLedger.grantsFor,
+    // which returns [] until this origin's grantsHydrated flag is set --
+    // and nothing has called registerApp on THIS broker instance yet, so it
+    // never has been. A person who already approved this app's network
+    // access sees it fail as though they never had.
+    expect(response.headers.get('content-security-policy')).toBe(
+      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'"
+    )
+
+    vi.doUnmock('electron')
+  })
+
+  it('THE RECOVERY PATH: once registerApp runs for this origin (the normal manifest-hint flow), the SAME already-registered handler reflects the real grant on its very next request -- no re-registration', async () => {
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-restart-csp-'))
+    const storage = nodeLoaderStorage(userData)
+    await pinRealOrigin(storage, ORIGIN)
+    const { broker } = await brokerRestartedWithAPersistedGrant()
+
+    const session = fakeSession()
+    vi.doMock('electron', () => ({ session: { fromPartition: () => session } }))
+    const { restorePinnedServing } = await import('../electron-serve.js')
+
+    await restorePinnedServing(storage, broker)
+    const handler = session.handlers.get('https')
+    if (handler === undefined) throw new Error('no handler was registered')
+
+    // A person reloads (or the tab simply navigates again) after the page's
+    // own manifest hint has been reported and the normal flow has called
+    // registerApp with a freshly fetched manifest -- app-install.ts's real
+    // production path, simulated here directly on the SAME broker instance
+    // restorePinnedServing was given above.
+    broker.registerApp(ORIGIN, manifestWith({ net: { tcp: { connect: GRANTED_PATTERNS } } }))
+
+    const response = await handler(new Request(`${ORIGIN}/`))
+
+    // This is what makes "a reload fixes it" true rather than assumed:
+    // registerServingFor's handler closure reads broker.app.grants(ORIGIN)
+    // fresh on every request (electron-serve.ts's own doc on
+    // grantedConnectPatternsFor), so the SAME handler this suite's sibling
+    // test found serving 'self'-only now answers with the real grant, with
+    // no re-registration and no new protocol.handle call.
+    expect(response.headers.get('content-security-policy')).toContain('api.example.com:443')
+
+    vi.doUnmock('electron')
+  })
+
+  it('THE HONEST PART: logs a diagnostic naming the origin, since the CSP itself must still start narrow -- widening it from unvalidated disk state is the mistake A137 rejected', async () => {
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-restart-csp-'))
+    const storage = nodeLoaderStorage(userData)
+    await pinRealOrigin(storage, ORIGIN)
+    const { broker } = await brokerRestartedWithAPersistedGrant()
+
+    const session = fakeSession()
+    vi.doMock('electron', () => ({ session: { fromPartition: () => session } }))
+    const { restorePinnedServing } = await import('../electron-serve.js')
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await restorePinnedServing(storage, broker)
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      '[loader]', ORIGIN, expect.stringContaining('not yet reflected'), expect.stringContaining('A158')
+    )
+
+    warnSpy.mockRestore()
+    vi.doUnmock('electron')
+  })
+
+  it('logs nothing for an origin with no persisted grant at all -- the ordinary case must stay quiet', async () => {
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-restart-csp-'))
+    const storage = nodeLoaderStorage(userData)
+    await pinRealOrigin(storage, ORIGIN)
+    // A broker backed by real, empty ledger storage -- this origin was
+    // never granted anything by anyone, in any session.
+    const broker = createBroker(baseDeps({ ledgerStorage: memoryLedgerStorage() }))
+
+    const session = fakeSession()
+    vi.doMock('electron', () => ({ session: { fromPartition: () => session } }))
+    const { restorePinnedServing } = await import('../electron-serve.js')
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await restorePinnedServing(storage, broker)
+
+    expect(warnSpy).not.toHaveBeenCalled()
+
+    warnSpy.mockRestore()
+    vi.doUnmock('electron')
+  })
+
+  it('logs nothing with no broker at all -- there is no ledger to have missed hydrating', async () => {
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-restart-csp-'))
+    const storage = nodeLoaderStorage(userData)
+    await pinRealOrigin(storage, ORIGIN)
+
+    const session = fakeSession()
+    vi.doMock('electron', () => ({ session: { fromPartition: () => session } }))
+    const { restorePinnedServing } = await import('../electron-serve.js')
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await restorePinnedServing(storage)
+
+    expect(warnSpy).not.toHaveBeenCalled()
+
+    warnSpy.mockRestore()
     vi.doUnmock('electron')
   })
 })
