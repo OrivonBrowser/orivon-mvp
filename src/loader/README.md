@@ -168,7 +168,7 @@ passthrough to the real network for everything else is a trust decision this lan
 silently -- denying is the fail-closed answer, consistent with "a same-origin request whose path
 is not in the pinned set is denied, not fetched" extended to the scheme-wide reality of how
 `protocol.handle` actually intercepts. AI recommendation, not an owner decision, filed as
-[`open-questions.md`](../../docs/open-questions.md) A138.
+[`open-questions.md`](../../docs/open-questions.md) A143.
 
 **Why `restorePinnedServing` runs at startup rather than only after a fresh `load()`.** Nothing in
 this codebase yet calls `Loader.load()` in production -- the consent-flow UI that would trigger it

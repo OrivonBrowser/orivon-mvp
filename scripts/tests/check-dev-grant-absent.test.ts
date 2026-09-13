@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { checkDevGrantAbsent, DEV_GRANT_MARKER } from '../check-dev-grant-absent.mjs'
+import { checkDevGrantAbsent, DEV_GRANT_MARKER, DEV_MARKERS } from '../check-dev-grant-absent.mjs'
 
 /** A scratch directory standing in for a repository root; `build` never actually runs electron-vite. */
 function withOutput (files: Record<string, string>): string {
@@ -58,6 +58,24 @@ describe('checkDevGrantAbsent', () => {
     const result = checkDevGrantAbsent(root, { build: () => {} })
     expect(result.ok).toBe(false)
     expect(result.offenders).toEqual(['out/main/index.js'])
+  })
+
+  // The regression this guard actually suffered: it was written against ONE
+  // global and kept passing when a second one was added behind the same
+  // build-time flag. Iterating DEV_MARKERS rather than naming them means a
+  // marker added to that list without being scanned fails here immediately.
+  it.each(DEV_MARKERS)('fails when %s survived into compiled output', (marker) => {
+    const root = withOutput({
+      'out/main/index.js': `globalThis.${marker} = async () => {};\n`
+    })
+    const result = checkDevGrantAbsent(root, { build: () => {} })
+    expect(result.ok).toBe(false)
+    expect(result.offenders).toEqual(['out/main/index.js'])
+  })
+
+  it('guards more than one marker, so a second dev-only global cannot slip through', () => {
+    expect(DEV_MARKERS.length).toBeGreaterThan(1)
+    expect(DEV_MARKERS[0]).toBe(DEV_GRANT_MARKER)
   })
 
   it('scans every .js file under the output directory, not only main/index.js', () => {
