@@ -90,6 +90,69 @@ describe('requestGrant (stubbed broker)', () => {
     expect(result).toBe(false)
     expect(consent).not.toHaveBeenCalled()
   })
+
+  // Finding 1 (A153, docs/open-questions.md): the dialog `consent()` awaits
+  // can run for up to 120 seconds, and installFromHint can re-register a
+  // narrower manifest for this same origin at any point while it is open
+  // (a page re-triggering its own <link rel="orivon-manifest"> hint by
+  // reloading itself). Nothing re-checked the manifest between computing
+  // `decision` and calling `broker.grant()`, so a decision computed against
+  // a manifest that no longer holds could still be committed.
+  it('re-reads the manifest after consent and fails closed if it no longer allows what was approved', async () => {
+    const calls: BrokerCall[] = []
+    let manifestReads = 0
+    const broker = stubBroker(calls, {
+      manifest: async () => {
+        manifestReads += 1
+        // The dialog is shown against THIS manifest (wide) -- by the time
+        // the person answers, a fresh install has narrowed it.
+        return manifestReads === 1
+          ? manifestWith({ net: { tcp: { connect: ['*:*'] } } })
+          : manifestWith({ net: { tcp: { connect: ['api.example.com:443'] } } })
+      }
+    })
+    const consent = vi.fn(async () => true)
+
+    const result = await requestGrant(broker, consent, APP, { capability: 'tcp.connect', patterns: ['evil.example.com:443'] })
+
+    expect(result).toBe(false)
+    expect(calls.some((call) => call.method === 'grant')).toBe(false)
+    // Proves the re-check actually happened, not merely that grant was skipped
+    // for some unrelated reason.
+    expect(manifestReads).toBeGreaterThanOrEqual(2)
+  })
+
+  it('still commits when the re-read manifest agrees with the one the dialog was shown', async () => {
+    const calls: BrokerCall[] = []
+    const broker = stubBroker(calls, {
+      manifest: async () => manifestWith({ net: { tcp: { connect: ['api.example.com:443'] } } }),
+      grant: async (origin, capability, patterns) => ({ id: 'g1', origin, capability, patterns, grantedAt: 0 })
+    })
+    const consent = vi.fn(async () => true)
+
+    const result = await requestGrant(broker, consent, APP, { capability: 'tcp.connect' })
+
+    expect(result).toBe(true)
+    expect(calls).toContainEqual({ method: 'grant', origin: APP, args: { capability: 'tcp.connect', patterns: ['api.example.com:443'] } })
+  })
+
+  it('fails closed if the origin\'s manifest is gone entirely by the time consent returns', async () => {
+    const calls: BrokerCall[] = []
+    let manifestReads = 0
+    const broker = stubBroker(calls, {
+      manifest: async () => {
+        manifestReads += 1
+        if (manifestReads === 1) return manifestWith({ fs: { quotaBytes: 1024 } })
+        throw new Error('no manifest registered for this origin')
+      }
+    })
+    const consent = vi.fn(async () => true)
+
+    const result = await requestGrant(broker, consent, APP, { capability: 'fs' })
+
+    expect(result).toBe(false)
+    expect(calls.some((call) => call.method === 'grant')).toBe(false)
+  })
 })
 
 describe('requestGrant (real broker) -- proves a real, persisted grant', () => {

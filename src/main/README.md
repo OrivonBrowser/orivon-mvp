@@ -283,3 +283,47 @@ definition of "how installFromHint is wired for real" (the broker, the loader, a
 dialog together) instead of two call sites that could quietly drift -- e.g. one remembering to
 pass `consent` and one forgetting it, silently degrading to "every app installs with nothing
 granted" with no error anywhere.
+
+**[`request-grant.ts`](request-grant.ts) — re-reads the manifest, and re-runs
+`decideGrantRequest`, between `consent()` returning and `broker.grant()` committing (`A153`,
+`docs/open-questions.md`).** `consent()` can await a real dialog for up to 120 seconds (`A140`),
+and `installFromHint` (`./app-install.ts`) can re-register a narrower manifest for the same
+origin at any point during that wait -- a page can trigger this by reloading itself, which
+re-runs its `<link rel="orivon-manifest">` hint (`src/preload/manifest-hint.ts`). Without the
+re-check, `broker.grant()` committed a decision computed against a manifest that might no longer
+be the one in force, and `GrantLedger.grant()` has no invariant of its own to catch that --
+capability-api.md's design rule 4 ("a grant can never exceed the manifest") was true only at the
+moment `decideGrantRequest` first ran, not at the moment the grant actually landed. The re-check
+uses the EXACT patterns already shown to the person (`decision.patterns`), never a fresh request,
+so accepting means exactly what was asked and nothing wider ever slips through on a re-read that
+happens to be more permissive. **Deliberately not also serialised through `withOriginQueue`**:
+the re-check alone closes the security hole outright, and a queue would only change TIMING --
+making one origin's grant dialog wait behind another's install (which can itself show a dialog,
+another up to 120 seconds) rather than closing anything the re-check leaves open. AI
+recommendation, not an owner decision; see `A153`.
+
+**[`grant-changed-capabilities.ts`](grant-changed-capabilities.ts) — extracted so
+`./install-consent.ts` and `./update-outcomes.ts` cannot each get "was this capability's
+authority actually different" wrong in a different way (`A154`, `A155`).** `broker.grant()`
+(`src/broker/index.ts`) always mints a fresh `GrantId` and tears down every live handle under the
+grant it replaces -- correct, and deliberately tested, for a REAL authority change (`A84`), but
+both call sites used to call it unconditionally for every capability in their own "capabilities
+to grant" list, including ones already held with an identical pattern set. The concrete harm:
+accepting an update that only adds `fs` could silently kill an open, unrelated `tcp.connect`
+socket, because the update's own capability list still named `tcp.connect` even though nothing
+about it had changed. Comparing pattern sets ORDER-INDEPENDENTLY matters here specifically --
+a manifest re-declaring the same patterns in a different order must read as unchanged, not as a
+widening that happens to net out to the same set.
+
+**[`install-consent.ts`](install-consent.ts) — bound 2 is now `.every`, not `.some` (`A155`).**
+`app.requestGrant` (`./request-grant.ts`) is a second door to a grant, reachable while a page's
+own scripts are already running (`A146`), and `registerApp` runs before this function in
+`app-install.ts`'s own `finishInstall` -- so an app could call `requestGrant` for exactly one of
+its declared capabilities before this check ever sees it. The old `.some` read "any declared
+capability already held" as "already asked", which is true when this function granted
+everything, but also true after that one out-of-band grant -- and skipping the WHOLE dialog then
+permanently withheld every other declared capability, silently. `.every` only skips once nothing
+declared is left unheld. This is still an INFERENCE from held grants, not a record of "asked, and
+here is the answer" -- the same honest limit `A145` already named for the decline case -- and
+`A155` parks the real fix (a persisted consent-decision marker, or an owner decision that the
+inference is an acceptable floor) rather than deciding it here.
