@@ -1,7 +1,7 @@
 // The real Fetch (fetch-bundle.ts's own type) over Electron's net.fetch --
 // session-aware, unlike Node's global fetch.
 
-import type { Fetch } from './fetch-bundle.js'
+import type { Fetch, FetchResponse } from './fetch-bundle.js'
 import { classifyAddress, isPublicUnicast } from '../broker/policy/address.js'
 
 export const electronFetch: Fetch = async (url, pinnedAddresses, signal) => {
@@ -21,15 +21,16 @@ export const electronFetch: Fetch = async (url, pinnedAddresses, signal) => {
   // WHAT IS NOT CLOSED, AND CANNOT BE WITH ELECTRON'S CURRENT API SURFACE:
   // neither `net.fetch` nor `net.request` exposes a way to pin a request's
   // underlying connection to a specific resolved address while keeping the
-  // real hostname for TLS SNI/the Host header/`response.url` (confirmed
-  // against node_modules/electron/electron.d.ts, electron 44):
-  // `request.setHeader` explicitly refuses `Host`, `--host-resolver-rules`
-  // is a startup-only global switch, not a per-request option, and neither
-  // `net.fetch`'s `Response` nor `ClientRequest`'s own response exposes the
-  // remote address a request actually connected to. Rewriting `url` to the
-  // IP literal instead would break TLS/SNI for every real https host AND
-  // fetch-bundle.ts's own same-origin check, which can never hold for an
-  // IP-literal response.url -- so that is not an option either. Tracked as
+  // real hostname for TLS SNI/the Host header (confirmed against
+  // node_modules/electron/electron.d.ts, electron 44): `request.setHeader`
+  // explicitly refuses `Host`, `--host-resolver-rules` is a startup-only
+  // global switch, not a per-request option, and neither `net.fetch`'s
+  // `Response` nor `ClientRequest`'s own response exposes the remote address
+  // a request actually connected to. Rewriting `url` to the IP literal
+  // instead would break TLS/SNI for every real https host AND
+  // fetch-bundle.ts's own same-origin check (A141: derived from this
+  // REQUESTED url, so an IP-literal `url` could never match `canonicalOrigin`
+  // either) -- so that is not an option either. Tracked as
   // docs/open-questions.md A66 -- this comment, not that entry, is what to
   // update if Electron ever adds such a hook.
   //
@@ -68,34 +69,40 @@ export const electronFetch: Fetch = async (url, pinnedAddresses, signal) => {
     throw new Error(`install origin's host is not a public address literal: ${hostname}`)
   }
 
-  // credentials: 'omit' -- this fetches content from an origin the app has
-  // no established session relationship with yet; no cookie should ever be
-  // read from or written to a store on its behalf here.
-  //
-  // SESSION UNSPECIFIED, AI-REC not an owner decision: no `session` option
-  // means Electron's default session. Once per-app partitions land, this
-  // may need the confirmed app's own partitioned session instead.
-  //
-  // redirect: 'error' -- this closes the REDIRECT-specific vector, and only
-  // that one. Electron's own net-client-request.ts source causes a hard
-  // promise REJECTION the instant a redirect response is seen, so a
-  // malicious redirect can never produce a followed Response for
-  // fetch-bundle.ts to inspect at all -- the fetch call fails before there
-  // is a Response, so this mechanism does not depend on `.url` being
-  // accurate. 'error' also avoids handing fetch-bundle.ts a manual-redirect
-  // Response shape it has no code to interpret; the loader never expects a
-  // redirect in the first place (the manifest is always fetched from one
-  // fixed URL, assets resolve against the app's own origin), so failing
-  // closed here costs nothing.
-  //
-  // WHAT THIS DOES NOT CLOSE: node_modules/electron/electron.d.ts documents
-  // the `.type` and `.url` of net.fetch's returned Response as INCORRECT --
-  // an UNCONDITIONAL limitation of net.fetch, not one scoped to redirects.
-  // fetch-bundle.ts's same-origin and canonical-path checks read
-  // response.url on EVERY fetch, redirected or not. Whether `.url` can be
-  // inaccurate on an ordinary, non-redirected, 200-OK fetch -- and what
-  // that would mean for those checks -- is NOT resolved by this option.
-  // Tracked as docs/open-questions.md A59; this option has not closed that
-  // question.
+  return await netFetch(url, signal)
+}
+
+/**
+ * The exact fetch electronFetch makes once the address guard above has
+ * passed -- exported separately so a test can exercise `redirect: 'error'`'s
+ * real behaviour against a real server without also having to satisfy that
+ * guard, which no local test server can ever pass (T12/A46's no carve-out
+ * refuses every loopback literal outright). See
+ * test/e2e-loader-adapter.test.ts.
+ *
+ * credentials: 'omit' -- this fetches content from an origin the app has
+ * no established session relationship with yet; no cookie should ever be
+ * read from or written to a store on its behalf here.
+ *
+ * SESSION UNSPECIFIED, AI-REC not an owner decision: no `session` option
+ * means Electron's default session. Once per-app partitions land, this
+ * may need the confirmed app's own partitioned session instead.
+ *
+ * redirect: 'error' -- closes the REDIRECT-specific vector, and (A141) now
+ * underwrites a SECOND guarantee too. Electron's own net-client-request.ts
+ * source causes a hard promise REJECTION the instant a redirect response is
+ * seen, so a followed Response -- one whose bytes could have come from
+ * somewhere other than `url` -- can never reach fetch-bundle.ts to be
+ * inspected at all; the fetch call fails before a Response exists. That is
+ * what makes it safe for fetch-bundle.ts's same-origin/canonical-path checks
+ * to trust the REQUESTED url rather than `response.url`, which real
+ * Electron reports as the empty string on every ordinary response (measured,
+ * docs/open-questions.md A59/A141) and so cannot be trusted at all.
+ * CHANGING OR REMOVING THIS OPTION SILENTLY REOPENS BOTH -- see `Fetch`'s
+ * own doc comment (fetch-budget.ts) and test/e2e-loader-adapter.test.ts,
+ * which fails if a real redirecting server stops producing a rejection here.
+ */
+export async function netFetch (url: string, signal: AbortSignal): Promise<FetchResponse> {
+  const { net } = await import('electron')
   return await net.fetch(url, { credentials: 'omit', signal, redirect: 'error' })
 }

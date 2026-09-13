@@ -67,9 +67,37 @@ shapes before `fetchBundle` ever sees them -- one layer earlier than before. Tho
 still in `fetch-bundle.ts`, kept as defence in depth rather than removed (this function must not
 quietly start trusting that `manifest.ts`'s validation is airtight), but their dedicated test
 coverage moved to [`manifest.test.ts`](./tests/manifest.test.ts), which already exercised the same input
-shapes independently. What `manifest.ts` cannot see -- a *redirect* landing two distinct declared
-names, or a redirected entry, at the same or a different canonical path than declared -- remains
-directly tested here, since only a real fetch can produce it.
+shapes independently. **Corrected by A141 (below): a *redirect* landing two distinct declared
+names, or a redirected entry, at a different canonical path than declared, is no longer something
+this file's own suite can produce at all** -- the paragraph immediately above described that as
+still directly tested here; A141 removed the mechanism the tests used to simulate it.
+
+**A141 (2026-09-13) -- `fetchBundle` cannot depend on `response.url`, because real Electron's
+`net.fetch` reports it as the empty string on every ordinary response, not only a redirected one**
+(measured, `docs/open-questions.md` A59/A141). The same-origin and canonical-path checks in
+`fetch-bundle.ts` now trust the url they *requested* (`manifestUrl`, `assetUrl`) instead --
+provably safe only because [`electron-fetch.ts`](electron-fetch.ts)'s `redirect: 'error'` makes a
+followed redirect response impossible to receive in the first place, which is now a hard
+requirement on any `Fetch` implementation (see that type's own doc comment,
+[`fetch-budget.ts`](fetch-budget.ts)), not only the real one.
+
+This closes off two things this suite used to be able to exercise, both by the same mechanism
+(the redirect-signalling `RouteSpec.url` override losing its effect): `fetch-bundle.ts`'s
+entry-leaf check (`ADR-0009` amendment #2) is unreachable through the public API for the same
+reason the checks above are -- `entryPath` and the asset loop's own canonical path are now the
+identical computation for the entry's own asset, so they cannot disagree without a bug in that
+computation itself, which no test can manufacture without reintroducing the bug. `bundleTree()`'s
+own case-folding collision check lost its only exercise through `fetchBundle` for the same
+reason; it keeps direct coverage in
+[`bundle-hash.test.ts`](../broker/policy/tests/bundle-hash.test.ts) instead. Neither check was
+deleted -- both stay as defence in depth against their own computations ever drifting apart.
+
+The real adapter itself (`electronFetch`/`netFetch`) was never exercised by any test before this
+-- every test injected a stub `Fetch`. [`test/e2e-loader-adapter.test.ts`](../../test/e2e-loader-adapter.test.ts)
+is what closes that: it drives the real `net.fetch` (and, for the one case its own address guard
+allows, the real `electronFetch`) inside a real Electron process against a real local server,
+including a real redirecting response, so the `redirect: 'error'` guarantee this section depends
+on is proven rather than assumed.
 
 **Why [`install-origin.ts`](install-origin.ts) is its own file.** Split out of `fetch-bundle.ts`
 per Rule 2 (adding the T12/A46 guard pushed that file to 524 lines) — it owns exactly one

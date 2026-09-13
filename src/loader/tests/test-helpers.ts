@@ -37,7 +37,12 @@ export function utf8 (text: string): Uint8Array {
 
 export interface RouteSpec {
   readonly status?: number
-  /** Final response.url, defaults to the requested url -- set to something else to simulate a redirect. */
+  /**
+   * `response.url`. Defaults to the requested url, but fetch-bundle.ts no
+   * longer reads this field at all (A141: real Electron's net.fetch reports
+   * it as '' unconditionally) -- set here only so a test can assert the
+   * field is genuinely inert, e.g. the A141 suite below setting it to ''.
+   */
   readonly url?: string
   readonly body: Uint8Array
   readonly headers?: Record<string, string>
