@@ -1,58 +1,16 @@
 import { describe, expect, it, vi } from 'vitest'
 import { installFromHint } from '../app-install.js'
 import type { AppInstallDeps } from '../app-install.js'
-import { APP, OTHER, stubBroker } from '../../broker/transport/tests/ipc.test-helpers.js'
+import { APP, OTHER } from '../../broker/transport/tests/ipc.test-helpers.js'
 import type { BrokerCall } from '../../broker/transport/tests/ipc.test-helpers.js'
-import type { Broker } from '../../broker/broker-contracts.js'
 import type { LoadResult, Loader } from '../../loader/index.js'
-import type { Grant, Manifest } from '../../contracts/index.js'
-
-function manifestWith (version = '1.0.0'): Manifest {
-  return { orivonApiVersion: 0, id: 'app.test', name: 'Test', version, entry: 'index.html', capabilities: {} }
-}
-
-function grant (overrides: Partial<Grant> = {}): Grant {
-  return { id: 'g1', origin: APP, capability: 'tcp.connect', patterns: ['api.example.com:443'], grantedAt: 0, ...overrides }
-}
-
-/**
- * `stubBroker` (ipc.test-helpers.ts) extended with `registerApp`/
- * `versionFloorFor`/`rollbackAcknowledgedVersionFor` overrides -- see that
- * file's own doc on why this reuses it rather than a second full fake
- * Broker. `calls` defaults to a throwaway array; pass one in to assert
- * which origin each method was actually called with. `acknowledgedRollback`
- * defaults to `undefined` (never acknowledged) -- the natural default for
- * every test that isn't specifically about rollback acknowledgement.
- */
-function fakeBroker (
-  overrides: Partial<{ grants: readonly Grant[], versionFloor: string, acknowledgedRollback: string | undefined, registerApp: Broker['registerApp'], grant: Broker['grant'] }> = {},
-  calls: BrokerCall[] = []
-): Broker {
-  return stubBroker(calls, {
-    grants: async () => overrides.grants ?? [],
-    versionFloorFor: async () => overrides.versionFloor ?? '0.0.0',
-    rollbackAcknowledgedVersionFor: async () => overrides.acknowledgedRollback,
-    registerApp: overrides.registerApp ?? (async () => {}),
-    grant: overrides.grant ?? (async (origin, capability, patterns) => ({ id: 'g1', origin, capability, patterns, grantedAt: 0 }))
-  })
-}
-
-/** `manifestWith`, but declaring a real capability -- S4-4's consent-wiring
- * tests below need a manifest that is actually something to ask about;
- * every other test in this file relies on `manifestWith`'s empty default. */
-function manifestWithCapabilities (): Manifest {
-  return { orivonApiVersion: 0, id: 'app.test', name: 'Test', version: '1.0.0', entry: 'index.html', capabilities: { net: { tcp: { connect: ['api.example.com:443'] } } } }
-}
-
-function installedResult (manifest: Manifest): LoadResult {
-  return { outcome: 'installed', canonicalOrigin: APP, manifest, pin: { schema: 1, origin: APP, bundleHash: 'sha256:' + 'a'.repeat(64), assets: [], version: manifest.version, pinnedAt: 0 } }
-}
-
-function fakeLoader (result: LoadResult): Loader & { load: ReturnType<typeof vi.fn> } {
-  return { load: vi.fn(async () => result) }
-}
-
-const REJECTED: LoadResult = { outcome: 'rejected', reason: 'unused' }
+import { createLoader } from '../../loader/index.js'
+import type { Fetch } from '../../loader/index.js'
+import { fromBundleTree } from '../../broker/policy/pin.js'
+import { bundleTree } from '../../broker/policy/bundle-hash.js'
+import { MANIFEST_URL, manifestJson, memoryStorage, ORIGIN, PUBLIC_RESOLVER, stubFetch, utf8 } from '../../loader/tests/test-helpers.js'
+import type { RouteSpec } from '../../loader/tests/test-helpers.js'
+import { fakeBroker, fakeLoader, grant, installedResult, manifestWith, manifestWithCapabilities, REJECTED } from './app-install.test-helpers.js'
 
 describe('installFromHint', () => {
   it('rejects an invalid hintedUrl before ever touching the broker or loader', async () => {
@@ -176,7 +134,9 @@ describe('installFromHint', () => {
           order.push('2 start')
         }
         return { outcome: 'rejected', reason: 'unused' }
-      })
+      }),
+      installFetched: vi.fn(async () => { throw new Error('installFetched was not stubbed for this test') }),
+      reconsider: vi.fn(async () => { throw new Error('reconsider was not stubbed for this test') })
     }
     const deps: AppInstallDeps = { broker, loader }
 
@@ -294,5 +254,82 @@ describe('installFromHint', () => {
       expect(result.outcome).toBe('installed')
       expect(calls.some((call) => call.method === 'grant')).toBe(false)
     })
+  })
+})
+
+// S4-5, full-stack: a REAL Loader (createLoader), not a fake, so the outcome
+// driven through installFromHint's own capabilityPrompt/reconsentPrompt
+// really came from decideUpdate() detecting an actual widening/code change --
+// not a test-authored LoadResult standing in for one. The property this
+// suite exists to prove: accepting the prompt never calls Loader.load() a
+// second time, counted at the real fetch layer, not merely asserted against
+// a mock.
+describe('installFromHint + a real Loader (S4-5 integration)', () => {
+  it('an update that widens its granted patterns raises the capability prompt, and accepting it installs with no second fetch', async () => {
+    const routes: Record<string, RouteSpec> = {
+      [MANIFEST_URL]: { body: utf8(manifestJson({ version: '1.1.0', capabilities: { net: { tcp: { connect: ['api.example.com:443', 'other.example.com:443'] } } } })) },
+      [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
+    }
+    const fetchCounts = new Map<string, number>()
+    const countingFetch: Fetch = async (url, pinned, signal) => {
+      fetchCounts.set(url, (fetchCounts.get(url) ?? 0) + 1)
+      return await stubFetch(routes)(url, pinned, signal)
+    }
+    const storage = memoryStorage()
+    const loader = createLoader({ fetch: countingFetch, storage, now: () => 0, resolve: PUBLIC_RESOLVER })
+
+    // Seed an existing pin at the OLD, narrower version/pattern -- writePin
+    // directly, mirroring a prior TOFU install, so this test is entirely
+    // about the UPDATE decision, not a second loader.load() round trip.
+    const oldManifest = { orivonApiVersion: 0 as const, id: 'app.orivon.example', name: 'Example App', version: '1.0.0', entry: 'index.html', capabilities: { net: { tcp: { connect: ['api.example.com:443'] } } } }
+    await storage.writeAsset(ORIGIN, '/.well-known/orivon.json', utf8(manifestJson({ version: '1.0.0', capabilities: oldManifest.capabilities })))
+    await storage.writeAsset(ORIGIN, '/index.html', utf8('<!doctype html>'))
+    const oldTree = await bundleTree([
+      { path: '/.well-known/orivon.json', content: utf8(manifestJson({ version: '1.0.0', capabilities: oldManifest.capabilities })) },
+      { path: '/index.html', content: utf8('<!doctype html>') }
+    ])
+    await storage.writePin(ORIGIN, fromBundleTree(ORIGIN, oldTree.root, oldTree.assets, '1.0.0', 0))
+
+    const calls: BrokerCall[] = []
+    const broker = fakeBroker({ grants: [grant({ patterns: ['api.example.com:443'] })], versionFloor: '1.0.0' }, calls)
+    const capabilityPrompt = vi.fn(async (_origin: string, _manifest: unknown, _requestedPatterns: Record<string, readonly string[]>) => true)
+
+    const result = await installFromHint({ broker, loader, capabilityPrompt }, ORIGIN, ORIGIN)
+
+    expect(capabilityPrompt).toHaveBeenCalledOnce()
+    expect(capabilityPrompt.mock.calls[0]?.[2]).toEqual({ 'tcp.connect': ['api.example.com:443', 'other.example.com:443'] })
+    expect(result.outcome).toBe('installed')
+    // The whole point: ONE installFromHint call fetches the manifest exactly
+    // ONCE, even though it took a prompt-and-accept round trip to resolve.
+    expect(fetchCounts.get(MANIFEST_URL)).toBe(1)
+  })
+
+  it('declining the capability prompt leaves the previously pinned (narrower) version installed and servable', async () => {
+    const routes: Record<string, RouteSpec> = {
+      [MANIFEST_URL]: { body: utf8(manifestJson({ version: '1.1.0', capabilities: { net: { tcp: { connect: ['*:*'] } } } })) },
+      [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
+    }
+    const storage = memoryStorage()
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: () => 0, resolve: PUBLIC_RESOLVER })
+
+    const oldCapabilities = { net: { tcp: { connect: ['api.example.com:443'] } } }
+    const oldTree = await bundleTree([
+      { path: '/.well-known/orivon.json', content: utf8(manifestJson({ version: '1.0.0', capabilities: oldCapabilities })) },
+      { path: '/index.html', content: utf8('<!doctype html>') }
+    ])
+    await storage.writeAsset(ORIGIN, '/.well-known/orivon.json', utf8(manifestJson({ version: '1.0.0', capabilities: oldCapabilities })))
+    await storage.writeAsset(ORIGIN, '/index.html', utf8('<!doctype html>'))
+    await storage.writePin(ORIGIN, fromBundleTree(ORIGIN, oldTree.root, oldTree.assets, '1.0.0', 0))
+
+    const broker = fakeBroker({ grants: [grant({ patterns: ['api.example.com:443'] })], versionFloor: '1.0.0' })
+    const capabilityPrompt = vi.fn(async () => false)
+
+    const result = await installFromHint({ broker, loader, capabilityPrompt }, ORIGIN, ORIGIN)
+
+    expect(result.outcome).toBe('needs-capability-prompt')
+    // The bundle actually on disk is still the OLD one -- pruneAssets/
+    // writePin for the new bundle never ran.
+    const pin = await storage.readPin(ORIGIN)
+    expect(pin).toEqual(fromBundleTree(ORIGIN, oldTree.root, oldTree.assets, '1.0.0', 0))
   })
 })

@@ -5036,3 +5036,54 @@ style, rather than a real Electron launch); or (3) something else not considered
 
 **Needed by:** before this entry's two failing checks are removed, rewritten, or silently marked
 `skip()` by a future lane that reaches them without knowing why they fail.
+
+---
+
+### A150 -- the reconsent/capability-widening/rollback-choice dialog wording is unreviewed **[AI-REC -- confirm at PR review]**
+
+Found 2026-09-13, `stream/loader-06-approve-and-install` (S4-5), which built the only callers of
+`Loader.load()`'s three pending outcomes and had to write three brand-new pieces of dialog text
+that did not exist before (`src/main/grant-prompt-render.ts`'s `describeReconsent`,
+`describeCapabilityPrompt`, `describeRollbackChoice`; the buttons are in
+`src/main/update-outcomes-prompt.ts`). Same class of finding as A127/A133/A134 -- wording nobody
+but the author has read yet -- filed for the same reason: the owner reviews words by reading them,
+not by reading the code that produces them.
+
+**The three literal texts, and the one AI call embedded in them worth naming explicitly.** All
+three buttons pair "take the update" against **"Keep the current version"**, never "Deny" --
+because declining any of these three outcomes does not deny a single capability, it declines the
+WHOLE update and leaves the previously pinned bundle running untouched. "Deny" (install-consent's
+own button, reused correctly there since that dialog really is a yes/no on capabilities for a
+bundle already committed to disk) would misdescribe what happens here. Not put to the owner in
+this exact form.
+
+- `needs-reconsent` (same authority, changed code): title is the origin; message *"This app has
+  been updated."*; detail *"{origin}\nClaims to be "{name}".\nIts code has changed. What it is
+  allowed to do has not."*; buttons `Use the update` / `Keep the current version`, type `question`.
+- `needs-capability-prompt` (an update asking for more than it already holds): title is the
+  origin; message *"This app wants to do more than you already allowed:"*; detail lists every
+  currently-declared capability via the SAME `describeCapabilityGrant` rows install-time consent
+  uses (Rule 3) -- the full current set, not only the delta, matching `update.ts`'s own framing
+  that a capability prompt "re-establishes consent for the app as it now is"; buttons `Allow` /
+  `Keep the current version`, type `warning` the moment any row is unlimited, else `question`.
+- `needs-rollback-choice` (`ADR-0013`): title is the origin; message *"This app is offering an
+  older version."*; detail *"{origin}\nClaims to be "{name}".\nYou've used version {floor} or
+  newer from this app before. It is now offering version {version} -- an older one.\nThis can be
+  a genuine rollback by the developer, or a sign that something is serving old, less secure
+  code."*; buttons `Use this version` / `Keep the current version`, type `warning` unconditionally.
+
+**A second call worth flagging separately:** `describeCapabilityPrompt` shows the app's FULL
+current declared set on every widening, not a delta highlighting only what is NEW. Deliberate --
+producing an accurate delta needs diffing against what is actually held (`broker.app.grants`),
+which `src/main/grant-prompt-render.ts` cannot read (it is Electron- and broker-free by design),
+and the full-set framing is what `describeInstallConsent` already does for the identical shape of
+content. Not tested against a real person; a future readability pass on this dialog should look
+here first if "which one is new?" turns out to be the actual question a user asks.
+
+**Adjacent, not a defect in this work:** an app whose update also drops a previously-granted
+capability keeps that grant untouched (`GrantLedger.registerApp`'s own documented behaviour,
+"existing grants are left untouched") -- confirmed intentional, not something this lane changed
+or needs to flag further.
+
+**Needed by:** before these three dialogs ship to a real user; ideally the same readability pass
+`CLAUDE.md`'s standing rule already requires at the end of a build step.
