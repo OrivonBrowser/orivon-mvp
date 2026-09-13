@@ -22,6 +22,7 @@ themselves via `subsystems.ts` rather than editing here.
 | `tab-types.ts` | The wire-format types (`TabState`, `TabsSnapshot`, `ShellState`, `Bounds`) pushed to the chrome UI |
 | `ipc.ts` | Shell IPC channels between the chrome view and main |
 | `omnibox.ts` | Address-bar input: URL or search. Unit tested |
+| `delivery-provenance.ts` | S4-6, `ADR-0007`: whether the active tab is being served from Orivon's own pinned cache -- the address-bar dot's one truthful signal |
 | `permission-gate.ts` | Denies every Chromium permission (camera, clipboard, notifications, …) by default, on every session a tab can reach |
 
 ## Two things not to rediscover

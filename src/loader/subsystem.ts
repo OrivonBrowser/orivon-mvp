@@ -19,9 +19,10 @@
 // suite could satisfy.
 //
 // MUST BE LISTED AFTER brokerIpcSubsystem in subsystems.ts (that file's own
-// header says so) -- not because this loader reads ctx.broker itself today,
-// but because whatever eventually calls load() will, and getting the
-// ordering right once now costs nothing.
+// header says so): S4-6 made this load-bearing rather than merely prudent --
+// ctx.broker now reads the live grant ledger for the served bundle's CSP
+// (electron-serve.ts's registerServingFor), so an undefined ctx.broker here
+// would mean every app's connect-src silently narrows to 'self' only.
 
 import { electronFetch } from './electron-fetch.js'
 import { electronResolveHost } from './electron-resolve.js'
@@ -51,10 +52,15 @@ export const loaderSubsystem: Subsystem = {
       // load() (a future consent-flow lane) gets serving registered for
       // that origin immediately, in this same run -- restorePinnedServing
       // below is the OTHER half, covering an app installed in a PRIOR run.
-      onInstalled: async (origin) => { await registerServingFor(storage, origin) }
+      // `ctx.broker` is threaded through so the served bundle's CSP
+      // (S4-6, connect-src.ts) reads this origin's LIVE grant on every
+      // request rather than none at all -- see registerServingFor's own
+      // doc for why `undefined` (no broker subsystem this run) still
+      // serves the app correctly, just with a narrower header.
+      onInstalled: async (origin) => { await registerServingFor(storage, origin, ctx.broker) }
     })
     publishLoader(ctx, loader)
-    maybeInstallDevServeHook(async (origin) => { await registerServingFor(storage, origin) })
+    maybeInstallDevServeHook(async (origin) => { await registerServingFor(storage, origin, ctx.broker) })
 
     // ADR-0007's serve-from-cache half (electron-serve.ts): restores
     // protocol.handle serving for every app this machine already has a
@@ -62,6 +68,6 @@ export const loaderSubsystem: Subsystem = {
     // keeps working offline across a restart, with no dependency on the
     // consent-flow UI that triggers a fresh load() (that UI is a different
     // build step 4 lane's work, not this subsystem's).
-    await restorePinnedServing(storage)
+    await restorePinnedServing(storage, ctx.broker)
   }
 }
