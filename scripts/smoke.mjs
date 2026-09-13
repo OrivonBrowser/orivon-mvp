@@ -60,6 +60,7 @@ import {
   findViewShowing,
   HERMETIC_RESOLVER,
   mismatch,
+  navigateThroughSelfDestroyingView,
   readTabDocument,
   tabIds,
   tabViews,
@@ -223,81 +224,82 @@ async function main () {
       // address bar.
       await dashboardView.click('#search-input')
       await dashboardView.fill('#search-input', urlFor('/a'))
-      await dashboardView.press('#search-input', 'Enter')
-      const dashboardNavigated = await waitFor(async () => {
-        const info = await evaluateRetrying(chrome, () => ({
-          address: document.querySelector('#address')?.value
-        }))
-        return info.address === urlFor('/a')
-      })
+      // Enter here destroys dashboardView itself -- see
+      // navigateThroughSelfDestroyingView's own doc comment (smoke-helpers.mjs) for why.
+      const { navigated: dashboardNavigated, view: afterNavigateView } =
+        await navigateThroughSelfDestroyingView(app, chrome, dashboardView, '#search-input', 'Enter', urlFor('/a'))
       check(
         "the dashboard's search box navigates the tab away from the dashboard",
         dashboardNavigated
       )
 
-      // Privilege boundary: once this SAME tab has left the dashboard, its
-      // preload's own location check (src/preload/newtab.ts) must no
-      // longer expose the privileged API -- confirms the check re-verifies
-      // on every load, not just once at tab creation.
-      const afterNavigate = await evaluateRetrying(dashboardView, () => ({
-        hasOrivonNewTab: typeof window.orivonNewTab,
-        hasOrdinaryOrivon: typeof window.orivon
-      }))
-      check(
-        'orivonNewTab is no longer exposed once the tab has left the dashboard',
-        afterNavigate.hasOrivonNewTab === 'undefined' && afterNavigate.hasOrdinaryOrivon === 'object',
-        JSON.stringify(afterNavigate)
-      )
+      if (afterNavigateView === undefined) {
+        check('a tab view exists after the dashboard navigated away from itself', false)
+      } else {
+        // Privilege boundary: once this SAME tab has left the dashboard, its
+        // preload's own location check (src/preload/newtab.ts) must no
+        // longer expose the privileged API -- confirms the check re-verifies
+        // on every load, not just once at tab creation.
+        const afterNavigate = await evaluateRetrying(afterNavigateView, () => ({
+          hasOrivonNewTab: typeof window.orivonNewTab,
+          hasOrdinaryOrivon: typeof window.orivon
+        }))
+        check(
+          'orivonNewTab is no longer exposed once the tab has left the dashboard',
+          afterNavigate.hasOrivonNewTab === 'undefined' && afterNavigate.hasOrdinaryOrivon === 'object',
+          JSON.stringify(afterNavigate)
+        )
 
-      // Build step 2's IPC bridge, on THIS SAME tab -- the exact one
-      // preload/newtab.ts's fallback branch used to leave at { version: 0 }
-      // before orivon-surface.ts existed. This is a SHELL-WIRING check, not
-      // a capability-enforcement one: docs/development/testing.md is
-      // explicit that the dedicated capability e2e test (not yet built)
-      // owns that claim. What this proves is narrower and still real --
-      // ipcMain.handle(CONTROL_CHANNEL) is registered, an origin WAS
-      // derived from the sender frame (a null origin denies before ever
-      // reaching the broker), and an OrivonError's .code and .name survive
-      // contextBridge intact, which src/contracts/errors.ts's closed enum
-      // depends on absolutely and which nothing in this repository
-      // establishes anywhere else.
-      const control = await evaluateRetrying(dashboardView, async () => {
-        const out = {}
-        try {
-          out.grants = await window.orivon.app.grants()
-        } catch (e) {
-          out.grantsCode = e?.code ?? String(e)
-        }
-        try {
-          await window.orivon.app.manifest()
-          out.manifest = 'resolved'
-        } catch (e) {
-          out.manifestCode = e?.code ?? String(e)
-          out.manifestName = e?.name
-        }
-        try {
-          await window.orivon.fs.readFile('x.txt')
-          out.fs = 'resolved'
-        } catch (e) {
-          out.fsCode = e?.code ?? String(e)
-        }
-        return out
-      })
-      check(
-        'orivon.app.grants round-trips ok with no grants registered for this origin',
-        Array.isArray(control.grants) && control.grants.length === 0,
-        JSON.stringify(control)
-      )
-      check(
-        "an OrivonError's code and name survive contextBridge (orivon.app.manifest with no manifest registered)",
-        control.manifestCode === 'internal' && control.manifestName === 'OrivonError',
-        JSON.stringify(control)
-      )
-      check(
-        'orivon.fs.readFile is denied before this origin holds an fs grant',
-        control.fsCode === 'denied',
-        JSON.stringify(control)
-      )
+        // Build step 2's IPC bridge, on THIS SAME tab -- the exact one
+        // preload/newtab.ts's fallback branch used to leave at { version: 0 }
+        // before orivon-surface.ts existed. This is a SHELL-WIRING check, not
+        // a capability-enforcement one: docs/development/testing.md is
+        // explicit that the dedicated capability e2e test (not yet built)
+        // owns that claim. What this proves is narrower and still real --
+        // ipcMain.handle(CONTROL_CHANNEL) is registered, an origin WAS
+        // derived from the sender frame (a null origin denies before ever
+        // reaching the broker), and an OrivonError's .code and .name survive
+        // contextBridge intact, which src/contracts/errors.ts's closed enum
+        // depends on absolutely and which nothing in this repository
+        // establishes anywhere else.
+        const control = await evaluateRetrying(afterNavigateView, async () => {
+          const out = {}
+          try {
+            out.grants = await window.orivon.app.grants()
+          } catch (e) {
+            out.grantsCode = e?.code ?? String(e)
+          }
+          try {
+            await window.orivon.app.manifest()
+            out.manifest = 'resolved'
+          } catch (e) {
+            out.manifestCode = e?.code ?? String(e)
+            out.manifestName = e?.name
+          }
+          try {
+            await window.orivon.fs.readFile('x.txt')
+            out.fs = 'resolved'
+          } catch (e) {
+            out.fsCode = e?.code ?? String(e)
+          }
+          return out
+        })
+        check(
+          'orivon.app.grants round-trips ok with no grants registered for this origin',
+          Array.isArray(control.grants) && control.grants.length === 0,
+          JSON.stringify(control)
+        )
+        check(
+          "an OrivonError's code and name survive contextBridge (orivon.app.manifest with no manifest registered)",
+          control.manifestCode === 'internal' && control.manifestName === 'OrivonError',
+          JSON.stringify(control)
+        )
+        check(
+          'orivon.fs.readFile is denied before this origin holds an fs grant',
+          control.fsCode === 'denied',
+          JSON.stringify(control)
+        )
+      }
     } else {
       skip('new-tab dashboard', 'no tab view was open at launch to test')
     }
