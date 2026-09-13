@@ -159,7 +159,7 @@ export async function createAppRequestHandler (storage: LoaderStorage, origin: s
     // already assumes a fully self-contained, pre-hashed bundle, and
     // proxying an unrelated origin through this handler is a live-network
     // trust decision this lane does not make. Filed as
-    // docs/open-questions.md A138 rather than resolved silently.
+    // docs/open-questions.md A143 rather than resolved silently.
     if (originFromUrl(request.url) !== origin) {
       return denyResponse('cross-origin request inside this app\'s own partition is not served')
     }

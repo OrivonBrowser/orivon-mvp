@@ -4407,7 +4407,7 @@ happened.
 to it -- save what was installed rather than re-fetching at launch (2026-09-11) -- and that
 choice stands; what changes is that the saved manifest informs the LIST, never the authority.
 
-### A138 -- a cross-origin request inside an app's own partition is denied, not proxied to the real network **[STILL OPEN]**
+### A143 -- a cross-origin request inside an app's own partition is denied, not proxied to the real network **[STILL OPEN]**
 
 **Raised 2026-09-13**, lane S4-3-serve, build step 4's serve-from-cache item
 (`ADR-0007`'s other half: `src/loader/serve.ts`, `src/loader/electron-serve.ts`).
