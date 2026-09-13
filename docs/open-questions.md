@@ -5262,3 +5262,103 @@ other failure through `require('net')`/`require('http')`/`require('https')`.
 > entirely (not merely its `instanceof Error`-ness) when `contextBridge` flattens it crossing the
 > isolated world -- a stricter loss than A152's, and the structural `isOrivonError` fix does
 > nothing for a value with no `.code` at all. A113 remains fully open, exactly as it was found.
+
+---
+
+### A154 -- `isValidCanonicalPath`'s doc comment overclaimed a property that only held on two of its three call paths **[RESOLVED 2026-09-14 -- ADV-fix2]**
+
+**Raised 2026-09-14**, adversarial review of the `step-4-app-loader` landing, confirmed
+independently before this lane started. `isValidCanonicalPath`'s own comment stated its
+re-derivation check "subsumes the '.'/'..' segment rule below, which URL normalisation
+collapses" -- true only when the function receives a RAW PATH STRING, which is what
+`bundle-hash.ts`, `pin.ts` and `manifest.ts`'s `validateRelativePath` all hand it.
+`canonicalAssetPath` does not: it calls `new URL(assetUrl)` on the FULL url first, and the
+WHATWG parser collapses a dot segment -- including its percent-encoded spelling -- while
+building `pathname`, before `isValidCanonicalPath` ever runs. Measured: `new
+URL('https://probe.example/%2e%2e/evil.js').pathname === '/evil.js'`, and the same for a
+two-level `.../%2e%2e/%2e%2e/...` case.
+
+**Not an exploit, and the reviewer said so plainly.** `fetch-bundle.ts`'s asset loop is
+protected upstream -- `manifest.ts`'s `validateRelativePath` already rejects a dot segment (or
+its percent-encoded spelling) in a manifest-declared `entry`/`assets` string before it is ever
+joined into a URL, per-segment, for exactly this reason (see that function's own comment on why
+it will not join a whole path through a base either -- the identical hazard, hit first, one call
+site over). `serve.ts`'s live-request path is protected downstream by `isPinnedPath`'s
+exact-string allowlist: a laundered path can only ever match an ALREADY-pinned asset the app
+itself shipped, never an arbitrary file. The defect was a false claim in a security-relevant
+comment, untested on the one call shape where it does not hold, in a function whose whole job is
+path safety -- not a live vulnerability.
+
+**Fixed 2026-09-14, ADV-fix2.** Chose to make the property actually true rather than only
+correct the comment, because the fix was cheap and this codebase already has a fix of the exact
+same shape one call site over (`manifest.ts`'s `validateRelativePath`, above) -- rejecting a dot
+segment before a whole-string URL join can launder it. `canonicalAssetPath` now rejects
+outright, before trusting `parsed.pathname`, if the RAW `assetUrl` string's path (found without
+parsing the authority: an unescaped `/` cannot occur in an http(s) authority, so the first `/`
+after `://` always starts the path) carries a segment that percent-decodes to `.` or `..`.
+`isValidCanonicalPath`'s own comment was also corrected to say precisely where the subsumption
+holds (a raw-path caller) and where it does not (reached via `canonicalAssetPath`, where a dot
+segment is now caught earlier, by that new check, not by anything in this function).
+
+**Verified:** `src/broker/policy/tests/canonical-path.test.ts` gained five cases exercising the
+one shape no existing test reached -- a full URL carrying a literal or percent-encoded dot
+segment (both hex cases), plus two guard-against-over-correction cases (a segment that merely
+starts with dots; a dot segment appearing only in the query string, which must not be rejected).
+All five fail against the pre-fix code and pass after. Full suite: `npm test` unchanged in count
+elsewhere, 38/38 in the touched file, 1900/1900 across `src/broker/policy/` and `src/loader/`.
+
+---
+
+### A155 -- nothing verified that `electronFetch` still delegates to a call carrying `redirect: 'error'` **[RESOLVED 2026-09-14 -- ADV-fix2]**
+
+**Raised 2026-09-14**, same adversarial review as A154, confirmed independently. A141's fix
+(above) made `redirect: 'error'` the ONLY thing keeping `fetch-bundle.ts`'s same-origin and
+canonical-path checks honest -- that entry's own resolution block says the remaining checks are
+"provably tautological" -- and the requirement lives in a doc comment on `netFetch`, not in the
+type system. `test/e2e-loader-adapter.test.ts`'s "THE LOAD-BEARING PROOF" (its own words) drives
+`netFetch` directly, never `electronFetch`; the only place that suite calls `electronFetch`
+asserts its address guard REFUSES a real loopback server, which returns before `netFetch` is
+ever reached. So no test anywhere exercised `electronFetch`'s delegation to `netFetch` on the
+path where the guard actually PASSES -- a future edit that wrapped, inlined, or re-implemented
+that call, dropping `redirect: 'error'` in the process, would have passed every existing test,
+including the one whose stated purpose is to prove this exact guarantee.
+
+**Why a hermetic version of "drive a real redirect through `electronFetch` itself" was
+considered and rejected**, rather than merely not attempted: `electronFetch` takes no injectable
+resolver -- it calls Electron's own `net.resolveHost` directly, and re-checks
+`isPublicUnicast(endpoint.address)` on the RESOLVED address, not just the hostname text. Mapping
+a nice-looking hostname to a local server via `--host-resolver-rules` does not help: the guard's
+post-resolution check would see the resolved address is loopback and refuse regardless -- that
+refusal is T12/A46 working exactly as designed, already the reason
+`test/e2e-loader-adapter.test.ts`'s own "Not a full end-to-end `fetchBundle()` success test, and
+not by oversight" paragraph gives for why that suite stops where it does (`src/loader/README.md`
+Design notes). No genuinely public, routable HTTPS endpoint exists for this repo's test suite to
+target, so a real redirect through `electronFetch`'s own guard is not reachable hermetically.
+
+**Fixed 2026-09-14, ADV-fix2**, by closing the seam at the boundary that actually matters
+instead: a new `src/loader/tests/electron-fetch.test.ts`, mocking `electron`'s `net.fetch`/
+`net.resolveHost` (the same pattern `src/main/tests/favicon.test.ts` already uses for the same
+reason), asserting the EXACT arguments `net.fetch` receives -- both through `netFetch` directly
+and through `electronFetch` once its guard passes, on both of the guard's two branches (a public
+address literal; a hostname that resolves to only public addresses). This is deliberately an
+assertion on `net.fetch`'s own call arguments, not on whether `netFetch` was called as a named
+function -- insensitive to a future inlining or rename, sensitive to the one thing that must
+never silently drop. Three more cases cover the guard's failure path on both branches (a private
+literal, a hostname resolving to a private address, a hostname resolving to no addresses),
+asserting `net.fetch` is never called.
+
+**Proven to actually catch the regression it exists for, not merely asserted to.** Verified by
+deliberately breaking `netFetch` two different ways and confirming the new suite fails each time,
+then restoring the original file unchanged (`git diff` empty afterward): dropping `redirect:
+'error'` from the options object failed the three delegation-asserting tests with a clear diff
+naming the missing key; replacing the call with `net.request(...)` entirely failed the same three
+tests with `TypeError: net.request is not a function`. Both times, the three guard-failure tests
+kept passing, confirming they exercise a genuinely different code path rather than coincidentally
+passing alongside a broken one.
+
+**Not touched:** `src/loader/electron-fetch.ts` itself, `test/e2e-loader-adapter.test.ts`, and
+`test/loader-adapter-entry.ts` -- this was a coverage gap, not a code defect, and the e2e suite's
+own real-Electron, real-redirecting-server proof of `redirect: 'error'` stays exactly as
+valuable as it already was for the one thing only a real process can prove (a real
+`net.fetch`/`Duplex` rejection on a real redirect). The new unit suite is a structural backstop
+underneath it, not a replacement for it.
