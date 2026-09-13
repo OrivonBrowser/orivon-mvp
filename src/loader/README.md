@@ -208,3 +208,26 @@ since nothing else re-registers its handler. `subsystem.ts`'s `afterReady` calls
 `listPinnedOrigins` finds a self-consistent pin for, and registers each independently -- one
 origin's corrupted pin or unreadable asset is logged and does not stop the rest, the same
 per-item-failure stance `runAfterReady` (`main/registry.ts`) already takes for subsystems.
+
+**Why the served bundle's CSP is read fresh per request, not computed once at handler
+creation.** [`serve.ts`](serve.ts)'s whole-tree re-verification is a deliberate ONE-TIME cost
+(the note above) because the pinned bytes cannot change without a new handler being built for
+them. A grant is different: `broker/grant-ledger.ts`'s `grant()`/`revoke()` can change what
+`connect-src.ts` should say for an origin whose handler is ALREADY registered, with no
+re-registration event to hook. `electron-serve.ts`'s `grantedConnectPatternsFor` is therefore
+called from inside the returned handler, once per request, not captured in the closure the way
+the pin and manifest are -- so a revoke narrows the very next request's CSP, and a fresh grant
+widens it, without waiting for the app to be reinstalled or the browser to restart. **What this
+still cannot fix, because nothing implementation-side can:** a document already loaded keeps
+whatever CSP its own navigation response carried, until the next load -- that is how CSP
+delivery works in every browser, not a gap this design left open.
+
+**Why `isOriginServedFromCache` (`electron-serve.ts`) asks Electron's protocol-handler registry
+instead of the broker.** S4-6's address-bar provenance signal needs to answer "is a request to
+this origin, right now, actually being served from the pinned cache" -- and `Broker
+.app.isRegisteredSync` cannot answer that: it means "a manifest is in the grant ledger," which
+`registerApp` sets independently of `registerServingFor` actually intercepting the scheme
+(`subsystem.ts`'s `onInstalled` calls both, but a future caller is not guaranteed to). Asking
+Electron's own `session.protocol.isProtocolHandled` instead is the only way to avoid a false
+positive -- ADR-0007 is explicit that showing "local cache, pinned" for bytes that did not
+actually come from it is precisely the false claim this feature exists to prevent.

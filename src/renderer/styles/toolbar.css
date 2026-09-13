@@ -81,6 +81,13 @@
 }
 .address-dot.secure { background: var(--wok); }
 .address-dot.insecure { background: var(--winsecure); }
+/* S4-6, ADR-0007: distinct from both -- pinned-cache delivery is neither a
+   live TLS pass (--wok) nor a plaintext warning (--winsecure), so it gets
+   its own colour rather than borrowing one that would overclaim or
+   under-claim. --waccent is already the app's own theme-invariant accent
+   (style.css), which is exactly the "this is Orivon's own doing" register
+   this state wants. */
+.address-dot.cached { background: var(--waccent); }
 
 .addressbar {
   flex: 1;
