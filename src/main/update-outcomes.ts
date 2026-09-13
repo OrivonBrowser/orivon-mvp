@@ -20,13 +20,13 @@
 // untouched. That is what "decline is safe" means here: not a special case
 // per outcome, just never calling installFetched/reconsider/grant.
 
-import { decideGrantRequest } from '../broker/policy/request-grant.js'
 import type { PatternSet } from '../broker/policy/update.js'
 import type { Broker } from '../broker/broker-contracts.js'
 import type { CapabilityKind, Manifest } from '../contracts/index.js'
 import type { LoadContext, LoadInstalled, LoadResult, Loader } from '../loader/index.js'
 import { requestInstallConsent } from './install-consent.js'
 import type { InstallConsentPrompt } from './install-consent.js'
+import { grantChangedCapabilities } from './grant-changed-capabilities.js'
 
 export type ReconsentPrompt = (origin: string, manifest: Manifest) => Promise<boolean>
 export type CapabilityPromptPrompt = (origin: string, manifest: Manifest, requestedPatterns: PatternSet) => Promise<boolean>
@@ -61,35 +61,6 @@ async function finishInstall (deps: UpdateOutcomeDeps, result: LoadInstalled): P
   }
   await requestInstallConsent(deps.broker, deps.consent, result.canonicalOrigin, result.manifest)
   return result
-}
-
-/**
- * Grants exactly the manifest's own declared patterns for each of
- * `capabilities`, via `decideGrantRequest` -- never a raw `broker.grant` of
- * whatever `requestedPatterns` says -- so a grant can never exceed the
- * manifest (`capability-api.md` design rule 4) even if something upstream
- * of this function is ever wrong. `decideGrantRequest(manifest, capability,
- * undefined)` reads as "whatever the manifest already declares" (that
- * function's own doc) and is always `allowed: true` here, because
- * `capabilities` was itself read off this exact manifest a moment ago --
- * the check runs anyway, unconditionally, so this stays true by
- * construction rather than by this file's own care.
- *
- * Errors are logged and swallowed per capability, matching
- * install-consent.ts's own stance: the bundle is already installed by the
- * time this runs, and one capability failing to grant must not be read as
- * the update itself having failed.
- */
-async function grantDeclared (broker: Broker, origin: string, manifest: Manifest, capabilities: readonly CapabilityKind[]): Promise<void> {
-  for (const capability of capabilities) {
-    const decision = decideGrantRequest(manifest, capability, undefined)
-    if (!decision.allowed) continue
-    try {
-      await broker.grant(origin, capability, decision.patterns)
-    } catch (error) {
-      console.error('[app-install] a widened capability could not be granted after the person accepted the update', origin, capability, error)
-    }
-  }
 }
 
 /**
@@ -139,11 +110,11 @@ export async function driveLoadResult (deps: UpdateOutcomeDeps, result: LoadResu
       if (!accepted) return result
       const installed = await deps.loader.installFetched(result.canonicalOrigin, result.manifest, result.tree, result.entries)
       if (installed.outcome !== 'installed') return installed
-      // Same idiom update.ts's widensAuthority and install-consent.ts's own
-      // capability loop both use for a PatternSet's own keys: every key in
-      // `requestedPatterns` was set by patternSetFromCapabilities itself
-      // (src/loader/index.ts), so this cast trusts nothing untrusted.
-      await grantDeclared(deps.broker, installed.canonicalOrigin, installed.manifest, Object.keys(result.requestedPatterns) as readonly CapabilityKind[])
+      // Same idiom update.ts's widensAuthority uses for a PatternSet's own
+      // keys: every key in `requestedPatterns` was set by
+      // patternSetFromCapabilities itself (src/loader/index.ts), so this
+      // cast trusts nothing untrusted.
+      await grantChangedCapabilities(deps.broker, installed.canonicalOrigin, installed.manifest, Object.keys(result.requestedPatterns) as readonly CapabilityKind[])
       return await finishInstall(deps, installed)
     }
 

@@ -20,10 +20,10 @@
 // origin is asked again on its next visit. Filed as A145 rather than
 // silently accepted; see docs/open-questions.md.
 
-import { decideGrantRequest } from '../broker/policy/request-grant.js'
 import { patternSetFromCapabilities } from '../broker/policy/manifest-patterns.js'
 import type { Broker } from '../broker/broker-contracts.js'
 import type { CapabilityKind, Manifest } from '../contracts/index.js'
+import { grantChangedCapabilities } from './grant-changed-capabilities.js'
 
 /**
  * Asks a person, ONCE, whether `origin` may hold everything `capabilities`
@@ -64,7 +64,12 @@ export async function requestInstallConsent (
   if (capabilities.length === 0) return // A139 bound 1: nothing declared, nothing to ask
 
   const held = await broker.app.grants(origin)
-  if (held.some((existing) => capabilities.includes(existing.capability))) return // A139 bound 2 -- see this file's header
+  // A139 bound 2 -- see this file's header. EVERY, not ANY (A155): a second
+  // door, app.requestGrant, can hold exactly ONE declared capability before
+  // this ever runs (README.md, Design notes) -- `.some` would read that as
+  // "already asked" and silently withhold every OTHER declared capability
+  // forever. `.every` only skips once nothing declared is left unheld.
+  if (capabilities.every((capability) => held.some((existing) => existing.capability === capability))) return
 
   if (consent === undefined) return // no prompt wired -- fail closed, same stance request-grant.ts takes
 
@@ -77,16 +82,5 @@ export async function requestInstallConsent (
   }
   if (!accepted) return // A138: all-or-nothing -- the app stays installed, holding nothing
 
-  for (const capability of capabilities) {
-    // `undefined` here means "whatever the manifest already declares"
-    // (decideGrantRequest's own doc) and is always `allowed: true`, because
-    // `capabilities` was itself read off this exact manifest a moment ago.
-    const decision = decideGrantRequest(manifest, capability, undefined)
-    if (!decision.allowed) continue
-    try {
-      await broker.grant(origin, capability, decision.patterns)
-    } catch (error) {
-      console.error('[install-consent] a capability could not be granted after the person accepted', origin, capability, error)
-    }
-  }
+  await grantChangedCapabilities(broker, origin, manifest, capabilities)
 }

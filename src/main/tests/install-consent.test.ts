@@ -47,7 +47,7 @@ describe('requestInstallConsent (stubbed broker)', () => {
     expect(calls).toContainEqual({ method: 'grant', origin: APP, args: { capability: 'fs', patterns: [] } })
   })
 
-  it('does not prompt again when the origin already holds a live grant for a declared capability', async () => {
+  it('does not prompt again when the origin already holds a live grant for every declared capability', async () => {
     const calls: BrokerCall[] = []
     const broker = stubBroker(calls, { grants: async () => [grant()] })
     const consent = vi.fn(async () => true)
@@ -56,6 +56,39 @@ describe('requestInstallConsent (stubbed broker)', () => {
 
     expect(consent).not.toHaveBeenCalled()
     expect(calls.some((call) => call.method === 'grant')).toBe(false)
+  })
+
+  // Finding 3 / A155 (docs/open-questions.md): the old check skipped the
+  // WHOLE dialog if the origin held a grant for ANY declared capability --
+  // sound only if this function is the sole door to a grant. It is not:
+  // app.requestGrant (./request-grant.ts) is a second one, and registerApp
+  // runs before this in app-install.ts's own finishInstall, so a page
+  // already running (A146) can call requestGrant for exactly ONE of its
+  // declared capabilities in that window and, under the old check,
+  // permanently suppress the dialog for every OTHER capability it declared
+  // -- silently, with nothing distinguishing that state from "never asked".
+  it('A155: still prompts when only SOME declared capabilities are already held', async () => {
+    const calls: BrokerCall[] = []
+    const broker = stubBroker(calls, {
+      // tcp.connect only -- as if the page called app.requestGrant for just
+      // this one capability before install-consent ever ran.
+      grants: async () => [grant({ capability: 'tcp.connect' })],
+      grant: async (origin, capability, patterns) => ({ id: 'g2', origin, capability, patterns, grantedAt: 0 })
+    })
+    const consent = vi.fn(async () => true)
+    const manifest = manifestWith({ net: { tcp: { connect: ['api.example.com:443'] } }, fs: { quotaBytes: 1024 } })
+
+    await requestInstallConsent(broker, consent, APP, manifest)
+
+    expect(consent).toHaveBeenCalledOnce()
+    expect(consent).toHaveBeenCalledWith(APP, manifest, expect.arrayContaining(['tcp.connect', 'fs']))
+    // fs is the capability the old check silently withheld forever.
+    expect(calls).toContainEqual({ method: 'grant', origin: APP, args: { capability: 'fs', patterns: [] } })
+    // tcp.connect is already held with the manifest's own exact pattern --
+    // re-granting it would tear down whatever live handle it already
+    // authorises for no authority change at all (the same hazard as
+    // Finding 2 / A154).
+    expect(calls.some((call) => call.method === 'grant' && (call.args as { capability: string }).capability === 'tcp.connect')).toBe(false)
   })
 
   it('prompts, and grants nothing, when the person declines -- the app stays installed either way', async () => {
