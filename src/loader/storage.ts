@@ -57,6 +57,32 @@ export interface LoaderStorage {
    * A no-op for an origin with nothing on disk yet (a fresh install).
    */
   pruneAssets(origin: string, keep: readonly string[]): Promise<void>
+  /**
+   * Reads back one previously-written asset's raw bytes, or undefined if the
+   * content cannot be verified to still be what `writeAsset` wrote -- a path
+   * never written, a file removed since, or one that failed to read. NEVER
+   * THROWS, same discipline as `readPin`, but a SIMPLER contract than that
+   * one: `readPin` must distinguish "never pinned" from "pinned but
+   * unreadable" because `index.ts`'s TOFU-vs-reconsent branch depends on
+   * which happened. Nothing downstream needs that distinction here --
+   * `serve-verify.ts`'s whole-tree check denies the entire bundle on ANY
+   * unreadable asset regardless of why, so every failure mode collapses to
+   * the same `undefined`.
+   */
+  readAsset(origin: string, path: string): Promise<Uint8Array | undefined>
+  /**
+   * Every origin this storage holds a STRUCTURALLY VALID pin record for --
+   * ADR-0007's "cached tree is re-verified at every load" needs a starting
+   * list of origins to verify and serve, independent of any network fetch,
+   * so a previously-installed app keeps working after a restart with no
+   * connectivity (README.md's "offline first-run keeps working for
+   * pre-cached apps"). A record that fails `parsePinRecord`, or whose
+   * `origin` field does not re-hash to the directory it was read from, is
+   * excluded rather than guessed at -- the same defence a hand-edited or
+   * copied record needs as any other self-describing file this codebase
+   * trusts only after checking it names its own storage location.
+   */
+  listPinnedOrigins(): Promise<readonly string[]>
 }
 
 /**
