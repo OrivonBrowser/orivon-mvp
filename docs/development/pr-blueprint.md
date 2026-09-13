@@ -170,6 +170,9 @@ If the change files anything in [`open-questions.md`](../open-questions.md), **l
 A-numbers here**. Take them from `main`'s highest, not your branch's — on 2026-08-27 four
 branches each claimed A15, and a merged renumber left `origin.ts` citing a stranger's question.
 [`parallel-work.md`](parallel-work.md) §Open-question numbers has the one-liner that prevents it.
+Taking the number from `main`'s highest reduces the collision, but two branches opened at the
+same time can still both take the same next number — `npm run check:questions` catches it in CI;
+the fix is to renumber whichever branch merges later and move its citations with it.
 
 If a change is architectural and load-bearing, this section is **not** where it goes — write an
 ADR ([`CLAUDE.md`](../../CLAUDE.md) Rule 1) and cite it here.
