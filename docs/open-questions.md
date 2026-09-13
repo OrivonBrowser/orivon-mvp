@@ -4753,3 +4753,38 @@ closed default is reversible; the reverse is not.
 
 **Needed by:** whichever future app actually needs an external resource from inside its own
 partition -- not before, since nothing in this MVP's own fixture/flagship apps does today.
+
+### A144 -- the loader's real-adapter e2e imports `esbuild`, which nothing declares **[AI-REC]**
+
+**Raised 2026-09-13**, lane S4-A141-fetch-url, while building the first test that exercises the
+REAL `electronFetch` rather than a stub (`test/e2e-loader-adapter.test.ts`).
+
+That test bundles a small Electron main-process entry with `esbuild`, imported directly. **No
+`package.json` entry declares it.** It resolves today only because `vite` pulls it in
+transitively, so the import works and CI passes.
+
+**Why this is filed rather than fixed.** Declaring it is a change to the dependency manifest,
+which this run treats as an owner gate (license, provenance and pure-JS status reviewed first,
+`CLAUDE.md` Rules 6 and 8). The lane could not safely run `npm install` either: every fleet
+worktree symlinks one shared `node_modules`, so an install mid-run would mutate the tree other
+lanes are building against.
+
+**Worth weighing when deciding.** Declaring `esbuild` explicitly adds **nothing** to the
+installed tree -- it is already there, already in the lock file, already audited by
+`check:natives` as part of `vite`'s subtree. What changes is only whether this repository states
+that it depends on it. So the usual "is this dependency acceptable" question is not really the
+question; the question is whether an undeclared transitive import is acceptable as a *test-time*
+dependency.
+
+**The cost of leaving it.** `vite` is free to drop or swap its bundler in any minor release. The
+day it does, this test fails with a module-resolution error that names `esbuild` and explains
+nothing about why a test that never mentioned it in `package.json` was relying on it. That is a
+confusing failure landing on whoever is unlucky, not on whoever chose it.
+
+**AI recommendation:** declare `esbuild` in `devDependencies` at the version already resolved in
+the lock, in a PR of its own that touches nothing else, so the lock diff is reviewable. The
+alternative -- rewriting the test to use the repo's own `electron-vite` build rather than a
+direct bundler call -- is more faithful to Rule 6 but materially more work, and the test's whole
+purpose is to be a small, independent harness that does not depend on the app build.
+
+**Needed by:** no deadline. It works today and will keep working until `vite` changes.
