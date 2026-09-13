@@ -4420,7 +4420,65 @@ happened.
 to it -- save what was installed rather than re-fetching at launch (2026-09-11) -- and that
 choice stands; what changes is that the saved manifest informs the LIST, never the authority.
 
-### A138 — `app.requestGrant`'s own IPC timeout (120s) has no natural bound to derive it from **[AI-REC]**
+## Build step 4 -- the app loader (2026-09-13)
+
+### A138 -- may a person accept PART of what an app asks for? **[PARKED -- needs owner decision]**
+
+**Raised 2026-09-13**, opening build step 4, by owner decision `d-0025` (`ADR-0012`'s
+2026-09-13 amendment): consent is asked once, before the app runs, for the whole set the
+manifest declares.
+
+What that amendment does not settle is whether the one dialog offers a **single choice** or a
+**row per capability**. An app declaring network, filesystem and identity could plausibly be
+allowed its network and refused its files.
+
+**What is being built while this is parked: all-or-nothing.** Two reasons, both concrete rather
+than preferential:
+
+1. It is what the authority layer already expresses. `decideGrantRequest` narrows a request to
+   what the manifest declares and answers allowed/not; the grant ledger stores one grant per
+   `(origin, capability)`. A per-row choice needs no new mechanism, but it does need a new
+   *decision* about what a partially-granted app is.
+2. A partially-granted app hits precisely the failure `d-0025` exists to remove. An app whose
+   filesystem call answers `'denied'` while its network works is, from its own code's point of
+   view, a broken environment -- and because it was written against Node or against a browser,
+   it will not have a graceful path for that. "Ask once so the app gets a decided answer" and
+   "let the user answer three-quarters of the question" pull against each other.
+
+**The counter-argument, stated so it is not lost:** all-or-nothing means a person who wants an
+app but not its filesystem access has exactly one option, which is not to use it. That is a real
+loss of user agency, and it is the kind of thing the permissions list (`A101`) exists to soften
+-- revoke after the fact rather than refuse up front.
+
+**Needed by:** Phase 4 item 4.2's owner checkpoint. Not blocking: the prompt is built
+all-or-nothing, and turning it into a per-row choice later is a change to the dialog and to what
+`requestGrant` is called with, not to the ledger or the policy beneath it.
+
+### A139 -- asking at install brings back part of the prompt fatigue `ADR-0012` rejected **[AI-REC -- confirm at the 4.2 checkpoint]**
+
+**Raised 2026-09-13**, same decision. `ADR-0012` rejected "ask before any fetch" partly because
+a dialog raised by merely loading a page, disconnected from anything the user did, trains the
+reflex to dismiss it. Asking once at install brings a version of that back: a first visit to a
+hinted origin can now raise a dialog the user did not initiate.
+
+**Three bounds are being implemented as requirements, not hopes** (they are also written into
+`ADR-0012`'s amendment):
+
+1. An origin whose manifest declares **no capabilities** is never asked about. It installs
+   silently, and there is genuinely no question to put.
+2. **Once per origin, ever** -- a grant lasts until revoked (`A101`), so a repeat visit is
+   silent. Only a manifest that widens what it asks for returns, through `decideUpdate`'s
+   existing re-consent path.
+3. **One dialog for the whole declared set**, never one per capability. Three sequential dialogs
+   for one app is the same fatigue at a finer grain.
+
+**What would settle it:** the owner seeing the real dialog on a real first visit and saying
+whether it reads as reasonable or as an interruption. That is exactly what item 4.2's checkpoint
+is for, so this is filed as the thing to look at there rather than as an open design question.
+
+**Needed by:** Phase 4 item 4.2's owner checkpoint.
+
+### A140 — `app.requestGrant`'s own IPC timeout (120s) has no natural bound to derive it from **[AI-REC]**
 
 **Raised 2026-09-13**, while wiring `app.requestGrant` onto `window.orivon` for the first time
 (compatibility-matrix.md Table 4 row 1). `contracts/ipc.ts`'s rule 2 requires every control call
