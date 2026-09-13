@@ -198,9 +198,9 @@ is not in the pinned set is denied, not fetched" extended to the scheme-wide rea
 `protocol.handle` actually intercepts. AI recommendation, not an owner decision, filed as
 [`open-questions.md`](../../docs/open-questions.md) A143.
 
-**Why `restorePinnedServing` runs at startup rather than only after a fresh `load()`.** Nothing in
-this codebase yet calls `Loader.load()` in production -- the consent-flow UI that would trigger it
-is a different build-step-4 lane's work. Without a startup pass, "offline first-run keeps working
+**Why `restorePinnedServing` runs at startup rather than only after a fresh `load()`.** `load()`
+does now have a production caller (the discovery trigger, via `src/main/app-install.ts`), but a
+fresh install is not the only way an app needs serving. Without a startup pass, "offline first-run keeps working
 for pre-cached apps" (this document's own line, from `ADR-0007`) would be false in practice: an
 app installed in one run would stop being servable from cache the moment the browser restarts,
 since nothing else re-registers its handler. `subsystem.ts`'s `afterReady` calls

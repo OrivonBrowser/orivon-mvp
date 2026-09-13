@@ -6,15 +6,12 @@
 // importing electron here, instead, is what would otherwise force every
 // plain-vitest unit test of the pure mechanism to mock it.
 //
-// NOTHING CALLS `ctx.requestGrant` YET. The only missing piece is a
-// control-channel case in ../broker/transport/ipc.ts turning a page's
-// `window.orivon.app.requestGrant(...)` into a call here with the origin
-// taken from `event.senderFrame` (T3) -- out of scope for this change; see
-// this lane's own PR body for why (a parallel lane owns that file this
-// batch). Until that case exists, this subsystem is live, real production
-// wiring with no caller, not a stub -- the same honest state
-// docs/planning/unattended-build-queue.md item 4.1 anticipates ("whether
-// requestGrant is reachable from a page yet, and if not why").
+// REACHED FROM A REAL PAGE. `../broker/transport/ipc.ts`'s
+// `app.requestGrant` control case turns a page's
+// `window.orivon.app.requestGrant(...)` into a call here, with the origin
+// taken from `event.senderFrame` and never from the payload (T3). That
+// origin argument is the whole security boundary of this seam: a page that
+// could name its own origin could grant itself anything.
 
 import type { Subsystem, SubsystemContext } from './registry.js'
 import { publishRequestGrant } from './registry.js'
