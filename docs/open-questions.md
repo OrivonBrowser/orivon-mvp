@@ -2146,7 +2146,7 @@ empty by pruning is now removed too. Gap 2 is resolved.
 
 ---
 
-### A59 — whether `net.fetch`'s `Response.url` can be wrong on an ordinary, non-redirected fetch is unresearched **[STILL OPEN]**
+### A59 — whether `net.fetch`'s `Response.url` can be wrong on an ordinary, non-redirected fetch is unresearched **[RESOLVED 2026-09-13 — measured, then fixed via A141]**
 
 Found 2026-09-03, a review-pass follow-up to `electron-fetch.ts`'s `redirect: 'error'` fix.
 
@@ -2231,6 +2231,10 @@ now answered directly, by measurement, rather than left to reasoning from a one-
 **PR #164 is not unblocked by this measurement** — it is blocked on the newly-filed A141 instead,
 which is worse than what this entry originally worried about (a silently wrong origin) and
 simpler to act on (the field is unusable outright, not subtly misleading).
+
+> **Closed 2026-09-13, lane S4-A141-fetch-url.** A141 (below) is fixed:
+> `fetch-bundle.ts` no longer reads `response.url` at all, so this question is moot rather than
+> merely answered. See A141's own resolution block for what changed and how it was verified.
 
 ---
 
@@ -4548,7 +4552,7 @@ is for, so this is filed as the thing to look at there rather than as an open de
 
 **Needed by:** Phase 4 item 4.2's owner checkpoint.
 
-### A141 -- `net.fetch`'s `Response.url` is the empty string on every ordinary fetch; `fetchBundle` cannot succeed against it as written **[STILL OPEN]**
+### A141 -- `net.fetch`'s `Response.url` is the empty string on every ordinary fetch; `fetchBundle` cannot succeed against it as written **[RESOLVED 2026-09-13 — lane S4-A141-fetch-url]**
 
 **Raised 2026-09-13**, lane S4-A59-probe, answering A59's own recommended measurement
 (`spike/a59-response-url/`, throwaway, Electron 44.0.0, real launch confirmed via
@@ -4589,6 +4593,64 @@ confirmed wrong, per `electron.d.ts`) is depended on anywhere.
 **Needed by:** before PR #164 (or any other path wiring `fetchBundle` to live, un-curated
 content) merges — this is not a latent risk to plan around, it is a function that cannot
 succeed today.
+
+> **Fixed 2026-09-13, lane S4-A141-fetch-url.** Took the AI recommendation above after
+> independently re-deriving it, rather than on authority: `fetch-bundle.ts`'s four `response.url`
+> reads (manifest origin, manifest canonical path, asset origin, asset canonical path) now derive
+> from the REQUESTED url (`manifestUrl`/`assetUrl`) instead. The checks themselves were kept, not
+> deleted, even though the manifest pair is now provably tautological (`manifestUrl` is built by
+> string concatenation two lines above) and the asset pair duplicates a pre-fetch check already
+> present — both are documented as such in `fetch-bundle.ts` rather than silently left looking
+> load-bearing. `electron-fetch.ts`'s `redirect: 'error'` was extracted into a separately exported
+> `netFetch` function specifically so a test could exercise it without also having to pass
+> `electronFetch`'s own loopback-refusing address guard, and `fetch-budget.ts`'s `Fetch` type now
+> states as a REQUIREMENT (not only electron-fetch.ts's own choice) that any implementation must
+> refuse to follow a redirect — fetch-bundle.ts's origin confinement rests entirely on that now,
+> with no independent backstop left inside fetch-bundle.ts itself.
+>
+> **Three existing tests turned out to depend on the mechanism being removed** (all simulated a
+> redirect via the test stub's `response.url` diverging from the request) and were replaced rather
+> than patched: two "manifest served from a different origin/path" tests (one was passing for an
+> unrelated reason once fixed, the other newly failing on a fixture gap that had never mattered
+> before), the entry-leaf redirect test (ADR-0009 amendment #2 — now structurally unreachable
+> through `fetchBundle`'s public API, since `entryPath` and the asset loop's own canonical path are
+> the identical computation for the entry's own asset), and `bundleTree()`'s case-folding collision
+> test (also unreachable through `fetchBundle` now — moved to a direct unit test in
+> `bundle-hash.test.ts` so that check keeps real coverage). Full account in
+> `src/loader/README.md`'s Design notes.
+>
+> **The larger half of this fix is the test infrastructure, not the four-line diff.** No test
+> anywhere had ever exercised the real `electronFetch`/`net.fetch` adapter — every loader test
+> injected a stub. `test/e2e-loader-adapter.test.ts` (with `test/loader-adapter-entry.ts`, a
+> permanent probe bundled at test time with esbuild and launched as a bare Electron main process
+> via the existing `launch-electron.mjs` harness) now drives the REAL adapter against a REAL local
+> HTTP server inside a REAL Electron process: `electronFetch`'s address guard really refuses a
+> real loopback attempt; `net.fetch`'s `response.url` really is `''` on an ordinary response
+> (A59's finding, now a standing regression check); that real Response, fed through the real,
+> unmodified `fetchWithBudget`, drains the correct bytes; and `redirect: 'error'` really produces
+> a rejection against a real redirecting server — the load-bearing proof this fix depends on.
+>
+> **Not a full end-to-end `fetchBundle()` success test, and not by oversight.**
+> `electronFetch`'s own address guard (T12/A46's no-loopback-carve-out) refuses every literal a
+> local test server could ever use, so `electronFetch` cannot reach a real `net.fetch` call at all
+> through this API without a genuinely public, routable HTTPS endpoint — which would make the test
+> non-hermetic and is correctly out of scope (`docs/development/testing.md`). The redirect and
+> content-draining proofs above call `netFetch` (electron-fetch.ts's own guard-free primitive,
+> extracted for exactly this reason) directly instead, through the real `fetchWithBudget`.
+>
+> **Verified:** `npm run typecheck`, `npm test` (3789 passed, 3 skipped, unchanged from before this
+> fix), `check:contracts`/`check:comments`/`check:size`/`check:natives`/`check:vectors`/
+> `check:secrets` all pass. `npm run test:e2e` (full build, all 11 e2e files, 34 tests, including
+> every pre-existing suite) green under `xvfb-run`, with zero surviving Electron/Xvfb processes
+> and no leftover temp directories, confirmed via `/proc/<pid>/exe` resolution rather than a
+> command-line match.
+>
+> **Left open:** esbuild is used directly from `node_modules` (already present transitively via
+> `vite`) rather than declared in `package.json`, because this worktree's `node_modules` is a
+> symlink into a tree shared with a live parallel-fleet run, and `npm install` against it mid-run
+> is unsafe. A follow-up should decide whether to formally declare it as a devDependency.
+
+---
 
 ### A142 -- the grant prompt shows a host, not a registrable domain, for lack of a public suffix list **[PARKED -- needs owner decision]**
 
@@ -4691,3 +4753,38 @@ closed default is reversible; the reverse is not.
 
 **Needed by:** whichever future app actually needs an external resource from inside its own
 partition -- not before, since nothing in this MVP's own fixture/flagship apps does today.
+
+### A144 -- the loader's real-adapter e2e imports `esbuild`, which nothing declares **[AI-REC]**
+
+**Raised 2026-09-13**, lane S4-A141-fetch-url, while building the first test that exercises the
+REAL `electronFetch` rather than a stub (`test/e2e-loader-adapter.test.ts`).
+
+That test bundles a small Electron main-process entry with `esbuild`, imported directly. **No
+`package.json` entry declares it.** It resolves today only because `vite` pulls it in
+transitively, so the import works and CI passes.
+
+**Why this is filed rather than fixed.** Declaring it is a change to the dependency manifest,
+which this run treats as an owner gate (license, provenance and pure-JS status reviewed first,
+`CLAUDE.md` Rules 6 and 8). The lane could not safely run `npm install` either: every fleet
+worktree symlinks one shared `node_modules`, so an install mid-run would mutate the tree other
+lanes are building against.
+
+**Worth weighing when deciding.** Declaring `esbuild` explicitly adds **nothing** to the
+installed tree -- it is already there, already in the lock file, already audited by
+`check:natives` as part of `vite`'s subtree. What changes is only whether this repository states
+that it depends on it. So the usual "is this dependency acceptable" question is not really the
+question; the question is whether an undeclared transitive import is acceptable as a *test-time*
+dependency.
+
+**The cost of leaving it.** `vite` is free to drop or swap its bundler in any minor release. The
+day it does, this test fails with a module-resolution error that names `esbuild` and explains
+nothing about why a test that never mentioned it in `package.json` was relying on it. That is a
+confusing failure landing on whoever is unlucky, not on whoever chose it.
+
+**AI recommendation:** declare `esbuild` in `devDependencies` at the version already resolved in
+the lock, in a PR of its own that touches nothing else, so the lock diff is reviewable. The
+alternative -- rewriting the test to use the repo's own `electron-vite` build rather than a
+direct bundler call -- is more faithful to Rule 6 but materially more work, and the test's whole
+purpose is to be a small, independent harness that does not depend on the app build.
+
+**Needed by:** no deadline. It works today and will keep working until `vite` changes.

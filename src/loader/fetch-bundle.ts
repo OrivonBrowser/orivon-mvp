@@ -136,20 +136,31 @@ export async function fetchBundle (
     if ('ok' in manifestFetch) return manifestFetch
     bytesUsed += manifestFetch.content.length
 
-    // Derived from the RESOLVED url the fetch actually returned
-    // (`response.url`), never the url that was requested. Same "trust what
-    // happened, not what was asked for" stance origin.ts's
-    // originFromSenderFrame takes for T3 -- a redirect must not be able to
-    // silently attribute these bytes to a path, or an origin, other than
-    // where they actually came from. The asset loop below applies the same
-    // stance to `assetFetch.response.url`.
-    const manifestOrigin = originFromUrl(manifestFetch.response.url)
+    // Derived from the REQUESTED url (manifestUrl), never `response.url` --
+    // A141: real Electron's net.fetch reports response.url as the empty
+    // string on every ordinary response, so it cannot name anything, let
+    // alone a redirect. Trusting manifestUrl instead is safe only because
+    // electron-fetch.ts's `redirect: 'error'` makes a followed redirect
+    // response impossible to receive here at all (net-client-request.ts
+    // hard-rejects the promise the instant a redirect is seen) -- a
+    // `Response` this file can inspect always came from exactly the url it
+    // asked for. See `Fetch`'s own doc comment (fetch-budget.ts) for why
+    // that is now a REQUIREMENT on every implementation, not just
+    // electron-fetch.ts's.
+    //
+    // Both checks below are provably tautological given how manifestUrl is
+    // built two lines above (`${canonicalOrigin}${MANIFEST_PATH}`) -- they
+    // are kept anyway rather than deleted, as documentation of the invariant
+    // and as a guard against manifestUrl's construction ever changing to
+    // something less trivially safe. The asset loop below applies the same
+    // "trust the request, not the response" stance to `assetUrl`.
+    const manifestOrigin = originFromUrl(manifestUrl)
     if (manifestOrigin !== canonicalOrigin) {
       return rejected(`manifest was served from a different origin (${manifestOrigin ?? 'invalid'}) than requested (${canonicalOrigin})`)
     }
-    const manifestCanonicalPath = canonicalAssetPath(manifestFetch.response.url)
+    const manifestCanonicalPath = canonicalAssetPath(manifestUrl)
     if (manifestCanonicalPath !== MANIFEST_PATH) {
-      return rejected(`manifest was served from ${manifestCanonicalPath ?? manifestFetch.response.url}, not the well-known path ${MANIFEST_PATH}`)
+      return rejected(`manifest was served from ${manifestCanonicalPath ?? manifestUrl}, not the well-known path ${MANIFEST_PATH}`)
     }
 
     const manifestText = new TextDecoder('utf-8', { fatal: false }).decode(manifestFetch.content)
@@ -205,14 +216,18 @@ export async function fetchBundle (
       const assetFetch = await fetchWithBudget(fetchFn, assetUrl, pinnedAddresses, MAX_ASSET_BYTES, MAX_BUNDLE_BYTES - bytesUsed, `asset ${assetPath}`, bundleController.signal)
       if ('ok' in assetFetch) return assetFetch
 
-      // Resolved url, not requested url -- same stance as the manifest
-      // check above.
-      const assetOrigin = originFromUrl(assetFetch.response.url)
+      // Requested url (assetUrl), not `response.url` -- see the manifest
+      // check above for why trusting the request is safe (A141), and note
+      // this pair is now ALSO tautological with the requestedOrigin check
+      // above, since both read the same unchanged assetUrl. `canonicalPath`
+      // is still needed as a VALUE (not only a check): it is what `entries`
+      // below actually gets pinned under.
+      const assetOrigin = originFromUrl(assetUrl)
       if (assetOrigin !== canonicalOrigin) {
         return rejected(`asset ${assetPath} was served from a different origin (${assetOrigin ?? 'invalid'}) than requested (${canonicalOrigin})`)
       }
-      const canonicalPath = canonicalAssetPath(assetFetch.response.url)
-      if (canonicalPath === null) return rejected(`asset ${assetPath} resolved to a URL with no canonical path: ${assetFetch.response.url}`)
+      const canonicalPath = canonicalAssetPath(assetUrl)
+      if (canonicalPath === null) return rejected(`asset ${assetPath} resolved to a URL with no canonical path: ${assetUrl}`)
 
       bytesUsed += assetFetch.content.length
       entries.push({ path: canonicalPath, content: assetFetch.content })
