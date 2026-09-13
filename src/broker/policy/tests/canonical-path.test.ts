@@ -338,4 +338,39 @@ describe('canonicalAssetPath', () => {
     const longPath = '/' + 'a'.repeat(2000) + '.js'
     expect(canonicalAssetPath(`https://x.example${longPath}`)).toBeNull()
   })
+
+  // -------------------------------------------------------------------
+  // A154 (docs/open-questions.md). Every dot-segment case above this
+  // describe block goes through bundleHash() on a RAW path string, the one
+  // shape isValidCanonicalPath's re-derivation check actually catches a dot
+  // segment in. canonicalAssetPath calls `new URL(assetUrl)` on the FULL url
+  // first, and the WHATWG parser collapses a dot segment -- literal or
+  // percent-encoded -- while building `pathname`, before
+  // isValidCanonicalPath ever sees the string. These cases exercise that
+  // one shape, which nothing above this block can reach.
+  // -------------------------------------------------------------------
+  it('rejects a full URL carrying a literal dot segment, rather than resolving it', () => {
+    expect(canonicalAssetPath('https://x.example/a/../b.js')).toBeNull()
+    expect(canonicalAssetPath('https://x.example/./b.js')).toBeNull()
+  })
+
+  it('rejects a full URL carrying a percent-encoded dot segment', () => {
+    // Measured independently: new URL('https://probe.example/%2e%2e/evil.js')
+    // .pathname === '/evil.js'. canonicalAssetPath must refuse this outright,
+    // not hand back the laundered '/evil.js'.
+    expect(canonicalAssetPath('https://probe.example/%2e%2e/evil.js')).toBeNull()
+    expect(canonicalAssetPath('https://probe.example/a/%2e%2e/%2e%2e/evil.js')).toBeNull()
+  })
+
+  it('rejects a percent-encoded dot segment regardless of hex case', () => {
+    expect(canonicalAssetPath('https://x.example/%2E%2e/b.js')).toBeNull()
+  })
+
+  it('does not reject a segment that merely starts with dots', () => {
+    expect(canonicalAssetPath('https://x.example/..foo/bar.js')).toBe('/..foo/bar.js')
+  })
+
+  it('does not reject a dot segment appearing only in the query string', () => {
+    expect(canonicalAssetPath('https://x.example/a.js?next=..%2F..')).toBe('/a.js')
+  })
 })
