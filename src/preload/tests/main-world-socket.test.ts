@@ -3,161 +3,8 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { installOrivon } from '../main-world-socket.js'
-import type { MainWorldDatagram, MainWorldUdpBridge } from '../main-world-socket.js'
-import type { OrivonErrorCode } from '../../contracts/errors.js'
-import type { FileStat, SendRefusal } from '../../contracts/handles.js'
-import type { ResponseEnvelope } from '../../contracts/ipc.js'
-
-const LIMITS = {
-  readWindowBytes: 1_000, writeWindowBytes: 1_000,
-  inboundDatagramWindow: 8, outboundDatagramWindow: 4
-}
-
-/** A fake SocketPort-shaped bridge result -- everything main-world-socket.ts needs from bridge.netConnect(). */
-function fakeSocketBridgeResult (): {
-  id: string, remoteAddress: string, remotePort: number, localAddress: string, localPort: number
-  onData: (cb: (chunk: Uint8Array) => void) => void
-  onReadEnd: (cb: (code: OrivonErrorCode | undefined) => void) => void
-  reportConsumed: (n: number) => void
-  write: (chunk: Uint8Array) => Promise<void>
-  endWrite: () => Promise<void>
-  abortWrite: () => void
-  onFatal: (cb: (code: OrivonErrorCode) => void) => void
-  closed: Promise<void>
-  close: () => Promise<void>
-  setNoDelay: (on: boolean) => Promise<void>
-  setKeepAlive: (on: boolean, ms?: number) => Promise<void>
-  emitData: (chunk: Uint8Array) => void
-  emitReadEnd: (code?: OrivonErrorCode) => void
-  emitFatal: (code: OrivonErrorCode) => void
-  written: Uint8Array[]
-  writeCalls: Array<{ resolve: () => void, reject: (e: unknown) => void }>
-  reportConsumedCalls: number[]
-  endWriteCalls: number
-  abortWriteCalls: number
-  closeCalls: number
-} {
-  let dataCb: ((chunk: Uint8Array) => void) | undefined
-  let readEndCb: ((code: OrivonErrorCode | undefined) => void) | undefined
-  let fatalCb: ((code: OrivonErrorCode) => void) | undefined
-  const written: Uint8Array[] = []
-  const writeCalls: Array<{ resolve: () => void, reject: (e: unknown) => void }> = []
-  const reportConsumedCalls: number[] = []
-  let closedResolve: () => void = () => {}
-  const closed = new Promise<void>((resolve) => { closedResolve = resolve })
-  const state = { endWriteCalls: 0, abortWriteCalls: 0, closeCalls: 0 }
-
-  return {
-    id: 'h1', remoteAddress: '93.184.216.34', remotePort: 443, localAddress: '10.0.0.5', localPort: 1234,
-    onData: (cb) => { dataCb = cb },
-    onReadEnd: (cb) => { readEndCb = cb },
-    reportConsumed: (n) => { reportConsumedCalls.push(n) },
-    write: async (chunk) => {
-      written.push(chunk)
-      return await new Promise((resolve, reject) => { writeCalls.push({ resolve, reject }) })
-    },
-    endWrite: async () => { state.endWriteCalls++ },
-    abortWrite: () => { state.abortWriteCalls++ },
-    onFatal: (cb) => { fatalCb = cb },
-    closed,
-    close: async () => { state.closeCalls++; closedResolve() },
-    setNoDelay: async () => {},
-    setKeepAlive: async () => {},
-    emitData: (chunk) => { dataCb?.(chunk) },
-    emitReadEnd: (code) => { readEndCb?.(code) },
-    emitFatal: (code) => { fatalCb?.(code) },
-    written,
-    writeCalls,
-    reportConsumedCalls,
-    get endWriteCalls () { return state.endWriteCalls },
-    get abortWriteCalls () { return state.abortWriteCalls },
-    get closeCalls () { return state.closeCalls }
-  }
-}
-
-function fakeBridge (
-  netConnectResult: ReturnType<typeof fakeSocketBridgeResult>,
-  udpResult?: ReturnType<typeof fakeUdpBridgeResult>,
-  fsReadFileSync: (path: string) => ResponseEnvelope<Uint8Array> = () => ({ id: '', ok: true, result: new Uint8Array() }),
-  netConnectSecureResult: ReturnType<typeof fakeSocketBridgeResult> = fakeSocketBridgeResult()
-): {
-  appManifest: () => Promise<unknown>, appGrants: () => Promise<unknown>
-  appRequestGrant: (request: { capability: string, patterns?: readonly string[] }) => Promise<boolean>
-  fsReadFile: (path: string) => Promise<Uint8Array>, fsWriteFile: (path: string, data: Uint8Array) => Promise<void>
-  fsReadFileSync: (path: string) => ResponseEnvelope<Uint8Array>
-  fsMkdir: (path: string, opts?: { recursive?: boolean }) => Promise<void>
-  fsReaddir: (path: string) => Promise<readonly string[]>
-  fsStat: (path: string) => Promise<FileStat>
-  fsRm: (path: string, opts?: { recursive?: boolean }) => Promise<void>
-  fsRename: (from: string, to: string) => Promise<void>
-  idPublicKey: (curve: string) => Promise<Uint8Array>, idSign: (curve: string, payload: Uint8Array) => Promise<Uint8Array>
-  netConnect: (opts: { host: string, port: number }) => Promise<ReturnType<typeof fakeSocketBridgeResult>>
-  netConnectSecure: (opts: { host: string, port: number }) => Promise<ReturnType<typeof fakeSocketBridgeResult>>
-  netUdpBind: (opts: { port: number }) => Promise<MainWorldUdpBridge>
-} {
-  return {
-    appManifest: async () => ({ orivonApiVersion: 0 }),
-    appGrants: async () => [],
-    appRequestGrant: async () => true,
-    fsReadFile: async () => new Uint8Array(),
-    fsWriteFile: async () => {},
-    fsReadFileSync,
-    fsMkdir: async () => {},
-    fsReaddir: async () => [],
-    fsStat: async () => ({ size: 0, isFile: true, isDirectory: false, mtimeMs: 0 }),
-    fsRm: async () => {},
-    fsRename: async () => {},
-    idPublicKey: async () => new Uint8Array(),
-    idSign: async () => new Uint8Array(),
-    netConnect: async (_opts) => netConnectResult,
-    // A SEPARATE fake result by default (its own fakeSocketBridgeResult(),
-    // not netConnectResult) -- reusing the same one would let a bug that
-    // called bridge.netConnect instead of bridge.netConnectSecure pass
-    // silently, since both fields would then resolve to an identical object.
-    netConnectSecure: async (_opts) => netConnectSecureResult,
-    netUdpBind: async (_opts) => udpResult ?? fakeUdpBridgeResult()
-  }
-}
-
-/** A MainWorldUdpBridge double whose callbacks the test drives by hand. */
-export function fakeUdpBridgeResult (): MainWorldUdpBridge & {
-  emit: (datagram: MainWorldDatagram) => void
-  emitDropped: (inbound: number, outbound: number) => void
-  emitRefusal: (refusal: SendRefusal) => void
-  emitEnd: (code?: OrivonErrorCode) => void
-  emitFatal: (code: OrivonErrorCode) => void
-  readonly sent: MainWorldDatagram[]
-  readonly consumed: Array<{ datagrams: number, bytes: number }>
-} {
-  let onDatagram: (d: MainWorldDatagram) => void = () => {}
-  let onDropped: (i: number, o: number) => void = () => {}
-  let onRefusal: (r: SendRefusal) => void = () => {}
-  let onReadEnd: (code: OrivonErrorCode | undefined) => void = () => {}
-  let onFatal: (code: OrivonErrorCode) => void = () => {}
-  const sent: MainWorldDatagram[] = []
-  const consumed: Array<{ datagrams: number, bytes: number }> = []
-  return {
-    id: 'u1',
-    localAddress: '0.0.0.0',
-    localPort: 6881,
-    onDatagram: (cb) => { onDatagram = cb },
-    onReadEnd: (cb) => { onReadEnd = cb },
-    onDropped: (cb) => { onDropped = cb },
-    onRefusal: (cb) => { onRefusal = cb },
-    onFatal: (cb) => { onFatal = cb },
-    reportConsumed: (datagrams, bytes) => { consumed.push({ datagrams, bytes }) },
-    send: async (datagram) => { sent.push(datagram) },
-    closed: new Promise<void>(() => {}),
-    close: async () => {},
-    emit: (datagram) => { onDatagram(datagram) },
-    emitDropped: (inbound, outbound) => { onDropped(inbound, outbound) },
-    emitRefusal: (refusal) => { onRefusal(refusal) },
-    emitEnd: (code) => { onReadEnd(code) },
-    emitFatal: (code) => { onFatal(code) },
-    sent,
-    consumed
-  }
-}
+import type { FileStat } from '../../contracts/handles.js'
+import { LIMITS, fakeBridge, fakeSocketBridgeResult, tick } from './main-world-socket.test-helpers.js'
 
 describe('installOrivon', () => {
   it('builds the whole window.orivon object, not just net', async () => {
@@ -300,6 +147,7 @@ describe('installOrivon', () => {
         caught = e
       }
       expect(caught).toMatchObject({ name: 'OrivonError', code: 'denied' })
+      expect(caught).toBeInstanceOf(Error)
       expect((caught as { platformCode?: unknown }).platformCode).toBeUndefined()
     })
 
@@ -319,6 +167,45 @@ describe('installOrivon', () => {
       }
       expect(caught).toMatchObject({ name: 'OrivonError', code: 'notFound', platformCode: 'ENOENT' })
     })
+  })
+
+  // A152 (docs/open-questions.md): ../orivon-error.ts's isolated-world
+  // toOrivonError deliberately rejects with a PLAIN OBJECT so it survives
+  // contextBridge's promise-rejection marshalling -- but that marshalling
+  // leaves it a plain object here too, never `instanceof Error`, which
+  // breaks the contract (`OrivonError extends Error`) for every consumer,
+  // not just src/shim/. installOrivon revives it into a real Error before
+  // the page ever sees the rejection.
+  it('A152: revives a bridge rejection that crossed as a plain object into a real Error', async () => {
+    const target: Record<string, unknown> = {}
+    const bridge = fakeBridge(fakeSocketBridgeResult())
+    bridge.netConnect = async () => {
+      throw { name: 'OrivonError', message: 'tcp.connect is not granted to this origin', code: 'denied' }
+    }
+    installOrivon(bridge, LIMITS, target)
+
+    const orivon = target.orivon as { net: { connect: (opts: unknown) => Promise<unknown> } }
+    let caught: unknown
+    try {
+      await orivon.net.connect({ host: 'x.example', port: 443 })
+    } catch (e) {
+      caught = e
+    }
+
+    expect(caught).toBeInstanceOf(Error)
+    expect((caught as { code?: string }).code).toBe('denied')
+    expect((caught as { message?: string }).message).toBe('tcp.connect is not granted to this origin')
+  })
+
+  it('passes a rejection that does not look like an OrivonError through unchanged', async () => {
+    const target: Record<string, unknown> = {}
+    const bridge = fakeBridge(fakeSocketBridgeResult())
+    const boom = new Error('a real, ordinary failure')
+    bridge.netConnect = async () => { throw boom }
+    installOrivon(bridge, LIMITS, target)
+
+    const orivon = target.orivon as { net: { connect: (opts: unknown) => Promise<unknown> } }
+    await expect(orivon.net.connect({ host: 'x.example', port: 443 })).rejects.toBe(boom)
   })
 
   it('net.connect resolves to a TcpSocket-shaped object with real WHATWG streams', async () => {
@@ -488,6 +375,30 @@ describe('installOrivon', () => {
     await expect(writer.write(new Uint8Array([1]))).rejects.toMatchObject({ code: 'reset' })
   })
 
+  // A152: this local toOrivonError never has to cross contextBridge again
+  // (unlike ../orivon-error.ts's isolated-world twin) -- it builds a real
+  // Error, so `OrivonError extends Error` (../../contracts/errors.ts) holds
+  // for a stream error too, not only for the initial connect() rejection.
+  it('A152: a stream error built from a fatal code is a real Error instance', async () => {
+    const result = fakeSocketBridgeResult()
+    const target: Record<string, unknown> = {}
+    installOrivon(fakeBridge(result), LIMITS, target)
+    const orivon = target.orivon as { net: { connect: (opts: unknown) => Promise<{ readable: ReadableStream<Uint8Array> }> } }
+    const socket = await orivon.net.connect({ host: 'x.example', port: 443 })
+    const reader = socket.readable.getReader()
+
+    result.emitFatal('reset')
+
+    let caught: unknown
+    try {
+      await reader.read()
+    } catch (e) {
+      caught = e
+    }
+    expect(caught).toBeInstanceOf(Error)
+    expect((caught as { code?: string }).code).toBe('reset')
+  })
+
   it('P-F3: an ERRORED (not clean) read-end also errors the writable side, not just the readable', async () => {
     const result = fakeSocketBridgeResult()
     const target: Record<string, unknown> = {}
@@ -627,155 +538,3 @@ function findMatching (source: string, openIndex: number, openChar: string, clos
   }
   throw new Error(`no matching '${closeChar}' found`)
 }
-
-async function tick (times = 5): Promise<void> {
-  for (let i = 0; i < times; i++) await Promise.resolve()
-}
-
-describe('installOrivon -- net.udpBind', () => {
-  function bindTarget (udp = fakeUdpBridgeResult()): {
-    orivon: { net: { udpBind: (opts: unknown) => Promise<Record<string, unknown>> } }
-    udp: ReturnType<typeof fakeUdpBridgeResult>
-  } {
-    const target: Record<string, unknown> = {}
-    installOrivon(fakeBridge(fakeSocketBridgeResult(), udp), LIMITS, target)
-    return { orivon: target.orivon as never, udp }
-  }
-
-  it('resolves to a UdpSocket-shaped object with real WHATWG streams', async () => {
-    const { orivon } = bindTarget()
-    const socket = await orivon.net.udpBind({ port: 6881 })
-
-    expect(socket.id).toBe('u1')
-    expect(socket.localAddress).toBe('0.0.0.0')
-    expect(socket.localPort).toBe(6881)
-    expect(socket.readable).toBeInstanceOf(ReadableStream)
-    expect(socket.writable).toBeInstanceOf(WritableStream)
-  })
-
-  it('delivers inbound datagrams whole, one chunk per packet', async () => {
-    const { orivon, udp } = bindTarget()
-    const socket = await orivon.net.udpBind({ port: 6881 })
-    const reader = (socket.readable as ReadableStream<MainWorldDatagram>).getReader()
-
-    udp.emit({ data: new Uint8Array([1, 2]), address: '10.0.0.9', port: 1234, family: 'IPv4' })
-    const { value } = await reader.read()
-
-    expect(value).toEqual({ data: new Uint8Array([1, 2]), address: '10.0.0.9', port: 1234, family: 'IPv4' })
-    reader.releaseLock()
-  })
-
-  // The trap: a number copied once at acquisition reads zero forever, and an
-  // app checking it would conclude it had lost nothing.
-  it('exposes both loss counters as live getters, not values frozen at bind', async () => {
-    const { orivon, udp } = bindTarget()
-    const socket = await orivon.net.udpBind({ port: 6881 })
-
-    expect(socket.droppedInbound).toBe(0)
-    expect(socket.droppedOutbound).toBe(0)
-    udp.emitDropped(4, 7)
-
-    expect(socket.droppedInbound).toBe(4)
-    expect(socket.droppedOutbound).toBe(7)
-  })
-
-  it('keeps the counters readable through Object.freeze', async () => {
-    const { orivon, udp } = bindTarget()
-    const socket = await orivon.net.udpBind({ port: 6881 })
-    expect(Object.isFrozen(socket)).toBe(true)
-    udp.emitDropped(1, 2)
-    expect(socket.droppedInbound).toBe(1)
-  })
-
-  it('sends what the page writes', async () => {
-    const { orivon, udp } = bindTarget()
-    const socket = await orivon.net.udpBind({ port: 6881 })
-    const writer = (socket.writable as WritableStream<MainWorldDatagram>).getWriter()
-
-    await writer.write({ data: new Uint8Array([9]), address: '93.184.216.34', port: 6881, family: 'IPv4' })
-
-    expect(udp.sent).toEqual([{ data: new Uint8Array([9]), address: '93.184.216.34', port: 6881, family: 'IPv4' }])
-    writer.releaseLock()
-  })
-
-  it('reports what the page drained, so the broker can release credit', async () => {
-    const { orivon, udp } = bindTarget()
-    const socket = await orivon.net.udpBind({ port: 6881 })
-    const reader = (socket.readable as ReadableStream<MainWorldDatagram>).getReader()
-
-    udp.emit({ data: new Uint8Array(12), address: 'a', port: 1, family: 'IPv4' })
-    await reader.read()
-    await tick()
-
-    expect(udp.consumed).toContainEqual({ datagrams: 1, bytes: 12 })
-    reader.releaseLock()
-  })
-
-  it('errors both streams when the read side ends abruptly', async () => {
-    const { orivon, udp } = bindTarget()
-    const socket = await orivon.net.udpBind({ port: 6881 })
-    const reader = (socket.readable as ReadableStream<MainWorldDatagram>).getReader()
-
-    udp.emitEnd('reset')
-
-    await expect(reader.read()).rejects.toMatchObject({ code: 'reset' })
-    await expect((socket.writable as WritableStream<MainWorldDatagram>).getWriter().closed)
-      .rejects.toMatchObject({ code: 'reset' })
-  })
-
-  it('does not throw when a genuine read-end arrives after onFatal already errored the controllers', async () => {
-    // onFatal's own controller calls are all try/catch-guarded for exactly
-    // this race; onReadEnd's were not, so a belated 'end' after a silence
-    // timeout already errored the stream would throw on an already-errored
-    // controller instead of being a harmless no-op.
-    const { orivon, udp } = bindTarget()
-    const socket = await orivon.net.udpBind({ port: 6881 })
-    const reader = (socket.readable as ReadableStream<MainWorldDatagram>).getReader()
-
-    udp.emitFatal('timeout')
-
-    expect(() => { udp.emitEnd() }).not.toThrow()
-    await expect(reader.read()).rejects.toMatchObject({ code: 'timeout' })
-  })
-
-  // A87: a refused send never rejects `writable` -- this is how the app
-  // actually learns which of its own writes was refused and why.
-  it('delivers a refused send on `refusals`, carrying its destination and code', async () => {
-    const { orivon, udp } = bindTarget()
-    const socket = await orivon.net.udpBind({ port: 6881 })
-    const reader = (socket.refusals as ReadableStream<SendRefusal>).getReader()
-
-    udp.emitRefusal({ address: '10.0.0.5', port: 4321, code: 'denied' })
-    const { value } = await reader.read()
-
-    expect(value).toEqual({ address: '10.0.0.5', port: 4321, code: 'denied' })
-    reader.releaseLock()
-  })
-
-  it('drops a refusal rather than growing the queue once it is full', async () => {
-    // `refusals` reports OUTBOUND send refusals, so it is sized off
-    // LIMITS.outboundDatagramWindow (4), not the inbound window -- no
-    // wire-level credit window paces refusals the way it paces inbound
-    // datagrams, so an app that never reads `refusals` must not let the
-    // broker's refusals pin unbounded memory here. Five refusals fired at an
-    // unread stream must leave exactly four queued, the fifth dropped rather
-    // than growing the queue past the mark.
-    const { orivon, udp } = bindTarget()
-    const socket = await orivon.net.udpBind({ port: 6881 })
-    const reader = (socket.refusals as ReadableStream<SendRefusal>).getReader()
-
-    for (let i = 0; i < 5; i += 1) udp.emitRefusal({ address: '10.0.0.5', port: 4321 + i, code: 'denied' })
-
-    const drained: SendRefusal[] = []
-    for (let i = 0; i < 4; i += 1) drained.push((await reader.read()).value as SendRefusal)
-    expect(drained.map((r) => r.port)).toEqual([4321, 4322, 4323, 4324])
-
-    // The fifth refusal (port 4325) must have been dropped outright rather
-    // than merely left queued behind the four already drained -- a sentinel
-    // enqueued now lands in the read right after them only if the queue was
-    // actually empty, which is what distinguishes "dropped" from "unread".
-    udp.emitRefusal({ address: '10.0.0.5', port: 9999, code: 'denied' })
-    expect((await reader.read()).value).toEqual({ address: '10.0.0.5', port: 9999, code: 'denied' })
-    reader.releaseLock()
-  })
-})

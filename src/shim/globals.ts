@@ -146,10 +146,20 @@ export interface GlobalsTarget {
 /**
  * Installs process/setImmediate/clearImmediate onto `target`.
  *
- * Never touches the real globalThis itself -- the caller decides what
- * "global" means (production: globalThis; a test: a disposable object).
+ * Never touches the real globalThis itself by default -- the caller
+ * decides what "global" means (a test: a disposable object; production:
+ * omit `target` and the default below applies). `target` is the TRAILING,
+ * defaulted parameter -- not the leading one this file used before A151 --
+ * so a caller reachable only via `contextBridge.executeInMainWorld`'s
+ * serialised `func`/`args` (../preload/expose-shim-globals.ts) can supply
+ * `options` and let `target` default to that call's own real main-world
+ * `window`, the identical pattern ../preload/main-world-socket.ts's
+ * `installOrivon` already uses for its own trailing `target` parameter.
  */
-export function installGlobals (target: GlobalsTarget, options: InstallGlobalsOptions): void {
+export function installGlobals (
+  options: InstallGlobalsOptions,
+  target: GlobalsTarget = typeof window === 'undefined' ? {} : window as unknown as GlobalsTarget
+): void {
   const { reportError } = options
 
   // THE RULE THIS FILE EXISTS FOR. Node's real process.nextTick surfaces an
