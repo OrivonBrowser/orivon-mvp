@@ -4940,3 +4940,48 @@ neither of those claims and borrowing either colour would overclaim or under-cla
 **Needed by:** before build step 6 designs the full trust indicator, which will likely want to
 say more about delivery provenance than a tooltip can hold -- this entry's answers should inform
 that design rather than be silently superseded by it.
+
+### A148 -- `script-src 'unsafe-inline'` on the served bundle gives up CSP's XSS role, and the reasoning for it only covers static markup **[AI-REC -- conductor, at merge review]**
+
+**Raised 2026-09-13**, conductor review of PR #172 (S4-6), which set the served bundle's CSP to
+`default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'` plus the
+grant-derived `connect-src`.
+
+**The argument in the code is correct as far as it goes.** An inline `<script>` inside a pinned,
+hash-verified `.html` file is exactly as verified as the pinned `.js` file that `'self'` already
+admits; there is no hash or nonce allowlist built that could admit one without the other; and a
+nonce cannot be injected without rewriting the served bytes, which would break the pinning
+guarantee that makes the whole origin trustworthy. Blocking inline script would break apps that
+legitimately ship it, in exchange for a rule this origin's own serving guarantee already makes
+redundant *for static markup*. That reasoning is sound and this entry does not dispute it.
+
+**What it does not cover, and what is actually being given up.** CSP's `script-src` is not only an
+integrity control over the markup the author shipped -- it is the last line of defence when an app
+renders data it did not author. A pinned Orivon app that fetches remote content and puts it in the
+DOM (a Nostr client rendering notes, a video app rendering titles and descriptions, anything
+talking to an API it does not control) is exactly the case where `'unsafe-inline'` stops
+protecting. The bundle being hash-pinned says nothing about the bytes it pulls at runtime, and
+those are the bytes an attacker controls. So the gap is not "inline script the author wrote"; it
+is "script an attacker gets the author's page to create".
+
+**Why this is filed and not fixed.** The fix is a real mechanism, not a config change: emit
+per-script `sha256-` source expressions in the header, computed from the pinned file contents at
+serve time. The bundle hash machinery already hashes every leaf, so the inputs exist -- but CSP
+script hashes are over the *script element's text*, not the file, so it means parsing each served
+HTML document and hashing each inline block. That is a self-contained piece of work with a real
+cost, and it is not this lane's scope.
+
+**It is also not urgent today, for a reason worth writing down rather than assuming.** `A143`: a
+`protocol.handle` registration intercepts the whole scheme for that partition, so an app's page
+currently cannot reach any third-party host at all -- a CSP-permitted request hits the app's own
+handler and gets a 404. The remote-data scenario this entry is about therefore does not exist yet.
+**It starts existing the moment `A143` is resolved in favour of proxying**, which makes these two
+questions a pair: whichever way `A143` goes decides how much this one matters.
+
+**AI recommendation:** leave `'unsafe-inline'` as shipped, and treat per-script hashes as the
+upgrade that lands alongside any decision to let an app reach third-party hosts. Do not silently
+carry the current reasoning forward into that world -- it was written for a bundle that talks to
+nothing.
+
+**Needed by:** whenever `A143` is decided, and before any app renders remote content it does not
+author.
