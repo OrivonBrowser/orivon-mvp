@@ -3968,7 +3968,7 @@ that wave) carry no A-number by design: the rule is fixed **or** filed, never si
 entries below are the ones filed rather than fixed, plus two structural constraints discovered while
 fixing.
 
-### A115 — a subdomain-prefix confusable survives in the grant prompt's title **[STILL OPEN]**
+### A115 — a subdomain-prefix confusable survives in the grant prompt's title **[PARTIALLY RESOLVED 2026-09-13]**
 
 **Raised 2026-09-10**, post-merge audit (lane R2, T25 follow-up to #130/#134).
 
@@ -3982,6 +3982,17 @@ Related but distinct from **A127**, which is about the origin not being reliably
 
 **Needed by:** before an untrusted app can trigger a grant prompt from a page — i.e. as soon as
 `app.requestGrant` has a caller.
+
+**RESOLVED, to the no-dependency floor, 2026-09-13** (lane `stream/shell-04-origin-confusable`,
+ahead of PR #165 giving `app.requestGrant` its first caller). `formatOriginForDisplay`
+(`src/main/grant-prompt-render.ts`) elides an overlong host from the LEFT by plain character
+count, so `attacker.example` always survives at the visible end and the reassuring prefix never
+survives alone. **Partial, by design and named as such:** this is a length rule, not a
+registrable-domain (eTLD+1) computation — that needs a public suffix list this repo does not
+depend on, and is parked as **A142** rather than built, per this run's stop condition on new
+dependencies. The floor is real (the confusable string a person reads can no longer be mistaken
+for `accounts.google.com`) but a person still is not shown "this is/is not google.com" directly;
+A142 is what would close that remaining gap.
 
 ### A116 — routed `fetch()` never follows redirects **[STILL OPEN]**
 
@@ -4158,7 +4169,7 @@ from the repository at all.
 **AI recommendation:** a `reviewed:` label, or one line per PR in a checked-in ledger. Cheap, and it
 is the difference between "we think #105-#136 were never reviewed" and knowing.
 
-### A127 — the consent prompt shows the origin only in a field Electron says some platforms drop **[STILL OPEN]**
+### A127 — the consent prompt shows the origin only in a field Electron says some platforms drop **[PARTIALLY RESOLVED]**
 
 **Raised 2026-09-10**, post-merge audit (adversarial review of the consent path, PRs #130/#134).
 
@@ -4178,6 +4189,16 @@ documented as ignoring message-box titles.
 the title, and is being made.** What stays open is the measurement: *no macOS machine was available
 to this audit*, so the platform claim is reasoned from Electron's declaration and not observed.
 Recorded rather than asserted, so nobody later cites it as measured.
+
+**The mechanism half is confirmed landed, verified directly 2026-09-13** (lane
+`stream/shell-04-origin-confusable`, fixing A115): `describeGrantRequest` already puts the origin
+as `detail`'s first line, ahead of the `Claims to be "<name>"` line, on `main` as of `9b8d871` —
+this predates that lane and was not built by it. That lane's own fix (A115) builds directly on
+top of this field, passing the same rendered origin string through both `title` and `detail` so
+neither can show a different, unprotected string from the other. **What stays open is exactly
+what this entry already named as open: the macOS measurement.** Nothing since has run this dialog
+on a real macOS build; treat "the title is not reliably shown" as reasoned, not measured, until
+one does.
 
 **Needed by:** confirmation needs one run of the prompt on a real macOS build. Until then, treat
 "the title is not reliably displayed" as the operating assumption, since the fix costs nothing on
@@ -4555,3 +4576,41 @@ confirmed wrong, per `electron.d.ts`) is depended on anywhere.
 **Needed by:** before PR #164 (or any other path wiring `fetchBundle` to live, un-curated
 content) merges — this is not a latent risk to plan around, it is a function that cannot
 succeed today.
+
+### A142 -- the grant prompt shows a host, not a registrable domain, for lack of a public suffix list **[PARKED -- needs owner decision]**
+
+**Raised 2026-09-13**, fixing A115 (subdomain-prefix confusable in the grant prompt).
+
+A115's fix (`formatOriginForDisplay`, `src/main/grant-prompt-render.ts`) elides an overlong host
+from the left by plain character count, so the label that decides authority always survives at
+the visible end. That is the floor this lane could build with no new dependency. It is not the
+same thing as showing the actual **registrable domain** (eTLD+1) -- the fact a person really
+wants ("this is google.com" / "this is not google.com") -- which needs a public suffix list to
+compute correctly. `example.co.uk`'s registrable domain is `example.co.uk`, not `co.uk`; a naive
+"last two labels" guess gets this backwards, in the direction that hides the real registrant, so
+it is worse than not computing it at all. This repo has no such dependency, and adding one is a
+stop condition for the current run (`docs/planning/unattended-build-queue.md` stop condition 4:
+license, provenance and pure-JS status reviewed by the owner first) -- so it is parked here
+rather than added.
+
+**Two candidates, checked against Rule 8 (pure-JS, no native modules) so the owner can decide
+cheaply:**
+
+- **`psl`** (`lupomontero/psl`) -- MIT license, latest `1.15.0`. One dependency, `punycode@^2.3.1`
+  (also pure JS). Widely used (it is the PSL parser inside `request`/`superagent`'s cookie
+  handling historically). Simpler API, slower per its own maintainer's benchmark against `tldts`.
+- **`tldts`** (`remusao/tldts`) -- MIT license, latest `7.4.12`. One dependency, `tldts-core`
+  (same author, same license, zero dependencies of its own). Used by several browser
+  privacy/ad-blocking projects (its own comparison doc claims roughly 1000x `psl`'s throughput).
+  Ships the suffix list baked into the package rather than fetched at runtime.
+
+Both are pure JavaScript with no native bindings or install-time compilation, so `npm run
+check:natives` should pass for either -- not run here, since neither is actually being added.
+Whichever is preferred, the update would replace `formatOriginForDisplay`'s length-based elision
+with rendering the registrable domain distinctly (e.g. bolded, or on its own line, ahead of the
+rest of the host) -- an improvement on this fix's floor, not a correction of it: the length-based
+elision remains correct (if blunter) even after a PSL is available, since it is the fallback for
+whatever a chosen library cannot classify.
+
+**Needed by:** whenever the owner is ready to review a new dependency; not blocking A115, whose
+fix does not need one.
