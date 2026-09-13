@@ -101,6 +101,7 @@ throw anything away.
 | [`src/broker/`](src/broker/) | Grants, prompts, session partitions, handle tables | Partly — the decisions are portable, the plumbing is not |
 | [`src/main/`](src/main/) | Window, tabs, omnibox, subsystem registry | **Entirely. Knowingly disposable** |
 | [`src/preload/`](src/preload/) | The privilege boundary | **Entirely** — "preload" is an Electron concept |
+| [`src/loader/`](src/loader/) | Manifest discovery, fetch, cache, hash-pinning, the update decision | Partly — the update decision is pure policy; fetching and serving the cache are Electron-specific machinery |
 | [`src/shim/`](src/shim/) | Node's `net`/`dgram`/`fs` over `orivon.*` | **Entirely** — a compatibility layer, by design temporary |
 | [`src/renderer/`](src/renderer/) | Browser chrome UI | **Entirely** |
 | [`apps/`](apps/) | The torrent flagship and the test fixture | **No** — they touch only `orivon.*`, exactly like a third-party app |
@@ -113,8 +114,20 @@ import**. Those are the actual boundaries; this table is the summary.
 
 A normal page stays a normal page. An origin becomes an app when a manifest is found at
 `/.well-known/orivon.json` — automatically, as part of loading the page, never as a separate
-step the user takes. Permission is asked for only once the page's own code actually calls for
-a capability, not at this point.
+step the user takes. Its declared files are fetched, hashed and cached automatically and
+silently; no consent is asked yet at this point.
+
+> **Corrected 2026-09-13, owner decision `d-0025` (`ADR-0012`'s amendment).** This paragraph
+> used to end *"Permission is asked for only once the page's own code actually calls for a
+> capability, not at this point"* — true as of 2026-09-03, no longer true. Consent is now asked
+> **once, before the app's own code runs**, for the app's whole declared capability set, in a
+> single dialog, rather than deferred to first use: ported code that has never heard of Orivon
+> cannot pause mid-request for a popup, and a denial answered while a person is still reading a
+> dialog looks, to that code, identical to a capability that does not exist at all. One gap
+> remains, bounded to a first visit: the page's own scripts can start running before that one
+> dialog is answered, so an early call can still see `'denied'` before consent resolves
+> ([`A146`](docs/open-questions.md)). Every later visit is unaffected — the grant is already
+> held by the time the app runs.
 
 **The manifest is never probed automatically.** An unsolicited request to every origin you
 visit is an active, attributable *"this visitor runs Orivon"* signal — sent from a
