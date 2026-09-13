@@ -15,6 +15,8 @@
 
 import type { Session } from 'electron'
 import { partitionFor } from '../broker/grants/origin-hash.js'
+import type { Broker } from '../broker/broker-contracts.js'
+import type { Pattern } from '../contracts/index.js'
 import { createAppRequestHandler } from './serve.js'
 import type { AppRequestHandler } from './serve.js'
 import type { LoaderStorage } from './storage.js'
@@ -42,17 +44,68 @@ export function registerAppOrigin (appSession: Session, origin: string, handler:
 }
 
 /**
+ * `origin`'s live `tcp.connect` grant, straight off the broker -- never
+ * cached here, so the handler built around this closure (`registerServingFor`
+ * below) answers each request with whatever is granted AT THAT MOMENT
+ * (serve.ts's own `GrantedConnectPatterns` doc). Falls back to the empty,
+ * `'self'`-only answer on ANY failure -- an unregistered origin
+ * (`broker.app.grants` rejects for one `canonical()` cannot parse) or a
+ * broker fault must never WIDEN the header past what connect-src.ts's own
+ * invariant allows; the strictest answer is always safe to hand back.
+ */
+async function grantedConnectPatternsFor (broker: Broker, origin: string): Promise<readonly Pattern[]> {
+  try {
+    const grants = await broker.app.grants(origin)
+    return grants.find((grant) => grant.capability === 'tcp.connect')?.patterns ?? []
+  } catch {
+    return []
+  }
+}
+
+/**
  * Builds `origin`'s request handler (re-verifying its whole pinned tree --
  * serve.ts's own cost choice) and registers it on that origin's own
  * partition. The one thing both call sites below need done identically:
  * `restorePinnedServing`, once per origin at startup, and `subsystem.ts`'s
  * `onInstalled` hook, once, immediately after a fresh install completes
  * within the current process run.
+ *
+ * `broker`, when given, is threaded straight into the handler as a
+ * per-request CSP source (`grantedConnectPatternsFor` above) -- `undefined`
+ * (no broker subsystem this run) still serves the app, with `connect-src
+ * 'self'` only, which is `connectSrcFor`'s own safe answer for "nothing
+ * granted", not a degraded mode.
  */
-export async function registerServingFor (storage: LoaderStorage, origin: string): Promise<void> {
-  const handler = await createAppRequestHandler(storage, origin)
+export async function registerServingFor (storage: LoaderStorage, origin: string, broker?: Broker): Promise<void> {
+  const handler = await createAppRequestHandler(
+    storage,
+    origin,
+    broker === undefined ? undefined : async () => await grantedConnectPatternsFor(broker, origin)
+  )
   const { session } = await import('electron')
   registerAppOrigin(session.fromPartition(partitionFor(origin)), origin, handler)
+}
+
+/**
+ * The address bar's own S4-6 provenance signal (ADR-0007: "the padlock is
+ * now misleading unless the UI corrects it"). Asks Electron's OWN
+ * protocol-handler registry, never the broker's `isRegisteredSync` --
+ * `registerApp` (a manifest in the grant ledger) and `registerServingFor`
+ * (this file, actually intercepting the scheme) are two separate calls, and
+ * only this one reflects whether a request to `origin` right now would
+ * truly be answered from the pinned cache rather than reaching the real
+ * network. A malformed `origin` answers `false`, the same fail-closed
+ * default `deliveryProvenanceFor` (src/main/) already applies one layer up.
+ */
+export async function isOriginServedFromCache (origin: string): Promise<boolean> {
+  let scheme: string
+  try {
+    scheme = new URL(origin).protocol.replace(':', '')
+  } catch {
+    return false
+  }
+  const { session } = await import('electron')
+  return session.fromPartition(partitionFor(origin)).protocol.isProtocolHandled(scheme)
 }
 
 /** One origin's outcome from `restorePinnedServing`, for the caller's own logging/tests. */
@@ -72,13 +125,13 @@ export interface RestoredOrigin {
  * everything else" stance `runAfterReady` (main/registry.ts) already takes
  * for subsystems, applied here per app instead of per subsystem.
  */
-export async function restorePinnedServing (storage: LoaderStorage): Promise<readonly RestoredOrigin[]> {
+export async function restorePinnedServing (storage: LoaderStorage, broker?: Broker): Promise<readonly RestoredOrigin[]> {
   const origins = await storage.listPinnedOrigins()
   const results: RestoredOrigin[] = []
 
   for (const origin of origins) {
     try {
-      await registerServingFor(storage, origin)
+      await registerServingFor(storage, origin, broker)
       results.push({ origin, ok: true })
     } catch (error) {
       console.error('[loader] failed to restore cache-serving for', origin, error)

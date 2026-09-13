@@ -84,3 +84,35 @@ describe('registerShellIpc -- the permissions commands (queue item 4.4)', () => 
     expect(openSettings).not.toHaveBeenCalled()
   })
 })
+
+describe('registerShellIpc -- deliveryProvenanceFor (S4-6, ADR-0007)', () => {
+  it('forwards the tab URL to the injected deliveryProvenance function', async () => {
+    const permissions = fakePermissions()
+    const deliveryProvenance = vi.fn(async () => ({ servedFromPinnedCache: true }))
+    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, permissions, vi.fn(), deliveryProvenance)
+
+    const result = await dispatch({ type: 'deliveryProvenanceFor', url: 'https://app.example/page' })
+
+    expect(deliveryProvenance).toHaveBeenCalledWith('https://app.example/page')
+    expect(result).toEqual({ servedFromPinnedCache: true })
+  })
+
+  it('refuses deliveryProvenanceFor from a frame that is not the chrome view\'s own', async () => {
+    const permissions = fakePermissions()
+    const deliveryProvenance = vi.fn(async () => ({ servedFromPinnedCache: true }))
+    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, permissions, vi.fn(), deliveryProvenance)
+
+    await dispatch({ type: 'deliveryProvenanceFor', url: 'https://app.example/page' }, OTHER_FRAME)
+
+    expect(deliveryProvenance).not.toHaveBeenCalled()
+  })
+
+  it('with no deliveryProvenance function injected, defaults to reporting false rather than throwing', async () => {
+    const permissions = fakePermissions()
+    registerShellIpc(chromeWebContents, {} as TabManager, {} as BookmarkStore, permissions, vi.fn())
+
+    const result = await dispatch({ type: 'deliveryProvenanceFor', url: 'https://app.example/page' })
+
+    expect(result).toEqual({ servedFromPinnedCache: false })
+  })
+})

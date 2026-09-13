@@ -113,21 +113,30 @@ this string as the same address", docs/open-questions.md A20) — because both a
 same [`address-parse.ts`](address-parse.ts) parsers and so can never disagree about what an
 address *is*, only about how it should be spelled.
 
-**[`connect-src.ts`](connect-src.ts)'s CSP `connect-src` derivation is pure; wiring it via
-`session.webRequest.onHeadersReceived` is build step 4's job.** Four things that step still needs
-to check, recorded here because nothing else in the corpus does: (1) ADD this header to the
-response, never REPLACE — multiple CSP headers intersect, which is what makes "the app cannot
-relax it" true without stripping the app's own document's CSP. (2) Verify whether
-`onHeadersReceived` fires for `protocol.handle`-served responses at all — ADR-0007 serves the
-cached bundle that way, and nothing in the corpus confirms `webRequest` sees those responses; set
-the header on the protocol handler's own `Response` too, just in case, since a worker script
-served the same way inherits its own response's CSP, not the document's. (3) It is per-partition,
-per-origin, and must be recomputed whenever a grant changes. (4) A live `context7` check is
-required before writing the actual Electron wiring. Two scope gaps, both filed rather than
-silently accepted: CSP bounds *names*, `connect.ts`'s `checkConnect` bounds *resolved addresses* —
+**[`connect-src.ts`](connect-src.ts)'s CSP `connect-src` derivation is pure; S4-6 wired it onto
+the served response directly** (`src/loader/serve.ts`'s `buildResponse`), never via
+`session.webRequest.onHeadersReceived` — A110 (`docs/open-questions.md`) confirmed that listener
+never fires for a `protocol.handle`-served response in this Electron version, so the header is
+set on the handler's own `Response` instead, the alternative that ADR-0007 itself names once A110
+closes it. What that wiring did with the four open items this note used to list for whoever built
+it: (1) there is nothing to ADD-not-REPLACE against — this `Response` is built from nothing, not
+intercepted from an existing one, so there is no prior CSP header to clobber; a `<meta
+http-equiv>` CSP the app's own HTML declares still *intersects* with this one regardless, which is
+what actually makes "the app cannot relax it" true. (2) Confirmed FALSE, per A110 above — settled,
+not still open. (3) Recomputed on every request, not once at registration — `serve.ts`'s
+`GrantedConnectPatterns` callback reads the broker's live grant ledger fresh each time, so a
+revoke or a new grant reaches the very next request through an already-registered handler; the
+one thing even that cannot fix is a document already loaded, which keeps the CSP its own
+navigation response carried until the next load — inherent to how CSP delivery works, not a gap
+this wiring left open. (4) Done — see the PR that landed this note's rewrite. Two scope gaps
+remain, both filed rather than silently accepted: CSP bounds *names*, `connect.ts`'s `checkConnect`
+bounds *resolved addresses* —
 for a hostname pattern the two diverge exactly on DNS rebinding, and no CSP construction closes
-that (A42, also noting `img-src`/`form-action`/`script-src`/`frame-src`/navigation/
-`<link rel=prefetch>` stay open channels this header never touches). And the emitted list is the
+that. A42 also listed `img-src`/`form-action`/`script-src`/`frame-src` as open channels this
+header never touched — `serve.ts`'s `cspHeaderValue` now sets `default-src 'self'` (which every
+one of those falls back to, unset) and an explicit `script-src 'self' 'unsafe-inline'`, so A42
+narrows to what CSP structurally cannot cover at all: top-level navigation (`<a href>`,
+`location.href` — `default-src` never governs it) and the DNS-rebinding gap above. And the emitted list is the
 app's *entire* `connect-src` allowlist, so an omitted pattern is not "uncovered", it is blocked —
 the flagship's `tcp.connect: ["*:*"]` has no CSP equivalent at all and is reported via `omitted`
 rather than widened to CSP's bare `*` (owner decision, A43: widening is the bigger bug). An IPv6

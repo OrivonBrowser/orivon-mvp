@@ -26,6 +26,8 @@ import { isPinnedPath, parsePinRecord } from '../broker/policy/pin.js'
 import type { PinRecord } from '../broker/policy/pin.js'
 import { MANIFEST_PATH, canonicalAssetPath } from '../broker/policy/canonical-path.js'
 import { originFromUrl } from '../broker/policy/origin.js'
+import { appCspHeaderValue } from '../broker/policy/connect-src.js'
+import type { Pattern } from '../contracts/index.js'
 import { entryCanonicalPath } from './fetch-bundle.js'
 import { parseManifest } from './manifest.js'
 import { contentTypeFor } from './serve-content-type.js'
@@ -34,6 +36,20 @@ import { verifyPinnedTree } from './serve-verify.js'
 import type { LoaderStorage } from './storage.js'
 
 export type AppRequestHandler = (request: Request) => Promise<Response>
+
+/**
+ * Supplies this handler's origin's LIVE granted `tcp.connect` patterns,
+ * called once per request rather than once at handler-build time -- a
+ * revoke or a fresh grant (broker/grant-ledger.ts) is then reflected on the
+ * very next request through this SAME registered handler, with no
+ * re-registration needed. `undefined` (every existing test, dev-serve.ts,
+ * and any future caller with no broker to ask) answers the safe default: a
+ * CSP naming only `'self'`, never a wider guess. See README.md's Design
+ * notes for the one thing even a live per-request read cannot fix: a
+ * document already loaded keeps the CSP its own navigation response
+ * carried, until the next load.
+ */
+export type GrantedConnectPatterns = () => Promise<readonly Pattern[]>
 
 /** Everything a request needs decided before a byte is read off disk -- deliberately exported for direct, Electron-free unit testing (this file's own header). */
 export type ResolvedRequest =
@@ -77,28 +93,70 @@ function denyResponse (reason: string): Response {
 }
 
 /**
+ * S4-6's CSP, for a pinned, hash-verified bundle: `connect-src` from the
+ * live grant (`appCspHeaderValue`, T22), `default-src 'self'` for every
+ * other fetch directive A42 found unset (`img-src`, `frame-src`,
+ * `form-action`, `worker-src`, ...), and `script-src`/`style-src` widened
+ * back to `'self' 'unsafe-inline'` rather than left at the `default-src`
+ * fallback.
+ *
+ * THE INLINE-SCRIPT CALL IS DELIBERATE, NOT AN OVERSIGHT: this origin only
+ * ever serves pinned, hash-verified files (ADR-0007's fail-closed rule,
+ * enforced above this function, on every request) -- an inline `<script>`
+ * sitting inside a pinned `.html` file is exactly as verified as a pinned
+ * `.js` file `'self'` already allows, and there is no hash/nonce allowlist
+ * built yet to admit one without the other. Blocking it would not raise
+ * the bar this origin is held to; it would only break an app that legitimately
+ * ships inline script, for a rule this origin's own serving guarantee
+ * already makes redundant. `default-src 'self'` still blocks the thing CSP
+ * actually exists to stop here: a SUBRESOURCE the pinned bundle never
+ * declared, from a host CSP's own grammar cannot enumerate around
+ * `connect-src`'s allowlist (img/frame/form-action, A42's gap, now mostly
+ * closed) -- it does not stand between a page and its own already-verified
+ * markup.
+ *
+ * NOT CLOSED BY THIS: `<a href>`/`location.href` navigation (CSP's
+ * `default-src` never covers it) and CSP naming a hostname where
+ * `checkConnect` authorises a resolved address (DNS rebinding) --
+ * both already filed as A42, unaffected by this change.
+ */
+function cspHeaderValue (connectPatterns: readonly Pattern[]): string {
+  return [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline'",
+    appCspHeaderValue(connectPatterns)
+  ].join('; ')
+}
+
+/**
  * Turns `content` into the actual `Response`, honouring a `Range` request.
  *
- * CSP AND OTHER RESPONSE HEADERS BELONG HERE, NOT IN `onHeadersReceived` --
- * A110 (docs/open-questions.md) confirmed that listener never fires for a
- * `protocol.handle`-served response in this Electron version. This function
- * fully controls the `Response` it builds, so whichever build step wires a
- * CSP header (S4-6, not this one) adds it to the `headers` object below --
- * this comment is that seam.
+ * CSP LIVES HERE, NOT IN `onHeadersReceived` -- A110 (docs/open-questions.md)
+ * confirmed that listener never fires for a `protocol.handle`-served
+ * response in this Electron version. This function fully controls the
+ * `Response` it builds, so the header goes straight on it; the caller
+ * supplies fresh `connectPatterns` on every call (see
+ * `GrantedConnectPatterns`'s own doc) rather than this function or its
+ * caller caching them across requests. Set on every served asset, not only
+ * the entry document: a worker script served through this same handler
+ * inherits its OWN response's CSP, never the document's (README.md's Design
+ * notes).
  */
-function buildResponse (content: Uint8Array, canonicalPath: string, rangeHeader: string | null): Response {
+function buildResponse (content: Uint8Array, canonicalPath: string, rangeHeader: string | null, connectPatterns: readonly Pattern[]): Response {
   const contentType = contentTypeFor(canonicalPath)
+  const csp = cspHeaderValue(connectPatterns)
   const total = content.length
   const range = parseRange(rangeHeader, total)
 
   if (range.kind === 'unsatisfiable') {
-    return new Response(null, { status: 416, headers: { 'content-range': `bytes */${total}`, 'accept-ranges': 'bytes' } })
+    return new Response(null, { status: 416, headers: { 'content-range': `bytes */${total}`, 'accept-ranges': 'bytes', 'content-security-policy': csp } })
   }
 
   if (range.kind === 'none') {
     return new Response(content as BodyInit, {
       status: 200,
-      headers: { 'content-type': contentType, 'content-length': String(total), 'accept-ranges': 'bytes' }
+      headers: { 'content-type': contentType, 'content-length': String(total), 'accept-ranges': 'bytes', 'content-security-policy': csp }
     })
   }
 
@@ -110,7 +168,8 @@ function buildResponse (content: Uint8Array, canonicalPath: string, rangeHeader:
       'content-type': contentType,
       'content-length': String(chunk.length),
       'content-range': `bytes ${start}-${end}/${total}`,
-      'accept-ranges': 'bytes'
+      'accept-ranges': 'bytes',
+      'content-security-policy': csp
     }
   })
 }
@@ -127,7 +186,7 @@ function buildResponse (content: Uint8Array, canonicalPath: string, rangeHeader:
  * caller registering this against `session.protocol.handle` has no other
  * sensible outcome to hand Electron for a scheme it must now answer for.
  */
-export async function createAppRequestHandler (storage: LoaderStorage, origin: string): Promise<AppRequestHandler> {
+export async function createAppRequestHandler (storage: LoaderStorage, origin: string, grantedConnectPatterns?: GrantedConnectPatterns): Promise<AppRequestHandler> {
   const rawPin = await storage.readPin(origin)
   const pin = parsePinRecord(rawPin)
   if (pin === null) {
@@ -176,6 +235,7 @@ export async function createAppRequestHandler (storage: LoaderStorage, origin: s
       return denyResponse('cached asset became unavailable after this app was loaded')
     }
 
-    return buildResponse(content, resolved.canonicalPath, request.headers.get('range'))
+    const connectPatterns = grantedConnectPatterns === undefined ? [] : await grantedConnectPatterns()
+    return buildResponse(content, resolved.canonicalPath, request.headers.get('range'), connectPatterns)
   }
 }

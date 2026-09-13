@@ -1,5 +1,6 @@
 import type { Bookmark } from '../main/bookmarks.js'
 import type { AppPermissions } from '../main/permissions.js'
+import type { DeliveryProvenance } from '../main/delivery-provenance.js'
 import type { ShellState, TabState } from '../main/tabs.js'
 import { createBookmarksView } from './bookmarks-view.js'
 import { closeIcon, globeIcon } from './icons.js'
@@ -23,6 +24,11 @@ interface OrivonShell {
   /** Queue item 4.4: the active tab's own grants, for the address-bar
    * icon -- `null` for an ordinary website (never registered as an app). */
   appPermissionsFor: (url: string) => Promise<AppPermissions | null>
+  /** S4-6, ADR-0007: is the active tab's document actually being answered
+   * from Orivon's own pinned local cache -- the one truthful signal the
+   * address-bar dot owes a page whose padlock would otherwise claim a live
+   * TLS connection that never happened. */
+  deliveryProvenanceFor: (url: string) => Promise<DeliveryProvenance>
   /** Opens the settings window -- `url`, when given, is the tab whose
    * card it should scroll to. */
   openSettings: (url?: string) => void
@@ -164,6 +170,54 @@ function renderTabs (state: ShellState): void {
   }
 }
 
+/** The plain https/http read `updateAddressDot` paints immediately, and
+ * upgrades to `.cached` once (or if) the provenance query below resolves
+ * otherwise -- never downgrades a page that really is plain https/http. */
+function applyConnectionDot (url: string): void {
+  if (url.startsWith('https://')) addressDot.classList.add('secure')
+  else if (url.startsWith('http://')) addressDot.classList.add('insecure')
+}
+
+/** S4-6, ADR-0007's "the padlock is now misleading unless the UI corrects
+ * it": the address-bar dot's own provenance state, resolved the same
+ * lagging, per-active-tab way `updateAddressPermissionsBadge` below already
+ * is (`dotRequestUrl` guards against a stale response the same way
+ * `permissionsRequestUrl` does). Paints the ordinary secure/insecure read
+ * first, synchronously, then replaces it with the pinned-cache state if
+ * `deliveryProvenanceFor` says so -- a page really is plain https/http
+ * until proven otherwise, never the reverse. */
+let dotRequestUrl: string | null = null
+
+function updateAddressDot (active: TabState | undefined): void {
+  addressDot.classList.remove('secure', 'insecure', 'cached')
+  addressDot.removeAttribute('title')
+  addressDot.removeAttribute('aria-label')
+
+  // Skip isNewTab: in dev mode the dashboard's own URL is a plain
+  // http://localhost:... address (electron-vite's dev server), which
+  // would otherwise flag Orivon's own page "insecure" -- wrong for an
+  // internal page, not a real signal about anything the user visited.
+  if (active === undefined || active.isNewTab) {
+    dotRequestUrl = null
+    return
+  }
+
+  const url = active.url
+  dotRequestUrl = url
+  applyConnectionDot(url)
+
+  void shell.deliveryProvenanceFor(url).then((provenance) => {
+    if (dotRequestUrl !== url) return // the active tab moved on; this answer is stale
+    if (!provenance.servedFromPinnedCache) return
+    addressDot.classList.remove('secure', 'insecure')
+    addressDot.classList.add('cached')
+    // The literal wording ADR-0007 asks for -- quoted, not paraphrased, so
+    // the address bar and the ADR never drift apart on what it says.
+    addressDot.title = 'Running from local cache, pinned'
+    addressDot.setAttribute('aria-label', 'Running from local cache, pinned')
+  })
+}
+
 function renderToolbar (state: ShellState): void {
   const active = activeTab(state)
   backBtn.disabled = active === undefined || !active.canGoBack
@@ -173,15 +227,7 @@ function renderToolbar (state: ShellState): void {
     addressInput.value = active === undefined || active.isNewTab ? '' : active.url
   }
 
-  addressDot.classList.remove('secure', 'insecure')
-  // Skip isNewTab: in dev mode the dashboard's own URL is a plain
-  // http://localhost:... address (electron-vite's dev server), which
-  // would otherwise flag Orivon's own page "insecure" -- wrong for an
-  // internal page, not a real signal about anything the user visited.
-  if (active !== undefined && !active.isNewTab) {
-    if (active.url.startsWith('https://')) addressDot.classList.add('secure')
-    else if (active.url.startsWith('http://')) addressDot.classList.add('insecure')
-  }
+  updateAddressDot(active)
 
   const bookmarked = active !== undefined && isBookmarked(state.bookmarks, active.url)
   bookmarkToggle.classList.toggle('active', bookmarked)

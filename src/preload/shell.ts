@@ -3,6 +3,7 @@ import { COMMAND_CHANNEL, STATE_CHANNEL } from '../main/channels.js'
 import type { ShellCommand } from '../main/ipc.js'
 import type { ShellState } from '../main/tabs.js'
 import type { AppPermissions } from '../main/permissions.js'
+import type { DeliveryProvenance } from '../main/delivery-provenance.js'
 
 // Loaded ONLY by the chrome view (src/main/window.ts) -- the tab strip and
 // toolbar UI. Privileged: this is the one preload that may issue tab
@@ -40,6 +41,13 @@ contextBridge.exposeInMainWorld('orivonShell', {
   // 'appPermissionsFor' for why listing/revoking are NOT here), and opening
   // the settings window (fire-and-forget, like every other command above).
   appPermissionsFor: async (url: string) => await request<AppPermissions | null>({ type: 'appPermissionsFor', url }),
+  // S4-6, ADR-0007: the address-bar dot's own truthful delivery-provenance
+  // query -- same round-trip shape as appPermissionsFor above, deliberately
+  // a separate command (see ShellCommand's own doc on 'deliveryProvenanceFor')
+  // rather than folded into the permissions payload, which answers a
+  // different question (what can this app do, not where did its bytes
+  // come from).
+  deliveryProvenanceFor: async (url: string) => await request<DeliveryProvenance>({ type: 'deliveryProvenanceFor', url }),
   openSettings: (url?: string) => { send(url === undefined ? { type: 'openSettings' } : { type: 'openSettings', url }) },
 
   /** Subscribes to shell state pushes from main. Returns an unsubscribe

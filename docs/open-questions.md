@@ -1077,7 +1077,7 @@ mechanism.
 a claim of "no network access" is false today for any app that tries WebRTC. Not blocking this
 PR.
 
-### A42 — what the injected CSP does not bound **[STILL OPEN]**
+### A42 — what the injected CSP does not bound **[PARTIALLY RESOLVED 2026-09-13]**
 
 Found 2026-09-02, same file as A41. Stated in `connect-src.ts`'s own header, recorded here so it
 is reachable outside a code comment (A40's own lesson).
@@ -1105,6 +1105,16 @@ problem, not this function's.
 **Needed by:** before the trust indicator (build step 6) or `security-model.md` state either gap
 as closed. Not blocking this PR — recorded so the honest scope of T22 survives past the file
 header that currently carries it alone.
+
+**Partially resolved 2026-09-13, lane S4-6-csp:** the header S4-6 actually wires
+(`src/loader/serve.ts`'s `cspHeaderValue`) adds `default-src 'self'` and an explicit `script-src
+'self' 'unsafe-inline'` alongside the `connect-src` this entry originally described alone. That
+closes `img-src`, `form-action` and `frame-src` (all three fall back to `default-src`, unset) and
+`script-src` (now explicit) — the exfiltration-via-`<img>`/`<iframe>`/`<script>` paths this entry
+names above. **Still open, unchanged by this fix:** top-level navigation (`<a href>`,
+`location.href` — CSP's `default-src` never governs it) and the DNS-rebinding paragraph below
+(CSP names, `checkConnect` addresses) — neither is a gap this fix could have closed; see
+`src/broker/policy/README.md`'s `connect-src.ts` note for the fuller accounting.
 
 ### A43 — a grant CSP cannot represent is omitted, which means BLOCKED, not merely uncovered **[OWNER DECISION]**
 
@@ -3799,7 +3809,7 @@ for a more complex code path whose flicker/double-load behavior has not been mea
 **Needed by:** whenever back/forward-through-a-cross-origin-swap is prioritized; not blocking —
 the current behavior is disclosed and safe, only less capable than an ordinary browser.
 
-### A110 — `onHeadersReceived` never fires for a `protocol.handle`-served response, in this Electron version **[STILL OPEN]**
+### A110 — `onHeadersReceived` never fires for a `protocol.handle`-served response, in this Electron version **[ACTED ON 2026-09-13]**
 
 **Raised 2026-09-10**, lane P0-5, probing `ADR-0007`'s own four "assumed, not yet confirmed"
 items (lines 86-92 and Reversibility). Full method and evidence recorded in `ADR-0007` itself,
@@ -3832,6 +3842,14 @@ first.
 
 **Needed by:** whichever build step designs cached-bundle header/CSP enforcement — not before,
 since nothing today relies on `onHeadersReceived` firing for a `protocol.handle` response.
+
+**Acted on 2026-09-13, lane S4-6-csp:** built the substitution this entry names as the next
+probe's direction, rather than leaving it as a suggestion — `connect-src.ts`'s CSP is set directly
+on the `Response` `src/loader/serve.ts`'s `createAppRequestHandler` already builds and fully
+controls, never via `webRequest`. Not marked RESOLVED: the Electron defect this entry documents
+is still real and still open upstream: nothing here changes electron/electron#45865's status,
+only routes around it. See `src/broker/policy/README.md`'s `connect-src.ts` note for what the
+routing actually does.
 
 ### A111 — `window.nostr` cannot be reached from a real page until the connect prompt exists **[STILL OPEN]**
 
@@ -4876,3 +4894,94 @@ interrupted by a dialog, and which is better is the owner's call, not an impleme
 
 **Needed by:** before an app that was not written for Orivon is expected to work on a first
 visit -- i.e. before Phase 5's FreeTube lane means anything. Not blocking anything merged today.
+
+### A147 -- the address-bar provenance wording, and the two-state-vs-three-state choice it rests on **[NEEDS OWNER DECISION]**
+
+**Raised 2026-09-13**, lane S4-6-csp, build step 4's CSP/provenance item (`ADR-0007`,
+`ADR-0006`). `ADR-0007` requires the address bar to say, in some words, that a tab is running
+from Orivon's own pinned local cache rather than a live TLS connection, and suggests the wording
+*"running from local cache, pinned"* without mandating it verbatim.
+
+**What shipped:** the address-bar dot (`src/renderer/main.ts`'s `updateAddressDot`) gains a
+third state, `.cached`, alongside the existing `secure`/`insecure` (green/orange). Its tooltip
+and `aria-label` are the literal string **`"Running from local cache, pinned"`** -- capitalised
+as a sentence, since every other tooltip in this UI is (`addressPermissionsBtn`'s "This site has
+no Orivon permissions"). Colour: `--waccent` (the app's own theme-invariant indigo accent),
+neither the secure green nor the insecure orange, on the reasoning that a pinned-cache load is
+neither of those claims and borrowing either colour would overclaim or under-claim.
+
+**Still open, owner's call, not decided here:**
+
+1. **Is a same-colour dot with a different tooltip enough, or does ADR-0007's "the UI must say
+   so" want the word "cached" (or similar) visible without hovering?** A dot with no visible
+   text is consistent with how `secure`/`insecure` already work today (colour only, no tooltip
+   on hover for either state currently, though this PR is the first to put text on the dot at
+   all) -- but ADR-0006's whole framing is "evidence-first," and a hover-only signal is easy to
+   miss on a first read. AI recommendation: ship the hover-only version now (least UI surface
+   added, consistent with the existing dot), and revisit once build step 6's trust indicator
+   gives cached delivery a permanent, always-visible home -- but this is exactly the kind of
+   product-feel call `CLAUDE.md` says to explain in plain language rather than assume.
+2. **Is the literal string right?** `"Running from local cache, pinned"` is ADR-0007's own
+   suggested wording, used verbatim rather than paraphrased so the ADR and the UI can never read
+   differently by accident -- but "pinned" is jargon this codebase understands (TOFU/hash-pin)
+   that an ordinary user has not been introduced to anywhere else in the UI yet. An alternative
+   considered and not chosen: `"Running offline from a saved copy"` -- plainer, but drops the
+   word ADR-0007 itself chose, and loses the specific claim "pinned" makes (verified against a
+   hash, not just cached).
+3. **Should the dot ever show BOTH facts at once** -- e.g. a pinned app whose bundle is ALSO
+   served under `https://`, meaning the origin's own declared scheme is secure even though these
+   particular bytes came from disk? Today the two are mutually exclusive in the UI (`.cached`
+   replaces `.secure`/`.insecure` outright, per `updateAddressDot`), on the reasoning that "where
+   the bytes came from" is the more load-bearing fact for a user deciding whether to trust the
+   page right now, and showing both risks reading as a contradiction rather than two
+   complementary facts. Not settled as a permanent design, only as this lane's least-surprising
+   default.
+
+**Needed by:** before build step 6 designs the full trust indicator, which will likely want to
+say more about delivery provenance than a tooltip can hold -- this entry's answers should inform
+that design rather than be silently superseded by it.
+
+### A148 -- `script-src 'unsafe-inline'` on the served bundle gives up CSP's XSS role, and the reasoning for it only covers static markup **[AI-REC -- conductor, at merge review]**
+
+**Raised 2026-09-13**, conductor review of PR #172 (S4-6), which set the served bundle's CSP to
+`default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'` plus the
+grant-derived `connect-src`.
+
+**The argument in the code is correct as far as it goes.** An inline `<script>` inside a pinned,
+hash-verified `.html` file is exactly as verified as the pinned `.js` file that `'self'` already
+admits; there is no hash or nonce allowlist built that could admit one without the other; and a
+nonce cannot be injected without rewriting the served bytes, which would break the pinning
+guarantee that makes the whole origin trustworthy. Blocking inline script would break apps that
+legitimately ship it, in exchange for a rule this origin's own serving guarantee already makes
+redundant *for static markup*. That reasoning is sound and this entry does not dispute it.
+
+**What it does not cover, and what is actually being given up.** CSP's `script-src` is not only an
+integrity control over the markup the author shipped -- it is the last line of defence when an app
+renders data it did not author. A pinned Orivon app that fetches remote content and puts it in the
+DOM (a Nostr client rendering notes, a video app rendering titles and descriptions, anything
+talking to an API it does not control) is exactly the case where `'unsafe-inline'` stops
+protecting. The bundle being hash-pinned says nothing about the bytes it pulls at runtime, and
+those are the bytes an attacker controls. So the gap is not "inline script the author wrote"; it
+is "script an attacker gets the author's page to create".
+
+**Why this is filed and not fixed.** The fix is a real mechanism, not a config change: emit
+per-script `sha256-` source expressions in the header, computed from the pinned file contents at
+serve time. The bundle hash machinery already hashes every leaf, so the inputs exist -- but CSP
+script hashes are over the *script element's text*, not the file, so it means parsing each served
+HTML document and hashing each inline block. That is a self-contained piece of work with a real
+cost, and it is not this lane's scope.
+
+**It is also not urgent today, for a reason worth writing down rather than assuming.** `A143`: a
+`protocol.handle` registration intercepts the whole scheme for that partition, so an app's page
+currently cannot reach any third-party host at all -- a CSP-permitted request hits the app's own
+handler and gets a 404. The remote-data scenario this entry is about therefore does not exist yet.
+**It starts existing the moment `A143` is resolved in favour of proxying**, which makes these two
+questions a pair: whichever way `A143` goes decides how much this one matters.
+
+**AI recommendation:** leave `'unsafe-inline'` as shipped, and treat per-script hashes as the
+upgrade that lands alongside any decision to let an app reach third-party hosts. Do not silently
+carry the current reasoning forward into that world -- it was written for a bundle that talks to
+nothing.
+
+**Needed by:** whenever `A143` is decided, and before any app renders remote content it does not
+author.

@@ -20,6 +20,7 @@ import { BookmarkStore } from './bookmarks.js'
 import { COMMAND_CHANNEL, NEWTAB_COMMAND_CHANNEL, STATE_CHANNEL } from './channels.js'
 import { registerNewTabIpc } from './newtab-ipc.js'
 import { createPermissionsController } from './permissions.js'
+import { deliveryProvenanceFor } from './delivery-provenance.js'
 import { rendererEntryUrl } from './renderer-entry.js'
 import type { SubsystemContext } from './registry.js'
 import { TabManager, type Bounds } from './tabs.js'
@@ -195,7 +196,7 @@ export function createShellWindow (ctx: SubsystemContext): BaseWindow {
     // particular app to scroll to", not an error.
     const focusOrigin = url === undefined ? undefined : originFromUrl(url) ?? undefined
     openSettingsWindow(permissions, focusOrigin)
-  })
+  }, deliveryProvenanceFor)
   registerNewTabIpc(dashboardUrl, tabs, bookmarks)
   // A16 makes createShellWindow() re-run routinely now (close the last
   // tab, then reopen from the macOS dock via app.on('activate')), and
