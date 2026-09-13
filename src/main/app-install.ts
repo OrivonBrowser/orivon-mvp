@@ -46,13 +46,14 @@ export interface AppInstallDeps {
  *
  * `hintingOrigin` is the origin that actually SUPPLIED the hint -- e.g.
  * `originFromSenderFrame(event.senderFrame)` (`src/broker/policy/
- * origin.ts`), already canonical. No real caller exists yet (the hint
- * listener isn't built), but this seam has to exist from day one: without
- * it, a hostile page could emit a hint for an unrelated origin (its bank,
- * say) and have this read THAT origin's grants and raise its version
- * floor. `hintedUrl` must resolve to EXACTLY `hintingOrigin` or this
- * rejects before the broker is ever touched, matching `Loader.load()`'s
- * own same-origin contract.
+ * origin.ts`), already canonical. This seam had to exist from day one, before
+ * any real caller did: without it, a hostile page could emit a hint for an
+ * unrelated origin (its bank, say) and have this read THAT origin's grants
+ * and raise its version floor. `hintedUrl` must resolve to EXACTLY
+ * `hintingOrigin` or this rejects before the broker is ever touched, matching
+ * `Loader.load()`'s own same-origin contract. The real caller is
+ * `src/main/manifest-hint.ts` (S4-2), which derives `hintingOrigin` exactly
+ * this way from a `<link rel="orivon-manifest">` hint's sender frame.
  *
  * That same-origin check, and `originFromUrl` failing, both run before any
  * broker call: `GrantLedger.versionFloorFor` creates a permanent in-memory
