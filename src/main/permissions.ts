@@ -16,13 +16,13 @@
 // A SECOND, SEPARATE GAP THIS FILE WORKS AROUND: `Broker` has no way to
 // enumerate registered origins (`app.manifest`/`app.grants` both take one
 // origin already known to the caller). `PermissionsRegistry.noteOrigin` is
-// the seam for whoever eventually learns of an origin becoming a real app
-// -- nothing calls it yet, because nothing in production calls
-// `broker.registerApp` yet either (`request-grant-subsystem.ts`'s own
-// header: "NOTHING CALLS ctx.requestGrant YET"). Until one of the two ever
-// happens, the settings page's full list is honestly empty; the address-bar
-// icon does not depend on this registry at all -- `forOrigin` asks the
-// broker about one already-known origin directly.
+// the seam for whoever learns of an origin becoming a real app. Installs
+// now happen in production (`app-install.ts`, from the discovery trigger),
+// so an origin CAN become a real app without this registry hearing about
+// it -- nothing calls `noteOrigin` yet, so the settings page's full list
+// can under-report. The address-bar icon does not depend on this registry:
+// `forOrigin` asks the broker about one already-known origin directly, so
+// the surface a person actually revokes from is unaffected.
 
 import type { CapabilityKind, Grant, GrantId, Manifest } from '../contracts/index.js'
 import type { Broker } from '../broker/broker-contracts.js'
