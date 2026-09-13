@@ -49,4 +49,34 @@ describe('toNodeError', () => {
     expect(result.code).toBe('internal')
     expect(result.message).toBe('mystery failure')
   })
+
+  // A152 (docs/open-questions.md): measured live, a real denial that
+  // crosses back from the main world (../preload/main-world-socket.ts) is
+  // a PLAIN OBJECT in this world -- never `instanceof Error`, despite
+  // carrying every field correctly. isOrivonError used to require
+  // `instanceof Error` and silently turned every one of these into
+  // 'internal'.
+  it('recognises a plain-object OrivonError that crossed a world boundary, never an Error instance', () => {
+    const crossed = { name: 'OrivonError', message: 'tcp.connect is not granted to this origin', code: 'denied' }
+    const result = toNodeError(crossed)
+    expect(result.code).toBe('denied')
+    expect(result.orivonCode).toBe('denied')
+    expect(result).toBeInstanceOf(Error)
+  })
+
+  // The closed enum must survive the relaxed, structural check: a value
+  // shaped like an OrivonError but carrying a code outside the eleven real
+  // ones must still fail closed to 'internal', never be trusted through.
+  it('still fails closed to internal when a plain object\'s code is not a real OrivonErrorCode', () => {
+    const spoofed = { name: 'OrivonError', message: 'not really one of ours', code: 'not-a-real-code' }
+    const result = toNodeError(spoofed)
+    expect(result.code).toBe('internal')
+    expect(result.orivonCode).toBe('internal')
+  })
+
+  it('still fails closed to internal when a plain object is missing .message', () => {
+    const malformed = { name: 'OrivonError', code: 'denied' }
+    const result = toNodeError(malformed)
+    expect(result.code).toBe('internal')
+  })
 })

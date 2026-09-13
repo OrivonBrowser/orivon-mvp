@@ -1,5 +1,6 @@
 import { exposeOrivon } from './orivon-surface.js'
 import { exposeFetchRoute } from './expose-fetch-route.js'
+import { exposeShimGlobals } from './expose-shim-globals.js'
 import { installManifestHintWatcher } from './manifest-hint.js'
 
 // Loaded by every ORDINARY TAB (src/main/tabs.ts) -- unprivileged. The
@@ -15,7 +16,11 @@ exposeOrivon()
 // registered app's granted hosts. Must run AFTER exposeOrivon() -- it
 // depends on window.orivon already existing in the main world.
 exposeFetchRoute()
-// S4-2: the discovery trigger. Order relative to the two calls above does
+// A151: installs orivon-node-shim's process/setImmediate/clearImmediate
+// for a real app tab, gated on the identical --orivon-app-tab flag
+// exposeFetchRoute() reads -- see expose-shim-globals.ts's own header.
+exposeShimGlobals()
+// S4-2: the discovery trigger. Order relative to the calls above does
 // not matter -- this never touches window.orivon, only the DOM and
 // ipcRenderer.
 installManifestHintWatcher()

@@ -1,5 +1,9 @@
 # Build step 4 -- the app loader: what is left, and in what order
 
+> **All seven items below shipped the same day this plan was written** (thirteen merged PRs,
+> #163-#175). Kept here as the work log this pass actually followed, not as a live queue --
+> `docs/planning/compatibility-matrix.md` and `src/loader/README.md` carry current status.
+
 **What this is.** The work queue for build step 4, written 2026-09-13 against `main` at
 `76c61e0`. It exists because step 4 is not a green field: most of the loader was built during
 the 2026-09-10 unattended run, and what remains is the wiring that makes it reachable. Starting

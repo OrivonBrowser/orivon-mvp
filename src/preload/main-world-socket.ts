@@ -123,19 +123,55 @@ export function installOrivon (
   target: { orivon?: unknown } = typeof window === 'undefined' ? {} : window as unknown as { orivon?: unknown }
 ): void {
   /**
-   * `options` mirrors ../orivon-error.ts's isolated-world twin exactly --
-   * this file cannot import that one (this whole function is serialised and
-   * re-run fresh in the main world; see the file header), so the shape is
-   * repeated here rather than shared across the boundary it crosses.
+   * UNLIKE ../orivon-error.ts's isolated-world twin, this builds a REAL
+   * `Error`, not a plain object -- A152 (docs/open-questions.md). That
+   * file's plain object is load-bearing THERE because it still has to
+   * cross `contextBridge` (which strips a thrown Error down to its
+   * `.message`); everything this copy builds is already past that
+   * crossing (onReadEnd/onFatal/close/readFileSync all hand it straight
+   * to the page's own stream controllers or throw it directly), so
+   * nothing here needs to survive contextBridge a second time, and
+   * `OrivonError extends Error` (../../contracts/errors.ts) can actually
+   * hold. This file cannot import the isolated-world twin either way
+   * (serialised and re-run fresh in the main world; see the file header).
    */
   function toOrivonError (
     code: OrivonErrorCode,
     options: { message?: string, platformCode?: string } = {}
-  ): { name: string, message: string, code: OrivonErrorCode, platformCode?: string } {
+  ): Error & { code: OrivonErrorCode, platformCode?: string } {
     const { message = `orivon: ${code}`, platformCode } = options
-    return platformCode === undefined
-      ? { name: 'OrivonError', message, code }
-      : { name: 'OrivonError', message, code, platformCode }
+    const error = new Error(message) as Error & { code: OrivonErrorCode, platformCode?: string }
+    error.name = 'OrivonError'
+    error.code = code
+    if (platformCode !== undefined) error.platformCode = platformCode
+    return error
+  }
+
+  /**
+   * A `bridge.*` call's rejection crosses `contextBridge`'s own promise-
+   * rejection marshalling FROM the isolated world -- ../orivon-error.ts's
+   * plain-object choice (see its own header) survives that crossing with
+   * every field intact, measured live (A152), but lands here as a fresh
+   * plain object in THIS world, so `instanceof Error` is false for it
+   * despite the contract promising every OrivonError one is. Rebuilds a
+   * real Error from it, entirely inside the main world -- there is no
+   * further crossing after this point for anything this function returns.
+   * A rejection that does not look like one of ours (no string `.message`
+   * or `.code`) passes through unchanged rather than being reshaped.
+   */
+  async function callRevived<T> (promise: Promise<T>): Promise<T> {
+    try {
+      return await promise
+    } catch (error) {
+      if (typeof error !== 'object' || error === null) throw error
+      const candidate = error as { name?: unknown, message?: unknown, code?: unknown, platformCode?: unknown }
+      if (typeof candidate.message !== 'string' || typeof candidate.code !== 'string') throw error
+      const revived = new Error(candidate.message) as Error & { code: string, platformCode?: string }
+      revived.name = typeof candidate.name === 'string' ? candidate.name : 'OrivonError'
+      revived.code = candidate.code
+      if (typeof candidate.platformCode === 'string') revived.platformCode = candidate.platformCode
+      throw revived
+    }
   }
 
   function buildSocket (s: Awaited<ReturnType<typeof bridge.netConnect>>): unknown {
@@ -185,8 +221,8 @@ export function installOrivon (
 
     const writable = new WritableStream<Uint8Array>({
       start (controller) { writeController = controller },
-      write: async (chunk) => { await s.write(chunk) },
-      close: async () => { await s.endWrite() },
+      write: async (chunk) => { await callRevived(s.write(chunk)) },
+      close: async () => { await callRevived(s.endWrite()) },
       abort: () => { s.abortWrite() }
     }, new ByteLengthQueuingStrategy({ highWaterMark: limits.writeWindowBytes }))
 
@@ -207,9 +243,11 @@ export function installOrivon (
       // A fresh promise, not s.closed itself -- see installOrivon's own
       // isolated-world counterpart (socket-port.ts's createSocketPort),
       // which deliberately hands out a wrapper for the same reason.
-      closed: new Promise<void>((resolve, reject) => { s.closed.then(resolve, reject) }),
+      // callRevived already returns a fresh promise, so this gets both
+      // properties from one call: a wrapper AND a revived rejection.
+      closed: callRevived(s.closed),
       close: async () => {
-        await s.close()
+        await callRevived(s.close())
         // Reflect the closure on both WHATWG streams the page holds --
         // ReadableStreamDefaultController has no other externally callable
         // terminal state, and error() is the closest WritableStream has to
@@ -217,8 +255,8 @@ export function installOrivon (
         try { readController.close() } catch { /* already closed or errored */ }
         try { writeController.error(toOrivonError('closed')) } catch { /* already settled */ }
       },
-      setNoDelay: async (on: boolean) => { await s.setNoDelay(on) },
-      setKeepAlive: async (on: boolean, initialDelayMs?: number) => { await s.setKeepAlive(on, initialDelayMs) }
+      setNoDelay: async (on: boolean) => { await callRevived(s.setNoDelay(on)) },
+      setKeepAlive: async (on: boolean, initialDelayMs?: number) => { await callRevived(s.setKeepAlive(on, initialDelayMs)) }
     })
   }
 
@@ -285,9 +323,9 @@ export function installOrivon (
       // error this stream permanently, and a peer list outside the grant is
       // ordinary traffic for a P2P app -- the refusal shows up in
       // droppedOutbound instead (open-questions.md A87).
-      write: async (datagram) => { await u.send(datagram) },
-      close: async () => { await u.close() },
-      abort: async () => { await u.close() }
+      write: async (datagram) => { await callRevived(u.send(datagram)) },
+      close: async () => { await callRevived(u.close()) },
+      abort: async () => { await callRevived(u.close()) }
     }, new CountQueuingStrategy({ highWaterMark: limits.outboundDatagramWindow }))
 
     // Fed by u.onRefusal (A87): every outbound datagram the broker refused,
@@ -327,9 +365,11 @@ export function installOrivon (
       // prevents redefinition, not invocation, so both survive it.
       get droppedInbound () { return droppedInbound },
       get droppedOutbound () { return droppedOutbound },
-      closed: new Promise<void>((resolve, reject) => { u.closed.then(resolve, reject) }),
+      // Same reasoning as buildSocket's own `closed` -- callRevived already
+      // hands back a fresh promise, so this both wraps and revives.
+      closed: callRevived(u.closed),
       close: async () => {
-        await u.close()
+        await callRevived(u.close())
         try { readController.close() } catch { /* already closed or errored */ }
         try { writeController.error(toOrivonError('closed')) } catch { /* already settled */ }
         try { refusalController.close() } catch { /* already closed or errored */ }
@@ -340,13 +380,13 @@ export function installOrivon (
   const api = {
     version: 0,
     app: Object.freeze({
-      manifest: async () => await bridge.appManifest(),
-      grants: async () => await bridge.appGrants(),
-      requestGrant: async (request: CapabilityRequest) => await bridge.appRequestGrant(request)
+      manifest: async () => await callRevived(bridge.appManifest()),
+      grants: async () => await callRevived(bridge.appGrants()),
+      requestGrant: async (request: CapabilityRequest) => await callRevived(bridge.appRequestGrant(request))
     }),
     fs: Object.freeze({
-      readFile: async (path: string) => await bridge.fsReadFile(path),
-      writeFile: async (path: string, data: Uint8Array) => { await bridge.fsWriteFile(path, data) },
+      readFile: async (path: string) => await callRevived(bridge.fsReadFile(path)),
+      writeFile: async (path: string, data: Uint8Array) => { await callRevived(bridge.fsWriteFile(path, data)) },
       // NOT wrapped in `async` -- confirmed live (a real Electron launch)
       // to stay genuinely synchronous once proxied through
       // `contextBridge.executeInMainWorld`; an `async` wrapper here would
@@ -354,7 +394,9 @@ export function installOrivon (
       // `bridge.fsReadFileSync` never throws (see its own doc on why); the
       // failure branch is built and thrown HERE instead, entirely inside
       // this main-world function, so the throw itself never has to cross
-      // the proxy boundary that strips a thrown value's shape.
+      // the proxy boundary that strips a thrown value's shape. No
+      // callRevived here either -- this never goes through a `bridge.*`
+      // rejection at all.
       readFileSync: (path: string) => {
         const response = bridge.fsReadFileSync(path)
         if (response.ok) return response.result
@@ -362,20 +404,20 @@ export function installOrivon (
           ? { message: response.message }
           : { message: response.message, platformCode: response.platformCode })
       },
-      mkdir: async (path: string, opts?: { recursive?: boolean }) => { await bridge.fsMkdir(path, opts) },
-      readdir: async (path: string) => await bridge.fsReaddir(path),
-      stat: async (path: string) => await bridge.fsStat(path),
-      rm: async (path: string, opts?: { recursive?: boolean }) => { await bridge.fsRm(path, opts) },
-      rename: async (from: string, to: string) => { await bridge.fsRename(from, to) }
+      mkdir: async (path: string, opts?: { recursive?: boolean }) => { await callRevived(bridge.fsMkdir(path, opts)) },
+      readdir: async (path: string) => await callRevived(bridge.fsReaddir(path)),
+      stat: async (path: string) => await callRevived(bridge.fsStat(path)),
+      rm: async (path: string, opts?: { recursive?: boolean }) => { await callRevived(bridge.fsRm(path, opts)) },
+      rename: async (from: string, to: string) => { await callRevived(bridge.fsRename(from, to)) }
     }),
     id: Object.freeze({
-      publicKey: async (opts: { curve: string }) => await bridge.idPublicKey(opts.curve),
-      sign: async (opts: { curve: string, payload: Uint8Array }) => await bridge.idSign(opts.curve, opts.payload)
+      publicKey: async (opts: { curve: string }) => await callRevived(bridge.idPublicKey(opts.curve)),
+      sign: async (opts: { curve: string, payload: Uint8Array }) => await callRevived(bridge.idSign(opts.curve, opts.payload))
     }),
     net: Object.freeze({
-      connect: async (opts: { host: string, port: number }) => buildSocket(await bridge.netConnect(opts)),
-      connectSecure: async (opts: { host: string, port: number }) => buildSocket(await bridge.netConnectSecure(opts)),
-      udpBind: async (opts: { port: number }) => buildUdpSocket(await bridge.netUdpBind(opts))
+      connect: async (opts: { host: string, port: number }) => buildSocket(await callRevived(bridge.netConnect(opts))),
+      connectSecure: async (opts: { host: string, port: number }) => buildSocket(await callRevived(bridge.netConnectSecure(opts))),
+      udpBind: async (opts: { port: number }) => buildUdpSocket(await callRevived(bridge.netUdpBind(opts)))
     })
   }
   // A plain assignment here would let any page script (or a compromised

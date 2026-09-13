@@ -1,37 +1,48 @@
 # App compatibility matrix
 
-**What is wired up right now, and the cheapest next lever.** Derived 2026-09-10 (second pass of
-the day) by reading the tree at `61fcfca`, after eighteen further merged PRs (#118-#135).
+**What is wired up right now, and the cheapest next lever.** Derived 2026-09-13 by reading the
+tree at `e84940c`, after build step 4's app-loader landing (thirteen merged PRs, #163-#175).
 [`../architecture/app-compatibility.md`](../architecture/app-compatibility.md) owns *why the
 tiers exist*; this file owns *what works today*. If they disagree, that one is the design and
 this one is stale.
 
-**What changed since this morning's derivation, cell by cell.** The two ADRs the previous pass
-kept calling "drafted, awaiting owner authorship" were authored and merged
-([ADR-0016](../decisions/ADR-0016-synchronous-file-reads-are-permitted.md),
-[ADR-0017](../decisions/ADR-0017-orivon-owns-the-app-http-path.md), #117), and almost every row
-that was blocked behind them moved:
+**What changed since the last derivation (2026-09-10, `61fcfca`), cell by cell.** Build step 4
+closed the row every earlier pass of this table called the single biggest gap:
 
-- **Table 1.** Three new rows -- `net.connectSecure` (✅✅✅✅, #126), `fs.readFileSync`
-  (✅✅✅✅, #124) and `dns.lookup` (decided, refusing shim only, A107). `fs.mkdir/readdir/stat/
-  rm/rename` ❌❌❌ -> ✅✅✅ (#132) and the PROVISIONAL markers are gone; `fs.open` split out of
-  that row because it alone is still unbuilt. The whole **Node shim column** filled in for
-  `net.connect`, `net.connectSecure`, `net.udpBind` and every `fs` row (#135, #131).
-  `app.requestGrant` ❌ -> ⚠️: the mechanism and the prompt exist (#127, #130), nothing calls
-  them. `net.listen`'s Page ❌ now has a filed reason rather than a deferral -- A114.
-- **Table 2.** The Node-stdlib family ❌ -> ⚠️: `net` (client), `dgram`, `fs`, `http`, `https`
-  and the eight core polyfill packages are in, `net.createServer` refuses.
-- **Table 3.** Four rows closed: the polyfill row (the owner approved all eight packages, and
-  `package.json` now carries them -- it had zero runtime dependencies this morning), the
-  `net`/`dgram`/`fs` shapes row, synchronous `fs`, and both HTTP rows. Two `needs T1` rows are
-  now built rather than merely decided.
-- **Table 4.** Rows 3, 5, 6 and 8 closed; row 1 rewritten, because the blocker is no longer the
-  absence of a prompt but the absence of a caller.
+- **Table 1.** `app.requestGrant` moves ✅⚠️❌➖ -> ✅✅✅➖. A control-channel case turns a page's
+  own `orivon.app.requestGrant(...)` call into a real dialog (#165), and an accepted answer
+  persists a real grant a later capability call actually uses -- e2e-verified end to end,
+  refusal included (#175). **Getting there needed more than the requestGrant wiring itself**: a
+  grant means nothing until an origin is registered as a real app, which is the rest of build
+  step 4 -- the discovery trigger (#164), install-time consent (#171), serving the cached bundle
+  at its own origin (#168) and the served bundle's CSP (#172). None of that machinery gets its
+  own cell here: it is the delivery mechanism that makes an origin an app at all, not a
+  capability an app calls, so it stays documented in
+  [`../../src/loader/README.md`](../../src/loader/README.md) and
+  [`step-4-app-loader-plan.md`](step-4-app-loader-plan.md) rather than duplicated into this
+  table (Table 6's own rule against a second `app-compatibility.md`).
+- **No other row moved.** `net.listen`'s page wiring, `fs.open`/`fs.userSelected`,
+  `id.requestIdentity`, `dns.lookup`, and every Table 2, 3 and 5 cell are exactly where the
+  2026-09-10 pass left them -- none of tonight's thirteen PRs touched the Node shim, the
+  `electron` module shim, or the native-module question.
 
-**Three fresh gaps this pass found, none of them regressions:** A112 (the synchronous `fs` path
-does not share the async path's per-origin fairness budget), A113 (a thrown `OrivonError` loses
-its `code` on the `exposeFallback` path, so apps cannot branch on the failure enum) and A114
-(`net.listen` cannot reach a page without a nested-port IPC shape).
+**Two fresh gaps this pass found, both bounded and both filed, neither a regression:** A146 (a
+first-ever visit to an app can see an early capability call denied before its one-time
+install-consent dialog has been answered -- every later visit is unaffected, since the grant is
+already held) and A143 (a cross-origin request from inside an app's own partition is denied
+outright rather than proxied to the real network -- a deliberate fail-closed choice, not yet an
+owner decision).
+
+**Two more findings this pass surfaced are about the shim underneath every row in this table,
+not about the loader, and are deliberately NOT reflected as cell changes above** -- re-deriving
+Table 3 by this document's own recipe ("verify by looking for the module") does not catch either
+one, because both are about whether a module that exists actually *runs* in production, not
+whether it exists: A151 (the shim's own global polyfills -- `process`, `setImmediate` -- have no
+production call site, so a real app whose dependency graph touches `stream` fails at load) and
+A152 (a real capability denial crossing the main-world bridge reports as the generic `'internal'`
+code, not `'denied'`, so a ported app cannot branch on it correctly). Both were being worked on
+in a separate lane as this pass was written -- check `docs/open-questions.md` before assuming
+either is still open.
 
 Two axes, and they fail in completely different ways:
 
@@ -70,7 +81,7 @@ every `dup` row automatically**; six rows survive it, and four of those were nev
 | `id.publicKey` / `sign` | ✅ | ✅ | ✅ | ➖ | Wired end to end, e2e-verified (#112). P-256 ECDSA only; secp256k1/Schnorr is the separate A44 question |
 | `id.requestIdentity` | ✅ | ❌ | ❌ | ➖ | The last lane of Phase 4, ready to dispatch. `src/nostr/nip07.ts`'s real wiring calls this and cannot reach a page until it exists -- A111 |
 | `app.manifest` / `grants` | ✅ | ✅ | ✅ | ➖ | Backs Electron's `app.*` -- see Table 2 |
-| `app.requestGrant` | ✅ | ⚠️ | ❌ | ➖ | **The mechanism now exists** -- policy in [`request-grant.ts`](../../src/broker/policy/request-grant.ts), the prompt in `src/main/request-grant-prompt.ts` and `grant-prompt-render.ts`, registered as a subsystem (#127, #130). It is not on `window.orivon`, and `src/main/permissions.ts`'s own header still records that nothing calls `ctx.requestGrant` yet |
+| `app.requestGrant` | ✅ | ✅ | ✅ | ➖ | **Reachable from a page, end to end.** A control-channel case in [`ipc.ts`](../../src/broker/transport/ipc.ts) turns a page's call into `ctx.requestGrant(origin, request)` (#165); accepting the dialog persists a real grant a later capability call actually uses -- e2e-verified, refusal included (#175). **A grant in practice still needs the rest of build step 4**: an origin must be registered as an app first (the discovery trigger, #164), which is also where install-time consent now asks once for the whole declared set before the app's own code runs (`d-0025`, #171) -- so a first-ever visit can still see an early call denied before that one dialog resolves (A146). `src/main/permissions.ts`'s and `request-grant-subsystem.ts`'s own header comments still say nothing calls `ctx.requestGrant` -- stale source comments, filed rather than fixed, out of this pass's paths |
 | `dns.lookup` | ❌ | ❌ | ❌ | ⚠️ | **Decided, not built.** The owner ruled (`D-0006`) that Orivon resolves names itself as part of the network permission. [`node-dns.ts`](../../src/shim/node-dns.ts) exists and fails loudly with a named error rather than hanging -- A107 |
 | `hid` / USB | 🚫 | 🚫 | 🚫 | 🚫 | Cut from v0 for every tier, by owner decision |
 | `subprocess` | 🚫 | 🚫 | 🚫 | 🚫 | Cut from v0 as largest attack surface |
@@ -81,10 +92,22 @@ Spec'd ❌ means implementation ran ahead of the contract, which is what `ADR-00
 prevent. `dns.lookup`'s ⚠️ in the shim column with ❌ everywhere left of it is the one legal
 exception in spirit: the shim entry exists **to refuse**, not to work.
 
-**The single biggest gap has moved.** It is no longer "nothing grants anything" -- `requestGrant`
-and the prompt are built. It is that **nothing calls them**: no page-facing entry point, so a real
-app still cannot ask, and `net.connect` from a page still answers `'denied'` for want of a grant.
-That is one wiring job, not a design one.
+**The single biggest gap this table has tracked since it started is closed.** `requestGrant` is
+wired to a page, the dialog fires, and an accepted answer persists a grant a subsequent
+`net.connect` (or any other granted capability) actually uses -- proven end to end, including the
+out-of-manifest refusal, by a real Electron launch.
+
+**What is not proven the same way, and it is worth naming rather than implying otherwise:** no
+automated test drives the exact chain "a real page, at a real public HTTPS origin, triggers the
+real install-time consent dialog and it works." `install-origin.ts`'s own T12/A46 guard means no
+hermetic test fixture's origin can ever pass `Loader.load()`'s own public-unicast check, so every
+e2e test in this area substitutes one layer below that wall -- a developer-only grant hook, or a
+direct call to the consent function itself -- the same substitution `test/e2e-capability-
+boundary.test.ts` already used for the raw capability API. Each link is proven for real (a real
+broker's consent decision, a real dialog's wiring, a real IPC round trip); the full chain through
+a real public origin is not something CI can reach at all, not a gap in the mechanism.
+
+The next real lever is Table 4 row 6 below (`fs.open`/`FileHandle`, for the folder picker).
 
 ## Table 2 -- the three adapter families (shim families structure)
 
@@ -176,7 +199,7 @@ only rows 1 and 9 are owned by anything today.
 
 | # | Blocker | Cheapest lever | Cost shape |
 |---|---|---|---|
-| 1 | **Nothing calls `app.requestGrant`.** The mechanism, the policy and the prompt all exist (#127, #130); no page-facing entry point does, so a real app still cannot ask for anything | Wire `requestGrant` onto `window.orivon` the way `fs.*` and `id.*` already are | Small, and it unblocks *everything* -- this is the row that was "no grant exists in production" for the whole project until now |
+| 1 | ~~Nothing calls `app.requestGrant`~~ -- **closed by #165**, plus the rest of build step 4 that makes registering an app mean something: the discovery trigger (#164), install-time consent (#171), serving from cache (#168), and the e2e journey proving the whole chain (#175) | -- | What is left open here is A146 (a first-visit race) and A143 (partition-wide scheme interception, a deliberate fail-closed choice) -- not a wiring gap |
 | 2 | ~~No `orivon.id.*` entry point~~ -- **closed by #112** | `id.requestIdentity` (named identities, `window.nostr`) is the last unstarted Phase 4 lane | A111 |
 | 3 | ~~CORS blocks tier-1 and tier-2 HTTP~~ -- **closed by #133**: the page's own `fetch()` is routed through the secure-connect capability for granted hosts | -- | [ADR-0017](../decisions/ADR-0017-orivon-owns-the-app-http-path.md) |
 | 4 | ~~No `net.listen`~~ (broker) -- **closed by #109**. **Still open: no page wiring**, and now with a filed cause rather than a deferral | Design the nested-port IPC shape -- one port carrying further port descriptors, one per accepted connection | A114. Bigger than "wire it like `net.connect`" was assumed to be: the IPC contract has no room for the shape |
@@ -190,11 +213,12 @@ only rows 1 and 9 are owned by anything today.
 | 12 | Tier 3 -- no HTML frontend | Container + xpra ([doc](container-apps-opportunity.md)) | Parked; reopens `subprocess` in a narrow shape |
 | 13 | App logic is not JavaScript | Nothing works today, WASM included | Blocked upstream: Go has no wasip2, wasi-sdk has no target with threads AND sockets |
 
-**Rows 1 and 6 are where the reach is now**, and both are build work rather than decisions --
-which is a different situation from every prior pass of this table, where the top rows were
-waiting on the owner. **Still unfiled** as of this pass: rows 9 and 11, plus declarability (what
-a grant prompt can honestly say for runtime-chosen hosts) and per-syscall IPC cost on a chatty
-workload. Rows 3, 5, 6 and 8 of the previous pass are closed.
+**Row 6 is now where the reach is** -- the only build-work row left near the top of this table,
+and the owner has already decided its UX (`D-0007`), so it needs no decision, only the work. Row
+1 closed this pass; rows 2, 3, 5, 7 and 8 closed in earlier passes; row 4 is half-closed (the
+broker side landed, page wiring is still blocked on a nested-port IPC shape, A114). **Still
+unfiled** as of this pass: rows 9 and 11, plus declarability (what a grant prompt can honestly
+say for runtime-chosen hosts) and per-syscall IPC cost on a chatty workload.
 
 ## Table 5 -- the native-module question, per library
 

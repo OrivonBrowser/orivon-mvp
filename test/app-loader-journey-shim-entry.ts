@@ -20,29 +20,19 @@
 // (src/shim/orivon-global.ts's `getOrivon()` is the ONLY place that
 // happens, inside the imported module, not here).
 
-import { installGlobals } from '../src/shim/globals.js'
-import type { GlobalsTarget } from '../src/shim/globals.js'
 import { connect } from '../src/shim/node-net.js'
 
-// FOUND WRITING THIS FIXTURE, FILED AS A151 (docs/open-questions.md):
-// installGlobals() (this same file) has NO production call site anywhere in
-// src/ -- nothing installs `process`/`setImmediate`/`clearImmediate` onto a
-// real app tab's globalThis today. stream-browserify's own `Readable.resume`
-// reads `process.nextTick` unconditionally, so ANY real app requiring a Node
-// library that pulls in `stream` (this shim's own 'net' does, via
-// node-net-socket.ts's `Duplex`) would hit the identical `ReferenceError:
-// process is not defined` this fixture hit before the line below was added.
-// Installed here, onto the real globalThis, exactly once -- the same call a
-// real production entry point will need, wherever build step 3's own work
-// ends up wiring it.
-// Cast, not a structural match: this repo's tsconfig sets `"types":
-// ["node"]` globally, so `globalThis.process` is typed as Node's real
-// `Process` (no `browser` field) rather than `GlobalsTarget`'s `ShimProcess`
-// -- the sandboxed renderer this shim actually runs in has no such global to
-// conflict with; only this file's own type-checking environment does.
-installGlobals(globalThis as unknown as GlobalsTarget, {
-  reportError: (error, origin) => { console.error(`[orivon-shim:${origin}]`, error) }
-})
+// A151 (docs/open-questions.md), CLOSED: this file used to call
+// installGlobals() itself here, worked around the fact that nothing in
+// production did. It no longer needs to -- src/preload/app.ts's real
+// preload script calls src/preload/expose-shim-globals.ts's
+// exposeShimGlobals() before this fixture's own bundle ever runs (the
+// fixture's tab carries the same --orivon-app-tab flag a real registered
+// app's tab does; see ./e2e-app-loader-journey.test.ts's own header for
+// how this fixture gets registered before it navigates, specifically so
+// that flag is present). If this file's own connect() below throws
+// `process is not defined` again, that is a real regression in the
+// production wiring, not something this fixture should paper back over.
 
 /** Matches src/shim/node-http-errors.ts's NodeShapedError -- the shape a
  * denial or connect failure actually arrives in through this shim, not the

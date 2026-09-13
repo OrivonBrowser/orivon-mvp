@@ -11,11 +11,21 @@ import { installGlobals, type GlobalsErrorReporter, type GlobalsTarget } from '.
 // this file at typecheck, not by tests quietly asserting on the wrong shape.
 function install (reportError = vi.fn<GlobalsErrorReporter>()) {
   const target: GlobalsTarget = {}
-  installGlobals(target, { reportError })
+  installGlobals({ reportError }, target)
   return { target, reportError }
 }
 
 describe('installGlobals', () => {
+  // A151 (docs/open-questions.md): `target` is now the trailing, defaulted
+  // parameter so a production caller can supply only `options` and let the
+  // default apply to its own real main-world `window` -- see globals.ts's
+  // own doc on installGlobals for why. Under this file's plain Node test
+  // environment there is no `window`, so the default is `{}`; this only
+  // proves the call is legal with `target` omitted, not what it defaults to.
+  it('accepts options with target omitted, matching the shape a production caller uses', () => {
+    expect(() => installGlobals({ reportError: vi.fn<GlobalsErrorReporter>() })).not.toThrow()
+  })
+
   it('writes process, setImmediate and clearImmediate onto the target object, not globalThis', () => {
     // Captured BEFORE the install, and compared by identity after. The
     // earlier version of this test only checked that globalThis.process was
