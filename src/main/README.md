@@ -202,7 +202,7 @@ truncated dialog is least likely to show it. The obvious-looking fix — show th
 domain (eTLD+1) prominently — needs a public suffix list this repo does not depend on, and a
 naive "last two labels" guess is wrong for `example.co.uk` in the direction that matters (it
 would emphasise `co.uk` and hide the real registrant). Adding that dependency is a stop
-condition for this run, so it is parked as **A141** rather than added; this fix is the no-
+condition for this run, so it is parked as **A142** rather than added; this fix is the no-
 dependency floor instead.
 
 - **A plain character count, not a DNS-aware truncation.** `MAX_DISPLAYED_HOST_LENGTH` is 24 --
