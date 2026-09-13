@@ -1,0 +1,178 @@
+import { describe, expect, it } from 'vitest'
+import { bundleTree } from '../../broker/policy/bundle-hash.js'
+import { fromBundleTree, isPinnedPath } from '../../broker/policy/pin.js'
+import { createAppRequestHandler, resolveRequestPath } from '../serve.js'
+import { manifestJson, memoryStorage, ORIGIN, utf8 } from './test-helpers.js'
+
+const INDEX_HTML = '<h1>hello orivon</h1>'
+const APP_JS = 'console.log("hi")'.padEnd(300, ' /* padding for a real range test */ ')
+
+async function installedStorage (): Promise<ReturnType<typeof memoryStorage>> {
+  const entries = [
+    { path: '/.well-known/orivon.json', content: utf8(manifestJson()) },
+    { path: '/index.html', content: utf8(INDEX_HTML) },
+    { path: '/app.js', content: utf8(APP_JS) }
+  ]
+  const tree = await bundleTree(entries)
+  const pin = fromBundleTree(ORIGIN, tree.root, tree.assets, '1.0.0', 0)
+  const storage = memoryStorage()
+  for (const entry of entries) await storage.writeAsset(ORIGIN, entry.path, entry.content)
+  await storage.writePin(ORIGIN, pin)
+  return storage
+}
+
+describe('resolveRequestPath', () => {
+  const entries = [
+    { path: '/.well-known/orivon.json', content: utf8(manifestJson()) },
+    { path: '/index.html', content: utf8(INDEX_HTML) }
+  ]
+
+  it('maps the bare root to the entry path, when the entry is pinned', async () => {
+    const tree = await bundleTree(entries)
+    const pin = fromBundleTree(ORIGIN, tree.root, tree.assets, '1.0.0', 0)
+    expect(isPinnedPath(pin, '/index.html')).toBe(true)
+
+    const resolved = resolveRequestPath('/index.html', pin, `${ORIGIN}/`)
+    expect(resolved).toEqual({ ok: true, canonicalPath: '/index.html' })
+  })
+
+  it('denies the root when the entry path is not itself pinned', async () => {
+    const tree = await bundleTree(entries)
+    const pin = fromBundleTree(ORIGIN, tree.root, tree.assets, '1.0.0', 0)
+
+    const resolved = resolveRequestPath('/not-actually-pinned.html', pin, `${ORIGIN}/`)
+    expect(resolved.ok).toBe(false)
+  })
+
+  it('denies the root when entryPath itself is null (an unresolvable entry)', async () => {
+    const tree = await bundleTree(entries)
+    const pin = fromBundleTree(ORIGIN, tree.root, tree.assets, '1.0.0', 0)
+
+    const resolved = resolveRequestPath(null, pin, `${ORIGIN}/`)
+    expect(resolved.ok).toBe(false)
+  })
+
+  it('serves an exact pinned path outside the root', async () => {
+    const tree = await bundleTree(entries)
+    const pin = fromBundleTree(ORIGIN, tree.root, tree.assets, '1.0.0', 0)
+
+    const resolved = resolveRequestPath('/index.html', pin, `${ORIGIN}/index.html`)
+    expect(resolved).toEqual({ ok: true, canonicalPath: '/index.html' })
+  })
+
+  it('THE FAIL-CLOSED RULE: denies a path that is structurally valid but simply not in the pinned set', async () => {
+    const tree = await bundleTree(entries)
+    const pin = fromBundleTree(ORIGIN, tree.root, tree.assets, '1.0.0', 0)
+
+    const resolved = resolveRequestPath('/index.html', pin, `${ORIGIN}/not-pinned.js`)
+    expect(resolved.ok).toBe(false)
+  })
+
+  it('denies a directory-ish path other than the bare root -- no directory index fallback beyond "/"', async () => {
+    const tree = await bundleTree(entries)
+    const pin = fromBundleTree(ORIGIN, tree.root, tree.assets, '1.0.0', 0)
+
+    const resolved = resolveRequestPath('/index.html', pin, `${ORIGIN}/subdir/`)
+    expect(resolved.ok).toBe(false)
+  })
+
+  it('never serves the pin record itself -- "/pin.json" is not a canonical asset path any bundle can pin', async () => {
+    const tree = await bundleTree(entries)
+    const pin = fromBundleTree(ORIGIN, tree.root, tree.assets, '1.0.0', 0)
+
+    const resolved = resolveRequestPath('/index.html', pin, `${ORIGIN}/pin.json`)
+    expect(resolved.ok).toBe(false)
+  })
+})
+
+describe('createAppRequestHandler', () => {
+  it('denies every request when this origin has never been pinned', async () => {
+    const handler = await createAppRequestHandler(memoryStorage(), ORIGIN)
+    const response = await handler(new Request(`${ORIGIN}/`))
+    expect(response.status).toBe(404)
+  })
+
+  it('denies every request when the pinned tree fails re-verification (a tampered asset)', async () => {
+    const storage = await installedStorage()
+    await storage.writeAsset(ORIGIN, '/app.js', utf8('tampered after pinning'))
+
+    const handler = await createAppRequestHandler(storage, ORIGIN)
+    const index = await handler(new Request(`${ORIGIN}/`))
+    const asset = await handler(new Request(`${ORIGIN}/app.js`))
+    expect(index.status).toBe(404)
+    expect(asset.status).toBe(404)
+  })
+
+  it('serves "/" as the manifest\'s entry, with the right content and Content-Type', async () => {
+    const handler = await createAppRequestHandler(await installedStorage(), ORIGIN)
+    const response = await handler(new Request(`${ORIGIN}/`))
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toBe('text/html; charset=utf-8')
+    expect(await response.text()).toBe(INDEX_HTML)
+  })
+
+  it('serves a pinned asset at its own path', async () => {
+    const handler = await createAppRequestHandler(await installedStorage(), ORIGIN)
+    const response = await handler(new Request(`${ORIGIN}/app.js`))
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toBe('text/javascript; charset=utf-8')
+    expect(await response.text()).toBe(APP_JS)
+  })
+
+  it('THE FAIL-CLOSED RULE, end to end through the handler: a planted file at this origin, never part of the pinned manifest, is refused', async () => {
+    const storage = await installedStorage()
+    // Plants a file directly on the backing store at this origin, bypassing
+    // install() entirely -- exactly what an out-of-band write (or a
+    // compromised prior version's leftover file) would look like on disk.
+    await storage.writeAsset(ORIGIN, '/evil.js', utf8('alert(1)'))
+
+    const handler = await createAppRequestHandler(storage, ORIGIN)
+    const response = await handler(new Request(`${ORIGIN}/evil.js`))
+
+    expect(response.status).toBe(404)
+  })
+
+  it('denies a request whose own origin differs from this handler\'s app origin, rather than proxying it to the network', async () => {
+    const handler = await createAppRequestHandler(await installedStorage(), ORIGIN)
+    const response = await handler(new Request('https://not-this-app.example/app.js'))
+
+    expect(response.status).toBe(404)
+  })
+
+  it('never serves the pin record even if it is directly requested by name', async () => {
+    const handler = await createAppRequestHandler(await installedStorage(), ORIGIN)
+    const response = await handler(new Request(`${ORIGIN}/pin.json`))
+
+    expect(response.status).toBe(404)
+  })
+
+  it('a satisfiable Range request returns 206 with the correct slice and Content-Range', async () => {
+    const handler = await createAppRequestHandler(await installedStorage(), ORIGIN)
+    const response = await handler(new Request(`${ORIGIN}/app.js`, { headers: { range: 'bytes=0-4' } }))
+
+    expect(response.status).toBe(206)
+    expect(response.headers.get('content-range')).toBe(`bytes 0-4/${utf8(APP_JS).length}`)
+    expect(await response.text()).toBe(APP_JS.slice(0, 5))
+  })
+
+  it('an unsatisfiable Range request returns 416', async () => {
+    const handler = await createAppRequestHandler(await installedStorage(), ORIGIN)
+    const total = utf8(APP_JS).length
+    const response = await handler(new Request(`${ORIGIN}/app.js`, { headers: { range: `bytes=${total + 10}-${total + 20}` } }))
+
+    expect(response.status).toBe(416)
+  })
+
+  it('a request for an asset that vanished from disk AFTER handler creation is denied, not thrown', async () => {
+    const storage = await installedStorage()
+    const handler = await createAppRequestHandler(storage, ORIGIN)
+    // Simulate the asset disappearing mid-session, after the whole-tree
+    // verification that ran when the handler was built.
+    storage.assets.get(ORIGIN)?.delete('/app.js')
+
+    const response = await handler(new Request(`${ORIGIN}/app.js`))
+    expect(response.status).toBe(404)
+  })
+})

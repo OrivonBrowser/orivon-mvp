@@ -155,22 +155,35 @@ describe('fetchBundle: the install origin must resolve to a public-unicast addre
     expect(result.ok).toBe(true)
   })
 
-  it('rejects when the manifest is actually served from a different origin than requested', async () => {
-    const routes: Record<string, RouteSpec> = {
-      [MANIFEST_URL]: { body: utf8(manifestJson()), url: 'https://evil.example.com/.well-known/orivon.json' }
-    }
-    const result = await fetchBundle(stubFetch(routes), ORIGIN, PUBLIC_RESOLVER)
-    expect(result.ok).toBe(false)
-    if (result.ok) return
-    expect(result.reason).toMatch(/origin/i)
-  })
+})
 
-  it('rejects when the manifest response resolves to a path other than the well-known one', async () => {
+// A141: real Electron's net.fetch reports response.url as the empty string
+// on every ordinary, non-redirected response (docs/open-questions.md A59) --
+// not sometimes, always. fetchBundle used to read response.url as its sole
+// source of truth for the checks above, which made it reject every fetch,
+// including a completely honest one: originFromUrl('') is null, so
+// `manifestOrigin !== canonicalOrigin` was always true. These checks now
+// trust the REQUESTED url instead (see fetch-bundle.ts's own comment on
+// why that is safe), so a `Fetch` implementation reporting url exactly like
+// the real one does must still succeed.
+//
+// This is also why two tests that used to live in the describe block above
+// are gone rather than fixed in place: both simulated a redirect landing the
+// manifest at a different origin/path by having the stub report a mismatched
+// `response.url` (RouteSpec's `url` override). fetchBundle no longer reads
+// that field at all, so no `Fetch` stub can make it diverge from the
+// requested url through this public API any more -- the origin/path
+// guarantee now rests entirely on the `Fetch` implementation itself refusing
+// to follow a redirect (see fetch-budget.ts's own `Fetch` doc comment).
+describe('fetchBundle: A141 -- must not depend on response.url', () => {
+  it('succeeds even though the fetch adapter reports url \'\' on every response, matching real Electron', async () => {
     const routes: Record<string, RouteSpec> = {
-      [MANIFEST_URL]: { body: utf8(manifestJson()), url: `${ORIGIN}/manifest-redirected.json` }
+      [MANIFEST_URL]: { body: utf8(manifestJson({ assets: ['app.js'] })), url: '' },
+      [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>'), url: '' },
+      [`${ORIGIN}/app.js`]: { body: utf8('console.log(1)'), url: '' }
     }
     const result = await fetchBundle(stubFetch(routes), ORIGIN, PUBLIC_RESOLVER)
-    expect(result.ok).toBe(false)
+    expect(result.ok).toBe(true)
   })
 })
 
@@ -400,26 +413,15 @@ describe('fetchBundle: manifest fetch and validation failures', () => {
   })
 })
 
-describe('fetchBundle: Manifest.entry must have a leaf (ADR-0009 amendment #2)', () => {
-  it('rejects a bundle with no leaf at the manifest\'s declared entry point', async () => {
-    // Entry is now always one of the fetched assetPaths (it is unioned in
-    // unconditionally, ADR-0011), so a route that simply does not exist
-    // surfaces as a fetch failure, not a missing-leaf rejection -- this
-    // check is only reachable when the fetch SUCCEEDS but at a different
-    // canonical path than `manifest.entry` names: a redirect. `entryPath`
-    // is computed from the declared string alone, ignoring where the
-    // response actually resolved to, so a redirected entry lands in
-    // `entries` under a path that never matches it.
-    const routes: Record<string, RouteSpec> = {
-      [MANIFEST_URL]: { body: utf8(manifestJson({ entry: 'index.html' })) },
-      [`${ORIGIN}/index.html`]: { body: utf8('x'), url: `${ORIGIN}/other.html` }
-    }
-    const result = await fetchBundle(stubFetch(routes), ORIGIN, PUBLIC_RESOLVER)
-    expect(result.ok).toBe(false)
-    if (result.ok) return
-    expect(result.reason).toMatch(/entry/i)
-  })
-})
+// fetchBundle: Manifest.entry must have a leaf (ADR-0009 amendment #2) --
+// the check itself is still in fetch-bundle.ts, but A141 removed the only
+// way this suite had to reach its failing branch. It used to fire when a
+// stubbed redirect (RouteSpec's `url` override) landed the entry asset's
+// SERVED path at something other than its declared one; entryPath and the
+// asset loop's own canonicalPath are both derived from the REQUESTED url
+// now, by the identical computation for the entry's own asset, so the two
+// can no longer disagree through this public API. See
+// src/loader/README.md, Design notes, for the fuller account.
 
 describe('fetchBundle: byte caps enforced before holding the whole bundle', () => {
   it('rejects an asset whose actual bytes exceed MAX_ASSET_BYTES', async () => {
@@ -636,25 +638,13 @@ describe('fetchBundle: a bundle-wide deadline bounds the whole install, not just
   })
 })
 
-describe('fetchBundle: delegates structural rejection to bundleTree', () => {
-  it('rejects two manifest-declared assets whose SERVED (redirected) locations collide under case-folding', async () => {
-    // Two manifest-level names that differ only by case ('App.js'/'app.js')
-    // are now caught earlier, by manifest.ts's own collisionKey check
-    // (readAssets) -- covered there, not here (Rule 3). What manifest.ts
-    // cannot see is a REDIRECT: 'other.js' is declared as its own asset,
-    // fetched from a URL that resolves (via RouteSpec's `url` override) to
-    // the SAME canonical path 'app.js' already occupies. bundleTree()'s own
-    // collision check is what still catches this -- the two declared names
-    // are distinct strings, so nothing upstream of it ever sees a problem.
-    const routes: Record<string, RouteSpec> = {
-      [MANIFEST_URL]: { body: utf8(manifestJson({ assets: ['app.js', 'other.js'] })) },
-      [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') },
-      [`${ORIGIN}/app.js`]: { body: utf8('a') },
-      [`${ORIGIN}/other.js`]: { body: utf8('b'), url: `${ORIGIN}/app.js` }
-    }
-    const result = await fetchBundle(stubFetch(routes), ORIGIN, PUBLIC_RESOLVER)
-    expect(result.ok).toBe(false)
-    if (result.ok) return
-    expect(result.reason).toMatch(/collide/)
-  })
-})
+// fetchBundle: delegates structural rejection to bundleTree -- this used to
+// hold a test proving a REDIRECT could land two declared asset names at the
+// same served canonical path, simulated via a stubbed RouteSpec `url`
+// override. A141 removed fetchBundle's only way to see that: every asset's
+// canonical path is now the requested one, computed straight from the
+// manifest's own declared (and already collision-checked) relative path, so
+// two distinct declared names can no longer collide through this public API
+// -- see src/loader/README.md, Design notes. bundleTree()'s own case-folding
+// collision check keeps direct coverage in
+// src/broker/policy/tests/bundle-hash.test.ts instead.

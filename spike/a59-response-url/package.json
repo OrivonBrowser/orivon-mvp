@@ -1,0 +1,7 @@
+{
+  "name": "orivon-spike-a59-response-url",
+  "version": "0.0.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "main.cjs"
+}

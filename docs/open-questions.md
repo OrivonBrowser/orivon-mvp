@@ -2146,7 +2146,7 @@ empty by pruning is now removed too. Gap 2 is resolved.
 
 ---
 
-### A59 — whether `net.fetch`'s `Response.url` can be wrong on an ordinary, non-redirected fetch is unresearched **[STILL OPEN]**
+### A59 — whether `net.fetch`'s `Response.url` can be wrong on an ordinary, non-redirected fetch is unresearched **[RESOLVED 2026-09-13 — measured, then fixed via A141]**
 
 Found 2026-09-03, a review-pass follow-up to `electron-fetch.ts`'s `redirect: 'error'` fix.
 
@@ -2182,6 +2182,59 @@ first principles.
 
 **Needed by:** before the loader's discovery trigger is wired to anything live. See
 `electron-fetch.ts`'s `redirect: 'error'` comment, which cites this entry.
+
+**Measured 2026-09-13 (lane S4-A59-probe, `spike/a59-response-url/`, throwaway, Electron 44.0.0,
+Chrome 152.0.7977.54; real launch confirmed via `app.getVersion()`/`MessageChannelMain`).** The
+answer is not "sometimes wrong" — `net.fetch`'s `Response.url` was the **empty string on every
+single ordinary, non-redirected, 200 OK response observed, with no exception found.** Measured
+against two real local servers (`node:http`, and `node:https` with a throwaway, freshly-generated
+self-signed cert, trusted narrowly by its exact SPKI hash via Chromium's own
+`--ignore-certificate-errors-spki-list` rather than by disabling certificate verification
+outright), called from a real Electron main process with
+`electron-fetch.ts`'s own options (`credentials: 'omit', redirect: 'error'`), across 20 distinct
+request shapes: plain path, trailing slash, no trailing slash, a query string, a percent-encoded
+path segment (`/a%2Fb/c%20d`), a duplicate slash (`/a//b//c`), a fragment (correctly stripped
+before the network request — standard Fetch-spec behaviour, not an Electron quirk), combined
+query+fragment, a non-ASCII query value, an uppercase host (`LOCALHOST`), an IDN host given both
+as punycode (`xn--caf-dma.localhost`) and as the raw Unicode label, and an IPv6 literal (`[::1]`)
+— each repeated over both `http:` and `https:`. All 20 came back `status: 200`,
+`redirected: false`, `type: 'default'`, `ok: true`, `url: ''`. A 21st case (embedded userinfo,
+`http://user:pass@host/...`) never produced a `Response` at all — `net.fetch` throws
+`TypeError: Request cannot be constructed from a URL that includes credentials`, standard
+Fetch-spec behaviour, unrelated to this entry. Confirmed this is not an artefact of the probe's
+own harness with a second, minimal, options-free isolation script
+(`spike/a59-response-url/isolate.cjs`): a bare `net.fetch(url)`, no request-init object at all,
+against a fresh `node:http` server, still returned `url: ''`. `response.type` is also confirmed
+wrong exactly as `electron.d.ts` warns — always `'default'`, never `'basic'`.
+
+**What this means for `fetch-bundle.ts`.** `originFromUrl('')` is `null` (`new URL('')` throws
+with no base — confirmed), so `manifestOrigin !== canonicalOrigin` (`null !== canonicalOrigin`)
+is true on every call, and `fetchBundle` rejects **every** manifest fetch with "manifest was
+served from a different origin (invalid) than requested" — before ever reaching the asset loop,
+which has the identical shape and would reject the same way. This is fail-closed, not a security
+hole: nothing is tricked into passing the check. But it means `fetchBundle` cannot succeed
+against a real `net.fetch` call as currently written, at all, regardless of which origin is being
+fetched — a correctness defect, not a narrow edge case. **Filed as A141, not fixed here**
+(`fetch-bundle.ts`/`electron-fetch.ts` are another lane's paths; the fix needs its own branch and
+review).
+
+**Residual, not measured:** a real (CA-signed) HTTPS certificate chain — the SPKI allowlist
+above bypasses every certificate error (including a hostname/SAN mismatch) for the one exact
+generated key, so hostname-vs-certificate mismatch behaviour was not exercised, though nothing
+else was trusted by it; a true default port (`:80`/`:443`
+— this environment's `ip_unprivileged_port_start=1024` refused the bind with `EACCES`, confirmed,
+so the port axis was tested only at non-default, dynamically-assigned ports); a non-loopback
+host; a proxied connection; non-GET methods; any Electron version other than 44.0.0.
+
+**This half of A59 can close on this evidence** — "can `.url` be wrong on an ordinary fetch" is
+now answered directly, by measurement, rather than left to reasoning from a one-line doc warning.
+**PR #164 is not unblocked by this measurement** — it is blocked on the newly-filed A141 instead,
+which is worse than what this entry originally worried about (a silently wrong origin) and
+simpler to act on (the field is unusable outright, not subtly misleading).
+
+> **Closed 2026-09-13, lane S4-A141-fetch-url.** A141 (below) is fixed:
+> `fetch-bundle.ts` no longer reads `response.url` at all, so this question is moot rather than
+> merely answered. See A141's own resolution block for what changed and how it was verified.
 
 ---
 
@@ -3919,7 +3972,7 @@ that wave) carry no A-number by design: the rule is fixed **or** filed, never si
 entries below are the ones filed rather than fixed, plus two structural constraints discovered while
 fixing.
 
-### A115 — a subdomain-prefix confusable survives in the grant prompt's title **[STILL OPEN]**
+### A115 — a subdomain-prefix confusable survives in the grant prompt's title **[PARTIALLY RESOLVED 2026-09-13]**
 
 **Raised 2026-09-10**, post-merge audit (lane R2, T25 follow-up to #130/#134).
 
@@ -3933,6 +3986,23 @@ Related but distinct from **A127**, which is about the origin not being reliably
 
 **Needed by:** before an untrusted app can trigger a grant prompt from a page — i.e. as soon as
 `app.requestGrant` has a caller.
+
+**RESOLVED, to the no-dependency floor, 2026-09-13** (lane `stream/shell-04-origin-confusable`,
+ahead of PR #165 giving `app.requestGrant` its first caller). `formatOriginForDisplay`
+(`src/main/grant-prompt-render.ts`) elides an overlong host from the LEFT by plain character
+count, so `attacker.example` always survives at the visible end and the reassuring prefix never
+survives alone. **Partial, by design and named as such:** this is a length rule, not a
+registrable-domain (eTLD+1) computation — that needs a public suffix list this repo does not
+depend on, and is parked as **A142** rather than built, per this run's stop condition on new
+dependencies. The floor is real (the confusable string a person reads can no longer be mistaken
+for `accounts.google.com`) but a person still is not shown "this is/is not google.com" directly;
+A142 is what would close that remaining gap.
+
+**Trigger fired, 2026-09-13.** `app.requestGrant` is now wired onto `window.orivon` (the control
+channel case in `src/broker/transport/ipc.ts`, the preload surface in
+`src/preload/orivon-surface.ts`) — a real page can reach the grant prompt today, even though no
+production caller registers an app yet (a separate, still-unwired gap). The confusable this entry
+names is unfixed; it is simply no longer theoretical.
 
 ### A116 — routed `fetch()` never follows redirects **[STILL OPEN]**
 
@@ -3979,13 +4049,20 @@ Bounded by the fact that these connections carry no ambient credentials and reac
 hosts, so the app is smuggling to a server it was already authorised to talk to. Filed rather than
 fixed for that reason.
 
-### A119 — `app.requestGrant`'s `patterns` array has no size bound **[STILL OPEN]**
+### A119 — `app.requestGrant`'s `patterns` array has no size bound **[PARTIALLY RESOLVED]**
 
 **Raised 2026-09-10**, post-merge audit (lane R2, PR #127).
 
 `decideGrantRequest` runs a caller-supplied array through the subset check with no length bound
 first. `MAX_PATTERNS` bounds what a *manifest* may declare; this path does not reuse it. Same shape
 as **A120**: a bound that exists elsewhere in the codebase was not applied here.
+
+**Narrowed 2026-09-13.** `isAppRequestGrantParams` (`src/broker/transport/ipc-validation.ts`)
+now rejects a `patterns` array longer than `MAX_PATTERNS` before `app.requestGrant`'s
+control-channel case ever calls into `decideGrantRequest` — the only production path to it,
+wired to a page for the first time in the same change. `decideGrantRequest` itself is still
+unbounded internally, so a future direct caller (bypassing the control channel) would reopen
+this; left that way deliberately, as a pure policy function outside this change's own scope.
 
 ### A120 — persisted grant, floor and acknowledgement files have no size bound before `readFileSync` + `JSON.parse` **[STILL OPEN]**
 
@@ -4109,7 +4186,7 @@ from the repository at all.
 **AI recommendation:** a `reviewed:` label, or one line per PR in a checked-in ledger. Cheap, and it
 is the difference between "we think #105-#136 were never reviewed" and knowing.
 
-### A127 — the consent prompt shows the origin only in a field Electron says some platforms drop **[STILL OPEN]**
+### A127 — the consent prompt shows the origin only in a field Electron says some platforms drop **[PARTIALLY RESOLVED]**
 
 **Raised 2026-09-10**, post-merge audit (adversarial review of the consent path, PRs #130/#134).
 
@@ -4129,6 +4206,16 @@ documented as ignoring message-box titles.
 the title, and is being made.** What stays open is the measurement: *no macOS machine was available
 to this audit*, so the platform claim is reasoned from Electron's declaration and not observed.
 Recorded rather than asserted, so nobody later cites it as measured.
+
+**The mechanism half is confirmed landed, verified directly 2026-09-13** (lane
+`stream/shell-04-origin-confusable`, fixing A115): `describeGrantRequest` already puts the origin
+as `detail`'s first line, ahead of the `Claims to be "<name>"` line, on `main` as of `9b8d871` —
+this predates that lane and was not built by it. That lane's own fix (A115) builds directly on
+top of this field, passing the same rendered origin string through both `title` and `detail` so
+neither can show a different, unprotected string from the other. **What stays open is exactly
+what this entry already named as open: the macOS measurement.** Nothing since has run this dialog
+on a real macOS build; treat "the title is not reliably shown" as reasoned, not measured, until
+one does.
 
 **Needed by:** confirmation needs one run of the prompt on a real macOS build. Until then, treat
 "the title is not reliably displayed" as the operating assumption, since the fix costs nothing on
@@ -4406,3 +4493,298 @@ happened.
 *Still open.* AI recommendation: the display-only path above. The owner already chose the input
 to it -- save what was installed rather than re-fetching at launch (2026-09-11) -- and that
 choice stands; what changes is that the saved manifest informs the LIST, never the authority.
+
+## Build step 4 -- the app loader (2026-09-13)
+
+### A138 -- may a person accept PART of what an app asks for? **[PARKED -- needs owner decision]**
+
+**Raised 2026-09-13**, opening build step 4, by owner decision `d-0025` (`ADR-0012`'s
+2026-09-13 amendment): consent is asked once, before the app runs, for the whole set the
+manifest declares.
+
+What that amendment does not settle is whether the one dialog offers a **single choice** or a
+**row per capability**. An app declaring network, filesystem and identity could plausibly be
+allowed its network and refused its files.
+
+**What is being built while this is parked: all-or-nothing.** Two reasons, both concrete rather
+than preferential:
+
+1. It is what the authority layer already expresses. `decideGrantRequest` narrows a request to
+   what the manifest declares and answers allowed/not; the grant ledger stores one grant per
+   `(origin, capability)`. A per-row choice needs no new mechanism, but it does need a new
+   *decision* about what a partially-granted app is.
+2. A partially-granted app hits precisely the failure `d-0025` exists to remove. An app whose
+   filesystem call answers `'denied'` while its network works is, from its own code's point of
+   view, a broken environment -- and because it was written against Node or against a browser,
+   it will not have a graceful path for that. "Ask once so the app gets a decided answer" and
+   "let the user answer three-quarters of the question" pull against each other.
+
+**The counter-argument, stated so it is not lost:** all-or-nothing means a person who wants an
+app but not its filesystem access has exactly one option, which is not to use it. That is a real
+loss of user agency, and it is the kind of thing the permissions list (`A101`) exists to soften
+-- revoke after the fact rather than refuse up front.
+
+**Needed by:** Phase 4 item 4.2's owner checkpoint. Not blocking: the prompt is built
+all-or-nothing, and turning it into a per-row choice later is a change to the dialog and to what
+`requestGrant` is called with, not to the ledger or the policy beneath it.
+
+### A139 -- asking at install brings back part of the prompt fatigue `ADR-0012` rejected **[AI-REC -- confirm at the 4.2 checkpoint]**
+
+**Raised 2026-09-13**, same decision. `ADR-0012` rejected "ask before any fetch" partly because
+a dialog raised by merely loading a page, disconnected from anything the user did, trains the
+reflex to dismiss it. Asking once at install brings a version of that back: a first visit to a
+hinted origin can now raise a dialog the user did not initiate.
+
+**Three bounds are being implemented as requirements, not hopes** (they are also written into
+`ADR-0012`'s amendment):
+
+1. An origin whose manifest declares **no capabilities** is never asked about. It installs
+   silently, and there is genuinely no question to put.
+2. **Once per origin, ever** -- a grant lasts until revoked (`A101`), so a repeat visit is
+   silent. Only a manifest that widens what it asks for returns, through `decideUpdate`'s
+   existing re-consent path.
+3. **One dialog for the whole declared set**, never one per capability. Three sequential dialogs
+   for one app is the same fatigue at a finer grain.
+
+**What would settle it:** the owner seeing the real dialog on a real first visit and saying
+whether it reads as reasonable or as an interruption. That is exactly what item 4.2's checkpoint
+is for, so this is filed as the thing to look at there rather than as an open design question.
+
+**Needed by:** Phase 4 item 4.2's owner checkpoint.
+
+### A141 -- `net.fetch`'s `Response.url` is the empty string on every ordinary fetch; `fetchBundle` cannot succeed against it as written **[RESOLVED 2026-09-13 — lane S4-A141-fetch-url]**
+
+**Raised 2026-09-13**, lane S4-A59-probe, answering A59's own recommended measurement
+(`spike/a59-response-url/`, throwaway, Electron 44.0.0, real launch confirmed via
+`app.getVersion()`/`MessageChannelMain`). Full method and every measured case are in A59's
+2026-09-13 update block, above — this entry is the actionable defect that measurement found,
+not a duplicate of it.
+
+`fetch-bundle.ts`'s same-origin and canonical-path checks (`fetchBundle`'s manifest and
+asset-loop checks alike) read `response.url` as their sole source of truth for where fetched
+bytes actually came from. Measured directly: `net.fetch`'s `Response.url` is `''` on every
+ordinary, non-redirected, 200 OK response — not sometimes wrong, not wrong only for a narrow
+input shape, unconditionally empty across 20 varied request shapes and both `http:`/`https:`,
+using `electron-fetch.ts`'s own fetch options. `originFromUrl('')` is `null` (`new URL('')`
+throws with no base, confirmed), so `manifestOrigin !== canonicalOrigin`
+(`src/loader/fetch-bundle.ts`'s manifest check) is always true, and `fetchBundle` rejects every
+manifest with "manifest was served from a different origin (invalid) than requested" before
+ever reaching the asset loop — which has the identical shape and would reject the same way.
+
+**Why this is not a security hole.** The check fails closed: nothing here lets a wrong origin's
+bytes through, it simply refuses every origin's bytes, including a completely honest one. The
+defect is availability, not confinement — but it is total: as written, `fetchBundle` cannot
+ever return `ok: true` against a real `net.fetch` call, which is exactly the path PR #164's
+discovery trigger is about to make reachable from live browsing.
+
+**AI recommendation, not a decision, and not attempted here** (`src/loader/` is another lane's
+paths): the same-origin and canonical-path checks do not need `response.url` at all. The URL
+actually fetched is already known-safe at the call site — `ensurePublicUnicastOrigin` validated
+the manifest URL's origin before `fetchBundle` ever calls `fetch(manifestUrl, ...)`, and
+`resolveUrl(assetPath, canonicalOrigin)` is what built each asset URL in the first place.
+`redirect: 'error'` (already shipped) is what makes trusting the REQUESTED url, rather than the
+response's, safe against the one thing that could make them diverge: `net-client-request.ts`
+hard-rejects the promise before a followed `Response` exists, so there is never a case where a
+`net.fetch` call that returns an ok `Response` actually came from somewhere other than the URL
+passed in. Whoever owns `src/loader/` should confirm that reasoning independently before relying
+on it, and should also check whether `response.type` (measured `'default'`, always — also
+confirmed wrong, per `electron.d.ts`) is depended on anywhere.
+
+**Needed by:** before PR #164 (or any other path wiring `fetchBundle` to live, un-curated
+content) merges — this is not a latent risk to plan around, it is a function that cannot
+succeed today.
+
+> **Fixed 2026-09-13, lane S4-A141-fetch-url.** Took the AI recommendation above after
+> independently re-deriving it, rather than on authority: `fetch-bundle.ts`'s four `response.url`
+> reads (manifest origin, manifest canonical path, asset origin, asset canonical path) now derive
+> from the REQUESTED url (`manifestUrl`/`assetUrl`) instead. The checks themselves were kept, not
+> deleted, even though the manifest pair is now provably tautological (`manifestUrl` is built by
+> string concatenation two lines above) and the asset pair duplicates a pre-fetch check already
+> present — both are documented as such in `fetch-bundle.ts` rather than silently left looking
+> load-bearing. `electron-fetch.ts`'s `redirect: 'error'` was extracted into a separately exported
+> `netFetch` function specifically so a test could exercise it without also having to pass
+> `electronFetch`'s own loopback-refusing address guard, and `fetch-budget.ts`'s `Fetch` type now
+> states as a REQUIREMENT (not only electron-fetch.ts's own choice) that any implementation must
+> refuse to follow a redirect — fetch-bundle.ts's origin confinement rests entirely on that now,
+> with no independent backstop left inside fetch-bundle.ts itself.
+>
+> **Three existing tests turned out to depend on the mechanism being removed** (all simulated a
+> redirect via the test stub's `response.url` diverging from the request) and were replaced rather
+> than patched: two "manifest served from a different origin/path" tests (one was passing for an
+> unrelated reason once fixed, the other newly failing on a fixture gap that had never mattered
+> before), the entry-leaf redirect test (ADR-0009 amendment #2 — now structurally unreachable
+> through `fetchBundle`'s public API, since `entryPath` and the asset loop's own canonical path are
+> the identical computation for the entry's own asset), and `bundleTree()`'s case-folding collision
+> test (also unreachable through `fetchBundle` now — moved to a direct unit test in
+> `bundle-hash.test.ts` so that check keeps real coverage). Full account in
+> `src/loader/README.md`'s Design notes.
+>
+> **The larger half of this fix is the test infrastructure, not the four-line diff.** No test
+> anywhere had ever exercised the real `electronFetch`/`net.fetch` adapter — every loader test
+> injected a stub. `test/e2e-loader-adapter.test.ts` (with `test/loader-adapter-entry.ts`, a
+> permanent probe bundled at test time with esbuild and launched as a bare Electron main process
+> via the existing `launch-electron.mjs` harness) now drives the REAL adapter against a REAL local
+> HTTP server inside a REAL Electron process: `electronFetch`'s address guard really refuses a
+> real loopback attempt; `net.fetch`'s `response.url` really is `''` on an ordinary response
+> (A59's finding, now a standing regression check); that real Response, fed through the real,
+> unmodified `fetchWithBudget`, drains the correct bytes; and `redirect: 'error'` really produces
+> a rejection against a real redirecting server — the load-bearing proof this fix depends on.
+>
+> **Not a full end-to-end `fetchBundle()` success test, and not by oversight.**
+> `electronFetch`'s own address guard (T12/A46's no-loopback-carve-out) refuses every literal a
+> local test server could ever use, so `electronFetch` cannot reach a real `net.fetch` call at all
+> through this API without a genuinely public, routable HTTPS endpoint — which would make the test
+> non-hermetic and is correctly out of scope (`docs/development/testing.md`). The redirect and
+> content-draining proofs above call `netFetch` (electron-fetch.ts's own guard-free primitive,
+> extracted for exactly this reason) directly instead, through the real `fetchWithBudget`.
+>
+> **Verified:** `npm run typecheck`, `npm test` (3789 passed, 3 skipped, unchanged from before this
+> fix), `check:contracts`/`check:comments`/`check:size`/`check:natives`/`check:vectors`/
+> `check:secrets` all pass. `npm run test:e2e` (full build, all 11 e2e files, 34 tests, including
+> every pre-existing suite) green under `xvfb-run`, with zero surviving Electron/Xvfb processes
+> and no leftover temp directories, confirmed via `/proc/<pid>/exe` resolution rather than a
+> command-line match.
+>
+> **Left open:** esbuild is used directly from `node_modules` (already present transitively via
+> `vite`) rather than declared in `package.json`, because this worktree's `node_modules` is a
+> symlink into a tree shared with a live parallel-fleet run, and `npm install` against it mid-run
+> is unsafe. A follow-up should decide whether to formally declare it as a devDependency.
+
+---
+
+### A142 -- the grant prompt shows a host, not a registrable domain, for lack of a public suffix list **[PARKED -- needs owner decision]**
+
+**Raised 2026-09-13**, fixing A115 (subdomain-prefix confusable in the grant prompt).
+
+A115's fix (`formatOriginForDisplay`, `src/main/grant-prompt-render.ts`) elides an overlong host
+from the left by plain character count, so the label that decides authority always survives at
+the visible end. That is the floor this lane could build with no new dependency. It is not the
+same thing as showing the actual **registrable domain** (eTLD+1) -- the fact a person really
+wants ("this is google.com" / "this is not google.com") -- which needs a public suffix list to
+compute correctly. `example.co.uk`'s registrable domain is `example.co.uk`, not `co.uk`; a naive
+"last two labels" guess gets this backwards, in the direction that hides the real registrant, so
+it is worse than not computing it at all. This repo has no such dependency, and adding one is a
+stop condition for the current run (`docs/planning/unattended-build-queue.md` stop condition 4:
+license, provenance and pure-JS status reviewed by the owner first) -- so it is parked here
+rather than added.
+
+**Two candidates, checked against Rule 8 (pure-JS, no native modules) so the owner can decide
+cheaply:**
+
+- **`psl`** (`lupomontero/psl`) -- MIT license, latest `1.15.0`. One dependency, `punycode@^2.3.1`
+  (also pure JS). Widely used (it is the PSL parser inside `request`/`superagent`'s cookie
+  handling historically). Simpler API, slower per its own maintainer's benchmark against `tldts`.
+- **`tldts`** (`remusao/tldts`) -- MIT license, latest `7.4.12`. One dependency, `tldts-core`
+  (same author, same license, zero dependencies of its own). Used by several browser
+  privacy/ad-blocking projects (its own comparison doc claims roughly 1000x `psl`'s throughput).
+  Ships the suffix list baked into the package rather than fetched at runtime.
+
+Both are pure JavaScript with no native bindings or install-time compilation, so `npm run
+check:natives` should pass for either -- not run here, since neither is actually being added.
+Whichever is preferred, the update would replace `formatOriginForDisplay`'s length-based elision
+with rendering the registrable domain distinctly (e.g. bolded, or on its own line, ahead of the
+rest of the host) -- an improvement on this fix's floor, not a correction of it: the length-based
+elision remains correct (if blunter) even after a PSL is available, since it is the fallback for
+whatever a chosen library cannot classify.
+
+**Needed by:** whenever the owner is ready to review a new dependency; not blocking A115, whose
+fix does not need one.
+
+### A140 — `app.requestGrant`'s own IPC timeout (120s) has no natural bound to derive it from **[AI-REC]**
+
+**Raised 2026-09-13**, while wiring `app.requestGrant` onto `window.orivon` for the first time
+(compatibility-matrix.md Table 4 row 1). `contracts/ipc.ts`'s rule 2 requires every control call
+to carry an explicit `timeoutMs`, and every existing budget in `orivon-surface.ts`'s `TIMEOUT_MS`
+table is sized against real I/O it bounds (a dial, a disk read). This call waits on a native
+`dialog.showMessageBox`, i.e. a person, which has no such bound -- 120 seconds is a guess, not a
+measurement.
+
+**Consequence if the guess is wrong.** `handleControlRequest`'s `withTimeout` (`../broker/
+transport/ipc.ts`) never cancels the underlying prompt when its own timer fires -- the doc
+comment on that function is explicit that the broker call is left to settle on its own and its
+result is discarded. So a person who takes longer than 120s to decide still produces a real
+grant (or a real denial) once they click, but the page's own `requestGrant()` call already
+resolved `'timeout'` and cannot see that outcome -- it would have to poll `app.grants()` to
+notice. This is the same fail-by-silence shape every other timeout in this file already accepts;
+what is new is that the wait this one bounds is a HUMAN decision, not I/O, so 120s trading off
+against "how long is a normal person expected to take to read a prompt and click a button" is a
+product judgement, not an engineering one.
+
+**AI recommendation:** ship the 120s guess rather than block this PR on it -- the alternative
+(no timeout at all) is not available under the existing contract, and a wrong guess degrades to
+"the page has to poll," not to an incorrect grant. **Still open:** whether 120s is the right
+number, and whether the page-visible failure mode (a `'timeout'` rejection racing an eventual
+real answer) is acceptable at all, or whether `app.requestGrant` needs a way to observe the
+prompt settling late -- e.g. a `app.grants()` change event -- instead.
+
+### A143 -- a cross-origin request inside an app's own partition is denied, not proxied to the real network **[STILL OPEN]**
+
+**Raised 2026-09-13**, lane S4-3-serve, build step 4's serve-from-cache item
+(`ADR-0007`'s other half: `src/loader/serve.ts`, `src/loader/electron-serve.ts`).
+
+`session.fromPartition(...).protocol.handle('https', handler)` intercepts the WHOLE `https`
+scheme for that session -- not merely requests addressed to the app's own host. Confirmed against
+`electron/electron`'s own protocol registration code, and consistent with `spike/adr7-probe/`'s
+own results (which never exercised a second host inside the probed partition). So a page running
+inside its own app partition that fetches a THIRD-PARTY `https://` URL -- a font from a CDN, an
+`<img src>` pointing elsewhere, anything not part of the pinned bundle -- reaches this SAME
+handler, not the real network.
+
+`serve.ts`'s handler answers that case by denying it (`originFromUrl(request.url) !== origin` ->
+404), never proxying it through to Electron's real network stack. This is the fail-closed choice,
+consistent with `ADR-0007`'s "a same-origin request whose path is not in the pinned set is denied,
+not fetched" extended to the scheme-wide reality of how `protocol.handle` actually intercepts --
+but it is a genuine behavioural choice ADR-0007's own text never resolves, because ADR-0007 was
+written before `protocol.handle`'s per-scheme (not per-host) interception scope was confirmed
+(A110, the 2026-09-10 probe).
+
+**What this means in practice:** an Orivon app that references ANY resource outside its own
+pinned, hashed bundle -- from its own partition, once serving is registered -- gets a silent
+404 for that resource today, not a live fetch. `ADR-0005` already assumes a fully self-contained
+bundle (everything the app needs is declared and hashed), so this may simply be correct and
+permanent; it has not been decided as such.
+
+**What would settle it:** an owner decision on whether an installed app may ever reference a
+live, non-pinned, third-party resource from its own origin's partition, and if so, whether that
+should be a full network passthrough (Electron's `net.fetch`, session-scoped, for any request
+whose origin does not match the app's own) or a narrower allowlisted case. AI recommendation, not
+an owner decision: leave it denied until a real app design needs otherwise -- broadening a fail-
+closed default is reversible; the reverse is not.
+
+**Needed by:** whichever future app actually needs an external resource from inside its own
+partition -- not before, since nothing in this MVP's own fixture/flagship apps does today.
+
+### A144 -- the loader's real-adapter e2e imports `esbuild`, which nothing declares **[AI-REC]**
+
+**Raised 2026-09-13**, lane S4-A141-fetch-url, while building the first test that exercises the
+REAL `electronFetch` rather than a stub (`test/e2e-loader-adapter.test.ts`).
+
+That test bundles a small Electron main-process entry with `esbuild`, imported directly. **No
+`package.json` entry declares it.** It resolves today only because `vite` pulls it in
+transitively, so the import works and CI passes.
+
+**Why this is filed rather than fixed.** Declaring it is a change to the dependency manifest,
+which this run treats as an owner gate (license, provenance and pure-JS status reviewed first,
+`CLAUDE.md` Rules 6 and 8). The lane could not safely run `npm install` either: every fleet
+worktree symlinks one shared `node_modules`, so an install mid-run would mutate the tree other
+lanes are building against.
+
+**Worth weighing when deciding.** Declaring `esbuild` explicitly adds **nothing** to the
+installed tree -- it is already there, already in the lock file, already audited by
+`check:natives` as part of `vite`'s subtree. What changes is only whether this repository states
+that it depends on it. So the usual "is this dependency acceptable" question is not really the
+question; the question is whether an undeclared transitive import is acceptable as a *test-time*
+dependency.
+
+**The cost of leaving it.** `vite` is free to drop or swap its bundler in any minor release. The
+day it does, this test fails with a module-resolution error that names `esbuild` and explains
+nothing about why a test that never mentioned it in `package.json` was relying on it. That is a
+confusing failure landing on whoever is unlucky, not on whoever chose it.
+
+**AI recommendation:** declare `esbuild` in `devDependencies` at the version already resolved in
+the lock, in a PR of its own that touches nothing else, so the lock diff is reviewable. The
+alternative -- rewriting the test to use the repo's own `electron-vite` build rather than a
+direct bundler call -- is more faithful to Rule 6 but materially more work, and the test's whole
+purpose is to be a small, independent harness that does not depend on the app build.
+
+**Needed by:** no deadline. It works today and will keep working until `vite` changes.
