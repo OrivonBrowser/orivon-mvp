@@ -72,6 +72,10 @@ Mark anything that must not leave the team draft as `(Keep private)`.
   vanish the moment you restarted -- the same question, every single launch. Now it is
   remembered, but only ever as a "don't ask again," never as anything an app could turn into
   access on its own.
+- 2026-09-14: **An app you already approved now just works, first try, after every restart.**
+  It used to look broken -- images, fonts, live connections all silently failing -- until you
+  refreshed the tab. Grants now come from the same verified bundle that already proves the app
+  is unchanged, so nothing has to wait for the page to load first.
 
 ### In my head
 
