@@ -356,8 +356,8 @@ describe('describeCapabilityGrant -- fs describes what a grant actually gives (A
 // the origin" (it always did, and that is exactly how the confusable
 // survived): it is whether the rendered text can be mistaken for the
 // brand it is impersonating.
-describe('formatOriginForDisplay -- eliding a confusable subdomain prefix (A115)', () => {
-  it('elides a subdomain-prefix confusable from the LEFT, so the reassuring prefix does not survive alone', () => {
+describe('formatOriginForDisplay -- the last three labels, owner decision 2026-09-14 (A115/A142)', () => {
+  it('elides a subdomain-prefix confusable to exactly its last three labels, so the reassuring prefix does not survive alone', () => {
     const confusable = 'https://accounts.google.com.attacker.example'
 
     const displayed = formatOriginForDisplay(confusable)
@@ -367,17 +367,11 @@ describe('formatOriginForDisplay -- eliding a confusable subdomain prefix (A115)
     expect(displayed).not.toBe('https://accounts.google.com')
     expect(displayed.includes('accounts.google.com')).toBe(false)
     expect(displayed.includes('google.com')).toBe(false)
-    // The authority-deciding end must survive intact.
-    expect(displayed.endsWith('attacker.example')).toBe(true)
-    // Elision actually happened, and happened from the left: the string
-    // is shorter than the original and no longer starts with the
-    // reassuring prefix.
-    expect(displayed).not.toBe(confusable)
-    expect(displayed.startsWith('https://accounts')).toBe(false)
-    expect(displayed.length).toBeLessThan(confusable.length)
+    // The owner's own worked example, verbatim.
+    expect(displayed).toBe('https://...com.attacker.example')
   })
 
-  it('marks the elision visibly rather than silently dropping characters', () => {
+  it('marks the elision visibly rather than silently dropping labels', () => {
     const displayed = formatOriginForDisplay('https://accounts.google.com.attacker.example')
 
     expect(displayed).toContain('...')
@@ -387,22 +381,28 @@ describe('formatOriginForDisplay -- eliding a confusable subdomain prefix (A115)
     expect(formatOriginForDisplay('https://example.com')).toBe('https://example.com')
   })
 
-  it('does not misjudge a real multi-label public suffix as needing special handling (example.co.uk)', () => {
-    // No public-suffix-list dependency exists here (A142, parked) -- the
-    // fix must not accidentally rely on "last two labels" reasoning, which
-    // would be wrong for .co.uk in the direction that matters (hiding the
-    // real registrant behind "co.uk"). A plain length check never makes
-    // that mistake because it never looks at labels at all.
+  it('shows the whole host at exactly three labels -- the owner\'s own "www, google, com" example', () => {
+    expect(formatOriginForDisplay('https://www.google.com')).toBe('https://www.google.com')
+  })
+
+  it('gets example.co.uk right BY CONSTRUCTION, with no public-suffix-list dependency (A142)', () => {
+    // example.co.uk is exactly three labels -- the whole host, unelided.
+    // A naive "last two labels" rule would show "co.uk" and hide the real
+    // registrant; counting labels instead of guessing at suffix shape never
+    // makes that mistake.
     expect(formatOriginForDisplay('https://example.co.uk')).toBe('https://example.co.uk')
   })
 
-  it('elides a long host with no attacker framing too -- this is a length rule, not a blocklist', () => {
+  it('drops only "www" from a four-label .co.uk host, still showing the true registrant', () => {
+    expect(formatOriginForDisplay('https://www.example.co.uk')).toBe('https://...example.co.uk')
+  })
+
+  it('a long but exactly-three-label host is shown in full -- this is a label-count rule, not a length rule', () => {
+    // The old character-count rule elided this host (67 characters); the
+    // owner's rule does not look at length at all, only label count.
     const long = 'https://a-perfectly-ordinary-but-very-long-subdomain.example.com'
 
-    const displayed = formatOriginForDisplay(long)
-
-    expect(displayed.endsWith('example.com')).toBe(true)
-    expect(displayed).not.toBe(long)
+    expect(formatOriginForDisplay(long)).toBe(long)
   })
 
   it('keeps the scheme intact even when the host is elided', () => {
@@ -413,6 +413,54 @@ describe('formatOriginForDisplay -- eliding a confusable subdomain prefix (A115)
 
   it('never throws on a value that is not a well-formed origin, and returns it unchanged', () => {
     expect(formatOriginForDisplay('not a url')).toBe('not a url')
+  })
+
+  describe('an IP literal is never chopped -- it is not label-structured, and cutting it changes which machine it names', () => {
+    it('a bare IPv4 literal survives whole, even though a naive label-split would produce four "labels"', () => {
+      expect(formatOriginForDisplay('http://203.0.113.10')).toBe('http://203.0.113.10')
+    })
+
+    it('an IPv6 literal in brackets survives whole', () => {
+      expect(formatOriginForDisplay('https://[2001:db8::1]')).toBe('https://[2001:db8::1]')
+    })
+
+    it('an IPv6 literal keeps its port too', () => {
+      expect(formatOriginForDisplay('https://[2001:db8::1]:8443')).toBe('https://[2001:db8::1]:8443')
+    })
+  })
+
+  it('localhost -- a single label -- survives whole', () => {
+    expect(formatOriginForDisplay('https://localhost')).toBe('https://localhost')
+    expect(formatOriginForDisplay('https://localhost:8080')).toBe('https://localhost:8080')
+  })
+
+  it('a non-default port belongs to the host and survives an elision intact', () => {
+    // Under the old character-count rule this port's own digits ate into
+    // the elision budget and swallowed the "com" label too
+    // (https://...attacker.example:8443) -- the port is no longer part of
+    // what gets counted or cut.
+    const displayed = formatOriginForDisplay('https://accounts.google.com.attacker.example:8443')
+
+    expect(displayed).toBe('https://...com.attacker.example:8443')
+  })
+
+  it('an already-punycoded IDN host is passed through untouched when it has three or fewer labels, never re-encoded', () => {
+    expect(formatOriginForDisplay('https://xn--e1aybc.xn--p1ai')).toBe('https://xn--e1aybc.xn--p1ai')
+    expect(formatOriginForDisplay('https://www.xn--e1aybc.xn--p1ai')).toBe('https://www.xn--e1aybc.xn--p1ai')
+  })
+
+  it('an already-punycoded IDN host past three labels is elided the same way, still never re-encoded', () => {
+    expect(formatOriginForDisplay('https://a.b.xn--e1aybc.xn--p1ai')).toBe('https://...b.xn--e1aybc.xn--p1ai')
+  })
+
+  it('a trailing dot (an explicit FQDN root) is not itself counted as a label', () => {
+    // Four real labels plus a root dot must still elide, same as without
+    // the dot -- and the elided form drops the dot along with the rest,
+    // the same way it already drops "www".
+    expect(formatOriginForDisplay('https://accounts.google.com.attacker.example.')).toBe('https://...com.attacker.example')
+    // Three or fewer real labels plus a root dot must still show the
+    // whole (unchanged) origin, dot included.
+    expect(formatOriginForDisplay('https://example.com.')).toBe('https://example.com.')
   })
 })
 
