@@ -81,6 +81,13 @@ export const APP_CLOSE_RACE_MS = 8_000
 const USER_DATA_DIRS = new WeakMap()
 
 /**
+ * Each launch's own main-process stdout+stderr, captured in arrival order --
+ * see mainOutput() below for why this lives here rather than in each test
+ * that wants to read it.
+ */
+const MAIN_OUTPUT = new WeakMap()
+
+/**
  * Every pid this module has ever been told is part of a launched app's
  * process tree, across every close performed in the calling file --
  * refreshed at close time with a fresh /proc scan (see closeElectron),
@@ -113,6 +120,10 @@ export function registerLaunchForTeardown (app, { userDataDir } = {}) {
  * @param {string[]} [options.args] Extra argv for the Electron process.
  * @param {number} [options.defaultTimeoutMs] Ceiling on any single Playwright
  *   action. See DEFAULT_ACTION_TIMEOUT_MS — raise it deliberately or not at all.
+ * @param {Record<string, string>} [options.env] Extra/overriding env vars,
+ *   applied on top of this process's own env (after POISON is stripped) --
+ *   see ORIVON_WINDOW_NO_FOCUS below for the one caller-visible default this
+ *   enables.
  * @returns {Promise<import('playwright').ElectronApplication>} Launched
  *   against a fresh, unique --user-data-dir -- never this machine's real
  *   `orivon` profile. See the userDataDir comment below.
@@ -120,9 +131,10 @@ export function registerLaunchForTeardown (app, { userDataDir } = {}) {
 export async function launchElectron ({
   appPath = '.',
   args = [],
-  defaultTimeoutMs = DEFAULT_ACTION_TIMEOUT_MS
+  defaultTimeoutMs = DEFAULT_ACTION_TIMEOUT_MS,
+  env: envOverrides = {}
 } = {}) {
-  const env = { ...process.env }
+  const env = { ...process.env, ...envOverrides }
   const stripped = []
   for (const key of POISON) {
     if (env[key] !== undefined) {
@@ -133,6 +145,13 @@ export async function launchElectron ({
   if (stripped.length > 0) {
     console.log(`[launch] stripped from env: ${stripped.join(', ')}`)
   }
+
+  // Every launch made through this shared file defaults to the no-focus
+  // window path (src/main/window.ts) unless a caller explicitly overrides
+  // it -- this is what makes `npm run smoke`/`test:e2e` no-focus even for
+  // someone who runs them without xvfb-run, on a platform with no virtual
+  // display at all (docs/development/setup.md).
+  if (env['ORIVON_WINDOW_NO_FOCUS'] === undefined) env['ORIVON_WINDOW_NO_FOCUS'] = '1'
 
   // BUG (found 2026-09-01, real regression): with no --user-data-dir, Electron
   // defaults to this machine's actual `orivon` profile directory
@@ -177,12 +196,21 @@ export async function launchElectron ({
   // of failing — see DEFAULT_ACTION_TIMEOUT_MS.
   app.context().setDefaultTimeout(defaultTimeoutMs)
 
-  // Forward MAIN-process stdout/stderr. Without this, console output from the
-  // main process is swallowed -- Playwright captures the child's streams and
+  // Forward MAIN-process stdout/stderr, and capture it for mainOutput()
+  // below. Without the forwarding half, console output from the main
+  // process is swallowed -- Playwright captures the child's streams and
   // does not relay them -- so a run can look silent when the main side is
-  // talking.
-  app.process().stdout?.on('data', (d) => process.stderr.write(`[main] ${d}`))
-  app.process().stderr?.on('data', (d) => process.stderr.write(`[main] ${d}`))
+  // talking. This is the first listener attached to either stream, so a
+  // caller reading mainOutput() after launchElectron() resolves cannot lose
+  // an early line to a race against attaching its own.
+  let capturedOutput = ''
+  const captureAndForward = (d) => {
+    capturedOutput += d.toString()
+    process.stderr.write(`[main] ${d}`)
+  }
+  app.process().stdout?.on('data', captureAndForward)
+  app.process().stderr?.on('data', captureAndForward)
+  MAIN_OUTPUT.set(app, () => capturedOutput)
 
   // Assert we got Electron, not Node wearing its binary. If this throws, no
   // result from this run may be trusted.
@@ -199,6 +227,19 @@ export async function launchElectron ({
   }
 
   return app
+}
+
+/**
+ * Everything `app`'s main process has printed to stdout or stderr since it
+ * launched, concatenated in arrival order. See the capture comment inside
+ * launchElectron() for why this cannot miss a line printed early (e.g.
+ * during window creation, before a caller gets around to reading this).
+ *
+ * @param {TeardownApp} app
+ * @returns {string}
+ */
+export function mainOutput (app) {
+  return MAIN_OUTPUT.get(app)?.() ?? ''
 }
 
 /** Root of the OS process-info pseudo-filesystem, overridable so a unit

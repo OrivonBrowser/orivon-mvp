@@ -17,7 +17,7 @@
     "node": ">=22.12.0"
   },
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "node scripts/dev.mjs",
     "build": "node scripts/build-ordinary.mjs",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
@@ -31,8 +31,8 @@
     "check:questions": "node scripts/check-questions.mjs",
     "check:dev-grant-absent": "node scripts/check-dev-grant-absent.mjs",
     "install:electron": "node scripts/install-electron.mjs",
-    "smoke": "node scripts/build-ordinary.mjs && node scripts/smoke.mjs",
-    "test:e2e": "node scripts/build-e2e.mjs && vitest run --config test/vitest.e2e.config.ts",
+    "smoke": "node scripts/build-ordinary.mjs && node scripts/run-headless.mjs node scripts/smoke.mjs",
+    "test:e2e": "node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts",
     "package:linux": "node scripts/build-ordinary.mjs && electron-builder --linux",
     "postinstall": "node scripts/check-no-native-modules.mjs && node scripts/install-electron.mjs",
     "check:advisories": "node scripts/check-advisories.mjs"
