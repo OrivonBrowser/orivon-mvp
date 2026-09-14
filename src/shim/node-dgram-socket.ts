@@ -24,6 +24,7 @@ import type { UdpSocket } from '../contracts/handles.js'
 import { toNodeError } from './node-http-errors.js'
 import { toBytes, toBytesJoined } from './node-stream-bytes.js'
 import { isIP } from './node-net-isip.js'
+import { refuseShim } from './errors.js'
 // One of the eight approved core-polyfill packages (module-map.ts) --
 // imported directly rather than relying on a global `Buffer`, because
 // nothing in this tree installs one yet. bencode (underneath bittorrent-dht)
@@ -194,4 +195,31 @@ export class Socket extends EventEmitter {
     pending.catch(() => {}).then(() => this.emit('close'))
     return this
   }
+
+  // A135: named by presence, not by absence -- real methods (not a
+  // module-level refusingProxy wrap) for the same duck-typing reason
+  // node-net-socket.ts's own ref/unref/setTimeout methods give: this is a
+  // stateful, feature-detected EventEmitter instance, and a throw-on-read
+  // proxy would make a defensive `typeof socket.setBroadcast === 'function'`
+  // check itself throw.
+
+  /** Real Node's own event-loop keep-alive controls -- no meaning here, so both are no-ops that return `this`, matching real Node's contract and keeping a defensive caller harmless. */
+  ref (): this { return this }
+  unref (): this { return this }
+
+  private socketOptionUnsupported (api: string): never {
+    throw refuseShim(
+      `dgram.Socket#${api}`, 'unimplemented',
+      `dgram.Socket#${api} is a real UDP socket option orivon.net.udpBind has no capability ` +
+      'surface for yet -- nothing has decided whether it will (compatibility-matrix.md Table 3). ' +
+      'Present (so a defensive typeof check still finds a function) but throwing when actually ' +
+      'called, rather than a silent no-op that would misreport the option as applied.'
+    )
+  }
+
+  setBroadcast (_flag: boolean): void { this.socketOptionUnsupported('setBroadcast') }
+  setMulticastTTL (_ttl: number): void { this.socketOptionUnsupported('setMulticastTTL') }
+  setMulticastLoopback (_flag: boolean): void { this.socketOptionUnsupported('setMulticastLoopback') }
+  addMembership (_multicastAddress: string, _multicastInterface?: string): void { this.socketOptionUnsupported('addMembership') }
+  dropMembership (_multicastAddress: string, _multicastInterface?: string): void { this.socketOptionUnsupported('dropMembership') }
 }

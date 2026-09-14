@@ -6,8 +6,9 @@
 
 import { getOrivon } from './orivon-global.js'
 import { Socket, createConnectFactory } from './node-net-socket.js'
-import { createServer } from './node-net-unsupported.js'
+import { createServer, otherNetMember } from './node-net-unsupported.js'
 import { isIP, isIPv4, isIPv6 } from './node-net-isip.js'
+import { refusingProxy } from './unimplemented.js'
 
 export { Socket } from './node-net-socket.js'
 export { createServer } from './node-net-unsupported.js'
@@ -18,4 +19,9 @@ const connect = createConnectFactory((opts) => getOrivon().net.connect(opts))
 export { connect }
 export const createConnection = connect
 
-export default { connect, createConnection: connect, Socket, createServer, isIP, isIPv4, isIPv6 }
+// A135: anything else read off this default export (net.Server, ...) names
+// the gap instead of reading `undefined` -- see node-net-unsupported.ts.
+export default refusingProxy(
+  { connect, createConnection: connect, Socket, createServer, isIP, isIPv4, isIPv6 },
+  otherNetMember
+)

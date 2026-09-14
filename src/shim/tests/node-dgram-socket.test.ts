@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { Socket } from '../node-dgram-socket.js'
 import { createFakeUdpSocket } from './support/fake-udp-socket.js'
 import type { Datagram, UdpSocket } from '../../contracts/handles.js'
+import { OrivonShimError } from '../errors.js'
 
 describe('dgram.Socket over a fake UdpSocket', () => {
   it('fires "listening" and reports a synchronous, real address() -- Handle rule 3', async () => {
@@ -187,5 +188,39 @@ describe('dgram.Socket over a fake UdpSocket', () => {
       socket.send([new Uint8Array([1, 2, 3, 4]), new Uint8Array([5, 6])], 0, 2, 9999, '203.0.113.9', () => {})
     }).toThrow(/offset\/length with an array message/)
     expect(fake.sent).toHaveLength(0)
+  })
+})
+
+// A135: named by presence, not by absence -- same reasoning as
+// node-net-socket.ts's own ref/unref/setTimeout methods, and not the
+// module-level refusingProxy wrap node-net.ts/node-dns.ts/node-fs.ts use,
+// for the identical duck-typing reason (dgram.Socket is a stateful,
+// feature-detected EventEmitter instance, not a plain module namespace).
+describe('dgram.Socket -- named refusal without breaking duck-typing (A135)', () => {
+  it('ref()/unref() are real, present, safe no-ops that return `this`', () => {
+    const fake = createFakeUdpSocket()
+    const socket = new Socket(async () => fake.socket)
+    expect(typeof socket.unref).toBe('function')
+    expect(socket.unref()).toBe(socket)
+    expect(socket.ref()).toBe(socket)
+  })
+
+  it.each([
+    ['setBroadcast', [true]],
+    ['setMulticastTTL', [64]],
+    ['setMulticastLoopback', [true]],
+    ['addMembership', ['230.185.192.108']],
+    ['dropMembership', ['230.185.192.108']]
+  ] as const)('%s is present (typeof check passes) but throws a named error when actually called', (method, args) => {
+    const fake = createFakeUdpSocket()
+    const socket = new Socket(async () => fake.socket)
+    expect(typeof socket[method]).toBe('function')
+    expect(() => (socket[method] as (...a: unknown[]) => void)(...args)).toThrow(OrivonShimError)
+    try {
+      ;(socket[method] as (...a: unknown[]) => void)(...args)
+    } catch (error) {
+      expect((error as OrivonShimError).api).toBe(`dgram.Socket#${method}`)
+      expect((error as OrivonShimError).reason).toBe('unimplemented')
+    }
   })
 })

@@ -63,6 +63,20 @@ describe('node-http.ts', () => {
     const error = await new Promise<Error>((resolve) => req.once('error', resolve))
     expect(error.message).toMatch(/window\.orivon/)
   })
+
+  // A135: an unbuilt member read off the default export (a bundled CJS
+  // `require('http')`'s own shape) used to be silently absent.
+  it('names an unbuilt member (Agent) on the default export instead of leaving it absent', async () => {
+    installFakeOrivon()
+    const http = (await import('../node-http.js')).default as unknown as Record<string, unknown>
+    const { OrivonShimError } = await import('../errors.js')
+    expect(() => http.Agent).toThrow(OrivonShimError)
+    try {
+      void http.Agent
+    } catch (error) {
+      expect((error as InstanceType<typeof OrivonShimError>).api).toBe('http.Agent')
+    }
+  })
 })
 
 describe('node-https.ts', () => {
@@ -89,5 +103,12 @@ describe('node-https.ts', () => {
     installFakeOrivon()
     const https = await import('../node-https.js')
     expect(() => https.createServer()).toThrow(/net\.listen/)
+  })
+
+  it('names an unbuilt member (Agent) on the default export instead of leaving it absent', async () => {
+    installFakeOrivon()
+    const https = (await import('../node-https.js')).default as unknown as Record<string, unknown>
+    const { OrivonShimError } = await import('../errors.js')
+    expect(() => https.Agent).toThrow(OrivonShimError)
   })
 })

@@ -309,3 +309,50 @@ describe('mkdir / readdir / stat / rm / rename', () => {
     expect(renameCalls).toEqual([{ from: '/tmp/x', to: '/torrents/x' }])
   })
 })
+
+// A135: every fs member this module does not build used to be silently
+// absent -- `fs.copyFile` read off the default export (a bundled CJS
+// `require('fs')`'s own shape) threw a bare "copyFile is not a function".
+describe('fs\'s other members -- named refusal instead of absence (A135)', () => {
+  it('names an ordinary unbuilt member (copyFile), reason unimplemented -- nothing has decided whether this will be built', async () => {
+    installFakeOrivon()
+    const fs = (await import('../node-fs.js')).default as unknown as Record<string, unknown>
+    expect(() => fs.copyFile).toThrow(/fs\.copyFile/)
+    try {
+      void fs.copyFile
+    } catch (error) {
+      const { OrivonShimError } = await import('../errors.js')
+      expect(error).toBeInstanceOf(OrivonShimError)
+      expect((error as InstanceType<typeof OrivonShimError>).reason).toBe('unimplemented')
+    }
+  })
+
+  it.each(['chmod', 'chmodSync', 'chown', 'chownSync'])(
+    'names %s reason not-applicable -- no POSIX permission model exists to set',
+    async (member) => {
+      installFakeOrivon()
+      const fs = (await import('../node-fs.js')).default as unknown as Record<string, unknown>
+      const { OrivonShimError } = await import('../errors.js')
+      expect(() => fs[member]).toThrow(OrivonShimError)
+      try {
+        void fs[member]
+      } catch (error) {
+        expect((error as InstanceType<typeof OrivonShimError>).reason).toBe('not-applicable')
+      }
+    }
+  )
+
+  it('still serves every real, already-built member unchanged through the same default export', async () => {
+    installFakeOrivon()
+    const fs = await import('../node-fs.js')
+    expect(typeof fs.default.readFile).toBe('function')
+    expect(typeof fs.default.open).toBe('function')
+    expect(typeof fs.default.statSync).toBe('function')
+  })
+
+  it('lets `in` report an unbuilt member as truthfully absent', async () => {
+    installFakeOrivon()
+    const fs = (await import('../node-fs.js')).default as unknown as Record<string, unknown>
+    expect('copyFile' in fs).toBe(false)
+  })
+})

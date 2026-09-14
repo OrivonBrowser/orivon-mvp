@@ -9,8 +9,11 @@ A95).
 
 This is the **second** of the matrix's three adapter families — a sibling of
 [`src/shim/`](../shim/README.md) (the Node stdlib family), not a part of it. An app imports
-`net`/`fs` from one and `electron` from the other; they solve different problems and neither
-depends on the other.
+`net`/`fs` from one and `electron` from the other; they solve different problems. **One
+narrow exception (A135):** `src/shim/` imports this package's `unimplemented.ts` (`refusingProxy`)
+directly, to give its own Node-stdlib gaps the same "refuse by name, not absence" treatment this
+package built first — see that file's README for the reasoning. The reverse import still does not
+happen and must not (§What it must never import, below).
 
 | Electron API | What backs it | This package |
 |---|---|---|
@@ -104,7 +107,11 @@ mechanism, reused three ways: a whole missing module (`unimplementedMember`, use
 `clipboard`, and the rest of `index.ts`'s curated list), one extra method on an object that
 mostly works (`dialog.ts`'s other methods, alongside `showOpenDialog`'s own decided refusal),
 and the package's whole export surface for default-style consumption
-(`withUnimplementedFallback`, `index.ts`'s default export).
+(`withUnimplementedFallback`, `index.ts`'s default export). **A fourth reuse, outside this
+package (A135):** `refusingProxy` itself takes a `classify` that returns the `Error` to throw
+directly, rather than a record this file used to convert via a hardcoded `refuse()` call, so
+[`src/shim/`](../shim/README.md) reuses this exact function with its own error type for the
+Node-stdlib family's equivalent gaps, without this package knowing that caller exists.
 
 **Three refusal reasons, because they are three different situations for a porting developer.**
 `'desktop-shell'` means refused by design — this will never work, an owner policy decision.
