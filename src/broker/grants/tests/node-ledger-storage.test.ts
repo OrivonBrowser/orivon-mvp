@@ -467,6 +467,168 @@ describe('nodeLedgerStorage', () => {
     })
   })
 
+  // A145: the remembered-no marker, stored alongside the version floor,
+  // rollback acknowledgement and grants (same `grants/<hash>/` directory,
+  // same atomic-write discipline) -- in its OWN file, never inside
+  // grants.json, so a declined capability set can never be mistaken for, or
+  // silently merged into, an actual grant record at the storage layer.
+  // Like readGrants, a corrupt or unparseable file reads as `undefined`: this
+  // state can only ever suppress a prompt, never authorise anything, so
+  // losing it to corruption costs a re-prompt, never a reopened hole.
+  describe('readDeclinedCapabilities / writeDeclinedCapabilities / deleteDeclinedCapabilities (A145)', () => {
+    it('readDeclinedCapabilities returns undefined for an origin never persisted', () => {
+      const userData = mkdtempSync(join(tmpdir(), 'orivon-ledger-storage-'))
+      const storage = nodeLedgerStorage(userData)
+
+      expect(storage.readDeclinedCapabilities(APP)).toBeUndefined()
+    })
+
+    it('writeDeclinedCapabilities then readDeclinedCapabilities round-trips the exact set', () => {
+      const userData = mkdtempSync(join(tmpdir(), 'orivon-ledger-storage-'))
+      const storage = nodeLedgerStorage(userData)
+
+      storage.writeDeclinedCapabilities(APP, ['tcp.connect', 'fs'])
+
+      expect(storage.readDeclinedCapabilities(APP)).toEqual(['tcp.connect', 'fs'])
+    })
+
+    it('writeDeclinedCapabilities overwrites whatever was there before', () => {
+      const userData = mkdtempSync(join(tmpdir(), 'orivon-ledger-storage-'))
+      const storage = nodeLedgerStorage(userData)
+
+      storage.writeDeclinedCapabilities(APP, ['tcp.connect', 'fs'])
+      storage.writeDeclinedCapabilities(APP, ['tcp.connect'])
+
+      expect(storage.readDeclinedCapabilities(APP)).toEqual(['tcp.connect'])
+    })
+
+    it('two different origins get two different declined-capability records', () => {
+      const userData = mkdtempSync(join(tmpdir(), 'orivon-ledger-storage-'))
+      const storage = nodeLedgerStorage(userData)
+
+      storage.writeDeclinedCapabilities(APP, ['tcp.connect'])
+      storage.writeDeclinedCapabilities('https://other.example', ['fs'])
+
+      expect(storage.readDeclinedCapabilities(APP)).toEqual(['tcp.connect'])
+      expect(storage.readDeclinedCapabilities('https://other.example')).toEqual(['fs'])
+    })
+
+    it('lives under the same grants/<hash> directory as its siblings, in its own file', () => {
+      const userData = mkdtempSync(join(tmpdir(), 'orivon-ledger-storage-'))
+      const storage = nodeLedgerStorage(userData)
+
+      storage.writeDeclinedCapabilities(APP, ['tcp.connect'])
+
+      const dir = join(userData, 'grants', originHash(APP))
+      expect(readdirSync(dir)).toEqual(['declined-capabilities.json'])
+    })
+
+    // THE STRUCTURAL-SEPARATION PROOF: writing a declined-capability record
+    // must never create, touch or be confused with an actual grants.json
+    // record for the very same capabilities.
+    it('never writes to or reads from grants.json, however many capabilities are declined', () => {
+      const userData = mkdtempSync(join(tmpdir(), 'orivon-ledger-storage-'))
+      const storage = nodeLedgerStorage(userData)
+
+      storage.writeDeclinedCapabilities(APP, ['tcp.connect', 'fs', 'id'])
+
+      expect(storage.readGrants(APP)).toBeUndefined()
+    })
+
+    it('a declined-capabilities file that exists but is not valid JSON reads as undefined', () => {
+      const userData = mkdtempSync(join(tmpdir(), 'orivon-ledger-storage-'))
+      const storage = nodeLedgerStorage(userData)
+      const dir = join(userData, 'grants', originHash(APP))
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, 'declined-capabilities.json'), '{"capabilities": ["tcp.connect"')
+
+      expect(storage.readDeclinedCapabilities(APP)).toBeUndefined()
+    })
+
+    it('a declined-capabilities file with the wrong JSON shape also reads as undefined', () => {
+      const userData = mkdtempSync(join(tmpdir(), 'orivon-ledger-storage-'))
+      const storage = nodeLedgerStorage(userData)
+      const dir = join(userData, 'grants', originHash(APP))
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, 'declined-capabilities.json'), '{"capabilities": "tcp.connect"}')
+
+      expect(storage.readDeclinedCapabilities(APP)).toBeUndefined()
+    })
+
+    it('a normal write leaves no temp file behind -- it lands via rename, not a truncate in place', () => {
+      const userData = mkdtempSync(join(tmpdir(), 'orivon-ledger-storage-'))
+      const storage = nodeLedgerStorage(userData)
+
+      storage.writeDeclinedCapabilities(APP, ['tcp.connect'])
+
+      const dir = join(userData, 'grants', originHash(APP))
+      expect(readdirSync(dir)).toEqual(['declined-capabilities.json'])
+    })
+
+    it.skipIf(isRoot)('a write that cannot create its temp file leaves the previously-persisted set untouched', () => {
+      const userData = mkdtempSync(join(tmpdir(), 'orivon-ledger-storage-'))
+      const storage = nodeLedgerStorage(userData)
+      storage.writeDeclinedCapabilities(APP, ['tcp.connect'])
+
+      const dir = join(userData, 'grants', originHash(APP))
+      chmodSync(dir, 0o555)
+      try {
+        expect(() => { storage.writeDeclinedCapabilities(APP, ['fs']) }).toThrow()
+      } finally {
+        chmodSync(dir, 0o755)
+      }
+
+      expect(storage.readDeclinedCapabilities(APP)).toEqual(['tcp.connect'])
+    })
+
+    describe('deleteDeclinedCapabilities', () => {
+      it('removes the file, so a later read returns undefined again', () => {
+        const userData = mkdtempSync(join(tmpdir(), 'orivon-ledger-storage-'))
+        const storage = nodeLedgerStorage(userData)
+        storage.writeDeclinedCapabilities(APP, ['tcp.connect'])
+
+        storage.deleteDeclinedCapabilities(APP)
+
+        expect(storage.readDeclinedCapabilities(APP)).toBeUndefined()
+      })
+
+      it('is a silent no-op for an origin never persisted', () => {
+        const userData = mkdtempSync(join(tmpdir(), 'orivon-ledger-storage-'))
+        const storage = nodeLedgerStorage(userData)
+
+        expect(() => { storage.deleteDeclinedCapabilities(APP) }).not.toThrow()
+      })
+
+      it('does not disturb the version floor, rollback acknowledgement or grants persisted for the same origin', () => {
+        const userData = mkdtempSync(join(tmpdir(), 'orivon-ledger-storage-'))
+        const storage = nodeLedgerStorage(userData)
+        storage.writeVersionFloor(APP, '1.0.0')
+        storage.writeAcknowledgedRollbackVersion(APP, '1.1.9')
+        storage.writeGrants(APP, { fs: { patterns: [], grantedAt: 1 } })
+        storage.writeDeclinedCapabilities(APP, ['tcp.connect'])
+
+        storage.deleteDeclinedCapabilities(APP)
+
+        expect(storage.readDeclinedCapabilities(APP)).toBeUndefined()
+        expect(storage.readVersionFloor(APP)).toBe('1.0.0')
+        expect(storage.readAcknowledgedRollbackVersion(APP)).toBe('1.1.9')
+        expect(storage.readGrants(APP)).toEqual({ fs: { patterns: [], grantedAt: 1 } })
+      })
+
+      it('does not disturb a different origin\'s declined-capability record', () => {
+        const userData = mkdtempSync(join(tmpdir(), 'orivon-ledger-storage-'))
+        const storage = nodeLedgerStorage(userData)
+        storage.writeDeclinedCapabilities(APP, ['tcp.connect'])
+        storage.writeDeclinedCapabilities('https://other.example', ['fs'])
+
+        storage.deleteDeclinedCapabilities(APP)
+
+        expect(storage.readDeclinedCapabilities(APP)).toBeUndefined()
+        expect(storage.readDeclinedCapabilities('https://other.example')).toEqual(['fs'])
+      })
+    })
+  })
+
   // A60's escape hatch: GrantLedger.forgetOrigin needs a real on-disk
   // delete, or a "forgotten" origin's poisoned floor would silently
   // resurrect itself the next time this origin is hydrated.
