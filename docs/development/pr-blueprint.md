@@ -365,3 +365,4 @@ failure mode of a mandatory field is that it gets filled, not that it gets skipp
 | [`code-guidelines.md`](code-guidelines.md) | How code is written here. Rule 1 is the same standard `## How it works` is held to |
 | [`CONTRIBUTING.md`](../../CONTRIBUTING.md) | The eight rules, the pre-commit hook, and the gate to run before opening a PR |
 | [`readability-log.md`](readability-log.md) | Why "state omissions as omissions" is a rule here |
+| [`review-coverage.md`](review-coverage.md) | Where an independent review pass -- a hand-review, an adversarial pass, a security scan, a clean-checkout run -- gets recorded once it happens |
