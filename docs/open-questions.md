@@ -6261,3 +6261,55 @@ mattered whether or not early hydration was ever built. Recorded here rather tha
 message because `CLAUDE.md` Rule 3 (contradictions get surfaced) applies to a silent capability
 gap as much as to a stated disagreement, and because the next person adding a `NetCapability`
 field should know this file's allowlist does not grow itself.
+
+### A165 -- an automatic check now fails CI when `src/contracts/manifest.ts` declares a field the loader will not accept, closing the failure mode behind A164 and the `consentGranularity` gap **[RESOLVED 2026-09-14 -- lane G-parity]**
+
+**The failure mode, named once rather than per incident.** `src/loader/manifest.ts` and
+`manifest-capabilities.ts` reject any manifest field they do not recognise, using hand-maintained
+allowlists (`MANIFEST_KEYS`, `CAPABILITIES_KEYS`, `NET_KEYS` and their siblings). Twice in one day
+-- `Manifest.consentGranularity` (closed in a follow-up before this lane started) and `A164`'s
+`NetCapability.https` -- a field landed in the contract with no matching update to the loader's
+own allowlist, so an app author reading the published interface and using it as documented was
+refused at install, blamed for a gap that was never theirs. Both compiled clean and both sides'
+own tests passed; the gap only ever surfaced when something tried to parse a real manifest.
+
+**The mechanism.** `scripts/check-manifest-parity.mjs`, wired into `npm run check:manifest-parity`
+and CI's `check` job alongside the other `check:*` guards. It reads `Manifest`, `Capabilities`,
+`NetCapability`, `TcpCapability`, `UdpCapability`, `HttpsCapability`, `FsCapability` and
+`IdCapability` straight out of `src/contracts/manifest.ts`'s own source text (`interfaceFields`),
+and reads the loader's real `*_KEYS` array literals straight out of its source text
+(`arrayLiteralItems`) -- both sides derived from the files that actually ship, never copied into
+a third hand-typed list, which is the trap a naive version of this check would have been:
+comparing one hand-written list against another is just a third list to forget. Any contract field
+absent from its corresponding loader array fails the check, naming the exact interface and field.
+
+**Distinguishing "not yet built, on purpose" from "forgotten".** A field the loader deliberately
+does not accept yet is not a bug, but this check cannot infer that on its own -- it has to be told,
+so it does not guess. `DELIBERATELY_DEFERRED` in the same script is the place that record lives,
+one entry per field, each with a required `reason`. It is empty today: every field either
+interface currently declares is already accepted, following `A164`'s fix and the
+`consentGranularity` fix. The next person who adds a contract field before the loader is ready for
+it adds a row there, with why, or this check fails on their branch -- which is the intended
+outcome, not a false positive.
+
+**Also landed: a round-trip regression test**, `src/loader/tests/manifest-contract-parity.test.ts`
+-- worth having independent of the check above, since it exercises the real `parseManifest` rather
+than a description of it. It types one "kitchen sink" manifest against `Required<Manifest>` (and
+`Required<>` on every nested capability interface), so a future field added anywhere in that chain
+without updating the fixture is a `npm run typecheck` failure, not a silent gap; the fixture is
+then run through the real parser and asserted accepted and round-tripped unchanged.
+
+**Verified against both historical defects directly**, not just by construction: with `https`
+removed from `NET_KEYS` in a scratch copy of the real files, the check fails naming
+`NetCapability.https`; with `consentGranularity` removed from `MANIFEST_KEYS`, it fails naming
+`Manifest.consentGranularity`. Both restores leave `git status` clean. Pasted into the PR body
+verbatim, not just asserted.
+
+**What this does not cover, on purpose (scope discipline, `CLAUDE.md` Rule 7).** It checks field
+*names* only, one level of allowlist at a time -- not value grammars (a pattern string, a port
+range, a curve name), not runtime accept/reject behaviour for a given value, and not a brand-new
+capability interface that needs an entirely new `*_KEYS` array and a new row in the check's own
+`PARITY_MAP` (a structural addition on both sides, not the silent-drift failure mode this exists
+for). It also does not check the reverse direction -- the loader accepting a key the contract no
+longer declares -- since that is a different bug class from the one that hit three times today and
+was out of scope for this lane.
