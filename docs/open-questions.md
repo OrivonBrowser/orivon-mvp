@@ -4048,7 +4048,7 @@ decision, which is why this is filed rather than fixed.
 
 **Needed by:** whenever a real app is ported. Most real HTTP APIs redirect somewhere.
 
-### A117 — routed `fetch()` bypasses mixed-content enforcement as well as CORS and CSP **[AI-REC]**
+### A117 — routed `fetch()` bypasses mixed-content enforcement as well as CORS and CSP **[RESOLVED 2026-09-14]**
 
 **Raised 2026-09-10**, post-merge audit (lane R3, PR #133).
 
@@ -4060,6 +4060,30 @@ granted host through the routed path, which its own renderer would have blocked.
 behaviour. An app that declared an `http://` host in its manifest and had a person approve it has
 been through more scrutiny than the browser's blanket rule provides. But it must be *written down*,
 by the same argument A116 makes.
+
+**Documented, in a different place than the recommendation named.** `ADR-0017`'s own
+Consequences section now names all three divergences together -- CORS, CSP and mixed content --
+with the mixed-content half precisely scoped: not "Orivon allows mixed content" in general, only
+that this one routed path skips an enforcement the renderer otherwise performs, for a host a
+person reviewed and granted at install. The recommendation above pointed at
+`src/preload/README.md`'s Design notes, which is where `fetch-route.ts`'s own header comment
+sends a reader for this exact catalogue (body cap, unfollowed redirects, limited body types) --
+but that file is owned by the `broker` stream (`parallel-work.md`'s ownership map puts it beside
+`app.ts`), and this lane's own brief holds it to no file under `src/`. Left as a cross-reference
+from the ADR rather than fixed in place: the owning stream should add a one-line pointer to the
+ADR the next time it touches that file, so a reader lands on the same explanation from either
+direction.
+
+**Resolved 2026-09-14, in both halves.** `ADR-0017`'s Consequences section gained the consolidated
+CORS/CSP/mixed-content note (PR #184), and the divergence itself is now listed in
+`src/preload/README.md`'s own **"known divergences from a real browser's `fetch()`"** list, beside
+the body cap, the brotli refusal, unfollowed redirects and the supported body types -- which is the
+list this entry meant by "the same place", and the one `ADR-0017` requires be kept.
+
+That second half was deliberately left open by the docs lane that closed the first: `src/preload/`
+belongs to another stream under `parallel-work.md`'s ownership map, and it reported the gap rather
+than reaching across a boundary. The conductor closed it once no lane was live in that directory.
+Recorded because the lane's restraint was correct and should not read, later, as an oversight.
 
 ### A118 — an app that bypasses the real `Headers` class can put conflicting framing headers on a routed request **[STILL OPEN]**
 
@@ -4200,7 +4224,7 @@ source text references any module-level identifier.
 and cannot be divided, so it sets a floor under its file that no further splitting reduces. The
 options listed above remain the options, minus the one already taken.
 
-### A126 — review coverage is recorded nowhere **[AI-REC]**
+### A126 — review coverage is recorded nowhere **[RESOLVED 2026-09-14 -- lane B-doc-trio]**
 
 **Raised 2026-09-10**, post-merge audit (conductor, process).
 
@@ -4211,6 +4235,35 @@ from the repository at all.
 
 **AI recommendation:** a `reviewed:` label, or one line per PR in a checked-in ledger. Cheap, and it
 is the difference between "we think #105-#136 were never reviewed" and knowing.
+
+**Resolved with the checked-in ledger, not the label.** `docs/development/review-coverage.md`,
+following the same pattern `readability-log.md` already established here: a standing,
+append-only log rather than a GitHub-side field. Reasoning over the three options this entry's
+own recommendation named:
+
+- **A GitHub label** is cheap to apply (`gh api -X POST .../issues/<n>/labels`, per `CLAUDE.md`'s
+  workaround for the `gh pr edit --add-label` GraphQL failure) but disappears the moment anyone
+  reads this repository offline or from a clone, and it can carry only a tag, not the shape of
+  what actually ran -- "reviewed" says nothing about a hand-review over one diff versus a
+  three-reviewer adversarial pass over ninety-three files. This project already keeps its
+  process record in checked-in documents (`open-questions.md` itself, `readability-log.md`), and
+  a label would be the one part of that record that lives somewhere else.
+- **A line in the PR template** costs every author something and, worse, asks for the answer at
+  the wrong time: review coverage is usually known only *after* a PR merges (an adversarial pass
+  runs over a landing, not a diff still being opened), so the author would be filling in a field
+  they cannot yet answer.
+- **A checked-in document** is what was chosen: durable, greppable, and able to record what
+  actually ran and what it found in aggregate, at the point the review event completes rather
+  than the point the PR opens. Its named weakness -- going stale silently -- is the same weakness
+  `readability-log.md` already carries and already manages, by being a short append-only log
+  rather than a table someone has to keep in sync.
+
+Populated with the material this run had on hand: PRs #163-#182 (a conductor hand-review of every
+`src/broker`/`src/main` diff, a three-reviewer adversarial pass over the step-4 landing, and a
+clean-checkout verification of the final state), verified against this run's own fleet ledger and
+against `git log` rather than transcribed on trust. **The record explicitly starts at #163** --
+everything before it is marked unrecorded, not unreviewed, since audits did happen earlier
+(`docs/planning/audit-2026-08-25.md`) without ever being brought in-repo.
 
 ### A127 — the consent prompt shows the origin only in a field Electron says some platforms drop **[PARTIALLY RESOLVED]**
 
@@ -4317,7 +4370,7 @@ scoreboard rewards it.
 row that is not a capability — *"a person can install an app and grant it something"* — and leave it
 ❌ until it is true. One honest row above the scoreboard changes what the next round optimises for.
 
-### A132 — apps cannot tell Orivon-grade primitives from polyfill-grade ones **[AI-REC]**
+### A132 — apps cannot tell Orivon-grade primitives from polyfill-grade ones **[PARTIALLY RESOLVED 2026-09-14 -- lane B-doc-trio]**
 
 **Raised 2026-09-10**, post-merge audit (named-persona review; Thompson's trusting-trust lens).
 
@@ -4337,6 +4390,21 @@ vectors checked in CI against an independent implementation. That separation is 
 app authors. An app that signs something with `crypto.createSign()` believing it has the same footing
 as `orivon.id.sign()` has been misled by a naming choice, not by a bug — and a documentation fix is
 the whole remedy.
+
+**Documented, in a different place than the recommendation named.** `security-model.md` gets a
+new row, T26, that records the structural placement as the mitigation first -- in the entry's own
+words, before the gap -- then names the gap precisely: `module-map.ts` presents
+`crypto-browserify` as `crypto` with nothing that marks it apart from `orivon.id.*`'s
+WebCrypto-backed identity primitives, and the two carry different security properties (A121's
+advisory reaches one, not the other). `shim-dependency-review.md`'s own crypto-browserify verdict
+now points to that row. **`src/shim/README.md` was deliberately not touched**, nor was "whatever
+documentation eventually faces app authors" written -- the former is owned by the `shim` stream,
+which has a lane live in that directory concurrently with this one, and this lane's brief holds
+it to no file under `src/`; the latter does not exist yet and is build step 9's job
+(`app-compatibility.md`), not this one's. Recorded as a gap for the owning stream to close with a
+pointer to T26, and for build step 9 to inherit when app-author documentation is written. **No
+API was built to distinguish the two** -- the entry itself rules that out as a contracts change,
+and this lane agrees: the honest fix here is the label, not new surface.
 
 ### A133 — the grant prompt's "and N other sites" summary has no cap **[STILL OPEN]**
 

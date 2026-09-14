@@ -71,8 +71,9 @@ recorded reasons.**
 | 5. [`development/pr-blueprint.md`](development/pr-blueprint.md) | How a pull request is titled, described and labelled. **Read before opening one** |
 | 6. [`planning/build-plan.md`](planning/build-plan.md) | The dependency-ordered work, step by step |
 
-Also: [`development/release-checklist.md`](development/release-checklist.md) and
-[`development/readability-log.md`](development/readability-log.md).
+Also: [`development/release-checklist.md`](development/release-checklist.md),
+[`development/readability-log.md`](development/readability-log.md) and
+[`development/review-coverage.md`](development/review-coverage.md).
 
 Start at [`ARCHITECTURE.md`](../ARCHITECTURE.md) if you have not already.
 
