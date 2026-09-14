@@ -4048,7 +4048,7 @@ decision, which is why this is filed rather than fixed.
 
 **Needed by:** whenever a real app is ported. Most real HTTP APIs redirect somewhere.
 
-### A117 — routed `fetch()` bypasses mixed-content enforcement as well as CORS and CSP **[PARTIALLY RESOLVED 2026-09-14 -- lane B-doc-trio]**
+### A117 — routed `fetch()` bypasses mixed-content enforcement as well as CORS and CSP **[RESOLVED 2026-09-14]**
 
 **Raised 2026-09-10**, post-merge audit (lane R3, PR #133).
 
@@ -4073,6 +4073,17 @@ but that file is owned by the `broker` stream (`parallel-work.md`'s ownership ma
 from the ADR rather than fixed in place: the owning stream should add a one-line pointer to the
 ADR the next time it touches that file, so a reader lands on the same explanation from either
 direction.
+
+**Resolved 2026-09-14, in both halves.** `ADR-0017`'s Consequences section gained the consolidated
+CORS/CSP/mixed-content note (PR #184), and the divergence itself is now listed in
+`src/preload/README.md`'s own **"known divergences from a real browser's `fetch()`"** list, beside
+the body cap, the brotli refusal, unfollowed redirects and the supported body types -- which is the
+list this entry meant by "the same place", and the one `ADR-0017` requires be kept.
+
+That second half was deliberately left open by the docs lane that closed the first: `src/preload/`
+belongs to another stream under `parallel-work.md`'s ownership map, and it reported the gap rather
+than reaching across a boundary. The conductor closed it once no lane was live in that directory.
+Recorded because the lane's restraint was correct and should not read, later, as an oversight.
 
 ### A118 — an app that bypasses the real `Headers` class can put conflicting framing headers on a routed request **[STILL OPEN]**
 
