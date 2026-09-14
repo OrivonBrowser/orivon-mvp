@@ -26,7 +26,9 @@ import { isPinnedPath, parsePinRecord } from '../broker/policy/pin.js'
 import type { PinRecord } from '../broker/policy/pin.js'
 import { MANIFEST_PATH, canonicalAssetPath } from '../broker/policy/canonical-path.js'
 import { originFromUrl } from '../broker/policy/origin.js'
-import { appCspHeaderValue } from '../broker/policy/connect-src.js'
+import { appCspHeaderValue, appReachCspHeaderValue } from '../broker/policy/connect-src.js'
+import { checkConnectSecure } from '../broker/policy/connect-secure.js'
+import type { ConnectSecureDecision } from '../broker/policy/connect-secure.js'
 import type { Pattern } from '../contracts/index.js'
 import { entryCanonicalPath } from './fetch-bundle.js'
 import { parseManifest } from './manifest.js'
@@ -50,6 +52,43 @@ export type AppRequestHandler = (request: Request) => Promise<Response>
  * carried, until the next load.
  */
 export type GrantedConnectPatterns = () => Promise<readonly Pattern[]>
+
+/**
+ * Same shape and the same "read fresh, per request" contract as
+ * `GrantedConnectPatterns`, but for the `https.connect` grant -- the
+ * capability `fetchThirdParty` (below) actually authorises a third-party
+ * request against, never `tcp.connect`.
+ *
+ * HEADER USE ONLY. This is wired into `img-src`/`font-src`/`media-src`
+ * (`appReachCspHeaderValue`) so the browser knows a request is even worth
+ * attempting; it is NEVER what decides whether one is actually served --
+ * see `AuthoriseReach` for that, and A158 (docs/open-questions.md) for why
+ * the two are allowed to disagree, briefly, after a restart.
+ */
+export type GrantedSecurePatterns = () => Promise<readonly Pattern[]>
+
+/**
+ * THE live authorisation gate for a third-party request -- the only thing
+ * `fetchThirdParty` ever asks before proxying one to the real network.
+ * Deliberately a DIFFERENT type than `GrantedSecurePatterns`: a caller
+ * cannot pass the (possibly advisory-widened, header-only) pattern list in
+ * by mistake, because this function returns a decision, not patterns. A
+ * real implementation (electron-serve.ts) reads the origin's LIVE, hydrated
+ * `https.connect` grant and calls `checkConnectSecure` against it -- the
+ * SAME function `orivon.net.connectSecure` itself calls (net-capability.ts)
+ * -- never anything read off disk (A137).
+ */
+export type AuthoriseReach = (host: string, port: number) => Promise<ConnectSecureDecision>
+
+/**
+ * Performs the actual network fetch to a host `AuthoriseReach` has already
+ * authorised, and turns whatever comes back into a `Response`. Injected
+ * rather than called directly so this file (see its own header) stays free
+ * of any real network I/O and unit-testable with a stub -- the real
+ * implementation (`serve-reach.ts`'s `nodeReachDial`) is wired in by
+ * electron-serve.ts.
+ */
+export type ReachDial = (request: Request, host: string, port: number) => Promise<Response>
 
 /** Everything a request needs decided before a byte is read off disk -- deliberately exported for direct, Electron-free unit testing (this file's own header). */
 export type ResolvedRequest =
@@ -119,13 +158,25 @@ function denyResponse (reason: string): Response {
  * `default-src` never covers it) and CSP naming a hostname where
  * `checkConnect` authorises a resolved address (DNS rebinding) --
  * both already filed as A42, unaffected by this change.
+ *
+ * `img-src`/`font-src`/`media-src` (A143) name what `fetchThirdParty`
+ * will actually serve, sourced from `https.connect`, never `tcp.connect` --
+ * a different grant than `connect-src`'s own. `securePatterns` MAY be wider
+ * than the origin's live, hydrated grant (electron-serve.ts's own A158
+ * fallback, for the narrow window right after a restart) without that being
+ * a security bug: this header only decides whether the BROWSER attempts a
+ * request at all, never whether one succeeds -- `fetchThirdParty` re-checks
+ * the LIVE grant on every single request regardless of what this header
+ * claimed, so a too-permissive header here still gets a real, unwidened
+ * refusal from the handler underneath it (see `AuthoriseReach`'s own doc).
  */
-function cspHeaderValue (connectPatterns: readonly Pattern[]): string {
+function cspHeaderValue (connectPatterns: readonly Pattern[], securePatterns: readonly Pattern[]): string {
   return [
     "default-src 'self'",
     "script-src 'self' 'unsafe-inline'",
     "style-src 'self' 'unsafe-inline'",
-    appCspHeaderValue(connectPatterns)
+    appCspHeaderValue(connectPatterns),
+    appReachCspHeaderValue(securePatterns)
   ].join('; ')
 }
 
@@ -143,9 +194,15 @@ function cspHeaderValue (connectPatterns: readonly Pattern[]): string {
  * inherits its OWN response's CSP, never the document's (README.md's Design
  * notes).
  */
-function buildResponse (content: Uint8Array, canonicalPath: string, rangeHeader: string | null, connectPatterns: readonly Pattern[]): Response {
+function buildResponse (
+  content: Uint8Array,
+  canonicalPath: string,
+  rangeHeader: string | null,
+  connectPatterns: readonly Pattern[],
+  securePatterns: readonly Pattern[]
+): Response {
   const contentType = contentTypeFor(canonicalPath)
-  const csp = cspHeaderValue(connectPatterns)
+  const csp = cspHeaderValue(connectPatterns, securePatterns)
   const total = content.length
   const range = parseRange(rangeHeader, total)
 
@@ -175,6 +232,63 @@ function buildResponse (content: Uint8Array, canonicalPath: string, rangeHeader:
 }
 
 /**
+ * Answers a request whose own origin differs from this handler's app origin
+ * -- reached here only because `protocol.handle` intercepts the WHOLE
+ * scheme for this partition, not merely the app's own host (A143). Granted,
+ * not declared: authorised against the app's LIVE `https.connect` grant via
+ * `authoriseReach`, never against anything the manifest merely asked for
+ * and never against anything read off disk.
+ *
+ * PLAIN `http:` STAYS DENIED, DELIBERATELY, NOT AS A GAP. `checkConnectSecure`
+ * binds identity through the TLS handshake itself -- there is no equivalent
+ * binding for a plain connection, which would need `checkConnect`'s own
+ * resolve-then-check discipline instead. `reachDial`'s transport has no way
+ * to pin a request's underlying connection to an address already checked
+ * (the same limitation `electron-fetch.ts`'s own A66 already names for a
+ * different caller, confirmed against Electron's own API surface) -- so
+ * authorising a plain request here would check one address and could
+ * legitimately connect to another moments later (T12, DNS rebinding). That
+ * gap is accepted elsewhere in this codebase for a single, narrow,
+ * address-literal-constrained install-time fetch; it is not accepted here,
+ * for a general surface any page content can point at a fresh hostname of
+ * its choosing. AI recommendation, not an owner decision.
+ *
+ * ANY OTHER FAILURE -- no live grant for this host, no `reachDial`/
+ * `authoriseReach` wired in at all (dev-serve.ts's own no-broker case), or
+ * `reachDial` itself throwing (a real connection failure, a refused
+ * redirect) -- answers the same `denyResponse` shape as every other refusal
+ * in this file. Nothing here distinguishes "not granted" from "granted but
+ * unreachable" to the page; see `README.md`'s own note on why a denial
+ * reason is a local log concern, not a renderer-visible one.
+ */
+async function fetchThirdParty (
+  request: Request,
+  authoriseReach: AuthoriseReach | undefined,
+  reachDial: ReachDial | undefined
+): Promise<Response> {
+  if (authoriseReach === undefined || reachDial === undefined) {
+    return denyResponse('cross-origin request inside this app\'s own partition is not served')
+  }
+
+  const url = new URL(request.url)
+  if (url.protocol !== 'https:') {
+    return denyResponse('only a granted https host may be reached from inside this app\'s own partition')
+  }
+  const port = url.port === '' ? 443 : Number(url.port)
+
+  const decision = await authoriseReach(url.hostname, port)
+  if (!decision.allowed) {
+    return denyResponse('this host is not granted to this app')
+  }
+
+  try {
+    return await reachDial(request, decision.host, port)
+  } catch (error) {
+    return denyResponse(`reaching the granted host failed: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
+
+/**
  * Builds the request handler for one app's own origin, doing the
  * whole-bundle re-verification ONCE here rather than per request (README.md
  * Design notes) -- everything the returned handler needs (the pin, the
@@ -186,7 +300,14 @@ function buildResponse (content: Uint8Array, canonicalPath: string, rangeHeader:
  * caller registering this against `session.protocol.handle` has no other
  * sensible outcome to hand Electron for a scheme it must now answer for.
  */
-export async function createAppRequestHandler (storage: LoaderStorage, origin: string, grantedConnectPatterns?: GrantedConnectPatterns): Promise<AppRequestHandler> {
+export async function createAppRequestHandler (
+  storage: LoaderStorage,
+  origin: string,
+  grantedConnectPatterns?: GrantedConnectPatterns,
+  grantedSecurePatterns?: GrantedSecurePatterns,
+  authoriseReach?: AuthoriseReach,
+  reachDial?: ReachDial
+): Promise<AppRequestHandler> {
   const rawPin = await storage.readPin(origin)
   const pin = parsePinRecord(rawPin)
   if (pin === null) {
@@ -214,13 +335,12 @@ export async function createAppRequestHandler (storage: LoaderStorage, origin: s
     // (confirmed against electron/electron's protocol_registry.cc), and
     // nothing about registering a handler for 'https' scopes it to one
     // host. A page in its own partition fetching a THIRD-PARTY https URL is
-    // therefore denied here rather than reaching the real network -- ADR-0005
-    // already assumes a fully self-contained, pre-hashed bundle, and
-    // proxying an unrelated origin through this handler is a live-network
-    // trust decision this lane does not make. Filed as
-    // docs/open-questions.md A143 rather than resolved silently.
+    // handled by fetchThirdParty below, on the SAME live-authorisation
+    // terms `orivon.net.connectSecure` itself uses -- never proxied on the
+    // strength of anything this handler already trusted for its OWN origin
+    // (docs/open-questions.md A143).
     if (originFromUrl(request.url) !== origin) {
-      return denyResponse('cross-origin request inside this app\'s own partition is not served')
+      return await fetchThirdParty(request, authoriseReach, reachDial)
     }
 
     const resolved = resolveRequestPath(entryPath, pin, request.url)
@@ -236,6 +356,7 @@ export async function createAppRequestHandler (storage: LoaderStorage, origin: s
     }
 
     const connectPatterns = grantedConnectPatterns === undefined ? [] : await grantedConnectPatterns()
-    return buildResponse(content, resolved.canonicalPath, request.headers.get('range'), connectPatterns)
+    const securePatterns = grantedSecurePatterns === undefined ? [] : await grantedSecurePatterns()
+    return buildResponse(content, resolved.canonicalPath, request.headers.get('range'), connectPatterns, securePatterns)
   }
 }

@@ -144,6 +144,20 @@ literal is the same story: CSP's host grammar has no `[`, `]` or `:`, confirmed 
 44.0.0/Chrome 152 that Chromium drops such a source outright — `host-ipv6-literal` exists so
 `omitted` stays honest about that gap instead of silently claiming coverage a grant doesn't have.
 
+**`img-src` is no longer one of A42's unset-and-therefore-`default-src`-covered directives, as of
+A143's 2026-09-14 resolution — `font-src`/`media-src` never were `default-src`-covered examples
+A42 named, but the same statement now applies to them too.** `connect-src.ts`'s
+`appReachCspHeaderValue` reuses `connectSrcFor`'s own translate/emit logic unchanged (Rule 3),
+fed from the `https.connect` grant rather than `connect-src`'s own `tcp.connect` — a deliberately
+different capability, because `src/loader/serve.ts`'s `fetchThirdParty` (the live handler these
+three directives now have to agree with) authorises a third-party fetch against `https.connect`,
+never `tcp.connect`. `form-action`/`frame-src`/`script-src`/`worker-src` are UNCHANGED by this —
+still `default-src 'self'`'s fallback (`frame-src`/`worker-src`/`form-action`) or the explicit
+`'self' 'unsafe-inline'` (`script-src`) `serve.ts`'s `cspHeaderValue` already set — a deliberate
+scope line: embedding a live third-party document or running third-party code at the app's own
+origin is a materially bigger step than fetching a static image/font/media resource, and neither
+was asked for.
+
 **Why [`paths.ts`](paths.ts)'s confinement verdict must be platform-independent.** Windows and
 macOS are supported run-from-source targets, but CI runs on Linux only, so a rule whose answer
 depends on the host OS ships to two platforms untested. Path flavour is chosen from the shape of
