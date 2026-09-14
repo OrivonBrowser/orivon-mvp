@@ -160,6 +160,15 @@ platform API is a trap":
   browser does the same.
 - **Redirects are not followed.** A 3xx response comes back to the app as an ordinary `Response`
   with that status code; the app must notice and follow it itself. v0 scope cut (PR #133).
+- **Mixed-content blocking does not apply on this path (`A117`).** A page served over `https` can
+  reach an `http://` granted host through a routed `fetch()`, which its own renderer would have
+  refused. Stated narrowly, because the wider claim would be wrong: Orivon does not permit mixed
+  content generally -- this one routed path does not apply an enforcement the renderer otherwise
+  performs, and only for a host named in the manifest and granted by a person at install. That
+  grant is what makes it defensible rather than merely undetected: the request goes to somewhere
+  the user reviewed, not anywhere the page chose. It is still a divergence, and ADR-0017's own
+  Consequences section is explicit that a silent one is a trap -- so it is written here, with the
+  others, rather than left to be discovered.
 - **Only string/`Uint8Array`/`ArrayBuffer`/`URLSearchParams` request bodies are supported** --
   `FormData`, `Blob` and a streamed-upload body are not built here. v0 scope cut (PR #133).
 
