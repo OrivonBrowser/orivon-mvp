@@ -47,6 +47,15 @@ const CHROME_HEIGHT = 104
 const OVERLAY_DARK = { color: '#1e1f24', symbolColor: '#e6e7e8' }
 const OVERLAY_LIGHT = { color: '#e4e4eb', symbolColor: '#202124' }
 
+// Dev/test tooling only -- never gated on app.isPackaged or "is this a
+// production build" (run-from-source is a real shipping path on Windows and
+// macOS, build-plan.md; a real user's window must always take focus).
+// showInactive() shows the window without activating it, so a build or e2e
+// run started while the owner is typing elsewhere does not steal keystrokes.
+// Set by `npm run dev`, and by test/launch-electron.mjs for every Electron
+// launch it makes -- docs/development/setup.md.
+const NO_FOCUS = process.env['ORIVON_WINDOW_NO_FOCUS'] === '1'
+
 export function createShellWindow (ctx: SubsystemContext): BaseWindow {
   // Centers on the OS's primary display -- no explicit x/y. A cursor-based
   // "open on whichever display has the pointer" variant was tried here and
@@ -249,7 +258,17 @@ export function createShellWindow (ctx: SubsystemContext): BaseWindow {
   function showOnce (): void {
     if (shown) return
     shown = true
-    win.show()
+    if (NO_FOCUS) {
+      // The one thing a real launch under a virtual display CAN check --
+      // there is no window manager there to take OS focus FROM, so
+      // isFocused() cannot tell showInactive() apart from show(). See
+      // test/e2e-window-no-focus.test.ts, which asserts this line runs
+      // instead. Do not remove as "stray debug output".
+      console.log('[window] ORIVON_WINDOW_NO_FOCUS=1 -- showInactive()')
+      win.showInactive()
+    } else {
+      win.show()
+    }
   }
   ;(win as unknown as { once: (event: 'ready-to-show', cb: () => void) => void })
     .once('ready-to-show', showOnce)
