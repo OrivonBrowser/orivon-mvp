@@ -13,6 +13,7 @@
 import type {
   Capabilities,
   FsCapability,
+  HttpsCapability,
   IdCapability,
   NetCapability,
   Pattern,
@@ -41,9 +42,10 @@ const MAX_CURVES = 8
 const MIN_UNPRIVILEGED_PORT = 1024
 
 const CAPABILITIES_KEYS = ['net', 'fs', 'id', 'protocols']
-const NET_KEYS = ['tcp', 'udp', 'concurrentSockets']
+const NET_KEYS = ['tcp', 'udp', 'https', 'concurrentSockets']
 const TCP_KEYS = ['connect', 'listen']
 const UDP_KEYS = ['bind', 'send']
+const HTTPS_KEYS = ['connect']
 const FS_KEYS = ['quotaBytes']
 const ID_CAPABILITY_KEYS = ['curves']
 
@@ -226,6 +228,34 @@ function readUdp (raw: unknown, path: string): UdpCapability {
   return result
 }
 
+/**
+ * `https.connect` (ADR-0017, contracts/manifest.ts's `HttpsCapability`) --
+ * A164 (docs/open-questions.md): this reader never existed, so a manifest
+ * declaring it was rejected outright by `readNet`'s own `NET_KEYS` allowlist
+ * below, both at install (`fetch-bundle.ts` calls this same `parseManifest`)
+ * and every time a pinned bundle's manifest is read back
+ * (`createAppRequestHandler`). Found while building A158's hydration tests,
+ * which need a real pinned manifest that actually declares `https.connect`.
+ *
+ * Same host:port syntax as `readTcp`'s own `connect` field (contracts'
+ * own doc: "same syntax as TcpCapability.connect") -- `validateConnectPattern`
+ * reused rather than re-implemented (code-guidelines.md Rule 3). The
+ * "matched against the hostname, not the resolved address" difference
+ * `HttpsCapability.connect`'s own doc names is a RUNTIME check
+ * (`checkConnectSecure`), not a syntax rule, so it has no bearing here.
+ */
+function readHttps (raw: unknown, path: string): HttpsCapability {
+  if (!isRecord(raw)) reject(`${path} must be an object, got ${describeValue(raw)}`)
+  const extra = extraKey(raw, HTTPS_KEYS)
+  if (extra !== null) reject(`${path} has an unrecognised field: ${describeValue(extra)}`)
+
+  const connect = optionalStringArray(raw, path, 'connect', MAX_PATTERNS, (pattern, i) => {
+    validateConnectPattern(pattern, `${path}.connect[${i}]`)
+  })
+
+  return connect === undefined ? {} : { connect }
+}
+
 function readNet (raw: unknown, path: string): NetCapability {
   if (!isRecord(raw)) reject(`${path} must be an object, got ${describeValue(raw)}`)
   const extra = extraKey(raw, NET_KEYS)
@@ -233,10 +263,12 @@ function readNet (raw: unknown, path: string): NetCapability {
 
   const tcpRaw = ownProperty(raw, 'tcp', isAny)
   const udpRaw = ownProperty(raw, 'udp', isAny)
+  const httpsRaw = ownProperty(raw, 'https', isAny)
 
-  const result: { tcp?: TcpCapability, udp?: UdpCapability, concurrentSockets?: number } = {}
+  const result: { tcp?: TcpCapability, udp?: UdpCapability, https?: HttpsCapability, concurrentSockets?: number } = {}
   if (tcpRaw !== undefined) result.tcp = readTcp(tcpRaw, `${path}.tcp`)
   if (udpRaw !== undefined) result.udp = readUdp(udpRaw, `${path}.udp`)
+  if (httpsRaw !== undefined) result.https = readHttps(httpsRaw, `${path}.https`)
 
   // NOT bounded against LIMITS.concurrentSockets here. The broker clamps it
   // instead (GrantLedger.socketAllowance), so raising or lowering the platform

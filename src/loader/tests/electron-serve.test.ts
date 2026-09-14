@@ -35,12 +35,24 @@ function fakeSession (): Session & { calls: { unhandle: string[], handle: string
   } as unknown as Session & { calls: { unhandle: string[], handle: string[] }, handlers: Map<string, AppRequestHandler> }
 }
 
-/** A real pinned bundle on disk, at `origin` -- shared by every describe
+/**
+ * A real pinned bundle on disk, at `origin` -- shared by every describe
  * block below that needs a genuinely servable app rather than just a
- * registration call. */
-async function pinRealOrigin (storage: ReturnType<typeof nodeLoaderStorage>, origin: string): Promise<void> {
+ * registration call. `manifestOverrides` lets a caller pin a manifest that
+ * actually DECLARES a capability (A158): the pinned bundle's own manifest is
+ * what `GrantLedger.hydrateFromPinnedManifest` re-validates a restored grant
+ * against, so a test proving that hydration needs the two to agree, the same
+ * way a real install always would -- unlike `manifestJson()`'s bare default
+ * (`capabilities: {}`), which is deliberately what every OTHER test here,
+ * uninterested in hydration, still gets by omitting the argument.
+ */
+async function pinRealOrigin (
+  storage: ReturnType<typeof nodeLoaderStorage>,
+  origin: string,
+  manifestOverrides: Record<string, unknown> = {}
+): Promise<void> {
   const entries = [
-    { path: '/.well-known/orivon.json', content: utf8(manifestJson()) },
+    { path: '/.well-known/orivon.json', content: utf8(manifestJson(manifestOverrides)) },
     { path: '/index.html', content: utf8('<h1>hi</h1>') }
   ]
   const tree = await bundleTree(entries)
@@ -49,20 +61,21 @@ async function pinRealOrigin (storage: ReturnType<typeof nodeLoaderStorage>, ori
 }
 
 /**
- * A minimal `Broker` stub -- `app.grants` and `app.isRegisteredSync` are
- * both real call sites on this path now (`headerPatternsFor` checks
- * hydration before trusting the live grant, A158), so both need an
- * implementation; `isRegisteredSync` answers `true` here because every test
- * using this fixture is about the ORDINARY, already-hydrated case, not
- * A158's own restart window (that gets its own real `createBroker` fixture
- * below, `brokerRestartedWithAPersistedGrant`).
+ * A minimal `Broker` stub -- `app.grants` is the real call site on this path
+ * (`liveGrantedPatternsFor` reads it directly, A158). `hydrateFromPinnedManifest`
+ * is a no-op here: every test using this fixture passes a `broker` straight
+ * to `registerServingFor`/`createAppRequestHandler` without a real pinned
+ * bundle behind it in most cases, so there is nothing for the real hydration
+ * seam to do -- `restorePinnedServing across a restart` below exercises that
+ * seam itself, against a REAL `createBroker`, not this stub.
  */
 function fakeBroker (grants: readonly Grant[]): Broker {
   return {
     app: {
       grants: vi.fn(async () => grants),
       isRegisteredSync: () => true,
-      persistedAppsSync: () => []
+      persistedAppsSync: () => [],
+      hydrateFromPinnedManifest: vi.fn(async () => {})
     }
   } as unknown as Broker
 }
@@ -244,7 +257,9 @@ describe('registerServingFor -- the served bundle\'s CSP reads the LIVE broker g
 
     const grant: Grant = { id: 'g1', origin: 'https://app.example', capability: 'tcp.connect', patterns: ['api.example.com:443'], grantedAt: 0 }
     const grantsSpy = vi.fn(async () => [grant])
-    const broker = { app: { grants: grantsSpy, isRegisteredSync: () => true, persistedAppsSync: () => [] } } as unknown as Broker
+    const broker = {
+      app: { grants: grantsSpy, isRegisteredSync: () => true, persistedAppsSync: () => [], hydrateFromPinnedManifest: vi.fn(async () => {}) }
+    } as unknown as Broker
     await registerServingFor(storage, 'https://app.example', broker)
     const handler = session.handlers.get('https')
     if (handler === undefined) throw new Error('no handler was registered')
@@ -269,7 +284,12 @@ describe('registerServingFor -- the served bundle\'s CSP reads the LIVE broker g
     const { registerServingFor } = await import('../electron-serve.js')
 
     const broker = {
-      app: { grants: vi.fn(async () => { throw new Error('ledger read failed') }), isRegisteredSync: () => true, persistedAppsSync: () => [] }
+      app: {
+        grants: vi.fn(async () => { throw new Error('ledger read failed') }),
+        isRegisteredSync: () => true,
+        persistedAppsSync: () => [],
+        hydrateFromPinnedManifest: vi.fn(async () => {})
+      }
     } as unknown as Broker
     await registerServingFor(storage, 'https://app.example', broker)
     const handler = session.handlers.get('https')
@@ -319,101 +339,121 @@ describe('isOriginServedFromCache -- the address bar\'s S4-6 provenance signal',
   })
 })
 
-describe('restorePinnedServing across a restart -- a real, persisted grant is not yet readable (A158)', () => {
+describe('restorePinnedServing across a restart -- A158, resolved for every directive via early hydration', () => {
   // A158 (docs/open-questions.md): restorePinnedServing runs in
-  // loaderSubsystem.afterReady BEFORE any window exists, so the ledger it
-  // hands to registerServingFor has never had registerApp called on THIS
-  // origin THIS run -- registerApp's only production callers fire after a
-  // page has already loaded and reported its manifest hint. GrantLedger's
-  // own `grantsHydrated` doc says a persisted grant becomes readable only
-  // on that first registerApp call, because re-validating it needs a
-  // manifest. This suite uses a REAL GrantLedger/createBroker against a
-  // REAL LedgerStorage double, not the fakeBroker stub above, so it proves
-  // the defect against the actual hydration mechanism, not an assumption
-  // about it.
+  // loaderSubsystem.afterReady BEFORE any window exists. Before this lane,
+  // the ledger it handed to registerServingFor had never had registerApp
+  // called on THIS origin THIS run, so every persisted grant read back as
+  // [] until a page loaded and reported its manifest hint. This lane makes
+  // registerServingFor hydrate GrantLedger from the PINNED, hash-verified
+  // manifest (GrantLedger.hydrateFromPinnedManifest) before it ever
+  // registers a handler that could answer a request -- so this suite now
+  // proves grants are live from the very first request, using a REAL
+  // GrantLedger/createBroker against a REAL LedgerStorage double, not the
+  // fakeBroker stub above, the same way it proved the defect before.
   const ORIGIN = 'https://app.example'
   const GRANTED_PATTERNS = ['api.example.com:443']
-
   const SECURE_GRANTED_PATTERNS = ['granted.example:443']
 
-  async function brokerRestartedWithAPersistedGrant (): Promise<{ ledgerStorage: ReturnType<typeof memoryLedgerStorage>, broker: Broker }> {
+  /**
+   * Simulates a real restart for one capability: session 1 installs, pins
+   * and grants; session 2 is a fresh GrantLedger over the SAME persisted
+   * storage, exactly what `loaderSubsystem.afterReady` constructs before any
+   * window exists. `capabilities` is written into BOTH the pinned bundle's
+   * own manifest (`pinRealOrigin`) and the session-1 `registerApp` call --
+   * they MUST agree, because `hydrateFromPinnedManifest` re-validates a
+   * restored grant against exactly the manifest the pinned bundle carries,
+   * the same way `registerApp` always has (A158, A137).
+   */
+  async function restartedWithAPersistedGrant (
+    storage: ReturnType<typeof nodeLoaderStorage>,
+    capabilities: Parameters<typeof manifestWith>[0],
+    capability: 'tcp.connect' | 'https.connect',
+    patterns: readonly string[]
+  ): Promise<{ ledgerStorage: ReturnType<typeof memoryLedgerStorage>, broker: Broker }> {
+    await pinRealOrigin(storage, ORIGIN, { capabilities })
+
     // Session 1: the app was really installed and really granted, by a
     // person, and that landed on disk (persistGrants, A23).
     const ledgerStorage = memoryLedgerStorage()
     const firstRun = createBroker(baseDeps({ ledgerStorage }))
-    firstRun.registerApp(ORIGIN, manifestWith({ net: { tcp: { connect: GRANTED_PATTERNS } } }))
-    await firstRun.grant(ORIGIN, 'tcp.connect', GRANTED_PATTERNS)
+    firstRun.registerApp(ORIGIN, manifestWith(capabilities))
+    await firstRun.grant(ORIGIN, capability, patterns)
 
-    // Session 2: a restart. A fresh GrantLedger, same persisted storage --
-    // exactly what loaderSubsystem.afterReady constructs before any window
-    // exists (src/broker/transport/ipc.ts wires the real equivalent).
+    // Session 2: a restart. A fresh GrantLedger, same persisted storage.
     return { ledgerStorage, broker: createBroker(baseDeps({ ledgerStorage })) }
   }
 
-  /** Same shape as `brokerRestartedWithAPersistedGrant`, but `https.connect` -- the ONE capability this lane's own A158 fix actually widens the header for. */
-  async function brokerRestartedWithAPersistedSecureGrant (): Promise<{ ledgerStorage: ReturnType<typeof memoryLedgerStorage>, broker: Broker }> {
-    const ledgerStorage = memoryLedgerStorage()
-    const firstRun = createBroker(baseDeps({ ledgerStorage }))
-    firstRun.registerApp(ORIGIN, manifestWith({ net: { https: { connect: SECURE_GRANTED_PATTERNS } } }))
-    await firstRun.grant(ORIGIN, 'https.connect', SECURE_GRANTED_PATTERNS)
-    return { ledgerStorage, broker: createBroker(baseDeps({ ledgerStorage })) }
-  }
-
-  it('A158 STILL OPEN FOR connect-src: a persisted, not-yet-hydrated tcp.connect grant does NOT widen connect-src -- WebSocket has no live re-check behind it (see grantedConnectPatternsFor\'s own doc)', async () => {
+  it('THE GRANT IS LIVE, NOT JUST DISPLAYED: broker.app.grants(ORIGIN) already holds the real, persisted tcp.connect AND https.connect grants right after restorePinnedServing -- before any registerApp call', async () => {
     const userData = await mkdtemp(join(tmpdir(), 'orivon-restart-csp-'))
     const storage = nodeLoaderStorage(userData)
-    await pinRealOrigin(storage, ORIGIN)
-    const { broker } = await brokerRestartedWithAPersistedGrant()
+    const capabilities = { net: { tcp: { connect: GRANTED_PATTERNS }, https: { connect: SECURE_GRANTED_PATTERNS } } }
+    await pinRealOrigin(storage, ORIGIN, { capabilities })
+    const ledgerStorage = memoryLedgerStorage()
+    const firstRun = createBroker(baseDeps({ ledgerStorage }))
+    firstRun.registerApp(ORIGIN, manifestWith(capabilities))
+    await firstRun.grant(ORIGIN, 'tcp.connect', GRANTED_PATTERNS)
+    await firstRun.grant(ORIGIN, 'https.connect', SECURE_GRANTED_PATTERNS)
+    const broker = createBroker(baseDeps({ ledgerStorage })) // the "restart"
 
     const session = fakeSession()
     vi.doMock('electron', () => ({ session: { fromPartition: () => session } }))
     const { restorePinnedServing } = await import('../electron-serve.js')
-
     await restorePinnedServing(storage, broker)
-    const handler = session.handlers.get('https')
-    if (handler === undefined) throw new Error('no handler was registered')
 
-    const response = await handler(new Request(`${ORIGIN}/`))
-
-    // The grant above is real and persisted, but broker.app.grants(ORIGIN)
-    // reads GrantLedger.grantsFor, which returns [] until this origin's
-    // grantsHydrated flag is set -- and nothing has called registerApp on
-    // THIS broker instance yet, so it never has been. connect-src stays
-    // 'self'-only here, DELIBERATELY: widening it from disk would widen a
-    // REAL authorisation for WebSocket, which nothing re-checks live.
-    expect(response.headers.get('content-security-policy')).toBe(
-      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; " +
-      "img-src 'self'; font-src 'self'; media-src 'self'"
-    )
+    // This is the SAME read `net-capability.ts`'s real orivon.net.connect/
+    // connectSecure check performs (ledger.currentGrant) -- not merely a
+    // header computation. registerApp was never called on this broker.
+    const grants = await broker.app.grants(ORIGIN)
+    expect(grants.find((g) => g.capability === 'tcp.connect')?.patterns).toEqual(GRANTED_PATTERNS)
+    expect(grants.find((g) => g.capability === 'https.connect')?.patterns).toEqual(SECURE_GRANTED_PATTERNS)
 
     vi.doUnmock('electron')
   })
 
-  it('A158 RESOLVED FOR THE HEADER: serves the first document with img-src/font-src/media-src already widened to a real, persisted https.connect grant this run has not yet re-validated', async () => {
+  it('A158 RESOLVED FOR connect-src: a real, persisted tcp.connect grant already widens the FIRST served document\'s connect-src -- no reload, no registerApp call', async () => {
     const userData = await mkdtemp(join(tmpdir(), 'orivon-restart-csp-'))
     const storage = nodeLoaderStorage(userData)
-    await pinRealOrigin(storage, ORIGIN)
-    const { broker } = await brokerRestartedWithAPersistedSecureGrant()
+    const { broker } = await restartedWithAPersistedGrant(
+      storage, { net: { tcp: { connect: GRANTED_PATTERNS } } }, 'tcp.connect', GRANTED_PATTERNS
+    )
 
     const session = fakeSession()
     vi.doMock('electron', () => ({ session: { fromPartition: () => session } }))
     const { restorePinnedServing } = await import('../electron-serve.js')
-
     await restorePinnedServing(storage, broker)
     const handler = session.handlers.get('https')
     if (handler === undefined) throw new Error('no handler was registered')
 
     const response = await handler(new Request(`${ORIGIN}/`))
 
-    // Before this lane, this would have been falsely 'self'-only for the
-    // SAME reason as the tcp.connect test above -- `secureHeaderPatternsFor`
-    // (electron-serve.ts) now falls back to the persisted state instead,
-    // safe to do ONLY because every request img-src/font-src/media-src can
-    // cause is an ordinary same-scheme http(s) subresource load, which
-    // ALWAYS reaches fetchThirdParty's own live check (unlike WebSocket
-    // above) -- see AuthoriseReach's own doc, serve.ts. The live gate still,
-    // separately, refuses an actual request until hydration really happens
-    // (the next test).
+    // Before this lane, this stayed falsely 'self'-only: broker.app.grants
+    // read GrantLedger.grantsFor, which returned [] until registerApp had
+    // run. registerServingFor now hydrates from the pinned, hash-verified
+    // manifest before this handler was ever registered -- widening this is
+    // no longer widening from anything unverified (A137's objection does
+    // not apply to a hash-pinned leaf).
+    expect(response.headers.get('content-security-policy')).toContain("connect-src 'self' api.example.com:443")
+
+    vi.doUnmock('electron')
+  })
+
+  it('A158 RESOLVED FOR img-src/font-src/media-src: a real, persisted https.connect grant already widens the FIRST served document\'s header the same way', async () => {
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-restart-csp-'))
+    const storage = nodeLoaderStorage(userData)
+    const { broker } = await restartedWithAPersistedGrant(
+      storage, { net: { https: { connect: SECURE_GRANTED_PATTERNS } } }, 'https.connect', SECURE_GRANTED_PATTERNS
+    )
+
+    const session = fakeSession()
+    vi.doMock('electron', () => ({ session: { fromPartition: () => session } }))
+    const { restorePinnedServing } = await import('../electron-serve.js')
+    await restorePinnedServing(storage, broker)
+    const handler = session.handlers.get('https')
+    if (handler === undefined) throw new Error('no handler was registered')
+
+    const response = await handler(new Request(`${ORIGIN}/`))
+
     expect(response.headers.get('content-security-policy')).toBe(
       "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; " +
       "img-src 'self' granted.example:443; font-src 'self' granted.example:443; media-src 'self' granted.example:443"
@@ -422,106 +462,131 @@ describe('restorePinnedServing across a restart -- a real, persisted grant is no
     vi.doUnmock('electron')
   })
 
-  it('A158 STILL REAL FOR THE LIVE GATE: an actual third-party https.connect request is still refused during that same unhydrated window, even though the header above already claims wider reach', async () => {
+  it('THE LIVE GATE ALSO WORKS, NOT JUST THE HEADER: a real third-party https.connect request to the granted host SUCCEEDS on the very first request after a restart', async () => {
     const userData = await mkdtemp(join(tmpdir(), 'orivon-restart-csp-'))
     const storage = nodeLoaderStorage(userData)
-    await pinRealOrigin(storage, ORIGIN)
-    const { broker } = await brokerRestartedWithAPersistedSecureGrant()
+    const { broker } = await restartedWithAPersistedGrant(
+      storage, { net: { https: { connect: SECURE_GRANTED_PATTERNS } } }, 'https.connect', SECURE_GRANTED_PATTERNS
+    )
 
     const session = fakeSession()
+    // `nodeReachDial` is a STATIC top-level import in electron-serve.ts, not
+    // a per-call `await import(...)` like 'electron' -- so it is bound once,
+    // whenever that module is first linked. Every earlier test in this file
+    // already imported it (unmocked), so mocking `serve-reach.js` alone
+    // would not reach that stale binding; resetModules forces a fresh link.
+    vi.resetModules()
     vi.doMock('electron', () => ({ session: { fromPartition: () => session } }))
+    vi.doMock('../serve-reach.js', () => ({
+      nodeReachDial: () => async (_request: Request, _host: string, _port: number) => new Response('granted bytes', { status: 200 })
+    }))
     const { restorePinnedServing } = await import('../electron-serve.js')
-
     await restorePinnedServing(storage, broker)
     const handler = session.handlers.get('https')
     if (handler === undefined) throw new Error('no handler was registered')
 
+    // Before this lane, authoriseReachFor's live read of broker.app.grants
+    // came back empty during this exact window and this request was
+    // refused with a 404, even though the header above already claimed
+    // wider reach (the whole point A158 named as still real and dangerous).
+    // It is no longer empty: the grant was hydrated before this handler was
+    // ever registered.
     const response = await handler(new Request('https://granted.example/font.woff2'))
+    expect(response.status).toBe(200)
+    expect(await response.text()).toBe('granted bytes')
 
-    // authoriseReachFor (electron-serve.ts) deliberately has NO disk
-    // fallback (A137) -- an unhydrated origin's live https.connect grant is
-    // genuinely empty right now, so this is refused for real, exactly as it
-    // would be for a host never granted at all.
+    vi.doUnmock('../serve-reach.js')
+    vi.doUnmock('electron')
+  })
+
+  it('THE OWNER\'S POINT, END TO END: a later real registerApp call with a manifest that no longer declares the capability drops it, even though it was already live from the pinned one', async () => {
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-restart-csp-'))
+    const storage = nodeLoaderStorage(userData)
+    const { broker } = await restartedWithAPersistedGrant(
+      storage, { net: { tcp: { connect: GRANTED_PATTERNS } } }, 'tcp.connect', GRANTED_PATTERNS
+    )
+
+    const session = fakeSession()
+    vi.doMock('electron', () => ({ session: { fromPartition: () => session } }))
+    const { restorePinnedServing } = await import('../electron-serve.js')
+    await restorePinnedServing(storage, broker)
+    const handler = session.handlers.get('https')
+    if (handler === undefined) throw new Error('no handler was registered')
+
+    const beforeRegisterApp = await handler(new Request(`${ORIGIN}/`))
+    expect(beforeRegisterApp.headers.get('content-security-policy')).toContain('api.example.com:443')
+
+    // The page loads, reports its manifest hint, and the real manifest --
+    // fetched fresh over the network -- no longer declares net.tcp.connect
+    // at all. The owner's own reasoning: a manifest change is itself enough
+    // to restart the status of permissions, so this must be authoritative,
+    // dropping what the pinned manifest still had.
+    broker.registerApp(ORIGIN, manifestWith({}))
+
+    const afterRegisterApp = await handler(new Request(`${ORIGIN}/`))
+    expect(afterRegisterApp.headers.get('content-security-policy')).not.toContain('api.example.com')
+
+    vi.doUnmock('electron')
+  })
+
+  it('A LATER MANIFEST THAT NO LONGER COVERS THE FULL GRANTED PATTERN SET DROPS THE WHOLE CAPABILITY (all-or-nothing, GrantLedger\'s own pre-existing rule -- decideGrantRequest never narrows to a subset)', async () => {
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-restart-csp-'))
+    const storage = nodeLoaderStorage(userData)
+    const bothHosts = ['api.example.com:443', 'second.example.com:443']
+    const { broker } = await restartedWithAPersistedGrant(
+      storage, { net: { tcp: { connect: bothHosts } } }, 'tcp.connect', bothHosts
+    )
+
+    const session = fakeSession()
+    vi.doMock('electron', () => ({ session: { fromPartition: () => session } }))
+    const { restorePinnedServing } = await import('../electron-serve.js')
+    await restorePinnedServing(storage, broker)
+    const handler = session.handlers.get('https')
+    if (handler === undefined) throw new Error('no handler was registered')
+
+    const beforeRegisterApp = await handler(new Request(`${ORIGIN}/`))
+    expect(beforeRegisterApp.headers.get('content-security-policy')).toContain("connect-src 'self' api.example.com:443 second.example.com:443")
+
+    // The fresh manifest declares LESS than the persisted grant held --
+    // `decideGrantRequest`'s existing widensAuthority check refuses the
+    // WHOLE capability rather than narrowing it to the covered subset, the
+    // same all-or-nothing rule an ordinary (non-pinned) restore has always
+    // applied. This lane changes WHEN that check runs, never what it does.
+    broker.registerApp(ORIGIN, manifestWith({ net: { tcp: { connect: GRANTED_PATTERNS } } }))
+
+    const afterRegisterApp = await handler(new Request(`${ORIGIN}/`))
+    expect(afterRegisterApp.headers.get('content-security-policy')).toContain("connect-src 'self';")
+    expect(afterRegisterApp.headers.get('content-security-policy')).not.toContain('example.com')
+
+    vi.doUnmock('electron')
+  })
+
+  it('DOES NOT WIDEN AN ORIGIN WHOSE PIN FAILS RE-VERIFICATION -- a tampered bundle gets nothing hydrated and stays denied', async () => {
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-restart-csp-'))
+    const storage = nodeLoaderStorage(userData)
+    const { broker } = await restartedWithAPersistedGrant(
+      storage, { net: { tcp: { connect: GRANTED_PATTERNS } } }, 'tcp.connect', GRANTED_PATTERNS
+    )
+    // Tampered AFTER pinning, but BEFORE the restart's restorePinnedServing
+    // call -- verifyPinnedTree must refuse this bundle, and nothing may be
+    // hydrated from a manifest this codebase never proved unchanged.
+    await storage.writeAsset(ORIGIN, '/index.html', utf8('tampered'))
+
+    const session = fakeSession()
+    vi.doMock('electron', () => ({ session: { fromPartition: () => session } }))
+    const { restorePinnedServing } = await import('../electron-serve.js')
+    await restorePinnedServing(storage, broker)
+
+    expect(await broker.app.grants(ORIGIN)).toEqual([])
+    const handler = session.handlers.get('https')
+    if (handler === undefined) throw new Error('no handler was registered')
+    const response = await handler(new Request(`${ORIGIN}/`))
     expect(response.status).toBe(404)
 
     vi.doUnmock('electron')
   })
 
-  it('THE RECOVERY PATH: once registerApp runs for this origin (the normal manifest-hint flow), the SAME already-registered handler reflects the real grant on its very next request -- no re-registration', async () => {
-    const userData = await mkdtemp(join(tmpdir(), 'orivon-restart-csp-'))
-    const storage = nodeLoaderStorage(userData)
-    await pinRealOrigin(storage, ORIGIN)
-    const { broker } = await brokerRestartedWithAPersistedGrant()
-
-    const session = fakeSession()
-    vi.doMock('electron', () => ({ session: { fromPartition: () => session } }))
-    const { restorePinnedServing } = await import('../electron-serve.js')
-
-    await restorePinnedServing(storage, broker)
-    const handler = session.handlers.get('https')
-    if (handler === undefined) throw new Error('no handler was registered')
-
-    // A person reloads (or the tab simply navigates again) after the page's
-    // own manifest hint has been reported and the normal flow has called
-    // registerApp with a freshly fetched manifest -- app-install.ts's real
-    // production path, simulated here directly on the SAME broker instance
-    // restorePinnedServing was given above.
-    broker.registerApp(ORIGIN, manifestWith({ net: { tcp: { connect: GRANTED_PATTERNS } } }))
-
-    const response = await handler(new Request(`${ORIGIN}/`))
-
-    // This is what makes "a reload fixes it" true rather than assumed:
-    // registerServingFor's handler closure reads broker.app.grants(ORIGIN)
-    // fresh on every request (electron-serve.ts's own doc on
-    // grantedConnectPatternsFor), so the SAME handler this suite's sibling
-    // test found serving 'self'-only now answers with the real grant, with
-    // no re-registration and no new protocol.handle call.
-    expect(response.headers.get('content-security-policy')).toContain('api.example.com:443')
-
-    vi.doUnmock('electron')
-  })
-
-  it('THE HONEST PART: logs a diagnostic naming the origin when a real https.connect grant was widened only in the header, since the live gate still starts narrow', async () => {
-    const userData = await mkdtemp(join(tmpdir(), 'orivon-restart-csp-'))
-    const storage = nodeLoaderStorage(userData)
-    await pinRealOrigin(storage, ORIGIN)
-    const { broker } = await brokerRestartedWithAPersistedSecureGrant()
-
-    const session = fakeSession()
-    vi.doMock('electron', () => ({ session: { fromPartition: () => session } }))
-    const { restorePinnedServing } = await import('../electron-serve.js')
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-
-    await restorePinnedServing(storage, broker)
-
-    expect(warnSpy).toHaveBeenCalledWith(
-      '[loader]', ORIGIN, expect.stringContaining('not yet re-validated'), expect.any(String), expect.stringContaining('A158')
-    )
-
-    warnSpy.mockRestore()
-    vi.doUnmock('electron')
-  })
-
-  it('logs nothing for an origin whose only persisted, not-yet-hydrated grant is tcp.connect -- nothing this lane touches was actually widened for it', async () => {
-    const userData = await mkdtemp(join(tmpdir(), 'orivon-restart-csp-'))
-    const storage = nodeLoaderStorage(userData)
-    await pinRealOrigin(storage, ORIGIN)
-    const { broker } = await brokerRestartedWithAPersistedGrant()
-
-    const session = fakeSession()
-    vi.doMock('electron', () => ({ session: { fromPartition: () => session } }))
-    const { restorePinnedServing } = await import('../electron-serve.js')
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-
-    await restorePinnedServing(storage, broker)
-
-    expect(warnSpy).not.toHaveBeenCalled()
-
-    warnSpy.mockRestore()
-    vi.doUnmock('electron')
-  })
-
-  it('logs nothing for an origin with no persisted grant at all -- the ordinary case must stay quiet', async () => {
+  it('DOES NOT WIDEN AN ORIGIN WITH NO PERSISTED GRANT AT ALL -- the ordinary case stays exactly self-only', async () => {
     const userData = await mkdtemp(join(tmpdir(), 'orivon-restart-csp-'))
     const storage = nodeLoaderStorage(userData)
     await pinRealOrigin(storage, ORIGIN)
@@ -532,31 +597,17 @@ describe('restorePinnedServing across a restart -- a real, persisted grant is no
     const session = fakeSession()
     vi.doMock('electron', () => ({ session: { fromPartition: () => session } }))
     const { restorePinnedServing } = await import('../electron-serve.js')
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-
     await restorePinnedServing(storage, broker)
 
-    expect(warnSpy).not.toHaveBeenCalled()
+    expect(await broker.app.grants(ORIGIN)).toEqual([])
+    const handler = session.handlers.get('https')
+    if (handler === undefined) throw new Error('no handler was registered')
+    const response = await handler(new Request(`${ORIGIN}/`))
+    expect(response.headers.get('content-security-policy')).toBe(
+      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; " +
+      "img-src 'self'; font-src 'self'; media-src 'self'"
+    )
 
-    warnSpy.mockRestore()
-    vi.doUnmock('electron')
-  })
-
-  it('logs nothing with no broker at all -- there is no ledger to have missed hydrating', async () => {
-    const userData = await mkdtemp(join(tmpdir(), 'orivon-restart-csp-'))
-    const storage = nodeLoaderStorage(userData)
-    await pinRealOrigin(storage, ORIGIN)
-
-    const session = fakeSession()
-    vi.doMock('electron', () => ({ session: { fromPartition: () => session } }))
-    const { restorePinnedServing } = await import('../electron-serve.js')
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-
-    await restorePinnedServing(storage)
-
-    expect(warnSpy).not.toHaveBeenCalled()
-
-    warnSpy.mockRestore()
     vi.doUnmock('electron')
   })
 })

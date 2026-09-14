@@ -211,9 +211,11 @@ it(
         // and e2e-csp-connect-src.test.ts's own evaluate callback share.
         // AN <img> ELEMENT, NOT AN XHR: `img-src`/`font-src`/`media-src` are
         // what this PR actually widens (this file's own earlier check,
-        // above) -- `connect-src` is UNCHANGED, still `tcp.connect`-only
-        // (A158's own STILL-OPEN half), so an XHR here would be refused by
-        // CSP's `connect-src` before ever reaching `fetchThirdParty` at
+        // above) -- `connect-src` is sourced from `tcp.connect` alone, a
+        // SEPARATE grant this fixture never holds (A143/ADR-0017's own
+        // split), unaffected by whether A158's restart-hydration gap is
+        // open or closed, so an XHR here would be refused by CSP's
+        // `connect-src` before ever reaching `fetchThirdParty` at
         // all, proving nothing about img-src. (Found running this file the
         // first time: both XHRs settled with `status: 0` and NEITHER real
         // server saw a connection -- a CSP-level refusal, not a policy

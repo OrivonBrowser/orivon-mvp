@@ -4,6 +4,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { parseManifest } from '../manifest.js'
+import type { NetCapability } from '../../contracts/index.js'
 
 function manifestWith (net: unknown): unknown {
   return {
@@ -16,7 +17,7 @@ function manifestWith (net: unknown): unknown {
   }
 }
 
-function parsed (net: unknown): { concurrentSockets?: number } {
+function parsed (net: unknown): NetCapability {
   const result = parseManifest(JSON.stringify(manifestWith(net)))
   if (!result.ok) throw new Error(`expected the manifest to parse, and it was rejected: ${result.reason}`)
   return result.manifest.capabilities.net ?? {}
@@ -71,5 +72,53 @@ describe('capabilities.net.concurrentSockets', () => {
 
   it('still rejects an unrecognised sibling field, so the new key did not widen the object', () => {
     expect(rejection({ concurrentSockets: 12, wat: 1 })).toContain('unrecognised')
+  })
+})
+
+// capabilities.net.https -- contracts/manifest.ts's HttpsCapability has
+// always declared this field (`https.connect`, ADR-0017's separate,
+// hostname-matched grant); this loader-side reader never implemented it.
+// Found while building A158's hydration tests, which need a REAL pinned
+// manifest that actually declares https.connect for GrantLedger's
+// re-validation to have anything to check against -- every existing test
+// exercising https.connect (serve.test.ts, electron-serve.test.ts) injected
+// the grant as a raw callback, never through a real declared-and-parsed
+// manifest, so this gap had no test that could have caught it. Filed as
+// A164 (docs/open-questions.md): independent of A158's own mechanism, but
+// blocking, since without it no real app could ever install (fetch-bundle.ts
+// calls this SAME parseManifest) with https.connect in its manifest at all.
+describe('capabilities.net.https.connect (A164)', () => {
+  it('is accepted, same host:port syntax as tcp.connect', () => {
+    expect(parsed({ https: { connect: ['api.example.com:443'] } }).https?.connect).toEqual(['api.example.com:443'])
+  })
+
+  it('accepts "*:*", the same unlimited-HTTPS declaration tcp.connect allows (ADR-0017)', () => {
+    expect(parsed({ https: { connect: ['*:*'] } }).https?.connect).toEqual(['*:*'])
+  })
+
+  it('is optional -- omitting it is not an error', () => {
+    expect(parsed({}).https).toBeUndefined()
+  })
+
+  it('sits alongside tcp, udp and concurrentSockets rather than replacing them', () => {
+    const outcome = parseManifest(JSON.stringify(manifestWith({
+      tcp: { connect: ['*:*'] }, https: { connect: ['cdn.example.com:443'] }, concurrentSockets: 12
+    })))
+    if (!outcome.ok) throw new Error(outcome.reason)
+    expect(outcome.manifest.capabilities.net?.tcp?.connect).toEqual(['*:*'])
+    expect(outcome.manifest.capabilities.net?.https?.connect).toEqual(['cdn.example.com:443'])
+    expect(outcome.manifest.capabilities.net?.concurrentSockets).toBe(12)
+  })
+
+  it('rejects the same malformed host:port patterns tcp.connect already rejects -- one grammar, not two', () => {
+    expect(rejection({ https: { connect: ['not a valid pattern'] } })).toContain('https.connect')
+  })
+
+  it('rejects an unrecognised sibling field inside https, so the new key did not widen the object', () => {
+    expect(rejection({ https: { connect: ['api.example.com:443'], wat: 1 } })).toContain('unrecognised')
+  })
+
+  it('rejects a non-object https value', () => {
+    expect(rejection({ https: 'nope' })).toContain('https')
   })
 })
