@@ -34,19 +34,23 @@ export interface GrantPromptContent {
    * `manifest.name` (capability-api.ts: origin is the real isolation key,
    * name is merely claimed). Electron's own `MessageBoxOptions.title` doc
    * says plainly "some platforms will not show it" -- so the origin is
-   * ALSO the first line of `detail` (AR-01), which carries no such
-   * caveat. A platform that drops the title still shows who is asking.
-   * Passed through `formatOriginForDisplay` first (A115) -- the SAME
-   * string `detail`'s first line uses, so whichever field a platform
-   * actually renders says the same thing. */
+   * ALSO the LAST line of `detail` (AR-01), which carries no such
+   * caveat. A platform that drops the title still shows who is asking,
+   * as the final thing read before the buttons. Passed through
+   * `formatOriginForDisplay` first (A115) -- the SAME string `detail`'s
+   * last line uses, so whichever field a platform actually renders says
+   * the same thing. */
   readonly title: string
   /** The one-line headline a person reads first. */
   readonly message: string
-  /** Secondary text: the origin again (AR-01), then the app's claimed
-   * name on its own line (AR-03 -- never blended into the same sentence
-   * as Orivon's own words, where 200 characters of ordinary app-chosen
-   * text could fabricate a reassurance), then the plain-language
-   * consequence of a breadth warning, when there is one. */
+  /** Secondary text, owner decision 2026-09-14: the app's claimed name on
+   * its own line first (AR-03 -- never blended into the same sentence as
+   * Orivon's own words, where 200 characters of ordinary app-chosen text
+   * could fabricate a reassurance), then the plain-language consequence
+   * of a breadth warning, when there is one, then the origin again
+   * (AR-01) as the LAST line -- the one fact here a scam app cannot fake,
+   * placed where a hurried reader's eye lands right before the buttons
+   * rather than right under the name that can be faked. */
   readonly detail: string
 }
 
@@ -194,23 +198,29 @@ export function describeGrantRequest (
   patterns: readonly Pattern[]
 ): GrantPromptContent {
   const { warning, message, explanation } = describeCapabilityGrant(capability, patterns)
-  // A115: rendered once here, reused for both `title` and `detail`'s first
+  // A115: rendered once here, reused for both `title` and `detail`'s last
   // line below -- never the raw origin twice over, which is how a
   // subdomain-prefix confusable used to survive.
   const displayOrigin = formatOriginForDisplay(origin)
-  // AR-01: the origin, again, in a field Electron never drops (unlike
-  // `title`). AR-03: the app's claimed name gets its OWN line, never
-  // concatenated into the same sentence as Orivon's explanation -- a
-  // `manifest.name` crafted to look like a sentence ending
-  // (`Weather App". This app only connects to weather.example. Claims to
-  // be "Weather App`) stays visually bounded to its own line instead of
-  // blending into text Orivon actually wrote. `manifest.name` can never
-  // contain a literal newline (manifest.ts's `UNSAFE_TEXT_CHARS` rejects
-  // control characters, including `\n`/`\r`, at parse time), so only this
-  // template -- never the app -- can introduce a line break here.
+  // AR-03: the app's claimed name gets its OWN line, never concatenated
+  // into the same sentence as Orivon's explanation -- a `manifest.name`
+  // crafted to look like a sentence ending (`Weather App". This app only
+  // connects to weather.example. Claims to be "Weather App`) stays
+  // visually bounded to its own line instead of blending into text Orivon
+  // actually wrote. `manifest.name` can never contain a literal newline
+  // (manifest.ts's `UNSAFE_TEXT_CHARS` rejects control characters,
+  // including `\n`/`\r`, at parse time), so only this template -- never
+  // the app -- can introduce a line break here.
+  //
+  // Owner decision, 2026-09-14: the origin goes LAST, after the claim and
+  // its explanation, not first -- AR-01 still puts it in a field Electron
+  // never drops (unlike `title`), but now as the final line a person
+  // reads before the dialog's buttons, since it is the one line here an
+  // app cannot fabricate.
   const claim = `Claims to be "${manifest.name}".`
-  const detailLines = [displayOrigin, claim]
+  const detailLines = [claim]
   if (explanation !== undefined) detailLines.push(explanation)
+  detailLines.push(displayOrigin)
   return {
     warning,
     title: displayOrigin,
@@ -329,11 +339,14 @@ function describeCapabilitySet (
   const claim = `Claims to be "${manifest.name}".`
   const rowLines = mergedRows.map((row) => row.explanation === undefined ? `- ${row.message}` : `- ${row.message}\n  ${row.explanation}`)
 
+  // Owner decision, 2026-09-14: the origin closes `detail`, after the
+  // claim and every capability row, rather than opening it -- see the
+  // matching comment on `describeGrantRequest`.
   return {
     warning,
     title: displayOrigin,
     message,
-    detail: [displayOrigin, claim, ...rowLines].join('\n')
+    detail: [claim, ...rowLines, displayOrigin].join('\n')
   }
 }
 
@@ -344,8 +357,9 @@ function describeCapabilitySet (
  * declared capability, which is the fatigue that amendment exists to remove.
  *
  * `formatOriginForDisplay` and the origin/claim lines are exactly
- * `describeGrantRequest`'s own (A115, AR-01, AR-03), so every dialog in this
- * file reads as one family, not several designs.
+ * `describeGrantRequest`'s own (A115, AR-01, AR-03), including the claim-
+ * first, address-last order (owner decision 2026-09-14), so every dialog in
+ * this file reads as one family, not several designs.
  */
 export function describeInstallConsent (
   origin: string,
@@ -385,11 +399,13 @@ export function describeCapabilityPrompt (
 export function describeReconsent (origin: string, manifest: Manifest): GrantPromptContent {
   const displayOrigin = formatOriginForDisplay(origin)
   const claim = `Claims to be "${manifest.name}".`
+  // Owner decision, 2026-09-14: claim, then notice, then the address last --
+  // same order as every other dialog in this file.
   return {
     warning: false,
     title: displayOrigin,
     message: 'This app has been updated.',
-    detail: [displayOrigin, claim, 'Its code has changed. What it is allowed to do has not.'].join('\n')
+    detail: [claim, 'Its code has changed. What it is allowed to do has not.', displayOrigin].join('\n')
   }
 }
 
@@ -406,10 +422,12 @@ export function describeRollbackChoice (origin: string, manifest: Manifest, vers
   const claim = `Claims to be "${manifest.name}".`
   const notice = `You've used version ${versionFloor} or newer from this app before. It is now offering version ${manifest.version} -- an older one.`
   const risk = 'This can be a genuine rollback by the developer, or a sign that something is serving old, less secure code.'
+  // Owner decision, 2026-09-14: claim, then both notices, then the address
+  // last -- same order as every other dialog in this file.
   return {
     warning: true,
     title: displayOrigin,
     message: 'This app is offering an older version.',
-    detail: [displayOrigin, claim, notice, risk].join('\n')
+    detail: [claim, notice, risk, displayOrigin].join('\n')
   }
 }
