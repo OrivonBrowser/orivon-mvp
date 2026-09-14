@@ -122,6 +122,15 @@ jobs:
       - name: No duplicate entry number in docs/open-questions.md
         run: npm run check:questions
 
+      # An app author reads src/contracts/manifest.ts, uses a field it
+      # documents, and gets refused at install by a loader-side allowlist
+      # that never learned the field's name -- the exact failure mode
+      # docs/open-questions.md A164 and the consentGranularity gap both
+      # were. scripts/check-manifest-parity.mjs reads both sides from their
+      # real source text and fails when they disagree.
+      - name: Loader accepts every field the manifest contract declares
+        run: npm run check:manifest-parity
+
       - name: Build
         run: npm run build
 
