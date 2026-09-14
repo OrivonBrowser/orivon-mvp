@@ -255,22 +255,63 @@ google and the .com)".
   as `...attacker.example:8443`, silently losing "com" as well as the count); counting labels
   first and appending the port afterward means the port's length can never change which labels
   survive.
-- **The same elided string is used for BOTH `title` and `detail`'s first line, not a fuller
-  string in one and a shorter one in the other.** `detail` wraps in a native message box; `title`
-  does not, and per A127 may not render at all on some platforms. Showing the full,
-  un-elided origin in `detail` and relying on wrapping was considered and rejected for exactly
-  that asymmetry -- it would leave `title`, wherever it *does* render, showing a different (and
-  unprotected) string from `detail`. Using one function for both keeps them saying the same
-  thing on every platform, whichever field survives.
+- **The same elided string is used for BOTH `title` and `detail` (as of 2026-09-14, `detail`'s
+  LAST line -- see the entry below), not a fuller string in one and a shorter one in the
+  other.** `detail` wraps in a native message box; `title` does not, and per A127 may not render
+  at all on some platforms. Showing the full, un-elided origin in `detail` and relying on
+  wrapping was considered and rejected for exactly that asymmetry -- it would leave `title`,
+  wherever it *does* render, showing a different (and unprotected) string from `detail`. Using
+  one function for both keeps them saying the same thing on every platform, whichever field
+  survives.
 - **A127's core fix -- the origin duplicated into `detail`, a field Electron does not document as
   ever being dropped -- predates this lane** (already present as `AR-01` before A115 was filed).
   This change does not alter that mechanism; it only changes the rule both fields now apply.
   A127 stays open on its own remaining term: no macOS machine has confirmed the platform claim
   that motivated it, so "the title is not reliably shown" remains reasoned, not measured.
 - **Not done, and named so nobody re-derives it as new:** no attempt to mark the origin line as
-  "not a name you typed" beyond the contrast already created by the very next line (`Claims to
-  be "<name>"`). A dedicated label (`Website: ...`) was considered; left out as presentation
-  polish outside this lane's security floor, not as an oversight.
+  "not a name you typed" beyond the contrast already created by its own isolation as the last
+  line (see the address-last entry below). A dedicated label (`Website: ...`) was considered;
+  left out as presentation polish outside this lane's security floor, not as an oversight.
+
+**[`grant-prompt-render.ts`](grant-prompt-render.ts) -- the origin moved to the LAST line of
+`detail`, and the claimed name to the FIRST, across every dialog that shows one (owner decision
+2026-09-14, lane `stream/shell-07-address-last`).** Before this change every dialog in this file
+put the origin first and `Claims to be "<name>"` immediately under it -- the exact shape the
+owner flagged: `manifest.name` is app-chosen text a scam app can set to anything, and a person
+reading quickly took in the address, then read the friendly name right below it, and stopped
+there. The address is the one line in this box an app cannot fake; the name is the one line an
+app fully controls. Putting the fakeable line last, right before the buttons, is exactly backward
+from what the box should do.
+
+**The fix is a straight reordering, not a new field or a duplicate:** `detail`'s lines become
+claim, then whatever content that dialog already carried (a capability's `explanation`, a
+manifest's capability rows, an update notice), then the origin -- for every one of the four
+functions that build a `detail` string (`describeGrantRequest`, the shared `describeCapabilitySet`
+behind `describeInstallConsent`/`describeCapabilityPrompt`, `describeReconsent`,
+`describeRollbackChoice`). `title` is untouched -- still the origin, per AR-01's own reasoning
+that Electron may not render `title` at all, so `detail` must carry it too, just now at its other
+end.
+
+**Where the claim goes was a real choice, not the only way to satisfy "address last"; both are
+2026-09-14, AI recommendation.** Two shapes both put the origin last: claim-then-content-then-
+origin (what shipped), or content-then-claim-then-origin, with the claim moved down to sit
+immediately above the address instead of at the top. The second was rejected: it recreates the
+exact adjacency this lane exists to remove, just shifted one line down and still directly beside
+the address at the moment that matters most -- the two lines a hurried reader takes in together
+right before clicking a button. Putting the claim at the top instead means every capability row
+or notice sits *between* the fakeable name and the real address, so the address arrives alone,
+with nothing app-chosen immediately next to it, exactly where AR-03's own rule (never let
+`manifest.name` share a line with Orivon's words) already argues attention should stay clean.
+Read as a whole, the new order also narrates better: state the (unverified) claim, say what it
+wants or what changed, then ground it in the one verifiable fact right before the decision.
+
+**Every dialog that shows an origin moved consistently, not only the install prompt (Rule 3).**
+`describeCapabilityPrompt` and `describeInstallConsent` share `describeCapabilitySet`'s one
+assembly point, so both moved together by construction. `describeReconsent` and
+`describeRollbackChoice` build their own `detail` arrays directly (they render no capability
+rows) and were each updated by hand to the same claim-first, address-last shape -- checked
+directly in `grant-prompt-render.test.ts`, which had no dedicated tests for either function
+before this lane; both now do.
 
 **[`grant-prompt-render.ts`](grant-prompt-render.ts) — `tcp.listen`/`udp.bind` now carry the
 "distinct, more serious prompt" `manifest.ts`'s own doc comment on `TcpCapability.listen`
