@@ -4954,7 +4954,7 @@ purpose is to be a small, independent harness that does not depend on the app bu
 
 **Needed by:** no deadline. It works today and will keep working until `vite` changes.
 
-### A145 -- a declined install-consent dialog is not remembered across a restart **[AI-REC]**
+### A145 -- a declined install-consent dialog is not remembered across a restart **[RESOLVED 2026-09-14 -- lane D-remember-no]**
 
 **Raised 2026-09-13**, lane S4-4-consent, implementing `d-0025` (`ADR-0012`'s 2026-09-13
 amendment): one dialog, once per origin, ever, for the whole set a manifest declares.
@@ -4993,6 +4993,67 @@ lane's own report says so explicitly.
 **Needed by:** whenever the owner reviews the S4-4 checkpoint's real dialog (the same moment
 `A139` is settled) -- worth deciding alongside it rather than separately, since both are about
 what "once, ever" should actually mean once a real person is declining a real dialog.
+
+> **Resolved 2026-09-14, lane `D-remember-no` (owner decision).** The owner decided directly,
+> not by picking one of the two options above: **remember the no.** Repeated friction on every
+> restart for an app someone already refused is not accepted as a real product property after
+> all -- it trains the reflex the rest of this consent design exists to avoid (`ADR-0012`'s own
+> Reasoning). Option 1 is now built, close to as sketched: `LedgerStorage` gained a fourth
+> per-origin file, `declined-capabilities.json`, alongside the version floor, rollback
+> acknowledgement and grants (`src/broker/grants/ledger-storage.ts`,
+> `node-ledger-storage.ts`) -- written by `GrantLedger.recordDeclinedConsent`, read by
+> `declinedCapabilitiesFor`, cleared by `clearDeclinedConsent`, all three thin wrappers over a
+> new `src/broker/grants/declined-consent.ts` mirroring `update-safety.ts`'s own floor/
+> rollback-ack shape. `requestInstallConsent` (`src/main/install-consent.ts`) now checks it
+> between the existing "already held" check (`A157`) and showing the dialog.
+>
+> **What is stored, and why not less or more.** Exactly the declared capability set the dialog
+> was declined FOR (`readonly CapabilityKind[]`, e.g. `['tcp.connect', 'fs']`) -- a bare boolean
+> cannot answer "is this still the same question", and the whole manifest is more than needed
+> and re-opens `A137`'s already-settled ruling (a value read off disk must not gain authority it
+> would not have arriving fresh; a manifest reappearing here could tempt a future caller into
+> re-deriving patterns from it, which `A137`'s own display-only `PersistedApp.appName: string`
+> shape was built specifically to make impossible). The stored set is capability NAMES only, in
+> its own file, never mixed into `grants.json` -- structurally incapable of being read as a
+> grant, proven directly in `node-ledger-storage.test.ts`.
+>
+> **Two fixed points, both held:** (1) `capabilities.every(c => declined.includes(c))` is the
+> comparison -- a manifest that now declares something NOT in the declined set asks again (a
+> genuinely different question), one that declares the same set or a subset stays suppressed.
+> (2) It is consulted ONLY inside `requestInstallConsent`, never by anything that grants --
+> `GrantLedger.grant`/`decideGrantRequest` do not know this file exists. The adversarial test in
+> `src/main/tests/install-consent.test.ts` ("a remembered decline never results in a live grant
+> ...") wires the consent prompt to always accept if it is ever asked again, across three
+> simulated restarts sharing one persisted store, and shows it is never called and `grants()`
+> stays empty throughout.
+>
+> **The narrow-vs-widen question this entry's own §2026-09-13 draft flagged as needing a
+> decision is answered for the NARROW direction too, and it is an AI recommendation, explicitly
+> retunable, not an owner decision:** a manifest that later declares LESS than was declined stays
+> suppressed rather than re-prompting for the smaller ask. Argument for: the person already
+> looked at a superset of this exact request and said no; re-litigating a strict subset of a
+> question already answered reads as the same fatigue `ADR-0012` exists to prevent, not as a
+> considerate offer. Argument against, recorded rather than dismissed: it means a person can
+> never be offered the smaller, more reasonable request without the manifest changing first.
+> **How to change your mind without a manifest change, today: `app.requestGrant`
+> (`src/main/request-grant.ts`), the app's own live per-capability door, is completely unaffected
+> by this record** -- it is a second, independent path to a grant (the exact path `A157` is
+> about), so an app that offers its own "connect" affordance still works, and whatever it grants
+> shows up in the permissions list and is revocable there (`A101`), same as any other grant. If
+> real usage shows people wanting a narrower re-ask from the install dialog itself specifically,
+> flip the comparison's direction here -- the storage shape needs no change, only
+> `install-consent.ts`'s own comparison.
+>
+> **An accept clears the record** (`clearDeclinedConsent`, called from `requestInstallConsent`'s
+> own accept branch): an old "no" cannot outlive a "yes" for the same-or-narrower question once
+> one has actually been given. `GrantLedger.forgetOrigin` (A60) also deletes it, alongside the
+> floor, rollback acknowledgement and grants it already forgets.
+>
+> Verified: `src/broker/grants/tests/grant-ledger-declined-consent.test.ts` (20 cases, the
+> GrantLedger layer, mirroring the rollback-acknowledgement suite's own restart idiom),
+> `node-ledger-storage.test.ts`'s new describe block (real disk, atomic-write and corrupt-read
+> discipline matching every sibling file), and `src/main/tests/install-consent.test.ts` (the
+> real flow, including the widen/narrow cases above and the adversarial restart test).
 
 ### A146 -- install-time consent is asked AFTER the page's own scripts are already running **[STILL OPEN]**
 
@@ -5617,6 +5678,20 @@ different door.
 > residual inference is an acceptable floor. Not this lane's call -- parked alongside `A145` for
 > whoever settles both at once, since they are now provably the same shape from two different
 > doors.
+>
+> **Update 2026-09-14, lane `D-remember-no`: the decline half of this pairing is now closed
+> (`A145`'s own resolution block, above), the accept half is deliberately NOT.** The owner's
+> 2026-09-14 decision was specifically "remember that the person said no" -- it says nothing
+> about persisting a separate "we asked, and they said yes" marker, and the grant ledger itself
+> already IS that record for a real accept (a live, persisted `Grant` is stronger evidence of
+> "asked and agreed" than any marker recording the question could be). So `.every(held...)`
+> remains exactly the inference it was: sound whenever it is true (nothing declared is left
+> unheld, by construction, regardless of which door filled it), but still not a record of
+> `requestInstallConsent` itself having run. `LedgerStorage` now has the shape a persisted
+> "consent decision" marker would need (`declined-capabilities.json`, `src/broker/grants/
+> declined-consent.ts`), so extending it to the accept side is cheap IF the owner ever decides the
+> residual inference is not an acceptable floor -- but that is a fresh decision, not implied by
+> this one, and remains this entry's own open half.
 
 ### A158 -- a restored app's first document is served with a CSP narrower than its real grant, and cannot self-correct **[STILL OPEN]**
 

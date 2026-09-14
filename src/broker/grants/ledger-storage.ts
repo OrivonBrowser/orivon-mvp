@@ -163,6 +163,29 @@ export interface LedgerStorage {
    * cannot be read or parsed -- a missing row in a list, never authority.
    */
   readPersistedApp(origin: string): PersistedApp | undefined
+
+  /**
+   * The capability set `origin`'s install-consent dialog (`../../main/
+   * install-consent.ts`) was most recently DECLINED for (A145), as plain
+   * untrusted strings -- not yet known to be real `CapabilityKind` literals.
+   * `undefined` for an origin never declined, for one whose decline was
+   * later cleared by an accepted visit, AND for a record that cannot be
+   * read or parsed. Collapsing a corrupt read to "nothing remembered" is
+   * the safe direction here, the same reasoning
+   * `readAcknowledgedRollbackVersion`'s own doc gives: this value is never
+   * consulted by anything that grants, so the worst a corrupt or lost read
+   * costs is one avoidable re-prompt, never authority.
+   */
+  readDeclinedCapabilities(origin: string): readonly string[] | undefined
+  /** Persists `capabilities` as the set declined for `origin`, replacing whatever was there before -- one decision in force per origin at a time, same shape as `writeAcknowledgedRollbackVersion`. */
+  writeDeclinedCapabilities(origin: string, capabilities: readonly string[]): void
+  /**
+   * Deletes whatever declined-capability record was persisted for `origin`,
+   * if any -- called both when a later visit ACCEPTS install consent (the
+   * remembered "no" no longer applies) and from `GrantLedger.forgetOrigin`.
+   * A no-op, never a throw, for an origin nothing was ever persisted for.
+   */
+  deleteDeclinedCapabilities(origin: string): void
 }
 
 /** One app as the settings list sees it before that app has ever been opened. See `LedgerStorage.readPersistedApp`. */

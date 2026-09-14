@@ -12,6 +12,7 @@ import type { ParsedPattern } from '../policy/connect-patterns.js'
 import type { ParsedPatternsCache } from './parsed-patterns-cache.js'
 import { createParsedPatternsCache } from './parsed-patterns-cache.js'
 import { hydrateGrants, persistGrants } from './grant-persistence.js'
+import { clearDeclinedConsent, hydrateDeclinedCapabilities, recordDeclinedConsent } from './declined-consent.js'
 
 /**
  * 128 bits from the platform CSPRNG, as hex -- same construction as
@@ -83,6 +84,14 @@ interface OriginRecord {
    * reason: it must survive a restart, not just this session.
    */
   rollbackAcknowledgedVersion: string | undefined
+  /**
+   * The capability set this origin's install-consent dialog was most
+   * recently DECLINED for (A145), or `undefined`. ADVISORY ONLY -- see
+   * ./declined-consent.ts's header for why this can never become or imply
+   * a grant, and why it hydrates eagerly, like `versionFloor` above, rather
+   * than waiting for `registerApp` the way `grants` does (A158).
+   */
+  declinedCapabilities: readonly CapabilityKind[] | undefined
 }
 
 /**
@@ -114,10 +123,11 @@ export class GrantLedger {
   #record (origin: string): OriginRecord {
     const existing = this.#origins.get(origin)
     if (existing !== undefined) return existing
-    const created: OriginRecord = { manifest: undefined, grants: new Map(), grantsHydrated: false, fsBytesWritten: 0, versionFloor: '0.0.0', rollbackAcknowledgedVersion: undefined }
+    const created: OriginRecord = { manifest: undefined, grants: new Map(), grantsHydrated: false, fsBytesWritten: 0, versionFloor: '0.0.0', rollbackAcknowledgedVersion: undefined, declinedCapabilities: undefined }
     this.#origins.set(origin, created)
     hydrateFloor(this.#storage, origin, created)
     hydrateRollbackAcknowledgedVersion(this.#storage, origin, created)
+    hydrateDeclinedCapabilities(this.#storage, origin, created)
     return created
   }
 
@@ -220,15 +230,20 @@ export class GrantLedger {
   forgetOrigin (origin: string): void {
     if (this.#storage !== undefined) {
       try {
-        // All three persisted pieces go together, disk-then-memory as above:
+        // All four persisted pieces go together, disk-then-memory as above:
         // if ANY delete throws, the in-memory record is left completely
-        // intact rather than half-forgotten -- best-effort across the three
-        // files, not a filesystem transaction.
+        // intact rather than half-forgotten -- best-effort across the four
+        // files, not a filesystem transaction. Called directly rather than
+        // through ./declined-consent.ts's own `clearDeclinedConsent`: that
+        // helper swallows a failed delete internally (A145's advisory value
+        // may outlive one lost write), which would break this method's
+        // stricter all-or-nothing contract.
         this.#storage.deleteVersionFloor(origin)
         this.#storage.deleteAcknowledgedRollbackVersion(origin)
         this.#storage.deleteGrants(origin)
+        this.#storage.deleteDeclinedCapabilities(origin)
       } catch (error) {
-        console.error('[broker] failed to delete a persisted version floor, rollback acknowledgement or grant set; the in-memory record was left intact so nothing is half-forgotten', error)
+        console.error('[broker] failed to delete a persisted version floor, rollback acknowledgement, grant set or declined-consent record; the in-memory record was left intact so nothing is half-forgotten', error)
         return
       }
     }
@@ -258,6 +273,21 @@ export class GrantLedger {
    * `registerApp`. */
   acknowledgeRollback (origin: string, version: string): void {
     acknowledgeRollback(this.#storage, origin, this.#record(origin), version)
+  }
+
+  /** The capability set this origin's install-consent dialog was most recently declined for (A145), or undefined. See ./declined-consent.ts. */
+  declinedCapabilitiesFor (origin: string): readonly CapabilityKind[] | undefined {
+    return this.#record(origin).declinedCapabilities
+  }
+
+  /** Remembers a decline (A145). Best-effort persistence, never throws -- see ./declined-consent.ts. */
+  recordDeclinedConsent (origin: string, capabilities: readonly CapabilityKind[]): void {
+    recordDeclinedConsent(this.#storage, origin, this.#record(origin), capabilities)
+  }
+
+  /** Forgets a decline once a later visit accepts (A145), so an old "no" cannot outlive a "yes". See ./declined-consent.ts. */
+  clearDeclinedConsent (origin: string): void {
+    clearDeclinedConsent(this.#storage, origin, this.#record(origin))
   }
 
   /** Every origin this ledger has a manifest for -- the apps that ARE loaded
