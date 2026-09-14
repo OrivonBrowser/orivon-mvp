@@ -4795,7 +4795,7 @@ succeed today.
 
 ---
 
-### A142 -- the grant prompt shows a host, not a registrable domain, for lack of a public suffix list **[PARKED -- needs owner decision]**
+### A142 -- the grant prompt shows a host, not a registrable domain, for lack of a public suffix list **[RESOLVED 2026-09-14 -- stream/shell-06-three-label-origin]**
 
 **Raised 2026-09-13**, fixing A115 (subdomain-prefix confusable in the grant prompt).
 
@@ -4832,6 +4832,28 @@ whatever a chosen library cannot classify.
 
 **Needed by:** whenever the owner is ready to review a new dependency; not blocking A115, whose
 fix does not need one.
+
+**RESOLVED 2026-09-14 (`stream/shell-06-three-label-origin`), by owner decision, without either
+candidate dependency.** The owner replaced A115's character-count elision outright: always show
+the host's last three dot-separated labels -- "the sub domain, the domain name, and the domain
+name level 1 (the www, the google and the .com)" -- and the whole host at three or fewer.
+**This closes the exact gap this entry names, by construction, with no suffix list to consult.**
+`example.co.uk` is exactly three labels, so it renders whole; `www.example.co.uk` reduces to
+`example.co.uk`, not to the `co.uk` a naive "last two labels" guess would have produced -- the
+failure mode this entry was raised to avoid. Checked directly, not assumed: `.org.uk`, `.ac.uk`,
+and Japan's `.co.jp`/`.or.jp`/similar two-label suffixes all get the same correct treatment,
+because the rule only ever needs to know *how many* labels to keep, never *which* labels a
+registry controls.
+
+**Not a full close of "show the true registrable domain" in general -- a narrower, related gap
+found while verifying the above and filed separately as A161, not folded in here.** Some Public
+Suffix List *private*-section entries (cloud/PaaS platforms, not ccTLD registries) are themselves
+three or four labels long -- confirmed live: `s3.amazonaws.com` is a fixed three-label suffix,
+and `ap-northeast-1.compute.amazonaws.com` runs to four. A three-label count cannot follow a
+suffix boundary that moves per platform; see A161 for what that means concretely and why a public
+suffix list would not fully close it either. Two both/and dependency candidates were evaluated
+(`psl`, `tldts`) and remain evaluated-but-unused; nothing here changes that assessment, since the
+owner's fix needed neither.
 
 ### A140 — `app.requestGrant`'s own IPC timeout (120s) has no natural bound to derive it from **[AI-REC]**
 
@@ -5740,3 +5762,53 @@ follow-up, own PR, per its own change-control rule.
 
 **Needed by:** whoever next reviews `stream/shim-12-named-refusals`, or the next time something
 else in `src/shim/` or `src/shim-electron/` wants to depend on the other.
+
+### A161 -- a fixed three-label origin display still hides the tenant behind a multi-label PRIVATE suffix (cloud/PaaS hosting) **[STILL OPEN -- narrow, not blocking]**
+
+**Raised 2026-09-14**, `stream/shell-06-three-label-origin`, verifying the owner's "last three
+labels" rule (`formatOriginForDisplay`, `src/main/grant-prompt-render.ts`) against real
+multi-part suffixes before shipping it, per that lane's own brief.
+
+**The rule is correct for what it was built to fix.** A142 (resolved by the same lane) was about
+ccTLD-style registry suffixes -- `.co.uk`, `.co.jp`, and the rest -- which are one or two labels,
+so three labels always leaves the true registrant visible. Checked directly against the live
+Public Suffix List, not assumed: the *private* section (platforms, not registries) contains fixed,
+non-wildcard suffixes longer than that. `s3.amazonaws.com` is itself a three-label suffix; AWS's
+own regional compute suffixes run to four (`ap-northeast-1.compute.amazonaws.com`, confirmed in
+the list as published, via AWS's own PSL-contribution fork). A tenant name sits to the LEFT of a
+suffix that long.
+
+**Concretely:** an Orivon app served from `accounts.google.com.attacker.s3.amazonaws.com` -- a
+legal S3 bucket name, since bucket names may contain literal dots -- displays as
+`...s3.amazonaws.com` under the current rule. That is a real, well-known AWS domain, and the
+entire tenant-controlled label -- including a same-shaped confusable payload to A115's own
+worked example, just relocated one level further left -- is dropped rather than shortened. This
+is a materially different failure from "shows too little": it shows a string that reads as
+*more* trustworthy than the truth, because the visible remainder names a platform, not the
+untrusted party actually serving the page.
+
+**Why this is filed separately from A142 rather than reopening it.** A142 was specifically about
+ccTLD registry suffixes, and three labels closes that case by construction -- correctly, with no
+suffix list needed. This is a different shape (a private suffix whose own length varies by
+platform, 1 to 4+ labels, with no small fixed count that is simultaneously right for `google.com`,
+`example.co.uk`, and `compute.amazonaws.com` at once) that no fixed label count can close, three
+or otherwise -- closing it for real needs exactly the public-suffix-list lookup A142 avoided
+adding, now for a different reason: not to avoid a wrong guess, but because "how many labels does
+this suffix have" is genuinely platform-dependent data, not a constant.
+
+**Scope check, so this is not overstated.** This needs an app actually hosted directly on a
+private-suffix cloud domain with a crafted tenant name -- most real deployments sit behind their
+own registered domain, where the three-label rule is exactly right. Nothing in this codebase
+currently resolves or displays an app's *hosting* platform separately from its origin, so this is
+a latent gap in the display, not a demonstrated live exploit against anything built so far.
+
+**AI recommendation:** leave the three-label rule as shipped -- it is a strict improvement over
+both "no elision" and the character-count rule it replaced, for the near-total majority of real
+origins -- and treat a public-suffix-list dependency as the eventual fix for both this and the
+"count distinct registrable domains" want noted in `src/main/README.md`'s Design notes, reviewed
+together rather than added twice. **Still open:** whether this is worth a dependency review before
+100 real users are onboarded, or can wait for a concrete report against it.
+
+**Needed by:** whenever the owner is ready to review a public-suffix-list dependency for real
+(A142's parked `psl`/`tldts` evaluation applies unchanged), or sooner if an app is ever actually
+served from a multi-label private suffix.

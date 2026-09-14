@@ -195,33 +195,66 @@ divergences at their shared root rather than patching `isUnlimited` and `namedHo
 separately, which would have left the underlying two-parsers problem in place for the next
 person to trip over the same way (code-guidelines.md Rule 3).
 
-**[`grant-prompt-render.ts`](grant-prompt-render.ts) — `formatOriginForDisplay` elides a long
-host from the LEFT, and deliberately never tries to compute the registrable domain (A115,
-T25).** `accounts.google.com.attacker.example` reads reassuringly left-to-right; the label that
-actually decides authority, `attacker.example`, sits at the far right, exactly where a narrow or
-truncated dialog is least likely to show it. The obvious-looking fix — show the registrable
-domain (eTLD+1) prominently — needs a public suffix list this repo does not depend on, and a
-naive "last two labels" guess is wrong for `example.co.uk` in the direction that matters (it
-would emphasise `co.uk` and hide the real registrant). Adding that dependency is a stop
-condition for this run, so it is parked as **A142** rather than added; this fix is the no-
-dependency floor instead.
+**[`grant-prompt-render.ts`](grant-prompt-render.ts) — `formatOriginForDisplay` keeps only the
+HOST's last three dot-separated labels, and shows the whole host at three or fewer (A115, T25,
+owner decision 2026-09-14).** `accounts.google.com.attacker.example` reads reassuringly
+left-to-right; the label that actually decides authority, `attacker.example`, sits at the far
+right, exactly where a narrow or truncated dialog is least likely to show it. In the owner's own
+words: always show "the sub domain, the domain name, and the domain name level 1 (the www, the
+google and the .com)".
 
-- **A plain character count, not a DNS-aware truncation.** `MAX_DISPLAYED_HOST_LENGTH` is 24 --
-  roughly the length of a short, ordinary hostname (`accounts.google.com` itself is 20
-  characters) plus a small margin, so an app's real host is essentially never elided on its own
-  account. Padding a real brand name into a longer confusable is what pushes the total past 24,
-  not anything about the shape of the string. The `example.co.uk`/bare-`example.com` test cases
-  exist specifically to prove the rule is not accidentally tuned to `.com` or to any particular
-  label count -- it never looks at labels at all, only length.
-- **Elide the HOST[:port] only; the scheme is never touched or counted.** The scheme carries no
-  authority information (it cannot be misread as a brand), so spending elision budget on it
-  would only shorten the part that matters. `https://` always survives intact.
-- **A naive forward-to-the-next-dot "clean label boundary" idea was tried and rejected.**
-  Snapping the cut point to the next `.` after the raw character count reads better when nothing
-  else changes, but the distance it skips depends on incidental length elsewhere in the string --
-  appending a port was enough, in testing, to make it skip an entire label it should have kept
-  visible. A plain character-count cut, with only a single conditional strip of one leading dot
-  for cosmetics, cannot do that: it always keeps exactly the tail it is told to keep.
+- **This is the second mechanism this function has used, not the first — history, not current
+  behaviour.** The original fix (A115, landed 2026-09-13) elided from the LEFT by a plain
+  24-character count (`MAX_DISPLAYED_HOST_LENGTH`), never looking at labels at all. It defended
+  the same attack and is why the `example.co.uk`/bare-`example.com` test cases exist — proving
+  the old rule was not accidentally tuned to `.com` or to any particular label count. The owner's
+  2026-09-14 decision **replaces** it outright with a label count, not an addition to it: no
+  origin is elided by both rules layered together, and the character-count constant is gone from
+  the source.
+- **Closes A142 without the public-suffix-list dependency that entry was parked for.** A142's
+  concern was real: the obvious-looking fix — show the registrable domain (eTLD+1) prominently —
+  needs a public suffix list this repo does not depend on, and a naive "last two labels" guess is
+  wrong for `example.co.uk` in the direction that matters (it would emphasise `co.uk` and hide
+  the real registrant). **Three labels gets `example.co.uk` right by construction, with no list
+  to consult:** it has exactly three labels, so the whole-host branch shows it unchanged, and
+  `www.example.co.uk` reduces to `example.co.uk` — the same three labels — not to `co.uk`. The
+  same reasoning covers every two-label public suffix this way (`.co.jp`, `.org.uk`, and the
+  rest): the count only ever needs to be right about *how many* labels to keep, never about
+  *which* labels form a registry-controlled suffix.
+- **A residual shape three labels does NOT get right, found while verifying the above and filed
+  rather than silently accepted: multi-label PRIVATE suffixes, the kind cloud/PaaS platforms
+  register in the Public Suffix List's private section.** `s3.amazonaws.com` is itself a fixed
+  three-label suffix (not a ccTLD structure), and some AWS regional compute suffixes run to four
+  labels (`ap-northeast-1.compute.amazonaws.com`) — confirmed against the live list, not assumed.
+  A bucket or instance name sits to the LEFT of a suffix that long, so `bucket-name.s3.amazonaws.
+  com` shows as `...s3.amazonaws.com` under this rule: a real, legitimate-looking AWS domain,
+  with the tenant-controlled label — which can itself carry a same-shaped confusable, since S3
+  bucket names may contain literal dots — dropped entirely rather than merely shortened. Filed as
+  its own entry rather than folded into A142, because a public suffix list would not fully close
+  this one either: it tells you *where* a suffix ends, but this file's fixed three-label count
+  cannot follow a boundary that moves per platform the way A142's ccTLD case needed it to.
+- **A plain label count, not a character count.** `DISPLAYED_LABEL_COUNT` is 3, and the function
+  never measures string length at all. A host that is long but exactly three labels
+  (`a-perfectly-ordinary-but-very-long-subdomain.example.com`) is now shown in full — a real,
+  intentional behaviour change from the 24-character rule, which elided it purely for length.
+- **An IP literal is opaque to this rule, on purpose.** `net.isIP` (after stripping IPv6's own
+  bracket syntax) decides this before any label splitting happens, and a positive match returns
+  the origin unchanged. An IP address is not a registrable-domain hierarchy — cutting it would
+  change which machine it names, not shorten a cosmetic prefix, so it is exempted rather than
+  merely handled gracefully by the label logic (which would mis-split an IPv4 literal's own dots
+  as if they were DNS labels).
+- **A trailing dot (an explicit FQDN root, `example.com.`) is stripped before counting, and
+  dropped rather than restored on an elided tail.** It carries no identity information, so
+  keeping it out of the label count is correct, and re-attaching it to a shortened display would
+  only add a character nobody needs — the same treatment `www` already gets.
+- **Elide the HOST only; the scheme is never touched, and a non-default port is reattached after
+  the label cut, never counted as part of it.** The scheme carries no authority information (it
+  cannot be misread as a brand), so it always survives intact. The port belongs to the host and
+  must survive too — under the old character-count rule a port's own digits could eat into the
+  budget and drop a whole extra label (`accounts.google.com.attacker.example:8443` used to render
+  as `...attacker.example:8443`, silently losing "com" as well as the count); counting labels
+  first and appending the port afterward means the port's length can never change which labels
+  survive.
 - **The same elided string is used for BOTH `title` and `detail`'s first line, not a fuller
   string in one and a shorter one in the other.** `detail` wraps in a native message box; `title`
   does not, and per A127 may not render at all on some platforms. Showing the full,
@@ -231,7 +264,7 @@ dependency floor instead.
   thing on every platform, whichever field survives.
 - **A127's core fix -- the origin duplicated into `detail`, a field Electron does not document as
   ever being dropped -- predates this lane** (already present as `AR-01` before A115 was filed).
-  This change does not alter that mechanism; it only hardens the string both fields now show.
+  This change does not alter that mechanism; it only changes the rule both fields now apply.
   A127 stays open on its own remaining term: no macOS machine has confirmed the platform claim
   that motivated it, so "the title is not reliably shown" remains reasoned, not measured.
 - **Not done, and named so nobody re-derives it as new:** no attempt to mark the origin line as
@@ -331,10 +364,13 @@ keeps the true count and the first host rather than replacing them with a vaguer
 actual problem -- spelled-out hostnames crowd a dialog exactly as much as a large integer fails
 to inform one), a details expander (rejected by name for this exact surface, `D-0004`), and
 counting distinct registrable domains instead of raw hosts (the coordinator's own suggestion,
-worth recording why it was not built: it needs the same public-suffix-list dependency A115
-already parked as `A142` rather than add, and it would not by itself have saved the feed-reader
-case anyway -- twelve different news outlets are twelve different registrable domains, so the
-fix that actually matters here is the threshold's size, not the unit it counts in).
+worth recording why it was not built: computing a registrable domain as a value to count, not
+just a string to display, still needs a public suffix list this repo does not depend on --
+`formatOriginForDisplay`'s label-count rule (A142, resolved) answers "how much of this host do I
+show", never "what is this host's registrable domain", so it settles no part of this different
+question -- and it would not by itself have saved the feed-reader case anyway, since twelve
+different news outlets are twelve different registrable domains; the fix that actually matters
+here is the threshold's size, not the unit it counts in).
 
 **[`install-consent.ts`](install-consent.ts) — "once per origin, ever" (A139) is derived from the
 grant ledger's own hydration, not tracked as a second piece of state.** `requestInstallConsent`
