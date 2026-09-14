@@ -58,7 +58,10 @@ directly in its source. `stream-browserify` is needed transitively, not directly
 `crypto-browserify`'s `Hash` extends `cipher-base`, which extends `stream.Transform`. This
 matches [`orivon-electron`](../../.claude/skills/orivon-electron/SKILL.md)'s own spike findings
 from 2026-08-25 exactly, on a materially newer webtorrent release -- the same requirement
-survived the 3.x rewrite.
+survived the 3.x rewrite. **Presented to apps under the name `crypto`, this package is not
+distinguishable from Orivon's own identity cryptography by an app author reading `require`
+calls** -- see `security-model.md` T26 for the boundary reasoning and the naming gap this
+approval leaves open.
 
 **`util` -- recommend defer the package; build it by hand instead.** The only confirmed live
 caller in the whole tree is `k-rpc-socket`'s `util.inherits(RPC, events.EventEmitter)` -- one
