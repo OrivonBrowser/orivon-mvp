@@ -173,6 +173,48 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     }
   }
 
+  // All three below are GENUINELY never-rejecting, unlike every other method
+  // in this file that calls `canonical()` unguarded: those propagate a
+  // malformed origin as a rejection because a wrong answer there is a real
+  // broker fault worth surfacing. These three cannot make that same trade --
+  // `requestInstallConsent` (src/main/install-consent.ts) documents itself
+  // as never throwing, and A145's value is advisory only, so degrading a bad
+  // origin to "nothing remembered" / "nothing recorded" costs one avoidable
+  // re-prompt at worst, never a security regression, exactly like every
+  // other failure mode this feature already tolerates.
+  async function declinedCapabilitiesFor (origin: string): Promise<readonly CapabilityKind[] | undefined> {
+    let key: string
+    try {
+      key = canonical(origin)
+    } catch (error) {
+      console.error('[broker] declinedCapabilitiesFor called with a string that is not an origin', origin, error)
+      return undefined
+    }
+    return ledger.declinedCapabilitiesFor(key)
+  }
+
+  async function recordDeclinedConsent (origin: string, capabilities: readonly CapabilityKind[]): Promise<void> {
+    let key: string
+    try {
+      key = canonical(origin)
+    } catch (error) {
+      console.error('[broker] recordDeclinedConsent called with a string that is not an origin', origin, error)
+      return
+    }
+    ledger.recordDeclinedConsent(key, capabilities)
+  }
+
+  async function clearDeclinedConsent (origin: string): Promise<void> {
+    let key: string
+    try {
+      key = canonical(origin)
+    } catch (error) {
+      console.error('[broker] clearDeclinedConsent called with a string that is not an origin', origin, error)
+      return
+    }
+    ledger.clearDeclinedConsent(key)
+  }
+
   /**
    * `GrantLedger.grant` (A23) can throw when persisting the new grant set
    * fails, AFTER its in-memory mutation has already landed (that method's own
@@ -283,6 +325,9 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     versionFloorFor,
     rollbackAcknowledgedVersionFor,
     acknowledgeRollback,
+    declinedCapabilitiesFor,
+    recordDeclinedConsent,
+    clearDeclinedConsent,
     grant,
     revoke,
     revokePersisted
