@@ -16,7 +16,7 @@
 import type { Subsystem, SubsystemContext } from './registry.js'
 import { publishInstallApp } from './registry.js'
 import { installFromHint } from './app-install.js'
-import { createInstallConsentPrompt } from './install-consent-prompt.js'
+import { createInstallConsentPrompt, createPerCapabilityConsentPrompt } from './install-consent-prompt.js'
 import { createCapabilityPrompt, createReconsentPrompt, createRollbackChoicePrompt } from './update-outcomes-prompt.js'
 
 export const appInstallSubsystem: Subsystem = {
@@ -31,10 +31,11 @@ export const appInstallSubsystem: Subsystem = {
     const broker = ctx.broker
     const loader = ctx.loader
     const consent = createInstallConsentPrompt()
+    const perCapabilityConsent = createPerCapabilityConsentPrompt()
     const reconsentPrompt = createReconsentPrompt()
     const capabilityPrompt = createCapabilityPrompt()
     const rollbackChoicePrompt = createRollbackChoicePrompt()
     publishInstallApp(ctx, async (hintingOrigin, hintedUrl) =>
-      await installFromHint({ broker, loader, consent, reconsentPrompt, capabilityPrompt, rollbackChoicePrompt }, hintingOrigin, hintedUrl))
+      await installFromHint({ broker, loader, consent, perCapabilityConsent, reconsentPrompt, capabilityPrompt, rollbackChoicePrompt }, hintingOrigin, hintedUrl))
   }
 }
