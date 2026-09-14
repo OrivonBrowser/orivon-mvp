@@ -50,6 +50,28 @@ export function hydrateGrants (
   return restored
 }
 
+/**
+ * Clears `grants` and repopulates it from `hydrateGrants` -- the shared
+ * "REPLACE, never merge" step `GrantLedger.registerApp` and its early
+ * counterpart `hydrateFromPinnedManifest` (A158) both need: whichever call
+ * restores grants must fully supersede whatever an earlier, narrower call
+ * already put there (a capability the manifest passed here no longer
+ * declares must not survive), never merely add to it. Harmless when
+ * `grants` is already empty -- clears nothing, then populates as normal.
+ */
+export function replaceHydratedGrants (
+  storage: LedgerStorage,
+  origin: string,
+  manifest: Manifest,
+  grants: Map<CapabilityKind, Grant>,
+  newId: () => GrantId
+): void {
+  grants.clear()
+  for (const [capability, grant] of hydrateGrants(storage, origin, manifest, newId)) {
+    grants.set(capability, grant)
+  }
+}
+
 /** `GrantLedger`'s live `grants` map, reshaped for `LedgerStorage.writeGrants` -- `id` and `origin` are dropped, since `hydrateGrants` never reads either back. */
 export function grantsToPersist (grants: ReadonlyMap<CapabilityKind, Grant>): Readonly<Record<string, PersistedGrant>> {
   const result: Record<string, PersistedGrant> = {}

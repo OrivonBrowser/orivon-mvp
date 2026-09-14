@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { bundleTree } from '../../broker/policy/bundle-hash.js'
 import { fromBundleTree, isPinnedPath } from '../../broker/policy/pin.js'
 import type { ConnectSecureDecision } from '../../broker/policy/connect-secure.js'
-import { createAppRequestHandler, resolveRequestPath } from '../serve.js'
+import { createAppRequestHandler, resolveRequestPath, verifiedManifestFor } from '../serve.js'
 import type { AuthoriseReach, ReachDial } from '../serve.js'
 import { manifestJson, memoryStorage, ORIGIN, utf8 } from './test-helpers.js'
 
@@ -176,6 +176,28 @@ describe('createAppRequestHandler', () => {
 
     const response = await handler(new Request(`${ORIGIN}/app.js`))
     expect(response.status).toBe(404)
+  })
+})
+
+// A158's early-hydration seam: the SAME verified manifest
+// createAppRequestHandler derives internally, exposed so a caller can
+// hydrate GrantLedger from it before registering anything servable.
+describe('verifiedManifestFor', () => {
+  it('returns the pinned manifest once the whole tree verifies', async () => {
+    const manifest = await verifiedManifestFor(await installedStorage(), ORIGIN)
+
+    expect(manifest?.entry).toBe('index.html')
+  })
+
+  it('is undefined when this origin has never been pinned', async () => {
+    expect(await verifiedManifestFor(memoryStorage(), ORIGIN)).toBeUndefined()
+  })
+
+  it('is undefined when the pinned tree fails re-verification (a tampered asset) -- never falls back to the unverified bytes on disk', async () => {
+    const storage = await installedStorage()
+    await storage.writeAsset(ORIGIN, '/app.js', utf8('tampered after pinning'))
+
+    expect(await verifiedManifestFor(storage, ORIGIN)).toBeUndefined()
   })
 })
 
