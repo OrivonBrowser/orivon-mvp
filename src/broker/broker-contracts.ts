@@ -419,6 +419,31 @@ export interface Broker {
    */
   acknowledgeRollback(origin: string, version: string): Promise<void>
   /**
+   * The capability set `origin`'s install-consent dialog was most recently
+   * DECLINED for (A145), or undefined -- never declined, or a later visit
+   * accepted and cleared it (`clearDeclinedConsent` below). ADVISORY ONLY:
+   * consulted before showing that dialog again, never by anything that
+   * grants a capability -- see `src/broker/grants/declined-consent.ts`.
+   * Same category as `versionFloorFor`: no `orivon.*` counterpart, an app
+   * can never read it.
+   */
+  declinedCapabilitiesFor(origin: string): Promise<readonly CapabilityKind[] | undefined>
+  /**
+   * Remembers that `origin`'s install-consent dialog was just declined for
+   * exactly `capabilities` -- `requestInstallConsent`'s own decline branch
+   * is the only caller. Never rejects on a failed persist: this value can
+   * never become or imply a grant, so the worst a lost write costs is one
+   * avoidable re-prompt next restart, never a security regression.
+   */
+  recordDeclinedConsent(origin: string, capabilities: readonly CapabilityKind[]): Promise<void>
+  /**
+   * Clears whatever declined-consent record `origin` holds -- called once a
+   * later visit's dialog is ACCEPTED, so an old "no" cannot outlive a "yes"
+   * for the same-or-narrower question. Same never-rejects contract as
+   * `recordDeclinedConsent`.
+   */
+  clearDeclinedConsent(origin: string): Promise<void>
+  /**
    * Records a capability the user actually granted. The broker never grants
    * on its own initiative; this is the permission-prompt UI's seam, never an
    * app's. Replaces any earlier grant of the same capability kind, under a

@@ -78,6 +78,9 @@ export function stubBroker (
     versionFloorFor: (origin: string) => Promise<string>
     rollbackAcknowledgedVersionFor: (origin: string) => Promise<string | undefined>
     acknowledgeRollback: (origin: string, version: string) => Promise<void>
+    declinedCapabilitiesFor: Broker['declinedCapabilitiesFor']
+    recordDeclinedConsent: Broker['recordDeclinedConsent']
+    clearDeclinedConsent: Broker['clearDeclinedConsent']
     grant: Broker['grant']
     revoke: Broker['revoke']
   }> = {}
@@ -183,6 +186,18 @@ export function stubBroker (
     acknowledgeRollback: async (origin, version) => {
       calls.push({ method: 'acknowledgeRollback', origin, args: version })
       await (overrides.acknowledgeRollback?.(origin, version) ?? notStubbed())
+    },
+    declinedCapabilitiesFor: async (origin) => {
+      calls.push({ method: 'declinedCapabilitiesFor', origin, args: undefined })
+      return await (overrides.declinedCapabilitiesFor?.(origin) ?? notStubbed())
+    },
+    recordDeclinedConsent: async (origin, capabilities) => {
+      calls.push({ method: 'recordDeclinedConsent', origin, args: capabilities })
+      await (overrides.recordDeclinedConsent?.(origin, capabilities) ?? notStubbed())
+    },
+    clearDeclinedConsent: async (origin) => {
+      calls.push({ method: 'clearDeclinedConsent', origin, args: undefined })
+      await (overrides.clearDeclinedConsent?.(origin) ?? notStubbed())
     },
     grant: async (origin, capability, patterns) => {
       calls.push({ method: 'grant', origin, args: { capability, patterns } })

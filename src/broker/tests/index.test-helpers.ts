@@ -204,15 +204,18 @@ export function memoryLedgerStorage (): LedgerStorage & {
   readonly floors: Map<string, string>
   readonly rollbackAcks: Map<string, string>
   readonly grants: Map<string, Readonly<Record<string, PersistedGrant>>>
+  readonly declined: Map<string, readonly string[]>
 } {
   const floors = new Map<string, string>()
   const rollbackAcks = new Map<string, string>()
   const grants = new Map<string, Readonly<Record<string, PersistedGrant>>>()
   const names = new Map<string, string>()
+  const declined = new Map<string, readonly string[]>()
   return {
     floors,
     rollbackAcks,
     grants,
+    declined,
     readVersionFloor: (origin) => floors.get(origin),
     writeVersionFloor: (origin, versionFloor) => { floors.set(origin, versionFloor) },
     deleteVersionFloor: (origin) => { floors.delete(origin) },
@@ -229,7 +232,10 @@ export function memoryLedgerStorage (): LedgerStorage & {
     readPersistedApp: (origin: string) => {
       const g = grants.get(origin)
       return g === undefined ? undefined : { origin, appName: names.get(origin), grants: g }
-    }
+    },
+    readDeclinedCapabilities: (origin) => declined.get(origin),
+    writeDeclinedCapabilities: (origin, capabilities) => { declined.set(origin, capabilities) },
+    deleteDeclinedCapabilities: (origin) => { declined.delete(origin) }
   }
 }
 

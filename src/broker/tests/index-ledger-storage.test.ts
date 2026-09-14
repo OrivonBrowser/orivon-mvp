@@ -17,7 +17,10 @@ function throwingLedgerStorage (): LedgerStorage {
     writeGrants: () => { throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' }) },
     deleteGrants: () => {},
     listPersistedOrigins: () => [],
-    readPersistedApp: () => undefined
+    readPersistedApp: () => undefined,
+    readDeclinedCapabilities: () => undefined,
+    writeDeclinedCapabilities: () => { throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' }) },
+    deleteDeclinedCapabilities: () => {}
   }
 }
 
@@ -315,5 +318,75 @@ describe('createBroker -- a grant/revoke persistence failure surfaces, it is not
 
     const error = await rejection(socket.closed)
     expect(error.code).toBe('revoked')
+  })
+})
+
+// A145: the declined-consent record reaches GrantLedger through the Broker
+// surface, and survives a restart -- same wiring concern as the version
+// floor and rollback-acknowledgement suites above (baseDeps's spread once
+// silently dropped ledgerStorage entirely).
+describe('createBroker -- declined-consent record (A145) reaches the grant ledger', () => {
+  it('is undefined through the Broker surface for an origin never declined', async () => {
+    const broker = createBroker(baseDeps({ ledgerStorage: memoryLedgerStorage() }))
+
+    await expect(broker.declinedCapabilitiesFor(APP)).resolves.toBeUndefined()
+  })
+
+  it('recording a decline through the Broker surface is written via the injected LedgerStorage', async () => {
+    const storage = memoryLedgerStorage()
+    const broker = createBroker(baseDeps({ ledgerStorage: storage }))
+
+    await broker.recordDeclinedConsent(APP, ['tcp.connect'])
+
+    expect(storage.declined.get(APP)).toEqual(['tcp.connect'])
+  })
+
+  it('declinedCapabilitiesFor reads back what a previous broker instance persisted -- simulates surviving a restart', async () => {
+    const storage = memoryLedgerStorage()
+    const before = createBroker(baseDeps({ ledgerStorage: storage }))
+    await before.recordDeclinedConsent(APP, ['tcp.connect', 'fs'])
+
+    const after = createBroker(baseDeps({ ledgerStorage: storage })) // the "restart"
+    await expect(after.declinedCapabilitiesFor(APP)).resolves.toEqual(['tcp.connect', 'fs'])
+  })
+
+  it('clearDeclinedConsent through the Broker surface removes the persisted record too', async () => {
+    const storage = memoryLedgerStorage()
+    const before = createBroker(baseDeps({ ledgerStorage: storage }))
+    await before.recordDeclinedConsent(APP, ['tcp.connect'])
+    await before.clearDeclinedConsent(APP)
+
+    const after = createBroker(baseDeps({ ledgerStorage: storage }))
+    await expect(after.declinedCapabilitiesFor(APP)).resolves.toBeUndefined()
+  })
+})
+
+// UNLIKE every other Broker method above (registerApp, acknowledgeRollback,
+// grant, revoke -- each proven to reject on a malformed origin so a broker
+// fault is never silently mistaken for a normal outcome), these three are
+// documented as genuinely never rejecting: A145's value is advisory only,
+// and requestInstallConsent (src/main/install-consent.ts) is itself
+// documented as never throwing. A caller passing a malformed origin gets a
+// safe default instead of a rejection -- proven here rather than only
+// claimed in the doc comment.
+describe('createBroker -- the declined-consent methods never reject, even for a malformed origin', () => {
+  const NOT_AN_ORIGIN = 'not a url at all'
+
+  it('declinedCapabilitiesFor resolves to undefined rather than rejecting', async () => {
+    const broker = createBroker(baseDeps())
+
+    await expect(broker.declinedCapabilitiesFor(NOT_AN_ORIGIN)).resolves.toBeUndefined()
+  })
+
+  it('recordDeclinedConsent resolves rather than rejecting', async () => {
+    const broker = createBroker(baseDeps())
+
+    await expect(broker.recordDeclinedConsent(NOT_AN_ORIGIN, ['tcp.connect'])).resolves.toBeUndefined()
+  })
+
+  it('clearDeclinedConsent resolves rather than rejecting', async () => {
+    const broker = createBroker(baseDeps())
+
+    await expect(broker.clearDeclinedConsent(NOT_AN_ORIGIN)).resolves.toBeUndefined()
   })
 })
