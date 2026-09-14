@@ -4639,7 +4639,7 @@ choice stands; what changes is that the saved manifest informs the LIST, never t
 
 ## Build step 4 -- the app loader (2026-09-13)
 
-### A138 -- may a person accept PART of what an app asks for? **[PARKED -- needs owner decision]**
+### A138 -- may a person accept PART of what an app asks for? **[RESOLVED 2026-09-14 -- lane F-contracts]**
 
 **Raised 2026-09-13**, opening build step 4, by owner decision `d-0025` (`ADR-0012`'s
 2026-09-13 amendment): consent is asked once, before the app runs, for the whole set the
@@ -4670,6 +4670,43 @@ loss of user agency, and it is the kind of thing the permissions list (`A101`) e
 **Needed by:** Phase 4 item 4.2's owner checkpoint. Not blocking: the prompt is built
 all-or-nothing, and turning it into a per-row choice later is a change to the dialog and to what
 `requestGrant` is called with, not to the ledger or the policy beneath it.
+
+> **Resolved 2026-09-14, lane `F-contracts` (owner decision).** The owner picked neither
+> option this entry parked between -- not "always all-or-nothing" and not "always per-row" --
+> but a third one nobody had put to them: *"A manifest can tell if the whole manifest is
+> enforced, or the user is allowed for a more fine tuned control. This way ported shim apps
+> will have no problem working, and Orivon-made apps will allow fine tuned permission
+> control."*
+>
+> **The app declares which consent style it can survive, in its own manifest** --
+> `Manifest.consentGranularity`, `'all-or-nothing'` or `'per-capability'`
+> (`src/contracts/manifest.ts`'s `ConsentGranularity`, `docs/architecture/capability-api.md`
+> §Manifest). A ported Node/Electron app, never written to handle a capability coming back
+> refused, declares (or simply omits, see below) `'all-or-nothing'` and is never handed the
+> mid-flight-denial failure this entry's point 2 named. An app written for Orivon from the
+> start, whose author knows it checks `orivon.app.grants()` and degrades a missing capability
+> on purpose, declares `'per-capability'` and its users get the real per-item control this
+> entry's counter-argument asked for.
+>
+> **Default when the field is absent: `'all-or-nothing'`**, matching what this entry already
+> had built. Every manifest written before this field existed was written with no idea a
+> partial grant could ever happen -- exactly the ported-app case -- so silence has to read as
+> the reading that can never hand an unprepared app a state its code has no path for.
+>
+> **One flag for the whole manifest, not one per capability.** The question it answers -- can
+> the app's own code cope with an incomplete grant at all -- is a property of the app as a
+> whole, not of any one capability: a ported app has no code path for a missing filesystem
+> grant any more than for a missing network one. Read literally, the owner's own phrasing
+> ("the whole manifest is enforced") already says this; no concrete case was found where a
+> single app needs a different answer per capability.
+>
+> **What this resolves and what it leaves open.** This settles the *shape of the declaration*
+> only -- a type on `Manifest`, contracts-only, no implementation. It does not build the
+> per-row prompt UI, teach `decideGrantRequest` or the grant ledger to honor a partial accept,
+> or wire `requestGrant` to pass a per-capability choice through -- that is real engineering
+> against a real dialog, left for whichever build-step-4 lane picks up the install prompt.
+> Until that lands, `'per-capability'` in a manifest is inert: the field types and documents
+> the choice, and nothing reads it yet.
 
 ### A139 -- asking at install brings back part of the prompt fatigue `ADR-0012` rejected **[AI-REC -- confirm at the 4.2 checkpoint]**
 
