@@ -197,12 +197,29 @@ elsewhere) reaches this same handler. Owner decision: let an app reach a host it
 allowed, performs the real fetch through [`serve-reach.ts`](serve-reach.ts)'s `nodeReachDial`
 (Node's own `https` module, chosen over Electron's `net.fetch` specifically so this path could be
 proven end to end over a real TLS handshake in a real Electron launch -- see that file's own
-header). Everything else -- an ungranted host, a plain `http:` request (A162, a deliberate,
+header). Everything else -- an ungranted host, a plain `http:` request (A163, a deliberate,
 narrower scope decision, not a gap), a redirect from the granted host -- still gets the same
 fail-closed `denyResponse` this handler has always answered with. `img-src`/`font-src`/`media-src`
 widen alongside it, from the same `https.connect` grant (`connect-src.ts`'s `appReachCspHeaderValue`)
 -- without that, `default-src 'self'`'s fallback would keep refusing the very requests this
 decision exists to allow, before they could ever reach the handler.
+
+**Why [`serve-reach.ts`](serve-reach.ts) uses Node's own `https` module, not Electron's `net.fetch`
+or a hand-rolled HTTP/1.1 client.** `test/e2e-fetch-routing.test.ts`'s own header records why an
+unmodified Electron build cannot be made to trust a locally generated test certificate -- which is
+why that file proves its own byte round trip over plain HTTP rather than HTTPS. Node's own `https`
+module takes a per-request `ca` override (`../broker/adapters/tls-adapter.ts`'s own established
+seam, same shape, same "testing only" rule), so this mechanism can be proven end to end over a real
+TLS handshake in a real Electron launch (`tests/serve-reach.test.ts`) -- a real advantage Electron's
+own `net.fetch` does not have. A hand-rolled client (the shape `src/preload/fetch-route.ts` is
+forced into by its own `contextBridge` serialisation constraint) was rejected because nothing here
+needs that constraint: Rule 6 says prefer the mature, already-audited component once a hand-rolled
+one is not actually required, and Node's own client already handles chunked encoding and keep-alive
+correctly. Two further properties this choice buys for free: `https.request` has no concept of a
+session or a cookie jar at all, so there is nothing to remember to set (contrast Chromium's
+`fetch()`, which needs an explicit `credentials: 'omit'` for the identical guarantee); and it never
+auto-follows a redirect -- a 3xx from the granted host is handed back to the page as an ordinary 3xx
+response, so a granted host can never hand a request off to one nobody approved.
 
 **Why `restorePinnedServing` runs at startup rather than only after a fresh `load()`.** `load()`
 does now have a production caller (the discovery trigger, via `src/main/app-install.ts`), but a

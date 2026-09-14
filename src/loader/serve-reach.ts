@@ -4,33 +4,11 @@
 // network socket: serve.ts's own header commits to staying free of that so
 // it can go on being tested with nothing but a stub LoaderStorage.
 //
-// NODE'S OWN `node:https`, NOT ELECTRON'S `net.fetch`, AND NOT A HAND-ROLLED
-// HTTP CLIENT. `test/e2e-fetch-routing.test.ts`'s own header records why an
-// unmodified Electron build cannot be made to trust a locally generated
-// test certificate -- which is why that file proves its own byte round trip
-// over plain HTTP rather than HTTPS. Node's own `https` module takes a
-// per-request `ca` override (`../broker/adapters/tls-adapter.ts`'s own
-// established seam, same shape, same "testing only" rule), so THIS
-// mechanism can be proven end to end over a real TLS handshake in a real
-// Electron launch (tests/serve-reach.test.ts). Preferred over a hand-rolled
-// HTTP/1.1 client (the shape `src/preload/fetch-route.ts` is forced into by
-// its own `contextBridge` serialisation constraint) because nothing here
-// needs that constraint -- Rule 6 says prefer the mature, already-audited
-// component once a hand-rolled one is not actually required, and Node's own
-// client already handles chunked encoding and keep-alive correctly.
-//
-// NO SESSION, NO COOKIE JAR, ANYWHERE ON THIS PATH. Node's `https.request`
-// has no concept of either -- nothing here reads or stores one. That is a
-// property of the transport, not a flag to remember to set (contrast
-// Chromium's fetch(), which needs an explicit `credentials: 'omit'` for the
-// same guarantee).
-//
-// REDIRECTS ARE NEVER FOLLOWED. `https.request` only ever reports the
-// response it actually received -- there is no auto-follow to disable here,
-// unlike Chromium's fetch() (`electron-fetch.ts`'s own `redirect: 'error'`).
-// A 3xx from the granted host is handed back to the page as an ordinary 3xx
-// response; nothing here re-dispatches it to wherever `Location` points, so
-// a granted host can never hand a request off to one nobody approved.
+// NODE'S OWN `node:https`, deliberately not Electron's `net.fetch` or a
+// hand-rolled HTTP/1.1 client, no session/cookie jar anywhere on this path,
+// and redirects are never followed -- see README.md's Design notes ("Why
+// serve-reach.ts uses Node's own https module") for the full reasoning
+// behind each of those, not repeated here.
 
 import { request as httpsRequest } from 'node:https'
 import type { IncomingMessage } from 'node:http'
