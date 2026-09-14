@@ -250,3 +250,28 @@ export function connectSrcFor (granted: readonly Pattern[]): ConnectSrcPolicy {
 export function appCspHeaderValue (granted: readonly Pattern[]): string {
   return `connect-src ${connectSrcFor(granted).sources.join(' ')}`
 }
+
+/**
+ * `img-src`/`font-src`/`media-src`, for a THIRD-PARTY resource fetch
+ * (A143, `src/loader/serve.ts`'s `fetchThirdParty`) rather than `fetch`/XHR.
+ *
+ * SOURCED FROM `https.connect`, NEVER `tcp.connect` -- deliberately a
+ * DIFFERENT input than `appCspHeaderValue` above. `fetchThirdParty` only
+ * ever proxies a granted `https:` request, authorised by `checkConnectSecure`
+ * against the `https.connect` grant; a CSP source list built from
+ * `tcp.connect` instead would advertise reach this directive can never
+ * actually grant. Reuses `connectSrcFor`'s own translation/omission logic
+ * unchanged (Rule 3) -- the host:port allowlist shape is identical, only the
+ * grant it is built from and the directives it is attached to differ.
+ *
+ * `img-src`/`font-src`/`media-src` were picked as the concrete, load-bearing
+ * cases named when this reach was decided (fonts, images); `frame-src` and
+ * `worker-src` are deliberately NOT widened here and stay on `default-src
+ * 'self'`'s fallback -- both are a bigger step (an embedded, live third-party
+ * document; code that runs at the app's own origin) than a static
+ * subresource, and neither was asked for.
+ */
+export function appReachCspHeaderValue (granted: readonly Pattern[]): string {
+  const list = connectSrcFor(granted).sources.join(' ')
+  return ['img-src', 'font-src', 'media-src'].map((directive) => `${directive} ${list}`).join('; ')
+}
