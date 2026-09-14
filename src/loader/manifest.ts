@@ -23,7 +23,7 @@
 // this file stays under the 500-line limit (Rule 2). Several helpers below
 // are exported for that file's use only, not for any outside consumer.
 
-import type { Manifest } from '../contracts/index.js'
+import type { ConsentGranularity, Manifest } from '../contracts/index.js'
 import { MAX_BUNDLE_ENTRIES, collisionKey, isValidCanonicalPath } from '../broker/policy/canonical-path.js'
 import { ownProperty } from '../broker/policy/own-property.js'
 import { compareVersions } from '../broker/policy/update.js'
@@ -76,7 +76,12 @@ const MAX_NAME_LENGTH = 200
 const MAX_VERSION_LENGTH = 256
 const MAX_ENTRY_LENGTH = 1024
 
-const MANIFEST_KEYS = ['orivonApiVersion', 'id', 'name', 'version', 'entry', 'assets', 'capabilities']
+const MANIFEST_KEYS = ['orivonApiVersion', 'id', 'name', 'version', 'entry', 'assets', 'capabilities', 'consentGranularity']
+
+// The two literals contracts/manifest.ts's ConsentGranularity actually has --
+// kept here, not derived from the type, because TypeScript erases that type
+// at runtime and this array is what the runtime check below is against.
+const CONSENT_GRANULARITIES: readonly ConsentGranularity[] = ['all-or-nothing', 'per-capability']
 
 /**
  * Two slots are reserved off MAX_BUNDLE_ENTRIES, not one. fetch-bundle.ts
@@ -339,6 +344,24 @@ function readAssets (value: Record<string, unknown>, entry: string): readonly st
   })
 }
 
+/**
+ * `consentGranularity` (contracts/manifest.ts's own doc comment carries the
+ * design reasoning -- not repeated here, Rule 1). Absent is legal and left
+ * OUT of the returned object entirely, the same "only add when defined"
+ * convention `assets` already uses below -- the contract's own "omitted
+ * means 'all-or-nothing'" default is a fact for a CALLER to apply, not a
+ * value this parser should invent and hand back as if the manifest had
+ * written it.
+ */
+function readConsentGranularity (value: Record<string, unknown>): ConsentGranularity | undefined {
+  const raw = ownProperty(value, 'consentGranularity', isAny)
+  if (raw === undefined) return undefined
+  if (typeof raw !== 'string' || !(CONSENT_GRANULARITIES as readonly string[]).includes(raw)) {
+    reject(`consentGranularity must be "all-or-nothing" or "per-capability", got ${describeValue(raw)}`)
+  }
+  return raw as ConsentGranularity
+}
+
 // --- top level ---------------------------------------------------------------
 
 function readManifest (value: unknown): Manifest {
@@ -390,7 +413,18 @@ function readManifest (value: unknown): Manifest {
   if (capabilitiesRaw === undefined) reject('capabilities is required')
   const capabilities = readCapabilities(capabilitiesRaw, 'capabilities')
 
-  return { orivonApiVersion: 0, id, name, version, entry, ...(assets !== undefined && { assets }), capabilities }
+  const consentGranularity = readConsentGranularity(value)
+
+  return {
+    orivonApiVersion: 0,
+    id,
+    name,
+    version,
+    entry,
+    ...(assets !== undefined && { assets }),
+    capabilities,
+    ...(consentGranularity !== undefined && { consentGranularity })
+  }
 }
 
 function parseJsonText (text: string): unknown {
