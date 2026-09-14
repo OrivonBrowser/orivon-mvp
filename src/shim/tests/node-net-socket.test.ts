@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Socket, createConnectFactory } from '../node-net-socket.js'
 import { createFakeTcpSocket } from './support/fake-tcp-socket.js'
+import { OrivonShimError } from '../errors.js'
 
 describe('net.Socket over a fake TcpSocket', () => {
   it('emits "connect" once the dial promise resolves, and exposes remoteAddress/remotePort synchronously after', async () => {
@@ -179,5 +180,35 @@ describe('createConnectFactory -- Node\'s real net.connect overloads', () => {
     await vi.waitFor(() => expect(calls).toHaveLength(1))
     expect(calls[0]).toEqual({ host: 'example.com', port: 80 })
     await vi.waitFor(() => expect(onConnect).toHaveBeenCalledOnce())
+  })
+})
+
+// A135: `socket.ref()`/`unref()`/`setTimeout()` used to be absent -- a bare
+// TypeError -- rather than the DELIBERATELY DIFFERENT treatment each one
+// gets below. This is not a Proxy (unlike node-dns.ts/node-fs.ts/node-net.ts's
+// module-level wraps): net.Socket is a stateful, feature-detected instance
+// real code guards with `typeof socket.unref === 'function'` before calling
+// it, and a throw-on-READ proxy would make that guard itself throw, turning
+// a graceful skip into a crash -- see README.md's Design notes.
+describe('net.Socket -- named refusal without breaking duck-typing (A135)', () => {
+  it('ref()/unref() are real, present, safe no-ops that return `this` -- there is no event-loop handle to ref/unref here', () => {
+    const fake = createFakeTcpSocket()
+    const socket = new Socket(async () => fake.socket)
+    expect(typeof socket.unref).toBe('function')
+    expect(socket.unref()).toBe(socket)
+    expect(socket.ref()).toBe(socket)
+  })
+
+  it('setTimeout is present (so a defensive typeof check still passes) but throws a named error when actually called', () => {
+    const fake = createFakeTcpSocket()
+    const socket = new Socket(async () => fake.socket)
+    expect(typeof socket.setTimeout).toBe('function')
+    expect(() => socket.setTimeout(30000)).toThrow(OrivonShimError)
+    try {
+      socket.setTimeout(30000)
+    } catch (error) {
+      expect((error as OrivonShimError).api).toBe('net.Socket#setTimeout')
+      expect((error as OrivonShimError).reason).toBe('unimplemented')
+    }
   })
 })

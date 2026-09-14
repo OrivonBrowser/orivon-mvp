@@ -14,12 +14,22 @@
 // one) -- both throw a named, explanatory error via node-fs-unsupported.ts,
 // the same treatment node-http-unsupported.ts and node-net-unsupported.ts
 // give their own gaps.
+//
+// EVERY OTHER fs MEMBER (A135): `copyFile`, `symlink`, `watch`, ... used to
+// be silently absent. The default export (what a bundled CJS `require('fs')`
+// resolves to) is wrapped so reading any of them names the gap instead of
+// reading `undefined` -- `chmod`/`chown` get their own reason ('not-
+// applicable': this confined fs has no POSIX uid/gid/mode model to set),
+// everything else defaults to 'unimplemented' (nothing decided either way,
+// unlike fs.open/the sync gaps above, which ARE decided).
 
 import { getOrivon } from './orivon-global.js'
 import { toNodeError } from './node-http-errors.js'
 import { toBytes } from './node-stream-bytes.js'
 import { toNodeStats, type NodeStats } from './node-fs-stats.js'
 import { open, syncUnsupported } from './node-fs-unsupported.js'
+import { refusingProxy } from './unimplemented.js'
+import { refuseShim } from './errors.js'
 import { Buffer } from 'buffer'
 
 export { open } from './node-fs-unsupported.js'
@@ -158,8 +168,26 @@ export function rename (from: string, to: string, callback: NodeCallback<void>):
 
 export type { NodeStats }
 
-export default {
+const POSIX_PERMISSION_MEMBERS = new Set(['chmod', 'chmodSync', 'chown', 'chownSync'])
+
+function otherFsMember (prop: string) {
+  if (POSIX_PERMISSION_MEMBERS.has(prop)) {
+    return refuseShim(
+      `fs.${prop}`, 'not-applicable',
+      `fs.${prop} sets a POSIX permission/ownership bit -- this shim's confined fs has no uid, ` +
+      'gid or mode to set one on (compatibility-matrix.md Table 3).'
+    )
+  }
+  return refuseShim(
+    `fs.${prop}`, 'unimplemented',
+    `fs.${prop} is real Node fs surface this shim has not implemented and has not decided ` +
+    'whether it will -- distinct from fs.open and the *Sync gaps above, which are decided, ' +
+    'unbuilt capabilities with their own reasons. See docs/planning/compatibility-matrix.md Table 3.'
+  )
+}
+
+export default refusingProxy({
   readFile, readFileSync, writeFile, writeFileSync,
   mkdir, readdir, stat, rm, rename, open,
   statSync, mkdirSync, readdirSync, rmSync, renameSync, existsSync
-}
+}, otherFsMember)
