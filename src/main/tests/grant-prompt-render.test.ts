@@ -102,13 +102,14 @@ describe('describeGrantRequest', () => {
     expect(messages.size).toBe(4)
   })
 
-  it('lists ports, not hosts, for tcp.listen -- a pattern shape connect capabilities never see', () => {
+  it('A134: tcp.listen gets a distinct, more serious prompt, not a plain unwarned row', () => {
     const manifest = manifestWith({ net: { tcp: { listen: ['6881-6889'] } } })
 
     const content = describeGrantRequest(ORIGIN, manifest, 'tcp.listen', ['6881-6889'])
 
-    expect(content.message).toBe('Accept incoming connections on port 6881-6889')
-    expect(content.warning).toBe(false)
+    expect(content.message).toBe('⚠ Accept incoming connections on port 6881-6889')
+    expect(content.warning).toBe(true)
+    expect(content.detail).toContain('any other computer that can reach this port')
   })
 
   it('dedupes repeated hosts across patterns before counting "other sites"', () => {
@@ -117,6 +118,39 @@ describe('describeGrantRequest', () => {
     const content = describeGrantRequest(ORIGIN, manifest, 'https.connect', ['a.example:443', 'a.example:8443', 'b.example:443'])
 
     expect(content.message).toBe('Connect to a.example and 1 other site')
+  })
+
+  it('A134: udp.bind gets the same distinct listening warning, worded for "receive" not "connect"', () => {
+    const manifest = manifestWith({ net: { udp: { bind: ['6881-6889'] } } })
+
+    const content = describeGrantRequest(ORIGIN, manifest, 'udp.bind', ['6881-6889'])
+
+    expect(content.message).toBe('⚠ Receive data on port 6881-6889')
+    expect(content.warning).toBe(true)
+    expect(content.detail).toContain('any other computer that can reach this port')
+  })
+
+  it('A134: listening is worded differently from unlimited network access, not a copy-pasted sentence', () => {
+    const listenManifest = manifestWith({ net: { tcp: { listen: ['6881-6889'] } } })
+    const netManifest = manifestWith({ net: { https: { connect: ['*:*'] } } })
+
+    const listen = describeGrantRequest(ORIGIN, listenManifest, 'tcp.listen', ['6881-6889'])
+    const net = describeGrantRequest(ORIGIN, netManifest, 'https.connect', ['*:*'])
+
+    expect(listen.warning).toBe(true)
+    expect(net.warning).toBe(true)
+    expect(listen.message).not.toBe(net.message)
+    expect(listen.detail).not.toBe(net.detail)
+  })
+
+  it('A134: tcp.listen and udp.bind read differently from each other too (connect vs send)', () => {
+    const tcpManifest = manifestWith({ net: { tcp: { listen: ['6881-6889'] } } })
+    const udpManifest = manifestWith({ net: { udp: { bind: ['6881-6889'] } } })
+
+    const tcp = describeGrantRequest(ORIGIN, tcpManifest, 'tcp.listen', ['6881-6889'])
+    const udp = describeGrantRequest(ORIGIN, udpManifest, 'udp.bind', ['6881-6889'])
+
+    expect(tcp.detail).not.toBe(udp.detail)
   })
 
   it('puts the ORIGIN, never the self-asserted manifest.name, in the title', () => {
@@ -178,6 +212,46 @@ describe('describeCapabilityGrant -- a wildcard host is unlimited whatever its p
   it('applies the same wildcard-whatever-the-port rule to tcp.connect and udp.send, not only https.connect', () => {
     expect(describeCapabilityGrant('tcp.connect', ['*:22']).warning).toBe(true)
     expect(describeCapabilityGrant('udp.send', ['*:53']).warning).toBe(true)
+  })
+})
+
+// A133: "and N other sites" has no upper bound today -- a manifest naming a
+// very large host set reads as a small, weighable fact right up until it
+// isn't. These pin the exact boundary (see this directory's README, Design
+// notes, for why 10 others is not an arbitrary round number) and the exact
+// wording either side of it, since that wording is what the owner reviews.
+describe('describeCapabilityGrant -- A133: "and N other sites" gets a breadth warning past a threshold', () => {
+  function hostPatterns (count: number): Pattern[] {
+    return Array.from({ length: count }, (_, i) => `host${i}.example:443`)
+  }
+
+  it('just under the threshold (9 others, 10 total) still reads as an ordinary named-hosts summary', () => {
+    const summary = describeCapabilityGrant('https.connect', hostPatterns(10))
+
+    expect(summary.warning).toBe(false)
+    expect(summary.message).toBe('Connect to host0.example and 9 other sites')
+  })
+
+  it('at the threshold (10 others, 11 total) switches to the breadth-warning treatment', () => {
+    const summary = describeCapabilityGrant('https.connect', hostPatterns(11))
+
+    expect(summary.warning).toBe(true)
+    expect(summary.message).toBe('⚠ Connect to a large number of sites')
+    expect(summary.explanation).toBe(
+      'This app can connect to 11 specific sites, starting with host0.example -- more than can be weighed individually.'
+    )
+  })
+
+  it('a much larger declared set still states the true count honestly, not a vaguer word instead', () => {
+    const summary = describeCapabilityGrant('https.connect', hostPatterns(200))
+
+    expect(summary.warning).toBe(true)
+    expect(summary.explanation).toContain('200 specific sites')
+  })
+
+  it('applies the same threshold to tcp.connect and udp.send, not only https.connect', () => {
+    expect(describeCapabilityGrant('tcp.connect', hostPatterns(11)).warning).toBe(true)
+    expect(describeCapabilityGrant('udp.send', hostPatterns(11)).warning).toBe(true)
   })
 })
 
@@ -424,5 +498,21 @@ describe('describeInstallConsent', () => {
 
     expect(content.warning).toBe(false)
     expect(content.detail).toBe('https://app.example\nClaims to be "Test app".')
+  })
+
+  it('A134: unlimited outbound and listening both stay visible as their own warned rows -- neither swallows the other', () => {
+    const manifest = manifestWith({ net: { https: { connect: ['*:*'] }, tcp: { listen: ['6881-6889'] } } })
+
+    const content = describeInstallConsent(ORIGIN, manifest, ['https.connect', 'tcp.listen'])
+
+    expect(content.warning).toBe(true)
+    expect(content.detail).toBe(
+      'https://app.example\n' +
+      'Claims to be "Test app".\n' +
+      '- ⚠ Unlimited network access\n' +
+      '  This app can connect to any website, not just specific ones.\n' +
+      '- ⚠ Accept incoming connections on port 6881-6889\n' +
+      '  This opens a door into your device: any other computer that can reach this port -- on your network, or the internet if it is forwarded -- can connect to this app, not only computers it reached out to first.'
+    )
   })
 })
