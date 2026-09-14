@@ -147,6 +147,19 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     }
   }
 
+  /**
+   * A158's early-hydration seam -- see `Broker.app.hydrateFromPinnedManifest`'s
+   * own doc for the caller contract. No try/catch around the ledger call,
+   * unlike `registerApp` above: `GrantLedger.hydrateFromPinnedManifest`
+   * performs no write of its own (it only reads persisted grants, the same
+   * as `hydrateGrants` already does unguarded inside `registerApp`'s own
+   * hydration branch), so there is no write failure here to translate.
+   */
+  async function hydrateFromPinnedManifest (origin: string, manifest: Manifest): Promise<void> {
+    const key = canonical(origin)
+    ledger.hydrateFromPinnedManifest(key, manifest)
+  }
+
   async function versionFloorFor (origin: string): Promise<string> {
     return ledger.versionFloorFor(canonical(origin))
   }
@@ -317,7 +330,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
   }
 
   return {
-    app: { manifest, grants, isRegisteredSync, registeredOriginsSync, persistedAppsSync },
+    app: { manifest, grants, isRegisteredSync, registeredOriginsSync, persistedAppsSync, hydrateFromPinnedManifest },
     net,
     id,
     fs,

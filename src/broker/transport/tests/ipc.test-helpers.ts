@@ -101,7 +101,11 @@ export function stubBroker (
         return overrides.isRegisteredSync?.(origin) ?? false
       },
       registeredOriginsSync: () => [],
-      persistedAppsSync: () => []
+      persistedAppsSync: () => [],
+      // Present so this stub still satisfies `Broker`; no test here drives
+      // it -- A158's early-hydration seam is a loader-side caller
+      // (electron-serve.ts's registerServingFor), never reached via ipc.ts.
+      hydrateFromPinnedManifest: async () => {}
     },
     net: {
       connect: async (origin, opts) => {

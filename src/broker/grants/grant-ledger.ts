@@ -11,7 +11,7 @@ import { acknowledgeRollback, hydrateFloor, hydrateRollbackAcknowledgedVersion, 
 import type { ParsedPattern } from '../policy/connect-patterns.js'
 import type { ParsedPatternsCache } from './parsed-patterns-cache.js'
 import { createParsedPatternsCache } from './parsed-patterns-cache.js'
-import { hydrateGrants, persistGrants } from './grant-persistence.js'
+import { persistGrants, replaceHydratedGrants } from './grant-persistence.js'
 import { clearDeclinedConsent, hydrateDeclinedCapabilities, recordDeclinedConsent } from './declined-consent.js'
 
 /**
@@ -131,7 +131,6 @@ export class GrantLedger {
     return created
   }
 
-
   /**
    * Registers -- or replaces -- an origin's manifest. Existing grants are
    * left untouched: a page reload re-declares the same manifest and must not
@@ -168,12 +167,11 @@ export class GrantLedger {
     record.manifest = manifest
 
     // First registration this session only -- see `grantsHydrated`'s doc.
+    // replaceHydratedGrants REPLACES rather than merges (A158, README.md).
     if (!record.grantsHydrated) {
       record.grantsHydrated = true
       if (this.#storage !== undefined && isPersistableOrigin(origin)) {
-        for (const [capability, grant] of hydrateGrants(this.#storage, origin, manifest, newGrantId)) {
-          record.grants.set(capability, grant)
-        }
+        replaceHydratedGrants(this.#storage, origin, manifest, record.grants, newGrantId)
       }
     }
 
@@ -181,6 +179,23 @@ export class GrantLedger {
     // nothing else -- see ./update-safety.ts. Returns false when the floor did
     // not move, which is the ordinary page-reload case and must not touch disk.
     raiseFloor(this.#storage, origin, record, manifest.version)
+  }
+
+  /**
+   * A158's early-hydration seam -- full reasoning in README.md's
+   * grant-persistence design note, not repeated here. Runs `registerApp`'s
+   * restore-and-re-validate step BEFORE `registerApp` itself has been called
+   * for `origin` this session. `manifest` MUST already be proven a leaf of a
+   * hash-pinned bundle (`serve.ts`'s `verifiedManifestFor`) -- NEVER a bare
+   * disk read; that is what tells this apart from A137's withdrawn attempt.
+   * A NO-OP once `registerApp` has hydrated this origin (`grantsHydrated`);
+   * otherwise idempotent, and always superseded by its later hydration.
+   */
+  hydrateFromPinnedManifest (origin: string, manifest: Manifest): void {
+    const record = this.#record(origin)
+    if (record.grantsHydrated) return
+    if (this.#storage === undefined || !isPersistableOrigin(origin)) return
+    replaceHydratedGrants(this.#storage, origin, manifest, record.grants, newGrantId)
   }
 
   /**
