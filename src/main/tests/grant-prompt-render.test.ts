@@ -215,30 +215,42 @@ describe('describeCapabilityGrant -- a wildcard host is unlimited whatever its p
   })
 })
 
-// A133: "and N other sites" has no upper bound today -- a manifest naming a
-// very large host set reads as a small, weighable fact right up until it
-// isn't. These pin the exact boundary (see this directory's README, Design
-// notes, for why 10 others is not an arbitrary round number) and the exact
-// wording either side of it, since that wording is what the owner reviews.
+// A133, CORRECTED: the first threshold (10 OTHER hosts, a single-digit vs
+// double-digit reading of English) was proven wrong by a real counter-
+// example -- a 12-host feed reader tripped it, and twelve individually
+// named feeds is a narrow declaration by any sensible reading, not a
+// breadth risk. Re-anchored on MAX_PATTERNS (the real, enforced ceiling on
+// how many hosts one capability's array may ever declare): the warning now
+// fires only past HALF that ceiling. The feed reader is the regression
+// test that must never trip again; see this directory's README, Design
+// notes, for the full before/after.
 describe('describeCapabilityGrant -- A133: "and N other sites" gets a breadth warning past a threshold', () => {
   function hostPatterns (count: number): Pattern[] {
     return Array.from({ length: count }, (_, i) => `host${i}.example:443`)
   }
 
-  it('just under the threshold (9 others, 10 total) still reads as an ordinary named-hosts summary', () => {
-    const summary = describeCapabilityGrant('https.connect', hostPatterns(10))
+  it('REGRESSION: a 12-feed reader -- the case that broke the original threshold -- never warns', () => {
+    const feeds = ['nytimes.com:443', 'bbc.com:443', 'reuters.com:443', 'apnews.com:443', 'npr.org:443', 'theguardian.com:443', 'wsj.com:443', 'ft.com:443', 'economist.com:443', 'aljazeera.com:443', 'dw.com:443', 'lemonde.fr:443']
+    const summary = describeCapabilityGrant('https.connect', feeds)
 
     expect(summary.warning).toBe(false)
-    expect(summary.message).toBe('Connect to host0.example and 9 other sites')
+    expect(summary.message).toBe('Connect to nytimes.com and 11 other sites')
   })
 
-  it('at the threshold (10 others, 11 total) switches to the breadth-warning treatment', () => {
-    const summary = describeCapabilityGrant('https.connect', hostPatterns(11))
+  it('just under the threshold (127 hosts) still reads as an ordinary named-hosts summary', () => {
+    const summary = describeCapabilityGrant('https.connect', hostPatterns(127))
+
+    expect(summary.warning).toBe(false)
+    expect(summary.message).toBe('Connect to host0.example and 126 other sites')
+  })
+
+  it('at the threshold (128 hosts -- half of MAX_PATTERNS) switches to the breadth-warning treatment', () => {
+    const summary = describeCapabilityGrant('https.connect', hostPatterns(128))
 
     expect(summary.warning).toBe(true)
     expect(summary.message).toBe('⚠ Connect to a large number of sites')
     expect(summary.explanation).toBe(
-      'This app can connect to 11 specific sites, starting with host0.example -- more than can be weighed individually.'
+      'This app can connect to 128 specific sites, starting with host0.example -- more than can be weighed individually.'
     )
   })
 
@@ -250,8 +262,8 @@ describe('describeCapabilityGrant -- A133: "and N other sites" gets a breadth wa
   })
 
   it('applies the same threshold to tcp.connect and udp.send, not only https.connect', () => {
-    expect(describeCapabilityGrant('tcp.connect', hostPatterns(11)).warning).toBe(true)
-    expect(describeCapabilityGrant('udp.send', hostPatterns(11)).warning).toBe(true)
+    expect(describeCapabilityGrant('tcp.connect', hostPatterns(128)).warning).toBe(true)
+    expect(describeCapabilityGrant('udp.send', hostPatterns(128)).warning).toBe(true)
   })
 })
 
@@ -514,5 +526,83 @@ describe('describeInstallConsent', () => {
       '- ⚠ Accept incoming connections on port 6881-6889\n' +
       '  This opens a door into your device: any other computer that can reach this port -- on your network, or the internet if it is forwarded -- can connect to this app, not only computers it reached out to first.'
     )
+  })
+
+  // Coordinator review, 2026-09-14: the round above did not test what
+  // happens when SEVERAL warned capabilities appear together, and the
+  // flagship's real manifest broke it -- 4 of 5 rows warned, one headline
+  // ("⚠ Unlimited network access") appearing twice from tcp.connect and
+  // udp.send. These pin the two merges that fix it.
+  it('merges tcp.connect and udp.send into ONE row when both are unlimited -- an identical headline never repeats', () => {
+    const manifest = manifestWith({ net: { tcp: { connect: ['*:*'] }, udp: { send: ['*:*'] } } })
+
+    const content = describeInstallConsent(ORIGIN, manifest, ['tcp.connect', 'udp.send'])
+
+    expect(content.warning).toBe(true)
+    expect(content.detail).toBe(
+      'https://app.example\n' +
+      'Claims to be "Test app".\n' +
+      '- ⚠ Unlimited network access\n' +
+      '  This app can connect to any computer on the internet, not just specific ones. This app can send data to any computer on the internet, not just specific ones.'
+    )
+  })
+
+  it('merges tcp.listen and udp.bind into ONE row on the same ports, not two "opens a door" rows', () => {
+    const manifest = manifestWith({ net: { tcp: { listen: ['6881-6889'] }, udp: { bind: ['6881-6889'] } } })
+
+    const content = describeInstallConsent(ORIGIN, manifest, ['tcp.listen', 'udp.bind'])
+
+    expect(content.warning).toBe(true)
+    expect(content.detail).toBe(
+      'https://app.example\n' +
+      'Claims to be "Test app".\n' +
+      '- ⚠ Accepts connections and data from other computers on port 6881-6889\n' +
+      '  This opens a door into your device: any other computer that can reach these ports -- on your network, or the internet if they are forwarded -- can connect to or send data to this app, not only computers this app contacted first.'
+    )
+  })
+
+  it('a listen/bind merge on DIFFERENT port ranges still names both, not one range silently standing in for the other', () => {
+    const manifest = manifestWith({ net: { tcp: { listen: ['6881-6889'] }, udp: { bind: ['6969'] } } })
+
+    const content = describeInstallConsent(ORIGIN, manifest, ['tcp.listen', 'udp.bind'])
+
+    expect(content.detail).toContain('⚠ Accepts connections and data from other computers on port 6881-6889 (TCP) and port 6969 (UDP)')
+  })
+
+  it('does NOT merge tcp.listen alone with anything -- the merge needs both capabilities present, not just one warned row', () => {
+    const manifest = manifestWith({ net: { tcp: { listen: ['6881-6889'] } } })
+
+    const content = describeInstallConsent(ORIGIN, manifest, ['tcp.listen'])
+
+    expect(content.detail).toContain('⚠ Accept incoming connections on port 6881-6889')
+    expect(content.detail).not.toContain('Accepts connections and data from other computers')
+  })
+
+  it('THE FLAGSHIP: connect *:*, listen, udp.bind and udp.send *:* together render exactly two warnings, not four, and no repeated headline', () => {
+    const manifest = manifestWith({
+      net: {
+        tcp: { connect: ['*:*'], listen: ['6881-6889'] },
+        udp: { bind: ['6881-6889'], send: ['*:*'] }
+      },
+      fs: { quotaBytes: 1024 * 1024 * 1024 }
+    })
+
+    const content = describeInstallConsent(ORIGIN, manifest, ['tcp.connect', 'tcp.listen', 'udp.bind', 'udp.send', 'fs'])
+
+    expect(content.warning).toBe(true)
+    expect(content.detail).toBe(
+      'https://app.example\n' +
+      'Claims to be "Test app".\n' +
+      '- ⚠ Unlimited network access\n' +
+      '  This app can connect to any computer on the internet, not just specific ones. This app can send data to any computer on the internet, not just specific ones.\n' +
+      '- ⚠ Accepts connections and data from other computers on port 6881-6889\n' +
+      '  This opens a door into your device: any other computer that can reach these ports -- on your network, or the internet if they are forwarded -- can connect to or send data to this app, not only computers this app contacted first.\n' +
+      '- Store files in a private folder for this app on this device'
+    )
+    // Five declared capabilities collapse to three rows: two distinct kinds
+    // of breadth (outbound reach, inbound reach), never a fourth repeating
+    // one of the first two.
+    expect(content.detail.match(/\n- /g)).toHaveLength(3)
+    expect(content.detail.match(/⚠/g)).toHaveLength(2)
   })
 })
