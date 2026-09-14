@@ -80,8 +80,31 @@ replaces.
 
 ## Consequences
 
-- **`fetch` behaves differently inside Orivon than in Chrome.** This must be documented plainly for
-  developers; a silent divergence in a web platform API is a trap.
+- **`fetch` behaves differently inside Orivon than in Chrome, in three ways that belong together
+  rather than found one at a time.** This must be documented plainly for developers; a silent
+  divergence in a web platform API is a trap.
+    - **CORS.** A routed request never becomes a browser-mediated network load, so none of the
+      renderer's cross-origin machinery -- preflight, the forbidden-header list, the
+      simple-request rules -- applies to it. Deliberate, and most of the point of routing (see
+      Context and Reasoning above): an app reaching a granted host gets the same header freedom a
+      native client would have.
+    - **CSP.** For the identical reason, a page's own declared Content-Security-Policy (a
+      `connect-src` directive, set via a `<meta>` tag or a response header) has no effect on a
+      routed request either. Enforcement moves entirely to the broker's own check on
+      `orivon.net.connectSecure` -- the manifest pattern match, not the page's CSP, is what
+      actually bounds the request.
+    - **Mixed content** (`docs/open-questions.md` A117, filed 2026-09-10). A page served over
+      `https:` can reach an `http:` granted host through this same routed path, which the
+      renderer's own mixed-content blocking would have refused for a native `fetch`. This is not
+      "Orivon allows mixed content" as a general property -- only this one routed path skips an
+      enforcement the renderer otherwise performs, and only for a host the manifest declared and
+      a person approved at install. An app that declared a plaintext host and had that reviewed
+      has been through more scrutiny than the browser's blanket rule provides, which is why this
+      is recorded as a documented, deliberate consequence rather than changed.
+
+  `src/preload/README.md`'s Design notes (owned by the `broker` stream) catalogue the further,
+  per-call-shape divergences this same requirement produced -- the response body cap, unfollowed
+  redirects, and the limited request-body types -- alongside this one.
 - **Unlimited HTTPS is the widest permission in the system.** If the prompt renders it the same way
   as a narrow declaration, every manifest will declare unlimited and the prompt stops meaning
   anything. Making breadth visible is therefore load-bearing, not polish.
