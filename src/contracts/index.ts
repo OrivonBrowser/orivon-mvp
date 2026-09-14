@@ -42,6 +42,7 @@ export type {
   Grant,
   GrantId,
   CapabilityKind,
+  ConsentGranularity,
   Pattern
 } from './manifest.js'
 

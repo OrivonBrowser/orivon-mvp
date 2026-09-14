@@ -183,9 +183,54 @@ Served alongside the app's frontend assets and fetched before first run.
     "id": { "curves": ["secp256k1"] },
     "protocols": ["magnet"]            // shell routes magnet: links to this app
                                        // (first registrant is default; conflicts → user chooses)
-  }
+  },
+
+  "consentGranularity": "all-or-nothing"  // omitting this line has the same effect; see below.
+                                           // "per-capability" lets the person accept some of the
+                                           // capabilities above and refuse others.
 }
 ```
+
+### `consentGranularity` — who decides whole-or-part, and why it defaults closed
+
+Asked whether a person may accept only *part* of what an app requests — grant its network
+access, refuse its filesystem access — the owner answered with an option nobody had put to
+them: **let the app say which it can survive.** `Manifest.consentGranularity` is that
+declaration, `'all-or-nothing'` or `'per-capability'` (`src/contracts/manifest.ts`'s
+`ConsentGranularity`).
+
+**`'all-or-nothing'`** presents the whole declared capability set as one accept/decline choice.
+The app either runs with everything it asked for, or does not run — there is no state where it
+holds part of what it declared. **`'per-capability'`** lets the person decide each declared
+capability on its own, and the app finds out what it actually got from `orivon.app.grants()`,
+which may report less than its manifest declared.
+
+**The app declares this, not Orivon**, for a concrete reason, not a preference: only the app's
+own author knows which their code can survive. Code ported from Node or Electron was never
+written to handle a capability being refused — it assumes what it asked for exists, the way
+Node's own `fs`/`net` do — so a person refusing one of several requested capabilities is not a
+smaller version of that app working, it is a crash wearing a different shape. An app written for
+Orivon from the start can check `orivon.app.grants()` on purpose and degrade a missing
+capability gracefully, so its author is free to offer real per-item control instead.
+
+**Omitting the field means `'all-or-nothing'`.** Every manifest written before this field
+existed was written with no knowledge that a partial grant could ever happen, which describes a
+ported app exactly — so the safe reading of silence is the one that can never hand an unprepared
+app a state it has no code path for. This costs the generous case (a person who wants the app
+but not its filesystem access has only the choice to decline the whole thing) to avoid the
+unsafe one (an app crashing mid-run on a refusal it cannot interpret). A person who wants finer
+control over an app that has not opted in still has the settings-list revoke path (A101) once
+the app is running — narrower than a row in the install prompt, but real.
+
+**One flag for the whole manifest, not one per capability.** The question this answers — can the
+app's own code cope with an incomplete grant — is a property of the app as a whole: a ported app
+has no code path for a missing filesystem grant any more than for a missing network one, so
+splitting the choice per capability would ask an author to answer a question their code does not
+actually distinguish.
+
+`docs/open-questions.md` A138 carries the fuller argument and is now resolved to this. This
+section is prose only — no broker, install-prompt or renderer code reads this field yet; that is
+implementation, out of scope for the contracts change that added it.
 
 ### `version` — semver, ordering, and what an unparseable one costs
 
