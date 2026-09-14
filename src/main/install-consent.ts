@@ -7,18 +7,16 @@
 // calls this from installFromHint's own 'installed' branch -- see that
 // file's header for exactly where.
 //
-// "ONCE PER ORIGIN, EVER" (A139) IS DERIVED, NOT TRACKED HERE. registerApp
-// (GrantLedger's own `grantsHydrated` flag) already restores every still-
-// valid persisted grant into the live ledger, checked against THIS call's
-// freshly fetched manifest, before this function ever runs -- see
-// app-install.ts's call order. So an origin already accepted on a prior
-// visit, this session or a past one, already holds a live grant for its
-// declared capabilities by the time this checks, and asking again would be
-// exactly the fatigue ADR-0012 exists to prevent. THE ONE CASE THIS DOES
-// NOT REMEMBER: a fully DECLINED visit persists no grant at all, so nothing
-// on disk distinguishes "asked, said no" from "never asked" -- a declined
-// origin is asked again on its next visit. Filed as A145 rather than
-// silently accepted; see docs/open-questions.md.
+// "ONCE PER ORIGIN, EVER" HAS TWO HALVES, ONE DERIVED AND ONE RECORDED. An
+// ACCEPT is derived from the grant ledger's own hydration (registerApp's
+// grantsHydrated), never tracked as separate state -- see this function's
+// own doc. A DECLINE is a real persisted record (A145,
+// GrantLedger.declinedCapabilitiesFor/recordDeclinedConsent): nothing else
+// on disk distinguishes "asked, said no" from "never asked". It is
+// ADVISORY ONLY -- it can suppress this dialog, never grant anything -- and
+// is cleared the moment a later visit accepts, so an old "no" cannot
+// outlive a "yes" for the same-or-narrower question. See
+// src/broker/grants/declined-consent.ts and docs/open-questions.md A145.
 
 import { patternSetFromCapabilities } from '../broker/policy/manifest-patterns.js'
 import type { Broker } from '../broker/broker-contracts.js'
@@ -42,8 +40,9 @@ export type InstallConsentPrompt = (
 
 /**
  * Runs d-0025's whole flow for one freshly-installed origin: work out what
- * to ask, skip asking when there is nothing to ask or it was already asked,
- * show the dialog, and grant everything on acceptance.
+ * to ask, skip asking when there is nothing to ask or it was already asked
+ * (either accepted or declined), show the dialog, and grant everything on
+ * acceptance.
  *
  * Never throws. A failure anywhere in here -- no prompt wired, the prompt
  * itself rejecting, a grant call rejecting -- degrades to "nothing new
@@ -71,6 +70,16 @@ export async function requestInstallConsent (
   // forever. `.every` only skips once nothing declared is left unheld.
   if (capabilities.every((capability) => held.some((existing) => existing.capability === capability))) return
 
+  // A145: the remembered-no check. `declined` is exactly the set this
+  // origin's dialog was last DECLINED for -- not a boolean -- so a manifest
+  // that now asks for something NOT in that set is a genuinely different
+  // question and is asked again. A manifest asking for the same set, or a
+  // NARROWER one, is treated as still covered by the earlier "no" (AI
+  // recommendation, retunable -- see docs/open-questions.md A145's
+  // 2026-09-14 update for the argument and the alternative).
+  const declined = await broker.declinedCapabilitiesFor(origin)
+  if (declined !== undefined && capabilities.every((capability) => declined.includes(capability))) return
+
   if (consent === undefined) return // no prompt wired -- fail closed, same stance request-grant.ts takes
 
   let accepted: boolean
@@ -80,7 +89,25 @@ export async function requestInstallConsent (
     console.error('[install-consent] the consent prompt threw; treating this visit as declined', origin, error)
     return
   }
-  if (!accepted) return // A138: all-or-nothing -- the app stays installed, holding nothing
+  if (!accepted) {
+    // Remember the no (A145) -- best-effort, never throws (see
+    // declined-consent.ts): the worst a lost write costs is one avoidable
+    // re-prompt next restart, never a security regression.
+    await broker.recordDeclinedConsent(origin, capabilities)
+    return // A138: all-or-nothing -- the app stays installed, holding nothing
+  }
 
+  // The person just said yes to exactly `capabilities` -- any earlier "no"
+  // for this origin is stale the moment this line runs, whatever it covered.
+  // CLEARED BEFORE GRANTING, DELIBERATELY: grantChangedCapabilities grants
+  // per capability and swallows a per-capability failure (its own doc), so a
+  // crash or a partial failure here could leave some capabilities granted
+  // and others not. Clearing first means that partial state is read next
+  // time as "some held, none declined" -- the existing "already held" check
+  // above asks again for whatever is still missing. Clearing AFTER would
+  // instead leave the stale decline in place over exactly those still-
+  // missing capabilities, silently re-suppressing a dialog the person just
+  // said yes to.
+  await broker.clearDeclinedConsent(origin)
   await grantChangedCapabilities(broker, origin, manifest, capabilities)
 }
