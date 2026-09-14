@@ -33,6 +33,22 @@ describe('refusingProxy', () => {
     const wrapped = refusingProxy({}, () => notConsidered('x')) as Record<symbol, unknown>
     expect(wrapped[Symbol.iterator]).toBeUndefined()
   })
+
+  // A135: src/shim/ reuses this exact function for its own Node-stdlib
+  // refusals, with its own error class and reason union -- `classify` must
+  // not be hardwired to ElectronShimReason/refuse(). Proven here with a
+  // plain TypeError rather than any ElectronShimError, so a passing test
+  // cannot be satisfied by classify secretly still routing through refuse().
+  it('throws exactly what classify returns, not an ElectronShimError manufactured from it', () => {
+    const wrapped = refusingProxy({}, (prop) => new TypeError(`unrelated: ${prop}`)) as Record<string, unknown>
+    expect(() => wrapped.missing).toThrow(TypeError)
+    try {
+      void wrapped.missing
+    } catch (error) {
+      expect(error).not.toBeInstanceOf(ElectronShimError)
+      expect((error as Error).message).toBe('unrelated: missing')
+    }
+  })
 })
 
 describe('unimplementedMember', () => {
