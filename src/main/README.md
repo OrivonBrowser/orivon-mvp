@@ -509,3 +509,58 @@ accept-side inference: the owner's decision behind that fix was specifically "re
 a live `Grant` is already stronger evidence of "asked and agreed" than a separate marker recording
 the question would be. `A157` still parks whether this residual inference is an acceptable floor
 or needs its own persisted marker -- see that entry's 2026-09-14 update.
+
+**[`install-consent.ts`](install-consent.ts) / [`grant-prompt-choice.ts`](grant-prompt-choice.ts) /
+[`install-consent-prompt.ts`](install-consent-prompt.ts) — A138's `'per-capability'` path: what
+"outstanding" replaces, why the real dialog is a staged native sequence rather than a custom
+window, and what a partial decline means for the remembered-no record.**
+
+*Why `requestInstallConsent`'s two gates became one filter.* Before this, "already asked" was two
+separate whole-set checks: skip if EVERY declared capability is held, else skip if EVERY declared
+capability is declined. That was sound only because an all-or-nothing decision always covers the
+WHOLE declared set at once — accept grants everything, decline records everything — so `held` and
+`declined` could never both be non-empty, non-overlapping subsets of the same request. A
+`'per-capability'` accept-some-refuse-some decision makes exactly that mixed state reachable: e.g.
+`held = [tcp.connect]`, `declined = [fs]`. Neither old whole-set check would have fired, so the
+dialog would have shown again for the full set every restart — asking again about a capability
+already decided in both directions. `outstanding` (capabilities covered by NEITHER `held` NOR
+`declined`) is the generalisation: proven, not assumed, to collapse back to the exact old
+behaviour whenever the mixed state cannot occur (install-consent-per-capability.test.ts's own
+restart suite, plus every pre-existing install-consent.test.ts case, unmodified and still green).
+
+*Why the all-or-nothing dialog still shows the WHOLE declared set, not `outstanding`, while the
+per-capability one asks only about `outstanding`.* `A157`'s own test fixed this asymmetry once
+already: a person choosing all-or-nothing must see the complete picture even when part of it is
+already held from an out-of-band `app.requestGrant` call, because `grantChangedCapabilities`
+already skips re-granting anything unchanged — showing the narrower `outstanding` set there would
+under-inform the person about what the app actually holds. Per-capability has no such reason to
+over-ask: each capability gets its own explicit yes/no, so one already decided (held or declined)
+has nothing left to ask.
+
+*Why the real per-capability surface is a staged sequence of native dialogs, not a window Orivon
+renders itself.* Three shapes were on the table (the lane's own brief named them): a plain
+sequence of independent native dialogs, a self-rendered checkbox-list window, or something staged.
+A plain sequence was rejected for reproducing exactly the fatigue the combined dialog (`A139`) was
+built to remove, and for never showing the whole request before any one part is decided. A
+self-rendered window is the only shape with a true checkbox list, but it is a new privileged
+surface — its own `webPreferences`, its own CSP, load-bearing the same way the chrome view's is
+(this file's own §Design notes on that view) — for a feature this lane's brief itself frames as a
+genuine, still-open design question rather than a settled requirement; building it now would be
+spending that care before the owner has seen the cheaper option work. The staged shape costs one
+extra click for the common cases (`Allow all` / `Deny all`, one dialog, same cost as today) and
+keeps the WHOLE request visible on every screen of the individual-choice path
+(`describeCapabilityChoice`, one screen per capability, marking the current row and everything
+this same sequence already decided) — the one property a plain sequence cannot offer at all, at
+zero new-surface cost. **AI recommendation, not an owner decision** — flagged in the PR as
+`needs-owner-decision`; a self-rendered window remains the better long-term answer if the owner
+wants a true checkbox list once this surface proves out.
+
+*What a partial acceptance does to the remembered-decline record.* The record was designed
+(`A145`) as one list per origin, replaced wholesale on every decision. A partial decision cannot
+use wholesale replace without erasing an unrelated earlier decline: if a person declined `fs`
+last week and today accepts `tcp.connect` (a different, newly-declared capability), replacing the
+whole record with just this round's answer would un-decline `fs` nobody revisited. Because
+`outstanding` already excludes anything in the old `declined` set by construction, nothing this
+round accepts or refuses was ever a member of it — so the new record is simply the old one plus
+exactly this round's fresh refusals, never a subtraction. An accept is never separately recorded;
+`grantsHydrated`'s own derivation (`A139`, above) already covers it once the grant lands.
