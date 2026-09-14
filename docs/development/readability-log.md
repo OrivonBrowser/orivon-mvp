@@ -43,7 +43,39 @@ Three reasons, in order of how much they matter:
 | 2026-09-03 | `docs/development/code-guidelines.md` §Rule 1, as rewritten | **"A comment describes the code as it stands, not the change that produced it" — could not follow it.** Four banned phrasings ran together in one sentence, and "the second kind ages into an outright lie" had no resolvable referent; the provenance of the rule was welded onto the end of the rule itself | Replaced the paragraph with a two-column **do-not-write / write-instead** table, one row per banned phrasing, and moved the audit provenance to §Background |
 | 2026-09-11 | `README.md` | **"Build step 1 of 10 is done" — inaccurate.** Steps 2 and 3 had landed the day before, and the same banner still said *"the capability broker — the actual product — is not written yet"*, which the roadmap table eight lines below contradicted. The document argued with itself, and the banner is what a reader meets first | Rewrote the banner to say steps 1-3 are done and to state the honest limit in its place — **no app can ask for a permission yet, so nothing is granted in practice** — and pointed it at the compatibility matrix as well as the build plan. The stale `CHANGELOG.md` the banner sends readers to, which still described step 1 only, was brought up to date in the same pass |
 | 2026-09-11 | `README.md` §Roadmap | **Process trivia in a product document.** *"Steps 2 and 3 landed on 2026-09-10, in one unattended multi-agent run of about eighteen hours."* The owner's words: *who cares if you're a new reader, but even a contributor* | Deleted. How the work got done is not what a README is for. The one useful half — a pointer to the compatibility matrix — moved into the status banner, where a reader looking for "what works today" will actually be |
+| 2026-09-14 | `README.md` | **None. The owner read it and found it well ordered.** | No fix needed. Recorded because a round that finds nothing is a result, not a skipped gate -- see Round 5 below for why this one is worth keeping |
 
+### Round 5 — 2026-09-14, `README.md`
+
+**The first round to come back clean, and worth recording for that reason rather than in spite of
+it.**
+
+Handed over at the end of build step 4, after a landing of twenty-four PRs that changed what the
+document could honestly claim: the app loader now works end to end, so the banner's own statement
+of the limit ("no app can ask for a permission yet") had become false and was rewritten during the
+landing itself. The owner's verdict on the result: *well ordered.* No first confusion point.
+
+**One thing was fixed before the artefact was handed over, and it is the reason this round is not
+simply "nothing happened".** While choosing which document to give the owner, the conductor found
+that `README.md`'s "What's different" table still promised consent *"the moment the site actually
+requests a capability"* -- deferred consent, which owner decision `d-0025` had reversed that same
+morning. It contradicted the status banner eight lines above it.
+
+**That is Round 4's own finding reproduced exactly**: a document contradicting itself in its own
+opening, with the banner correct and the text below it stale. Round 4 caught it in the banner;
+this time the banner was right and the table was wrong. The failure mode is not "the banner goes
+stale" -- it is **that a decision reversed in one place survives in another**, and the opening of
+a README is where a reader meets both.
+
+It was fixed rather than left for the cold read, on the reasoning that handing someone a document
+already known to state something false wastes the read. That is a judgement call worth naming: a
+readability check is for *where a reader gets lost*, not for defects the author already knows
+about, and the two should not be conflated.
+
+**What this round adds to how the docs are written:** when a decision is reversed, grep for the
+old claim rather than correcting the place it was noticed. `d-0025`'s reversal was carried into
+`ADR-0012`, `docs/README.md`'s index row and the status banner on the day it was taken -- and
+still left one sentence standing in a table nobody thought to look at.
 
 ### Round 3 — 2026-09-03, `code-guidelines.md`
 
