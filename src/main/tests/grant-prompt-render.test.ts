@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { describeCapabilityGrant, describeGrantRequest, describeInstallConsent, formatOriginForDisplay } from '../grant-prompt-render.js'
+import { describeCapabilityGrant, describeCapabilityPrompt, describeGrantRequest, describeInstallConsent, describeReconsent, describeRollbackChoice, formatOriginForDisplay } from '../grant-prompt-render.js'
 import { manifestWith } from '../../broker/tests/index.test-helpers.js'
 import type { CapabilityKind, Pattern } from '../../contracts/index.js'
 
@@ -289,8 +289,11 @@ describe('describeCapabilityGrant -- port breadth for a single named host (AR-02
 // will not show it", per Electron's own .d.ts), the origin must still be
 // legible -- checked for every capability kind and both the warning and
 // non-warning branches, not just the one case that happened to be tested
-// before.
-describe('describeGrantRequest -- the origin survives a dropped title (AR-01)', () => {
+// before. Owner decision, 2026-09-14: the origin is the LAST line of
+// `detail`, not the first -- it is the one field a scam app cannot fake,
+// so it belongs where a hurried reader's eye lands right before the
+// buttons, not buried under the app's own self-asserted name.
+describe('describeGrantRequest -- the origin survives a dropped title (AR-01), now as the last line', () => {
   const cases: ReadonlyArray<[CapabilityKind, readonly Pattern[]]> = [
     ['tcp.connect', ['a.example:443']],
     ['tcp.connect', ['*:*']],
@@ -304,13 +307,13 @@ describe('describeGrantRequest -- the origin survives a dropped title (AR-01)', 
     ['id', []]
   ]
 
-  it.each(cases)('%s renders the origin in `detail`, not only `title`', (capability, patterns) => {
+  it.each(cases)('%s renders the origin in `detail`, not only `title`, as the LAST line', (capability, patterns) => {
     const manifest = manifestWith({})
 
     const content = describeGrantRequest(ORIGIN, manifest, capability, patterns)
 
     expect(content.title).toBe(ORIGIN)
-    expect(content.detail.startsWith(ORIGIN)).toBe(true)
+    expect(content.detail.endsWith(ORIGIN)).toBe(true)
   })
 })
 
@@ -319,7 +322,7 @@ describe('describeGrantRequest -- the origin survives a dropped title (AR-01)', 
 // placed immediately before Orivon's words could otherwise fabricate a
 // reassurance in Orivon's own voice.
 describe('describeGrantRequest -- the claimed name never blends into Orivon\'s own words (AR-03)', () => {
-  it('keeps a name written to look like a sentence, on its own line, separate from the real explanation', () => {
+  it('keeps a name written to look like a sentence, on its own line, separate from the real explanation and from the address', () => {
     const trickyName = 'Weather App". This app only connects to weather.example. Claims to be "Weather App'
     const manifest = { ...manifestWith({ net: { https: { connect: ['*:*'] } } }), name: trickyName }
 
@@ -327,12 +330,12 @@ describe('describeGrantRequest -- the claimed name never blends into Orivon\'s o
     const lines = content.detail.split('\n')
 
     expect(lines).toHaveLength(3)
-    expect(lines[0]).toBe(ORIGIN)
-    expect(lines[1]).toContain(trickyName)
-    expect(lines[2]).toContain('any website')
+    expect(lines[0]).toContain(trickyName)
+    expect(lines[1]).toContain('any website')
+    expect(lines[2]).toBe(ORIGIN)
     // The line carrying the app's claim and the line carrying Orivon's own
     // explanation must never be the same line.
-    expect(lines[1]).not.toBe(lines[2])
+    expect(lines[0]).not.toBe(lines[1])
   })
 })
 
@@ -476,8 +479,10 @@ describe('describeGrantRequest -- the confusable is elided everywhere the origin
     expect(content.title.endsWith('attacker.example')).toBe(true)
     // Consistency: whichever field a platform actually shows, it must say
     // the same thing -- a title that renders a different truncation than
-    // detail would be its own small confusable.
-    expect(content.detail.split('\n')[0]).toBe(content.title)
+    // detail would be its own small confusable. The origin is the LAST
+    // line of `detail` (owner decision 2026-09-14), not the first.
+    const lines = content.detail.split('\n')
+    expect(lines[lines.length - 1]).toBe(content.title)
   })
 
   it('still renders an ordinary short origin exactly as before (no regression for the common case)', () => {
@@ -486,7 +491,7 @@ describe('describeGrantRequest -- the confusable is elided everywhere the origin
     const content = describeGrantRequest(ORIGIN, manifest, 'fs', [])
 
     expect(content.title).toBe(ORIGIN)
-    expect(content.detail.startsWith(ORIGIN)).toBe(true)
+    expect(content.detail.endsWith(ORIGIN)).toBe(true)
   })
 })
 
@@ -495,6 +500,11 @@ describe('describeGrantRequest -- the confusable is elided everywhere the origin
 // repeated in a loop. The two cases below are the literal worked examples
 // pasted into this lane's own PR body -- the owner reviews the exact words,
 // so the strings here are load-bearing, not incidental.
+//
+// Owner decision, 2026-09-14: the address moves to the LAST line of
+// `detail`, after the capability rows -- the one thing in this dialog a
+// scam app cannot fake belongs where a hurried reader's eye lands right
+// before the buttons, not directly under the app's own claimed name.
 describe('describeInstallConsent', () => {
   it('worked example 1: a single narrow host reads as one plain line, no warning anywhere', () => {
     const manifest = manifestWith({ net: { https: { connect: ['weather.example:443'] } } })
@@ -505,7 +515,7 @@ describe('describeInstallConsent', () => {
     expect(content.title).toBe(ORIGIN)
     expect(content.message).toBe('This app wants to:')
     expect(content.detail).toBe(
-      'https://app.example\nClaims to be "Test app".\n- Connect to weather.example'
+      'Claims to be "Test app".\n- Connect to weather.example\nhttps://app.example'
     )
   })
 
@@ -521,11 +531,11 @@ describe('describeInstallConsent', () => {
     expect(content.title).toBe(ORIGIN)
     expect(content.message).toBe('This app wants to:')
     expect(content.detail).toBe(
-      'https://app.example\n' +
       'Claims to be "Test app".\n' +
       '- ⚠ Unlimited network access\n' +
       '  This app can connect to any website, not just specific ones.\n' +
-      '- Store files in a private folder for this app on this device'
+      '- Store files in a private folder for this app on this device\n' +
+      'https://app.example'
     )
   })
 
@@ -548,7 +558,7 @@ describe('describeInstallConsent', () => {
 
     expect(content.title).not.toBe(confusable)
     expect(content.title.includes('accounts.google.com')).toBe(false)
-    expect(content.detail.startsWith(content.title)).toBe(true)
+    expect(content.detail.endsWith(content.title)).toBe(true)
   })
 
   it('never asks about nothing -- an empty capability list still renders (defensive; the caller is what actually skips it)', () => {
@@ -557,7 +567,7 @@ describe('describeInstallConsent', () => {
     const content = describeInstallConsent(ORIGIN, manifest, [])
 
     expect(content.warning).toBe(false)
-    expect(content.detail).toBe('https://app.example\nClaims to be "Test app".')
+    expect(content.detail).toBe('Claims to be "Test app".\nhttps://app.example')
   })
 
   it('A134: unlimited outbound and listening both stay visible as their own warned rows -- neither swallows the other', () => {
@@ -567,12 +577,12 @@ describe('describeInstallConsent', () => {
 
     expect(content.warning).toBe(true)
     expect(content.detail).toBe(
-      'https://app.example\n' +
       'Claims to be "Test app".\n' +
       '- ⚠ Unlimited network access\n' +
       '  This app can connect to any website, not just specific ones.\n' +
       '- ⚠ Accept incoming connections on port 6881-6889\n' +
-      '  This opens a door into your device: any other computer that can reach this port -- on your network, or the internet if it is forwarded -- can connect to this app, not only computers it reached out to first.'
+      '  This opens a door into your device: any other computer that can reach this port -- on your network, or the internet if it is forwarded -- can connect to this app, not only computers it reached out to first.\n' +
+      'https://app.example'
     )
   })
 
@@ -588,10 +598,10 @@ describe('describeInstallConsent', () => {
 
     expect(content.warning).toBe(true)
     expect(content.detail).toBe(
-      'https://app.example\n' +
       'Claims to be "Test app".\n' +
       '- ⚠ Unlimited network access\n' +
-      '  This app can connect to any computer on the internet, not just specific ones. This app can send data to any computer on the internet, not just specific ones.'
+      '  This app can connect to any computer on the internet, not just specific ones. This app can send data to any computer on the internet, not just specific ones.\n' +
+      'https://app.example'
     )
   })
 
@@ -602,10 +612,10 @@ describe('describeInstallConsent', () => {
 
     expect(content.warning).toBe(true)
     expect(content.detail).toBe(
-      'https://app.example\n' +
       'Claims to be "Test app".\n' +
       '- ⚠ Accepts connections and data from other computers on port 6881-6889\n' +
-      '  This opens a door into your device: any other computer that can reach these ports -- on your network, or the internet if they are forwarded -- can connect to or send data to this app, not only computers this app contacted first.'
+      '  This opens a door into your device: any other computer that can reach these ports -- on your network, or the internet if they are forwarded -- can connect to or send data to this app, not only computers this app contacted first.\n' +
+      'https://app.example'
     )
   })
 
@@ -639,18 +649,73 @@ describe('describeInstallConsent', () => {
 
     expect(content.warning).toBe(true)
     expect(content.detail).toBe(
-      'https://app.example\n' +
       'Claims to be "Test app".\n' +
       '- ⚠ Unlimited network access\n' +
       '  This app can connect to any computer on the internet, not just specific ones. This app can send data to any computer on the internet, not just specific ones.\n' +
       '- ⚠ Accepts connections and data from other computers on port 6881-6889\n' +
       '  This opens a door into your device: any other computer that can reach these ports -- on your network, or the internet if they are forwarded -- can connect to or send data to this app, not only computers this app contacted first.\n' +
-      '- Store files in a private folder for this app on this device'
+      '- Store files in a private folder for this app on this device\n' +
+      'https://app.example'
     )
     // Five declared capabilities collapse to three rows: two distinct kinds
     // of breadth (outbound reach, inbound reach), never a fourth repeating
     // one of the first two.
     expect(content.detail.match(/\n- /g)).toHaveLength(3)
     expect(content.detail.match(/⚠/g)).toHaveLength(2)
+  })
+})
+
+// Owner decision, 2026-09-14: every dialog that shows an origin moves it to
+// the LAST line of `detail`, not only describeInstallConsent -- the update
+// prompts (describeCapabilityPrompt, describeReconsent, describeRollbackChoice)
+// share describeCapabilityGrant's per-row rendering already (Rule 3); these
+// three checks are what confirms they also share the new address position,
+// not just the install prompt this lane's PR body leads with.
+describe('describeCapabilityPrompt -- shares describeInstallConsent\'s row rendering and address-last order', () => {
+  it('renders the claim, then the row, then the address last', () => {
+    const manifest = manifestWith({ fs: {} })
+
+    const content = describeCapabilityPrompt(ORIGIN, manifest, { fs: [] })
+
+    expect(content.title).toBe(ORIGIN)
+    expect(content.message).toBe('This app wants to do more than you already allowed:')
+    expect(content.detail).toBe(
+      'Claims to be "Test app".\n' +
+      '- Store files in a private folder for this app on this device\n' +
+      'https://app.example'
+    )
+  })
+})
+
+describe('describeReconsent -- the claim and notice come first, the address last', () => {
+  it('renders exactly this order (owner decision 2026-09-14)', () => {
+    const manifest = manifestWith({ fs: {} })
+
+    const content = describeReconsent(ORIGIN, manifest)
+
+    expect(content.title).toBe(ORIGIN)
+    expect(content.message).toBe('This app has been updated.')
+    expect(content.detail).toBe(
+      'Claims to be "Test app".\n' +
+      'Its code has changed. What it is allowed to do has not.\n' +
+      'https://app.example'
+    )
+  })
+})
+
+describe('describeRollbackChoice -- the claim and both notices come first, the address last', () => {
+  it('renders exactly this order (owner decision 2026-09-14)', () => {
+    const manifest = manifestWith({ fs: {} })
+
+    const content = describeRollbackChoice(ORIGIN, manifest, '2.0.0')
+
+    expect(content.title).toBe(ORIGIN)
+    expect(content.message).toBe('This app is offering an older version.')
+    expect(content.detail).toBe(
+      'Claims to be "Test app".\n' +
+      "You've used version 2.0.0 or newer from this app before. It is now offering version 1.0.0 -- an older one.\n" +
+      'This can be a genuine rollback by the developer, or a sign that something is serving old, less secure code.\n' +
+      'https://app.example'
+    )
   })
 })
