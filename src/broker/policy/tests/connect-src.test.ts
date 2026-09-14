@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { appCspHeaderValue, connectSrcFor } from '../connect-src.js'
+import { appCspHeaderValue, appReachCspHeaderValue, connectSrcFor } from '../connect-src.js'
 import { checkConnect } from '../connect.js'
 import { hostSpecKind } from '../connect-patterns.js'
 import { PUBLIC_A, PUBLIC_B, noResolution, resolverFor } from './connect.test-helpers.js'
@@ -533,6 +533,22 @@ describe('connectSrcFor -- agrees with checkConnect (the invariant, executable)'
     expect(decision.allowed).toBe(true)
     expect(cspAllows(policy.sources, PUBLIC_B, 443)).toBe(false)
     expect(policy.omitted).toEqual([{ pattern: '*:*', reason: 'host-any-public-unicast' }])
+  })
+})
+
+describe('appReachCspHeaderValue -- A143\'s img-src/font-src/media-src, sourced from https.connect', () => {
+  it('is self-only for an empty grant, same as connect-src', () => {
+    expect(appReachCspHeaderValue([])).toBe("img-src 'self'; font-src 'self'; media-src 'self'")
+  })
+
+  it('widens all three directives identically to one granted host:port', () => {
+    expect(appReachCspHeaderValue(['cdn.example.com:443'])).toBe(
+      "img-src 'self' cdn.example.com:443; font-src 'self' cdn.example.com:443; media-src 'self' cdn.example.com:443"
+    )
+  })
+
+  it('reuses connectSrcFor\'s own omission rules -- an unrepresentable pattern is dropped from all three, not approximated', () => {
+    expect(appReachCspHeaderValue(['*:*'])).toBe("img-src 'self'; font-src 'self'; media-src 'self'")
   })
 })
 

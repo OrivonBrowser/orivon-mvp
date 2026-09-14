@@ -16,9 +16,11 @@
 import type { Session } from 'electron'
 import { partitionFor } from '../broker/grants/origin-hash.js'
 import type { Broker } from '../broker/broker-contracts.js'
+import { checkConnectSecure } from '../broker/policy/connect-secure.js'
 import type { Pattern } from '../contracts/index.js'
 import { createAppRequestHandler } from './serve.js'
-import type { AppRequestHandler } from './serve.js'
+import type { AppRequestHandler, AuthoriseReach } from './serve.js'
+import { nodeReachDial } from './serve-reach.js'
 import type { LoaderStorage } from './storage.js'
 
 /**
@@ -44,14 +46,24 @@ export function registerAppOrigin (appSession: Session, origin: string, handler:
 }
 
 /**
- * `origin`'s live `tcp.connect` grant, straight off the broker -- never
- * cached here, so the handler built around this closure (`registerServingFor`
- * below) answers each request with whatever is granted AT THAT MOMENT
- * (serve.ts's own `GrantedConnectPatterns` doc). Falls back to the empty,
- * `'self'`-only answer on ANY failure -- an unregistered origin
- * (`broker.app.grants` rejects for one `canonical()` cannot parse) or a
- * broker fault must never WIDEN the header past what connect-src.ts's own
- * invariant allows; the strictest answer is always safe to hand back.
+ * `origin`'s live `tcp.connect` grant, straight off the broker -- for the
+ * `connect-src` header ONLY, never cached. Falls back to `[]` on ANY
+ * failure (an unregistered origin, or any other broker fault): the
+ * strictest answer is always safe to hand back.
+ *
+ * DELIBERATELY HAS NO A158 DISK FALLBACK, UNLIKE `secureHeaderPatternsFor`
+ * BELOW -- a REAL DIFFERENCE, not an oversight. `connect-src` is the ONLY
+ * thing standing between an app's page and a live `WebSocket` connection
+ * (`docs/open-questions.md` A42: "`connect-src` bounds `fetch` AND
+ * `WebSocket`") -- `ws:`/`wss:` is a scheme `registerAppOrigin` never
+ * registers a handler for, so a `wss://` attempt never reaches
+ * `fetchThirdParty` or any other live re-check at all; CSP is the whole
+ * gate. Widening THIS header from a persisted grant this run has not yet
+ * re-validated would therefore widen a REAL authorisation, exactly what
+ * `A137` forbids -- the reasoning that makes `secureHeaderPatternsFor`'s own
+ * fallback safe (a live handler underneath re-checks every actual request
+ * regardless of what the header claimed) does not hold here, because for
+ * `WebSocket` there is no such handler.
  */
 async function grantedConnectPatternsFor (broker: Broker, origin: string): Promise<readonly Pattern[]> {
   try {
@@ -59,6 +71,68 @@ async function grantedConnectPatternsFor (broker: Broker, origin: string): Promi
     return grants.find((grant) => grant.capability === 'tcp.connect')?.patterns ?? []
   } catch {
     return []
+  }
+}
+
+/**
+ * `origin`'s patterns for `https.connect`, for the `img-src`/`font-src`/
+ * `media-src` header ONLY -- never wired into anything that authorises a
+ * real request (see `AuthoriseReach`, below, for that).
+ *
+ * A158 (docs/open-questions.md), SAFE HERE SPECIFICALLY. Once the origin IS
+ * hydrated (`isRegisteredSync`), the live ledger is used, exactly like
+ * `grantedConnectPatternsFor` above. Before that -- the narrow window right
+ * after a restart -- this falls back to `persistedAppsSync`'s real,
+ * disk-persisted patterns, the SAME pair `hasUnhydratedPersistedSecureGrant`
+ * (below) already reads for display. That fallback is safe ONLY because
+ * every request these three directives can ever cause is an ordinary
+ * http(s) subresource load, which ALWAYS reaches `fetchThirdParty` (same
+ * scheme as the app's own origin, so always intercepted, unlike
+ * `WebSocket` -- see `grantedConnectPatternsFor`'s own doc for the case
+ * where this reasoning does NOT apply) -- so a header that is momentarily
+ * too permissive here grants nothing by itself; it only decides whether the
+ * browser ATTEMPTS a request the live-checked handler still, correctly,
+ * refuses if the grant was not real. `A137`'s ruling is about AUTHORITY:
+ * nothing here is ever treated as one, so trusting disk for this header is
+ * a different question than trusting it for a decision.
+ */
+async function secureHeaderPatternsFor (broker: Broker, origin: string): Promise<readonly Pattern[]> {
+  try {
+    if (broker.app.isRegisteredSync(origin)) {
+      const grants = await broker.app.grants(origin)
+      return grants.find((grant) => grant.capability === 'https.connect')?.patterns ?? []
+    }
+    const persisted = broker.app.persistedAppsSync().find((app) => app.origin === origin)
+    return persisted?.grants['https.connect']?.patterns ?? []
+  } catch {
+    return []
+  }
+}
+
+/**
+ * THE live authorisation gate for a third-party request (serve.ts's
+ * `AuthoriseReach`). Reads `origin`'s `https.connect` grant fresh, straight
+ * off the LIVE ledger (`broker.app.grants`, never disk), and decides with
+ * `checkConnectSecure` -- the SAME function `net-capability.ts`'s own
+ * `connectSecure` calls, so this can never authorise a request
+ * `orivon.net.connectSecure` itself would refuse.
+ *
+ * DELIBERATELY DOES NOT SHARE `headerPatternsFor`'s disk fallback (A158).
+ * An unhydrated origin genuinely has no live grant yet; `checkConnectSecure`
+ * denies an empty pattern list the same way it denies "never granted",
+ * because from here those two cases MUST be indistinguishable -- that is
+ * what makes the header above safe to widen without this ever being
+ * (A137).
+ */
+function authoriseReachFor (broker: Broker, origin: string): AuthoriseReach {
+  return async (host, port) => {
+    try {
+      const grants = await broker.app.grants(origin)
+      const patterns = grants.find((grant) => grant.capability === 'https.connect')?.patterns ?? []
+      return checkConnectSecure(patterns, host, port)
+    } catch {
+      return { allowed: false, code: 'denied', reason: 'not-declared' }
+    }
   }
 }
 
@@ -71,16 +145,26 @@ async function grantedConnectPatternsFor (broker: Broker, origin: string): Promi
  * within the current process run.
  *
  * `broker`, when given, is threaded straight into the handler as a
- * per-request CSP source (`grantedConnectPatternsFor` above) -- `undefined`
- * (no broker subsystem this run) still serves the app, with `connect-src
- * 'self'` only, which is `connectSrcFor`'s own safe answer for "nothing
- * granted", not a degraded mode.
+ * per-request CSP source (`grantedConnectPatternsFor`/`secureHeaderPatternsFor`
+ * above) and as the live gate for a third-party request (`authoriseReachFor`,
+ * A143) -- `undefined` (no broker subsystem this run) still serves the app,
+ * with `connect-src`/`img-src`/`font-src`/`media-src` all `'self'` only and
+ * third-party reach refused outright, which is the same safe "nothing
+ * granted" answer as before this lane, not a degraded mode of it.
+ *
+ * `nodeReachDial()` (A143, `serve-reach.ts`) is wired in unconditionally --
+ * it needs no broker and performs no I/O until `fetchThirdParty` actually
+ * calls it, which only happens once `authoriseReachFor` has already said
+ * yes.
  */
 export async function registerServingFor (storage: LoaderStorage, origin: string, broker?: Broker): Promise<void> {
   const handler = await createAppRequestHandler(
     storage,
     origin,
-    broker === undefined ? undefined : async () => await grantedConnectPatternsFor(broker, origin)
+    broker === undefined ? undefined : async () => await grantedConnectPatternsFor(broker, origin),
+    broker === undefined ? undefined : async () => await secureHeaderPatternsFor(broker, origin),
+    broker === undefined ? undefined : authoriseReachFor(broker, origin),
+    nodeReachDial()
   )
   const { session } = await import('electron')
   registerAppOrigin(session.fromPartition(partitionFor(origin)), origin, handler)
@@ -116,12 +200,21 @@ export interface RestoredOrigin {
 
 /**
  * A158 (docs/open-questions.md): true when `origin` holds a real, persisted
- * capability grant from a prior session that THIS run's ledger has not yet
- * re-validated. `registerServingFor`'s handler reads `broker.app.grants`
- * fresh per request (its own doc), and that stays empty until `registerApp`
- * hydrates it -- which only happens once this origin's page has loaded and
- * reported its manifest hint. Until then, this origin's served CSP is
- * `'self'`-only even though the person already approved more.
+ * `https.connect` grant from a prior session that THIS run's ledger has not
+ * yet re-validated. `registerApp` only hydrates it once this origin's page
+ * has loaded and reported its manifest hint -- so this is true for the
+ * narrow window right after a restart, before that happens.
+ *
+ * `https.connect` SPECIFICALLY, NOT "ANY CAPABILITY" -- narrower than this
+ * function's own pre-A143 version on purpose. `secureHeaderPatternsFor`
+ * above widens `img-src`/`font-src`/`media-src` from this SAME persisted
+ * state once hydration is missing, safely, because that header is advisory
+ * and `fetchThirdParty`/`authoriseReachFor` (serve.ts) still live-check the
+ * real ledger on every actual request. `grantedConnectPatternsFor`
+ * (`connect-src`, `tcp.connect`) has NO such fallback -- see its own doc for
+ * why (`WebSocket` has no live re-check to fall back on) -- so a persisted
+ * `tcp.connect`-only grant with no `https.connect` alongside it changes
+ * nothing this lane touches, and must not trigger this log.
  *
  * READS ONLY ALREADY-SANCTIONED DISPLAY DATA. `isRegisteredSync` and
  * `persistedAppsSync` are the exact pair `src/main/permissions.ts`'s
@@ -129,10 +222,10 @@ export interface RestoredOrigin {
  * live authority (A137) -- this function does the same, purely to decide
  * whether to log, and never feeds the answer back into what is served.
  */
-function hasUnhydratedPersistedGrant (broker: Broker, origin: string): boolean {
+function hasUnhydratedPersistedSecureGrant (broker: Broker, origin: string): boolean {
   if (broker.app.isRegisteredSync(origin)) return false
   const persisted = broker.app.persistedAppsSync().find((app) => app.origin === origin)
-  return persisted !== undefined && Object.keys(persisted.grants).length > 0
+  return persisted?.grants['https.connect'] !== undefined
 }
 
 /**
@@ -146,12 +239,16 @@ function hasUnhydratedPersistedGrant (broker: Broker, origin: string): boolean {
  * everything else" stance `runAfterReady` (main/registry.ts) already takes
  * for subsystems, applied here per app instead of per subsystem.
  *
- * A158: an origin restored here with a real, not-yet-hydrated grant is
- * logged rather than left silent -- the CSP itself must still start narrow
- * (widening it from unvalidated disk state is the exact mistake A137
- * rejected), so this is the honest half of that tradeoff: the person is not
- * told directly yet (no UI reads this today), but the condition is no
- * longer invisible to anyone looking at this app's own log.
+ * A158 (RESOLVED for the served `img-src`/`font-src`/`media-src`, STILL
+ * OPEN for `connect-src`, see both functions' own docs above): an origin
+ * restored here with a real, not-yet-hydrated `https.connect` grant now
+ * gets those three directives widened from that same persisted state
+ * (`secureHeaderPatternsFor`) rather than falsely `'self'`-only -- but
+ * `authoriseReachFor` still, correctly, refuses an actual third-party
+ * request until this origin's manifest hint lands and `registerApp`
+ * hydrates the real ledger. Logged rather than left silent, so that
+ * narrow, real window is diagnosable rather than reading as an unexplained
+ * handful of early 404s.
  */
 export async function restorePinnedServing (storage: LoaderStorage, broker?: Broker): Promise<readonly RestoredOrigin[]> {
   const origins = await storage.listPinnedOrigins()
@@ -160,10 +257,11 @@ export async function restorePinnedServing (storage: LoaderStorage, broker?: Bro
   for (const origin of origins) {
     try {
       await registerServingFor(storage, origin, broker)
-      if (broker !== undefined && hasUnhydratedPersistedGrant(broker, origin)) {
+      if (broker !== undefined && hasUnhydratedPersistedSecureGrant(broker, origin)) {
         console.warn(
-          '[loader]', origin, 'has a real, persisted capability grant not yet reflected in its served CSP --',
-          'it will apply once this app reports its manifest hint (A158, docs/open-questions.md)'
+          '[loader]', origin, 'was restored with a real, persisted https.connect grant this run has not yet re-validated --',
+          'its img-src/font-src/media-src were widened from that persisted state, but an actual third-party request may still be refused',
+          'until this app reports its manifest hint (A158, docs/open-questions.md)'
         )
       }
       results.push({ origin, ok: true })
