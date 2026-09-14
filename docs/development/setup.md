@@ -80,6 +80,44 @@ not the exit code alone.**
 
 ---
 
+## The no-focus switch
+
+`npm run dev`, `npm run smoke` and `npm run test:e2e` open a real Electron window without taking
+OS keyboard focus, so a build or test run does not interrupt whatever you are typing in another
+window. If a window flashes on screen but your cursor and keystrokes stay wherever they already
+were, that is this working as intended, not a bug.
+
+Mechanism: `src/main/window.ts`'s `showOnce()` calls `win.showInactive()` instead of `win.show()`
+when `ORIVON_WINDOW_NO_FOCUS=1` is set. It is **never** set for a real user's own launch
+(`npm start`, or a packaged build) — only:
+
+- `npm run dev`, via `scripts/dev.mjs`;
+- every Electron launch made through [`test/launch-electron.mjs`](../../test/launch-electron.mjs),
+  which both `npm run smoke` and `npm run test:e2e` go through — so this holds even running a
+  single e2e file directly (`npx vitest run --config test/vitest.e2e.config.ts test/some-file.
+  test.ts`), bypassing the npm scripts below entirely.
+
+`npm run smoke` and `npm run test:e2e` go a step further on Linux:
+[`scripts/run-headless.mjs`](../../scripts/run-headless.mjs) runs them under a fresh virtual
+display (`xvfb-run -a`) automatically, whenever `xvfb-run` is on `PATH` — nothing appears on a
+real screen at all, not even briefly. **On macOS, on Windows, or a Linux box that never installed
+`xvfb-run`, they still run** — just directly, relying on the no-focus switch above instead of a
+virtual display. Either way, typing a plain `npm run smoke` or `npm run test:e2e` with no wrapper
+is safe to do while you are working.
+
+**Not a substitute for `xvfb-run` in the fleet/unattended-run protocol**
+([`unattended-run-protocol.md`](unattended-run-protocol.md)): that policy wraps every launch
+externally as a process-hygiene guarantee independent of what the code under test does, and still
+applies to any automated/unattended run. Doubling up — an external `xvfb-run -a npm run test:e2e`
+around a command that now also wraps itself — is harmless (confirmed empirically: a nested
+`xvfb-run` just opens a second virtual display on top of the first), so no existing convention
+needed to change.
+
+Debugging: `echo "${ORIVON_WINDOW_NO_FOCUS:-not set}"` inside whatever launched `electron-vite` or
+`test/launch-electron.mjs` tells you whether it is active for that run.
+
+---
+
 ## Platform notes
 
 **Linux is the packaged target** — AppImage and deb. No code-signing cost, and the audience
