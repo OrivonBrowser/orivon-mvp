@@ -4639,7 +4639,7 @@ choice stands; what changes is that the saved manifest informs the LIST, never t
 
 ## Build step 4 -- the app loader (2026-09-13)
 
-### A138 -- may a person accept PART of what an app asks for? **[PARKED -- needs owner decision]**
+### A138 -- may a person accept PART of what an app asks for? **[RESOLVED 2026-09-14 -- lane F-contracts]**
 
 **Raised 2026-09-13**, opening build step 4, by owner decision `d-0025` (`ADR-0012`'s
 2026-09-13 amendment): consent is asked once, before the app runs, for the whole set the
@@ -4670,6 +4670,43 @@ loss of user agency, and it is the kind of thing the permissions list (`A101`) e
 **Needed by:** Phase 4 item 4.2's owner checkpoint. Not blocking: the prompt is built
 all-or-nothing, and turning it into a per-row choice later is a change to the dialog and to what
 `requestGrant` is called with, not to the ledger or the policy beneath it.
+
+> **Resolved 2026-09-14, lane `F-contracts` (owner decision).** The owner picked neither
+> option this entry parked between -- not "always all-or-nothing" and not "always per-row" --
+> but a third one nobody had put to them: *"A manifest can tell if the whole manifest is
+> enforced, or the user is allowed for a more fine tuned control. This way ported shim apps
+> will have no problem working, and Orivon-made apps will allow fine tuned permission
+> control."*
+>
+> **The app declares which consent style it can survive, in its own manifest** --
+> `Manifest.consentGranularity`, `'all-or-nothing'` or `'per-capability'`
+> (`src/contracts/manifest.ts`'s `ConsentGranularity`, `docs/architecture/capability-api.md`
+> §Manifest). A ported Node/Electron app, never written to handle a capability coming back
+> refused, declares (or simply omits, see below) `'all-or-nothing'` and is never handed the
+> mid-flight-denial failure this entry's point 2 named. An app written for Orivon from the
+> start, whose author knows it checks `orivon.app.grants()` and degrades a missing capability
+> on purpose, declares `'per-capability'` and its users get the real per-item control this
+> entry's counter-argument asked for.
+>
+> **Default when the field is absent: `'all-or-nothing'`**, matching what this entry already
+> had built. Every manifest written before this field existed was written with no idea a
+> partial grant could ever happen -- exactly the ported-app case -- so silence has to read as
+> the reading that can never hand an unprepared app a state its code has no path for.
+>
+> **One flag for the whole manifest, not one per capability.** The question it answers -- can
+> the app's own code cope with an incomplete grant at all -- is a property of the app as a
+> whole, not of any one capability: a ported app has no code path for a missing filesystem
+> grant any more than for a missing network one. Read literally, the owner's own phrasing
+> ("the whole manifest is enforced") already says this; no concrete case was found where a
+> single app needs a different answer per capability.
+>
+> **What this resolves and what it leaves open.** This settles the *shape of the declaration*
+> only -- a type on `Manifest`, contracts-only, no implementation. It does not build the
+> per-row prompt UI, teach `decideGrantRequest` or the grant ledger to honor a partial accept,
+> or wire `requestGrant` to pass a per-capability choice through -- that is real engineering
+> against a real dialog, left for whichever build-step-4 lane picks up the install prompt.
+> Until that lands, `'per-capability'` in a manifest is inert: the field types and documents
+> the choice, and nothing reads it yet.
 
 ### A139 -- asking at install brings back part of the prompt fatigue `ADR-0012` rejected **[AI-REC -- confirm at the 4.2 checkpoint]**
 
@@ -4949,7 +4986,7 @@ keeping the real hostname for the connection, the same limitation `electron-fetc
 already names for a different caller. Authorising a plain request would therefore check one
 address and could legitimately connect to another moments later (T12, DNS rebinding), for a
 general, attacker-URL-reachable surface -- a materially different risk than A66's own narrow,
-address-literal-constrained, install-time-only case. Filed as its own entry, A162, rather than
+address-literal-constrained, install-time-only case. Filed as its own entry, A163, rather than
 silently narrowed.
 
 **CSP widened alongside the handler, from the SAME grant, not a second one.**
@@ -6003,7 +6040,7 @@ together rather than added twice. **Still open:** whether this is worth a depend
 (A142's parked `psl`/`tldts` evaluation applies unchanged), or sooner if an app is ever actually
 served from a multi-label private suffix.
 
-### A162 -- third-party reach (A143) only proxies `https:`; a plain `http:` cross-origin request inside an app's own partition stays denied **[AI-REC -- not an owner decision]**
+### A163 -- third-party reach (A143) only proxies `https:`; a plain `http:` cross-origin request inside an app's own partition stays denied **[AI-REC -- not an owner decision]**
 
 **Raised 2026-09-14**, lane F-reach, while deciding how `fetchThirdParty` (`src/loader/serve.ts`)
 should authorise a cross-origin request `A143` newly lets through to the real network.
@@ -6049,3 +6086,59 @@ by Chromium's own mixed-content blocking before they would ever reach this handl
 
 **Needed by:** whichever future app actually needs a plain-http cross-origin resource from inside
 its own partition -- not before.
+
+### A162 -- honouring `consentGranularity: 'per-capability'`: the install prompt is built, the three update prompts are not **[AI-REC -- needs-owner-decision]**
+
+**Raised 2026-09-14**, lane `F-granular` (`stream/shell-09-per-capability-consent`), closing
+A138's contracts-only landing (PR #192) with a real implementation.
+
+**Part 1, urgent and self-contained, landed first.** `src/loader/manifest.ts`'s `readManifest`
+rejects any field its `MANIFEST_KEYS` allowlist does not name -- and that allowlist never learned
+`consentGranularity` when PR #192 added it to `Manifest`. Any app author who read the contract,
+added the field, and shipped it got refused at install with "manifest has an unrecognised field",
+blaming them for using the interface as documented. Fixed: the field is now recognised, validated
+against exactly the two `ConsentGranularity` literals, and an absent field is left out of the
+parsed manifest entirely (the contract's own "omitted means `'all-or-nothing'`" is a fact for a
+CALLER to apply, never a value this parser invents). No app exists yet, so nothing broke in the
+wild, but this sat on `main` since #192 merged and needed to stop sitting there.
+
+**Part 2, built for exactly one surface: the install-time consent dialog
+(`src/main/install-consent.ts`, `d-0025`).** A manifest declaring `'per-capability'` now gets a
+real choice: a staged native-dialog sequence (`createPerCapabilityConsentPrompt`,
+`src/main/install-consent-prompt.ts`) -- one overview offering "Allow all" / "Choose
+individually" / "Deny all", and only for the middle choice, one Allow/Deny dialog per capability
+(`describeCapabilityChoice`, `src/main/grant-prompt-choice.ts`), each screen printing the WHOLE
+outstanding request as context so choosing individually never loses the whole picture. Every
+grant still goes through `decideGrantRequest` (via the existing `grantChangedCapabilities`,
+untouched); a refusal of one capability never refuses the app; the accepted subset is filtered
+defensively back to what was actually asked before anything is granted, so a misbehaving prompt
+cannot widen a grant even in principle. `requestInstallConsent`'s own "once, ever" gate is
+generalised from two whole-set checks (all held / all declined) to one OUTSTANDING filter
+(covered by neither), which collapses back to the old behaviour exactly whenever the old mixed
+state cannot occur -- proven by the full pre-existing `install-consent.test.ts` suite passing
+unmodified. Full design reasoning (why staged-native over a self-rendered window, why the two
+prompts see different capability sets, what a partial refusal does to the remembered-decline
+record) is in `src/main/README.md`'s Design notes -- not repeated here.
+
+**What this does NOT cover, on purpose, and is this entry's own open half.** `src/main/
+update-outcomes.ts` drives THREE other prompts -- `reconsentPrompt`, `capabilityPrompt`
+(`needs-capability-prompt`: an installed app's UPDATE asking for more than it already holds), and
+`rollbackChoicePrompt` -- all still plain booleans, regardless of `consentGranularity`. The most
+analogous case is `capabilityPrompt`: an app widening its declared capabilities on update is
+structurally the same shape as a first install (`describeCapabilityPrompt` already shares
+`describeCapabilitySet` with `describeInstallConsent` -- one vocabulary, Rule 3), so it is the
+natural next candidate for the same staged treatment. It was not built here: `driveLoadResult`'s
+`'needs-capability-prompt'` case calls `grantChangedCapabilities` directly with no
+declined-consent bookkeeping at all today (a PRE-EXISTING gap, not introduced by this lane), so
+wiring per-capability choice into it means deciding that bookkeeping too, not just swapping a
+prompt type -- real engineering against a second call site, not a mechanical extension.
+
+**AI recommendation, not an owner decision, `needs-owner-decision`:** (1) confirm the staged
+native-dialog surface (rather than a self-rendered privileged window) is the right floor for
+per-capability consent -- the PR body pastes its literal rendering for exactly this review; (2)
+decide whether `capabilityPrompt`'s update-time widening deserves the same per-capability
+treatment, and if so, whether the same "outstanding" gate and declined-consent record should
+extend to it or use its own.
+
+**Needed by:** whenever the owner reviews this lane's PR, the natural moment to also settle
+whether the update-time widening path should match.
