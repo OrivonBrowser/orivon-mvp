@@ -187,16 +187,39 @@ that origin was reinstalled within the same process run; `electron-serve.ts`'s `
 unhandles first so the session always answers with a handler built from the freshly re-verified
 pin.
 
-**Why a cross-origin request inside an app's own partition is denied, not proxied to the real
-network.** `session.fromPartition(...).protocol.handle('https', ...)` intercepts the WHOLE scheme
-for that session, not merely requests to the app's own host -- so a page in its own partition
-fetching a third-party `https://` URL (a CDN font, an `<img>` pointing elsewhere) reaches this same
-handler. `ADR-0005` already assumes a fully self-contained, pre-hashed bundle, and building a live
-passthrough to the real network for everything else is a trust decision this lane does not make
-silently -- denying is the fail-closed answer, consistent with "a same-origin request whose path
-is not in the pinned set is denied, not fetched" extended to the scheme-wide reality of how
-`protocol.handle` actually intercepts. AI recommendation, not an owner decision, filed as
-[`open-questions.md`](../../docs/open-questions.md) A143.
+**Why a cross-origin request inside an app's own partition reaches `fetchThirdParty`, not an
+automatic denial (A143, resolved 2026-09-14).** `session.fromPartition(...).protocol.handle('https',
+...)` intercepts the WHOLE scheme for that session, not merely requests to the app's own host -- so
+a page in its own partition fetching a third-party `https://` URL (a CDN font, an `<img>` pointing
+elsewhere) reaches this same handler. Owner decision: let an app reach a host it holds a granted
+`https.connect` for. `serve.ts`'s `fetchThirdParty` authorises against the LIVE grant via
+`checkConnectSecure` -- the SAME function `orivon.net.connectSecure` itself calls -- and, if
+allowed, performs the real fetch through [`serve-reach.ts`](serve-reach.ts)'s `nodeReachDial`
+(Node's own `https` module, chosen over Electron's `net.fetch` specifically so this path could be
+proven end to end over a real TLS handshake in a real Electron launch -- see that file's own
+header). Everything else -- an ungranted host, a plain `http:` request (A163, a deliberate,
+narrower scope decision, not a gap), a redirect from the granted host -- still gets the same
+fail-closed `denyResponse` this handler has always answered with. `img-src`/`font-src`/`media-src`
+widen alongside it, from the same `https.connect` grant (`connect-src.ts`'s `appReachCspHeaderValue`)
+-- without that, `default-src 'self'`'s fallback would keep refusing the very requests this
+decision exists to allow, before they could ever reach the handler.
+
+**Why [`serve-reach.ts`](serve-reach.ts) uses Node's own `https` module, not Electron's `net.fetch`
+or a hand-rolled HTTP/1.1 client.** `test/e2e-fetch-routing.test.ts`'s own header records why an
+unmodified Electron build cannot be made to trust a locally generated test certificate -- which is
+why that file proves its own byte round trip over plain HTTP rather than HTTPS. Node's own `https`
+module takes a per-request `ca` override (`../broker/adapters/tls-adapter.ts`'s own established
+seam, same shape, same "testing only" rule), so this mechanism can be proven end to end over a real
+TLS handshake in a real Electron launch (`tests/serve-reach.test.ts`) -- a real advantage Electron's
+own `net.fetch` does not have. A hand-rolled client (the shape `src/preload/fetch-route.ts` is
+forced into by its own `contextBridge` serialisation constraint) was rejected because nothing here
+needs that constraint: Rule 6 says prefer the mature, already-audited component once a hand-rolled
+one is not actually required, and Node's own client already handles chunked encoding and keep-alive
+correctly. Two further properties this choice buys for free: `https.request` has no concept of a
+session or a cookie jar at all, so there is nothing to remember to set (contrast Chromium's
+`fetch()`, which needs an explicit `credentials: 'omit'` for the identical guarantee); and it never
+auto-follows a redirect -- a 3xx from the granted host is handed back to the page as an ordinary 3xx
+response, so a granted host can never hand a request off to one nobody approved.
 
 **Why `restorePinnedServing` runs at startup rather than only after a fresh `load()`.** `load()`
 does now have a production caller (the discovery trigger, via `src/main/app-install.ts`), but a
@@ -221,6 +244,25 @@ widens it, without waiting for the app to be reinstalled or the browser to resta
 still cannot fix, because nothing implementation-side can:** a document already loaded keeps
 whatever CSP its own navigation response carried, until the next load -- that is how CSP
 delivery works in every browser, not a gap this design left open.
+
+**Why `img-src`/`font-src`/`media-src` (A143) may fall back to a persisted-but-not-yet-hydrated
+grant when `connect-src` never may (A158).** Both are computed per request, the same way, but
+`electron-serve.ts`'s `secureHeaderPatternsFor` (the first three, `https.connect`) and
+`grantedConnectPatternsFor` (`connect-src`, `tcp.connect`) diverge on ONE thing right after a
+restart, before this origin's page has reported its manifest hint and `registerApp` has
+re-validated its persisted grant: `secureHeaderPatternsFor` falls back to the real, persisted
+grant on disk; `grantedConnectPatternsFor` does not. That asymmetry is deliberate, not
+inconsistent. `serve.ts`'s `fetchThirdParty` independently, LIVE-checks every actual third-party
+request against the hydrated ledger regardless of what `img-src`/`font-src`/`media-src` claimed --
+so widening those three from disk only widens what the browser ATTEMPTS, never what is actually
+served, which is exactly what makes it safe under `A137`'s "never trust disk as authority" rule.
+`connect-src` has no such live handler standing behind it for every request type it governs:
+`docs/open-questions.md` A42 already established it is the sole gate for `WebSocket`
+(`ws:`/`wss:`, a scheme `registerAppOrigin` never registers a `protocol.handle` for), so widening
+it from disk would widen a REAL authorisation with nothing left to catch a wrong guess. See
+`docs/open-questions.md` A158's 2026-09-14 update for the full account, and
+`grantedConnectPatternsFor`'s/`secureHeaderPatternsFor`'s own doc comments for the code-level
+version of this same split.
 
 **Why `isOriginServedFromCache` (`electron-serve.ts`) asks Electron's protocol-handler registry
 instead of the broker.** S4-6's address-bar provenance signal needs to answer "is a request to

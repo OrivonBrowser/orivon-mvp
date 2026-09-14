@@ -4919,7 +4919,7 @@ number, and whether the page-visible failure mode (a `'timeout'` rejection racin
 real answer) is acceptable at all, or whether `app.requestGrant` needs a way to observe the
 prompt settling late -- e.g. a `app.grants()` change event -- instead.
 
-### A143 -- a cross-origin request inside an app's own partition is denied, not proxied to the real network **[STILL OPEN]**
+### A143 -- a cross-origin request inside an app's own partition is denied, not proxied to the real network **[RESOLVED 2026-09-14 -- lane F-reach]**
 
 **Raised 2026-09-13**, lane S4-3-serve, build step 4's serve-from-cache item
 (`ADR-0007`'s other half: `src/loader/serve.ts`, `src/loader/electron-serve.ts`).
@@ -4955,6 +4955,56 @@ closed default is reversible; the reverse is not.
 
 **Needed by:** whichever future app actually needs an external resource from inside its own
 partition -- not before, since nothing in this MVP's own fixture/flagship apps does today.
+
+**Resolved 2026-09-14, owner decision: let apps reach third-party hosts they were granted.**
+`src/loader/serve.ts`'s handler no longer denies a cross-origin request outright -- it now asks
+`fetchThirdParty` (same file), which authorises the request against the app's LIVE `https.connect`
+grant via `checkConnectSecure` (`src/broker/policy/connect-secure.js`) -- the SAME function
+`orivon.net.connectSecure` itself calls, so this can never authorise a request that capability
+would refuse -- and, if allowed, performs the real fetch via `src/loader/serve-reach.ts`'s
+`nodeReachDial`, wired in by `src/loader/electron-serve.ts`.
+
+**What stops this being an open proxy, stated explicitly rather than left implicit:** (1) only
+requests already inside a SPECIFIC app's own partition ever reach this handler at all --
+`ADR-0007`'s partition-scoped interception, unchanged; (2) every request is authorised against
+THAT origin's LIVE, hydrated `https.connect` grant, read fresh per request, never anything cached
+or read off disk (A137); (3) that grant is something a person actually approved (`ADR-0012`,
+`A153`/`A156`/`A157`'s revalidation work); (4) no ambient credential ever flows -- `nodeReachDial`
+uses Node's own `https` module, which has no cookie jar or session concept at all, a stronger
+guarantee than Chromium's `credentials: 'omit'` because there is nothing to have forgotten to set;
+(5) a redirect from the granted host is handed back as an ordinary 3xx `Response`, never followed,
+so a granted host can never hand the request off to one nobody approved; (6) the response is
+served as ordinary subresource content -- `script-src`/`connect-src` are untouched by this change,
+so a hostile response body served through this path cannot execute as script.
+
+**Only `https:` is proxied; `http:` stays denied, AI recommendation not an owner decision.**
+`checkConnectSecure`'s trust model binds identity through the TLS handshake itself; a plain
+connection has none, and `nodeReachDial`'s Node-`https`-based transport (chosen over Electron's
+`net.fetch` specifically so this could be proven end to end over a real TLS handshake -- see
+`serve-reach.ts`'s own header) has no way to pin a request to an address already checked while
+keeping the real hostname for the connection, the same limitation `electron-fetch.ts`'s own A66
+already names for a different caller. Authorising a plain request would therefore check one
+address and could legitimately connect to another moments later (T12, DNS rebinding), for a
+general, attacker-URL-reachable surface -- a materially different risk than A66's own narrow,
+address-literal-constrained, install-time-only case. Filed as its own entry, A163, rather than
+silently narrowed.
+
+**CSP widened alongside the handler, from the SAME grant, not a second one.**
+`img-src`/`font-src`/`media-src` now widen to the origin's `https.connect` grant
+(`connect-src.ts`'s new `appReachCspHeaderValue`, reusing `connectSrcFor`'s own translation --
+Rule 3) -- without this, `default-src 'self'`'s fallback would keep refusing the very
+image/font/media loads this decision exists to allow, before a request could ever reach the
+handler above. `connect-src` itself is untouched, still sourced from `tcp.connect` alone.
+
+**A158 partially dissolved as a side effect -- see that entry's own resolution.** Before this
+change, a too-narrow CSP header changed nothing observable, because the underlying request was
+always denied regardless of what CSP said; this change made it concretely observable, and closed
+it for `img-src`/`font-src`/`media-src` specifically -- but not for `connect-src`, for a reason
+(`WebSocket` has no live re-check to fall back on) recorded in full on that entry, not repeated
+here.
+
+**A148's risk -- addressed directly in that entry**, since this is the change its own text named
+as the trigger.
 
 ### A144 -- the loader's real-adapter e2e imports `esbuild`, which nothing declares **[AI-REC]**
 
@@ -5230,6 +5280,35 @@ nothing.
 
 **Needed by:** whenever `A143` is decided, and before any app renders remote content it does not
 author.
+
+**Update 2026-09-14, lane F-reach -- A143 is now decided, and the precondition above needs a
+correction, not just a confirmation.** `A143`'s own resolution note explains what this lane built:
+apps can now reach a granted third-party host, so "the remote-data scenario this entry is about"
+is real starting with this PR, exactly as predicted. **But the premise "it does not exist yet" was
+already stale before this lane touched anything.** `src/preload/fetch-route.ts`'s `installFetchRoute`
+(ADR-0017) routes an app tab's own `fetch()` to `orivon.net.connect`/`connectSecure` for a granted
+host, is already wired unconditionally in `preload/app.ts`'s production path, and
+`test/e2e-fetch-routing.test.ts` already proves it reaches a granted host and returns real bytes
+in production, gated purely on `tcp.connect`/`https.connect` -- CSP and `A143`'s own protocol.handle
+interception play no part in it at all (that routing bypasses Chromium's network stack entirely,
+`ADR-0017`'s own Consequences section). So an app fetching remote JSON/HTML and rendering it into
+the DOM (a Nostr client rendering notes, exactly A148's own example) was **already able to**, the
+moment ADR-0017's routing landed -- independent of A143, and before this lane. This entry's own
+"starts existing the moment A143 is resolved" pairing was therefore always incomplete: A143 controls
+whether an IMAGE/FONT/MEDIA response can carry attacker-controlled bytes into the page (a resource,
+never executable through those specific CSP directives, which stay untouched -- `script-src` is
+still exactly `'self' 'unsafe-inline'`, unaffected by this lane), while `fetch()`-routed remote text
+already controlled whether an attacker-influenced STRING could reach `innerHTML`/`document.write`
+and be reinterpreted as an inline `<script>` `'unsafe-inline'` would then run.
+
+**So: this lane's own change does not newly activate the risk A148 describes** -- the risk was
+already live via ADR-0017's routing, on a different, earlier-landed path this lane did not touch
+and does not own. **It is not closed either.** Nothing here implements per-script hashing, and
+nothing here should be read as having assessed whether the ALREADY-live fetch()-based version of
+this risk is otherwise mitigated. Filed precisely, per this lane's own brief, rather than left
+ambiguous: **A148 stays open, its status corrected from "will start mattering" to "already
+matters, on a path outside this lane's ownership as well as on this one," and the per-script-hash
+fix it names is still owed on both.**
 
 ### A149 -- `scripts/smoke.mjs`'s favicon scenario cannot pass under both T12 and "hermetic by construction" at once **[NEEDS OWNER DECISION]**
 
@@ -5730,7 +5809,7 @@ different door.
 > residual inference is not an acceptable floor -- but that is a fresh decision, not implied by
 > this one, and remains this entry's own open half.
 
-### A158 -- a restored app's first document is served with a CSP narrower than its real grant, and cannot self-correct **[STILL OPEN]**
+### A158 -- a restored app's first document is served with a CSP narrower than its real grant, and cannot self-correct **[PARTIALLY RESOLVED 2026-09-14 -- lane F-reach]**
 
 **Raised 2026-09-14**, adversarial review of the whole S4-6/S4-7 landing (lane ADV-fix3),
 verified directly against the real `GrantLedger`/`createBroker` mechanism rather than assumed.
@@ -5801,6 +5880,42 @@ extent of what this lane closed -- see `src/loader/electron-serve.ts`'s `hasUnhy
 **AI recommendation, not an owner decision:** resolve this alongside `A146`, since fixing one all
 but fixes the other, rather than building a second, narrower "reload this one tab" mechanism
 just for grants.
+
+**Update 2026-09-14, lane F-reach -- partially resolved, and the reasoning for why only partly is
+the more important part.** `A143`'s own resolution made `src/loader/serve.ts`'s `fetchThirdParty`
+a SECOND, independent, per-request LIVE gate for `https.connect` -- reading `broker.app.grants`
+fresh and deciding with `checkConnectSecure`, exactly the function `orivon.net.connectSecure`
+itself calls. That changes the answer to this entry's own framing question ("work out whether
+[a live handler gate] changes what the header should be computed from at first load"): **once a
+live handler independently re-checks every actual request, a header that is momentarily too
+permissive grants nothing by itself** -- it only decides whether the browser attempts a request
+the handler still, correctly, refuses if the grant was not real. So `img-src`/`font-src`/
+`media-src` (this same PR's own new CSP directives, sourced from `https.connect`) now widen from
+`persistedAppsSync`'s real, disk-persisted state during the narrow post-restart window, via
+`electron-serve.ts`'s `secureHeaderPatternsFor` -- the same-shaped fallback this entry's own
+"what this lane did instead" section already used for its diagnostic, now feeding the actual
+header rather than only a log line.
+
+**`connect-src` (`tcp.connect`) deliberately keeps the OLD, strict, no-fallback behaviour --
+this is not an oversight, and applying the same widening there was considered and rejected
+mid-lane, after nearly shipping it.** `connect-src` is not only backed by a live handler:
+`docs/open-questions.md` A42 already established it is "the ONLY thing standing between an app's
+page and a live `WebSocket`" connection, and `ws:`/`wss:` is a scheme `registerAppOrigin` never
+registers a `protocol.handle` for -- so a `wss://` attempt never reaches `fetchThirdParty` or any
+other live re-check at all. Widening `connect-src` from a persisted-but-not-yet-re-validated grant
+would therefore widen a REAL authorisation for that one request type, exactly the mistake `A137`
+forbids -- the reasoning that makes the `https.connect` fallback above safe (a live handler
+underneath re-checks every actual request) simply does not hold for `WebSocket`. See
+`src/loader/electron-serve.ts`'s `grantedConnectPatternsFor` and `secureHeaderPatternsFor`, whose
+doc comments now cross-reference this distinction directly, and the two tests in
+`electron-serve.test.ts` proving each side (`'A158 STILL OPEN FOR connect-src'` /
+`'A158 RESOLVED FOR THE HEADER'`).
+
+**So, precisely:** RESOLVED for `img-src`/`font-src`/`media-src` (the two new directives this PR
+introduces). STILL OPEN for `connect-src` -- a restored app's `fetch`/XHR/`WebSocket` reach still
+shows `'self'`-only until this origin's manifest hint lands, for the reason recorded above, and
+the fix this entry originally proposed (resolve alongside `A146`, holding the first navigation
+until state settles) is still the right shape for closing that remaining half, not attempted here.
 
 ### A159 -- `scripts/smoke.mjs` leaked its temp profile on every run, and the file is now exactly at its line ceiling **[RESOLVED 2026-09-14 in part; the ceiling is STILL OPEN]**
 
@@ -5924,6 +6039,53 @@ together rather than added twice. **Still open:** whether this is worth a depend
 **Needed by:** whenever the owner is ready to review a public-suffix-list dependency for real
 (A142's parked `psl`/`tldts` evaluation applies unchanged), or sooner if an app is ever actually
 served from a multi-label private suffix.
+
+### A163 -- third-party reach (A143) only proxies `https:`; a plain `http:` cross-origin request inside an app's own partition stays denied **[AI-REC -- not an owner decision]**
+
+**Raised 2026-09-14**, lane F-reach, while deciding how `fetchThirdParty` (`src/loader/serve.ts`)
+should authorise a cross-origin request `A143` newly lets through to the real network.
+
+`ADR-0017`'s own routed `fetch()` (`src/preload/fetch-route.ts`) already splits on scheme:
+`https:` goes through `orivon.net.connectSecure` (`https.connect`, hostname-bound by the TLS
+handshake itself), `http:` goes through `orivon.net.connect` (`tcp.connect`, resolved-address-bound
+by `checkConnect`'s own "resolve once, check every answer" discipline). `fetchThirdParty` mirrors
+only the first half. A plain `http:` cross-origin request inside an app's own partition -- an
+`<img src="http://...">`, a raw (non-routed) `XMLHttpRequest` -- is refused outright, regardless of
+what `tcp.connect` the app holds.
+
+**Why, stated precisely rather than asserted.** `checkConnect`'s own security property depends on
+dialling the EXACT resolved literal the check just validated, never re-resolving the hostname
+afterwards (`connect.ts`'s own header: "RESOLVE ONCE, check EVERY address that came back, and hand
+the caller the validated literals to dial"). `fetchThirdParty`'s actual network I/O
+(`serve-reach.ts`'s `nodeReachDial`) is Node's own `https` module, dialling by HOSTNAME -- there is
+no way to hand it a pre-validated literal address while keeping the real hostname for the
+connection and the `Host` header. Authorising a plain request here would therefore check one
+address (at grant-authorisation time) and could legitimately connect to a DIFFERENT one moments
+later if the name's DNS answer changes in between (T12, DNS rebinding) -- the check and the
+connection would be resolving independently, reopening exactly the gap `checkConnect`'s own design
+exists to close.
+
+**This is the SAME limitation `electron-fetch.ts`'s own A66 already names** ("neither `net.fetch`
+nor `net.request` exposes a way to pin a request's underlying connection to a specific resolved
+address while keeping the real hostname for TLS SNI/the Host header") -- confirmed there against
+Electron's API surface, and true of Node's `https` module for the identical reason (neither
+exposes per-request DNS pinning). `A66` accepted this gap for `electronFetch`'s own narrow case: a
+SINGLE, address-literal-constrained fetch of an app's OWN declared install origin, re-resolved
+and re-checked immediately before each use, for up to `BUNDLE_TIMEOUT_MS`. **This lane judged that
+narrow acceptance does not transfer to `fetchThirdParty`'s own surface**, which is general and
+repeatable and can be pointed at any hostname a page's own markup or script names -- exactly the
+"attacker who can get a URL into the page" threat model this whole feature has to survive. AI
+recommendation, not an owner decision: keep `http:` denied until either Electron/Node exposes a
+pinning hook this gap could close with, or an owner decides the risk is acceptable for a stated,
+narrower reason the way `A66` was.
+
+**What this costs today:** nothing measured -- no fixture or flagship app in this MVP references a
+plain-http cross-origin resource from inside its own partition, and `ADR-0017`'s own mixed-content
+note already means an `https:`-origin app's browser-level requests to `http:` targets are refused
+by Chromium's own mixed-content blocking before they would ever reach this handler regardless.
+
+**Needed by:** whichever future app actually needs a plain-http cross-origin resource from inside
+its own partition -- not before.
 
 ### A162 -- honouring `consentGranularity: 'per-capability'`: the install prompt is built, the three update prompts are not **[AI-REC -- needs-owner-decision]**
 

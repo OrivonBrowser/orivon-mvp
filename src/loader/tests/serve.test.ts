@@ -1,7 +1,9 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { bundleTree } from '../../broker/policy/bundle-hash.js'
 import { fromBundleTree, isPinnedPath } from '../../broker/policy/pin.js'
+import type { ConnectSecureDecision } from '../../broker/policy/connect-secure.js'
 import { createAppRequestHandler, resolveRequestPath } from '../serve.js'
+import type { AuthoriseReach, ReachDial } from '../serve.js'
 import { manifestJson, memoryStorage, ORIGIN, utf8 } from './test-helpers.js'
 
 const INDEX_HTML = '<h1>hello orivon</h1>'
@@ -134,7 +136,7 @@ describe('createAppRequestHandler', () => {
     expect(response.status).toBe(404)
   })
 
-  it('denies a request whose own origin differs from this handler\'s app origin, rather than proxying it to the network', async () => {
+  it('denies a request whose own origin differs from this handler\'s app origin, when nothing wires up third-party reach at all', async () => {
     const handler = await createAppRequestHandler(await installedStorage(), ORIGIN)
     const response = await handler(new Request('https://not-this-app.example/app.js'))
 
@@ -177,7 +179,7 @@ describe('createAppRequestHandler', () => {
   })
 })
 
-const DEFAULT_CSP = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'"
+const DEFAULT_CSP = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self'; font-src 'self'; media-src 'self'"
 
 describe('createAppRequestHandler -- CSP (S4-6, ADR-0007/ADR-0006)', () => {
   it('sets a self-only CSP when no live grant source is given', async () => {
@@ -192,7 +194,8 @@ describe('createAppRequestHandler -- CSP (S4-6, ADR-0007/ADR-0006)', () => {
     const response = await handler(new Request(`${ORIGIN}/`))
 
     expect(response.headers.get('content-security-policy')).toBe(
-      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' api.example.com:443"
+      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' api.example.com:443; " +
+      "img-src 'self'; font-src 'self'; media-src 'self'"
     )
   })
 
@@ -230,5 +233,116 @@ describe('createAppRequestHandler -- CSP (S4-6, ADR-0007/ADR-0006)', () => {
 
     expect(response.status).toBe(416)
     expect(response.headers.get('content-security-policy')).toBe(DEFAULT_CSP)
+  })
+
+  it('widens img-src/font-src/media-src to the live granted https.connect patterns, independently of connect-src\'s own tcp.connect grant', async () => {
+    const handler = await createAppRequestHandler(
+      await installedStorage(), ORIGIN, async () => ['api.example.com:443'], async () => ['cdn.example.com:443']
+    )
+    const response = await handler(new Request(`${ORIGIN}/`))
+
+    const csp = response.headers.get('content-security-policy')
+    expect(csp).toContain("connect-src 'self' api.example.com:443")
+    expect(csp).toContain("img-src 'self' cdn.example.com:443; font-src 'self' cdn.example.com:443; media-src 'self' cdn.example.com:443")
+  })
+})
+
+describe('createAppRequestHandler -- fetchThirdParty (A143, third-party reach)', () => {
+  /** `decision.allowed === true` always answers `hostArg` as `.host` -- checkConnectSecure's own contract, mirrored here rather than re-deriving it. */
+  function allow (host: string): ConnectSecureDecision {
+    return { allowed: true, host }
+  }
+
+  const DENIED: ConnectSecureDecision = { allowed: false, code: 'denied', reason: 'no-pattern-match' }
+
+  it('THE BROKEN-GATE PROOF: an ungranted host never reaches reachDial -- proven by a spy the test fails if it is ever called', async () => {
+    const authoriseReach: AuthoriseReach = vi.fn(async () => DENIED)
+    const reachDial: ReachDial = vi.fn(async () => new Response('should never be seen'))
+    const handler = await createAppRequestHandler(
+      await installedStorage(), ORIGIN, undefined, undefined, authoriseReach, reachDial
+    )
+
+    const response = await handler(new Request('https://not-granted.example/font.woff2'))
+
+    expect(response.status).toBe(404)
+    expect(reachDial).not.toHaveBeenCalled()
+    expect(authoriseReach).toHaveBeenCalledWith('not-granted.example', 443)
+  })
+
+  it('a granted host reaches reachDial, dialled at the AUTHORISED (canonical) host/port, and returns exactly what it answers', async () => {
+    const upstream = new Response('real bytes', { status: 200, headers: { 'content-type': 'font/woff2' } })
+    const reachDial: ReachDial = vi.fn(async () => upstream)
+    const authoriseReach: AuthoriseReach = async (host, port) => allow(host === 'granted.example' && port === 443 ? host : 'wrong')
+    const handler = await createAppRequestHandler(
+      await installedStorage(), ORIGIN, undefined, undefined, authoriseReach, reachDial
+    )
+
+    const response = await handler(new Request('https://granted.example/font.woff2'))
+
+    expect(response).toBe(upstream)
+    expect(reachDial).toHaveBeenCalledTimes(1)
+    const call = vi.mocked(reachDial).mock.calls[0]
+    if (call === undefined) throw new Error('reachDial was never called')
+    const [, dialedHost, dialedPort] = call
+    expect(dialedHost).toBe('granted.example')
+    expect(dialedPort).toBe(443)
+  })
+
+  it('a request without an explicit port defaults to 443 for both the authorisation check and the dial', async () => {
+    const authoriseReach: AuthoriseReach = vi.fn(async () => allow('granted.example'))
+    const reachDial: ReachDial = vi.fn(async () => new Response(null))
+    const handler = await createAppRequestHandler(
+      await installedStorage(), ORIGIN, undefined, undefined, authoriseReach, reachDial
+    )
+
+    await handler(new Request('https://granted.example/img.png'))
+
+    expect(authoriseReach).toHaveBeenCalledWith('granted.example', 443)
+    const call = vi.mocked(reachDial).mock.calls[0]
+    if (call === undefined) throw new Error('reachDial was never called')
+    const [, , dialedPort] = call
+    expect(dialedPort).toBe(443)
+  })
+
+  it('plain http: stays denied even when authoriseReach would allow it and reachDial is wired -- there is no address-safe way to authorise it (see fetchThirdParty\'s own doc)', async () => {
+    const authoriseReach: AuthoriseReach = vi.fn(async () => allow('granted.example'))
+    const reachDial: ReachDial = vi.fn(async () => new Response('should never be seen'))
+    const handler = await createAppRequestHandler(
+      await installedStorage(), ORIGIN, undefined, undefined, authoriseReach, reachDial
+    )
+
+    const response = await handler(new Request('http://granted.example/img.png'))
+
+    expect(response.status).toBe(404)
+    expect(authoriseReach).not.toHaveBeenCalled()
+    expect(reachDial).not.toHaveBeenCalled()
+  })
+
+  it('reachDial throwing (a real connection failure) is turned into a denial, not an unhandled rejection', async () => {
+    const authoriseReach: AuthoriseReach = async () => allow('granted.example')
+    const reachDial: ReachDial = async () => { throw new Error('ECONNREFUSED') }
+    const handler = await createAppRequestHandler(
+      await installedStorage(), ORIGIN, undefined, undefined, authoriseReach, reachDial
+    )
+
+    const response = await handler(new Request('https://granted.example/img.png'))
+
+    expect(response.status).toBe(404)
+  })
+
+  it('authoriseReach is asked FRESH on every request -- a revoke narrows the very next request through the SAME already-built handler', async () => {
+    let allowed = true
+    const authoriseReach: AuthoriseReach = async (host) => (allowed ? allow(host) : DENIED)
+    const reachDial: ReachDial = async () => new Response('bytes')
+    const handler = await createAppRequestHandler(
+      await installedStorage(), ORIGIN, undefined, undefined, authoriseReach, reachDial
+    )
+
+    const before = await handler(new Request('https://granted.example/img.png'))
+    expect(before.status).toBe(200)
+
+    allowed = false // simulates broker.revoke() landing between the two requests
+    const after = await handler(new Request('https://granted.example/img.png'))
+    expect(after.status).toBe(404)
   })
 })
