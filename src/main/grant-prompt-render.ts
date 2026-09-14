@@ -18,10 +18,12 @@
 // style choice (R2-01/AR-05).
 
 import type { CapabilityKind, Manifest, Pattern } from '../contracts/index.js'
-import { MAX_PORT } from '../broker/policy/canonical-host.js'
-import { hostSpecKind, parsePattern as parseConnectPattern, parsePortSpec } from '../broker/policy/connect-patterns.js'
+import type { CapabilityGrantSummary } from './grant-prompt-connect.js'
+import { describeConnectCapability, portsPhrase } from './grant-prompt-connect.js'
 import { patternSetFromCapabilities } from '../broker/policy/manifest-patterns.js'
 import type { PatternSet } from '../broker/policy/update.js'
+
+export type { CapabilityGrantSummary } from './grant-prompt-connect.js'
 
 export interface GrantPromptContent {
   /** Drives `dialog.showMessageBox`'s own `type` -- a second, non-text
@@ -46,8 +48,6 @@ export interface GrantPromptContent {
    * consequence of a breadth warning, when there is one. */
   readonly detail: string
 }
-
-const WARNING_HEADLINE = '⚠ Unlimited network access'
 
 // ASCII, not the Unicode ellipsis glyph -- guaranteed to render identically
 // under whatever font a native dialog falls back to, where a missing glyph
@@ -101,173 +101,6 @@ export function formatOriginForDisplay (origin: string): string {
   return `${parsed.protocol}//${ELISION_MARKER}${tail}`
 }
 
-/** One parsed `host:port` pattern, via the SAME grammar the runtime
- * matcher uses -- never `grant-prompt-render.ts`'s own guess at the string.
- * A pattern the real grammar cannot parse authorises nothing at connect
- * time (`connect-patterns.ts`'s own doc on `parsePattern`), so it
- * contributes nothing here either, rather than being rendered as if it
- * were a host. */
-interface ConnectPatternInfo {
-  readonly host: string
-  readonly port: string
-  /** `hostSpecKind(host) === 'any-public-unicast'` -- true for a bare `'*'`
-   * host REGARDLESS of the paired port (R2-01): the runtime matcher grants
-   * reach to any public address on that basis alone. */
-  readonly hostIsWildcard: boolean
-}
-
-function parseConnectPatterns (patterns: readonly Pattern[]): readonly ConnectPatternInfo[] {
-  const infos: ConnectPatternInfo[] = []
-  for (const pattern of patterns) {
-    const parsed = parseConnectPattern(pattern)
-    if (parsed === null) continue
-    infos.push({ host: parsed.host, port: parsed.port, hostIsWildcard: hostSpecKind(parsed.host) === 'any-public-unicast' })
-  }
-  return infos
-}
-
-/** A port spec that reaches every port a connection could ever name -- the
- * literal `'*'` wildcard, or a `lo-hi` range spanning the whole space
- * (`1-65535`). Both mean the same thing to a person reading a prompt, so
- * both read as "any port" rather than one looking narrower than the other
- * purely because of which digits its author happened to write. */
-function coversAllPorts (portSpec: string): boolean {
-  const parsed = parsePortSpec(portSpec)
-  if (parsed === null) return false
-  return parsed === 'any' || (parsed.lo === 1 && parsed.hi === MAX_PORT)
-}
-
-function isSinglePort (portSpec: string): boolean {
-  const parsed = parsePortSpec(portSpec)
-  return parsed !== null && parsed !== 'any' && parsed.lo === parsed.hi
-}
-
-/** `port 443`, or `ports 22, 443, 5432` for more than one -- the same shape
- * `portsPhrase` below already renders for `tcp.listen`/`udp.bind`, reused
- * here for connect breadth (AR-02) rather than a second joiner. */
-function portsListPhrase (specs: readonly string[]): string {
-  const unique = Array.from(new Set(specs))
-  if (unique.length === 1) {
-    const only = unique[0]
-    if (only !== undefined && coversAllPorts(only)) return 'any port'
-  }
-  return portsPhrase(unique)
-}
-
-// A133: past this many OTHER hosts, "and N other sites" stops being a
-// quantity a reader pictures and becomes a bare magnitude they can only
-// compare against other magnitudes -- functionally the same non-signal an
-// unlimited grant gives, just spelled as a number instead of a wildcard.
-// Set at the point where the rendered count itself crosses from a
-// single-digit, itemisable quantity into a double-digit one: the owner's
-// own worked example (d-0027) calibrates the low end at 3 ("reads as
-// intended"), and English itself shifts register at the same point, from
-// naming small counts individually to a magnitude word ("dozens", "many").
-// Presentation, not policy -- retune freely; see this directory's README,
-// Design notes, for the full reasoning and why 10 was picked over another
-// round number.
-const MANY_OTHER_HOSTS_THRESHOLD = 10
-
-// Matches the owner's own example register ("Connect to youtube.com and 3
-// other sites", d-0027): name the first host, count the rest, never list
-// every one -- that reads as noise, not clarity, once an app declares more
-// than a handful. Port breadth (AR-02) is shown only for a SINGLE named
-// host: once there is more than one, the line is already "first host and N
-// others" and stacking port detail on top of that would need the "details"
-// expander D-0004 rejects by name -- this is a deliberate scope limit, not
-// an oversight, and it does not hide anything the wildcard-host branch
-// below is responsible for (that branch never calls this function at all).
-function namedHostsSummary (verb: string, singular: string, plural: string, infos: readonly ConnectPatternInfo[]): CapabilityGrantSummary {
-  const hosts = Array.from(new Set(infos.map((info) => info.host)))
-  const first = hosts[0]
-  if (first === undefined) return { warning: false, message: `${verb} -- no hosts declared` }
-  if (hosts.length === 1) {
-    const ports = infos.filter((info) => info.host === first).map((info) => info.port)
-    const uniquePorts = Array.from(new Set(ports))
-    const onlyPort = uniquePorts[0]
-    if (uniquePorts.length === 1 && onlyPort !== undefined && isSinglePort(onlyPort)) return { warning: false, message: `${verb} ${first}` }
-    return { warning: false, message: `${verb} ${first} on ${portsListPhrase(uniquePorts)}` }
-  }
-  const rest = hosts.length - 1
-  if (rest >= MANY_OTHER_HOSTS_THRESHOLD) {
-    // Same mechanism as the wildcard-host warning (warning + explanation),
-    // never a second vocabulary -- but the count stays honest in the
-    // explanation rather than being replaced by a vaguer word: the reader
-    // gets both "this is too many to weigh" AND the true number.
-    const lowerVerb = verb.charAt(0).toLowerCase() + verb.slice(1)
-    return {
-      warning: true,
-      message: `⚠ ${verb} a large number of ${plural}`,
-      explanation: `This app can ${lowerVerb} ${hosts.length} specific ${plural}, starting with ${first} -- more than can be weighed individually.`
-    }
-  }
-  return { warning: false, message: `${verb} ${first} and ${rest} other ${rest === 1 ? singular : plural}` }
-}
-
-function portsPhrase (patterns: readonly Pattern[]): string {
-  return patterns.length === 1 ? `port ${patterns[0]}` : `ports ${patterns.join(', ')}`
-}
-
-/**
- * One already-granted capability's plain-language summary -- exported for
- * the permissions list (queue item 4.4, `../permissions.ts`), which renders
- * one row per live `Grant` and needs exactly this fact, not a whole request
- * dialog's title/detail. `describeGrantRequest` below is this function plus
- * the claim/explanation framing a REQUEST prompt needs; the two must never
- * drift into two separate wordings for the same capability
- * (code-guidelines.md Rule 3), so the list reuses this directly rather than
- * re-deriving its own copy of the switch below.
- */
-export interface CapabilityGrantSummary {
-  readonly warning: boolean
-  readonly message: string
-  /** Present only alongside `warning: true` -- the sentence explaining what
-   * this row's warning actually means: unlimited reach, a host set too
-   * large to weigh individually (A133), or a listening/binding capability
-   * accepting inbound traffic (A134). */
-  readonly explanation?: string
-}
-
-/**
- * `tcp.connect` / `https.connect` / `udp.send` share one shape: host:port
- * patterns, a host wildcard that means "any public address" REGARDLESS of
- * its paired port (R2-01), and port breadth that must stay visible even
- * when the host is narrow (AR-02).
- *
- * A pattern whose host is the wildcard makes the WHOLE grant read as
- * unlimited, however many named patterns sit alongside it -- "any public
- * address" already subsumes every other declared host, so this branch
- * never calls `namedHostsPhrase`: the wildcard host must never be rendered
- * as if it were a literal hostname (R2-01's own failure mode), and there is
- * nothing a specific host could add to "any address" that needs its own
- * mention in a one-line summary (D-0004 rejects an expander for the detail
- * that would take). What DOES still vary honestly is the port: a wildcard
- * host paired only with bounded ports is still unlimited in HOST terms, but
- * "any site, on port 443" is a real, narrower fact than "any site, any
- * port" and the addendum requires both to read differently.
- */
-function describeConnectCapability (
-  verb: string,
-  singular: string,
-  plural: string,
-  unlimitedExplanation: string,
-  patterns: readonly Pattern[]
-): CapabilityGrantSummary {
-  const infos = parseConnectPatterns(patterns)
-  const wildcard = infos.filter((info) => info.hostIsWildcard)
-  const named = infos.filter((info) => !info.hostIsWildcard)
-
-  if (wildcard.length > 0) {
-    const fullyOpen = wildcard.some((info) => coversAllPorts(info.port))
-    const explanation = fullyOpen
-      ? unlimitedExplanation
-      : `${unlimitedExplanation} Limited to ${portsListPhrase(wildcard.map((info) => info.port))}.`
-    return { warning: true, message: WARNING_HEADLINE, explanation }
-  }
-
-  return namedHostsSummary(verb, singular, plural, named)
-}
-
 // `tcp.listen`/`udp.bind` never reach a wildcard-host branch: the contract
 // itself rejects a bare `"*"` port range (manifest.ts), and a listen/bind
 // pattern has no host at all -- only which ports.
@@ -312,6 +145,13 @@ export function describeCapabilityGrant (capability: CapabilityKind, patterns: r
         message: `⚠ Receive data on ${portsPhrase(patterns)}`,
         explanation: 'This opens a door into your device: any other computer that can reach this port -- on your network, or the internet if it is forwarded -- can send this app data, not only computers it contacted first.'
       }
+    // Not merged with udp.bind here -- that merge only makes sense when a
+    // single request names BOTH (a real P2P app's normal shape: one port
+    // range, two protocols), and this function renders exactly one
+    // capability at a time, including for the settings permissions list
+    // (../permissions.ts), where each live grant is its own revocable row
+    // and must stay that way. describeCapabilitySet's own mergeInboundRows
+    // is where the combined case lives.
     case 'fs':
       // AR-04: `fs.userSelected` and a folder picker are unbuilt (queue item
       // 4.3). What a grant actually gives today is an app-private directory
@@ -370,6 +210,59 @@ export function describeGrantRequest (
 }
 
 /**
+ * `tcp.listen` and `udp.bind` together, as one row -- a real P2P app (the
+ * flagship included) declares both for the SAME reason, one port range
+ * doing peer connections over TCP and DHT/exchange over UDP, and rendering
+ * them as two separately-warned rows says the same underlying fact
+ * ("other computers can reach this device") twice in different words. Only
+ * called when a single request names BOTH; either alone still renders
+ * through `describeCapabilityGrant`'s own case, unmerged, exactly as
+ * before (the settings permissions list, ../permissions.ts, always calls
+ * that path and never this one -- see the comment on the `udp.bind` case
+ * above).
+ */
+function describeInboundAccess (listenPatterns: readonly Pattern[], bindPatterns: readonly Pattern[]): CapabilityGrantSummary {
+  const samePorts = listenPatterns.length === bindPatterns.length &&
+    listenPatterns.every((pattern, index) => pattern === bindPatterns[index])
+  const portsText = samePorts
+    ? `on ${portsPhrase(listenPatterns)}`
+    : `on ${portsPhrase(listenPatterns)} (TCP) and ${portsPhrase(bindPatterns)} (UDP)`
+  return {
+    warning: true,
+    message: `⚠ Accepts connections and data from other computers ${portsText}`,
+    explanation: 'This opens a door into your device: any other computer that can reach these ports -- on your network, or the internet if they are forwarded -- can connect to or send data to this app, not only computers this app contacted first.'
+  }
+}
+
+/**
+ * Collapses rows that render the IDENTICAL headline into one, unioning
+ * their explanations -- the fix for the other half of the same redundancy
+ * `describeInboundAccess` targets. `tcp.connect: ["*:*"]` and
+ * `udp.send: ["*:*"]` both produce the literal string `WARNING_HEADLINE`
+ * with DIFFERENT explanations; shown as two rows, an identical headline
+ * repeated reads as a rendering bug, not as two facts. Order-preserving --
+ * the merged row appears where its first contributor did, so `fs`/`id`
+ * rows are never reordered around it -- and general on purpose: it fires
+ * for any two capabilities that happen to share a headline, not only this
+ * pair, without either capability needing to know about the other.
+ */
+function mergeRowsWithIdenticalMessage (rows: readonly CapabilityGrantSummary[]): readonly CapabilityGrantSummary[] {
+  const merged: CapabilityGrantSummary[] = []
+  for (const row of rows) {
+    const at = merged.findIndex((seen) => seen.message === row.message)
+    const existing = at === -1 ? undefined : merged[at]
+    if (existing === undefined) {
+      merged.push(row)
+      continue
+    }
+    const explanations = Array.from(new Set([existing.explanation, row.explanation].filter((value): value is string => value !== undefined)))
+    const combined = { warning: existing.warning || row.warning, message: existing.message }
+    merged[at] = explanations.length > 0 ? { ...combined, explanation: explanations.join(' ') } : combined
+  }
+  return merged
+}
+
+/**
  * The shared body behind `describeInstallConsent` and S4-5's
  * `describeCapabilityPrompt`: one dialog listing several capabilities at
  * once, each rendered through `describeCapabilityGrant` -- never a second
@@ -383,6 +276,21 @@ export function describeGrantRequest (
  * "Unlimited" marker and explanation -- so a narrow row sitting next to a
  * wide one still reads as narrow, and the wide one still stands out on its
  * own line, not only through an icon a person may not consciously register.
+ *
+ * TWO MERGES RUN BEFORE RENDERING, both fixing REDUNDANT rows rather than
+ * TRUE ones -- found against the flagship's own manifest (`connect: ["*:*"]`
+ * + `listen` + `udp.bind` + `send: ["*:*"]` + `fs`), which rendered 4 of 5
+ * rows warned and one headline twice. Neither merge silences a real
+ * warning: `tcp.listen`+`udp.bind` become one row (`describeInboundAccess`)
+ * because they are one fact stated twice, and any two rows that render the
+ * identical headline collapse into one (`mergeRowsWithIdenticalMessage`)
+ * for the same reason. What is left after both is exactly as many warned
+ * rows as there are DISTINCT kinds of breadth the manifest actually
+ * declares -- for the flagship, two: it can reach anywhere outbound, and it
+ * can be reached from anywhere inbound. Considered and rejected: a second,
+ * lower-severity marker for `tcp.listen`/`udp.bind` (README, Design notes)
+ * -- the two facts are not degrees of the same risk, so grading one below
+ * the other would misstate it rather than declutter it.
  */
 function describeCapabilitySet (
   origin: string,
@@ -391,12 +299,25 @@ function describeCapabilitySet (
   capabilities: readonly CapabilityKind[],
   message: string
 ): GrantPromptContent {
-  const rows = capabilities.map((capability) => describeCapabilityGrant(capability, declared[capability] ?? []))
-  const warning = rows.some((row) => row.warning)
+  const mergeInbound = capabilities.includes('tcp.listen') && capabilities.includes('udp.bind')
+  let inboundRowEmitted = false
+  const rows: CapabilityGrantSummary[] = []
+  for (const capability of capabilities) {
+    const isInboundCapability = capability === 'tcp.listen' || capability === 'udp.bind'
+    if (mergeInbound && isInboundCapability) {
+      if (inboundRowEmitted) continue
+      inboundRowEmitted = true
+      rows.push(describeInboundAccess(declared['tcp.listen'] ?? [], declared['udp.bind'] ?? []))
+      continue
+    }
+    rows.push(describeCapabilityGrant(capability, declared[capability] ?? []))
+  }
+  const mergedRows = mergeRowsWithIdenticalMessage(rows)
+  const warning = mergedRows.some((row) => row.warning)
 
   const displayOrigin = formatOriginForDisplay(origin)
   const claim = `Claims to be "${manifest.name}".`
-  const rowLines = rows.map((row) => row.explanation === undefined ? `- ${row.message}` : `- ${row.message}\n  ${row.explanation}`)
+  const rowLines = mergedRows.map((row) => row.explanation === undefined ? `- ${row.message}` : `- ${row.message}\n  ${row.explanation}`)
 
   return {
     warning,

@@ -259,36 +259,82 @@ and every declared port range carries the same shape of risk, the same reasoning
 "can send this app data") rather than one shared string with the noun swapped -- matching this
 file's existing rule that two capabilities must never share a rendered sentence
 (see the udp.send/tcp.connect distinctness test already in this suite).
-**Two warned rows in one dialog do not collapse into one** (checked directly: an app declaring
-both `https.connect: ["*:*"]` and `tcp.listen`): `describeCapabilitySet`'s per-row rendering
-(above) already means each row keeps its own message and explanation regardless of how many
-other rows are also warned -- the outer `warning` boolean is only ever an OR over the rows, never
-a replacement for what each row says on its own line. Nothing needed to change here; a test now
-pins that this stays true.
+**Correction, coordinator review 2026-09-14: "two warned rows in one dialog do not collapse into
+one" was true of the pair tested (`https.connect: ["*:*"]` + `tcp.listen`) and false in general.**
+The flagship's real manifest -- `tcp.connect: ["*:*"]` + `tcp.listen` + `udp.bind` + `udp.send:
+["*:*"]` + `fs` -- rendered 4 of 5 rows warned, with `"⚠ Unlimited network access"` appearing
+TWICE (from `tcp.connect` and `udp.send`, each with its own explanation underneath). Read cold,
+a repeated headline looks like a rendering bug, and a wall of four identical markers stops
+telling the reader anything -- A100's exit criterion is that unlimited looks unmistakably
+different from narrow, not that everything serious looks the same as everything else serious.
+Neither problem was reachable by the tests this lane had, all of which declared at most one
+warned axis at a time.
 
-**[`grant-prompt-render.ts`](grant-prompt-render.ts) — "and N other sites" now warns past 10
-others, closing the gap the sentence had no upper bound on (A133).** The count was always
-honest; the question the finding raised was whether the sentence stayed a fact a person could
-weigh at any size, and past some point it does not -- "and 4,271 other sites" is closer in kind
-to an unlimited grant than to "a few named sites", and nothing said so.
+**Fixed by two merges inside `describeCapabilitySet`, both removing REDUNDANT rows rather than
+TRUE ones.** `mergeRowsWithIdenticalMessage` collapses any two rows that render the identical
+headline into one, unioning their explanations -- general on purpose, so it fires for whichever
+capabilities happen to coincide, not only `tcp.connect`/`udp.send`. `describeInboundAccess`
+merges `tcp.listen` and `udp.bind` into one row whenever a single request names both, because a
+real P2P app declares both for the SAME reason (one port range, TCP peer connections and UDP
+DHT/exchange) -- rendering them as two separately-scary rows states one fact ("other computers
+can reach this device") twice. Either capability alone still renders through
+`describeCapabilityGrant`'s own unmerged case exactly as before, including in the settings
+permissions list (`../permissions.ts`), which needs each grant on its own revocable row and
+never calls the merged path. After both merges the flagship shows exactly two warned rows, not
+four -- one per DISTINCT kind of breadth it actually declares (it can reach anywhere outbound,
+and it can be reached from anywhere inbound), never a third or fourth restating one of those two.
 
-**Why 10, not some other round number.** The owner's own worked example (`d-0027`) calibrates
-the low end at 3 ("reads as intended"). The threshold is set at the point the rendered count
-itself crosses from a single-digit, itemisable quantity into a double-digit one -- English marks
-the same boundary in its own vocabulary, naming small counts individually ("a few", "several")
-and reaching for a magnitude word ("dozens", "many") once a count passes nine. That gives a
-checkable, language-native inflection point rather than a number chosen to fit a target string.
-**This is presentation, not policy, and the owner may retune `MANY_OTHER_HOSTS_THRESHOLD` freely**
--- nothing downstream depends on the specific value 10; only on there being *some* value.
+**Considered and rejected: a second, lower-severity marker for `tcp.listen`/`udp.bind`, so
+"unlimited" and "opens a door" would read as different tiers of the same scale.** Rejected
+because they are not degrees of the same risk -- an app choosing where it connects and a device
+accepting connections from strangers are different KINDS of exposure, not one being milder than
+the other, and grading one below the other would misstate that rather than declutter it. The
+actual defect was redundancy (one fact stated on 2-4 rows), not that two genuinely different
+facts both deserve a visible marker; removing the redundancy left exactly as many markers as
+there are distinct facts, which is what A100 asks for in the first place.
 
-**What happens past the threshold is the wildcard-host mechanism, reused rather than
-reinvented:** `warning: true`, a fixed headline (`"⚠ Connect to a large number of sites"`, not
-the specific hosts), and an `explanation` that keeps the true count and the first host rather
-than replacing them with a vaguer word -- so the summary is simultaneously "this is too many to
-weigh" and, for anyone who wants it, the honest number. **Considered and rejected:** naming more
-than one host before counting (does not address the actual problem -- ten spelled-out hostnames
-crowd a dialog exactly as much as a large integer fails to inform one) and a details expander
-(rejected by name for this exact surface, `D-0004`).
+**[`grant-prompt-render.ts`](grant-prompt-render.ts) — "and N other sites" now warns only once
+the declared host count reaches half of `MAX_PATTERNS`, closing the gap the sentence had no
+upper bound on (A133).** The count was always honest; the question the finding raised was
+whether the sentence stayed a fact a person could weigh at any size, and past some point it does
+not -- "and 4,271 other sites" is closer in kind to an unlimited grant than to "a few named
+sites", and nothing said so.
+
+**Correction, coordinator review 2026-09-14: the first threshold (10 OTHER hosts) was wrong, not
+just unproven.** It was reasoned from where English shifts from naming small counts individually
+to a magnitude word ("dozens", "many") -- calibrated against the owner's own worked example
+(`d-0027`, 3 others "reads as intended"), but never checked against an ordinary app with a
+longer, still-narrow list. A 12-feed reader (`nytimes.com`, `bbc.com`, `reuters.com`, ...) is
+exactly that: twelve individually meaningful, curated destinations, narrow by any sensible
+reading -- and it tripped the warning, because 11 crosses from one digit to two just as easily
+whether the list behind it is curated or not. Single-digit-vs-double-digit measures how a number
+*reads*, which turns out not to be what determines whether a host list is actually broad.
+
+**Re-anchored on something a host count can be compared against instead: `MAX_PATTERNS`, the
+same enforced ceiling (`loader/manifest-capabilities.ts`) on how many patterns one capability's
+array may ever declare, already imported here for the wildcard-port check.** The threshold is
+now `MAX_PATTERNS / 2` -- 128 at today's ceiling of 256. A feed reader's dozen sources clears it
+by more than 10x; so would a large CDN allowlist of several dozen hosts. What trips it is a
+manifest naming HALF of the total address space the format permits it to name at all, which is
+the point past which a list has stopped being a materially narrower declaration than not naming
+any hosts -- close enough to the structural maximum that individual names have stopped doing
+useful work for the reader. **This is presentation, not policy, and the owner may retune
+`MANY_HOSTS_THRESHOLD` freely** -- nothing downstream depends on the specific fraction (half);
+only on the threshold moving with `MAX_PATTERNS` rather than drifting from it, and on there being
+*some* value that a plausible ordinary app cannot reach by accident.
+
+**What happens past the threshold is unchanged from the first version:** the wildcard-host
+mechanism, reused rather than reinvented -- `warning: true`, a fixed headline
+(`"⚠ Connect to a large number of sites"`, not the specific hosts), and an `explanation` that
+keeps the true count and the first host rather than replacing them with a vaguer word.
+**Considered and rejected:** naming more than one host before counting (does not address the
+actual problem -- spelled-out hostnames crowd a dialog exactly as much as a large integer fails
+to inform one), a details expander (rejected by name for this exact surface, `D-0004`), and
+counting distinct registrable domains instead of raw hosts (the coordinator's own suggestion,
+worth recording why it was not built: it needs the same public-suffix-list dependency A115
+already parked as `A142` rather than add, and it would not by itself have saved the feed-reader
+case anyway -- twelve different news outlets are twelve different registrable domains, so the
+fix that actually matters here is the threshold's size, not the unit it counts in).
 
 **[`install-consent.ts`](install-consent.ts) — "once per origin, ever" (A139) is derived from the
 grant ledger's own hydration, not tracked as a second piece of state.** `requestInstallConsent`
