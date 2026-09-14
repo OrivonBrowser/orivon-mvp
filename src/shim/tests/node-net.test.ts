@@ -62,4 +62,25 @@ describe('node-net.ts', () => {
     const error = await new Promise<Error>((resolve) => socket.once('error', resolve))
     expect(error.message).toMatch(/window\.orivon/)
   })
+
+  // A135: members read off the default export (a bundled CJS `require('net')`'s
+  // own shape) used to be silently absent rather than named.
+  it('names net.Server, reason not-built, citing the same A114 gap as createServer', async () => {
+    installFakeOrivon()
+    const net = (await import('../node-net.js')).default as unknown as Record<string, unknown>
+    const { OrivonShimError } = await import('../errors.js')
+    expect(() => net.Server).toThrow(/A114/)
+    try {
+      void net.Server
+    } catch (error) {
+      expect((error as InstanceType<typeof OrivonShimError>).reason).toBe('not-built')
+    }
+  })
+
+  it('names any other unbuilt member, reason unimplemented', async () => {
+    installFakeOrivon()
+    const net = (await import('../node-net.js')).default as unknown as Record<string, unknown>
+    const { OrivonShimError } = await import('../errors.js')
+    expect(() => net.getDefaultAutoSelectFamily).toThrow(OrivonShimError)
+  })
 })

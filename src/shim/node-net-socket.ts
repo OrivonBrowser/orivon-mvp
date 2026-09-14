@@ -22,6 +22,7 @@ import { Duplex } from 'stream'
 import type { TcpSocket } from '../contracts/handles.js'
 import { toNodeError } from './node-http-errors.js'
 import { toBytes } from './node-stream-bytes.js'
+import { refuseShim } from './errors.js'
 
 export type NetDialFn = (opts: { host: string, port: number }) => Promise<TcpSocket>
 
@@ -163,6 +164,26 @@ export class Socket extends Duplex {
   async setKeepAlive (on = false, initialDelayMs?: number): Promise<this> {
     if (this.handle !== null) await this.handle.setKeepAlive(on, initialDelayMs).catch(() => {})
     return this
+  }
+
+  // A135: named by presence, not by absence -- see this file's own header
+  // comment on ref/unref/setTimeout for why these are real methods (not the
+  // module-level refusingProxy wrap node-net.ts/node-dns.ts/node-fs.ts use)
+  // and why ref/unref specifically are safe no-ops rather than throws.
+
+  /** Real Node's own event-loop keep-alive controls -- no meaning here (there is no libuv handle to ref/unref), so both are no-ops that return `this`, exactly matching real Node's contract. A throw would be actively worse than today's absence: real code calls these defensively (`if (typeof socket.unref === 'function') socket.unref()`), and a no-op keeps that call harmless, which is the objectively correct behaviour, not a shortcut. */
+  ref (): this { return this }
+  unref (): this { return this }
+
+  /** Real Node's idle-timeout control. Unlike ref/unref, a no-op here would silently break an app's own timeout logic instead of doing nothing meaningful, so this refuses by name -- present (so a defensive `typeof` check still finds a function) but throwing when actually called, the same treatment node-http-unsupported.ts's createServer gives its own gap. */
+  setTimeout (_ms: number, _callback?: () => void): this {
+    throw refuseShim(
+      'net.Socket#setTimeout', 'unimplemented',
+      "net.Socket#setTimeout is not implemented yet -- an idle timeout would need a timer wired " +
+      "to this socket's own read/write activity, which this shim does not have. A silent no-op " +
+      "would break an app's own timeout logic without telling it, so this refuses by name instead " +
+      '(compatibility-matrix.md Table 3).'
+    )
   }
 }
 
