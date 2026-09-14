@@ -49,7 +49,7 @@
 // past its 800-line test ceiling) -- this file is scenarios, that one is
 // plumbing.
 import { createServer } from 'node:http'
-import { launchElectron } from '../test/launch-electron.mjs'
+import { closeElectron, launchElectron } from '../test/launch-electron.mjs'
 import {
   ABSENCE_SETTLE_MS,
   activeTabFaviconSrc,
@@ -783,9 +783,9 @@ async function main () {
   }
 
   try {
-    await app.close()
+    await closeElectron(app) // never a bare app.close(): only this removes the temp profile (A159)
   } catch (e) {
-    console.error('teardown: app.close() failed (results above still stand):', String(e).split('\n')[0])
+    console.error('teardown: closeElectron failed (results stand):', String(e).split('\n')[0])
   }
   server.close()
   server2.close()
