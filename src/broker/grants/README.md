@@ -84,3 +84,41 @@ ordinary revoke is scoped to one capability and leaves the rest of the origin's 
 version floor) untouched, while a full "remove this app" action — `forgetOrigin`, A60's escape
 hatch, doubling as A23's removal primitive — forgets everything about the origin at once,
 including every persisted grant, so nothing reappears on the next restart.
+
+### `declined-consent.ts` — remembering a "no" without it ever becoming a "yes" (A145)
+
+A fifth per-origin file, `declined-capabilities.json`, alongside the floor, rollback
+acknowledgement and grants — written when `src/main/install-consent.ts`'s all-or-nothing dialog
+is DECLINED, so a restart no longer asks the same question again as if nothing had happened.
+
+**What is stored is the declared capability set the dialog was declined for — never a boolean,
+never a manifest.** A boolean cannot answer "is this still the same question" once a manifest
+changes; the whole manifest is more than the comparison needs and would reopen A137's ruling (a
+value read off disk must not gain authority it would not have arriving fresh). Comparing exactly
+the capability names lets `install-consent.ts` ask again only when a manifest now declares
+something genuinely new, and stay silent for the same request or a narrower one.
+
+**Hydrates eagerly, at `#record`'s create branch — the version floor's shape, not the grants'
+(A158).** `grant-persistence.ts`'s own design note above explains why grants must wait for
+`registerApp` to supply a manifest to re-validate against. A declined-capability record needs no
+such re-validation: it authorises nothing, so there is nothing for a manifest to re-check it
+against. Deferring its hydration to `registerApp` the way grants does would only recreate A158's
+exact ordering hazard for a value that has no reason to share it.
+
+**ADVISORY ONLY, and that is enforced by what this file's two write paths can reach, not by
+convention.** `recordDeclinedConsent`/`clearDeclinedConsent` write only to their own file and to
+`OriginRecord.declinedCapabilities`; neither touches `grants`, and nothing in `grant()` or
+`decideGrantRequest` (`../policy/request-grant.ts`) ever reads this field. A remembered no can
+suppress `install-consent.ts`'s own dialog and nothing else — `app.requestGrant`
+(`src/main/request-grant.ts`), the app's own live per-capability door, is a completely separate
+path to a grant, untouched by this record either way.
+
+**A failed write is logged, never thrown — unlike the version floor's.** The floor's write
+failing is security-relevant (T19's replay guard would silently weaken); a lost decline-record
+write costs one avoidable re-prompt next restart, never a security regression, so it is held to
+the same best-effort standard `forgetOrigin`'s own disk cleanup already uses for the same reason.
+`GrantLedger.forgetOrigin` itself is the one caller that does NOT use this file's
+`clearDeclinedConsent` — that function's internal swallow-and-log would break `forgetOrigin`'s
+own stricter contract (a failed delete must leave the in-memory record untouched), so it calls
+`storage.deleteDeclinedCapabilities` directly instead, inside its own all-four-or-nothing try
+block alongside the floor, rollback acknowledgement and grants deletes.

@@ -68,6 +68,10 @@ Mark anything that must not leave the team draft as `(Keep private)`.
   itself as an app, get one real consent dialog, and load from local cache with the network
   unplugged. Two gaps stay open on purpose: a first visit can still race the dialog, and the
   shim's own globals still don't run in production.
+- 2026-09-14: **Say no to an app now, and it stays said.** Declining install consent used to
+  vanish the moment you restarted -- the same question, every single launch. Now it is
+  remembered, but only ever as a "don't ask again," never as anything an app could turn into
+  access on its own.
 
 ### In my head
 

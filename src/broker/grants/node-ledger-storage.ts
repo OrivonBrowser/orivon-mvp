@@ -32,6 +32,10 @@ function grantsPath (userDataPath: string, origin: string): string {
   return join(originGrantsDir(userDataPath, origin), 'grants.json')
 }
 
+function declinedCapabilitiesPath (userDataPath: string, origin: string): string {
+  return join(originGrantsDir(userDataPath, origin), 'declined-capabilities.json')
+}
+
 /**
  * Writes `text` to `path` atomically: a temp file in the SAME directory
  * (`renameSync` across filesystems is not atomic, and is sometimes refused
@@ -102,6 +106,12 @@ function isVersionFloorShape (value: unknown): value is { versionFloor: string }
 function isAcknowledgedVersionShape (value: unknown): value is { acknowledgedVersion: string } {
   return typeof value === 'object' && value !== null &&
     typeof (value as { acknowledgedVersion?: unknown }).acknowledgedVersion === 'string'
+}
+
+function isDeclinedCapabilitiesShape (value: unknown): value is { capabilities: string[] } {
+  return typeof value === 'object' && value !== null &&
+    Array.isArray((value as { capabilities?: unknown }).capabilities) &&
+    (value as { capabilities: unknown[] }).capabilities.every((c) => typeof c === 'string')
 }
 
 function isPersistedGrant (value: unknown): value is PersistedGrant {
@@ -223,6 +233,36 @@ export function nodeLedgerStorage (userDataPath: string): LedgerStorage {
     deleteAcknowledgedRollbackVersion: (origin) => {
       try {
         unlinkSync(rollbackAckPath(userDataPath, origin))
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      }
+    },
+
+    readDeclinedCapabilities: (origin) => {
+      let text: string
+      try {
+        text = readFileSync(declinedCapabilitiesPath(userDataPath, origin), 'utf8')
+      } catch {
+        // ENOENT and any other read failure both collapse here -- "nothing
+        // remembered" is the SAFE direction for this value, same reasoning
+        // readAcknowledgedRollbackVersion's own doc gives.
+        return undefined
+      }
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(text)
+      } catch {
+        return undefined
+      }
+      return isDeclinedCapabilitiesShape(parsed) ? parsed.capabilities : undefined
+    },
+    writeDeclinedCapabilities: (origin, capabilities) => {
+      mkdirSync(originGrantsDir(userDataPath, origin), { recursive: true })
+      writeFileAtomic(declinedCapabilitiesPath(userDataPath, origin), JSON.stringify({ capabilities }))
+    },
+    deleteDeclinedCapabilities: (origin) => {
+      try {
+        unlinkSync(declinedCapabilitiesPath(userDataPath, origin))
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
       }

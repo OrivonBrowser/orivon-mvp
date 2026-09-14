@@ -68,6 +68,25 @@ describe('d-0025: install-time consent gates the grant, against a real Broker', 
     expect(await connectDenialCode(broker, GRANTED_TARGET)).toBe('denied')
     expect(await broker.app.grants(ORIGIN)).toEqual([])
 
+    // A145, against a real Broker: the decline just given is now REMEMBERED,
+    // not just reflected in the (still-empty) grant ledger -- re-running the
+    // identical, un-widened manifest must not reach the prompt a second
+    // time. `wouldAccept` is wired to accept if it is ever called, so a
+    // regression that stopped suppressing would show up here as a live
+    // grant, not just as an extra prompt call.
+    const wouldAccept: InstallConsentPrompt = async () => true
+    const wouldAcceptCalls: unknown[] = []
+    await requestInstallConsent(broker, async (...args) => { wouldAcceptCalls.push(args); return await wouldAccept(...args) }, ORIGIN, manifest)
+    expect(wouldAcceptCalls).toHaveLength(0)
+    expect(await broker.app.grants(ORIGIN)).toEqual([])
+
+    // The person changes their mind through a real Broker seam (the same
+    // one `requestInstallConsent`'s own accept branch calls internally) --
+    // this test's own scope is the decision logic in front of a grant, not
+    // the not-yet-built UI a real settings page would offer for this; see
+    // docs/open-questions.md A145 for what that UI gap still is.
+    await broker.clearDeclinedConsent(ORIGIN)
+
     const accept: InstallConsentPrompt = async () => true
     await requestInstallConsent(broker, accept, ORIGIN, manifest)
     const grants = await broker.app.grants(ORIGIN)

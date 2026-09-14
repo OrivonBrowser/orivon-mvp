@@ -423,14 +423,19 @@ past one, already holds a live grant for its declared capabilities by the time t
 `broker.app.grants(origin)`. A second flag recording the same fact would be exactly the Rule-3
 duplicate this codebase keeps naming and then finding later.
 
-**The one case that derivation cannot cover, named rather than quietly accepted: a fully DECLINED
-visit.** All-or-nothing (`A138`) means declining creates no grant at all, and the ledger has no
-concept of "asked, and the answer was no" -- only of what was actually granted. So a declined
-origin looks identical to a never-visited one on the next visit, and is asked again. Filed as
-`A145` (`docs/open-questions.md`) rather than fixed here: closing it needs either a new persisted
-"decision made" marker (a real addition to `LedgerStorage`'s shape, which touches every
-implementation of it) or an owner decision that repeated friction for a repeatedly-declined app is
-acceptable, or even desirable -- neither is this lane's call to make alone.
+**The one case derivation could not cover on its own -- a fully DECLINED visit -- is now a real
+persisted record, not an inference (`A145`, resolved 2026-09-14).** All-or-nothing (`A138`) means
+declining creates no grant at all, so there was nothing for `grantsHydrated` to derive an answer
+from. `requestInstallConsent` now checks `broker.declinedCapabilitiesFor(origin)` between the
+"already held" check above and showing the dialog: a manifest whose declared set is fully covered
+by what was declined stays suppressed, and a manifest asking for something NOT in that set (a
+widen) is asked again. `GrantLedger.recordDeclinedConsent`/`clearDeclinedConsent`
+(`src/broker/grants/declined-consent.ts`) are the write side -- the accept branch clears the
+record, so an old "no" cannot outlive a later "yes". This is ADVISORY ONLY: it can suppress this
+dialog, never grant anything, and `app.requestGrant` (`./request-grant.ts`) remains a completely
+independent, unaffected path for an app that offers its own in-app "connect" affordance. Whether a
+LATER-NARROWED manifest should still be asked again is an AI recommendation, explicitly retunable
+-- see `A145`'s own resolution block for the argument either way.
 
 **[`app-install.ts`](app-install.ts) — what "before the app's own scripts run" actually means
 here, stated precisely because the two readings differ.** `requestInstallConsent` is awaited
@@ -498,6 +503,9 @@ capability already held" as "already asked", which is true when this function gr
 everything, but also true after that one out-of-band grant -- and skipping the WHOLE dialog then
 permanently withheld every other declared capability, silently. `.every` only skips once nothing
 declared is left unheld. This is still an INFERENCE from held grants, not a record of "asked, and
-here is the answer" -- the same honest limit `A145` already named for the decline case -- and
-`A157` parks the real fix (a persisted consent-decision marker, or an owner decision that the
-inference is an acceptable floor) rather than deciding it here.
+here is the answer" -- the honest limit `A145` named for the decline case is now CLOSED there
+(a real persisted decline record, `declined-consent.ts`), but deliberately NOT extended to this
+accept-side inference: the owner's decision behind that fix was specifically "remember a no", and
+a live `Grant` is already stronger evidence of "asked and agreed" than a separate marker recording
+the question would be. `A157` still parks whether this residual inference is an acceptable floor
+or needs its own persisted marker -- see that entry's 2026-09-14 update.

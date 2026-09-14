@@ -10,7 +10,7 @@ import { APP, stubBroker } from '../../broker/transport/tests/ipc.test-helpers.j
 import type { BrokerCall } from '../../broker/transport/tests/ipc.test-helpers.js'
 import type { Broker } from '../../broker/broker-contracts.js'
 import type { LoadResult, Loader } from '../../loader/index.js'
-import type { Grant, Manifest } from '../../contracts/index.js'
+import type { CapabilityKind, Grant, Manifest } from '../../contracts/index.js'
 
 export function manifestWith (version = '1.0.0'): Manifest {
   return { orivonApiVersion: 0, id: 'app.test', name: 'Test', version, entry: 'index.html', capabilities: {} }
@@ -28,16 +28,22 @@ export function grant (overrides: Partial<Grant> = {}): Grant {
  * in to assert which origin each method was actually called with.
  * `acknowledgedRollback` defaults to `undefined` (never acknowledged) --
  * the natural default for every test that isn't specifically about
- * rollback acknowledgement.
+ * rollback acknowledgement. `declinedCapabilities` defaults to `undefined`
+ * (never declined) for the same reason (A145); `recordDeclinedConsent`/
+ * `clearDeclinedConsent` default to a no-op, matching `acknowledgeRollback`'s
+ * own default, since most tests here have no reason to care about either.
  */
 export function fakeBroker (
   overrides: Partial<{
     grants: readonly Grant[]
     versionFloor: string
     acknowledgedRollback: string | undefined
+    declinedCapabilities: readonly CapabilityKind[] | undefined
     registerApp: Broker['registerApp']
     grant: Broker['grant']
     acknowledgeRollback: Broker['acknowledgeRollback']
+    recordDeclinedConsent: Broker['recordDeclinedConsent']
+    clearDeclinedConsent: Broker['clearDeclinedConsent']
   }> = {},
   calls: BrokerCall[] = []
 ): Broker {
@@ -45,9 +51,12 @@ export function fakeBroker (
     grants: async () => overrides.grants ?? [],
     versionFloorFor: async () => overrides.versionFloor ?? '0.0.0',
     rollbackAcknowledgedVersionFor: async () => overrides.acknowledgedRollback,
+    declinedCapabilitiesFor: async () => overrides.declinedCapabilities,
     registerApp: overrides.registerApp ?? (async () => {}),
     grant: overrides.grant ?? (async (origin, capability, patterns) => ({ id: 'g1', origin, capability, patterns, grantedAt: 0 })),
-    acknowledgeRollback: overrides.acknowledgeRollback ?? (async () => {})
+    acknowledgeRollback: overrides.acknowledgeRollback ?? (async () => {}),
+    recordDeclinedConsent: overrides.recordDeclinedConsent ?? (async () => {}),
+    clearDeclinedConsent: overrides.clearDeclinedConsent ?? (async () => {})
   })
 }
 
