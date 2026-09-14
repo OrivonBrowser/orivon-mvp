@@ -5924,3 +5924,59 @@ together rather than added twice. **Still open:** whether this is worth a depend
 **Needed by:** whenever the owner is ready to review a public-suffix-list dependency for real
 (A142's parked `psl`/`tldts` evaluation applies unchanged), or sooner if an app is ever actually
 served from a multi-label private suffix.
+
+### A162 -- honouring `consentGranularity: 'per-capability'`: the install prompt is built, the three update prompts are not **[AI-REC -- needs-owner-decision]**
+
+**Raised 2026-09-14**, lane `F-granular` (`stream/shell-09-per-capability-consent`), closing
+A138's contracts-only landing (PR #192) with a real implementation.
+
+**Part 1, urgent and self-contained, landed first.** `src/loader/manifest.ts`'s `readManifest`
+rejects any field its `MANIFEST_KEYS` allowlist does not name -- and that allowlist never learned
+`consentGranularity` when PR #192 added it to `Manifest`. Any app author who read the contract,
+added the field, and shipped it got refused at install with "manifest has an unrecognised field",
+blaming them for using the interface as documented. Fixed: the field is now recognised, validated
+against exactly the two `ConsentGranularity` literals, and an absent field is left out of the
+parsed manifest entirely (the contract's own "omitted means `'all-or-nothing'`" is a fact for a
+CALLER to apply, never a value this parser invents). No app exists yet, so nothing broke in the
+wild, but this sat on `main` since #192 merged and needed to stop sitting there.
+
+**Part 2, built for exactly one surface: the install-time consent dialog
+(`src/main/install-consent.ts`, `d-0025`).** A manifest declaring `'per-capability'` now gets a
+real choice: a staged native-dialog sequence (`createPerCapabilityConsentPrompt`,
+`src/main/install-consent-prompt.ts`) -- one overview offering "Allow all" / "Choose
+individually" / "Deny all", and only for the middle choice, one Allow/Deny dialog per capability
+(`describeCapabilityChoice`, `src/main/grant-prompt-choice.ts`), each screen printing the WHOLE
+outstanding request as context so choosing individually never loses the whole picture. Every
+grant still goes through `decideGrantRequest` (via the existing `grantChangedCapabilities`,
+untouched); a refusal of one capability never refuses the app; the accepted subset is filtered
+defensively back to what was actually asked before anything is granted, so a misbehaving prompt
+cannot widen a grant even in principle. `requestInstallConsent`'s own "once, ever" gate is
+generalised from two whole-set checks (all held / all declined) to one OUTSTANDING filter
+(covered by neither), which collapses back to the old behaviour exactly whenever the old mixed
+state cannot occur -- proven by the full pre-existing `install-consent.test.ts` suite passing
+unmodified. Full design reasoning (why staged-native over a self-rendered window, why the two
+prompts see different capability sets, what a partial refusal does to the remembered-decline
+record) is in `src/main/README.md`'s Design notes -- not repeated here.
+
+**What this does NOT cover, on purpose, and is this entry's own open half.** `src/main/
+update-outcomes.ts` drives THREE other prompts -- `reconsentPrompt`, `capabilityPrompt`
+(`needs-capability-prompt`: an installed app's UPDATE asking for more than it already holds), and
+`rollbackChoicePrompt` -- all still plain booleans, regardless of `consentGranularity`. The most
+analogous case is `capabilityPrompt`: an app widening its declared capabilities on update is
+structurally the same shape as a first install (`describeCapabilityPrompt` already shares
+`describeCapabilitySet` with `describeInstallConsent` -- one vocabulary, Rule 3), so it is the
+natural next candidate for the same staged treatment. It was not built here: `driveLoadResult`'s
+`'needs-capability-prompt'` case calls `grantChangedCapabilities` directly with no
+declined-consent bookkeeping at all today (a PRE-EXISTING gap, not introduced by this lane), so
+wiring per-capability choice into it means deciding that bookkeeping too, not just swapping a
+prompt type -- real engineering against a second call site, not a mechanical extension.
+
+**AI recommendation, not an owner decision, `needs-owner-decision`:** (1) confirm the staged
+native-dialog surface (rather than a self-rendered privileged window) is the right floor for
+per-capability consent -- the PR body pastes its literal rendering for exactly this review; (2)
+decide whether `capabilityPrompt`'s update-time widening deserves the same per-capability
+treatment, and if so, whether the same "outstanding" gate and declined-consent record should
+extend to it or use its own.
+
+**Needed by:** whenever the owner reviews this lane's PR, the natural moment to also settle
+whether the update-time widening path should match.
