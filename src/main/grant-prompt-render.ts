@@ -154,6 +154,20 @@ function portsListPhrase (specs: readonly string[]): string {
   return portsPhrase(unique)
 }
 
+// A133: past this many OTHER hosts, "and N other sites" stops being a
+// quantity a reader pictures and becomes a bare magnitude they can only
+// compare against other magnitudes -- functionally the same non-signal an
+// unlimited grant gives, just spelled as a number instead of a wildcard.
+// Set at the point where the rendered count itself crosses from a
+// single-digit, itemisable quantity into a double-digit one: the owner's
+// own worked example (d-0027) calibrates the low end at 3 ("reads as
+// intended"), and English itself shifts register at the same point, from
+// naming small counts individually to a magnitude word ("dozens", "many").
+// Presentation, not policy -- retune freely; see this directory's README,
+// Design notes, for the full reasoning and why 10 was picked over another
+// round number.
+const MANY_OTHER_HOSTS_THRESHOLD = 10
+
 // Matches the owner's own example register ("Connect to youtube.com and 3
 // other sites", d-0027): name the first host, count the rest, never list
 // every one -- that reads as noise, not clarity, once an app declares more
@@ -163,20 +177,31 @@ function portsListPhrase (specs: readonly string[]): string {
 // expander D-0004 rejects by name -- this is a deliberate scope limit, not
 // an oversight, and it does not hide anything the wildcard-host branch
 // below is responsible for (that branch never calls this function at all).
-function namedHostsPhrase (verb: string, singular: string, plural: string, infos: readonly ConnectPatternInfo[]): string {
+function namedHostsSummary (verb: string, singular: string, plural: string, infos: readonly ConnectPatternInfo[]): CapabilityGrantSummary {
   const hosts = Array.from(new Set(infos.map((info) => info.host)))
-  if (hosts.length === 0) return `${verb} -- no hosts declared`
   const first = hosts[0]
-  if (first === undefined) return `${verb} -- no hosts declared`
+  if (first === undefined) return { warning: false, message: `${verb} -- no hosts declared` }
   if (hosts.length === 1) {
     const ports = infos.filter((info) => info.host === first).map((info) => info.port)
     const uniquePorts = Array.from(new Set(ports))
     const onlyPort = uniquePorts[0]
-    if (uniquePorts.length === 1 && onlyPort !== undefined && isSinglePort(onlyPort)) return `${verb} ${first}`
-    return `${verb} ${first} on ${portsListPhrase(uniquePorts)}`
+    if (uniquePorts.length === 1 && onlyPort !== undefined && isSinglePort(onlyPort)) return { warning: false, message: `${verb} ${first}` }
+    return { warning: false, message: `${verb} ${first} on ${portsListPhrase(uniquePorts)}` }
   }
   const rest = hosts.length - 1
-  return `${verb} ${first} and ${rest} other ${rest === 1 ? singular : plural}`
+  if (rest >= MANY_OTHER_HOSTS_THRESHOLD) {
+    // Same mechanism as the wildcard-host warning (warning + explanation),
+    // never a second vocabulary -- but the count stays honest in the
+    // explanation rather than being replaced by a vaguer word: the reader
+    // gets both "this is too many to weigh" AND the true number.
+    const lowerVerb = verb.charAt(0).toLowerCase() + verb.slice(1)
+    return {
+      warning: true,
+      message: `⚠ ${verb} a large number of ${plural}`,
+      explanation: `This app can ${lowerVerb} ${hosts.length} specific ${plural}, starting with ${first} -- more than can be weighed individually.`
+    }
+  }
+  return { warning: false, message: `${verb} ${first} and ${rest} other ${rest === 1 ? singular : plural}` }
 }
 
 function portsPhrase (patterns: readonly Pattern[]): string {
@@ -196,8 +221,10 @@ function portsPhrase (patterns: readonly Pattern[]): string {
 export interface CapabilityGrantSummary {
   readonly warning: boolean
   readonly message: string
-  /** Present only alongside `warning: true` -- the sentence explaining
-   * what "unlimited" actually means for this capability. */
+  /** Present only alongside `warning: true` -- the sentence explaining what
+   * this row's warning actually means: unlimited reach, a host set too
+   * large to weigh individually (A133), or a listening/binding capability
+   * accepting inbound traffic (A134). */
   readonly explanation?: string
 }
 
@@ -238,7 +265,7 @@ function describeConnectCapability (
     return { warning: true, message: WARNING_HEADLINE, explanation }
   }
 
-  return { warning: false, message: namedHostsPhrase(verb, singular, plural, named) }
+  return namedHostsSummary(verb, singular, plural, named)
 }
 
 // `tcp.listen`/`udp.bind` never reach a wildcard-host branch: the contract
@@ -264,10 +291,27 @@ export function describeCapabilityGrant (capability: CapabilityKind, patterns: r
         'This app can send data to any computer on the internet, not just specific ones.',
         patterns
       )
+    // A134: listening is a materially different act from connecting out --
+    // the manifest's own doc comment (TcpCapability.listen) promises this a
+    // "distinct, more serious prompt", and capability-api.md's open item 1
+    // requires it unconditionally, not only past some port-breadth
+    // threshold: `'*'` is already rejected for a listen pattern, so there
+    // is no "narrow" listen grant the way a single named host is a narrow
+    // connect grant. warning: true always, matching describeRollbackChoice's
+    // own unconditional case for the same reason -- every instance is the
+    // same shape of risk.
     case 'tcp.listen':
-      return { warning: false, message: `Accept incoming connections on ${portsPhrase(patterns)}` }
+      return {
+        warning: true,
+        message: `⚠ Accept incoming connections on ${portsPhrase(patterns)}`,
+        explanation: 'This opens a door into your device: any other computer that can reach this port -- on your network, or the internet if it is forwarded -- can connect to this app, not only computers it reached out to first.'
+      }
     case 'udp.bind':
-      return { warning: false, message: `Receive data on ${portsPhrase(patterns)}` }
+      return {
+        warning: true,
+        message: `⚠ Receive data on ${portsPhrase(patterns)}`,
+        explanation: 'This opens a door into your device: any other computer that can reach this port -- on your network, or the internet if it is forwarded -- can send this app data, not only computers it contacted first.'
+      }
     case 'fs':
       // AR-04: `fs.userSelected` and a folder picker are unbuilt (queue item
       // 4.3). What a grant actually gives today is an app-private directory

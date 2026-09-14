@@ -239,6 +239,57 @@ dependency floor instead.
   be "<name>"`). A dedicated label (`Website: ...`) was considered; left out as presentation
   polish outside this lane's security floor, not as an oversight.
 
+**[`grant-prompt-render.ts`](grant-prompt-render.ts) — `tcp.listen`/`udp.bind` now carry the
+"distinct, more serious prompt" `manifest.ts`'s own doc comment on `TcpCapability.listen`
+promises, and `capability-api.md`'s open item 1 requires (A134).** Before this fix,
+`describeCapabilityGrant` rendered a listening grant as a plain `warning: false` row --
+`"Accept incoming connections on port 6881-6889"` sat next to `"Connect to weather.example"`
+with no visual or textual distinction, even though the contract already commits to asking these
+two questions differently. **The contract's reasoning was checked, not assumed correct**: listening
+means the network reaches the app -- anything on the local network, and anything on the internet
+if the port is forwarded, for an unsigned app a person merely visited -- which is categorically
+different from the app reaching out. Fixed by giving `tcp.listen`/`udp.bind` `warning: true`
+unconditionally, plus an `explanation` naming the actual exposure, using the exact mechanism
+`describeConnectCapability`'s wildcard-host branch already uses for the same purpose (Rule 3: one
+vocabulary, not two). **Unconditional, not breadth-scaled:** unlike a connect grant, there is no
+narrow case to distinguish -- a listen pattern can never be `"*"` (rejected at manifest validation)
+and every declared port range carries the same shape of risk, the same reasoning
+`describeRollbackChoice` already uses for its own unconditional `warning: true`.
+**Tcp and udp get their own, deliberately different, sentences** ("can connect to this app" vs
+"can send this app data") rather than one shared string with the noun swapped -- matching this
+file's existing rule that two capabilities must never share a rendered sentence
+(see the udp.send/tcp.connect distinctness test already in this suite).
+**Two warned rows in one dialog do not collapse into one** (checked directly: an app declaring
+both `https.connect: ["*:*"]` and `tcp.listen`): `describeCapabilitySet`'s per-row rendering
+(above) already means each row keeps its own message and explanation regardless of how many
+other rows are also warned -- the outer `warning` boolean is only ever an OR over the rows, never
+a replacement for what each row says on its own line. Nothing needed to change here; a test now
+pins that this stays true.
+
+**[`grant-prompt-render.ts`](grant-prompt-render.ts) — "and N other sites" now warns past 10
+others, closing the gap the sentence had no upper bound on (A133).** The count was always
+honest; the question the finding raised was whether the sentence stayed a fact a person could
+weigh at any size, and past some point it does not -- "and 4,271 other sites" is closer in kind
+to an unlimited grant than to "a few named sites", and nothing said so.
+
+**Why 10, not some other round number.** The owner's own worked example (`d-0027`) calibrates
+the low end at 3 ("reads as intended"). The threshold is set at the point the rendered count
+itself crosses from a single-digit, itemisable quantity into a double-digit one -- English marks
+the same boundary in its own vocabulary, naming small counts individually ("a few", "several")
+and reaching for a magnitude word ("dozens", "many") once a count passes nine. That gives a
+checkable, language-native inflection point rather than a number chosen to fit a target string.
+**This is presentation, not policy, and the owner may retune `MANY_OTHER_HOSTS_THRESHOLD` freely**
+-- nothing downstream depends on the specific value 10; only on there being *some* value.
+
+**What happens past the threshold is the wildcard-host mechanism, reused rather than
+reinvented:** `warning: true`, a fixed headline (`"⚠ Connect to a large number of sites"`, not
+the specific hosts), and an `explanation` that keeps the true count and the first host rather
+than replacing them with a vaguer word -- so the summary is simultaneously "this is too many to
+weigh" and, for anyone who wants it, the honest number. **Considered and rejected:** naming more
+than one host before counting (does not address the actual problem -- ten spelled-out hostnames
+crowd a dialog exactly as much as a large integer fails to inform one) and a details expander
+(rejected by name for this exact surface, `D-0004`).
+
 **[`install-consent.ts`](install-consent.ts) — "once per origin, ever" (A139) is derived from the
 grant ledger's own hydration, not tracked as a second piece of state.** `requestInstallConsent`
 could have kept its own persisted "was this origin ever asked" flag. It does not, because
