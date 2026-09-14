@@ -5550,3 +5550,39 @@ extent of what this lane closed -- see `src/loader/electron-serve.ts`'s `hasUnhy
 **AI recommendation, not an owner decision:** resolve this alongside `A146`, since fixing one all
 but fixes the other, rather than building a second, narrower "reload this one tab" mechanism
 just for grants.
+
+### A159 -- `scripts/smoke.mjs` leaked its temp profile on every run, and the file is now exactly at its line ceiling **[RESOLVED 2026-09-14 in part; the ceiling is STILL OPEN]**
+
+**Found 2026-09-14** by the clean-checkout verification lane (V-clean), which was looking for
+something else entirely -- it noticed a `/tmp/orivon-test-*` directory surviving a run that had
+otherwise passed.
+
+**The leak, now fixed.** `scripts/smoke.mjs` tore down with a bare Playwright `app.close()` instead
+of `test/launch-electron.mjs`'s shared `closeElectron()`. Only `closeElectron`'s own `finally`
+removes the temp `--user-data-dir` that `launchElectron` created, and `launch-electron.mjs`'s own
+comments already said so in as many words. So every smoke run -- **passing or failing** -- left
+roughly 5 MB behind. Every e2e test file already went through the shared helper for exactly this
+reason; the smoke script was the one caller that did not.
+
+This is the mechanism behind a machine-health problem the owner has already been bitten by once:
+leftover profiles accumulating until the disk and the desktop filled. The conductor removed five of
+them (18 MB) earlier the same night without yet knowing why they kept appearing.
+
+**What is NOT fixed, and is the more interesting half.** `scripts/smoke.mjs` is now at **exactly
+800 lines, its Rule 2 ceiling, with zero slack.** Fixing a one-line bug required three attempts to
+fit: a five-line comment explaining why the bare `close()` is wrong (which is precisely the comment
+that would have prevented this bug) did not fit, and the explanation had to be compressed onto the
+end of the line it protects.
+
+**That is the ceiling working as designed and also telling us something.** Rule 2's own text says
+to split by concern and never by line count, and `foo-part2.mjs` would be worse than the long file.
+But a file that cannot absorb a two-line comment is a file where the next correct change is a
+split, and doing that as a side effect of a bug fix -- at 01:00, in a script whose whole job is to
+be the last line of defence before a release -- would have been the wrong trade.
+
+**AI recommendation:** split `scripts/smoke.mjs` by scenario before the next change to it. The
+natural seam is already visible in the file -- the journeys are independently numbered and
+sequential, and `test/smoke-helpers.mjs` already exists as the destination for shared machinery.
+Not urgent; it becomes urgent the moment anyone needs to add a check.
+
+**Needed by:** the next change to `scripts/smoke.mjs`, whatever it is.
