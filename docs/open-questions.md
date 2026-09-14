@@ -5809,7 +5809,7 @@ different door.
 > residual inference is not an acceptable floor -- but that is a fresh decision, not implied by
 > this one, and remains this entry's own open half.
 
-### A158 -- a restored app's first document is served with a CSP narrower than its real grant, and cannot self-correct **[PARTIALLY RESOLVED 2026-09-14 -- lane F-reach]**
+### A158 -- a restored app's first document is served with a CSP narrower than its real grant, and cannot self-correct **[RESOLVED 2026-09-14 -- lane G-hydrate]**
 
 **Raised 2026-09-14**, adversarial review of the whole S4-6/S4-7 landing (lane ADV-fix3),
 verified directly against the real `GrantLedger`/`createBroker` mechanism rather than assumed.
@@ -5911,11 +5911,89 @@ doc comments now cross-reference this distinction directly, and the two tests in
 `electron-serve.test.ts` proving each side (`'A158 STILL OPEN FOR connect-src'` /
 `'A158 RESOLVED FOR THE HEADER'`).
 
-**So, precisely:** RESOLVED for `img-src`/`font-src`/`media-src` (the two new directives this PR
-introduces). STILL OPEN for `connect-src` -- a restored app's `fetch`/XHR/`WebSocket` reach still
-shows `'self'`-only until this origin's manifest hint lands, for the reason recorded above, and
-the fix this entry originally proposed (resolve alongside `A146`, holding the first navigation
-until state settles) is still the right shape for closing that remaining half, not attempted here.
+**So, precisely, as of lane F-reach:** RESOLVED for `img-src`/`font-src`/`media-src` (the two new
+directives that PR introduces). STILL OPEN for `connect-src` -- a restored app's `fetch`/XHR/
+`WebSocket` reach still showed `'self'`-only until this origin's manifest hint landed.
+
+> **RESOLVED, for every directive, 2026-09-14, lane `G-hydrate` -- owner decision.** The remaining
+> `connect-src` gap above was never a flaw in `grantedConnectPatternsFor`'s own refusal to widen
+> from disk -- that refusal was correct, and stays. What changed is WHICH manifest hydration reads
+> from, and the owner supplied the insight that makes an EARLIER read safe: *"changing the manifest
+> changes also the hash, so a change on manifest is enough to re-start the status of permissions,
+> the same a new added/modified file would."* The manifest lives at `/.well-known/orivon.json`
+> **inside the pinned bundle**, as a leaf of `ADR-0009`'s hash tree, and `serve-verify.ts`'s
+> `verifyPinnedTree` recomputes that whole tree against `pin.bundleHash` before ANY byte of the
+> bundle is servable. So the manifest on disk is not "a saved value" in the sense `A137` ruled
+> out -- it is cryptographically tied to the exact bundle a person already consented to, and
+> reading it costs nothing beyond what `createAppRequestHandler` was already going to pay to
+> verify that same bundle before serving it at all.
+>
+> **Why this genuinely dissolves `A137`'s objection, and where the boundary actually sits.**
+> `A137`'s withdrawn attempt hydrated from a manifest persisted BARE, for hydration's own sake,
+> with no cryptographic tie to anything else -- an attacker with local write access to the profile
+> directory could plant a self-consistent `(manifest.json, grants.json)` pair for an origin they
+> chose, at the cost of nothing but two flat JSON files. This mechanism reuses the SAME artefact
+> that already gates whether ANY code for that origin runs at all: forging a pinned manifest now
+> means forging a whole pin record plus a bundle whose hash matches it -- which is not a new attack
+> surface this lane adds, it is `verifyPinnedTree`'s EXISTING security boundary for cached serving,
+> already relied on by every app on this machine. An attacker able to defeat that boundary could
+> already serve themselves arbitrary code offline forever under a chosen origin; hydrating grants
+> from the same already-verified artefact adds nothing to what such an attacker could already do.
+> `A137`'s rule -- a value read off disk must never gain authority a fresh request would not have --
+> is honoured, not overridden: what changed is that this ONE value is no longer merely "read off
+> disk" in the sense that rule was written to forbid.
+>
+> **The mechanism.** `GrantLedger.hydrateFromPinnedManifest` (`src/broker/grants/grant-ledger.ts`)
+> runs the SAME `hydrateGrants` re-validation `registerApp` itself performs, callable independently
+> of it, gated on the SAME `grantsHydrated` flag so it is a no-op once the real `registerApp` has
+> already spoken. `src/loader/serve.ts`'s `verifiedManifestFor` shares its whole-tree verification
+> with `createAppRequestHandler` (one `resolveVerifiedBundle` helper, not two copies) and answers
+> `undefined` for anything short of a fully re-verified pin. `electron-serve.ts`'s
+> `registerServingFor` calls both, in that order, BEFORE `registerAppOrigin` ever wires a handler
+> onto the session -- so there is no window in which a request could reach a handler whose grants
+> are not already live. **The later, freshly fetched manifest stays fully authoritative**:
+> `registerApp`'s own hydration branch now clears whatever this seeded before re-deriving the set
+> from the fresh manifest (`record.grants.clear()`), so a capability the fresh manifest narrows or
+> drops is narrowed or dropped exactly as if nothing had been hydrated early -- `decideGrantRequest`
+> is unconditional and all-or-nothing either way (a persisted grant whose pattern set is not fully
+> covered by the manifest in force is refused entirely, not narrowed to the covered subset -- a
+> pre-existing rule, unchanged by this lane).
+>
+> **What this closes, concretely.** `liveGrantedPatternsFor` (`electron-serve.ts`, the function
+> `grantedConnectPatternsFor`/`secureHeaderPatternsFor` now both delegate to -- Rule 3, one
+> implementation) reads `broker.app.grants` directly, with no disk-fallback special case for
+> either header any more: by the time either can be called, the ledger already holds the truth.
+> `authoriseReachFor`'s live gate for a real third-party `https.connect` request, and any live
+> capability call an app's own page makes (`orivon.net.connect`/`connectSecure`, reading the SAME
+> `ledger.currentGrant`), see the identical, already-hydrated answer. Proven end to end in
+> `src/loader/tests/electron-serve.test.ts`'s "restorePinnedServing across a restart" suite,
+> against a real `GrantLedger`/`createBroker`/`LedgerStorage`, not a stub: a real, persisted
+> `tcp.connect` grant widens the FIRST served document's `connect-src` with no registerApp call
+> ("A158 RESOLVED FOR connect-src"); the equivalent `https.connect` case widens `img-src`/
+> `font-src`/`media-src` the same way; a real third-party fetch to the granted host through the
+> live handler actually SUCCEEDS (200, not 404) on the very first request ("THE LIVE GATE ALSO
+> WORKS, NOT JUST THE HEADER"); `broker.app.grants` itself -- the same read a live capability
+> check performs -- already holds both grants before any `registerApp` call ("THE GRANT IS LIVE,
+> NOT JUST DISPLAYED"); a later real `registerApp` with a manifest that drops the capability
+> entirely still wins ("THE OWNER'S POINT, END TO END"); and an origin with no pin, or one whose
+> pin fails re-verification, gets nothing hydrated and stays exactly as narrow as before this lane.
+>
+> **A pre-existing, independent bug was found and fixed along the way, not by this lane's own
+> design but because it blocked verifying this fix honestly.** Building a REAL pinned manifest that
+> declares `https.connect` (needed so `hydrateFromPinnedManifest`'s re-validation has something
+> genuine to check against, rather than a manifest and a grant that merely happened to agree by
+> construction) hit `src/loader/manifest-capabilities.ts`'s `readNet`, which had never implemented
+> `net.https` at all -- `NET_KEYS` listed only `tcp`/`udp`/`concurrentSockets`, so ANY manifest
+> declaring `https.connect` was rejected outright by `parseManifest`, both at install
+> (`fetch-bundle.ts` calls the identical function) and every time a pinned bundle's manifest is
+> read back. Filed and fixed as **A164** below -- every existing test exercising `https.connect`
+> injected the grant as a raw callback, never through a real declared-and-parsed manifest, which
+> is exactly why this had no test that could have caught it.
+>
+> Verified: `src/broker/grants/tests/grant-ledger-pin-hydration.test.ts` (the `GrantLedger`
+> contract in isolation -- idempotence, the no-op-once-registered case, the fresh-GrantId rule, the
+> owner's own narrowing/dropping scenario), `src/loader/tests/serve.test.ts`'s `verifiedManifestFor`
+> suite, and the `electron-serve.test.ts` suite named above.
 
 ### A159 -- `scripts/smoke.mjs` leaked its temp profile on every run, and the file is now exactly at its line ceiling **[RESOLVED 2026-09-14 in part; the ceiling is STILL OPEN]**
 
@@ -6142,3 +6220,44 @@ extend to it or use its own.
 
 **Needed by:** whenever the owner reviews this lane's PR, the natural moment to also settle
 whether the update-time widening path should match.
+
+### A164 -- `src/loader/manifest-capabilities.ts` never implemented `net.https`, so a manifest declaring `https.connect` was rejected outright, at install and at every serve **[RESOLVED 2026-09-14 -- lane G-hydrate]**
+
+**Raised and fixed 2026-09-14**, lane `G-hydrate`, closing `A158`. Not something this lane set out
+to find: `A158`'s own fix needed a test that pins a REAL bundle whose manifest actually declares
+`https.connect` (`GrantLedger.hydrateFromPinnedManifest` re-validates a restored grant against
+exactly that manifest, so a fixture that let the pinned manifest and the grant merely agree by
+construction, rather than by being read through the real parser, would not have exercised the real
+mechanism at all). Building that fixture hit the bug directly.
+
+**The bug, precisely.** `contracts/manifest.ts`'s `NetCapability` has declared
+`readonly https?: HttpsCapability` since `ADR-0017`, and the BROKER side is fully wired for it
+(`src/broker/policy/request-grant.ts`'s `CONNECT_SHAPED_CAPABILITIES`, `manifest-patterns.ts`'s
+own `secureConnect` line, which even carries a comment about a PRIOR bug in the same neighbourhood:
+"ADDED https.connect went undetected by decideUpdate()'s subset check"). But
+`src/loader/manifest-capabilities.ts`'s `readNet` -- the LOADER's own, independent manifest
+parser -- never learned about it: `NET_KEYS` listed only `['tcp', 'udp', 'concurrentSockets']`, so
+`extraKey(raw, NET_KEYS)` rejected any manifest with a `net.https` field as an "unrecognised
+field", unconditionally. `parseManifest` is called from exactly two places, both load-bearing:
+`fetch-bundle.ts` (install time) and `serve.ts`'s `createAppRequestHandler` (every time a pinned
+bundle is served). So a manifest declaring `https.connect` could not be installed, and if somehow
+already pinned before this bug, could not be served either -- the entire capability was
+unreachable through any real app, only through a test that injects the grant as a raw callback and
+never parses a manifest at all, which is exactly what every existing test that exercises
+`https.connect` (`serve.test.ts`, `electron-serve.test.ts`, pre-this-lane) did. No manifest field
+introduced since `ADR-0017` had a test that actually round-tripped it through the real parser.
+
+**Fixed directly, not filed for later**, because it blocked verifying `A158`'s own fix honestly:
+`readNet` gained a `readHttps` (mirroring `readTcp`'s own `connect` field, reusing
+`validateConnectPattern`/`validateConnectHost` rather than a second grammar -- Rule 3), `NET_KEYS`
+now lists `https`. `src/loader/tests/manifest-capabilities.test.ts`'s new
+`capabilities.net.https.connect (A164)` suite proves it parses (including `"*:*"`, ADR-0017's
+unlimited-HTTPS declaration), sits alongside `tcp`/`udp`/`concurrentSockets` without disturbing
+them, and still rejects the same malformed patterns and unrecognised sibling fields every other
+capability reader does.
+
+**Independent of `A158`'s own mechanism** -- this is a parser gap that would have existed and
+mattered whether or not early hydration was ever built. Recorded here rather than only in a commit
+message because `CLAUDE.md` Rule 3 (contradictions get surfaced) applies to a silent capability
+gap as much as to a stated disagreement, and because the next person adding a `NetCapability`
+field should know this file's allowlist does not grow itself.

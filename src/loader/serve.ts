@@ -20,7 +20,8 @@
 // THIS app's origin -> deny, never proxied to the real network (see the
 // deny branch's own comment for why); (3) a same-origin path not in the
 // pinned set -> deny. See README.md's Design notes for the re-verification
-// cost tradeoff this file spends.
+// cost tradeoff this file spends, and for `verifiedManifestFor` below, the
+// one exception to "no Manifest argument" above (an OUTPUT, not an input).
 
 import { isPinnedPath, parsePinRecord } from '../broker/policy/pin.js'
 import type { PinRecord } from '../broker/policy/pin.js'
@@ -29,7 +30,7 @@ import { originFromUrl } from '../broker/policy/origin.js'
 import { appCspHeaderValue, appReachCspHeaderValue } from '../broker/policy/connect-src.js'
 import { checkConnectSecure } from '../broker/policy/connect-secure.js'
 import type { ConnectSecureDecision } from '../broker/policy/connect-secure.js'
-import type { Pattern } from '../contracts/index.js'
+import type { Manifest, Pattern } from '../contracts/index.js'
 import { entryCanonicalPath } from './fetch-bundle.js'
 import { parseManifest } from './manifest.js'
 import { contentTypeFor } from './serve-content-type.js'
@@ -300,6 +301,59 @@ async function fetchThirdParty (
  * caller registering this against `session.protocol.handle` has no other
  * sensible outcome to hand Electron for a scheme it must now answer for.
  */
+/** What `resolveVerifiedBundle` (below) found, or why it refused -- the ONE
+ * place this file's whole-tree verification and manifest read/parse
+ * happen, shared by `createAppRequestHandler` and `verifiedManifestFor` so
+ * neither re-derives it independently (code-guidelines.md Rule 3). */
+type VerifiedBundleResult =
+  | { readonly ok: true, readonly pin: PinRecord, readonly manifest: Manifest }
+  | { readonly ok: false, readonly reason: string }
+
+async function resolveVerifiedBundle (storage: LoaderStorage, origin: string): Promise<VerifiedBundleResult> {
+  const rawPin = await storage.readPin(origin)
+  const pin = parsePinRecord(rawPin)
+  if (pin === null) {
+    return { ok: false, reason: 'this origin has no valid cached bundle' }
+  }
+
+  if (!await verifyPinnedTree(storage, origin, pin)) {
+    return { ok: false, reason: 'the cached bundle failed re-verification against disk' }
+  }
+
+  const manifestBytes = await storage.readAsset(origin, MANIFEST_PATH)
+  const manifestResult = manifestBytes === undefined
+    ? null
+    : parseManifest(new TextDecoder().decode(manifestBytes))
+  if (manifestResult === null || !manifestResult.ok) {
+    return { ok: false, reason: 'the cached manifest could not be read back' }
+  }
+
+  return { ok: true, pin, manifest: manifestResult.manifest }
+}
+
+/**
+ * A158's early-hydration seam (`docs/open-questions.md`): `origin`'s
+ * manifest, read from its pinned bundle ONLY once `verifyPinnedTree` has
+ * confirmed that whole tree still hashes to `pin.bundleHash` -- undefined
+ * for anything short of that (no pin, a corrupt one, or one that fails
+ * re-verification). The SAME resolution `createAppRequestHandler` performs
+ * to decide what it serves, exposed separately so a caller
+ * (`electron-serve.ts`'s `registerServingFor`) can hand this exact,
+ * already-verified manifest to `GrantLedger.hydrateFromPinnedManifest`
+ * BEFORE registering anything that could answer a real request -- never an
+ * unverified copy (A137).
+ *
+ * Re-verifies the tree independently of whatever `createAppRequestHandler`
+ * does moments later for the same origin -- a deliberate, bounded doubling
+ * of this file's own accepted per-launch cost (`README.md`'s "Re-
+ * verification cost" design note), not a second source of truth: both calls
+ * run the identical `resolveVerifiedBundle` above.
+ */
+export async function verifiedManifestFor (storage: LoaderStorage, origin: string): Promise<Manifest | undefined> {
+  const resolved = await resolveVerifiedBundle(storage, origin)
+  return resolved.ok ? resolved.manifest : undefined
+}
+
 export async function createAppRequestHandler (
   storage: LoaderStorage,
   origin: string,
@@ -308,25 +362,13 @@ export async function createAppRequestHandler (
   authoriseReach?: AuthoriseReach,
   reachDial?: ReachDial
 ): Promise<AppRequestHandler> {
-  const rawPin = await storage.readPin(origin)
-  const pin = parsePinRecord(rawPin)
-  if (pin === null) {
-    return async () => denyResponse('this origin has no valid cached bundle')
+  const resolved = await resolveVerifiedBundle(storage, origin)
+  if (!resolved.ok) {
+    return async () => denyResponse(resolved.reason)
   }
+  const { pin, manifest } = resolved
 
-  if (!await verifyPinnedTree(storage, origin, pin)) {
-    return async () => denyResponse('the cached bundle failed re-verification against disk')
-  }
-
-  const manifestBytes = await storage.readAsset(origin, MANIFEST_PATH)
-  const manifestResult = manifestBytes === undefined
-    ? null
-    : parseManifest(new TextDecoder().decode(manifestBytes))
-  if (manifestResult === null || !manifestResult.ok) {
-    return async () => denyResponse('the cached manifest could not be read back')
-  }
-
-  const entryPath = entryCanonicalPath(origin, manifestResult.manifest.entry)
+  const entryPath = entryCanonicalPath(origin, manifest.entry)
 
   return async (request: Request): Promise<Response> => {
     // Every https/http request inside this app's OWN partition passes

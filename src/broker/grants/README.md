@@ -70,6 +70,25 @@ guard that makes this happen exactly once per origin per session, on that origin
 registration — never on a later reload, so an in-session revoke is never silently undone by a
 second `registerApp` call re-reading the same stale disk state.
 
+**`hydrateFromPinnedManifest` is the same read, run early (A158, resolved 2026-09-14) — not a
+second implementation of it.** `registerApp`'s hydration above waits for a manifest because
+there was previously no other one to trust; there is now a second, narrower source that already
+carries the same guarantee a fresh `registerApp` manifest does: a manifest that is a verified leaf
+of a hash-pinned bundle (`src/loader/serve.ts`'s `verifiedManifestFor`, gated on
+`serve-verify.ts`'s `verifyPinnedTree`) is cryptographically tied to the exact bundle a person
+already consented to, not merely "a value saved to disk" in the sense `A137`'s ruling forbids
+trusting as authority. `A137`'s withdrawn attempt hydrated from a manifest persisted bare, for
+hydration's own sake, with no such tie — an attacker with local write access could plant a
+self-consistent `(manifest.json, grants.json)` pair at the cost of two flat files. Reusing the
+pinned-bundle manifest costs an attacker forging a whole pin record plus a bundle whose hash
+matches it, which is not new attack surface this adds: it is `verifyPinnedTree`'s EXISTING
+boundary for cached serving, the same one every already-installed app already relies on. This
+method is a no-op once `registerApp` has actually run (`grantsHydrated`), and `registerApp`'s own
+branch now clears whatever this seeded before re-deriving from the fresh manifest, so the later,
+really-fetched manifest stays fully authoritative — the owner's own point: a manifest change
+changes the bundle hash, which is itself enough to restart the status of permissions. Full account:
+`docs/open-questions.md` A158's 2026-09-14 resolution.
+
 **Write side (`persistGrants`, `grantsToPersist`) is the ledger's live `grants` map, reshaped for
 disk and written back in full on every `grant()`/`revoke()`** — one JSON file per origin holding
 every capability it currently holds, keyed by capability kind. A single whole-file write, never

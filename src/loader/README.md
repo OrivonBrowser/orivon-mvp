@@ -245,24 +245,38 @@ still cannot fix, because nothing implementation-side can:** a document already 
 whatever CSP its own navigation response carried, until the next load -- that is how CSP
 delivery works in every browser, not a gap this design left open.
 
-**Why `img-src`/`font-src`/`media-src` (A143) may fall back to a persisted-but-not-yet-hydrated
-grant when `connect-src` never may (A158).** Both are computed per request, the same way, but
-`electron-serve.ts`'s `secureHeaderPatternsFor` (the first three, `https.connect`) and
-`grantedConnectPatternsFor` (`connect-src`, `tcp.connect`) diverge on ONE thing right after a
-restart, before this origin's page has reported its manifest hint and `registerApp` has
-re-validated its persisted grant: `secureHeaderPatternsFor` falls back to the real, persisted
-grant on disk; `grantedConnectPatternsFor` does not. That asymmetry is deliberate, not
-inconsistent. `serve.ts`'s `fetchThirdParty` independently, LIVE-checks every actual third-party
-request against the hydrated ledger regardless of what `img-src`/`font-src`/`media-src` claimed --
-so widening those three from disk only widens what the browser ATTEMPTS, never what is actually
-served, which is exactly what makes it safe under `A137`'s "never trust disk as authority" rule.
-`connect-src` has no such live handler standing behind it for every request type it governs:
-`docs/open-questions.md` A42 already established it is the sole gate for `WebSocket`
-(`ws:`/`wss:`, a scheme `registerAppOrigin` never registers a `protocol.handle` for), so widening
-it from disk would widen a REAL authorisation with nothing left to catch a wrong guess. See
-`docs/open-questions.md` A158's 2026-09-14 update for the full account, and
-`grantedConnectPatternsFor`'s/`secureHeaderPatternsFor`'s own doc comments for the code-level
-version of this same split.
+**Why `img-src`/`font-src`/`media-src` and `connect-src` no longer diverge right after a restart
+(A158, resolved 2026-09-14).** They used to, on purpose: `electron-serve.ts`'s
+`secureHeaderPatternsFor` (`https.connect`) fell back to a persisted-but-not-yet-hydrated grant
+read straight off disk, safely, because `serve.ts`'s `fetchThirdParty` independently LIVE-checks
+every actual third-party request regardless of what the header claimed -- widening only what the
+browser ATTEMPTS, never what is actually served. `grantedConnectPatternsFor` (`connect-src`,
+`tcp.connect`) could not share that fallback: `connect-src` is the sole gate for `WebSocket`
+(`docs/open-questions.md` A42), which has no live handler behind it to catch a wrong guess, so
+reading disk there would have widened a REAL authorisation from an unverified source (`A137`).
+
+That gap is closed differently now, not by adding a matching fallback to `connect-src` (which
+would still have been unsafe) but by making the LEDGER ITSELF correct before either function can
+ever be asked: `electron-serve.ts`'s `registerServingFor` hydrates `origin`'s persisted grants
+from its pinned, hash-verified manifest (`verifiedManifestFor` below, `GrantLedger
+.hydrateFromPinnedManifest`) BEFORE `registerAppOrigin` wires anything onto the session. Both
+header functions now share one `liveGrantedPatternsFor` helper that simply reads
+`broker.app.grants` -- no disk fallback, no special-casing, because there is no longer a window in
+which the ledger is not already the true answer. See `docs/open-questions.md` A158's 2026-09-14
+resolution for the full reasoning (why a manifest that is a leaf of a hash-pinned bundle is not
+the kind of "saved value" `A137` forbids trusting), and A137 itself for why the withdrawn attempt
+this lane is not a repeat of was wrong.
+
+**Why `verifiedManifestFor` (`serve.ts`) exists alongside `createAppRequestHandler`, sharing one
+`resolveVerifiedBundle` helper rather than each re-deriving the same verification.** A158's
+early-hydration seam needs the EXACT, already-verified manifest `createAppRequestHandler` itself
+derives -- an output, not an input, which is why `serve.ts`'s own header calls out this one
+exception to "no `Manifest` argument, ever". `registerServingFor` calls it, then hydrates
+`GrantLedger` from the result, before building the handler at all -- accepting a second, bounded
+whole-tree re-verification per `registerServingFor` call (this directory's own accepted per-launch
+cost, doubled rather than multiplied per request) instead of threading a pre-resolved manifest
+through `createAppRequestHandler`'s public signature, which every test and `dev-serve.ts` already
+depend on staying `storage`+`origin`-only.
 
 **Why `isOriginServedFromCache` (`electron-serve.ts`) asks Electron's protocol-handler registry
 instead of the broker.** S4-6's address-bar provenance signal needs to answer "is a request to
