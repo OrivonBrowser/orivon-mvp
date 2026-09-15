@@ -99,6 +99,28 @@ crossing the line between two readings. Both, not either:
   never two at once. One real Electron e2e at a time, always: two suites contending for fixture
   ports and the same binary is a known failure here, independent of any limit.
 
+### Launch hygiene -- `xvfb-run` alone is not sufficient here
+
+**Owner directive, 2026-09-15**, after an e2e opened a window in front of the owner mid-typing.
+`D-0002` already required every Electron launch to go through `xvfb-run`. That turned out not to be
+enough on this machine: it is a **Wayland** session, `xvfb-run` only sets `DISPLAY`, and Electron's
+ozone layer finds the inherited `WAYLAND_DISPLAY` and connects to the real compositor anyway --
+while the wrapper's log still says it is using a virtual display.
+
+**Every launch goes through `scripts/run-headless.mjs`**, which strips `WAYLAND_DISPLAY` from the
+child environment so X11 -- the virtual one -- is all ozone can find:
+
+    env -u ELECTRON_RUN_AS_NODE npm run test:e2e
+
+A hookify rule (`.claude/hookify.electron-launch-headless.local.md`) blocks a launch that bypasses
+it, because this is a rule an agent will otherwise follow in spirit and break in fact.
+
+**Verify the backend rather than the log line** -- `ozone-platform=x11` in the process arguments is
+the proof; `ozone-platform=wayland` means it is on the owner's screen. And when checking for
+leftovers, remember `pgrep -f` matches your own shell command: confirm with
+`ps -eo pid,cmd | grep -F ... | grep -v grep`, and never kill a tree whose profile is
+`~/.config/orivon` with a live `electron-vite` parent -- that is the owner's own `npm run dev`.
+
 ### Resuming, and the one honest limitation
 
 The reset timestamp is known exactly, so resumption is scheduled *at* it rather than guessed. But
