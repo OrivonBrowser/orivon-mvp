@@ -17,6 +17,7 @@
 // touches the real `ipcMain`/`MessageChannelMain` value imports below.
 
 import { ipcMain, MessageChannelMain } from 'electron'
+import type { MessagePortMain } from 'electron'
 import { CONTROL_CHANNEL, PORT_CHANNEL, SYNC_CONTROL_CHANNEL } from '../../main/channels.js'
 import { publishBroker } from '../../main/registry.js'
 import type { Subsystem, SubsystemContext } from '../../main/registry.js'
@@ -27,8 +28,9 @@ import { dialTls } from '../adapters/tls-adapter.js'
 import { bindUdp } from '../adapters/udp-adapter.js'
 import { nodeLedgerStorage } from '../grants/node-ledger-storage.js'
 import { createPortRegistry } from './port-registry.js'
-import { createSocketRelay } from './socket-relay.js'
+import { deliverTcpSocket } from './socket-relay.js'
 import { createDatagramRelay } from './datagram-relay.js'
+import { deliverTcpServer } from './server-relay.js'
 import { deliverPort } from './deliver-port.js'
 import { createTokenBucketLimiter } from './token-bucket.js'
 import type { RateLimiter } from './token-bucket.js'
@@ -46,9 +48,8 @@ import {
   isNetUdpBindParams, isRequestEnvelope, type RequestGrantCtx
 } from './ipc-validation.js'
 import type {
-  PortDeliveryFrame, PortLike, PortPair, PortTransport, SocketDescriptor, UdpSocketDescriptor
+  PortDeliveryFrame, PortLike, PortPair, PortTransport, UdpSocketDescriptor
 } from './port-transport.js'
-import type { FailableTcpSocket } from '../handles/handle-contracts.js'
 import type { CapabilityRequest, RequestEnvelope, ResponseEnvelope } from '../../contracts/index.js'
 import { LIMITS } from '../../contracts/index.js'
 
@@ -59,83 +60,11 @@ export type {
   NetConnectParams, NetCloseParams, NetSetKeepAliveParams, NetSetNoDelayParams, NetUdpBindParams, RequestGrantCtx
 } from './ipc-validation.js'
 export type {
-  PortDeliveryFrame, PortLike, PortPair, PortTransport, SocketDescriptor, UdpSocketDescriptor
+  PortDeliveryFrame, PortLike, PortPair, PortTransport, SocketDescriptor, TcpServerDescriptor, UdpSocketDescriptor
 } from './port-transport.js'
 
 export interface ControlEvent {
   readonly senderFrame: PortDeliveryFrame | null
-}
-
-/**
- * Everything net.connect and net.connectSecure share once the broker has
- * already handed back an acquired `FailableTcpSocket`: mint a port pair,
- * wire the byte-pump relay, deliver the port to the calling frame (or
- * abandon and release the handle if that fails), and return the plain
- * descriptor. The two control methods differ only in WHICH broker method
- * produced `socket` and which grant authorised it -- both dead ends by the
- * time this runs -- so this is one implementation of "wire an acquired TCP
- * socket to the renderer", not two copies drifting apart
- * (code-guidelines.md Rule 3).
- */
-async function deliverTcpSocket (
-  origin: string,
-  socket: FailableTcpSocket,
-  event: ControlEvent,
-  transport: PortTransport
-): Promise<SocketDescriptor> {
-  const pair = transport.createPortPair()
-  // Owns everything mechanical about relaying this socket's bytes in
-  // both directions, registering it for net.close, and releasing it
-  // exactly once -- see ./socket-relay.ts. What stays here is only
-  // what is security-relevant: the transport check above, the origin
-  // re-derivation below, and the port delivery itself.
-  const relay = createSocketRelay({
-    origin,
-    socket,
-    port: pair.port1,
-    registry: transport.registry,
-    readWindowBytes: LIMITS.readWindowBytes,
-    writeWindowBytes: LIMITS.writeWindowBytes
-  })
-
-  // If the port never reaches the frame, the app never learns this
-  // socket's id -- the descriptor below is not returned -- so it can
-  // never call net.close for it either. Releasing it here is the only
-  // remaining chance: handle-contracts.ts's destroy rule is that a
-  // resource is released exactly once, ALWAYS, "including when the
-  // acquisition that would have registered the handle is itself
-  // refused... otherwise one fd leaks per attempt against a limit an
-  // attacker can hit in a loop". A frame that navigated or was disposed
-  // between this request and this line is ordinary, not adversarial.
-  const abandon = async (reason: string): Promise<never> => {
-    // stop(), not a bare cleanup(): cleanup() alone unregisters and closes
-    // the port but leaves the pump free to still be mid-pumpLoop, reading
-    // the OS socket and posting to a port that was just closed.
-    relay.stop('internal')
-    try {
-      await socket.close()
-    } catch {
-      // The handle table is the owner of record and has already been told
-      // to release; a failure here leaves nothing further to do.
-    }
-    throw fail('internal', reason)
-  }
-
-  await deliverPort({
-    origin,
-    handleId: socket.id,
-    frame: event.senderFrame,
-    port2: pair.port2,
-    abandon
-  })
-
-  return {
-    id: socket.id,
-    remoteAddress: socket.remoteAddress,
-    remotePort: socket.remotePort,
-    localAddress: socket.localAddress,
-    localPort: socket.localPort
-  }
 }
 
 /** One request, dispatched to `broker` with the origin THIS FUNCTION derived -- never one from `payload`. */
@@ -228,6 +157,16 @@ async function dispatch (
       const socket = await broker.net.connectSecure(origin, { host: payload.host, port: payload.port })
       return await deliverTcpSocket(origin, socket, event, transport)
     }
+    // A114/d-0028: the server's own port is delivered the same way a
+    // net.connect socket's is (deliverTcpServer, ./server-relay.ts); each
+    // connection it later accepts arrives over THAT port as an
+    // AcceptedMessage, not through another control-channel round trip.
+    case 'net.listen': {
+      if (!isNetUdpBindParams(payload)) throw fail('invalid', 'net.listen requires { port: number }')
+      if (transport === undefined) throw fail('internal', 'no port transport configured for this broker')
+      const server = await broker.net.listen(origin, { port: payload.port })
+      return await deliverTcpServer(origin, server, event, transport)
+    }
     case 'net.udpBind': {
       if (!isNetUdpBindParams(payload)) throw fail('invalid', 'net.udpBind requires { port: number }')
       if (transport === undefined) throw fail('internal', 'no port transport configured for this broker')
@@ -290,6 +229,7 @@ async function dispatch (
       // handle, so calling a TCP-only option on it is its own bug rather than
       // a probe for handles it does not have, and telling it so leaks nothing.
       if (entry?.kind === 'udp') throw fail('invalid', 'setNoDelay is not available on a UDP socket')
+      if (entry?.kind === 'server') throw fail('invalid', 'setNoDelay is not available on a TCP server')
       if (entry !== undefined) await entry.setNoDelay(payload.on)
       return undefined
     }
@@ -297,6 +237,7 @@ async function dispatch (
       if (!isNetSetKeepAliveParams(payload)) throw fail('invalid', 'net.setKeepAlive requires { id: string, on: boolean }')
       const entry = transport?.registry.get(origin, payload.id)
       if (entry?.kind === 'udp') throw fail('invalid', 'setKeepAlive is not available on a UDP socket')
+      if (entry?.kind === 'server') throw fail('invalid', 'setKeepAlive is not available on a TCP server')
       if (entry !== undefined) await entry.setKeepAlive(payload.on, payload.initialDelayMs)
       return undefined
     }
@@ -422,7 +363,13 @@ export function registerSyncFsIpc (ipc: IpcMainOnLike, policy: SyncFsPolicy, lim
 function realPortPair (): PortPair {
   const { port1, port2 } = new MessageChannelMain()
   const wrapped: PortLike = {
-    postMessage: (message) => { port1.postMessage(message) },
+    // `transfer` is `unknown[]` at this structural boundary (./port-transport.ts's
+    // own PortPair.port2, `unknown` for the same reason) but is ALWAYS, in
+    // production, an array of this module's own freshly-minted MessagePortMain
+    // values -- the only thing anything in this file ever puts in one. Cast at
+    // this one real-Electron call site rather than widening MessagePortMain's
+    // own `.postMessage` signature.
+    postMessage: (message, transfer) => { port1.postMessage(message, transfer as MessagePortMain[] | undefined) },
     onMessage: (listener) => { port1.on('message', (event) => { listener(event.data) }) },
     onClose: (listener) => { port1.on('close', listener) },
     close: () => { port1.close() }

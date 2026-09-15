@@ -1,11 +1,13 @@
 import type { OrivonErrorCode } from '../../contracts/errors.js'
 import type { FailableTcpSocket } from '../handles/handle-contracts.js'
-import type { PortLike, RegisteredSocket } from './port-transport.js'
+import type { PortDeliveryFrame, PortLike, PortTransport, RegisteredSocket, SocketDescriptor } from './port-transport.js'
 import type { PortRegistry } from './port-registry.js'
 import { createPortPump } from './port-pump.js'
 import { createPortSink } from './port-sink.js'
 import { parseRendererToBrokerMessage } from './port-messages.js'
-import { errnoOf, isOrivonErrorLike } from '../errors.js'
+import { deliverPort } from './deliver-port.js'
+import { errnoOf, fail, isOrivonErrorLike } from '../errors.js'
+import { LIMITS } from '../../contracts/index.js'
 
 // Everything mechanical about relaying ONE socket's bytes over its
 // dedicated port, in both directions: given an already-delivered PortLike,
@@ -209,4 +211,82 @@ export function createSocketRelay (options: SocketRelayOptions): SocketRelay {
   })
 
   return { cleanup, stop }
+}
+
+/**
+ * Everything net.connect and net.connectSecure share once the broker has
+ * already handed back an acquired `FailableTcpSocket`: mint a port pair,
+ * wire this file's own createSocketRelay, deliver the port to the calling
+ * frame (or abandon and release the handle if that fails), and return the
+ * plain descriptor. The two control methods differ only in WHICH broker
+ * method produced `socket` and which grant authorised it -- both dead ends
+ * by the time this runs -- so this is one implementation of "wire an
+ * acquired TCP socket to the renderer", not two copies drifting apart
+ * (code-guidelines.md Rule 3).
+ *
+ * Moved here from ./ipc.ts, which this addition would otherwise have pushed
+ * past Rule 2's 500-line ceiling -- ./server-relay.ts's own `deliverTcpServer`
+ * sets the same precedent for the same reason: this kind of "wire an
+ * acquired handle to the renderer" helper lives beside the relay it wires,
+ * not in the dispatch file.
+ */
+export async function deliverTcpSocket (
+  origin: string,
+  socket: FailableTcpSocket,
+  event: { readonly senderFrame: PortDeliveryFrame | null },
+  transport: PortTransport
+): Promise<SocketDescriptor> {
+  const pair = transport.createPortPair()
+  // Owns everything mechanical about relaying this socket's bytes in
+  // both directions, registering it for net.close, and releasing it
+  // exactly once. What stays here is only what is security-relevant:
+  // the origin re-derivation inside deliverPort and the port delivery
+  // itself.
+  const relay = createSocketRelay({
+    origin,
+    socket,
+    port: pair.port1,
+    registry: transport.registry,
+    readWindowBytes: LIMITS.readWindowBytes,
+    writeWindowBytes: LIMITS.writeWindowBytes
+  })
+
+  // If the port never reaches the frame, the app never learns this
+  // socket's id -- the descriptor below is not returned -- so it can
+  // never call net.close for it either. Releasing it here is the only
+  // remaining chance: handle-contracts.ts's destroy rule is that a
+  // resource is released exactly once, ALWAYS, "including when the
+  // acquisition that would have registered the handle is itself
+  // refused... otherwise one fd leaks per attempt against a limit an
+  // attacker can hit in a loop". A frame that navigated or was disposed
+  // between this request and this line is ordinary, not adversarial.
+  const abandon = async (reason: string): Promise<never> => {
+    // stop(), not a bare cleanup(): cleanup() alone unregisters and closes
+    // the port but leaves the pump free to still be mid-pumpLoop, reading
+    // the OS socket and posting to a port that was just closed.
+    relay.stop('internal')
+    try {
+      await socket.close()
+    } catch {
+      // The handle table is the owner of record and has already been told
+      // to release; a failure here leaves nothing further to do.
+    }
+    throw fail('internal', reason)
+  }
+
+  await deliverPort({
+    origin,
+    handleId: socket.id,
+    frame: event.senderFrame,
+    port2: pair.port2,
+    abandon
+  })
+
+  return {
+    id: socket.id,
+    remoteAddress: socket.remoteAddress,
+    remotePort: socket.remotePort,
+    localAddress: socket.localAddress,
+    localPort: socket.localPort
+  }
 }

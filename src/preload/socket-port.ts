@@ -27,6 +27,28 @@ export interface PortLike {
   close: () => void
 }
 
+/**
+ * Adapts a real (DOM) `MessagePort` -- Electron's own conversion of a
+ * transferred `MessagePortMain` -- to this file's own `PortLike`. Shared by
+ * every per-port state machine in this directory that receives one:
+ * ./orivon-surface.ts's netConnect/netConnectSecure/netUdpBind for their own
+ * ports, and ./server-port.ts for each accepted connection's (A114, d-0028)
+ * -- code-guidelines.md Rule 3, the adaptation is the same idea regardless of
+ * which control method produced the port. Lives here, not in orivon-surface.ts
+ * where it was first written, because this file is the one that owns
+ * `PortLike` itself.
+ */
+export function wrapPort (raw: unknown): PortLike {
+  const port = raw as MessagePort
+  return {
+    postMessage: (message) => { port.postMessage(message) },
+    // Assigning .onmessage (rather than addEventListener) implicitly starts
+    // the port per the WHATWG spec -- no separate port.start() needed.
+    onMessage: (listener) => { port.onmessage = (event) => { listener(event.data) } },
+    close: () => { port.close() }
+  }
+}
+
 export interface SocketPortOptions {
   readonly handleId: string
   readonly port: PortLike
@@ -168,6 +190,26 @@ export function createSocketPort (options: SocketPortOptions): SocketPort {
         fatalCb?.(message.code)
         forceRejectClosed(error)
         break
+      }
+      // Every datagram-domain kind, plus AcceptedMessage, never flows on a
+      // per-connection TCP port: the first four belong to
+      // ../broker/transport/datagram-relay.ts's own port, and AcceptedMessage
+      // only ever flows on a TcpServer's OWN dedicated port
+      // (contracts/ipc.ts's own header on AcceptedMessage). Reachable here
+      // only if something upstream is badly confused -- listed explicitly,
+      // not folded into a bare default, so TypeScript narrows `message` to
+      // `never` below and the NEXT new BrokerToRendererMessage member landing
+      // here unhandled is a compile error rather than the silent gap A114
+      // found (open-questions.md A167/A170).
+      case 'datagram':
+      case 'datagram-dropped':
+      case 'send-ack':
+      case 'send-failed':
+      case 'accepted':
+        break
+      default: {
+        const exhaustive: never = message
+        void exhaustive
       }
     }
   })
