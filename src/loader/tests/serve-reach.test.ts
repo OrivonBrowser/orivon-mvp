@@ -163,6 +163,15 @@ describe('nodeReachDial -- request body cap (A173)', () => {
     server = createHttpsServer({ key: fixture.leafKey, cert: fixture.leafCert }, (req, res) => {
       req.on('data', () => {}) // drain -- this suite never inspects the received body
       req.on('end', () => {
+        if (req.url === '/echo-headers') {
+          // A183: reports what the peer ACTUALLY received on the wire. The
+          // only way to prove a smuggling pair was not forwarded -- asserting
+          // on the Request handed in would re-read this test's own input,
+          // never what Node put on the socket.
+          res.writeHead(200, { 'content-type': 'application/json' })
+          res.end(JSON.stringify(req.headers))
+          return
+        }
         res.writeHead(200, { 'content-type': 'text/plain' })
         res.end('ok')
       })
@@ -193,5 +202,31 @@ describe('nodeReachDial -- request body cap (A173)', () => {
     const response = await dial(request, 'localhost', port)
 
     expect(response.status).toBe(200)
+  })
+
+  it('A183: refuses to smuggle -- an app-set transfer-encoding never reaches the peer alongside the content-length this file sets itself', async () => {
+    const dial = nodeReachDial({ ca })
+    // Exactly the pair that makes a front-end and a back-end disagree about
+    // where this request ends. The app controls every header here and the
+    // body bytes; nothing upstream of this file restricts either.
+    const request = new Request(`https://localhost:${String(port)}/echo-headers`, {
+      method: 'POST',
+      headers: { 'transfer-encoding': 'chunked', te: 'trailers', upgrade: 'websocket', trailer: 'x-thing', 'x-keep': 'ordinary' },
+      body: 'hello'
+    })
+
+    const response = await dial(request, 'localhost', port)
+    const received = JSON.parse(await readAll(response)) as Record<string, string>
+
+    // The smuggling pair: content-length is set by this file, so a forwarded
+    // transfer-encoding is what turns one request into two.
+    expect(received['transfer-encoding']).toBeUndefined()
+    expect(received['content-length']).toBe('5')
+    // The rest of RFC 7230 SS6.1, stripped for the same reason.
+    expect(received['te']).toBeUndefined()
+    expect(received['upgrade']).toBeUndefined()
+    expect(received['trailer']).toBeUndefined()
+    // An ordinary app header still passes through untouched.
+    expect(received['x-keep']).toBe('ordinary')
   })
 })

@@ -6627,3 +6627,39 @@ silent zero IS the correct, measured answer).
 5-byte range recorded 300; fifty 10-byte range requests recorded 15000, not 500; a 416 recorded
 300, not 0), then passing after the fix; a fourth confirms a denied same-origin request still
 adds nothing. `src/loader/tests/pin-coverage.test.ts`.
+
+### A183 -- an app could smuggle a second request past the one host its grant names **[RESOLVED 2026-09-15 -- found by the review run's own security pass]**
+
+`nodeReachDial` (`src/loader/serve-reach.ts`) stripped only `host`, `connection` and
+`content-length` from the OUTBOUND request. RFC 7230 SS6.1's remaining hop-by-hop headers --
+`transfer-encoding` above all -- were forwarded from whatever the app set, and nothing upstream of
+this file restricts an app's headers.
+
+**`nodeReachDial` sets `content-length` itself.** So a forwarded `transfer-encoding: chunked`
+arrives ALONGSIDE it. Measured rather than assumed, with a probe against Node's own client:
+
+    POST / HTTP/1.1
+    transfer-encoding: chunked
+    content-length: 5
+    ...
+    "5\r\nhello\r\n0"
+
+Node sends **both** headers and chunk-frames the body. A front-end and a back-end that disagree
+about which header ends the request is the whole of request smuggling, and here the app controls
+every header and every body byte.
+
+**Why this is a capability escape and not a generic web bug.** The grant authorises one host. A
+smuggled second request is processed by whatever sits behind that host's front-end -- another
+virtual host, another backend -- which the person never granted and the broker never checked.
+`checkConnectSecure` authorises the connection; it cannot see a second request hidden inside the
+first one's body.
+
+**Fixed** by stripping the full RFC 7230 SS6.1 set on the request side, the same set the response
+side had just gained. The regression test asserts on the headers the PEER ACTUALLY RECEIVED --
+echoed back from the test server -- because asserting on the `Request` handed in would only re-read
+the test's own input, never what Node put on the socket. Verified to FAIL against the unfixed strip
+set and pass with it.
+
+**How it was found, because the method is the transferable part:** the fix that landed
+`A174` added a hop-by-hop set for the RESPONSE and left the REQUEST side's three-entry set
+untouched. The asymmetry was the tell. Reading it raised the question; a probe answered it.
