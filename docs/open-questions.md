@@ -6543,3 +6543,63 @@ once this lane's shapes are confirmed.
 **Needed by:** the A114 implementation lane (item 1), the `fs.open`/`fs.userSelected` broker lane
 (item 2, compatibility-matrix.md Table 4 row 6), and whichever lane wires `node-dns.ts` to a real
 broker capability (item 3, `A107`).
+
+---
+
+### A170 -- "Deny" on the install dialog did not take back a capability the dialog itself listed **[PARTIALLY RESOLVED 2026-09-15 -- lane FIX-3; the second half needs the owner]**
+
+The all-or-nothing install dialog deliberately shows the **whole declared set**, not the outstanding
+subset -- `src/main/README.md` argues for that explicitly, and it is the right call: a person
+choosing all-or-nothing must see the complete picture. `describeInstallConsent` renders that set
+under the literal heading **"This app wants to:"**.
+
+But a capability can already be **held** at that moment. `app.requestGrant` is a documented second
+door, and `registerApp` runs before `requestInstallConsent` in `app-install.ts`'s `finishInstall`,
+so an app can obtain one declared capability out of band, with its own separate dialog, before the
+install dialog is ever shown -- `install-consent.ts`'s own "not held" filter exists precisely
+because that state is reachable.
+
+So a person read a list containing something the app already had, clicked **Deny**, and the app kept
+it. Nothing in the dialog distinguished a held row from a requested one: `describeInstallConsent`
+was never given the held set, so it **could not** mark them -- while the per-capability screens
+already marked earlier answers `[Allowed]`/`[Denied]`, which made the all-or-nothing dialog the odd
+one out rather than a considered exception.
+
+**Fixed:** the held subset is now passed to the renderer and already-held rows are marked
+`[Already allowed]`, matching the bracket convention `describeCapabilityChoice` already used. Deny
+visibly applies to the rest. A row that merges two capabilities is marked only when **every**
+contributing capability is held.
+
+**STILL OPEN, and it is an owner decision, not an implementation gap:** should Deny also **revoke**
+the already-held capability? Taking away a grant the person separately agreed to, because they
+declined a different question, is a real behaviour change with its own surprise -- so the run
+deliberately did not build it. The dialog now tells the truth either way; the question is whether
+the truth it tells is the one the owner wants.
+
+### A172 -- the declined-consent record was kept three inconsistent ways, and one of them made a capability permanently un-askable **[RESOLVED 2026-09-15 -- lane FIX-3]**
+
+All three in `src/main/install-consent.ts`, found independently by two reviewers and `/code-review`:
+
+1. **It recorded too much.** The decline branch wrote the *entire declared set*, including a
+   capability that was currently **held**. Concrete harm: an origin declares `{tcp.connect, fs}`;
+   `fs` is already held through the second door; the person declines; `fs` is written into the
+   declined record. The person later revokes `fs` from the settings list -- `revokePersisted`
+   touches `grants`, never `declinedCapabilities` -- and on the next visit nothing is outstanding,
+   so **the dialog never returns and `fs` can never be offered again.** A declined entry needs no
+   live grant to suppress a future dialog, which is what made this permanent.
+2. **Replace versus append.** The all-or-nothing branch REPLACED the record; the per-capability
+   branch APPENDED. A manifest switching `consentGranularity` between visits could therefore drop an
+   earlier per-capability "no". The module's own doc claimed a refusal "is never a decline of
+   anything OUTSIDE this round" -- true of one branch only.
+3. **Cleared on one accept path of three.** `clearDeclinedConsent`'s only caller in the tree was
+   this file's own all-or-nothing accept branch. A "yes" reached through `app.requestGrant`, or
+   through `update-outcomes.ts`'s accepted capability prompt, left the persisted decline in place --
+   contradicting the stated invariant that an old "no" cannot outlive a "yes".
+
+**Fixed:** a decline now records only what was actually outstanding this round; both branches write
+through one `recordDeclined` helper that always appends, so "declined" cannot mean different things
+depending on which branch ran; and both other accept paths now retire the relevant decline --
+`request-grant.ts` retires just the one capability it granted, composed from existing `Broker`
+methods so no new broker primitive was needed, and `update-outcomes.ts`'s capability-prompt accept
+clears the whole record, justified because its `requestedPatterns` is the manifest's current
+declared set, the same shape as the all-or-nothing accept.
