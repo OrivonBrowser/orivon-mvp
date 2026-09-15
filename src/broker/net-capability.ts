@@ -21,6 +21,7 @@ import { checkBind } from './policy/bind.js'
 import { checkConnect } from './policy/connect.js'
 import { checkConnectSecure } from './policy/connect-secure.js'
 import { checkLookup } from './policy/lookup.js'
+import { isPublicUnicast } from './policy/address.js'
 import type { BoundUdpSocket, Broker, CreateBrokerOptions, DialedSocket, ListenedServer, SendOutcome } from './broker-contracts.js'
 import type { CapabilityKind, Datagram, LookupAddress } from '../contracts/index.js'
 
@@ -446,11 +447,33 @@ export function createNetCapability ({ deps, handleTable, ledger, canonical }: N
       // `run` actually starting `deps.resolveLookup` would still let the
       // real DNS call go ahead for a capability the app no longer holds.
       if (signal.aborted) throw fail('revoked', 'the grant authorising this lookup was withdrawn')
+      let resolved: readonly LookupAddress[]
       try {
-        return await deps.resolveLookup(authorisedHostname)
+        resolved = await deps.resolveLookup(authorisedHostname)
       } catch (error) {
         throw mapIoError(error, 'net')
       }
+
+      // A RESOLVER IS A NETWORK SCANNER IF ITS ANSWERS ARE NOT FILTERED, and
+      // `checkLookup` cannot catch this because it decides on the NAME, before
+      // any address exists. `connect` refuses a private, loopback or
+      // link-local result for both pattern kinds that authorise a lookup
+      // (policy/connect-patterns.ts: `any-public-unicast` and `hostname` both
+      // end in `isPublicUnicast(address)`), so returning one here would hand an
+      // app the internal addresses of a network it can never reach -- the
+      // user's router, NAS and intranet hosts, enumerated by name and carried
+      // out over a granted host. d-0030 bounds a lookup by the network grant
+      // the app already holds; an address that grant could never connect to is
+      // outside that bound, so the same rule decides both.
+      const reachable = resolved.filter((entry) => isPublicUnicast(entry.address))
+
+      // 'unreachable', NOT 'denied', and not an empty array: an app must not be
+      // able to tell "this internal name exists" from "this name does not
+      // resolve", which a distinguishable answer here would leak one probe at a
+      // time. It is also the honest code -- nothing resolvable is reachable.
+      if (reachable.length === 0) throw fail('unreachable', 'the hostname resolved to no address this app can reach')
+
+      return reachable
     })
   }
 

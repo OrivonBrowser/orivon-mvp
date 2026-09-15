@@ -27,6 +27,40 @@ describe("orivon.net.lookup is bounded by the app's own held network grant (d-00
     expect(error.platformCode).toBeUndefined()
   })
 
+  it('never hands back a private address, so a resolver cannot enumerate the internal network', async () => {
+    // The attack this closes: an app holding an ordinary grant asks for a name
+    // that resolves inside the user's LAN. `connect` would refuse the result,
+    // but an unfiltered lookup still REPORTS it -- the router, the NAS, the
+    // intranet host, discoverable by name and carried out over a granted host.
+    const broker = createBroker(baseDeps({
+      resolveLookup: async () => [{ address: '192.168.1.1', family: 'IPv4' } as const]
+    }))
+    broker.registerApp(APP, manifestWith({ net: { tcp: { connect: ['*:*'] } } }))
+    await broker.grant(APP, 'tcp.connect', ['*:*'])
+
+    const error = await rejection(broker.net.lookup(APP, { hostname: 'router.example.com' }))
+
+    // 'unreachable', not 'denied' -- an app must not be able to tell an
+    // existing internal name from a non-existent one, one probe at a time.
+    expect(error.code).toBe('unreachable')
+  })
+
+  it('keeps the public answers when a name resolves to both public and private addresses', async () => {
+    // The filter must not turn a legitimate multi-homed answer into a failure.
+    const broker = createBroker(baseDeps({
+      resolveLookup: async () => [
+        { address: '10.0.0.5', family: 'IPv4' } as const,
+        { address: '93.184.216.34', family: 'IPv4' } as const
+      ]
+    }))
+    broker.registerApp(APP, manifestWith({ net: { tcp: { connect: ['*:*'] } } }))
+    await broker.grant(APP, 'tcp.connect', ['*:*'])
+
+    const addresses = await broker.net.lookup(APP, { hostname: 'split.example.com' })
+
+    expect(addresses).toEqual([{ address: '93.184.216.34', family: 'IPv4' }])
+  })
+
   it('resolves a hostname the held tcp.connect grant names, in resolver order (never re-sorted)', async () => {
     const answers: readonly LookupAddress[] = [
       { address: '2606:2800:220:1:248:1893:25c8:1946', family: 'IPv6' },
@@ -82,13 +116,13 @@ describe("orivon.net.lookup is bounded by the app's own held network grant (d-00
   })
 
   it('resolves any hostname under an unlimited "*:*" grant', async () => {
-    const broker = createBroker(baseDeps({ resolveLookup: async () => [{ address: '203.0.113.9', family: 'IPv4' }] }))
+    const broker = createBroker(baseDeps({ resolveLookup: async () => [{ address: '93.184.216.34', family: 'IPv4' }] }))
     broker.registerApp(APP, manifestWith({ net: { tcp: { connect: ['*:*'] } } }))
     await broker.grant(APP, 'tcp.connect', ['*:*'])
 
     const addresses = await broker.net.lookup(APP, { hostname: 'anything.example.org' })
 
-    expect(addresses).toEqual([{ address: '203.0.113.9', family: 'IPv4' }])
+    expect(addresses).toEqual([{ address: '93.184.216.34', family: 'IPv4' }])
   })
 
   // A82's port question, this lane's reading (policy/README.md's design
@@ -97,13 +131,13 @@ describe("orivon.net.lookup is bounded by the app's own held network grant (d-00
   // lookup -- the app can already force that exact name resolved by
   // replaying the same host:port through net.connect.
   it('resolves a hostname granted only on a reserved connect port', async () => {
-    const broker = createBroker(baseDeps({ resolveLookup: async () => [{ address: '198.51.100.5', family: 'IPv4' }] }))
+    const broker = createBroker(baseDeps({ resolveLookup: async () => [{ address: '93.184.216.34', family: 'IPv4' }] }))
     broker.registerApp(APP, manifestWith({ net: { tcp: { connect: ['mail.example.com:25'] } } }))
     await broker.grant(APP, 'tcp.connect', ['mail.example.com:25'])
 
     const addresses = await broker.net.lookup(APP, { hostname: 'mail.example.com' })
 
-    expect(addresses).toEqual([{ address: '198.51.100.5', family: 'IPv4' }])
+    expect(addresses).toEqual([{ address: '93.184.216.34', family: 'IPv4' }])
   })
 
   it('rejects unreachable, with a real platformCode, for a permitted name that does not resolve', async () => {
