@@ -3,7 +3,7 @@ import { SYNC_CONTROL_CHANNEL } from '../main/channels.js'
 import { installOrivon } from './main-world-socket.js'
 import type { MainWorldFileBridge } from './main-world-socket.js'
 import { call, TIMEOUT_MS } from './control-call.js'
-import { netConnectBridge, netConnectSecureBridge, netLookupBridge, netUdpBindBridge } from './net-surface.js'
+import { netConnectBridge, netConnectSecureBridge, netListenBridge, netLookupBridge, netUdpBindBridge } from './net-surface.js'
 import type { CapabilityRequest, FileStat, Grant, Manifest, OrivonErrorCode } from '../contracts/index.js'
 import { LIMITS } from '../contracts/index.js'
 import type { ResponseEnvelope } from '../contracts/ipc.js'
@@ -29,7 +29,9 @@ import { toOrivonError } from './orivon-error.js'
 // `./control-call.ts`'s `call()` is the only thing that touches
 // `ipcRenderer.invoke` (the raw MessagePortMain/ipcRenderer never crossing
 // into the main world is this whole directory's rule, not just this
-// file's); each method's own timeout budget lives there too.
+// file's); each method's own timeout budget lives there too. net.listen's
+// own bridge closure (netListenBridge) lives in ./net-surface.ts alongside
+// net.connect/net.udpBind/net.lookup's, for the same reason.
 
 async function appManifest (): Promise<Manifest> { return await call('app.manifest', undefined, TIMEOUT_MS.metadata) }
 async function appGrants (): Promise<readonly Grant[]> { return await call('app.grants', undefined, TIMEOUT_MS.metadata) }
@@ -221,6 +223,7 @@ export function exposeOrivon (): void {
     netConnect: netConnectBridge,
     netConnectSecure: netConnectSecureBridge,
     netUdpBind: netUdpBindBridge,
+    netListen: netListenBridge,
     netLookup: netLookupBridge
   }
   try {
