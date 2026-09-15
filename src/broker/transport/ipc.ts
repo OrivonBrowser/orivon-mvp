@@ -239,7 +239,17 @@ function realPortPair (): PortPair {
     // -- contracts/ipc.ts's own header rule 1). Cast at this one real-
     // Electron call site rather than widening MessagePortMain's own
     // `.postMessage` signature.
-    postMessage: (message, transfer) => { port1.postMessage(message, transfer as MessagePortMain[] | undefined) },
+    // PASSING `undefined` AS THE TRANSFER LIST IS NOT THE SAME AS OMITTING
+    // IT. Electron's MessagePortMain binding validates the argument when it
+    // is present at all, so `postMessage(message, undefined)` throws
+    // "transferables must be an array of MessagePorts" -- and that is every
+    // ordinary data message, not just an accept. A plain object PortLike
+    // accepts `undefined` happily, so unit tests cannot see this; the real
+    // e2e caught it as every socket byte pump failing at once.
+    postMessage: (message, transfer) => {
+      if (transfer === undefined) port1.postMessage(message)
+      else port1.postMessage(message, transfer as MessagePortMain[])
+    },
     onMessage: (listener) => { port1.on('message', (event) => { listener(event.data) }) },
     onClose: (listener) => { port1.on('close', listener) },
     close: () => { port1.close() }
