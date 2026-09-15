@@ -4,7 +4,7 @@
 // out whole, since it is the one concern in that file with no TCP-socket
 // dependency). Not *.test.ts, so vitest does not collect it as its own suite.
 
-import type { MainWorldDatagram, MainWorldServerBridge, MainWorldSocketBridge, MainWorldUdpBridge } from '../main-world-socket.js'
+import type { MainWorldDatagram, MainWorldFileBridge, MainWorldServerBridge, MainWorldSocketBridge, MainWorldUdpBridge } from '../main-world-socket.js'
 import type { OrivonErrorCode } from '../../contracts/errors.js'
 import type { FileStat, SendRefusal } from '../../contracts/handles.js'
 import type { ResponseEnvelope } from '../../contracts/ipc.js'
@@ -76,6 +76,20 @@ export function fakeSocketBridgeResult (): {
   }
 }
 
+/** A fake `bridge.fsOpen()` result -- everything `buildFile` (main-world-socket.ts) needs. */
+export function fakeFileBridgeResult (overrides: Partial<MainWorldFileBridge> = {}): MainWorldFileBridge {
+  return {
+    id: 'f1',
+    read: async () => new Uint8Array([1, 2, 3]),
+    write: async () => 3,
+    stat: async () => ({ size: 3, isFile: true, isDirectory: false, mtimeMs: 0 }),
+    truncate: async () => {},
+    sync: async () => {},
+    close: async () => {},
+    ...overrides
+  }
+}
+
 export function fakeBridge (
   netConnectResult: ReturnType<typeof fakeSocketBridgeResult>,
   udpResult?: ReturnType<typeof fakeUdpBridgeResult>,
@@ -92,6 +106,7 @@ export function fakeBridge (
   fsStat: (path: string) => Promise<FileStat>
   fsRm: (path: string, opts?: { recursive?: boolean }) => Promise<void>
   fsRename: (from: string, to: string) => Promise<void>
+  fsOpen: (path: string, flags: string) => Promise<MainWorldFileBridge>
   idPublicKey: (curve: string) => Promise<Uint8Array>, idSign: (curve: string, payload: Uint8Array) => Promise<Uint8Array>
   netConnect: (opts: { host: string, port: number }) => Promise<ReturnType<typeof fakeSocketBridgeResult>>
   netConnectSecure: (opts: { host: string, port: number }) => Promise<ReturnType<typeof fakeSocketBridgeResult>>
@@ -111,6 +126,7 @@ export function fakeBridge (
     fsStat: async () => ({ size: 0, isFile: true, isDirectory: false, mtimeMs: 0 }),
     fsRm: async () => {},
     fsRename: async () => {},
+    fsOpen: async () => fakeFileBridgeResult(),
     idPublicKey: async () => new Uint8Array(),
     idSign: async () => new Uint8Array(),
     netConnect: async (_opts) => netConnectResult,

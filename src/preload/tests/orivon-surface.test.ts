@@ -96,7 +96,7 @@ describe('exposeOrivon -- P-F10: the fail-closed fallback covers BOTH "absent" a
     // main-world stream wrapping, so it is wired identically in both the
     // fallback and the executeInMainWorld path, exactly like readFile/
     // writeFile above it.
-    for (const method of ['mkdir', 'readdir', 'stat', 'rm', 'rename']) {
+    for (const method of ['mkdir', 'readdir', 'stat', 'rm', 'rename', 'open']) {
       expect(typeof (surface.fs as Record<string, unknown>)[method]).toBe('function')
     }
   })
@@ -434,6 +434,12 @@ describe('exposeOrivon -- P-F11: end-to-end wiring smoke, through the real conte
   })
 })
 
+// orivon.fs.open (A184) -- exercised end to end through the REAL
+// installOrivon/buildFile wiring (installViaFakeMainWorld calls installOrivon
+// for real, unlike a hand-built stub), the same way fs.mkdir/readdir/stat/
+// rm/rename are above. main-world-socket-fs.test.ts proves buildFile's own
+// wrapping in isolation; this proves the whole path -- orivon-surface.ts's
+// fsOpen, through installOrivon, through call(), to a mocked ipcRenderer.
 describe('exposeOrivon -- P-F11 continued: net.listen (A114, d-0028)', () => {
   it('a successful net.listen resolves a TcpServer, and an AcceptedMessage on its own port yields a real TcpSocket', async () => {
     const target = installViaFakeMainWorld()
@@ -478,6 +484,82 @@ describe('exposeOrivon -- P-F11 continued: net.listen (A114, d-0028)', () => {
     expect(socket.id).toBe('acc-1')
     expect(socket.readable).toBeInstanceOf(ReadableStream)
     expect(socket.writable).toBeInstanceOf(WritableStream)
+  })
+})
+
+describe('exposeOrivon -- fs.open and its handle-scoped siblings', () => {
+  it('open, then read/write/fstat/truncate/sync/close, each send the right CONTROL_CHANNEL envelope', async () => {
+    const target = installViaFakeMainWorld()
+    const stat = { size: 4, isFile: true, isDirectory: false, mtimeMs: 9 }
+    const seenEnvelopes: Array<{ method: string, payload: unknown }> = []
+    invoke.mockImplementation(async (_channel: string, envelope: { method: string, payload: unknown }) => {
+      seenEnvelopes.push({ method: envelope.method, payload: envelope.payload })
+      if (envelope.method === 'fs.open') return okEnvelope({ id: 'h1' })
+      if (envelope.method === 'fs.read') return okEnvelope(new Uint8Array([1, 2]))
+      if (envelope.method === 'fs.write') return okEnvelope(2)
+      if (envelope.method === 'fs.fstat') return okEnvelope(stat)
+      return okEnvelope(undefined)
+    })
+
+    exposeOrivon()
+    const orivon = target.orivon as {
+      fs: {
+        open: (path: string, flags: string) => Promise<{
+          id: string
+          read: (opts: { position: number, length: number }) => Promise<Uint8Array>
+          write: (opts: { position: number, data: Uint8Array }) => Promise<number>
+          stat: () => Promise<unknown>
+          truncate: (length: number) => Promise<void>
+          sync: () => Promise<void>
+          close: () => Promise<void>
+        }>
+      }
+    }
+
+    const file = await orivon.fs.open('piece.bin', 'w+')
+    expect(file.id).toBe('h1')
+    expect(Array.from(await file.read({ position: 4, length: 2 }))).toEqual([1, 2])
+    expect(await file.write({ position: 0, data: new Uint8Array([9, 9]) })).toBe(2)
+    expect(await file.stat()).toEqual(stat)
+    await file.truncate(10)
+    await file.sync()
+    await file.close()
+
+    expect(seenEnvelopes).toEqual([
+      { method: 'fs.open', payload: { path: 'piece.bin', flags: 'w+' } },
+      { method: 'fs.read', payload: { id: 'h1', position: 4, length: 2 } },
+      { method: 'fs.write', payload: { id: 'h1', position: 0, data: new Uint8Array([9, 9]) } },
+      { method: 'fs.fstat', payload: { id: 'h1' } },
+      { method: 'fs.truncate', payload: { id: 'h1', length: 10 } },
+      { method: 'fs.sync', payload: { id: 'h1' } },
+      { method: 'fs.close', payload: { id: 'h1' } }
+    ])
+  })
+
+  it('fs.open propagates a real OrivonError (e.g. "denied") rather than a raw rejection', async () => {
+    const target = installViaFakeMainWorld()
+    invoke.mockResolvedValue({ id: 'r', ok: false, code: 'denied', message: 'fs is not granted to this origin' })
+
+    exposeOrivon()
+    const orivon = target.orivon as { fs: { open: (path: string, flags: string) => Promise<unknown> } }
+
+    await expect(orivon.fs.open('a', 'r')).rejects.toMatchObject({ code: 'denied' })
+  })
+
+  it('a read against an already-revoked handle propagates \'revoked\', not a raw rejection', async () => {
+    const target = installViaFakeMainWorld()
+    invoke.mockImplementation(async (_channel: string, envelope: { method: string }) => {
+      if (envelope.method === 'fs.open') return okEnvelope({ id: 'h1' })
+      return { id: 'r', ok: false, code: 'revoked', message: 'the grant authorising this fs operation was withdrawn' }
+    })
+
+    exposeOrivon()
+    const orivon = target.orivon as {
+      fs: { open: (path: string, flags: string) => Promise<{ read: (opts: { position: number, length: number }) => Promise<Uint8Array> }> }
+    }
+    const file = await orivon.fs.open('a', 'r')
+
+    await expect(file.read({ position: 0, length: 1 })).rejects.toMatchObject({ code: 'revoked' })
   })
 })
 
