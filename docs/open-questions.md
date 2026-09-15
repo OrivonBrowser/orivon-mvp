@@ -6605,3 +6605,22 @@ reading was taken as given) before `net.lookup` reaches a production grant path.
 
 **Needed by:** lane L6 (`src/shim/node-dns.ts`'s real `dns.lookup` shape, A107) -- this lane
 deliberately left that file untouched, per its own scope.
+
+**Amended 2026-09-15 by the conductor, during the `src/broker/` hand-review, before merge.** The
+lane's `checkLookup` decides on the NAME, which is correct and is where `d-0030`'s bound lives --
+but nothing filtered the resolver's ANSWER. `connect` refuses a private, loopback or link-local
+result for both pattern kinds that can authorise a lookup (`policy/connect-patterns.ts`:
+`any-public-unicast` and `hostname` both end in `isPublicUnicast(address)`), so an unfiltered
+lookup handed an app the internal addresses of a network it can never reach -- the user's router,
+NAS and intranet hosts, enumerable by name under an ordinary `*:*` grant and carried back out over
+a granted host. **Fixed, not filed:** the result is now filtered through the same
+`isPublicUnicast` `connect` uses, and an answer with nothing reachable left rejects `'unreachable'`
+rather than `'denied'` or an empty array, so an app cannot tell an existing internal name from a
+non-existent one one probe at a time.
+
+Two of the lane's own tests failed against the fix and **both failures were fixture artifacts, not
+the assertions**: they used RFC 5737 documentation addresses (`203.0.113.x`, `198.51.100.x`), which
+`isPublicUnicast` refuses exactly as it refuses a private one -- verified by probing the real
+function rather than reasoning about it. The assertions they make (an unlimited grant resolves any
+name; a reserved-port grant still authorises its own lookup) are unchanged and still pass against a
+routable fixture.
