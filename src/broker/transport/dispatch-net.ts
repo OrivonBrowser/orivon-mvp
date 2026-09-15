@@ -11,7 +11,8 @@ import { createSocketRelay } from './socket-relay.js'
 import { createDatagramRelay } from './datagram-relay.js'
 import { deliverPort } from './deliver-port.js'
 import {
-  isNetCloseParams, isNetConnectParams, isNetSetKeepAliveParams, isNetSetNoDelayParams, isNetUdpBindParams
+  isNetCloseParams, isNetConnectParams, isNetLookupParams, isNetSetKeepAliveParams, isNetSetNoDelayParams,
+  isNetUdpBindParams
 } from './ipc-validation.js'
 import type { ControlMethod } from './ipc-validation.js'
 import type { ControlEvent, PortTransport, SocketDescriptor, UdpSocketDescriptor } from './port-transport.js'
@@ -192,6 +193,14 @@ export async function dispatchNet (
       if (entry?.kind === 'udp') throw fail('invalid', 'setKeepAlive is not available on a UDP socket')
       if (entry !== undefined) await entry.setKeepAlive(payload.on, payload.initialDelayMs)
       return undefined
+    }
+    // No port pair, no handle registration -- unlike every other case here,
+    // `broker.net.lookup` (d-0030) resolves once and hands back plain data,
+    // never a live resource (net-capability.ts's own `lookup` doc). The
+    // CONTROL_CHANNEL round trip alone is the whole delivery.
+    case 'net.lookup': {
+      if (!isNetLookupParams(payload)) throw fail('invalid', 'net.lookup requires { hostname: string }')
+      return await broker.net.lookup(origin, { hostname: payload.hostname })
     }
   }
 }
