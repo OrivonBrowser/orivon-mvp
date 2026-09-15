@@ -32,6 +32,41 @@ const REACH_TIMEOUT_MS = 30_000
 /** Headers Node's own client computes itself from `host`/`port`/the body it is handed -- forwarding the app's own copy risks it disagreeing with what Node actually sends on the wire. */
 const HOP_BY_HOP_REQUEST_HEADERS = new Set(['host', 'connection', 'content-length'])
 
+/**
+ * The RFC 7230 SS6.1 hop-by-hop set, stripped from the response the same way
+ * the request side already strips its own three (above) -- each header here
+ * describes the hop between the peer and Node's own client, which has
+ * already ended by the time anything downstream sees this `Response`.
+ * `transfer-encoding` is the concrete case A174 was filed against: this
+ * function's own doc says the body is handed to `Response` as a live
+ * stream, never rebuffered -- but Node's `http` parser has ALREADY stripped
+ * the wire's chunk framing before `res` ever emits a byte, so a forwarded
+ * `transfer-encoding: chunked` describes framing that no longer exists on
+ * this stream and would be simply false to the app reading it.
+ */
+const HOP_BY_HOP_RESPONSE_HEADERS = new Set([
+  'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer', 'transfer-encoding', 'upgrade'
+])
+
+/**
+ * Matches `src/preload/fetch-route.ts`'s own `ROUTED_FETCH_MAX_BODY_BYTES`
+ * (16 MiB) -- the repo already decided this number once, for the identical
+ * "an unbounded page-supplied body must not be buffered whole" problem on
+ * the OTHER side of this same fetch (a routed `fetch()` call reaches this
+ * file, via `net.connectSecure`, only for the response half; a request BODY
+ * takes the ordinary `orivon.net.connect`/`connectSecure` socket path on
+ * its way out of the renderer -- so this file, not that one, is where a
+ * page's own bytes actually land as a `Request` this main process must
+ * buffer before dialling). Not imported: `src/loader/` and `src/preload/`
+ * sit on opposite sides of a trust boundary neither may import across
+ * (README.md's "what it must never import"), so this is a second literal
+ * copy by the same rule this file already uses above for `isNullBodyStatus`
+ * (Rule 3) -- the honest cost of one idea living on both sides, not a
+ * missed extraction. Exported so a test builds the boundary case against
+ * this exact value instead of a third, silently drifting copy.
+ */
+export const REACH_MAX_REQUEST_BODY_BYTES = 16 * 1024 * 1024
+
 function forwardedRequestHeaders (request: Request, bodyLength: number): Record<string, string> {
   const headers: Record<string, string> = {}
   request.headers.forEach((value, name) => {
@@ -45,12 +80,41 @@ function forwardedRequestHeaders (request: Request, bodyLength: number): Record<
 function forwardedResponseHeaders (res: IncomingMessage): Headers {
   const headers = new Headers()
   for (const [name, value] of Object.entries(res.headers)) {
-    if (value === undefined) continue
+    if (value === undefined || HOP_BY_HOP_RESPONSE_HEADERS.has(name.toLowerCase())) continue
     for (const one of Array.isArray(value) ? value : [value]) {
       try { headers.append(name, one) } catch { /* skip -- see doc above */ }
     }
   }
   return headers
+}
+
+/**
+ * Reads `request`'s body into one `Buffer`, rejecting the instant the
+ * running total would exceed `REACH_MAX_REQUEST_BODY_BYTES` -- never
+ * buffered past the cap first (A173). This runs in the privileged MAIN
+ * process: an app posting a large or unbounded body to a granted host must
+ * not be able to drive unbounded allocation here, the same reasoning this
+ * file's own header already applies to the RESPONSE side (streamed, never
+ * buffered) -- the request side needs the opposite fix, a cap, because it
+ * IS buffered, into one `Buffer`, to hand to `httpsRequest` as `content-
+ * length`-framed content rather than a second stream.
+ */
+async function readCappedBody (request: Request): Promise<Buffer | null> {
+  if (request.body === null) return null
+  const reader = request.body.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    total += value.length
+    if (total > REACH_MAX_REQUEST_BODY_BYTES) {
+      await reader.cancel().catch(() => {})
+      throw new TypeError(`orivon: request body exceeds the reach body cap of ${String(REACH_MAX_REQUEST_BODY_BYTES)} bytes (REACH_MAX_REQUEST_BODY_BYTES)`)
+    }
+    chunks.push(value)
+  }
+  return Buffer.concat(chunks)
 }
 
 /**
@@ -65,11 +129,18 @@ function forwardedResponseHeaders (res: IncomingMessage): Headers {
  * `Response`, not held whole in this process's memory -- no size cap is
  * needed on this side for the same reason an ordinary browser network
  * response needs none.
+ *
+ * THE REQUEST BODY IS THE OPPOSITE SHAPE, AND DOES NEED ONE (A173): it is
+ * buffered whole, by design, because `httpsRequest` below sends it as one
+ * `content-length`-framed write rather than a second relayed stream -- so
+ * `readCappedBody` bounds it at `REACH_MAX_REQUEST_BODY_BYTES` instead,
+ * refusing rather than letting an app drive unbounded allocation in this
+ * privileged process.
  */
 export function nodeReachDial (options: ReachDialOptions = {}): ReachDial {
   return async (request, host, port) => {
     const url = new URL(request.url)
-    const body = request.body === null ? null : Buffer.from(await request.arrayBuffer())
+    const body = await readCappedBody(request)
     const bodyLength = body?.length ?? 0
 
     const res = await new Promise<IncomingMessage>((resolve, reject) => {

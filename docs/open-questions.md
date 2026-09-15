@@ -6543,3 +6543,87 @@ once this lane's shapes are confirmed.
 **Needed by:** the A114 implementation lane (item 1), the `fs.open`/`fs.userSelected` broker lane
 (item 2, compatibility-matrix.md Table 4 row 6), and whichever lane wires `node-dns.ts` to a real
 broker capability (item 3, `A107`).
+
+### A173 -- `serve-reach.ts`'s outbound request body was buffered unbounded in the main process **[RESOLVED 2026-09-15]**
+
+**Raised and fixed 2026-09-15**, lane FIX-4 (`stream/loader-10-reach-hygiene`), an independent
+review finding re-verified by the fleet conductor reading the code before this lane started.
+`nodeReachDial` (`src/loader/serve-reach.ts`) read an app's own request body with
+`Buffer.from(await request.arrayBuffer())` -- the file's own header carefully argues the
+RESPONSE side needs no size cap (`Readable.toWeb` streams it) and says nothing about the
+request, which is the gap: a page `fetch()`-ing a large or effectively unbounded body to a
+granted `https.connect` host drove unbounded allocation in this **privileged main process**,
+not the sandboxed renderer.
+
+**Fixed by `readCappedBody`**, a streaming reader over `request.body` that rejects the instant
+the running total would exceed `REACH_MAX_REQUEST_BODY_BYTES` (16 MiB), never buffering past
+the cap first -- the same discipline `src/preload/fetch-route.ts`'s own `readAllCapped` already
+uses for its response body. The cap VALUE matches that file's own `ROUTED_FETCH_MAX_BODY_BYTES`
+exactly (16 MiB is the number this repo already chose once for "an unbounded page-supplied body
+must not be buffered whole"), but it is a second literal, not an import: `src/loader/` and
+`src/preload/` sit on opposite sides of a trust boundary neither may import across
+(`src/loader/README.md`'s "what it must never import" / `src/preload/README.md`'s own list),
+and there is no third neutral home for a single numeric constant that would justify the
+cross-boundary wiring -- `src/shared/` exists for exactly this kind of case but is deliberately
+still empty (code-guidelines.md), and adding its first occupant was judged out of scope for a
+three-defect hygiene lane. AI recommendation, not an owner decision: an owner call on whether
+this constant belongs in `src/shared/` once a second real user of it exists would settle this
+more permanently.
+
+**Verified (this lane):** a test sending a body one byte over the cap now rejects with a
+`REACH_MAX_REQUEST_BODY_BYTES`-naming `TypeError`, confirmed to resolve (not reject) against the
+pre-fix code first; a body exactly at the cap still succeeds. `src/loader/tests/serve-reach.test.ts`.
+
+### A174 -- `serve-reach.ts` forwarded hop-by-hop response headers verbatim, including a `transfer-encoding` that was already false **[RESOLVED 2026-09-15]**
+
+**Raised and fixed 2026-09-15**, lane FIX-4, same review pass as A173. `forwardedRequestHeaders`
+already stripped `host`/`connection`/`content-length` with an explicit
+`HOP_BY_HOP_REQUEST_HEADERS` set; `forwardedResponseHeaders` had no strip set at all, so
+`transfer-encoding`, `connection` and `keep-alive` were copied onto the `Response` handed back
+to `serve.ts`'s `fetchThirdParty`. `transfer-encoding: chunked` is the concrete harm: Node's
+`http` parser has already de-chunked the body by the time `IncomingMessage` emits anything, so a
+forwarded `transfer-encoding` header describes wire framing that no longer exists on the stream
+the app actually reads -- simply false, not merely redundant.
+
+**Fixed** with a second strip set, `HOP_BY_HOP_RESPONSE_HEADERS`, covering the full RFC 7230
+SS6.1 hop-by-hop list (`connection`, `keep-alive`, `proxy-authenticate`, `proxy-authorization`,
+`te`, `trailer`, `transfer-encoding`, `upgrade`) rather than only the three the finding named --
+these are all headers describing a hop that has already ended by the time this `Response` is
+built, and there is no principled reason to strip three of the eight and forward the rest. Kept
+as a second, separately-documented set rather than unified with the request side's: the request
+set strips `host`/`content-length` for a DIFFERENT reason (Node computes those itself from what
+it is handed, not because they are hop-by-hop), so a single shared set would either miss those
+two or mis-describe why `transfer-encoding` matters on the response side specifically.
+
+**Verified (this lane):** a test against a real chunked, `Connection: keep-alive`-declaring TLS
+response confirms all three headers are now absent from the `Response` while `content-type`
+still passes through untouched -- confirmed to fail against the pre-fix code first (transfer-
+encoding measured as `'chunked'`, not `null`). `src/loader/tests/serve-reach.test.ts`.
+
+### A175 -- pin coverage counted the whole pinned asset's size even when a Range request served only a slice, or nothing at all **[RESOLVED 2026-09-15]**
+
+**Raised and fixed 2026-09-15**, lane FIX-4, same review pass as A173/A174.
+`createAppRequestHandler` (`src/loader/serve.ts`) called `recordCoverage?.('pinned',
+content.length)` BEFORE `buildResponse` applied the request's `Range` header, so a 10 MB video
+fetched in many range requests recorded the full 10 MB every single time, and an unsatisfiable
+range (416, no body at all) recorded the full asset size for zero bytes actually sent. Third-
+party requests were never affected -- `fetchThirdParty` already records the peer's own
+`content-length`, read after the real response exists -- so this skewed the pinned-vs-third-
+party ratio specifically, the measure `src/trust/README.md` calls load-bearing and the reason
+this whole coverage mechanism (ADR-0006's D-ladder, #198) exists.
+
+**Fixed** by moving the `recordCoverage?.('pinned', ...)` call to AFTER `buildResponse` runs,
+and reading the byte count off the response it actually built (`contentLengthOf`, the same
+helper `fetchThirdParty` already used for the identical purpose on its own side -- one
+implementation of "read the byte count off the `Response` you are about to return," not two).
+`buildResponse` always sets `content-length` on a 200 or 206; a 416 sets none, handled as an
+explicit `0` rather than falling through to `contentLengthOf`'s `undefined` -- a 416's zero
+bytes-sent is a KNOWN value, not a size that could not be measured, so it must not trip
+`pin-coverage.ts`'s own `bytesIncomplete` flag (that file's header: "a missing size sets
+`bytesIncomplete`, never a silent zero" -- which is exactly backwards for a case where the
+silent zero IS the correct, measured answer).
+
+**Verified (this lane):** three tests confirmed failing against the pre-fix code first (a single
+5-byte range recorded 300; fifty 10-byte range requests recorded 15000, not 500; a 416 recorded
+300, not 0), then passing after the fix; a fourth confirms a denied same-origin request still
+adds nothing. `src/loader/tests/pin-coverage.test.ts`.

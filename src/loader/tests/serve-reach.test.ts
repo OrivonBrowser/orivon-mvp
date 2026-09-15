@@ -17,7 +17,7 @@ import { createServer as createHttpsServer } from 'node:https'
 import type { Server as HttpsServer } from 'node:https'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { generateTlsFixture } from '../../broker/adapters/tests/tls-adapter.test-helpers.js'
-import { nodeReachDial } from '../serve-reach.js'
+import { nodeReachDial, REACH_MAX_REQUEST_BODY_BYTES } from '../serve-reach.js'
 
 async function readAll (response: Response): Promise<string> {
   return await response.text()
@@ -45,6 +45,16 @@ describe('nodeReachDial -- A143\'s real, byte-moving half', () => {
         if (req.url === '/not-found') {
           res.writeHead(404, { 'content-type': 'text/plain' })
           res.end('nope')
+          return
+        }
+        if (req.url === '/hop-by-hop') {
+          // No content-length and two writes -> Node answers with a real
+          // chunked transfer-encoding; Connection/Keep-Alive are set
+          // explicitly to prove they get stripped too, not just the one
+          // A174 was filed against.
+          res.writeHead(200, { 'content-type': 'text/plain', connection: 'keep-alive', 'keep-alive': 'timeout=5' })
+          res.write('first chunk, ')
+          res.end('second chunk')
           return
         }
         res.writeHead(200, { 'content-type': 'font/woff2', 'x-custom': 'orivon-e2e' })
@@ -125,5 +135,63 @@ describe('nodeReachDial -- A143\'s real, byte-moving half', () => {
 
     expect(response.status).toBe(404)
     expect(await readAll(response)).toBe('nope')
+  })
+
+  it('A174: strips hop-by-hop response headers -- transfer-encoding is false once Readable.toWeb has already de-chunked the body, and connection/keep-alive describe a hop that no longer applies', async () => {
+    const dial = nodeReachDial({ ca })
+    const request = new Request(`https://localhost:${String(port)}/hop-by-hop`)
+
+    const response = await dial(request, 'localhost', port)
+
+    expect(response.headers.get('transfer-encoding')).toBeNull()
+    expect(response.headers.get('connection')).toBeNull()
+    expect(response.headers.get('keep-alive')).toBeNull()
+    // Ordinary headers still pass through untouched.
+    expect(response.headers.get('content-type')).toBe('text/plain')
+    expect(await readAll(response)).toBe('first chunk, second chunk')
+  })
+})
+
+describe('nodeReachDial -- request body cap (A173)', () => {
+  let server: HttpsServer
+  let port: number
+  let ca: string
+
+  beforeAll(async () => {
+    const fixture = generateTlsFixture()
+    ca = fixture.caCert
+    server = createHttpsServer({ key: fixture.leafKey, cert: fixture.leafCert }, (req, res) => {
+      req.on('data', () => {}) // drain -- this suite never inspects the received body
+      req.on('end', () => {
+        res.writeHead(200, { 'content-type': 'text/plain' })
+        res.end('ok')
+      })
+    })
+    await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
+    const address = server.address()
+    if (address === null || typeof address === 'string') throw new Error('server did not report a port')
+    port = address.port
+  })
+
+  afterAll(async () => {
+    await new Promise<void>((resolve) => { server.close(() => resolve()) })
+  })
+
+  it('refuses a request body over REACH_MAX_REQUEST_BODY_BYTES with a clear error, never buffering it whole in this (main) process', async () => {
+    const dial = nodeReachDial({ ca })
+    const oversized = new Uint8Array(REACH_MAX_REQUEST_BODY_BYTES + 1)
+    const request = new Request(`https://localhost:${String(port)}/x`, { method: 'POST', body: oversized })
+
+    await expect(dial(request, 'localhost', port)).rejects.toThrow(/REACH_MAX_REQUEST_BODY_BYTES/)
+  })
+
+  it('accepts a request body right at REACH_MAX_REQUEST_BODY_BYTES', async () => {
+    const dial = nodeReachDial({ ca })
+    const atCap = new Uint8Array(REACH_MAX_REQUEST_BODY_BYTES)
+    const request = new Request(`https://localhost:${String(port)}/x`, { method: 'POST', body: atCap })
+
+    const response = await dial(request, 'localhost', port)
+
+    expect(response.status).toBe(200)
   })
 })
