@@ -30,7 +30,14 @@ function makeOrivonError (code: OrivonErrorCode, message: string, platformCode?:
   return error
 }
 
-export function createFakeTcpSocket (): FakeTcpSocket {
+export interface FakeTcpSocketOptions {
+  remoteAddress?: string
+  remotePort?: number
+  localAddress?: string
+  localPort?: number
+}
+
+export function createFakeTcpSocket (opts: FakeTcpSocketOptions = {}): FakeTcpSocket {
   let readableController!: ReadableStreamDefaultController<Uint8Array>
   const readable = new ReadableStream<Uint8Array>({
     start (controller) { readableController = controller }
@@ -48,10 +55,10 @@ export function createFakeTcpSocket (): FakeTcpSocket {
     close: async () => { didClose = true },
     readable,
     writable,
-    remoteAddress: '127.0.0.1',
-    remotePort: 80,
-    localAddress: '127.0.0.1',
-    localPort: 55555,
+    remoteAddress: opts.remoteAddress ?? '127.0.0.1',
+    remotePort: opts.remotePort ?? 80,
+    localAddress: opts.localAddress ?? '127.0.0.1',
+    localPort: opts.localPort ?? 55555,
     setNoDelay: async () => {},
     setKeepAlive: async () => {}
   }
