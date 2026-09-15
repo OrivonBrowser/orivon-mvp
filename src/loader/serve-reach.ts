@@ -29,8 +29,27 @@ export interface ReachDialOptions {
 /** Generous, not tuned -- a stalled or malicious peer must not hold a request open forever. LIMITS-style tuning is future work, not blocking this lane. */
 const REACH_TIMEOUT_MS = 30_000
 
-/** Headers Node's own client computes itself from `host`/`port`/the body it is handed -- forwarding the app's own copy risks it disagreeing with what Node actually sends on the wire. */
-const HOP_BY_HOP_REQUEST_HEADERS = new Set(['host', 'connection', 'content-length'])
+/**
+ * Two kinds of header, stripped from the OUTBOUND request for two reasons.
+ *
+ * `host` and `content-length` Node computes itself from `host`/`port` and
+ * the body it is handed -- forwarding the app's own copy risks it
+ * disagreeing with what Node actually puts on the wire.
+ *
+ * The rest are RFC 7230 SS6.1's hop-by-hop set, and `transfer-encoding` is
+ * why this is a correctness requirement rather than tidiness (A183).
+ * `nodeReachDial` sets `content-length` itself; a forwarded
+ * `transfer-encoding: chunked` therefore arrives ALONGSIDE it, and Node
+ * sends both and chunk-frames the body -- measured, not assumed. A
+ * front-end and a back-end that disagree about which header ends the
+ * request is the whole of request smuggling, and an app here controls every
+ * header and every body byte, so it could get a second, unauthorised
+ * request processed behind the one host its grant actually names.
+ */
+const HOP_BY_HOP_REQUEST_HEADERS = new Set([
+  'host', 'content-length',
+  'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer', 'transfer-encoding', 'upgrade'
+])
 
 /**
  * The RFC 7230 SS6.1 hop-by-hop set, stripped from the response the same way
