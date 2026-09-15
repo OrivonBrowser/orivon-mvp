@@ -56,15 +56,17 @@ export interface NetSetKeepAliveParams { readonly id: string, readonly on: boole
 export interface AppRequestGrantParams { readonly capability: string, readonly patterns?: readonly Pattern[] }
 
 /**
- * The one field of `SubsystemContext` (../../main/registry.js) `ipc.ts`'s
- * 'app.requestGrant' case needs, read via THIS object's own live getter on
- * every call rather than captured once: `registerBrokerIpc` runs before
- * request-grant-subsystem publishes it (subsystems.ts's own ordering
- * comment), so grabbing the value at wiring time would freeze it at
+ * The one field of `SubsystemContext` (../../main/registry.js)
+ * `dispatch-app.ts`'s 'app.requestGrant' case needs, read via THIS object's
+ * own live getter on every call rather than captured once: `registerBrokerIpc`
+ * runs before request-grant-subsystem publishes it (subsystems.ts's own
+ * ordering comment), so grabbing the value at wiring time would freeze it at
  * `undefined` forever. A real `SubsystemContext` satisfies this shape
  * structurally; ipc.test.ts needs only a plain object with this one field.
  * Lives here, alongside the payload shape it pairs with, rather than in
- * ipc.ts itself, which is at Rule 2's own limit.
+ * dispatch-app.ts: both ipc.ts's `handleControlRequest` and dispatch-app.ts's
+ * `dispatchApp` need this same type, so it lives in the shared validation
+ * module rather than in either one.
  */
 export interface RequestGrantCtx {
   readonly requestGrant: ((origin: string, request: CapabilityRequest) => Promise<boolean>) | undefined
