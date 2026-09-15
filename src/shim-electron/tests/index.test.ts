@@ -18,7 +18,7 @@ function fakeOrivon (): Orivon {
   return {
     version: 0,
     app: { manifest: async () => MANIFEST, grants: async () => [], requestGrant: async () => false },
-    net: { connect: unused, connectSecure: unused, listen: unused, udpBind: unused },
+    net: { connect: unused, connectSecure: unused, listen: unused, udpBind: unused, lookup: unused },
     fs: {
       readFile: async () => new Uint8Array(),
       writeFile: async () => {},
@@ -29,7 +29,7 @@ function fakeOrivon (): Orivon {
       stat: unused,
       rm: async () => {},
       rename: async () => {},
-      userSelected: async () => []
+      userSelected: unused
     },
     id: { publicKey: async () => new Uint8Array(), sign: async () => new Uint8Array(), requestIdentity: async () => null }
   }
