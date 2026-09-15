@@ -6543,3 +6543,74 @@ once this lane's shapes are confirmed.
 **Needed by:** the A114 implementation lane (item 1), the `fs.open`/`fs.userSelected` broker lane
 (item 2, compatibility-matrix.md Table 4 row 6), and whichever lane wires `node-dns.ts` to a real
 broker capability (item 3, `A107`).
+
+---
+
+### A171 -- an app granted unlimited HTTPS gets exactly the same CSP as an app granted nothing, so the reach it was granted is blocked before any code runs **[NEEDS OWNER DECISION]**
+
+`appReachCspHeaderValue` (`src/broker/policy/connect-src.ts`) builds `img-src`/`font-src`/`media-src`
+from the granted `https.connect` patterns by reusing `connectSrcFor`. That function deliberately
+OMITS a `*` host, classifying it `host-any-public-unicast`, and the reason is good: CSP's bare `*`
+would also permit loopback and the LAN, which a `*` grant explicitly does not (`A82`).
+
+The consequence was not noticed when the reach feature was built. A grant of `*:443` produces
+`img-src 'self'; font-src 'self'; media-src 'self'` -- byte-for-byte what an app holding NO grant
+gets. Chromium then refuses the subresource in the renderer, so `fetchThirdParty` never runs and the
+live per-request gate never gets a say. **The feature is silently unreachable for the widest and
+most likely declaration**, and `ADR-0017` names that declaration explicitly: *"an app may declare
+unlimited HTTPS"*.
+
+**Not fixed by the review run, deliberately.** The current behaviour fails CLOSED, and widening a
+CSP directive is a security tradeoff -- the build queue's own stop conditions say a security
+tradeoff wakes the owner rather than being decided by a run.
+
+**The ask:** may the REACH directives only -- `img-src`, `font-src`, `media-src` -- emit the `https:`
+scheme source for a `*` host?
+
+**AI recommendation, labelled as one:** yes, and the asymmetry with `connect-src` is the argument.
+For the schemes `protocol.handle` intercepts, every request is independently re-checked live by
+`checkConnectSecure`, which still refuses loopback and the LAN whatever the header says -- so the
+header is defence in depth and a momentarily-wider one grants nothing. `connect-src` cannot take the
+same reasoning, because it also governs `wss:`, which is never intercepted and where CSP is
+therefore the SOLE gate. That distinction is already load-bearing elsewhere in this design
+(`A158`/#194's own revert), so this would apply an existing rule rather than invent one.
+
+### A178 -- `grant-ledger.ts` reached exactly Rule 2's 500-line limit, and a second file is six lines from it **[RESOLVED 2026-09-15 for the first; NOTED for the second]**
+
+`src/broker/grants/grant-ledger.ts` sat at exactly 500 lines -- passing `check:size`, which is
+inclusive, with zero headroom. Resolved by continuing the split seam this file already has
+(`grant-persistence.ts`, `update-safety.ts`, `declined-consent.ts` all came out of it): resource
+allowances moved to `resource-limits.ts`, bringing it to 493 despite the A168 fix adding to it.
+
+**Still noted, not fixed:** `src/broker/broker-contracts.ts` is at 494. It got there by accumulation
+-- 451, then 476, then 494 -- across separate changes that were each individually reasonable. This
+is the shape Rule 2 keeps failing in here: **the limit breaks on MERGE, not on a branch**, because
+two changes each under the ceiling can cross it together. Whoever next extends `Broker`'s contract
+surface needs a split plan before starting, not on discovering it mid-diff.
+
+### A180 -- the app decides how much choice the person gets, and its incentive is always to offer none **[NEEDS OWNER DECISION]**
+
+`requestInstallConsent` (`src/main/install-consent.ts`) takes the per-capability path only when the
+MANIFEST declares `consentGranularity: 'per-capability'`; absent, `src/contracts/manifest.ts`
+defaults it to `'all-or-nothing'`.
+
+The recorded reasoning is sound and should not be thrown away: the app author is the only party who
+knows whether their code survives a half-granted environment, and a ported app has no code path for
+a missing filesystem grant any more than for a missing network one.
+
+But the incentive runs one way. All-or-nothing gets the author everything they asked for, with less
+friction and no half-granted state to handle. A rational author never declares `'per-capability'`.
+**So the person's ability to refuse one thing is set by the party that wants it granted**, and the
+consent granularity built for them may never be reachable in practice.
+
+**This is not an imported framing. The project already made this exact argument about itself**, in
+`ADR-0017`: *"If the prompt renders it the same way as a narrow declaration, every manifest will
+declare unlimited and the prompt stops meaning anything."* Same structure, different field, never
+applied here.
+
+**The ask:** should the person be able to choose per-capability even when the manifest did not ask
+for it -- for instance an always-available "Choose individually" affordance, with the manifest's
+declaration downgraded from a gate to a hint about what the app can actually cope with? Anything
+here is a real product decision about who holds the choice, so it is the owner's, not a run's.
+
+Found by the named-persona review pass, through the product lens; no other mechanism surfaced it.
