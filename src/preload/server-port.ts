@@ -10,7 +10,7 @@ import { toOrivonError } from './orivon-error.js'
 // is onAccepted/reportAccepted here.
 //
 // REPORTACCEPTED REUSES CreditMessage, NOT A NEW WIRE MESSAGE -- a flagged
-// AI judgment call (open-questions.md A170), matching
+// AI judgment call (open-questions.md A185), matching
 // ../broker/transport/accept-pump.ts's own header, which this file is the
 // renderer-side counterpart of. `bytesConsumed` below is always 1: one unit
 // of demand per app `connections.getReader().read()` call, the exact
@@ -94,7 +94,7 @@ export function createServerPort (options: ServerPortOptions): ServerPort {
       // explicitly, not folded into a bare default, so TypeScript narrows
       // `message` to `never` below and the NEXT new BrokerToRendererMessage
       // member landing here unhandled is a compile error rather than the
-      // silent gap A114 found (open-questions.md A167/A170).
+      // silent gap A114 found (open-questions.md A167/A185).
       case 'data':
       case 'write-ack':
       case 'write-failed':

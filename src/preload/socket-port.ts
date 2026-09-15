@@ -200,7 +200,7 @@ export function createSocketPort (options: SocketPortOptions): SocketPort {
       // not folded into a bare default, so TypeScript narrows `message` to
       // `never` below and the NEXT new BrokerToRendererMessage member landing
       // here unhandled is a compile error rather than the silent gap A114
-      // found (open-questions.md A167/A170).
+      // found (open-questions.md A167/A185).
       case 'datagram':
       case 'datagram-dropped':
       case 'send-ack':

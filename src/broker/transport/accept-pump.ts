@@ -14,14 +14,14 @@ import { isOrivonErrorLike } from '../errors.js'
 //
 // REUSES CreditMessage (contracts/ipc.ts) AS THE DEMAND SIGNAL, RATHER THAN A
 // NEW WIRE MESSAGE -- a flagged AI judgment call, not an owner decision
-// (open-questions.md A170). `src/contracts/` is settled for this lane (A167's
+// (open-questions.md A185). `src/contracts/` is settled for this lane (A167's
 // own scope rule: no `RendererToBrokerMessage` member exists for "accept the
 // next connection", and adding one was out of bounds here). CreditMessage's
 // wire shape -- `{kind:'credit', handleId, bytesConsumed}` -- is already the
 // one RendererToBrokerMessage member that means "the renderer is ready for
 // more"; `bytesConsumed` is reinterpreted here as a COUNT of connections the
 // app's own `connections.getReader().read()` calls have asked for, always 1
-// per call (../../preload/server-port.ts's own `reportAccepted`). See A170
+// per call (../../preload/server-port.ts's own `reportAccepted`). See A185
 // for the alternative this stopped short of (a purpose-built message member)
 // and why.
 

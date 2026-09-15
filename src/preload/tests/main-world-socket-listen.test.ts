@@ -7,7 +7,7 @@
 // proves highWaterMark: 0 survives all the way into the page's own
 // ReadableStream, not just at the broker (accept-pump.test.ts) or the
 // isolated-world preload layer (server-port.test.ts) -- the property
-// open-questions.md A170 names as the one most likely to be silently
+// open-questions.md A185 names as the one most likely to be silently
 // destroyed by a page-side wrapper.
 
 import { describe, expect, it } from 'vitest'
