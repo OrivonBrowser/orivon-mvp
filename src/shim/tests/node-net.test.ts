@@ -54,6 +54,14 @@ describe('node-net.ts', () => {
     installFakeOrivon()
     const net = await import('../node-net.js')
     expect(() => net.createServer()).toThrow(/A114/)
+    // A177: OrivonNetUnsupportedError now extends OrivonShimError, so a
+    // catch block checking only the shared type still catches this one.
+    const { OrivonShimError } = await import('../errors.js')
+    try {
+      net.createServer()
+    } catch (error) {
+      expect(error).toBeInstanceOf(OrivonShimError)
+    }
   })
 
   it('surfaces a clear, named "error" event if window.orivon is absent when connect is attempted', async () => {
@@ -64,23 +72,26 @@ describe('node-net.ts', () => {
   })
 
   // A135: members read off the default export (a bundled CJS `require('net')`'s
-  // own shape) used to be silently absent rather than named.
-  it('names net.Server, reason not-built, citing the same A114 gap as createServer', async () => {
+  // own shape) used to be silently absent rather than named. A169: reading
+  // one is now safe, the same as real absence; only calling it still throws.
+  it('reading net.Server does not throw; calling it names it, reason not-built, citing the same A114 gap as createServer', async () => {
     installFakeOrivon()
-    const net = (await import('../node-net.js')).default as unknown as Record<string, unknown>
+    const net = (await import('../node-net.js')).default as unknown as Record<string, () => unknown>
     const { OrivonShimError } = await import('../errors.js')
-    expect(() => net.Server).toThrow(/A114/)
+    expect(() => net.Server).not.toThrow()
+    expect(() => net.Server!()).toThrow(/A114/)
     try {
-      void net.Server
+      net.Server!()
     } catch (error) {
       expect((error as InstanceType<typeof OrivonShimError>).reason).toBe('not-built')
     }
   })
 
-  it('names any other unbuilt member, reason unimplemented', async () => {
+  it('reading any other unbuilt member does not throw; calling it names it, reason unimplemented', async () => {
     installFakeOrivon()
-    const net = (await import('../node-net.js')).default as unknown as Record<string, unknown>
+    const net = (await import('../node-net.js')).default as unknown as Record<string, () => unknown>
     const { OrivonShimError } = await import('../errors.js')
-    expect(() => net.getDefaultAutoSelectFamily).toThrow(OrivonShimError)
+    expect(() => net.getDefaultAutoSelectFamily).not.toThrow()
+    expect(() => net.getDefaultAutoSelectFamily!()).toThrow(OrivonShimError)
   })
 })

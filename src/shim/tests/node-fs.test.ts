@@ -313,13 +313,14 @@ describe('mkdir / readdir / stat / rm / rename', () => {
 // A135: every fs member this module does not build used to be silently
 // absent -- `fs.copyFile` read off the default export (a bundled CJS
 // `require('fs')`'s own shape) threw a bare "copyFile is not a function".
-describe('fs\'s other members -- named refusal instead of absence (A135)', () => {
-  it('names an ordinary unbuilt member (copyFile), reason unimplemented -- nothing has decided whether this will be built', async () => {
+describe('fs\'s other members -- named refusal instead of absence (A135), reading one is safe (A169)', () => {
+  it('reading copyFile does not throw; calling it names it, reason unimplemented -- nothing has decided whether this will be built', async () => {
     installFakeOrivon()
-    const fs = (await import('../node-fs.js')).default as unknown as Record<string, unknown>
-    expect(() => fs.copyFile).toThrow(/fs\.copyFile/)
+    const fs = (await import('../node-fs.js')).default as unknown as Record<string, () => unknown>
+    expect(() => fs.copyFile).not.toThrow()
+    expect(() => fs.copyFile!()).toThrow(/fs\.copyFile/)
     try {
-      void fs.copyFile
+      fs.copyFile!()
     } catch (error) {
       const { OrivonShimError } = await import('../errors.js')
       expect(error).toBeInstanceOf(OrivonShimError)
@@ -328,14 +329,15 @@ describe('fs\'s other members -- named refusal instead of absence (A135)', () =>
   })
 
   it.each(['chmod', 'chmodSync', 'chown', 'chownSync'])(
-    'names %s reason not-applicable -- no POSIX permission model exists to set',
+    'reading %s does not throw; calling it names it, reason not-applicable -- no POSIX permission model exists to set',
     async (member) => {
       installFakeOrivon()
-      const fs = (await import('../node-fs.js')).default as unknown as Record<string, unknown>
+      const fs = (await import('../node-fs.js')).default as unknown as Record<string, () => unknown>
       const { OrivonShimError } = await import('../errors.js')
-      expect(() => fs[member]).toThrow(OrivonShimError)
+      expect(() => fs[member]).not.toThrow()
+      expect(() => fs[member]!()).toThrow(OrivonShimError)
       try {
-        void fs[member]
+        fs[member]!()
       } catch (error) {
         expect((error as InstanceType<typeof OrivonShimError>).reason).toBe('not-applicable')
       }
@@ -354,5 +356,16 @@ describe('fs\'s other members -- named refusal instead of absence (A135)', () =>
     installFakeOrivon()
     const fs = (await import('../node-fs.js')).default as unknown as Record<string, unknown>
     expect('copyFile' in fs).toBe(false)
+  })
+
+  // A169: fs.constants is data (POSIX flag numbers), not a function -- a
+  // throwing-function refusal would misreport its own type, so it is
+  // genuinely absent instead, the same as real Node reports a method this
+  // shim has never even considered.
+  it('reads fs.constants as undefined rather than a throwing function, since real Node exposes it as data, not a function', async () => {
+    installFakeOrivon()
+    const fs = (await import('../node-fs.js')).default as unknown as Record<string, unknown>
+    expect(fs.constants).toBeUndefined()
+    expect('constants' in fs).toBe(true)
   })
 })
