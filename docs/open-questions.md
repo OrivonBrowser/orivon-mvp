@@ -4701,12 +4701,17 @@ all-or-nothing, and turning it into a per-row choice later is a change to the di
 > single app needs a different answer per capability.
 >
 > **What this resolves and what it leaves open.** This settles the *shape of the declaration*
-> only -- a type on `Manifest`, contracts-only, no implementation. It does not build the
+> only -- a type on `Manifest`, contracts-only, no implementation. It does not itself build the
 > per-row prompt UI, teach `decideGrantRequest` or the grant ledger to honor a partial accept,
 > or wire `requestGrant` to pass a per-capability choice through -- that is real engineering
 > against a real dialog, left for whichever build-step-4 lane picks up the install prompt.
-> Until that lands, `'per-capability'` in a manifest is inert: the field types and documents
-> the choice, and nothing reads it yet.
+>
+> **Update 2026-09-14, lane `F-granular`.** That lane landed: `src/loader/manifest.ts` now
+> parses `consentGranularity`, and `src/main/install-consent.ts`'s `requestInstallConsent`
+> branches its staged Allow-all / Choose-individually / Deny-all dialog sequence on
+> `manifest.consentGranularity === 'per-capability'`. `'per-capability'` in a manifest is no
+> longer inert for install-time consent. See A162 for the implementation and for what still
+> is not wired to it (the three update-time prompts).
 
 ### A139 -- asking at install brings back part of the prompt fatigue `ADR-0012` rejected **[AI-REC -- confirm at the 4.2 checkpoint]**
 
@@ -5432,6 +5437,19 @@ mechanism.
 
 **Needed by:** whoever builds build step 6's real trust indicator -- `stream/trust-02-pin-coverage`
 is already the named lane for it as of this writing.
+
+> **Update 2026-09-15.** `stream/trust-02-pin-coverage` (PR #198) landed the measurement this
+> entry asked for: `src/loader/pin-coverage.ts` and `electron-serve.ts`'s `pinCoverageFor` now
+> track, per origin, how many requests and bytes came from the pin versus a granted third-party
+> host, and `src/trust/delivery-ladder.ts`'s `DeliveryHistoryInput`/`DeliveryEvidence` now carry
+> that as a `pinCoverage` field end to end.
+>
+> **What this entry actually asked for is still open.** The new field is evidence only --
+> `metRung` is unchanged, and by the field's own doc comment "no rung here reads it... this
+> scores nothing; see build step 6 for how it renders". Nothing yet reads the number back out
+> in production either (A181). The scoring/rendering decision this entry raised -- how coverage
+> should affect the ladder, or whatever a person actually sees -- is still unmade, still left
+> for build step 6. This entry is not resolved.
 
 ### A149 -- `scripts/smoke.mjs`'s favicon scenario cannot pass under both T12 and "hermetic by construction" at once **[NEEDS OWNER DECISION]**
 
@@ -6543,3 +6561,33 @@ once this lane's shapes are confirmed.
 **Needed by:** the A114 implementation lane (item 1), the `fs.open`/`fs.userSelected` broker lane
 (item 2, compatibility-matrix.md Table 4 row 6), and whichever lane wires `node-dns.ts` to a real
 broker capability (item 3, `A107`).
+
+### A181 -- pin coverage is measured but nothing reads it yet **[NOTED -- deferred by design, not a defect]**
+
+**Raised 2026-09-15**, docs-correction lane FIX-6, while checking `A166`'s claims against the
+tree.
+
+`stream/trust-02-pin-coverage` (PR #198) built the measurement `A166` asked for --
+`src/loader/pin-coverage.ts` tracks, per origin, how many requests and bytes came from the pin
+versus a granted third-party host -- but nothing in production reads it back out.
+
+**Verified by grep, both claims:**
+- `pinCoverageFor` (`src/loader/electron-serve.ts:49`) has no caller anywhere under `src/`
+  outside its own test file (`src/loader/tests/electron-serve.test.ts`).
+- `deliveryLadder` (`src/trust/delivery-ladder.ts`) has no call site anywhere under `src/`
+  outside its own test file -- so `DeliveryHistoryInput.pinCoverage` is never supplied by
+  production code either; nothing yet constructs the input that would carry a coverage snapshot
+  into the ladder in the first place.
+
+**Not a defect.** The file's own comment on `PinCoverageEvidence` says this plainly: "this
+scores nothing; see build step 6 for how it renders." The measurement was scoped and built
+ahead of the UI that will eventually read it, which is a reasonable order to build in.
+
+**Why it is filed anyway.** PR #198's own title ("measure how much of a served app's pin
+actually covers what it runs") promises a measurement, and a reader who did not also read the
+source comment would reasonably assume the number already reaches somebody -- a person, a log,
+anything. It does not yet. See `A166`'s 2026-09-15 update for the same gap from the ladder's
+side.
+
+**Needed by:** build step 6, same as `A166` -- no new lane implied by this entry; it records
+current state so the next reader does not have to re-derive it from `grep`.
