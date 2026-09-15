@@ -8,7 +8,7 @@ import { vi } from 'vitest'
 import type { ControlEvent, PortLike, PortPair, PortTransport } from '../ipc.js'
 import type { Broker, RawFileStat } from '../../broker-contracts.js'
 import { createPortRegistry } from '../port-registry.js'
-import type { Datagram, Grant, Manifest, OrivonError, OrivonErrorCode } from '../../../contracts/index.js'
+import type { Datagram, Grant, LookupAddress, Manifest, OrivonError, OrivonErrorCode } from '../../../contracts/index.js'
 import type { CloseReason, FailableFileHandle, FailableTcpServer, FailableTcpSocket, FailableUdpSocket } from '../../handles/handle-contracts.js'
 import type { RequestEnvelope } from '../../../contracts/ipc.js'
 
@@ -63,6 +63,7 @@ export function stubBroker (
     connectSecure: (origin: string, opts: { host: string, port: number }) => Promise<FailableTcpSocket>
     udpBind: (origin: string, opts: { port: number }) => Promise<FailableUdpSocket>
     listen: (origin: string, opts: { port: number }) => Promise<FailableTcpServer>
+    lookup: (origin: string, opts: { hostname: string }) => Promise<readonly LookupAddress[]>
     readFile: (origin: string, path: string) => Promise<Uint8Array>
     writeFile: (origin: string, path: string, data: Uint8Array) => Promise<void>
     /** SYNCHRONOUS, unlike every other override here (ADR-0016's Broker.fs.confineSync) -- no test in this suite calls it via handleControlRequest, since it has no CONTROL_CHANNEL method of its own (sync-fs.ts's own channel), but the stub still needs to satisfy Broker's shape. */
@@ -129,6 +130,13 @@ export function stubBroker (
       listen: async (origin, opts) => {
         calls.push({ method: 'net.listen', origin, args: opts })
         return await (overrides.listen?.(origin, opts) ?? notStubbed())
+      },
+      // Satisfies `Broker`; exercised by whichever suite drives net.lookup
+      // through `overrides.lookup` -- unused elsewhere the same way udpBind
+      // and listen were before their own control methods landed.
+      lookup: async (origin, opts) => {
+        calls.push({ method: 'net.lookup', origin, args: opts })
+        return await (overrides.lookup?.(origin, opts) ?? notStubbed())
       }
     },
     fs: {

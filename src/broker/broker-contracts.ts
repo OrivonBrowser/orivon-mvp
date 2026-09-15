@@ -18,6 +18,7 @@ import type {
   Grant,
   GrantId,
   Handle,
+  LookupAddress,
   Manifest,
   OrivonErrorCode,
   Pattern,
@@ -190,6 +191,8 @@ export interface CreateBrokerOptions {
   readonly bind: Bind
   readonly listen: Listen
   readonly resolve: Resolver
+  /** `orivon.net.lookup`'s real DNS call (d-0030) -- ../adapters/node-adapters.ts's `resolveLookup`. */
+  readonly resolveLookup: (hostname: string) => Promise<readonly LookupAddress[]>
   /** Clock, read once per grant -- `Grant.grantedAt`. Injected so a test can freeze it. */
   readonly now: () => number
   readonly fs: BrokerFs
@@ -297,6 +300,8 @@ export interface Broker {
      * server tears down every socket it produced that is still open.
      */
     listen(origin: string, opts: { port: number }): Promise<FailableTcpServer>
+    /** `orivon.net.lookup` (d-0030) -- bounded by the origin's tcp.connect/https.connect/udp.send grants; see capability-api.ts's own OrivonNet.lookup doc for the full spec. */
+    lookup(origin: string, opts: { hostname: string }): Promise<readonly LookupAddress[]>
   }
   /** `BrokerFsMethods` -- ./fs-contracts.js, alongside the types it is built from. */
   readonly fs: BrokerFsMethods
