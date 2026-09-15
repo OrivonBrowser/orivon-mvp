@@ -182,7 +182,8 @@ describe('installFromHint', () => {
       const result = await installFromHint({ broker, loader, consent }, APP, APP)
 
       expect(result.outcome).toBe('installed')
-      expect(consent).toHaveBeenCalledExactlyOnceWith(APP, manifest, ['tcp.connect'])
+      // Nothing held -- the fourth argument (A170) is an empty list.
+      expect(consent).toHaveBeenCalledExactlyOnceWith(APP, manifest, ['tcp.connect'], [])
       expect(calls).toContainEqual({ method: 'grant', origin: APP, args: { capability: 'tcp.connect', patterns: ['api.example.com:443'] } })
     })
 
