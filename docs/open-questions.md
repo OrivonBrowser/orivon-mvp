@@ -6436,3 +6436,110 @@ capability interface that needs an entirely new `*_KEYS` array and a new row in 
 for). It also does not check the reverse direction -- the loader accepting a key the contract no
 longer declares -- since that is a different bug class from the one that hit three times today and
 was out of scope for this lane.
+
+### A167 -- three `src/contracts/` shapes landed (A114's delivery shape, the folder picker, `dns.lookup`) -- judgment calls inside each need confirming before the matching implementation lane starts **[AI-REC -- contracts landed this lane; confirm before build]**
+
+**Raised 2026-09-15**, lane L0-contracts (`stream/contracts-05-listen-picker-lookup`), landing
+three owner decisions from the same day -- `d-0028`, `d-0029`, `d-0030` -- as `src/contracts/`
+types only. No implementation anywhere; that is this lane's own scope rule. Each shape below
+carries real judgment calls beyond what the owner decision itself specified, flagged here rather
+than left implicit in the type, so the lane that builds against it is confirming a documented
+choice rather than reverse-engineering one from a diff.
+
+**1. A114's delivery shape (`d-0028`) is now `src/contracts/ipc.ts`'s `AcceptedMessage`,
+added to `BrokerToRendererMessage`.** It carries the accepted `TcpSocket`'s full synchronous
+shape (`socketId`, `remoteAddress`, `remotePort`, `localAddress`, `localPort`) plus its `port`,
+delivered over the `TcpServer`'s own port -- the shape A114 named and the owner chose, over a
+second `PORT_CHANNEL` round trip per accept.
+
+**Flagged, AI judgment, not owner-reviewed:** `port` is typed `MessagePort` -- the ambient DOM
+type this file already relies on for `ReadableStream`/`WritableStream` without an import, and
+the type a renderer genuinely holds once Electron completes the transfer. The **broker** side
+constructs this message holding a real `MessagePortMain` (Electron-main-process, a different
+class), and contracts cannot import `electron` to reference that type directly
+(`check:contracts`). This is the same reason `src/broker/transport/port-transport.ts` and
+`src/preload/socket-port.ts` already define two independently-shaped `PortLike` interfaces
+rather than sharing one -- the concrete port class genuinely differs per process. The
+implementing lane will hit a real type gap constructing this message on the broker side; the
+call made here is to let contracts describe what the **renderer** receives (matching the type's
+own name, `BrokerToRendererMessage`) and leave the broker-side adapter to do its own narrowing,
+consistent with how `PortLike` already works. Flagging for confirmation rather than asserting it
+is the only right answer.
+
+**Also needed by that lane, not built here (implementation, out of this PR's scope):** both
+`PortLike.postMessage` signatures (`port-transport.ts`'s `(message: BrokerToRendererMessage) =>
+void`, `socket-port.ts`'s `(message: unknown) => void`) will need a transfer-list parameter --
+today neither accepts one, and a `MessagePort`/`MessagePortMain` cannot cross a structured clone
+without being named in one. Verified this lane's own change causes **no typecheck break** from
+adding `AcceptedMessage` to the union itself: `npm run typecheck` (2026-09-15, this branch)
+found none, and a direct grep for an exhaustiveness check over `BrokerToRendererMessage`/`.kind`
+(`assertNever`, `: never`, a `Record` keyed on every kind) found none anywhere in the tree --
+`src/preload/socket-port.ts` and `src/preload/datagram-port.ts` both `switch` on `message.kind`
+with no exhaustiveness assertion, so a new member is silently unhandled there today, not a
+compile error. The real work -- constructing, sending and receiving this message -- is entirely
+unbuilt, matching A114's own "still open" status for the implementation half; only the shape
+question A114 posed is answered by this lane.
+
+**2. The folder picker (`d-0029`).** `capability-api.ts`'s `userSelected` is now overloaded on
+the literal `directory` value: `userSelected(opts: { directory: true }): Promise<DirectoryHandle
+| null>` alongside the existing file shape, `Promise<readonly FileHandle[]>`. `handles.ts` gains
+`DirectoryHandle`, confined and revocable the same way `FileHandle` is, with the same method set
+as `OrivonFs` minus `readFileSync` (justified only for the app's own startup-config reads) and
+`userSelected` (no second dialog nested inside the first).
+
+**Flagged, AI judgment:** (a) the directory shape resolves `DirectoryHandle | null` rather than
+an array, on the reasoning that a folder picker's true cardinality is 0-or-1 and forcing an
+array the file shape's own cancel-as-empty-array convention would otherwise imply is less honest
+than the nullable, not more; (b) `multiple` was dropped entirely from the directory overload
+(rather than accepted and ignored) since a native folder picker offers one folder per pick and a
+silently-ignored option is its own small dishonesty; (c) `DirectoryHandle`'s method set mirrors
+`OrivonFs` rather than the web platform's `FileSystemDirectoryHandle` traversal API (per-entry
+handles, `entries()`/`keys()`/`values()`), on the reasoning that Orivon's own filesystem idiom --
+a root plus relative paths, confined in the broker -- is already established by `OrivonFs`
+itself and a second, differently-shaped filesystem interface for one handle type would cost more
+than it buys. None of the three is a literal reading of `D-0007`, which specifies persistence
+and revocability, not method shape or cancel semantics -- confirm before the broker lane that
+builds `fs.open`/`fs.userSelected` (compatibility-matrix.md Table 4 row 6) takes this shape as
+given.
+
+**Also corrected in the same file, not new:** `handles.ts`'s `FileHandle` doc comment claimed
+`userSelected` handles do "not survive an app restart either" -- true when written, reversed by
+`D-0007` (2026-09-09) and left uncorrected since. Rewritten to state persistence and settings-
+list revocability; the separate revocation-cascade exception (`fs` revocation does not close it)
+is unchanged and was not what `D-0007` reversed.
+
+**3. `dns.lookup` (`d-0030`, closing part of `A107`'s "not answerable by a shim" gap).**
+`OrivonNet.lookup(opts: { hostname: string }): Promise<readonly LookupAddress[]>`
+(`LookupAddress` in `handles.ts`: `{ address: string, family: 'IPv4' | 'IPv6' }`), bounded by
+the app's own held network grant rather than a separate capability, per the owner's stated
+reasoning (an unbounded resolver is a covert exfiltration channel to anywhere).
+
+**Flagged, AI judgment, the one most worth owner eyes before it is built:** the owner decision
+states the BOUND ("as wide as the app's network grant already is") but not which of the app's
+several possible grants count or how a bare hostname is matched against a `host:port` pattern.
+This lane's reading: `hostname` is checked against the HOST portion of every pattern in the
+app's held `tcp.connect`, `https.connect` and `udp.send` grants (manifest.js) -- the union of
+every OUTBOUND-reaching capability, not just one of them, and not `tcp.listen`/`udp.bind`
+(inbound, no destination host to match against). The reasoning: `connect`/`connectSecure`/
+`udpBind` already check a resolved or requested address against these same patterns before any
+byte moves, so a lookup that matches one of them opens no route the app could not already
+reach by name via that capability -- but this is this lane's inference from the owner's stated
+principle, not a separately confirmed decision, and it is exactly the kind of boundary-drawing
+CLAUDE.md Rule 2 says must not blur into "the owner decided this." **Confirm the union-of-
+outbound-capabilities reading before the broker lane implements the match.**
+
+**Error code, not flagged -- reused, not invented.** A lookup that resolves nothing rejects
+`'unreachable'`, which `errors.ts`'s own closed enum already documents as covering "DNS
+failure." No new `OrivonErrorCode` was added.
+
+**Verified, this lane:** `npm run typecheck` finds exactly 3 pre-existing-mock breaks (listed in
+this lane's own log, `/home/jhon/.claude/orivon-fleet/lanes/L0-contracts/log.md`, and repeated
+in this PR's body) -- `src/nostr/tests/nip07.test.ts` and `src/shim-electron/tests/index.test.ts`,
+both constructing a hand-written `OrivonNet`/`OrivonFs` mock missing the new `lookup` method and
+the widened `userSelected` overload. Not fixed here (test code outside `src/contracts/`, and
+implementation-adjacent); the fix is one stub method and one signature update per file, mechanical
+once this lane's shapes are confirmed.
+
+**Needed by:** the A114 implementation lane (item 1), the `fs.open`/`fs.userSelected` broker lane
+(item 2, compatibility-matrix.md Table 4 row 6), and whichever lane wires `node-dns.ts` to a real
+broker capability (item 3, `A107`).
