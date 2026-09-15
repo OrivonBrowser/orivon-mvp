@@ -22,7 +22,7 @@ describe('createBroker -- A168: hydration must not desynchronise a live handle f
 
     // A previous session: registerApp + grant, persisted to disk.
     const before = createBroker(baseDeps({ ledgerStorage: storage }))
-    before.registerApp(APP, manifest)
+    await before.registerApp(APP, manifest)
     await before.grant(APP, 'tcp.connect', ['93.184.216.34:443'])
 
     // "Restart": a fresh broker over the same storage. The app loader's
@@ -37,7 +37,7 @@ describe('createBroker -- A168: hydration must not desynchronise a live handle f
     // The page's own manifest hint triggers the first REAL registerApp for
     // this origin this session, with the IDENTICAL manifest -- authority did
     // not change.
-    after.registerApp(APP, manifest)
+    await after.registerApp(APP, manifest)
 
     const removed = await after.revokePersisted(APP, 'tcp.connect')
     expect(removed).toBe(true)
@@ -56,7 +56,7 @@ describe('createBroker -- A168: hydration must not desynchronise a live handle f
     const narrowManifest = manifestWith({ net: { tcp: { connect: ['93.184.216.34:443'] } } })
 
     const before = createBroker(baseDeps({ ledgerStorage: storage }))
-    before.registerApp(APP, wideManifest)
+    await before.registerApp(APP, wideManifest)
     await before.grant(APP, 'tcp.connect', ['*:*'])
 
     const after = createBroker(baseDeps({ ledgerStorage: storage }))
@@ -68,7 +68,7 @@ describe('createBroker -- A168: hydration must not desynchronise a live handle f
     // The real, narrower manifest arrives -- authority DID change: the
     // persisted '*:*' no longer fits what narrowManifest declares, so
     // hydration drops tcp.connect entirely rather than reusing it.
-    after.registerApp(APP, narrowManifest)
+    await after.registerApp(APP, narrowManifest)
 
     // Unfixed: nothing ever calls handleTable.revoke for the wide grant's
     // id -- the ledger silently stopped tracking it, but the socket, still
