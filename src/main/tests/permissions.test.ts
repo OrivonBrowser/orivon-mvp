@@ -2,9 +2,10 @@ import { describe, expect, it } from 'vitest'
 import { createBroker } from '../../broker/index.js'
 import { APP, baseDeps, manifestWith } from '../../broker/tests/index.test-helpers.js'
 import { rejection } from '../../broker/handles/tests/handles.test-helpers.js'
-import type { Broker } from '../../broker/broker-contracts.js'
+import type { Broker, PickPathResult } from '../../broker/broker-contracts.js'
+import type { FailableDirectoryHandle } from '../../broker/handles/handle-contracts.js'
 import type { Grant } from '../../contracts/index.js'
-import { buildAppPermissions, createPermissionsController, PermissionsRegistry, buildPersistedAppPermissions } from '../permissions.js'
+import { buildAppPermissions, createPermissionsController, describePickedPath, PermissionsRegistry, buildPersistedAppPermissions } from '../permissions.js'
 import type { SubsystemContext } from '../registry.js'
 
 // Item 4.4's exit criterion, checked directly: "revoking from the list
@@ -152,7 +153,7 @@ describe('createPermissionsController', () => {
 
     await controller.revoke(APP, issued.id)
 
-    expect(await registry.list(broker)).toEqual([{ origin: APP, appName: manifestWith({}).name, rows: [] }])
+    expect(await registry.list(broker)).toEqual([{ origin: APP, appName: manifestWith({}).name, rows: [], pickedPathRows: [] }])
   })
 
   // C-04 (docs/open-questions.md): describeOrigin catches everything and
@@ -172,7 +173,8 @@ describe('createPermissionsController', () => {
           if (failNext) throw new Error('transient')
           return { name: 'Example App', version: '1.0.0', capabilities: {} }
         },
-        grants: async () => []
+        grants: async () => [],
+        pickedPaths: async () => []
       }
     } as unknown as Broker
 
@@ -196,7 +198,8 @@ describe('createPermissionsController', () => {
         registeredOriginsSync: () => [],
         persistedAppsSync: () => [],
         manifest: async () => { throw new Error('no manifest registered for this origin') },
-        grants: async () => []
+        grants: async () => [],
+        pickedPaths: async () => []
       }
     } as unknown as Broker
 
@@ -205,7 +208,7 @@ describe('createPermissionsController', () => {
     expect(await registry.list(broker)).toHaveLength(0)
     // Proven dropped rather than merely absent: a broker that would now
     // succeed must not resurrect it, because nothing re-noted it.
-    const revived = { app: { isRegisteredSync: () => true, registeredOriginsSync: () => [], persistedAppsSync: () => [], manifest: async () => ({ name: 'Back', version: '1.0.0', capabilities: {} }), grants: async () => [] } } as unknown as Broker
+    const revived = { app: { isRegisteredSync: () => true, registeredOriginsSync: () => [], persistedAppsSync: () => [], manifest: async () => ({ name: 'Back', version: '1.0.0', capabilities: {} }), grants: async () => [], pickedPaths: async () => [] } } as unknown as Broker
     expect(await registry.list(revived)).toHaveLength(0)
   })
 })
@@ -219,37 +222,124 @@ describe('buildPersistedAppPermissions -- a saved name is re-checked before it i
   const oneGrant = { 'tcp.connect': { patterns: ['a.example:443'], grantedAt: 0 } }
 
   it('shows an ordinary saved name', () => {
-    const app = buildPersistedAppPermissions({ origin: 'https://app.example', appName: 'Example App', grants: oneGrant })
+    const app = buildPersistedAppPermissions({ origin: 'https://app.example', appName: 'Example App', grants: oneGrant, pickedPaths: {} })
     expect(app.appName).toBe('Example App')
   })
 
   it('falls back to the origin for a name carrying a bidi override -- the filename-spoof trick', () => {
-    const app = buildPersistedAppPermissions({ origin: 'https://app.example', appName: 'safe\u202egnp.exe', grants: oneGrant })
+    const app = buildPersistedAppPermissions({ origin: 'https://app.example', appName: 'safe\u202egnp.exe', grants: oneGrant, pickedPaths: {} })
     expect(app.appName).toBe('https://app.example')
   })
 
   it('falls back to the origin for a zero-width character', () => {
-    const app = buildPersistedAppPermissions({ origin: 'https://app.example', appName: 'app\u200b.example', grants: oneGrant })
+    const app = buildPersistedAppPermissions({ origin: 'https://app.example', appName: 'app\u200b.example', grants: oneGrant, pickedPaths: {} })
     expect(app.appName).toBe('https://app.example')
   })
 
   it('falls back to the origin for an oversized name, and accepts one exactly at the bound', () => {
     const atBound = 'a'.repeat(200)
-    expect(buildPersistedAppPermissions({ origin: 'https://app.example', appName: atBound, grants: oneGrant }).appName).toBe(atBound)
-    expect(buildPersistedAppPermissions({ origin: 'https://app.example', appName: 'a'.repeat(201), grants: oneGrant }).appName).toBe('https://app.example')
+    expect(buildPersistedAppPermissions({ origin: 'https://app.example', appName: atBound, grants: oneGrant, pickedPaths: {} }).appName).toBe(atBound)
+    expect(buildPersistedAppPermissions({ origin: 'https://app.example', appName: 'a'.repeat(201), grants: oneGrant, pickedPaths: {} }).appName).toBe('https://app.example')
   })
 
   it('skips a disk key that is not one of the real capability kinds', () => {
     const app = buildPersistedAppPermissions({
       origin: 'https://app.example',
       appName: 'X',
-      grants: { 'not.a.capability': { patterns: ['a:1'], grantedAt: 0 }, ...oneGrant }
+      grants: { 'not.a.capability': { patterns: ['a:1'], grantedAt: 0 }, ...oneGrant },
+      pickedPaths: {}
     })
     expect(app.rows.map((r) => r.capability)).toEqual(['tcp.connect'])
   })
 
   it('gives every persisted row a null grantId, so the caller routes to the capability-addressed revoke', () => {
-    const app = buildPersistedAppPermissions({ origin: 'https://app.example', appName: 'X', grants: oneGrant })
+    const app = buildPersistedAppPermissions({ origin: 'https://app.example', appName: 'X', grants: oneGrant, pickedPaths: {} })
     expect(app.rows.every((r) => r.grantId === null)).toBe(true)
+  })
+})
+
+// D-0007: a picked path sits BESIDE an app's network and file access in the
+// same list, not off in a second surface -- the trap this lane's own brief
+// exists to prevent. PROPOSED WORDING, NOT OWNER-REVIEWED (see this file's
+// own note on `describePickedPath`, and this lane's log).
+describe('describePickedPath -- proposed wording, not owner-reviewed', () => {
+  it('a folder pick carries the warning flag -- breadth must be visible, the same as an unlimited network pattern', () => {
+    const { warning, message } = describePickedPath('directory', '/home/user/Downloads')
+    expect(warning).toBe(true)
+    expect(message).toContain('/home/user/Downloads')
+    expect(message.toLowerCase()).toContain('everywhere')
+  })
+
+  it('a single file pick does NOT carry the warning flag -- narrow by construction', () => {
+    const { warning, message } = describePickedPath('file', '/home/user/report.pdf')
+    expect(warning).toBe(false)
+    expect(message).toContain('/home/user/report.pdf')
+  })
+})
+
+describe('picked-path rows in AppPermissions (D-0007)', () => {
+  it('buildAppPermissions renders one row per live pick, alongside the grant rows', () => {
+    const manifest = manifestWith({})
+    const result = buildAppPermissions(APP, manifest, [], [{ id: 'pick-1', kind: 'directory', path: '/home/user/Downloads', pickedAt: 0 }])
+
+    expect(result.pickedPathRows).toEqual([
+      { pickId: 'pick-1', warning: true, message: describePickedPath('directory', '/home/user/Downloads').message }
+    ])
+  })
+
+  it('buildAppPermissions defaults to no picked-path rows when none are passed', () => {
+    const result = buildAppPermissions(APP, manifestWith({}), [])
+    expect(result.pickedPathRows).toEqual([])
+  })
+
+  it('buildPersistedAppPermissions renders picked-path rows from disk, addressed by the SAME id readPickedPaths uses', () => {
+    const app = buildPersistedAppPermissions({
+      origin: APP,
+      appName: 'Torrent App',
+      grants: {},
+      pickedPaths: { 'pick-1': { kind: 'file', path: '/home/user/a.torrent', pickedAt: 0 } }
+    })
+
+    expect(app.pickedPathRows).toEqual([
+      { pickId: 'pick-1', warning: false, message: describePickedPath('file', '/home/user/a.torrent').message }
+    ])
+  })
+})
+
+describe('end to end: a real picked directory, listed and revoked through PermissionsController', () => {
+  function pickedDirectory (path: string): () => Promise<PickPathResult> {
+    return async () => ({ canceled: false, paths: [path] })
+  }
+
+  it('list() shows the picked path even when the app holds no OTHER grant at all', async () => {
+    const broker = createBroker(baseDeps({ pickPath: pickedDirectory('/home/user/Downloads') }))
+    broker.registerApp(APP, manifestWith({}))
+    await broker.fs.userSelected(APP, { directory: true })
+    const registry = new PermissionsRegistry()
+    registry.noteOrigin(APP)
+
+    const [app] = await registry.list(broker)
+
+    expect(app?.rows).toEqual([])
+    expect(app?.pickedPathRows).toHaveLength(1)
+    expect(app?.pickedPathRows[0]?.message).toContain('/home/user/Downloads')
+  })
+
+  it('revokePickedPath tears down the live handle -- the same exit criterion the grant revoke test above proves', async () => {
+    const broker = createBroker(baseDeps({ pickPath: pickedDirectory('/home/user/Downloads') }))
+    broker.registerApp(APP, manifestWith({}))
+    const handle = await broker.fs.userSelected(APP, { directory: true }) as FailableDirectoryHandle
+    const [pick] = await broker.app.pickedPaths(APP)
+    const controller = createPermissionsController(ctxWith(broker))
+
+    await controller.revokePickedPath(APP, pick!.id)
+
+    const error = await rejection(handle.readdir())
+    expect(error.code).toBe('closed')
+  })
+
+  it('revokePickedPath is a no-op when no broker is published yet', async () => {
+    const controller = createPermissionsController(ctxWith(undefined))
+    await expect(controller.revokePickedPath(APP, 'pick-1')).resolves.toBeUndefined()
   })
 })

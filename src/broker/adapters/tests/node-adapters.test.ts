@@ -277,7 +277,8 @@ describe('net.listen end to end: a real accepted connection, a real denial, a re
       resolveLookup: async () => [],
       now: () => Date.now(),
       fs: nodeFs('/tmp/orivon-listen-e2e-unused'),
-      keychain: { getSeed: async () => { throw new Error('not used by this test') } }
+      keychain: { getSeed: async () => { throw new Error('not used by this test') } },
+      pickPath: async () => { throw new Error('not used by this test') }
     })
   }
 

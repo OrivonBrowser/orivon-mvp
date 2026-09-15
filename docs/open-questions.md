@@ -6781,3 +6781,128 @@ should prove.
 **Needed by:** whichever lane wires a production `tcp.listen` grant and the Node-shaped
 `net.createServer` shim that actually calls this surface -- this lane, like A114 before it,
 stops at a real grant reaching a real page; nothing here issues one in production.
+
+
+### A187 -- `orivon.fs.userSelected` is built end to end at the broker layer (confinement, persistence, both revocation-cascade halves), deliberately NOT wired to a page yet **[AI-REC -- page-reachability deferral is a scope call tied to the open owner gate below; the other judgment calls are flagged, not owner-reviewed]**
+
+**Raised 2026-09-15**, lane L5-userselected (`stream/main-10-user-selected`), built directly on
+top of `orivon.fs.open` (A184, merged same day). `DirectoryHandle`/`FileHandle` from the picker
+(`d-0029`, A167 item 2) needed no `src/contracts/` change -- the shape was already complete -- so
+this lane built the broker capability (`src/broker/user-selected-capability.ts`), the picked-path
+state (`src/broker/grants/picked-path-ledger.ts`), the persistence slice sharing `GrantLedger`'s
+own on-disk file (`src/broker/grants/ledger-storage.ts`/`node-ledger-storage.ts`), the handle-
+table's own revocation index for a pick (`byPickedPath`, `HandleTable.revokeUserSelected`,
+`src/broker/handles/`), and the settings-list extension (`src/main/permissions.ts`,
+`settings-ipc.ts`, `src/preload/settings.ts`, `src/renderer/settings/`).
+
+**What is genuinely done, tested against both revocation-cascade halves and against a simulated
+restart:** `userSelected` for both the folder and file shapes, confined to the PICKED root (never
+the app's own files directory) through the same `confinePath` fs-capability.ts already uses,
+under the same per-origin fs write quota, with the picker's cancel resolving `null`/`[]` rather
+than rejecting. Revoking the standing `fs` grant does not touch a picked handle; revoking the
+pick itself (`Broker.revokeUserSelectedPath`, addressed by a pickId minted once and shared
+between the handle table's index and the persisted record) does, and the persisted record itself
+survives a simulated broker restart (`src/broker/tests/user-selected.test.ts`,
+`src/broker/grants/tests/picked-path-ledger.test.ts`, `src/broker/grants/tests/
+node-ledger-storage-picked-paths.test.ts`, `src/broker/handles/tests/handles-user-selected.test.ts`).
+
+**Still open, by design, a scope call rather than a gap discovered mid-build:** there is no
+CONTROL_CHANNEL case delivering `userSelected` to a real page, and the preload exposes nothing on
+`window.orivon.fs.userSelected` -- `broker.fs.userSelected(origin, opts)` is real and directly
+callable (by a test, or a future main-process caller) but not yet page-reachable, the same
+category of gap A184 itself left for `readable()`/`writable()`. Doubly deliberate here: this
+lane's own owner gate (queue item 4.3, below) leaves the picker's wording unapproved, so wiring
+the page-facing surface now would let a picker with unreviewed copy reach a real app before that
+review happens. The real Electron `dialog.showOpenDialog` call IS wired (`src/broker/transport/
+ipc.ts`'s `pickPath`), deliberately textually neutral -- no `title`/`buttonLabel`/`message` yet --
+so `broker.fs.userSelected` is exercisable end to end today by anything that can reach the broker
+directly, just not by an app's own page.
+
+**Flagged AI judgment calls, not owner-reviewed:**
+
+1. **A `DirectoryHandle` is registered under `HandleKind: 'file'`**, not a new `'directory'` kind
+   -- it shares `LIMITS.concurrentFileHandles` with an open fd rather than getting its own budget.
+   Reasoning: a `DirectoryHandle` holds no OS descriptor (it is a confined root plus relative-path
+   operations), so the exhaustion risk a per-kind budget exists to bound is smaller than a real
+   fd's, and a fourth `HandleKind` would touch `OriginCounts`/`#census` in `handle-store.ts` for
+   a distinction nothing downstream currently needs.
+2. **A file opened via `DirectoryHandle.open()` shares the SAME `pickId` as the folder itself**,
+   registered as a second row under the identical `Authorisation` rather than a derived handle
+   (`acquireDerived` is a tcpSocket-only mechanism, `handles.ts`'s own guard rejects any other
+   kind). Consequence: revoking the FOLDER pick also closes a file opened from inside it, for
+   free, via the shared `byPickedPath` bucket -- tested directly. The converse is NOT built:
+   closing the `DirectoryHandle` itself (`close()`, not a revoke) does NOT cascade to files opened
+   from it, since no parent/child edge exists between them. Judgment call, not specified by the
+   contract either way.
+3. **Each individually-picked FILE (the `multiple: true` shape) gets its OWN, distinct `pickId`**,
+   never one pickId shared across a whole `userSelected()` call's results. Reasoning: this lane's
+   own brief's "breadth must be visible -- a narrow request must not look like a broad one" applies
+   to REVOCATION granularity too, not only to wording -- revoking one of three picked files must
+   not silently take the other two with it.
+4. **What "persists across restarts" (D-0007) actually buys, given the contract has no "reuse a
+   prior pick without a fresh OS dialog" entry point.** A167 already flagged this exact ambiguity
+   for the folder picker's landing and left it for "the broker lane that builds fs.open/
+   fs.userSelected" to resolve -- this is that resolution. Read literally against D-0007's own
+   text ("persisted picked paths need somewhere to live and a revocation path"): persistence means
+   the settings list shows and can revoke a pick across a restart, exactly like a persisted grant
+   already does. It does NOT mean a later `userSelected()` call skips the native OS dialog for a
+   previously-picked path -- there is no contract method for that, and building one unasked would
+   contradict "the user's choice in the OS picker IS the consent" for a pick the CURRENT call never
+   actually made. Every live `userSelected` handle is torn down at session end regardless
+   (`HandleTable.dropOrigin` already takes `userSelected` handles, unchanged by this lane); only
+   the on-disk record and its revocability survive.
+5. **A picked FILE is always opened with flags `'r+'`**, never exposed as a raw path or a choice
+   of flags. Reasoning: `dialog.showOpenDialog` only ever names an EXISTING file (a save dialog is
+   a different, unbuilt Electron method), so read-write against an existing file is always valid,
+   and the contract's `userSelected` file shape returns `FileHandle`, not a string, so there is
+   nowhere to carry a flags argument even if one were wanted.
+6. **A picked path's bytes count against the SAME per-origin `fs.quotaBytes` counter** an app's
+   own files directory already uses (`GrantLedger.reserveFsBytes`/`releaseFsBytes`), rather than
+   being unmetered or getting a separate counter. Reasoning: writing through a user-granted folder
+   must not be a way around a declared storage limit -- tested directly.
+7. **`PickedPathLedger` is a THIRD state class alongside `GrantLedger` and `HandleTable`**
+   (`src/broker/grants/picked-path-ledger.ts`), not a new field/method set inside `GrantLedger`.
+   `grant-ledger.ts` landed A184 at exactly 500 lines with zero headroom (code-guidelines.md
+   Rule 2), so any addition there needed either a Rule-2 split of an unrelated concern first, or a
+   sibling class -- the sibling was smaller and cleaner, and matches `createBroker`'s own existing
+   "kept apart on purpose" split between `GrantLedger` and `HandleTable`. Storage is still SHARED
+   with `GrantLedger`'s own per-origin file (D-0007's own "P4-3 and P4-4 now share a surface"
+   instruction) -- `writeGrants`/`writePickedPaths` in `node-ledger-storage.ts` each preserve the
+   other's slice of that one JSON file, tested directly for both directions.
+8. **`confineToRoot`'s bypass for `DirectoryHandle.readdir()`/`stat()` when `path` is omitted.**
+   `confinePath` itself refuses a requested path that resolves to the root (`'is-root'`) by
+   design, for an APP-SUPPLIED path -- but `handles.ts`'s own `DirectoryHandle` doc requires
+   omitting `path` to target the root itself. This lane's `root` is broker-computed (realpath'd
+   once at acquisition, from the OS picker's own result, never from anything the app supplied), so
+   it is used directly rather than being run back through the check built to reject exactly that
+   input. `confinePath`'s own doc already draws this line: `root` is "broker-supplied, trusted for
+   shape."
+9. **`src/shim-electron/dialog.ts`'s `showOpenDialog` refusal is updated, not fixed.** Its
+   `'not-built'` reason and doc comment were stale the moment this lane's broker capability
+   landed (it no longer says the broker "does not implement it yet" -- it now names the REAL
+   remaining gap: `orivon.fs.userSelected` resolves an opaque `FileHandle`/`DirectoryHandle`,
+   never the raw host path Electron's own `showOpenDialog` returns, and presenting Node's
+   path-string idiom over that opaque handle is a genuine shim-layer design question this lane did
+   not attempt to answer -- `src/shim-electron/` is outside this lane's owned paths (`src/broker/`)
+   regardless of the docs gap. Filed here rather than guessed at.
+
+**OWNER GATE, still open (queue item 4.3) -- the picker's own wording.** This lane built the
+mechanism (the real `dialog.showOpenDialog` call, deliberately carrying no `title`/`buttonLabel`/
+`message` yet) and a settings-list row renderer that reuses the existing plain `.permission-row`
+markup verbatim (no new CSS). The PROPOSED wording for both -- the native dialog's own text and
+the settings-list row's message -- is written out in full in this lane's own log
+(`/home/jhon/.claude/orivon-fleet/lanes/L5-userselected/log.md`), per the owner's standing
+instruction that they review wording during development rather than at the end. Nothing here is
+finalised; `describePickedPath` (`src/main/permissions.ts`) carries the same "PROPOSED, NOT
+OWNER-REVIEWED" marker in its own doc comment.
+
+**Verified, this lane:** `npm run typecheck` clean; `npm test` 4489 passed, 3 skipped across 194
+files (baseline on `main` before this merge, after `fs.open`/A184: 4438 passed, 3 skipped, per
+this lane's brief); `npm run check:size`/`check:comments`/`check:contracts`/`check:natives`/
+`check:secrets`/`check:questions`/`check:manifest-parity` all pass. `npm run test:e2e` was
+deliberately **not run** -- this lane does not launch Electron; see this lane's own log for what
+a real e2e should prove once the wording gate clears.
+
+**Needed by:** whichever lane resolves the owner gate above and wires the CONTROL_CHANNEL case
+plus the preload surface (this lane's own "still open" section, item 1) -- this lane, like A184
+and A185 before it, stops at a real capability reaching a real page.

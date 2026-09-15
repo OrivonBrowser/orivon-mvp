@@ -23,9 +23,9 @@
 import { fail } from './errors.js'
 import { mapIoError } from './io-errors.js'
 import { CONFINEMENT_ERROR_CODE, confinePath } from './policy/paths.js'
+import { createFileHandleWrapper, VALID_OPEN_FLAGS } from './fs-handle-wrapper.js'
 import type { HandleTable } from './handles/handles.js'
-import type { OperationScope } from './handles/handle-contracts.js'
-import type { FailableFileHandle, HandleEntry } from './handles/handle-contracts.js'
+import type { FailableFileHandle, OperationScope } from './handles/handle-contracts.js'
 import type { GrantLedger } from './grants/grant-ledger.js'
 import type { Broker, CreateBrokerOptions, OpenedFile, RawFileStat } from './broker-contracts.js'
 import type { Grant } from '../contracts/index.js'
@@ -38,8 +38,14 @@ export interface FsCapabilityOptions {
   readonly canonical: (origin: string) => string
 }
 
-/** Builds `Broker['fs']` -- see this file's header for why it takes the broker's own state rather than owning any of it. */
-export function createFsCapability ({ deps, handleTable, ledger, canonical }: FsCapabilityOptions): Broker['fs'] {
+/**
+ * Builds every `Broker['fs']` member EXCEPT `userSelected` -- see this
+ * file's header for why it takes the broker's own state rather than owning
+ * any of it. `userSelected` is the one member ./user-selected-capability.ts
+ * builds instead (a different authorisation shape entirely); `../index.ts`
+ * spreads both factories' results into one `fs` object.
+ */
+export function createFsCapability ({ deps, handleTable, ledger, canonical }: FsCapabilityOptions): Omit<Broker['fs'], 'userSelected'> {
   /**
    * The `fs` capability check plus path confinement, shared by every method
    * below (Rule 3 -- these were byte-for-byte the same logic before this
@@ -100,17 +106,11 @@ export function createFsCapability ({ deps, handleTable, ledger, canonical }: Fs
     return await runIo(key, { on: 'grant', grantId: grant.id }, io)
   }
 
-  /**
-   * Scoped to the HANDLE -- for a call against an ALREADY-OPEN FileHandle
-   * (`open`'s own read/write/stat/truncate/sync). `{on:'handle'}` re-checks
-   * ownership of THIS handle (T11c) via `HandleTable.run`, and is cancelled
-   * the instant `closeTree` reaches it -- a direct close(), a fail()/
-   * abort(), or a grant revocation cascading through it -- unlike `open`'s
-   * own `{on:'grant'}` scope, which only ever covers the acquisition itself.
-   */
-  async function runFileIo<T> (key: string, handleId: string, io: () => Promise<T>): Promise<T> {
-    return await runIo(key, { on: 'handle', handleId }, io)
-  }
+  // `{on:'handle'}` scoping, quota-checked writable() and the whole
+  // FailableFileHandle shape are ./fs-handle-wrapper.ts now -- shared with
+  // ./user-selected-capability.ts, which needs the identical wrapping for a
+  // picked file (Rule 3). `open` below is this file's only caller.
+  const { toFailableFileHandle } = createFileHandleWrapper({ handleTable, ledger })
 
   /**
    * ADR-0016's synchronous entry point: `orivon.fs.readFileSync` needs the
@@ -230,92 +230,6 @@ export function createFsCapability ({ deps, handleTable, ledger, canonical }: Fs
     const source = confineForOrigin(key, from)
     const destination = confineForOrigin(key, to)
     await runFsIo(key, source.grant, async () => { await deps.fs.rename(source.resolved, destination.resolved) })
-  }
-
-  /**
-   * Every flags string `node:fs`'s own `open` accepts (its docs' "File
-   * system flags" table) plus the two numeric-mode variants are out of
-   * scope -- `capability-api.ts`'s `open` takes a `string`, never a number.
-   * Checked HERE, before the confined path or the grant ever matter, so a
-   * malformed flags string is 'invalid' (an app bug) rather than surfacing
-   * as whatever `deps.fs.open` happens to throw for it -- which would be
-   * 'internal', the code reserved for a BROKER fault (errors.ts).
-   */
-  const VALID_OPEN_FLAGS: ReadonlySet<string> = new Set([
-    'r', 'r+', 'rs', 'rs+', 'w', 'wx', 'w+', 'wx+', 'a', 'ax', 'a+', 'ax+'
-  ])
-
-  /**
-   * Wraps a real writable byte stream so every chunk is checked against the
-   * running per-origin storage quota before it lands -- `writable()`'s own
-   * counterpart to `write()`'s `reserveFsBytes`/`releaseFsBytes` pair below.
-   * `writable()` has no single request to reject wholesale the way a
-   * positional `write()` call does: each chunk on the stream is its own
-   * reservation, refunded if the underlying write itself then fails.
-   *
-   * UNLIKE `udp.send`'s counted, never-rejecting loss (A87), exceeding the
-   * quota here DOES error the stream. A torrent write that silently
-   * dropped bytes past quota would corrupt the file on disk where a
-   * dropped datagram merely loses one packet a swarm already tolerates
-   * losing -- the two are not the same shape of failure, so they do not
-   * get the same treatment (code-guidelines.md Rule 3's counterweight).
-   */
-  function quotaCheckedWritable (key: string, real: WritableStream<Uint8Array>): WritableStream<Uint8Array> {
-    const writer = real.getWriter()
-    return new WritableStream<Uint8Array>({
-      async write (chunk) {
-        if (!ledger.reserveFsBytes(key, chunk.byteLength)) {
-          throw fail('limit', "this write would exceed the app's declared storage quota")
-        }
-        try {
-          await writer.write(chunk)
-        } catch (error) {
-          ledger.releaseFsBytes(key, chunk.byteLength)
-          throw error
-        }
-      },
-      async close () { await writer.close() },
-      async abort (reason) { await writer.abort(reason) }
-    })
-  }
-
-  /** Wraps an already-registered handle entry into the app-facing `FailableFileHandle` -- `net-capability.ts`'s `toFailableSocket` is the pattern this follows. */
-  function toFailableFileHandle (key: string, entry: HandleEntry, fields: Omit<OpenedFile, 'destroy'>): FailableFileHandle {
-    return {
-      id: entry.id,
-      closed: entry.closed,
-      close: async (): Promise<void> => { await handleTable.release(key, entry.id) },
-      fail: (code, platformCode) => { handleTable.fail(key, entry.id, code, platformCode) },
-      onUnlink: (listener) => { handleTable.onUnlink(key, entry.id, listener) },
-      read: async (opts) => await runFileIo(key, entry.id, async () => await fields.read(opts)),
-      write: async (opts) => {
-        if (!ledger.reserveFsBytes(key, opts.data.length)) {
-          throw fail('limit', "this write would exceed the app's declared storage quota")
-        }
-        let started = false
-        try {
-          return await runFileIo(key, entry.id, async () => {
-            started = true
-            try {
-              return await fields.write(opts)
-            } catch (error) {
-              ledger.releaseFsBytes(key, opts.data.length) // nothing landed -- unmapped, runFileIo maps it below
-              throw error
-            }
-          })
-        } catch (error) {
-          // Same "refund only what never reached the raw call" rule as
-          // writeFile's own catch above.
-          if (!started) ledger.releaseFsBytes(key, opts.data.length)
-          throw error
-        }
-      },
-      readable: (opts) => fields.readable(opts),
-      writable: (opts) => quotaCheckedWritable(key, fields.writable(opts)),
-      stat: async () => await runFileIo(key, entry.id, async () => await fields.stat()),
-      truncate: async (length) => await runFileIo(key, entry.id, async () => { await fields.truncate(length) }),
-      sync: async () => await runFileIo(key, entry.id, async () => { await fields.sync() })
-    }
   }
 
   /**

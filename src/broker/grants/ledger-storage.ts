@@ -28,6 +28,23 @@ export interface PersistedGrant {
   readonly grantedAt: number
 }
 
+/**
+ * One `orivon.fs.userSelected` pick, persisted (D-0007). NO `id`: the
+ * caller addresses one by the key it is stored under, the same convention
+ * `PersistedGrant` follows for capability kind.
+ *
+ * `path` is the REAL, un-confined host path the OS picker returned -- the
+ * one place outside the broker's own process this ever appears in plain
+ * text, because the settings permissions list exists to let a person read
+ * exactly what they gave access to. An app itself never sees it
+ * (`DirectoryHandle`/`FileHandle` are opaque, handle-contracts.md).
+ */
+export interface PersistedPick {
+  readonly kind: 'file' | 'directory'
+  readonly path: string
+  readonly pickedAt: number
+}
+
 export interface LedgerStorage {
   /**
    * The persisted version floor for `origin`, or undefined ONLY if this
@@ -186,6 +203,37 @@ export interface LedgerStorage {
    * A no-op, never a throw, for an origin nothing was ever persisted for.
    */
   deleteDeclinedCapabilities(origin: string): void
+
+  /**
+   * Every `orivon.fs.userSelected` pick persisted for `origin`, keyed by a
+   * caller-minted pick id (the SAME string `PickedPathLedger` uses as the
+   * handle table's `pickId` when a pick is live this session --
+   * `../handles/handle-contracts.js`'s `Authorisation`). `undefined` for an
+   * origin never persisted, and for a record that cannot be read or parsed
+   * -- same fail-safe direction as `readGrants`'s own doc: a pick that fails
+   * to restore only costs it missing from the settings list, never
+   * authority nobody has.
+   *
+   * SHARES `origin`'s ONE FILE WITH `readGrants`/`writeGrants` -- D-0007's
+   * own text: "P4-3 and P4-4 now share a surface." `writeGrants` and
+   * `writePickedPaths` each preserve whatever slice of that file the other
+   * one owns; see `nodeLedgerStorage`'s implementation for how.
+   */
+  readPickedPaths(origin: string): Readonly<Record<string, PersistedPick>> | undefined
+  /**
+   * Persists the FULL set of `origin`'s current picks, replacing whatever
+   * was there before -- same one-file-written-whole shape as `writeGrants`,
+   * and `appName` means the same thing here it does there.
+   */
+  writePickedPaths(origin: string, picks: Readonly<Record<string, PersistedPick>>, appName?: string): void
+  /**
+   * Deletes whatever picks were persisted for `origin`, if any -- the
+   * picked-path half of a full forget (`GrantLedger.forgetOrigin`), and a
+   * no-op, never a throw, for an origin nothing was ever persisted for.
+   * Leaves `origin`'s grants (and file) untouched when any remain -- see
+   * `nodeLedgerStorage`'s implementation.
+   */
+  deletePickedPaths(origin: string): void
 }
 
 /** One app as the settings list sees it before that app has ever been opened. See `LedgerStorage.readPersistedApp`. */
@@ -196,4 +244,6 @@ export interface PersistedApp {
    * `Manifest`. Absent if the record predates this field. */
   readonly appName: string | undefined
   readonly grants: Readonly<Record<string, PersistedGrant>>
+  /** This app's persisted `userSelected` picks, keyed the same way `readPickedPaths` returns them. Empty, never absent, for a record that predates this field or simply has none. */
+  readonly pickedPaths: Readonly<Record<string, PersistedPick>>
 }
