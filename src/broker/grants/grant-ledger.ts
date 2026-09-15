@@ -4,7 +4,6 @@
 // capability entry points that consult this ledger.
 
 import type { CapabilityKind, Grant, GrantId, Manifest, Pattern } from '../../contracts/index.js'
-import { LIMITS } from '../../contracts/index.js'
 import type { LedgerStorage, PersistedApp, PersistedGrant } from './ledger-storage.js'
 import { isPersistableOrigin } from '../policy/origin.js'
 import { acknowledgeRollback, hydrateFloor, hydrateRollbackAcknowledgedVersion, raiseFloor } from './update-safety.js'
@@ -12,7 +11,9 @@ import type { ParsedPattern } from '../policy/connect-patterns.js'
 import type { ParsedPatternsCache } from './parsed-patterns-cache.js'
 import { createParsedPatternsCache } from './parsed-patterns-cache.js'
 import { persistGrants, replaceHydratedGrants } from './grant-persistence.js'
+import type { SupersededGrant } from './grant-persistence.js'
 import { clearDeclinedConsent, hydrateDeclinedCapabilities, recordDeclinedConsent } from './declined-consent.js'
+import { releaseFsBytes, reserveFsBytes, socketAllowance } from './resource-limits.js'
 
 /**
  * 128 bits from the platform CSPRNG, as hex -- same construction as
@@ -161,24 +162,46 @@ export class GrantLedger {
    * value -- but it is reported instead of silent. `Broker.registerApp`
    * (../index.ts) turns this into the rejected promise every other method on
    * that surface already produces.
+   *
+   * Calls `hydrateGrantsOnFirstRegistration` below rather than inlining the
+   * hydration branch it used to hold -- that method is now the single
+   * implementation both this call and `createBroker`'s own `registerApp`
+   * wrapper (../index.ts) use, the latter BEFORE this method, so it can
+   * cascade the superseded grants it returns through `HandleTable.revoke`
+   * regardless of whether the floor write below throws (A168). Idempotent
+   * (`grantsHydrated`), so calling it again here is a normal no-op on that
+   * path, and unchanged behaviour for a caller that reaches this method
+   * directly, without going through the broker.
    */
   registerApp (origin: string, manifest: Manifest): void {
     const record = this.#record(origin)
     record.manifest = manifest
-
-    // First registration this session only -- see `grantsHydrated`'s doc.
-    // replaceHydratedGrants REPLACES rather than merges (A158, README.md).
-    if (!record.grantsHydrated) {
-      record.grantsHydrated = true
-      if (this.#storage !== undefined && isPersistableOrigin(origin)) {
-        replaceHydratedGrants(this.#storage, origin, manifest, record.grants, newGrantId)
-      }
-    }
+    this.hydrateGrantsOnFirstRegistration(origin, manifest)
 
     // One writer for the raise-only rule and its persistence, shared with
     // nothing else -- see ./update-safety.ts. Returns false when the floor did
     // not move, which is the ordinary page-reload case and must not touch disk.
     raiseFloor(this.#storage, origin, record, manifest.version)
+  }
+
+  /**
+   * The once-per-origin grants hydration `registerApp`'s first-run branch
+   * used to run inline, split out (A168) so `createBroker` (../index.ts) can
+   * call it BEFORE `registerApp`'s own version-floor write -- which can
+   * throw -- and still receive the `SupersededGrant` list to cascade through
+   * `HandleTable.revoke`, independent of that write's outcome. Guarded by
+   * the same `grantsHydrated` flag `registerApp` always used, so calling
+   * this here and then letting `registerApp` call it again internally is a
+   * normal idempotent no-op the second time, never a double hydration.
+   *
+   * PUBLIC: `createBroker` (../index.ts) is exactly the caller this exists
+   * for, one layer outside this class.
+   */
+  hydrateGrantsOnFirstRegistration (origin: string, manifest: Manifest): readonly SupersededGrant[] {
+    const record = this.#record(origin)
+    if (record.grantsHydrated) return []
+    record.grantsHydrated = true
+    return this.#hydrateGrants(record, origin, manifest)
   }
 
   /**
@@ -190,12 +213,23 @@ export class GrantLedger {
    * disk read; that is what tells this apart from A137's withdrawn attempt.
    * A NO-OP once `registerApp` has hydrated this origin (`grantsHydrated`);
    * otherwise idempotent, and always superseded by its later hydration.
+   *
+   * Returns the `SupersededGrant`s this pass replaced (A168) -- ordinarily
+   * empty, since this normally runs before anything else has granted the
+   * origin anything this session, but computed the same way
+   * `hydrateGrantsOnFirstRegistration` does so a caller never has to treat
+   * the two differently.
    */
-  hydrateFromPinnedManifest (origin: string, manifest: Manifest): void {
+  hydrateFromPinnedManifest (origin: string, manifest: Manifest): readonly SupersededGrant[] {
     const record = this.#record(origin)
-    if (record.grantsHydrated) return
-    if (this.#storage === undefined || !isPersistableOrigin(origin)) return
-    replaceHydratedGrants(this.#storage, origin, manifest, record.grants, newGrantId)
+    if (record.grantsHydrated) return []
+    return this.#hydrateGrants(record, origin, manifest)
+  }
+
+  /** Shared by both hydration entry points above -- storage/persistability guard plus the actual clear-and-repopulate (A168). Neither touches `grantsHydrated`; that flag is the one thing telling the two callers apart. */
+  #hydrateGrants (record: OriginRecord, origin: string, manifest: Manifest): readonly SupersededGrant[] {
+    if (this.#storage === undefined || !isPersistableOrigin(origin)) return []
+    return replaceHydratedGrants(this.#storage, origin, manifest, record.grants, newGrantId)
   }
 
   /**
@@ -437,22 +471,9 @@ export class GrantLedger {
     }
   }
 
-  /**
-   * How many sockets this origin may hold at once: what its manifest declared
-   * (`net.concurrentSockets`), clamped to `LIMITS.concurrentSockets`, or
-   * `LIMITS.defaultConcurrentSockets` when it declared nothing.
-   *
-   * CLAMPED, not rejected, and the manifest validator deliberately accepts a
-   * larger number for the same reason: changing the platform ceiling must
-   * never turn an already-published manifest into an invalid one.
-   *
-   * Reads through `#origins.get`, not `#record`, so merely asking about an
-   * origin does not create a row for it -- same as `fsBytesWritten` below.
-   */
+  /** How many sockets this origin may hold at once -- see ./resource-limits.ts's `socketAllowance`. Reads through `#origins.get`, not `#record`, so merely asking about an origin does not create a row for it -- same as `fsBytesWritten` below. */
   socketAllowance (origin: string): number {
-    const declared = this.#origins.get(origin)?.manifest?.capabilities.net?.concurrentSockets
-    if (declared === undefined) return LIMITS.defaultConcurrentSockets
-    return Math.min(declared, LIMITS.concurrentSockets)
+    return socketAllowance(this.#origins.get(origin))
   }
 
   /** Bytes already reserved (written, or still in flight) against `origin`'s quota this session. Zero for an origin the ledger has no record of yet. */
@@ -460,41 +481,13 @@ export class GrantLedger {
     return this.#origins.get(origin)?.fsBytesWritten ?? 0
   }
 
-  /**
-   * The quota check AND the reservation, as one synchronous step. Reading
-   * the counter and only updating it later -- after an `await` -- lets every
-   * concurrent caller observe the same pre-write value and all pass; the
-   * ONLY thing that closes that gap is doing both in the same synchronous
-   * turn, before anything yields to another call. No lock is needed for
-   * that: JavaScript does not interleave two synchronous stretches of code,
-   * only what sits either side of an `await`.
-   *
-   * Returns false, reserving nothing, when `bytes` would push the running
-   * total over `quotaBytes`. Reserves unconditionally (and returns true)
-   * when the origin has no declared quota -- `quotaBytes?: number` is
-   * optional -- mirroring the old unconditional counter, so a quota added
-   * to the manifest later still sees every byte written before it existed.
-   *
-   * The caller must call `releaseFsBytes` for whatever it reserved here if
-   * the write does not end up landing.
-   */
+  /** The quota check AND the reservation, as one synchronous step -- see ./resource-limits.ts's own doc for why the two cannot be split across an `await`. The caller must call `releaseFsBytes` for whatever it reserved here if the write does not end up landing. */
   reserveFsBytes (origin: string, bytes: number): boolean {
-    const record = this.#record(origin)
-    const quotaBytes = record.manifest?.capabilities.fs?.quotaBytes
-    if (quotaBytes !== undefined && record.fsBytesWritten + bytes > quotaBytes) return false
-    record.fsBytesWritten += bytes
-    return true
+    return reserveFsBytes(this.#record(origin), bytes)
   }
 
-  /**
-   * Refunds a reservation `reserveFsBytes` made for a write that did not
-   * land -- refused before the real I/O ran, or that I/O itself rejected.
-   * Clamped at zero rather than trusted to balance exactly, so a mismatched
-   * caller degrades to an over-strict quota instead of a negative counter
-   * that would then let a future write past the real limit.
-   */
+  /** Refunds a reservation `reserveFsBytes` made for a write that did not land -- see ./resource-limits.ts's own doc for the clamped-at-zero reasoning. */
   releaseFsBytes (origin: string, bytes: number): void {
-    const record = this.#record(origin)
-    record.fsBytesWritten = Math.max(0, record.fsBytesWritten - bytes)
+    releaseFsBytes(this.#record(origin), bytes)
   }
 }
