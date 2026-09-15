@@ -21,7 +21,7 @@ import { publishBroker } from '../../main/registry.js'
 import type { Subsystem, SubsystemContext } from '../../main/registry.js'
 import { createBroker } from '../index.js'
 import type { Broker, CreateBrokerOptions } from '../broker-contracts.js'
-import { dialTcp, listenTcp, nodeFs, resolveHost } from '../adapters/node-adapters.js'
+import { dialTcp, listenTcp, nodeFs, resolveHost, resolveLookup } from '../adapters/node-adapters.js'
 import { dialTls } from '../adapters/tls-adapter.js'
 import { bindUdp } from '../adapters/udp-adapter.js'
 import { nodeLedgerStorage } from '../grants/node-ledger-storage.js'
@@ -93,6 +93,7 @@ async function dispatch (
     case 'net.close':
     case 'net.setNoDelay':
     case 'net.setKeepAlive':
+    case 'net.lookup':
       return await dispatchNet(broker, origin, method, payload, event, transport)
   }
 }
@@ -256,6 +257,7 @@ export const brokerIpcSubsystem: Subsystem = {
       bind: bindUdp,
       listen: listenTcp,
       resolve: resolveHost,
+      resolveLookup,
       now: realNow,
       fs: nodeFs(ctx.app.getPath('userData')),
       ledgerStorage: nodeLedgerStorage(ctx.app.getPath('userData')),

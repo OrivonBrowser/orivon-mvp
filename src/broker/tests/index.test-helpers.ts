@@ -192,6 +192,7 @@ export function baseDeps (overrides: Partial<CreateBrokerOptions> = {}): CreateB
     bind: async () => okUdpSocket(),
     listen: async () => okListenedServer(),
     resolve: async () => [],
+    resolveLookup: async () => [],
     now: () => 0,
     fs: stubFs(),
     keychain: { getSeed: async () => new Uint8Array(32) },
