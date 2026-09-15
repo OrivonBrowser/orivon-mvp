@@ -1,6 +1,7 @@
 # ADR-0006: The trust indicator is built from observed behaviour, not claims
 
-- **Status:** accepted
+- **Status:** accepted, **amended 2026-09-15** (see the Amendment section below -- a gap in the
+  D-ladder, not a reversal of anything above)
 - **Date:** 2026-08-18
 - **Type:** product / architecture
 - **Decided by:** owner (insisted the full spectrum matters, and proposed the attestation
@@ -188,6 +189,24 @@ No provider exists yet, so no judged level is ever displayed in month 1.
   mark which levels are automatic versus judged. A public-facing change, not internal.
 - Defers cleanly: when a provider or trustless resolution appears, each *adds* levels without
   invalidating anything already shipped.
+
+## Amendment, 2026-09-15 -- the D-ladder grades how a bundle was pinned, not how much of the app the pin covers
+
+Filed while recording an owner correction to `open-questions.md` A148 (per-script CSP hashing):
+the guarantee this ADR's D2 rung makes is that a bundle is unaltered from what its author
+published, and an app fetching third-party code at runtime does not violate that -- it costs
+**trust score**, not correctness, which is this document's job to represent and does not do
+today.
+
+The D1-D4 rungs, as shipped (`src/trust/delivery-ladder.ts`), evaluate each rung as one pass/
+fail fact about the whole bundle. A two-file bundle (a manifest and an `index.html`) that
+immediately fetches thirty remote scripts sits on the exact same D2 rung as a bundle that ships
+everything it runs -- both read as "hash-pinned, TOFU once," even though the first has almost
+nothing a person's consent, or a future attestation, actually covers. Nothing here overturns
+the Reasoning section or the ladder table above; both remain correct about *how* delivery is
+graded. What is missing is a further axis -- *how much* of the running app that grading
+actually reaches -- and the full reasoning for it, deliberately not resolved here, is recorded
+as `open-questions.md` A166 for whoever builds the real measurement.
 
 ## Reversibility
 - **Cost to reverse:** cheap to extend, expensive to retract. Levels shown once become claims

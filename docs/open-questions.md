@@ -5142,7 +5142,7 @@ what "once, ever" should actually mean once a real person is declining a real di
 > discipline matching every sibling file), and `src/main/tests/install-consent.test.ts` (the
 > real flow, including the widen/narrow cases above and the adversarial restart test).
 
-### A146 -- install-time consent is asked AFTER the page's own scripts are already running **[STILL OPEN]**
+### A146 -- install-time consent is asked AFTER the page's own scripts are already running **[RESOLVED 2026-09-15 -- owner decision]**
 
 **Raised 2026-09-13**, at the seam between the discovery trigger (#164) and install-time consent
 (#171), by the conductor while merging the two -- neither lane could see it alone, which is why it
@@ -5190,6 +5190,40 @@ interrupted by a dialog, and which is better is the owner's call, not an impleme
 **Needed by:** before an app that was not written for Orivon is expected to work on a first
 visit -- i.e. before Phase 5's FreeTube lane means anything. Not blocking anything merged today.
 
+> **Owner decision, 2026-09-15: accepted as built, not a defect owed a fix.** The owner, put
+> directly to this entry:
+>
+> > "Lets keep the system like this, we accept that when the app is first open, permission box
+> > opens, and it can be told no for an instant."
+>
+> **In plain terms:** on a first-ever visit to an app, that app's own code may run for a brief
+> window before the permission box has appeared or been answered, and a capability call made in
+> that window is told `'denied'` -- a refusal the app did not expect and was never told to
+> expect. That is now the accepted shape of the system, not an open defect waiting on a fix.
+>
+> **This keeps option 2 above as the shipped design, and closes the other two by declining
+> them, not by picking a winner among them later.** Option 1 -- hold the first navigation until
+> install and consent settle, then load from cache -- was fully specified above and was
+> available to build. It was declined: making a page visibly pause before it is allowed to run
+> is a different experience from one that runs immediately and might be told no for an instant,
+> and the owner's call is that the second is the one worth keeping. Option 3 (silently reload the
+> tab once a grant exists) was not chosen either, for the reason already given above -- it costs
+> a reload the person did not ask for and is wrong for an app that already did something stateful
+> on its first start.
+>
+> **The acceptance is bounded exactly as this entry's own evidence already bounded it: to the
+> first visit only.** Every later visit is unaffected -- the grant is already decided, held
+> until revoked (`A101`), and the app starts with a settled answer before it runs at all.
+> Nothing about this decision touches that; it is a decision about the one already-isolated
+> moment above, not about consent timing generally.
+>
+> **What this does not settle, so it is not read into it:** `A158`'s restart-time CSP gap (a
+> registered app's first document served narrower than its real, already-persisted grant) looked
+> like the same underlying gap while it was open, and its own text asked whoever decided `A146`
+> to see it. It has since been closed a different way -- by re-hydrating grants from the
+> already-verified pinned manifest, not by holding a navigation (`A158`'s 2026-09-14 resolution)
+> -- so nothing here reopens it or depends on it.
+
 ### A147 -- the address-bar provenance wording, and the two-state-vs-three-state choice it rests on **[NEEDS OWNER DECISION]**
 
 **Raised 2026-09-13**, lane S4-6-csp, build step 4's CSP/provenance item (`ADR-0007`,
@@ -5236,7 +5270,7 @@ neither of those claims and borrowing either colour would overclaim or under-cla
 say more about delivery provenance than a tooltip can hold -- this entry's answers should inform
 that design rather than be silently superseded by it.
 
-### A148 -- `script-src 'unsafe-inline'` on the served bundle gives up CSP's XSS role, and the reasoning for it only covers static markup **[AI-REC -- conductor, at merge review]**
+### A148 -- `script-src 'unsafe-inline'` on the served bundle gives up CSP's XSS role, and the reasoning for it only covers static markup **[REFRAMED 2026-09-15 -- owner decision; residual open]**
 
 **Raised 2026-09-13**, conductor review of PR #172 (S4-6), which set the served bundle's CSP to
 `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'` plus the
@@ -5309,6 +5343,95 @@ this risk is otherwise mitigated. Filed precisely, per this lane's own brief, ra
 ambiguous: **A148 stays open, its status corrected from "will start mattering" to "already
 matters, on a path outside this lane's ownership as well as on this one," and the per-script-hash
 fix it names is still owed on both.**
+
+> **Update 2026-09-15, lane H-decisions -- this entry's own framing is corrected by the owner,
+> not only its status, and the correction is more fundamental than the 2026-09-14 update above.**
+> The conductor had, across this entry and elsewhere, repeatedly cast the risk as "everything an
+> app runs must have come from the bundle you approved, so an app reaching third-party code is a
+> hole in that guarantee." The owner corrected that framing directly:
+>
+> > "What matters is that the basical bundle is the one approved. Potentially it could be only
+> > index.html, but this would drastically reduce the chances of a valid Web3 score for that
+> > site. The thing isn't that everything running from this app came from the bundle, but that a
+> > X bundle has been verified to be trustless by being on its original form, even if it fetches
+> > third party code, because he may still do it in a trustless manner."
+>
+> **The guarantee `ADR-0009`'s bundle hash actually makes is narrower than the conductor's
+> framing, and this entry inherited that error.** It proves the app's OWN code -- exactly the
+> bytes in its pinned bundle -- is unaltered from what its author published. It has never
+> claimed, and was never built to claim, that nothing else runs. An app that deliberately fetches
+> and runs third-party code is not violating that guarantee; the guarantee about the bundle it
+> shipped still holds regardless, and the app can still be reaching out in a manner that is
+> itself verifiable -- "trustless" describes HOW it reaches third parties, not a promise that it
+> never does.
+>
+> **What deliberate third-party reach actually costs is trust SCORE, not correctness.** An app
+> that ships almost nothing in its own pinned bundle and pulls the rest at runtime has very
+> little that is actually verified by the pin -- and `ADR-0006`'s indicator, not CSP, is where
+> that should be visible to a person deciding whether to trust the app. **See `A166` below**,
+> filed alongside this correction: nothing in the shipped delivery ladder
+> (`src/trust/delivery-ladder.ts`, D1-D4) currently measures how much of a running app the pin
+> actually covers, only how the pin was obtained. That is the residual this reframe hands to
+> build step 6, not to CSP.
+>
+> **Per-script CSP hashing is therefore no longer owed as the fix for "an app reaches
+> third-party code"** -- that was never the right problem for it to solve, and this entry's own
+> 2026-09-14 update above had already narrowed toward the real one without naming the reframe
+> explicitly.
+>
+> **But do not read this as clearing the entry -- the part of it that survives untouched is the
+> more concrete half.** The scenario this entry has been narrowing to since 2026-09-14 -- an
+> attacker-influenced STRING, fetched by the app's own code, reaching `innerHTML`/
+> `document.write` and being reinterpreted as an inline `<script>` because `'unsafe-inline'`
+> does not distinguish the author's own markup from anything else -- is **not** "the app
+> deliberately runs third-party code." It is the app's OWN rendering of data it did not author
+> going wrong: the same DOM-based-injection failure `script-src` exists to catch on any ordinary
+> website. Nothing about a bundle's trust score changes whether that specific injection
+> executes -- a low-scored app and a high-scored app are equally exposed if either mishandles
+> what it fetches, and a person reading a trust score has no way to see this particular risk from
+> it. Per-script `sha256-` hashing (this entry's original proposal) would still be a correct,
+> working defence against exactly that scenario, because an attacker-injected `<script>` has no
+> matching allowlisted hash regardless of where the data that produced it came from. **This half
+> of the entry stays open**, as real but narrower and lower-priority security work than
+> originally framed -- owed whenever an app both reaches a third party (true today, `A143`/
+> `ADR-0017`) and renders what it gets back as raw markup, not whenever it merely fetches
+> third-party code at all.
+
+### A166 -- the delivery ladder grades HOW a bundle was pinned, never HOW MUCH of the running app that pin actually covers **[NEEDS OWNER DECISION -- build step 6]**
+
+**Raised 2026-09-15**, lane H-decisions, while recording the `A148` reframe above. This entry
+files the gap; it does not build the measurement -- a sibling lane
+(`stream/trust-02-pin-coverage`) owns `src/trust/` and the mechanism, and this is the reasoning
+for why it is needed, left for that lane to read rather than pre-empted here.
+
+**What the ladder measures today.** `ADR-0006`'s D1-D4 rungs, implemented in
+`src/trust/delivery-ladder.ts`, grade *how* an app's code arrived: fetched fresh every load
+(D1), fetched once and hash-pinned (D2), content-addressed (D3), content-addressed and
+trustlessly name-resolved (D4). Each rung is evaluated as a single pass/fail fact about the
+whole bundle (`DeliveryRungResult.met: boolean`), with no notion of size, proportion, or what
+fraction of the code a person actually runs was inside the thing that got pinned.
+
+**Why that is a real gap, not a nicety, given the `A148` reframe.** The owner's correction
+settled that a bundle fetching third-party code is not a violated guarantee -- it is a scored
+fact. But nothing currently produces that score. An app whose pinned bundle is a two-file
+`index.html`-plus-manifest that immediately fetches thirty remote scripts sits on **exactly the
+same D2 rung** as an app that ships everything it runs. Both read as "hash-pinned, TOFU once" to
+anyone looking at the ladder today, even though the first has almost nothing a person's consent,
+or a future attestation, actually covers. `ADR-0006`'s own worked example -- *"if the site is
+completely running locally, we can say that this is trustless"* -- implies the inverse should
+also be visible: if it is NOT completely running locally, the indicator should say how far from
+that it is, not silently round up to the same rung as a bundle that is.
+
+**What "coverage" would need to mean is left to the sibling lane to define precisely, not
+prescribed here:** some measure of how much of what the app actually executes was present in the
+pinned bundle versus fetched at runtime outside it -- a byte count, a file count, or a
+runtime-observed fraction via the connection log (`src/trust/connection-log.ts` already keeps
+the entries such a measure would read). Any of these is a defensible starting point; none is
+specified here, deliberately, per this lane's own brief to record the reasoning rather than the
+mechanism.
+
+**Needed by:** whoever builds build step 6's real trust indicator -- `stream/trust-02-pin-coverage`
+is already the named lane for it as of this writing.
 
 ### A149 -- `scripts/smoke.mjs`'s favicon scenario cannot pass under both T12 and "hermetic by construction" at once **[NEEDS OWNER DECISION]**
 
