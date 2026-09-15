@@ -33,6 +33,7 @@ import type { ConnectSecureDecision } from '../broker/policy/connect-secure.js'
 import type { Manifest, Pattern } from '../contracts/index.js'
 import { entryCanonicalPath } from './fetch-bundle.js'
 import { parseManifest } from './manifest.js'
+import type { PinCoverageOutcome } from './pin-coverage.js'
 import { contentTypeFor } from './serve-content-type.js'
 import { parseRange } from './serve-range.js'
 import { verifyPinnedTree } from './serve-verify.js'
@@ -91,6 +92,16 @@ export type AuthoriseReach = (host: string, port: number) => Promise<ConnectSecu
  */
 export type ReachDial = (request: Request, host: string, port: number) => Promise<Response>
 
+/**
+ * Reports one request's pin-coverage outcome (pin-coverage.ts), called once
+ * per request alongside the response it produced -- same "supply a callback,
+ * every existing caller passes `undefined`" shape as the patterns above.
+ * `bytes` is read from what the response already carries (`Uint8Array.length`
+ * for a pinned asset, the peer's own `content-length` header for a
+ * third-party one), never measured by buffering -- see pin-coverage.ts.
+ */
+export type RecordPinCoverage = (outcome: PinCoverageOutcome, bytes?: number) => void
+
 /** Everything a request needs decided before a byte is read off disk -- deliberately exported for direct, Electron-free unit testing (this file's own header). */
 export type ResolvedRequest =
   | { readonly ok: true, readonly canonicalPath: string }
@@ -130,6 +141,14 @@ export function resolveRequestPath (entryPath: string | null, pin: PinRecord, re
 
 function denyResponse (reason: string): Response {
   return new Response(`Orivon: ${reason}`, { status: 404, headers: { 'content-type': 'text/plain; charset=utf-8' } })
+}
+
+/** `response`'s own `content-length`, when the peer sent one and it parses as a real size -- `undefined` otherwise (a chunked or compressed response carries none), never a guessed value. */
+function contentLengthOf (response: Response): number | undefined {
+  const header = response.headers.get('content-length')
+  if (header === null) return undefined
+  const length = Number(header)
+  return Number.isFinite(length) && length >= 0 ? length : undefined
 }
 
 /**
@@ -265,26 +284,33 @@ function buildResponse (
 async function fetchThirdParty (
   request: Request,
   authoriseReach: AuthoriseReach | undefined,
-  reachDial: ReachDial | undefined
+  reachDial: ReachDial | undefined,
+  recordCoverage: RecordPinCoverage | undefined
 ): Promise<Response> {
   if (authoriseReach === undefined || reachDial === undefined) {
+    recordCoverage?.('denied')
     return denyResponse('cross-origin request inside this app\'s own partition is not served')
   }
 
   const url = new URL(request.url)
   if (url.protocol !== 'https:') {
+    recordCoverage?.('denied')
     return denyResponse('only a granted https host may be reached from inside this app\'s own partition')
   }
   const port = url.port === '' ? 443 : Number(url.port)
 
   const decision = await authoriseReach(url.hostname, port)
   if (!decision.allowed) {
+    recordCoverage?.('denied')
     return denyResponse('this host is not granted to this app')
   }
 
   try {
-    return await reachDial(request, decision.host, port)
+    const response = await reachDial(request, decision.host, port)
+    recordCoverage?.('third-party', contentLengthOf(response))
+    return response
   } catch (error) {
+    recordCoverage?.('denied')
     return denyResponse(`reaching the granted host failed: ${error instanceof Error ? error.message : String(error)}`)
   }
 }
@@ -360,7 +386,8 @@ export async function createAppRequestHandler (
   grantedConnectPatterns?: GrantedConnectPatterns,
   grantedSecurePatterns?: GrantedSecurePatterns,
   authoriseReach?: AuthoriseReach,
-  reachDial?: ReachDial
+  reachDial?: ReachDial,
+  recordCoverage?: RecordPinCoverage
 ): Promise<AppRequestHandler> {
   const resolved = await resolveVerifiedBundle(storage, origin)
   if (!resolved.ok) {
@@ -382,11 +409,14 @@ export async function createAppRequestHandler (
     // strength of anything this handler already trusted for its OWN origin
     // (docs/open-questions.md A143).
     if (originFromUrl(request.url) !== origin) {
-      return await fetchThirdParty(request, authoriseReach, reachDial)
+      return await fetchThirdParty(request, authoriseReach, reachDial, recordCoverage)
     }
 
     const resolved = resolveRequestPath(entryPath, pin, request.url)
-    if (!resolved.ok) return denyResponse(resolved.reason)
+    if (!resolved.ok) {
+      recordCoverage?.('denied')
+      return denyResponse(resolved.reason)
+    }
 
     const content = await storage.readAsset(origin, resolved.canonicalPath)
     if (content === undefined) {
@@ -394,8 +424,10 @@ export async function createAppRequestHandler (
       // at handler-creation time -- reaching this branch means the file was
       // removed from disk AFTER that, during this same process run. Same
       // fail-closed answer as never having been readable.
+      recordCoverage?.('denied')
       return denyResponse('cached asset became unavailable after this app was loaded')
     }
+    recordCoverage?.('pinned', content.length)
 
     const connectPatterns = grantedConnectPatterns === undefined ? [] : await grantedConnectPatterns()
     const securePatterns = grantedSecurePatterns === undefined ? [] : await grantedSecurePatterns()
