@@ -63,6 +63,30 @@ export function patternSetFromGrants (grants: readonly Grant[]): PatternSet {
   return result
 }
 
+/**
+ * Order-independent set equality -- two patterns are the same authority
+ * however a manifest or a persisted record happens to list them, so
+ * re-declaring them in a different order is never mistaken for a change.
+ *
+ * NOT `widensAuthority` above: that is a one-directional COVERS check under
+ * the runtime's matching grammar (`*:*` "covers" `93.184.216.34:443` without
+ * being equal to it), the right question for "may this update proceed
+ * silently". This is a stricter, symmetric "is this the exact same
+ * authority" check -- the right question for "may an id naming that
+ * authority be reused" (grant-persistence.ts's `replaceHydratedGrants`,
+ * A168) or "is a re-grant even necessary" (main/grant-changed-
+ * capabilities.ts). Moved here from that second, original caller once a
+ * third call site needed the identical idea (code-guidelines.md Rule 3) --
+ * `src/main/` may import from here, but `src/broker/` must never import
+ * from `src/main/`, so the shared copy has to live on this side.
+ */
+export function sameOwnPatterns (a: readonly Pattern[], b: readonly Pattern[]): boolean {
+  if (a.length !== b.length) return false
+  const left = [...a].sort()
+  const right = [...b].sort()
+  return left.every((pattern, index) => pattern === right[index])
+}
+
 export interface UpdateInput {
   /** Bundle hash the user consented to, from the grant ledger (TOFU, ADR-0005). */
   readonly pinnedHash: string
