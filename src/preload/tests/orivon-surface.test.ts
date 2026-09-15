@@ -63,7 +63,7 @@ beforeEach(() => {
 })
 
 describe('exposeOrivon -- P-F10: the fail-closed fallback covers BOTH "absent" and "throws"', () => {
-  it('falls back to exposeInMainWorld (no net) when executeInMainWorld is absent', () => {
+  it('falls back to exposeInMainWorld (net.lookup only, no stream methods) when executeInMainWorld is absent', () => {
     executeInMainWorld = undefined
 
     exposeOrivon()
@@ -71,7 +71,18 @@ describe('exposeOrivon -- P-F10: the fail-closed fallback covers BOTH "absent" a
     expect(exposeInMainWorld).toHaveBeenCalledTimes(1)
     const [name, surface] = exposeInMainWorld.mock.calls[0] as [string, Record<string, unknown>]
     expect(name).toBe('orivon')
-    expect(surface.net).toBeUndefined()
+    // net.lookup (d-0030) needs no main-world stream wrapping -- it resolves
+    // to plain data, never a live handle -- so it is genuinely wired in the
+    // fallback surface, exactly like fs.readFile below it. connect/
+    // connectSecure/udpBind are not: each would resolve to something that
+    // is not a real TcpSocket/UdpSocket without the main-world stream
+    // wrapper, which is exactly the failure mode this fallback exists to
+    // avoid shipping (exposeOrivon's own doc).
+    const net = surface.net as Record<string, unknown>
+    expect(typeof net.lookup).toBe('function')
+    expect(net.connect).toBeUndefined()
+    expect(net.connectSecure).toBeUndefined()
+    expect(net.udpBind).toBeUndefined()
     expect(typeof (surface.app as Record<string, unknown>).manifest).toBe('function')
     expect(typeof (surface.app as Record<string, unknown>).requestGrant).toBe('function')
     expect(typeof (surface.id as Record<string, unknown>).publicKey).toBe('function')
@@ -98,7 +109,9 @@ describe('exposeOrivon -- P-F10: the fail-closed fallback covers BOTH "absent" a
     expect(executeInMainWorld).toHaveBeenCalledTimes(1)
     expect(exposeInMainWorld).toHaveBeenCalledTimes(1)
     const [, surface] = exposeInMainWorld.mock.calls[0] as [string, Record<string, unknown>]
-    expect(surface.net).toBeUndefined()
+    const net = surface.net as Record<string, unknown>
+    expect(typeof net.lookup).toBe('function')
+    expect(net.connect).toBeUndefined()
   })
 
   it('does NOT fall back when executeInMainWorld exists and succeeds', () => {
@@ -309,6 +322,36 @@ describe('exposeOrivon -- P-F11: end-to-end wiring smoke, through the real conte
 
     await expect(orivon.id.sign({ curve: 'P-256', payload: new Uint8Array(1) }))
       .rejects.toMatchObject({ code: 'denied' })
+  })
+
+  it('net.lookup round-trips through call() and installOrivon -- plain data, no PORT_CHANNEL involved', async () => {
+    const target = installViaFakeMainWorld()
+    const answers = [{ address: '93.184.216.34', family: 'IPv4' }, { address: '2606:2800:220:1::1', family: 'IPv6' }]
+    const seenEnvelopes: Array<{ method: string, payload: unknown }> = []
+    invoke.mockImplementation(async (_channel: string, envelope: { method: string, payload: unknown }) => {
+      seenEnvelopes.push({ method: envelope.method, payload: envelope.payload })
+      if (envelope.method === 'net.lookup') return okEnvelope(answers)
+      return okEnvelope(undefined)
+    })
+
+    exposeOrivon()
+    const orivon = target.orivon as { net: { lookup: (opts: { hostname: string }) => Promise<unknown> } }
+
+    // No portListener delivery step (unlike net.connect's own test above):
+    // this resolves the instant the CONTROL_CHANNEL reply arrives.
+    expect(await orivon.net.lookup({ hostname: 'api.example.com' })).toEqual(answers)
+    expect(seenEnvelopes).toEqual([{ method: 'net.lookup', payload: { hostname: 'api.example.com' } }])
+  })
+
+  it('net.lookup propagates a real OrivonError (e.g. "denied") rather than a raw rejection', async () => {
+    const target = installViaFakeMainWorld()
+    invoke.mockResolvedValue({ id: 'r', ok: false, code: 'denied', message: 'the hostname was not authorised by any held network grant' })
+
+    exposeOrivon()
+    const orivon = target.orivon as { net: { lookup: (opts: { hostname: string }) => Promise<unknown> } }
+
+    await expect(orivon.net.lookup({ hostname: 'what-i-stole.attacker.example' }))
+      .rejects.toMatchObject({ name: 'OrivonError', code: 'denied' })
   })
 
   it('app.requestGrant round-trips through call() and installOrivon, with patterns present or omitted', async () => {
