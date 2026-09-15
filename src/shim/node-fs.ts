@@ -9,37 +9,40 @@
 // same layer split node-http-message.ts already draws between wire bytes
 // and the Node shape presented on top.
 //
-// TWO GAPS, NAMED RATHER THAN FAKED: fs.open (no FileHandle capability yet)
-// and every synchronous export except readFileSync (ADR-0016 grants exactly
-// one) -- both throw a named, explanatory error via node-fs-unsupported.ts,
-// the same treatment node-http-unsupported.ts and node-net-unsupported.ts
-// give their own gaps.
+// fs.open (node-fs-handle.ts) is real now: a local cursor over
+// orivon.fs.open's FileHandle, exposed as fs.promises.open and the callback
+// open/read/write/close family -- see that file's own header for why the
+// cursor lives there. Every synchronous export except readFileSync
+// (ADR-0016) is still a named refusal (node-fs-unsupported.ts).
 //
-// EVERY OTHER fs MEMBER (A135): `copyFile`, `symlink`, `watch`, ... used to
-// be silently absent. The default export (what a bundled CJS `require('fs')`
-// resolves to) is wrapped so reading any of them names the gap instead of
-// reading `undefined` -- `chmod`/`chown` get their own reason ('not-
-// applicable': this confined fs has no POSIX uid/gid/mode model to set),
-// everything else defaults to 'unimplemented' (nothing decided either way,
-// unlike fs.open/the sync gaps above, which ARE decided).
+// EVERY OTHER fs MEMBER (A135) names its gap rather than reading
+// `undefined` off the default export: `chmod`/`chown` are 'not-applicable'
+// (no POSIX uid/gid/mode model), `createReadStream`/`createWriteStream` are
+// A184 (node-fs-handle.ts's FileHandle refuses the same broker-stream gap),
+// everything else is 'unimplemented'.
 
 import { getOrivon } from './orivon-global.js'
 import { toNodeError } from './node-http-errors.js'
 import { toBytes } from './node-stream-bytes.js'
 import { toNodeStats, type NodeStats } from './node-fs-stats.js'
-import { open, syncUnsupported } from './node-fs-unsupported.js'
+import { syncUnsupported } from './node-fs-unsupported.js'
+import { open, openHandle, close, read, write, fstat, ftruncate, fsync, type NodeCallback } from './node-fs-handle.js'
 import { refusingProxy } from './unimplemented.js'
 import { refuseShim } from './errors.js'
 import { Buffer } from 'buffer'
 
-export { open } from './node-fs-unsupported.js'
+export { open, close, read, write, fstat, ftruncate, fsync } from './node-fs-handle.js'
+export const promises = refusingProxy({ open: openHandle }, (prop) => refuseShim(
+  `fs.promises.${prop}`, 'unimplemented',
+  `fs.promises.${prop} is real Node fs surface this shim has not implemented and has not ` +
+  'decided whether it will -- distinct from fs.promises.open, which is built. See ' +
+  'docs/planning/compatibility-matrix.md Table 3.'
+))
 
 interface ReadFileOptions { encoding?: string }
 interface WriteFileOptions { encoding?: string }
 interface MkdirOptions { recursive?: boolean }
 interface RmOptions { recursive?: boolean }
-
-type NodeCallback<T> = (error: Error | null, result?: T) => void
 
 /** Pops a trailing callback and an optional options object from a variadic tail -- the shape every fs.* call below shares once its own required leading args are removed. */
 function splitTail<Options> (args: readonly unknown[]): { options: Options | undefined, callback: NodeCallback<unknown> } {
@@ -169,6 +172,7 @@ export function rename (from: string, to: string, callback: NodeCallback<void>):
 export type { NodeStats }
 
 const POSIX_PERMISSION_MEMBERS = new Set(['chmod', 'chmodSync', 'chown', 'chownSync'])
+const STREAM_GAP_MEMBERS = new Set(['createReadStream', 'createWriteStream'])
 
 function otherFsMember (prop: string) {
   if (POSIX_PERMISSION_MEMBERS.has(prop)) {
@@ -178,16 +182,24 @@ function otherFsMember (prop: string) {
       'gid or mode to set one on (compatibility-matrix.md Table 3).'
     )
   }
+  if (STREAM_GAP_MEMBERS.has(prop)) {
+    return refuseShim(
+      `fs.${prop}`, 'not-built',
+      `fs.${prop} needs FileHandle.readable()/writable(), which the broker builds but does not ` +
+      'expose to a page yet -- see docs/open-questions.md A184. Use fs.readFile/writeFile for ' +
+      'whole-file access, or fs.open plus positional read/write, instead.'
+    )
+  }
   return refuseShim(
     `fs.${prop}`, 'unimplemented',
     `fs.${prop} is real Node fs surface this shim has not implemented and has not decided ` +
-    'whether it will -- distinct from fs.open and the *Sync gaps above, which are decided, ' +
-    'unbuilt capabilities with their own reasons. See docs/planning/compatibility-matrix.md Table 3.'
+    'whether it will -- distinct from the *Sync gaps above, which are a decided, permanent ' +
+    'refusal (ADR-0016). See docs/planning/compatibility-matrix.md Table 3.'
   )
 }
 
 export default refusingProxy({
   readFile, readFileSync, writeFile, writeFileSync,
-  mkdir, readdir, stat, rm, rename, open,
+  mkdir, readdir, stat, rm, rename, open, close, read, write, fstat, ftruncate, fsync, promises,
   statSync, mkdirSync, readdirSync, rmSync, renameSync, existsSync
 }, otherFsMember)
