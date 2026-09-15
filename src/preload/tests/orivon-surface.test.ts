@@ -391,6 +391,53 @@ describe('exposeOrivon -- P-F11: end-to-end wiring smoke, through the real conte
   })
 })
 
+describe('exposeOrivon -- P-F11 continued: net.listen (A114, d-0028)', () => {
+  it('a successful net.listen resolves a TcpServer, and an AcceptedMessage on its own port yields a real TcpSocket', async () => {
+    const target = installViaFakeMainWorld()
+    invoke.mockImplementation(async (_channel: string, envelope: { method: string }) => {
+      if (envelope.method === 'net.listen') {
+        return okEnvelope({ id: 'srv-1', localAddress: '0.0.0.0', localPort: 4001 })
+      }
+      return okEnvelope(undefined)
+    })
+
+    exposeOrivon()
+    const orivon = target.orivon as { net: { listen: (opts: unknown) => Promise<{ id: string, localAddress: string, localPort: number, connections: ReadableStream }> } }
+    const listening = orivon.net.listen({ port: 4001 })
+
+    // Deliver the SERVER's own port over PORT_CHANNEL -- socket-bridge.ts's
+    // listener is kind-agnostic (its own header), the same one net.connect's
+    // test above uses.
+    const serverPort = fakeMessagePort() as { postMessage: () => void, onmessage?: (e: { data: unknown }) => void, close: () => void }
+    portListener?.({ ports: [serverPort] }, { handleId: 'srv-1' })
+
+    const server = await listening
+    expect(server.id).toBe('srv-1')
+    expect(server.localAddress).toBe('0.0.0.0')
+    expect(server.localPort).toBe(4001)
+
+    const reader = server.connections.getReader()
+    const reading = reader.read()
+    await Promise.resolve() // let pull() fire and post the reused accept-demand credit message
+
+    // The accepted connection's OWN port, delivered inline on the AcceptedMessage
+    // (A114/d-0028) -- never a second PORT_CHANNEL round trip.
+    const acceptedPort = fakeMessagePort()
+    serverPort.onmessage?.({
+      data: {
+        kind: 'accepted', handleId: 'srv-1', socketId: 'acc-1',
+        remoteAddress: '1.2.3.4', remotePort: 5555, localAddress: '10.0.0.5', localPort: 4001,
+        port: acceptedPort
+      }
+    })
+
+    const { value: socket } = (await reading) as { value: { id: string, readable: unknown, writable: unknown } }
+    expect(socket.id).toBe('acc-1')
+    expect(socket.readable).toBeInstanceOf(ReadableStream)
+    expect(socket.writable).toBeInstanceOf(WritableStream)
+  })
+})
+
 describe('exposeOrivon -- fs.readFileSync (ADR-0016)', () => {
   it('calls ipcRenderer.sendSync, not .invoke, and returns the bytes synchronously on success', () => {
     const target = installViaFakeMainWorld()

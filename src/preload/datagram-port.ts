@@ -194,10 +194,23 @@ export function createDatagramPort (options: DatagramPortOptions): DatagramPort 
           : toOrivonError(message.code, { message: 'the udp socket ended' }))
         releaseAll()
         break
-      default:
-        // A byte-path message on a datagram port. Ignored, matching the
-        // broker relay's own stance -- there is no state it could corrupt.
+      // A byte-path message, or AcceptedMessage (A114, d-0028's TcpServer-only
+      // kind), on a datagram port. Ignored, matching the broker relay's own
+      // stance -- there is no state it could corrupt. Listed explicitly,
+      // not folded into a bare default, so TypeScript narrows `message` to
+      // `never` below and the NEXT new BrokerToRendererMessage member is a
+      // compile error here rather than the silent gap A114 found
+      // (open-questions.md A167/A170) -- see ../socket-port.ts's own
+      // identical fix, applied here for the same reason.
+      case 'data':
+      case 'write-ack':
+      case 'write-failed':
+      case 'accepted':
         break
+      default: {
+        const exhaustive: never = message
+        void exhaustive
+      }
     }
   })
 
