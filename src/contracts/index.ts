@@ -25,8 +25,10 @@ export type {
   UdpSocket,
   Datagram,
   SendRefusal,
+  LookupAddress,
   FileHandle,
   FileStat,
+  DirectoryHandle,
   IdentityHandle
 } from './handles.js'
 
@@ -75,6 +77,7 @@ export type {
   SendMessage,
   SendAckMessage,
   SendFailedMessage,
+  AcceptedMessage,
   BrokerToRendererMessage,
   RendererToBrokerMessage,
   PortMessage
