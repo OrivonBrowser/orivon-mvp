@@ -13,22 +13,29 @@
 // for this function already looks like.
 //
 // EVERY OTHER dns.* MEMBER (A135): `resolve4`, `resolve6`, `reverse`,
-// `setServers`, `promises`, ... share `lookup`'s own D-0006 gap -- the same
-// missing broker capability, not a separate decision -- so the default
-// export (what a bundled CJS `require('dns')` resolves to) is wrapped so
-// reading any of them names the gap instead of reading `undefined`.
+// `setServers`, ... share `lookup`'s own D-0006 gap -- the same missing
+// broker capability, not a separate decision -- so the default export (what
+// a bundled CJS `require('dns')` resolves to) is wrapped so calling any of
+// them names the gap instead of a bare TypeError (A169: reading one is safe,
+// same as a real absent member -- only a call still refuses by name).
+// `dns.promises` is the one exception, handled at the export below.
 
 import { refusingProxy } from './unimplemented.js'
-import { refuseShim } from './errors.js'
+import { OrivonShimError, refuseShim } from './errors.js'
 
-export class OrivonDnsUnsupportedError extends Error {
+// A177: extends OrivonShimError so `catch (e) { if (e instanceof
+// OrivonShimError) ... }` also catches this one, rather than needing its own
+// special case -- name/message/code below are unchanged from before.
+export class OrivonDnsUnsupportedError extends OrivonShimError {
   readonly code = 'ERR_ORIVON_DNS_UNSUPPORTED'
 
   constructor () {
     super(
-      'orivon-node-shim: dns.lookup is not supported -- DNS resolution needs its own broker ' +
-      'capability, which does not exist yet. Connect to an IP address literal instead of a ' +
-      'hostname, or wait for that capability to land.'
+      'dns.lookup',
+      'not-built',
+      'dns.lookup is not supported -- DNS resolution needs its own broker capability, which ' +
+      'does not exist yet. Connect to an IP address literal instead of a hostname, or wait for ' +
+      'that capability to land.'
     )
     this.name = 'OrivonDnsUnsupportedError'
   }
@@ -62,4 +69,10 @@ function otherDnsMember (prop: string) {
   )
 }
 
-export default refusingProxy({ lookup }, otherDnsMember)
+export default refusingProxy({
+  lookup,
+  // dns.promises is an object of promise-returning methods, not a function
+  // -- a throwing-function refusal (A169) would misreport its own type, so
+  // this is explicitly undefined rather than routed through otherDnsMember.
+  promises: undefined
+}, otherDnsMember)

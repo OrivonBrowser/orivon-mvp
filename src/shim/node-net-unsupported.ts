@@ -1,13 +1,16 @@
 // net.createServer, deliberately not built -- same shape as
 // node-http-unsupported.ts's createServer, and the same underlying gap: A114.
 
-import { refuseShim, type OrivonShimError } from './errors.js'
+import { OrivonShimError, refuseShim } from './errors.js'
 
-export class OrivonNetUnsupportedError extends Error {
+// A177: extends OrivonShimError so `catch (e) { if (e instanceof
+// OrivonShimError) ... }` also catches this one -- message/name/code
+// unchanged from before.
+export class OrivonNetUnsupportedError extends OrivonShimError {
   readonly code = 'ERR_ORIVON_NET_UNSUPPORTED'
 
   constructor (api: string, reason: string) {
-    super(`orivon-node-shim: ${api} is not supported -- ${reason}`)
+    super(api, 'not-built', `${api} is not supported -- ${reason}`)
     this.name = 'OrivonNetUnsupportedError'
   }
 }

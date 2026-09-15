@@ -3,13 +3,16 @@
 // reason the same way rather than drifting into two slightly different
 // messages for one gap.
 
-import { refuseShim, type OrivonShimError } from './errors.js'
+import { OrivonShimError, refuseShim } from './errors.js'
 
-export class OrivonHttpUnsupportedError extends Error {
+// A177: extends OrivonShimError so `catch (e) { if (e instanceof
+// OrivonShimError) ... }` also catches this one -- message/name/code
+// unchanged from before.
+export class OrivonHttpUnsupportedError extends OrivonShimError {
   readonly code = 'ERR_ORIVON_HTTP_UNSUPPORTED'
 
   constructor (api: string, reason: string) {
-    super(`orivon-node-shim: ${api} is not supported -- ${reason}`)
+    super(api, 'not-built', `${api} is not supported -- ${reason}`)
     this.name = 'OrivonHttpUnsupportedError'
   }
 }

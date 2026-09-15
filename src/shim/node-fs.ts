@@ -189,5 +189,9 @@ function otherFsMember (prop: string) {
 export default refusingProxy({
   readFile, readFileSync, writeFile, writeFileSync,
   mkdir, readdir, stat, rm, rename, open,
-  statSync, mkdirSync, readdirSync, rmSync, renameSync, existsSync
+  statSync, mkdirSync, readdirSync, rmSync, renameSync, existsSync,
+  // fs.constants is data (POSIX flag numbers), not a function -- a
+  // throwing-function refusal (A169) would misreport its own type, so this
+  // is explicitly undefined rather than routed through otherFsMember.
+  constants: undefined
 }, otherFsMember)
