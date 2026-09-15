@@ -192,6 +192,19 @@ platform API is a trap":
 - **Only string/`Uint8Array`/`ArrayBuffer`/`URLSearchParams` request bodies are supported** --
   `FormData`, `Blob` and a streamed-upload body are not built here. v0 scope cut (PR #133).
 
+**A second, independent mechanism diverges the same way, for a different class of request.**
+`fetch-route.ts` above only intercepts the page's own JS-level `fetch()` calls. A passive
+subresource load pointed at a granted third-party host -- an `<img>`, `<link>`, or `<video>`
+`src`/`href` -- never reaches `fetch-route.ts` at all: it is intercepted at the
+`protocol.handle` layer instead, inside the app's own partition
+([`src/loader/serve.ts`](../loader/serve.ts)'s `fetchThirdParty`, dialled by
+[`src/loader/serve-reach.ts`](../loader/serve-reach.ts)'s `nodeReachDial`, Node's own `https`
+module). Like the mechanism above, it never follows a redirect: a 3xx response from the granted
+host comes back exactly as received, so a redirecting URL used as an `<img src>` or `<video src>`
+on a granted host renders as a broken load rather than following through -- surprising, since the
+page wrote no network code of its own to suspect. See `src/loader/README.md`'s Design notes for
+the full mechanism; this file's own list above covers only the `fetch()` path.
+
 **`init.signal` (`AbortController`) IS supported**, matching real `fetch()`: an already-aborted
 signal rejects before any dial happens; aborting mid-flight rejects the pending promise (via a
 `raceAbort` race against every awaited step) AND closes the underlying socket directly, so the
