@@ -6784,7 +6784,7 @@ stops at a real grant reaching a real page; nothing here issues one in productio
 
 ### A186 -- lane L6-shim's dispatch brief said `orivon.fs.open` was merged (PR #204); at this
 lane's own cut point it is not, and A184 (cited in this lane's own code) has no entry here yet
-**[STILL OPEN -- cross-branch coordination gap, not a defect in this lane's own code]**
+**[RESOLVED 2026-09-15 -- the branch landed as PR #204; this lane now builds on it directly]**
 
 **Raised 2026-09-15**, lane L6-shim (`stream/shim-14-server-open-dns`), building the Node shapes
 over `net.createServer`, `fs.open` and `dns.lookup`. Two of the three capabilities this lane was
@@ -6839,3 +6839,17 @@ the merge-order dependency, and whether the fleet's own A-number floor tracking 
 "the floor is NOT main's high-water mark" warning) should be extended to check unmerged branches
 programmatically rather than by an agent noticing mid-lane, since this is now the second
 independent discovery of the same undercount in one run.
+
+**Resolved the same day, by the conductor, before this lane's own PR was opened.** `fs.open` merged
+as **PR #204** (`main` = `c47f7c5`) minutes after this lane was dispatched, and `A184` landed with
+it. This branch has since merged `main`, so the shim's `fs.open` shape now sits on the real broker
+capability rather than on a type contract alone -- **4480 tests pass across the merged tree**, and
+`A184`'s own entry exists.
+
+**The lane was right to file it and right not to guess.** The brief asserted a merge that had not
+happened yet at the cut commit; the lane checked rather than believed it, built against the stable
+type contract regardless, and said so. **Keeping it as a resolved entry rather than deleting it,
+because the underlying hazard is structural and will recur:** a brief written while a dependency is
+in flight goes stale between dispatch and execution, and a lane that trusts it builds on something
+absent. The cheap fix on the conductor's side is to state the dependency's commit, not just its PR
+number, so a lane can verify the claim instead of taking it on faith.
