@@ -34,7 +34,8 @@ Five directories, one per job. The name of the directory is the question it answ
 | [`adapters/`](adapters/) | **Do** — dial the address, open the file | no | **this is the only place** |
 | [`transport/`](transport/) | **Speak** — reach the page, move the bytes | connection registry | Electron IPC and ports |
 
-Three files stay at the top level because they belong to no single directory:
+Eight files stay at the top level because they belong to no single directory (this count was
+"three" for a while and drifted uncorrected as more joined it — fixed 2026-09-15, A169):
 
 - [`index.ts`](index.ts) — `createBroker` and the capability entry points that consult all five
 - [`broker-contracts.ts`](broker-contracts.ts) — the `Broker` interface and its fixed dependency shape
@@ -56,12 +57,18 @@ Three files stay at the top level because they belong to no single directory:
   has no `Broker` entry point yet, see the file's own header), built alongside
   `net-capability.ts` from the start rather than inlined into `index.ts` first, same reason:
   `index.ts` was already 264 lines before `id`
-- [`fs-capability.ts`](fs-capability.ts) — `orivon.fs`'s eight entry points (`readFile`,
-  `writeFile`, `confineSync` plus queue item 2.1's `mkdir`/`readdir`/`stat`/`rm`/`rename`),
-  lifted out of `index.ts` on 2026-09-10 under the same Rule 2 seam `net-capability.ts` and
-  `id-capability.ts` already established — every method routes through this file's own
-  `confineForOrigin`, the one call into `policy/paths.ts`'s `confinePath`. `orivon.fs.open`
-  (`FileHandle`) is deliberately not here — parked, see that lane's own PR body
+- [`fs-capability.ts`](fs-capability.ts) — `orivon.fs`'s nine entry points (`readFile`,
+  `writeFile`, `confineSync` plus queue item 2.1's `mkdir`/`readdir`/`stat`/`rm`/`rename`, plus
+  `open`, A169), lifted out of `index.ts` on 2026-09-10 under the same Rule 2 seam
+  `net-capability.ts` and `id-capability.ts` already established — every method routes through
+  this file's own `confineForOrigin`, the one call into `policy/paths.ts`'s `confinePath`.
+  `open` confines once, at open time — see the file's own doc on `open` for why a handle that
+  outlives the call is still safe under that
+- [`fs-contracts.ts`](fs-contracts.ts) — `RawFileStat`, `OpenedFile`, `BrokerFs` and
+  `BrokerFsMethods`, split out of `broker-contracts.ts` on 2026-09-15 (A169) when `open`'s own
+  types pushed that file past 500 lines — re-exported from there, so no existing import site
+  had to change. The `net`/`fs` split here mirrors `net-capability.ts`'s own move out of
+  `index.ts`: by SUBSYSTEM, not by "is this a type or a function"
 
 The decomposition and the import boundaries are recorded in
 [`ADR-0015`](../../docs/decisions/ADR-0015-the-broker-is-organised-by-job.md), including the two
@@ -378,3 +385,63 @@ longer obtain is silently dropped, never restored. See `grants/README.md`'s own 
 the full mechanism, including why hydration runs from `registerApp` rather than `versionFloor`'s
 own earlier-touch hook (it needs a manifest to re-validate against), and the T13c exclusion for
 loopback/plain-http origins.
+
+### `fs-capability.ts`'s `open` -- confining once, no `abort`, and why a stream errors on quota (A169)
+
+**Confinement runs exactly once, at open, never again for `read`/`write`/`stat`/`truncate`/
+`sync`/`readable`/`writable`.** Every other `fs` method re-derives a fresh `confineForOrigin`
+call per invocation because each one carries a fresh path; `open`'s own operations carry no path
+at all past acquisition -- they address the real OS file descriptor `deps.fs.open` already
+returned. A symlink swapped in on disk after `open()` returns cannot retarget an already-open fd
+the way it could a second path lookup, so there is nothing left for a second confinement check to
+catch. This mirrors `net.connect` exactly: the policy check runs once, at acquisition, and every
+operation after it re-checks only OWNERSHIP of the handle (T11c, via `runFileIo`'s
+`{on:'handle'}` scope), never the grant a second time.
+
+**`FailableFileHandle` has no `abort`, unlike `FailableTcpSocket`.** A `TcpSocket` is one fixed
+duplex, so "abort the socket" is unambiguous: tear the whole handle down with an RST. A
+`FileHandle`'s `readable()`/`writable()` are FACTORIES -- an app may hold several live streams
+over one handle at once, at different offsets, exactly matching this handle's own no-implicit-
+cursor rule -- so "abort the file" has no single stream to mean. Aborting one `writable()`
+stream discards that stream's own buffered bytes through the real underlying `WritableStream`'s
+own `abort()`, entirely below this interface; it never reaches into the handle table the way a
+TcpSocket's `abort()` does, and the other streams the app may be holding are untouched.
+
+**`writable()`'s quota check ERRORS the stream on the chunk that exceeds it -- it does not
+silently drop the chunk the way `udp.send`'s A87 counted loss does.** The two failures are not
+the same shape (code-guidelines.md Rule 3's counterweight: extract or diverge on the REASON, not
+the shape): a DHT peer list routinely names addresses outside a grant, so treating the first
+excluded peer as fatal would kill a working swarm, and UDP has no delivery guarantee to violate
+by dropping one packet. A torrent write that silently dropped bytes past quota would instead
+corrupt the file actually landing on disk -- there is no "the app expected some loss here" for a
+positional byte stream the way there is for a P2P transport. Positional `write()` gets the same
+treatment via `reserveFsBytes`/`releaseFsBytes`; both paths share the SAME running per-origin
+counter, so an app cannot bypass its declared quota by switching from one call shape to the
+other.
+
+**`destroy()`'s teardown (`../adapters/node-fs-adapter.ts`) is conditional on the close reason,
+mirroring `destroySocket`'s A84 fix, but deliberately does NOT reuse its `CLOSE_DRAIN_TIMEOUT_MS`.**
+'closed'/'sessionEnded' let a still-queued `writable()` stream finish before the fd is released;
+'revoked'/'aborted'/'failed' discard it outright -- same two-way split, same reason (a flushing
+reason must not truncate the app's own final bytes; an abrupt one has nothing worth preserving).
+The socket version needs a deadline because `socket.end()`'s callback can wait forever on a REMOTE
+PEER that has simply stopped reading. A local `fs.WriteStream` has no such adversary: it drains to
+the OS's own `write()` syscall, bounded by real disk I/O, never by another party's willingness to
+read anything. Proven directly, not assumed: `node-fs-adapter-open.test.ts`'s teardown tests fire a
+write without awaiting it and call `destroy()` a line later -- deterministic because JS is single-
+threaded and a real fs write cannot complete before the test's own next synchronous statement runs,
+the same trick that makes the test immune to disk speed.
+
+**`readable()`/`writable()` stop at the broker layer in this landing (2026-09-15, A169) --
+still open, not forgotten.** They are real, adapter-level WHATWG streams, proven directly against
+a real fd (`node-fs-adapter-open.test.ts`), and `port-pump.ts`/`port-sink.ts` are already generic
+enough to relay either one over a socket's dedicated port the same way `net.connect`'s byte pump
+does -- nothing about them is TCP-specific. What is missing is the wiring itself: a control-
+channel case that mints a port pair for a `FileHandle` the way `net.connect`'s `deliverTcpSocket`
+does for a `TcpSocket`, and the main-world stream construction on the preload side
+(`main-world-socket.ts`'s `buildSocket` is the pattern to follow). Deferred as an explicit scope
+decision under this lane's own ordering constraint ("keep the dispatch cases minimal"), not
+discovered as a blocker -- see `docs/open-questions.md` A169 and this lane's own PR body for what
+that means a page cannot do yet: `window.orivon.fs.open(...)`'s returned object is deliberately
+narrower than `FileHandle`, with no `readable`/`writable`, and its `closed` is not live-pushed
+(revocation surfaces on the next operation attempted against the handle, not proactively).

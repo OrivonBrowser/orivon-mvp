@@ -27,9 +27,18 @@
 >   (`src/broker/id-capability.ts`, wired through the control channel and the preload surface).
 >   `requestIdentity` and the named-identity `signEvent` shape below are **not** built: they need
 >   the connect prompt, which is build step 4 (`docs/open-questions.md` A111).
-> - **`FileHandle`** — still the exception. `src/broker/index.ts` exposes flat, whole-file
->   `fs.readFile`/`writeFile`/`readFileSync` (path-confined and quota-checked), but the positional
->   `read`/`write`, `stat`, `truncate`, `sync` and `userSelected` shape below does not exist.
+> - **`FileHandle`** — **corrected again 2026-09-15 (A169, `stream/broker-15-fs-open`).** The
+>   positional `read`/`write`, `stat`, `truncate`, `sync`, `readable()` and `writable()` shape
+>   below is now built and page-reachable via `orivon.fs.open` — `src/broker/fs-capability.ts`,
+>   the control-channel cases in `src/broker/transport/dispatch-fs.ts`, and
+>   `src/preload/orivon-surface.ts`. **`readable()`/`writable()` are the one part that stopped at
+>   the broker layer, same shape as `TcpServer`'s own note above:** they are real WHATWG streams,
+>   tested directly against a real fd (`src/broker/adapters/tests/node-fs-adapter-open.test.ts`),
+>   but there is no CONTROL_CHANNEL case yet to deliver one to a page, so
+>   `window.orivon.fs.open(...)`'s returned object is deliberately narrower than `FileHandle`
+>   here — no `readable`/`writable`, and `closed` is not live-pushed (it settles on an explicit
+>   `close()`, not on a broker-side revocation the app never asked for). `orivon.fs.userSelected`
+>   is untouched by this lane and still does not exist.
 >
 > Each section's own marker is the authority for that handle; this list is a summary and will go
 > stale before they do.
@@ -387,13 +396,19 @@ interface UdpSocket extends Handle {
 
 ## §FileHandle
 
-> **Partially implemented.** `src/broker/index.ts` exposes flat, whole-file
-> `fs.readFile`/`writeFile` — checked against path confinement and the running per-origin quota
-> — but not the `FileHandle` object below: no positional `read`/`write`, no `stat`, `truncate`
-> or `sync`, no `readable()`/`writable()` stream factories, and no `orivon.fs.userSelected`. The
-> kind-agnostic handle-table accounting for a `file`-kind handle (§Limits, the `userSelected`
-> revocation exception) is built and tested even though nothing yet acquires a handle through
-> this shape.
+> **Partially implemented, corrected 2026-09-15 (A169).** `orivon.fs.open` now builds the whole
+> `FileHandle` shape below at the broker layer (`src/broker/fs-capability.ts`,
+> `src/broker/adapters/node-fs-adapter.ts`) — positional `read`/`write` (no implicit cursor,
+> confined once at open time), `stat`, `truncate`, `sync`, and real WHATWG `readable()`/
+> `writable()` streams over the same fd. `read`/`write`/`stat`/`truncate`/`sync`/`close` are
+> page-reachable via `src/broker/transport/dispatch-fs.ts`'s control-channel cases and
+> `src/preload/orivon-surface.ts`. **`readable()`/`writable()` stop at the broker layer**: they
+> are real, tested streams, but nothing yet delivers one to a page over a port the way
+> `net.connect`'s byte pump does for `TcpSocket` — see the banner above and this lane's own PR
+> body. `orivon.fs.userSelected` still does not exist. The kind-agnostic handle-table accounting
+> for a `file`-kind handle (§Limits, the `userSelected` revocation exception) was already built
+> and tested before this lane, and is now exercised by a real acquisition rather than only its
+> own unit tests.
 
 ```ts
 interface FileStat {

@@ -6543,3 +6543,71 @@ once this lane's shapes are confirmed.
 **Needed by:** the A114 implementation lane (item 1), the `fs.open`/`fs.userSelected` broker lane
 (item 2, compatibility-matrix.md Table 4 row 6), and whichever lane wires `node-dns.ts` to a real
 broker capability (item 3, `A107`).
+
+### A169 -- `orivon.fs.open` is built end to end for its RPC-shaped methods; `readable()`/`writable()` stop at the broker layer, not yet page-reachable **[AI-REC -- readable/writable deferral is a scope call, not a discovered blocker; the other judgment calls below are flagged, not owner-reviewed]**
+
+**Raised 2026-09-15**, lane L2-fsopen (`stream/broker-15-fs-open`). `FileHandle`
+(`docs/architecture/handle-contracts.md` §FileHandle, `src/contracts/handles.ts`) needed no
+`src/contracts/` change -- the shape was already complete -- so this lane built the broker
+capability (`src/broker/fs-capability.ts`, `src/broker/adapters/node-fs-adapter.ts`), the
+control-channel dispatch (`src/broker/transport/dispatch-fs.ts`) and the preload surface
+(`src/preload/orivon-surface.ts`, `src/preload/main-world-socket.ts`) in one PR.
+
+**What is genuinely done, page-reachable, and tested against real I/O:** `open`, positional
+`read`/`write` (no implicit cursor, matching the contract's own explicit-position rule), `stat`,
+`truncate`, `sync` and `close`, each confined once at open time and running under the same
+per-origin in-flight budget and write quota `readFile`/`writeFile` already use. Confinement,
+grant-absence, revocation-mid-operation and quota-exceeded are all covered by a failing-path test,
+not only the success path (`src/broker/tests/fs-open.test.ts`,
+`src/broker/adapters/tests/node-fs-adapter-open.test.ts`).
+
+**Still open, by design, a scope call under this lane's own ordering constraint ("keep the
+dispatch cases minimal") rather than a gap discovered mid-build:** `readable()`/`writable()` are
+real, tested WHATWG streams at the broker/adapter layer (proven directly against a real fd), but
+there is no CONTROL_CHANNEL case delivering one to a page the way `net.connect`'s byte pump does
+for a `TcpSocket` -- `port-pump.ts`/`port-sink.ts` are already generic enough to relay either one
+over a socket's dedicated port (nothing in them is TCP-specific), so this is wiring work, not a
+redesign. `window.orivon.fs.open(...)`'s returned object is therefore deliberately narrower than
+`FileHandle`: no `readable`/`writable`, and `closed` is not live-pushed -- it settles on an
+explicit `close()`, and a broker-side revocation the app never asked for surfaces only on the
+NEXT operation attempted against the handle, not proactively. This is the same category of gap
+`net.connect` itself had for three of its four landing PRs (`CLAUDE.md`'s own history).
+`orivon.fs.userSelected` is untouched by this lane -- A167 item 2's `DirectoryHandle`/folder-
+picker judgment calls are still unconfirmed and still need their own implementation lane.
+
+**Flagged AI judgment calls, not owner-reviewed, all in `src/broker/README.md`'s own design
+note for this lane (search `A169`) with the full reasoning -- summarised here:**
+
+1. **`FailableFileHandle` has no `abort()`**, unlike `FailableTcpSocket`. A `FileHandle`'s
+   `readable()`/`writable()` are factories an app may call more than once concurrently, unlike a
+   `TcpSocket`'s one fixed duplex, so "abort the file" has no single stream to mean -- aborting a
+   `writable()` stream discards only that stream's own buffered bytes, never reaching into the
+   handle table.
+2. **`writable()`'s quota check ERRORS the stream on the chunk that exceeds it**, unlike
+   `udp.send`'s A87 counted, never-rejecting loss. A dropped datagram is ordinary P2P traffic; a
+   silently dropped byte in a positional file write is silent corruption. Positional `write()`
+   and the `writable()` stream share one running `reserveFsBytes`/`releaseFsBytes` counter, so
+   neither path can be used to exceed the declared quota the other already enforces.
+3. **`destroy()`'s close-reason-conditional teardown (mirroring `destroySocket`'s A84 fix)
+   deliberately does not reuse its `CLOSE_DRAIN_TIMEOUT_MS`.** A local `fs.WriteStream` drains to
+   the OS's own `write()` syscall, bounded by real disk I/O, never by a remote peer that can
+   simply stop reading -- the hazard that timeout exists for. Proven directly (not assumed):
+   `node-fs-adapter-open.test.ts` fires a write without awaiting it and calls `destroy()` a line
+   later, deterministic because a real fs write cannot complete before the test's own next
+   synchronous statement runs.
+4. **`open`'s flags string is checked against Node's own documented flag set** (`'r'`, `'r+'`,
+   `'w'`, `'wx'`, ... -- `fs-capability.ts`'s `VALID_OPEN_FLAGS`) before the confined path or the
+   grant are even consulted, so a malformed flags string is `'invalid'` (an app bug) rather than
+   whatever the raw adapter call happens to throw for it. No numeric-mode variant is accepted --
+   `capability-api.ts`'s `open` types `flags` as a `string`, never a number.
+5. **Confining once, at `open`, is sufficient for a handle that outlives the call that created
+   it** -- this lane's own brief asked this to be thought through and written down, not assumed.
+   Every operation after acquisition addresses the real OS file descriptor, never the path again,
+   so there is nothing left for a second confinement check to catch; a symlink swapped in after
+   `open()` returns cannot retarget an already-open fd the way it could a second path lookup.
+
+**Verified, this lane:** `npm run typecheck` clean; `npm test` 4346 passed, 3 skipped (up from
+4307 before this lane, all pre-existing suites still green); `npm run check:size`,
+`check:comments`, `check:contracts`, `check:natives`, `check:secrets`, `check:questions` all
+pass. Full numbers and the PR body are in this lane's own log
+(`/home/jhon/.claude/orivon-fleet/lanes/L2-fsopen/log.md`).
