@@ -24,68 +24,16 @@ import type { OrivonErrorCode } from '../contracts/errors.js'
 import type { FileStat, LookupAddress, SendRefusal, UdpSocket } from '../contracts/handles.js'
 import type { ResponseEnvelope } from '../contracts/ipc.js'
 import type { CapabilityRequest } from '../contracts/capability-api.js'
+import type { MainWorldDatagram, MainWorldServerBridge, MainWorldSocketBridge, MainWorldUdpBridge, OrivonLimits } from './main-world-bridges.js'
 
-export interface OrivonLimits {
-  readonly readWindowBytes: number
-  readonly writeWindowBytes: number
-  readonly inboundDatagramWindow: number
-  readonly outboundDatagramWindow: number
-}
-
-/** One UDP packet, as the page sees it. Mirrors contracts/handles.ts's Datagram. */
-export interface MainWorldDatagram {
-  readonly data: Uint8Array
-  readonly address: string
-  readonly port: number
-  readonly family: 'IPv4' | 'IPv6'
-}
-
-/**
- * What orivon-surface.ts's netUdpBind closure resolves to -- ./datagram-port.ts's
- * DatagramPort plus the bind descriptor and the one control-channel operation
- * a UDP socket has (close).
- *
- * `onDropped` is PUSH-BASED rather than a pair of getters, and that is not a
- * style choice: a value returned synchronously across contextBridge's proxy is
- * unproven on this path, while sync-void calls with callbacks are exactly what
- * the rest of this bridge already does and what the 2026-09-05 probe confirmed.
- */
-export interface MainWorldUdpBridge {
-  readonly id: string
-  readonly localAddress: string
-  readonly localPort: number
-  readonly onDatagram: (cb: (datagram: MainWorldDatagram) => void) => void
-  readonly onReadEnd: (cb: (code: OrivonErrorCode | undefined) => void) => void
-  readonly onDropped: (cb: (inbound: number, outbound: number) => void) => void
-  /** Fires once per refused outbound datagram (A87), feeding buildUdpSocket's `refusals` stream. */
-  readonly onRefusal: (cb: (refusal: SendRefusal) => void) => void
-  readonly onFatal: (cb: (code: OrivonErrorCode) => void) => void
-  readonly reportConsumed: (datagrams: number, bytes: number) => void
-  readonly send: (datagram: MainWorldDatagram) => Promise<void>
-  readonly closed: Promise<void>
-  readonly close: () => Promise<void>
-}
-
-/** The shape ./socket-port.ts's SocketPort plus a connection descriptor and the three control-channel operations net.connect doesn't otherwise expose -- what orivon-surface.ts's netConnect bridge closure resolves to. */
-export interface MainWorldSocketBridge {
-  readonly id: string
-  readonly remoteAddress: string
-  readonly remotePort: number
-  readonly localAddress: string
-  readonly localPort: number
-  readonly onData: (cb: (chunk: Uint8Array) => void) => void
-  readonly onReadEnd: (cb: (code: OrivonErrorCode | undefined) => void) => void
-  readonly reportConsumed: (bytesConsumed: number) => void
-  readonly write: (chunk: Uint8Array) => Promise<void>
-  readonly endWrite: () => Promise<void>
-  readonly abortWrite: () => void
-  /** Fires once if the write direction fails outright, or the port goes silent past the timeout -- see ./socket-port.ts's own SocketPort.onFatal. */
-  readonly onFatal: (cb: (code: OrivonErrorCode) => void) => void
-  readonly closed: Promise<void>
-  readonly close: () => Promise<void>
-  readonly setNoDelay: (on: boolean) => Promise<void>
-  readonly setKeepAlive: (on: boolean, initialDelayMs?: number) => Promise<void>
-}
+// The bridge shapes (OrivonLimits, MainWorldDatagram, MainWorldUdpBridge,
+// MainWorldServerBridge, MainWorldSocketBridge) live in ./main-world-bridges.ts
+// now -- split out under code-guidelines.md Rule 2, safe despite this file's
+// own serialised-function constraint below because an `interface` produces no
+// JS at all (that file's own header). Re-exported here so every existing
+// `import ... from './main-world-socket.js'` elsewhere in the tree keeps
+// working unchanged.
+export type { MainWorldDatagram, MainWorldServerBridge, MainWorldSocketBridge, MainWorldUdpBridge, OrivonLimits } from './main-world-bridges.js'
 
 export function installOrivon (
   bridge: {
@@ -118,6 +66,7 @@ export function installOrivon (
     /** net.connectSecure's own closure -- resolves to the identical bridge shape netConnect does; buildSocket below is shared by both (Rule 3). */
     netConnectSecure: (opts: { host: string, port: number }) => Promise<MainWorldSocketBridge>
     netUdpBind: (opts: { port: number }) => Promise<MainWorldUdpBridge>
+    netListen: (opts: { port: number }) => Promise<MainWorldServerBridge>
     /** `net.lookup` (d-0030) -- plain data, not a bridge: no per-socket state to wrap, unlike every other `net*` entry above. */
     netLookup: (opts: { hostname: string }) => Promise<readonly LookupAddress[]>
   },
@@ -259,6 +208,54 @@ export function installOrivon (
       },
       setNoDelay: async (on: boolean) => { await callRevived(s.setNoDelay(on)) },
       setKeepAlive: async (on: boolean, initialDelayMs?: number) => { await callRevived(s.setKeepAlive(on, initialDelayMs)) }
+    })
+  }
+
+  /**
+   * Builds the page's real `TcpServer` (contracts/handles.ts) -- the
+   * `connections` half of A114/d-0028, over exactly the closures
+   * ./server-port.ts built in the isolated world.
+   *
+   * `highWaterMark: 0`, MATCHING THE BROKER'S OWN `entry.connections`
+   * EXACTLY (handle-contracts.md's "TcpServer" section, net-capability.ts's
+   * own `listen`): `pull()` below fires once per app `read()` that finds the
+   * queue empty, and each firing is EXACTLY one unit of accept demand
+   * (./server-port.ts's `reportAccepted`, ../broker/transport/accept-pump.ts's
+   * own `handleDemand` one layer down). THIS IS THE PROPERTY THIS WHOLE LANE
+   * EXISTS TO PRESERVE: `reportAccepted` must never be called from anywhere
+   * but here, or the broker accepts connections nobody asked for
+   * (open-questions.md A185).
+   */
+  function buildServer (s: Awaited<ReturnType<typeof bridge.netListen>>): unknown {
+    let readController: ReadableStreamDefaultController<unknown>
+
+    const connections = new ReadableStream({
+      start (controller) {
+        readController = controller
+        s.onConnection((socket) => { controller.enqueue(buildSocket(socket)) })
+        s.onReadEnd((code) => {
+          if (code === undefined) {
+            try { controller.close() } catch { /* already settled */ }
+          } else {
+            try { controller.error(toOrivonError(code)) } catch { /* already settled */ }
+          }
+        })
+      },
+      pull () {
+        s.reportAccepted()
+      }
+    }, new CountQueuingStrategy({ highWaterMark: 0 }))
+
+    return Object.freeze({
+      id: s.id,
+      localAddress: s.localAddress,
+      localPort: s.localPort,
+      connections,
+      closed: callRevived(s.closed),
+      close: async () => {
+        await callRevived(s.close())
+        try { readController.close() } catch { /* already closed or errored */ }
+      }
     })
   }
 
@@ -420,6 +417,7 @@ export function installOrivon (
       connect: async (opts: { host: string, port: number }) => buildSocket(await callRevived(bridge.netConnect(opts))),
       connectSecure: async (opts: { host: string, port: number }) => buildSocket(await callRevived(bridge.netConnectSecure(opts))),
       udpBind: async (opts: { port: number }) => buildUdpSocket(await callRevived(bridge.netUdpBind(opts))),
+      listen: async (opts: { port: number }) => buildServer(await callRevived(bridge.netListen(opts))),
       lookup: async (opts: { hostname: string }) => await callRevived(bridge.netLookup(opts))
     })
   }

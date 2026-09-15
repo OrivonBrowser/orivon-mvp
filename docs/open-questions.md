@@ -6624,3 +6624,64 @@ the assertions**: they used RFC 5737 documentation addresses (`203.0.113.x`, `19
 function rather than reasoning about it. The assertions they make (an unlimited grant resolves any
 name; a reserved-port grant still authorises its own lookup) are unchanged and still pass against a
 routable fixture.
+
+### A185 -- `net.listen`'s accept-demand signal reuses `CreditMessage` rather than a new wire member, and the highWaterMark: 0 property had to be proven end to end through three new layers **[AI-REC -- confirm alongside A167]**
+
+**Raised 2026-09-15**, lane L3-listen-page (`stream/preload-06-listen-page`), which built the
+page-reachable half of `orivon.net.listen` (A114/d-0028): `broker.net.listen`'s already-complete
+`connections` stream, delivered to a real page as a real `TcpServer.connections` `ReadableStream`.
+This run resumed a predecessor cut off mid-work by a session-limit interruption (committed as
+`b61d9e8`); this entry covers the judgment call the predecessor's own code comments already
+pointed here for (`accept-pump.ts`, `server-port.ts`) but never wrote up, plus what this run found
+and fixed finishing the landing.
+
+**1. The judgment call: one accepted connection is ONE unit of demand, signalled by reusing
+`CreditMessage` (`{kind:'credit', handleId, bytesConsumed}`) rather than a new
+`RendererToBrokerMessage` member.** `src/broker/transport/accept-pump.ts`'s `handleDemand`
+interprets `bytesConsumed` as a COUNT of connections rather than bytes; `src/preload/server-port.ts`'s
+`reportAccepted` always sends `bytesConsumed: 1`, one call per app `connections.getReader().read()`.
+The alternative -- a purpose-built member, e.g. `{kind:'accept', handleId}` -- was not built: A167
+closed `src/contracts/` for this lane (its own scope rule: three shapes landed, no new
+`RendererToBrokerMessage` member among them), and `CreditMessage`'s existing wire shape already
+means "the renderer is ready for more," so reinterpreting its one field costs nothing to the wire
+protocol at the price of a field name (`bytesConsumed`) that means something different on a
+server's own port than it does on a socket's. **Confirm:** does the reused field stand, or is a
+purpose-built member worth a `src/contracts/` change now that the implementation exists to show
+what it would look like?
+
+**2. Verified end to end, not just asserted: `highWaterMark: 0` survives all three new layers.**
+This is the property the brief named as the one most likely to be silently destroyed by a page-side
+wrapper that eagerly drains `connections` -- if it were, the broker would accept connections nobody
+asked for. Proven at each layer with an explicit "N reads accept exactly N connections, and an
+unread server accepts none" test: `accept-pump.test.ts` (the broker's own pump), `server-port.test.ts`
+(the isolated-world preload state machine), and `main-world-socket-listen.test.ts` (the page's own
+`ReadableStream`, constructed with `CountQueuingStrategy({ highWaterMark: 0 })` in
+`main-world-socket.ts`'s `buildServer`, whose `pull()` is the ONLY caller of `reportAccepted` --
+enforced by construction, not just convention, since nothing else in the isolated or main world
+holds a reference to it).
+
+**3. Found and fixed, independent of the merge conflict this run also resolved: `net.listen` was
+declared reachable but was never actually dispatched on `main`.** `src/broker/transport/
+ipc-validation.ts`'s `ControlMethod`/`isControlMethod` already listed `'net.listen'` (landed by
+the contracts-adjacent split before this run resumed), but neither `ipc.ts`'s pre-split `dispatch()`
+switch nor `dispatch-net.ts`'s post-split one had a matching `case` -- a call would have fallen
+through to the end of the switch and resolved `undefined` instead of erroring or listening,
+exactly the silent-gap shape the brief's first warning described for `message.kind` switches.
+Fixed by adding the case, and separately by adding a `never`-typed default case to BOTH `ipc.ts`'s
+`dispatch()` and `dispatch-net.ts`'s `dispatchNet()` switches, so a future `ControlMethod`/
+`NetControlMethod` member with no matching case is a compile error rather than a silent
+`undefined` -- neither switch had one before. `src/preload/socket-port.ts` and
+`src/preload/datagram-port.ts`'s own `message.kind` switches already had an equivalent
+exhaustiveness guard (the predecessor's own work, before the interruption); this run did not find
+or need to change either.
+
+**Verified, this run:** `npm run typecheck` clean; `npm test` 4358 passed, 3 skipped across 186
+files (baseline on `main` before this merge: 4300 passed, 3 skipped, 181 files -- the difference
+is this lane's five new test files); `npm run check:size`/`check:comments`/`check:contracts`/
+`check:natives`/`check:secrets`/`check:questions` all pass. `npm run test:e2e` was deliberately
+**not run** -- this lane does not launch Electron; see this run's own log for what a real e2e
+should prove.
+
+**Needed by:** whichever lane wires a production `tcp.listen` grant and the Node-shaped
+`net.createServer` shim that actually calls this surface -- this lane, like A114 before it,
+stops at a real grant reaching a real page; nothing here issues one in production.

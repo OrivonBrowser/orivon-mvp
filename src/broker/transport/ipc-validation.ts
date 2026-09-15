@@ -13,12 +13,12 @@
 import type { CapabilityRequest, Pattern, RequestEnvelope } from '../../contracts/index.js'
 import { MAX_PATTERNS } from '../policy/connect.js'
 
-/** The nineteen wired control operations. Anything else is 'invalid'. */
+/** The twenty wired control operations. Anything else is 'invalid'. */
 export type ControlMethod =
   | 'app.manifest' | 'app.grants' | 'app.requestGrant' | 'fs.readFile' | 'fs.writeFile'
   | 'fs.mkdir' | 'fs.readdir' | 'fs.stat' | 'fs.rm' | 'fs.rename'
   | 'id.publicKey' | 'id.sign'
-  | 'net.connect' | 'net.connectSecure' | 'net.udpBind' | 'net.close'
+  | 'net.connect' | 'net.connectSecure' | 'net.udpBind' | 'net.listen' | 'net.close'
   | 'net.setNoDelay' | 'net.setKeepAlive' | 'net.lookup'
 
 export function isControlMethod (method: string): method is ControlMethod {
@@ -28,7 +28,7 @@ export function isControlMethod (method: string): method is ControlMethod {
     method === 'fs.rm' || method === 'fs.rename' ||
     method === 'id.publicKey' || method === 'id.sign' ||
     method === 'net.connect' || method === 'net.connectSecure' ||
-    method === 'net.udpBind' || method === 'net.close' ||
+    method === 'net.udpBind' || method === 'net.listen' || method === 'net.close' ||
     method === 'net.setNoDelay' || method === 'net.setKeepAlive' ||
     method === 'net.lookup'
 }
@@ -45,6 +45,11 @@ export interface IdSignParams { readonly curve: string, readonly payload: Uint8A
 /** Shared by net.connect and net.connectSecure -- both take exactly { host, port }, and isNetConnectParams below validates either call's payload (code-guidelines.md Rule 3: same shape, same reason). */
 export interface NetConnectParams { readonly host: string, readonly port: number }
 /**
+ * Shared by net.udpBind and net.listen -- both take exactly `{ port }`, and
+ * `isNetUdpBindParams` below validates either call's payload
+ * (code-guidelines.md Rule 3: same shape, same reason -- matching
+ * `NetConnectParams`' own precedent above for net.connect/net.connectSecure).
+ *
  * `port` of 0 is LEGAL here and means "any free port" -- the one place in this
  * file where zero is not a shape error. policy/bind.ts decides what it is
  * allowed to resolve to; this only checks it is an integer in range.
