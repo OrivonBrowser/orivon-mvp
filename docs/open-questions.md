@@ -6625,7 +6625,7 @@ function rather than reasoning about it. The assertions they make (an unlimited 
 name; a reserved-port grant still authorises its own lookup) are unchanged and still pass against a
 routable fixture.
 
-### A170 -- `net.listen`'s accept-demand signal reuses `CreditMessage` rather than a new wire member, and the highWaterMark: 0 property had to be proven end to end through three new layers **[AI-REC -- confirm alongside A167]**
+### A185 -- `net.listen`'s accept-demand signal reuses `CreditMessage` rather than a new wire member, and the highWaterMark: 0 property had to be proven end to end through three new layers **[AI-REC -- confirm alongside A167]**
 
 **Raised 2026-09-15**, lane L3-listen-page (`stream/preload-06-listen-page`), which built the
 page-reachable half of `orivon.net.listen` (A114/d-0028): `broker.net.listen`'s already-complete

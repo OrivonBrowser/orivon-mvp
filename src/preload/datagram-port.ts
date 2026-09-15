@@ -200,7 +200,7 @@ export function createDatagramPort (options: DatagramPortOptions): DatagramPort 
       // not folded into a bare default, so TypeScript narrows `message` to
       // `never` below and the NEXT new BrokerToRendererMessage member is a
       // compile error here rather than the silent gap A114 found
-      // (open-questions.md A167/A170) -- see ../socket-port.ts's own
+      // (open-questions.md A167/A185) -- see ../socket-port.ts's own
       // identical fix, applied here for the same reason.
       case 'data':
       case 'write-ack':

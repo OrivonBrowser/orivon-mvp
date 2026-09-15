@@ -110,7 +110,7 @@ export function createServerRelay (options: ServerRelayOptions): ServerRelay {
         // MessagePortMain that ./port-transport.ts's own PortPair.port2
         // already types as `unknown` for exactly this reason -- there is no
         // narrower type this file could give it without importing `electron`
-        // into a structurally-typed module. See open-questions.md A167/A170.
+        // into a structurally-typed module. See open-questions.md A167/A185.
         port: pair.port2 as MessagePort
       }
       send(accepted, [pair.port2])

@@ -73,7 +73,7 @@ export interface MainWorldServerBridge {
   readonly localPort: number
   readonly onConnection: (cb: (socket: MainWorldSocketBridge) => void) => void
   readonly onReadEnd: (cb: (code: OrivonErrorCode | undefined) => void) => void
-  /** One unit of accept demand -- called ONLY from ./main-world-socket.ts's own buildServer `pull()`; see that file's header and open-questions.md A170. */
+  /** One unit of accept demand -- called ONLY from ./main-world-socket.ts's own buildServer `pull()`; see that file's header and open-questions.md A185. */
   readonly reportAccepted: () => void
   readonly closed: Promise<void>
   readonly close: () => Promise<void>

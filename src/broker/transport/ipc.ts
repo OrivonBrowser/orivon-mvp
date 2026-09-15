@@ -101,7 +101,7 @@ async function dispatch (
     default: {
       // Exhaustiveness check: if ControlMethod (ipc-validation.ts) ever
       // gains a member no case above names, `method` is not assignable to
-      // `never` here and THIS LINE FAILS TO COMPILE -- the guard A170's
+      // `never` here and THIS LINE FAILS TO COMPILE -- the guard A185's
       // brief asked for, because nothing else in this switch does (no
       // `assertNever`, no keyed `Record`) and a missed case would otherwise
       // resolve silently to `undefined` instead of a compile error.

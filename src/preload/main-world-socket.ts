@@ -224,7 +224,7 @@ export function installOrivon (
    * own `handleDemand` one layer down). THIS IS THE PROPERTY THIS WHOLE LANE
    * EXISTS TO PRESERVE: `reportAccepted` must never be called from anywhere
    * but here, or the broker accepts connections nobody asked for
-   * (open-questions.md A170).
+   * (open-questions.md A185).
    */
   function buildServer (s: Awaited<ReturnType<typeof bridge.netListen>>): unknown {
     let readController: ReadableStreamDefaultController<unknown>
