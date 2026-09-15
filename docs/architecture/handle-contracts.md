@@ -27,7 +27,7 @@
 >   (`src/broker/id-capability.ts`, wired through the control channel and the preload surface).
 >   `requestIdentity` and the named-identity `signEvent` shape below are **not** built: they need
 >   the connect prompt, which is build step 4 (`docs/open-questions.md` A111).
-> - **`FileHandle`** — **corrected again 2026-09-15 (A169, `stream/broker-15-fs-open`).** The
+> - **`FileHandle`** — **corrected again 2026-09-15 (A184, `stream/broker-15-fs-open`).** The
 >   positional `read`/`write`, `stat`, `truncate`, `sync`, `readable()` and `writable()` shape
 >   below is now built and page-reachable via `orivon.fs.open` — `src/broker/fs-capability.ts`,
 >   the control-channel cases in `src/broker/transport/dispatch-fs.ts`, and
@@ -396,7 +396,7 @@ interface UdpSocket extends Handle {
 
 ## §FileHandle
 
-> **Partially implemented, corrected 2026-09-15 (A169).** `orivon.fs.open` now builds the whole
+> **Partially implemented, corrected 2026-09-15 (A184).** `orivon.fs.open` now builds the whole
 > `FileHandle` shape below at the broker layer (`src/broker/fs-capability.ts`,
 > `src/broker/adapters/node-fs-adapter.ts`) — positional `read`/`write` (no implicit cursor,
 > confined once at open time), `stat`, `truncate`, `sync`, and real WHATWG `readable()`/

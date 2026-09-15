@@ -1,6 +1,6 @@
 // orivon.fs's entry points -- readFile, writeFile, confineSync (ADR-0016),
 // the extended set added for queue item 2.1 (mkdir, readdir, stat, rm,
-// rename), and `open` (FileHandle, A169). Lifted out of ./index.ts under
+// rename), and `open` (FileHandle, A184). Lifted out of ./index.ts under
 // the same Rule 2 seam net-capability.ts and id-capability.ts already
 // established -- README.md's own design notes name this as the next seam
 // once fs's entry points grew past what one flat call justified.

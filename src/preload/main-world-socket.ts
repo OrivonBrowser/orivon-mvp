@@ -88,7 +88,7 @@ export interface MainWorldSocketBridge {
 }
 
 /**
- * What orivon-surface.ts's fsOpen bridge closure resolves to (A169) --
+ * What orivon-surface.ts's fsOpen bridge closure resolves to (A184) --
  * deliberately narrower than `FileHandle` (contracts/handles.ts): no
  * `readable`/`writable`, and no live-pushed `closed`. Every method here is a
  * plain request/reply CONTROL_CHANNEL round trip -- unlike net.connect,

@@ -6544,7 +6544,7 @@ once this lane's shapes are confirmed.
 (item 2, compatibility-matrix.md Table 4 row 6), and whichever lane wires `node-dns.ts` to a real
 broker capability (item 3, `A107`).
 
-### A169 -- `orivon.fs.open` is built end to end for its RPC-shaped methods; `readable()`/`writable()` stop at the broker layer, not yet page-reachable **[AI-REC -- readable/writable deferral is a scope call, not a discovered blocker; the other judgment calls below are flagged, not owner-reviewed]**
+### A184 -- `orivon.fs.open` is built end to end for its RPC-shaped methods; `readable()`/`writable()` stop at the broker layer, not yet page-reachable **[AI-REC -- readable/writable deferral is a scope call, not a discovered blocker; the other judgment calls below are flagged, not owner-reviewed]**
 
 **Raised 2026-09-15**, lane L2-fsopen (`stream/broker-15-fs-open`). `FileHandle`
 (`docs/architecture/handle-contracts.md` §FileHandle, `src/contracts/handles.ts`) needed no
@@ -6576,7 +6576,7 @@ NEXT operation attempted against the handle, not proactively. This is the same c
 picker judgment calls are still unconfirmed and still need their own implementation lane.
 
 **Flagged AI judgment calls, not owner-reviewed, all in `src/broker/README.md`'s own design
-note for this lane (search `A169`) with the full reasoning -- summarised here:**
+note for this lane (search `A184`) with the full reasoning -- summarised here:**
 
 1. **`FailableFileHandle` has no `abort()`**, unlike `FailableTcpSocket`. A `FileHandle`'s
    `readable()`/`writable()` are factories an app may call more than once concurrently, unlike a
@@ -6607,7 +6607,7 @@ note for this lane (search `A169`) with the full reasoning -- summarised here:**
    `open()` returns cannot retarget an already-open fd the way it could a second path lookup.
 
 **A usage-limit interruption cut this lane's first attempt off mid-verification (2026-09-15),
-resuming as the SAME A169** -- not a separate finding, recorded here because the defect it left
+resuming as the SAME A184** -- not a separate finding, recorded here because the defect it left
 behind is the kind of thing a reviewer would otherwise have to rediscover. The interrupted run's
 last action was reverting `destroy()`'s abrupt-teardown fix to confirm its own regression test
 caught the bug, and had not yet restored it when the session ended -- confirmed on resume by
@@ -6635,7 +6635,7 @@ numbers and the PR body are in this lane's own log
 (`/home/jhon/.claude/orivon-fleet/lanes/L2-fsopen/log.md`).
 
 **A separate, fleet-level numbering collision, not this lane's to resolve:** an unmerged sibling
-branch (`stream/shim-13-refuse-on-call-not-read`, commit `96962c8`) also claims A169, for an
+branch (`stream/shim-13-refuse-on-call-not-read`, commit `96962c8`) also claims A184, for an
 unrelated fix ("refuse an unimplemented shim member on call, not on read"). Neither branch's
 `open-questions.md` currently shows a duplicate -- `npm run check:questions` passes clean on
 this branch -- because the collision only exists ACROSS the two unmerged branches, not within

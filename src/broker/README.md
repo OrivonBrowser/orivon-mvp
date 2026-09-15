@@ -35,7 +35,7 @@ Five directories, one per job. The name of the directory is the question it answ
 | [`transport/`](transport/) | **Speak** — reach the page, move the bytes | connection registry | Electron IPC and ports |
 
 Eight files stay at the top level because they belong to no single directory (this count was
-"three" for a while and drifted uncorrected as more joined it — fixed 2026-09-15, A169):
+"three" for a while and drifted uncorrected as more joined it — fixed 2026-09-15, A184):
 
 - [`index.ts`](index.ts) — `createBroker` and the capability entry points that consult all five
 - [`broker-contracts.ts`](broker-contracts.ts) — the `Broker` interface and its fixed dependency shape
@@ -59,13 +59,13 @@ Eight files stay at the top level because they belong to no single directory (th
   `index.ts` was already 264 lines before `id`
 - [`fs-capability.ts`](fs-capability.ts) — `orivon.fs`'s nine entry points (`readFile`,
   `writeFile`, `confineSync` plus queue item 2.1's `mkdir`/`readdir`/`stat`/`rm`/`rename`, plus
-  `open`, A169), lifted out of `index.ts` on 2026-09-10 under the same Rule 2 seam
+  `open`, A184), lifted out of `index.ts` on 2026-09-10 under the same Rule 2 seam
   `net-capability.ts` and `id-capability.ts` already established — every method routes through
   this file's own `confineForOrigin`, the one call into `policy/paths.ts`'s `confinePath`.
   `open` confines once, at open time — see the file's own doc on `open` for why a handle that
   outlives the call is still safe under that
 - [`fs-contracts.ts`](fs-contracts.ts) — `RawFileStat`, `OpenedFile`, `BrokerFs` and
-  `BrokerFsMethods`, split out of `broker-contracts.ts` on 2026-09-15 (A169) when `open`'s own
+  `BrokerFsMethods`, split out of `broker-contracts.ts` on 2026-09-15 (A184) when `open`'s own
   types pushed that file past 500 lines — re-exported from there, so no existing import site
   had to change. The `net`/`fs` split here mirrors `net-capability.ts`'s own move out of
   `index.ts`: by SUBSYSTEM, not by "is this a type or a function"
@@ -386,7 +386,7 @@ the full mechanism, including why hydration runs from `registerApp` rather than 
 own earlier-touch hook (it needs a manifest to re-validate against), and the T13c exclusion for
 loopback/plain-http origins.
 
-### `fs-capability.ts`'s `open` -- confining once, no `abort`, and why a stream errors on quota (A169)
+### `fs-capability.ts`'s `open` -- confining once, no `abort`, and why a stream errors on quota (A184)
 
 **Confinement runs exactly once, at open, never again for `read`/`write`/`stat`/`truncate`/
 `sync`/`readable`/`writable`.** Every other `fs` method re-derives a fresh `confineForOrigin`
@@ -445,7 +445,7 @@ escape too, but waits for an in-flight write to finish rather than interrupting 
 turns a 'revoked' close into a flush -- confirmed directly, not assumed, by a throwaway probe
 where the full chunk landed. `destroy()`'s own teardown call is unchanged by this fix.**
 
-**`readable()`/`writable()` stop at the broker layer in this landing (2026-09-15, A169) --
+**`readable()`/`writable()` stop at the broker layer in this landing (2026-09-15, A184) --
 still open, not forgotten.** They are real, adapter-level WHATWG streams, proven directly against
 a real fd (`node-fs-adapter-open.test.ts`), and `port-pump.ts`/`port-sink.ts` are already generic
 enough to relay either one over a socket's dedicated port the same way `net.connect`'s byte pump
@@ -454,7 +454,7 @@ channel case that mints a port pair for a `FileHandle` the way `net.connect`'s `
 does for a `TcpSocket`, and the main-world stream construction on the preload side
 (`main-world-socket.ts`'s `buildSocket` is the pattern to follow). Deferred as an explicit scope
 decision under this lane's own ordering constraint ("keep the dispatch cases minimal"), not
-discovered as a blocker -- see `docs/open-questions.md` A169 and this lane's own PR body for what
+discovered as a blocker -- see `docs/open-questions.md` A184 and this lane's own PR body for what
 that means a page cannot do yet: `window.orivon.fs.open(...)`'s returned object is deliberately
 narrower than `FileHandle`, with no `readable`/`writable`, and its `closed` is not live-pushed
 (revocation surfaces on the next operation attempted against the handle, not proactively).

@@ -5,7 +5,7 @@ import { createPortRegistry } from '../port-registry.js'
 import type { FailableFileHandle } from '../../handles/handle-contracts.js'
 import { APP, OTHER, type BrokerCall, envelope, frameFor, stubBroker } from './ipc.test-helpers.js'
 
-// `orivon.fs.open` (A169) and its handle-scoped siblings -- fs.read, fs.write,
+// `orivon.fs.open` (A184) and its handle-scoped siblings -- fs.read, fs.write,
 // fs.fstat, fs.truncate, fs.sync, fs.close -- split out of ipc-fs.test.ts
 // under code-guidelines.md's 800-line test limit, matching that file's own
 // precedent for a control method outgrowing it.
