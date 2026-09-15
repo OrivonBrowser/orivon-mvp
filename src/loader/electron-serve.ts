@@ -27,10 +27,28 @@ import { partitionFor } from '../broker/grants/origin-hash.js'
 import type { Broker } from '../broker/broker-contracts.js'
 import { checkConnectSecure } from '../broker/policy/connect-secure.js'
 import type { CapabilityKind, Pattern } from '../contracts/index.js'
+import { createPinCoverageTracker } from './pin-coverage.js'
+import type { PinCoverageSnapshot } from './pin-coverage.js'
 import { createAppRequestHandler, verifiedManifestFor } from './serve.js'
 import type { AppRequestHandler, AuthoriseReach } from './serve.js'
 import { nodeReachDial } from './serve-reach.js'
 import type { LoaderStorage } from './storage.js'
+
+/**
+ * One pin-coverage tracker per origin currently being served, keyed the same
+ * way `partitionFor` keys a session -- one canonical origin. Replaced, not
+ * merged, on every `registerServingFor` call: a reinstall within this run
+ * starts a fresh session's counts rather than carrying the old ones forward,
+ * matching `registerAppOrigin`'s own idempotent re-registration (this file's
+ * own doc, above). Never persisted -- gone on restart, along with every
+ * other in-process count this codebase keeps for the trust indicator.
+ */
+const coverageTrackers = new Map<string, ReturnType<typeof createPinCoverageTracker>>()
+
+/** `origin`'s pin-coverage counts for the current process run, or `undefined` when nothing has registered serving for it yet -- src/trust/'s consumer end of pin-coverage.ts's "agreed shape" (that module's own header). */
+export function pinCoverageFor (origin: string): PinCoverageSnapshot | undefined {
+  return coverageTrackers.get(origin)?.snapshot()
+}
 
 /**
  * Registers `handler` as `origin`'s own scheme's handler on `appSession`.
@@ -171,13 +189,17 @@ export async function registerServingFor (storage: LoaderStorage, origin: string
     if (pinnedManifest !== undefined) await broker.app.hydrateFromPinnedManifest(origin, pinnedManifest)
   }
 
+  const tracker = createPinCoverageTracker()
+  coverageTrackers.set(origin, tracker)
+
   const handler = await createAppRequestHandler(
     storage,
     origin,
     broker === undefined ? undefined : async () => await grantedConnectPatternsFor(broker, origin),
     broker === undefined ? undefined : async () => await secureHeaderPatternsFor(broker, origin),
     broker === undefined ? undefined : authoriseReachFor(broker, origin),
-    nodeReachDial()
+    nodeReachDial(),
+    tracker.record
   )
   const { session } = await import('electron')
   registerAppOrigin(session.fromPartition(partitionFor(origin)), origin, handler)
