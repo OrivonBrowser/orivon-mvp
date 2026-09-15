@@ -3,7 +3,7 @@ import { SYNC_CONTROL_CHANNEL } from '../main/channels.js'
 import { installOrivon } from './main-world-socket.js'
 import type { MainWorldFileBridge } from './main-world-socket.js'
 import { call, TIMEOUT_MS } from './control-call.js'
-import { netConnectBridge, netConnectSecureBridge, netUdpBindBridge } from './net-surface.js'
+import { netConnectBridge, netConnectSecureBridge, netLookupBridge, netUdpBindBridge } from './net-surface.js'
 import type { CapabilityRequest, FileStat, Grant, Manifest, OrivonErrorCode } from '../contracts/index.js'
 import { LIMITS } from '../contracts/index.js'
 import type { ResponseEnvelope } from '../contracts/ipc.js'
@@ -146,7 +146,15 @@ async function idSign (curve: string, payload: Uint8Array): Promise<Uint8Array> 
   return await call('id.sign', { curve, payload }, TIMEOUT_MS.id)
 }
 
-/** The `net`-less surface: used both when `executeInMainWorld` is absent and when it exists but throws -- one implementation, not two copies quietly drifting apart. */
+/**
+ * The stream-less `net` surface: used both when `executeInMainWorld` is
+ * absent and when it exists but throws -- one implementation, not two
+ * copies quietly drifting apart. `net.lookup` (d-0030) is included here,
+ * unlike `connect`/`connectSecure`/`udpBind`: it resolves to plain data,
+ * never a live handle, so it needs none of the main-world stream wrapping
+ * that makes the other three unsafe to expose without `executeInMainWorld`
+ * (`exposeOrivon`'s own doc below) -- exactly `fs.readFile`'s own reasoning.
+ */
 function exposeFallback (): void {
   contextBridge.exposeInMainWorld('orivon', {
     version: 0,
@@ -165,6 +173,9 @@ function exposeFallback (): void {
     id: {
       publicKey: async (opts: { curve: string }) => await idPublicKey(opts.curve),
       sign: async (opts: { curve: string, payload: Uint8Array }) => await idSign(opts.curve, opts.payload)
+    },
+    net: {
+      lookup: async (opts: { hostname: string }) => await netLookupBridge(opts)
     }
   })
 }
@@ -209,7 +220,8 @@ export function exposeOrivon (): void {
     idSign,
     netConnect: netConnectBridge,
     netConnectSecure: netConnectSecureBridge,
-    netUdpBind: netUdpBindBridge
+    netUdpBind: netUdpBindBridge,
+    netLookup: netLookupBridge
   }
   try {
     contextBridge.executeInMainWorld({

@@ -394,3 +394,47 @@ is only the pointer:
   `stream/backlog-09-chrome-restyle`, a local branch not yet merged and not pushed to any remote
   as of this writing — `git show 18b2e12` fails for anyone who has not fetched that branch. The
   code block above is the whole fix, so nothing is lost if that branch never lands.
+
+## `xvfb-run` is not enough on a Wayland desktop (found 2026-09-15, the hard way)
+
+**The symptom:** an agent runs the e2e suite "headlessly", the log says *using a virtual display*,
+and a window opens **on the owner's real screen, in front of what they are typing**, stealing focus.
+
+**The cause.** `xvfb-run` starts an X server and sets `DISPLAY`. It does nothing about
+`WAYLAND_DISPLAY`, which a Wayland session leaves in the environment. Electron's ozone layer
+auto-detects a backend, finds Wayland available, prefers it, and connects to the **real
+compositor**. The virtual display sits unused. Nothing errors, and the reassuring log line is
+printed by the wrapper before any of this happens.
+
+**How to tell which backend a running Electron actually chose** — do this rather than trusting a
+log line:
+
+    ps -eo cmd | grep -F node_modules/electron/dist/electron | grep -oE 'ozone-platform=[a-z0-9]+'
+
+`wayland` means it is on the real desktop. `x11` under `xvfb-run` means it is genuinely virtual.
+
+**The fix, already in `scripts/run-headless.mjs`:** remove `WAYLAND_DISPLAY` from the child
+environment (and downgrade `XDG_SESSION_TYPE`) whenever the virtual-display path is taken, so X11
+is the only backend ozone can discover — the one `xvfb-run` just pointed at the virtual display.
+
+**Do NOT "fix" this by passing `--ozone-platform=x11`.** `src/main/index.ts`'s own header warns that
+forcing it there crashes the GPU process. Changing what the child can *discover* is safe; changing
+what the app *asks for* is not.
+
+### Two false positives that will waste your time
+
+**1. A `dev` session looks exactly like an orphaned test tree.** `pgrep` reporting many Electron
+processes with no `Xvfb` running is D-0002's signature — and is also what `npm run dev` looks like.
+Killing it destroys the owner's live work. **The distinguishing signal is the profile path and the
+parent**, never the process count:
+
+    ps -eo pid,ppid,cmd | grep -F node_modules/electron/dist/electron | grep -oE 'user-data-dir=[^ ]*'
+
+`--user-data-dir=/home/jhon/.config/orivon` with a live `electron-vite dev` parent is the **owner's
+own session — leave it alone.** A `/tmp/orivon-test-*` profile is a test run and is yours to clean.
+
+**2. `pgrep -f` matches your own shell command.** The D-0002 post-run check
+(`pgrep -f node_modules/electron/dist/electron` returning nothing) reports a false positive if the
+command you are running *contains that string* — including the check itself when written inside a
+larger pipeline. Confirm with `ps -eo pid,cmd | grep -F ... | grep -v grep` before concluding a run
+left something behind, or you will "clean up" a run that already tore down correctly.

@@ -6640,3 +6640,83 @@ unrelated fix ("refuse an unimplemented shim member on call, not on read"). Neit
 `open-questions.md` currently shows a duplicate -- `npm run check:questions` passes clean on
 this branch -- because the collision only exists ACROSS the two unmerged branches, not within
 either one alone. Whichever of the two merges second will need to renumber.
+### A171 -- `orivon.net.lookup`'s broker implementation built A167's union-of-three-capabilities reading, plus two judgment calls of its own **[AI-REC -- confirm alongside A167]**
+
+**Raised 2026-09-15**, lane L4-dns (`stream/broker-16-net-lookup`), which built `broker.net.lookup`,
+its control-channel dispatch and its page surface against A167's still-unconfirmed reading of
+`d-0030`. That reading is what got built: `hostname` is checked against the HOST portion of
+every pattern in the UNION of whatever `tcp.connect`, `https.connect` and `udp.send` grants the
+origin holds (the first of those, checked in that fixed order, whose patterns authorise it is
+also what SCOPES revocation -- see below). Two more judgment calls this lane had to make that
+A167 named but did not settle:
+
+**1. A82's reserved-port carve-out does not apply to a lookup at all.** A lookup has no port, so
+the question is not "does a reserved port narrow this" but "does it matter which port a pattern
+names." This lane's answer: no. `checkLookup` (`src/broker/policy/lookup.ts`) checks the HOST
+portion only, regardless of the pattern's own port -- so a hostname granted only on a reserved
+port (`mail.example.com:25`, say) still authorises its own lookup. The safety argument, written
+out in `src/broker/policy/README.md`'s Design notes for `lookup.ts`: whatever port a pattern
+names, the app already knows it (it is in the app's own held grant, readable via
+`app.grants()`) and can already force that exact hostname resolved today by replaying the same
+host:port through `net.connect` -- `checkConnect`'s own pre-resolve gate
+(`couldAnyPatternMatch`) lets a granted pattern's host through to the real resolver before any
+port or address is checked, reserved-port carve-out included, since a pattern that NAMES a
+reserved port exactly is exempted from it by design (`reserved-ports.ts`'s own
+`patternNamesPortExactly`). `lookup` authorised the same way hands back a name-to-address
+MAPPING the app did not have before; it never hands back the ability to force a name resolved
+that `connect`/`connectSecure`/`udpBind` could not already force.
+
+**2. Which grant's revocation cancels an authorised lookup, when more than one held grant would
+authorise the same hostname.** Not specified anywhere -- this lane's answer: the first
+capability in the fixed check order above (`tcp.connect`, then `https.connect`, then
+`udp.send` -- `net-capability.ts`'s own `OUTBOUND_CAPABILITIES`) whose patterns actually
+authorise the hostname is what `handleTable.run`'s revocation scope binds to. A DIFFERENT held
+grant for the same origin being revoked must not cancel an in-flight lookup that a still-live
+grant authorised -- tested directly (`src/broker/tests/net-lookup.test.ts`, "is not cancelled by
+revoking a DIFFERENT held grant than the one that authorised it").
+
+**Not flagged, reused rather than invented:** the error split (`'denied'` for a hostname outside
+every held grant, `'unreachable'` with a real `platformCode` for a permitted name that does not
+resolve) follows `connect`'s own established rule, and no new `OrivonErrorCode` was needed
+(A167's own note on this already stands).
+
+**The two pre-existing mock breaks A167 flagged** (`src/nostr/tests/nip07.test.ts`,
+`src/shim-electron/tests/index.test.ts`) **did not reproduce on this branch** -- `npm run
+typecheck` found seven breaks, all caused by this lane's own `CreateBrokerOptions.resolveLookup`/
+`Broker.net.lookup` additions rippling into other test files' hand-built mocks (adapters tests,
+`ipc.test-helpers.ts`, `sync-fs-policy.test.ts`, both e2e capability tests), all fixed here as
+the mechanical one-stub-per-file change A167 anticipated. Whatever fixed the two A167 named must
+have landed on `main` between that lane and this one; not otherwise investigated.
+
+**Verified, this lane:** `npm run typecheck` clean; `npm test` 4298 passed, 3 skipped (pre-
+existing, unrelated) across 181 files; `npm run check:size`/`check:comments`/`check:contracts`/
+`check:natives`/`check:secrets`/`check:questions`/`check:manifest-parity` all pass -- the last
+one confirming `net.lookup` adds no manifest key, exactly as designed (it rides the existing
+network declaration).
+
+**Still open:** A167's union-of-three-capabilities reading itself remains AI recommendation, not
+an owner decision -- this lane built against it rather than waiting, per its own brief, but the
+owner should confirm A167 (and the two judgment calls above, which only exist because that
+reading was taken as given) before `net.lookup` reaches a production grant path.
+
+**Needed by:** lane L6 (`src/shim/node-dns.ts`'s real `dns.lookup` shape, A107) -- this lane
+deliberately left that file untouched, per its own scope.
+
+**Amended 2026-09-15 by the conductor, during the `src/broker/` hand-review, before merge.** The
+lane's `checkLookup` decides on the NAME, which is correct and is where `d-0030`'s bound lives --
+but nothing filtered the resolver's ANSWER. `connect` refuses a private, loopback or link-local
+result for both pattern kinds that can authorise a lookup (`policy/connect-patterns.ts`:
+`any-public-unicast` and `hostname` both end in `isPublicUnicast(address)`), so an unfiltered
+lookup handed an app the internal addresses of a network it can never reach -- the user's router,
+NAS and intranet hosts, enumerable by name under an ordinary `*:*` grant and carried back out over
+a granted host. **Fixed, not filed:** the result is now filtered through the same
+`isPublicUnicast` `connect` uses, and an answer with nothing reachable left rejects `'unreachable'`
+rather than `'denied'` or an empty array, so an app cannot tell an existing internal name from a
+non-existent one one probe at a time.
+
+Two of the lane's own tests failed against the fix and **both failures were fixture artifacts, not
+the assertions**: they used RFC 5737 documentation addresses (`203.0.113.x`, `198.51.100.x`), which
+`isPublicUnicast` refuses exactly as it refuses a private one -- verified by probing the real
+function rather than reasoning about it. The assertions they make (an unlimited grant resolves any
+name; a reserved-port grant still authorises its own lookup) are unchanged and still pass against a
+routable fixture.
