@@ -432,6 +432,19 @@ write without awaiting it and call `destroy()` a line later -- deterministic bec
 threaded and a real fs write cannot complete before the test's own next synchronous statement runs,
 the same trick that makes the test immune to disk speed.
 
+**That same abrupt-teardown path has a SECOND escape past the file's own `nodeStream.on('error',
+() => {})` guard, found while restoring a fix a usage-limit interruption had left reverted --
+`Writable.toWeb` also settles `writer.closed`, `writer.ready`, and each individual
+`writer.write(chunk)` call's own promise when it detects the premature close, none of which that
+raw-stream 'error' listener ever sees. `writable()`'s `getWriter()` is wrapped (not called
+eagerly -- acquiring and holding a writer before the caller does would lock the stream out from
+under them) so that whichever writer the caller ends up creating gets a silent `.catch(() => {})`
+attached to all three, alongside whatever handler the caller attaches itself, the instant it is
+acquired. A `writer.abort()` at the WHATWG layer was tried first and rejected: it avoids the
+escape too, but waits for an in-flight write to finish rather than interrupting it, which silently
+turns a 'revoked' close into a flush -- confirmed directly, not assumed, by a throwaway probe
+where the full chunk landed. `destroy()`'s own teardown call is unchanged by this fix.**
+
 **`readable()`/`writable()` stop at the broker layer in this landing (2026-09-15, A169) --
 still open, not forgotten.** They are real, adapter-level WHATWG streams, proven directly against
 a real fd (`node-fs-adapter-open.test.ts`), and `port-pump.ts`/`port-sink.ts` are already generic

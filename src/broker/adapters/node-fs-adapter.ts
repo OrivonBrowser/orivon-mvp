@@ -95,7 +95,41 @@ function openFile (path: string, flags: string): Promise<OpenedFile> {
         nodeStream.on('error', () => {})
         liveWriteStreams.add(nodeStream)
         nodeStream.once('close', () => { liveWriteStreams.delete(nodeStream) })
-        return Writable.toWeb(nodeStream) as WritableStream<Uint8Array>
+        const web = Writable.toWeb(nodeStream) as WritableStream<Uint8Array>
+        // TWO SEPARATE escapes from the same premature close, both found
+        // running the full suite, neither covered by the raw stream's own
+        // 'error' listener above because both live on DIFFERENT promises
+        // that Writable.toWeb creates internally:
+        //   1. `writer.closed`/`writer.ready` settle when the wrapped
+        //      stream errors -- unhandled if the caller never observes them.
+        //   2. Each individual `writer.write(chunk)` call has its OWN
+        //      promise, tied to that one queued write, which is what
+        //      abrupt teardown actually needs to interrupt (a graceful
+        //      `writer.abort()` waits for an in-flight write instead of
+        //      cutting it off -- confirmed directly: it lets the whole
+        //      chunk land, which is wrong for 'revoked'/'aborted'). So the
+        //      write MUST be interrupted via the raw stream's `destroy()`
+        //      below, which leaves this exact promise to reject on its own.
+        // getWriter() is wrapped, not called here, because acquiring the
+        // writer eagerly and holding it would lock the stream before the
+        // caller ever gets a chance to -- this only observes whichever
+        // writer the caller ends up creating, attaching a silent handler
+        // alongside (never instead of) whatever the caller itself attaches,
+        // so a caller that DOES check write()'s result still sees it.
+        const getWriter = web.getWriter.bind(web)
+        web.getWriter = () => {
+          const writer = getWriter()
+          writer.closed.catch(() => {})
+          writer.ready.catch(() => {})
+          const write = writer.write.bind(writer)
+          writer.write = (chunk) => {
+            const result = write(chunk)
+            result.catch(() => {})
+            return result
+          }
+          return writer
+        }
+        return web
       },
       stat: async () => {
         const s = await handle.stat()
@@ -113,7 +147,19 @@ function openFile (path: string, flags: string): Promise<OpenedFile> {
             else { stream.destroy(); resolve() }
           })
         }))
-        await handle.close()
+        try {
+          await handle.close()
+        } catch (error) {
+          // Expected, not exceptional, whenever a stream was just torn down
+          // above: destroying/ending it closes this SAME shared fd even
+          // though it was opened with `autoClose: false` (confirmed
+          // directly, not assumed -- that option only suppresses the
+          // auto-close-on-finish convenience, not the close a stream's own
+          // teardown forces regardless), so this handle.close() is closing
+          // an fd that is already gone. Any OTHER close failure still
+          // propagates.
+          if (!(error != null && typeof error === 'object' && 'code' in error && error.code === 'EBADF')) throw error
+        }
       }
     }
   })

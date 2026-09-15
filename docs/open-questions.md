@@ -6606,8 +6606,37 @@ note for this lane (search `A169`) with the full reasoning -- summarised here:**
    so there is nothing left for a second confinement check to catch; a symlink swapped in after
    `open()` returns cannot retarget an already-open fd the way it could a second path lookup.
 
-**Verified, this lane:** `npm run typecheck` clean; `npm test` 4346 passed, 3 skipped (up from
-4307 before this lane, all pre-existing suites still green); `npm run check:size`,
-`check:comments`, `check:contracts`, `check:natives`, `check:secrets`, `check:questions` all
-pass. Full numbers and the PR body are in this lane's own log
+**A usage-limit interruption cut this lane's first attempt off mid-verification (2026-09-15),
+resuming as the SAME A169** -- not a separate finding, recorded here because the defect it left
+behind is the kind of thing a reviewer would otherwise have to rediscover. The interrupted run's
+last action was reverting `destroy()`'s abrupt-teardown fix to confirm its own regression test
+caught the bug, and had not yet restored it when the session ended -- confirmed on resume by
+running the suite cold: `node-fs-adapter-open.test.ts`'s "an abrupt reason never raises an
+unhandled process-level error" failed with an escaped `EBADF`. Chasing it found a SECOND,
+previously-undiscovered escape past the same `nodeStream.on('error', () => {})` guard the file's
+own header already documents: `Writable.toWeb`'s wrapper settles `writer.closed`/`writer.ready`
+AND each individual `writer.write(chunk)` call's own promise on the same premature-close path,
+none of which that raw-stream 'error' listener touches. Confirmed directly, not assumed, before
+picking a fix: a `writer.abort()` at the WHATWG layer avoids the escape entirely but WAITS for an
+in-flight write instead of interrupting it, silently turning 'revoked' into a flush (the full
+64 KiB chunk landed in a throwaway probe, where the test requires it discarded). The fix that
+keeps both properties -- `node-fs-adapter.ts`'s `writable()` now wraps `getWriter()` so it can
+attach a silent `.catch(() => {})` to `.closed`, `.ready`, and every `.write()` call's own
+promise the instant the caller acquires a writer, alongside whatever handler the caller attaches
+itself, never instead of it -- while `destroy()`'s actual teardown (`stream.destroy()`, called
+synchronously, immediately) is completely unchanged from before this fix.
+
+**Verified, this lane, after the fix above:** `npm run typecheck` clean; `npm test` 183 files
+passed (0 failed), 4347 passed, 3 skipped -- against this brief's own stated main baseline of 181
+files / 4300 passed / 3 skipped, the difference being this lane's own new test files and cases,
+all green, no regressions; `npm run check:size`, `check:comments`, `check:contracts`,
+`check:natives`, `check:secrets`, `check:questions` and `check:manifest-parity` all pass. Full
+numbers and the PR body are in this lane's own log
 (`/home/jhon/.claude/orivon-fleet/lanes/L2-fsopen/log.md`).
+
+**A separate, fleet-level numbering collision, not this lane's to resolve:** an unmerged sibling
+branch (`stream/shim-13-refuse-on-call-not-read`, commit `96962c8`) also claims A169, for an
+unrelated fix ("refuse an unimplemented shim member on call, not on read"). Neither branch's
+`open-questions.md` currently shows a duplicate -- `npm run check:questions` passes clean on
+this branch -- because the collision only exists ACROSS the two unmerged branches, not within
+either one alone. Whichever of the two merges second will need to renumber.
