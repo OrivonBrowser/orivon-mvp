@@ -16,6 +16,7 @@
 // touches the real `ipcMain`/`MessageChannelMain` value imports below.
 
 import { ipcMain, MessageChannelMain } from 'electron'
+import type { MessagePortMain } from 'electron'
 import { CONTROL_CHANNEL, PORT_CHANNEL, SYNC_CONTROL_CHANNEL } from '../../main/channels.js'
 import { publishBroker } from '../../main/registry.js'
 import type { Subsystem, SubsystemContext } from '../../main/registry.js'
@@ -49,7 +50,8 @@ export type {
   NetConnectParams, NetCloseParams, NetSetKeepAliveParams, NetSetNoDelayParams, NetUdpBindParams, RequestGrantCtx
 } from './ipc-validation.js'
 export type {
-  ControlEvent, PortDeliveryFrame, PortLike, PortPair, PortTransport, SocketDescriptor, UdpSocketDescriptor
+  ControlEvent, PortDeliveryFrame, PortLike, PortPair, PortTransport, SocketDescriptor, TcpServerDescriptor,
+  UdpSocketDescriptor
 } from './port-transport.js'
 
 /**
@@ -90,11 +92,22 @@ async function dispatch (
     case 'net.connect':
     case 'net.connectSecure':
     case 'net.udpBind':
+    case 'net.listen':
     case 'net.close':
     case 'net.setNoDelay':
     case 'net.setKeepAlive':
     case 'net.lookup':
       return await dispatchNet(broker, origin, method, payload, event, transport)
+    default: {
+      // Exhaustiveness check: if ControlMethod (ipc-validation.ts) ever
+      // gains a member no case above names, `method` is not assignable to
+      // `never` here and THIS LINE FAILS TO COMPILE -- the guard A185's
+      // brief asked for, because nothing else in this switch does (no
+      // `assertNever`, no keyed `Record`) and a missed case would otherwise
+      // resolve silently to `undefined` instead of a compile error.
+      const unrouted: never = method
+      throw fail('internal', `unrouted control method: ${unrouted as string}`)
+    }
   }
 }
 
@@ -217,7 +230,26 @@ export function registerSyncFsIpc (ipc: IpcMainOnLike, policy: SyncFsPolicy, lim
 function realPortPair (): PortPair {
   const { port1, port2 } = new MessageChannelMain()
   const wrapped: PortLike = {
-    postMessage: (message) => { port1.postMessage(message) },
+    // `transfer` is `readonly unknown[]` at this structural boundary
+    // (./port-transport.ts's own PortPair.port2, `unknown` for the same
+    // reason) but is ALWAYS, in production, an array of this module's own
+    // freshly-minted MessagePortMain values -- the only thing anything in
+    // this file ever puts in one (server-relay.ts's AcceptedMessage.port,
+    // the sole BrokerToRendererMessage member that carries a transferable
+    // -- contracts/ipc.ts's own header rule 1). Cast at this one real-
+    // Electron call site rather than widening MessagePortMain's own
+    // `.postMessage` signature.
+    // PASSING `undefined` AS THE TRANSFER LIST IS NOT THE SAME AS OMITTING
+    // IT. Electron's MessagePortMain binding validates the argument when it
+    // is present at all, so `postMessage(message, undefined)` throws
+    // "transferables must be an array of MessagePorts" -- and that is every
+    // ordinary data message, not just an accept. A plain object PortLike
+    // accepts `undefined` happily, so unit tests cannot see this; the real
+    // e2e caught it as every socket byte pump failing at once.
+    postMessage: (message, transfer) => {
+      if (transfer === undefined) port1.postMessage(message)
+      else port1.postMessage(message, transfer as MessagePortMain[])
+    },
     onMessage: (listener) => { port1.on('message', (event) => { listener(event.data) }) },
     onClose: (listener) => { port1.on('close', listener) },
     close: () => { port1.close() }

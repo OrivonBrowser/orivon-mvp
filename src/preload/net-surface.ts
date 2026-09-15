@@ -1,18 +1,20 @@
-// net.connect / net.connectSecure / net.udpBind's page-facing bridge
-// closures, split out of ./orivon-surface.ts under code-guidelines.md Rule 2
-// -- the net.* surface a `net.listen`/`net.lookup` lane would otherwise have
-// grown alongside every other capability's code. See ./README.md's Design
-// notes for the rest of this split.
+// net.connect / net.connectSecure / net.udpBind / net.listen / net.lookup's
+// page-facing bridge closures, split out of ./orivon-surface.ts under
+// code-guidelines.md Rule 2 -- the net.* surface a `net.listen`/`net.lookup`
+// lane would otherwise have grown alongside every other capability's code.
+// See ./README.md's Design notes for the rest of this split.
 
 import { ipcRenderer } from 'electron'
 import { PORT_CHANNEL } from '../main/channels.js'
 import { call, TIMEOUT_MS } from './control-call.js'
 import { createSocketBridge } from './socket-bridge.js'
 import type { IpcRendererLike } from './socket-bridge.js'
-import { createSocketPort } from './socket-port.js'
+import { createSocketPort, wrapPort } from './socket-port.js'
 import { createDatagramPort } from './datagram-port.js'
 import type { PortLike } from './socket-port.js'
-import type { MainWorldSocketBridge, MainWorldUdpBridge } from './main-world-socket.js'
+import { createServerPort } from './server-port.js'
+import type { AcceptedConnection } from './server-port.js'
+import type { MainWorldServerBridge, MainWorldSocketBridge, MainWorldUdpBridge } from './main-world-socket.js'
 import type { LookupAddress } from '../contracts/index.js'
 
 /**
@@ -37,16 +39,11 @@ interface UdpSocketDescriptor {
   readonly localPort: number
 }
 
-/** Adapts a real (DOM) `MessagePort` -- Electron's own conversion of the transferred `MessagePortMain` -- to ./socket-port.ts's PortLike. */
-function wrapPort (raw: unknown): PortLike {
-  const port = raw as MessagePort
-  return {
-    postMessage: (message) => { port.postMessage(message) },
-    // Assigning .onmessage (rather than addEventListener) implicitly starts
-    // the port per the WHATWG spec -- no separate port.start() needed.
-    onMessage: (listener) => { port.onmessage = (event) => { listener(event.data) } },
-    close: () => { port.close() }
-  }
+/** `net.listen`'s reply. Repeated at this trust boundary for the same reason SocketDescriptor is. */
+interface TcpServerDescriptor {
+  readonly id: string
+  readonly localAddress: string
+  readonly localPort: number
 }
 
 const socketBridge = createSocketBridge({ ipcRenderer: ipcRenderer as unknown as IpcRendererLike, portChannel: PORT_CHANNEL, wrapPort })
@@ -165,6 +162,65 @@ function buildUdpBridgeResult (descriptor: UdpSocketDescriptor, port: PortLike):
     close: async () => {
       await call('net.close', { id: descriptor.id }, TIMEOUT_MS.net)
       datagramPort.dispose()
+    }
+  }
+}
+
+/**
+ * `net.listen`'s own bridge closure -- A114/d-0028's page-reachable half.
+ * Correlates the two channels exactly as netUdpBindBridge does; unlike
+ * that one, the "port" it correlates is not the socket's own bytes but the
+ * SERVER's own accept-demand/AcceptedMessage channel (./server-port.ts).
+ */
+export async function netListenBridge (opts: { port: number }): Promise<MainWorldServerBridge> {
+  const descriptor = await call<TcpServerDescriptor>('net.listen', opts, TIMEOUT_MS.net)
+  try {
+    return buildServerBridgeResult(descriptor, await socketBridge.waitForPort(descriptor.id))
+  } catch (error) {
+    // Same reasoning as netConnectBridge's/netUdpBindBridge's own catch: the
+    // broker counted this server against concurrentSockets the instant it
+    // replied, and nothing else on this side would ever release the slot.
+    call('net.close', { id: descriptor.id }, TIMEOUT_MS.net).catch(() => {})
+    throw error
+  }
+}
+
+/**
+ * Builds ONE accepted connection's own bridge -- reusing buildBridgeResult
+ * unchanged (code-guidelines.md Rule 3): an accepted socket and a dialled
+ * one are the same thing once accepted, so this just reshapes
+ * AcceptedConnection's fields into the SocketDescriptor shape
+ * buildBridgeResult already expects. `connection.port` is already a
+ * ./socket-port.ts PortLike -- ./server-port.ts wrapped the raw transferred
+ * MessagePort the instant its AcceptedMessage arrived.
+ */
+function buildAcceptedBridge (connection: AcceptedConnection): MainWorldSocketBridge {
+  return buildBridgeResult(
+    {
+      id: connection.socketId,
+      remoteAddress: connection.remoteAddress,
+      remotePort: connection.remotePort,
+      localAddress: connection.localAddress,
+      localPort: connection.localPort
+    },
+    connection.port
+  )
+}
+
+function buildServerBridgeResult (descriptor: TcpServerDescriptor, port: PortLike): MainWorldServerBridge {
+  const serverPort = createServerPort({ handleId: descriptor.id, port })
+
+  return {
+    id: descriptor.id,
+    localAddress: descriptor.localAddress,
+    localPort: descriptor.localPort,
+    onConnection: (cb) => { serverPort.onAccepted((connection) => { cb(buildAcceptedBridge(connection)) }) },
+    onReadEnd: serverPort.onReadEnd,
+    reportAccepted: serverPort.reportAccepted,
+    closed: serverPort.closed,
+    close: async () => {
+      await call('net.close', { id: descriptor.id }, TIMEOUT_MS.net)
+      serverPort.dispose()
     }
   }
 }
