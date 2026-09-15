@@ -8,9 +8,11 @@
 // test that exercised them keeps exercising the same code, imported from
 // here instead.
 
-import { mkdirSync, realpathSync } from 'node:fs'
+import { createReadStream, createWriteStream, mkdirSync, realpathSync } from 'node:fs'
+import type { WriteStream } from 'node:fs'
 import {
   mkdir,
+  open as fsOpen,
   readdir as fsReaddir,
   readFile as fsReadFile,
   rename as fsRename,
@@ -18,9 +20,150 @@ import {
   stat as fsStat,
   writeFile as fsWriteFile
 } from 'node:fs/promises'
+import { Readable, Writable } from 'node:stream'
 import { dirname, join } from 'node:path'
-import type { BrokerFs } from '../broker-contracts.js'
+import type { BrokerFs, OpenedFile } from '../broker-contracts.js'
+import type { CloseReason } from '../handles/handle-contracts.js'
 import { originHash } from '../grants/origin-hash.js'
+
+/**
+ * `OpenedFile` over a real `fs.promises.FileHandle`. `readable`/`writable`
+ * ALWAYS pass an explicit `start` (never `undefined`) to `createReadStream`/
+ * `createWriteStream` -- Node falls back to the shared, kernel-tracked fd
+ * position once `start` is left out, and that is exactly the implicit-cursor
+ * hazard `FileHandle`'s own contract (src/contracts/handles.ts) exists to
+ * rule out even for these bulk-stream paths. See node-fs-adapter-open.test.ts's
+ * "writable() with no opts starts at 0" for the regression this guards.
+ *
+ * `destroy`'s teardown is CONDITIONAL ON THE CLOSE REASON, mirroring
+ * node-adapters.ts's `destroySocket` (A84): 'closed'/'sessionEnded' let any
+ * still-queued `writable()` stream drain before the fd is released;
+ * 'revoked'/'aborted'/'failed' discard it. Unlike a TCP socket there is no
+ * remote peer that can stall a drain forever -- a local Node WriteStream
+ * drains to the OS's own write() syscall, bounded by disk I/O, never by
+ * another party's willingness to read -- so this deliberately does NOT
+ * reuse `destroySocket`'s CLOSE_DRAIN_TIMEOUT_MS; see README.md's design
+ * notes for the full reasoning.
+ */
+function openFile (path: string, flags: string): Promise<OpenedFile> {
+  return fsOpen(path, flags).then((handle) => {
+    const fd = handle.fd
+    const liveWriteStreams = new Set<WriteStream>()
+
+    return {
+      read: async ({ position, length }) => {
+        const buffer = Buffer.alloc(length)
+        const { bytesRead } = await handle.read({ buffer, position, length })
+        // Same copy discipline as readFile above -- see that method's own
+        // comment. `subarray` is a view; wrapping it in `new Uint8Array(...)`
+        // is what actually copies it into its own backing buffer.
+        return new Uint8Array(buffer.subarray(0, bytesRead))
+      },
+      write: async ({ position, data }) => {
+        const { bytesWritten } = await handle.write(data, 0, data.length, position)
+        return bytesWritten
+      },
+      readable: (opts) => {
+        const start = opts?.start ?? 0
+        // contracts/handles.ts's own doc: "[start, end)" -- EXCLUSIVE of end.
+        // Node's own `end` option on createReadStream is INCLUSIVE, so it is
+        // translated here rather than passed through; an empty range (end
+        // at or before start) is answered directly, since Node has no clean
+        // way to ask a ReadStream for zero bytes.
+        if (opts?.end !== undefined && opts.end <= start) {
+          return new ReadableStream<Uint8Array>({ start (controller) { controller.close() } })
+        }
+        const nodeStream = createReadStream(path, { fd, start, end: opts?.end === undefined ? undefined : opts.end - 1, autoClose: false })
+        // Same reasoning as writable()'s own 'error' listener just below --
+        // a reader.cancel() (or this handle's own destroy()) can destroy the
+        // raw stream abruptly, and a zero-listener 'error' event is fatal to
+        // the whole process, not merely to this read.
+        nodeStream.on('error', () => {})
+        return Readable.toWeb(nodeStream) as ReadableStream<Uint8Array>
+      },
+      writable: (opts) => {
+        const nodeStream = createWriteStream(path, { fd, start: opts?.start ?? 0, autoClose: false })
+        // REQUIRED, not decoration: `destroy()` below calls `stream.destroy()`
+        // directly on the RAW stream for an abrupt reason, bypassing
+        // `Writable.toWeb`'s own graceful-close bookkeeping -- its internal
+        // `end-of-stream` listener then raises ERR_STREAM_PREMATURE_CLOSE as
+        // a real 'error' event on THIS stream. An EventEmitter with zero
+        // 'error' listeners throws, which on this path crashes the whole
+        // Electron main process. The WHATWG side still reports the failure
+        // correctly through its own writer promise regardless -- this
+        // listener only stops the raw duplicate from being fatal.
+        nodeStream.on('error', () => {})
+        liveWriteStreams.add(nodeStream)
+        nodeStream.once('close', () => { liveWriteStreams.delete(nodeStream) })
+        const web = Writable.toWeb(nodeStream) as WritableStream<Uint8Array>
+        // TWO SEPARATE escapes from the same premature close, both found
+        // running the full suite, neither covered by the raw stream's own
+        // 'error' listener above because both live on DIFFERENT promises
+        // that Writable.toWeb creates internally:
+        //   1. `writer.closed`/`writer.ready` settle when the wrapped
+        //      stream errors -- unhandled if the caller never observes them.
+        //   2. Each individual `writer.write(chunk)` call has its OWN
+        //      promise, tied to that one queued write, which is what
+        //      abrupt teardown actually needs to interrupt (a graceful
+        //      `writer.abort()` waits for an in-flight write instead of
+        //      cutting it off -- confirmed directly: it lets the whole
+        //      chunk land, which is wrong for 'revoked'/'aborted'). So the
+        //      write MUST be interrupted via the raw stream's `destroy()`
+        //      below, which leaves this exact promise to reject on its own.
+        // getWriter() is wrapped, not called here, because acquiring the
+        // writer eagerly and holding it would lock the stream before the
+        // caller ever gets a chance to -- this only observes whichever
+        // writer the caller ends up creating, attaching a silent handler
+        // alongside (never instead of) whatever the caller itself attaches,
+        // so a caller that DOES check write()'s result still sees it.
+        const getWriter = web.getWriter.bind(web)
+        web.getWriter = () => {
+          const writer = getWriter()
+          writer.closed.catch(() => {})
+          writer.ready.catch(() => {})
+          const write = writer.write.bind(writer)
+          writer.write = (chunk) => {
+            const result = write(chunk)
+            result.catch(() => {})
+            return result
+          }
+          return writer
+        }
+        return web
+      },
+      stat: async () => {
+        const s = await handle.stat()
+        return { size: s.size, isFile: s.isFile(), isDirectory: s.isDirectory(), mtimeMs: s.mtimeMs }
+      },
+      truncate: async (length) => { await handle.truncate(length) },
+      sync: async () => { await handle.sync() },
+      destroy: async (reason: CloseReason) => {
+        const flush = reason === 'closed' || reason === 'sessionEnded'
+        const pending = Array.from(liveWriteStreams)
+        liveWriteStreams.clear()
+        await Promise.all(pending.map(async (stream) => {
+          await new Promise<void>((resolve) => {
+            if (flush) stream.end(() => { resolve() })
+            else { stream.destroy(); resolve() }
+          })
+        }))
+        try {
+          await handle.close()
+        } catch (error) {
+          // Expected, not exceptional, whenever a stream was just torn down
+          // above: destroying/ending it closes this SAME shared fd even
+          // though it was opened with `autoClose: false` (confirmed
+          // directly, not assumed -- that option only suppresses the
+          // auto-close-on-finish convenience, not the close a stream's own
+          // teardown forces regardless), so this handle.close() is closing
+          // an fd that is already gone. Any OTHER close failure still
+          // propagates.
+          if (!(error != null && typeof error === 'object' && 'code' in error && error.code === 'EBADF')) throw error
+        }
+      }
+    }
+  })
+}
 
 /**
  * `BrokerFs` over the real filesystem. `rootFor` is `../grants/origin-hash.js`'s
@@ -100,6 +243,7 @@ export function nodeFs (userDataPath: string): BrokerFs {
     // above -- `mkdir` is now its own capability method, and a caller that
     // wants that convenience can call it explicitly rather than have rename
     // silently create directory structure on its behalf.
-    rename: async (from, to) => { await fsRename(from, to) }
+    rename: async (from, to) => { await fsRename(from, to) },
+    open: openFile
   }
 }
