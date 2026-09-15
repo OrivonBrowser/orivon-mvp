@@ -4,7 +4,9 @@
 `newtab.ts`, added 2026-08-28 for the new-tab dashboard), plus `orivon-surface.ts` — not a
 preload entry itself, but the `orivon.*` exposure both `app.ts` and `newtab.ts`'s fallback
 branch share (build step 2's IPC task; §The rule that governs this directory still applies to
-it) — and four files it depends on: `socket-bridge.ts` (the only file touching
+it), its two Rule 2 splits `control-call.ts` (the shared `CONTROL_CHANNEL` call/timeout
+machinery) and `net-surface.ts` (the `net.*` bridge closures — see Design notes for why these
+split out) — and four more files it depends on: `socket-bridge.ts` (the only file touching
 `ipcRenderer.on(PORT_CHANNEL)`, and deliberately kind-agnostic — it maps a handle id to a port and
 does not care what kind of socket it belongs to), `socket-port.ts` and `datagram-port.ts` (the
 isolated-world per-socket state machines for TCP and UDP, both Electron-free), and
@@ -26,8 +28,9 @@ neutral place a channel name shared across this trust boundary can live — `she
 `newtab.ts` already relied on this before `orivon-surface.ts` did too. Nothing else under
 `src/main/` is fair game.
 
-**Owner stream.** `app.ts`, `orivon-surface.ts`, `socket-bridge.ts`, `socket-port.ts`,
-`datagram-port.ts` and `main-world-socket.ts` belong to `broker` (build step 2); `shell.ts` and
+**Owner stream.** `app.ts`, `orivon-surface.ts`, `control-call.ts`, `net-surface.ts`,
+`socket-bridge.ts`, `socket-port.ts`, `datagram-port.ts` and `main-world-socket.ts` belong to
+`broker` (build step 2); `shell.ts` and
 `newtab.ts` belong to
 `shell` (build step 1, done).
 
@@ -69,6 +72,23 @@ The smoke check asserts `require` and `process` are `undefined` in every rendere
 regresses, stop.
 
 ## Design notes
+
+**Why `orivon-surface.ts` split into three files (`orivon-surface.ts`, `control-call.ts`,
+`net-surface.ts`).** `orivon-surface.ts` was 448 lines against Rule 2's 500-line limit, and four
+capability lanes were about to land behind it, every one adding page-surface entries to it
+(`fs.open` and its file operations, `net.listen`'s page half, `net.lookup`, `fs.userSelected`) --
+the same merge-time failure mode `../broker/transport/ipc.ts`'s own split
+(`../broker/transport/README.md`'s Design notes) exists to avoid. The net.* bridge closures
+(`netConnectBridge`, `netConnectSecureBridge`, `netUdpBindBridge` and everything only they use --
+`wrapPort`, the local `SocketDescriptor`/`UdpSocketDescriptor` shapes, `buildBridgeResult`,
+`buildUdpBridgeResult`) moved into `net-surface.ts`, so a `net.listen`/`net.lookup` lane grows
+that file, not the one every other capability's code also lives in. `call()`, `raceTimeout()` and
+the per-capability `TIMEOUT_MS` budgets moved into `control-call.ts`, because both
+`orivon-surface.ts` (the `app.*`/`fs.*`/`id.*` closures, `exposeFallback`, `exposeOrivon`) and
+`net-surface.ts` need them, and `net-surface.ts` importing them from `orivon-surface.ts` directly
+would cycle back through `orivon-surface.ts`'s own import of the net bridge closures for
+`exposeOrivon`'s wiring object -- `control-call.ts` is a leaf neither file needs to route through
+the other to reach.
 
 **Why `orivon-surface.ts` is shaped the way it is**, moved here from its own header per
 code-guidelines.md's destination test (none of this is a trap a single line needs; it explains

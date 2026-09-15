@@ -1,7 +1,7 @@
 import { connect as netConnect, createServer, type Server, type Socket } from 'node:net'
 import { createBroker } from '../../index.js'
 import { afterEach, describe, expect, it } from 'vitest'
-import { dialTcp, listenTcp, nodeFs, resolveHost } from '../node-adapters.js'
+import { dialTcp, listenTcp, nodeFs, resolveHost, resolveLookup } from '../node-adapters.js'
 
 // nodeFs's own suite (the BrokerFs real-filesystem adapter) moved to
 // ./node-fs-adapter.test.ts, paired with ../node-fs-adapter.ts's own split
@@ -31,6 +31,24 @@ describe('resolveHost (real DNS)', () => {
   // The mapping itself (any dns.lookup rejection -> 'unreachable',
   // errno preserved as platformCode) is a single straight-line branch,
   // covered indirectly wherever a real dial fails end-to-end.
+})
+
+describe('resolveLookup (real DNS, orivon.net.lookup\'s own adapter -- d-0030)', () => {
+  it('resolves loopback to a real address with a string family, not Node\'s numeric one', async () => {
+    const addresses = await resolveLookup('localhost')
+
+    expect(addresses.length).toBeGreaterThan(0)
+    for (const answer of addresses) {
+      expect(typeof answer.address).toBe('string')
+      expect(['IPv4', 'IPv6']).toContain(answer.family)
+    }
+  })
+
+  // Same empirical finding as resolveHost's own suite just above, on the
+  // same sandbox: an unresolvable-name failure path is not reliably
+  // reproducible here, so it is covered indirectly wherever a real lookup
+  // fails end-to-end (../../tests/net-lookup.test.ts exercises the mapping
+  // itself against a stub).
 })
 
 describe('dialTcp / dialOne against a real local TCP server', () => {
@@ -256,6 +274,7 @@ describe('net.listen end to end: a real accepted connection, a real denial, a re
       bind: async () => { throw new Error('not used by this test') },
       listen: listenTcp,
       resolve: async () => [],
+      resolveLookup: async () => [],
       now: () => Date.now(),
       fs: nodeFs('/tmp/orivon-listen-e2e-unused'),
       keychain: { getSeed: async () => { throw new Error('not used by this test') } }

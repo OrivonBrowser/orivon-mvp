@@ -1,20 +1,21 @@
+// net.connect / net.connectSecure / net.udpBind / net.listen / net.lookup's
+// page-facing bridge closures, split out of ./orivon-surface.ts under
+// code-guidelines.md Rule 2 -- the net.* surface a `net.listen`/`net.lookup`
+// lane would otherwise have grown alongside every other capability's code.
+// See ./README.md's Design notes for the rest of this split.
+
 import { ipcRenderer } from 'electron'
 import { PORT_CHANNEL } from '../main/channels.js'
+import { call, TIMEOUT_MS } from './control-call.js'
 import { createSocketBridge } from './socket-bridge.js'
 import type { IpcRendererLike } from './socket-bridge.js'
 import { createSocketPort, wrapPort } from './socket-port.js'
-import type { PortLike } from './socket-port.js'
 import { createDatagramPort } from './datagram-port.js'
+import type { PortLike } from './socket-port.js'
 import { createServerPort } from './server-port.js'
 import type { AcceptedConnection } from './server-port.js'
-import type { MainWorldServerBridge, MainWorldSocketBridge, MainWorldUdpBridge } from './main-world-bridges.js'
-import { TIMEOUT_MS, call } from './orivon-call.js'
-
-// The net.* bridge closures orivon-surface.ts's exposeOrivon() hands into
-// the main world -- split out of that file under code-guidelines.md Rule 2
-// (by concern: "how the net capability crosses the isolated-world/main-world
-// boundary", separate from "which closures exist for app/fs/id" and the
-// exposure wiring, which that file still owns).
+import type { MainWorldServerBridge, MainWorldSocketBridge, MainWorldUdpBridge } from './main-world-socket.js'
+import type { LookupAddress } from '../contracts/index.js'
 
 /**
  * What `net.connect`'s CONTROL_CHANNEL reply actually carries -- deliberately
@@ -76,9 +77,9 @@ export async function netConnectBridge (opts: { host: string, port: number }): P
  * net.connectSecure's own bridge closure -- a SIBLING of netConnectBridge
  * above, not a second implementation: the CONTROL_CHANNEL method name is
  * the only difference. `net.connectSecure` resolves to the exact same
- * SocketDescriptor shape net.connect does (ipc.ts's deliverTcpSocket is
- * shared by both on the broker side), so buildBridgeResult below is reused
- * unchanged rather than copied (code-guidelines.md Rule 3).
+ * SocketDescriptor shape net.connect does (../broker/transport/dispatch-net.ts's
+ * deliverTcpSocket is shared by both on the broker side), so buildBridgeResult
+ * below is reused unchanged rather than copied (code-guidelines.md Rule 3).
  */
 export async function netConnectSecureBridge (opts: { host: string, port: number }): Promise<MainWorldSocketBridge> {
   const descriptor = await call<SocketDescriptor>('net.connectSecure', opts, TIMEOUT_MS.net)
@@ -143,6 +144,28 @@ export async function netUdpBindBridge (opts: { port: number }): Promise<MainWor
   }
 }
 
+function buildUdpBridgeResult (descriptor: UdpSocketDescriptor, port: PortLike): MainWorldUdpBridge {
+  const datagramPort = createDatagramPort({ handleId: descriptor.id, port })
+
+  return {
+    id: descriptor.id,
+    localAddress: descriptor.localAddress,
+    localPort: descriptor.localPort,
+    onDatagram: datagramPort.onDatagram,
+    onReadEnd: datagramPort.onReadEnd,
+    onDropped: datagramPort.onDropped,
+    onRefusal: datagramPort.onRefusal,
+    onFatal: datagramPort.onFatal,
+    reportConsumed: datagramPort.reportConsumed,
+    send: datagramPort.send,
+    closed: datagramPort.closed,
+    close: async () => {
+      await call('net.close', { id: descriptor.id }, TIMEOUT_MS.net)
+      datagramPort.dispose()
+    }
+  }
+}
+
 /**
  * `net.listen`'s own bridge closure -- A114/d-0028's page-reachable half.
  * Correlates the two channels exactly as netUdpBindBridge does; unlike
@@ -202,24 +225,14 @@ function buildServerBridgeResult (descriptor: TcpServerDescriptor, port: PortLik
   }
 }
 
-function buildUdpBridgeResult (descriptor: UdpSocketDescriptor, port: PortLike): MainWorldUdpBridge {
-  const datagramPort = createDatagramPort({ handleId: descriptor.id, port })
-
-  return {
-    id: descriptor.id,
-    localAddress: descriptor.localAddress,
-    localPort: descriptor.localPort,
-    onDatagram: datagramPort.onDatagram,
-    onReadEnd: datagramPort.onReadEnd,
-    onDropped: datagramPort.onDropped,
-    onRefusal: datagramPort.onRefusal,
-    onFatal: datagramPort.onFatal,
-    reportConsumed: datagramPort.reportConsumed,
-    send: datagramPort.send,
-    closed: datagramPort.closed,
-    close: async () => {
-      await call('net.close', { id: descriptor.id }, TIMEOUT_MS.net)
-      datagramPort.dispose()
-    }
-  }
+/**
+ * `net.lookup` (d-0030). UNLIKE every other closure in this file, this is a
+ * PLAIN request/response -- no PORT_CHANNEL correlation, no bridge object,
+ * because the broker hands back data, not a live handle (../broker/net-
+ * capability.ts's own `lookup` doc explains why there is nothing to
+ * acquire). One `call()`, the same as `orivon-surface.ts`'s own
+ * `fs.readFile`.
+ */
+export async function netLookupBridge (opts: { hostname: string }): Promise<readonly LookupAddress[]> {
+  return await call('net.lookup', opts, TIMEOUT_MS.net)
 }

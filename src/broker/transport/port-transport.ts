@@ -146,3 +146,8 @@ export interface PortDeliveryFrame extends SenderFrameLike {
   // strictly contravariant and would reject it.
   postMessage (channel: string, message: unknown, transfer?: unknown[]): void
 }
+
+/** The per-request event shape `./ipc.ts` and `./dispatch-net.ts` both read `senderFrame` off. */
+export interface ControlEvent {
+  readonly senderFrame: PortDeliveryFrame | null
+}

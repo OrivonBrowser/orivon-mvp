@@ -48,7 +48,7 @@ import {
 import { HOST, STATIC_PORT } from '../apps/fixture/config.mjs'
 import { createBroker } from '../src/broker/index.js'
 import type { BrokerFs, CreateBrokerOptions, Keychain } from '../src/broker/broker-contracts.js'
-import { dialTcp, listenTcp, resolveHost } from '../src/broker/adapters/node-adapters.js'
+import { dialTcp, listenTcp, resolveHost, resolveLookup } from '../src/broker/adapters/node-adapters.js'
 import { dialTls } from '../src/broker/adapters/tls-adapter.js'
 import { bindUdp } from '../src/broker/adapters/udp-adapter.js'
 import { isOrivonErrorLike } from '../src/broker/errors.js'
@@ -257,6 +257,7 @@ it('Phase 2: the real broker signs under a real id grant, and denies an ungrante
         bind: bindUdp,
         listen: listenTcp,
         resolve: resolveHost,
+        resolveLookup,
         now: () => Date.now(),
         fs: fsStub,
         keychain

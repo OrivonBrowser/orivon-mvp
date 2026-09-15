@@ -41,6 +41,33 @@ Why the code here has the shape it has. This is the destination
 source comment protects a specific line from a specific mistake; the case for a file's overall
 shape belongs here instead.
 
+**Why `dispatch()`'s switch is split into [`dispatch-app.ts`](dispatch-app.ts),
+[`dispatch-fs.ts`](dispatch-fs.ts), [`dispatch-id.ts`](dispatch-id.ts) and
+[`dispatch-net.ts`](dispatch-net.ts) rather than staying inline in [`ipc.ts`](ipc.ts).**
+[`ipc.ts`](ipc.ts) was 498 lines against Rule 2's 500-line limit, and four capability lanes were
+about to land behind it, every one adding dispatch cases to the same switch (`fs.open` and its
+file operations, `net.listen`'s page half, `net.lookup`, `fs.userSelected`) — the documented
+failure mode where two individually-compliant PRs push a shared file over the limit on merge, not
+on either branch. The switch already grouped its cases by capability prefix (`app.*`, `fs.*`,
+`id.*`, `net.*`), so that grouping is the seam: each capability's cases, and anything used by only
+that capability (`deliverTcpSocket`, needed only by `net.connect`/`net.connectSecure`), moved into
+its own file. `ipc.ts`'s own `dispatch()` is now a thin router that narrows `method` to each
+module's own slice of `ControlMethod` (`Extract<ControlMethod, \`app.${string}\`>` and its three
+siblings) and calls straight through — the same switch, the same case labels, the same
+exhaustiveness, just spread across four files instead of inlined in one. This concentrates each
+future lane's growth in the one file that actually needs it: `fs.open`/`fs.userSelected` only grow
+`dispatch-fs.ts`, `net.listen`/`net.lookup` only grow `dispatch-net.ts`, and `dispatch-app.ts`/
+`dispatch-id.ts` do not grow at all — rather than every lane converging on one file regardless of
+which capability it touches.
+
+**`ControlEvent` moved to [`port-transport.ts`](port-transport.ts), alongside `PortDeliveryFrame`
+it is built from.** Both `ipc.ts` (the top-level router and `handleControlRequest`) and
+`dispatch-net.ts` (`deliverTcpSocket`, the `net.*` cases) need this type, and `dispatch-net.ts`
+must not import `ipc.ts` — that would cycle back through `ipc.ts`'s own import of `dispatchNet`.
+`port-transport.ts` already held the shape it is built from and imports nothing from either file,
+so it is the one place both can reach without a cycle. `ipc.ts` re-exports it unchanged, so nothing
+importing `ControlEvent` from `'../ipc.js'` (the test suite, chiefly) needed to change.
+
 **Why [`ipc.ts`](ipc.ts)'s dispatch functions take structural types, not `electron`'s real
 ones.** `handleControlRequest`, `dispatch` and `registerBrokerIpc` take a `Broker` and
 structurally-typed `event`/`ipcMain`/`PortTransport`, so `ipc.test.ts` exercises the whole

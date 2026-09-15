@@ -21,7 +21,7 @@
 // shares.
 
 import type { OrivonErrorCode } from '../contracts/errors.js'
-import type { FileStat, SendRefusal, UdpSocket } from '../contracts/handles.js'
+import type { FileStat, LookupAddress, SendRefusal, UdpSocket } from '../contracts/handles.js'
 import type { ResponseEnvelope } from '../contracts/ipc.js'
 import type { CapabilityRequest } from '../contracts/capability-api.js'
 import type { MainWorldDatagram, MainWorldServerBridge, MainWorldSocketBridge, MainWorldUdpBridge, OrivonLimits } from './main-world-bridges.js'
@@ -67,6 +67,8 @@ export function installOrivon (
     netConnectSecure: (opts: { host: string, port: number }) => Promise<MainWorldSocketBridge>
     netUdpBind: (opts: { port: number }) => Promise<MainWorldUdpBridge>
     netListen: (opts: { port: number }) => Promise<MainWorldServerBridge>
+    /** `net.lookup` (d-0030) -- plain data, not a bridge: no per-socket state to wrap, unlike every other `net*` entry above. */
+    netLookup: (opts: { hostname: string }) => Promise<readonly LookupAddress[]>
   },
   limits: OrivonLimits,
   target: { orivon?: unknown } = typeof window === 'undefined' ? {} : window as unknown as { orivon?: unknown }
@@ -415,7 +417,8 @@ export function installOrivon (
       connect: async (opts: { host: string, port: number }) => buildSocket(await callRevived(bridge.netConnect(opts))),
       connectSecure: async (opts: { host: string, port: number }) => buildSocket(await callRevived(bridge.netConnectSecure(opts))),
       udpBind: async (opts: { port: number }) => buildUdpSocket(await callRevived(bridge.netUdpBind(opts))),
-      listen: async (opts: { port: number }) => buildServer(await callRevived(bridge.netListen(opts)))
+      listen: async (opts: { port: number }) => buildServer(await callRevived(bridge.netListen(opts))),
+      lookup: async (opts: { hostname: string }) => await callRevived(bridge.netLookup(opts))
     })
   }
   // A plain assignment here would let any page script (or a compromised

@@ -2,7 +2,7 @@ import type { OrivonErrorCode } from '../../contracts/errors.js'
 import type { AcceptedMessage, BrokerToRendererMessage } from '../../contracts/ipc.js'
 import { LIMITS } from '../../contracts/index.js'
 import type { FailableTcpServer } from '../handles/handle-contracts.js'
-import type { PortDeliveryFrame, PortLike, PortTransport, TcpServerDescriptor } from './port-transport.js'
+import type { ControlEvent, PortLike, PortTransport, TcpServerDescriptor } from './port-transport.js'
 import { createAcceptPump } from './accept-pump.js'
 import { createSocketRelay } from './socket-relay.js'
 import { deliverPort } from './deliver-port.js'
@@ -159,16 +159,15 @@ export function createServerRelay (options: ServerRelayOptions): ServerRelay {
  * Everything net.listen needs once the broker has handed back an acquired
  * FailableTcpServer: mint the server's own port pair, wire createServerRelay,
  * deliver the port to the calling frame (or abandon and release it if that
- * fails), and return the plain descriptor. Mirrors ./ipc.ts's own
+ * fails), and return the plain descriptor. Mirrors ./dispatch-net.ts's own
  * deliverTcpSocket (code-guidelines.md Rule 3 -- same idea, "wire an
- * acquired handle to the renderer") -- kept here rather than there because
- * ipc.ts was already at Rule 2's 500-line ceiling (see this lane's own PR
- * body).
+ * acquired handle to the renderer") -- kept here, beside the relay it wires,
+ * rather than in ./dispatch-net.ts, which only calls it.
  */
 export async function deliverTcpServer (
   origin: string,
   server: FailableTcpServer,
-  event: { readonly senderFrame: PortDeliveryFrame | null },
+  event: ControlEvent,
   transport: PortTransport
 ): Promise<TcpServerDescriptor> {
   const pair = transport.createPortPair()

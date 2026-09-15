@@ -158,6 +158,29 @@ scope line: embedding a live third-party document or running third-party code at
 origin is a materially bigger step than fetching a static image/font/media resource, and neither
 was asked for.
 
+**[`lookup.ts`](lookup.ts) -- why a host-only check (no port, no resolved address) still opens
+nothing new (A171, `docs/open-questions.md` A167).** `orivon.net.lookup` (d-0030) checks
+`hostname` against the HOST PORTION of a pattern the app already holds under `tcp.connect`,
+`https.connect` or `udp.send` -- never a port, and never a resolved address the way
+`connect.ts`'s own `checkConnect` does. That looks weaker until you notice what those three
+capabilities already let an app force today: `checkConnect`'s own pre-resolve gate
+(`couldAnyPatternMatch`) lets a granted pattern's exact host -- or `*`, or an address literal --
+through to the real resolver before any port or address is checked, so an app holding
+`example.com:22` can already make the broker resolve `example.com` by attempting a connection
+to it, whatever the outcome of that connection turns out to be. `lookup` authorised the same way
+hands back a name-to-address MAPPING the app did not have before; it never hands back the
+ability to force a NAME resolved that the app could not already force resolved by name through
+`connect`/`connectSecure`/`udpBind`. A82's reserved-port carve-out is therefore irrelevant here
+too: whatever port a pattern names, the app already knows it (it is in the app's own held
+grant, readable via `app.grants()`) and can replay it through `connect` to force that exact
+host's resolution regardless of which port `lookup` itself does not have to check.
+
+**AI recommendation, not an owner decision** -- `d-0030` states the bound ("as wide as the
+app's network grant already is") but not this file's specific reading of it, and A167 flags the
+union-of-three-capabilities reading as still unconfirmed. This note is this lane's (L4-dns,
+A171) reasoning for why that reading is safe, recorded so the next reader is confirming a
+documented argument rather than reverse-engineering one from the diff.
+
 **Why [`paths.ts`](paths.ts)'s confinement verdict must be platform-independent.** Windows and
 macOS are supported run-from-source targets, but CI runs on Linux only, so a rule whose answer
 depends on the host OS ships to two platforms untested. Path flavour is chosen from the shape of
