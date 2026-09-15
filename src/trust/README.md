@@ -66,3 +66,33 @@ accidentally compare against instead.
 reasons an app *author* needs — a malformed pattern is their bug to fix. A trust screen showing
 a *user* what broke has no use for that distinction, so whoever wires the real derivation to
 this module maps those reasons down to these.
+
+**Pin coverage is counted in bytes, not requests — AI recommendation, deliberately easy to
+change.** [`delivery-ladder.ts`](delivery-ladder.ts)'s `PinCoverageEvidence` (owner's framing,
+2026-09-15: fetching third-party code is not a violation the pin fails to catch, but it costs
+trust score, and D2 had no way to say by how much) keeps both a request count and a byte count
+per bucket, but byte totals are the one that answers "how much of the running app". A single
+enormous remote script and forty tiny pinned icons are not well described by a request count —
+by that measure the pinned side would dominate 40:1 while the app's actual weight ran almost
+entirely unpinned. Bytes read that correctly. Both counts are kept anyway, at no extra cost,
+so build step 6 can weigh by whichever it renders.
+
+**Byte totals are a floor, never a guess, when a size could not be read.**
+[`src/loader/pin-coverage.ts`](../loader/pin-coverage.ts) reads a pinned asset's exact size (the
+bytes are already in hand to serve it) but a third-party response's size only from its own
+`content-length` header — never by buffering the body to measure it, which would defeat the
+streaming `serve-reach.ts` exists for. A chunked or compressed response carries no such header;
+its request is still counted, but `bytesIncomplete` is set rather than treating it as zero bytes
+— the same "undefined, not zero" discipline `connection-log.ts`'s own `bytesSent`/`bytesReceived`
+already use, for the identical reason: an unmeasured byte count is not evidence of a small one.
+
+**`PinCoverageEvidence` is defined once in each direction, not imported across.**
+`delivery-ladder.ts`'s copy and `src/loader/pin-coverage.ts`'s `PinCoverageSnapshot` are
+structurally identical on purpose — this directory's own README says never reach into another
+stream's internals, and `src/loader/README.md` does not list this directory as something it may
+import either. The two modules agree on a shape rather than sharing a type, the same relationship
+`connection-log.ts` already has with the broker's own (still-unwired) connection log. Running
+totals only, kept in memory per origin for the current process run and discarded on restart —
+never a per-request history, and never which third-party host was reached beyond what
+`connection-log.ts` already legitimately records. This is a count for the indicator, not browsing
+history.
