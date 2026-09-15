@@ -11,6 +11,7 @@ import type { DestroyResource, FailableTcpServer, FailableTcpSocket, FailableUdp
 import type { LedgerStorage } from './grants/ledger-storage.js'
 import type { PortRange } from './policy/bind.js'
 import type { Resolver } from './policy/connect.js'
+import type { BrokerFs, BrokerFsMethods } from './fs-contracts.js'
 import type {
   CapabilityKind,
   Datagram,
@@ -22,6 +23,12 @@ import type {
   Pattern,
   TcpSocket
 } from '../contracts/index.js'
+
+// RawFileStat, OpenedFile and BrokerFs itself live in ./fs-contracts.js now
+// (split out once `open`'s types pushed this file past Rule 2's 500 lines)
+// -- re-exported so no existing `from '../broker-contracts.js'` import site
+// needs to change.
+export type { BrokerFs, BrokerFsMethods, OpenedFile, RawFileStat } from './fs-contracts.js'
 
 /**
  * What `orivon.net.connect` needs from a live TCP connection, minus the
@@ -167,46 +174,6 @@ export interface ListenedServer {
  */
 export type Listen = (ranges: readonly PortRange[], signal: AbortSignal) => Promise<ListenedServer>
 
-/** What `fs.stat` reports. Mirrors `contracts/handles.ts`'s `FileStat` exactly -- one shape, not redeclared. */
-export interface RawFileStat {
-  size: number
-  isFile: boolean
-  isDirectory: boolean
-  mtimeMs: number
-}
-
-/**
- * What `orivon.fs` needs from the real filesystem. `policy/paths.ts` stays
- * pure; this is the one seam where confinement's decision touches disk.
- *
- * Every method below receives an ALREADY-CONFINED absolute path (or two, for
- * `rename`) -- `./fs-capability.ts` is the only caller, and it never hands
- * this interface anything that has not already passed `confinePath`. This
- * layer's job is raw I/O, nothing else.
- */
-export interface BrokerFs {
-  /**
-   * The absolute directory `origin`'s files are confined to. Computed by the
-   * INJECTED implementation, not here: security-model.md T13b makes it
-   * `sha256(canonical origin)` under the app data directory, and that
-   * directory lives outside anything this pure-orchestration layer knows --
-   * there is no `electron`, and no user-data path, in createBroker's fixed
-   * dependency shape. AI recommendation, not an owner decision: nothing in
-   * the corpus specifies which side of this seam computes the root.
-   */
-  rootFor(origin: string): string
-  /** `confinePath`'s `realpath` parameter (policy/paths.ts). Synchronous, matching node:fs's `realpathSync`. */
-  realpathSync(path: string): string
-  readFile(path: string): Promise<Uint8Array>
-  writeFile(path: string, data: Uint8Array): Promise<void>
-  mkdir(path: string, opts?: { recursive?: boolean }): Promise<void>
-  readdir(path: string): Promise<readonly string[]>
-  stat(path: string): Promise<RawFileStat>
-  /** `force` is never exposed above this layer -- a missing path surfaces ENOENT, mapped to `notFound`, the same as every other fs call. */
-  rm(path: string, opts?: { recursive?: boolean }): Promise<void>
-  rename(from: string, to: string): Promise<void>
-}
-
 /**
  * Backs `orivon.id` -- key derivation from a locked seed (ADR-0010,
  * policy/derive.ts). Not yet used: `createBroker` accepts it because
@@ -331,50 +298,8 @@ export interface Broker {
      */
     listen(origin: string, opts: { port: number }): Promise<FailableTcpServer>
   }
-  readonly fs: {
-    readFile(origin: string, path: string): Promise<Uint8Array>
-    writeFile(origin: string, path: string, data: Uint8Array): Promise<void>
-    /**
-     * ADR-0016's synchronous entry point: the SAME grant check and path
-     * confinement `readFile`/`writeFile` use (`../index.ts`'s
-     * `confineForOrigin`), exposed synchronously for `orivon.fs.
-     * readFileSync`'s main-process handler (`../transport/sync-fs.ts`),
-     * which cannot await a Promise on this path. Returns the confined
-     * absolute path; throws an OrivonError ('denied') on refusal. Does NOT
-     * run under the per-origin in-flight budget `readFile`/`writeFile` do
-     * -- see `../index.ts`'s own doc on `confineSync` for why that budget
-     * is `async`-shaped and this call, by ADR-0016's own design, is not.
-     */
-    confineSync(origin: string, path: string): string
-    /**
-     * Confined the same way `readFile`/`writeFile` are (`../fs-capability.ts`'s
-     * `confineForOrigin`) and run under the same per-origin in-flight budget
-     * (`runFsIo`). `recursive: true` matches `node:fs/promises.mkdir`'s own
-     * flag; omitted or `false`, a missing parent yields `notFound` (mapped
-     * ENOENT), the same failure shape every other fs call already produces.
-     */
-    mkdir(origin: string, path: string, opts?: { recursive?: boolean }): Promise<void>
-    /** Confined and budgeted like `readFile`. Entry NAMES only, never full paths -- matching `contracts/capability-api.ts`'s `Promise<readonly string[]>`. */
-    readdir(origin: string, path: string): Promise<readonly string[]>
-    /** Confined and budgeted like `readFile`. Mirrors `contracts/handles.ts`'s `FileStat` shape exactly. */
-    stat(origin: string, path: string): Promise<RawFileStat>
-    /**
-     * Confined and budgeted like `writeFile`, but reserves no quota: quota
-     * tracks bytes WRITTEN (`fs.writeFile`'s own doc), and deleting is never
-     * a write. `recursive: true` matches `node:fs/promises.rm`; `force` is
-     * never exposed -- a missing path yields `notFound`, same as every other
-     * fs call.
-     */
-    rm(origin: string, path: string, opts?: { recursive?: boolean }): Promise<void>
-    /**
-     * BOTH `from` AND `to` are independently confined before anything on
-     * disk moves -- see `../fs-capability.ts`'s own doc for why a check on
-     * `from` alone would turn this into an arbitrary-write primitive. Runs
-     * under `from`'s in-flight budget slot (the same grant authorises both
-     * paths, so either would do).
-     */
-    rename(origin: string, from: string, to: string): Promise<void>
-  }
+  /** `BrokerFsMethods` -- ./fs-contracts.js, alongside the types it is built from. */
+  readonly fs: BrokerFsMethods
   /**
    * The APP KEYS half of capability-api.ts's "Two kinds of identity" --
    * per-origin, silent, checked against a live `id` grant whose `patterns`

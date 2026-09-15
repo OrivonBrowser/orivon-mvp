@@ -87,6 +87,25 @@ export interface MainWorldSocketBridge {
   readonly setKeepAlive: (on: boolean, initialDelayMs?: number) => Promise<void>
 }
 
+/**
+ * What orivon-surface.ts's fsOpen bridge closure resolves to (A169) --
+ * deliberately narrower than `FileHandle` (contracts/handles.ts): no
+ * `readable`/`writable`, and no live-pushed `closed`. Every method here is a
+ * plain request/reply CONTROL_CHANNEL round trip -- unlike net.connect,
+ * fs.open needs no per-socket port or byte pump, so it needs none of the
+ * main-world stream machinery `buildSocket` below exists for. See this
+ * lane's own PR body for what that means a page cannot do yet.
+ */
+export interface MainWorldFileBridge {
+  readonly id: string
+  read: (opts: { position: number, length: number }) => Promise<Uint8Array>
+  write: (opts: { position: number, data: Uint8Array }) => Promise<number>
+  stat: () => Promise<FileStat>
+  truncate: (length: number) => Promise<void>
+  sync: () => Promise<void>
+  close: () => Promise<void>
+}
+
 export function installOrivon (
   bridge: {
     appManifest: () => Promise<unknown>
@@ -112,6 +131,15 @@ export function installOrivon (
     fsStat: (path: string) => Promise<FileStat>
     fsRm: (path: string, opts?: { recursive?: boolean }) => Promise<void>
     fsRename: (from: string, to: string) => Promise<void>
+    /**
+     * Resolves to a `MainWorldFileBridge` -- itself a plain object of MORE
+     * proxied closures (read/write/stat/truncate/sync/close), each its own
+     * round trip. Needs no main-world stream wrapping, same reasoning as
+     * fsMkdir/fsReaddir/etc. above; `buildFile` below still wraps each
+     * nested closure in `callRevived`, because EVERY one of them crosses
+     * back into the isolated world independently and could reject.
+     */
+    fsOpen: (path: string, flags: string) => Promise<MainWorldFileBridge>
     idPublicKey: (curve: string) => Promise<Uint8Array>
     idSign: (curve: string, payload: Uint8Array) => Promise<Uint8Array>
     netConnect: (opts: { host: string, port: number }) => Promise<MainWorldSocketBridge>
@@ -377,6 +405,25 @@ export function installOrivon (
     })
   }
 
+  /**
+   * `fsOpen`'s own counterpart to `buildSocket`/`buildUdpSocket` -- far
+   * simpler, because every method here is a plain request/reply round trip
+   * with no port and no stream to build. Each nested closure still needs
+   * its own `callRevived`: `f.read`/`f.write`/... each cross back into the
+   * isolated world independently, and any one of them can reject on its own.
+   */
+  function buildFile (f: Awaited<ReturnType<typeof bridge.fsOpen>>): MainWorldFileBridge {
+    return Object.freeze({
+      id: f.id,
+      read: async (opts: { position: number, length: number }) => await callRevived(f.read(opts)),
+      write: async (opts: { position: number, data: Uint8Array }) => await callRevived(f.write(opts)),
+      stat: async () => await callRevived(f.stat()),
+      truncate: async (length: number) => { await callRevived(f.truncate(length)) },
+      sync: async () => { await callRevived(f.sync()) },
+      close: async () => { await callRevived(f.close()) }
+    })
+  }
+
   const api = {
     version: 0,
     app: Object.freeze({
@@ -408,7 +455,8 @@ export function installOrivon (
       readdir: async (path: string) => await callRevived(bridge.fsReaddir(path)),
       stat: async (path: string) => await callRevived(bridge.fsStat(path)),
       rm: async (path: string, opts?: { recursive?: boolean }) => { await callRevived(bridge.fsRm(path, opts)) },
-      rename: async (from: string, to: string) => { await callRevived(bridge.fsRename(from, to)) }
+      rename: async (from: string, to: string) => { await callRevived(bridge.fsRename(from, to)) },
+      open: async (path: string, flags: string) => buildFile(await callRevived(bridge.fsOpen(path, flags)))
     }),
     id: Object.freeze({
       publicKey: async (opts: { curve: string }) => await callRevived(bridge.idPublicKey(opts.curve)),
