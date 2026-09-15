@@ -1,56 +1,44 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { SYNC_CONTROL_CHANNEL } from '../main/channels.js'
 import { installOrivon } from './main-world-socket.js'
-import type { CapabilityRequest, FileStat, Grant, Manifest } from '../contracts/index.js'
+import { call, TIMEOUT_MS } from './control-call.js'
+import { netConnectBridge, netConnectSecureBridge, netListenBridge, netLookupBridge, netUdpBindBridge } from './net-surface.js'
+import type { CapabilityRequest, FileStat, Grant, Manifest, OrivonErrorCode } from '../contracts/index.js'
 import { LIMITS } from '../contracts/index.js'
 import type { ResponseEnvelope } from '../contracts/ipc.js'
 import { toOrivonError } from './orivon-error.js'
-import { TIMEOUT_MS, call } from './orivon-call.js'
-import { netConnectBridge, netConnectSecureBridge, netListenBridge, netUdpBindBridge } from './orivon-net-bridge.js'
 
 // The real orivon.* surface, shared by preload/app.ts and preload/newtab.ts's
 // fallback branch. See README.md's Design notes section for why this file
 // is shaped the way it is (the two-world split, the CONTROL_CHANNEL import
-// source, what is and isn't wired yet).
+// source, what is and isn't wired yet, and how it splits across
+// ./control-call.ts and ./net-surface.ts).
 //
 // Nothing below hands the page anything but a Promise-returning closure,
 // with ONE exception -- ADR-0016's deliberately narrow synchronous call,
-// still never touching `ipcRenderer` directly from the page (it stays a
-// plain proxied closure, exactly like every other method here). It is
-// SPLIT INTO TWO FUNCTIONS, `fsReadFileSyncEnvelope`/`fsReadFileSyncThrowing`
-// -- see their own docs -- because a THROWN value does not survive
-// `contextBridge`'s function-proxy boundary intact (found live, not in a
-// unit test); a RETURNED one does, so the envelope crosses as data and the
-// real `OrivonError` is thrown on whichever side of the boundary the call
-// already ends up on.
-//
-// `call()`/`TIMEOUT_MS` (./orivon-call.ts) and the four net.* bridge closures
-// (./orivon-net-bridge.ts) moved out of this file under code-guidelines.md
-// Rule 2, once net.listen's own addition pushed it past 500 lines -- by
-// concern, not by line count: "the control-channel call primitive" and "how
-// net crosses the isolated-world/main-world boundary" are both genuinely
-// separate questions from "which app/fs/id closures exist and how they are
-// exposed", which is what remains here.
+// still never touching `ipcRenderer` directly from the PAGE (it stays a
+// plain proxied closure, exactly like every other method here; only this
+// preload script's own `fsReadFileSyncEnvelope` touches `ipcRenderer.
+// sendSync` itself). It is SPLIT INTO TWO FUNCTIONS,
+// `fsReadFileSyncEnvelope`/`fsReadFileSyncThrowing` -- see their own docs --
+// because a THROWN value does not survive `contextBridge`'s function-proxy
+// boundary intact (found live, not in a unit test); a RETURNED one does, so
+// the envelope crosses as data and the real `OrivonError` is thrown on
+// whichever side of the boundary the call already ends up on.
+// `./control-call.ts`'s `call()` is the only thing that touches
+// `ipcRenderer.invoke` (the raw MessagePortMain/ipcRenderer never crossing
+// into the main world is this whole directory's rule, not just this
+// file's); each method's own timeout budget lives there too. net.listen's
+// own bridge closure (netListenBridge) lives in ./net-surface.ts alongside
+// net.connect/net.udpBind/net.lookup's, for the same reason.
 
-// The six closures both exposeFallback (no net) and the executeInMainWorld
-// bridge (with net) need -- one implementation, reused by both, rather than
-// two copies of the same broker call/timeout pair (code-guidelines.md Rule
-// 3). id.publicKey/sign need no main-world stream wrapping (net.connect's
-// own reason for the executeInMainWorld dance) -- a plain Uint8Array in,
-// Uint8Array out, exactly fs.readFile/writeFile's shape -- so they are wired
-// identically to those two, not to net. The synchronous call just below is
-// wired into both exposure sites too, but as TWO functions, not one --
-// see fsReadFileSyncEnvelope's own doc for why -- because it is the one
-// call() cannot serve: call() always returns a Promise (../../contracts/
-// ipc.ts's rule 2, a required timeout on every reply) and this one, by
-// design, never does.
 async function appManifest (): Promise<Manifest> { return await call('app.manifest', undefined, TIMEOUT_MS.metadata) }
 async function appGrants (): Promise<readonly Grant[]> { return await call('app.grants', undefined, TIMEOUT_MS.metadata) }
 /**
- * `request.patterns` is flattened the same way `setKeepAlive`'s
- * `initialDelayMs` is: `exactOptionalPropertyTypes` treats an explicit
- * `patterns: undefined` as different from the key being absent, and only
- * the absent form means "whatever the manifest already declares"
+ * `request.patterns` is flattened the same way `net-surface.ts`'s
+ * `setKeepAlive`'s `initialDelayMs` is: `exactOptionalPropertyTypes` treats an
+ * explicit `patterns: undefined` as different from the key being absent, and
+ * only the absent form means "whatever the manifest already declares"
  * (request-grant.ts's own contract) once it reaches the broker.
  */
 async function appRequestGrant (request: CapabilityRequest): Promise<boolean> {
@@ -134,7 +122,15 @@ async function idSign (curve: string, payload: Uint8Array): Promise<Uint8Array> 
   return await call('id.sign', { curve, payload }, TIMEOUT_MS.id)
 }
 
-/** The `net`-less surface: used both when `executeInMainWorld` is absent and when it exists but throws -- one implementation, not two copies quietly drifting apart. */
+/**
+ * The stream-less `net` surface: used both when `executeInMainWorld` is
+ * absent and when it exists but throws -- one implementation, not two
+ * copies quietly drifting apart. `net.lookup` (d-0030) is included here,
+ * unlike `connect`/`connectSecure`/`udpBind`: it resolves to plain data,
+ * never a live handle, so it needs none of the main-world stream wrapping
+ * that makes the other three unsafe to expose without `executeInMainWorld`
+ * (`exposeOrivon`'s own doc below) -- exactly `fs.readFile`'s own reasoning.
+ */
 function exposeFallback (): void {
   contextBridge.exposeInMainWorld('orivon', {
     version: 0,
@@ -152,6 +148,9 @@ function exposeFallback (): void {
     id: {
       publicKey: async (opts: { curve: string }) => await idPublicKey(opts.curve),
       sign: async (opts: { curve: string, payload: Uint8Array }) => await idSign(opts.curve, opts.payload)
+    },
+    net: {
+      lookup: async (opts: { hostname: string }) => await netLookupBridge(opts)
     }
   })
 }
@@ -196,7 +195,8 @@ export function exposeOrivon (): void {
     netConnect: netConnectBridge,
     netConnectSecure: netConnectSecureBridge,
     netUdpBind: netUdpBindBridge,
-    netListen: netListenBridge
+    netListen: netListenBridge,
+    netLookup: netLookupBridge
   }
   try {
     contextBridge.executeInMainWorld({

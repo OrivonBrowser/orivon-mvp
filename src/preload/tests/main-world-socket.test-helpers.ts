@@ -97,6 +97,7 @@ export function fakeBridge (
   netConnectSecure: (opts: { host: string, port: number }) => Promise<ReturnType<typeof fakeSocketBridgeResult>>
   netUdpBind: (opts: { port: number }) => Promise<MainWorldUdpBridge>
   netListen: (opts: { port: number }) => Promise<MainWorldServerBridge>
+  netLookup: (opts: { hostname: string }) => Promise<ReadonlyArray<{ address: string, family: 'IPv4' | 'IPv6' }>>
 } {
   return {
     appManifest: async () => ({ orivonApiVersion: 0 }),
@@ -119,7 +120,11 @@ export function fakeBridge (
     // silently, since both fields would then resolve to an identical object.
     netConnectSecure: async (_opts) => netConnectSecureResult,
     netUdpBind: async (_opts) => udpResult ?? fakeUdpBridgeResult(),
-    netListen: async (_opts) => serverResult ?? fakeServerBridgeResult()
+    netListen: async (_opts) => serverResult ?? fakeServerBridgeResult(),
+    // Present so this fake still satisfies installOrivon's bridge shape --
+    // no test in this file drives net.lookup (main-world-lookup.test.ts,
+    // this lane's own sibling, does).
+    netLookup: async () => []
   }
 }
 

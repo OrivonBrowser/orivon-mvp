@@ -1,19 +1,15 @@
+// The `CONTROL_CHANNEL` request/timeout machinery every `orivon.*` method
+// needs, net and non-net alike -- split out of ./orivon-surface.ts under
+// code-guidelines.md Rule 2 so ./net-surface.ts can share it without an
+// import cycle back through ./orivon-surface.ts. See ./README.md's Design
+// notes for the rest of this split.
+
 import { ipcRenderer } from 'electron'
 import { CONTROL_CHANNEL } from '../main/channels.js'
 import type { RequestEnvelope, ResponseEnvelope } from '../contracts/ipc.js'
 import { toOrivonError } from './orivon-error.js'
 
-// The one control-channel call primitive every orivon.* bridge closure goes
-// through -- split out of ./orivon-surface.ts under code-guidelines.md Rule 2
-// (by concern: this is "how one request/reply round trip works", separate
-// from "which closures exist and what they call", which ./orivon-surface.ts
-// and ./orivon-net-bridge.ts still own).
-//
-// `call()` is the only thing that touches `ipcRenderer.invoke` (the raw
-// MessagePortMain/ipcRenderer never crossing into the main world is the
-// whole directory's rule, not just this file's). Every call through `call()`
-// carries an explicit timeout (../contracts/ipc.ts's rule 2) -- see
-// TIMEOUT_MS below.
+/** Every call through `call()` below carries an explicit timeout (../contracts/ipc.ts's rule 2) -- this is where each capability's own budget is picked. */
 export const TIMEOUT_MS = {
   /** app.manifest / app.grants: broker-local reads, no I/O of their own. */
   metadata: 5_000,
@@ -22,11 +18,11 @@ export const TIMEOUT_MS = {
   /** id.publicKey / id.sign: WebCrypto plus a keychain read, no network I/O -- metadata's own budget covers it with room to spare. */
   id: 5_000,
   /**
-   * net.connect / net.connectSecure / net.listen / net.udpBind / net.close /
-   * net.setNoDelay / net.setKeepAlive. Must exceed node-adapters.ts's own
-   * DIAL_TIMEOUT_MS (30_000) -- otherwise a legitimately slow dial reports
-   * THIS timeout instead of the broker's real 'timeout' answer, discarding
-   * the more specific error for a less useful one.
+   * net.connect / net.close / net.setNoDelay / net.setKeepAlive. Must
+   * exceed node-adapters.ts's own DIAL_TIMEOUT_MS (30_000) -- otherwise a
+   * legitimately slow dial reports THIS timeout instead of the broker's
+   * real 'timeout' answer, discarding the more specific error for a less
+   * useful one.
    */
   net: 35_000,
   /**
@@ -63,7 +59,7 @@ async function raceTimeout<T> (promise: Promise<ResponseEnvelope<T>>, timeoutMs:
       (error: unknown) => {
         clearTimeout(timer)
         // The isolated world's OWN console -- contextIsolation means the
-        // page cannot see or intercept this call. See ../README.md's design
+        // page cannot see or intercept this call. See ./README.md's design
         // notes for why the underlying error can never just be re-thrown.
         console.error('[orivon] control call failed', error)
         resolve({ id: '', ok: false, code: 'internal', message: 'control call failed' })
@@ -82,6 +78,7 @@ async function raceTimeout<T> (promise: Promise<ResponseEnvelope<T>>, timeoutMs:
 // fixtures cannot reach.
 let nextRequestId = 0
 
+/** One CONTROL_CHANNEL round trip: builds the envelope, races it against `timeoutMs`, and throws the real `OrivonError` on any failure shape. Every `orivon.*` method, here and in ./net-surface.ts alike, calls through here. */
 export async function call<TResult> (method: string, payload: unknown, timeoutMs: number): Promise<TResult> {
   const envelope: RequestEnvelope<unknown> = { id: `r${++nextRequestId}`, method, payload, timeoutMs }
   const response = await raceTimeout(

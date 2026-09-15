@@ -13,13 +13,13 @@
 import type { CapabilityRequest, Pattern, RequestEnvelope } from '../../contracts/index.js'
 import { MAX_PATTERNS } from '../policy/connect.js'
 
-/** The nineteen wired control operations. Anything else is 'invalid'. */
+/** The twenty wired control operations. Anything else is 'invalid'. */
 export type ControlMethod =
   | 'app.manifest' | 'app.grants' | 'app.requestGrant' | 'fs.readFile' | 'fs.writeFile'
   | 'fs.mkdir' | 'fs.readdir' | 'fs.stat' | 'fs.rm' | 'fs.rename'
   | 'id.publicKey' | 'id.sign'
   | 'net.connect' | 'net.connectSecure' | 'net.udpBind' | 'net.listen' | 'net.close'
-  | 'net.setNoDelay' | 'net.setKeepAlive'
+  | 'net.setNoDelay' | 'net.setKeepAlive' | 'net.lookup'
 
 export function isControlMethod (method: string): method is ControlMethod {
   return method === 'app.manifest' || method === 'app.grants' || method === 'app.requestGrant' ||
@@ -29,7 +29,8 @@ export function isControlMethod (method: string): method is ControlMethod {
     method === 'id.publicKey' || method === 'id.sign' ||
     method === 'net.connect' || method === 'net.connectSecure' ||
     method === 'net.udpBind' || method === 'net.listen' || method === 'net.close' ||
-    method === 'net.setNoDelay' || method === 'net.setKeepAlive'
+    method === 'net.setNoDelay' || method === 'net.setKeepAlive' ||
+    method === 'net.lookup'
 }
 
 export interface FsReadFileParams { readonly path: string }
@@ -55,21 +56,25 @@ export interface NetConnectParams { readonly host: string, readonly port: number
  */
 export interface NetUdpBindParams { readonly port: number }
 export interface NetCloseParams { readonly id: string }
+/** `net.lookup` (d-0030) -- no port, unlike NetConnectParams: a lookup is bounded by the origin's held network grants, never by a port of its own. */
+export interface NetLookupParams { readonly hostname: string }
 export interface NetSetNoDelayParams { readonly id: string, readonly on: boolean }
 export interface NetSetKeepAliveParams { readonly id: string, readonly on: boolean, readonly initialDelayMs?: number }
 /** The wire shape of `CapabilityRequest` (capability-api.ts) -- untrusted, including `capability`, which `main/request-grant.ts` narrows against the manifest; this file only checks shape. */
 export interface AppRequestGrantParams { readonly capability: string, readonly patterns?: readonly Pattern[] }
 
 /**
- * The one field of `SubsystemContext` (../../main/registry.js) `ipc.ts`'s
- * 'app.requestGrant' case needs, read via THIS object's own live getter on
- * every call rather than captured once: `registerBrokerIpc` runs before
- * request-grant-subsystem publishes it (subsystems.ts's own ordering
- * comment), so grabbing the value at wiring time would freeze it at
+ * The one field of `SubsystemContext` (../../main/registry.js)
+ * `dispatch-app.ts`'s 'app.requestGrant' case needs, read via THIS object's
+ * own live getter on every call rather than captured once: `registerBrokerIpc`
+ * runs before request-grant-subsystem publishes it (subsystems.ts's own
+ * ordering comment), so grabbing the value at wiring time would freeze it at
  * `undefined` forever. A real `SubsystemContext` satisfies this shape
  * structurally; ipc.test.ts needs only a plain object with this one field.
  * Lives here, alongside the payload shape it pairs with, rather than in
- * ipc.ts itself, which is at Rule 2's own limit.
+ * dispatch-app.ts: both ipc.ts's `handleControlRequest` and dispatch-app.ts's
+ * `dispatchApp` need this same type, so it lives in the shared validation
+ * module rather than in either one.
  */
 export interface RequestGrantCtx {
   readonly requestGrant: ((origin: string, request: CapabilityRequest) => Promise<boolean>) | undefined
@@ -154,6 +159,11 @@ export function isNetSetKeepAliveParams (payload: unknown): payload is NetSetKee
 export function isNetCloseParams (payload: unknown): payload is NetCloseParams {
   return typeof payload === 'object' && payload !== null &&
     typeof (payload as { id?: unknown }).id === 'string'
+}
+
+export function isNetLookupParams (payload: unknown): payload is NetLookupParams {
+  return typeof payload === 'object' && payload !== null &&
+    typeof (payload as { hostname?: unknown }).hostname === 'string'
 }
 
 /**

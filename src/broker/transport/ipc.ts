@@ -1,13 +1,12 @@
-// Wires createBroker (../index.ts) to a real renderer over Electron IPC.
-//
-// SCOPE: app.manifest, app.grants, app.requestGrant, fs.readFile, fs.writeFile, id.publicKey,
-// id.sign, net.connect, net.connectSecure, net.udpBind, net.close, net.setNoDelay, net.setKeepAlive. See ./README.md
-// for the two rules every method here enforces (origin attribution off the
-// sending frame, bytes never over request/response IPC) and
-// ../../contracts/ipc.ts for the timeout and no-transferables rules
-// withTimeout() and dispatch() apply below. net.connect's, net.connectSecure's
-// and net.udpBind's port delivery are the only transferables this file ever
-// sends; everything else on CONTROL_CHANNEL is plain cloned data.
+// Wires createBroker (../index.ts) to a real renderer over Electron IPC:
+// validates the envelope, derives the origin, rate-limits, times out, and
+// routes to the per-capability dispatcher (./dispatch-app.ts, ./dispatch-fs.ts,
+// ./dispatch-id.ts, ./dispatch-net.ts -- see ./README.md's Design notes for
+// why dispatch lives there and wiring stays here). See ./README.md for the
+// two rules every method enforces (origin attribution off the sending
+// frame, bytes never over request/response IPC) and ../../contracts/ipc.ts
+// for the timeout and no-transferables rules withTimeout() and dispatch()
+// below apply.
 //
 // TESTABLE WITHOUT ELECTRON, the way src/main/registry.ts is:
 // `handleControlRequest`, `dispatch` and `registerBrokerIpc` take a
@@ -23,15 +22,11 @@ import { publishBroker } from '../../main/registry.js'
 import type { Subsystem, SubsystemContext } from '../../main/registry.js'
 import { createBroker } from '../index.js'
 import type { Broker, CreateBrokerOptions } from '../broker-contracts.js'
-import { dialTcp, listenTcp, nodeFs, resolveHost } from '../adapters/node-adapters.js'
+import { dialTcp, listenTcp, nodeFs, resolveHost, resolveLookup } from '../adapters/node-adapters.js'
 import { dialTls } from '../adapters/tls-adapter.js'
 import { bindUdp } from '../adapters/udp-adapter.js'
 import { nodeLedgerStorage } from '../grants/node-ledger-storage.js'
 import { createPortRegistry } from './port-registry.js'
-import { deliverTcpSocket } from './socket-relay.js'
-import { createDatagramRelay } from './datagram-relay.js'
-import { deliverTcpServer } from './server-relay.js'
-import { deliverPort } from './deliver-port.js'
 import { createTokenBucketLimiter } from './token-bucket.js'
 import type { RateLimiter } from './token-bucket.js'
 import { createSyncFsPolicy } from './sync-fs-policy.js'
@@ -40,18 +35,13 @@ import type { SyncControlEvent, SyncFsPolicy } from './sync-fs.js'
 import { originFromSenderFrame } from '../policy/origin.js'
 import { fail } from '../errors.js'
 import { toFailureResponse } from './response-envelope.js'
-import {
-  envelopeId, isAppRequestGrantParams, isControlMethod, isFsPathWithRecursiveParams, isFsReaddirParams,
-  isFsReadFileParams, isFsRenameParams, isFsStatParams, isFsWriteFileParams,
-  isIdPublicKeyParams, isIdSignParams,
-  isNetCloseParams, isNetConnectParams, isNetSetKeepAliveParams, isNetSetNoDelayParams,
-  isNetUdpBindParams, isRequestEnvelope, type RequestGrantCtx
-} from './ipc-validation.js'
-import type {
-  PortDeliveryFrame, PortLike, PortPair, PortTransport, UdpSocketDescriptor
-} from './port-transport.js'
-import type { CapabilityRequest, RequestEnvelope, ResponseEnvelope } from '../../contracts/index.js'
-import { LIMITS } from '../../contracts/index.js'
+import { dispatchApp } from './dispatch-app.js'
+import { dispatchFs } from './dispatch-fs.js'
+import { dispatchId } from './dispatch-id.js'
+import { dispatchNet } from './dispatch-net.js'
+import { envelopeId, isControlMethod, isRequestEnvelope, type RequestGrantCtx } from './ipc-validation.js'
+import type { ControlEvent, PortLike, PortPair, PortTransport } from './port-transport.js'
+import type { RequestEnvelope, ResponseEnvelope } from '../../contracts/index.js'
 
 export { CONTROL_CHANNEL, PORT_CHANNEL }
 export type {
@@ -60,14 +50,18 @@ export type {
   NetConnectParams, NetCloseParams, NetSetKeepAliveParams, NetSetNoDelayParams, NetUdpBindParams, RequestGrantCtx
 } from './ipc-validation.js'
 export type {
-  PortDeliveryFrame, PortLike, PortPair, PortTransport, SocketDescriptor, TcpServerDescriptor, UdpSocketDescriptor
+  ControlEvent, PortDeliveryFrame, PortLike, PortPair, PortTransport, SocketDescriptor, TcpServerDescriptor,
+  UdpSocketDescriptor
 } from './port-transport.js'
 
-export interface ControlEvent {
-  readonly senderFrame: PortDeliveryFrame | null
-}
-
-/** One request, dispatched to `broker` with the origin THIS FUNCTION derived -- never one from `payload`. */
+/**
+ * One request, dispatched to `broker` with the origin THIS FUNCTION derived
+ * -- never one from `payload`. Routes by capability prefix to
+ * ./dispatch-app.ts, ./dispatch-fs.ts, ./dispatch-id.ts and ./dispatch-net.ts
+ * -- each case group below narrows `method` to that module's own slice of
+ * `ControlMethod`, so the call is exactly as type-checked as the single
+ * switch this replaced.
+ */
 async function dispatch (
   broker: Broker,
   origin: string,
@@ -81,165 +75,38 @@ async function dispatch (
 
   switch (method) {
     case 'app.manifest':
-      return await broker.app.manifest(origin)
     case 'app.grants':
-      return await broker.app.grants(origin)
-    // `capability` is not re-validated here (Rule 3: request-grant.ts's
-    // isCapabilityKind is the one check). Only capability/patterns cross,
-    // never the rest of `payload`, even one naming its own `origin` (T3).
-    case 'app.requestGrant': {
-      if (!isAppRequestGrantParams(payload)) throw fail('invalid', 'app.requestGrant requires { capability: string, patterns?: string[] }')
-      if (requestGrantCtx?.requestGrant === undefined) throw fail('internal', 'requestGrant is not available -- request-grant subsystem failed to start')
-      const request: CapabilityRequest = payload.patterns === undefined
-        ? { capability: payload.capability }
-        : { capability: payload.capability, patterns: payload.patterns }
-      return await requestGrantCtx.requestGrant(origin, request)
-    }
-    case 'fs.readFile': {
-      if (!isFsReadFileParams(payload)) throw fail('invalid', 'fs.readFile requires { path: string }')
-      return await broker.fs.readFile(origin, payload.path)
-    }
-    case 'fs.writeFile': {
-      if (!isFsWriteFileParams(payload)) throw fail('invalid', 'fs.writeFile requires { path: string, data: Uint8Array }')
-      await broker.fs.writeFile(origin, payload.path, payload.data)
-      return undefined
-    }
-    case 'fs.mkdir': {
-      if (!isFsPathWithRecursiveParams(payload)) throw fail('invalid', 'fs.mkdir requires { path: string, recursive?: boolean }')
-      await broker.fs.mkdir(origin, payload.path, payload.recursive === undefined ? undefined : { recursive: payload.recursive })
-      return undefined
-    }
-    case 'fs.readdir': {
-      if (!isFsReaddirParams(payload)) throw fail('invalid', 'fs.readdir requires { path: string }')
-      return await broker.fs.readdir(origin, payload.path)
-    }
-    case 'fs.stat': {
-      if (!isFsStatParams(payload)) throw fail('invalid', 'fs.stat requires { path: string }')
-      return await broker.fs.stat(origin, payload.path)
-    }
-    case 'fs.rm': {
-      if (!isFsPathWithRecursiveParams(payload)) throw fail('invalid', 'fs.rm requires { path: string, recursive?: boolean }')
-      await broker.fs.rm(origin, payload.path, payload.recursive === undefined ? undefined : { recursive: payload.recursive })
-      return undefined
-    }
-    case 'fs.rename': {
-      if (!isFsRenameParams(payload)) throw fail('invalid', 'fs.rename requires { from: string, to: string }')
-      await broker.fs.rename(origin, payload.from, payload.to)
-      return undefined
-    }
-    // id.publicKey/sign carry no port transport of their own -- a plain
-    // Uint8Array response, exactly fs.readFile's shape, unlike net.connect's
-    // below.
-    case 'id.publicKey': {
-      if (!isIdPublicKeyParams(payload)) throw fail('invalid', 'id.publicKey requires { curve: string }')
-      return await broker.id.publicKey(origin, { curve: payload.curve })
-    }
-    case 'id.sign': {
-      if (!isIdSignParams(payload)) throw fail('invalid', 'id.sign requires { curve: string, payload: Uint8Array }')
-      return await broker.id.sign(origin, { curve: payload.curve, payload: payload.payload })
-    }
-    case 'net.connect': {
-      if (!isNetConnectParams(payload)) throw fail('invalid', 'net.connect requires { host: string, port: number }')
-      if (transport === undefined) throw fail('internal', 'no port transport configured for this broker')
-      const socket = await broker.net.connect(origin, { host: payload.host, port: payload.port })
-      return await deliverTcpSocket(origin, socket, event, transport)
-    }
-    // A SIBLING of net.connect above, not a variant: the broker method
-    // (checked against the separate https.connect grant and dialled via
-    // node:tls -- ../net-capability.ts's own connectSecure) is the only
-    // thing that differs. `broker.net.connectSecure` resolves to the exact
-    // same FailableTcpSocket shape net.connect does, so everything past
-    // that call -- the port pair, the byte-pump relay, the port delivery,
-    // the descriptor -- is deliverTcpSocket, unchanged.
-    case 'net.connectSecure': {
-      if (!isNetConnectParams(payload)) throw fail('invalid', 'net.connectSecure requires { host: string, port: number }')
-      if (transport === undefined) throw fail('internal', 'no port transport configured for this broker')
-      const socket = await broker.net.connectSecure(origin, { host: payload.host, port: payload.port })
-      return await deliverTcpSocket(origin, socket, event, transport)
-    }
-    // A114/d-0028: the server's own port is delivered the same way a
-    // net.connect socket's is (deliverTcpServer, ./server-relay.ts); each
-    // connection it later accepts arrives over THAT port as an
-    // AcceptedMessage, not through another control-channel round trip.
-    case 'net.listen': {
-      if (!isNetUdpBindParams(payload)) throw fail('invalid', 'net.listen requires { port: number }')
-      if (transport === undefined) throw fail('internal', 'no port transport configured for this broker')
-      const server = await broker.net.listen(origin, { port: payload.port })
-      return await deliverTcpServer(origin, server, event, transport)
-    }
-    case 'net.udpBind': {
-      if (!isNetUdpBindParams(payload)) throw fail('invalid', 'net.udpBind requires { port: number }')
-      if (transport === undefined) throw fail('internal', 'no port transport configured for this broker')
-      const socket = await broker.net.udpBind(origin, { port: payload.port })
-
-      const pair = transport.createPortPair()
-      const relay = createDatagramRelay({
-        origin,
-        socket,
-        port: pair.port1,
-        registry: transport.registry,
-        inboundWindow: LIMITS.inboundDatagramWindow,
-        inboundWindowBytes: LIMITS.inboundDatagramWindowBytes,
-        outboundWindow: LIMITS.outboundDatagramWindow
-      })
-
-      const abandon = async (reason: string): Promise<never> => {
-        relay.stop('internal')
-        try {
-          await socket.close()
-        } catch {
-          // As net.connect's: the handle table already owns the release.
-        }
-        throw fail('internal', reason)
-      }
-
-      await deliverPort({
-        origin,
-        handleId: socket.id,
-        frame: event.senderFrame,
-        port2: pair.port2,
-        abandon
-      })
-
-      const descriptor: UdpSocketDescriptor = {
-        id: socket.id,
-        localAddress: socket.localAddress,
-        localPort: socket.localPort
-      }
-      return descriptor
-    }
-    case 'net.close': {
-      if (!isNetCloseParams(payload)) throw fail('invalid', 'net.close requires { id: string }')
-      // Idempotent, silent no-op for an id this origin was never handed --
-      // matching TcpSocket.close()'s own contract (handle-contracts.md's
-      // "Common shape" section) -- rather than distinguishing "wrong origin"
-      // from "already gone", either of which would let an app probe for
-      // handles it does not hold.
-      const entry = transport?.registry.get(origin, payload.id)
-      if (entry !== undefined) await entry.close()
-      return undefined
-    }
-    case 'net.setNoDelay': {
-      if (!isNetSetNoDelayParams(payload)) throw fail('invalid', 'net.setNoDelay requires { id: string, on: boolean }')
-      // Same T11c ownership check and same silent-no-op contract as
-      // net.close above, over the same registry -- a handle id from one
-      // origin means nothing presented by another.
-      const entry = transport?.registry.get(origin, payload.id)
-      // 'invalid', not the silent no-op an unknown id gets: the app HOLDS this
-      // handle, so calling a TCP-only option on it is its own bug rather than
-      // a probe for handles it does not have, and telling it so leaks nothing.
-      if (entry?.kind === 'udp') throw fail('invalid', 'setNoDelay is not available on a UDP socket')
-      if (entry?.kind === 'server') throw fail('invalid', 'setNoDelay is not available on a TCP server')
-      if (entry !== undefined) await entry.setNoDelay(payload.on)
-      return undefined
-    }
-    case 'net.setKeepAlive': {
-      if (!isNetSetKeepAliveParams(payload)) throw fail('invalid', 'net.setKeepAlive requires { id: string, on: boolean }')
-      const entry = transport?.registry.get(origin, payload.id)
-      if (entry?.kind === 'udp') throw fail('invalid', 'setKeepAlive is not available on a UDP socket')
-      if (entry?.kind === 'server') throw fail('invalid', 'setKeepAlive is not available on a TCP server')
-      if (entry !== undefined) await entry.setKeepAlive(payload.on, payload.initialDelayMs)
-      return undefined
+    case 'app.requestGrant':
+      return await dispatchApp(broker, origin, method, payload, requestGrantCtx)
+    case 'fs.readFile':
+    case 'fs.writeFile':
+    case 'fs.mkdir':
+    case 'fs.readdir':
+    case 'fs.stat':
+    case 'fs.rm':
+    case 'fs.rename':
+      return await dispatchFs(broker, origin, method, payload)
+    case 'id.publicKey':
+    case 'id.sign':
+      return await dispatchId(broker, origin, method, payload)
+    case 'net.connect':
+    case 'net.connectSecure':
+    case 'net.udpBind':
+    case 'net.listen':
+    case 'net.close':
+    case 'net.setNoDelay':
+    case 'net.setKeepAlive':
+    case 'net.lookup':
+      return await dispatchNet(broker, origin, method, payload, event, transport)
+    default: {
+      // Exhaustiveness check: if ControlMethod (ipc-validation.ts) ever
+      // gains a member no case above names, `method` is not assignable to
+      // `never` here and THIS LINE FAILS TO COMPILE -- the guard A170's
+      // brief asked for, because nothing else in this switch does (no
+      // `assertNever`, no keyed `Record`) and a missed case would otherwise
+      // resolve silently to `undefined` instead of a compile error.
+      const unrouted: never = method
+      throw fail('internal', `unrouted control method: ${unrouted as string}`)
     }
   }
 }
@@ -363,12 +230,15 @@ export function registerSyncFsIpc (ipc: IpcMainOnLike, policy: SyncFsPolicy, lim
 function realPortPair (): PortPair {
   const { port1, port2 } = new MessageChannelMain()
   const wrapped: PortLike = {
-    // `transfer` is `unknown[]` at this structural boundary (./port-transport.ts's
-    // own PortPair.port2, `unknown` for the same reason) but is ALWAYS, in
-    // production, an array of this module's own freshly-minted MessagePortMain
-    // values -- the only thing anything in this file ever puts in one. Cast at
-    // this one real-Electron call site rather than widening MessagePortMain's
-    // own `.postMessage` signature.
+    // `transfer` is `readonly unknown[]` at this structural boundary
+    // (./port-transport.ts's own PortPair.port2, `unknown` for the same
+    // reason) but is ALWAYS, in production, an array of this module's own
+    // freshly-minted MessagePortMain values -- the only thing anything in
+    // this file ever puts in one (server-relay.ts's AcceptedMessage.port,
+    // the sole BrokerToRendererMessage member that carries a transferable
+    // -- contracts/ipc.ts's own header rule 1). Cast at this one real-
+    // Electron call site rather than widening MessagePortMain's own
+    // `.postMessage` signature.
     postMessage: (message, transfer) => { port1.postMessage(message, transfer as MessagePortMain[] | undefined) },
     onMessage: (listener) => { port1.on('message', (event) => { listener(event.data) }) },
     onClose: (listener) => { port1.on('close', listener) },
@@ -409,6 +279,7 @@ export const brokerIpcSubsystem: Subsystem = {
       bind: bindUdp,
       listen: listenTcp,
       resolve: resolveHost,
+      resolveLookup,
       now: realNow,
       fs: nodeFs(ctx.app.getPath('userData')),
       ledgerStorage: nodeLedgerStorage(ctx.app.getPath('userData')),
