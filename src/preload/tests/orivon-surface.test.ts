@@ -391,7 +391,7 @@ describe('exposeOrivon -- P-F11: end-to-end wiring smoke, through the real conte
   })
 })
 
-// orivon.fs.open (A169) -- exercised end to end through the REAL
+// orivon.fs.open (A184) -- exercised end to end through the REAL
 // installOrivon/buildFile wiring (installViaFakeMainWorld calls installOrivon
 // for real, unlike a hand-built stub), the same way fs.mkdir/readdir/stat/
 // rm/rename are above. main-world-socket-fs.test.ts proves buildFile's own

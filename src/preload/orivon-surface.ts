@@ -77,7 +77,7 @@ async function fsRename (from: string, to: string): Promise<void> { await call('
 interface FsHandleDescriptor { readonly id: string }
 
 /**
- * `orivon.fs.open` (A169). No main-world stream wrapping needed -- exactly
+ * `orivon.fs.open` (A184). No main-world stream wrapping needed -- exactly
  * fs.readFile/writeFile's own reasoning above -- because THIS handle has
  * none yet: `readable`/`writable` have no CONTROL_CHANNEL case in this
  * lane's own landing, so the object below is deliberately narrower than

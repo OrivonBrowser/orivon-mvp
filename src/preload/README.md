@@ -101,7 +101,7 @@ the file's overall shape):
 - **This is build step 2's control surface** -- `../broker/transport/ipc.ts`'s `handleControlRequest`, on
   the other side of `CONTROL_CHANNEL`. `app.manifest`, `app.grants`, `app.requestGrant`,
   `fs.readFile`, `fs.writeFile`, `fs.mkdir`/`readdir`/`stat`/`rm`/`rename`, `fs.open` and its
-  handle-scoped siblings (`fs.read`/`write`/`fstat`/`truncate`/`sync`/`close`, A169),
+  handle-scoped siblings (`fs.read`/`write`/`fstat`/`truncate`/`sync`/`close`, A184),
   `id.publicKey`, `id.sign`, `net.connect`, `net.connectSecure`, `net.udpBind`, `net.close`
   (plus `net.setNoDelay`/`setKeepAlive`) are wired there; `fs.readFileSync` is wired the same way
   but over its OWN channel (`SYNC_CONTROL_CHANNEL`, `../broker/transport/sync-fs.ts`'s

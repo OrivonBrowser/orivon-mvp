@@ -290,7 +290,7 @@ export const brokerIpcSubsystem: Subsystem = {
       }
     }
     const transport: PortTransport = { createPortPair: realPortPair, registry: createPortRegistry() }
-    // fs.open's own per-origin lookup (A169) -- the same generic
+    // fs.open's own per-origin lookup (A184) -- the same generic
     // createPortRegistry `transport.registry` above uses, over
     // FailableFileHandle instead of RegisteredSocket. One instance for the
     // subsystem's whole lifetime, exactly like `transport`.

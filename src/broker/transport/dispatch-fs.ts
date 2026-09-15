@@ -2,7 +2,7 @@
 // of ./ipc.ts's dispatch() switch under code-guidelines.md Rule 2 -- see
 // ./dispatch-app.ts's header for the seam this and its siblings share.
 // fs.open and its handle-scoped siblings (read/write/fstat/truncate/sync/
-// close, A169) joined this file rather than starting a new one, for the
+// close, A184) joined this file rather than starting a new one, for the
 // same reason net.connect's port wiring stayed inside dispatch-net.ts:
 // FailableFileHandle is FileHandle's own broker-internal counterpart, the
 // same way FailableTcpSocket is TcpSocket's.

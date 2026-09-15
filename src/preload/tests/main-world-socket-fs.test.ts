@@ -3,7 +3,7 @@ import { installOrivon } from '../main-world-socket.js'
 import type { MainWorldFileBridge } from '../main-world-socket.js'
 import { LIMITS, fakeBridge, fakeFileBridgeResult, fakeSocketBridgeResult } from './main-world-socket.test-helpers.js'
 
-// orivon.fs.open (A169) -- split out of main-world-socket.test.ts under
+// orivon.fs.open (A184) -- split out of main-world-socket.test.ts under
 // code-guidelines.md's 800-line test limit, matching main-world-socket-udp.
 // test.ts's own precedent for a concern with no TCP-socket dependency.
 //

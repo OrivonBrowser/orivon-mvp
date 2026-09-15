@@ -5,7 +5,7 @@ import { createBroker } from '../index.js'
 import type { Broker, CreateBrokerOptions } from '../broker-contracts.js'
 import { LIMITS } from '../../contracts/index.js'
 
-// `orivon.fs.open` (A169) -- the FileHandle half of `orivon.fs`, built
+// `orivon.fs.open` (A184) -- the FileHandle half of `orivon.fs`, built
 // against the POLICY layer (confinement, the grant, the running quota, the
 // per-origin in-flight budget, revocation) using `index.test-helpers.ts`'s
 // in-memory `stubFs`. Real fd/stream mechanics -- does a positional write
