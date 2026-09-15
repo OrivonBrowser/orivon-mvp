@@ -332,10 +332,65 @@ export interface SendFailedMessage {
   readonly port: number
 }
 
+// THE TCPSERVER ACCEPT DIRECTION (A114, d-0028). TcpServer.connections
+// needs to hand the renderer a FRESH port per accepted socket, nested
+// inside the SERVER's own port -- no existing delivery mechanism covered
+// that (A114's own survey: CONTROL_CHANNEL's reply carries no
+// transferable, PORT_CHANNEL's deliverPort only answers a request it did
+// not receive here, and this file's own closed BrokerToRendererMessage
+// union had no "here is a new handle and its port" member before this
+// one). This is that member -- the owner's chosen shape over the
+// alternative named alongside it in A114, a second PORT_CHANNEL round trip
+// per accepted connection, because that alternative leaves an accepted
+// peer sitting in the broker with no renderer end for a full round trip,
+// which under seeding load reads as peers that connect and immediately
+// drop.
+
+/**
+ * A new inbound connection was accepted on a `TcpServer`, flowing broker ->
+ * renderer over the SERVER'S OWN port. `handleId` here is the SERVER's --
+ * matching every other message on that port, so the existing
+ * `message.handleId !== handleId` ownership check needs no special case --
+ * and `socketId` names the accepted `TcpSocket` this message is about.
+ *
+ * Carries every synchronous `TcpSocket` property up front (design rule 3,
+ * ./handles.js's own header: nothing here is a cache a later event fills
+ * in), so the renderer can build a complete, immediately-usable
+ * `TcpSocket` the instant this message arrives, with no further request
+ * for this socket's own connection details -- that second round trip is
+ * exactly what d-0028 chose this shape to avoid.
+ *
+ * `port` IS A TRANSFERABLE, and this is the ONLY member of
+ * `BrokerToRendererMessage` that is one. THE ASYMMETRY IS DELIBERATE AND
+ * MUST NEVER BE UNDONE: this file's header rule 1 bans a transferable on
+ * the RENDERER -> MAIN path, permanently -- electron#34905 is silent total
+ * loss there, not an error, so structured clone is the only mechanism that
+ * direction may ever use. MAIN -> RENDERER, this member's own direction,
+ * is the one that actually works, which is the only reason `port` is safe
+ * to carry here. Do not generalise this into a symmetric API:
+ * `RendererToBrokerMessage` must never gain a transferable member on the
+ * strength of this one existing. Sending this message is not an ordinary
+ * `postMessage(message)` call either -- `port` cannot cross a structured
+ * clone inline; whatever sends this message must name `port` in an
+ * explicit transfer list, the same way any `postMessage` call carrying a
+ * real port anywhere else in this codebase already must.
+ */
+export interface AcceptedMessage {
+  readonly kind: 'accepted'
+  readonly handleId: string
+  readonly socketId: string
+  readonly remoteAddress: string
+  readonly remotePort: number
+  readonly localAddress: string
+  readonly localPort: number
+  readonly port: MessagePort
+}
+
 /** Every message the broker ever sends on a socket's dedicated port. */
 export type BrokerToRendererMessage =
   | DataMessage | StreamEndMessage | WriteAckMessage | WriteFailedMessage
   | DatagramMessage | DatagramDropMessage | SendAckMessage | SendFailedMessage
+  | AcceptedMessage
 
 /** Every message the renderer ever sends on a socket's dedicated port. */
 export type RendererToBrokerMessage =
