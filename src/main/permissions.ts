@@ -24,12 +24,12 @@
 // person actually revokes from was never affected.
 
 import type { CapabilityKind, Grant, GrantId, Manifest } from '../contracts/index.js'
-import type { Broker } from '../broker/broker-contracts.js'
+import type { Broker, PickedPath } from '../broker/broker-contracts.js'
 import { originFromUrl } from '../broker/policy/origin.js'
 import { describeCapabilityGrant } from './grant-prompt-render.js'
 import { isCapabilityKind } from '../broker/policy/request-grant.js'
 import { UNSAFE_TEXT_CHARS } from '../loader/manifest.js'
-import type { PersistedApp } from '../broker/grants/ledger-storage.js'
+import type { PersistedApp, PersistedPick } from '../broker/grants/ledger-storage.js'
 import type { SubsystemContext } from './registry.js'
 
 /** One granted capability, rendered in the install prompt's own words
@@ -46,23 +46,63 @@ export interface PermissionRow {
   readonly message: string
 }
 
+/**
+ * One `orivon.fs.userSelected` pick, rendered the same "same fact, same
+ * words" way `PermissionRow` is -- D-0007's own instruction that a picked
+ * path sits "beside that app's network and file access" in this list, not
+ * off in a second surface.
+ *
+ * PROPOSED WORDING, NOT OWNER-REVIEWED (queue item 4.3's own checkpoint --
+ * see this lane's log for the wording proposal in full). `describePickedPath`
+ * below is where it is generated; nothing here is final.
+ */
+export interface PickedPathRow {
+  readonly pickId: string
+  readonly warning: boolean
+  readonly message: string
+}
+
 /** One app's whole row set, for one card in the settings page or one
  * popover under the address bar. */
 export interface AppPermissions {
   readonly origin: string
   readonly appName: string
   readonly rows: readonly PermissionRow[]
+  readonly pickedPathRows: readonly PickedPathRow[]
+}
+
+/**
+ * The words a person reads for one picked path -- kept apart from
+ * `describeCapabilityGrant` (a `CapabilityKind` concept a pick is not) but
+ * following its own "visual contrast, not accuracy alone" rule
+ * (grant-prompt-render.ts's header): `warning: true` for a folder pick,
+ * because it grants a WHOLE SUBTREE and that breadth must be visible
+ * exactly as an unlimited network pattern's warning already is -- this
+ * lane's own brief, echoing the owner's standing instruction. A single
+ * picked FILE is narrow by construction and does not carry it.
+ *
+ * PROPOSED, NOT OWNER-REVIEWED -- see this file's own doc on `PickedPathRow`.
+ */
+export function describePickedPath (kind: PersistedPick['kind'], path: string): { warning: boolean, message: string } {
+  return kind === 'directory'
+    ? { warning: true, message: `Can read and write everywhere inside "${path}".` }
+    : { warning: false, message: `Can read and write "${path}".` }
 }
 
 /** Pure: no broker, no I/O -- the mapping from what the ledger holds to
  * what a person reads, testable directly against real `Manifest`/`Grant`
- * values. */
-export function buildAppPermissions (origin: string, manifest: Manifest, grants: readonly Grant[]): AppPermissions {
+ * values. `pickedPaths` defaults to empty so every existing call site (none
+ * of which knew about picks before this lane) keeps compiling unchanged. */
+export function buildAppPermissions (origin: string, manifest: Manifest, grants: readonly Grant[], pickedPaths: readonly PickedPath[] = []): AppPermissions {
   const rows = grants.map((grant): PermissionRow => {
     const { warning, message } = describeCapabilityGrant(grant.capability, grant.patterns)
     return { capability: grant.capability, grantId: grant.id, warning, message }
   })
-  return { origin, appName: manifest.name, rows }
+  const pickedPathRows = pickedPaths.map((pick): PickedPathRow => {
+    const { warning, message } = describePickedPath(pick.kind, pick.path)
+    return { pickId: pick.id, warning, message }
+  })
+  return { origin, appName: manifest.name, rows, pickedPathRows }
 }
 
 /**
@@ -84,7 +124,12 @@ export function buildPersistedAppPermissions (app: PersistedApp): AppPermissions
     const { warning, message } = describeCapabilityGrant(capability, grant.patterns)
     rows.push({ capability, grantId: null, warning, message })
   }
-  return { origin: app.origin, appName: displayableName(app.appName) ?? app.origin, rows }
+  const pickedPathRows: PickedPathRow[] = []
+  for (const [pickId, pick] of Object.entries(app.pickedPaths)) {
+    const { warning, message } = describePickedPath(pick.kind, pick.path)
+    pickedPathRows.push({ pickId, warning, message })
+  }
+  return { origin: app.origin, appName: displayableName(app.appName) ?? app.origin, rows, pickedPathRows }
 }
 
 /**
@@ -178,9 +223,11 @@ export class PermissionsRegistry {
       // (`revoke` does not delete the file when the set empties). Showing that
       // as a card with no rows and no revoke button would be a permanent piece
       // of furniture a person cannot act on or dismiss -- so a persisted app
-      // with nothing left to revoke is not listed. A LOADED app with zero
-      // grants still is, above, because it is genuinely installed and running.
-      if (described.rows.length === 0) continue
+      // with nothing left to revoke is not listed. BOTH row kinds count: an
+      // app with grants all revoked but a picked path still live is exactly
+      // as actionable as one the other way around. A LOADED app with zero of
+      // either still is, above, because it is genuinely installed and running.
+      if (described.rows.length === 0 && described.pickedPathRows.length === 0) continue
       results.push(described)
     }
     return results
@@ -201,8 +248,8 @@ export class PermissionsRegistry {
  * from it). */
 async function describeOrigin (broker: Broker, origin: string): Promise<AppPermissions | null> {
   try {
-    const [manifest, grants] = await Promise.all([broker.app.manifest(origin), broker.app.grants(origin)])
-    return buildAppPermissions(origin, manifest, grants)
+    const [manifest, grants, pickedPaths] = await Promise.all([broker.app.manifest(origin), broker.app.grants(origin), broker.app.pickedPaths(origin)])
+    return buildAppPermissions(origin, manifest, grants, pickedPaths)
   } catch {
     return null
   }
@@ -223,6 +270,14 @@ export interface PermissionsController {
   /** REVOKES ONE CAPABILITY from an app that may not be loaded, addressed by
    * `(origin, capability)` because a persisted grant has no live id. */
   revokeCapability: (origin: string, capability: CapabilityKind) => Promise<void>
+  /**
+   * REVOKES ONE PICKED PATH, addressed by `pickId` rather than a
+   * `CapabilityKind` -- a pick holds no standing grant, so `revokeCapability`
+   * cannot address it (this file's own header on `PermissionRow.grantId`
+   * explains the same split one level up). Works whether or not the owning
+   * app is loaded this session -- `Broker.revokeUserSelectedPath`'s own doc.
+   */
+  revokePickedPath: (origin: string, pickId: string) => Promise<void>
 }
 
 /** The one way to build a `PermissionsController`, closing over `ctx`
@@ -256,6 +311,12 @@ export function createPermissionsController (ctx: SubsystemContext): Permissions
       const broker = ctx.broker
       if (broker === undefined) return
       await broker.revokePersisted(origin, capability)
+    },
+
+    async revokePickedPath (origin, pickId) {
+      const broker = ctx.broker
+      if (broker === undefined) return
+      await broker.revokeUserSelectedPath(origin, pickId)
     }
   }
 }

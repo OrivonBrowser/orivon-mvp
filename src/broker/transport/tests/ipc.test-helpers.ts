@@ -107,7 +107,13 @@ export function stubBroker (
       // Present so this stub still satisfies `Broker`; no test here drives
       // it -- A158's early-hydration seam is a loader-side caller
       // (electron-serve.ts's registerServingFor), never reached via ipc.ts.
-      hydrateFromPinnedManifest: async () => {}
+      hydrateFromPinnedManifest: async () => {},
+      // Satisfies `Broker`; unused here -- userSelected has no CONTROL_CHANNEL
+      // case yet (L5-userselected's own PR body: deferred deliberately, the
+      // same "stops at the broker layer" precedent A184 set for readable/
+      // writable, and doubly so here while the picker's own wording is still
+      // an open owner checkpoint).
+      pickedPaths: async () => []
     },
     net: {
       connect: async (origin, opts) => {
@@ -176,7 +182,10 @@ export function stubBroker (
       open: async (origin, path, flags) => {
         calls.push({ method: 'fs.open', origin, args: { path, flags } })
         return await (overrides.open?.(origin, path, flags) ?? notStubbed())
-      }
+      },
+      // Satisfies `Broker`; no CONTROL_CHANNEL case yet, same note as
+      // `app.pickedPaths` above.
+      userSelected: (async () => { throw new Error('userSelected has no CONTROL_CHANNEL case; this stub was not configured for a test that calls it directly') }) as Broker['fs']['userSelected']
     },
     id: {
       publicKey: async (origin, opts) => {
@@ -228,6 +237,9 @@ export function stubBroker (
     },
     revokePersisted: async () => {
       throw new Error('revokePersisted is not reachable via orivon.* and this stub was not configured for a test that calls it directly')
+    },
+    revokeUserSelectedPath: async () => {
+      throw new Error('revokeUserSelectedPath is not reachable via orivon.* and this stub was not configured for a test that calls it directly')
     }
   }
 }

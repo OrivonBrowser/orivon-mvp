@@ -1,10 +1,19 @@
 // dialog.showOpenDialog is the one Table 2 API this package cannot back yet.
-// It maps to orivon.fs.userSelected, spec'd in capability-api.ts but not
-// implemented by the broker (compatibility-matrix.md Table 1: Broker [ ]) and
-// not exposed on window.orivon by the preload either. The signature below is
-// the real Electron shape, so a ported app's call site type-checks and fails
-// at the one line that actually needs the broker, rather than failing to
-// import at all.
+// It maps to orivon.fs.userSelected, which the broker NOW implements
+// (L5-userselected, A187) -- the remaining gap is a genuine shape mismatch,
+// not a missing broker method: Electron's real showOpenDialog returns raw
+// host OS paths (`filePaths: string[]`), while `orivon.fs.userSelected`
+// resolves opaque `FileHandle`/`DirectoryHandle` objects with NO raw path an
+// app can read (handle-contracts.md's own confinement design -- an app never
+// sees where on the host disk its pick actually lives). Presenting Node's
+// path-string idiom over that opaque handle is a real shim-layer design
+// question -- how a ported app's later `fs.readFile(theReturnedPath)` call
+// would even address the same file through OrivonFs's own confined,
+// relative-path model -- filed as A187 rather than guessed at here, and out
+// of L5's own owned paths (src/broker/) regardless. The signature below is
+// still the real Electron shape, so a ported app's call site type-checks and
+// fails at the one line that actually needs this resolved, rather than
+// failing to import at all.
 
 import { refuse } from './errors.js'
 import { notConsidered, refusingProxy } from './unimplemented.js'
@@ -43,10 +52,11 @@ export function createDialog (orivon: Pick<Orivon, 'fs'>): ElectronDialog {
   const known: ElectronDialog = {
     async showOpenDialog () {
       throw refuse('dialog.showOpenDialog', 'not-built',
-        "dialog.showOpenDialog is backed by orivon.fs.userSelected, which the broker does not " +
-        'implement yet (compatibility-matrix.md Table 1). Even once it does, userSelected ' +
-        "resolves to a FileHandle, not a host OS path, so this method's return shape needs " +
-        'revisiting rather than simply wiring the call through.')
+        'dialog.showOpenDialog is backed by orivon.fs.userSelected, which the broker now ' +
+        'implements (L5-userselected) -- but userSelected resolves an opaque FileHandle/' +
+        'DirectoryHandle, never a host OS path, so this method still cannot return the real ' +
+        "Electron shape (filePaths: string[]) without a shim-layer design this package's own " +
+        'lane has not built (filed as A187, docs/open-questions.md).')
     }
   }
   return refusingProxy(known, (prop) => notConsidered(`dialog.${prop}`))

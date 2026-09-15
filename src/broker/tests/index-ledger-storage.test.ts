@@ -20,7 +20,10 @@ function throwingLedgerStorage (): LedgerStorage {
     readPersistedApp: () => undefined,
     readDeclinedCapabilities: () => undefined,
     writeDeclinedCapabilities: () => { throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' }) },
-    deleteDeclinedCapabilities: () => {}
+    deleteDeclinedCapabilities: () => {},
+    readPickedPaths: () => undefined,
+    writePickedPaths: () => { throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' }) },
+    deletePickedPaths: () => {}
   }
 }
 

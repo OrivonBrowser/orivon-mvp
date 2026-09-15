@@ -6,7 +6,7 @@
 // layer up). Re-exported from broker-contracts.ts, so no import site
 // elsewhere needed to change.
 
-import type { DestroyResource, FailableFileHandle } from './handles/handle-contracts.js'
+import type { DestroyResource, FailableDirectoryHandle, FailableFileHandle } from './handles/handle-contracts.js'
 
 /** What `fs.stat` reports. Mirrors `contracts/handles.ts`'s `FileStat` exactly -- one shape, not redeclared. */
 export interface RawFileStat {
@@ -146,4 +146,18 @@ export interface BrokerFsMethods {
    * against reads/writes on the socket it returns.
    */
   open(origin: string, path: string, flags: string): Promise<FailableFileHandle>
+  /**
+   * `orivon.fs.userSelected` -- the OS picker, checked against nothing:
+   * capability-api.ts is explicit that the user's choice at the dialog IS
+   * the authorisation, no `fs` grant involved. Overloaded on `directory` the
+   * same way the contract itself is (A167 item 2), so the broker's own
+   * return type stays honest for both shapes with no union or cast at this
+   * call site either.
+   *
+   * `null` for a cancelled folder pick, `[]` for a cancelled file pick --
+   * NEVER a rejection (see that method's own contract doc); ./user-
+   * selected-capability.ts is where that branch lives.
+   */
+  userSelected(origin: string, opts: { directory: true }): Promise<FailableDirectoryHandle | null>
+  userSelected(origin: string, opts?: { directory?: false, multiple?: boolean }): Promise<readonly FailableFileHandle[]>
 }

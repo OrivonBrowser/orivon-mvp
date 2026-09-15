@@ -15,7 +15,7 @@
 // why. Only `brokerIpcSubsystem`, which nothing in ipc.test.ts calls,
 // touches the real `ipcMain`/`MessageChannelMain` value imports below.
 
-import { ipcMain, MessageChannelMain } from 'electron'
+import { dialog, ipcMain, MessageChannelMain } from 'electron'
 import type { MessagePortMain } from 'electron'
 import { CONTROL_CHANNEL, PORT_CHANNEL, SYNC_CONTROL_CHANNEL } from '../../main/channels.js'
 import { publishBroker } from '../../main/registry.js'
@@ -316,6 +316,18 @@ export const brokerIpcSubsystem: Subsystem = {
       now: realNow,
       fs: nodeFs(ctx.app.getPath('userData')),
       ledgerStorage: nodeLedgerStorage(ctx.app.getPath('userData')),
+      // orivon.fs.userSelected's real OS picker (L5-userselected). PLAIN AND
+      // UNSTYLED ON PURPOSE -- no title/buttonLabel/message yet: that text
+      // is an owner checkpoint (queue item 4.3), proposed but not decided as
+      // of this lane, so nothing here bakes in wording that has not been
+      // signed off. Electron's own defaults render meanwhile.
+      pickPath: async ({ directory, multiple }) => {
+        const properties: Array<'openFile' | 'openDirectory' | 'multiSelections'> = directory
+          ? ['openDirectory']
+          : (multiple ? ['openFile', 'multiSelections'] : ['openFile'])
+        const result = await dialog.showOpenDialog({ properties })
+        return result.canceled ? { canceled: true } : { canceled: false, paths: result.filePaths }
+      },
       // ADR-0010 key derivation is not implemented yet (broker/index.ts's
       // own header: "nothing below calls it yet") -- none of the six wired
       // control operations reach `orivon.id`.

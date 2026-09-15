@@ -17,6 +17,9 @@ export type SettingsCommand =
    * and have no live id, so the capability itself is the address. An origin
    * holds at most one grant per capability, so this is not ambiguous. */
   | { type: 'revokeCapability', origin: string, capability: CapabilityKind }
+  /** D-0007's own revoke button, addressed by pickId -- a picked path is
+   * never a CapabilityKind, so `revokeCapability` cannot reach it. */
+  | { type: 'revokePickedPath', origin: string, pickId: string }
 
 function isFromSettingsWindow (event: IpcMainInvokeEvent, settingsWebContents: WebContents): boolean {
   return event.senderFrame !== null && event.senderFrame === settingsWebContents.mainFrame
@@ -33,6 +36,8 @@ export function registerSettingsIpc (settingsWebContents: WebContents, permissio
         return permissions.revoke(command.origin, command.grantId)
       case 'revokeCapability':
         return permissions.revokeCapability(command.origin, command.capability)
+      case 'revokePickedPath':
+        return permissions.revokePickedPath(command.origin, command.pickId)
     }
   })
 }

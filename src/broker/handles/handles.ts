@@ -349,6 +349,33 @@ export class HandleTable {
   }
 
   /**
+   * The OTHER revocation path a `userSelected` handle answers to: a person
+   * revoking one picked path from the settings permissions list. `revoke`'s
+   * own doc explains why that cascade cannot reach a picked handle at all --
+   * this is the one that can, walking `byPickedPath` instead of `byGrant`.
+   * No tombstone, unlike `revoke`: a `pickId` is minted fresh at the moment
+   * of a successful pick and registered in the same call, so there is no
+   * window for a late acquisition to race an already-issued revoke of it,
+   * the hazard `revokedGrants` exists to close for an ordinary grant.
+   */
+  async revokeUserSelected (origin: string, pickId: string): Promise<void> {
+    const key = this.#key(origin)
+    const existing = this.#registry.existing(key)
+    if (existing === undefined) return
+
+    const ids = existing.byPickedPath.get(pickId)
+    if (ids !== undefined) {
+      for (const id of Array.from(ids)) {
+        const record = existing.handles.get(id)
+        if (record !== undefined) void existing.closeTree(record, 'revoked', this.#onFault)
+      }
+    }
+
+    this.#reap(key, existing)
+    await Promise.resolve()
+  }
+
+  /**
    * The broker recording that the user has granted a capability.
    *
    * Clears the tombstone, so a capability the user withdrew and then granted
