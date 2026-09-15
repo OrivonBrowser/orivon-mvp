@@ -339,6 +339,63 @@ describe('isOriginServedFromCache -- the address bar\'s S4-6 provenance signal',
   })
 })
 
+describe('pinCoverageFor -- the registered handler\'s own pin-coverage tracker', () => {
+  it('is undefined for an origin nothing has registered serving for', async () => {
+    vi.doMock('electron', () => ({ session: { fromPartition: () => fakeSession() } }))
+    const { pinCoverageFor } = await import('../electron-serve.js')
+
+    expect(pinCoverageFor('https://never-registered.example')).toBeUndefined()
+
+    vi.doUnmock('electron')
+  })
+
+  it('a real request through the registered handler updates what pinCoverageFor reports for that origin', async () => {
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-pin-coverage-'))
+    const storage = nodeLoaderStorage(userData)
+    await pinRealOrigin(storage, 'https://app.example')
+
+    const session = fakeSession()
+    vi.doMock('electron', () => ({ session: { fromPartition: () => session } }))
+    const { registerServingFor, pinCoverageFor } = await import('../electron-serve.js')
+
+    await registerServingFor(storage, 'https://app.example')
+    expect(pinCoverageFor('https://app.example')).toEqual({
+      pinnedRequests: 0, thirdPartyRequests: 0, deniedRequests: 0, pinnedBytes: 0, thirdPartyBytes: 0, bytesIncomplete: false
+    })
+
+    const handler = session.handlers.get('https')
+    if (handler === undefined) throw new Error('no handler was registered')
+    await handler(new Request('https://app.example/'))
+
+    expect(pinCoverageFor('https://app.example')).toEqual({
+      pinnedRequests: 1, thirdPartyRequests: 0, deniedRequests: 0, pinnedBytes: '<h1>hi</h1>'.length, thirdPartyBytes: 0, bytesIncomplete: false
+    })
+
+    vi.doUnmock('electron')
+  })
+
+  it('re-registering the same origin starts a fresh tracker -- a reinstall\'s counts never carry the previous session\'s forward', async () => {
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-pin-coverage-reinstall-'))
+    const storage = nodeLoaderStorage(userData)
+    await pinRealOrigin(storage, 'https://app.example')
+
+    const session = fakeSession()
+    vi.doMock('electron', () => ({ session: { fromPartition: () => session } }))
+    const { registerServingFor, pinCoverageFor } = await import('../electron-serve.js')
+
+    await registerServingFor(storage, 'https://app.example')
+    const firstHandler = session.handlers.get('https')
+    if (firstHandler === undefined) throw new Error('no handler was registered')
+    await firstHandler(new Request('https://app.example/'))
+    expect(pinCoverageFor('https://app.example')?.pinnedRequests).toBe(1)
+
+    await registerServingFor(storage, 'https://app.example')
+    expect(pinCoverageFor('https://app.example')?.pinnedRequests).toBe(0)
+
+    vi.doUnmock('electron')
+  })
+})
+
 describe('restorePinnedServing across a restart -- A158, resolved for every directive via early hydration', () => {
   // A158 (docs/open-questions.md): restorePinnedServing runs in
   // loaderSubsystem.afterReady BEFORE any window exists. Before this lane,

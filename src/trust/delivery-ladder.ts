@@ -24,6 +24,29 @@ export type DeliveryRung = 'D1' | 'D2' | 'D3' | 'D4'
 export type DeliveryMethod = 'fetched-each-load' | 'served-from-pinned-cache'
 
 /**
+ * How much of what this app's page loaded this session came from its own
+ * hash-verified pin versus a granted third-party host (owner's framing,
+ * 2026-09-15: fetching third-party code is not a violation the pin fails to
+ * catch -- the pin still proves the app's OWN bytes are unaltered -- but it
+ * costs trust score, and no rung below said by how much). Passed through
+ * into `DeliveryEvidence.pinCoverage` verbatim -- no rung here reads it, the
+ * same "evidence, not a verdict" stance connection-ladder.ts already takes
+ * for its own pattern heuristic (this scores nothing; see build step 6 for
+ * how it renders). Structurally identical to src/loader/pin-coverage.ts's
+ * `PinCoverageSnapshot`, defined separately rather than imported from it --
+ * this directory's README: never reach into another stream's internals.
+ */
+export interface PinCoverageEvidence {
+  readonly pinnedRequests: number
+  readonly thirdPartyRequests: number
+  readonly deniedRequests: number
+  readonly pinnedBytes: number
+  readonly thirdPartyBytes: number
+  /** True once some counted request's byte size could not be measured -- the byte totals above are a floor, not exact, from that point on. */
+  readonly bytesIncomplete: boolean
+}
+
+/**
  * What a caller (eventually the loader, which owns pinning -- ADR-0005,
  * ADR-0009) knows about this app's delivery history. Defined locally, not
  * imported from src/broker/'s `PinRecord` -- this module's own README says
@@ -52,6 +75,8 @@ export interface DeliveryHistoryInput {
   readonly addressIsContentAddressed: boolean
   /** Whether the human-readable name resolving to that address was itself resolved trustlessly (e.g. ENS) -- D4. See this file's header: unreachable today. */
   readonly nameResolvedTrustlessly: boolean
+  /** This app's pin-coverage for the current session, or `undefined` when the caller has none to report (no request observed yet, or nothing wired it up). Passed through into `DeliveryEvidence.pinCoverage` unchanged -- see `PinCoverageEvidence`'s own doc. */
+  readonly pinCoverage?: PinCoverageEvidence
 }
 
 export interface DeliveryRungResult {
@@ -75,6 +100,8 @@ export interface DeliveryEvidence {
   readonly deliveryMethod: DeliveryMethod
   readonly addressIsContentAddressed: boolean
   readonly nameResolvedTrustlessly: boolean
+  /** `input.pinCoverage`, unchanged -- see that field's own doc. */
+  readonly pinCoverage: PinCoverageEvidence | undefined
 }
 
 export interface DeliveryLadderResult {
@@ -110,7 +137,8 @@ export function deliveryLadder (input: DeliveryHistoryInput): DeliveryLadderResu
     pinMismatch,
     deliveryMethod: input.deliveryMethod,
     addressIsContentAddressed: input.addressIsContentAddressed,
-    nameResolvedTrustlessly: input.nameResolvedTrustlessly
+    nameResolvedTrustlessly: input.nameResolvedTrustlessly,
+    pinCoverage: input.pinCoverage
   }
 
   const rungs = ALL_RUNGS.map((rung) => ({ rung, met: metRung(rung, evidence, input) }))

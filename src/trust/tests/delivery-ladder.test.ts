@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { deliveryLadder } from '../delivery-ladder.js'
-import type { DeliveryHistoryInput } from '../delivery-ladder.js'
+import type { DeliveryHistoryInput, PinCoverageEvidence } from '../delivery-ladder.js'
 
 // THE INVARIANT UNDER TEST, throughout: the result always carries `rungs`
 // (every D1-D4 rung, each independently evaluated) alongside `evidence` (the
@@ -124,6 +124,39 @@ describe('deliveryLadder -- D4, deferred in the MVP', () => {
   it('D4 is never met by any input this MVP can actually produce today (no trustless resolver exists) -- the field exists so a later lane can wire it without a type change', () => {
     const result = deliveryLadder(input())
     expect(result.rungs.find((r) => r.rung === 'D4')?.met).toBe(false)
+  })
+})
+
+describe('deliveryLadder -- pinCoverage is passed through, never scored', () => {
+  it('is undefined in evidence when the caller has none to report', () => {
+    const result = deliveryLadder(input())
+    expect(result.evidence.pinCoverage).toBeUndefined()
+  })
+
+  it('flows straight from input to evidence, unchanged', () => {
+    const pinCoverage: PinCoverageEvidence = {
+      pinnedRequests: 2, thirdPartyRequests: 1, deniedRequests: 0, pinnedBytes: 500, thirdPartyBytes: 50_000, bytesIncomplete: false
+    }
+    const result = deliveryLadder(input({ pinCoverage }))
+    expect(result.evidence.pinCoverage).toEqual(pinCoverage)
+  })
+
+  it('does not change which rungs are met -- a thin, mostly-remote app still meets D2 on its own pin, exactly as a fully-shipped one does', () => {
+    const thin: PinCoverageEvidence = {
+      pinnedRequests: 1, thirdPartyRequests: 1, deniedRequests: 0, pinnedBytes: 200, thirdPartyBytes: 50_000, bytesIncomplete: false
+    }
+    const whole: PinCoverageEvidence = {
+      pinnedRequests: 2, thirdPartyRequests: 0, deniedRequests: 0, pinnedBytes: 50_200, thirdPartyBytes: 0, bytesIncomplete: false
+    }
+    const base = { everPinned: true, pinnedAt: 1_699_000_000_000, deliveryMethod: 'served-from-pinned-cache' as const, currentFetchMatchesPin: true }
+
+    const thinResult = deliveryLadder(input({ ...base, pinCoverage: thin }))
+    const wholeResult = deliveryLadder(input({ ...base, pinCoverage: whole }))
+
+    // Same rungs met either way -- D2 asks "is the pin valid", not "how much
+    // of the app does it cover". Coverage is evidence for whatever build
+    // step 6 renders alongside the rung, not an input to the rung itself.
+    expect(metRungs(thinResult)).toEqual(metRungs(wholeResult))
   })
 })
 
