@@ -6543,3 +6543,84 @@ once this lane's shapes are confirmed.
 **Needed by:** the A114 implementation lane (item 1), the `fs.open`/`fs.userSelected` broker lane
 (item 2, compatibility-matrix.md Table 4 row 6), and whichever lane wires `node-dns.ts` to a real
 broker capability (item 3, `A107`).
+
+---
+
+### A169 -- a shim member the package refuses by name threw when it was READ, not when it was called, turning a library's defensive feature check into a crash **[RESOLVED 2026-09-15 -- lane FIX-2]**
+
+`refusingProxy` (`src/shim-electron/unimplemented.ts`, reused through `src/shim/unimplemented.ts`)
+threw from its `get` trap. A `get` trap fires on a property **read**, not only on a call, so every
+ordinary cross-version feature check crashed instead of reporting absence:
+
+    typeof net.getDefaultAutoSelectFamily === 'function'   // threw
+    fs?.watchFile?.()                                      // threw at the read
+    const { watchFile } = fs                               // threw
+    'watchFile' in fs                                      // false -- the only safe idiom
+
+Before the named-refusal work this was a graceful `undefined` and the library skipped the branch.
+A check at module top level -- a common shape in compat shims -- made importing the dependency at
+all fatal. The modules affected were `net`, `http`, `https`, `dns` and `fs`: precisely the ones the
+flagship's dependency graph uses.
+
+**`src/shim/README.md` had already reached the right conclusion for socket INSTANCES** -- "a
+throw-on-read proxy would make a defensive check itself throw, turning a graceful, intentional skip
+into a crash" -- and ships `ref()`/`unref()` no-ops plus throw-on-call methods there. That reasoning
+was simply never applied to the five module-level wraps. The fix extends the existing, already-argued
+pattern rather than inventing a new one: the `get` trap now returns a real function that throws the
+same named error only when **invoked**.
+
+**One requirement could not be met as literally stated, and was not faked.** Making
+`typeof x.y === 'function'` read `false` while a call still throws is impossible: a Proxy's
+callability, and therefore its `typeof`, is fixed by whether its target is callable at construction,
+never by a trap. Verified empirically rather than argued from the spec. The achievable half was
+built -- reading no longer throws -- and the residual tension is filed as `A182`.
+
+`fs.constants` and `dns.promises` are narrow, deliberate exceptions: real Node exposes both as data
+objects, so a throwing function in those slots would misreport their type. They are listed
+explicitly with value `undefined`, genuinely absent. Side effect, documented in the source: those two
+names report `true` for `in` where every other unbuilt member reports `false`.
+
+### A177 -- two incompatible shim error taxonomies, so `instanceof OrivonShimError` missed three of them **[RESOLVED 2026-09-15 -- lane FIX-2]**
+
+`OrivonShimError`'s header claims "one error type for a member `src/shim/`'s modules refuse by
+name". Three older classes -- `OrivonHttpUnsupportedError`, `OrivonNetUnsupportedError`,
+`OrivonDnsUnsupportedError` -- coexisted with it, shaped differently (a `.code` constant, no
+`.reason`, no `.api`) and still thrown for `createServer()` and `dns.lookup()`, i.e. for gaps in the
+very same modules the new mechanism covered for every other member. A porting developer writing
+`catch (e) { if (e instanceof OrivonShimError) handleRefusal(e.reason) }` silently missed all three.
+The three now extend `OrivonShimError`, with `.message`/`.name`/`.code` verified unchanged.
+
+**`OrivonFsUnsupportedError` (`src/shim/node-fs-unsupported.ts`) is a fourth instance of the same
+problem and is NOT fixed here** -- the lane's brief named three classes, and it reported the gap
+rather than silently widening its own scope. It should be folded in.
+
+### A182 -- after A169, a feature-detecting library takes the branch and throws at the call, where it once skipped **[NEEDS OWNER DECISION]**
+
+Trace one library's defensive check across the three states:
+
+| | `typeof x.y` | what the library does |
+|---|---|---|
+| before the named-refusal work | `'undefined'` | skips the branch -- **works** |
+| after it (`A169`'s bug) | *throws* | **crash at detection** |
+| after `A169`'s fix | `'function'` | takes the branch, the call throws -- **crash at use** |
+
+`A169`'s fix is a clear improvement and should ship: a named error at the call site beats an
+inexplicable throw at a property read. But the crash **moved** rather than went away, and for a
+library that feature-detects and then calls, pre-existing compatibility is not restored.
+
+**The real fix is not a Proxy trick, and `A169` already demonstrated it** for `fs.constants` and
+`dns.promises`: list the member explicitly with value `undefined` so it is genuinely absent, exactly
+as real Node reports a member this package never considered. The open question is **which members
+get that treatment**, and it is a straight conflict between two goals the owner has endorsed
+separately:
+
+- **`A135`, named refusals** -- a missing feature must announce itself by name, so a person can tell
+  a gap from a broken browser. Serves the person debugging.
+- **The shim's reason to exist** -- run unmodified third-party code. The flagship is `webtorrent`
+  over exactly these modules. Serves the app that would otherwise crash.
+
+The existing reason enum already carries a distinction that could decide it -- `'not-built'` /
+`'unimplemented'` / `'not-applicable'` -- but nothing maps those onto visible-versus-invisible
+today. **AI recommendation, explicitly retunable:** a member Orivon has decided it will never
+implement is better invisible (the app degrades gracefully); a member that is planned but unbuilt is
+better named (the developer learns why). That is a guess at the owner's intent, not a decision.
