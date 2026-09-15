@@ -9,7 +9,7 @@ import type { ControlEvent, PortLike, PortPair, PortTransport } from '../ipc.js'
 import type { Broker, RawFileStat } from '../../broker-contracts.js'
 import { createPortRegistry } from '../port-registry.js'
 import type { Datagram, Grant, LookupAddress, Manifest, OrivonError, OrivonErrorCode } from '../../../contracts/index.js'
-import type { CloseReason, FailableTcpServer, FailableTcpSocket, FailableUdpSocket } from '../../handles/handle-contracts.js'
+import type { CloseReason, FailableFileHandle, FailableTcpServer, FailableTcpSocket, FailableUdpSocket } from '../../handles/handle-contracts.js'
 import type { RequestEnvelope } from '../../../contracts/ipc.js'
 
 export const APP = 'https://app.example'
@@ -73,6 +73,7 @@ export function stubBroker (
     stat: (origin: string, path: string) => Promise<RawFileStat>
     rm: (origin: string, path: string, opts?: { recursive?: boolean }) => Promise<void>
     rename: (origin: string, from: string, to: string) => Promise<void>
+    open: (origin: string, path: string, flags: string) => Promise<FailableFileHandle>
     idPublicKey: (origin: string, opts: { curve: string }) => Promise<Uint8Array>
     idSign: (origin: string, opts: { curve: string, payload: Uint8Array }) => Promise<Uint8Array>
     registerApp: (origin: string, manifest: Manifest) => Promise<void>
@@ -171,6 +172,10 @@ export function stubBroker (
       rename: async (origin, from, to) => {
         calls.push({ method: 'fs.rename', origin, args: { from, to } })
         await (overrides.rename?.(origin, from, to) ?? notStubbed())
+      },
+      open: async (origin, path, flags) => {
+        calls.push({ method: 'fs.open', origin, args: { path, flags } })
+        return await (overrides.open?.(origin, path, flags) ?? notStubbed())
       }
     },
     id: {
