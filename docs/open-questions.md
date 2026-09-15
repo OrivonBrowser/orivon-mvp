@@ -6781,3 +6781,75 @@ should prove.
 **Needed by:** whichever lane wires a production `tcp.listen` grant and the Node-shaped
 `net.createServer` shim that actually calls this surface -- this lane, like A114 before it,
 stops at a real grant reaching a real page; nothing here issues one in production.
+
+### A186 -- lane L6-shim's dispatch brief said `orivon.fs.open` was merged (PR #204); at this
+lane's own cut point it is not, and A184 (cited in this lane's own code) has no entry here yet
+**[RESOLVED 2026-09-15 -- the branch landed as PR #204; this lane now builds on it directly]**
+
+**Raised 2026-09-15**, lane L6-shim (`stream/shim-14-server-open-dns`), building the Node shapes
+over `net.createServer`, `fs.open` and `dns.lookup`. Two of the three capabilities this lane was
+told to build on ARE reachable at `origin/main @ f2bc8e0` (this lane's own cut commit), verified
+by reading the actual dispatch/preload wiring, not by trusting the brief: `net.listen` (PR #203)
+and `net.lookup` (PR #201) both have real broker dispatch cases and real preload/main-world
+bridges (`src/broker/transport/dispatch-net.ts`'s `'net.listen'`/`'net.lookup'` cases,
+`src/preload/net-surface.ts`'s `netListenBridge`/`netLookupBridge`,
+`src/preload/main-world-socket.ts`'s `buildServer`/`netLookup`). **The third is not.**
+
+**`orivon.fs.open`'s broker half and preload wiring are NOT on `main` at this lane's cut point.**
+`src/broker/fs-capability.ts`'s own header says so directly ("`FileHandle` (orivon.fs.open) is
+NOT here -- see this lane's own PR body for why it was parked"), there is no `'fs.open'` dispatch
+case anywhere under `src/broker/transport/`, and `src/preload/orivon-surface.ts`'s `exposeOrivon`
+wires `fs.readFile`/`writeFile`/`mkdir`/`readdir`/`stat`/`rm`/`rename` but no `fs.open`. The work
+lives on an unmerged branch, `stream/broker-15-fs-open` (confirmed via `git log`: `09e7b2b`
+"Merge remote-tracking branch 'origin/main' into stream/broker-15-fs-open", `fcbd525` "Restore
+fs.open's abrupt-close fix..."), not an ancestor of this lane's own base commit
+(`git merge-base --is-ancestor 09e7b2b f2bc8e0` returns false). This matches the standing warning
+already carried at the top of this run ("Seven unmerged branches from an earlier session carry
+A169-A183") -- `stream/broker-15-fs-open` is evidently an eighth, undercounted the same way.
+
+**A184 does not exist in `docs/open-questions.md` on `main` either**, though this lane's own
+brief cites it as an already-recorded fact ("FileHandle.readable()/writable() are built in the
+broker but are NOT page-reachable yet (recorded as A184)"). The most likely explanation is that
+A184 was filed on `stream/broker-15-fs-open` itself (the branch that would have discovered this
+gap while building `fs.open`'s broker half) and has simply not reached `main` yet, for the same
+reason its own branch has not. `npm run check:questions` only rejects a DUPLICATE `### A<n>`
+heading within one file; it does not require every A-number a branch cites in source actually
+resolve to a heading on that branch, so this lane's own `docs/open-questions.md A184` citations
+(`node-fs-handle.ts`, `node-fs.ts`, their tests, `README.md`) pass CI here regardless, and will
+resolve correctly once `stream/broker-15-fs-open` (or whatever carries A184's actual text) merges
+before or alongside this lane.
+
+**What this lane did about it, since the contract types (`src/contracts/handles.ts`'s
+`FileHandle`, `src/contracts/capability-api.ts`'s `OrivonFs.open`) ARE already stable on `main`
+regardless of the broker/preload wiring's merge status:** built and fully unit-tested
+`node-fs-handle.ts` (the local cursor, the callback family, the A184-citing
+`createReadStream`/`createWriteStream` refusal) entirely against that type contract, using a
+fake `orivon.fs.open` in every test -- never against a live broker, which this lane was told not
+to launch anyway. The code is correct against the contract and will start working the moment
+`fs.open` actually lands on `main`; it cannot be exercised end to end before that, and this lane
+did not claim otherwise anywhere in its own log or PR body.
+
+**Still open:** whether `stream/broker-15-fs-open` merges before this lane, requiring no action
+here, or after, requiring this lane's branch to pick up whatever `fs.open`'s real dispatch/
+preload shape turns out to be (this lane built against the TYPE contract only, which is the
+stable, change-controlled part -- but a real implementation detail neither this lane nor the
+brief could see, e.g. a different error shape on a specific failure mode, could still surface
+once wired to a real broker). **Owner's decision needed:** which of the two branches should take
+the merge-order dependency, and whether the fleet's own A-number floor tracking (this run's own
+"the floor is NOT main's high-water mark" warning) should be extended to check unmerged branches
+programmatically rather than by an agent noticing mid-lane, since this is now the second
+independent discovery of the same undercount in one run.
+
+**Resolved the same day, by the conductor, before this lane's own PR was opened.** `fs.open` merged
+as **PR #204** (`main` = `c47f7c5`) minutes after this lane was dispatched, and `A184` landed with
+it. This branch has since merged `main`, so the shim's `fs.open` shape now sits on the real broker
+capability rather than on a type contract alone -- **4480 tests pass across the merged tree**, and
+`A184`'s own entry exists.
+
+**The lane was right to file it and right not to guess.** The brief asserted a merge that had not
+happened yet at the cut commit; the lane checked rather than believed it, built against the stable
+type contract regardless, and said so. **Keeping it as a resolved entry rather than deleting it,
+because the underlying hazard is structural and will recur:** a brief written while a dependency is
+in flight goes stale between dispatch and execution, and a lane that trusts it builds on something
+absent. The cheap fix on the conductor's side is to state the dependency's commit, not just its PR
+number, so a lane can verify the claim instead of taking it on faith.
