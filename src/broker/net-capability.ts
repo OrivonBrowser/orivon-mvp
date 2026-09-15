@@ -20,8 +20,19 @@ import { mapIoError, mapTlsError } from './io-errors.js'
 import { checkBind } from './policy/bind.js'
 import { checkConnect } from './policy/connect.js'
 import { checkConnectSecure } from './policy/connect-secure.js'
+import { checkLookup } from './policy/lookup.js'
 import type { BoundUdpSocket, Broker, CreateBrokerOptions, DialedSocket, ListenedServer, SendOutcome } from './broker-contracts.js'
-import type { Datagram } from '../contracts/index.js'
+import type { CapabilityKind, Datagram, LookupAddress } from '../contracts/index.js'
+
+/**
+ * The three capabilities `orivon.net.lookup` reads a grant from (d-0030) --
+ * every OUTBOUND-reaching one, checked in this fixed order so that when more
+ * than one held grant would authorise the same hostname, revocation always
+ * scopes to the same one (policy/lookup.ts's own README note, A171).
+ * `tcp.listen`/`udp.bind` are excluded on purpose: inbound capabilities name
+ * no destination host to match a lookup against.
+ */
+const OUTBOUND_CAPABILITIES: readonly CapabilityKind[] = ['tcp.connect', 'https.connect', 'udp.send']
 
 export interface NetCapabilityOptions {
   readonly deps: CreateBrokerOptions
@@ -393,5 +404,55 @@ export function createNetCapability ({ deps, handleTable, ledger, canonical }: N
     })
   }
 
-  return { connect, connectSecure, udpBind, listen }
+  /**
+   * `orivon.net.lookup` (d-0030). Reads across OUTBOUND_CAPABILITIES above --
+   * unlike `connect`/`connectSecure`/`udpBind`, there is no single capability
+   * this rides, because holding ANY of the three already lets `hostname` be
+   * force-resolved today (policy/lookup.ts's own header, and policy/README.md's
+   * design note on why that makes a host-only check safe).
+   *
+   * THE FIRST MATCHING GRANT, not every one that would match: `checkLookup`
+   * is cheap and pure, so checking each held grant in turn costs nothing,
+   * and picking one fixes which grant's revocation cancels this call below --
+   * see OUTBOUND_CAPABILITIES's own doc for why a fixed order matters.
+   *
+   * NO HANDLE IS ACQUIRED. Unlike every other method in this file, `lookup`
+   * produces no live resource to revoke or close later -- it resolves once
+   * and hands back plain data -- so `handleTable.run` is used only for its
+   * other two jobs: the per-origin in-flight budget (T11b) and cancelling a
+   * slow resolution the instant the authorising grant is revoked, the same
+   * guarantee `connect`'s own mid-dial abort gives a socket that never
+   * finished connecting.
+   */
+  async function lookup (origin: string, opts: { hostname: string }): Promise<readonly LookupAddress[]> {
+    const key = canonical(origin)
+
+    let grantId: string | undefined
+    let hostname: string | undefined
+    for (const capability of OUTBOUND_CAPABILITIES) {
+      const grant = ledger.currentGrant(key, capability)
+      if (grant === undefined) continue
+      const decision = checkLookup(grant.patterns, opts.hostname)
+      if (decision.allowed) { grantId = grant.id; hostname = decision.hostname; break }
+    }
+    if (grantId === undefined || hostname === undefined) {
+      throw fail('denied', 'the hostname was not authorised by any held network grant')
+    }
+    const authorisedHostname = hostname
+
+    return await handleTable.run(key, { on: 'grant', grantId }, async (signal) => {
+      // Same reasoning as every other method's mid-check guard: without
+      // this, a grant revoked in the window between the loop above and
+      // `run` actually starting `deps.resolveLookup` would still let the
+      // real DNS call go ahead for a capability the app no longer holds.
+      if (signal.aborted) throw fail('revoked', 'the grant authorising this lookup was withdrawn')
+      try {
+        return await deps.resolveLookup(authorisedHostname)
+      } catch (error) {
+        throw mapIoError(error, 'net')
+      }
+    })
+  }
+
+  return { connect, connectSecure, udpBind, listen, lookup }
 }

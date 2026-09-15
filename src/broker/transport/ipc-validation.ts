@@ -13,13 +13,13 @@
 import type { CapabilityRequest, Pattern, RequestEnvelope } from '../../contracts/index.js'
 import { MAX_PATTERNS } from '../policy/connect.js'
 
-/** The eighteen wired control operations. Anything else is 'invalid'. */
+/** The nineteen wired control operations. Anything else is 'invalid'. */
 export type ControlMethod =
   | 'app.manifest' | 'app.grants' | 'app.requestGrant' | 'fs.readFile' | 'fs.writeFile'
   | 'fs.mkdir' | 'fs.readdir' | 'fs.stat' | 'fs.rm' | 'fs.rename'
   | 'id.publicKey' | 'id.sign'
   | 'net.connect' | 'net.connectSecure' | 'net.udpBind' | 'net.close'
-  | 'net.setNoDelay' | 'net.setKeepAlive'
+  | 'net.setNoDelay' | 'net.setKeepAlive' | 'net.lookup'
 
 export function isControlMethod (method: string): method is ControlMethod {
   return method === 'app.manifest' || method === 'app.grants' || method === 'app.requestGrant' ||
@@ -29,7 +29,8 @@ export function isControlMethod (method: string): method is ControlMethod {
     method === 'id.publicKey' || method === 'id.sign' ||
     method === 'net.connect' || method === 'net.connectSecure' ||
     method === 'net.udpBind' || method === 'net.close' ||
-    method === 'net.setNoDelay' || method === 'net.setKeepAlive'
+    method === 'net.setNoDelay' || method === 'net.setKeepAlive' ||
+    method === 'net.lookup'
 }
 
 export interface FsReadFileParams { readonly path: string }
@@ -50,6 +51,8 @@ export interface NetConnectParams { readonly host: string, readonly port: number
  */
 export interface NetUdpBindParams { readonly port: number }
 export interface NetCloseParams { readonly id: string }
+/** `net.lookup` (d-0030) -- no port, unlike NetConnectParams: a lookup is bounded by the origin's held network grants, never by a port of its own. */
+export interface NetLookupParams { readonly hostname: string }
 export interface NetSetNoDelayParams { readonly id: string, readonly on: boolean }
 export interface NetSetKeepAliveParams { readonly id: string, readonly on: boolean, readonly initialDelayMs?: number }
 /** The wire shape of `CapabilityRequest` (capability-api.ts) -- untrusted, including `capability`, which `main/request-grant.ts` narrows against the manifest; this file only checks shape. */
@@ -151,6 +154,11 @@ export function isNetSetKeepAliveParams (payload: unknown): payload is NetSetKee
 export function isNetCloseParams (payload: unknown): payload is NetCloseParams {
   return typeof payload === 'object' && payload !== null &&
     typeof (payload as { id?: unknown }).id === 'string'
+}
+
+export function isNetLookupParams (payload: unknown): payload is NetLookupParams {
+  return typeof payload === 'object' && payload !== null &&
+    typeof (payload as { hostname?: unknown }).hostname === 'string'
 }
 
 /**

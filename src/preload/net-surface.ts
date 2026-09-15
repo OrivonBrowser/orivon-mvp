@@ -13,6 +13,7 @@ import { createSocketPort } from './socket-port.js'
 import { createDatagramPort } from './datagram-port.js'
 import type { PortLike } from './socket-port.js'
 import type { MainWorldSocketBridge, MainWorldUdpBridge } from './main-world-socket.js'
+import type { LookupAddress } from '../contracts/index.js'
 
 /**
  * What `net.connect`'s CONTROL_CHANNEL reply actually carries -- deliberately
@@ -166,4 +167,16 @@ function buildUdpBridgeResult (descriptor: UdpSocketDescriptor, port: PortLike):
       datagramPort.dispose()
     }
   }
+}
+
+/**
+ * `net.lookup` (d-0030). UNLIKE every other closure in this file, this is a
+ * PLAIN request/response -- no PORT_CHANNEL correlation, no bridge object,
+ * because the broker hands back data, not a live handle (../broker/net-
+ * capability.ts's own `lookup` doc explains why there is nothing to
+ * acquire). One `call()`, the same as `orivon-surface.ts`'s own
+ * `fs.readFile`.
+ */
+export async function netLookupBridge (opts: { hostname: string }): Promise<readonly LookupAddress[]> {
+  return await call('net.lookup', opts, TIMEOUT_MS.net)
 }
