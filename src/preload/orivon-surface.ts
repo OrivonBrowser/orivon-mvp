@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { SYNC_CONTROL_CHANNEL } from '../main/channels.js'
 import { installOrivon } from './main-world-socket.js'
-import type { MainWorldFileBridge } from './main-world-socket.js'
+import type { MainWorldDirectoryBridge, MainWorldFileBridge } from './main-world-socket.js'
 import { call, TIMEOUT_MS } from './control-call.js'
 import { netConnectBridge, netConnectSecureBridge, netListenBridge, netLookupBridge, netUdpBindBridge } from './net-surface.js'
 import type { CapabilityRequest, FileStat, Grant, Manifest, OrivonErrorCode } from '../contracts/index.js'
@@ -111,16 +111,47 @@ async function fsOpen (path: string, flags: string): Promise<MainWorldFileBridge
   return buildFileBridge(descriptor.id)
 }
 
-/**
- * `orivon.fs.userSelected`'s FILE shape only (A194, d-0032) -- the folder
- * shape (`{ directory: true }`) has no CONTROL_CHANNEL case yet
- * (dispatch-fs.ts's own comment on that refusal), so it is not accepted
- * here at all: the type below omits `directory` entirely rather than accept
- * it and fail at runtime.
- */
+/** `orivon.fs.userSelected`'s FILE shape (A194, d-0032). `exposeFallback`'s own `userSelected` closure routes here for every call except `{ directory: true }`, which goes to `fsUserSelectedDirectory` below (A195). */
 async function fsUserSelected (opts?: { multiple?: boolean }): Promise<readonly MainWorldFileBridge[]> {
   const descriptors = await call<readonly FsHandleDescriptor[]>('fs.userSelected', opts ?? {}, TIMEOUT_MS.fs)
   return descriptors.map((descriptor) => buildFileBridge(descriptor.id))
+}
+
+/**
+ * `buildFileBridge`'s own `DirectoryHandle` counterpart (A195, closing
+ * A194) -- every member is a plain request/reply round trip over the
+ * `fs.dir*` control methods dispatch-fs.ts now wires, so this needs no
+ * main-world stream wrapping, exactly like `buildFileBridge` above. `open`
+ * resolves through `fs.dirOpen`, then reuses `buildFileBridge` on the id it
+ * returns -- the SAME file-handle mechanism `fs.open`/`fs.userSelected`'s
+ * file shape already use, not a second one.
+ */
+function buildDirectoryBridge (id: string): MainWorldDirectoryBridge {
+  return {
+    id,
+    readdir: async (path) => await call('fs.dirReaddir', path === undefined ? { id } : { id, path }, TIMEOUT_MS.fs),
+    stat: async (path) => await call('fs.dirStat', path === undefined ? { id } : { id, path }, TIMEOUT_MS.fs),
+    mkdir: async (path, opts) => {
+      await call('fs.dirMkdir', opts?.recursive === undefined ? { id, path } : { id, path, recursive: opts.recursive }, TIMEOUT_MS.fs)
+    },
+    rm: async (path, opts) => {
+      await call('fs.dirRm', opts?.recursive === undefined ? { id, path } : { id, path, recursive: opts.recursive }, TIMEOUT_MS.fs)
+    },
+    rename: async (from, to) => { await call('fs.dirRename', { id, from, to }, TIMEOUT_MS.fs) },
+    readFile: async (path) => await call('fs.dirReadFile', { id, path }, TIMEOUT_MS.fs),
+    writeFile: async (path, data) => { await call('fs.dirWriteFile', { id, path, data }, TIMEOUT_MS.fs) },
+    open: async (path, flags) => {
+      const descriptor = await call<FsHandleDescriptor>('fs.dirOpen', { id, path, flags }, TIMEOUT_MS.fs)
+      return buildFileBridge(descriptor.id)
+    },
+    close: async () => { await call('fs.close', { id }, TIMEOUT_MS.fs) }
+  }
+}
+
+/** `orivon.fs.userSelected`'s FOLDER shape (A195). `null` on a cancelled pick, matching capability-api.ts's own folder cancel contract -- never a rejection. */
+async function fsUserSelectedDirectory (): Promise<MainWorldDirectoryBridge | null> {
+  const descriptor = await call<FsHandleDescriptor | null>('fs.userSelected', { directory: true }, TIMEOUT_MS.fs)
+  return descriptor === null ? null : buildDirectoryBridge(descriptor.id)
 }
 
 /**
@@ -194,7 +225,13 @@ function exposeFallback (): void {
       rm: fsRm,
       rename: fsRename,
       open: fsOpen,
-      userSelected: fsUserSelected
+      // Routes on `opts?.directory`, matching capability-api.ts's own
+      // overload split (A195) -- `fsUserSelectedDirectory` for the folder
+      // shape, `fsUserSelected` (unchanged) for the file one.
+      userSelected: async (opts?: { directory?: boolean, multiple?: boolean }) => {
+        if (opts?.directory === true) return await fsUserSelectedDirectory()
+        return await fsUserSelected(opts?.multiple === undefined ? undefined : { multiple: opts.multiple })
+      }
     },
     id: {
       publicKey: async (opts: { curve: string }) => await idPublicKey(opts.curve),
@@ -243,6 +280,7 @@ export function exposeOrivon (): void {
     fsRename,
     fsOpen,
     fsUserSelected,
+    fsUserSelectedDirectory,
     idPublicKey,
     idSign,
     netConnect: netConnectBridge,

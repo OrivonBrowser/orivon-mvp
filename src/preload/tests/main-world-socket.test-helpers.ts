@@ -4,7 +4,10 @@
 // out whole, since it is the one concern in that file with no TCP-socket
 // dependency). Not *.test.ts, so vitest does not collect it as its own suite.
 
-import type { MainWorldDatagram, MainWorldFileBridge, MainWorldServerBridge, MainWorldSocketBridge, MainWorldUdpBridge } from '../main-world-socket.js'
+import type {
+  MainWorldDatagram, MainWorldDirectoryBridge, MainWorldFileBridge, MainWorldServerBridge,
+  MainWorldSocketBridge, MainWorldUdpBridge
+} from '../main-world-socket.js'
 import type { OrivonErrorCode } from '../../contracts/errors.js'
 import type { FileStat, SendRefusal } from '../../contracts/handles.js'
 import type { ResponseEnvelope } from '../../contracts/ipc.js'
@@ -90,6 +93,23 @@ export function fakeFileBridgeResult (overrides: Partial<MainWorldFileBridge> = 
   }
 }
 
+/** A fake `bridge.fsUserSelectedDirectory()` result (A195) -- everything `buildDirectory` (main-world-socket.ts) needs. */
+export function fakeDirectoryBridgeResult (overrides: Partial<MainWorldDirectoryBridge> = {}): MainWorldDirectoryBridge {
+  return {
+    id: 'd1',
+    readdir: async () => ['a.txt'],
+    stat: async () => ({ size: 0, isFile: false, isDirectory: true, mtimeMs: 0 }),
+    mkdir: async () => {},
+    rm: async () => {},
+    rename: async () => {},
+    readFile: async () => new Uint8Array([1, 2, 3]),
+    writeFile: async () => {},
+    open: async () => fakeFileBridgeResult(),
+    close: async () => {},
+    ...overrides
+  }
+}
+
 export function fakeBridge (
   netConnectResult: ReturnType<typeof fakeSocketBridgeResult>,
   udpResult?: ReturnType<typeof fakeUdpBridgeResult>,
@@ -108,6 +128,7 @@ export function fakeBridge (
   fsRename: (from: string, to: string) => Promise<void>
   fsOpen: (path: string, flags: string) => Promise<MainWorldFileBridge>
   fsUserSelected: (opts?: { multiple?: boolean }) => Promise<readonly MainWorldFileBridge[]>
+  fsUserSelectedDirectory: () => Promise<MainWorldDirectoryBridge | null>
   idPublicKey: (curve: string) => Promise<Uint8Array>, idSign: (curve: string, payload: Uint8Array) => Promise<Uint8Array>
   netConnect: (opts: { host: string, port: number }) => Promise<ReturnType<typeof fakeSocketBridgeResult>>
   netConnectSecure: (opts: { host: string, port: number }) => Promise<ReturnType<typeof fakeSocketBridgeResult>>
@@ -132,6 +153,9 @@ export function fakeBridge (
     // main-world-socket-fs.test.ts is the one that drives fs.userSelected
     // specifically; every other caller here only needs fsOpen.
     fsUserSelected: async () => [fakeFileBridgeResult()],
+    // Same story, one level down (A195) -- main-world-socket-fs.test.ts's
+    // own folder-shape tests are the ones that drive this directly.
+    fsUserSelectedDirectory: async () => fakeDirectoryBridgeResult(),
     idPublicKey: async () => new Uint8Array(),
     idSign: async () => new Uint8Array(),
     netConnect: async (_opts) => netConnectResult,
