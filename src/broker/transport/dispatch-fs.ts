@@ -9,9 +9,11 @@
 
 import { fail } from '../errors.js'
 import type { Broker } from '../broker-contracts.js'
-import type { FailableFileHandle } from '../handles/handle-contracts.js'
+import type { FailableDirectoryHandle, FailableFileHandle } from '../handles/handle-contracts.js'
 import type { PortRegistry } from './port-registry.js'
 import {
+  isFsDirOpenParams, isFsDirPathOptionalParams, isFsDirPathRequiredParams, isFsDirPathWithRecursiveParams,
+  isFsDirRenameParams, isFsDirWriteFileParams,
   isFsHandleIdParams, isFsHandleReadParams, isFsHandleTruncateParams, isFsHandleWriteParams,
   isFsOpenParams, isFsPathWithRecursiveParams, isFsReaddirParams, isFsReadFileParams,
   isFsRenameParams, isFsStatParams, isFsUserSelectedParams, isFsWriteFileParams
@@ -44,9 +46,18 @@ export interface FsHandleDescriptor {
  * fs counterpart, using the exact same generic `createPortRegistry` rather
  * than a second lookup mechanism (code-guidelines.md Rule 3). ONE instance
  * lives for the subsystem's whole lifetime, exactly like `PortTransport`.
+ *
+ * `dirRegistry` (A195) is `DirectoryHandle`'s own counterpart, OPTIONAL so
+ * every existing call site building an `FsTransport` for a test that never
+ * touches the folder shape still type-checks unchanged. Production wiring
+ * (./ipc.ts's `brokerIpcSubsystem`) always supplies both; a directory case
+ * reached without one fails 'internal', the same wiring-bug-not-a-
+ * capability-decision reasoning `transport === undefined` already gets
+ * below.
  */
 export interface FsTransport {
   readonly registry: PortRegistry<FailableFileHandle>
+  readonly dirRegistry?: PortRegistry<FailableDirectoryHandle>
 }
 
 /**
@@ -61,6 +72,13 @@ function requireFile (transport: FsTransport | undefined, origin: string, id: st
   return entry
 }
 
+/** `requireFile`'s own DirectoryHandle counterpart (A195) -- identical reasoning, over `dirRegistry` instead. */
+function requireDirectory (transport: FsTransport | undefined, origin: string, id: string): FailableDirectoryHandle {
+  const entry = transport?.dirRegistry?.get(origin, id)
+  if (entry === undefined) throw fail('denied', 'no such directory handle for this origin', id)
+  return entry
+}
+
 /**
  * Registers an already-acquired file handle the SAME way for both callers
  * that produce one -- `fs.open`'s own case below, and `fs.userSelected`'s
@@ -69,6 +87,12 @@ function requireFile (transport: FsTransport | undefined, origin: string, id: st
  * for ANY reason -- an explicit fs.close, a revoked grant/pick, or session
  * teardown -- so a stale registry entry never outlives the resource it
  * names; one mechanism, not a second cleanup path duplicating fs.close's.
+ *
+ * A THIRD caller joined this lane (A195): `fs.dirOpen`'s own case below,
+ * registering the `FileHandle` a `DirectoryHandle.open()` returns -- the
+ * brief's own instruction to route a folder-opened file through the EXISTING
+ * file mechanism rather than invent a second one. No change to this
+ * function was needed to make that true.
  */
 function registerFileHandle (transport: FsTransport, origin: string, file: FailableFileHandle): FsHandleDescriptor {
   transport.registry.register(origin, file.id, file)
@@ -76,7 +100,16 @@ function registerFileHandle (transport: FsTransport, origin: string, file: Faila
   return { id: file.id }
 }
 
-/** `fs.*`'s dispatch cases, unchanged from ./ipc.ts's own switch for the seven pre-existing ones. */
+/** `registerFileHandle`'s own DirectoryHandle counterpart (A195) -- same shape, over `dirRegistry` instead. */
+function registerDirectoryHandle (transport: FsTransport, origin: string, dir: FailableDirectoryHandle): FsHandleDescriptor {
+  const registry = transport.dirRegistry
+  if (registry === undefined) throw fail('internal', 'no fs directory transport configured for this broker')
+  registry.register(origin, dir.id, dir)
+  dir.onUnlink(() => { registry.remove(origin, dir.id) })
+  return { id: dir.id }
+}
+
+/** `fs.*`'s dispatch cases -- the app-rooted seven, `fs.open`'s handle-scoped six (A184), `fs.userSelected`'s two shapes and `DirectoryHandle`'s own eight (A195). */
 export async function dispatchFs (
   broker: Broker,
   origin: string,
@@ -127,22 +160,16 @@ export async function dispatchFs (
       if (!isFsUserSelectedParams(payload)) {
         throw fail('invalid', 'fs.userSelected requires an optional { directory?: boolean, multiple?: boolean }')
       }
-      if (payload.directory === true) {
-        // The FOLDER shape (DirectoryHandle) has no CONTROL_CHANNEL delivery
-        // yet -- a genuinely different problem from `fs.open`'s, not the
-        // same one repeated. FileHandle's handle-scoped siblings
-        // (fs.read/write/fstat/truncate/sync/close) already existed before
-        // this case was written, so the FILE shape below is pure reuse; a
-        // DirectoryHandle needs EIGHT new handle-scoped verbs
-        // (readdir/stat/mkdir/rm/rename/readFile/writeFile/open) with no
-        // existing precedent to reuse, over a method set A167 already flags
-        // as an unconfirmed AI recommendation (docs/open-questions.md).
-        // Building that surface now would mean inventing a delivery
-        // mechanism for a shape nobody has signed off on -- filed as A194
-        // rather than guessed at.
-        throw fail('internal', "orivon.fs.userSelected's folder shape is not reachable from a page yet -- see A194, docs/open-questions.md")
-      }
       if (transport === undefined) throw fail('internal', 'no fs transport configured for this broker')
+      if (payload.directory === true) {
+        // The FOLDER shape (A195, closing A194). `broker.fs.userSelected`'s
+        // own directory overload (fs-contracts.ts) already resolves
+        // `FailableDirectoryHandle | null` -- registerDirectoryHandle is the
+        // ONLY new registration mechanism this needed, mirroring
+        // registerFileHandle exactly (Rule 3).
+        const dir = await broker.fs.userSelected(origin, { directory: true })
+        return dir === null ? null : registerDirectoryHandle(transport, origin, dir)
+      }
       const opts = payload.multiple === undefined ? undefined : { multiple: payload.multiple }
       const files = await broker.fs.userSelected(origin, opts)
       return files.map((file) => registerFileHandle(transport, origin, file))
@@ -180,9 +207,69 @@ export async function dispatchFs (
       // matching Handle.close()'s own contract (handle-contracts.md's
       // "Common shape" section), the one exception to requireFile's refusal
       // above -- exactly net.close's own precedent (dispatch-net.ts).
-      const entry = transport?.registry.get(origin, payload.id)
-      if (entry !== undefined) await entry.close()
+      //
+      // ONE method closes either kind (A195): a page never says whether the
+      // id it is holding names a file or a folder, and ids are drawn from
+      // handles.ts's own global, unguessable pool and never reused while
+      // either registry still holds one (fs-handle-wrapper.ts's own doc on
+      // that pool), so checking both registries in turn can never find the
+      // wrong resource -- only ever the right one, or none.
+      const file = transport?.registry.get(origin, payload.id)
+      if (file !== undefined) { await file.close(); return undefined }
+      const dir = transport?.dirRegistry?.get(origin, payload.id)
+      if (dir !== undefined) await dir.close()
       return undefined
+    }
+    case 'fs.dirReaddir': {
+      if (!isFsDirPathOptionalParams(payload)) throw fail('invalid', 'fs.dirReaddir requires { id: string, path?: string }')
+      const dir = requireDirectory(transport, origin, payload.id)
+      return await dir.readdir(payload.path)
+    }
+    case 'fs.dirStat': {
+      if (!isFsDirPathOptionalParams(payload)) throw fail('invalid', 'fs.dirStat requires { id: string, path?: string }')
+      const dir = requireDirectory(transport, origin, payload.id)
+      return await dir.stat(payload.path)
+    }
+    case 'fs.dirMkdir': {
+      if (!isFsDirPathWithRecursiveParams(payload)) throw fail('invalid', 'fs.dirMkdir requires { id: string, path: string, recursive?: boolean }')
+      const dir = requireDirectory(transport, origin, payload.id)
+      await dir.mkdir(payload.path, payload.recursive === undefined ? undefined : { recursive: payload.recursive })
+      return undefined
+    }
+    case 'fs.dirRm': {
+      if (!isFsDirPathWithRecursiveParams(payload)) throw fail('invalid', 'fs.dirRm requires { id: string, path: string, recursive?: boolean }')
+      const dir = requireDirectory(transport, origin, payload.id)
+      await dir.rm(payload.path, payload.recursive === undefined ? undefined : { recursive: payload.recursive })
+      return undefined
+    }
+    case 'fs.dirRename': {
+      if (!isFsDirRenameParams(payload)) throw fail('invalid', 'fs.dirRename requires { id: string, from: string, to: string }')
+      const dir = requireDirectory(transport, origin, payload.id)
+      await dir.rename(payload.from, payload.to)
+      return undefined
+    }
+    case 'fs.dirReadFile': {
+      if (!isFsDirPathRequiredParams(payload)) throw fail('invalid', 'fs.dirReadFile requires { id: string, path: string }')
+      const dir = requireDirectory(transport, origin, payload.id)
+      return await dir.readFile(payload.path)
+    }
+    case 'fs.dirWriteFile': {
+      if (!isFsDirWriteFileParams(payload)) throw fail('invalid', 'fs.dirWriteFile requires { id: string, path: string, data: Uint8Array }')
+      const dir = requireDirectory(transport, origin, payload.id)
+      await dir.writeFile(payload.path, payload.data)
+      return undefined
+    }
+    case 'fs.dirOpen': {
+      if (!isFsDirOpenParams(payload)) throw fail('invalid', 'fs.dirOpen requires { id: string, path: string, flags: string }')
+      if (transport === undefined) throw fail('internal', 'no fs transport configured for this broker')
+      const dir = requireDirectory(transport, origin, payload.id)
+      // The whole point of A195's brief: DirectoryHandle.open() resolves a
+      // real FileHandle (confined inside the picked folder, sharing its
+      // pickId -- ../user-selected-capability.ts's own `open`), registered
+      // through the EXACT SAME registerFileHandle fs.open/fs.userSelected
+      // already use. No second file-handle mechanism.
+      const file = await dir.open(payload.path, payload.flags)
+      return registerFileHandle(transport, origin, file)
     }
     default: {
       // Exhaustiveness check, same reasoning and shape as ./ipc.ts's own

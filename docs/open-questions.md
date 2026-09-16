@@ -7843,3 +7843,84 @@ at the owner's discretion.
 
 **Needed by:** whoever next opens a `src/contracts/`-touching PR, or a dedicated docs-only one if
 none is queued soon enough that this drifts further from the implementation it describes.
+
+### A195 -- the FOLDER shape of `orivon.fs.userSelected` now reaches a page, built against A167 item 2's method set while it is STILL an unconfirmed AI recommendation **[NEEDS OWNER DECISION on A167 item 2 -- everything else below is AI-REC or verified fact]**
+
+**Raised 2026-09-16**, lane `stream/broker-19-directory-handle-page` (A194-folder), closing A194's
+own "deliberately not built" gap: `DirectoryHandle`'s nine members (`contracts/handles.ts`) now
+have a full CONTROL_CHANNEL path, dispatched from `dispatch-fs.ts` and exposed through both preload
+worlds (`orivon-surface.ts`'s `exposeFallback`, `main-world-socket.ts`'s `installOrivon`).
+
+**1. The gate A194 named was not cleared -- it was overridden by explicit instruction, and that
+distinction matters.** A194's own text is direct: building this surface needs `DirectoryHandle`'s
+method set (A167 item 2: readdir/stat/mkdir/rm/rename/readFile/writeFile/open, minus
+`readFileSync`/`userSelected`) "owner-confirmed" first, because it is "AI judgment, not owner-
+reviewed" (A167's own words). That confirmation never happened between A194 and this lane. This
+lane's own brief stated the broker capability was "fully built and tested" and instructed
+building the page path regardless, on the reasoning that `fs.open`'s `FileHandle` precedent proves
+the shape fits. That reasoning is sound engineering (see §2), but it is not the same thing as the
+owner confirming A167 item 2, and CLAUDE.md Rule 2 says not to blur the two. **Still open:** A167
+item 2's method-set shape itself remains an unconfirmed AI recommendation; what this lane confirms
+is only that IF that shape is right, it has a working, tested delivery mechanism now built on top
+of it. If the owner later changes `DirectoryHandle`'s method set, this lane's dispatch/preload
+layer changes with it (mechanical, not a redesign) -- the wire methods below are a thin RPC skin
+over whatever the contract says.
+
+**2. The shape DID fit, exactly as `fs.open` predicted -- verified, not assumed.** Eight new
+CONTROL_CHANNEL methods (`fs.dirReaddir`/`dirStat`/`dirMkdir`/`dirRm`/`dirRename`/`dirReadFile`/
+`dirWriteFile`/`dirOpen`), one per `DirectoryHandle` member, each carrying the folder handle's `id`
+the same way `fs.read`/`fs.write`/... already carry a file's. `fs.dirOpen` is the load-bearing
+case: `DirectoryHandle.open()` resolves a real `FileHandle` (`../user-selected-capability.ts`'s
+own `toFailableDirectoryHandle.open`, unchanged by this lane), registered through the EXACT SAME
+`registerFileHandle` `fs.open`/`fs.userSelected`'s file shape already use -- so every subsequent
+call against a folder-opened file (`fs.read`/`write`/`fstat`/`truncate`/`sync`/`close`) needed ZERO
+new dispatch code. No second file-handle mechanism was built, matching this lane's own brief.
+
+**3. Four AI-judgment calls made while wiring this, none owner-reviewed:**
+
+- **Wire method naming** (`fs.dirReaddir` etc., one dot, not `fs.dir.readdir`): matches every other
+  `ControlMethod` member's flat `category.verb` convention (`net.setKeepAlive`, not
+  `net.set.keepAlive`); a two-dot form would have been the only one in the file.
+- **`FailableDirectoryHandle.open`'s return type widened from the inherited `Promise<FileHandle>`
+  to `Promise<FailableFileHandle>`** (`src/broker/handles/handle-contracts.ts`) -- precedented by
+  `FailableTcpServer.connections: ReadableStream<FailableTcpSocket>` (that file's own doc: a
+  nested handle a `Failable*` type PRODUCES needs the same broker-internal escape hatch its parent
+  has). Tightens a type to match what `user-selected-capability.ts` already returned at runtime;
+  no behaviour change, confirmed by `npm run typecheck` before and after.
+- **`fs.close` closes either kind** (checks `FsTransport.registry` then `dirRegistry`) rather than
+  adding a `fs.dirClose` method -- a page never knows which kind an id names, and ids are drawn
+  from one global unguessable pool (`fs-handle-wrapper.ts`'s own doc), so one method is unambiguous
+  and correct for both.
+- **`FsTransport.dirRegistry` is OPTIONAL**, not a required second field alongside `registry` --
+  minimises the blast radius on the ~15 existing test files that construct an `FsTransport` for
+  scenarios that never touch the folder shape (all keep compiling unchanged); production wiring
+  (`ipc.ts`'s `brokerIpcSubsystem`) always supplies both, and a directory case reached without one
+  fails `'internal'`, covered by its own test.
+
+**4. `src/shim-electron/dialog.ts` needed NO change.** Its refusal already named the real remaining
+gap (A187: `userSelected` resolves an opaque handle, never `showOpenDialog`'s raw host path) rather
+than claiming the broker did not implement `userSelected` -- that correction predates this lane
+(A194's own "L5-userselected" landing). This lane changes which shapes reach a page, not whether
+`userSelected` itself is implemented, so `dialog.ts`'s own reasoning is unaffected either way.
+
+**Verified, this lane (2026-09-16, `5d144f9` base):** `npm run typecheck` clean. `npm test`: **4651
+passed, 3 skipped** (baseline before this lane: 4615 passed, 3 skipped -- one stale test removed
+from `ipc-fs-user-selected.test.ts`, two stale tests replaced in `orivon-surface.test.ts`, 39 net
+new added across `ipc-fs-user-selected-directory.test.ts` (31), `main-world-socket-fs.test.ts` (7),
+`orivon-surface.test.ts` (2)). `check:size`/`check:comments`/`check:contracts`/`check:questions`/
+`check:manifest-parity`/`check:natives`/`check:secrets` all pass. `src/broker/transport/tests/
+ipc.test-helpers.ts` was measured at 499/500 before this lane touched it; split into a new
+`stub-broker.ts` (pure move, own commit, `git log` shows it landed before any behavioural change)
+before adding the folder-shape's own widened `stubBroker.userSelected` override.
+
+**Not run:** `npm run test:e2e` / a real Electron launch, per this lane's own instructions.
+**Ready for one:** a real folder picked via a real `dialog.showOpenDialog` call, a real page
+calling `orivon.fs.userSelected({ directory: true })`, reading/writing/opening a file inside it
+through the SAME `fs.dir*`/`fs.read`/`fs.write` control methods this lane proved at the unit level,
+and a revoke from the settings permissions list tearing down both the folder handle and a
+`FileHandle` opened through it live -- the same shape #82's Phase-1 e2e proved for `net.connect`'s
+write pump, and what A194's own "ready for one" already named before this lane cleared it.
+
+**Needed by:** the owner, to confirm or revise A167 item 2's `DirectoryHandle` method set now that
+a real page can exercise it -- and whoever builds the settings-permissions UI surface for a picked
+folder, which this lane's dispatch layer is ready for but does not itself build.

@@ -10,14 +10,13 @@ import { APP, OTHER, type BrokerCall, envelope, frameFor, stubBroker } from './i
 // own file, matching that file's own precedent (fs.open outgrew
 // ipc-fs.test.ts; this concern gets the same treatment from the start).
 //
-// THE FOLDER SHAPE HAS NO CASE HERE ON PURPOSE. `dispatch-fs.ts`'s own
-// 'fs.userSelected' case refuses `directory: true` with 'internal' before
-// the broker is ever called -- DirectoryHandle's eight-method RPC surface
-// has no existing handle-scoped dispatch precedent to reuse, unlike
-// FileHandle's (fs.read/write/fstat/truncate/sync/close, already built for
-// fs.open, and reused here for free). See that case's own comment and A194
-// (docs/open-questions.md) for the full reasoning; this file proves the
-// refusal, not a workaround for it.
+// THE FOLDER SHAPE HAS ITS OWN FILE NOW (A195):
+// ipc-fs-user-selected-directory.test.ts. It used to be refused here with
+// 'internal' before the broker was ever called (A194's own gap); that
+// refusal is gone -- DirectoryHandle's eight-method RPC surface reuses
+// FileHandle's handle-scoped siblings for anything `dirOpen` returns, the
+// same way FileHandle's own (fs.read/write/fstat/truncate/sync/close,
+// already built for fs.open) are reused here for free.
 
 /** A minimal FailableFileHandle double -- same shape ipc-fs-open.test.ts's own fakeFile uses. */
 function fakeFile (overrides: Partial<FailableFileHandle> = {}): FailableFileHandle {
@@ -167,16 +166,6 @@ describe('fs.userSelected -- the denied path', () => {
     )
 
     expect(response).toMatchObject({ ok: false, code: 'denied' })
-  })
-
-  it('the folder shape (directory: true) is refused as internal, before the broker is ever called -- see this file\'s own header, A194', async () => {
-    const calls: BrokerCall[] = []
-    const broker = stubBroker(calls)
-
-    const response = await handleControlRequest(broker, frameFor(APP), envelope('fs.userSelected', { directory: true }))
-
-    expect(response).toMatchObject({ ok: false, code: 'internal' })
-    expect(calls).toEqual([])
   })
 
   it.each<[string, unknown]>([
