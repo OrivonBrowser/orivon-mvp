@@ -317,6 +317,36 @@ in a lookahead inside a single `regex_match`.
   `ln -s <repo>/node_modules <worktree>/node_modules`.
 - **Branch protection is `strict`.** Merging PR N+1 always needs a fresh `main`-merge into its
   branch first, even if N+1 touches none of N's files — expect this on every sequential merge.
+- **Syncing `main` with `origin` never uses a bare `git pull`.** Local `main` is always `0`
+  ahead here, so the sync is a fast-forward — but the working tree is routinely dirty with
+  uncommitted work (14 files across docs, `src/contracts/` and `src/telemetry/` for the whole of
+  2026-09-10..15), and on a dirty tree `git pull` aborts with *"local changes would be
+  overwritten"*. The obvious recoveries — `git checkout -- .`, or a rebase resolved badly —
+  destroy that work silently. **Owner's decision (2026-09-15): the procedure below is the
+  default, and an agent that finds `main` behind runs it unprompted when the tree is clean, and
+  reports rather than acts when the tree is dirty.** A clean tree makes the fast-forward
+  risk-free; a dirty one carries stash/pop conflict risk, and a conflicted tree nobody asked for
+  is a bad surprise with this many worktrees live.
+
+  1. `git fetch origin --prune`, then `git rev-list --left-right --count main...origin/main`.
+  2. Back the dirty tree up outside the repo first — `git diff > <scratch>/uncommitted.patch`
+     plus a tarball that also captures the untracked files, which no stash takes by default.
+  3. `git stash push -m "pre-sync <date>: ..."`. Leave untracked files in place; they only
+     block the merge if `origin/main` adds a file at the same path, which is worth checking
+     (`git cat-file -e origin/main:<path>`) rather than assuming.
+  4. `git merge --ff-only origin/main` — **never** a merge commit, and never `--force`.
+  5. `git stash pop`. On conflict the stash is **kept**, not dropped, so nothing is lost; a
+     clean pop drops it, which is the signal the reapply worked.
+  6. Verify before reporting: per-file `git diff --numstat` against the backup patch (hunk
+     counts must match, or the difference must be explained), then `npm run typecheck` and
+     `npm run check:contracts`. Check `package.json`/`package-lock.json` in the pulled range —
+     a lock change needs `npm install`, a scripts-only change does not.
+
+  Two things this catches that a hunk-count check alone does not: a file whose local edit
+  **auto-merged** now sits on a newer base and may be textually clean but semantically stale
+  (`ARCHITECTURE.md` after a 162-commit jump is the worked example — re-read it, don't trust the
+  clean merge), and a dirty file that upstream **also** changed, which is where every real
+  conflict comes from. List those before stashing, not after.
 
 ### The readability check
 

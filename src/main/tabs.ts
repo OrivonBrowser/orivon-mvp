@@ -153,7 +153,7 @@ export class TabManager {
     // cannot tell that apart from a real app on scheme alone, but the
     // dashboard is shell UI (ADR-0003's "browser state" tier), never app
     // content, and must never be isolated as if it were an app's own origin.
-    const partition = isDashboard ? undefined : partitionForTarget(target)
+    const partition = isDashboard ? undefined : partitionForTarget(target, this.ctx.broker)
 
     const id = makeTabId()
     const view = makeTabView(
@@ -207,9 +207,9 @@ export class TabManager {
       // undefined) -- see createTab()'s isDashboard branch and this file's
       // README-linked design notes for why that tab must stay unpartitioned.
       if (!record.isDashboardTab) {
-        const nextPartition = partitionChanged(navigatedUrl, record.partition)
-        if (nextPartition !== undefined) {
-          this.repartitionView(id, record, navigatedUrl, nextPartition)
+        const swap = partitionChanged(navigatedUrl, record.partition, this.ctx.broker)
+        if (swap !== undefined) {
+          this.repartitionView(id, record, navigatedUrl, swap.to)
           return
         }
       }
@@ -264,9 +264,15 @@ export class TabManager {
    * handler (a redirect, clicked link, form submission or script navigation
    * -- the target is only known once Chromium has already committed it).
    * See this directory's README.md, `## Design notes`, for the residual
-   * that late catch leaves open and the KNOWN, DISCLOSED LIMITATION this
-   * swap has always had on `back()`. */
-  private repartitionView (id: string, record: TabRecord, target: string, nextPartition: string): void {
+   * that late catch leaves open.
+   *
+   * The swap still discards the old view's `navigationHistory` -- Electron
+   * gives no way to carry it across. That is survivable now only because
+   * ordinary browsing no longer swaps at all (A109, resolved 2026-09-15 by
+   * isolating installed apps and nothing else; see tab-view.ts's
+   * `partitionForTarget`). Entering or leaving an app still costs the back
+   * button, which is the narrow residual the owner accepted. */
+  private repartitionView (id: string, record: TabRecord, target: string, nextPartition: string | undefined): void {
     const oldView = record.view
     const wasActive = this.activeId === id
 
@@ -372,21 +378,20 @@ export class TabManager {
    * dashboard's own navigate command both funnel here (ipc.ts, newtab-
    * ipc.ts) -- a person's very first act in a fresh tab is typing a URL,
    * not calling createTab(url) directly. Repartitions via repartitionView()
-   * exactly when the target's origin differs from the tab's CURRENT
-   * partition; `partitionForTarget(BLANK_URL)` is always undefined, so a
-   * rejected navigation never swaps and keeps landing in whatever
-   * view/partition the tab already had (BLANK_URL's own doc: "an EXISTING
-   * tab keeps whatever preload it was created with"), and a same-origin
-   * navigation computes the identical partition string and also does not
-   * swap. */
+   * exactly when the target belongs in a different session from the one the
+   * tab is in -- which, since 2026-09-15, means entering or leaving an
+   * installed app, never one ordinary website to another. BLANK_URL has no
+   * derivable origin, so a rejected navigation never swaps and keeps landing
+   * in whatever view/partition the tab already had (BLANK_URL's own doc: "an
+   * EXISTING tab keeps whatever preload it was created with"). */
   navigate (id: string, rawInput: string): void {
     const record = this.tabs.get(id)
     if (record === undefined || record.view.webContents.isDestroyed()) return
     const target = this.resolveTarget(rawInput)
 
-    const nextPartition = partitionChanged(target, record.partition)
-    if (nextPartition !== undefined) {
-      this.repartitionView(id, record, target, nextPartition)
+    const swap = partitionChanged(target, record.partition, this.ctx.broker)
+    if (swap !== undefined) {
+      this.repartitionView(id, record, target, swap.to)
       return
     }
 
@@ -409,6 +414,15 @@ export class TabManager {
     this.liveWebContents(id)?.reload()
   }
 
+  /** The icon this tab is currently showing, already fetched, size-capped
+   * and re-encoded to a `data:` URL by favicon.ts. `null` when the page
+   * declares none, or when its fetch has not landed yet. Read when a page
+   * is starred, so the bookmark keeps the icon rather than the shell going
+   * back to the network for one (bookmarks.ts's `favicon`). */
+  faviconFor (id: string): string | null {
+    return this.tabs.get(id)?.favicon ?? null
+  }
+
   /** Fetches the favicon for `favicons[0]` (the first http(s) candidate)
    * and stores it on `record`, unless the tab has since closed or moved
    * on to a different favicon request. */
@@ -417,7 +431,12 @@ export class TabManager {
     if (sourceUrl === null) return
 
     record.pendingFaviconUrl = sourceUrl
-    const dataUrl = await fetchFaviconDataUrlCached(sourceUrl)
+    // The page that DECLARED this icon, which is what decides whether a
+    // loopback candidate may be fetched at all (favicon.ts's isSafeFaviconUrl).
+    // Read here rather than passed in: 'page-favicon-updated' fires for the
+    // document currently committed in this view, which is exactly getURL().
+    const pageUrl = record.view.webContents.getURL()
+    const dataUrl = await fetchFaviconDataUrlCached(sourceUrl, pageUrl)
 
     // The tab may have closed (removed from `this.tabs`) or navigated to
     // a page with a different favicon (a newer request overwrote

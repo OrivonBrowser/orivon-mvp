@@ -27,10 +27,12 @@
   color: var(--wink-dim);
   flex: none;
 }
-/* Deliberately larger than the icon cluster's 18px glyphs -- this is
-   what the reference actually ships, not a rendering bug introduced
-   here. */
-.navgroup .navbtn svg { width: 24px; height: 24px; }
+/* 18px, the same glyph size .bookmarkbtn and the cluster's .iconbtn use.
+   The v2 reference draws these three at 24 inside the same 34px box,
+   which reads as oversized next to the bookmark toggle sitting right
+   beside them -- owner, 2026-09-15. Parity across the row wins over
+   quoting the reference exactly. */
+.navgroup .navbtn svg { width: 18px; height: 18px; }
 .navbtn:not(:disabled):hover {
   color: var(--wink);
 }
@@ -122,31 +124,17 @@
   color: var(--wink);
   background: var(--whover-soft);
 }
-/* Queue item 4.4: the active tab's app currently holds at least one
-   capability -- the same visual family the omnibox's own secure/insecure
-   dot uses (toolbar.css above), applied to this icon instead of a second,
-   separate indicator. */
-.pillbtn.has-app {
-  color: var(--wok);
-}
-/* One of those capabilities is an UNLIMITED grant (grant-prompt-render.ts's
-   `warning`) -- takes precedence over .has-app's colour, matching the
-   install prompt's own "never look the same as narrow" rule. */
-.pillbtn.has-warning {
-  color: var(--winsecure);
-}
+/* The product mark. The logo is already a circle with its own gradient, so
+   no border-radius and no --wmark plate behind it -- a rounded square tinted
+   orange under a round logo just reads as a rendering mistake. Drawn from
+   CSS rather than an <img> so Vite rewrites the URL per entry: the built app
+   loads these pages over file://, where a root-relative /logo.png would
+   resolve to the filesystem root. */
 .mark-badge {
   width: 16px;
   height: 16px;
-  border-radius: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--wmark);
-  color: #fff;
-  font-size: 8px;
-  font-weight: 700;
   flex: none;
+  background: url('../assets/logo.png') center / contain no-repeat;
 }
 
 .toolbar-cluster {
@@ -177,10 +165,24 @@
   color: var(--wink);
   background: var(--whover-strong);
 }
-/* Every .iconbtn (and .pillbtn below) in this codebase is a permanent
-   placeholder -- never toggled at runtime (main.ts never queries them) --
-   unlike #back/#forward/#reload, which are genuinely, contextually
-   disabled and keep the base dim-on-dim style. The global
+/* Queue item 4.4: the active tab's app currently holds at least one
+   capability -- the same visual family the omnibox's own secure/insecure
+   dot uses, applied to the permission key rather than a second, separate
+   indicator. Lives on .iconbtn because the control sits outside the pill
+   (owner, 2026-09-15); the pill's trailing slot is the Web3 Score's. */
+.iconbtn.has-app {
+  color: var(--wok);
+}
+/* One of those capabilities is an UNLIMITED grant (grant-prompt-render.ts's
+   `warning`) -- takes precedence over .has-app's colour, matching the
+   install prompt's own "never look the same as narrow" rule. */
+.iconbtn.has-warning {
+  color: var(--winsecure);
+}
+/* A disabled .iconbtn/.pillbtn here is a permanent placeholder -- shipped
+   inert because the feature is not built, never toggled back on at
+   runtime -- unlike #back/#forward/#reload, which are genuinely,
+   contextually disabled and keep the base dim-on-dim style. The global
    button:disabled { opacity: 0.35 } left these unreadable, which read
    as "broken" rather than "not built yet" (open-questions.md A32).
    not-allowed on hover makes the inertness legible without reaching

@@ -54,6 +54,7 @@ import {
   ABSENCE_SETTLE_MS,
   activeTabFaviconSrc,
   bookmarkUrls,
+  bookmarksBarMatches,
   delay,
   evaluateRetrying,
   findChrome,
@@ -349,9 +350,11 @@ async function main () {
     // Resize check -- verifies chrome + tab bounds actually track a window
     // resize (win.on('resize') -> layoutChrome() + tabs.layout() in
     // window.ts), via each view's OWN rendered viewport rather than reaching
-    // into main-process internals. CHROME_HEIGHT (104) must stay in sync
-    // with src/renderer/style.css's `html, body { height: 104px }`.
-    const CHROME_HEIGHT = 104
+    // into main-process internals.
+    // 76, not 104: nothing is bookmarked yet and an empty bookmarks bar is
+    // no longer rendered (owner, 2026-09-15), so the chrome is two rows
+    // here. Both numbers live in src/main/window.ts and style.css too.
+    const CHROME_HEIGHT = 76
     const targetWidth = 900
     const targetHeight = 700
     await app.evaluate(({ BaseWindow }, { w, h }) => {
@@ -603,6 +606,11 @@ async function main () {
       await waitFor(async () => (await bookmarkUrls(chrome)).includes(urlFor('/a')))
     )
 
+    check(
+      'a bookmark brings the bar back, in the DOM and in the chrome main sized',
+      await waitFor(() => bookmarksBarMatches(chrome, true))
+    )
+
     // Navigate away, then open the bookmark from the bar -- proves its click
     // handler drives a real navigation (openBookmark), not just a render of
     // the stored title.
@@ -630,6 +638,13 @@ async function main () {
     check(
       'unstarring removes the page from the bookmarks bar',
       await waitFor(async () => !(await bookmarkUrls(chrome)).includes(urlFor('/a')))
+    )
+
+    // ...and the bar goes with it. An empty bar left behind is the exact
+    // state this behaviour exists to prevent.
+    check(
+      'losing the last bookmark takes the bar and the row main sized for it',
+      await waitFor(() => bookmarksBarMatches(chrome, false))
     )
 
     // ---- Bookmarks bar: remove directly from the bar, not just the toolbar

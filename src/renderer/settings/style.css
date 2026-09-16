@@ -1,4 +1,4 @@
-/* The settings window's own stylesheet -- a separate Vite entry from the
+/* The permissions panel's own stylesheet -- a separate Vite entry from the
    chrome view (electron.vite.config.ts), so these tokens are a small,
    literal duplicate of style.css's palette rather than a cross-entry
    import -- newtab/style.css's own header explains why that is the
@@ -54,45 +54,51 @@ button:focus-visible {
   outline-offset: 2px;
 }
 
+/* Sized for a ~380px popup hanging off the toolbar (permissions-panel.ts),
+   not a 480px window -- tighter padding, smaller type, and the list itself
+   is what scrolls. The rounded outer corners are the native view's
+   (setBorderRadius); this only has to not paint into them. */
 .page {
   height: 100%;
   overflow-y: auto;
-  padding: 20px 24px 32px;
+  padding: 12px 14px 16px;
 }
 
 .page-header h1 {
-  margin: 0 0 4px;
-  font-size: 18px;
+  margin: 0 0 3px;
+  font-size: 14px;
 }
 .subtitle {
-  margin: 0 0 20px;
+  margin: 0 0 12px;
   color: var(--wink-dim);
+  font-size: 12px;
   line-height: 1.4;
 }
 
 .empty-state {
   color: var(--wink-dim);
+  font-size: 12px;
   line-height: 1.5;
 }
 
 .apps-list {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
 }
 
 .app-card {
   background: var(--wsurface);
   border: 1px solid var(--wborder);
-  border-radius: 10px;
-  padding: 14px 16px;
+  border-radius: 8px;
+  padding: 10px 12px;
 }
 
 .app-heading {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 .app-origin {
   font-weight: 600;

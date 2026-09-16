@@ -6,9 +6,9 @@ import { createPermissionsListView } from './permissions-view.js'
 // click, re-fetch. No live push channel exists for this yet (unlike the
 // chrome view's ShellState) -- every render is a fresh `list()` round trip,
 // which is cheap enough at the scale this page ever shows (a handful of
-// apps) and keeps this file simple. See src/main/settings-window.ts's own
-// header for the one known gap this causes: re-opening an already-open
-// window for a different `focusOrigin` does not re-scroll it.
+// apps) and keeps this file simple. The panel is built fresh on every open
+// (src/main/permissions-panel.ts), so unlike the window this replaced there
+// is no stale-`focusOrigin` gap -- a reopen is always a fresh load.
 
 interface OrivonSettings {
   list: () => Promise<readonly AppPermissions[]>
@@ -17,6 +17,7 @@ interface OrivonSettings {
   revokeCapability: (origin: string, capability: CapabilityKind) => Promise<void>
   /** D-0007's own revoke, addressed by pickId. */
   revokePickedPath: (origin: string, pickId: string) => Promise<void>
+  reportHeight: (height: number) => void
   focusOrigin: string | null
 }
 
@@ -31,8 +32,8 @@ function must<T> (value: T | null | undefined, message: string): T {
   return value
 }
 
-// A hard throw, unlike newtab.ts's graceful degrade: this window's preload
-// path is fixed at construction (settings-window.ts) and never anything
+// A hard throw, unlike newtab.ts's graceful degrade: this panel's preload
+// path is fixed at construction (permissions-panel.ts) and never anything
 // but preload/settings.ts, so `orivonSettings` missing here means the
 // preload itself failed, not a legitimately unprivileged load.
 const settings = must(window.orivonSettings, 'orivonSettings not exposed -- preload did not run')
@@ -59,10 +60,32 @@ function scrollToFocusOriginOnce (): void {
   card.scrollIntoView({ block: 'start' })
 }
 
+/** Measured from where the content actually ENDS, not from any element's own
+ * height. `.page` is `height: 100%` of the panel (style.css), so both its
+ * offsetHeight and its scrollHeight are floored at the panel's current
+ * height -- feeding either back to main gives a fixed point that can grow
+ * but never shrink, which is how this first went wrong (the panel stuck at
+ * its 180px opening size). Reported after every render: the list arrives
+ * over IPC, so the first paint is always an empty one. */
+function reportContentHeight (): void {
+  const page = document.querySelector<HTMLElement>('.page')
+  if (page === null) return
+
+  const top = page.getBoundingClientRect().top
+  let bottom = top
+  for (const child of page.children) {
+    if (child instanceof HTMLElement && child.hidden) continue
+    bottom = Math.max(bottom, child.getBoundingClientRect().bottom)
+  }
+  const paddingBottom = parseFloat(getComputedStyle(page).paddingBottom)
+  settings.reportHeight(Math.ceil(bottom - top + paddingBottom))
+}
+
 async function refresh (): Promise<void> {
   const apps = await settings.list()
   view.render(apps)
   scrollToFocusOriginOnce()
+  reportContentHeight()
 }
 
 /** Two revoke paths, one button. A row for an app loaded this session carries

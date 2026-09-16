@@ -30,10 +30,9 @@ function path (d: string, strokeWidth: string): SVGPathElement {
   return el
 }
 
-/** Generic favicon stand-in -- used for bookmarks-bar items (which never
- * carry a real favicon) and as the tab strip's fallback when a tab has
- * no real favicon yet, or its favicon fails to load (main.ts). Real tab
- * favicons themselves are fetched by src/main/favicon.ts. */
+/** Generic favicon stand-in -- the fallback inside faviconElement below,
+ * for anything with no real favicon yet or whose favicon fails to load.
+ * Real favicons are fetched by src/main/favicon.ts. */
 export function globeIcon (): SVGSVGElement {
   const el = svg('0 0 24 24')
   el.append(
@@ -52,6 +51,29 @@ function circle (cx: number, cy: number, r: number): SVGCircleElement {
   el.setAttribute('r', String(r))
   el.setAttribute('stroke-width', '2')
   return el
+}
+
+/** A favicon as an `<img>`, or the generic globe when there is none.
+ *
+ * Always a `data:` URL, never the site's own https one: main fetches every
+ * favicon and re-encodes it (src/main/favicon.ts) precisely so no privileged
+ * view makes a network request for an icon, and the CSPs here are
+ * `img-src 'self' data:` to match. Shared by the tab strip, the bookmarks bar
+ * and the dashboard's tiles -- all three answer the same question, so this is
+ * one implementation of it (code-guidelines.md Rule 3).
+ *
+ * On a decode failure the image swaps ITSELF for the globe, so a caller can
+ * append the result and forget about it -- in practice that is a corrupt
+ * cached entry, not a network problem, since the bytes are already local. */
+export function faviconElement (dataUrl: string | null): HTMLImageElement | SVGSVGElement {
+  if (dataUrl === null) return globeIcon()
+  const img = document.createElement('img')
+  img.alt = ''
+  img.decoding = 'async'
+  img.referrerPolicy = 'no-referrer'
+  img.addEventListener('error', () => { img.replaceWith(globeIcon()) }, { once: true })
+  img.src = dataUrl
+  return img
 }
 
 /** The tab strip's close (x) button, shared with the bookmarks bar's remove button. */

@@ -25,7 +25,7 @@ import { rendererEntryUrl } from './renderer-entry.js'
 import type { SubsystemContext } from './registry.js'
 import { TabManager, type Bounds } from './tabs.js'
 import { registerShellIpc } from './ipc.js'
-import { openSettingsWindow } from './settings-window.js'
+import { createPermissionsPanel } from './permissions-panel.js'
 
 // Chrome restyle, 2026-08-28 (owner: match a reference screenshot that
 // turned out to be the prior prototype's chrome pixel-for-pixel --
@@ -36,8 +36,10 @@ import { openSettingsWindow } from './settings-window.js'
 // CSS agree on where the tab content starts:
 //   tabrow      36px (matches titleBarOverlay.height below)
 // + toolbar     40px
-// + bookmarks   28px
-const CHROME_HEIGHT = 104
+// + bookmarks   28px, only when the bar is rendered -- see chromeHeight()
+const CHROME_TOP_ROWS = 76
+const BOOKMARKS_BAR_HEIGHT = 28
+const CHROME_HEIGHT = CHROME_TOP_ROWS + BOOKMARKS_BAR_HEIGHT
 
 // Kept in sync with src/renderer/style.css's --wchrome/--wink tokens --
 // same dual-source-of-truth pattern as CHROME_HEIGHT above. The overlay
@@ -129,14 +131,33 @@ export function createShellWindow (ctx: SubsystemContext): BaseWindow {
   // electron.vite.config.ts's `newtab` entry.
   const dashboardUrl = rendererEntryUrl(import.meta.dirname, devServerUrl, '/newtab/', '../renderer/newtab/index.html')
 
+  // Bookmarks: owner override, 2026-08-28 (mvp-scope.md, ADR-0003) -- not
+  // in the original scope pass, arrived bundled with the chrome restyle.
+  // A separate store, not folded into TabManager -- tabs and bookmarks
+  // change independently and neither needs to know the other exists;
+  // window.ts is what composes both into the one ShellState snapshot the
+  // chrome view receives.
+  const bookmarks = new BookmarkStore(join(app.getPath('userData'), 'bookmarks.json'))
+
+  // The bookmarks bar is rendered only when there is something in it
+  // (owner, 2026-09-15) -- it holds the real list and nothing else now, so
+  // an empty one is an empty row. Main has to own this, not just CSS: the
+  // tab view starts where the chrome view ends, so a row the renderer
+  // hides without main shrinking these bounds leaves a 28px band of empty
+  // chrome above the page instead of giving it back to the page.
+  function chromeHeight (): number {
+    return bookmarks.getAll().length > 0 ? CHROME_HEIGHT : CHROME_TOP_ROWS
+  }
+
   function layoutChrome (): void {
     const bounds = win.getContentBounds()
-    chrome.setBounds({ x: 0, y: 0, width: bounds.width, height: CHROME_HEIGHT })
+    chrome.setBounds({ x: 0, y: 0, width: bounds.width, height: chromeHeight() })
   }
 
   function tabBounds (): Bounds {
     const bounds = win.getContentBounds()
-    return { x: 0, y: CHROME_HEIGHT, width: bounds.width, height: bounds.height - CHROME_HEIGHT }
+    const top = chromeHeight()
+    return { x: 0, y: top, width: bounds.width, height: bounds.height - top }
   }
 
   // A16, resolved (owner decision, 2026-08-28): closing the last tab
@@ -155,19 +176,16 @@ export function createShellWindow (ctx: SubsystemContext): BaseWindow {
 
   const tabs = new TabManager(win.contentView, tabBounds, closeWindow, dashboardUrl, ctx)
 
-  // Bookmarks: owner override, 2026-08-28 (mvp-scope.md, ADR-0003) -- not
-  // in the original scope pass, arrived bundled with the chrome restyle.
-  // A separate store, not folded into TabManager -- tabs and bookmarks
-  // change independently and neither needs to know the other exists;
-  // window.ts is what composes both into the one ShellState snapshot the
-  // chrome view receives.
-  const bookmarks = new BookmarkStore(join(app.getPath('userData'), 'bookmarks.json'))
-
   // Queue item 4.4: the permissions settings page and the address-bar icon
   // both read/revoke through this one controller, closing over `ctx` so it
   // always sees whichever broker is currently published (permissions.ts's
   // own doc).
   const permissions = createPermissionsController(ctx)
+
+  /** Previous push's active tab, so pushState() can tell a genuine tab
+   * SWITCH from the many other reasons state is pushed (a title, a favicon,
+   * a loading flag). */
+  let lastActiveTabId: string | null = null
 
   function pushState (): void {
     // A16 makes this reachable routinely now, not just via an OS-level
@@ -178,14 +196,52 @@ export function createShellWindow (ctx: SubsystemContext): BaseWindow {
     // no top-level handler anywhere in this app (same class of gap
     // tabs.ts's own 'destroyed' handling exists for).
     if (chrome.webContents.isDestroyed()) return
-    chrome.webContents.send(STATE_CHANNEL, { ...tabs.getState(), bookmarks: bookmarks.getAll() })
+    const state = tabs.getState()
+
+    // Star a page the instant it opens and its favicon has not arrived yet,
+    // so the bookmark is saved iconless. The fetch lands moments later and
+    // pushes state -- this is where that late icon reaches the bookmark it
+    // belongs to. fillMissingFavicon never overwrites an icon already
+    // stored, and deliberately does not notify listeners, so this cannot
+    // push state from inside a state push; the list read below already
+    // reflects it.
+    for (const tab of state.tabs) {
+      if (tab.favicon !== null) bookmarks.fillMissingFavicon(tab.url, tab.favicon)
+    }
+    // Switching tabs reattaches the incoming tab's view (TabManager.
+    // activateTab -> addChildView), which would stack it ABOVE the panel --
+    // the panel is only on top because it was added last. Focus moving to
+    // that view already closes it in practice, but this does not depend on
+    // focus semantics to avoid leaving a panel stranded under a page.
+    if (state.activeTabId !== lastActiveTabId) {
+      lastActiveTabId = state.activeTabId
+      permissionsPanel.close()
+    }
+    chrome.webContents.send(STATE_CHANNEL, { ...state, bookmarks: bookmarks.getAll() })
+  }
+
+  // Only the first and last bookmark change the chrome's height, so the
+  // relayout is guarded on the height actually moving rather than run on
+  // every add and remove -- resizing two views per keystroke-speed change
+  // would be visible.
+  let laidOutHeight = chromeHeight()
+  function onBookmarksChanged (): void {
+    const height = chromeHeight()
+    if (height !== laidOutHeight) {
+      laidOutHeight = height
+      layoutChrome()
+      tabs.layout()
+    }
+    pushState()
   }
 
   tabs.onStateChange(pushState)
-  bookmarks.onChange(pushState)
-  // Loading is non-blocking -- an empty bookmarks bar for one frame on a
-  // slow disk beats delaying the whole window on a non-essential feature.
-  void bookmarks.load().then(pushState)
+  bookmarks.onChange(onBookmarksChanged)
+  // Loading is non-blocking -- no bookmarks bar for one frame on a slow
+  // disk beats delaying the whole window on a non-essential feature. It
+  // goes through onBookmarksChanged, not pushState: a profile that HAS
+  // bookmarks grows the chrome by a row the moment they land.
+  void bookmarks.load().then(onBookmarksChanged)
 
   // Without this, tabs.createTab() below pushes state before the chrome
   // page has loaded far enough to register its ipcRenderer listener
@@ -197,14 +253,18 @@ export function createShellWindow (ctx: SubsystemContext): BaseWindow {
   // land, not timing-dependent.
   chrome.webContents.on('did-finish-load', pushState)
 
-  registerShellIpc(chrome.webContents, tabs, bookmarks, permissions, (url) => {
-    // The address-bar icon sends the active TAB's url, not an origin --
-    // same `originFromUrl` tab-view.ts's own appTabArgsFor already uses
-    // for the identical derivation. undefined (the toolbar's own
-    // "Permissions" button) and an unparseable url both mean "no
-    // particular app to scroll to", not an error.
+  // Queue item 4.4's permissions surface, now a panel inside this window
+  // rather than a second one (owner, 2026-09-16) -- ./permissions-panel.ts.
+  const permissionsPanel = createPermissionsPanel(win, win.contentView, permissions, import.meta.dirname)
+
+  registerShellIpc(chrome.webContents, tabs, bookmarks, permissions, (anchor, url) => {
+    // The chrome view sends the active TAB's url, not an origin -- same
+    // `originFromUrl` tab-view.ts's own appTabArgsFor already uses for the
+    // identical derivation. undefined (no tab, or the dashboard) and an
+    // unparseable url both mean "no particular app to scroll to", not an
+    // error.
     const focusOrigin = url === undefined ? undefined : originFromUrl(url) ?? undefined
-    openSettingsWindow(permissions, focusOrigin)
+    permissionsPanel.toggle(anchor, focusOrigin)
   }, deliveryProvenanceFor)
   registerNewTabIpc(dashboardUrl, tabs, bookmarks)
   // A16 makes createShellWindow() re-run routinely now (close the last
@@ -217,6 +277,9 @@ export function createShellWindow (ctx: SubsystemContext): BaseWindow {
   win.on('closed', () => {
     ipcMain.removeHandler(COMMAND_CHANNEL)
     ipcMain.removeHandler(NEWTAB_COMMAND_CHANNEL)
+    // Also removes SETTINGS_COMMAND_CHANNEL, which the panel registers per
+    // open -- same reregistration trap this handler already exists for.
+    permissionsPanel.close()
   })
 
   // win.getContentBounds() read SYNCHRONOUSLY inside 'resize' returns the
@@ -235,6 +298,10 @@ export function createShellWindow (ctx: SubsystemContext): BaseWindow {
     setImmediate(() => {
       layoutChrome()
       tabs.layout()
+      // Closed rather than repositioned: a toolbar popup that follows a
+      // drag-resize around is stranger than one that simply dismisses, and
+      // this is what every browser does with its own.
+      permissionsPanel.close()
     })
   })
 

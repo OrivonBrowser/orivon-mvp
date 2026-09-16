@@ -1,5 +1,7 @@
 // The renderer <-> main message shapes.
 //
+// ipc.ts - What the preload and broker say to each other
+//
 // Control operations (open, close, options) use normal Electron IPC; BULK
 // BYTES use a dedicated MessageChannelMain port per handle, because
 // per-message IPC is too slow for torrent-rate data

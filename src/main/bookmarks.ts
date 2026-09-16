@@ -15,6 +15,43 @@ import { sanitizeDirectUrl } from './omnibox.js'
 export interface Bookmark {
   url: string
   title: string
+  /** The site's own favicon as a `data:` URL, captured from the tab at the
+   * moment it was starred (src/main/favicon.ts already fetched and re-encoded
+   * it for the tab strip). Stored with the bookmark rather than re-fetched:
+   * the bookmarks bar must render instantly and offline, and a privileged
+   * view making a network request for an icon is exactly what favicon.ts
+   * exists to avoid. `null` for a bookmark starred before its favicon
+   * arrived, or from before this field existed -- the bar falls back to the
+   * generic globe. */
+  favicon: string | null
+}
+
+/** What a caller hands `BookmarkStore.add` -- the icon is optional there, and
+ * normalised to `null` on the way in. */
+export interface BookmarkInput {
+  url: string
+  title: string
+  favicon?: string | null
+}
+
+/** A stored favicon is only ever a `data:` image, capped near the same size
+ * favicon.ts enforces on the wire (`MAX_FAVICON_BYTES`, plus base64's ~4/3
+ * expansion and a little slack for the media-type prefix).
+ *
+ * This runs on LOAD, not just on write, for the same reason `sanitizeDirectUrl`
+ * does: `bookmarks.json` is a plain user-writable file, so anything in it is
+ * untrusted input to a privileged view. A `data:text/html` here could not
+ * execute -- the chrome view's CSP is `img-src 'self' data:` and this only
+ * ever becomes an `<img>` -- but persisting unbounded attacker-chosen bytes
+ * into a file the shell reads at startup is not a thing to allow on the
+ * grounds that the next layer would probably catch it. */
+export const MAX_STORED_FAVICON_CHARS = 48 * 1024
+
+export function sanitizeStoredFavicon (value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  if (!value.startsWith('data:image/')) return null
+  if (value.length > MAX_STORED_FAVICON_CHARS) return null
+  return value
 }
 
 /** Adds `entry`, replacing any existing bookmark for the same URL rather
@@ -51,11 +88,14 @@ export function parseBookmarksFile (raw: string): Bookmark[] {
   const result: Bookmark[] = []
   for (const entry of data) {
     if (typeof entry !== 'object' || entry === null) continue
-    const { url, title } = entry as Record<string, unknown>
+    const { url, title, favicon } = entry as Record<string, unknown>
     if (typeof url !== 'string' || typeof title !== 'string') continue
     const safeUrl = sanitizeDirectUrl(url)
     if (safeUrl === null) continue
-    result.push({ url: safeUrl, title })
+    // A rejected favicon drops the ICON, never the bookmark -- losing a
+    // page someone saved because its icon was malformed would be a far
+    // worse failure than showing the globe.
+    result.push({ url: safeUrl, title, favicon: sanitizeStoredFavicon(favicon) })
   }
   return result
 }
@@ -125,11 +165,37 @@ export class BookmarkStore {
     return hasBookmark(this.list, url)
   }
 
-  add (entry: Bookmark): void {
+  /** `favicon` is optional because a caller may genuinely not have one yet
+   * -- a page starred before its icon finished loading. It is sanitized on
+   * the way in as well as on the way out (parseBookmarksFile): this value
+   * reaches here from a tab's captured favicon, and the store should not
+   * depend on every future caller having checked it first. */
+  add (entry: BookmarkInput): void {
     const safeUrl = sanitizeDirectUrl(entry.url)
     if (safeUrl === null) return
-    this.list = addBookmark(this.list, { url: safeUrl, title: entry.title })
+    this.list = addBookmark(this.list, {
+      url: safeUrl,
+      title: entry.title,
+      favicon: sanitizeStoredFavicon(entry.favicon)
+    })
     this.emitChange()
+  }
+
+  /** Fills in the icon for an ALREADY-saved bookmark, and reports whether
+   * anything changed. Deliberately does NOT notify `onChange` listeners, only
+   * schedules the disk write: its one caller is window.ts's pushState, which
+   * is about to send the whole list anyway, and emitting there would push
+   * state from inside a state push. Never overwrites an icon that is already
+   * set -- the stored one came from the page at the moment it was starred,
+   * which is the one the user actually chose to keep. */
+  fillMissingFavicon (url: string, favicon: string): boolean {
+    const safe = sanitizeStoredFavicon(favicon)
+    if (safe === null) return false
+    const existing = this.list.find((b) => b.url === url)
+    if (existing === undefined || existing.favicon !== null) return false
+    this.list = this.list.map((b) => (b.url === url ? { ...b, favicon: safe } : b))
+    this.scheduleWrite()
+    return true
   }
 
   remove (url: string): void {

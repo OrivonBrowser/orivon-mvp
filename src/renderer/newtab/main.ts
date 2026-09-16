@@ -1,5 +1,5 @@
 import type { Bookmark } from '../../main/bookmarks.js'
-import { globeIcon } from '../icons.js'
+import { faviconElement } from '../icons.js'
 
 // The dashboard's whole job: a search box and real bookmark tiles -- see
 // index.html's own header for the scope note.
@@ -58,7 +58,7 @@ async function renderBookmarks (
     tile.type = 'button'
     tile.title = bookmark.url
 
-    const icon = globeIcon()
+    const icon = faviconElement(bookmark.favicon)
     icon.setAttribute('class', 'tile-icon')
 
     const label = document.createElement('span')

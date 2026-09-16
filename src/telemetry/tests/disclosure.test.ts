@@ -92,7 +92,7 @@ describe('buildDisclosurePayload -- the literal JSON, from real accounting sampl
   })
 })
 
-describe('DISCLOSURE_OPTIONS -- exactly two, of equal weight', () => {
+describe('DISCLOSURE_OPTIONS -- exactly two', () => {
   it('has exactly two options', () => {
     expect(DISCLOSURE_OPTIONS).toHaveLength(2)
   })
@@ -100,12 +100,6 @@ describe('DISCLOSURE_OPTIONS -- exactly two, of equal weight', () => {
   it('uses the ADR-0004 button copy verbatim', () => {
     expect(DISCLOSURE_OPTIONS[0].label).toBe('Keep on')
     expect(DISCLOSURE_OPTIONS[1].label).toBe('Turn off')
-  })
-
-  it('gives both options the identical field set -- no extra property (e.g. "primary") on either', () => {
-    const expectedFields = ['id', 'label', 'resultingState'].sort()
-    expect(Object.keys(DISCLOSURE_OPTIONS[0]).sort()).toEqual(expectedFields)
-    expect(Object.keys(DISCLOSURE_OPTIONS[1]).sort()).toEqual(expectedFields)
   })
 
   it('leads to two different, non-overlapping outcomes', () => {

@@ -6,8 +6,10 @@ import {
   addBookmark,
   BookmarkStore,
   hasBookmark,
+  MAX_STORED_FAVICON_CHARS,
   parseBookmarksFile,
   removeBookmark,
+  sanitizeStoredFavicon,
   serializeBookmarksFile,
   WRITE_DEBOUNCE_MS,
   type Bookmark
@@ -52,19 +54,19 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 
 describe('addBookmark', () => {
   it('appends a new entry', () => {
-    const result = addBookmark([], { url: 'https://a.example/', title: 'A' })
-    expect(result).toEqual([{ url: 'https://a.example/', title: 'A' }])
+    const result = addBookmark([], { url: 'https://a.example/', title: 'A', favicon: null })
+    expect(result).toEqual([{ url: 'https://a.example/', title: 'A', favicon: null }])
   })
 
   it('replaces an existing entry for the same URL, moving it to the end', () => {
     const list: Bookmark[] = [
-      { url: 'https://a.example/', title: 'A' },
-      { url: 'https://b.example/', title: 'B' }
+      { url: 'https://a.example/', title: 'A', favicon: null },
+      { url: 'https://b.example/', title: 'B', favicon: null }
     ]
-    const result = addBookmark(list, { url: 'https://a.example/', title: 'A renamed' })
+    const result = addBookmark(list, { url: 'https://a.example/', title: 'A renamed', favicon: null })
     expect(result).toEqual([
-      { url: 'https://b.example/', title: 'B' },
-      { url: 'https://a.example/', title: 'A renamed' }
+      { url: 'https://b.example/', title: 'B', favicon: null },
+      { url: 'https://a.example/', title: 'A renamed', favicon: null }
     ])
   })
 })
@@ -72,29 +74,77 @@ describe('addBookmark', () => {
 describe('removeBookmark', () => {
   it('drops the matching URL and leaves the rest', () => {
     const list: Bookmark[] = [
-      { url: 'https://a.example/', title: 'A' },
-      { url: 'https://b.example/', title: 'B' }
+      { url: 'https://a.example/', title: 'A', favicon: null },
+      { url: 'https://b.example/', title: 'B', favicon: null }
     ]
-    expect(removeBookmark(list, 'https://a.example/')).toEqual([{ url: 'https://b.example/', title: 'B' }])
+    expect(removeBookmark(list, 'https://a.example/')).toEqual([{ url: 'https://b.example/', title: 'B', favicon: null }])
   })
 
   it('is a no-op when the URL is not bookmarked', () => {
-    const list: Bookmark[] = [{ url: 'https://a.example/', title: 'A' }]
+    const list: Bookmark[] = [{ url: 'https://a.example/', title: 'A', favicon: null }]
     expect(removeBookmark(list, 'https://nowhere.example/')).toEqual(list)
   })
 })
 
 describe('hasBookmark', () => {
   it('reports true only for a URL present in the list', () => {
-    const list: Bookmark[] = [{ url: 'https://a.example/', title: 'A' }]
+    const list: Bookmark[] = [{ url: 'https://a.example/', title: 'A', favicon: null }]
     expect(hasBookmark(list, 'https://a.example/')).toBe(true)
     expect(hasBookmark(list, 'https://b.example/')).toBe(false)
   })
 })
 
+describe('sanitizeStoredFavicon -- bookmarks.json is a user-writable file', () => {
+  const tiny = 'data:image/png;base64,iVBORw0KGgo='
+
+  it('accepts a data: image URL', () => {
+    expect(sanitizeStoredFavicon(tiny)).toBe(tiny)
+  })
+
+  it('rejects a data: URL that is not an image -- a stored data:text/html must never reach an <img>', () => {
+    expect(sanitizeStoredFavicon('data:text/html;base64,PHNjcmlwdD4=')).toBeNull()
+  })
+
+  it('rejects an http(s) URL -- a privileged view must never fetch an icon over the network', () => {
+    expect(sanitizeStoredFavicon('https://evil.example/tracker.png')).toBeNull()
+    expect(sanitizeStoredFavicon('http://a.example/favicon.ico')).toBeNull()
+  })
+
+  it('rejects anything past the size cap', () => {
+    const huge = 'data:image/png;base64,' + 'A'.repeat(MAX_STORED_FAVICON_CHARS)
+    expect(sanitizeStoredFavicon(huge)).toBeNull()
+  })
+
+  it('rejects a non-string', () => {
+    expect(sanitizeStoredFavicon(undefined)).toBeNull()
+    expect(sanitizeStoredFavicon(null)).toBeNull()
+    expect(sanitizeStoredFavicon(42)).toBeNull()
+    expect(sanitizeStoredFavicon({ toString: () => tiny })).toBeNull()
+  })
+})
+
+describe('parseBookmarksFile -- the favicon field', () => {
+  const tiny = 'data:image/png;base64,iVBORw0KGgo='
+
+  it('keeps a valid stored icon', () => {
+    const raw = JSON.stringify([{ url: 'https://a.example/', title: 'A', favicon: tiny }])
+    expect(parseBookmarksFile(raw)).toEqual([{ url: 'https://a.example/', title: 'A', favicon: tiny }])
+  })
+
+  it('reads a bookmark saved before this field existed as having no icon', () => {
+    const raw = JSON.stringify([{ url: 'https://a.example/', title: 'A' }])
+    expect(parseBookmarksFile(raw)).toEqual([{ url: 'https://a.example/', title: 'A', favicon: null }])
+  })
+
+  it('drops a bad icon but KEEPS the bookmark -- losing a saved page over its icon would be the worse failure', () => {
+    const raw = JSON.stringify([{ url: 'https://a.example/', title: 'A', favicon: 'data:text/html,<script>' }])
+    expect(parseBookmarksFile(raw)).toEqual([{ url: 'https://a.example/', title: 'A', favicon: null }])
+  })
+})
+
 describe('parseBookmarksFile', () => {
   it('round-trips what serializeBookmarksFile writes', () => {
-    const list: Bookmark[] = [{ url: 'https://a.example/', title: 'A' }]
+    const list: Bookmark[] = [{ url: 'https://a.example/', title: 'A', favicon: null }]
     expect(parseBookmarksFile(serializeBookmarksFile(list))).toEqual(list)
   })
 
@@ -108,12 +158,12 @@ describe('parseBookmarksFile', () => {
 
   it('drops entries missing a url or title', () => {
     const raw = JSON.stringify([
-      { url: 'https://a.example/', title: 'A' },
+      { url: 'https://a.example/', title: 'A', favicon: null },
       { url: 'https://b.example/' },
       { title: 'no url' },
       { url: 123, title: 'wrong type' }
     ])
-    expect(parseBookmarksFile(raw)).toEqual([{ url: 'https://a.example/', title: 'A' }])
+    expect(parseBookmarksFile(raw)).toEqual([{ url: 'https://a.example/', title: 'A', favicon: null }])
   })
 
   // Security-critical: the file is user-writable, and a stored
@@ -121,10 +171,10 @@ describe('parseBookmarksFile', () => {
   // privileged chrome view the moment the bar renders it.
   it('rejects entries with a dangerous scheme, same rule as the omnibox', () => {
     const raw = JSON.stringify([
-      { url: 'javascript:alert(1)', title: 'evil' },
-      { url: 'https://a.example/', title: 'fine' }
+      { url: 'javascript:alert(1)', title: 'evil', favicon: null },
+      { url: 'https://a.example/', title: 'fine', favicon: null }
     ])
-    expect(parseBookmarksFile(raw)).toEqual([{ url: 'https://a.example/', title: 'fine' }])
+    expect(parseBookmarksFile(raw)).toEqual([{ url: 'https://a.example/', title: 'fine', favicon: null }])
   })
 })
 
@@ -144,6 +194,58 @@ describe('BookmarkStore', () => {
     fsGate.failNextWith = null
   })
 
+  describe('BookmarkStore.fillMissingFavicon -- the icon that arrives after the star', () => {
+    const tiny = 'data:image/png;base64,iVBORw0KGgo='
+    const other = 'data:image/gif;base64,R0lGODlhAQAB'
+
+    it('fills in the icon for a bookmark saved without one', () => {
+      const store = new BookmarkStore(filePath)
+      store.add({ url: 'https://a.example/', title: 'A' })
+
+      expect(store.fillMissingFavicon('https://a.example/', tiny)).toBe(true)
+      expect(store.getAll()[0]?.favicon).toBe(tiny)
+    })
+
+    it('never overwrites an icon already stored -- the one captured at star time is the page the user chose', () => {
+      const store = new BookmarkStore(filePath)
+      store.add({ url: 'https://a.example/', title: 'A', favicon: tiny })
+
+      expect(store.fillMissingFavicon('https://a.example/', other)).toBe(false)
+      expect(store.getAll()[0]?.favicon).toBe(tiny)
+    })
+
+    it('is a no-op for a URL that is not bookmarked', () => {
+      const store = new BookmarkStore(filePath)
+      expect(store.fillMissingFavicon('https://nowhere.example/', tiny)).toBe(false)
+    })
+
+    it('refuses an icon that would not survive a reload anyway', () => {
+      const store = new BookmarkStore(filePath)
+      store.add({ url: 'https://a.example/', title: 'A' })
+
+      expect(store.fillMissingFavicon('https://a.example/', 'https://evil.example/x.png')).toBe(false)
+      expect(store.getAll()[0]?.favicon).toBeNull()
+    })
+
+    // The one behaviour window.ts's pushState depends on: it calls this from
+    // INSIDE a state push, so a listener notification here would push state
+    // from within a state push.
+    it('does not notify onChange listeners, but does persist', async () => {
+      const store = new BookmarkStore(filePath)
+      store.add({ url: 'https://a.example/', title: 'A' })
+      await store.flushPendingWrite()
+
+      const listener = vi.fn()
+      store.onChange(listener)
+      expect(store.fillMissingFavicon('https://a.example/', tiny)).toBe(true)
+      expect(listener).not.toHaveBeenCalled()
+
+      await store.flushPendingWrite()
+      const onDisk = parseBookmarksFile(await readFile(filePath, 'utf8'))
+      expect(onDisk[0]?.favicon).toBe(tiny)
+    })
+  })
+
   it('starts empty when the file does not exist yet (first launch)', async () => {
     const store = new BookmarkStore(filePath)
     await store.load()
@@ -159,14 +261,14 @@ describe('BookmarkStore', () => {
 
   it('add() is rejected for a dangerous scheme and does not change the list', () => {
     const store = new BookmarkStore(filePath)
-    store.add({ url: 'javascript:alert(1)', title: 'evil' })
+    store.add({ url: 'javascript:alert(1)', title: 'evil', favicon: null })
     expect(store.getAll()).toEqual([])
   })
 
   it('add() then remove() round-trips through has()', () => {
     const store = new BookmarkStore(filePath)
     expect(store.has('https://a.example/')).toBe(false)
-    store.add({ url: 'https://a.example/', title: 'A' })
+    store.add({ url: 'https://a.example/', title: 'A', favicon: null })
     expect(store.has('https://a.example/')).toBe(true)
     store.remove('https://a.example/')
     expect(store.has('https://a.example/')).toBe(false)
@@ -174,8 +276,8 @@ describe('BookmarkStore', () => {
 
   it('debounces writes and persists the final state to disk, creating parent directories', async () => {
     const store = new BookmarkStore(filePath)
-    store.add({ url: 'https://a.example/', title: 'A' })
-    store.add({ url: 'https://b.example/', title: 'B' })
+    store.add({ url: 'https://a.example/', title: 'A', favicon: null })
+    store.add({ url: 'https://b.example/', title: 'B', favicon: null })
     // Nothing written yet -- still inside the debounce window.
     await expect(readFile(filePath, 'utf8')).rejects.toThrow()
 
@@ -186,16 +288,16 @@ describe('BookmarkStore', () => {
 
     const onDisk = parseBookmarksFile(await readFile(filePath, 'utf8'))
     expect(onDisk).toEqual([
-      { url: 'https://a.example/', title: 'A' },
-      { url: 'https://b.example/', title: 'B' }
+      { url: 'https://a.example/', title: 'A', favicon: null },
+      { url: 'https://b.example/', title: 'B', favicon: null }
     ])
   })
 
   it('flushPendingWrite settles even when a second change arrives before the debounced write has fired', async () => {
     const store = new BookmarkStore(filePath)
-    store.add({ url: 'https://a.example/', title: 'A' })
+    store.add({ url: 'https://a.example/', title: 'A', favicon: null })
     const flushed = store.flushPendingWrite()
-    store.add({ url: 'https://b.example/', title: 'B' })
+    store.add({ url: 'https://b.example/', title: 'B', favicon: null })
 
     // Short explicit timeout: a caller holding this promise must never wait
     // forever just because another change landed before the write fired. If
@@ -204,14 +306,14 @@ describe('BookmarkStore', () => {
 
     const onDisk = parseBookmarksFile(await readFile(filePath, 'utf8'))
     expect(onDisk).toEqual([
-      { url: 'https://a.example/', title: 'A' },
-      { url: 'https://b.example/', title: 'B' }
+      { url: 'https://a.example/', title: 'A', favicon: null },
+      { url: 'https://b.example/', title: 'B', favicon: null }
     ])
   }, 1000)
 
   it('does not resolve until a change made while the write is already in flight is also on disk', async () => {
     const store = new BookmarkStore(filePath)
-    store.add({ url: 'https://a.example/', title: 'A' })
+    store.add({ url: 'https://a.example/', title: 'A', favicon: null })
 
     let releaseFirstWrite: () => void = () => {}
     fsGate.release = new Promise((resolve) => { releaseFirstWrite = resolve })
@@ -223,15 +325,15 @@ describe('BookmarkStore', () => {
     }, 1000)
 
     const flushed = store.flushPendingWrite()
-    store.add({ url: 'https://b.example/', title: 'B' })
+    store.add({ url: 'https://b.example/', title: 'B', favicon: null })
     releaseFirstWrite()
 
     await flushed
 
     const onDisk = parseBookmarksFile(await readFile(filePath, 'utf8'))
     expect(onDisk).toEqual([
-      { url: 'https://a.example/', title: 'A' },
-      { url: 'https://b.example/', title: 'B' }
+      { url: 'https://a.example/', title: 'A', favicon: null },
+      { url: 'https://b.example/', title: 'B', favicon: null }
     ])
   }, 2000)
 
@@ -243,7 +345,7 @@ describe('BookmarkStore', () => {
   // safe.
   it('does not resolve while a slow first write could still land after a fresher one and clobber it', async () => {
     const store = new BookmarkStore(filePath)
-    store.add({ url: 'https://a.example/', title: 'A' })
+    store.add({ url: 'https://a.example/', title: 'A', favicon: null })
 
     let releaseFirstWrite: () => void = () => {}
     fsGate.release = new Promise((resolve) => { releaseFirstWrite = resolve })
@@ -258,7 +360,7 @@ describe('BookmarkStore', () => {
     let settled = false
     void flushed.finally(() => { settled = true })
 
-    store.add({ url: 'https://b.example/', title: 'B' })
+    store.add({ url: 'https://b.example/', title: 'B', favicon: null })
 
     // Longer than one debounce window: enough time for a second, unblocked
     // write to start and land if the implementation lets one run
@@ -276,8 +378,8 @@ describe('BookmarkStore', () => {
     expect(settled).toBe(true)
     const onDisk = parseBookmarksFile(await readFile(filePath, 'utf8'))
     expect(onDisk).toEqual([
-      { url: 'https://a.example/', title: 'A' },
-      { url: 'https://b.example/', title: 'B' }
+      { url: 'https://a.example/', title: 'A', favicon: null },
+      { url: 'https://b.example/', title: 'B', favicon: null }
     ])
   }, 3000)
 
@@ -287,7 +389,7 @@ describe('BookmarkStore', () => {
     fsGate.failNextWith = failure
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
-    store.add({ url: 'https://a.example/', title: 'A' })
+    store.add({ url: 'https://a.example/', title: 'A', favicon: null })
 
     await expect(store.flushPendingWrite()).rejects.toBe(failure)
     expect(errorSpy).toHaveBeenCalled()
@@ -302,17 +404,17 @@ describe('BookmarkStore', () => {
 
   it('resolves immediately once a previous write has fully settled, and still tracks the next one', async () => {
     const store = new BookmarkStore(filePath)
-    store.add({ url: 'https://a.example/', title: 'A' })
+    store.add({ url: 'https://a.example/', title: 'A', favicon: null })
     await store.flushPendingWrite()
     await expect(store.flushPendingWrite()).resolves.toBeUndefined()
 
-    store.add({ url: 'https://b.example/', title: 'B' })
+    store.add({ url: 'https://b.example/', title: 'B', favicon: null })
     await store.flushPendingWrite()
 
     const onDisk = parseBookmarksFile(await readFile(filePath, 'utf8'))
     expect(onDisk).toEqual([
-      { url: 'https://a.example/', title: 'A' },
-      { url: 'https://b.example/', title: 'B' }
+      { url: 'https://a.example/', title: 'A', favicon: null },
+      { url: 'https://b.example/', title: 'B', favicon: null }
     ])
   }, 1000)
 
@@ -320,7 +422,7 @@ describe('BookmarkStore', () => {
     const store = new BookmarkStore(filePath)
     const calls: number[] = []
     store.onChange(() => calls.push(calls.length))
-    store.add({ url: 'https://a.example/', title: 'A' })
+    store.add({ url: 'https://a.example/', title: 'A', favicon: null })
     store.remove('https://a.example/')
     expect(calls).toEqual([0, 1])
   })

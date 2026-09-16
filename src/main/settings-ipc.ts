@@ -1,9 +1,10 @@
-// The settings window's own command channel -- list every app's grants,
+// The permissions panel's own command channel -- list every app's grants,
 // revoke one. Mirrors ipc.ts's `isFromChrome` sender check exactly, against
-// this window's own webContents instead of the chrome view's: the settings
-// window's single WebContentsView never navigates anywhere else (no links,
-// no address bar), so an identity check is enough, the same reasoning
-// ipc.ts's own header gives for the chrome view.
+// the panel's own webContents instead of the chrome view's: the panel's
+// WebContentsView never navigates anywhere else (no links, no address bar),
+// so an identity check is enough, the same reasoning ipc.ts's own header
+// gives for the chrome view. The panel is rebuilt on every open, so this is
+// registered and removed per open -- see permissions-panel.ts.
 
 import { ipcMain, type IpcMainInvokeEvent, type WebContents } from 'electron'
 import { SETTINGS_COMMAND_CHANNEL } from './channels.js'
@@ -20,12 +21,21 @@ export type SettingsCommand =
   /** D-0007's own revoke button, addressed by pickId -- a picked path is
    * never a CapabilityKind, so `revokeCapability` cannot reach it. */
   | { type: 'revokePickedPath', origin: string, pickId: string }
+  /** How tall the rendered list actually is, so the panel can size itself to
+   * its content the way a toolbar popup does. Sent by the page after every
+   * render, because the list arrives over IPC and the first paint is always
+   * an empty one. Advisory: permissions-panel.ts clamps it. */
+  | { type: 'contentHeight', height: number }
 
 function isFromSettingsWindow (event: IpcMainInvokeEvent, settingsWebContents: WebContents): boolean {
   return event.senderFrame !== null && event.senderFrame === settingsWebContents.mainFrame
 }
 
-export function registerSettingsIpc (settingsWebContents: WebContents, permissions: PermissionsController): void {
+export function registerSettingsIpc (
+  settingsWebContents: WebContents,
+  permissions: PermissionsController,
+  onContentHeight: (height: number) => void = () => {}
+): void {
   ipcMain.handle(SETTINGS_COMMAND_CHANNEL, (event: IpcMainInvokeEvent, command: SettingsCommand): void | Promise<void | readonly AppPermissions[]> => {
     if (!isFromSettingsWindow(event, settingsWebContents)) return
 
@@ -38,6 +48,11 @@ export function registerSettingsIpc (settingsWebContents: WebContents, permissio
         return permissions.revokeCapability(command.origin, command.capability)
       case 'revokePickedPath':
         return permissions.revokePickedPath(command.origin, command.pickId)
+      case 'contentHeight':
+        // Number.isFinite, not a bare typeof check: NaN and Infinity are both
+        // numbers, and either would reach setBounds as a corrupt height.
+        if (Number.isFinite(command.height)) onContentHeight(command.height)
+        return
     }
   })
 }

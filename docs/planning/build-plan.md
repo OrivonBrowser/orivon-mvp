@@ -283,9 +283,11 @@ connection log, operation scoring. Click-through shows the actual evidence, not 
 **7. Nostr** — inject `window.nostr` (NIP-07) backed by `orivon.id`. Verify against two or
 three real clients before trusting the ~1 day estimate (`open-questions.md` C4).
 
-**8. Telemetry** — collection, first-run disclosure showing the literal JSON with equal
+**8. Telemetry** — collection, first-run disclosure showing the literal JSON with
 [Keep on] / [Turn off] buttons and no preselected default, in-product "what has been sent"
-page. The disclosure UI is not optional (`ADR-0004`).
+page. The disclosure UI is not optional (`ADR-0004`). **[Keep on] is the primary button**
+(owner decision, 2026-09-10); neither choice is preselected and no keyboard default activates
+one.
 
 **9. Developer mode** — unpacked loader, plainly-worded opt-in, unsigned marking, developer
 docs. This is journey 3.
@@ -390,7 +392,7 @@ well-seeded MP4 torrent**, not "a magnet link", or pass/fail tracks swarm health
 journey 3 must name **three Nostr clients pinned at a version** and assert the displayed npub
 is **byte-identical across two of them** — the check that would have caught the per-origin-key
 contradiction (`open-questions.md` B4). Two items belong on the list regardless of journey:
-the **telemetry first-run screen** (literal JSON, two equal buttons, no preselected default,
+the **telemetry first-run screen** (literal JSON, two buttons, no preselected default,
 nothing sent before the choice) and **launch with no keyring available**
 (`--password-store=basic`), confirming the seed is never silently written in plaintext.
 

@@ -1,8 +1,11 @@
 /* Bookmarks bar -- owner override, 2026-08-28 (mvp-scope.md, ADR-0003),
-   not in the original scope pass. Structure and static items (the apps
-   grid, "Other Bookmarks") match orivon-browser-v2 (visual reference
-   only, ADR-0002); the actual bookmark list is this shell's own, since
-   v2's bar was static decoration with no data model. */
+   not in the original scope pass. v2's bar (visual reference only,
+   ADR-0002) was static decoration with no data model; this one holds
+   nothing but the real list. */
+
+/* Hidden outright when the list is empty -- owner, 2026-09-15.
+   src/main/window.ts shrinks the chrome view to match; see style.css. */
+html[data-bookmarks="none"] .bookmarksbar { display: none; }
 
 .bookmarksbar {
   height: 28px;
@@ -11,41 +14,6 @@
   padding: 0 12px;
   gap: 12px;
   background: var(--wbookmarks);
-}
-
-.bmicon {
-  padding: 2px 4px;
-  border-radius: 4px;
-  display: flex;
-  color: var(--wink-dim);
-}
-.bmicon svg { width: 16px; height: 16px; }
-.bmicon:not(:disabled):hover {
-  background: var(--whover-soft);
-}
-/* A permanent placeholder, same reasoning as .iconbtn/.pillbtn
-   (toolbar.css) -- the base button:disabled dim-on-dim read as broken
-   rather than "not built yet" (open-questions.md A32). */
-.bmicon:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
-.bmfolder {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 2px 8px;
-  border-radius: 4px;
-  color: var(--wink-dim);
-  cursor: default;
-  flex: none;
-}
-.bmfolder svg { width: 16px; height: 16px; }
-.bmfolder span {
-  font-size: 12px;
-  font-weight: 500;
-  white-space: nowrap;
 }
 
 .bmlist {
@@ -74,7 +42,13 @@
   background: var(--whover-soft);
   color: var(--wink);
 }
-.bmitem > svg { width: 14px; height: 14px; flex: none; }
+/* svg OR img: a bookmark shows the site's real favicon when one was
+   captured at star time, and the globe when it was not (icons.ts's
+   faviconElement). Both have to occupy the same 14px box or the row's
+   text shifts depending on which one a given bookmark got. */
+.bmitem > svg,
+.bmitem > img { width: 14px; height: 14px; flex: none; }
+.bmitem > img { border-radius: 2px; object-fit: contain; }
 .bmitem span {
   font-size: 12px;
   font-weight: 500;

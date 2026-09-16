@@ -7,29 +7,60 @@ import { partitionFor } from '../broker/grants/origin-hash.js'
 import { originFromUrl } from '../broker/policy/origin.js'
 import type { Broker } from '../broker/broker-contracts.js'
 
-/** `partitionFor`/`originFromUrl` are the SAME functions the broker uses to
+/** Which Electron session `target` must run in: an installed app's own
+ * isolated partition, or undefined for the shell's shared default session.
+ *
+ * **Only an installed app is isolated** -- owner's decision, 2026-09-15,
+ * resolving A109. Partitioning every origin meant every cross-origin
+ * navigation swapped the whole `WebContentsView` (Electron fixes a partition
+ * at construction), and a fresh view starts with empty `navigationHistory`
+ * -- so on an ordinary browse, one clicked link or one redirect killed the
+ * back button and reloaded the page from scratch. Measured before the change:
+ * same-origin back worked, every cross-origin back was dead. An ordinary
+ * website has no grant and no app storage to protect, so the isolation was
+ * buying nothing there while costing that.
+ *
+ * `partitionFor`/`originFromUrl` are the SAME functions the broker uses to
  * key its grant ledger and (ADR-0007) to register a cached bundle's own
  * protocol interception -- so a tab and its eventual grant always agree on
- * which Electron session an origin means. Returns undefined for anything
- * with no derivable origin (about:blank, a rejected navigation), which
- * keeps that tab on the shell's own default session -- there is no app
- * storage to isolate for a page the user never reached. */
-export function partitionForTarget (target: string): string | undefined {
+ * which Electron session an origin means. `broker` undefined (not yet
+ * published) reads as "nothing is registered", the same fallback
+ * `appTabArgsFor` below already takes. */
+export function partitionForTarget (target: string, broker: Broker | undefined): string | undefined {
   const origin = originFromUrl(target)
-  return origin === null ? undefined : partitionFor(origin)
+  if (origin === null || broker === undefined) return undefined
+  return broker.app.isRegisteredSync(origin) ? partitionFor(origin) : undefined
+}
+
+/** Where a navigation must move a tab's view, or undefined for "stay put".
+ *
+ * `to: undefined` is a REAL answer, not a missing one -- it means "swap this
+ * tab back onto the shared default session", which is what an app tab
+ * navigating away to an ordinary website needs. Collapsing the two into one
+ * `string | undefined` return (as this did before 2026-09-15) silently left
+ * that website running inside the app's own partition: its cookies, its
+ * storage, and the partition a capability grant is scoped to. */
+export interface PartitionSwap {
+  readonly to: string | undefined
 }
 
 /** The one comparison that decides whether a navigation must swap a tab's
  * view -- shared by navigate()'s own explicit repartition and wireView()'s
  * did-navigate catch for a redirect, clicked link, form submission or script
  * navigation that changes origin without ever calling navigate() (Rule 3;
- * A108/A109, docs/open-questions.md). Returns undefined for "no swap": either
- * `target` has no derivable origin (about:blank, a rejected navigation) or
- * its partition already matches `currentPartition`. */
-export function partitionChanged (target: string, currentPartition: string | undefined): string | undefined {
-  const nextPartition = partitionForTarget(target)
-  if (nextPartition === undefined || nextPartition === currentPartition) return undefined
-  return nextPartition
+ * A108/A109, docs/open-questions.md).
+ *
+ * A target with no derivable origin (about:blank, a rejected navigation)
+ * never swaps: there is nothing to isolate, and moving the tab off its
+ * current session for a blank page would throw away history for nothing. */
+export function partitionChanged (
+  target: string,
+  currentPartition: string | undefined,
+  broker: Broker | undefined
+): PartitionSwap | undefined {
+  if (originFromUrl(target) === null) return undefined
+  const next = partitionForTarget(target, broker)
+  return next === currentPartition ? undefined : { to: next }
 }
 
 /** ADR-0017's `fetch()`-routing gate: a value fixed at `WebContentsView`
