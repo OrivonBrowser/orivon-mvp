@@ -159,27 +159,55 @@ origin is a materially bigger step than fetching a static image/font/media resou
 was asked for.
 
 **[`lookup.ts`](lookup.ts) -- why a host-only check (no port, no resolved address) still opens
-nothing new (A171, `docs/open-questions.md` A167).** `orivon.net.lookup` (d-0030) checks
-`hostname` against the HOST PORTION of a pattern the app already holds under `tcp.connect`,
-`https.connect` or `udp.send` -- never a port, and never a resolved address the way
-`connect.ts`'s own `checkConnect` does. That looks weaker until you notice what those three
-capabilities already let an app force today: `checkConnect`'s own pre-resolve gate
-(`couldAnyPatternMatch`) lets a granted pattern's exact host -- or `*`, or an address literal --
-through to the real resolver before any port or address is checked, so an app holding
-`example.com:22` can already make the broker resolve `example.com` by attempting a connection
-to it, whatever the outcome of that connection turns out to be. `lookup` authorised the same way
-hands back a name-to-address MAPPING the app did not have before; it never hands back the
-ability to force a NAME resolved that the app could not already force resolved by name through
-`connect`/`connectSecure`/`udpBind`. A82's reserved-port carve-out is therefore irrelevant here
-too: whatever port a pattern names, the app already knows it (it is in the app's own held
-grant, readable via `app.grants()`) and can replay it through `connect` to force that exact
-host's resolution regardless of which port `lookup` itself does not have to check.
+nothing new (A171, `docs/open-questions.md` A167), and why `https.connect` does not belong in
+the union it checks against (d-0031, A190/A193).** `orivon.net.lookup` (d-0030) checks
+`hostname` against the HOST PORTION of a pattern the app already holds under `tcp.connect` or
+`udp.send` -- never a port, and never a resolved address the way `connect.ts`'s own
+`checkConnect` does. That looks weaker until you notice what those two capabilities already let
+an app force today: `checkConnect`'s own pre-resolve gate (`couldAnyPatternMatch`) lets a
+granted pattern's exact host -- or `*`, or an address literal -- through to the real resolver
+before any port or address is checked, so an app holding `example.com:22` can already make the
+broker resolve `example.com` by attempting a connection to it, whatever the outcome of that
+connection turns out to be; `authorisedSend` (`../net-capability.ts`) reuses `checkConnect`
+verbatim, so `udp.send` gets the identical argument. `lookup` authorised the same way hands back
+a name-to-address MAPPING the app did not have before; it never hands back the ability to force
+a NAME resolved that the app could not already force resolved by name through
+`connect`/`udpBind`. A82's reserved-port carve-out is therefore irrelevant here too: whatever
+port a pattern names, the app already knows it (it is in the app's own held grant, readable via
+`app.grants()`) and can replay it through `connect` to force that exact host's resolution
+regardless of which port `lookup` itself does not have to check.
 
-**AI recommendation, not an owner decision** -- `d-0030` states the bound ("as wide as the
-app's network grant already is") but not this file's specific reading of it, and A167 flags the
-union-of-three-capabilities reading as still unconfirmed. This note is this lane's (L4-dns,
-A171) reasoning for why that reading is safe, recorded so the next reader is confirming a
-documented argument rather than reverse-engineering one from the diff.
+**`https.connect` was originally read into this same union and is not any more -- the one case
+the argument above never covered.** `connect-secure.ts`'s own header says why directly:
+`checkConnectSecure` never resolves a hostname at all -- TLS certificate verification stands in
+for the address check `checkConnect` performs -- so before `net.lookup` existed, an app holding
+ONLY `https.connect: ["*:*"]` had no broker-exposed way to learn what a hostname resolves to.
+Folding it into `net.lookup`'s union anyway (this lane's original, unconfirmed reading) handed
+that app exactly that: a general DNS oracle over any hostname it can guess, behind a capability
+whose stated intent was "let this app fetch over TLS," never "let this app query DNS for
+arbitrary names" -- A190's own finding, confirmed by an independent adversarial review. **Owner's
+decision, d-0031:** `https.connect` is dropped from `OUTBOUND_CAPABILITIES`
+(`../net-capability.ts`); an `https.connect`-only app loses the DNS-lookup convenience
+`net.lookup` used to give it, and must hold `tcp.connect` or `udp.send` to resolve a name at
+all. `tcp.connect` and `udp.send` are unaffected -- the pre-resolve-gate argument above holds for
+both without qualification.
+
+**The capability layer's `'denied'` stays uniform for this refusal, same as every other
+one** (`errors.ts`) -- an app that is refused a lookup because it holds only `https.connect`
+sees exactly the same `'denied'`, with no `platformCode`, as any other reason `checkLookup`
+declines. Naming the reason for a ported app's benefit happens one layer up, in
+`src/shim/node-dns.ts`, which reads the app's OWN `orivon.app.grants()` -- a standing,
+already-legitimate capability an app has over itself -- to tell this specific refusal apart from
+an ordinary one, rather than the broker's reply carrying anything new. See that file's own
+`describeLookupDenial` for the mechanism and why it fails back to the ordinary generic message
+whenever it cannot say more with confidence.
+
+**Owner decision, not an AI recommendation, as of 2026-09-16 (d-0031).** `d-0030` itself states
+the bound ("as wide as the app's network grant already is") but not which capabilities count;
+A167 flagged that reading as unconfirmed, and A190 (an independent adversarial review) found the
+`https.connect` half of it concretely wrong rather than merely unconfirmed. d-0031 settles both:
+the union is `tcp.connect` + `udp.send`, and it is now the recorded intent, not this lane's own
+inference.
 
 **Why [`paths.ts`](paths.ts)'s confinement verdict must be platform-independent.** Windows and
 macOS are supported run-from-source targets, but CI runs on Linux only, so a rule whose answer
