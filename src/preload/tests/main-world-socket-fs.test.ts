@@ -113,3 +113,78 @@ describe('orivon.fs.open', () => {
     expect(typeof (orivon.fs as Record<string, unknown>).open).toBe('function')
   })
 })
+
+function fsUserSelectedOrivon (target: Record<string, unknown>): { userSelected: (opts?: { multiple?: boolean }) => Promise<readonly MainWorldFileBridge[]> } {
+  return (target.orivon as { fs: { userSelected: (opts?: { multiple?: boolean }) => Promise<readonly MainWorldFileBridge[]> } }).fs
+}
+
+// orivon.fs.userSelected (A194, d-0032) -- the FILE shape only. `buildFile`
+// itself is already proven above for every nested closure; this suite
+// proves the array-wrapping `userSelected` adds on top: opts passed
+// through, one MainWorldFileBridge per returned raw result, in order, and
+// that each is independently revived (A152) the same way a single fs.open
+// result already is.
+describe('orivon.fs.userSelected', () => {
+  it('passes opts through to bridge.fsUserSelected and wraps every returned result', async () => {
+    const target: Record<string, unknown> = {}
+    const calls: Array<{ multiple?: boolean } | undefined> = []
+    const bridge = fakeBridge(fakeSocketBridgeResult())
+    bridge.fsUserSelected = async (opts) => {
+      calls.push(opts)
+      return [fakeFileBridgeResult({ id: 'p1' }), fakeFileBridgeResult({ id: 'p2' })]
+    }
+    installOrivon(bridge, LIMITS, target)
+
+    const files = await fsUserSelectedOrivon(target).userSelected({ multiple: true })
+
+    expect(calls).toEqual([{ multiple: true }])
+    expect(files.map((f) => f.id)).toEqual(['p1', 'p2'])
+  })
+
+  it('a cancelled picker resolves an empty array, never a rejection', async () => {
+    const target: Record<string, unknown> = {}
+    const bridge = fakeBridge(fakeSocketBridgeResult())
+    bridge.fsUserSelected = async () => []
+    installOrivon(bridge, LIMITS, target)
+
+    await expect(fsUserSelectedOrivon(target).userSelected()).resolves.toEqual([])
+  })
+
+  it('each wrapped result is independently usable -- read/close forward to that ONE result\'s own closures, not a shared one', async () => {
+    const target: Record<string, unknown> = {}
+    const bridge = fakeBridge(fakeSocketBridgeResult())
+    const seen: Array<{ id: string, op: string }> = []
+    bridge.fsUserSelected = async () => [
+      { id: 'p1', read: async () => { seen.push({ id: 'p1', op: 'read' }); return new Uint8Array([1]) }, write: async () => 0, stat: async () => ({ size: 0, isFile: true, isDirectory: false, mtimeMs: 0 }), truncate: async () => {}, sync: async () => {}, close: async () => { seen.push({ id: 'p1', op: 'close' }) } },
+      { id: 'p2', read: async () => { seen.push({ id: 'p2', op: 'read' }); return new Uint8Array([2]) }, write: async () => 0, stat: async () => ({ size: 0, isFile: true, isDirectory: false, mtimeMs: 0 }), truncate: async () => {}, sync: async () => {}, close: async () => { seen.push({ id: 'p2', op: 'close' }) } }
+    ]
+    installOrivon(bridge, LIMITS, target)
+
+    const [first, second] = await fsUserSelectedOrivon(target).userSelected({ multiple: true })
+    await second?.read({ position: 0, length: 1 })
+    await first?.close()
+
+    expect(seen).toEqual([{ id: 'p2', op: 'read' }, { id: 'p1', op: 'close' }])
+  })
+
+  // A152, applied here the same way main-world-socket-fs.test.ts's own
+  // fs.open suite already proves it for a single handle -- a rejection from
+  // bridge.fsUserSelected ITSELF (the outer call, e.g. a denied grant) must
+  // still cross as a real revived error, not a raw thrown value.
+  it('A152: revives a rejection from the outer bridge.fsUserSelected call', async () => {
+    const target: Record<string, unknown> = {}
+    const bridge = fakeBridge(fakeSocketBridgeResult())
+    bridge.fsUserSelected = async () => { throw { name: 'OrivonError', message: 'the OS picker could not be shown', code: 'internal' } }
+    installOrivon(bridge, LIMITS, target)
+
+    let caught: unknown
+    try {
+      await fsUserSelectedOrivon(target).userSelected()
+    } catch (e) {
+      caught = e
+    }
+
+    expect(caught).toBeInstanceOf(Error)
+    expect((caught as { code?: string }).code).toBe('internal')
+  })
+})

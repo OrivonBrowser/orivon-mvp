@@ -260,20 +260,19 @@ describe('buildPersistedAppPermissions -- a saved name is re-checked before it i
 
 // D-0007: a picked path sits BESIDE an app's network and file access in the
 // same list, not off in a second surface -- the trap this lane's own brief
-// exists to prevent. PROPOSED WORDING, NOT OWNER-REVIEWED (see this file's
-// own note on `describePickedPath`, and this lane's log).
-describe('describePickedPath -- proposed wording, not owner-reviewed', () => {
-  it('a folder pick carries the warning flag -- breadth must be visible, the same as an unlimited network pattern', () => {
+// exists to prevent. WORDING SETTLED (owner decision d-0032, 2026-09-16 --
+// see this file's own note on `describePickedPath`).
+describe('describePickedPath -- d-0032 wording', () => {
+  it('a folder pick carries the warning flag and the owner-approved copy, including the load-bearing "including new files"', () => {
     const { warning, message } = describePickedPath('directory', '/home/user/Downloads')
     expect(warning).toBe(true)
-    expect(message).toContain('/home/user/Downloads')
-    expect(message.toLowerCase()).toContain('everywhere')
+    expect(message).toBe('Can read, change and delete everything in "/home/user/Downloads", including new files.')
   })
 
-  it('a single file pick does NOT carry the warning flag -- narrow by construction', () => {
+  it('a single file pick does NOT carry the warning flag -- narrow by construction -- and names what a FileHandle actually permits', () => {
     const { warning, message } = describePickedPath('file', '/home/user/report.pdf')
     expect(warning).toBe(false)
-    expect(message).toContain('/home/user/report.pdf')
+    expect(message).toBe('Can read and change "/home/user/report.pdf", including emptying it.')
   })
 })
 

@@ -86,9 +86,15 @@ interface FsHandleDescriptor { readonly id: string }
  * `FileHandle` (contracts/handles.ts). See this lane's PR body for what
  * that means and what does not yet reach a page.
  */
-async function fsOpen (path: string, flags: string): Promise<MainWorldFileBridge> {
-  const descriptor = await call<FsHandleDescriptor>('fs.open', { path, flags }, TIMEOUT_MS.fs)
-  const { id } = descriptor
+/**
+ * Wraps an already-opened handle's `id` into the closures `fsOpen` and
+ * `fsUserSelected` both need -- identical wiring either way, since a picked
+ * file's handle lands in the SAME broker-side registry `fs.open`'s own does
+ * (fs-handle-wrapper.ts: one `FailableFileHandle` shape, shared) and the
+ * same fs.read/write/fstat/truncate/sync/close cases serve both (Rule 3:
+ * one implementation, not two copies of this object literal).
+ */
+function buildFileBridge (id: string): MainWorldFileBridge {
   return {
     id,
     read: async (opts) => await call('fs.read', { id, position: opts.position, length: opts.length }, TIMEOUT_MS.fs),
@@ -98,6 +104,23 @@ async function fsOpen (path: string, flags: string): Promise<MainWorldFileBridge
     sync: async () => { await call('fs.sync', { id }, TIMEOUT_MS.fs) },
     close: async () => { await call('fs.close', { id }, TIMEOUT_MS.fs) }
   }
+}
+
+async function fsOpen (path: string, flags: string): Promise<MainWorldFileBridge> {
+  const descriptor = await call<FsHandleDescriptor>('fs.open', { path, flags }, TIMEOUT_MS.fs)
+  return buildFileBridge(descriptor.id)
+}
+
+/**
+ * `orivon.fs.userSelected`'s FILE shape only (A194, d-0032) -- the folder
+ * shape (`{ directory: true }`) has no CONTROL_CHANNEL case yet
+ * (dispatch-fs.ts's own comment on that refusal), so it is not accepted
+ * here at all: the type below omits `directory` entirely rather than accept
+ * it and fail at runtime.
+ */
+async function fsUserSelected (opts?: { multiple?: boolean }): Promise<readonly MainWorldFileBridge[]> {
+  const descriptors = await call<readonly FsHandleDescriptor[]>('fs.userSelected', opts ?? {}, TIMEOUT_MS.fs)
+  return descriptors.map((descriptor) => buildFileBridge(descriptor.id))
 }
 
 /**
@@ -170,7 +193,8 @@ function exposeFallback (): void {
       stat: fsStat,
       rm: fsRm,
       rename: fsRename,
-      open: fsOpen
+      open: fsOpen,
+      userSelected: fsUserSelected
     },
     id: {
       publicKey: async (opts: { curve: string }) => await idPublicKey(opts.curve),
@@ -218,6 +242,7 @@ export function exposeOrivon (): void {
     fsRm,
     fsRename,
     fsOpen,
+    fsUserSelected,
     idPublicKey,
     idSign,
     netConnect: netConnectBridge,

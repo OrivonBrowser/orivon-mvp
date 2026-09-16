@@ -52,9 +52,8 @@ export interface PermissionRow {
  * path sits "beside that app's network and file access" in this list, not
  * off in a second surface.
  *
- * PROPOSED WORDING, NOT OWNER-REVIEWED (queue item 4.3's own checkpoint --
- * see this lane's log for the wording proposal in full). `describePickedPath`
- * below is where it is generated; nothing here is final.
+ * WORDING SETTLED (owner decision `d-0032`, 2026-09-16, queue item 4.3).
+ * `describePickedPath` below is where it is generated.
  */
 export interface PickedPathRow {
   readonly pickId: string
@@ -81,12 +80,23 @@ export interface AppPermissions {
  * lane's own brief, echoing the owner's standing instruction. A single
  * picked FILE is narrow by construction and does not carry it.
  *
- * PROPOSED, NOT OWNER-REVIEWED -- see this file's own doc on `PickedPathRow`.
+ * FOLDER WORDING IS OWNER-APPROVED VERBATIM (`d-0032`, 2026-09-16): the
+ * owner chose the strongest of three drafted options, on the reasoning that
+ * "read and write" understated what a folder grant really lets an app do --
+ * the phrase "including new files" is load-bearing and must not be trimmed
+ * (this is the exact thing people misread about a folder pick: they picture
+ * only what is visible today, not a standing grant over everything the
+ * folder will ever hold). The FILE wording follows the same voice but is
+ * DERIVED, not separately owner-reviewed word for word: a `FileHandle` has
+ * no delete/unlink method (handles.ts's own method set), so it says what it
+ * actually permits -- read and change the file's own bytes, including
+ * emptying it via `truncate(0)` -- rather than claiming a "delete" this
+ * handle cannot do.
  */
 export function describePickedPath (kind: PersistedPick['kind'], path: string): { warning: boolean, message: string } {
   return kind === 'directory'
-    ? { warning: true, message: `Can read and write everywhere inside "${path}".` }
-    : { warning: false, message: `Can read and write "${path}".` }
+    ? { warning: true, message: `Can read, change and delete everything in "${path}", including new files.` }
+    : { warning: false, message: `Can read and change "${path}", including emptying it.` }
 }
 
 /** Pure: no broker, no I/O -- the mapping from what the ledger holds to

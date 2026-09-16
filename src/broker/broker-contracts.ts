@@ -46,8 +46,15 @@ export type { PickedPath } from './grants/picked-path-ledger.js'
  * in flight for this to race (capability-api.ts: the picker choice IS the
  * authorisation, minted fresh the moment it resolves), so nothing can
  * revoke an acquisition that has not happened yet.
+ *
+ * `appName` is the requesting origin's own declared `manifest.name`
+ * (`GrantLedger.manifestFor`, read by `user-selected-capability.ts` before
+ * calling this), `undefined` only if no manifest was ever registered for
+ * the origin. An implementation may use it to name the app in the dialog's
+ * own chrome (d-0032) -- `transport/ipc.ts`'s `describePickerDialog` is the
+ * real one that does.
  */
-export type PickPath = (opts: { directory: boolean, multiple: boolean }) => Promise<PickPathResult>
+export type PickPath = (opts: { directory: boolean, multiple: boolean, appName: string | undefined }) => Promise<PickPathResult>
 
 /**
  * `canceled: true` for a dismissed dialog -- capability-api.ts is explicit

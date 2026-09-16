@@ -7655,3 +7655,105 @@ accepting that an `https.connect`-only app loses the DNS-lookup convenience `net
 gives it, or (b) keep the union as built and record, as an explicit owner decision rather than an
 unconfirmed AI reading, that `https.connect: "*:*"` is understood to also grant unrestricted DNS
 resolution. Either closes A167's own cross-reference; neither has been chosen yet.
+
+### A194 -- A187's wording gate is closed (`d-0032`); the FILE shape of `orivon.fs.userSelected` now reaches a page, the FOLDER shape deliberately still does not **[RESOLVED: wording. AI-REC: the folder-shape scope call]**
+
+**Raised 2026-09-16**, lane L5-wording (`stream/main-10-user-selected`), resuming A187's own
+work once the owner ruled on queue item 4.3's wording checkpoint.
+
+**1. The wording -- owner's decision, `d-0032`, quoted verbatim.** The owner chose the strongest
+of three drafted folder options, on the reasoning that "this app can read and write everywhere
+inside the folder" understated what a folder grant really means to a person: it covers every
+file that folder will ever hold, not only what is visible the day it is picked.
+
+- OS picker dialog, folder: `title` `Choose a folder for "${appName}" to access`; `buttonLabel`
+  `Allow access to this folder`; `message` (macOS only) `This app will be able to read, change
+  and delete everything in this folder, including files you add to it later.` The phrase
+  "including files you add to it later" is load-bearing (the owner's own reasoning) and is not
+  trimmed anywhere it appears.
+- Settings permissions row, folder (`describePickedPath`, `src/main/permissions.ts`):
+  `Can read, change and delete everything in "${path}", including new files.`, `warning: true`
+  (unchanged from A187 -- the same treatment an unlimited network pattern already gets).
+
+**The FILE wording is DERIVED from the same voice, not separately owner-reviewed word for
+word** -- the brief was explicit about this distinction. A `FileHandle` (`src/contracts/
+handles.ts`) has no delete/unlink method, only `read`/`write`/`truncate`/`sync`, so the file
+strings say what that handle actually permits (reading and changing the file's own bytes,
+including emptying it) rather than claiming a "delete" it structurally cannot do:
+
+- OS picker dialog, single file: `title` `Choose a file for "${appName}" to access`;
+  `buttonLabel` `Allow access to this file`; `message` (macOS only) `This app will be able to
+  read and change this file, including emptying it.`
+- OS picker dialog, multiple files: `title` `Choose files for "${appName}" to access`;
+  `buttonLabel` `Allow access to these files`; `message` (macOS only) `This app will be able to
+  read and change these files, including emptying them.`
+- Settings permissions row, file: `Can read and change "${path}", including emptying it.`,
+  `warning: false` (unchanged from A187).
+
+Both dialog and settings-row wording moved out of `src/broker/transport/ipc.ts`'s
+`pickPath`/`src/main/permissions.ts`'s `describePickedPath` into a pure, independently-testable
+form (`ipc.ts`'s new exported `describePickerDialog`) -- `dialog` is a real Electron value
+import and cannot be exercised from this suite (`ipc.ts`'s own "TESTABLE WITHOUT ELECTRON"
+header), so the wording itself needed a seam that could be. Both `describePickedPath`'s and
+`describePickerDialog`'s doc comments now cite `d-0032` and no longer carry a "PROPOSED, NOT
+OWNER-REVIEWED" marker.
+
+**2. The page surface -- built for the FILE shape, deliberately STOPPED for the FOLDER shape.**
+The brief's own instruction: wire the dispatch case plus the preload closure now that the
+wording gate cleared, but stop and report rather than invent a delivery mechanism if the shape
+turns out not to fit the existing transport.
+
+**What was built, FILE shape only:** `fs.userSelected` joined `ControlMethod`
+(`ipc-validation.ts`), with a new `isFsUserSelectedParams` validator and a
+`dispatch-fs.ts` case satisfying the `never`-typed exhaustiveness guard PR #213 added (both the
+per-file `dispatchFs` switch and `ipc.ts`'s own top-level routing switch needed the new case --
+found by the compiler, not by reading, exactly what that guard is for). A picked file's
+`FailableFileHandle` registers in the EXACT SAME `FsTransport.registry` `fs.open` already uses
+(`registerFileHandle`, extracted so both callers share one registration mechanism rather than
+two copies of it, Rule 3) -- so a picked file's id is usable through the SAME
+`fs.read`/`write`/`fstat`/`truncate`/`sync`/`close` cases `fs.open` already wired, with zero new
+handle-scoped dispatch code. `src/preload/orivon-surface.ts` gained `fsUserSelected`, wired into
+both `exposeFallback` and the `executeInMainWorld` bridge; `src/preload/main-world-socket.ts`
+gained the matching bridge field and reuses `buildFile` per returned handle (Rule 3 again -- no
+second wrapping implementation). The preload's own exposed type omits `directory` entirely
+rather than accept it and fail at runtime.
+
+**What was deliberately NOT built, FOLDER shape:** `dispatch-fs.ts`'s `'fs.userSelected'` case
+refuses `directory: true` with `'internal'` before the broker is ever called, citing this entry.
+**Why this is a shape problem, not plumbing, per the brief's own test:** `FileHandle`'s
+handle-scoped siblings (`fs.read`/`write`/`fstat`/`truncate`/`sync`/`close`) already existed
+before this lane touched anything -- A184 built them for `fs.open`, and the file shape above
+reuses every one of them for free. `DirectoryHandle` (`src/contracts/handles.ts`) has NO such
+precedent: its own method set -- `readdir`/`stat`/`mkdir`/`rm`/`rename`/`readFile`/`writeFile`/
+`open` -- is eight RPC-shaped calls with no existing handle-scoped dispatch case to reuse for
+any of them. Delivering it would mean inventing a parallel dispatch surface (eight new cases,
+eight new payload validators, a registry decision for `FailableDirectoryHandle`, eight new
+preload closures) on top of a method set **A167 already flags as an unconfirmed AI
+recommendation** ("`DirectoryHandle`'s method set mirrors `OrivonFs` rather than the web
+platform's `FileSystemDirectoryHandle`... confirm before the broker lane... takes this shape as
+given" -- never confirmed). Building that surface now would bake an unreviewed shape into the
+wire protocol; STOPPING and filing it, per the brief's own instruction, is the correct call here,
+not a shortfall.
+
+**Verified, this lane:** `npm run typecheck` clean; `npm test` 4610 passed, 3 skipped (202 test
+files) -- baseline after this lane's own merge of `origin/main` (which also resolved a real
+conflict in `src/broker/fs-capability.ts`, PR #213's `truncate` quota/lock fix carried forward
+into `fs-handle-wrapper.ts` rather than dropped): 4584 passed, 3 skipped, 200 files; this lane
+added 26 net new passing tests (`picker-dialog-wording.test.ts`, `ipc-fs-user-selected.test.ts`,
+plus additions to `permissions.test.ts`, `orivon-surface.test.ts`,
+`main-world-socket-fs.test.ts`). `npm run check:size`/`check:comments`/`check:contracts`/
+`check:natives`/`check:secrets`/`check:questions`/`check:manifest-parity` all pass.
+`npm run test:e2e` was deliberately **not run** -- this lane does not launch Electron.
+
+**Ready for one, once dispatched:** a real Electron launch, a real temp file picked via a real
+`dialog.showOpenDialog` call (proving the owner-approved title/buttonLabel/message actually
+render, which no unit test can — `dialog` is a real Electron value import), a real page calling
+`window.orivon.fs.userSelected()` and reading/writing the picked file through the SAME
+`fs.read`/`fs.write` control methods `fs.open` already proved end to end, and a revoke from the
+settings window tearing down that live handle — the same shape #82's Phase-1 e2e proved for
+`net.connect`'s write pump, and what A187's own "ready for one" already named before the wording
+gate cleared it.
+
+**Needed by:** whichever lane gets A167 item 2's `DirectoryHandle` method set owner-confirmed,
+which is the actual precondition for building its delivery mechanism -- not a wiring task on its
+own, a design one.

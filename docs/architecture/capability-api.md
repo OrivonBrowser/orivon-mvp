@@ -15,8 +15,15 @@
 >
 > **Named here with no control method wired**:
 > `app.requestGrant`, `net.listen`, `net.connectSecure`, `fs.readFileSync`, every other `fs.*`
-> method below `readFile`/`writeFile` (`open`, `mkdir`, `readdir`, `stat`, `rm`, `rename`,
-> `userSelected`) -- none of these has any related code anywhere in `src/broker/`.
+> method below `readFile`/`writeFile` (`open`, `mkdir`, `readdir`, `stat`, `rm`, `rename`) --
+> none of these has any related code anywhere in `src/broker/`. **This paragraph is otherwise
+> known-stale** (`net.listen`, `net.connectSecure` and several `fs.*` methods below have since
+> landed real control methods -- see `src/preload/README.md`'s own corrected bullet, which this
+> one should match but a full audit of this paragraph was out of scope for the lane that noticed;
+> flagged, not fixed here). **`userSelected` corrected 2026-09-16 (A194, d-0032):** its FILE
+> shape now has a real `fs.userSelected` control method, reusing `fs.open`'s own handle-scoped
+> siblings; its FOLDER shape (`DirectoryHandle`) still has none -- `dispatch-fs.ts`'s own case
+> refuses it explicitly, a delivery mechanism nobody has built (A194).
 > `net.connectSecure` and `fs.readFileSync` are new to this document as of 2026-09-10
 > (`ADR-0016`, `ADR-0017`): specified here and in `src/contracts/`, with no broker or shim
 > code yet -- that is Phase 2 of `planning/unattended-build-queue.md`, not this change.

@@ -85,6 +85,42 @@ export function createFileHandleWrapper ({ handleTable, ledger }: FileHandleWrap
     })
   }
 
+  /**
+   * Runs truncate() calls against the SAME handle strictly one at a time.
+   * `truncate`'s own doc explains why: computing the growth charge needs a
+   * "current size" read that is still true the instant the real truncate
+   * runs. `handleTable.run` (T11b) never serialises concurrent calls
+   * against one handle, so two truncates issued back to back could both
+   * read the pre-truncate size and race the reservation against it -- this
+   * queue is what actually closes that window, by keeping only one
+   * stat-then-truncate sequence in flight per handle id at a time.
+   *
+   * Keyed by handle id alone, not (origin, id) -- ids are drawn from
+   * `handles.ts`'s global, unguessable pool and never reused while a
+   * `recentlyClosed` entry for one still exists, so two live handles never
+   * collide on this key. `advance` is an ordering-only tail that never
+   * rejects (so the next caller's `?? Promise.resolve()` fallback never
+   * adopts a rejected chain); `run` is what the caller actually awaits and
+   * rejects exactly as `work()` would on its own. The map entry is dropped
+   * once nothing is queued behind it, so this never grows across a session.
+   *
+   * Shared here (not per-call-site) so `fs.open` and `fs.userSelected`'s
+   * picked files serialise against the SAME map -- one handle id can only
+   * ever belong to one of the two callers, so no cross-talk, but a single
+   * lock keeps the invariant obviously true rather than merely accidental.
+   */
+  const truncateChains = new Map<string, Promise<void>>()
+  function withTruncateLock<T> (handleId: string, work: () => Promise<T>): Promise<T> {
+    const previous = truncateChains.get(handleId) ?? Promise.resolve()
+    const run = previous.then(work)
+    const advance = run.then(() => {}, () => {})
+    truncateChains.set(handleId, advance)
+    advance.then(() => {
+      if (truncateChains.get(handleId) === advance) truncateChains.delete(handleId)
+    }).catch(() => {})
+    return run
+  }
+
   function toFailableFileHandle (key: string, entry: HandleEntry, fields: Omit<OpenedFile, 'destroy'>): FailableFileHandle {
     return {
       id: entry.id,
@@ -116,7 +152,53 @@ export function createFileHandleWrapper ({ handleTable, ledger }: FileHandleWrap
       readable: (opts) => fields.readable(opts),
       writable: (opts) => quotaCheckedWritable(key, fields.writable(opts)),
       stat: async () => await runFileIo(key, entry.id, async () => await fields.stat()),
-      truncate: async (length) => await runFileIo(key, entry.id, async () => { await fields.truncate(length) }),
+      /**
+       * Node's `truncate` EXTENDS a file with null bytes when `length`
+       * exceeds its current size -- so growing past the current size is a
+       * write in every sense the quota cares about (manifest.ts's
+       * `quotaBytes` doc, and `write`'s own comment above), and must be
+       * charged and refusable exactly like one. Shrinking releases the
+       * difference instead, or the counter would drift upward forever on
+       * an app that writes little but truncates often; a same-length
+       * truncate touches the ledger at all.
+       *
+       * `currentSize` is read fresh, under `withTruncateLock`, immediately
+       * before this same call's own real truncate -- seeing this file's
+       * OWN previous truncate land, never a stale read raced by another one
+       * (see that lock's own doc). A concurrent `write()` to the same
+       * handle can still move the real size in between; that race is
+       * `write()`'s own pre-existing quota model (which charges every byte
+       * written, not the file's resulting size) and is not newly opened or
+       * closed by this fix.
+       */
+      truncate: async (length) => await withTruncateLock(entry.id, async () => {
+        const { size: currentSize } = await runFileIo(key, entry.id, async () => await fields.stat())
+        const delta = length - currentSize
+        if (delta <= 0) {
+          await runFileIo(key, entry.id, async () => { await fields.truncate(length) })
+          if (delta < 0) ledger.releaseFsBytes(key, -delta)
+          return
+        }
+        if (!ledger.reserveFsBytes(key, delta)) {
+          throw fail('limit', "this truncate would exceed the app's declared storage quota")
+        }
+        let started = false
+        try {
+          await runFileIo(key, entry.id, async () => {
+            started = true
+            try {
+              await fields.truncate(length)
+            } catch (error) {
+              ledger.releaseFsBytes(key, delta) // nothing landed -- unmapped, runFileIo maps it below
+              throw error
+            }
+          })
+        } catch (error) {
+          // Same "refund only what never reached the raw call" rule as write's own catch above.
+          if (!started) ledger.releaseFsBytes(key, delta)
+          throw error
+        }
+      }),
       sync: async () => await runFileIo(key, entry.id, async () => { await fields.sync() })
     }
   }

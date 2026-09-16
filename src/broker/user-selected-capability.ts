@@ -150,7 +150,7 @@ export function createUserSelectedCapability (
   async function pickDirectory (key: string, appName: string | undefined): Promise<FailableDirectoryHandle | null> {
     let result: Awaited<ReturnType<CreateBrokerOptions['pickPath']>>
     try {
-      result = await deps.pickPath({ directory: true, multiple: false })
+      result = await deps.pickPath({ directory: true, multiple: false, appName })
     } catch (error) {
       throw fail('internal', 'the OS picker could not be shown', undefined, error instanceof Error ? error.message : undefined)
     }
@@ -175,7 +175,7 @@ export function createUserSelectedCapability (
   async function pickFiles (key: string, multiple: boolean, appName: string | undefined): Promise<readonly FailableFileHandle[]> {
     let result: Awaited<ReturnType<CreateBrokerOptions['pickPath']>>
     try {
-      result = await deps.pickPath({ directory: false, multiple })
+      result = await deps.pickPath({ directory: false, multiple, appName })
     } catch (error) {
       throw fail('internal', 'the OS picker could not be shown', undefined, error instanceof Error ? error.message : undefined)
     }

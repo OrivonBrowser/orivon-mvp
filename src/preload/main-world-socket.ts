@@ -88,6 +88,15 @@ export function installOrivon (
      * back into the isolated world independently and could reject.
      */
     fsOpen: (path: string, flags: string) => Promise<MainWorldFileBridge>
+    /**
+     * `orivon.fs.userSelected`'s FILE shape only (A194, d-0032) -- no
+     * `directory` field here at all, matching `orivon-surface.ts`'s own
+     * `fsUserSelected`: the folder shape has no CONTROL_CHANNEL case yet.
+     * Resolves an array of the SAME raw shape `fsOpen` resolves one of
+     * (`MainWorldFileBridge`, before `buildFile`'s own `callRevived`
+     * wrapping); `buildFile` below wraps each entry identically.
+     */
+    fsUserSelected: (opts?: { multiple?: boolean }) => Promise<readonly MainWorldFileBridge[]>
     idPublicKey: (curve: string) => Promise<Uint8Array>
     idSign: (curve: string, payload: Uint8Array) => Promise<Uint8Array>
     netConnect: (opts: { host: string, port: number }) => Promise<MainWorldSocketBridge>
@@ -455,7 +464,9 @@ export function installOrivon (
       stat: async (path: string) => await callRevived(bridge.fsStat(path)),
       rm: async (path: string, opts?: { recursive?: boolean }) => { await callRevived(bridge.fsRm(path, opts)) },
       rename: async (from: string, to: string) => { await callRevived(bridge.fsRename(from, to)) },
-      open: async (path: string, flags: string) => buildFile(await callRevived(bridge.fsOpen(path, flags)))
+      open: async (path: string, flags: string) => buildFile(await callRevived(bridge.fsOpen(path, flags))),
+      userSelected: async (opts?: { multiple?: boolean }) =>
+        (await callRevived(bridge.fsUserSelected(opts))).map(buildFile)
     }),
     id: Object.freeze({
       publicKey: async (opts: { curve: string }) => await callRevived(bridge.idPublicKey(opts.curve)),

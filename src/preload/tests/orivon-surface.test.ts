@@ -96,7 +96,7 @@ describe('exposeOrivon -- P-F10: the fail-closed fallback covers BOTH "absent" a
     // main-world stream wrapping, so it is wired identically in both the
     // fallback and the executeInMainWorld path, exactly like readFile/
     // writeFile above it.
-    for (const method of ['mkdir', 'readdir', 'stat', 'rm', 'rename', 'open']) {
+    for (const method of ['mkdir', 'readdir', 'stat', 'rm', 'rename', 'open', 'userSelected']) {
       expect(typeof (surface.fs as Record<string, unknown>)[method]).toBe('function')
     }
   })
@@ -560,6 +560,78 @@ describe('exposeOrivon -- fs.open and its handle-scoped siblings', () => {
     const file = await orivon.fs.open('a', 'r')
 
     await expect(file.read({ position: 0, length: 1 })).rejects.toMatchObject({ code: 'revoked' })
+  })
+})
+
+// A194, d-0032: the FILE shape only -- see dispatch-fs.ts's own comment on
+// why the folder shape (DirectoryHandle) has no page delivery. The type
+// this closure exposes omits `directory` entirely (checked below), and
+// every returned handle reuses fs.open's own read/write/fstat/truncate/
+// sync/close wiring -- proven above already, so this suite proves the
+// picker-specific parts: the envelope, the array, and the denied path.
+describe('exposeOrivon -- fs.userSelected (A194, d-0032) -- the file shape only', () => {
+  it('sends one fs.userSelected envelope and wraps each returned descriptor into a usable file handle', async () => {
+    const target = installViaFakeMainWorld()
+    const seenEnvelopes: Array<{ method: string, payload: unknown }> = []
+    invoke.mockImplementation(async (_channel: string, envelope: { method: string, payload: unknown }) => {
+      seenEnvelopes.push({ method: envelope.method, payload: envelope.payload })
+      if (envelope.method === 'fs.userSelected') return okEnvelope([{ id: 'p1' }, { id: 'p2' }])
+      if (envelope.method === 'fs.read') return okEnvelope(new Uint8Array([1]))
+      return okEnvelope(undefined)
+    })
+
+    exposeOrivon()
+    const orivon = target.orivon as {
+      fs: {
+        userSelected: (opts?: { multiple?: boolean }) => Promise<ReadonlyArray<{
+          id: string
+          read: (opts: { position: number, length: number }) => Promise<Uint8Array>
+        }>>
+      }
+    }
+
+    const files = await orivon.fs.userSelected({ multiple: true })
+
+    expect(files.map((f) => f.id)).toEqual(['p1', 'p2'])
+    expect(Array.from(await files[0]?.read({ position: 0, length: 1 }) ?? [])).toEqual([1])
+    expect(seenEnvelopes[0]).toEqual({ method: 'fs.userSelected', payload: { multiple: true } })
+    expect(seenEnvelopes[1]).toEqual({ method: 'fs.read', payload: { id: 'p1', position: 0, length: 1 } })
+  })
+
+  it('a cancelled picker resolves an empty array, never a rejection', async () => {
+    const target = installViaFakeMainWorld()
+    invoke.mockResolvedValue(okEnvelope([]))
+
+    exposeOrivon()
+    const orivon = target.orivon as { fs: { userSelected: () => Promise<readonly unknown[]> } }
+
+    await expect(orivon.fs.userSelected()).resolves.toEqual([])
+  })
+
+  it('the folder shape is refused as a real OrivonError, not a raw rejection -- dispatch-fs.ts\'s own A194 refusal', async () => {
+    const target = installViaFakeMainWorld()
+    invoke.mockResolvedValue({
+      id: 'r', ok: false, code: 'internal',
+      message: "orivon.fs.userSelected's folder shape is not reachable from a page yet -- see A194, docs/open-questions.md"
+    })
+
+    exposeOrivon()
+    const orivon = target.orivon as { fs: { userSelected: (opts: unknown) => Promise<unknown> } }
+
+    // The preload's OWN type omits `directory` (this file's own header) --
+    // the cast below models a page that ignores that and calls it anyway,
+    // exactly the shape a compromised or hand-written caller could still
+    // send over the wire regardless of what TypeScript allows here.
+    await expect(orivon.fs.userSelected({ directory: true })).rejects.toMatchObject({ code: 'internal' })
+  })
+
+  it('orivon.fs.userSelected does not accept a `directory` option at the type level', () => {
+    const target = installViaFakeMainWorld()
+    exposeOrivon()
+    const orivon = target.orivon as { fs: { userSelected: (opts?: { multiple?: boolean }) => Promise<unknown> } }
+
+    // @ts-expect-error -- the folder shape has no page delivery (A194); a real caller cannot ask for it through this type.
+    void (async () => { await orivon.fs.userSelected({ directory: true }) })
   })
 })
 

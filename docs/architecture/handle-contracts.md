@@ -411,10 +411,21 @@ interface UdpSocket extends Handle {
 > `src/preload/orivon-surface.ts`. **`readable()`/`writable()` stop at the broker layer**: they
 > are real, tested streams, but nothing yet delivers one to a page over a port the way
 > `net.connect`'s byte pump does for `TcpSocket` — see the banner above and this lane's own PR
-> body. `orivon.fs.userSelected` still does not exist. The kind-agnostic handle-table accounting
-> for a `file`-kind handle (§Limits, the `userSelected` revocation exception) was already built
-> and tested before this lane, and is now exercised by a real acquisition rather than only its
-> own unit tests.
+> body. The kind-agnostic handle-table accounting for a `file`-kind handle (§Limits, the
+> `userSelected` revocation exception) was already built and tested before this lane, and is now
+> exercised by a real acquisition rather than only its own unit tests.
+>
+> **`orivon.fs.userSelected` corrected 2026-09-16 (A187, A194, d-0032, `stream/main-10-
+> user-selected`).** Built end to end at the broker layer for both shapes (confinement rooted at
+> the picked path, persistence across a restart, both revocation-cascade halves), and page-
+> reachable for the FILE shape only, over the SAME `fs.read`/`write`/`fstat`/`truncate`/`sync`/
+> `close` control cases `fs.open` already uses (one `FailableFileHandle` shape, shared). The
+> FOLDER shape (`DirectoryHandle` — `src/contracts/handles.ts`'s own doc comment, not repeated as
+> a section of its own here) is real and tested at the broker layer but NOT page-reachable —
+> `dispatch-fs.ts`'s own `'fs.userSelected'` case refuses `directory: true`
+> explicitly: its eight-method RPC surface has no existing handle-scoped dispatch precedent to
+> reuse, unlike `FileHandle`'s, and building one would mean inventing a delivery mechanism for a
+> method set A167 already flags as an unconfirmed AI recommendation — see A194.
 
 ```ts
 interface FileStat {
