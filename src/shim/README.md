@@ -117,8 +117,9 @@ guarantee for anything else.
 Electron desktop-shell gap are different situations for a porting developer (code-
 guidelines.md Rule 3: "same shape is not the same reason"). Four reasons, reconciling A135's own
 wording ("unbuilt, refused by design, or a gap nobody noticed") with this package's actual
-gaps: `'not-built'` (a decision is on record and a build path is named -- `dns.lookup`'s D-0006,
-`net.createServer`'s A114), `'unimplemented'` (nothing has decided either way -- most of the
+gaps: `'not-built'` (a decision is on record and a build path is named -- `FileHandle.createReadStream`/
+`createWriteStream`'s A184 is the live example; `dns.lookup`'s D-0006 and `net.createServer`'s A114
+were this reason's original examples and are now built), `'unimplemented'` (nothing has decided either way -- most of the
 surface here), `'excluded'` (an owner policy row, compatibility-matrix.md Table 1's 🚫 rows --
 not currently emitted by any file in this package: `hid`/`subprocess` have no shim target yet,
 and ambient-FS exclusion is enforced by the broker's path policy, not by a member name), and
