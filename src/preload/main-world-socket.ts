@@ -24,35 +24,19 @@ import type { OrivonErrorCode } from '../contracts/errors.js'
 import type { FileStat, LookupAddress, SendRefusal, UdpSocket } from '../contracts/handles.js'
 import type { ResponseEnvelope } from '../contracts/ipc.js'
 import type { CapabilityRequest } from '../contracts/capability-api.js'
-import type { MainWorldDatagram, MainWorldServerBridge, MainWorldSocketBridge, MainWorldUdpBridge, OrivonLimits } from './main-world-bridges.js'
+import type {
+  MainWorldDatagram, MainWorldDirectoryBridge, MainWorldFileBridge, MainWorldServerBridge,
+  MainWorldSocketBridge, MainWorldUdpBridge, OrivonLimits
+} from './main-world-bridges.js'
 
-// The bridge shapes (OrivonLimits, MainWorldDatagram, MainWorldUdpBridge,
-// MainWorldServerBridge, MainWorldSocketBridge) live in ./main-world-bridges.ts
-// now -- split out under code-guidelines.md Rule 2, safe despite this file's
-// own serialised-function constraint below because an `interface` produces no
-// JS at all (that file's own header). Re-exported here so every existing
-// `import ... from './main-world-socket.js'` elsewhere in the tree keeps
-// working unchanged.
-export type { MainWorldDatagram, MainWorldServerBridge, MainWorldSocketBridge, MainWorldUdpBridge, OrivonLimits } from './main-world-bridges.js'
-
-/**
- * What orivon-surface.ts's fsOpen bridge closure resolves to (A184) --
- * deliberately narrower than `FileHandle` (contracts/handles.ts): no
- * `readable`/`writable`, and no live-pushed `closed`. Every method here is a
- * plain request/reply CONTROL_CHANNEL round trip -- unlike net.connect,
- * fs.open needs no per-socket port or byte pump, so it needs none of the
- * main-world stream machinery `buildSocket` below exists for. See this
- * lane's own PR body for what that means a page cannot do yet.
- */
-export interface MainWorldFileBridge {
-  readonly id: string
-  read: (opts: { position: number, length: number }) => Promise<Uint8Array>
-  write: (opts: { position: number, data: Uint8Array }) => Promise<number>
-  stat: () => Promise<FileStat>
-  truncate: (length: number) => Promise<void>
-  sync: () => Promise<void>
-  close: () => Promise<void>
-}
+// The bridge shapes live in ./main-world-bridges.ts -- split out under
+// code-guidelines.md Rule 2, safe despite this file's own serialised-
+// function constraint below since an `interface` produces no JS at all
+// (that file's own header). Re-exported so no import site changes.
+export type {
+  MainWorldDatagram, MainWorldDirectoryBridge, MainWorldFileBridge, MainWorldServerBridge,
+  MainWorldSocketBridge, MainWorldUdpBridge, OrivonLimits
+} from './main-world-bridges.js'
 
 export function installOrivon (
   bridge: {
@@ -88,15 +72,10 @@ export function installOrivon (
      * back into the isolated world independently and could reject.
      */
     fsOpen: (path: string, flags: string) => Promise<MainWorldFileBridge>
-    /**
-     * `orivon.fs.userSelected`'s FILE shape only (A194, d-0032) -- no
-     * `directory` field here at all, matching `orivon-surface.ts`'s own
-     * `fsUserSelected`: the folder shape has no CONTROL_CHANNEL case yet.
-     * Resolves an array of the SAME raw shape `fsOpen` resolves one of
-     * (`MainWorldFileBridge`, before `buildFile`'s own `callRevived`
-     * wrapping); `buildFile` below wraps each entry identically.
-     */
+    /** `orivon.fs.userSelected`'s FILE shape (A194, d-0032). `api.fs.userSelected` below routes here for every call except `{ directory: true }`. Resolves the same raw `MainWorldFileBridge` shape `fsOpen` does; `buildFile` wraps each entry. */
     fsUserSelected: (opts?: { multiple?: boolean }) => Promise<readonly MainWorldFileBridge[]>
+    /** `orivon.fs.userSelected`'s FOLDER shape (A195) -- a separate closure, not a widened `fsUserSelected`, since the two resolve genuinely different shapes (capability-api.ts's own overload split). `buildDirectory` is this one's `buildFile`. */
+    fsUserSelectedDirectory: () => Promise<MainWorldDirectoryBridge | null>
     idPublicKey: (curve: string) => Promise<Uint8Array>
     idSign: (curve: string, payload: Uint8Array) => Promise<Uint8Array>
     netConnect: (opts: { host: string, port: number }) => Promise<MainWorldSocketBridge>
@@ -432,6 +411,22 @@ export function installOrivon (
     })
   }
 
+  /** `buildFile`'s own DirectoryHandle counterpart (A195) -- `open` reuses `buildFile` on whatever it resolves, so a folder-opened file gets the identical wrapped shape `orivon.fs.open()` itself would hand it. */
+  function buildDirectory (d: MainWorldDirectoryBridge): MainWorldDirectoryBridge {
+    return Object.freeze({
+      id: d.id,
+      readdir: async (path?: string) => await callRevived(d.readdir(path)),
+      stat: async (path?: string) => await callRevived(d.stat(path)),
+      mkdir: async (path: string, opts?: { recursive?: boolean }) => { await callRevived(d.mkdir(path, opts)) },
+      rm: async (path: string, opts?: { recursive?: boolean }) => { await callRevived(d.rm(path, opts)) },
+      rename: async (from: string, to: string) => { await callRevived(d.rename(from, to)) },
+      readFile: async (path: string) => await callRevived(d.readFile(path)),
+      writeFile: async (path: string, data: Uint8Array) => { await callRevived(d.writeFile(path, data)) },
+      open: async (path: string, flags: string) => buildFile(await callRevived(d.open(path, flags))),
+      close: async () => { await callRevived(d.close()) }
+    })
+  }
+
   const api = {
     version: 0,
     app: Object.freeze({
@@ -465,8 +460,15 @@ export function installOrivon (
       rm: async (path: string, opts?: { recursive?: boolean }) => { await callRevived(bridge.fsRm(path, opts)) },
       rename: async (from: string, to: string) => { await callRevived(bridge.fsRename(from, to)) },
       open: async (path: string, flags: string) => buildFile(await callRevived(bridge.fsOpen(path, flags))),
-      userSelected: async (opts?: { multiple?: boolean }) =>
-        (await callRevived(bridge.fsUserSelected(opts))).map(buildFile)
+      // Routes on `opts?.directory`, matching capability-api.ts's own overload split (A195).
+      userSelected: async (opts?: { directory?: boolean, multiple?: boolean }) => {
+        if (opts?.directory === true) {
+          const dir = await callRevived(bridge.fsUserSelectedDirectory())
+          return dir === null ? null : buildDirectory(dir)
+        }
+        const fileOpts = opts?.multiple === undefined ? undefined : { multiple: opts.multiple }
+        return (await callRevived(bridge.fsUserSelected(fileOpts))).map(buildFile)
+      }
     }),
     id: Object.freeze({
       publicKey: async (opts: { curve: string }) => await callRevived(bridge.idPublicKey(opts.curve)),
