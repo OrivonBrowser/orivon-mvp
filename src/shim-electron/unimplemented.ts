@@ -16,10 +16,14 @@ import type { ElectronShimError } from './errors.js'
 
 /**
  * Wraps `known` so every property already on it works exactly as it does
- * today, and any other property throws instead of silently reading as
- * `undefined`. `classify` returns the Error to throw for whatever prop was
- * accessed -- the two call sites below classify differently (a whole member
- * vs. one extra method on an existing object), which is why this stays a
+ * today. Any OTHER property no longer throws on the read itself (A169) --
+ * it returns a function (named after the prop, for a legible stack) whose
+ * body is `classify(prop)`'s Error, so `typeof`/optional-chaining/
+ * destructuring/`in` all see the same thing real Node shows for a member
+ * that genuinely does not exist, and only an actual CALL still refuses by
+ * name. `classify` returns the Error to throw for whatever prop was
+ * accessed -- the call sites below classify differently (a whole member vs.
+ * one extra method on an existing object), which is why this stays a
  * parameter rather than a fixed message baked in here.
  */
 export function refusingProxy<T extends object> (known: T, classify: (prop: string) => Error): T {
@@ -28,9 +32,23 @@ export function refusingProxy<T extends object> (known: T, classify: (prop: stri
       if (typeof prop === 'symbol' || Reflect.has(target, prop)) {
         return Reflect.get(target, prop, receiver)
       }
-      throw classify(prop)
+      return refusingFunction(prop, classify)
     }
   })
+}
+
+/**
+ * The value `refusingProxy`'s `get` trap returns for a prop nothing backs.
+ * Reading it is inert -- `typeof` sees a function (matching real Node, which
+ * really does have most of this surface as callable), and optional
+ * chaining/destructuring never trip over it -- so a defensive
+ * feature-detection check is never fooled into crashing on the mere read.
+ * Only calling it does what #186/A135 built this whole mechanism for.
+ */
+function refusingFunction (prop: string, classify: (prop: string) => Error): (...args: readonly unknown[]) => never {
+  const fn = (..._args: readonly unknown[]): never => { throw classify(prop) }
+  Object.defineProperty(fn, 'name', { value: prop, configurable: true })
+  return fn
 }
 
 /** The 'unimplemented' reason's one wording, shared by every call site below so every such refusal reads the same. */
@@ -47,11 +65,9 @@ export function notConsidered (api: string): ElectronShimError {
 
 /**
  * A stand-in for a whole Electron module this package does not implement at
- * all (`shell`, `clipboard`, ...). Every property access throws, naming the
- * member and the property together (`shell.openExternal`) -- a porting app
- * almost always reads a method off one of these before calling it, so
- * throwing on the read gives a shorter, more legible stack than waiting for
- * the call.
+ * all (`shell`, `clipboard`, ...). Every property call throws, naming the
+ * member and the property together (`shell.openExternal`) -- reading one
+ * first, the way a porting app's own defensive check does, stays safe (A169).
  */
 export function unimplementedMember (api: string): object {
   return refusingProxy({}, (prop) => notConsidered(`${api}.${prop}`))
@@ -61,7 +77,7 @@ export function unimplementedMember (api: string): object {
  * Wraps the package's own exported surface for `import electron from
  * 'electron'` / default-style consumption, so a name outside it -- anything
  * this package has never even listed, not just the curated members built
- * with `unimplementedMember` -- throws the same way when read off the
+ * with `unimplementedMember` -- refuses the same way when called off the
  * default export, instead of resolving to `undefined`. This is the one
  * consumption shape where the refusal is genuinely total rather than
  * limited to a curated list: see README.md for why named exports cannot
