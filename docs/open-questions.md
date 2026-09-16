@@ -6638,19 +6638,30 @@ is unchanged and was not what `D-0007` reversed.
 the app's own held network grant rather than a separate capability, per the owner's stated
 reasoning (an unbounded resolver is a covert exfiltration channel to anywhere).
 
-**Flagged, AI judgment, the one most worth owner eyes before it is built:** the owner decision
-states the BOUND ("as wide as the app's network grant already is") but not which of the app's
-several possible grants count or how a bare hostname is matched against a `host:port` pattern.
-This lane's reading: `hostname` is checked against the HOST portion of every pattern in the
-app's held `tcp.connect`, `https.connect` and `udp.send` grants (manifest.js) -- the union of
-every OUTBOUND-reaching capability, not just one of them, and not `tcp.listen`/`udp.bind`
-(inbound, no destination host to match against). The reasoning: `connect`/`connectSecure`/
-`udpBind` already check a resolved or requested address against these same patterns before any
-byte moves, so a lookup that matches one of them opens no route the app could not already
-reach by name via that capability -- but this is this lane's inference from the owner's stated
-principle, not a separately confirmed decision, and it is exactly the kind of boundary-drawing
-CLAUDE.md Rule 2 says must not blur into "the owner decided this." **Confirm the union-of-
-outbound-capabilities reading before the broker lane implements the match.**
+**Flagged, AI judgment, the one most worth owner eyes before it is built -- since resolved, see
+below.** The owner decision states the BOUND ("as wide as the app's network grant already is")
+but not which of the app's several possible grants count or how a bare hostname is matched
+against a `host:port` pattern. This lane's ORIGINAL reading: `hostname` is checked against the
+HOST portion of every pattern in the app's held `tcp.connect`, `https.connect` and `udp.send`
+grants (manifest.js) -- the union of every OUTBOUND-reaching capability, not just one of them,
+and not `tcp.listen`/`udp.bind` (inbound, no destination host to match against). The reasoning:
+`connect`/`connectSecure`/`udpBind` already check a resolved or requested address against these
+same patterns before any byte moves, so a lookup that matches one of them opens no route the app
+could not already reach by name via that capability -- but this is this lane's inference from
+the owner's stated principle, not a separately confirmed decision, and it is exactly the kind of
+boundary-drawing CLAUDE.md Rule 2 says must not blur into "the owner decided this."
+
+> **Confirmed, in part, and corrected, in part -- 2026-09-16, `d-0031`, lane
+> `stream/broker-18-narrow-lookup-union` (A193).** An independent adversarial review (A190) found
+> the `https.connect` third of this reading concretely wrong, not merely unconfirmed:
+> `checkConnectSecure` never resolves a hostname at all (TLS certificate verification stands in
+> for the address check `checkConnect` performs), so an `https.connect`-only app never had the
+> pre-existing "force a resolution by attempting a connection" route this paragraph's own
+> reasoning relies on. The owner's decision keeps the union argument for `tcp.connect` and
+> `udp.send` (both do share that route -- `authorisedSend` reuses `checkConnect` verbatim) and
+> drops `https.connect` from it. See A190's own resolution for the full account. This closes
+> A167's own cross-reference: the union-of-outbound-capabilities reading is now `tcp.connect` +
+> `udp.send`, an owner decision, not this lane's unconfirmed inference.
 
 **Error code, not flagged -- reused, not invented.** A lookup that resolves nothing rejects
 `'unreachable'`, which `errors.ts`'s own closed enum already documents as covering "DNS
@@ -7610,7 +7621,7 @@ rather than attempted here.
 doing before `fs.open` carries a real page-facing grant in production (no origin holds one today,
 per the standing note at the top of this file's build-step-4 entries).
 
-### A190 -- `net.lookup`'s capability union hands an `https.connect`-only app a DNS-reconnaissance oracle `https.connect` itself never had **[AI-REC -- confirm alongside A167, do not narrow without owner sign-off]**
+### A190 -- `net.lookup`'s capability union hands an `https.connect`-only app a DNS-reconnaissance oracle `https.connect` itself never had **[RESOLVED 2026-09-16 -- stream/broker-18-narrow-lookup-union, d-0031]**
 
 **Raised 2026-09-16**, lane ADV-fix (`stream/broker-17-adversarial-fixes`), from an independent
 adversarial review (`ADV-boundary`) of PRs #199-#205, confirmed against the code by the conductor
@@ -7757,3 +7768,78 @@ gate cleared it.
 **Needed by:** whichever lane gets A167 item 2's `DirectoryHandle` method set owner-confirmed,
 which is the actual precondition for building its delivery mechanism -- not a wiring task on its
 own, a design one.
+> **Resolved 2026-09-16, `d-0031`, lane `stream/broker-18-narrow-lookup-union` (A193). Option
+> (a).** `https.connect` is dropped from `net-capability.ts`'s `OUTBOUND_CAPABILITIES`, which now
+> reads `['tcp.connect', 'udp.send']`. An app holding only `https.connect` loses the DNS-lookup
+> convenience this entry describes; it must hold `tcp.connect` or `udp.send` to resolve a
+> hostname through `orivon.net.lookup` at all. `tcp.connect` and `udp.send` are both kept, per
+> this entry's own finding above (`authorisedSend` reuses `checkConnect` verbatim, so `udp.send`
+> shares `tcp.connect`'s pre-existing force-a-resolution route exactly) -- narrowing the union
+> was never a case for narrowing it to one capability.
+>
+> **Second half of the decision: narrow AND warn.** An app refused a lookup because it holds
+> only `https.connect` gets a bare, uniform `'denied'` at the capability layer, same as any other
+> reason `checkLookup` (`src/broker/policy/lookup.ts`) declines -- `errors.ts`'s "denied never
+> varies by reason" rule is not relaxed for this case, and no new `OrivonErrorCode` was added.
+> The NAMED refusal this decision also asked for happens one layer up, in
+> `src/shim/node-dns.ts`'s `describeLookupDenial`: on a `'denied'` `net.lookup` rejection, it
+> reads the app's own `orivon.app.grants()` -- a standing, already-legitimate capability an app
+> has to introspect ITSELF, not the broker's reply saying anything new -- and, only when the held
+> set is exactly "https.connect, no tcp.connect, no udp.send", rewrites the Node-shaped error's
+> message to name the reason and the fix ("hold tcp.connect or udp.send to resolve a hostname").
+> Any other denial (no grant at all, a held grant whose pattern does not match, `app.grants()`
+> itself failing) falls back to the ordinary generic message rather than guessing. This is not a
+> new channel: `app.grants()` already existed for exactly this kind of self-inspection
+> (`capability-api.ts`'s own `OrivonApp.grants` doc), so nothing crosses the broker/shim trust
+> boundary here that did not already.
+>
+> **The test that would have failed against the old behaviour:**
+> `src/broker/tests/net-lookup.test.ts`'s `'denies a lookup under an https.connect-only grant --
+> https.connect is not a raw-connection capability (d-0031)'` -- before this lane, the sibling
+> test this replaced (`'resolves under an https.connect-only grant -- the union, not just
+> tcp.connect'`) asserted the opposite outcome for the identical setup.
+>
+> **One residual finding, filed rather than fixed here: `src/contracts/capability-api.ts`'s own
+> `OrivonNet.lookup` doc comment still states the pre-narrowing union** ("this rides whatever
+> `tcp.connect`, `https.connect` and `udp.send` patterns... the app already holds"), now stale.
+> This lane's own scope rule (`CLAUDE.md`'s parallel-work discipline: contracts changes are their
+> own PR, merging first, never alongside an implementation) forbids touching
+> `src/contracts/` here even for a doc-only correction -- see A193 below.
+
+---
+
+### A193 -- `capability-api.ts`'s `OrivonNet.lookup` doc comment still names `https.connect` as part of `net.lookup`'s authorising union, now stale under d-0031 **[NEEDS A CONTRACTS-ONLY FOLLOW-UP]**
+
+**Raised 2026-09-16**, lane `stream/broker-18-narrow-lookup-union`, while implementing A190's
+resolution (d-0031: `net.lookup` no longer reads a bound from `https.connect`, only from
+`tcp.connect`/`udp.send` -- see A190's own resolved note for the full account).
+
+`src/contracts/capability-api.ts`'s `OrivonNet.lookup` doc comment reads, unchanged by this lane:
+"this rides whatever `tcp.connect`, `https.connect` and `udp.send` patterns (manifest.js) the
+app already holds." That sentence is no longer true of the implementation this lane shipped
+(`src/broker/net-capability.ts`'s `OUTBOUND_CAPABILITIES`, now `['tcp.connect', 'udp.send']`) or
+of `src/broker/policy/README.md`'s design note, which this lane did update.
+
+**Why left stale rather than fixed here.** This lane's own scope, set by the dispatch that
+opened it, is explicit: "Do NOT touch `src/contracts/`. The capability signature does not
+change." That instruction reflects a real, standing project rule (`CLAUDE.md`'s parallel-work
+discipline): "Never modify `src/contracts/` in the same PR as an implementation. A contracts
+change touches every stream at once; it goes in its own PR and merges first." A doc-comment-only
+correction is still a `src/contracts/` change under that rule, however small, so it was not made
+here even though the fix itself is a two-line prose edit with no signature change at all.
+
+**Not a security or correctness gap** -- the doc comment is documentation, not code; nothing
+reads it at runtime, and the actual authorising set is correctly narrowed. It is a fidelity gap:
+a reader of `capability-api.ts` (which `docs/README.md` calls out as "the product surface in
+seven files, faster than any prose") would currently learn the wrong bound for `net.lookup`.
+
+**AI recommendation:** a follow-up contracts-only PR should update `OrivonNet.lookup`'s doc
+comment to read "`tcp.connect` and `udp.send`" in place of "`tcp.connect`, `https.connect` and
+`udp.send`", and should note the `https.connect` exclusion and why (mirroring
+`src/broker/policy/README.md`'s own updated note under this lane's PR), matching the doc
+carve-out `code-guidelines.md` Rule 1 already grants exported declarations in `src/contracts/`.
+Small enough to fold into whatever contracts PR is next in the queue rather than needing its own,
+at the owner's discretion.
+
+**Needed by:** whoever next opens a `src/contracts/`-touching PR, or a dedicated docs-only one if
+none is queued soon enough that this drifts further from the implementation it describes.
