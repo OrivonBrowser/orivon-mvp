@@ -26,14 +26,28 @@ import type { BoundUdpSocket, Broker, CreateBrokerOptions, DialedSocket, Listene
 import type { CapabilityKind, Datagram, LookupAddress } from '../contracts/index.js'
 
 /**
- * The three capabilities `orivon.net.lookup` reads a grant from (d-0030) --
- * every OUTBOUND-reaching one, checked in this fixed order so that when more
- * than one held grant would authorise the same hostname, revocation always
- * scopes to the same one (policy/lookup.ts's own README note, A171).
- * `tcp.listen`/`udp.bind` are excluded on purpose: inbound capabilities name
- * no destination host to match a lookup against.
+ * The two capabilities `orivon.net.lookup` reads a grant from (d-0030,
+ * narrowed by d-0031 -- docs/open-questions.md A190/A193), checked in this
+ * fixed order so that when both held grants would authorise the same
+ * hostname, revocation always scopes to the same one (policy/lookup.ts's
+ * own README note, A171). `tcp.listen`/`udp.bind` are excluded on purpose:
+ * inbound capabilities name no destination host to match a lookup against.
+ *
+ * `https.connect` is NOT here, and this is the load-bearing line d-0031
+ * decided: `checkConnectSecure` never resolves a hostname at all -- TLS
+ * certificate verification stands in for the address check `checkConnect`
+ * performs -- so unlike `tcp.connect` and `udp.send` below, holding only
+ * `https.connect` never let an app force the broker to resolve a name
+ * before `net.lookup` existed. Folding it into this union anyway handed an
+ * `https.connect`-only app a DNS-reconnaissance oracle `https.connect`
+ * itself never had (A190's own finding). `tcp.connect` and `udp.send` both
+ * stay: `connect`'s own pre-resolve gate (`couldAnyPatternMatch`) lets a
+ * granted pattern's host through to the real resolver before any address is
+ * checked, and `authorisedSend` below reuses `checkConnect` verbatim, so
+ * both already let a held pattern force that same resolution today --
+ * `net.lookup` under either one hands back a mapping, never a new ability.
  */
-const OUTBOUND_CAPABILITIES: readonly CapabilityKind[] = ['tcp.connect', 'https.connect', 'udp.send']
+const OUTBOUND_CAPABILITIES: readonly CapabilityKind[] = ['tcp.connect', 'udp.send']
 
 export interface NetCapabilityOptions {
   readonly deps: CreateBrokerOptions
@@ -406,11 +420,14 @@ export function createNetCapability ({ deps, handleTable, ledger, canonical }: N
   }
 
   /**
-   * `orivon.net.lookup` (d-0030). Reads across OUTBOUND_CAPABILITIES above --
-   * unlike `connect`/`connectSecure`/`udpBind`, there is no single capability
-   * this rides, because holding ANY of the three already lets `hostname` be
-   * force-resolved today (policy/lookup.ts's own header, and policy/README.md's
-   * design note on why that makes a host-only check safe).
+   * `orivon.net.lookup` (d-0030, narrowed by d-0031). Reads across
+   * OUTBOUND_CAPABILITIES above -- unlike `connect`/`connectSecure`/
+   * `udpBind`, there is no single capability this rides, because holding
+   * EITHER of the two already lets `hostname` be force-resolved today
+   * (policy/lookup.ts's own header, and policy/README.md's design note on
+   * why that makes a host-only check safe). `connectSecure`'s own
+   * `https.connect` grant is deliberately absent from that list -- see
+   * OUTBOUND_CAPABILITIES's own doc for why.
    *
    * THE FIRST MATCHING GRANT, not every one that would match: `checkLookup`
    * is cheap and pure, so checking each held grant in turn costs nothing,
