@@ -402,71 +402,6 @@ describe('revocation and release are idempotent', () => {
   })
 })
 
-describe('the fs.userSelected exception', () => {
-  it('keeps a picker-authorised file open across an fs revocation', async () => {
-    const t = table()
-    const granted = spyDestroy()
-    const picked = spyDestroy()
-    t.acquire({ origin: APP, kind: 'file', authorisedBy: { by: 'grant', grantId: FS_GRANT }, destroy: granted })
-    const userSelected = t.acquire({ origin: APP, kind: 'file', authorisedBy: { by: 'userSelected' }, destroy: picked })
-
-    await t.revoke(APP, FS_GRANT)
-
-    // The user's one-time choice at the OS picker IS the authorisation. It is
-    // not the standing fs grant, so withdrawing that grant cannot withdraw it.
-    expect(granted).toHaveBeenCalledWith('revoked')
-    expect(picked).not.toHaveBeenCalled()
-    expect(t.lookup(APP, userSelected.id).id).toBe(userSelected.id)
-  })
-
-  it('still counts a picker-authorised file against the file limit', () => {
-    const t = table()
-    for (let i = 0; i < LIMITS.concurrentFileHandles; i += 1) {
-      t.acquire({ origin: APP, kind: 'file', authorisedBy: { by: 'userSelected' }, destroy: noop })
-    }
-
-    // The exception is to the revocation cascade only. An open fd is an open
-    // fd however the user authorised it.
-    expect(thrown(() => t.acquire({ origin: APP, kind: 'file', authorisedBy: { by: 'userSelected' }, destroy: noop })).code).toBe('limit')
-  })
-
-  it('does not survive the session', async () => {
-    const t = table()
-    const picked = spyDestroy()
-    const handle = t.acquire({ origin: APP, kind: 'file', authorisedBy: { by: 'userSelected' }, destroy: picked })
-
-    await t.dropOrigin(APP)
-
-    // Session-scoped, not a standing grant of its own: it must not come back
-    // after a restart, so the session teardown has to take it.
-    expect(picked).toHaveBeenCalledWith('sessionEnded')
-    expect(thrown(() => t.lookup(APP, handle.id)).code).toBe('denied')
-  })
-
-  it('closes grant-authorised handles and pending operations on session teardown', async () => {
-    const t = table()
-    const destroy = spyDestroy()
-    const handle = t.acquire({ origin: APP, kind: 'tcpSocket', authorisedBy: { by: 'grant', grantId: TCP_GRANT }, destroy })
-    const pending = t.run(APP, { on: 'handle', handleId: handle.id }, never)
-
-    await t.dropOrigin(APP)
-
-    expect(destroy).toHaveBeenCalledWith('sessionEnded')
-    expect((await rejection(pending)).code).toBe('revoked')
-    expect(t.counts(APP).handles).toBe(0)
-  })
-
-  it('leaves other origins alone on session teardown', async () => {
-    const t = table()
-    const theirs = spyDestroy()
-    t.acquire({ origin: OTHER, kind: 'tcpSocket', authorisedBy: { by: 'grant', grantId: TCP_GRANT }, destroy: theirs })
-
-    await t.dropOrigin(APP)
-
-    expect(theirs).not.toHaveBeenCalled()
-  })
-})
-
 // ---------------------------------------------------------------------------
 // Added by the review pass (2026-08-27). Every block below was written from
 // handle-contracts.md rather than from handles.ts, because the first suite's
@@ -584,7 +519,7 @@ describe('a grant stays revoked (the cascade is not a one-shot sweep)', () => {
 
     // userSelected is authorised by the OS picker, not by any grant, so no
     // tombstone can apply to it.
-    expect(() => t.acquire({ origin: APP, kind: 'file', authorisedBy: { by: 'userSelected' }, destroy: noop })).not.toThrow()
+    expect(() => t.acquire({ origin: APP, kind: 'file', authorisedBy: { by: 'userSelected', pickId: 'pick-test' }, destroy: noop })).not.toThrow()
   })
 
   it('bounds how many revoked grant ids it remembers', () => {
@@ -714,7 +649,7 @@ describe('session teardown', () => {
   it('closes gracefully, not abruptly', async () => {
     const t = table()
     const destroy = spyDestroy()
-    t.acquire({ origin: APP, kind: 'file', authorisedBy: { by: 'userSelected' }, destroy })
+    t.acquire({ origin: APP, kind: 'file', authorisedBy: { by: 'userSelected', pickId: 'pick-test' }, destroy })
 
     await t.dropOrigin(APP)
 
@@ -725,12 +660,12 @@ describe('session teardown', () => {
 
   it('refuses a handle registered after the teardown began', async () => {
     const t = table()
-    t.acquire({ origin: APP, kind: 'file', authorisedBy: { by: 'userSelected' }, destroy: never })
+    t.acquire({ origin: APP, kind: 'file', authorisedBy: { by: 'userSelected', pickId: 'pick-test' }, destroy: never })
 
     const dropping = t.dropOrigin(APP)
     // An fs.userSelected picker resolving one tick late. SSFileHandle requires
     // these not to survive the session.
-    const late = thrown(() => t.acquire({ origin: APP, kind: 'file', authorisedBy: { by: 'userSelected' }, destroy: noop }))
+    const late = thrown(() => t.acquire({ origin: APP, kind: 'file', authorisedBy: { by: 'userSelected', pickId: 'pick-test' }, destroy: noop }))
 
     expect(late.code).toBe('revoked')
     void dropping

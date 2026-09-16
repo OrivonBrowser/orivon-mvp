@@ -74,6 +74,8 @@ export function stubBroker (
     rm: (origin: string, path: string, opts?: { recursive?: boolean }) => Promise<void>
     rename: (origin: string, from: string, to: string) => Promise<void>
     open: (origin: string, path: string, flags: string) => Promise<FailableFileHandle>
+    /** The FILE-returning overload only -- A194's dispatch case refuses `directory: true` before the broker is reached, so no test needs the folder shape here. */
+    userSelected: (origin: string, opts?: { multiple?: boolean }) => Promise<readonly FailableFileHandle[]>
     idPublicKey: (origin: string, opts: { curve: string }) => Promise<Uint8Array>
     idSign: (origin: string, opts: { curve: string, payload: Uint8Array }) => Promise<Uint8Array>
     registerApp: (origin: string, manifest: Manifest) => Promise<void>
@@ -107,7 +109,10 @@ export function stubBroker (
       // Present so this stub still satisfies `Broker`; no test here drives
       // it -- A158's early-hydration seam is a loader-side caller
       // (electron-serve.ts's registerServingFor), never reached via ipc.ts.
-      hydrateFromPinnedManifest: async () => {}
+      hydrateFromPinnedManifest: async () => {},
+      // Satisfies `Broker`; unused here -- `app.pickedPaths` is a
+      // settings-surface call (PermissionsController), never CONTROL_CHANNEL.
+      pickedPaths: async () => []
     },
     net: {
       connect: async (origin, opts) => {
@@ -176,7 +181,13 @@ export function stubBroker (
       open: async (origin, path, flags) => {
         calls.push({ method: 'fs.open', origin, args: { path, flags } })
         return await (overrides.open?.(origin, path, flags) ?? notStubbed())
-      }
+      },
+      // Cast the same way the other narrower-than-`Broker` overrides here
+      // already do (see `overrides.userSelected`'s own doc above for why).
+      userSelected: (async (origin: string, opts?: { multiple?: boolean }) => {
+        calls.push({ method: 'fs.userSelected', origin, args: opts })
+        return await (overrides.userSelected?.(origin, opts) ?? notStubbed())
+      }) as Broker['fs']['userSelected']
     },
     id: {
       publicKey: async (origin, opts) => {
@@ -228,6 +239,9 @@ export function stubBroker (
     },
     revokePersisted: async () => {
       throw new Error('revokePersisted is not reachable via orivon.* and this stub was not configured for a test that calls it directly')
+    },
+    revokeUserSelectedPath: async () => {
+      throw new Error('revokeUserSelectedPath is not reachable via orivon.* and this stub was not configured for a test that calls it directly')
     }
   }
 }

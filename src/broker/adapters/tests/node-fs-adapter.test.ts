@@ -270,7 +270,8 @@ describe('the fs capability works end to end for an origin that has never writte
       resolveLookup: async () => [],
       now: () => Date.now(),
       fs: nodeFs(userData),
-      keychain: { getSeed: async () => { throw new Error('not used by this test') } }
+      keychain: { getSeed: async () => { throw new Error('not used by this test') } },
+      pickPath: async () => { throw new Error('not used by this test') }
     })
     broker.registerApp('https://app.example', {
       name: 'probe', version: '1.0.0', orivonApiVersion: 0, capabilities: { fs: { quotaBytes: 1_000_000 } }

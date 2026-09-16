@@ -15,7 +15,7 @@
 // why. Only `brokerIpcSubsystem`, which nothing in ipc.test.ts calls,
 // touches the real `ipcMain`/`MessageChannelMain` value imports below.
 
-import { ipcMain, MessageChannelMain } from 'electron'
+import { dialog, ipcMain, MessageChannelMain } from 'electron'
 import type { MessagePortMain } from 'electron'
 import { CONTROL_CHANNEL, PORT_CHANNEL, SYNC_CONTROL_CHANNEL } from '../../main/channels.js'
 import { publishBroker } from '../../main/registry.js'
@@ -95,6 +95,7 @@ async function dispatch (
     case 'fs.truncate':
     case 'fs.sync':
     case 'fs.close':
+    case 'fs.userSelected':
       return await dispatchFs(broker, origin, method, payload, fsTransport)
     case 'id.publicKey':
     case 'id.sign':
@@ -288,6 +289,51 @@ const CONTROL_RATE_LIMIT_CAPACITY = 200
 const CONTROL_RATE_LIMIT_REFILL_PER_SECOND = 100
 
 /**
+ * The text `pickPath`'s real `dialog.showOpenDialog` call shows. Kept as a
+ * pure function, separate from the `electron` call itself, so it is
+ * testable the same way the rest of this file is (this file's own header,
+ * "TESTABLE WITHOUT ELECTRON") -- `dialog` is a real Electron value import
+ * and cannot be exercised from this suite.
+ *
+ * FOLDER WORDING IS OWNER-APPROVED VERBATIM (`d-0032`, 2026-09-16): three
+ * drafts were proposed, and the owner chose the strongest, on the reasoning
+ * that "read and write" understated what a folder grant really lets an app
+ * do. `message`'s "including files you add to it later" is the load-bearing
+ * phrase -- the thing people misread about a folder pick -- and is not
+ * trimmed for length. FILE/multi-file wording follows the same voice but is
+ * DERIVED, not separately owner-reviewed word for word: `permissions.ts`'s
+ * `describePickedPath` carries the identical reasoning for why it says
+ * "change" rather than claim a delete a `FileHandle` cannot perform.
+ *
+ * `message` is macOS-only (Electron's own `OpenDialogOptions` doc); passed
+ * unconditionally because Electron silently ignores it elsewhere rather
+ * than erroring, confirmed against Electron's own docs (context7,
+ * 2026-09-16) before writing this.
+ */
+export function describePickerDialog (opts: { directory: boolean, multiple: boolean, appName: string | undefined }): { title: string, buttonLabel: string, message: string } {
+  const named = opts.appName === undefined ? undefined : `"${opts.appName}"`
+  if (opts.directory) {
+    return {
+      title: named === undefined ? 'Choose a folder to access' : `Choose a folder for ${named} to access`,
+      buttonLabel: 'Allow access to this folder',
+      message: 'This app will be able to read, change and delete everything in this folder, including files you add to it later.'
+    }
+  }
+  if (opts.multiple) {
+    return {
+      title: named === undefined ? 'Choose files to access' : `Choose files for ${named} to access`,
+      buttonLabel: 'Allow access to these files',
+      message: 'This app will be able to read and change these files, including emptying them.'
+    }
+  }
+  return {
+    title: named === undefined ? 'Choose a file to access' : `Choose a file for ${named} to access`,
+    buttonLabel: 'Allow access to this file',
+    message: 'This app will be able to read and change this file, including emptying it.'
+  }
+}
+
+/**
  * Builds the production `Broker` and registers it on `ipcMain`. The one
  * place this module's `electron` value imports are used.
  *
@@ -316,6 +362,18 @@ export const brokerIpcSubsystem: Subsystem = {
       now: realNow,
       fs: nodeFs(ctx.app.getPath('userData')),
       ledgerStorage: nodeLedgerStorage(ctx.app.getPath('userData')),
+      // orivon.fs.userSelected's real OS picker (L5-userselected). Carries
+      // the owner-approved/derived wording (d-0032) from describePickerDialog
+      // above -- see that function's own doc for what is verbatim-approved
+      // and what is derived.
+      pickPath: async ({ directory, multiple, appName }) => {
+        const properties: Array<'openFile' | 'openDirectory' | 'multiSelections'> = directory
+          ? ['openDirectory']
+          : (multiple ? ['openFile', 'multiSelections'] : ['openFile'])
+        const { title, buttonLabel, message } = describePickerDialog({ directory, multiple, appName })
+        const result = await dialog.showOpenDialog({ properties, title, buttonLabel, message })
+        return result.canceled ? { canceled: true } : { canceled: false, paths: result.filePaths }
+      },
       // ADR-0010 key derivation is not implemented yet (broker/index.ts's
       // own header: "nothing below calls it yet") -- none of the six wired
       // control operations reach `orivon.id`.

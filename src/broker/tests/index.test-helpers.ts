@@ -5,7 +5,7 @@
 import { vi } from 'vitest'
 import { createBroker } from '../index.js'
 import type { BoundUdpSocket, Broker, CreateBrokerOptions, DialedSocket, ListenedServer } from '../broker-contracts.js'
-import type { LedgerStorage, PersistedGrant } from '../grants/ledger-storage.js'
+import type { LedgerStorage, PersistedGrant, PersistedPick } from '../grants/ledger-storage.js'
 import type { Capabilities, Manifest } from '../../contracts/index.js'
 
 export const APP = 'https://app.example'
@@ -264,6 +264,7 @@ export function baseDeps (overrides: Partial<CreateBrokerOptions> = {}): CreateB
     now: () => 0,
     fs: stubFs(),
     keychain: { getSeed: async () => new Uint8Array(32) },
+    pickPath: async () => ({ canceled: true }),
     ...overrides
   }
 }
@@ -274,17 +275,20 @@ export function memoryLedgerStorage (): LedgerStorage & {
   readonly rollbackAcks: Map<string, string>
   readonly grants: Map<string, Readonly<Record<string, PersistedGrant>>>
   readonly declined: Map<string, readonly string[]>
+  readonly pickedPaths: Map<string, Readonly<Record<string, PersistedPick>>>
 } {
   const floors = new Map<string, string>()
   const rollbackAcks = new Map<string, string>()
   const grants = new Map<string, Readonly<Record<string, PersistedGrant>>>()
   const names = new Map<string, string>()
   const declined = new Map<string, readonly string[]>()
+  const pickedPaths = new Map<string, Readonly<Record<string, PersistedPick>>>()
   return {
     floors,
     rollbackAcks,
     grants,
     declined,
+    pickedPaths,
     readVersionFloor: (origin) => floors.get(origin),
     writeVersionFloor: (origin, versionFloor) => { floors.set(origin, versionFloor) },
     deleteVersionFloor: (origin) => { floors.delete(origin) },
@@ -297,14 +301,22 @@ export function memoryLedgerStorage (): LedgerStorage & {
       if (appName !== undefined) names.set(origin, appName)
     },
     deleteGrants: (origin) => { grants.delete(origin) },
-    listPersistedOrigins: () => [...grants.keys()],
+    listPersistedOrigins: () => [...new Set([...grants.keys(), ...pickedPaths.keys()])],
     readPersistedApp: (origin: string) => {
       const g = grants.get(origin)
-      return g === undefined ? undefined : { origin, appName: names.get(origin), grants: g }
+      const p = pickedPaths.get(origin)
+      if (g === undefined && p === undefined) return undefined
+      return { origin, appName: names.get(origin), grants: g ?? {}, pickedPaths: p ?? {} }
     },
     readDeclinedCapabilities: (origin) => declined.get(origin),
     writeDeclinedCapabilities: (origin, capabilities) => { declined.set(origin, capabilities) },
-    deleteDeclinedCapabilities: (origin) => { declined.delete(origin) }
+    deleteDeclinedCapabilities: (origin) => { declined.delete(origin) },
+    readPickedPaths: (origin) => pickedPaths.get(origin),
+    writePickedPaths: (origin, picks, appName) => {
+      pickedPaths.set(origin, picks)
+      if (appName !== undefined) names.set(origin, appName)
+    },
+    deletePickedPaths: (origin) => { pickedPaths.delete(origin) }
   }
 }
 

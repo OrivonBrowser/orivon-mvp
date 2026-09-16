@@ -14,7 +14,7 @@ import type { PortRegistry } from './port-registry.js'
 import {
   isFsHandleIdParams, isFsHandleReadParams, isFsHandleTruncateParams, isFsHandleWriteParams,
   isFsOpenParams, isFsPathWithRecursiveParams, isFsReaddirParams, isFsReadFileParams,
-  isFsRenameParams, isFsStatParams, isFsWriteFileParams
+  isFsRenameParams, isFsStatParams, isFsUserSelectedParams, isFsWriteFileParams
 } from './ipc-validation.js'
 import type { ControlMethod } from './ipc-validation.js'
 
@@ -59,6 +59,21 @@ function requireFile (transport: FsTransport | undefined, origin: string, id: st
   const entry = transport?.registry.get(origin, id)
   if (entry === undefined) throw fail('denied', 'no such file handle for this origin', id)
   return entry
+}
+
+/**
+ * Registers an already-acquired file handle the SAME way for both callers
+ * that produce one -- `fs.open`'s own case below, and `fs.userSelected`'s
+ * (Rule 3: one registration mechanism, not two copies of the exact same
+ * five lines). Released the instant the handle leaves the broker's tables
+ * for ANY reason -- an explicit fs.close, a revoked grant/pick, or session
+ * teardown -- so a stale registry entry never outlives the resource it
+ * names; one mechanism, not a second cleanup path duplicating fs.close's.
+ */
+function registerFileHandle (transport: FsTransport, origin: string, file: FailableFileHandle): FsHandleDescriptor {
+  transport.registry.register(origin, file.id, file)
+  file.onUnlink(() => { transport.registry.remove(origin, file.id) })
+  return { id: file.id }
 }
 
 /** `fs.*`'s dispatch cases, unchanged from ./ipc.ts's own switch for the seven pre-existing ones. */
@@ -106,14 +121,31 @@ export async function dispatchFs (
       if (!isFsOpenParams(payload)) throw fail('invalid', 'fs.open requires { path: string, flags: string }')
       if (transport === undefined) throw fail('internal', 'no fs transport configured for this broker')
       const file = await broker.fs.open(origin, payload.path, payload.flags)
-      transport.registry.register(origin, file.id, file)
-      // Released the instant the handle leaves the broker's tables for ANY
-      // reason -- an explicit fs.close below, a revoked grant, or session
-      // teardown -- so a stale entry never outlives the resource it names.
-      // One mechanism, not a second cleanup path duplicating `fs.close`'s.
-      file.onUnlink(() => { transport.registry.remove(origin, file.id) })
-      const descriptor: FsHandleDescriptor = { id: file.id }
-      return descriptor
+      return registerFileHandle(transport, origin, file)
+    }
+    case 'fs.userSelected': {
+      if (!isFsUserSelectedParams(payload)) {
+        throw fail('invalid', 'fs.userSelected requires an optional { directory?: boolean, multiple?: boolean }')
+      }
+      if (payload.directory === true) {
+        // The FOLDER shape (DirectoryHandle) has no CONTROL_CHANNEL delivery
+        // yet -- a genuinely different problem from `fs.open`'s, not the
+        // same one repeated. FileHandle's handle-scoped siblings
+        // (fs.read/write/fstat/truncate/sync/close) already existed before
+        // this case was written, so the FILE shape below is pure reuse; a
+        // DirectoryHandle needs EIGHT new handle-scoped verbs
+        // (readdir/stat/mkdir/rm/rename/readFile/writeFile/open) with no
+        // existing precedent to reuse, over a method set A167 already flags
+        // as an unconfirmed AI recommendation (docs/open-questions.md).
+        // Building that surface now would mean inventing a delivery
+        // mechanism for a shape nobody has signed off on -- filed as A194
+        // rather than guessed at.
+        throw fail('internal', "orivon.fs.userSelected's folder shape is not reachable from a page yet -- see A194, docs/open-questions.md")
+      }
+      if (transport === undefined) throw fail('internal', 'no fs transport configured for this broker')
+      const opts = payload.multiple === undefined ? undefined : { multiple: payload.multiple }
+      const files = await broker.fs.userSelected(origin, opts)
+      return files.map((file) => registerFileHandle(transport, origin, file))
     }
     case 'fs.read': {
       if (!isFsHandleReadParams(payload)) throw fail('invalid', 'fs.read requires { id: string, position: number, length: number }')

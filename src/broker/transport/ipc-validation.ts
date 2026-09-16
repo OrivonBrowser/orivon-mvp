@@ -13,11 +13,12 @@
 import type { CapabilityRequest, Pattern, RequestEnvelope } from '../../contracts/index.js'
 import { MAX_PATTERNS } from '../policy/connect.js'
 
-/** The twenty-seven wired control operations. Anything else is 'invalid'. */
+/** The twenty-eight wired control operations. Anything else is 'invalid'. */
 export type ControlMethod =
   | 'app.manifest' | 'app.grants' | 'app.requestGrant' | 'fs.readFile' | 'fs.writeFile'
   | 'fs.mkdir' | 'fs.readdir' | 'fs.stat' | 'fs.rm' | 'fs.rename'
   | 'fs.open' | 'fs.read' | 'fs.write' | 'fs.fstat' | 'fs.truncate' | 'fs.sync' | 'fs.close'
+  | 'fs.userSelected'
   | 'id.publicKey' | 'id.sign'
   | 'net.connect' | 'net.connectSecure' | 'net.udpBind' | 'net.listen' | 'net.close'
   | 'net.setNoDelay' | 'net.setKeepAlive' | 'net.lookup'
@@ -29,6 +30,7 @@ export function isControlMethod (method: string): method is ControlMethod {
     method === 'fs.rm' || method === 'fs.rename' ||
     method === 'fs.open' || method === 'fs.read' || method === 'fs.write' ||
     method === 'fs.fstat' || method === 'fs.truncate' || method === 'fs.sync' || method === 'fs.close' ||
+    method === 'fs.userSelected' ||
     method === 'id.publicKey' || method === 'id.sign' ||
     method === 'net.connect' || method === 'net.connectSecure' ||
     method === 'net.udpBind' || method === 'net.listen' || method === 'net.close' ||
@@ -44,6 +46,17 @@ export interface FsReaddirParams { readonly path: string }
 export interface FsStatParams { readonly path: string }
 export interface FsRenameParams { readonly from: string, readonly to: string }
 export interface FsOpenParams { readonly path: string, readonly flags: string }
+/**
+ * `orivon.fs.userSelected`'s wire payload -- both `directory` and `multiple`
+ * optional, matching `capability-api.ts`'s own overload split (`{directory:
+ * true}` for a folder, `{directory?: false, multiple?: boolean}` for files).
+ * Shape validation accepts EITHER call; `dispatch-fs.ts`'s own case is what
+ * refuses `directory: true` today (no CONTROL_CHANNEL delivery for
+ * `DirectoryHandle` yet -- see that case's own comment) -- kept as a
+ * dispatch-level refusal, not a shape error, because the payload itself is
+ * perfectly well-formed against the real contract.
+ */
+export interface FsUserSelectedParams { readonly directory?: boolean, readonly multiple?: boolean }
 /** Shared by fs.fstat, fs.sync and fs.close -- all three name only the handle. */
 export interface FsHandleIdParams { readonly id: string }
 export interface FsHandleReadParams { readonly id: string, readonly position: number, readonly length: number }
@@ -138,6 +151,13 @@ export function isFsOpenParams (payload: unknown): payload is FsOpenParams {
   return typeof payload === 'object' && payload !== null &&
     typeof (payload as { path?: unknown }).path === 'string' &&
     typeof (payload as { flags?: unknown }).flags === 'string'
+}
+
+export function isFsUserSelectedParams (payload: unknown): payload is FsUserSelectedParams {
+  if (typeof payload !== 'object' || payload === null) return false
+  const { directory, multiple } = payload as { directory?: unknown, multiple?: unknown }
+  return (directory === undefined || typeof directory === 'boolean') &&
+    (multiple === undefined || typeof multiple === 'boolean')
 }
 
 export function isFsHandleIdParams (payload: unknown): payload is FsHandleIdParams {

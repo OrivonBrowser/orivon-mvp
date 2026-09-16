@@ -31,6 +31,7 @@ function fakePermissions (overrides: Partial<PermissionsController> = {}): Permi
     forUrl: vi.fn(async () => null),
     revoke: vi.fn(async () => {}),
     revokeCapability: vi.fn(async () => {}),
+    revokePickedPath: vi.fn(async () => {}),
     ...overrides
   }
 }
@@ -43,13 +44,13 @@ function dispatch (command: unknown, senderFrame: unknown = SETTINGS_FRAME): unk
 
 describe('registerSettingsIpc', () => {
   it('list calls permissions.list() and returns what it resolves', async () => {
-    const permissions = fakePermissions({ list: vi.fn(async () => [{ origin: 'https://app.example', appName: 'Test', rows: [] }]) })
+    const permissions = fakePermissions({ list: vi.fn(async () => [{ origin: 'https://app.example', appName: 'Test', rows: [], pickedPathRows: [] }]) })
     registerSettingsIpc(settingsWebContents, permissions)
 
     const result = await dispatch({ type: 'list' })
 
     expect(permissions.list).toHaveBeenCalledOnce()
-    expect(result).toEqual([{ origin: 'https://app.example', appName: 'Test', rows: [] }])
+    expect(result).toEqual([{ origin: 'https://app.example', appName: 'Test', rows: [], pickedPathRows: [] }])
   })
 
   it('revoke forwards origin and grantId to permissions.revoke() -- the settings page\'s own Revoke button', async () => {

@@ -5,7 +5,7 @@
 // Spec: docs/architecture/handle-contracts.md. See ./handles.ts's header for
 // why this directory holds state at all and what it may and may not import.
 
-import type { Datagram, FileHandle, GrantId, Handle, OrivonErrorCode, TcpSocket } from '../../contracts/index.js'
+import type { Datagram, DirectoryHandle, FileHandle, GrantId, Handle, OrivonErrorCode, TcpSocket } from '../../contracts/index.js'
 
 /**
  * What kind of resource a handle names.
@@ -29,12 +29,21 @@ export type HandleKind = 'tcpSocket' | 'tcpServer' | 'udpSocket' | 'file' | 'ide
 export type Authorisation =
   | { readonly by: 'grant', readonly grantId: GrantId }
   /**
-   * A FileHandle from `orivon.fs.userSelected`. The user's one-time choice at
-   * the OS picker IS the authorisation, so revoking the standing `fs` grant
-   * does not close it. It is session-scoped, not a standing grant of its own:
-   * `dropOrigin` takes it, which is what "does not survive a restart" means.
+   * A FileHandle or DirectoryHandle from `orivon.fs.userSelected`. The
+   * user's one-time choice at the OS picker IS the authorisation, so
+   * revoking the standing `fs` grant does not close it. The LIVE HANDLE is
+   * session-scoped, not a standing grant of its own: `dropOrigin` takes it,
+   * which is what "does not survive a restart" means (D-0007's own
+   * distinction is between this in-memory handle and the PERSISTED pick
+   * record naming it, which does survive -- ../grants/picked-path-ledger.js).
+   *
+   * `pickId` addresses this one pick for the OTHER revocation path: a person
+   * revoking it from the settings permissions list, which must tear down any
+   * live handle it still authorises (../handles.ts's `revokeUserSelected`)
+   * the same way an ordinary grant's revoke does -- see `byPickedPath` in
+   * ./handle-store.ts, the index this id is looked up through.
    */
-  | { readonly by: 'userSelected' }
+  | { readonly by: 'userSelected', readonly pickId: string }
 
 /**
  * Why a handle is being torn down. The injected destroy callback decides the
@@ -325,6 +334,16 @@ export interface FailableTcpServer extends Handle {
  * with no single stream to mean.
  */
 export interface FailableFileHandle extends FileHandle {
+  fail: (code: OrivonErrorCode, platformCode?: string) => void
+  onUnlink: (listener: (reason: CloseReason, code?: OrivonErrorCode) => void) => void
+}
+
+/**
+ * A `DirectoryHandle` widened the same way `FailableFileHandle` widens
+ * `FileHandle` -- same escape hatch, same absence of `abort` and for the
+ * same reason (a directory has no single stream to mean it either).
+ */
+export interface FailableDirectoryHandle extends DirectoryHandle {
   fail: (code: OrivonErrorCode, platformCode?: string) => void
   onUnlink: (listener: (reason: CloseReason, code?: OrivonErrorCode) => void) => void
 }
