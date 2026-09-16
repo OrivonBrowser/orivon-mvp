@@ -31,13 +31,14 @@ describe('createDialog', () => {
   })
 
   it.each(['showMessageBox', 'showSaveDialog', 'showErrorBox', 'somethingNotRealEither'])(
-    'dialog.%s throws a named, not-yet-considered error rather than a bare TypeError',
+    'dialog.%s: reading it is safe (A169); calling it throws a named, not-yet-considered error rather than a bare TypeError',
     (method) => {
       const orivon = { fs: {} } as unknown as Pick<Orivon, 'fs'>
-      const dialog = createDialog(orivon) as unknown as Record<string, unknown>
-      expect(() => dialog[method]).toThrow(ElectronShimError)
+      const dialog = createDialog(orivon) as unknown as Record<string, () => unknown>
+      expect(() => dialog[method]).not.toThrow()
+      expect(() => dialog[method]!()).toThrow(ElectronShimError)
       try {
-        void dialog[method]
+        dialog[method]!()
       } catch (error) {
         expect((error as Error).name).not.toBe('TypeError')
         expect((error as ElectronShimError).reason).toBe('unimplemented')

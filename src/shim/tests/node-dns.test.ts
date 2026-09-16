@@ -128,25 +128,27 @@ describe('dns.promises.lookup', () => {
     await expect(dns.promises.lookup('blocked.example')).rejects.toMatchObject({ code: 'denied' })
   })
 
-  it('other dns.promises members are named, not silently absent (A135)', async () => {
+  it('other dns.promises members are named, not silently absent (A135) -- reading one is safe (A169), only calling it refuses', async () => {
     installFakeOrivon(async () => ROUTER)
-    const dns = (await import('../node-dns.js')).default as unknown as { promises: Record<string, unknown> }
+    const dns = (await import('../node-dns.js')).default as unknown as { promises: Record<string, () => unknown> }
     const { OrivonShimError } = await import('../errors.js')
-    expect(() => dns.promises.resolve4).toThrow(OrivonShimError)
+    expect(() => dns.promises.resolve4).not.toThrow()
+    expect(() => dns.promises.resolve4!()).toThrow(OrivonShimError)
   })
 })
 
 // A135: every OTHER dns.* member used to be silently absent -- `dns.resolve4`
 // read off the default export (the shape a bundled CJS `require('dns')`
 // resolves to) threw a bare "resolve4 is not a function".
-describe('dns\'s other members -- named refusal instead of absence (A135)', () => {
-  it('throws a named OrivonShimError, reason unimplemented, for resolve4 -- read off the default export, before it is even called', async () => {
+describe('dns\'s other members -- named refusal instead of absence (A135), reading one is safe (A169)', () => {
+  it('throws a named OrivonShimError, reason unimplemented, for resolve4 when called -- reading it off the default export first does not throw', async () => {
     installFakeOrivon(async () => ROUTER)
-    const dns = (await import('../node-dns.js')).default as unknown as Record<string, unknown>
+    const dns = (await import('../node-dns.js')).default as unknown as Record<string, () => unknown>
     const { OrivonShimError } = await import('../errors.js')
-    expect(() => dns.resolve4).toThrow(OrivonShimError)
+    expect(() => dns.resolve4).not.toThrow()
+    expect(() => dns.resolve4!()).toThrow(OrivonShimError)
     try {
-      void dns.resolve4
+      dns.resolve4!()
     } catch (error) {
       expect((error as InstanceType<typeof OrivonShimError>).api).toBe('dns.resolve4')
       expect((error as InstanceType<typeof OrivonShimError>).reason).toBe('unimplemented')
@@ -154,14 +156,26 @@ describe('dns\'s other members -- named refusal instead of absence (A135)', () =
   })
 
   it.each(['resolve', 'resolve6', 'reverse', 'setServers'])(
-    'names %s the same way, not a generic TypeError',
+    'names %s the same way when called, not a generic TypeError -- reading it first is safe',
     async (member) => {
       installFakeOrivon(async () => ROUTER)
-      const dns = (await import('../node-dns.js')).default as unknown as Record<string, unknown>
+      const dns = (await import('../node-dns.js')).default as unknown as Record<string, () => unknown>
       const { OrivonShimError } = await import('../errors.js')
-      expect(() => dns[member]).toThrow(OrivonShimError)
+      expect(() => dns[member]).not.toThrow()
+      expect(() => dns[member]!()).toThrow(OrivonShimError)
     }
   )
+
+  // A169's actual point: a library that merely probes an unbuilt member --
+  // `typeof`, optional chaining, destructuring -- must never crash at
+  // import just because it checked before calling.
+  it('typeof, optional chaining and destructuring over an unbuilt member never throw', async () => {
+    installFakeOrivon(async () => ROUTER)
+    const dns = (await import('../node-dns.js')).default as unknown as Record<string, unknown>
+    expect(typeof dns.resolve4).toBe('function')
+    expect(() => dns.resolve4 ?? undefined).not.toThrow()
+    expect(() => { const { resolve4 } = dns as { resolve4?: unknown }; return resolve4 }).not.toThrow()
+  })
 
   it('still serves the real lookup/promises exports unchanged through the same default export', async () => {
     installFakeOrivon(async () => ROUTER)
