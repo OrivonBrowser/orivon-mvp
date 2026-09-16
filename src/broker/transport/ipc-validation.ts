@@ -13,12 +13,26 @@
 import type { CapabilityRequest, Pattern, RequestEnvelope } from '../../contracts/index.js'
 import { MAX_PATTERNS } from '../policy/connect.js'
 
-/** The twenty-eight wired control operations. Anything else is 'invalid'. */
+/**
+ * The wired control operations. Anything else is 'invalid'.
+ *
+ * The `fs.dir*` eight (A195) are `DirectoryHandle`'s own method set
+ * (`contracts/handles.ts`) reaching CONTROL_CHANNEL -- one case per member,
+ * each carrying the picked folder's handle `id` the same way `fs.read`/
+ * `fs.write`/... already carry a file's. `fs.dirOpen` is the one that does
+ * NOT get a matching `fs.dir*` sibling of its own for what it returns: it
+ * resolves a `FileHandle`, so every subsequent call against it is `fs.read`/
+ * `fs.write`/`fs.fstat`/`fs.truncate`/`fs.sync`/`fs.close` -- fs.open's own
+ * six, reused for free (A194's own dispatch-fs.ts comment on why that is
+ * the correct reuse, not a second mechanism).
+ */
 export type ControlMethod =
   | 'app.manifest' | 'app.grants' | 'app.requestGrant' | 'fs.readFile' | 'fs.writeFile'
   | 'fs.mkdir' | 'fs.readdir' | 'fs.stat' | 'fs.rm' | 'fs.rename'
   | 'fs.open' | 'fs.read' | 'fs.write' | 'fs.fstat' | 'fs.truncate' | 'fs.sync' | 'fs.close'
   | 'fs.userSelected'
+  | 'fs.dirReaddir' | 'fs.dirStat' | 'fs.dirMkdir' | 'fs.dirRm' | 'fs.dirRename'
+  | 'fs.dirReadFile' | 'fs.dirWriteFile' | 'fs.dirOpen'
   | 'id.publicKey' | 'id.sign'
   | 'net.connect' | 'net.connectSecure' | 'net.udpBind' | 'net.listen' | 'net.close'
   | 'net.setNoDelay' | 'net.setKeepAlive' | 'net.lookup'
@@ -31,6 +45,9 @@ export function isControlMethod (method: string): method is ControlMethod {
     method === 'fs.open' || method === 'fs.read' || method === 'fs.write' ||
     method === 'fs.fstat' || method === 'fs.truncate' || method === 'fs.sync' || method === 'fs.close' ||
     method === 'fs.userSelected' ||
+    method === 'fs.dirReaddir' || method === 'fs.dirStat' || method === 'fs.dirMkdir' ||
+    method === 'fs.dirRm' || method === 'fs.dirRename' || method === 'fs.dirReadFile' ||
+    method === 'fs.dirWriteFile' || method === 'fs.dirOpen' ||
     method === 'id.publicKey' || method === 'id.sign' ||
     method === 'net.connect' || method === 'net.connectSecure' ||
     method === 'net.udpBind' || method === 'net.listen' || method === 'net.close' ||
@@ -50,11 +67,9 @@ export interface FsOpenParams { readonly path: string, readonly flags: string }
  * `orivon.fs.userSelected`'s wire payload -- both `directory` and `multiple`
  * optional, matching `capability-api.ts`'s own overload split (`{directory:
  * true}` for a folder, `{directory?: false, multiple?: boolean}` for files).
- * Shape validation accepts EITHER call; `dispatch-fs.ts`'s own case is what
- * refuses `directory: true` today (no CONTROL_CHANNEL delivery for
- * `DirectoryHandle` yet -- see that case's own comment) -- kept as a
- * dispatch-level refusal, not a shape error, because the payload itself is
- * perfectly well-formed against the real contract.
+ * Shape validation accepts EITHER call; `dispatch-fs.ts`'s own case routes
+ * `directory: true` to a `DirectoryHandle` acquisition (A195) and everything
+ * else to the pre-existing file shape.
  */
 export interface FsUserSelectedParams { readonly directory?: boolean, readonly multiple?: boolean }
 /** Shared by fs.fstat, fs.sync and fs.close -- all three name only the handle. */
@@ -62,6 +77,22 @@ export interface FsHandleIdParams { readonly id: string }
 export interface FsHandleReadParams { readonly id: string, readonly position: number, readonly length: number }
 export interface FsHandleWriteParams { readonly id: string, readonly position: number, readonly data: Uint8Array }
 export interface FsHandleTruncateParams { readonly id: string, readonly length: number }
+
+/**
+ * `DirectoryHandle`'s own eight-method wire payloads (A195), each carrying
+ * the picked folder's handle `id` alongside whatever `path` its
+ * `contracts/handles.ts` signature already takes. `path` is OPTIONAL only on
+ * `fs.dirReaddir`/`fs.dirStat` -- `DirectoryHandle.readdir`/`stat` omitting
+ * it targets the root itself (that interface's own doc comment); every other
+ * member requires one, matching its signature exactly.
+ */
+export interface FsDirPathOptionalParams { readonly id: string, readonly path?: string }
+export interface FsDirPathRequiredParams { readonly id: string, readonly path: string }
+/** Shared by fs.dirMkdir and fs.dirRm -- both take a path and an optional recursive flag, mirroring FsPathWithRecursiveParams one layer up. */
+export interface FsDirPathWithRecursiveParams { readonly id: string, readonly path: string, readonly recursive?: boolean }
+export interface FsDirRenameParams { readonly id: string, readonly from: string, readonly to: string }
+export interface FsDirWriteFileParams { readonly id: string, readonly path: string, readonly data: Uint8Array }
+export interface FsDirOpenParams { readonly id: string, readonly path: string, readonly flags: string }
 export interface IdPublicKeyParams { readonly curve: string }
 export interface IdSignParams { readonly curve: string, readonly payload: Uint8Array }
 /** Shared by net.connect and net.connectSecure -- both take exactly { host, port }, and isNetConnectParams below validates either call's payload (code-guidelines.md Rule 3: same shape, same reason). */
@@ -192,6 +223,49 @@ export function isFsHandleTruncateParams (payload: unknown): payload is FsHandle
   if (typeof payload !== 'object' || payload === null) return false
   const { id, length } = payload as { id?: unknown, length?: unknown }
   return typeof id === 'string' && typeof length === 'number' && Number.isSafeInteger(length) && length >= 0
+}
+
+/** Shared by fs.dirReaddir and fs.dirStat -- `path` optional, matching `DirectoryHandle.readdir`/`stat` (contracts/handles.ts). */
+export function isFsDirPathOptionalParams (payload: unknown): payload is FsDirPathOptionalParams {
+  if (typeof payload !== 'object' || payload === null) return false
+  const { id, path } = payload as { id?: unknown, path?: unknown }
+  return typeof id === 'string' && (path === undefined || typeof path === 'string')
+}
+
+/** fs.dirReadFile -- `path` required, unlike the optional-path pair above. */
+export function isFsDirPathRequiredParams (payload: unknown): payload is FsDirPathRequiredParams {
+  return typeof payload === 'object' && payload !== null &&
+    typeof (payload as { id?: unknown }).id === 'string' &&
+    typeof (payload as { path?: unknown }).path === 'string'
+}
+
+/** Shared by fs.dirMkdir and fs.dirRm, `recursive` optional -- FsPathWithRecursiveParams's own reasoning, one layer down. */
+export function isFsDirPathWithRecursiveParams (payload: unknown): payload is FsDirPathWithRecursiveParams {
+  if (typeof payload !== 'object' || payload === null) return false
+  const { id, path, recursive } = payload as { id?: unknown, path?: unknown, recursive?: unknown }
+  return typeof id === 'string' && typeof path === 'string' &&
+    (recursive === undefined || typeof recursive === 'boolean')
+}
+
+export function isFsDirRenameParams (payload: unknown): payload is FsDirRenameParams {
+  return typeof payload === 'object' && payload !== null &&
+    typeof (payload as { id?: unknown }).id === 'string' &&
+    typeof (payload as { from?: unknown }).from === 'string' &&
+    typeof (payload as { to?: unknown }).to === 'string'
+}
+
+export function isFsDirWriteFileParams (payload: unknown): payload is FsDirWriteFileParams {
+  return typeof payload === 'object' && payload !== null &&
+    typeof (payload as { id?: unknown }).id === 'string' &&
+    typeof (payload as { path?: unknown }).path === 'string' &&
+    (payload as { data?: unknown }).data instanceof Uint8Array
+}
+
+export function isFsDirOpenParams (payload: unknown): payload is FsDirOpenParams {
+  return typeof payload === 'object' && payload !== null &&
+    typeof (payload as { id?: unknown }).id === 'string' &&
+    typeof (payload as { path?: unknown }).path === 'string' &&
+    typeof (payload as { flags?: unknown }).flags === 'string'
 }
 
 export function isIdPublicKeyParams (payload: unknown): payload is IdPublicKeyParams {

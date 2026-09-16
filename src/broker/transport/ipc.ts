@@ -96,6 +96,14 @@ async function dispatch (
     case 'fs.sync':
     case 'fs.close':
     case 'fs.userSelected':
+    case 'fs.dirReaddir':
+    case 'fs.dirStat':
+    case 'fs.dirMkdir':
+    case 'fs.dirRm':
+    case 'fs.dirRename':
+    case 'fs.dirReadFile':
+    case 'fs.dirWriteFile':
+    case 'fs.dirOpen':
       return await dispatchFs(broker, origin, method, payload, fsTransport)
     case 'id.publicKey':
     case 'id.sign':
@@ -385,8 +393,9 @@ export const brokerIpcSubsystem: Subsystem = {
     // fs.open's own per-origin lookup (A184) -- the same generic
     // createPortRegistry `transport.registry` above uses, over
     // FailableFileHandle instead of RegisteredSocket. One instance for the
-    // subsystem's whole lifetime, exactly like `transport`.
-    const fsTransport: FsTransport = { registry: createPortRegistry() }
+    // subsystem's whole lifetime, exactly like `transport`. `dirRegistry`
+    // (A195) is its DirectoryHandle counterpart, over FailableDirectoryHandle.
+    const fsTransport: FsTransport = { registry: createPortRegistry(), dirRegistry: createPortRegistry() }
     const limiter = createTokenBucketLimiter({
       capacity: CONTROL_RATE_LIMIT_CAPACITY,
       refillPerSecond: CONTROL_RATE_LIMIT_REFILL_PER_SECOND,

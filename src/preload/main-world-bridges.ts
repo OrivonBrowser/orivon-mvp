@@ -13,7 +13,54 @@
 // ever reaches the main world; only installOrivon's own compiled body does.
 
 import type { OrivonErrorCode } from '../contracts/errors.js'
-import type { SendRefusal } from '../contracts/handles.js'
+import type { FileStat, SendRefusal } from '../contracts/handles.js'
+
+/**
+ * What orivon-surface.ts's fsOpen bridge closure resolves to (A184) --
+ * deliberately narrower than `FileHandle` (contracts/handles.ts): no
+ * `readable`/`writable`, and no live-pushed `closed`. Every method here is a
+ * plain request/reply CONTROL_CHANNEL round trip -- unlike net.connect,
+ * fs.open needs no per-socket port or byte pump, so it needs none of the
+ * main-world stream machinery ./main-world-socket.ts's `buildSocket` exists
+ * for. See this lane's own PR body for what that means a page cannot do yet.
+ *
+ * Moved here from ./main-world-socket.ts (A195) so `MainWorldDirectoryBridge`
+ * below could reference it without a circular import -- re-exported from
+ * there so no existing `from '../main-world-socket.js'` import site needed
+ * to change.
+ */
+export interface MainWorldFileBridge {
+  readonly id: string
+  read: (opts: { position: number, length: number }) => Promise<Uint8Array>
+  write: (opts: { position: number, data: Uint8Array }) => Promise<number>
+  stat: () => Promise<FileStat>
+  truncate: (length: number) => Promise<void>
+  sync: () => Promise<void>
+  close: () => Promise<void>
+}
+
+/**
+ * What orivon-surface.ts's fsUserSelectedDirectory bridge closure resolves
+ * to (A195) -- `MainWorldFileBridge`'s own counterpart for `DirectoryHandle`
+ * (contracts/handles.ts), same reasoning: every member is a plain
+ * request/reply round trip, so this needs no main-world stream machinery
+ * either. `open` resolves the SAME raw shape `MainWorldFileBridge` is --
+ * `DirectoryHandle.open()` returns a real `FileHandle`, routed through
+ * fs.open's existing wire methods (dispatch-fs.ts's own `fs.dirOpen` case),
+ * not a second file-handle mechanism.
+ */
+export interface MainWorldDirectoryBridge {
+  readonly id: string
+  readdir: (path?: string) => Promise<readonly string[]>
+  stat: (path?: string) => Promise<FileStat>
+  mkdir: (path: string, opts?: { recursive?: boolean }) => Promise<void>
+  rm: (path: string, opts?: { recursive?: boolean }) => Promise<void>
+  rename: (from: string, to: string) => Promise<void>
+  readFile: (path: string) => Promise<Uint8Array>
+  writeFile: (path: string, data: Uint8Array) => Promise<void>
+  open: (path: string, flags: string) => Promise<MainWorldFileBridge>
+  close: () => Promise<void>
+}
 
 export interface OrivonLimits {
   readonly readWindowBytes: number

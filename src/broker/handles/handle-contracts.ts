@@ -343,7 +343,19 @@ export interface FailableFileHandle extends FileHandle {
  * `FileHandle` -- same escape hatch, same absence of `abort` and for the
  * same reason (a directory has no single stream to mean it either).
  */
-export interface FailableDirectoryHandle extends DirectoryHandle {
+export interface FailableDirectoryHandle extends Omit<DirectoryHandle, 'open'> {
   fail: (code: OrivonErrorCode, platformCode?: string) => void
   onUnlink: (listener: (reason: CloseReason, code?: OrivonErrorCode) => void) => void
+  /**
+   * Widens `DirectoryHandle.open`'s return type the same way
+   * `FailableTcpServer.connections` widens `TcpServer`'s (this file's own
+   * doc on that field): a nested handle a `Failable*` type PRODUCES needs
+   * the same broker-internal escape hatch its parent already has, or a
+   * caller holding only the app-facing `FileHandle` this would otherwise
+   * inherit could never register it with `fail`/`onUnlink` the way
+   * `dispatch-fs.ts`'s `fs.dirOpen` case does (A195) -- `../user-selected-
+   * capability.ts`'s real `open` already returns exactly this shape, so
+   * this only tightens the type to match, no behaviour change.
+   */
+  open(path: string, flags: string): Promise<FailableFileHandle>
 }
