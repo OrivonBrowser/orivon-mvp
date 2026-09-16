@@ -3725,7 +3725,7 @@ exactly what Rule 2 says an agent should not blur into a decision.
 blocking, since the behaviour it describes (bounded, disclosed, reset rather than silent growth)
 is safe today regardless of which reading of the spec is correct.
 
-### A107 — `k-rpc-socket` needs real `dns.lookup`; no pure-JS polyfill answers it, and it is a broker capability question, not shim work **[STILL OPEN]**
+### A107 — `k-rpc-socket` needs real `dns.lookup`; no pure-JS polyfill answers it, and it is a broker capability question, not shim work **[RESOLVED 2026-09-15]**
 
 **Raised 2026-09-10**, lane P3-1, `docs/planning/shim-dependency-review.md` (now on `main` via
 PR #111).
@@ -3745,6 +3745,25 @@ however it is spelled.
 
 **Needed by:** before DHT peer resolution can work for any hostname-addressed peer — queue item
 3.2, or whichever review of `orivon.net`'s surface comes first.
+
+**RESOLVED 2026-09-15, in the shape this entry asked for: broker authority, not a shim
+polyfill.** `d-0030` added `OrivonNet.lookup` to `src/contracts/capability-api.ts` (#199);
+`net-capability.ts`'s `lookup`, its control-channel dispatch (`dispatch-net.ts`'s `'net.lookup'`
+case) and its preload surface (`net-surface.ts`'s `netLookupBridge`) landed in #201;
+`src/shim/node-dns.ts`'s `dns.lookup`/`dns.promises.lookup` now call through to it for real,
+wired into `module-map.ts`'s `'dns'` entry, closing #205. **Verified against the tree, not
+assumed:** `net-capability.ts` exports `lookup` from `createNetCapability`'s returned object,
+`dispatch-net.ts` has a real case for it, and `node-dns.ts` no longer contains a refusal for
+`lookup` itself (only for every other `dns.*` member, unchanged and unrelated to this entry).
+
+**Half-open, tracked separately rather than reopening this entry:** the review above named the
+missing authority, not the exact grant-matching semantics a lookup should use once that
+authority existed — that reading (`hostname` checked against the union of the origin's held
+`tcp.connect`/`https.connect`/`udp.send` patterns) was supplied by the implementing lane itself
+and remains an AI recommendation the owner has not confirmed. See A167 item 3 and A171 for that
+still-open half; this entry closes because its own question — "is this shim work or does it need
+new broker authority" — has a real answer now, not because every judgment call downstream of
+that answer is settled.
 
 ### A108 — a same-view HTTP redirect to a different origin is not caught by the partition swap **[STILL OPEN]**
 
@@ -3949,7 +3968,7 @@ real `Error` instance there, not only the right `.code`) and hardened `src/shim/
 entry's own failure mode) is not something a structural shape check can recover regardless. See
 A152's own resolution note for the full reasoning.
 
-### A114 — delivering `TcpServer.connections` to a page needs a nested-port shape the IPC contract has no room for **[STILL OPEN]**
+### A114 — delivering `TcpServer.connections` to a page needs a nested-port shape the IPC contract has no room for **[RESOLVED 2026-09-15]**
 
 **Raised 2026-09-10**, lane P2-6wire (PR #126), filed by the conductor. **Architectural, so the
 lane correctly parked it rather than choosing** — it needs a `src/contracts/` change and an owner
@@ -3982,6 +4001,29 @@ into this round at all. Queue item 5.1's exit criterion (a real torrent from a n
 peer) does not strictly require inbound listening, but the seeding half of the flagship does.
 
 **Still open.** Needs the owner to pick a delivery shape before a contracts PR can be written.
+
+**RESOLVED 2026-09-15.** `d-0028` chose the first of the two named shapes: deliver each accepted
+socket's port over the *server's own* port. `AcceptedMessage`, a new `BrokerToRendererMessage`
+member carrying the accepted `TcpSocket`'s full synchronous shape plus its `port`, landed in
+`src/contracts/ipc.ts` (#199) — see A167 item 1 for the judgment calls that shape carried
+(typing `port` as the renderer-side `MessagePort` rather than the broker-side
+`MessagePortMain`, matching how `PortLike` already differs per process). The implementation —
+`src/broker/transport/accept-pump.ts` constructing and sending it, `src/preload/server-port.ts`
+and `src/preload/main-world-socket.ts`'s `buildServer` receiving it and building a real
+`TcpServer.connections` `ReadableStream` — landed in #203. **Verified against the tree, not
+assumed:** `dispatch-net.ts` has a real `'net.listen'` control-channel case,
+`main-world-socket.ts`'s `buildServer` is exercised by `main-world-socket-listen.test.ts`
+against the real `installOrivon` wiring, and `highWaterMark: 0` (the property that keeps the
+broker from accepting a connection nobody asked for) is proven end to end across all three new
+layers by `accept-pump.test.ts`, `server-port.test.ts` and `main-world-socket-listen.test.ts`
+(A185's own verification). `compatibility-matrix.md`'s `net.listen` row moves to ✅✅✅✅.
+
+**Half-open, tracked separately rather than reopening this entry:** A185 flags whether reusing
+`CreditMessage`'s `bytesConsumed` field to mean "one accepted connection" (rather than a
+purpose-built wire member) should stand now that the implementation exists to show what the
+alternative would look like — a design-quality question, not a reachability one. This entry
+closes because a page can now receive `TcpServer.connections` for real, which is the question it
+asked; A185's own framing question is separate and still open.
 
 ---
 
