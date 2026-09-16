@@ -137,13 +137,30 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
    * rose in memory, so 'denied'/'limit' would misreport a broker fault as
    * the registration being refused. Fresh message, errno kept as
    * `platformCode`, for `mapIoError`'s own path-leak reason.
+   *
+   * `ledger.hydrateGrantsOnFirstRegistration` runs BEFORE the try/catch,
+   * deliberately -- it is what `ledger.registerApp` itself calls internally
+   * for the same first-registration branch (grant-ledger.ts), so calling it
+   * again here first, then letting `ledger.registerApp` find the flag
+   * already set, costs nothing and is what lets this method see the
+   * `SupersededGrant`s a hydration pass replaced (A168) independent of
+   * whether the floor write below throws. UNCONDITIONAL cascade, same
+   * ordering `revokePersisted`/`grant`/`revoke` below already use: a
+   * version-floor write failure must never be the reason a
+   * hydration-superseded grant's handles are left running.
    */
   async function registerApp (origin: string, appManifest: Manifest): Promise<void> {
     const key = canonical(origin)
+    const superseded = ledger.hydrateGrantsOnFirstRegistration(key, appManifest)
+    let persistError: unknown
     try {
       ledger.registerApp(key, appManifest)
     } catch (error) {
-      throw fail('internal', 'the version floor could not be persisted', undefined, errnoOf(error))
+      persistError = error
+    }
+    for (const { grantId } of superseded) await handleTable.revoke(key, grantId)
+    if (persistError !== undefined) {
+      throw fail('internal', 'the version floor could not be persisted', undefined, errnoOf(persistError))
     }
   }
 
@@ -154,10 +171,17 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
    * performs no write of its own (it only reads persisted grants, the same
    * as `hydrateGrants` already does unguarded inside `registerApp`'s own
    * hydration branch), so there is no write failure here to translate.
+   *
+   * Cascades whatever `SupersededGrant`s this hydration pass reports through
+   * `handleTable.revoke`, same as `registerApp` above (A168) -- ordinarily
+   * empty here, since nothing has usually granted this origin anything yet
+   * this session, but this seam can run twice for the same origin
+   * (idempotent) and a defensive caller order is cheaper than a special case.
    */
   async function hydrateFromPinnedManifest (origin: string, manifest: Manifest): Promise<void> {
     const key = canonical(origin)
-    ledger.hydrateFromPinnedManifest(key, manifest)
+    const superseded = ledger.hydrateFromPinnedManifest(key, manifest)
+    for (const { grantId } of superseded) await handleTable.revoke(key, grantId)
   }
 
   async function versionFloorFor (origin: string): Promise<string> {

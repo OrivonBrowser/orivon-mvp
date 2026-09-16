@@ -6479,6 +6479,70 @@ for). It also does not check the reverse direction -- the loader accepting a key
 longer declares -- since that is a different bug class from the one that hit three times today and
 was out of scope for this lane.
 
+### A168 -- a handle acquired under a pin-hydrated grant outlived it: `revoke`/`revokePersisted` could not find it under either the old or a superseded id **[RESOLVED 2026-09-15 -- lane FIX-1]**
+
+**Raised 2026-09-15** by an adversarial review lane against A158's hydration seam, confirmed by
+the conductor re-verifying the whole chain by hand before assigning the fix.
+
+**The gap, precisely.** `hydrateFromPinnedManifest` (A158) deliberately does not set
+`grantsHydrated`, so it is always superseded by the first REAL `registerApp` for the same origin.
+That later `registerApp` call still saw `grantsHydrated` false and ran `replaceHydratedGrants`
+again -- which minted a BRAND-NEW `GrantId` for every capability, even one whose restored
+patterns had not changed at all. A handle's `authorisedBy.grantId`
+(`src/broker/handles/handle-store.ts`) is frozen at acquire time and never rebinds, and
+`HandleTable`'s revocation cascade (`src/broker/handles/handles.ts`) indexes by that frozen id
+(`byGrant`). So: a restored app opens a socket under the pin-hydrated grant `G1`; the page's own
+manifest hint triggers the first real `registerApp`, which re-mints the same authority as `G2`;
+the user clicks Revoke; the ledger row for `G2` disappears; the socket, still filed under `G1`,
+is never touched. The revoke button lied. A sibling of `A84`/`A70`, in the same subsystem, found
+the same way -- by hand-verifying a hydration/handle-identity interaction rather than trusting
+that a green suite meant the cascade actually ran.
+
+**Why the existing suite could not see it.** Every `hydrateFromPinnedManifest` test
+(`grant-ledger-pin-hydration.test.ts`) exercised `GrantLedger` alone, with no `HandleTable` in the
+picture at all -- so a re-minted id with no live handle under it looked identical to a re-minted
+id that quietly orphaned one. Nothing in the suite ever acquired a handle between the two
+hydration calls.
+
+> **Resolved 2026-09-15, lane FIX-1.** Two halves, neither correct alone:
+>
+> **Half 1 -- do not re-mint unchanged authority.** `grant-persistence.ts`'s
+> `replaceHydratedGrants` now compares each newly-restored capability's patterns against
+> whatever `grants` already held for it, using the same order-independent `sameOwnPatterns`
+> check `src/main/grant-changed-capabilities.ts` already used for the identical reason one layer
+> up (A156) -- moved into `src/broker/policy/update.ts`, not duplicated a third time, since
+> `src/broker/` may never import `src/main/` and the shared copy had to live on the broker side.
+> A set-equal match reuses the EXISTING `Grant` object, id included, instead of the fresh one
+> hydration minted for it.
+>
+> **Half 2 -- when authority DID change, the superseded grant's handles are torn down.**
+> `GrantLedger` has no `HandleTable` reference (README.md's own class doc), so it cannot cascade
+> by itself. `replaceHydratedGrants` now returns a `SupersededGrant[]` -- every capability
+> `grants` held before the call that was either dropped outright or replaced with a genuinely
+> different pattern set, paired with its OLD id. `GrantLedger.hydrateFromPinnedManifest` and a
+> new `hydrateGrantsOnFirstRegistration` (the hydration branch pulled out of `registerApp`, so
+> `createBroker` can call it separately and still receive this list even if `registerApp`'s own
+> version-floor write throws afterward) both surface it. `createBroker`'s `registerApp` and
+> `hydrateFromPinnedManifest` wrappers (`src/broker/index.ts`) cascade it through
+> `handleTable.revoke`, unconditionally, matching the ordering `revokePersisted`/`grant`/`revoke`
+> already use: ledger mutation first, cascade after, regardless of whether a disk write failed.
+>
+> **Proven by two tests that fail before the fix**, `src/broker/tests/
+> index-hydration-grant-identity.test.ts`, both against the real `createBroker` surface (not
+> `GrantLedger` alone, closing the coverage gap above): Half 1 -- a handle acquired under a
+> pin-hydrated grant is still torn down by `revokePersisted` after a same-manifest
+> `registerApp`; Half 2 -- a handle acquired under a WIDE pin-hydrated grant is torn down by a
+> narrowing `registerApp` alone, with no explicit revoke call at all. Both time out waiting for
+> `socket.closed` to reject against the unmodified code. Six further unit tests in
+> `grant-persistence.test.ts` prove `replaceHydratedGrants`'s two halves directly (id reuse,
+> order-independence, three distinct supersession shapes, the empty-`grants` baseline case).
+>
+> **Also in scope: `grant-ledger.ts`'s 500-line ceiling (`A177`).** This fix added to a file
+> already at the limit with zero headroom, so `fsBytesWritten`/`reserveFsBytes`/
+> `releaseFsBytes`/`socketAllowance` were pulled out into a new `resource-limits.ts`, continuing
+> the same seam that already produced `grant-persistence.ts`/`update-safety.ts`/
+> `declined-consent.ts`: a "how much may this origin use" concern, distinct from "what was this
+> origin actually granted". `grant-ledger.ts` is 493 lines after this change.
 ### A167 -- three `src/contracts/` shapes landed (A114's delivery shape, the folder picker, `dns.lookup`) -- judgment calls inside each need confirming before the matching implementation lane starts **[AI-REC -- contracts landed this lane; confirm before build]**
 
 **Raised 2026-09-15**, lane L0-contracts (`stream/contracts-05-listen-picker-lookup`), landing

@@ -104,6 +104,27 @@ version floor) untouched, while a full "remove this app" action — `forgetOrigi
 hatch, doubling as A23's removal primitive — forgets everything about the origin at once,
 including every persisted grant, so nothing reappears on the next restart.
 
+**`replaceHydratedGrants` reuses an id across two hydration passes for unchanged authority, and
+reports the ones it does not (A168, resolved 2026-09-15).** `hydrateFromPinnedManifest` and the
+first real `registerApp` for the same origin both call it, and — since neither is guaranteed to
+be the ONLY one that ever runs for an origin whose bundle did not actually change — the second
+pass used to mint a brand-new `GrantId` even when the restored pattern set was byte-for-byte the
+same as what the first pass already installed. A live handle's `authorisedBy.grantId`
+(`../handles/handle-store.ts`) is frozen at acquire time and never rebinds, so that id churn alone
+made `revoke`/`revokePersisted` unable to find a handle acquired between the two passes ever
+again — the revoke button lied. The fix: compare each capability's restored patterns against
+whatever the ledger's `grants` map already held for it, order-independently (`sameOwnPatterns`,
+`../policy/update.ts` — moved there from `src/main/grant-changed-capabilities.ts`, which already
+needed the identical idea one layer up for A156, once a caller inside `src/broker/` needed it
+too), and reuse the OLD `Grant` object, id included, on a match. Every capability that is NOT a
+match — dropped outright, or replaced by genuinely different patterns — is returned as a
+`SupersededGrant`, because an id is the only thing safe to carry forward silently; real authority
+never is. `GrantLedger` has no `HandleTable` reference (this file's own header), so it can only
+report that list — `../index.ts`'s `createBroker` wrapper is what cascades it through
+`handleTable.revoke`, in both its `registerApp` and `hydrateFromPinnedManifest` wrappers, using
+the same unconditional ordering `revokePersisted`/`grant`/`revoke` already use elsewhere in that
+file: ledger mutation first, cascade after, regardless of whether a disk write failed.
+
 ### `declined-consent.ts` — remembering a "no" without it ever becoming a "yes" (A145)
 
 A fifth per-origin file, `declined-capabilities.json`, alongside the floor, rollback
@@ -141,3 +162,14 @@ the same best-effort standard `forgetOrigin`'s own disk cleanup already uses for
 own stricter contract (a failed delete must leave the in-memory record untouched), so it calls
 `storage.deleteDeclinedCapabilities` directly instead, inside its own all-four-or-nothing try
 block alongside the floor, rollback acknowledgement and grants deletes.
+
+### `resource-limits.ts` — how much an origin may use, not what it was granted
+
+Split out of `grant-ledger.ts` (code-guidelines.md Rule 2) once the A168 fix pushed that file to
+its 500-line limit with no headroom left (A177). `socketAllowance`/`reserveFsBytes`/
+`releaseFsBytes` read nothing but `manifest.capabilities.net.concurrentSockets`/`fs.quotaBytes`
+and the origin's own running byte count — they answer "how much of an already-declared resource
+ceiling has this origin used", a question with no comparison or write path in common with
+grant-persistence.ts's "was this capability actually approved" or update-safety.ts's "may this
+version install". `GrantLedger` keeps the per-origin record and the public methods; this file
+keeps the arithmetic, the same split shape as `update-safety.ts` and `declined-consent.ts` above.
