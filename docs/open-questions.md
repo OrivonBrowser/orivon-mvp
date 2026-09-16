@@ -3725,7 +3725,7 @@ exactly what Rule 2 says an agent should not blur into a decision.
 blocking, since the behaviour it describes (bounded, disclosed, reset rather than silent growth)
 is safe today regardless of which reading of the spec is correct.
 
-### A107 — `k-rpc-socket` needs real `dns.lookup`; no pure-JS polyfill answers it, and it is a broker capability question, not shim work **[STILL OPEN]**
+### A107 — `k-rpc-socket` needs real `dns.lookup`; no pure-JS polyfill answers it, and it is a broker capability question, not shim work **[RESOLVED 2026-09-15]**
 
 **Raised 2026-09-10**, lane P3-1, `docs/planning/shim-dependency-review.md` (now on `main` via
 PR #111).
@@ -3745,6 +3745,25 @@ however it is spelled.
 
 **Needed by:** before DHT peer resolution can work for any hostname-addressed peer — queue item
 3.2, or whichever review of `orivon.net`'s surface comes first.
+
+**RESOLVED 2026-09-15, in the shape this entry asked for: broker authority, not a shim
+polyfill.** `d-0030` added `OrivonNet.lookup` to `src/contracts/capability-api.ts` (#199);
+`net-capability.ts`'s `lookup`, its control-channel dispatch (`dispatch-net.ts`'s `'net.lookup'`
+case) and its preload surface (`net-surface.ts`'s `netLookupBridge`) landed in #201;
+`src/shim/node-dns.ts`'s `dns.lookup`/`dns.promises.lookup` now call through to it for real,
+wired into `module-map.ts`'s `'dns'` entry, closing #205. **Verified against the tree, not
+assumed:** `net-capability.ts` exports `lookup` from `createNetCapability`'s returned object,
+`dispatch-net.ts` has a real case for it, and `node-dns.ts` no longer contains a refusal for
+`lookup` itself (only for every other `dns.*` member, unchanged and unrelated to this entry).
+
+**Half-open, tracked separately rather than reopening this entry:** the review above named the
+missing authority, not the exact grant-matching semantics a lookup should use once that
+authority existed — that reading (`hostname` checked against the union of the origin's held
+`tcp.connect`/`https.connect`/`udp.send` patterns) was supplied by the implementing lane itself
+and remains an AI recommendation the owner has not confirmed. See A167 item 3 and A171 for that
+still-open half; this entry closes because its own question — "is this shim work or does it need
+new broker authority" — has a real answer now, not because every judgment call downstream of
+that answer is settled.
 
 ### A108 — a same-view HTTP redirect to a different origin is not caught by the partition swap **[STILL OPEN]**
 
@@ -3949,7 +3968,7 @@ real `Error` instance there, not only the right `.code`) and hardened `src/shim/
 entry's own failure mode) is not something a structural shape check can recover regardless. See
 A152's own resolution note for the full reasoning.
 
-### A114 — delivering `TcpServer.connections` to a page needs a nested-port shape the IPC contract has no room for **[STILL OPEN]**
+### A114 — delivering `TcpServer.connections` to a page needs a nested-port shape the IPC contract has no room for **[RESOLVED 2026-09-15]**
 
 **Raised 2026-09-10**, lane P2-6wire (PR #126), filed by the conductor. **Architectural, so the
 lane correctly parked it rather than choosing** — it needs a `src/contracts/` change and an owner
@@ -3982,6 +4001,29 @@ into this round at all. Queue item 5.1's exit criterion (a real torrent from a n
 peer) does not strictly require inbound listening, but the seeding half of the flagship does.
 
 **Still open.** Needs the owner to pick a delivery shape before a contracts PR can be written.
+
+**RESOLVED 2026-09-15.** `d-0028` chose the first of the two named shapes: deliver each accepted
+socket's port over the *server's own* port. `AcceptedMessage`, a new `BrokerToRendererMessage`
+member carrying the accepted `TcpSocket`'s full synchronous shape plus its `port`, landed in
+`src/contracts/ipc.ts` (#199) — see A167 item 1 for the judgment calls that shape carried
+(typing `port` as the renderer-side `MessagePort` rather than the broker-side
+`MessagePortMain`, matching how `PortLike` already differs per process). The implementation —
+`src/broker/transport/accept-pump.ts` constructing and sending it, `src/preload/server-port.ts`
+and `src/preload/main-world-socket.ts`'s `buildServer` receiving it and building a real
+`TcpServer.connections` `ReadableStream` — landed in #203. **Verified against the tree, not
+assumed:** `dispatch-net.ts` has a real `'net.listen'` control-channel case,
+`main-world-socket.ts`'s `buildServer` is exercised by `main-world-socket-listen.test.ts`
+against the real `installOrivon` wiring, and `highWaterMark: 0` (the property that keeps the
+broker from accepting a connection nobody asked for) is proven end to end across all three new
+layers by `accept-pump.test.ts`, `server-port.test.ts` and `main-world-socket-listen.test.ts`
+(A185's own verification). `compatibility-matrix.md`'s `net.listen` row moves to ✅✅✅✅.
+
+**Half-open, tracked separately rather than reopening this entry:** A185 flags whether reusing
+`CreditMessage`'s `bytesConsumed` field to mean "one accepted connection" (rather than a
+purpose-built wire member) should stand now that the implementation exists to show what the
+alternative would look like — a design-quality question, not a reachability one. This entry
+closes because a page can now receive `TcpServer.connections` for real, which is the question it
+asked; A185's own framing question is separate and still open.
 
 ---
 
@@ -6437,6 +6479,70 @@ for). It also does not check the reverse direction -- the loader accepting a key
 longer declares -- since that is a different bug class from the one that hit three times today and
 was out of scope for this lane.
 
+### A168 -- a handle acquired under a pin-hydrated grant outlived it: `revoke`/`revokePersisted` could not find it under either the old or a superseded id **[RESOLVED 2026-09-15 -- lane FIX-1]**
+
+**Raised 2026-09-15** by an adversarial review lane against A158's hydration seam, confirmed by
+the conductor re-verifying the whole chain by hand before assigning the fix.
+
+**The gap, precisely.** `hydrateFromPinnedManifest` (A158) deliberately does not set
+`grantsHydrated`, so it is always superseded by the first REAL `registerApp` for the same origin.
+That later `registerApp` call still saw `grantsHydrated` false and ran `replaceHydratedGrants`
+again -- which minted a BRAND-NEW `GrantId` for every capability, even one whose restored
+patterns had not changed at all. A handle's `authorisedBy.grantId`
+(`src/broker/handles/handle-store.ts`) is frozen at acquire time and never rebinds, and
+`HandleTable`'s revocation cascade (`src/broker/handles/handles.ts`) indexes by that frozen id
+(`byGrant`). So: a restored app opens a socket under the pin-hydrated grant `G1`; the page's own
+manifest hint triggers the first real `registerApp`, which re-mints the same authority as `G2`;
+the user clicks Revoke; the ledger row for `G2` disappears; the socket, still filed under `G1`,
+is never touched. The revoke button lied. A sibling of `A84`/`A70`, in the same subsystem, found
+the same way -- by hand-verifying a hydration/handle-identity interaction rather than trusting
+that a green suite meant the cascade actually ran.
+
+**Why the existing suite could not see it.** Every `hydrateFromPinnedManifest` test
+(`grant-ledger-pin-hydration.test.ts`) exercised `GrantLedger` alone, with no `HandleTable` in the
+picture at all -- so a re-minted id with no live handle under it looked identical to a re-minted
+id that quietly orphaned one. Nothing in the suite ever acquired a handle between the two
+hydration calls.
+
+> **Resolved 2026-09-15, lane FIX-1.** Two halves, neither correct alone:
+>
+> **Half 1 -- do not re-mint unchanged authority.** `grant-persistence.ts`'s
+> `replaceHydratedGrants` now compares each newly-restored capability's patterns against
+> whatever `grants` already held for it, using the same order-independent `sameOwnPatterns`
+> check `src/main/grant-changed-capabilities.ts` already used for the identical reason one layer
+> up (A156) -- moved into `src/broker/policy/update.ts`, not duplicated a third time, since
+> `src/broker/` may never import `src/main/` and the shared copy had to live on the broker side.
+> A set-equal match reuses the EXISTING `Grant` object, id included, instead of the fresh one
+> hydration minted for it.
+>
+> **Half 2 -- when authority DID change, the superseded grant's handles are torn down.**
+> `GrantLedger` has no `HandleTable` reference (README.md's own class doc), so it cannot cascade
+> by itself. `replaceHydratedGrants` now returns a `SupersededGrant[]` -- every capability
+> `grants` held before the call that was either dropped outright or replaced with a genuinely
+> different pattern set, paired with its OLD id. `GrantLedger.hydrateFromPinnedManifest` and a
+> new `hydrateGrantsOnFirstRegistration` (the hydration branch pulled out of `registerApp`, so
+> `createBroker` can call it separately and still receive this list even if `registerApp`'s own
+> version-floor write throws afterward) both surface it. `createBroker`'s `registerApp` and
+> `hydrateFromPinnedManifest` wrappers (`src/broker/index.ts`) cascade it through
+> `handleTable.revoke`, unconditionally, matching the ordering `revokePersisted`/`grant`/`revoke`
+> already use: ledger mutation first, cascade after, regardless of whether a disk write failed.
+>
+> **Proven by two tests that fail before the fix**, `src/broker/tests/
+> index-hydration-grant-identity.test.ts`, both against the real `createBroker` surface (not
+> `GrantLedger` alone, closing the coverage gap above): Half 1 -- a handle acquired under a
+> pin-hydrated grant is still torn down by `revokePersisted` after a same-manifest
+> `registerApp`; Half 2 -- a handle acquired under a WIDE pin-hydrated grant is torn down by a
+> narrowing `registerApp` alone, with no explicit revoke call at all. Both time out waiting for
+> `socket.closed` to reject against the unmodified code. Six further unit tests in
+> `grant-persistence.test.ts` prove `replaceHydratedGrants`'s two halves directly (id reuse,
+> order-independence, three distinct supersession shapes, the empty-`grants` baseline case).
+>
+> **Also in scope: `grant-ledger.ts`'s 500-line ceiling (`A177`).** This fix added to a file
+> already at the limit with zero headroom, so `fsBytesWritten`/`reserveFsBytes`/
+> `releaseFsBytes`/`socketAllowance` were pulled out into a new `resource-limits.ts`, continuing
+> the same seam that already produced `grant-persistence.ts`/`update-safety.ts`/
+> `declined-consent.ts`: a "how much may this origin use" concern, distinct from "what was this
+> origin actually granted". `grant-ledger.ts` is 493 lines after this change.
 ### A167 -- three `src/contracts/` shapes landed (A114's delivery shape, the folder picker, `dns.lookup`) -- judgment calls inside each need confirming before the matching implementation lane starts **[AI-REC -- contracts landed this lane; confirm before build]**
 
 **Raised 2026-09-15**, lane L0-contracts (`stream/contracts-05-listen-picker-lookup`), landing
@@ -6642,3 +6748,490 @@ the constraint 'true'.` -- plus a second, expected error at the test's own runti
 field on its own tracker's return value (a side effect of the deliberately-broken fixture, not
 part of the binding). The field was then removed and `npm run typecheck` was re-run clean;
 `git diff --stat src/loader/pin-coverage.ts` showed no changes, confirming a clean revert.
+---
+
+### A170 -- "Deny" on the install dialog did not take back a capability the dialog itself listed **[PARTIALLY RESOLVED 2026-09-15 -- lane FIX-3; the second half needs the owner]**
+
+The all-or-nothing install dialog deliberately shows the **whole declared set**, not the outstanding
+subset -- `src/main/README.md` argues for that explicitly, and it is the right call: a person
+choosing all-or-nothing must see the complete picture. `describeInstallConsent` renders that set
+under the literal heading **"This app wants to:"**.
+
+But a capability can already be **held** at that moment. `app.requestGrant` is a documented second
+door, and `registerApp` runs before `requestInstallConsent` in `app-install.ts`'s `finishInstall`,
+so an app can obtain one declared capability out of band, with its own separate dialog, before the
+install dialog is ever shown -- `install-consent.ts`'s own "not held" filter exists precisely
+because that state is reachable.
+
+So a person read a list containing something the app already had, clicked **Deny**, and the app kept
+it. Nothing in the dialog distinguished a held row from a requested one: `describeInstallConsent`
+was never given the held set, so it **could not** mark them -- while the per-capability screens
+already marked earlier answers `[Allowed]`/`[Denied]`, which made the all-or-nothing dialog the odd
+one out rather than a considered exception.
+
+**Fixed:** the held subset is now passed to the renderer and already-held rows are marked
+`[Already allowed]`, matching the bracket convention `describeCapabilityChoice` already used. Deny
+visibly applies to the rest. A row that merges two capabilities is marked only when **every**
+contributing capability is held.
+
+**STILL OPEN, and it is an owner decision, not an implementation gap:** should Deny also **revoke**
+the already-held capability? Taking away a grant the person separately agreed to, because they
+declined a different question, is a real behaviour change with its own surprise -- so the run
+deliberately did not build it. The dialog now tells the truth either way; the question is whether
+the truth it tells is the one the owner wants.
+
+### A172 -- the declined-consent record was kept three inconsistent ways, and one of them made a capability permanently un-askable **[RESOLVED 2026-09-15 -- lane FIX-3]**
+
+All three in `src/main/install-consent.ts`, found independently by two reviewers and `/code-review`:
+
+1. **It recorded too much.** The decline branch wrote the *entire declared set*, including a
+   capability that was currently **held**. Concrete harm: an origin declares `{tcp.connect, fs}`;
+   `fs` is already held through the second door; the person declines; `fs` is written into the
+   declined record. The person later revokes `fs` from the settings list -- `revokePersisted`
+   touches `grants`, never `declinedCapabilities` -- and on the next visit nothing is outstanding,
+   so **the dialog never returns and `fs` can never be offered again.** A declined entry needs no
+   live grant to suppress a future dialog, which is what made this permanent.
+2. **Replace versus append.** The all-or-nothing branch REPLACED the record; the per-capability
+   branch APPENDED. A manifest switching `consentGranularity` between visits could therefore drop an
+   earlier per-capability "no". The module's own doc claimed a refusal "is never a decline of
+   anything OUTSIDE this round" -- true of one branch only.
+3. **Cleared on one accept path of three.** `clearDeclinedConsent`'s only caller in the tree was
+   this file's own all-or-nothing accept branch. A "yes" reached through `app.requestGrant`, or
+   through `update-outcomes.ts`'s accepted capability prompt, left the persisted decline in place --
+   contradicting the stated invariant that an old "no" cannot outlive a "yes".
+
+**Fixed:** a decline now records only what was actually outstanding this round; both branches write
+through one `recordDeclined` helper that always appends, so "declined" cannot mean different things
+depending on which branch ran; and both other accept paths now retire the relevant decline --
+`request-grant.ts` retires just the one capability it granted, composed from existing `Broker`
+methods so no new broker primitive was needed, and `update-outcomes.ts`'s capability-prompt accept
+clears the whole record, justified because its `requestedPatterns` is the manifest's current
+declared set, the same shape as the all-or-nothing accept.
+### A173 -- `serve-reach.ts`'s outbound request body was buffered unbounded in the main process **[RESOLVED 2026-09-15]**
+
+**Raised and fixed 2026-09-15**, lane FIX-4 (`stream/loader-10-reach-hygiene`), an independent
+review finding re-verified by the fleet conductor reading the code before this lane started.
+`nodeReachDial` (`src/loader/serve-reach.ts`) read an app's own request body with
+`Buffer.from(await request.arrayBuffer())` -- the file's own header carefully argues the
+RESPONSE side needs no size cap (`Readable.toWeb` streams it) and says nothing about the
+request, which is the gap: a page `fetch()`-ing a large or effectively unbounded body to a
+granted `https.connect` host drove unbounded allocation in this **privileged main process**,
+not the sandboxed renderer.
+
+**Fixed by `readCappedBody`**, a streaming reader over `request.body` that rejects the instant
+the running total would exceed `REACH_MAX_REQUEST_BODY_BYTES` (16 MiB), never buffering past
+the cap first -- the same discipline `src/preload/fetch-route.ts`'s own `readAllCapped` already
+uses for its response body. The cap VALUE matches that file's own `ROUTED_FETCH_MAX_BODY_BYTES`
+exactly (16 MiB is the number this repo already chose once for "an unbounded page-supplied body
+must not be buffered whole"), but it is a second literal, not an import: `src/loader/` and
+`src/preload/` sit on opposite sides of a trust boundary neither may import across
+(`src/loader/README.md`'s "what it must never import" / `src/preload/README.md`'s own list),
+and there is no third neutral home for a single numeric constant that would justify the
+cross-boundary wiring -- `src/shared/` exists for exactly this kind of case but is deliberately
+still empty (code-guidelines.md), and adding its first occupant was judged out of scope for a
+three-defect hygiene lane. AI recommendation, not an owner decision: an owner call on whether
+this constant belongs in `src/shared/` once a second real user of it exists would settle this
+more permanently.
+
+**Verified (this lane):** a test sending a body one byte over the cap now rejects with a
+`REACH_MAX_REQUEST_BODY_BYTES`-naming `TypeError`, confirmed to resolve (not reject) against the
+pre-fix code first; a body exactly at the cap still succeeds. `src/loader/tests/serve-reach.test.ts`.
+
+### A174 -- `serve-reach.ts` forwarded hop-by-hop response headers verbatim, including a `transfer-encoding` that was already false **[RESOLVED 2026-09-15]**
+
+**Raised and fixed 2026-09-15**, lane FIX-4, same review pass as A173. `forwardedRequestHeaders`
+already stripped `host`/`connection`/`content-length` with an explicit
+`HOP_BY_HOP_REQUEST_HEADERS` set; `forwardedResponseHeaders` had no strip set at all, so
+`transfer-encoding`, `connection` and `keep-alive` were copied onto the `Response` handed back
+to `serve.ts`'s `fetchThirdParty`. `transfer-encoding: chunked` is the concrete harm: Node's
+`http` parser has already de-chunked the body by the time `IncomingMessage` emits anything, so a
+forwarded `transfer-encoding` header describes wire framing that no longer exists on the stream
+the app actually reads -- simply false, not merely redundant.
+
+**Fixed** with a second strip set, `HOP_BY_HOP_RESPONSE_HEADERS`, covering the full RFC 7230
+SS6.1 hop-by-hop list (`connection`, `keep-alive`, `proxy-authenticate`, `proxy-authorization`,
+`te`, `trailer`, `transfer-encoding`, `upgrade`) rather than only the three the finding named --
+these are all headers describing a hop that has already ended by the time this `Response` is
+built, and there is no principled reason to strip three of the eight and forward the rest. Kept
+as a second, separately-documented set rather than unified with the request side's: the request
+set strips `host`/`content-length` for a DIFFERENT reason (Node computes those itself from what
+it is handed, not because they are hop-by-hop), so a single shared set would either miss those
+two or mis-describe why `transfer-encoding` matters on the response side specifically.
+
+**Verified (this lane):** a test against a real chunked, `Connection: keep-alive`-declaring TLS
+response confirms all three headers are now absent from the `Response` while `content-type`
+still passes through untouched -- confirmed to fail against the pre-fix code first (transfer-
+encoding measured as `'chunked'`, not `null`). `src/loader/tests/serve-reach.test.ts`.
+
+### A175 -- pin coverage counted the whole pinned asset's size even when a Range request served only a slice, or nothing at all **[RESOLVED 2026-09-15]**
+
+**Raised and fixed 2026-09-15**, lane FIX-4, same review pass as A173/A174.
+`createAppRequestHandler` (`src/loader/serve.ts`) called `recordCoverage?.('pinned',
+content.length)` BEFORE `buildResponse` applied the request's `Range` header, so a 10 MB video
+fetched in many range requests recorded the full 10 MB every single time, and an unsatisfiable
+range (416, no body at all) recorded the full asset size for zero bytes actually sent. Third-
+party requests were never affected -- `fetchThirdParty` already records the peer's own
+`content-length`, read after the real response exists -- so this skewed the pinned-vs-third-
+party ratio specifically, the measure `src/trust/README.md` calls load-bearing and the reason
+this whole coverage mechanism (ADR-0006's D-ladder, #198) exists.
+
+**Fixed** by moving the `recordCoverage?.('pinned', ...)` call to AFTER `buildResponse` runs,
+and reading the byte count off the response it actually built (`contentLengthOf`, the same
+helper `fetchThirdParty` already used for the identical purpose on its own side -- one
+implementation of "read the byte count off the `Response` you are about to return," not two).
+`buildResponse` always sets `content-length` on a 200 or 206; a 416 sets none, handled as an
+explicit `0` rather than falling through to `contentLengthOf`'s `undefined` -- a 416's zero
+bytes-sent is a KNOWN value, not a size that could not be measured, so it must not trip
+`pin-coverage.ts`'s own `bytesIncomplete` flag (that file's header: "a missing size sets
+`bytesIncomplete`, never a silent zero" -- which is exactly backwards for a case where the
+silent zero IS the correct, measured answer).
+
+**Verified (this lane):** three tests confirmed failing against the pre-fix code first (a single
+5-byte range recorded 300; fifty 10-byte range requests recorded 15000, not 500; a 416 recorded
+300, not 0), then passing after the fix; a fourth confirms a denied same-origin request still
+adds nothing. `src/loader/tests/pin-coverage.test.ts`.
+
+### A183 -- an app could smuggle a second request past the one host its grant names **[RESOLVED 2026-09-15 -- found by the review run's own security pass]**
+
+`nodeReachDial` (`src/loader/serve-reach.ts`) stripped only `host`, `connection` and
+`content-length` from the OUTBOUND request. RFC 7230 SS6.1's remaining hop-by-hop headers --
+`transfer-encoding` above all -- were forwarded from whatever the app set, and nothing upstream of
+this file restricts an app's headers.
+
+**`nodeReachDial` sets `content-length` itself.** So a forwarded `transfer-encoding: chunked`
+arrives ALONGSIDE it. Measured rather than assumed, with a probe against Node's own client:
+
+    POST / HTTP/1.1
+    transfer-encoding: chunked
+    content-length: 5
+    ...
+    "5\r\nhello\r\n0"
+
+Node sends **both** headers and chunk-frames the body. A front-end and a back-end that disagree
+about which header ends the request is the whole of request smuggling, and here the app controls
+every header and every body byte.
+
+**Why this is a capability escape and not a generic web bug.** The grant authorises one host. A
+smuggled second request is processed by whatever sits behind that host's front-end -- another
+virtual host, another backend -- which the person never granted and the broker never checked.
+`checkConnectSecure` authorises the connection; it cannot see a second request hidden inside the
+first one's body.
+
+**Fixed** by stripping the full RFC 7230 SS6.1 set on the request side, the same set the response
+side had just gained. The regression test asserts on the headers the PEER ACTUALLY RECEIVED --
+echoed back from the test server -- because asserting on the `Request` handed in would only re-read
+the test's own input, never what Node put on the socket. Verified to FAIL against the unfixed strip
+set and pass with it.
+
+**How it was found, because the method is the transferable part:** the fix that landed
+`A174` added a hop-by-hop set for the RESPONSE and left the REQUEST side's three-entry set
+untouched. The asymmetry was the tell. Reading it raised the question; a probe answered it.
+### A184 -- `orivon.fs.open` is built end to end for its RPC-shaped methods; `readable()`/`writable()` stop at the broker layer, not yet page-reachable **[AI-REC -- readable/writable deferral is a scope call, not a discovered blocker; the other judgment calls below are flagged, not owner-reviewed]**
+
+**Raised 2026-09-15**, lane L2-fsopen (`stream/broker-15-fs-open`). `FileHandle`
+(`docs/architecture/handle-contracts.md` §FileHandle, `src/contracts/handles.ts`) needed no
+`src/contracts/` change -- the shape was already complete -- so this lane built the broker
+capability (`src/broker/fs-capability.ts`, `src/broker/adapters/node-fs-adapter.ts`), the
+control-channel dispatch (`src/broker/transport/dispatch-fs.ts`) and the preload surface
+(`src/preload/orivon-surface.ts`, `src/preload/main-world-socket.ts`) in one PR.
+
+**What is genuinely done, page-reachable, and tested against real I/O:** `open`, positional
+`read`/`write` (no implicit cursor, matching the contract's own explicit-position rule), `stat`,
+`truncate`, `sync` and `close`, each confined once at open time and running under the same
+per-origin in-flight budget and write quota `readFile`/`writeFile` already use. Confinement,
+grant-absence, revocation-mid-operation and quota-exceeded are all covered by a failing-path test,
+not only the success path (`src/broker/tests/fs-open.test.ts`,
+`src/broker/adapters/tests/node-fs-adapter-open.test.ts`).
+
+**Still open, by design, a scope call under this lane's own ordering constraint ("keep the
+dispatch cases minimal") rather than a gap discovered mid-build:** `readable()`/`writable()` are
+real, tested WHATWG streams at the broker/adapter layer (proven directly against a real fd), but
+there is no CONTROL_CHANNEL case delivering one to a page the way `net.connect`'s byte pump does
+for a `TcpSocket` -- `port-pump.ts`/`port-sink.ts` are already generic enough to relay either one
+over a socket's dedicated port (nothing in them is TCP-specific), so this is wiring work, not a
+redesign. `window.orivon.fs.open(...)`'s returned object is therefore deliberately narrower than
+`FileHandle`: no `readable`/`writable`, and `closed` is not live-pushed -- it settles on an
+explicit `close()`, and a broker-side revocation the app never asked for surfaces only on the
+NEXT operation attempted against the handle, not proactively. This is the same category of gap
+`net.connect` itself had for three of its four landing PRs (`CLAUDE.md`'s own history).
+`orivon.fs.userSelected` is untouched by this lane -- A167 item 2's `DirectoryHandle`/folder-
+picker judgment calls are still unconfirmed and still need their own implementation lane.
+
+**Flagged AI judgment calls, not owner-reviewed, all in `src/broker/README.md`'s own design
+note for this lane (search `A184`) with the full reasoning -- summarised here:**
+
+1. **`FailableFileHandle` has no `abort()`**, unlike `FailableTcpSocket`. A `FileHandle`'s
+   `readable()`/`writable()` are factories an app may call more than once concurrently, unlike a
+   `TcpSocket`'s one fixed duplex, so "abort the file" has no single stream to mean -- aborting a
+   `writable()` stream discards only that stream's own buffered bytes, never reaching into the
+   handle table.
+2. **`writable()`'s quota check ERRORS the stream on the chunk that exceeds it**, unlike
+   `udp.send`'s A87 counted, never-rejecting loss. A dropped datagram is ordinary P2P traffic; a
+   silently dropped byte in a positional file write is silent corruption. Positional `write()`
+   and the `writable()` stream share one running `reserveFsBytes`/`releaseFsBytes` counter, so
+   neither path can be used to exceed the declared quota the other already enforces.
+3. **`destroy()`'s close-reason-conditional teardown (mirroring `destroySocket`'s A84 fix)
+   deliberately does not reuse its `CLOSE_DRAIN_TIMEOUT_MS`.** A local `fs.WriteStream` drains to
+   the OS's own `write()` syscall, bounded by real disk I/O, never by a remote peer that can
+   simply stop reading -- the hazard that timeout exists for. Proven directly (not assumed):
+   `node-fs-adapter-open.test.ts` fires a write without awaiting it and calls `destroy()` a line
+   later, deterministic because a real fs write cannot complete before the test's own next
+   synchronous statement runs.
+4. **`open`'s flags string is checked against Node's own documented flag set** (`'r'`, `'r+'`,
+   `'w'`, `'wx'`, ... -- `fs-capability.ts`'s `VALID_OPEN_FLAGS`) before the confined path or the
+   grant are even consulted, so a malformed flags string is `'invalid'` (an app bug) rather than
+   whatever the raw adapter call happens to throw for it. No numeric-mode variant is accepted --
+   `capability-api.ts`'s `open` types `flags` as a `string`, never a number.
+5. **Confining once, at `open`, is sufficient for a handle that outlives the call that created
+   it** -- this lane's own brief asked this to be thought through and written down, not assumed.
+   Every operation after acquisition addresses the real OS file descriptor, never the path again,
+   so there is nothing left for a second confinement check to catch; a symlink swapped in after
+   `open()` returns cannot retarget an already-open fd the way it could a second path lookup.
+
+**A usage-limit interruption cut this lane's first attempt off mid-verification (2026-09-15),
+resuming as the SAME A184** -- not a separate finding, recorded here because the defect it left
+behind is the kind of thing a reviewer would otherwise have to rediscover. The interrupted run's
+last action was reverting `destroy()`'s abrupt-teardown fix to confirm its own regression test
+caught the bug, and had not yet restored it when the session ended -- confirmed on resume by
+running the suite cold: `node-fs-adapter-open.test.ts`'s "an abrupt reason never raises an
+unhandled process-level error" failed with an escaped `EBADF`. Chasing it found a SECOND,
+previously-undiscovered escape past the same `nodeStream.on('error', () => {})` guard the file's
+own header already documents: `Writable.toWeb`'s wrapper settles `writer.closed`/`writer.ready`
+AND each individual `writer.write(chunk)` call's own promise on the same premature-close path,
+none of which that raw-stream 'error' listener touches. Confirmed directly, not assumed, before
+picking a fix: a `writer.abort()` at the WHATWG layer avoids the escape entirely but WAITS for an
+in-flight write instead of interrupting it, silently turning 'revoked' into a flush (the full
+64 KiB chunk landed in a throwaway probe, where the test requires it discarded). The fix that
+keeps both properties -- `node-fs-adapter.ts`'s `writable()` now wraps `getWriter()` so it can
+attach a silent `.catch(() => {})` to `.closed`, `.ready`, and every `.write()` call's own
+promise the instant the caller acquires a writer, alongside whatever handler the caller attaches
+itself, never instead of it -- while `destroy()`'s actual teardown (`stream.destroy()`, called
+synchronously, immediately) is completely unchanged from before this fix.
+
+**Verified, this lane, after the fix above:** `npm run typecheck` clean; `npm test` 183 files
+passed (0 failed), 4347 passed, 3 skipped -- against this brief's own stated main baseline of 181
+files / 4300 passed / 3 skipped, the difference being this lane's own new test files and cases,
+all green, no regressions; `npm run check:size`, `check:comments`, `check:contracts`,
+`check:natives`, `check:secrets`, `check:questions` and `check:manifest-parity` all pass. Full
+numbers and the PR body are in this lane's own log
+(`/home/jhon/.claude/orivon-fleet/lanes/L2-fsopen/log.md`).
+
+**A separate, fleet-level numbering collision, not this lane's to resolve:** an unmerged sibling
+branch (`stream/shim-13-refuse-on-call-not-read`, commit `96962c8`) also claims A184, for an
+unrelated fix ("refuse an unimplemented shim member on call, not on read"). Neither branch's
+`open-questions.md` currently shows a duplicate -- `npm run check:questions` passes clean on
+this branch -- because the collision only exists ACROSS the two unmerged branches, not within
+either one alone. Whichever of the two merges second will need to renumber.
+### A171 -- `orivon.net.lookup`'s broker implementation built A167's union-of-three-capabilities reading, plus two judgment calls of its own **[AI-REC -- confirm alongside A167]**
+
+**Raised 2026-09-15**, lane L4-dns (`stream/broker-16-net-lookup`), which built `broker.net.lookup`,
+its control-channel dispatch and its page surface against A167's still-unconfirmed reading of
+`d-0030`. That reading is what got built: `hostname` is checked against the HOST portion of
+every pattern in the UNION of whatever `tcp.connect`, `https.connect` and `udp.send` grants the
+origin holds (the first of those, checked in that fixed order, whose patterns authorise it is
+also what SCOPES revocation -- see below). Two more judgment calls this lane had to make that
+A167 named but did not settle:
+
+**1. A82's reserved-port carve-out does not apply to a lookup at all.** A lookup has no port, so
+the question is not "does a reserved port narrow this" but "does it matter which port a pattern
+names." This lane's answer: no. `checkLookup` (`src/broker/policy/lookup.ts`) checks the HOST
+portion only, regardless of the pattern's own port -- so a hostname granted only on a reserved
+port (`mail.example.com:25`, say) still authorises its own lookup. The safety argument, written
+out in `src/broker/policy/README.md`'s Design notes for `lookup.ts`: whatever port a pattern
+names, the app already knows it (it is in the app's own held grant, readable via
+`app.grants()`) and can already force that exact hostname resolved today by replaying the same
+host:port through `net.connect` -- `checkConnect`'s own pre-resolve gate
+(`couldAnyPatternMatch`) lets a granted pattern's host through to the real resolver before any
+port or address is checked, reserved-port carve-out included, since a pattern that NAMES a
+reserved port exactly is exempted from it by design (`reserved-ports.ts`'s own
+`patternNamesPortExactly`). `lookup` authorised the same way hands back a name-to-address
+MAPPING the app did not have before; it never hands back the ability to force a name resolved
+that `connect`/`connectSecure`/`udpBind` could not already force.
+
+**2. Which grant's revocation cancels an authorised lookup, when more than one held grant would
+authorise the same hostname.** Not specified anywhere -- this lane's answer: the first
+capability in the fixed check order above (`tcp.connect`, then `https.connect`, then
+`udp.send` -- `net-capability.ts`'s own `OUTBOUND_CAPABILITIES`) whose patterns actually
+authorise the hostname is what `handleTable.run`'s revocation scope binds to. A DIFFERENT held
+grant for the same origin being revoked must not cancel an in-flight lookup that a still-live
+grant authorised -- tested directly (`src/broker/tests/net-lookup.test.ts`, "is not cancelled by
+revoking a DIFFERENT held grant than the one that authorised it").
+
+**Not flagged, reused rather than invented:** the error split (`'denied'` for a hostname outside
+every held grant, `'unreachable'` with a real `platformCode` for a permitted name that does not
+resolve) follows `connect`'s own established rule, and no new `OrivonErrorCode` was needed
+(A167's own note on this already stands).
+
+**The two pre-existing mock breaks A167 flagged** (`src/nostr/tests/nip07.test.ts`,
+`src/shim-electron/tests/index.test.ts`) **did not reproduce on this branch** -- `npm run
+typecheck` found seven breaks, all caused by this lane's own `CreateBrokerOptions.resolveLookup`/
+`Broker.net.lookup` additions rippling into other test files' hand-built mocks (adapters tests,
+`ipc.test-helpers.ts`, `sync-fs-policy.test.ts`, both e2e capability tests), all fixed here as
+the mechanical one-stub-per-file change A167 anticipated. Whatever fixed the two A167 named must
+have landed on `main` between that lane and this one; not otherwise investigated.
+
+**Verified, this lane:** `npm run typecheck` clean; `npm test` 4298 passed, 3 skipped (pre-
+existing, unrelated) across 181 files; `npm run check:size`/`check:comments`/`check:contracts`/
+`check:natives`/`check:secrets`/`check:questions`/`check:manifest-parity` all pass -- the last
+one confirming `net.lookup` adds no manifest key, exactly as designed (it rides the existing
+network declaration).
+
+**Still open:** A167's union-of-three-capabilities reading itself remains AI recommendation, not
+an owner decision -- this lane built against it rather than waiting, per its own brief, but the
+owner should confirm A167 (and the two judgment calls above, which only exist because that
+reading was taken as given) before `net.lookup` reaches a production grant path.
+
+**Needed by:** lane L6 (`src/shim/node-dns.ts`'s real `dns.lookup` shape, A107) -- this lane
+deliberately left that file untouched, per its own scope.
+
+**Amended 2026-09-15 by the conductor, during the `src/broker/` hand-review, before merge.** The
+lane's `checkLookup` decides on the NAME, which is correct and is where `d-0030`'s bound lives --
+but nothing filtered the resolver's ANSWER. `connect` refuses a private, loopback or link-local
+result for both pattern kinds that can authorise a lookup (`policy/connect-patterns.ts`:
+`any-public-unicast` and `hostname` both end in `isPublicUnicast(address)`), so an unfiltered
+lookup handed an app the internal addresses of a network it can never reach -- the user's router,
+NAS and intranet hosts, enumerable by name under an ordinary `*:*` grant and carried back out over
+a granted host. **Fixed, not filed:** the result is now filtered through the same
+`isPublicUnicast` `connect` uses, and an answer with nothing reachable left rejects `'unreachable'`
+rather than `'denied'` or an empty array, so an app cannot tell an existing internal name from a
+non-existent one one probe at a time.
+
+Two of the lane's own tests failed against the fix and **both failures were fixture artifacts, not
+the assertions**: they used RFC 5737 documentation addresses (`203.0.113.x`, `198.51.100.x`), which
+`isPublicUnicast` refuses exactly as it refuses a private one -- verified by probing the real
+function rather than reasoning about it. The assertions they make (an unlimited grant resolves any
+name; a reserved-port grant still authorises its own lookup) are unchanged and still pass against a
+routable fixture.
+
+### A185 -- `net.listen`'s accept-demand signal reuses `CreditMessage` rather than a new wire member, and the highWaterMark: 0 property had to be proven end to end through three new layers **[AI-REC -- confirm alongside A167]**
+
+**Raised 2026-09-15**, lane L3-listen-page (`stream/preload-06-listen-page`), which built the
+page-reachable half of `orivon.net.listen` (A114/d-0028): `broker.net.listen`'s already-complete
+`connections` stream, delivered to a real page as a real `TcpServer.connections` `ReadableStream`.
+This run resumed a predecessor cut off mid-work by a session-limit interruption (committed as
+`b61d9e8`); this entry covers the judgment call the predecessor's own code comments already
+pointed here for (`accept-pump.ts`, `server-port.ts`) but never wrote up, plus what this run found
+and fixed finishing the landing.
+
+**1. The judgment call: one accepted connection is ONE unit of demand, signalled by reusing
+`CreditMessage` (`{kind:'credit', handleId, bytesConsumed}`) rather than a new
+`RendererToBrokerMessage` member.** `src/broker/transport/accept-pump.ts`'s `handleDemand`
+interprets `bytesConsumed` as a COUNT of connections rather than bytes; `src/preload/server-port.ts`'s
+`reportAccepted` always sends `bytesConsumed: 1`, one call per app `connections.getReader().read()`.
+The alternative -- a purpose-built member, e.g. `{kind:'accept', handleId}` -- was not built: A167
+closed `src/contracts/` for this lane (its own scope rule: three shapes landed, no new
+`RendererToBrokerMessage` member among them), and `CreditMessage`'s existing wire shape already
+means "the renderer is ready for more," so reinterpreting its one field costs nothing to the wire
+protocol at the price of a field name (`bytesConsumed`) that means something different on a
+server's own port than it does on a socket's. **Confirm:** does the reused field stand, or is a
+purpose-built member worth a `src/contracts/` change now that the implementation exists to show
+what it would look like?
+
+**2. Verified end to end, not just asserted: `highWaterMark: 0` survives all three new layers.**
+This is the property the brief named as the one most likely to be silently destroyed by a page-side
+wrapper that eagerly drains `connections` -- if it were, the broker would accept connections nobody
+asked for. Proven at each layer with an explicit "N reads accept exactly N connections, and an
+unread server accepts none" test: `accept-pump.test.ts` (the broker's own pump), `server-port.test.ts`
+(the isolated-world preload state machine), and `main-world-socket-listen.test.ts` (the page's own
+`ReadableStream`, constructed with `CountQueuingStrategy({ highWaterMark: 0 })` in
+`main-world-socket.ts`'s `buildServer`, whose `pull()` is the ONLY caller of `reportAccepted` --
+enforced by construction, not just convention, since nothing else in the isolated or main world
+holds a reference to it).
+
+**3. Found and fixed, independent of the merge conflict this run also resolved: `net.listen` was
+declared reachable but was never actually dispatched on `main`.** `src/broker/transport/
+ipc-validation.ts`'s `ControlMethod`/`isControlMethod` already listed `'net.listen'` (landed by
+the contracts-adjacent split before this run resumed), but neither `ipc.ts`'s pre-split `dispatch()`
+switch nor `dispatch-net.ts`'s post-split one had a matching `case` -- a call would have fallen
+through to the end of the switch and resolved `undefined` instead of erroring or listening,
+exactly the silent-gap shape the brief's first warning described for `message.kind` switches.
+Fixed by adding the case, and separately by adding a `never`-typed default case to BOTH `ipc.ts`'s
+`dispatch()` and `dispatch-net.ts`'s `dispatchNet()` switches, so a future `ControlMethod`/
+`NetControlMethod` member with no matching case is a compile error rather than a silent
+`undefined` -- neither switch had one before. `src/preload/socket-port.ts` and
+`src/preload/datagram-port.ts`'s own `message.kind` switches already had an equivalent
+exhaustiveness guard (the predecessor's own work, before the interruption); this run did not find
+or need to change either.
+
+**Verified, this run:** `npm run typecheck` clean; `npm test` 4358 passed, 3 skipped across 186
+files (baseline on `main` before this merge: 4300 passed, 3 skipped, 181 files -- the difference
+is this lane's five new test files); `npm run check:size`/`check:comments`/`check:contracts`/
+`check:natives`/`check:secrets`/`check:questions` all pass. `npm run test:e2e` was deliberately
+**not run** -- this lane does not launch Electron; see this run's own log for what a real e2e
+should prove.
+
+**Needed by:** whichever lane wires a production `tcp.listen` grant and the Node-shaped
+`net.createServer` shim that actually calls this surface -- this lane, like A114 before it,
+stops at a real grant reaching a real page; nothing here issues one in production.
+
+### A186 -- lane L6-shim's dispatch brief said `orivon.fs.open` was merged (PR #204); at this
+lane's own cut point it is not, and A184 (cited in this lane's own code) has no entry here yet
+**[RESOLVED 2026-09-15 -- the branch landed as PR #204; this lane now builds on it directly]**
+
+**Raised 2026-09-15**, lane L6-shim (`stream/shim-14-server-open-dns`), building the Node shapes
+over `net.createServer`, `fs.open` and `dns.lookup`. Two of the three capabilities this lane was
+told to build on ARE reachable at `origin/main @ f2bc8e0` (this lane's own cut commit), verified
+by reading the actual dispatch/preload wiring, not by trusting the brief: `net.listen` (PR #203)
+and `net.lookup` (PR #201) both have real broker dispatch cases and real preload/main-world
+bridges (`src/broker/transport/dispatch-net.ts`'s `'net.listen'`/`'net.lookup'` cases,
+`src/preload/net-surface.ts`'s `netListenBridge`/`netLookupBridge`,
+`src/preload/main-world-socket.ts`'s `buildServer`/`netLookup`). **The third is not.**
+
+**`orivon.fs.open`'s broker half and preload wiring are NOT on `main` at this lane's cut point.**
+`src/broker/fs-capability.ts`'s own header says so directly ("`FileHandle` (orivon.fs.open) is
+NOT here -- see this lane's own PR body for why it was parked"), there is no `'fs.open'` dispatch
+case anywhere under `src/broker/transport/`, and `src/preload/orivon-surface.ts`'s `exposeOrivon`
+wires `fs.readFile`/`writeFile`/`mkdir`/`readdir`/`stat`/`rm`/`rename` but no `fs.open`. The work
+lives on an unmerged branch, `stream/broker-15-fs-open` (confirmed via `git log`: `09e7b2b`
+"Merge remote-tracking branch 'origin/main' into stream/broker-15-fs-open", `fcbd525` "Restore
+fs.open's abrupt-close fix..."), not an ancestor of this lane's own base commit
+(`git merge-base --is-ancestor 09e7b2b f2bc8e0` returns false). This matches the standing warning
+already carried at the top of this run ("Seven unmerged branches from an earlier session carry
+A169-A183") -- `stream/broker-15-fs-open` is evidently an eighth, undercounted the same way.
+
+**A184 does not exist in `docs/open-questions.md` on `main` either**, though this lane's own
+brief cites it as an already-recorded fact ("FileHandle.readable()/writable() are built in the
+broker but are NOT page-reachable yet (recorded as A184)"). The most likely explanation is that
+A184 was filed on `stream/broker-15-fs-open` itself (the branch that would have discovered this
+gap while building `fs.open`'s broker half) and has simply not reached `main` yet, for the same
+reason its own branch has not. `npm run check:questions` only rejects a DUPLICATE `### A<n>`
+heading within one file; it does not require every A-number a branch cites in source actually
+resolve to a heading on that branch, so this lane's own `docs/open-questions.md A184` citations
+(`node-fs-handle.ts`, `node-fs.ts`, their tests, `README.md`) pass CI here regardless, and will
+resolve correctly once `stream/broker-15-fs-open` (or whatever carries A184's actual text) merges
+before or alongside this lane.
+
+**What this lane did about it, since the contract types (`src/contracts/handles.ts`'s
+`FileHandle`, `src/contracts/capability-api.ts`'s `OrivonFs.open`) ARE already stable on `main`
+regardless of the broker/preload wiring's merge status:** built and fully unit-tested
+`node-fs-handle.ts` (the local cursor, the callback family, the A184-citing
+`createReadStream`/`createWriteStream` refusal) entirely against that type contract, using a
+fake `orivon.fs.open` in every test -- never against a live broker, which this lane was told not
+to launch anyway. The code is correct against the contract and will start working the moment
+`fs.open` actually lands on `main`; it cannot be exercised end to end before that, and this lane
+did not claim otherwise anywhere in its own log or PR body.
+
+**Still open:** whether `stream/broker-15-fs-open` merges before this lane, requiring no action
+here, or after, requiring this lane's branch to pick up whatever `fs.open`'s real dispatch/
+preload shape turns out to be (this lane built against the TYPE contract only, which is the
+stable, change-controlled part -- but a real implementation detail neither this lane nor the
+brief could see, e.g. a different error shape on a specific failure mode, could still surface
+once wired to a real broker). **Owner's decision needed:** which of the two branches should take
+the merge-order dependency, and whether the fleet's own A-number floor tracking (this run's own
+"the floor is NOT main's high-water mark" warning) should be extended to check unmerged branches
+programmatically rather than by an agent noticing mid-lane, since this is now the second
+independent discovery of the same undercount in one run.
+
+**Resolved the same day, by the conductor, before this lane's own PR was opened.** `fs.open` merged
+as **PR #204** (`main` = `c47f7c5`) minutes after this lane was dispatched, and `A184` landed with
+it. This branch has since merged `main`, so the shim's `fs.open` shape now sits on the real broker
+capability rather than on a type contract alone -- **4480 tests pass across the merged tree**, and
+`A184`'s own entry exists.
+
+**The lane was right to file it and right not to guess.** The brief asserted a merge that had not
+happened yet at the cut commit; the lane checked rather than believed it, built against the stable
+type contract regardless, and said so. **Keeping it as a resolved entry rather than deleting it,
+because the underlying hazard is structural and will recur:** a brief written while a dependency is
+in flight goes stale between dispatch and execution, and a lane that trusts it builds on something
+absent. The cheap fix on the conductor's side is to state the dependency's commit, not just its PR
+number, so a lane can verify the claim instead of taking it on faith.
