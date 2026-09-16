@@ -37,5 +37,15 @@ export async function dispatchApp (
         : { capability: payload.capability, patterns: payload.patterns }
       return await requestGrantCtx.requestGrant(origin, request)
     }
+    default: {
+      // Exhaustiveness check, same reasoning and shape as ./ipc.ts's own
+      // dispatch() and ./dispatch-net.ts's dispatchNet (A185): if
+      // AppControlMethod ever gains a member no case above names, `method`
+      // is not assignable to `never` and this line fails to compile, instead
+      // of the switch silently falling through and this function resolving
+      // `undefined` for an operation that never ran.
+      const unrouted: never = method
+      throw fail('internal', `unrouted app control method: ${unrouted as string}`)
+    }
   }
 }
