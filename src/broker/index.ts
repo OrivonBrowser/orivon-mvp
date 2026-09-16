@@ -32,6 +32,9 @@ import { originFromUrl } from './policy/origin.js'
 import { createNetCapability } from './net-capability.js'
 import { createIdCapability } from './id-capability.js'
 import { createFsCapability } from './fs-capability.js'
+import { createUserSelectedCapability } from './user-selected-capability.js'
+import { PickedPathLedger } from './grants/picked-path-ledger.js'
+import type { PickedPath } from './grants/picked-path-ledger.js'
 import type {
   CapabilityKind,
   Grant,
@@ -44,6 +47,13 @@ import type { Broker, CreateBrokerOptions } from './broker-contracts.js'
 export function createBroker (deps: CreateBrokerOptions): Broker {
   const handleTable = new HandleTable()
   const ledger = new GrantLedger(deps.ledgerStorage)
+  // The picked-path state D-0007 needs, kept apart from `ledger` the same
+  // way `ledger` itself is kept apart from `handleTable` -- see
+  // ./grants/picked-path-ledger.ts's own header for why a pick is not a
+  // Grant and does not belong inside GrantLedger (which has no line budget
+  // left to grow a third concern into, A184's own landing having brought it
+  // to exactly 500).
+  const pickedPaths = new PickedPathLedger(deps.ledgerStorage)
 
   /**
    * The isolation key, through the one definition of it (policy/origin.ts) --
@@ -77,7 +87,13 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
   // (ADR-0016) plus queue item 2.1's mkdir/readdir/stat/rm/rename. Lifted to
   // ./fs-capability.ts for the same Rule 2 reason net/id were: see that
   // file's own header for the confinement guarantee every one of them shares.
-  const fs = createFsCapability({ deps, handleTable, ledger, canonical })
+  //
+  // userSelected joins the same `fs` object from a SEPARATE factory
+  // (./user-selected-capability.ts) rather than growing inside
+  // fs-capability.ts -- it is authorised by the picker choice, not by the
+  // `fs` grant every other method here checks, and that difference is
+  // structural (handles.ts's "FileHandle" exception), not cosmetic.
+  const fs = { ...createFsCapability({ deps, handleTable, ledger, canonical }), ...createUserSelectedCapability({ deps, handleTable, ledger, pickedPaths, canonical }) }
 
   async function manifest (origin: string): Promise<Manifest> {
     const found = ledger.manifestFor(canonical(origin))
@@ -91,6 +107,11 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
 
   async function grants (origin: string): Promise<readonly Grant[]> {
     return ledger.grantsFor(canonical(origin))
+  }
+
+  /** D-0007's other half of the settings surface -- see `Broker.app.pickedPaths`'s own doc. */
+  async function pickedPathsFor (origin: string): Promise<readonly PickedPath[]> {
+    return pickedPaths.listFor(canonical(origin))
   }
 
   /**
@@ -301,6 +322,28 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     return removed
   }
 
+  /**
+   * `revokePersisted`'s own picked-path counterpart -- see this method's
+   * doc on `Broker.revokeUserSelectedPath` for why it goes through
+   * `handleTable.revokeUserSelected` rather than `handleTable.revoke`: a
+   * pick holds no GrantId for the ordinary cascade to find.
+   *
+   * `pickedPaths.revoke` first, synchronously, then the handle-table
+   * cascade -- the same ordering `revokePersisted` documents: a
+   * `pickedPaths()`/`userSelected()` call racing the teardown must never
+   * observe a pick whose handle is already going away. UNCONDITIONAL,
+   * exactly as `revokePersisted`: there is no persistence failure mode to
+   * defer here -- `PickedPathLedger.revoke` never throws (its own doc: a
+   * lost write costs a stale settings row at worst, never a live handle
+   * staying open past a revoke the person just clicked).
+   */
+  async function revokeUserSelectedPath (origin: string, pickId: string): Promise<boolean> {
+    const key = canonical(origin)
+    const removed = pickedPaths.revoke(key, pickId)
+    await handleTable.revokeUserSelected(key, pickId)
+    return removed
+  }
+
   async function grant (origin: string, capability: CapabilityKind, patterns: readonly Pattern[]): Promise<Grant> {
     const key = canonical(origin)
     // Captured BEFORE the call below: GrantLedger.grant's own Map.set already
@@ -354,7 +397,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
   }
 
   return {
-    app: { manifest, grants, isRegisteredSync, registeredOriginsSync, persistedAppsSync, hydrateFromPinnedManifest },
+    app: { manifest, grants, isRegisteredSync, registeredOriginsSync, persistedAppsSync, hydrateFromPinnedManifest, pickedPaths: pickedPathsFor },
     net,
     id,
     fs,
@@ -367,6 +410,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     clearDeclinedConsent,
     grant,
     revoke,
-    revokePersisted
+    revokePersisted,
+    revokeUserSelectedPath
   }
 }

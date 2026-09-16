@@ -358,7 +358,7 @@ describe('limits the first suite left unpinned', () => {
   it('reports the file count it enforces against', () => {
     const t = table()
     t.acquire({ origin: APP, kind: 'file', authorisedBy: { by: 'grant', grantId: FS_GRANT }, destroy: noop })
-    t.acquire({ origin: APP, kind: 'file', authorisedBy: { by: 'userSelected' }, destroy: noop })
+    t.acquire({ origin: APP, kind: 'file', authorisedBy: { by: 'userSelected', pickId: 'pick-test' }, destroy: noop })
 
     expect(t.counts(APP).files).toBe(2)
   })
@@ -377,7 +377,7 @@ describe('limits the first suite left unpinned', () => {
 
   it('only derives the pair the specification describes', () => {
     const t = table()
-    const picked = t.acquire({ origin: APP, kind: 'file', authorisedBy: { by: 'userSelected' }, destroy: noop })
+    const picked = t.acquire({ origin: APP, kind: 'file', authorisedBy: { by: 'userSelected', pickId: 'pick-test' }, destroy: noop })
 
     // Inheriting `userSelected` onto a socket would put it in no grant's set,
     // where no revoke could ever reach it.

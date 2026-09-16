@@ -223,6 +223,7 @@ it('Phase 2: the real broker binds a real UDP socket, round-trips a datagram, an
       resolveLookup,
       now: () => Date.now(),
       fs: fsStub,
+      pickPath: async () => { throw new Error('userSelected is not exercised by this test') },
       keychain: keychainStub
     }
     const broker = createBroker(deps)

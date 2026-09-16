@@ -1,4 +1,4 @@
-import type { AppPermissions, PermissionRow } from '../../main/permissions.js'
+import type { AppPermissions, PermissionRow, PickedPathRow } from '../../main/permissions.js'
 import type { CapabilityKind, GrantId } from '../../contracts/index.js'
 import { createPermissionsListView } from './permissions-view.js'
 
@@ -15,6 +15,8 @@ interface OrivonSettings {
   revoke: (origin: string, grantId: GrantId) => Promise<void>
   /** For a row whose app is not loaded this session -- see revokeAndRefresh. */
   revokeCapability: (origin: string, capability: CapabilityKind) => Promise<void>
+  /** D-0007's own revoke, addressed by pickId. */
+  revokePickedPath: (origin: string, pickId: string) => Promise<void>
   focusOrigin: string | null
 }
 
@@ -38,9 +40,12 @@ const settings = must(window.orivonSettings, 'orivonSettings not exposed -- prel
 const list = must(document.querySelector<HTMLDivElement>('#apps-list'), '#apps-list missing')
 const emptyState = must(document.querySelector<HTMLElement>('#empty-state'), '#empty-state missing')
 
-const view = createPermissionsListView(list, emptyState, (origin, row) => {
-  void revokeAndRefresh(origin, row)
-})
+const view = createPermissionsListView(
+  list,
+  emptyState,
+  (origin, row) => { void revokeAndRefresh(origin, row) },
+  (origin, row) => { void revokePickedPathAndRefresh(origin, row) }
+)
 
 /** Scrolls to `settings.focusOrigin`'s card once, the first time it
  * appears in a rendered list -- guarded so a later refresh (after a
@@ -71,6 +76,15 @@ async function revokeAndRefresh (origin: string, row: PermissionRow): Promise<vo
   } else {
     await settings.revoke(origin, row.grantId)
   }
+  await refresh()
+}
+
+/** D-0007's own revoke button -- always addressed by pickId, whether or
+ * not the owning app is loaded this session (Broker.revokeUserSelectedPath
+ * works either way), so there is no `PermissionRow.grantId === null`-style
+ * branch to make here. */
+async function revokePickedPathAndRefresh (origin: string, row: PickedPathRow): Promise<void> {
+  await settings.revokePickedPath(origin, row.pickId)
   await refresh()
 }
 

@@ -42,7 +42,8 @@ async function realBroker (): Promise<{ broker: Broker, userData: string }> {
     resolveLookup: notUsed,
     now: () => Date.now(),
     fs: nodeFs(userData),
-    keychain: { getSeed: notUsed }
+    keychain: { getSeed: notUsed },
+    pickPath: notUsed
   }
   return { broker: createBroker(deps), userData }
 }

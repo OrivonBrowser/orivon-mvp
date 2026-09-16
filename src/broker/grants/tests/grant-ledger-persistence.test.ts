@@ -39,7 +39,10 @@ function throwingLedgerStorage (): LedgerStorage {
     readPersistedApp: () => undefined,
     readDeclinedCapabilities: () => undefined,
     writeDeclinedCapabilities: () => { throw Object.assign(new Error('ENOSPC'), { code: 'ENOSPC' }) },
-    deleteDeclinedCapabilities: () => {}
+    deleteDeclinedCapabilities: () => {},
+    readPickedPaths: () => undefined,
+    writePickedPaths: () => { throw Object.assign(new Error('ENOSPC'), { code: 'ENOSPC' }) },
+    deletePickedPaths: () => {}
   }
 }
 

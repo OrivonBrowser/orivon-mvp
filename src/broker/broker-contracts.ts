@@ -12,6 +12,7 @@ import type { LedgerStorage } from './grants/ledger-storage.js'
 import type { PortRange } from './policy/bind.js'
 import type { Resolver } from './policy/connect.js'
 import type { BrokerFs, BrokerFsMethods } from './fs-contracts.js'
+import type { PickedPath } from './grants/picked-path-ledger.js'
 import type {
   CapabilityKind,
   Datagram,
@@ -30,6 +31,42 @@ import type {
 // -- re-exported so no existing `from '../broker-contracts.js'` import site
 // needs to change.
 export type { BrokerFs, BrokerFsMethods, OpenedFile, RawFileStat } from './fs-contracts.js'
+export type { PickedPath } from './grants/picked-path-ledger.js'
+
+/**
+ * Opens the real OS picker -- `orivon.fs.userSelected`'s own dependency,
+ * the `Dial`/`Bind`/`Listen` pattern applied to a native dialog instead of a
+ * socket. `directory: true` asks for the folder-picker chrome; `multiple`
+ * is meaningless (and MUST be ignored) when `directory` is true, mirroring
+ * `capability-api.ts`'s own `userSelected` overload split -- there is no
+ * signal to pass it through as, so the injected implementation decides at
+ * this boundary, not one layer up.
+ *
+ * NO `signal` PARAMETER, unlike `Dial`/`Bind`/`Listen` -- there is no grant
+ * in flight for this to race (capability-api.ts: the picker choice IS the
+ * authorisation, minted fresh the moment it resolves), so nothing can
+ * revoke an acquisition that has not happened yet.
+ *
+ * `appName` is the requesting origin's own declared `manifest.name`
+ * (`GrantLedger.manifestFor`, read by `user-selected-capability.ts` before
+ * calling this), `undefined` only if no manifest was ever registered for
+ * the origin. An implementation may use it to name the app in the dialog's
+ * own chrome (d-0032) -- `transport/ipc.ts`'s `describePickerDialog` is the
+ * real one that does.
+ */
+export type PickPath = (opts: { directory: boolean, multiple: boolean, appName: string | undefined }) => Promise<PickPathResult>
+
+/**
+ * `canceled: true` for a dismissed dialog -- capability-api.ts is explicit
+ * that declining a picker is never a rejected promise, so this is a plain
+ * value the caller branches on, not an error `PickPath` throws. `paths` are
+ * real host OS paths, exactly what a native `dialog.showOpenDialog` hands
+ * back; `userSelected` in ./user-selected-capability.ts is what turns them
+ * into confined, revocable handles.
+ */
+export type PickPathResult =
+  | { readonly canceled: true }
+  | { readonly canceled: false, readonly paths: readonly string[] }
 
 /**
  * What `orivon.net.connect` needs from a live TCP connection, minus the
@@ -197,6 +234,8 @@ export interface CreateBrokerOptions {
   readonly now: () => number
   readonly fs: BrokerFs
   readonly keychain: Keychain
+  /** `orivon.fs.userSelected`'s real OS picker (see `PickPath`'s own doc). */
+  readonly pickPath: PickPath
   /**
    * Where `GrantLedger`'s version floor survives a restart (A57,
    * `docs/open-questions.md`). Optional so every existing caller of this
@@ -263,6 +302,13 @@ export interface Broker {
      * freshly fetched manifest later arrives via `registerApp`.
      */
     hydrateFromPinnedManifest(origin: string, manifest: Manifest): Promise<void>
+    /**
+     * Every `orivon.fs.userSelected` pick this origin holds, for a LOADED
+     * app -- the live counterpart to `grants` above, and D-0007's other
+     * half of the settings surface. `revokeUserSelectedPath` below is how
+     * one of these is withdrawn.
+     */
+    pickedPaths(origin: string): Promise<readonly PickedPath[]>
   }
   readonly net: {
     /** Returns a `FailableTcpSocket` -- a `TcpSocket` plus one broker-internal
@@ -421,4 +467,17 @@ export interface Broker {
    * `GrantLedger.revokePersisted`.
    */
   revokePersisted(origin: string, capability: CapabilityKind): Promise<boolean>
+  /**
+   * Withdraws one `orivon.fs.userSelected` pick, by the id `app.pickedPaths`
+   * (or the settings list, reading a persisted-but-not-loaded app) named --
+   * `revokePersisted`'s own picked-path counterpart, and NOT the same
+   * mechanism: a pick holds no GrantId (`fs`'s own revoke cannot reach it,
+   * handle-contracts.md's "FileHandle" exception), so this addresses the
+   * handle table's `byPickedPath` index directly
+   * (`HandleTable.revokeUserSelected`) rather than going through `revoke`.
+   * WITHOUT THIS CASCADE THE REVOKE BUTTON LIES, the same principle
+   * `revokePersisted`'s own comment states -- see ../index.ts's
+   * implementation. Resolves to whether anything was actually removed.
+   */
+  revokeUserSelectedPath(origin: string, pickId: string): Promise<boolean>
 }

@@ -182,6 +182,14 @@ export class OriginTable {
   readonly handles = new Map<string, HandleRecord>()
   /** grantId -> the ids it authorised. userSelected handles are in NO set here. */
   readonly byGrant = new Map<GrantId, Set<string>>()
+  /**
+   * pickId -> the ids it authorised. The `userSelected` mirror of `byGrant`
+   * above, and the reason a picked handle is revocable at all: it holds no
+   * GrantId, so `byGrant` structurally cannot reach it (that omission is the
+   * "FileHandle" exception itself). `HandleTable.revokeUserSelected` is the
+   * cascade that walks this index.
+   */
+  readonly byPickedPath = new Map<string, Set<string>>()
   /** Operations attributed to a grant rather than a handle: acquisitions in flight. */
   readonly grantOperations = new Map<GrantId, Set<PendingOperation>>()
   readonly recentlyClosed = new Set<string>()
@@ -270,12 +278,12 @@ export class OriginTable {
     void closed.catch((): void => {})
 
     // Copied, not retained. `authorisedBy` is the caller's object and indexes
-    // `byGrant`; a caller mutating it afterwards would desynchronise the row
-    // from the revocation index that has to find it.
+    // `byGrant`/`byPickedPath`; a caller mutating it afterwards would
+    // desynchronise the row from whichever revocation index has to find it.
     const authorisation: Authorisation = Object.freeze(
       authorisedBy.by === 'grant'
         ? { by: 'grant' as const, grantId: authorisedBy.grantId }
-        : { by: 'userSelected' as const }
+        : { by: 'userSelected' as const, pickId: authorisedBy.pickId }
     )
 
     const entry: HandleEntry = Object.freeze({ id, origin, kind, authorisedBy: authorisation, parentId, closed })
@@ -294,6 +302,10 @@ export class OriginTable {
       const set = this.byGrant.get(authorisation.grantId) ?? new Set<string>()
       set.add(id)
       this.byGrant.set(authorisation.grantId, set)
+    } else {
+      const set = this.byPickedPath.get(authorisation.pickId) ?? new Set<string>()
+      set.add(id)
+      this.byPickedPath.set(authorisation.pickId, set)
     }
     return entry
   }
@@ -341,6 +353,11 @@ export class OriginTable {
         // Reclaimed here rather than left behind: an empty Set per grant id the
         // origin has ever held is a slow leak, not a bound.
         if (set !== undefined && set.size === 0) this.byGrant.delete(authorisedBy.grantId)
+      } else {
+        // Same reclaim rule, `byPickedPath`'s own copy of it.
+        const set = this.byPickedPath.get(authorisedBy.pickId)
+        set?.delete(id)
+        if (set !== undefined && set.size === 0) this.byPickedPath.delete(authorisedBy.pickId)
       }
       if (parentId !== null) this.handles.get(parentId)?.children.delete(id)
       remember(this.recentlyClosed, id, CLOSED_ID_MEMORY)

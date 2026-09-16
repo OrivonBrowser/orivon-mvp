@@ -107,6 +107,7 @@ export function fakeBridge (
   fsRm: (path: string, opts?: { recursive?: boolean }) => Promise<void>
   fsRename: (from: string, to: string) => Promise<void>
   fsOpen: (path: string, flags: string) => Promise<MainWorldFileBridge>
+  fsUserSelected: (opts?: { multiple?: boolean }) => Promise<readonly MainWorldFileBridge[]>
   idPublicKey: (curve: string) => Promise<Uint8Array>, idSign: (curve: string, payload: Uint8Array) => Promise<Uint8Array>
   netConnect: (opts: { host: string, port: number }) => Promise<ReturnType<typeof fakeSocketBridgeResult>>
   netConnectSecure: (opts: { host: string, port: number }) => Promise<ReturnType<typeof fakeSocketBridgeResult>>
@@ -127,6 +128,10 @@ export function fakeBridge (
     fsRm: async () => {},
     fsRename: async () => {},
     fsOpen: async () => fakeFileBridgeResult(),
+    // Present so this fake still satisfies installOrivon's bridge shape --
+    // main-world-socket-fs.test.ts is the one that drives fs.userSelected
+    // specifically; every other caller here only needs fsOpen.
+    fsUserSelected: async () => [fakeFileBridgeResult()],
     idPublicKey: async () => new Uint8Array(),
     idSign: async () => new Uint8Array(),
     netConnect: async (_opts) => netConnectResult,

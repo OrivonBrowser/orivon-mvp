@@ -31,6 +31,9 @@ if (expectedUrl !== undefined && location.href === expectedUrl) {
     revokeCapability: async (origin: string, capability: CapabilityKind): Promise<void> => {
       await ipcRenderer.invoke(SETTINGS_COMMAND_CHANNEL, { type: 'revokeCapability', origin, capability } satisfies SettingsCommand)
     },
+    revokePickedPath: async (origin: string, pickId: string): Promise<void> => {
+      await ipcRenderer.invoke(SETTINGS_COMMAND_CHANNEL, { type: 'revokePickedPath', origin, pickId } satisfies SettingsCommand)
+    },
     /** Read-only -- which app's card, if any, to scroll to on load. `null`
      * for an ordinary open from the toolbar's own "Permissions" button. */
     focusOrigin: focusOrigin ?? null

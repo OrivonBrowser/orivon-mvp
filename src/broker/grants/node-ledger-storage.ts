@@ -5,7 +5,7 @@
 import { closeSync, fsyncSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { originHash } from './origin-hash.js'
-import type { LedgerStorage, PersistedApp, PersistedGrant } from './ledger-storage.js'
+import type { LedgerStorage, PersistedApp, PersistedGrant, PersistedPick } from './ledger-storage.js'
 
 /**
  * Never valid semver (no digits, no dots) -- returned for anything that
@@ -127,6 +127,19 @@ function isGrantsShape (value: unknown): value is Record<string, PersistedGrant>
     Object.values(value).every(isPersistedGrant)
 }
 
+function isPersistedPick (value: unknown): value is PersistedPick {
+  return typeof value === 'object' && value !== null &&
+    ((value as { kind?: unknown }).kind === 'file' || (value as { kind?: unknown }).kind === 'directory') &&
+    typeof (value as { path?: unknown }).path === 'string' &&
+    typeof (value as { pickedAt?: unknown }).pickedAt === 'number'
+}
+
+/** A plain object whose every own value is a well-formed `PersistedPick` -- `readPickedPaths`'s own counterpart to `isGrantsShape`. Keys are caller-minted pick ids, not validated here. */
+function isPickedPathsShape (value: unknown): value is Record<string, PersistedPick> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value) &&
+    Object.values(value).every(isPersistedPick)
+}
+
 /**
  * The current file shape: the origin alongside its own grants, so the set of
  * origins can be enumerated from a directory whose NAME is a one-way hash
@@ -146,12 +159,18 @@ interface GrantsFile {
    * field existed still loads, and simply shows the origin alone. */
   readonly appName?: string
   readonly grants: Record<string, PersistedGrant>
+  /** D-0007's half of this file -- see ledger-storage.ts's own doc on
+   * `readPickedPaths` for why it shares this file rather than inventing a
+   * second one. Optional: a file written before this field existed still
+   * loads, simply with no picks to show. */
+  readonly pickedPaths?: Record<string, PersistedPick>
 }
 
 function isGrantsFileShape (value: unknown): value is GrantsFile {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
-  const candidate = value as { origin?: unknown, grants?: unknown }
+  const candidate = value as { origin?: unknown, grants?: unknown, pickedPaths?: unknown }
   if (typeof candidate.origin !== 'string' || !isGrantsShape(candidate.grants)) return false
+  if (candidate.pickedPaths !== undefined && !isPickedPathsShape(candidate.pickedPaths)) return false
   // appName is optional, but if present it must be a string -- a number or an
   // object reaching the renderer as an app's name is a rendering bug waiting
   // to happen, and this is untrusted disk content.
@@ -297,18 +316,26 @@ export function nodeLedgerStorage (userDataPath: string): LedgerStorage {
     },
     writeGrants: (origin, grants, appName) => {
       mkdirSync(originGrantsDir(userDataPath, origin), { recursive: true })
-      // The name is preserved across writes it was not given: revoking one
-      // capability must not erase the app's name from the settings list, and
-      // the revoke path has no manifest to hand over.
-      const existing = appName ?? readGrantsFile(userDataPath, origin)?.appName
-      const file: GrantsFile = existing === undefined ? { origin, grants } : { origin, appName: existing, grants }
+      // The name AND any picked paths are preserved across a grants-only
+      // write: revoking or granting one capability must not erase the app's
+      // name from the settings list, nor the OTHER half of this file D-0007
+      // shares with it (readPickedPaths's own doc) -- this write knows
+      // nothing about picks and must not silently drop them.
+      const current = readGrantsFile(userDataPath, origin)
+      const existingAppName = appName ?? current?.appName
+      const file: GrantsFile = {
+        origin,
+        ...(existingAppName === undefined ? {} : { appName: existingAppName }),
+        grants,
+        ...(current?.pickedPaths === undefined ? {} : { pickedPaths: current.pickedPaths })
+      }
       writeFileAtomic(grantsPath(userDataPath, origin), JSON.stringify(file))
     },
 
     readPersistedApp: (origin) => {
       const file = readGrantsFile(userDataPath, origin)
       if (file === null) return undefined
-      const app: PersistedApp = { origin, appName: file.appName, grants: file.grants }
+      const app: PersistedApp = { origin, appName: file.appName, grants: file.grants, pickedPaths: file.pickedPaths ?? {} }
       return app
     },
     deleteGrants: (origin) => {
@@ -317,6 +344,32 @@ export function nodeLedgerStorage (userDataPath: string): LedgerStorage {
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
       }
+    },
+
+    readPickedPaths: (origin) => readGrantsFile(userDataPath, origin)?.pickedPaths,
+    writePickedPaths: (origin, pickedPaths, appName) => {
+      mkdirSync(originGrantsDir(userDataPath, origin), { recursive: true })
+      // Same preservation rule as writeGrants above, mirrored: this write
+      // knows nothing about grants and must not silently drop them.
+      const current = readGrantsFile(userDataPath, origin)
+      const existingAppName = appName ?? current?.appName
+      const file: GrantsFile = {
+        origin,
+        ...(existingAppName === undefined ? {} : { appName: existingAppName }),
+        grants: current?.grants ?? {},
+        pickedPaths
+      }
+      writeFileAtomic(grantsPath(userDataPath, origin), JSON.stringify(file))
+    },
+    deletePickedPaths: (origin) => {
+      // No file to delete outright, unlike deleteGrants -- this file may
+      // still hold real grants worth keeping. A no-op for an origin with
+      // nothing persisted at all, matching every other delete's contract.
+      const current = readGrantsFile(userDataPath, origin)
+      if (current === null || current.pickedPaths === undefined) return
+      const { pickedPaths, ...rest } = current
+      void pickedPaths
+      writeFileAtomic(grantsPath(userDataPath, origin), JSON.stringify(rest))
     },
 
     listPersistedOrigins: () => {
