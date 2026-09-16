@@ -6668,6 +6668,104 @@ once this lane's shapes are confirmed.
 (item 2, compatibility-matrix.md Table 4 row 6), and whichever lane wires `node-dns.ts` to a real
 broker capability (item 3, `A107`).
 
+### A176 -- two ways `scripts/check-manifest-parity.mjs` (A165) could silently pass when it should fail **[RESOLVED 2026-09-15 -- lane FIX-5]**
+
+**Both found independently by two reviewers, reviewing the A165 landing**, and both reproduced
+against the real exported functions before either was touched. Both are the same shape as A164
+itself: a way a contract field an app author could rely on gets refused at install, with the one
+check that exists to prevent exactly that not firing.
+
+1. **Nested inline-object fields were flattened.** `interfaceFields`'s regex matched every
+   `readonly <name>` between an interface's braces, tracking brace depth only to find the
+   interface's own closing brace -- not to tell a field at the interface's own top level apart
+   from one nested inside another field's inline object type. `interfaceFields('export interface
+   Foo { readonly bar?: { readonly nested: string }\n readonly baz: number }', 'Foo')` returned
+   `['bar', 'nested', 'baz']` -- `nested` is `bar`'s own child, not `Foo`'s sibling. Dormant
+   today (no tracked interface in `PARITY_MAP` has such a field), but the day one does, this either
+   fails CI on a phantom name that cannot sensibly go in `DELIBERATELY_DEFERRED`, or -- worse --
+   a nested name collides with a real top-level key and silently masks that the nesting was never
+   checked.
+2. **A field missing the `readonly` keyword vanished entirely.** The regex required
+   `readonly\s+(\w+)`, so `{ readonly a: string; b: number }` with loader array `['a']` yielded
+   `ok: true, gaps: []` -- `b` never appeared anywhere. Nothing in this repo mechanically enforces
+   the `readonly` convention (there is no linter), so this was one dropped keyword away from
+   exactly the drift the check exists to catch.
+
+**The fix, both cases, in `scripts/check-manifest-parity.mjs`.** `interfaceMembers` (the renamed,
+now-internal core of what `interfaceFields` used to do alone) tracks brace depth AND paren depth
+over the interface body and only treats brace-depth-1, paren-depth-0 text as a candidate member --
+text inside a nested `{ ... }` is masked out entirely rather than scanned, which fixes point 1 (the
+paren tracking is free hardening against a function-typed field's parameter list matching the same
+way; no tracked interface has one today, but the failure mode would have been identical). The
+member regex now matches a field whether or not `readonly` precedes it, and records which; a
+missing keyword no longer drops the field -- `interfaceFields` still returns its name (so gap
+detection against the loader continues working), and the new `nonReadonlyInterfaceFields` /
+`checkManifestParity`'s new `missingReadonly` list reports the dropped keyword itself as its own
+failure, **independent of whether the field's name happens to already be in the loader's
+allowlist** -- the missing keyword is the defect, not a proxy for one. `ok` is false whenever
+`gaps`, `unreadable` or `missingReadonly` is non-empty.
+
+**Why report-the-gap-either-way rather than reject the field as unparseable.** The alternative
+(treat a non-`readonly` member as unreadable, the same fail-closed path as a missing interface)
+was rejected: `unreadable` means "this check's own regex cannot find something it expects to
+exist," which is a true statement about the interface or array as a whole, not about one member
+inside a body the check found fine. Folding a convention violation into that path would make
+`unreadable`'s message ("fix the check before trusting it") wrong for this case -- the check
+found the field correctly; the field itself is what needs fixing. A dedicated `missingReadonly`
+list keeps the two failure classes distinguishable in the output.
+
+**Verified**, reproduced live in this lane (pasted into the PR body): `interfaceFields` on the
+task's literal nested-object repro now returns `['bar', 'baz']`, not `['bar', 'nested', 'baz']`;
+on the missing-`readonly` repro (`{ readonly a: string; b: number }`) it now returns `['a', 'b']`,
+not `['a']`, and `nonReadonlyInterfaceFields` returns `['b']`. Both new behaviours, plus a
+`checkManifestParity`-level test proving a field missing `readonly` fails even when the loader
+array already lists it (the dropped-keyword case, isolated from the gap case), are asserted in
+`scripts/tests/check-manifest-parity.test.ts`. The real tree still passes:
+`checkManifestParity(process.cwd())` returns `{ ok: true, gaps: [], unreadable: [],
+missingReadonly: [] }` unchanged.
+
+### A179 -- a second hand-maintained duplicate of a shape, created two PRs after the guard (A165) against exactly this **[RESOLVED 2026-09-15 -- lane FIX-5]**
+
+**The shape.** `src/loader/pin-coverage.ts`'s `PinCoverageSnapshot` and
+`src/trust/delivery-ladder.ts`'s `PinCoverageEvidence` are field-for-field identical
+(`pinnedRequests`, `thirdPartyRequests`, `deniedRequests`, `pinnedBytes`, `thirdPartyBytes`,
+`bytesIncomplete` -- same names, same types, in both). The duplication itself is deliberate and
+correct: `src/trust/README.md` forbids reaching into `src/loader/`'s internals, and
+`src/loader/README.md` does not list `src/trust/` among what it may import either, so the two
+streams cannot share one type across that boundary. **The defect is that nothing bound the two
+copies together** -- add a field to one and the other silently does not get it; no test, no
+typecheck and no CI gate fails. This is A165's own failure mode (a contract shape and a
+hand-maintained second copy of it drifting apart, unnoticed until something downstream breaks),
+reintroduced two PRs later, in a place `check-manifest-parity.mjs`'s regex cannot reach: there is
+no hand-maintained array here to diff against a source file, because both sides here ARE the
+source.
+
+**The fix does not touch either module.** Per `src/trust/README.md`'s own "defined once in each
+direction, not imported across" note, the duplication stays. `scripts/tests/pin-coverage-
+parity.test.ts` (new file, in `scripts/tests/` rather than either stream's own directory --
+comparing the two types requires importing both, and importing both from inside `src/trust/` or
+`src/loader/` would itself be the boundary violation their READMEs forbid; `scripts/` answers to
+neither) binds the two types with a type-level equality check: `Equals<PinCoverageSnapshot,
+PinCoverageEvidence>` via the standard distributive-conditional-type trick
+(`(<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false`), asserted
+`true` through `AssertEqual<T extends true>`. A plain mutual `A extends B` / `B extends A` check
+would not have been enough on its own to explain as obviously safe -- TypeScript's structural
+typing already lets a type with an extra field satisfy `extends` against a narrower one, so a
+field added to only one side is not guaranteed caught by both directions naively; the
+distributive-conditional form does not have that gap; it fails to reduce to `true` for any
+difference at all -- added, removed or retyped, on either side. Follows the precedent
+`src/loader/tests/manifest-contract-parity.test.ts` set for A164/A165: a type mismatch here is an
+`npm run typecheck` failure, not a silent gap or a runtime-only assertion.
+
+**Proven to actually fail, not just written and trusted**, in this lane: a field
+(`a179ProofField: number`) was added to `PinCoverageSnapshot` alone, and `npm run typecheck`
+failed at the new test's own `Equals<...>` line --
+`scripts/tests/pin-coverage-parity.test.ts(55,48): error TS2344: Type 'false' does not satisfy
+the constraint 'true'.` -- plus a second, expected error at the test's own runtime-proof line
+(65,11) and an unrelated pre-existing error inside `pin-coverage.ts` itself from the now-missing
+field on its own tracker's return value (a side effect of the deliberately-broken fixture, not
+part of the binding). The field was then removed and `npm run typecheck` was re-run clean;
+`git diff --stat src/loader/pin-coverage.ts` showed no changes, confirming a clean revert.
 ### A181 -- pin coverage is measured but nothing reads it yet **[NOTED -- deferred by design, not a defect]**
 
 **Raised 2026-09-15**, docs-correction lane FIX-6, while checking `A166`'s claims against the
