@@ -74,13 +74,7 @@
 .tab .fav.newtab {
   width: 14px;
   height: 14px;
-  border-radius: 4px;
-  background: var(--wmark);
-  color: #fff;
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 14px;
-  text-align: center;
+  background: url('../assets/logo.png') center / contain no-repeat;
 }
 
 .tab .title {

@@ -24,6 +24,19 @@ import {
 } from './e2e-helpers.js'
 import { originFromUrl } from '../src/broker/policy/origin.js'
 import { partitionFor } from '../src/broker/grants/origin-hash.js'
+import type { DevGrantRequest } from '../src/main/dev-grant.js'
+import type { Grant, Manifest } from '../src/contracts/index.js'
+
+/** Smallest manifest the dev-grant hook will register -- this file is
+ * about WHICH partition a redirect lands in, not what a grant permits. */
+const FIXTURE_MANIFEST: Manifest = {
+  orivonApiVersion: 0,
+  id: 'app.orivon.redirect-fixture',
+  name: 'Redirect-partition fixture',
+  version: '0.1.0',
+  entry: 'index.html',
+  capabilities: {}
+}
 
 let redirector: Server | undefined
 let destination: Server | undefined
@@ -78,6 +91,31 @@ it('a cross-origin HTTP redirect lands the tab in the DESTINATION origin\'s part
       app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
       const ready = await waitFor(() => (app as NonNullable<typeof app>).windows().length === 2)
       check('the shell reaches its launch-time window count', ready)
+
+
+      // ---- Grant BOTH origins, because isolation follows CONSENT ----
+      // ADR-0018 (owner, 2026-09-16). Ungranted origins share the default
+      // session by design, and a redirect between two tabs of the same
+      // session would prove nothing about A108's repartition -- there would
+      // be no partition to move between.
+      const granted = await app.evaluate(async (_electron, requests: DevGrantRequest[]) => {
+        const hook = (globalThis as unknown as { __orivonDevGrant?: (r: DevGrantRequest) => Promise<Grant> }).__orivonDevGrant
+        if (typeof hook !== 'function') return { installed: false as const }
+        for (const request of requests) await hook(request)
+        return { installed: true as const }
+      }, [fromUrl, toUrl].map((url) => ({
+        // The hook keys the ledger by canonical origin; these are full URLs.
+        origin: originFromUrl(url) as string,
+        manifest: FIXTURE_MANIFEST,
+        capability: 'id' as const,
+        patterns: []
+      })) satisfies DevGrantRequest[])
+      check(
+        'the developer-only grant hook is installed in this build (npm run test:e2e builds with ORIVON_ENABLE_DEV_GRANT=1)',
+        granted.installed,
+        granted.installed ? undefined : 'globalThis.__orivonDevGrant was not a function in the main process'
+      )
+      if (!granted.installed) throw new Error('dev-grant hook missing -- was this built via npm run test:e2e?')
 
       const chrome = findChrome(app)
       await waitForAddressBarStable(chrome)

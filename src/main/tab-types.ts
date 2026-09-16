@@ -3,6 +3,7 @@
 // navigate fix pushed that file over Rule 2's 500-line limit. These are
 // wire-format types with no logic of their own; tabs.ts re-exports them so
 // every existing `from './tabs.js'` import keeps working unchanged.
+import type { WebContentsView } from 'electron'
 import type { Bookmark } from './bookmarks.js'
 
 export interface TabState {
@@ -54,4 +55,34 @@ export interface Bounds {
   y: number
   width: number
   height: number
+}
+
+/** One live tab, as TabManager and the per-view wiring in tab-view.ts both
+ * see it. Exported so that wiring can live outside the class. */
+export interface TabRecord {
+  /** Mutable, not readonly: repartitionView() (see navigate()) replaces
+   * this with a fresh WebContentsView whenever a navigation changes the
+   * tab's origin -- Electron fixes a partition at construction, so
+   * changing it is only possible by swapping the whole view. */
+  view: WebContentsView
+  favicon: string | null
+  faviconOrigin: string | null
+  /** Guards a fetch that resolves after the tab already closed or
+   * navigated again -- only the record's own most recent request may
+   * write `favicon`. */
+  pendingFaviconUrl: string | null
+  /** The partition currently assigned to `view`, or undefined for the
+   * shell's own default session -- kept alongside `view` so navigate()
+   * can tell "did the origin actually change" without re-deriving it from
+   * `view.webContents.getURL()`, which may still reflect an in-flight
+   * navigation. */
+  partition: string | undefined
+  /** True only for a tab still showing the dashboard. Starts from
+   * createTab()'s own `isDashboard` decision; repartitionView() flips it
+   * to false, ONE-WAY, the moment a navigate() call sends this tab to
+   * real, different-origin content -- never re-derived from a URL a page
+   * could influence (see TabState.isNewTab's own doc comment: `this.
+   * dashboardUrl` is a plain http:// address in dev mode, which a page
+   * could otherwise steer an unrelated tab's `wc.getURL()` to match). */
+  isDashboardTab: boolean
 }

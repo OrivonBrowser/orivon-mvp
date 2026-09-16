@@ -1,9 +1,10 @@
 import type { Bookmark } from '../main/bookmarks.js'
-import { closeIcon, globeIcon } from './icons.js'
+import { closeIcon, faviconElement } from './icons.js'
 
-// Renders the bookmarks bar's dynamic list; the "Other Bookmarks" folder and
-// apps-grid button are static markup in index.html. See README.md for why
-// bookmarks are a real feature here.
+// Renders the bookmarks bar, which is now nothing but this list -- the
+// apps-grid button and the "Other Bookmarks" folder were removed
+// 2026-09-15 (owner), having never had anything behind them. See
+// README.md for why bookmarks are a real feature here.
 //
 // A div with a nested <button>, not a single <button>: each item needs two
 // independent click targets (open, remove), and a <button> cannot contain
@@ -39,7 +40,7 @@ export function createBookmarksView (
         onRemove(bookmark.url)
       })
 
-      item.append(globeIcon(), label, remove)
+      item.append(faviconElement(bookmark.favicon), label, remove)
       item.addEventListener('click', () => onOpen(bookmark.url))
       list.append(item)
     }

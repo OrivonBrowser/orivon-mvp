@@ -1,5 +1,7 @@
 // Transcribed from docs/architecture/capability-api.md's "Manifest" section.
 //
+// manifest.ts - What an app can declare
+//
 // The manifest is served alongside the app's frontend assets at
 // /.well-known/orivon.json and fetched before first run. It DECLARES what an
 // app may ask for; the user GRANTS what it actually gets. An app can never

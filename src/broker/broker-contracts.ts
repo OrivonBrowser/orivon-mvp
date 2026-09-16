@@ -272,6 +272,18 @@ export interface Broker {
      * throws; an unparseable `origin` is simply "not registered".
      */
     isRegisteredSync(origin: string): boolean
+    /**
+     * Does `origin` hold at least one live grant? SYNCHRONOUS for the same
+     * reason `isRegisteredSync` is, and used for the same kind of decision
+     * that cannot wait: which Electron session a tab is built in.
+     *
+     * Separate from `isRegisteredSync` because installing and consenting are
+     * different things (owner, 2026-09-16). An app can be loaded this session
+     * with nothing granted to it, and an origin can hold grants restored from
+     * disk before anything registers a manifest for it this run -- A158's
+     * hydration seam exists precisely to make that second case true.
+     */
+    hasGrantsSync(origin: string): boolean
     /** Every origin the broker has an app loaded for this session. Synchronous
      * for the same reason `isRegisteredSync` is: it reads the in-memory ledger
      * and cannot fail. */

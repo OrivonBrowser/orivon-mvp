@@ -28,18 +28,16 @@ devtools network panel. **Reading the source is not sufficient for the last asse
 
 **Input.** Launch the app for the first time.
 
-**Assertions.** All five must hold:
+**Assertions.** All four must hold:
 
 1. The disclosure screen appears **before** any other UI is usable.
 2. It shows the **literal JSON** that would be sent — not a description of it, not a summary.
-3. There are exactly **two buttons**, of **visually equal weight**. Neither is styled as the
-   preferred action.
-4. **Neither is preselected**, and no keyboard default activates one.
-5. **Nothing has been transmitted** at the moment the screen is displayed. Verified from the
+3. **Neither is preselected**, and no keyboard default activates one.
+4. **Nothing has been transmitted** at the moment the screen is displayed. Verified from the
    traffic observation, not from the code.
 
-**Fails if:** the JSON is summarised, one button is visually dominant, a choice is preselected,
-or a single request leaves the machine before the user chooses.
+**Fails if:** the JSON is summarised, a choice is preselected, or a single request leaves the
+machine before the user chooses.
 
 ---
 

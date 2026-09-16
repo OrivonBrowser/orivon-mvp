@@ -174,6 +174,21 @@ export async function bookmarkUrls (chrome) {
  * currently showing the SVG fallback (globe/spinner) or the new-tab
  * badge instead -- src/renderer/main.ts's renderFavicon() only ever
  * renders one of an <img>, an <svg>, or plain text at a time. */
+/** Whether the bookmarks bar is drawn AND main sized the chrome view to
+ * hold it -- asserted as one fact because either half alone passes while
+ * the feature is broken: a row drawn into a view main never grew is
+ * clipped, and a view grown for a row the CSS never drew is a band of
+ * empty chrome. Read from the page, never from main's internals, since
+ * the disagreement between the two is the bug worth catching.
+ * `shown` false is the mirror image: no row, and no space kept for one. */
+export async function bookmarksBarMatches (chrome, shown) {
+  const g = await evaluateRetrying(chrome, () => ({
+    viewHeight: window.innerHeight,
+    barHeight: document.querySelector('.bookmarksbar')?.getBoundingClientRect().height ?? 0
+  }))
+  return shown ? g.barHeight === 28 && g.viewHeight === 104 : g.barHeight === 0 && g.viewHeight === 76
+}
+
 export async function activeTabFaviconSrc (chrome) {
   return evaluateRetrying(chrome, () =>
     document.querySelector('.tab.active .fav img')?.getAttribute('src') ?? null

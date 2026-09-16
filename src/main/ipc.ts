@@ -19,6 +19,7 @@ import { COMMAND_CHANNEL } from './channels.js'
 import type { TabManager } from './tabs.js'
 import type { AppPermissions, PermissionsController } from './permissions.js'
 import type { DeliveryProvenance } from './delivery-provenance.js'
+import type { PanelAnchor } from './permissions-panel.js'
 
 export type ShellCommand =
   | { type: 'newTab'; url?: string }
@@ -28,7 +29,13 @@ export type ShellCommand =
   | { type: 'back'; id: string }
   | { type: 'forward'; id: string }
   | { type: 'reload'; id: string }
-  | { type: 'addBookmark'; url: string; title: string }
+  /** `tabId` is which tab is being starred, NOT an icon: main reads that
+   * tab's own already-fetched favicon (TabManager.faviconFor) and stores it
+   * with the bookmark. Deliberately not sent as a data: URL from the chrome
+   * view -- main fetched and size-capped that value in the first place, and
+   * having it round-trip through a renderer only adds a way for it to come
+   * back different. */
+  | { type: 'addBookmark'; url: string; title: string; tabId: string }
   | { type: 'removeBookmark'; url: string }
   | { type: 'openBookmark'; url: string }
   /** Queue item 4.4: the address-bar icon's own state, from the active
@@ -42,12 +49,17 @@ export type ShellCommand =
    * one truthful provenance signal, queried the same lagging, per-active-tab
    * way `appPermissionsFor` already is (see ./delivery-provenance.ts). */
   | { type: 'deliveryProvenanceFor'; url: string }
-  /** Opens (or focuses) the settings window -- see ./settings-window.ts.
-   * `url` (the active TAB's url, not yet an origin -- window.ts derives
-   * one via originFromUrl before this reaches openSettingsWindow) is set
-   * only by the address-bar icon, never the toolbar's own "Permissions"
-   * button. */
-  | { type: 'openSettings'; url?: string }
+  /** Opens, or closes, the permissions panel under the toolbar's permission
+   * key -- see ./permissions-panel.ts. `url` is the active TAB's url, not
+   * yet an origin (window.ts derives one via originFromUrl on the way), and
+   * says which app's card to scroll to; it is absent when no tab has one.
+   *
+   * `anchor` is the key's own rect, measured by the chrome view. Main
+   * cannot derive it: where that button sits depends on the toolbar's CSS
+   * and the window width, both of which live in the renderer. It is only a
+   * position -- treated as a hint and clamped to the window in
+   * panelBounds(), never trusted as a bounds to set directly. */
+  | { type: 'openSettings'; url?: string; anchor: PanelAnchor }
 
 function isFromChrome (event: IpcMainInvokeEvent, chromeWebContents: WebContents): boolean {
   return event.senderFrame !== null &&
@@ -59,7 +71,7 @@ export function registerShellIpc (
   tabs: TabManager,
   bookmarks: BookmarkStore,
   permissions: PermissionsController,
-  openSettings: (url?: string) => void,
+  openSettings: (anchor: PanelAnchor, url?: string) => void,
   /** Injected, matching `permissions` above -- ipc.test.ts stubs this rather
    * than reaching through to a real Electron `session`, the same reason
    * `permissions` is a `PermissionsController` object rather than an
@@ -97,7 +109,7 @@ export function registerShellIpc (
         tabs.reload(command.id)
         return
       case 'addBookmark':
-        bookmarks.add({ url: command.url, title: command.title })
+        bookmarks.add({ url: command.url, title: command.title, favicon: tabs.faviconFor(command.tabId) })
         return
       case 'removeBookmark':
         bookmarks.remove(command.url)
@@ -122,7 +134,7 @@ export function registerShellIpc (
       case 'deliveryProvenanceFor':
         return deliveryProvenance(command.url)
       case 'openSettings':
-        openSettings(command.url)
+        openSettings(command.anchor, command.url)
         return
     }
   })

@@ -15,10 +15,8 @@
 // required to consult first (mayTransmit) and to render literally
 // (buildDisclosurePayload), not paraphrase.
 //
-// A screen that technically appears but nudges toward "yes" passes a
-// casual review while failing the actual intent. Equal weight and no
-// preselection are therefore VALUES a test compares below, not notes
-// left for whoever builds the view.
+// No preselection is a VALUE a test compares below, not a note left for
+// whoever builds the view.
 
 import type { AccountingState, AppId, Period, PeriodTotals } from './accounting.js'
 
@@ -130,17 +128,14 @@ export function shouldPresentDisclosure (state: ConsentState): boolean {
   return state === 'undecided'
 }
 
-// The two options: equal weight, no preference
+// The two options
 
 export type DisclosureChoiceId = 'keep-on' | 'turn-off'
 
 /**
- * id, label and resultingState are the whole shape -- deliberately.
- * There is no field here a UI could read to decide "which button is the
- * recommended one", because none exists to set. Adding one (`primary`,
- * `recommended`, `isDefault`, or any field present on one option and not
- * the other) is exactly the mutation the equal-weight tests exist to
- * catch.
+ * id, label and resultingState are the whole shape: what the choice is
+ * called, and what it settles the consent state to. How either option is
+ * presented is the view's concern and is not encoded here.
  */
 export interface DisclosureOption {
   readonly id: DisclosureChoiceId

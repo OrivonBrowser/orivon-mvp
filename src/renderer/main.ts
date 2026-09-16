@@ -3,7 +3,7 @@ import type { AppPermissions } from '../main/permissions.js'
 import type { DeliveryProvenance } from '../main/delivery-provenance.js'
 import type { ShellState, TabState } from '../main/tabs.js'
 import { createBookmarksView } from './bookmarks-view.js'
-import { closeIcon, globeIcon } from './icons.js'
+import { closeIcon, faviconElement } from './icons.js'
 
 // The chrome view's whole job: render ShellState, turn clicks/typing into
 // orivonShell.* commands. Main holds truth (src/main/tabs.ts,
@@ -18,20 +18,24 @@ interface OrivonShell {
   back: (id: string) => void
   forward: (id: string) => void
   reload: (id: string) => void
-  addBookmark: (url: string, title: string) => void
+  /** `tabId` lets main read that tab's own captured favicon and keep it with
+   * the bookmark -- this view never sends the icon itself. */
+  addBookmark: (url: string, title: string, tabId: string) => void
   removeBookmark: (url: string) => void
   openBookmark: (url: string) => void
-  /** Queue item 4.4: the active tab's own grants, for the address-bar
-   * icon -- `null` for an ordinary website (never registered as an app). */
+  /** Queue item 4.4: the active tab's own grants, for the toolbar's
+   * permission key -- `null` for an ordinary website (never registered
+   * as an app). */
   appPermissionsFor: (url: string) => Promise<AppPermissions | null>
   /** S4-6, ADR-0007: is the active tab's document actually being answered
    * from Orivon's own pinned local cache -- the one truthful signal the
    * address-bar dot owes a page whose padlock would otherwise claim a live
    * TLS connection that never happened. */
   deliveryProvenanceFor: (url: string) => Promise<DeliveryProvenance>
-  /** Opens the settings window -- `url`, when given, is the tab whose
-   * card it should scroll to. */
-  openSettings: (url?: string) => void
+  /** Opens (or closes) the permissions panel under the permission key.
+   * `anchor` is that key's own rect -- main cannot know where the toolbar
+   * put it. `url`, when given, is the tab whose card to scroll to. */
+  openSettings: (anchor: { x: number, y: number, width: number, height: number }, url?: string) => void
   onState: (listener: (state: ShellState) => void) => () => void
   /** Read-only -- see preload/shell.ts for why this exists instead of
    * env(titlebar-area-*) or navigator.windowControlsOverlay. */
@@ -71,7 +75,6 @@ const bookmarkToggle = must(document.querySelector<HTMLButtonElement>('#bookmark
 const addressForm = must(document.querySelector<HTMLFormElement>('#address-form'), '#address-form missing')
 const addressInput = must(document.querySelector<HTMLInputElement>('#address'), '#address missing')
 const addressDot = must(document.querySelector<HTMLSpanElement>('#address-dot'), '#address-dot missing')
-const addressPermissionsBtn = must(document.querySelector<HTMLButtonElement>('#address-permissions-btn'), '#address-permissions-btn missing')
 const permissionsBtn = must(document.querySelector<HTMLButtonElement>('#permissions-btn'), '#permissions-btn missing')
 const bookmarksList = must(document.querySelector<HTMLDivElement>('#bookmarks-list'), '#bookmarks-list missing')
 
@@ -99,22 +102,12 @@ function renderFavicon (tab: TabState): HTMLSpanElement {
   if (tab.loading) {
     fav.classList.add('loading')
   } else if (tab.isNewTab) {
+    // The mark is the .newtab class's own background image (tabstrip.css) --
+    // nothing goes inside it. It used to hold a literal 'O', which would now
+    // render on top of the logo.
     fav.classList.add('newtab')
-    fav.textContent = 'O'
-  } else if (tab.favicon !== null) {
-    // Real favicon, fetched and re-encoded by main (src/main/favicon.ts)
-    // -- never the site's own https:// URL, so this <img> never makes a
-    // network request itself. Falls back to the generic globe on load
-    // failure (a corrupt cached data: URL, in practice).
-    const img = document.createElement('img')
-    img.alt = ''
-    img.decoding = 'async'
-    img.referrerPolicy = 'no-referrer'
-    img.addEventListener('error', () => { fav.replaceChildren(globeIcon()) }, { once: true })
-    img.src = tab.favicon
-    fav.append(img)
   } else {
-    fav.append(globeIcon())
+    fav.append(faviconElement(tab.favicon))
   }
   return fav
 }
@@ -233,17 +226,20 @@ function renderToolbar (state: ShellState): void {
   bookmarkToggle.classList.toggle('active', bookmarked)
   bookmarkToggle.setAttribute('aria-pressed', String(bookmarked))
 
-  updateAddressPermissionsBadge(active)
+  updatePermissionsBadge(active)
 }
 
-/** Queue item 4.4's address-bar icon: what the active tab's app can do, at
- * a glance. `permissionsRequestUrl` guards against a slow response for a
- * tab that is no longer active landing after a newer request already
- * started -- the same stale-response shape tabs.ts's own captureFavicon
- * guards against, one layer up. */
+/** Queue item 4.4's permission key: what the active tab's app can do, at
+ * a glance. It sits outside the omnibox (owner, 2026-09-15 -- the pill's
+ * trailing slot is the Web3 Score's), so one control carries both halves:
+ * the current tab's state, and the way into the full list.
+ * `permissionsRequestUrl` guards against a slow response for a tab that is
+ * no longer active landing after a newer request already started -- the
+ * same stale-response shape tabs.ts's own captureFavicon guards against,
+ * one layer up. */
 let permissionsRequestUrl: string | null = null
 
-function updateAddressPermissionsBadge (active: TabState | undefined): void {
+function updatePermissionsBadge (active: TabState | undefined): void {
   const url = active === undefined || active.isNewTab ? null : active.url
   permissionsRequestUrl = url
   if (url === null) {
@@ -258,16 +254,23 @@ function updateAddressPermissionsBadge (active: TabState | undefined): void {
 function applyPermissionsBadge (app: AppPermissions | null): void {
   const hasRows = app !== null && app.rows.length > 0
   const hasWarning = hasRows && app.rows.some((row) => row.warning)
-  addressPermissionsBtn.classList.toggle('has-app', hasRows)
-  addressPermissionsBtn.classList.toggle('has-warning', hasWarning)
-  const label = hasRows ? `${app.appName} — click to view or revoke its permissions` : 'This site has no Orivon permissions'
-  addressPermissionsBtn.title = label
-  addressPermissionsBtn.setAttribute('aria-label', label)
+  permissionsBtn.classList.toggle('has-app', hasRows)
+  permissionsBtn.classList.toggle('has-warning', hasWarning)
+  const label = hasRows
+    ? `${app.appName} — click to view or revoke its permissions`
+    : 'Permissions — this site has none'
+  permissionsBtn.title = label
+  permissionsBtn.setAttribute('aria-label', label)
 }
 
 function render (state: ShellState): void {
   renderTabs(state)
   renderToolbar(state)
+  // Drives style.css's height override and bookmarks.css's hide rule.
+  // main sizes this whole view from the same fact (window.ts's
+  // chromeHeight), so the row and the space reserved for it appear and
+  // disappear together.
+  document.documentElement.dataset['bookmarks'] = state.bookmarks.length > 0 ? 'some' : 'none'
   bookmarksView.render(state.bookmarks)
 }
 
@@ -295,17 +298,25 @@ bookmarkToggle.addEventListener('click', () => {
   if (isBookmarked(currentState.bookmarks, active.url)) {
     shell.removeBookmark(active.url)
   } else {
-    shell.addBookmark(active.url, active.title.length > 0 ? active.title : active.url)
+    shell.addBookmark(active.url, active.title.length > 0 ? active.title : active.url, active.id)
   }
 })
 
-// Queue item 4.4: the toolbar's own "Permissions" button opens the full
-// list; the address-bar icon opens the same window scoped to whichever
-// app the CURRENT tab is (or an ordinary open, for an ordinary website).
-permissionsBtn.addEventListener('click', () => { shell.openSettings() })
-addressPermissionsBtn.addEventListener('click', () => {
+// Queue item 4.4: always the full list, scrolled to whichever app the
+// CURRENT tab is when there is one. A URL that belongs to no app is
+// harmless -- settings/main.ts finds no card to scroll to and renders the
+// list unscrolled, which is the ordinary open.
+permissionsBtn.addEventListener('click', () => {
   const active = activeTab(currentState)
-  shell.openSettings(active === undefined || active.isNewTab ? undefined : active.url)
+  // Measured at click time, not cached: the window may have been resized,
+  // and the bookmarks bar appearing or disappearing moves nothing in this
+  // row but the toolbar's own width does shift this button.
+  // A plain object, not the DOMRect itself: contextBridge deep-clones what
+  // crosses it, and a DOMRect's values live on its prototype rather than as
+  // own properties -- it arrives in main as {}.
+  const r = permissionsBtn.getBoundingClientRect()
+  const anchor = { x: r.x, y: r.y, width: r.width, height: r.height }
+  shell.openSettings(anchor, active === undefined || active.isNewTab ? undefined : active.url)
 })
 
 addressInput.addEventListener('focus', () => { addressFocused = true })

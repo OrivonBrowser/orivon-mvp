@@ -92,11 +92,16 @@ function additionalArgumentsOf (view: RecordedView): string[] | undefined {
   return view.options.webPreferences?.['additionalArguments'] as string[] | undefined
 }
 
-/** A fake `SubsystemContext` whose `broker.app.isRegisteredSync` answers from a caller-supplied set of registered origins -- everything else throws if touched, since no test here needs it. */
+/** A fake `SubsystemContext` whose broker answers from a caller-supplied set of origins --
+ * everything else throws if touched, since no test here needs it. The set answers BOTH
+ * `hasGrantsSync` (which decides the partition) and `isRegisteredSync` (which decides
+ * ADR-0017's app-tab fetch flag), because these tests predate the two being separate and
+ * assert on both: `tab-view.test.ts` is where the distinction itself is proven. */
 function ctxWithRegisteredOrigins (...origins: string[]): SubsystemContext {
   const registered = new Set(origins)
+  const known = (origin: string): boolean => registered.has(origin)
   return {
-    broker: { app: { isRegisteredSync: (origin: string) => registered.has(origin) } }
+    broker: { app: { isRegisteredSync: known, hasGrantsSync: known } }
   } as unknown as SubsystemContext
 }
 
@@ -106,9 +111,13 @@ beforeEach(() => {
   fakeContentView.removeChildView.mockClear()
 })
 
-describe('TabManager -- per-origin session partitions at creation (ADR-0003, ADR-0007)', () => {
+// Only an INSTALLED APP is isolated -- owner, 2026-09-15, resolving A109.
+// Every test that wants a partition therefore has to say which origins are
+// registered; a manager built on the bare fakeCtx has no broker at all, which
+// reads as "nothing is installed" and is the ordinary-browsing case.
+describe('TabManager -- an installed app gets its own session at creation (ADR-0003, ADR-0007)', () => {
   it('assigns a real app tab the exact partition partitionFor(originFromUrl(url)) computes', () => {
-    const manager = newManager()
+    const manager = newManager(ctxWithRegisteredOrigins('https://app.example'))
     manager.createTab('https://app.example/page')
 
     const expected = partitionFor(originFromUrl('https://app.example/page') as string)
@@ -116,8 +125,8 @@ describe('TabManager -- per-origin session partitions at creation (ADR-0003, ADR
     expect(partitionOf(createdViews[0] as RecordedView)).toBe(expected)
   })
 
-  it('gives two different origins two different partitions', () => {
-    const manager = newManager()
+  it('gives two different apps two different partitions', () => {
+    const manager = newManager(ctxWithRegisteredOrigins('https://a.example', 'https://b.example'))
     manager.createTab('https://a.example/')
     manager.createTab('https://b.example/')
 
@@ -129,7 +138,7 @@ describe('TabManager -- per-origin session partitions at creation (ADR-0003, ADR
   })
 
   it('gives two different paths on the SAME origin the SAME partition -- origin is the isolation key, not the full URL', () => {
-    const manager = newManager()
+    const manager = newManager(ctxWithRegisteredOrigins('https://app.example'))
     manager.createTab('https://app.example/one')
     manager.createTab('https://app.example/two')
 
@@ -137,7 +146,7 @@ describe('TabManager -- per-origin session partitions at creation (ADR-0003, ADR
   })
 
   it('every real app partition is persist:-prefixed -- ADR-0003 requires storage to survive a restart', () => {
-    const manager = newManager()
+    const manager = newManager(ctxWithRegisteredOrigins('https://app.example'))
     manager.createTab('https://app.example/')
     expect(partitionOf(createdViews[0] as RecordedView)).toMatch(/^persist:app-[0-9a-f]{64}$/)
   })
@@ -214,9 +223,48 @@ describe("TabManager -- ADR-0017's synchronous fetch()-routing flag (appTabArgsF
   })
 })
 
-describe('TabManager -- navigate() repartitions a tab when the ORIGIN changes', () => {
-  it('navigating a fresh dashboard tab to a real origin swaps in a view with that origin\'s partition', () => {
+describe('TabManager -- navigate() swaps a view only when entering or leaving an installed app', () => {
+  // THE REGRESSION TEST FOR A109. Before 2026-09-15 this swapped the view,
+  // and a swapped-in view starts with empty navigationHistory -- so one
+  // ordinary click or redirect to another site killed the back button.
+  // Reusing the view is what keeps the history alive; nothing else in this
+  // file would catch a return to the old rule.
+  it('does NOT swap between two ordinary websites -- the view, and its history, survive', () => {
     const manager = newManager()
+    const id = manager.createTab('https://news.example/')
+    manager.navigate(id, 'https://search.example/')
+
+    expect(createdViews).toHaveLength(1)
+    const view = createdViews[0] as RecordedView
+    expect(view.webContents.loadURL).toHaveBeenLastCalledWith('https://search.example/')
+    expect(view.webContents.close).not.toHaveBeenCalled()
+  })
+
+  it('swaps an ordinary tab OUT of the default session when it reaches an installed app', () => {
+    const manager = newManager(ctxWithRegisteredOrigins('https://app.example'))
+    const id = manager.createTab('https://news.example/')
+    manager.navigate(id, 'https://app.example/page')
+
+    expect(createdViews).toHaveLength(2)
+    expect(partitionOf(createdViews[0] as RecordedView)).toBeUndefined()
+    const expected = partitionFor(originFromUrl('https://app.example/page') as string)
+    expect(partitionOf(createdViews[1] as RecordedView)).toBe(expected)
+  })
+
+  // The other half of that swap, and the reason partitionChanged returns
+  // { to: undefined } rather than plain undefined: an app tab leaving for an
+  // ordinary website must NOT keep running it inside the app's own session.
+  it('swaps an app tab back onto the shared default session when it leaves for an ordinary website', () => {
+    const manager = newManager(ctxWithRegisteredOrigins('https://app.example'))
+    const id = manager.createTab('https://app.example/page')
+    manager.navigate(id, 'https://news.example/')
+
+    expect(createdViews).toHaveLength(2)
+    expect(partitionOf(createdViews[1] as RecordedView)).toBeUndefined()
+  })
+
+  it('navigating a fresh dashboard tab to an app origin swaps in a view with that origin\'s partition', () => {
+    const manager = newManager(ctxWithRegisteredOrigins('https://app.example'))
     const id = manager.createTab() // dashboard, no partition
     manager.navigate(id, 'https://app.example/page')
 
@@ -225,8 +273,8 @@ describe('TabManager -- navigate() repartitions a tab when the ORIGIN changes', 
     expect(partitionOf(createdViews[1] as RecordedView)).toBe(expected)
   })
 
-  it('navigating an existing app tab to a DIFFERENT origin swaps to a new view with the new partition', () => {
-    const manager = newManager()
+  it('navigating an existing app tab to a DIFFERENT app swaps to a new view with the new partition', () => {
+    const manager = newManager(ctxWithRegisteredOrigins('https://a.example', 'https://b.example'))
     const id = manager.createTab('https://a.example/')
     manager.navigate(id, 'https://b.example/')
 
@@ -236,7 +284,7 @@ describe('TabManager -- navigate() repartitions a tab when the ORIGIN changes', 
   })
 
   it('closes the OLD view\'s webContents on a swap -- no leaked WebContentsView per navigation', () => {
-    const manager = newManager()
+    const manager = newManager(ctxWithRegisteredOrigins('https://a.example', 'https://b.example'))
     const id = manager.createTab('https://a.example/')
     manager.navigate(id, 'https://b.example/')
 
@@ -244,7 +292,7 @@ describe('TabManager -- navigate() repartitions a tab when the ORIGIN changes', 
   })
 
   it('does NOT forget the tab when the OLD (swapped-out) view is later destroyed -- the tab is not closing', () => {
-    const manager = newManager()
+    const manager = newManager(ctxWithRegisteredOrigins('https://a.example', 'https://b.example'))
     const id = manager.createTab('https://a.example/')
     manager.navigate(id, 'https://b.example/')
 
@@ -268,7 +316,7 @@ describe('TabManager -- navigate() repartitions a tab when the ORIGIN changes', 
   })
 
   it('a rejected navigation on a real app tab does NOT swap -- stays in its own partition, loads about:blank on the SAME view', () => {
-    const manager = newManager()
+    const manager = newManager(ctxWithRegisteredOrigins('https://a.example'))
     const id = manager.createTab('https://a.example/')
     const before = partitionOf(createdViews[0] as RecordedView)
     manager.navigate(id, 'javascript:alert(1)')
@@ -293,7 +341,7 @@ describe('TabManager -- navigate() repartitions a tab when the ORIGIN changes', 
   })
 
   it('the swapped-in view\'s own popup handler (T18) still redirects window.open() to a new tab', () => {
-    const manager = newManager()
+    const manager = newManager(ctxWithRegisteredOrigins('https://app.example', 'https://popup.example'))
     const id = manager.createTab() // dashboard
     manager.navigate(id, 'https://app.example/')
 
@@ -309,7 +357,7 @@ describe('TabManager -- navigate() repartitions a tab when the ORIGIN changes', 
   })
 
   it('reattaches the swapped view to the window only when the tab being navigated is the ACTIVE one', () => {
-    const manager = newManager()
+    const manager = newManager(ctxWithRegisteredOrigins('https://app.example', 'https://b.example', 'https://c.example', 'https://d.example', 'https://popup.example'))
     // Each createTab() call activates itself (TabManager.activateTab), so
     // after both calls `backgroundTabId` is in the BACKGROUND and
     // `activeTabId` is the one currently shown.
@@ -341,8 +389,22 @@ describe('TabManager -- navigate() repartitions a tab when the ORIGIN changes', 
 // is only observable by actually emitting the event, not by calling a
 // TabManager method.
 describe('TabManager -- did-navigate repartitions a tab for a redirect, link, form submission or script navigation (A108/A109)', () => {
-  it('a same-view redirect to a different origin ends in that origin\'s partition', () => {
+  // THE REGRESSION TEST FOR A109 on the redirect path. A redirect between
+  // two ordinary websites is now an ordinary navigation inside one view --
+  // it was the most common way a real browse lost its back button.
+  it('a same-view redirect between two ordinary websites does not swap, so the back button survives it', () => {
     const manager = newManager()
+    manager.createTab('https://news.example/')
+    const ordinary = createdViews[0] as RecordedView
+
+    ordinary.webContents.emit('did-navigate', {}, 'https://elsewhere.example/')
+
+    expect(createdViews).toHaveLength(1)
+    expect(ordinary.webContents.close).not.toHaveBeenCalled()
+  })
+
+  it('a same-view redirect INTO an installed app still ends in that app\'s partition', () => {
+    const manager = newManager(ctxWithRegisteredOrigins('https://b.example'))
     manager.createTab('https://a.example/')
     const view = createdViews[0] as RecordedView
 
@@ -365,16 +427,30 @@ describe('TabManager -- did-navigate repartitions a tab for a redirect, link, fo
     expect(createdViews).toHaveLength(1)
   })
 
-  it('a clicked link or script-driven navigation to a different origin swaps exactly like a redirect -- TabManager cannot tell them apart, and must not need to', () => {
-    const manager = newManager()
+  it('a clicked link or script-driven navigation INTO an app swaps exactly like a redirect -- TabManager cannot tell them apart, and must not need to', () => {
+    const manager = newManager(ctxWithRegisteredOrigins('https://app.example'))
     manager.createTab('https://a.example/')
+    const view = createdViews[0] as RecordedView
+
+    view.webContents.emit('did-navigate', {}, 'https://app.example/')
+
+    expect(createdViews).toHaveLength(2)
+    const expected = partitionFor(originFromUrl('https://app.example/') as string)
+    expect(partitionOf(createdViews[1] as RecordedView)).toBe(expected)
+  })
+
+  // The escape route that matters for isolation: a script inside an app
+  // sending its own tab to an unrelated site must not leave that site
+  // sitting in the app's session.
+  it('a script inside an app navigating the tab to an ordinary website swaps it back off the app partition', () => {
+    const manager = newManager(ctxWithRegisteredOrigins('https://app.example'))
+    manager.createTab('https://app.example/')
     const view = createdViews[0] as RecordedView
 
     view.webContents.emit('did-navigate', {}, 'https://attacker.example/')
 
     expect(createdViews).toHaveLength(2)
-    const expected = partitionFor(originFromUrl('https://attacker.example/') as string)
-    expect(partitionOf(createdViews[1] as RecordedView)).toBe(expected)
+    expect(partitionOf(createdViews[1] as RecordedView)).toBeUndefined()
   })
 
   it('a same-origin navigation (a link to another path on the same origin) does not swap', () => {
@@ -422,7 +498,7 @@ describe('TabManager -- did-navigate repartitions a tab for a redirect, link, fo
   })
 
   it('closes the OLD view\'s webContents on a did-navigate-triggered swap -- no leaked WebContentsView', () => {
-    const manager = newManager()
+    const manager = newManager(ctxWithRegisteredOrigins('https://b.example'))
     manager.createTab('https://a.example/')
     const view = createdViews[0] as RecordedView
 
