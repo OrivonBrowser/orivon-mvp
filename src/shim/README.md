@@ -82,8 +82,35 @@ for the `electron` compatibility package; this extends the same mechanism here r
 re-inventing it, on two module-namespace exports at a time: `node-dns.ts`, `node-fs.ts`,
 `node-http.ts`/`node-https.ts` and `node-net.ts` each wrap their default export (the shape a
 bundled CJS `require(...)` resolves to) with `refusingProxy`, so any member they have not built
-throws a named, closed-reason `OrivonShimError` (`errors.ts`) the instant a caller reads it,
-instead of resolving to `undefined`.
+throws a named, closed-reason `OrivonShimError` (`errors.ts`) when a caller CALLS it, instead of
+a bare `TypeError`. **Corrected (A169):** the first shipped version of this threw on the READ
+itself, not the call -- see this section's last entry below for why that was a regression, and
+why the fix moved the throw from `get` to the returned value's invocation instead.
+
+**What `refusingProxy`'s `get` trap returns for an unbuilt member, and the one case it cannot
+honestly cover (A169).** `unimplemented.ts`'s `refusingFunction` -- named after the prop it
+stands in for, so a stack trace reads legibly -- so `typeof`, optional chaining and destructuring
+all see a real, present function instead of throwing on the mere read; only calling it runs
+`classify(prop)`'s Error. This is a deliberate, unavoidable trade-off, not a free win: a function
+is the one JS value that is both safe to merely hold (`typeof f === 'function'` never throws) and
+throws precisely when invoked, but `typeof` on it necessarily reports `'function'`, never
+`'undefined'` -- there is no way to make a value both callable-when-invoked and typeof-false at
+the same read (a `Proxy`'s callability, and hence its `typeof`, is fixed by its target at
+construction, not by any trap; verified empirically, not just from the spec, before this was
+accepted as final). For the vast majority of this surface (`fs.watchFile`, `dns.resolve4`, ...)
+that is the right answer anyway, since real Node genuinely does expose them as functions --
+`typeof` reporting `'function'` is the TRUTHFUL answer for those, matching what real Node itself
+would say, and the important part of the regression (reading no longer *throws*) is fully fixed.
+The one place a throwing function would be dishonest is a member real Node exposes as DATA, not a
+function -- `fs.constants`, `dns.promises` -- where `typeof` should say `'object'`/`'undefined'`,
+which no throwing function can do. `node-fs.ts` and `node-dns.ts` handle these two by name,
+listing them in `refusingProxy`'s own `known` object with an explicit `undefined` value rather
+than routing them through `otherFsMember`/`otherDnsMember` -- genuinely absent, the same as a
+member never considered at all, rather than faked as callable. This does mean `'constants' in fs`
+and `'promises' in dns` report `true` (the key exists, valued `undefined`) where every other
+unbuilt member reports `false` -- a deliberate, narrow exception for the two names this package
+has explicitly decided it cannot honestly present as functions, not a hole in the `in`-truthful
+guarantee for anything else.
 
 **Why this package's own `OrivonShimError`/`ShimRefusalReason`, not `shim-electron`'s
 `ElectronShimError`.** Same shape, deliberately not the same union -- a Node-stdlib gap and an
@@ -116,20 +143,24 @@ recommendation, not an owner decision** -- nothing in either package's "must nev
 forbids this one direction (`src/shim-electron/`'s list forbids the reverse), but the choice
 itself was not put to the owner.
 
-**Why `net.Socket`/`dgram.Socket` instances are NOT wrapped the same way.** `refusingProxy`
-throws the instant a member is *read*, which is exactly wrong for a stateful, duck-typed
-instance real Node libraries feature-detect before calling (`if (typeof socket.setBroadcast ===
-'function') ...`, `'unref' in socket`) -- a throw-on-read proxy would make that defensive check
-itself throw, turning a graceful, intentional skip into a crash. That would be a *regression*
-caused by this fix, not an improvement. `class` prototypes are also non-writable/non-configurable
-(`Socket.prototype = proxy` throws), so wrapping is not even mechanically available at the
-prototype level the way it is for a plain exported object. Instead, `node-net-socket.ts` and
-`node-dgram-socket.ts` add the handful of real Node members a porting app is likely to hit as
-actual present methods -- the same "present, throws when called" shape `node-fs-unsupported.ts`'s
-`syncUnsupported` and `node-http-unsupported.ts`/`node-net-unsupported.ts`'s `createServer`
-already use for their own decided gaps. Two of those (`ref`/`unref`) are safe NO-OPS rather than
-throws: real Node's contract for them is "no meaning, returns `this`", so a no-op is the
-objectively correct behaviour here too (there is no event-loop handle to ref/unref in this
+**Why `net.Socket`/`dgram.Socket` instances are NOT wrapped the same way.** A throw-on-*read*
+proxy is exactly wrong for a stateful, duck-typed instance real Node libraries feature-detect
+before calling (`if (typeof socket.setBroadcast === 'function') ...`, `'unref' in socket`) -- it
+would make that defensive check itself throw, turning a graceful, intentional skip into a crash.
+That would be a *regression*, not an improvement -- **and it is exactly the regression A169 found
+`refusingProxy` itself shipped with at the module-namespace grain** (`node-net.ts`/`node-dns.ts`/
+etc.), months after this paragraph named the failure mode; A169's fix (the entry above) makes
+`refusingProxy` itself safe to read, closing that gap at its source. `class` prototypes remain
+non-writable/non-configurable regardless (`Socket.prototype = proxy` throws), so wrapping is
+still not mechanically available at the prototype level the way it is for a plain exported
+object -- that structural reason, not the now-fixed throw-on-read behaviour, is why instances
+stay on their own mechanism. `node-net-socket.ts` and `node-dgram-socket.ts` add the handful of
+real Node members a porting app is likely to hit as actual present methods -- the same "present,
+throws when called" shape `node-fs-unsupported.ts`'s `syncUnsupported`,
+`node-http-unsupported.ts`/`node-net-unsupported.ts`'s `createServer`, and `refusingProxy` itself
+(post-A169) all use for their own decided gaps. Two of those (`ref`/`unref`) are safe NO-OPS
+rather than throws: real Node's contract for them is "no meaning, returns `this`", so a no-op is
+the objectively correct behaviour here too (there is no event-loop handle to ref/unref in this
 environment) -- throwing would be strictly worse than today's absence for any caller that
 already guards them defensively. The rest (`setTimeout`, `setBroadcast`, the multicast family)
 throw when called: a silent no-op there would misreport a real capability as applied instead of

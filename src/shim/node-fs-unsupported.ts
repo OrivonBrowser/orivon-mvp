@@ -9,11 +9,19 @@
 // ..., 'webtorrent')`, caught, falling back to os.tmpdir()). Throwing here
 // composes with that existing guard instead of needing a new one.
 
-export class OrivonFsUnsupportedError extends Error {
+import { OrivonShimError } from './errors.js'
+
+// A177's FOURTH instance, closed here. This class was added after the branch
+// that fixed the other three was written, so it reintroduced the same gap:
+// extending bare Error meant `catch (e) { if (e instanceof OrivonShimError) }`
+// -- the check a ported app writes once for the whole shim -- silently missed
+// every fs refusal. Message, name and both codes are unchanged; only the
+// base class moves, so nothing a caller already matches on shifts.
+export class OrivonFsUnsupportedError extends OrivonShimError {
   readonly code: string
 
   constructor (api: string, reason: string, code = 'ERR_ORIVON_FS_UNSUPPORTED') {
-    super(`orivon-node-shim: ${api} is not supported -- ${reason}`)
+    super(api, 'not-built', `${api} is not supported -- ${reason}`)
     this.name = 'OrivonFsUnsupportedError'
     this.code = code
   }
