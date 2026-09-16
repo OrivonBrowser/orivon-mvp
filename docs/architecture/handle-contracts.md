@@ -22,7 +22,7 @@
 > - **`TcpSocket`** — built and page-reachable, as before, including the close/half-close wire
 >   table (`node-adapters.ts`'s `destroySocket`).
 > - **`UdpSocket`** — built and page-reachable. See §UdpSocket's own correction below.
-> - **`TcpServer`** — **built at the broker layer, not reachable from a page.** See §TcpServer.
+> - **`TcpServer`** — **built and reachable from a page** (corrected 2026-09-15; A114 resolved). See §TcpServer.
 > - **`IdentityHandle`** — `orivon.id.publicKey`/`sign` are built and page-reachable
 >   (`src/broker/id-capability.ts`, wired through the control channel and the preload surface).
 >   `requestIdentity` and the named-identity `signEvent` shape below are **not** built: they need
@@ -292,15 +292,21 @@ particular broker or preload implements them.
 > accepted socket's handle and the server's handle both reject `'revoked'` and puts a real RST on
 > the wire (the client sees `ECONNRESET`).
 >
-> **It is NOT reachable from a page, and that gap is a design question rather than unfinished
-> plumbing.** `TcpServer.connections` has to hand the renderer a fresh port *per accepted socket*,
-> nested inside the server's own port. None of the three delivery mechanisms that exist covers
-> that: the control channel's structured-clone reply carries no transferable, `deliverPort` only
-> answers a control-channel request, and a socket's dedicated port carries
-> `BrokerToRendererMessage` — a **closed union** in `src/contracts/ipc.ts` with no
-> "here is a new handle and its port" shape, whose `postMessage` takes no transfer list either.
-> Closing it needs a `src/contracts/` change (own PR, merges first) and an owner decision on the
-> delivery shape. Filed as `docs/open-questions.md` A114.
+> **CORRECTED 2026-09-15 — it IS reachable from a page now; A114 is resolved.** This paragraph
+> used to say the opposite, and the reasoning it recorded is kept because it explains the shape
+> that was chosen. `TcpServer.connections` has to hand the renderer a fresh port *per accepted
+> socket*, nested inside the server's own port, and none of the three delivery mechanisms that
+> existed covered it: the control channel's structured-clone reply carries no transferable,
+> `deliverPort` only answers a control-channel request, and a socket's dedicated port carried a
+> **closed union** with no "here is a new handle and its port" shape.
+>
+> The owner chose to **hand the accepted socket over immediately** rather than have the renderer
+> fetch it on request (`d-0028`): the alternative left every inbound peer waiting a round trip and
+> briefly existing in the broker with no renderer end, which under seeding load reads as peers that
+> connect and immediately drop. `src/contracts/ipc.ts` gained `AcceptedMessage` — **the only
+> transferable member of `BrokerToRendererMessage`**, and that asymmetry is deliberate and load-
+> bearing: transferables are permanently banned on the renderer → main path (electron#34905 loses
+> them silently), and this is the main → renderer direction, the one that works.
 >
 > The handle-table mechanics below (`HandleKind: 'tcpServer'`) were written ahead of the accept
 > code and are unchanged by it.
