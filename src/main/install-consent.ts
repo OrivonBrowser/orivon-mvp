@@ -37,11 +37,17 @@ import { grantChangedCapabilities } from './grant-changed-capabilities.js'
  * call uses. All-or-nothing: the answer is a single boolean covering
  * everything at once -- see `PerCapabilityConsentPrompt` below for the
  * per-row answer A138's `'per-capability'` manifest value asks for.
+ *
+ * `held` (A170) is the SUBSET of `capabilities` already granted through
+ * that other door -- Deny still applies only to the rest, so the real
+ * dialog (./install-consent-prompt.ts) marks those rows rather than
+ * letting them read as part of what a Deny actually covers.
  */
 export type InstallConsentPrompt = (
   origin: string,
   manifest: Manifest,
-  capabilities: readonly CapabilityKind[]
+  capabilities: readonly CapabilityKind[],
+  held: readonly CapabilityKind[]
 ) => Promise<boolean>
 
 /**
@@ -104,13 +110,14 @@ export async function requestInstallConsent (
   if (notHeld.length === 0) return
 
   // A145's remembered-no check, generalised into OUTSTANDING = covered by
-  // NEITHER a live grant NOR a past decline. Under all-or-nothing a decline
-  // always covers the WHOLE declared set at once (the decline branch below
-  // still records `capabilities`, never a subset), so this reduces to
-  // exactly the old two separate whole-set checks it replaced; under
-  // per-capability a decline can cover only SOME capabilities, and this is
-  // what stops that mixed state from being silently re-asked in full every
-  // restart (see runPerCapabilityConsent's own tests).
+  // NEITHER a live grant NOR a past decline. A decline, in EITHER
+  // granularity, now records only what was actually outstanding this round
+  // (A172) -- never something already held or already declined -- so a
+  // `'per-capability'` accept-some-refuse-some decision (`held =
+  // [tcp.connect]`, `declined = [fs]`, both non-empty, non-overlapping
+  // subsets of the same request) is exactly the mixed state this filter
+  // exists to stop from being silently re-asked in full every restart (see
+  // runPerCapabilityConsent's own tests).
   const declined = await broker.declinedCapabilitiesFor(origin)
   const outstanding = declined === undefined ? notHeld : notHeld.filter((capability) => !declined.includes(capability))
   if (outstanding.length === 0) return
@@ -128,16 +135,26 @@ export async function requestInstallConsent (
     // all-or-nothing must see the complete picture even when part of it is
     // already held (A157's own test): grantChangedCapabilities below skips
     // re-granting anything unchanged, so nothing is torn down needlessly.
-    accepted = await consent(origin, manifest, capabilities)
+    // The held SUBSET of it goes along too (A170), so the real dialog can
+    // mark those rows -- Deny below only ever covers `outstanding`, never
+    // a row already held through the other door.
+    accepted = await consent(origin, manifest, capabilities, held.map((grant) => grant.capability))
   } catch (error) {
     console.error('[install-consent] the consent prompt threw; treating this visit as declined', origin, error)
     return
   }
   if (!accepted) {
-    // Remember the no (A145) -- best-effort, never throws (see
-    // declined-consent.ts): the worst a lost write costs is one avoidable
-    // re-prompt next restart, never a security regression.
-    await broker.recordDeclinedConsent(origin, capabilities)
+    // A172(1): record `outstanding`, never the whole `capabilities` --
+    // this dialog showed the complete picture, but only outstanding rows
+    // were actually being asked about; a held row Deny does not touch must
+    // never be written down as declined (that survived a revoke of the
+    // held capability could then never be asked about again, since a
+    // declined entry needs no live grant to suppress a future dialog).
+    // A172(2): APPENDED to the existing record via the same helper
+    // runPerCapabilityConsent's own refusal branch uses below, never a
+    // wholesale replace -- an earlier decline outside this round (a
+    // different manifest shape, or a granularity switch) must survive it.
+    await recordDeclined(broker, origin, declined, outstanding)
     return // A138: all-or-nothing -- the app stays installed, holding nothing
   }
 
@@ -157,6 +174,29 @@ export async function requestInstallConsent (
 }
 
 /**
+ * A172: the ONE write both decline branches below go through, so "declined"
+ * cannot mean something different depending on which one ran. Appends
+ * `newlyDeclined` to `declined` -- never a wholesale replace -- because a
+ * caller only ever passes what was actually asked about THIS round
+ * (`outstanding`, or a `'per-capability'` refusal already narrowed to it),
+ * so nothing here was ever a member of the old declined set already; there
+ * is nothing stale to remove, and the old set's own entries (a decline the
+ * current manifest does not even declare any more, say) must survive.
+ */
+async function recordDeclined (
+  broker: Broker,
+  origin: string,
+  declined: readonly CapabilityKind[] | undefined,
+  newlyDeclined: readonly CapabilityKind[]
+): Promise<void> {
+  if (newlyDeclined.length === 0) return
+  // Best-effort, never throws (see declined-consent.ts): the worst a lost
+  // write costs is one avoidable re-prompt next restart, never a security
+  // regression.
+  await broker.recordDeclinedConsent(origin, [...(declined ?? []), ...newlyDeclined])
+}
+
+/**
  * A138's 'per-capability' path. `outstanding` is already narrowed to what
  * is neither held nor declined -- the ONLY thing this asks about, so a
  * person is never re-asked about a capability they already decided in an
@@ -172,11 +212,9 @@ export async function requestInstallConsent (
  * PROMPT fails toward "asks again next time," never toward "grants
  * something nobody was shown."
  *
- * A refusal is never a decline of anything OUTSIDE this round: the new
- * declined record is the OLD one plus exactly the newly refused
- * capabilities -- never a wholesale replace -- because nothing accepted or
- * refused just now was ever a member of the old declined set (`outstanding`
- * excludes it by construction), so there is nothing stale to remove.
+ * A refusal is never a decline of anything OUTSIDE this round -- see
+ * `recordDeclined`'s own doc for how that is now true of the all-or-nothing
+ * branch above too (A172), through the same write.
  */
 async function runPerCapabilityConsent (
   broker: Broker,
@@ -201,6 +239,6 @@ async function runPerCapabilityConsent (
   // above) is never recorded as declined either -- it stays outstanding and
   // is asked about again next visit, rather than being misfiled as a real
   // "no" nobody actually chose.
-  if (refused.length > 0) await broker.recordDeclinedConsent(origin, [...(declined ?? []), ...refused])
+  await recordDeclined(broker, origin, declined, refused)
   if (accepted.length > 0) await grantChangedCapabilities(broker, origin, manifest, accepted)
 }

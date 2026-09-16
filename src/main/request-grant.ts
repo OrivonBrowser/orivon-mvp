@@ -91,5 +91,28 @@ export async function requestGrant (
   if (!revalidated.allowed) return false
 
   await broker.grant(origin, request.capability, revalidated.patterns)
+  // A172(3): this is a SECOND door to a grant -- install-consent.ts's own
+  // all-or-nothing accept clears an origin's whole declined-consent record
+  // because it just re-asked about everything the manifest declares
+  // ("an old no cannot outlive a yes", that file's header); this door only
+  // just re-asked about ONE capability, so it retires ONE "no", leaving any
+  // OTHER declined capability -- something this call was never asked
+  // about -- alone.
+  await clearDeclinedCapability(broker, origin, request.capability)
   return true
+}
+
+/**
+ * Composed entirely from the two Broker methods already used above --
+ * `declinedCapabilitiesFor`/`recordDeclinedConsent`/`clearDeclinedConsent`
+ * -- no new bookkeeping primitive needed for this. Reads the record, drops
+ * `capability` if present, and writes back whatever remains (or fully
+ * clears it once nothing does).
+ */
+async function clearDeclinedCapability (broker: Broker, origin: string, capability: CapabilityKind): Promise<void> {
+  const declined = await broker.declinedCapabilitiesFor(origin)
+  if (declined === undefined || !declined.includes(capability)) return
+  const remaining = declined.filter((existing) => existing !== capability)
+  if (remaining.length === 0) await broker.clearDeclinedConsent(origin)
+  else await broker.recordDeclinedConsent(origin, remaining)
 }
