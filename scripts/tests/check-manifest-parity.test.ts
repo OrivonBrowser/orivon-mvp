@@ -8,6 +8,7 @@ import {
   CONTRACT_FILE,
   DELIBERATELY_DEFERRED,
   interfaceFields,
+  nonReadonlyInterfaceFields,
   PARITY_MAP
 } from '../check-manifest-parity.mjs'
 
@@ -70,6 +71,31 @@ describe('interfaceFields', () => {
     expect(interfaceFields(source, 'Widget')).toBeNull()
   })
 
+  // A176 point 1: a field nested inside another field's own inline object
+  // type used to be read as a sibling of the field that contains it.
+  it('does not flatten a field nested inside another field\'s inline object type', () => {
+    const source = 'export interface Foo { readonly bar?: { readonly nested: string }\n' +
+      ' readonly baz: number }'
+    expect(interfaceFields(source, 'Foo')).toEqual(['bar', 'baz'])
+  })
+
+  it('masks a nested object field even when it repeats a real top-level name', () => {
+    // The dangerous case named in A176: a nested field whose name collides
+    // with a real top-level key would mask that the nesting was never
+    // checked at all -- deduping 'baz' against itself proves nothing; this
+    // proves the nested 'baz' was never extracted in the first place.
+    const source = 'export interface Foo { readonly bar?: { readonly baz: string }\n' +
+      ' readonly baz: number }'
+    expect(interfaceFields(source, 'Foo')).toEqual(['bar', 'baz'])
+  })
+
+  // A176 point 2: a field missing the `readonly` keyword used to vanish
+  // from the list entirely rather than being reported as a convention gap.
+  it('still reports a field that is missing the readonly keyword, rather than dropping it', () => {
+    const source = 'export interface Widget { readonly a: string\n b: number }'
+    expect(interfaceFields(source, 'Widget')).toEqual(['a', 'b'])
+  })
+
   it('stops at the interface\'s own closing brace, not a later one', () => {
     const source = `
       export interface Widget {
@@ -97,6 +123,30 @@ describe('arrayLiteralItems', () => {
 
   it('returns null when the array cannot be found', () => {
     expect(arrayLiteralItems("const OTHER_KEYS = ['a']", 'WIDGET_KEYS')).toBeNull()
+  })
+})
+
+describe('nonReadonlyInterfaceFields', () => {
+  it('is empty when every top-level member says readonly', () => {
+    const source = 'export interface Widget { readonly a: string\n readonly b?: number }'
+    expect(nonReadonlyInterfaceFields(source, 'Widget')).toEqual([])
+  })
+
+  it('names a top-level member missing readonly, and only that one', () => {
+    const source = 'export interface Widget { readonly a: string\n b: number }'
+    expect(nonReadonlyInterfaceFields(source, 'Widget')).toEqual(['b'])
+  })
+
+  it('does not reach into a nested inline object type\'s own members', () => {
+    // A field inside a nested object missing readonly is that field's own
+    // interface's problem (if it is one), not Widget's -- this function
+    // must stay scoped to the same top level interfaceFields is.
+    const source = 'export interface Widget { readonly a?: { nested: string }\n readonly b: number }'
+    expect(nonReadonlyInterfaceFields(source, 'Widget')).toEqual([])
+  })
+
+  it('returns null when the interface is not present at all', () => {
+    expect(nonReadonlyInterfaceFields('export interface Other { readonly x: string }', 'Widget')).toBeNull()
   })
 })
 
@@ -161,6 +211,36 @@ describe('checkManifestParity', () => {
     expect(result.unreadable).toEqual(['WIDGET_KEYS in src/loader/widget.ts'])
   })
 
+  // A176 point 2, at the checkManifestParity level: the field is no longer
+  // dropped, so it now also surfaces as an ordinary gap when the loader
+  // array does not list it either.
+  it('reports a field missing readonly both as a gap and in missingReadonly, when the loader does not list it', () => {
+    const root = fixture({
+      'src/contracts/manifest.ts': 'export interface Widget { readonly a: string\n b: number }',
+      'src/loader/widget.ts': "const WIDGET_KEYS = ['a']"
+    })
+    const result = checkManifestParity(root, { parityMap })
+    expect(result.ok).toBe(false)
+    expect(result.gaps).toEqual([
+      { interfaceName: 'Widget', field: 'b', loaderFile: 'src/loader/widget.ts', arrayName: 'WIDGET_KEYS' }
+    ])
+    expect(result.missingReadonly).toEqual([{ interfaceName: 'Widget', field: 'b' }])
+  })
+
+  // The case the fix is actually for: a dropped keyword must fail loudly
+  // even when the field's name already happens to be in the loader's
+  // allowlist -- the missing keyword is the defect, not the gap.
+  it('still fails on missingReadonly alone, even when the loader array already lists the field', () => {
+    const root = fixture({
+      'src/contracts/manifest.ts': 'export interface Widget { readonly a: string\n b: number }',
+      'src/loader/widget.ts': "const WIDGET_KEYS = ['a', 'b']"
+    })
+    const result = checkManifestParity(root, { parityMap })
+    expect(result.ok).toBe(false)
+    expect(result.gaps).toEqual([])
+    expect(result.missingReadonly).toEqual([{ interfaceName: 'Widget', field: 'b' }])
+  })
+
   it('reports a gap for every unmatched field, not just the first', () => {
     const root = fixture({
       'src/contracts/manifest.ts': 'export interface Widget { readonly a?: string\n readonly b?: number\n readonly c?: boolean }',
@@ -169,6 +249,23 @@ describe('checkManifestParity', () => {
     const result = checkManifestParity(root, { parityMap })
     expect(result.ok).toBe(false)
     expect(result.gaps.map((g) => g.field)).toEqual(['b', 'c'])
+  })
+
+  // A176 point 1, at the checkManifestParity level: before the fix, 'nested'
+  // would have been extracted as a phantom top-level field and reported as
+  // a gap (nothing named 'nested' belongs in WIDGET_KEYS), even though
+  // 'bar' and 'baz' -- the interface's real fields -- are both covered.
+  it('does not report a phantom gap for a nested inline-object field', () => {
+    const root = fixture({
+      'src/contracts/manifest.ts': 'export interface Widget { readonly bar?: { readonly nested: string }\n' +
+        ' readonly baz: number }',
+      'src/loader/widget.ts': "const WIDGET_KEYS = ['bar', 'baz']"
+    })
+    const result = checkManifestParity(root, { parityMap: [
+      { interfaceName: 'Widget', loaderFile: 'src/loader/widget.ts', arrayName: 'WIDGET_KEYS' }
+    ] })
+    expect(result.ok).toBe(true)
+    expect(result.gaps).toEqual([])
   })
 
   it('passes the real tree as it stands on main -- every current PARITY_MAP row, with the real DELIBERATELY_DEFERRED list', () => {
