@@ -112,6 +112,66 @@ describe('createAppRequestHandler -- pin coverage, through the real request pipe
     })
   })
 
+  it('A175: a satisfiable Range request counts only the sliced bytes actually served, never the whole pinned asset', async () => {
+    const tracker = createPinCoverageTracker()
+    const handler = await createAppRequestHandler(
+      await installedStorage(), ORIGIN, undefined, undefined, undefined, undefined, tracker.record
+    )
+
+    const total = utf8(APP_JS).length
+    const response = await handler(new Request(`${ORIGIN}/app.js`, { headers: { range: 'bytes=0-4' } }))
+
+    expect(response.status).toBe(206)
+    const snapshot = tracker.snapshot()
+    expect(snapshot.pinnedBytes).toBe(5) // bytes 0-4 inclusive
+    expect(snapshot.pinnedBytes).not.toBe(total)
+  })
+
+  it('A175: many range requests against the same asset sum to the bytes actually served, not the asset size repeated per request', async () => {
+    const tracker = createPinCoverageTracker()
+    const handler = await createAppRequestHandler(
+      await installedStorage(), ORIGIN, undefined, undefined, undefined, undefined, tracker.record
+    )
+
+    for (let i = 0; i < 50; i++) {
+      const response = await handler(new Request(`${ORIGIN}/app.js`, { headers: { range: 'bytes=0-9' } }))
+      expect(response.status).toBe(206)
+    }
+
+    const snapshot = tracker.snapshot()
+    expect(snapshot.pinnedRequests).toBe(50)
+    expect(snapshot.pinnedBytes).toBe(50 * 10) // 10 bytes per request, never 50 * the whole asset
+  })
+
+  it('A175: an unsatisfiable Range (416) records zero bytes served, not the full asset size, and does not mark bytesIncomplete', async () => {
+    const tracker = createPinCoverageTracker()
+    const handler = await createAppRequestHandler(
+      await installedStorage(), ORIGIN, undefined, undefined, undefined, undefined, tracker.record
+    )
+
+    const total = utf8(APP_JS).length
+    const response = await handler(new Request(`${ORIGIN}/app.js`, { headers: { range: `bytes=${total + 10}-${total + 20}` } }))
+
+    expect(response.status).toBe(416)
+    const snapshot = tracker.snapshot()
+    expect(snapshot.pinnedBytes).toBe(0)
+    expect(snapshot.bytesIncomplete).toBe(false)
+  })
+
+  it('A175: a denied request never adds bytes, even when the underlying asset has a real size', async () => {
+    const tracker = createPinCoverageTracker()
+    const handler = await createAppRequestHandler(
+      await installedStorage(), ORIGIN, undefined, undefined, undefined, undefined, tracker.record
+    )
+
+    const response = await handler(new Request(`${ORIGIN}/not-pinned.js`))
+
+    expect(response.status).toBe(404)
+    const snapshot = tracker.snapshot()
+    expect(snapshot.pinnedBytes).toBe(0)
+    expect(snapshot.deniedRequests).toBe(1)
+  })
+
   it('a same-origin request outside the pinned set counts as denied, not pinned', async () => {
     const tracker = createPinCoverageTracker()
     const handler = await createAppRequestHandler(

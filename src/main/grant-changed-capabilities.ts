@@ -6,22 +6,15 @@
 // change, wrong for a capability whose declared patterns did not change at
 // all. Extracted once both call sites needed the exact same "skip if
 // unchanged" idea (code-guidelines.md Rule 3), rather than each re-deciding
-// what "unchanged" means.
+// what "unchanged" means. `sameOwnPatterns` itself now lives in
+// ../broker/policy/update.js -- moved, not duplicated, once a THIRD caller
+// (grant-persistence.ts's `replaceHydratedGrants`, A168) needed the same
+// idea from inside `src/broker/`, which may never import `src/main/`.
 
 import { decideGrantRequest } from '../broker/policy/request-grant.js'
-import { patternSetFromGrants } from '../broker/policy/update.js'
+import { patternSetFromGrants, sameOwnPatterns } from '../broker/policy/update.js'
 import type { Broker } from '../broker/broker-contracts.js'
-import type { CapabilityKind, Manifest, Pattern } from '../contracts/index.js'
-
-/** Order-independent set equality -- two patterns are the same authority
- * however a manifest happens to list them, so re-declaring them in a
- * different order is never mistaken for a change. */
-function sameOwnPatterns (a: readonly Pattern[], b: readonly Pattern[]): boolean {
-  if (a.length !== b.length) return false
-  const left = [...a].sort()
-  const right = [...b].sort()
-  return left.every((pattern, index) => pattern === right[index])
-}
+import type { CapabilityKind, Manifest } from '../contracts/index.js'
 
 /**
  * Grants exactly `capabilities`, each bounded to the manifest's own declared
