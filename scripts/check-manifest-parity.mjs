@@ -60,29 +60,86 @@ function stripComments (source) {
 }
 
 /**
- * The `readonly <field>` member names declared directly inside
- * `export interface <interfaceName> { ... }` in `source` -- comments
- * stripped first, so doc-comment prose can never look like a field.
+ * The interface's own top-level members -- name plus whether `readonly` was
+ * present -- for `export interface <interfaceName> { ... }` in `source`.
+ * Comments are stripped first, so doc-comment prose can never look like a
+ * field.
  *
- * @returns {string[] | null} null when the interface cannot be found at
- *   all -- a bug in THIS check (its regex is out of date with a reformatted
- *   file), which the caller must fail closed on rather than read as "zero
- *   fields, zero gaps".
+ * Two things this masks out on purpose, both from the interface's own
+ * top-level view: text inside a NESTED `{ ... }` (an inline object type on
+ * one of this interface's own fields -- A176 point 1, that field's own
+ * members are not this interface's siblings), and text inside `( ... )` (a
+ * function-typed field's parameter list, where a parameter name followed by
+ * `:` would otherwise regex-match exactly like a field). Both are tracked as
+ * depth counters over the body; only text at brace-depth 1, paren-depth 0
+ * is a candidate member.
+ *
+ * Matches a member whether or not it says `readonly` (A176 point 2 -- a
+ * missing keyword used to make the field vanish from this list entirely
+ * rather than be reported as a convention violation); `readonly` on the
+ * returned record says which.
+ *
+ * @returns {Array<{ name: string, readonly: boolean }> | null} null when the
+ *   interface cannot be found at all -- a bug in THIS check (its regex is
+ *   out of date with a reformatted file), which the caller must fail closed
+ *   on rather than read as "zero members, zero gaps".
  */
-export function interfaceFields (source, interfaceName) {
+function interfaceMembers (source, interfaceName) {
   const stripped = stripComments(source)
   const open = new RegExp(`export interface ${interfaceName}\\b[^{]*\\{`).exec(stripped)
   if (open === null) return null
 
-  let depth = 1
+  let braceDepth = 1
+  let parenDepth = 0
   let i = open.index + open[0].length
-  while (i < stripped.length && depth > 0) {
-    if (stripped[i] === '{') depth += 1
-    else if (stripped[i] === '}') depth -= 1
+  let topLevel = ''
+  while (i < stripped.length && braceDepth > 0) {
+    const ch = stripped[i]
+    if (ch === '{') {
+      braceDepth += 1
+    } else if (ch === '}') {
+      braceDepth -= 1
+      if (braceDepth === 0) { i += 1; break }
+    } else if (ch === '(') {
+      parenDepth += 1
+    } else if (ch === ')') {
+      parenDepth -= 1
+    }
+    topLevel += (braceDepth === 1 && parenDepth === 0) ? ch : ' '
     i += 1
   }
-  const body = stripped.slice(open.index + open[0].length, i - 1)
-  return [...body.matchAll(/readonly\s+(\w+)\??\s*:/g)].map((match) => match[1])
+
+  return [...topLevel.matchAll(/(readonly\s+)?(\w+)\??\s*:/g)]
+    .map((match) => ({ name: match[2], readonly: match[1] !== undefined }))
+}
+
+/**
+ * The member names from {@link interfaceMembers}, `readonly` or not --
+ * see that function's own doc for what "top-level" excludes and why.
+ *
+ * @returns {string[] | null} null under the same condition as
+ *   `interfaceMembers`.
+ */
+export function interfaceFields (source, interfaceName) {
+  const members = interfaceMembers(source, interfaceName)
+  return members === null ? null : members.map((member) => member.name)
+}
+
+/**
+ * The subset of {@link interfaceMembers} missing the `readonly` keyword --
+ * A176 point 2. Nothing in this repo lints for the keyword, so this is the
+ * only mechanism that tells a dropped one apart from a field that was never
+ * there; it fails the check even when the field's name is already present
+ * in the loader's allowlist, because the missing keyword is itself the
+ * defect being reported, not a proxy for one.
+ *
+ * @returns {string[] | null} null under the same condition as
+ *   `interfaceMembers`.
+ */
+export function nonReadonlyInterfaceFields (source, interfaceName) {
+  const members = interfaceMembers(source, interfaceName)
+  if (members === null) return null
+  return members.filter((member) => !member.readonly).map((member) => member.name)
 }
 
 /**
@@ -112,9 +169,14 @@ function readSafe (path) {
  *   PARITY_MAP and DELIBERATELY_DEFERRED above.
  * @returns {{ ok: boolean,
  *   gaps: Array<{interfaceName: string, field: string, loaderFile: string, arrayName: string}>,
- *   unreadable: string[] }}
+ *   unreadable: string[],
+ *   missingReadonly: Array<{interfaceName: string, field: string}> }}
  *   `unreadable` names an interface or array this check could not find at
- *   all. Non-empty `unreadable` always makes `ok` false, on its own.
+ *   all. `missingReadonly` names a field this check found without the
+ *   `readonly` keyword (A176 point 2) -- reported on its own, independent of
+ *   `gaps`, because the missing keyword is a defect even when the field's
+ *   name already happens to be in the loader's allowlist. All three make
+ *   `ok` false whenever any is non-empty.
  */
 export function checkManifestParity (root, options = {}) {
   const parityMap = options.parityMap ?? PARITY_MAP
@@ -123,12 +185,17 @@ export function checkManifestParity (root, options = {}) {
 
   const gaps = []
   const unreadable = []
+  const missingReadonly = []
 
   for (const { interfaceName, loaderFile, arrayName } of parityMap) {
     const contractFields = interfaceFields(contractSource, interfaceName)
     if (contractFields === null) {
       unreadable.push(`interface ${interfaceName} in ${CONTRACT_FILE}`)
       continue
+    }
+
+    for (const field of nonReadonlyInterfaceFields(contractSource, interfaceName)) {
+      missingReadonly.push({ interfaceName, field })
     }
 
     const loaderSource = readSafe(join(root, loaderFile))
@@ -145,11 +212,12 @@ export function checkManifestParity (root, options = {}) {
     }
   }
 
-  return { ok: gaps.length === 0 && unreadable.length === 0, gaps, unreadable }
+  const ok = gaps.length === 0 && unreadable.length === 0 && missingReadonly.length === 0
+  return { ok, gaps, unreadable, missingReadonly }
 }
 
 if (isInvokedDirectly(import.meta.url)) {
-  const { ok, gaps, unreadable } = checkManifestParity(process.cwd())
+  const { ok, gaps, unreadable, missingReadonly } = checkManifestParity(process.cwd())
 
   if (!ok) {
     if (unreadable.length > 0) {
@@ -158,6 +226,16 @@ if (isInvokedDirectly(import.meta.url)) {
         '\nmay be out of date with a reformatted file. Fix the check before trusting it:\n'
       )
       for (const item of unreadable) console.error(`  ${item}`)
+    }
+    if (missingReadonly.length > 0) {
+      console.error(`\n${CONTRACT_FILE} declares a field without the readonly keyword:\n`)
+      for (const { interfaceName, field } of missingReadonly) {
+        console.error(`  ${interfaceName}.${field} -- missing 'readonly'`)
+      }
+      console.error(
+        '\nNothing in this repo lints for readonly (docs/open-questions.md A176), so a' +
+        '\ndropped keyword is invisible everywhere else this check is not run. Add it back.\n'
+      )
     }
     if (gaps.length > 0) {
       console.error(`\n${CONTRACT_FILE} declares a field the loader does not accept:\n`)
