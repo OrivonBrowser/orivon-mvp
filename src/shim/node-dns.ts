@@ -1,78 +1,111 @@
-// `dns` module target (module-map.ts). NOT BUILT: DNS resolution needs its
-// own broker capability (a network permission, like tcp.connect) that does
-// not exist yet -- owner decision (D-0006), out of this lane's scope. The
-// one confirmed caller in the target graph is k-rpc-socket's
-// `_resolveAndQuery`, which calls `dns.lookup(host, cb)` only for a bootstrap
-// peer named by hostname (e.g. 'router.bittorrent.com') rather than an IP
-// literal -- `net.isIP()` (node-net-isip.ts) is what routes a query there in
-// the first place. Failing loudly here, the same way node-http-unsupported.ts
-// and node-net-unsupported.ts fail loudly for their own gaps, beats a silent
-// hang: `lookup`'s callback fires asynchronously with a named, closed error,
-// same as if it could not resolve any name -- never a thrown exception,
-// because a lookup failure is exactly what real Node's own async contract
-// for this function already looks like.
+// `dns` module target (module-map.ts), over orivon.net.lookup (d-0030),
+// merged since this file's earlier NOT-BUILT header was written. The one
+// confirmed caller in the target graph is k-rpc-socket's `_resolveAndQuery`,
+// which calls `dns.lookup(host, cb)` -- hostname and callback only, no
+// options -- only for a bootstrap peer named by hostname (e.g.
+// 'router.bittorrent.com') rather than an IP literal; `net.isIP()`
+// (node-net-isip.ts) is what routes a query there in the first place.
 //
-// EVERY OTHER dns.* MEMBER (A135): `resolve4`, `resolve6`, `reverse`,
-// `setServers`, ... share `lookup`'s own D-0006 gap -- the same missing
-// broker capability, not a separate decision -- so the default export (what
-// a bundled CJS `require('dns')` resolves to) is wrapped so calling any of
-// them names the gap instead of a bare TypeError (A169: reading one is safe,
-// same as a real absent member -- only a call still refuses by name).
-// `dns.promises` is the one exception, handled at the export below.
+// A152's LESSON: a real denial must surface as `err.code === 'denied'`, not
+// a generic 'internal' one a ported app cannot branch on -- toNodeError
+// (node-http-errors.ts, already reused by every other capability here)
+// already gives 'denied' exactly that treatment, so this file does not
+// reinvent it.
+//
+// NO SECOND ROUND TRIP: orivon.net.lookup returns every resolved address
+// in resolver order (capability-api.ts's own doc on this). `{ all: true }`
+// is that array, filtered by `family` when asked; the default single-result
+// shape is its first entry.
 
+import { getOrivon } from './orivon-global.js'
+import { toNodeError } from './node-http-errors.js'
 import { refusingProxy } from './unimplemented.js'
-import { OrivonShimError, refuseShim } from './errors.js'
-
-// A177: extends OrivonShimError so `catch (e) { if (e instanceof
-// OrivonShimError) ... }` also catches this one, rather than needing its own
-// special case -- name/message/code below are unchanged from before.
-export class OrivonDnsUnsupportedError extends OrivonShimError {
-  readonly code = 'ERR_ORIVON_DNS_UNSUPPORTED'
-
-  constructor () {
-    super(
-      'dns.lookup',
-      'not-built',
-      'dns.lookup is not supported -- DNS resolution needs its own broker capability, which ' +
-      'does not exist yet. Connect to an IP address literal instead of a hostname, or wait for ' +
-      'that capability to land.'
-    )
-    this.name = 'OrivonDnsUnsupportedError'
-  }
-}
+import { refuseShim } from './errors.js'
+import type { LookupAddress } from '../contracts/handles.js'
 
 export interface LookupOptions {
   family?: number
   all?: boolean
 }
 
-type LookupCallback = (error: Error | null, address: string, family: number) => void
+export interface LookupResult { address: string, family: number }
 
-/** lookup(hostname[, options], callback) -- every documented positional form, since real callers pass either. */
-export function lookup (_hostname: string, optionsOrCallback: LookupOptions | LookupCallback, callback?: LookupCallback): void {
-  const cb = typeof optionsOrCallback === 'function' ? optionsOrCallback : callback
-  // Asynchronous on purpose, matching real Node's own contract for this
-  // function: a caller that already handles a lookup failure (every
-  // confirmed caller does, since real DNS lookups fail in the wild) handles
-  // this one identically, with no synchronous throw to also guard against.
-  queueMicrotask(() => cb?.(new OrivonDnsUnsupportedError(), '', 0))
+type LookupCallback = (error: Error | null, address: string, family: number) => void
+type LookupAllCallback = (error: Error | null, addresses: LookupResult[]) => void
+
+function toNodeFamily (family: LookupAddress['family']): number { return family === 'IPv6' ? 6 : 4 }
+
+function notFoundError (hostname: string): Error & { code: string } {
+  return Object.assign(new Error(`orivon-node-shim: getaddrinfo ENOTFOUND ${hostname}`), { code: 'ENOTFOUND' })
 }
 
-/** dns.lookup's own gap, generalised: every other dns.* member is the same D-0006 capability, unbuilt. */
-function otherDnsMember (prop: string) {
+/** orivon.net.lookup's own resolved order, narrowed to `options.family` when given -- no second round trip either way (this file's own header). */
+async function resolveAddresses (hostname: string, options: LookupOptions): Promise<readonly LookupAddress[]> {
+  const addresses = await getOrivon().net.lookup({ hostname })
+  if (options.family === undefined || options.family === 0) return addresses
+  const wanted: LookupAddress['family'] = options.family === 6 ? 'IPv6' : 'IPv4'
+  return addresses.filter((address) => address.family === wanted)
+}
+
+/** dns.lookup(hostname[, options], callback) -- every documented positional form, since real callers pass either. */
+export function lookup (hostname: string, callback: LookupCallback): void
+export function lookup (hostname: string, options: LookupOptions & { all?: false }, callback: LookupCallback): void
+export function lookup (hostname: string, options: LookupOptions & { all: true }, callback: LookupAllCallback): void
+export function lookup (
+  hostname: string,
+  optionsOrCallback: LookupOptions | LookupCallback | LookupAllCallback,
+  callback?: LookupCallback | LookupAllCallback
+): void {
+  const options: LookupOptions = typeof optionsOrCallback === 'object' && optionsOrCallback !== null ? optionsOrCallback : {}
+  const cb = typeof optionsOrCallback === 'function' ? optionsOrCallback : callback
+  if (cb === undefined) return
+  resolveAddresses(hostname, options).then((addresses) => {
+    if (addresses.length === 0) { (cb as LookupCallback)(notFoundError(hostname), '', 0); return }
+    if (options.all === true) {
+      (cb as LookupAllCallback)(null, addresses.map((address) => ({ address: address.address, family: toNodeFamily(address.family) })))
+      return
+    }
+    const picked = addresses[0] as LookupAddress
+    ;(cb as LookupCallback)(null, picked.address, toNodeFamily(picked.family))
+  }).catch((error) => {
+    const nodeError = toNodeError(error)
+    if (options.all === true) (cb as LookupAllCallback)(nodeError, []); else (cb as LookupCallback)(nodeError, '', 0)
+  })
+}
+
+/** dns.promises.lookup(hostname[, options]) -- `options` may also be a bare family number, matching real Node's own overload. */
+async function lookupPromise (hostname: string, options: LookupOptions | number = {}): Promise<LookupResult | LookupResult[]> {
+  const opts: LookupOptions = typeof options === 'number' ? { family: options } : options
+  let addresses: readonly LookupAddress[]
+  try {
+    addresses = await resolveAddresses(hostname, opts)
+  } catch (error) {
+    throw toNodeError(error)
+  }
+  if (addresses.length === 0) throw notFoundError(hostname)
+  if (opts.all === true) return addresses.map((address) => ({ address: address.address, family: toNodeFamily(address.family) }))
+  const picked = addresses[0] as LookupAddress
+  return { address: picked.address, family: toNodeFamily(picked.family) }
+}
+
+function otherDnsPromisesMember (prop: string) {
   return refuseShim(
-    `dns.${prop}`,
-    'not-built',
-    `dns.${prop} is not supported -- like dns.lookup, it needs the same broker network-resolution ` +
-    'capability, which does not exist yet (D-0006, docs/planning/compatibility-matrix.md Table 1). ' +
-    'Connect to an IP address literal instead of a hostname, or wait for that capability to land.'
+    `dns.promises.${prop}`, 'unimplemented',
+    `dns.promises.${prop} is real Node dns surface this shim has not implemented and has not ` +
+    'decided whether it will -- distinct from dns.promises.lookup, which is built. See ' +
+    'docs/planning/compatibility-matrix.md Table 3.'
   )
 }
 
-export default refusingProxy({
-  lookup,
-  // dns.promises is an object of promise-returning methods, not a function
-  // -- a throwing-function refusal (A169) would misreport its own type, so
-  // this is explicitly undefined rather than routed through otherDnsMember.
-  promises: undefined
-}, otherDnsMember)
+export const promises = refusingProxy({ lookup: lookupPromise }, otherDnsPromisesMember)
+
+/** Every other dns.* member -- `resolve4`, `resolve6`, `reverse`, `setServers`, ... -- is real Node dns surface this shim has not implemented and has not decided whether it will (compatibility-matrix.md Table 3), distinct from `lookup`/`promises.lookup` above, which are built. */
+function otherDnsMember (prop: string) {
+  return refuseShim(
+    `dns.${prop}`, 'unimplemented',
+    `dns.${prop} is real Node dns surface this shim has not implemented and has not decided ` +
+    'whether it will. See docs/planning/compatibility-matrix.md Table 3.'
+  )
+}
+
+export default refusingProxy({ lookup, promises }, otherDnsMember)

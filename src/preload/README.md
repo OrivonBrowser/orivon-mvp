@@ -4,7 +4,9 @@
 `newtab.ts`, added 2026-08-28 for the new-tab dashboard), plus `orivon-surface.ts` — not a
 preload entry itself, but the `orivon.*` exposure both `app.ts` and `newtab.ts`'s fallback
 branch share (build step 2's IPC task; §The rule that governs this directory still applies to
-it) — and four files it depends on: `socket-bridge.ts` (the only file touching
+it), its two Rule 2 splits `control-call.ts` (the shared `CONTROL_CHANNEL` call/timeout
+machinery) and `net-surface.ts` (the `net.*` bridge closures — see Design notes for why these
+split out) — and four more files it depends on: `socket-bridge.ts` (the only file touching
 `ipcRenderer.on(PORT_CHANNEL)`, and deliberately kind-agnostic — it maps a handle id to a port and
 does not care what kind of socket it belongs to), `socket-port.ts` and `datagram-port.ts` (the
 isolated-world per-socket state machines for TCP and UDP, both Electron-free), and
@@ -26,8 +28,9 @@ neutral place a channel name shared across this trust boundary can live — `she
 `newtab.ts` already relied on this before `orivon-surface.ts` did too. Nothing else under
 `src/main/` is fair game.
 
-**Owner stream.** `app.ts`, `orivon-surface.ts`, `socket-bridge.ts`, `socket-port.ts`,
-`datagram-port.ts` and `main-world-socket.ts` belong to `broker` (build step 2); `shell.ts` and
+**Owner stream.** `app.ts`, `orivon-surface.ts`, `control-call.ts`, `net-surface.ts`,
+`socket-bridge.ts`, `socket-port.ts`, `datagram-port.ts` and `main-world-socket.ts` belong to
+`broker` (build step 2); `shell.ts` and
 `newtab.ts` belong to
 `shell` (build step 1, done).
 
@@ -70,6 +73,23 @@ regresses, stop.
 
 ## Design notes
 
+**Why `orivon-surface.ts` split into three files (`orivon-surface.ts`, `control-call.ts`,
+`net-surface.ts`).** `orivon-surface.ts` was 448 lines against Rule 2's 500-line limit, and four
+capability lanes were about to land behind it, every one adding page-surface entries to it
+(`fs.open` and its file operations, `net.listen`'s page half, `net.lookup`, `fs.userSelected`) --
+the same merge-time failure mode `../broker/transport/ipc.ts`'s own split
+(`../broker/transport/README.md`'s Design notes) exists to avoid. The net.* bridge closures
+(`netConnectBridge`, `netConnectSecureBridge`, `netUdpBindBridge` and everything only they use --
+`wrapPort`, the local `SocketDescriptor`/`UdpSocketDescriptor` shapes, `buildBridgeResult`,
+`buildUdpBridgeResult`) moved into `net-surface.ts`, so a `net.listen`/`net.lookup` lane grows
+that file, not the one every other capability's code also lives in. `call()`, `raceTimeout()` and
+the per-capability `TIMEOUT_MS` budgets moved into `control-call.ts`, because both
+`orivon-surface.ts` (the `app.*`/`fs.*`/`id.*` closures, `exposeFallback`, `exposeOrivon`) and
+`net-surface.ts` need them, and `net-surface.ts` importing them from `orivon-surface.ts` directly
+would cycle back through `orivon-surface.ts`'s own import of the net bridge closures for
+`exposeOrivon`'s wiring object -- `control-call.ts` is a leaf neither file needs to route through
+the other to reach.
+
 **Why `orivon-surface.ts` is shaped the way it is**, moved here from its own header per
 code-guidelines.md's destination test (none of this is a trap a single line needs; it explains
 the file's overall shape):
@@ -79,17 +99,22 @@ the file's overall shape):
   call this file's `exposeOrivon()`, so there is exactly one `orivon.*` object definition, not
   two copies drifting apart (code-guidelines.md Rule 3).
 - **This is build step 2's control surface** -- `../broker/transport/ipc.ts`'s `handleControlRequest`, on
-  the other side of `CONTROL_CHANNEL`. `app.manifest`, `app.grants`, `fs.readFile`,
-  `fs.writeFile`, `id.publicKey`, `id.sign`, `net.connect`, `net.udpBind`, `net.close` (plus
-  `net.setNoDelay`/`setKeepAlive`) are wired there; `fs.readFileSync` is wired the same way but
-  over its OWN channel (`SYNC_CONTROL_CHANNEL`, `../broker/transport/sync-fs.ts`'s
-  `handleSyncFsReadRequest`), never as a twelfth `CONTROL_CHANNEL` method, because it replies via
-  `event.returnValue`, not a resolved `Promise`. Everything else in
-  `docs/architecture/capability-api.md` (`net.listen`, `fs.open`/`mkdir`/`readdir`/`stat`/`rm`/
-  `rename`/`userSelected`, `id.requestIdentity`, `app.requestGrant`) is simply absent -- the
-  broker does not implement the rest yet either (`id.requestIdentity` specifically needs the
-  connect-prompt UI, a later build step), and a method that always threw `'invalid'` would be
-  worse than a method that is not there.
+  the other side of `CONTROL_CHANNEL`. `app.manifest`, `app.grants`, `app.requestGrant`,
+  `fs.readFile`, `fs.writeFile`, `fs.mkdir`/`readdir`/`stat`/`rm`/`rename`, `fs.open` and its
+  handle-scoped siblings (`fs.read`/`write`/`fstat`/`truncate`/`sync`/`close`, A184),
+  `id.publicKey`, `id.sign`, `net.connect`, `net.connectSecure`, `net.udpBind`, `net.close`
+  (plus `net.setNoDelay`/`setKeepAlive`) are wired there; `fs.readFileSync` is wired the same way
+  but over its OWN channel (`SYNC_CONTROL_CHANNEL`, `../broker/transport/sync-fs.ts`'s
+  `handleSyncFsReadRequest`), never one more `CONTROL_CHANNEL` method, because it replies via
+  `event.returnValue`, not a resolved `Promise`. **This bullet went stale once before** (it once
+  listed `fs.mkdir`/`readdir`/`stat`/`rm`/`rename`/`app.requestGrant` as absent after they had
+  already landed) -- corrected 2026-09-15 alongside `fs.open`, rather than left for whoever
+  next notices. Everything else in `docs/architecture/capability-api.md`
+  (`net.listen`'s page half, `net.lookup`, `fs.open`'s own `readable()`/`writable()`,
+  `fs.userSelected`, `id.requestIdentity`) is still simply absent -- the broker does not
+  implement the rest yet either (`id.requestIdentity` specifically needs the connect-prompt UI,
+  a later build step), and a method that always threw `'invalid'` would be worse than a method
+  that is not there.
 - **`net.connect`'s real shape (readable/writable are actual WHATWG streams) cannot be built in
   the isolated world.** `contextBridge` copies plain values into the main world; it does not
   proxy a stream built on this side intact (checked live via context7 against Electron's own
@@ -171,6 +196,19 @@ platform API is a trap":
   others, rather than left to be discovered.
 - **Only string/`Uint8Array`/`ArrayBuffer`/`URLSearchParams` request bodies are supported** --
   `FormData`, `Blob` and a streamed-upload body are not built here. v0 scope cut (PR #133).
+
+**A second, independent mechanism diverges the same way, for a different class of request.**
+`fetch-route.ts` above only intercepts the page's own JS-level `fetch()` calls. A passive
+subresource load pointed at a granted third-party host -- an `<img>`, `<link>`, or `<video>`
+`src`/`href` -- never reaches `fetch-route.ts` at all: it is intercepted at the
+`protocol.handle` layer instead, inside the app's own partition
+([`src/loader/serve.ts`](../loader/serve.ts)'s `fetchThirdParty`, dialled by
+[`src/loader/serve-reach.ts`](../loader/serve-reach.ts)'s `nodeReachDial`, Node's own `https`
+module). Like the mechanism above, it never follows a redirect: a 3xx response from the granted
+host comes back exactly as received, so a redirecting URL used as an `<img src>` or `<video src>`
+on a granted host renders as a broken load rather than following through -- surprising, since the
+page wrote no network code of its own to suspect. See `src/loader/README.md`'s Design notes for
+the full mechanism; this file's own list above covers only the `fetch()` path.
 
 **`init.signal` (`AbortController`) IS supported**, matching real `fetch()`: an already-aborted
 signal rejects before any dial happens; aborting mid-flight rejects the pending promise (via a

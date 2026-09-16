@@ -23,8 +23,8 @@ import type { CapabilityKind } from '../contracts/index.js'
 
 /** Builds the real InstallConsentPrompt ./app-install-subsystem.ts wires in. */
 export function createInstallConsentPrompt (): InstallConsentPrompt {
-  return async (origin, manifest, capabilities) => {
-    const content = describeInstallConsent(origin, manifest, capabilities)
+  return async (origin, manifest, capabilities, held = []) => {
+    const content = describeInstallConsent(origin, manifest, capabilities, held)
     const options: MessageBoxOptions = {
       type: content.warning ? 'warning' : 'question',
       buttons: ['Allow', 'Deny'],

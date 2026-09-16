@@ -6,6 +6,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Orivon } from '../../contracts/capability-api.js'
 import type { FileStat } from '../../contracts/handles.js'
+import { createFakeFileHandle } from './support/fake-file-handle.js'
 
 type GlobalWithOrivon = typeof globalThis & { orivon?: Orivon }
 
@@ -19,12 +20,14 @@ function installFakeOrivon (): {
   mkdirCalls: Array<{ path: string, opts: unknown }>
   rmCalls: Array<{ path: string, opts: unknown }>
   renameCalls: Array<{ from: string, to: string }>
+  openCalls: Array<{ path: string, flags: string }>
 } {
   const files = new Map<string, Uint8Array>()
   const stats = new Map<string, FileStat>()
   const mkdirCalls: Array<{ path: string, opts: unknown }> = []
   const rmCalls: Array<{ path: string, opts: unknown }> = []
   const renameCalls: Array<{ from: string, to: string }> = []
+  const openCalls: Array<{ path: string, flags: string }> = []
 
   ;(globalThis as GlobalWithOrivon).orivon = {
     fs: {
@@ -49,11 +52,14 @@ function installFakeOrivon (): {
       rm: async (path: string, opts: unknown) => { rmCalls.push({ path, opts }) },
       rename: async (from: string, to: string) => { renameCalls.push({ from, to }) },
       userSelected: async () => { throw new Error('not used in this test') },
-      open: async () => { throw new Error('not used in this test') }
+      // fs.open's own cursor/callback-family behaviour is
+      // node-fs-handle.test.ts's job; this stub only proves node-fs.ts's
+      // re-export ROUTES to it correctly.
+      open: async (path: string, flags: string) => { openCalls.push({ path, flags }); return createFakeFileHandle().handle }
     }
   } as unknown as Orivon
 
-  return { files, stats, mkdirCalls, rmCalls, renameCalls }
+  return { files, stats, mkdirCalls, rmCalls, renameCalls, openCalls }
 }
 
 afterEach(() => {
@@ -253,11 +259,30 @@ describe('every other synchronous export', () => {
   })
 })
 
-describe('fs.open', () => {
-  it('throws a named error -- no FileHandle capability exists at the broker', async () => {
+describe('fs.open / fs.promises.open', () => {
+  it('fs.open routes through orivon.fs.open -- node-fs-handle.test.ts covers the cursor/callback behaviour', async () => {
+    const { openCalls } = installFakeOrivon()
+    const fs = await import('../node-fs.js')
+    const fd = await new Promise<number>((resolve, reject) => {
+      fs.open('/piece-0', 'r+', (err, result) => (err !== null ? reject(err) : resolve(result as number)))
+    })
+    expect(typeof fd).toBe('number')
+    expect(openCalls).toEqual([{ path: '/piece-0', flags: 'r+' }])
+  })
+
+  it('fs.promises.open routes through the same orivon.fs.open', async () => {
+    const { openCalls } = installFakeOrivon()
+    const fs = await import('../node-fs.js')
+    const handle = await fs.promises.open('/piece-0', 'r+')
+    expect(typeof handle.fd).toBe('number')
+    expect(openCalls).toEqual([{ path: '/piece-0', flags: 'r+' }])
+  })
+
+  it('fs.promises\'s other members are named, not silently absent (A135)', async () => {
     installFakeOrivon()
     const fs = await import('../node-fs.js')
-    expect(() => fs.open('/x', 'r')).toThrow(/FileHandle/)
+    const { OrivonShimError } = await import('../errors.js')
+    expect(() => (fs.promises as unknown as Record<string, unknown>).readFile).toThrow(OrivonShimError)
   })
 })
 
@@ -340,6 +365,22 @@ describe('fs\'s other members -- named refusal instead of absence (A135), readin
         fs[member]!()
       } catch (error) {
         expect((error as InstanceType<typeof OrivonShimError>).reason).toBe('not-applicable')
+      }
+    }
+  )
+
+  it.each(['createReadStream', 'createWriteStream'])(
+    'names %s reason not-built, citing A184 -- FileHandle.readable()/writable() are not page-reachable yet',
+    async (member) => {
+      installFakeOrivon()
+      const fs = (await import('../node-fs.js')).default as unknown as Record<string, unknown>
+      const { OrivonShimError } = await import('../errors.js')
+      expect(() => fs[member]).toThrow(OrivonShimError)
+      try {
+        void fs[member]
+      } catch (error) {
+        expect((error as InstanceType<typeof OrivonShimError>).reason).toBe('not-built')
+        expect((error as InstanceType<typeof OrivonShimError>).message).toMatch(/A184/)
       }
     }
   )
