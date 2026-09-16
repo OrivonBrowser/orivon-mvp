@@ -14,13 +14,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 - **The capability broker** (build step 2). Manifest parsing, a grant ledger that survives a
   restart, per-origin enforcement, and per-app `session` partitions so two origins never share
-  storage. Outbound TCP, TLS, UDP and a rooted filesystem are reachable from a real page under
-  a grant; inbound TCP is built in the broker but cannot yet reach a page. An identity that can
-  sign is wired end to end.
-- **`orivon-node-shim`** (build step 3). `net` (client), `dgram` and `fs` present real Node
-  shapes over the capabilities, with Node's `http`/`https` clients on top of the TLS one, and
-  the core browser polyfills. `net.createServer` and `dns` are present but refuse loudly rather
-  than failing silently — each has a filed reason.
+  storage. Outbound TCP, TLS, UDP, inbound TCP, a rooted filesystem (including an open file
+  handle) and name resolution are all reachable from a real page under a grant. An identity that
+  can sign is wired end to end.
+- **`orivon-node-shim`** (build step 3). `net` (client and server), `dgram`, `fs` (including
+  `FileHandle`) and `dns.lookup` present real Node shapes over the capabilities, with Node's
+  `http`/`https` clients on top of the TLS one, and the core browser polyfills. A handful of
+  narrower cases still refuse loudly rather than failing silently — a `net.Server` bound to a
+  specific host rather than every interface, and a `FileHandle`'s own stream methods — each has
+  a filed reason.
 - **The page's own `fetch()` is routed** through the capability for granted hosts, carrying
   app-chosen headers. This is what lets an ordinary web frontend reach hosts a browser's
   same-origin rules would refuse.
