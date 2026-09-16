@@ -248,6 +248,102 @@ describe('fs.open -- the write quota applies to positional write(), exactly like
   })
 })
 
+describe('fs.open -- truncate() growth is charged against the quota exactly like write() (A189-adjacent CRITICAL fix)', () => {
+  it('growing past the current size past the quota yields limit and reserves nothing -- the unfixed bug this guards', async () => {
+    const broker = createBroker(baseDeps({ fs: stubFs() }))
+    broker.registerApp(APP, manifestWith({ fs: { quotaBytes: 10 } }))
+    await broker.grant(APP, 'fs', [])
+    const file = await broker.fs.open(APP, 'quota.bin', 'w+')
+
+    // The file starts empty, so this is a pure 20-byte grow -- against the
+    // unfixed code (truncate routed straight to the adapter with no
+    // reservation at all) this resolved silently and the quota counter
+    // stayed at zero.
+    const error = await rejection(file.truncate(20))
+
+    expect(error.code).toBe('limit')
+    // Proves nothing was reserved by the refused attempt: a write that
+    // exactly fills the whole 10-byte quota must still succeed afterward.
+    await expect(file.write({ position: 0, data: new Uint8Array(10) })).resolves.toBe(10)
+    await file.close()
+  })
+
+  it('growing within the quota charges the growth, counted against the NEXT write', async () => {
+    const broker = createBroker(baseDeps({ fs: stubFs() }))
+    broker.registerApp(APP, manifestWith({ fs: { quotaBytes: 10 } }))
+    await broker.grant(APP, 'fs', [])
+    const file = await broker.fs.open(APP, 'quota.bin', 'w+')
+
+    // Grows the empty file by 6 bytes -- must charge exactly 6, not 0
+    // (the unfixed bug) and not the full new length.
+    await file.truncate(6)
+    const error = await rejection(file.write({ position: 6, data: new Uint8Array(6) }))
+
+    expect(error.code).toBe('limit')
+    // The remaining 4 bytes of headroom must still be usable.
+    await expect(file.write({ position: 6, data: new Uint8Array(4) })).resolves.toBe(4)
+    await file.close()
+  })
+
+  it('shrinking refunds the difference, so the counter does not drift upward forever', async () => {
+    const broker = createBroker(baseDeps({ fs: stubFs() }))
+    broker.registerApp(APP, manifestWith({ fs: { quotaBytes: 10 } }))
+    await broker.grant(APP, 'fs', [])
+    const file = await broker.fs.open(APP, 'quota.bin', 'w+')
+
+    await file.write({ position: 0, data: new Uint8Array(10) }) // fills the whole quota
+    await file.truncate(2) // shrinks back down -- must refund 8
+
+    // Without the refund this would still read 'limit': the counter would
+    // sit at 10 with nothing released.
+    await expect(file.write({ position: 2, data: new Uint8Array(8) })).resolves.toBe(8)
+    await file.close()
+  })
+
+  it('a same-length truncate touches the ledger not at all', async () => {
+    const broker = createBroker(baseDeps({ fs: stubFs() }))
+    broker.registerApp(APP, manifestWith({ fs: { quotaBytes: 10 } }))
+    await broker.grant(APP, 'fs', [])
+    const file = await broker.fs.open(APP, 'quota.bin', 'w+')
+
+    await file.write({ position: 0, data: new Uint8Array(4) })
+    await file.truncate(4) // exactly the current size -- a no-op charge
+
+    await expect(file.write({ position: 4, data: new Uint8Array(6) })).resolves.toBe(6)
+    await file.close()
+  })
+
+  it('a truncate the raw call itself rejects refunds its growth reservation, same as write()', async () => {
+    let truncateCalls = 0
+    const fs: CreateBrokerOptions['fs'] = {
+      ...stubFs(),
+      open: async () => ({
+        read: async () => new Uint8Array(0),
+        write: async ({ data }) => data.length,
+        readable: () => new ReadableStream(),
+        writable: () => new WritableStream(),
+        stat: async () => ({ size: 0, isFile: true, isDirectory: false, mtimeMs: 0 }),
+        truncate: async () => {
+          truncateCalls += 1
+          if (truncateCalls === 1) throw Object.assign(new Error('EIO'), { code: 'EIO' })
+        },
+        sync: async () => {},
+        destroy: () => {}
+      })
+    }
+    const broker = createBroker(baseDeps({ fs }))
+    broker.registerApp(APP, manifestWith({ fs: { quotaBytes: 6 } }))
+    await broker.grant(APP, 'fs', [])
+    const file = await broker.fs.open(APP, 'quota.bin', 'w+')
+
+    await rejection(file.truncate(6))
+
+    // Refunded: a write of the SAME size the failed truncate reserved must still fit.
+    await expect(file.write({ position: 0, data: new Uint8Array(6) })).resolves.toBe(6)
+    await file.close()
+  })
+})
+
 describe('fs.open -- the per-origin in-flight budget and revocation mid-operation (T11b, CRITICAL)', () => {
   /** An fs whose `open` resolves immediately but whose `read`/`write` stall forever, for proving cancellation rather than a real result. */
   function stallingOpenFs (): CreateBrokerOptions['fs'] {

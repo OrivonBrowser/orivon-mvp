@@ -18,11 +18,17 @@ describe('refusingProxy', () => {
     expect(wrapped.known()).toBe('ok')
   })
 
-  it('throws the classified error, not a bare TypeError, for a property not on the wrapped object', () => {
+  it('does not throw reading a property not on the wrapped object -- A169: only calling it does', () => {
     const wrapped = refusingProxy({}, (prop) => notConsidered(`x.${prop}`)) as Record<string, unknown>
-    expect(() => wrapped.missing).toThrow(ElectronShimError)
+    expect(() => wrapped.missing).not.toThrow()
+    expect('missing' in wrapped).toBe(false)
+  })
+
+  it('throws the classified error, not a bare TypeError, when a property not on the wrapped object is called', () => {
+    const wrapped = refusingProxy({}, (prop) => notConsidered(`x.${prop}`)) as unknown as Record<string, () => unknown>
+    expect(() => wrapped.missing!()).toThrow(ElectronShimError)
     try {
-      void wrapped.missing
+      wrapped.missing!()
     } catch (error) {
       expect((error as Error).name).not.toBe('TypeError')
       expect((error as ElectronShimError).api).toBe('x.missing')
@@ -40,10 +46,10 @@ describe('refusingProxy', () => {
   // plain TypeError rather than any ElectronShimError, so a passing test
   // cannot be satisfied by classify secretly still routing through refuse().
   it('throws exactly what classify returns, not an ElectronShimError manufactured from it', () => {
-    const wrapped = refusingProxy({}, (prop) => new TypeError(`unrelated: ${prop}`)) as Record<string, unknown>
-    expect(() => wrapped.missing).toThrow(TypeError)
+    const wrapped = refusingProxy({}, (prop) => new TypeError(`unrelated: ${prop}`)) as unknown as Record<string, () => unknown>
+    expect(() => wrapped.missing!()).toThrow(TypeError)
     try {
-      void wrapped.missing
+      wrapped.missing!()
     } catch (error) {
       expect(error).not.toBeInstanceOf(ElectronShimError)
       expect((error as Error).message).toBe('unrelated: missing')
@@ -53,12 +59,13 @@ describe('refusingProxy', () => {
 
 describe('unimplementedMember', () => {
   it.each(['openExternal', 'showItemInFolder', 'trashItem'])(
-    'shell.%s throws naming the member and the property together, reason unimplemented',
+    'shell.%s: reading it is safe (A169), calling it throws naming the member and the property together, reason unimplemented',
     (method) => {
-      const shell = unimplementedMember('shell') as Record<string, unknown>
-      expect(() => shell[method]).toThrow(ElectronShimError)
+      const shell = unimplementedMember('shell') as unknown as Record<string, () => unknown>
+      expect(() => shell[method]).not.toThrow()
+      expect(() => shell[method]!()).toThrow(ElectronShimError)
       try {
-        void shell[method]
+        shell[method]!()
       } catch (error) {
         expect((error as ElectronShimError).api).toBe(`shell.${method}`)
         expect((error as ElectronShimError).reason).toBe('unimplemented')
@@ -73,8 +80,9 @@ describe('withUnimplementedFallback', () => {
     expect(wrapped.app).toBe('real')
   })
 
-  it('throws for a name entirely outside the known surface, not just outside a curated list', () => {
-    const wrapped = withUnimplementedFallback({ app: 'real' }) as Record<string, unknown>
-    expect(() => wrapped.somethingThisPackageHasNeverHeardOf).toThrow(ElectronShimError)
+  it('reading a name entirely outside the known surface is safe; calling it throws, not just outside a curated list', () => {
+    const wrapped = withUnimplementedFallback({ app: 'real' }) as unknown as Record<string, () => unknown>
+    expect(() => wrapped.somethingThisPackageHasNeverHeardOf).not.toThrow()
+    expect(() => wrapped.somethingThisPackageHasNeverHeardOf!()).toThrow(ElectronShimError)
   })
 })

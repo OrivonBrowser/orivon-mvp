@@ -55,6 +55,14 @@ describe('node-http.ts', () => {
     installFakeOrivon()
     const http = await import('../node-http.js')
     expect(() => http.createServer()).toThrow(/net\.listen/)
+    // A177: OrivonHttpUnsupportedError now extends OrivonShimError, so a
+    // catch block checking only the shared type still catches this one.
+    const { OrivonShimError } = await import('../errors.js')
+    try {
+      http.createServer()
+    } catch (error) {
+      expect(error).toBeInstanceOf(OrivonShimError)
+    }
   })
 
   it('surfaces a clear, named "error" event if window.orivon is absent when a request is attempted', async () => {
@@ -65,14 +73,17 @@ describe('node-http.ts', () => {
   })
 
   // A135: an unbuilt member read off the default export (a bundled CJS
-  // `require('http')`'s own shape) used to be silently absent.
-  it('names an unbuilt member (Agent) on the default export instead of leaving it absent', async () => {
+  // `require('http')`'s own shape) used to be silently absent. A169:
+  // reading one is now safe, the same as real absence; only calling it
+  // still names the gap.
+  it('reading an unbuilt member (Agent) on the default export is safe; calling it names the gap instead of leaving it absent', async () => {
     installFakeOrivon()
-    const http = (await import('../node-http.js')).default as unknown as Record<string, unknown>
+    const http = (await import('../node-http.js')).default as unknown as Record<string, () => unknown>
     const { OrivonShimError } = await import('../errors.js')
-    expect(() => http.Agent).toThrow(OrivonShimError)
+    expect(() => http.Agent).not.toThrow()
+    expect(() => http.Agent!()).toThrow(OrivonShimError)
     try {
-      void http.Agent
+      http.Agent!()
     } catch (error) {
       expect((error as InstanceType<typeof OrivonShimError>).api).toBe('http.Agent')
     }
@@ -105,10 +116,11 @@ describe('node-https.ts', () => {
     expect(() => https.createServer()).toThrow(/net\.listen/)
   })
 
-  it('names an unbuilt member (Agent) on the default export instead of leaving it absent', async () => {
+  it('reading an unbuilt member (Agent) on the default export is safe; calling it names the gap instead of leaving it absent', async () => {
     installFakeOrivon()
-    const https = (await import('../node-https.js')).default as unknown as Record<string, unknown>
+    const https = (await import('../node-https.js')).default as unknown as Record<string, () => unknown>
     const { OrivonShimError } = await import('../errors.js')
-    expect(() => https.Agent).toThrow(OrivonShimError)
+    expect(() => https.Agent).not.toThrow()
+    expect(() => https.Agent!()).toThrow(OrivonShimError)
   })
 })

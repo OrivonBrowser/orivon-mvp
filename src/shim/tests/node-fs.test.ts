@@ -6,6 +6,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Orivon } from '../../contracts/capability-api.js'
 import type { FileStat } from '../../contracts/handles.js'
+import { createFakeFileHandle } from './support/fake-file-handle.js'
 
 type GlobalWithOrivon = typeof globalThis & { orivon?: Orivon }
 
@@ -19,12 +20,14 @@ function installFakeOrivon (): {
   mkdirCalls: Array<{ path: string, opts: unknown }>
   rmCalls: Array<{ path: string, opts: unknown }>
   renameCalls: Array<{ from: string, to: string }>
+  openCalls: Array<{ path: string, flags: string }>
 } {
   const files = new Map<string, Uint8Array>()
   const stats = new Map<string, FileStat>()
   const mkdirCalls: Array<{ path: string, opts: unknown }> = []
   const rmCalls: Array<{ path: string, opts: unknown }> = []
   const renameCalls: Array<{ from: string, to: string }> = []
+  const openCalls: Array<{ path: string, flags: string }> = []
 
   ;(globalThis as GlobalWithOrivon).orivon = {
     fs: {
@@ -49,11 +52,14 @@ function installFakeOrivon (): {
       rm: async (path: string, opts: unknown) => { rmCalls.push({ path, opts }) },
       rename: async (from: string, to: string) => { renameCalls.push({ from, to }) },
       userSelected: async () => { throw new Error('not used in this test') },
-      open: async () => { throw new Error('not used in this test') }
+      // fs.open's own cursor/callback-family behaviour is
+      // node-fs-handle.test.ts's job; this stub only proves node-fs.ts's
+      // re-export ROUTES to it correctly.
+      open: async (path: string, flags: string) => { openCalls.push({ path, flags }); return createFakeFileHandle().handle }
     }
   } as unknown as Orivon
 
-  return { files, stats, mkdirCalls, rmCalls, renameCalls }
+  return { files, stats, mkdirCalls, rmCalls, renameCalls, openCalls }
 }
 
 afterEach(() => {
@@ -253,11 +259,32 @@ describe('every other synchronous export', () => {
   })
 })
 
-describe('fs.open', () => {
-  it('throws a named error -- no FileHandle capability exists at the broker', async () => {
+describe('fs.open / fs.promises.open', () => {
+  it('fs.open routes through orivon.fs.open -- node-fs-handle.test.ts covers the cursor/callback behaviour', async () => {
+    const { openCalls } = installFakeOrivon()
+    const fs = await import('../node-fs.js')
+    const fd = await new Promise<number>((resolve, reject) => {
+      fs.open('/piece-0', 'r+', (err, result) => (err !== null ? reject(err) : resolve(result as number)))
+    })
+    expect(typeof fd).toBe('number')
+    expect(openCalls).toEqual([{ path: '/piece-0', flags: 'r+' }])
+  })
+
+  it('fs.promises.open routes through the same orivon.fs.open', async () => {
+    const { openCalls } = installFakeOrivon()
+    const fs = await import('../node-fs.js')
+    const handle = await fs.promises.open('/piece-0', 'r+')
+    expect(typeof handle.fd).toBe('number')
+    expect(openCalls).toEqual([{ path: '/piece-0', flags: 'r+' }])
+  })
+
+  it('fs.promises\'s other members are named, not silently absent (A135) -- reading one is safe (A169), only calling it refuses', async () => {
     installFakeOrivon()
     const fs = await import('../node-fs.js')
-    expect(() => fs.open('/x', 'r')).toThrow(/FileHandle/)
+    const { OrivonShimError } = await import('../errors.js')
+    const promisesRec = fs.promises as unknown as Record<string, () => unknown>
+    expect(() => promisesRec.readFile).not.toThrow()
+    expect(() => promisesRec.readFile!()).toThrow(OrivonShimError)
   })
 })
 
@@ -313,13 +340,14 @@ describe('mkdir / readdir / stat / rm / rename', () => {
 // A135: every fs member this module does not build used to be silently
 // absent -- `fs.copyFile` read off the default export (a bundled CJS
 // `require('fs')`'s own shape) threw a bare "copyFile is not a function".
-describe('fs\'s other members -- named refusal instead of absence (A135)', () => {
-  it('names an ordinary unbuilt member (copyFile), reason unimplemented -- nothing has decided whether this will be built', async () => {
+describe('fs\'s other members -- named refusal instead of absence (A135), reading one is safe (A169)', () => {
+  it('reading copyFile does not throw; calling it names it, reason unimplemented -- nothing has decided whether this will be built', async () => {
     installFakeOrivon()
-    const fs = (await import('../node-fs.js')).default as unknown as Record<string, unknown>
-    expect(() => fs.copyFile).toThrow(/fs\.copyFile/)
+    const fs = (await import('../node-fs.js')).default as unknown as Record<string, () => unknown>
+    expect(() => fs.copyFile).not.toThrow()
+    expect(() => fs.copyFile!()).toThrow(/fs\.copyFile/)
     try {
-      void fs.copyFile
+      fs.copyFile!()
     } catch (error) {
       const { OrivonShimError } = await import('../errors.js')
       expect(error).toBeInstanceOf(OrivonShimError)
@@ -328,19 +356,48 @@ describe('fs\'s other members -- named refusal instead of absence (A135)', () =>
   })
 
   it.each(['chmod', 'chmodSync', 'chown', 'chownSync'])(
-    'names %s reason not-applicable -- no POSIX permission model exists to set',
+    'reading %s does not throw; calling it names it, reason not-applicable -- no POSIX permission model exists to set',
     async (member) => {
       installFakeOrivon()
-      const fs = (await import('../node-fs.js')).default as unknown as Record<string, unknown>
+      const fs = (await import('../node-fs.js')).default as unknown as Record<string, () => unknown>
       const { OrivonShimError } = await import('../errors.js')
-      expect(() => fs[member]).toThrow(OrivonShimError)
+      expect(() => fs[member]).not.toThrow()
+      expect(() => fs[member]!()).toThrow(OrivonShimError)
       try {
-        void fs[member]
+        fs[member]!()
       } catch (error) {
         expect((error as InstanceType<typeof OrivonShimError>).reason).toBe('not-applicable')
       }
     }
   )
+
+  it.each(['createReadStream', 'createWriteStream'])(
+    'names %s reason not-built when called, citing A184 -- FileHandle.readable()/writable() are not page-reachable yet; reading it first is safe',
+    async (member) => {
+      installFakeOrivon()
+      const fs = (await import('../node-fs.js')).default as unknown as Record<string, () => unknown>
+      const { OrivonShimError } = await import('../errors.js')
+      expect(() => fs[member]).not.toThrow()
+      expect(() => fs[member]!()).toThrow(OrivonShimError)
+      try {
+        fs[member]!()
+      } catch (error) {
+        expect((error as InstanceType<typeof OrivonShimError>).reason).toBe('not-built')
+        expect((error as InstanceType<typeof OrivonShimError>).message).toMatch(/A184/)
+      }
+    }
+  )
+
+  // A169's actual point: a library that merely probes an unbuilt member --
+  // `typeof`, optional chaining, destructuring -- must never crash at
+  // import just because it checked before calling.
+  it('typeof, optional chaining and destructuring over an unbuilt member never throw', async () => {
+    installFakeOrivon()
+    const fs = (await import('../node-fs.js')).default as unknown as Record<string, unknown>
+    expect(typeof fs.copyFile).toBe('function')
+    expect(() => fs.copyFile ?? undefined).not.toThrow()
+    expect(() => { const { copyFile } = fs as { copyFile?: unknown }; return copyFile }).not.toThrow()
+  })
 
   it('still serves every real, already-built member unchanged through the same default export', async () => {
     installFakeOrivon()
@@ -354,5 +411,16 @@ describe('fs\'s other members -- named refusal instead of absence (A135)', () =>
     installFakeOrivon()
     const fs = (await import('../node-fs.js')).default as unknown as Record<string, unknown>
     expect('copyFile' in fs).toBe(false)
+  })
+
+  // A169: fs.constants is data (POSIX flag numbers), not a function -- a
+  // throwing-function refusal would misreport its own type, so it is
+  // genuinely absent instead, the same as real Node reports a method this
+  // shim has never even considered.
+  it('reads fs.constants as undefined rather than a throwing function, since real Node exposes it as data, not a function', async () => {
+    installFakeOrivon()
+    const fs = (await import('../node-fs.js')).default as unknown as Record<string, unknown>
+    expect(fs.constants).toBeUndefined()
+    expect('constants' in fs).toBe(true)
   })
 })

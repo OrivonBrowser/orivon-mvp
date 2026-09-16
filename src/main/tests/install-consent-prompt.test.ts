@@ -21,7 +21,7 @@ describe('createInstallConsentPrompt', () => {
     showMessageBox.mockResolvedValueOnce({ response: 0 })
     const consent = createInstallConsentPrompt()
 
-    const result = await consent(ORIGIN, manifestWith({ fs: {} }), ['fs'])
+    const result = await consent(ORIGIN, manifestWith({ fs: {} }), ['fs'], [])
 
     expect(result).toBe(true)
   })
@@ -30,7 +30,7 @@ describe('createInstallConsentPrompt', () => {
     showMessageBox.mockResolvedValueOnce({ response: 1 })
     const consent = createInstallConsentPrompt()
 
-    const result = await consent(ORIGIN, manifestWith({ fs: {} }), ['fs'])
+    const result = await consent(ORIGIN, manifestWith({ fs: {} }), ['fs'], [])
 
     expect(result).toBe(false)
   })
@@ -38,7 +38,7 @@ describe('createInstallConsentPrompt', () => {
   it('defaults to and cancels on the Deny button -- dismissing the dialog must never grant', async () => {
     showMessageBox.mockResolvedValueOnce({ response: 1 })
 
-    await createInstallConsentPrompt()(ORIGIN, manifestWith({ fs: {} }), ['fs'])
+    await createInstallConsentPrompt()(ORIGIN, manifestWith({ fs: {} }), ['fs'], [])
 
     expect(showMessageBox).toHaveBeenCalledWith(expect.objectContaining({
       defaultId: 1,
@@ -49,11 +49,11 @@ describe('createInstallConsentPrompt', () => {
 
   it('uses the "warning" dialog type when any declared capability is unlimited, "question" otherwise', async () => {
     showMessageBox.mockResolvedValueOnce({ response: 1 })
-    await createInstallConsentPrompt()(ORIGIN, manifestWith({ net: { https: { connect: ['a.example:443'] } } }), ['https.connect'])
+    await createInstallConsentPrompt()(ORIGIN, manifestWith({ net: { https: { connect: ['a.example:443'] } } }), ['https.connect'], [])
     expect(showMessageBox).toHaveBeenCalledWith(expect.objectContaining({ type: 'question' }))
 
     showMessageBox.mockResolvedValueOnce({ response: 1 })
-    await createInstallConsentPrompt()(ORIGIN, manifestWith({ net: { https: { connect: ['*:*'] } } }), ['https.connect'])
+    await createInstallConsentPrompt()(ORIGIN, manifestWith({ net: { https: { connect: ['*:*'] } } }), ['https.connect'], [])
     expect(showMessageBox).toHaveBeenCalledWith(expect.objectContaining({ type: 'warning' }))
   })
 
@@ -61,7 +61,7 @@ describe('createInstallConsentPrompt', () => {
     showMessageBox.mockResolvedValueOnce({ response: 1 })
     const manifest = manifestWith({ fs: {} })
 
-    await createInstallConsentPrompt()(ORIGIN, manifest, ['fs'])
+    await createInstallConsentPrompt()(ORIGIN, manifest, ['fs'], [])
 
     expect(showMessageBox).toHaveBeenCalledWith(expect.objectContaining({
       title: ORIGIN,
