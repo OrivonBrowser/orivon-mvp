@@ -427,10 +427,19 @@ export async function createAppRequestHandler (
       recordCoverage?.('denied')
       return denyResponse('cached asset became unavailable after this app was loaded')
     }
-    recordCoverage?.('pinned', content.length)
 
     const connectPatterns = grantedConnectPatterns === undefined ? [] : await grantedConnectPatterns()
     const securePatterns = grantedSecurePatterns === undefined ? [] : await grantedSecurePatterns()
-    return buildResponse(content, resolved.canonicalPath, request.headers.get('range'), connectPatterns, securePatterns)
+    const response = buildResponse(content, resolved.canonicalPath, request.headers.get('range'), connectPatterns, securePatterns)
+    // A175: record what buildResponse actually SENT, not `content.length`
+    // (the whole pinned asset) -- a Range request serves only a slice, and
+    // an unsatisfiable one (416) serves no body at all, so counting the
+    // full asset size there inflates pinned coverage by bytes that were
+    // never on the wire. `content-length` is always set by buildResponse on
+    // a 200/206; a 416 carries none, but that is a KNOWN zero (no body was
+    // built), not a size that could not be measured, so it must read as 0,
+    // never trip `bytesIncomplete` (pin-coverage.ts's own contract).
+    recordCoverage?.('pinned', response.status === 416 ? 0 : contentLengthOf(response))
+    return response
   }
 }
