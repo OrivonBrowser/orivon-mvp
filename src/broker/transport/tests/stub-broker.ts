@@ -39,6 +39,8 @@ export function stubBroker (
     grants: (origin: string) => Promise<readonly Grant[]>
     /** SYNCHRONOUS, same reasoning as `confineSync` below -- Broker.app.isRegisteredSync has no CONTROL_CHANNEL method (it's an in-process, main-only call from tab construction), but the stub still needs to satisfy Broker's shape. */
     isRegisteredSync: (origin: string) => boolean
+    /** SYNCHRONOUS for the same reason, and used for the same kind of decision: which session a tab is built in. */
+    hasGrantsSync: (origin: string) => boolean
     connect: (origin: string, opts: { host: string, port: number }) => Promise<FailableTcpSocket>
     connectSecure: (origin: string, opts: { host: string, port: number }) => Promise<FailableTcpSocket>
     udpBind: (origin: string, opts: { port: number }) => Promise<FailableUdpSocket>
@@ -91,6 +93,10 @@ export function stubBroker (
       isRegisteredSync: (origin) => {
         calls.push({ method: 'app.isRegisteredSync', origin, args: undefined })
         return overrides.isRegisteredSync?.(origin) ?? false
+      },
+      hasGrantsSync: (origin) => {
+        calls.push({ method: 'app.hasGrantsSync', origin, args: undefined })
+        return overrides.hasGrantsSync?.(origin) ?? false
       },
       registeredOriginsSync: () => [],
       persistedAppsSync: () => [],

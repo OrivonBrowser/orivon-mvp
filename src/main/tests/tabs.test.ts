@@ -92,11 +92,16 @@ function additionalArgumentsOf (view: RecordedView): string[] | undefined {
   return view.options.webPreferences?.['additionalArguments'] as string[] | undefined
 }
 
-/** A fake `SubsystemContext` whose `broker.app.isRegisteredSync` answers from a caller-supplied set of registered origins -- everything else throws if touched, since no test here needs it. */
+/** A fake `SubsystemContext` whose broker answers from a caller-supplied set of origins --
+ * everything else throws if touched, since no test here needs it. The set answers BOTH
+ * `hasGrantsSync` (which decides the partition) and `isRegisteredSync` (which decides
+ * ADR-0017's app-tab fetch flag), because these tests predate the two being separate and
+ * assert on both: `tab-view.test.ts` is where the distinction itself is proven. */
 function ctxWithRegisteredOrigins (...origins: string[]): SubsystemContext {
   const registered = new Set(origins)
+  const known = (origin: string): boolean => registered.has(origin)
   return {
-    broker: { app: { isRegisteredSync: (origin: string) => registered.has(origin) } }
+    broker: { app: { isRegisteredSync: known, hasGrantsSync: known } }
   } as unknown as SubsystemContext
 }
 
