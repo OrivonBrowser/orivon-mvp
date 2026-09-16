@@ -1,14 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { open, syncUnsupported } from '../node-fs-unsupported.js'
-
-describe('fs.open', () => {
-  it('throws a named error citing why, rather than pretending to open a FileHandle', () => {
-    expect(() => open()).toThrow(/no FileHandle capability/)
-  })
-})
+import { syncUnsupported } from '../node-fs-unsupported.js'
 
 describe('syncUnsupported', () => {
-  it('throws a named error citing ADR-0016, distinguishable from fs.open\'s error', () => {
+  it('throws a named error citing ADR-0016', () => {
     const statSync = syncUnsupported('fs.statSync')
     let caught: Error & { code?: string } | undefined
     try { statSync() } catch (error) { caught = error as Error & { code?: string } }

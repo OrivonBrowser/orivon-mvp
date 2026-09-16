@@ -111,8 +111,8 @@ Strictly dependency-ordered; each step needs the one before it.
 |---|---|---|
 | 0 | Feasibility spike — can a renderer really run a torrent client? | **done** — [verdict](docs/planning/spike-verdict.md) |
 | 1 | **Shell** — tabs, omnibox, back/forward, window chrome | **done** |
-| 2 | **Capability broker** — manifests, grants, per-origin enforcement | **done** — including per-app session partitions and `net.listen`; one gap, `net.listen` is not reachable from a page ([A114](docs/open-questions.md)) |
-| 3 | **Node shim** — `net`, `dgram`, `fs` over `orivon.*` | **done** — plus `http`/`https` and the core polyfills; `net.createServer` and `dns` refuse loudly, pending A114 and A107 |
+| 2 | **Capability broker** — manifests, grants, per-origin enforcement | **done** — including per-app session partitions, and `net.listen` now reaches a page too ([A114](docs/open-questions.md), resolved) |
+| 3 | **Node shim** — `net`, `dgram`, `fs` over `orivon.*` | **done** — plus `http`/`https`, the core polyfills, `net.createServer` and `dns.lookup` over real broker capabilities ([A114](docs/open-questions.md)/[A107](docs/open-questions.md), both resolved) |
 | 4 | **App loader** — manifest discovery, fetch, cache, hash-pinning | **done** — discovery, fetch, caching, hash-pinning, the update decision and the served bundle's CSP are all reachable from a real page behind a real, one-time consent dialog. The folder picker (`fs.userSelected`) is a separate, still-unbuilt capability — see the compatibility matrix |
 | 5 | **Torrent app** — the flagship, and the demo clip | |
 | 6 | **Trust indicator** — what an app actually did, not a grade | groundwork in [`src/trust/`](src/trust/) |

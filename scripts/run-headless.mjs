@@ -51,10 +51,30 @@ const resolvedCommand = process.platform === 'win32' && command === 'npx' ? 'npx
 
 const useVirtualDisplay = process.platform === 'linux' && commandExists('xvfb-run')
 console.error(useVirtualDisplay
-  ? '[run-headless] using a virtual display (xvfb-run)'
+  ? '[run-headless] using a virtual display (xvfb-run, Wayland stripped from the child env)'
   : '[run-headless] no virtual display available -- running directly, relying on ORIVON_WINDOW_NO_FOCUS')
+// XVFB-RUN ALONE IS NOT ENOUGH ON A WAYLAND DESKTOP, and this is the whole
+// reason this block exists. `xvfb-run` creates an X server and sets DISPLAY.
+// Electron's ozone layer auto-detects, sees WAYLAND_DISPLAY still inherited
+// from the session, and connects to the REAL compositor -- so the window
+// opens on the owner's actual desktop, stealing focus mid-typing, while the
+// virtual display sits unused and the log still says "using a virtual
+// display". Removing WAYLAND_DISPLAY (and the session-type hint that also
+// selects it) leaves X11 as the only option ozone can find, which is the
+// one xvfb-run just pointed at the virtual display.
+//
+// Deliberately NOT `--ozone-platform=x11`: src/main/index.ts's own header
+// warns that forcing it there crashes the GPU process. This changes only
+// what the child can DISCOVER, never what the app asks for, so the app's
+// normal launch on a real desktop is untouched.
+const childEnv = { ...process.env }
+if (useVirtualDisplay) {
+  delete childEnv.WAYLAND_DISPLAY
+  if (childEnv.XDG_SESSION_TYPE === 'wayland') childEnv.XDG_SESSION_TYPE = 'x11'
+}
+
 const result = useVirtualDisplay
-  ? spawnSync('xvfb-run', ['-a', resolvedCommand, ...args], { stdio: 'inherit' })
+  ? spawnSync('xvfb-run', ['-a', resolvedCommand, ...args], { stdio: 'inherit', env: childEnv })
   : spawnSync(resolvedCommand, args, { stdio: 'inherit' })
 
 if (result.error !== undefined) {

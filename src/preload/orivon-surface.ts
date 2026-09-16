@@ -1,8 +1,9 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { SYNC_CONTROL_CHANNEL } from '../main/channels.js'
 import { installOrivon } from './main-world-socket.js'
+import type { MainWorldFileBridge } from './main-world-socket.js'
 import { call, TIMEOUT_MS } from './control-call.js'
-import { netConnectBridge, netConnectSecureBridge, netUdpBindBridge } from './net-surface.js'
+import { netConnectBridge, netConnectSecureBridge, netListenBridge, netLookupBridge, netUdpBindBridge } from './net-surface.js'
 import type { CapabilityRequest, FileStat, Grant, Manifest, OrivonErrorCode } from '../contracts/index.js'
 import { LIMITS } from '../contracts/index.js'
 import type { ResponseEnvelope } from '../contracts/ipc.js'
@@ -28,7 +29,9 @@ import { toOrivonError } from './orivon-error.js'
 // `./control-call.ts`'s `call()` is the only thing that touches
 // `ipcRenderer.invoke` (the raw MessagePortMain/ipcRenderer never crossing
 // into the main world is this whole directory's rule, not just this
-// file's); each method's own timeout budget lives there too.
+// file's); each method's own timeout budget lives there too. net.listen's
+// own bridge closure (netListenBridge) lives in ./net-surface.ts alongside
+// net.connect/net.udpBind/net.lookup's, for the same reason.
 
 async function appManifest (): Promise<Manifest> { return await call('app.manifest', undefined, TIMEOUT_MS.metadata) }
 async function appGrants (): Promise<readonly Grant[]> { return await call('app.grants', undefined, TIMEOUT_MS.metadata) }
@@ -71,6 +74,31 @@ async function fsRm (path: string, opts?: { recursive?: boolean }): Promise<void
   await call('fs.rm', payload, TIMEOUT_MS.fs)
 }
 async function fsRename (from: string, to: string): Promise<void> { await call('fs.rename', { from, to }, TIMEOUT_MS.fs) }
+
+/** `fs.open`'s CONTROL_CHANNEL reply -- deliberately just an id, matching net-surface.ts's own SocketDescriptor: `read`/`write`/... are built below as plain proxied closures, not carried across this call. */
+interface FsHandleDescriptor { readonly id: string }
+
+/**
+ * `orivon.fs.open` (A184). No main-world stream wrapping needed -- exactly
+ * fs.readFile/writeFile's own reasoning above -- because THIS handle has
+ * none yet: `readable`/`writable` have no CONTROL_CHANNEL case in this
+ * lane's own landing, so the object below is deliberately narrower than
+ * `FileHandle` (contracts/handles.ts). See this lane's PR body for what
+ * that means and what does not yet reach a page.
+ */
+async function fsOpen (path: string, flags: string): Promise<MainWorldFileBridge> {
+  const descriptor = await call<FsHandleDescriptor>('fs.open', { path, flags }, TIMEOUT_MS.fs)
+  const { id } = descriptor
+  return {
+    id,
+    read: async (opts) => await call('fs.read', { id, position: opts.position, length: opts.length }, TIMEOUT_MS.fs),
+    write: async (opts) => await call('fs.write', { id, position: opts.position, data: opts.data }, TIMEOUT_MS.fs),
+    stat: async () => await call('fs.fstat', { id }, TIMEOUT_MS.fs),
+    truncate: async (length) => { await call('fs.truncate', { id, length }, TIMEOUT_MS.fs) },
+    sync: async () => { await call('fs.sync', { id }, TIMEOUT_MS.fs) },
+    close: async () => { await call('fs.close', { id }, TIMEOUT_MS.fs) }
+  }
+}
 
 /**
  * ADR-0016's one synchronous call. `ipcRenderer.sendSync` blocks THIS
@@ -120,7 +148,15 @@ async function idSign (curve: string, payload: Uint8Array): Promise<Uint8Array> 
   return await call('id.sign', { curve, payload }, TIMEOUT_MS.id)
 }
 
-/** The `net`-less surface: used both when `executeInMainWorld` is absent and when it exists but throws -- one implementation, not two copies quietly drifting apart. */
+/**
+ * The stream-less `net` surface: used both when `executeInMainWorld` is
+ * absent and when it exists but throws -- one implementation, not two
+ * copies quietly drifting apart. `net.lookup` (d-0030) is included here,
+ * unlike `connect`/`connectSecure`/`udpBind`: it resolves to plain data,
+ * never a live handle, so it needs none of the main-world stream wrapping
+ * that makes the other three unsafe to expose without `executeInMainWorld`
+ * (`exposeOrivon`'s own doc below) -- exactly `fs.readFile`'s own reasoning.
+ */
 function exposeFallback (): void {
   contextBridge.exposeInMainWorld('orivon', {
     version: 0,
@@ -133,11 +169,15 @@ function exposeFallback (): void {
       readdir: fsReaddir,
       stat: fsStat,
       rm: fsRm,
-      rename: fsRename
+      rename: fsRename,
+      open: fsOpen
     },
     id: {
       publicKey: async (opts: { curve: string }) => await idPublicKey(opts.curve),
       sign: async (opts: { curve: string, payload: Uint8Array }) => await idSign(opts.curve, opts.payload)
+    },
+    net: {
+      lookup: async (opts: { hostname: string }) => await netLookupBridge(opts)
     }
   })
 }
@@ -177,11 +217,14 @@ export function exposeOrivon (): void {
     fsStat,
     fsRm,
     fsRename,
+    fsOpen,
     idPublicKey,
     idSign,
     netConnect: netConnectBridge,
     netConnectSecure: netConnectSecureBridge,
-    netUdpBind: netUdpBindBridge
+    netUdpBind: netUdpBindBridge,
+    netListen: netListenBridge,
+    netLookup: netLookupBridge
   }
   try {
     contextBridge.executeInMainWorld({

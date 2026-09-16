@@ -1,11 +1,9 @@
 // orivon.fs's entry points -- readFile, writeFile, confineSync (ADR-0016),
-// plus the extended set added for queue item 2.1: mkdir, readdir, stat, rm,
-// rename. Lifted out of ./index.ts under the same Rule 2 seam
-// net-capability.ts and id-capability.ts already established --
-// README.md's own design notes name this as the next seam once fs's entry
-// points grew past what one flat call justified. `FileHandle`
-// (orivon.fs.open) is NOT here -- see this lane's own PR body for why it
-// was parked rather than built alongside these five.
+// the extended set added for queue item 2.1 (mkdir, readdir, stat, rm,
+// rename), and `open` (FileHandle, A184). Lifted out of ./index.ts under
+// the same Rule 2 seam net-capability.ts and id-capability.ts already
+// established -- README.md's own design notes name this as the next seam
+// once fs's entry points grew past what one flat call justified.
 //
 // SAME DEPENDENCY SHAPE AS ./index.ts ITSELF -- the HandleTable and
 // GrantLedger it already built, plus `canonical`, are passed in rather than
@@ -14,18 +12,22 @@
 // same functions, just imported from here instead of defined inline.
 //
 // CONFINEMENT IS PROVEN PER CALL, NOT ONCE, and that is this file's whole
-// reason to exist as a single seam: every one of the eight methods below --
-// including BOTH sides of rename -- routes through `confineForOrigin`, the
-// ONE call into policy/paths.ts's confinePath (code-guidelines.md Rule 3).
-// A second confinement implementation, anywhere, is the bug this file
-// exists to make impossible.
+// reason to exist as a single seam: every one of the methods below --
+// including BOTH sides of rename, and `open` -- routes through
+// `confineForOrigin`, the ONE call into policy/paths.ts's confinePath
+// (code-guidelines.md Rule 3). A second confinement implementation,
+// anywhere, is the bug this file exists to make impossible. `open` confines
+// exactly once, at open time -- see its own doc for why that is sufficient
+// even though the handle it returns outlives this call.
 
 import { fail } from './errors.js'
 import { mapIoError } from './io-errors.js'
 import { CONFINEMENT_ERROR_CODE, confinePath } from './policy/paths.js'
 import type { HandleTable } from './handles/handles.js'
+import type { OperationScope } from './handles/handle-contracts.js'
+import type { FailableFileHandle, HandleEntry } from './handles/handle-contracts.js'
 import type { GrantLedger } from './grants/grant-ledger.js'
-import type { Broker, CreateBrokerOptions, RawFileStat } from './broker-contracts.js'
+import type { Broker, CreateBrokerOptions, OpenedFile, RawFileStat } from './broker-contracts.js'
 import type { Grant } from '../contracts/index.js'
 
 export interface FsCapabilityOptions {
@@ -65,20 +67,16 @@ export function createFsCapability ({ deps, handleTable, ledger, canonical }: Fs
 
   /**
    * Every `fs` I/O call runs under the SAME per-origin in-flight budget
-   * `net.connect` uses (`{ on: 'grant' }` -- handle-contracts.ts on that
-   * scope: "without it those calls would escape the in-flight cap entirely,
-   * which is the cap that keeps the broker responsive", T11b). Before
-   * readFile/writeFile were routed through this, `fs` called `deps.fs.*`
-   * directly and was subject to no cap at all -- every method added since
-   * shares this same fix rather than reopening the gap for itself.
-   *
-   * `signal.aborted` is checked on both sides of the raw call: before, in
-   * case the grant was already gone by the time a slot freed up; after,
-   * because revoking mid-call must not let the app receive confirmation for
-   * an operation performed after its grant was withdrawn.
+   * `net.connect` uses (T11b). `signal.aborted` is checked on both sides of
+   * the raw call: before, in case the grant/handle was already gone by the
+   * time a slot freed up; after, because revoking mid-call must not let the
+   * app receive confirmation for an operation performed after its
+   * authorisation was withdrawn. Shared by `runFsIo` and `runFileIo` below
+   * (Rule 3): both wrap one raw call in the identical revocation-aware,
+   * error-mapped shape and differ only in what `scope` attributes it to.
    */
-  async function runFsIo<T> (key: string, grant: Grant, io: () => Promise<T>): Promise<T> {
-    return await handleTable.run(key, { on: 'grant', grantId: grant.id }, async (signal) => {
+  async function runIo<T> (key: string, scope: OperationScope, io: () => Promise<T>): Promise<T> {
+    return await handleTable.run(key, scope, async (signal) => {
       if (signal.aborted) throw fail('revoked', 'the grant authorising this fs operation was withdrawn')
       let result: T
       try {
@@ -89,6 +87,29 @@ export function createFsCapability ({ deps, handleTable, ledger, canonical }: Fs
       if (signal.aborted) throw fail('revoked', 'the grant authorising this fs operation was withdrawn')
       return result
     })
+  }
+
+  /**
+   * Scoped to the GRANT -- the right attribution for a call with no handle
+   * of its own yet (readFile/writeFile/mkdir/.../open's own acquisition).
+   * Before readFile/writeFile were routed through this, `fs` called
+   * `deps.fs.*` directly and was subject to no in-flight cap at all -- every
+   * method added since shares this same fix rather than reopening the gap.
+   */
+  async function runFsIo<T> (key: string, grant: Grant, io: () => Promise<T>): Promise<T> {
+    return await runIo(key, { on: 'grant', grantId: grant.id }, io)
+  }
+
+  /**
+   * Scoped to the HANDLE -- for a call against an ALREADY-OPEN FileHandle
+   * (`open`'s own read/write/stat/truncate/sync). `{on:'handle'}` re-checks
+   * ownership of THIS handle (T11c) via `HandleTable.run`, and is cancelled
+   * the instant `closeTree` reaches it -- a direct close(), a fail()/
+   * abort(), or a grant revocation cascading through it -- unlike `open`'s
+   * own `{on:'grant'}` scope, which only ever covers the acquisition itself.
+   */
+  async function runFileIo<T> (key: string, handleId: string, io: () => Promise<T>): Promise<T> {
+    return await runIo(key, { on: 'handle', handleId }, io)
   }
 
   /**
@@ -211,5 +232,219 @@ export function createFsCapability ({ deps, handleTable, ledger, canonical }: Fs
     await runFsIo(key, source.grant, async () => { await deps.fs.rename(source.resolved, destination.resolved) })
   }
 
-  return { readFile, writeFile, confineSync, mkdir, readdir, stat, rm, rename }
+  /**
+   * Every flags string `node:fs`'s own `open` accepts (its docs' "File
+   * system flags" table) plus the two numeric-mode variants are out of
+   * scope -- `capability-api.ts`'s `open` takes a `string`, never a number.
+   * Checked HERE, before the confined path or the grant ever matter, so a
+   * malformed flags string is 'invalid' (an app bug) rather than surfacing
+   * as whatever `deps.fs.open` happens to throw for it -- which would be
+   * 'internal', the code reserved for a BROKER fault (errors.ts).
+   */
+  const VALID_OPEN_FLAGS: ReadonlySet<string> = new Set([
+    'r', 'r+', 'rs', 'rs+', 'w', 'wx', 'w+', 'wx+', 'a', 'ax', 'a+', 'ax+'
+  ])
+
+  /**
+   * Wraps a real writable byte stream so every chunk is checked against the
+   * running per-origin storage quota before it lands -- `writable()`'s own
+   * counterpart to `write()`'s `reserveFsBytes`/`releaseFsBytes` pair below.
+   * `writable()` has no single request to reject wholesale the way a
+   * positional `write()` call does: each chunk on the stream is its own
+   * reservation, refunded if the underlying write itself then fails.
+   *
+   * UNLIKE `udp.send`'s counted, never-rejecting loss (A87), exceeding the
+   * quota here DOES error the stream. A torrent write that silently
+   * dropped bytes past quota would corrupt the file on disk where a
+   * dropped datagram merely loses one packet a swarm already tolerates
+   * losing -- the two are not the same shape of failure, so they do not
+   * get the same treatment (code-guidelines.md Rule 3's counterweight).
+   */
+  function quotaCheckedWritable (key: string, real: WritableStream<Uint8Array>): WritableStream<Uint8Array> {
+    const writer = real.getWriter()
+    return new WritableStream<Uint8Array>({
+      async write (chunk) {
+        if (!ledger.reserveFsBytes(key, chunk.byteLength)) {
+          throw fail('limit', "this write would exceed the app's declared storage quota")
+        }
+        try {
+          await writer.write(chunk)
+        } catch (error) {
+          ledger.releaseFsBytes(key, chunk.byteLength)
+          throw error
+        }
+      },
+      async close () { await writer.close() },
+      async abort (reason) { await writer.abort(reason) }
+    })
+  }
+
+  /**
+   * Runs truncate() calls against the SAME handle strictly one at a time.
+   * `truncate`'s own doc explains why: computing the growth charge needs a
+   * "current size" read that is still true the instant the real truncate
+   * runs. `handleTable.run` (T11b) never serialises concurrent calls
+   * against one handle, so two truncates issued back to back could both
+   * read the pre-truncate size and race the reservation against it -- this
+   * queue is what actually closes that window, by keeping only one
+   * stat-then-truncate sequence in flight per handle id at a time.
+   *
+   * Keyed by handle id alone, not (origin, id) -- ids are drawn from
+   * `handles.ts`'s global, unguessable pool and never reused while a
+   * `recentlyClosed` entry for one still exists, so two live handles never
+   * collide on this key. `advance` is an ordering-only tail that never
+   * rejects (so the next caller's `?? Promise.resolve()` fallback never
+   * adopts a rejected chain); `run` is what the caller actually awaits and
+   * rejects exactly as `work()` would on its own. The map entry is dropped
+   * once nothing is queued behind it, so this never grows across a session.
+   */
+  const truncateChains = new Map<string, Promise<void>>()
+  function withTruncateLock<T> (handleId: string, work: () => Promise<T>): Promise<T> {
+    const previous = truncateChains.get(handleId) ?? Promise.resolve()
+    const run = previous.then(work)
+    const advance = run.then(() => {}, () => {})
+    truncateChains.set(handleId, advance)
+    advance.then(() => {
+      if (truncateChains.get(handleId) === advance) truncateChains.delete(handleId)
+    }).catch(() => {})
+    return run
+  }
+
+  /** Wraps an already-registered handle entry into the app-facing `FailableFileHandle` -- `net-capability.ts`'s `toFailableSocket` is the pattern this follows. */
+  function toFailableFileHandle (key: string, entry: HandleEntry, fields: Omit<OpenedFile, 'destroy'>): FailableFileHandle {
+    return {
+      id: entry.id,
+      closed: entry.closed,
+      close: async (): Promise<void> => { await handleTable.release(key, entry.id) },
+      fail: (code, platformCode) => { handleTable.fail(key, entry.id, code, platformCode) },
+      onUnlink: (listener) => { handleTable.onUnlink(key, entry.id, listener) },
+      read: async (opts) => await runFileIo(key, entry.id, async () => await fields.read(opts)),
+      write: async (opts) => {
+        if (!ledger.reserveFsBytes(key, opts.data.length)) {
+          throw fail('limit', "this write would exceed the app's declared storage quota")
+        }
+        let started = false
+        try {
+          return await runFileIo(key, entry.id, async () => {
+            started = true
+            try {
+              return await fields.write(opts)
+            } catch (error) {
+              ledger.releaseFsBytes(key, opts.data.length) // nothing landed -- unmapped, runFileIo maps it below
+              throw error
+            }
+          })
+        } catch (error) {
+          // Same "refund only what never reached the raw call" rule as
+          // writeFile's own catch above.
+          if (!started) ledger.releaseFsBytes(key, opts.data.length)
+          throw error
+        }
+      },
+      readable: (opts) => fields.readable(opts),
+      writable: (opts) => quotaCheckedWritable(key, fields.writable(opts)),
+      stat: async () => await runFileIo(key, entry.id, async () => await fields.stat()),
+      /**
+       * Node's `truncate` EXTENDS a file with null bytes when `length`
+       * exceeds its current size -- so growing past the current size is a
+       * write in every sense the quota cares about (manifest.ts's
+       * `quotaBytes` doc, and `write`'s own comment above), and must be
+       * charged and refusable exactly like one. Shrinking releases the
+       * difference instead, or the counter would drift upward forever on
+       * an app that writes little but truncates often; a same-length
+       * truncate touches the ledger at all.
+       *
+       * `currentSize` is read fresh, under `withTruncateLock`, immediately
+       * before this same call's own real truncate -- seeing this file's
+       * OWN previous truncate land, never a stale read raced by another one
+       * (see that lock's own doc). A concurrent `write()` to the same
+       * handle can still move the real size in between; that race is
+       * `write()`'s own pre-existing quota model (which charges every byte
+       * written, not the file's resulting size) and is not newly opened or
+       * closed by this fix.
+       */
+      truncate: async (length) => await withTruncateLock(entry.id, async () => {
+        const { size: currentSize } = await runFileIo(key, entry.id, async () => await fields.stat())
+        const delta = length - currentSize
+        if (delta <= 0) {
+          await runFileIo(key, entry.id, async () => { await fields.truncate(length) })
+          if (delta < 0) ledger.releaseFsBytes(key, -delta)
+          return
+        }
+        if (!ledger.reserveFsBytes(key, delta)) {
+          throw fail('limit', "this truncate would exceed the app's declared storage quota")
+        }
+        let started = false
+        try {
+          await runFileIo(key, entry.id, async () => {
+            started = true
+            try {
+              await fields.truncate(length)
+            } catch (error) {
+              ledger.releaseFsBytes(key, delta) // nothing landed -- unmapped, runFileIo maps it below
+              throw error
+            }
+          })
+        } catch (error) {
+          // Same "refund only what never reached the raw call" rule as write's own catch above.
+          if (!started) ledger.releaseFsBytes(key, delta)
+          throw error
+        }
+      }),
+      sync: async () => await runFileIo(key, entry.id, async () => { await fields.sync() })
+    }
+  }
+
+  /**
+   * `orivon.fs.open` -- confines and checks the grant exactly ONCE, here,
+   * the same as every method above. WHETHER THAT IS SUFFICIENT for a handle
+   * that outlives this call was the open question this lane's brief named,
+   * and the answer is yes: every operation against the returned handle
+   * (`read`/`write`/`stat`/`truncate`/`sync`/`readable`/`writable`) goes
+   * through the real OS file descriptor `deps.fs.open` returns, never
+   * through the path again -- there is nothing left to re-resolve, so a
+   * symlink swapped in after this call cannot retarget an already-open fd
+   * the way it could a second path-based call. This mirrors `net.connect`:
+   * the policy check runs once, at acquisition, and everything after runs
+   * against the handle, re-checking only OWNERSHIP (T11c) via `runFileIo`'s
+   * `{on:'handle'}` scope -- never the grant a second time.
+   *
+   * Acquisition itself follows `connect`'s own shape exactly (README.md's
+   * design notes on `net-capability.ts`): check `signal.aborted` before the
+   * raw open, dial it, check again after in case the grant was withdrawn
+   * while it was in flight, and destroy a just-opened-but-now-unwanted file
+   * with 'revoked' rather than let `acquire`'s own silent 'failed' cleanup
+   * paper over a real, live descriptor.
+   */
+  async function open (origin: string, path: string, flags: string): Promise<FailableFileHandle> {
+    if (!VALID_OPEN_FLAGS.has(flags)) throw fail('invalid', `unrecognised fs.open flags: ${flags}`)
+    const key = canonical(origin)
+    const { resolved, grant } = confineForOrigin(key, path)
+
+    return await handleTable.run(key, { on: 'grant', grantId: grant.id }, async (signal) => {
+      if (signal.aborted) throw fail('revoked', 'the grant authorising this fs operation was withdrawn')
+      let opened: OpenedFile
+      try {
+        opened = await deps.fs.open(resolved, flags)
+      } catch (error) {
+        throw mapIoError(error, 'fs')
+      }
+      if (signal.aborted) {
+        await opened.destroy('revoked')
+        throw fail('revoked', 'the grant authorising this fs operation was withdrawn')
+      }
+
+      const { destroy, ...fields } = opened
+      const entry = handleTable.acquire({
+        origin: key,
+        kind: 'file',
+        authorisedBy: { by: 'grant', grantId: grant.id },
+        destroy
+      })
+
+      return toFailableFileHandle(key, entry, fields)
+    })
+  }
+
+  return { readFile, writeFile, confineSync, mkdir, readdir, stat, rm, rename, open }
 }
