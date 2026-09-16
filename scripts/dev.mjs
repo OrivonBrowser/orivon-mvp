@@ -3,6 +3,12 @@
  * "The no-focus switch") so a dev-server launch does not steal the owner's
  * keyboard focus while they are working on something else.
  *
+ * NO `--watch`, deliberately -- owner, 2026-09-15. Consequence, stated here
+ * so nobody re-adds the flag to "fix" it: a main-process or preload edit
+ * does NOT appear until `npm run dev` is restarted, and a half-applied
+ * change (renderer hot-reloaded, main stale) looks like a bug in the
+ * feature -- restart before believing it. Why, in docs/development/setup.md.
+ *
  * A plain `ORIVON_WINDOW_NO_FOCUS=1 electron-vite dev` in package.json would
  * be simpler, but that shell syntax is not portable to Windows' cmd.exe, a
  * supported run-from-source platform (Rule 8) -- same reasoning as

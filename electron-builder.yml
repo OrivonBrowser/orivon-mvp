@@ -27,13 +27,11 @@ directories:
   output: release
   # Already gitignored (.gitignore "Electron / packaging" section) -- verified, not
   # assumed, before writing this key.
-  # buildResources (icon source, etc.) is left at its default, `build/`. That directory
-  # does not exist in this repo yet -- no icon has been designed. Per electron-builder's
-  # documented behaviour this is not a hard failure: absent a custom icon it falls back
-  # to the stock Electron icon rather than refusing to build. Flagged here and in
-  # docs/development/packaging.md as a real, currently-open gap rather than worked
-  # around, because it is a binary asset this task has no file permission to create and
-  # no source to draw one from.
+  # buildResources (icon source, etc.) is left at its default, `build/`. RESOLVED
+  # 2026-09-16: `build/icon.png` is now a real 512x512 app icon, generated from the
+  # owner's own logo -- electron-builder picks it up from that default location with no
+  # key here, and derives the smaller sizes itself. The note this replaces said no icon
+  # had been designed and packaged builds therefore shipped the stock Electron one.
 
 # --- Contents of app.asar ----------------------------------------------------------
 # An allowlist, not a blocklist subtracted from `**/*`. This repo also contains spike/,

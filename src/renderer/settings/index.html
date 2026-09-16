@@ -13,11 +13,11 @@
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
-    <!-- The settings window's own single WebContentsView
-         (src/main/settings-window.ts) -- queue item 4.4's "full
-         permissions page" half of d-0027: every installed app, and what
-         each one can do, with revoke. Not part of the chrome view or any
-         tab; see this lane's PR body for why it is a separate window. -->
+    <!-- The permissions panel's own WebContentsView
+         (src/main/permissions-panel.ts) -- queue item 4.4's "every
+         installed app, and what each one can do, with revoke". Anchored
+         under the toolbar's permission key, inside the shell window; it
+         was a separate BaseWindow until 2026-09-16 (owner). -->
     <main class="page">
       <header class="page-header">
         <h1>Permissions</h1>

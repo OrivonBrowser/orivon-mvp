@@ -128,6 +128,27 @@ export function toDataUrl (bytes: Uint8Array, contentType: string | null): strin
   return `data:${type};base64,${Buffer.from(bytes).toString('base64')}`
 }
 
+/** This machine: a loopback literal in any spelling classifyAddress
+ * normalises, or a `localhost` name (which Chromium resolves to loopback
+ * itself and never puts on the wire). */
+function isLoopbackHost (host: string): boolean {
+  return isLocalhostName(host) || classifyAddress(host) === 'loopback'
+}
+
+/** Whether the PAGE declaring a favicon is itself running on this machine.
+ * `file:` and every other scheme is not -- only a real http(s) page on
+ * loopback counts, so a local HTML file cannot be the lever either. */
+function isLoopbackPage (pageUrl: string): boolean {
+  let parsed: URL
+  try {
+    parsed = new URL(pageUrl)
+  } catch {
+    return false
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false
+  return isLoopbackHost(parsed.hostname)
+}
+
 /**
  * T12 (security-model.md): true only if `url` is safe for the main
  * process to fetch unprompted -- no manifest, no grant, no app involved,
@@ -140,31 +161,48 @@ export function toDataUrl (bytes: Uint8Array, contentType: string | null): strin
  * the one net.fetch itself will consult) rather than a second
  * implementation of either (code-guidelines.md Rule 3).
  *
- * https only: an http candidate would let a page served over https force
- * a plaintext request from the main process, outside the renderer's own
- * mixed-content rules.
+ * **Loopback is allowed, for a page that is itself on loopback** -- owner's
+ * decision, 2026-09-16, replacing the blanket refusal this had before. A
+ * local dev server is a real thing to browse here, and refusing its icon
+ * bought nothing. `http` is allowed on that path too, because a local dev
+ * server is almost never https and an https-only carve-out would refuse
+ * exactly the case the carve-out exists for.
+ *
+ * What stays refused, and why it is not the thing being allowed: a PUBLIC
+ * page declaring `<link rel=icon href="http://127.0.0.1:8080/...">`. The
+ * page fully controls this URL, so without the `isLoopbackPage` condition
+ * any site you visit could make the privileged main process issue blind,
+ * credential-less GETs to every port on your machine -- a port scanner
+ * with no origin and none of the Private Network Access rules the renderer
+ * is held to. An icon belonging to a local page is what was asked for;
+ * that is a public page reaching into your machine.
+ *
+ * `https` only off loopback: an http candidate would otherwise let a page
+ * served over https force a plaintext request from the main process,
+ * outside the renderer's own mixed-content rules.
  *
  * A LITERAL address (including every decimal/octal/hex/IPv4-mapped-IPv6
  * spelling classifyAddress already normalises) is judged directly. A
  * HOSTNAME is resolved, and EVERY returned address must be public -- a
  * name that resolves to a private address is DNS rebinding
  * (policy/connect.ts's own resolver handling is the worked example), not
- * merely a private literal spelled as a name. No loopback carve-out,
- * matching install-origin.ts: nothing here is a user-initiated
- * developer-mode action, so there is no case where reaching loopback is
- * the intended outcome.
+ * merely a private literal spelled as a name.
  */
-export async function isSafeFaviconUrl (url: string, resolveHost: Resolver): Promise<boolean> {
+export async function isSafeFaviconUrl (url: string, pageUrl: string, resolveHost: Resolver): Promise<boolean> {
   let parsed: URL
   try {
     parsed = new URL(url)
   } catch {
     return false
   }
-  if (parsed.protocol !== 'https:') return false
 
   const host = parsed.hostname
-  if (isLocalhostName(host)) return false
+  if (isLoopbackHost(host)) {
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false
+    return isLoopbackPage(pageUrl)
+  }
+
+  if (parsed.protocol !== 'https:') return false
   if (classifyAddress(host) !== 'unparseable') return isPublicUnicast(host)
 
   let answers: readonly string[]
@@ -183,9 +221,15 @@ export async function isSafeFaviconUrl (url: string, resolveHost: Resolver): Pro
  * never throws by contract, matching update-check-runner.ts's
  * fetchLatestGithubRelease.
  */
-export async function fetchFaviconDataUrl (url: string): Promise<string | null> {
-  if (!(await isSafeFaviconUrl(url, electronResolveHost))) return null
+export async function fetchFaviconDataUrl (url: string, pageUrl: string): Promise<string | null> {
+  if (!(await isSafeFaviconUrl(url, pageUrl, electronResolveHost))) return null
+  return await fetchUnchecked(url)
+}
 
+/** The fetch itself, with the T12 gate already cleared by the caller. Split
+ * out so the cached path can run that gate exactly once per call instead of
+ * either skipping it on a cache hit or resolving the same hostname twice. */
+async function fetchUnchecked (url: string): Promise<string | null> {
   const { net } = await import('electron')
 
   let response: Awaited<ReturnType<typeof net.fetch>>
@@ -222,11 +266,17 @@ export async function fetchFaviconDataUrl (url: string): Promise<string | null> 
  * retried on the next visit rather than staying null forever. */
 const faviconCache = new Map<string, string>()
 
-export async function fetchFaviconDataUrlCached (url: string): Promise<string | null> {
+export async function fetchFaviconDataUrlCached (url: string, pageUrl: string): Promise<string | null> {
+  // The gate runs BEFORE the cache is consulted, not just on a miss: whether
+  // a favicon may be fetched now depends on which page is asking (a loopback
+  // icon is allowed for a loopback page and refused for a public one), so a
+  // hit left ungated would be a way straight around that condition.
+  if (!(await isSafeFaviconUrl(url, pageUrl, electronResolveHost))) return null
+
   const cached = faviconCache.get(url)
   if (cached !== undefined) return cached
 
-  const result = await fetchFaviconDataUrl(url)
+  const result = await fetchUnchecked(url)
   if (result !== null) faviconCache.set(url, result)
   return result
 }

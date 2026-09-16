@@ -105,6 +105,29 @@ real screen at all, not even briefly. **On macOS, on Windows, or a Linux box tha
 virtual display. Either way, typing a plain `npm run smoke` or `npm run test:e2e` with no wrapper
 is safe to do while you are working.
 
+### `npm run dev` deliberately does not pass `--watch`
+
+`electron-vite dev` only rebuilds the main process and the preloads when `-w`/`--watch` is
+passed (confirmed in `node_modules/electron-vite/dist/cli.js`, which sets a build `watch`
+config on that flag and not otherwise). `scripts/dev.mjs` does **not** pass it. **Owner's
+decision, 2026-09-15**, after it was added and withdrawn the same day.
+
+The flag makes the app **restart on every `src/main/` or `src/preload/` edit**, and a restart
+destroys and recreates the window. `ORIVON_WINDOW_NO_FOCUS` stops that window taking the
+keyboard — nothing stops it *appearing*. With an agent editing main-process files while a dev
+server is running, that is a window popping back onto the owner's desktop every few seconds.
+The convenience is not worth the interruption.
+
+What this costs you, and the failure it looks like: **a main-process or preload edit does not
+show up until you restart `npm run dev`.** The renderer still hot-reloads, so a change that
+spans both halves goes half-applied — the 2026-09-15 collapsing bookmarks bar rendered as a
+dead 28px band of chrome, because the renderer had hidden the row while main was still
+reserving space for it. That reads as a bug in the feature. Restart before believing it.
+
+Related: `.claude/hookify.window-focus.local.md` blocks an agent from starting any Electron
+process that is not wrapped in `scripts/run-headless.mjs`. Starting a dev server is the owner's
+action.
+
 **Not a substitute for `xvfb-run` in the fleet/unattended-run protocol**
 ([`unattended-run-protocol.md`](unattended-run-protocol.md)): that policy wraps every launch
 externally as a process-hygiene guarantee independent of what the code under test does, and still

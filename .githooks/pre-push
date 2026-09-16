@@ -1,0 +1,79 @@
+#!/bin/sh
+# codeArbiter-managed git hook (#161) — this SHIM is refreshed by any live host's session (it is host-neutral, ADR-0014); the plugin-specific enforcer entries it dispatches to (.git/codearbiter-hooksd/*.path) each self-heal only on THAT plugin's own next session (#556) — edits here are overwritten.
+D='/home/jhon/Desktop/Develop/Claude/orivon-mvp/.git/codearbiter-hooksd'
+if [ -e "$D/trusted-executables.identity" ] || [ -L "$D/trusted-executables.identity" ]; then
+  [ -f "$D/trusted-executables.identity" ] || exit 1
+  exec 3< "$D/trusted-executables.identity" || exit 1
+  IFS= read -r PY <&3 || exit 1
+  IFS= read -r G <&3 || exit 1
+  IFS= read -r IDENTITY_OWNER <&3 || exit 1
+  IDENTITY_EXTRA=''
+  if IFS= read -r IDENTITY_EXTRA <&3 || [ -n "$IDENTITY_EXTRA" ]; then exit 1; fi
+  exec 3<&-
+  [ -n "$IDENTITY_OWNER" ] && [ -f "$PY" ] && [ -f "$G" ] || exit 1
+  export CODEARBITER_GIT_EXECUTABLE="$G"
+  export CODEARBITER_PYTHON_EXECUTABLE="$PY"
+else
+  if python3 -c "" 2>/dev/null; then PY=python3; else PY=python; fi
+fi
+PUSH_INPUT=''
+while IFS= read -r L; do
+  PUSH_INPUT="${PUSH_INPUT}${L}
+"
+done
+SKIP=$("$PY" - "$D" <<'CODEARBITER_556_FRESHNESS'
+import os, re, sys
+d = sys.argv[1] if len(sys.argv) > 1 else ''
+try:
+    names = os.listdir(d)
+except OSError:
+    names = []
+legacy = re.compile(r'^[0-9]+\.[0-9]+\.[0-9]+$')
+def _rd(p):
+    try:
+        with open(p, encoding='utf-8', errors='replace') as f:
+            return f.read().strip()
+    except OSError:
+        return None
+entries = []
+for n in sorted(names):
+    if not n.endswith('.path'):
+        continue
+    plugin = n[:-len('.path')]
+    if legacy.fullmatch(plugin):
+        continue
+    path_val = _rd(os.path.join(d, n))
+    if path_val is None:
+        continue
+    seen_file = os.path.join(d, plugin + '.seen')
+    confirmed = None
+    if _rd(seen_file) == path_val:
+        try:
+            confirmed = os.stat(seen_file).st_mtime
+        except OSError:
+            confirmed = None
+    entries.append((plugin, confirmed))
+known = [m for _, m in entries if m is not None]
+if known:
+    mx = max(known)
+    for plugin, m in entries:
+        if m is None or m < mx:
+            print(plugin)
+CODEARBITER_556_FRESHNESS
+)
+SEEN=0
+for c in "$D"/*.path; do
+  [ -f "$c" ] || continue
+  N=${c##*/}
+  case "$N" in [0-9]*.[0-9]*.[0-9]*.path) continue ;; esac
+  case " $SKIP " in *" ${N%.path} "*) continue ;; esac
+  IFS= read -r E < "$c" || continue
+  [ -f "$E" ] || continue
+  SEEN=1
+  printf '%s' "$PUSH_INPUT" | "$PY" "$E" pre-push
+  RC=$?
+  [ "$RC" -eq 0 ] || exit "$RC"
+done
+[ "$SEEN" -eq 0 ] || exit 0
+echo "codeArbiter: no registered git-enforce.py could be resolved from \"$D\" -- failing CLOSED (#161/#265 git backstop, ADR-0014). Reinstall codeArbiter, or check .git/codearbiter-hooksd/*.path entries." >&2
+exit 1

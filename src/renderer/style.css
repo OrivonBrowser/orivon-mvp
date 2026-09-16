@@ -72,6 +72,15 @@ html, body {
   font-size: 12.5px;
   user-select: none;
 }
+/* No bookmarks -> no bookmarks bar, and the chrome is one row shorter
+   (styles/bookmarks.css hides the row itself). main.ts sets
+   data-bookmarks from the same ShellState push that main sizes this view
+   from (window.ts's chromeHeight), so the two never disagree for longer
+   than a frame. */
+html[data-bookmarks="none"],
+html[data-bookmarks="none"] body {
+  height: 76px; /* CHROME_TOP_ROWS, src/main/window.ts: 36 (tabs) + 40 (toolbar) */
+}
 
 button {
   font: inherit;

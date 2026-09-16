@@ -1,6 +1,8 @@
 // Transcribed from docs/architecture/handle-contracts.md. That document is the
 // specification; this file must not diverge from it.
 //
+// handles.ts - What apps can get back
+//
 // ADR-0008: WHATWG streams are the durable interface. Node's shapes --
 // EventEmitter sockets, `socket.end()`, an implicit file cursor -- are
 // presented by orivon-node-shim one layer ABOVE this one, not here.

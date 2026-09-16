@@ -54,6 +54,11 @@ function resolverReturning (...addresses: string[]): Resolver {
 
 // T12 (security-model.md): every case from the brief's own test list, plus
 // the scheme and localhost restrictions layered on top of it.
+/** The page declaring the icon. Loopback candidates are judged against this
+ * (owner, 2026-09-16), so every case has to say which kind of page is asking. */
+const PUBLIC_PAGE = 'https://example.com/page'
+const LOCAL_PAGE = 'http://127.0.0.1:3000/app'
+
 describe('isSafeFaviconUrl', () => {
   it.each([
     ['127.0.0.1', 'loopback'],
@@ -67,52 +72,121 @@ describe('isSafeFaviconUrl', () => {
     ['0177.0.0.1', 'loopback with an octal first octet'],
     ['0x7f000001', 'loopback as one hex integer'],
     ['::ffff:127.0.0.1', 'IPv4-mapped IPv6 loopback -- the classic bypass']
-  ])('refuses a literal %s (%s) without ever resolving', async (literal) => {
-    await expect(isSafeFaviconUrl(`https://${literal}/icon.png`, unreachableResolver)).resolves.toBe(false)
+  ])('refuses a literal %s (%s) to a PUBLIC page, without ever resolving', async (literal) => {
+    await expect(isSafeFaviconUrl(`https://${literal}/icon.png`, PUBLIC_PAGE, unreachableResolver)).resolves.toBe(false)
   })
 
   it('refuses a hostname that resolves to a private address', async () => {
-    await expect(isSafeFaviconUrl('https://rebind.example/icon.png', resolverReturning('127.0.0.1')))
+    await expect(isSafeFaviconUrl('https://rebind.example/icon.png', PUBLIC_PAGE, resolverReturning('127.0.0.1')))
       .resolves.toBe(false)
   })
 
   it('refuses a hostname where only ONE of several resolved addresses is private', async () => {
     await expect(
-      isSafeFaviconUrl('https://rebind.example/icon.png', resolverReturning('93.184.216.34', '127.0.0.1'))
+      isSafeFaviconUrl('https://rebind.example/icon.png', PUBLIC_PAGE, resolverReturning('93.184.216.34', '127.0.0.1'))
     ).resolves.toBe(false)
   })
 
   it('refuses a hostname that resolves to no addresses', async () => {
-    await expect(isSafeFaviconUrl('https://nowhere.example/icon.png', resolverReturning()))
+    await expect(isSafeFaviconUrl('https://nowhere.example/icon.png', PUBLIC_PAGE, resolverReturning()))
       .resolves.toBe(false)
   })
 
   it('refuses a hostname whose resolution throws', async () => {
     const throwing: Resolver = async () => { throw new Error('NXDOMAIN') }
-    await expect(isSafeFaviconUrl('https://nowhere.example/icon.png', throwing)).resolves.toBe(false)
+    await expect(isSafeFaviconUrl('https://nowhere.example/icon.png', PUBLIC_PAGE, throwing)).resolves.toBe(false)
   })
 
   it('refuses http:// even for an otherwise-public host', async () => {
-    await expect(isSafeFaviconUrl('http://93.184.216.34/icon.png', unreachableResolver)).resolves.toBe(false)
+    await expect(isSafeFaviconUrl('http://93.184.216.34/icon.png', PUBLIC_PAGE, unreachableResolver)).resolves.toBe(false)
   })
 
-  it('refuses the .localhost namespace without ever resolving (RFC 6761)', async () => {
-    await expect(isSafeFaviconUrl('https://localhost/icon.png', unreachableResolver)).resolves.toBe(false)
-    await expect(isSafeFaviconUrl('https://app.localhost/icon.png', unreachableResolver)).resolves.toBe(false)
+  it('refuses the .localhost namespace to a PUBLIC page without ever resolving (RFC 6761)', async () => {
+    await expect(isSafeFaviconUrl('https://localhost/icon.png', PUBLIC_PAGE, unreachableResolver)).resolves.toBe(false)
+    await expect(isSafeFaviconUrl('https://app.localhost/icon.png', PUBLIC_PAGE, unreachableResolver)).resolves.toBe(false)
   })
 
   it('refuses a string that does not parse as a URL', async () => {
-    await expect(isSafeFaviconUrl('not a url', unreachableResolver)).resolves.toBe(false)
+    await expect(isSafeFaviconUrl('not a url', PUBLIC_PAGE, unreachableResolver)).resolves.toBe(false)
   })
 
   it('accepts an ordinary public literal address without resolving', async () => {
-    await expect(isSafeFaviconUrl('https://93.184.216.34/icon.png', unreachableResolver)).resolves.toBe(true)
+    await expect(isSafeFaviconUrl('https://93.184.216.34/icon.png', PUBLIC_PAGE, unreachableResolver)).resolves.toBe(true)
   })
 
   it('accepts an ordinary public hostname once every resolved address is public', async () => {
     await expect(
-      isSafeFaviconUrl('https://example.com/icon.png', resolverReturning('93.184.216.34', '2606:2800:220:1:248:1893:25c8:1946'))
+      isSafeFaviconUrl('https://example.com/icon.png', PUBLIC_PAGE, resolverReturning('93.184.216.34', '2606:2800:220:1:248:1893:25c8:1946'))
     ).resolves.toBe(true)
+  })
+})
+
+// Owner's decision, 2026-09-16: a local dev server's icon is a real thing to
+// want, and refusing it bought nothing. What the allowance turns on is WHICH
+// PAGE is asking -- the page fully controls the favicon URL, so a public page
+// pointing at loopback is a port scanner driven from the main process, not an
+// icon belonging to a local site.
+describe('isSafeFaviconUrl -- loopback, for a page that is itself on loopback', () => {
+  it.each([
+    'http://127.0.0.1:3000/favicon.ico',
+    'http://localhost:3000/favicon.ico',
+    'http://[::1]:3000/favicon.ico',
+    'https://127.0.0.1:3000/favicon.ico',
+    'http://app.localhost/favicon.ico'
+  ])('accepts %s when the page is local', async (candidate) => {
+    await expect(isSafeFaviconUrl(candidate, LOCAL_PAGE, unreachableResolver)).resolves.toBe(true)
+  })
+
+  it('accepts http, which is the whole point -- a dev server is almost never https', async () => {
+    await expect(isSafeFaviconUrl('http://127.0.0.1:8080/icon.png', LOCAL_PAGE, unreachableResolver))
+      .resolves.toBe(true)
+  })
+
+  it('still refuses loopback to a PUBLIC page -- that is a port scan, not an icon', async () => {
+    await expect(isSafeFaviconUrl('http://127.0.0.1:8080/icon.png', PUBLIC_PAGE, unreachableResolver))
+      .resolves.toBe(false)
+    await expect(isSafeFaviconUrl('https://localhost/icon.png', PUBLIC_PAGE, unreachableResolver))
+      .resolves.toBe(false)
+  })
+
+  it('refuses every obfuscated loopback spelling to a public page too', async () => {
+    for (const literal of ['0177.0.0.1', '0x7f000001', '2130706433', '::ffff:127.0.0.1']) {
+      await expect(isSafeFaviconUrl(`http://${literal}/icon.png`, PUBLIC_PAGE, unreachableResolver))
+        .resolves.toBe(false)
+    }
+  })
+
+  it('accepts those same spellings FROM a local page -- they are the same machine either way', async () => {
+    for (const literal of ['0177.0.0.1', '0x7f000001', '2130706433']) {
+      await expect(isSafeFaviconUrl(`http://${literal}/icon.png`, LOCAL_PAGE, unreachableResolver))
+        .resolves.toBe(true)
+    }
+  })
+
+  it('does not treat a file: page as local -- a downloaded HTML file must not be the lever', async () => {
+    await expect(isSafeFaviconUrl('http://127.0.0.1:8080/icon.png', 'file:///tmp/evil.html', unreachableResolver))
+      .resolves.toBe(false)
+  })
+
+  it('does not treat an unparseable page URL as local', async () => {
+    await expect(isSafeFaviconUrl('http://127.0.0.1:8080/icon.png', '', unreachableResolver))
+      .resolves.toBe(false)
+  })
+
+  it('does not let a local page reach a PRIVATE LAN address -- only this machine', async () => {
+    await expect(isSafeFaviconUrl('http://192.168.1.1/icon.png', LOCAL_PAGE, unreachableResolver))
+      .resolves.toBe(false)
+    await expect(isSafeFaviconUrl('http://169.254.169.254/icon.png', LOCAL_PAGE, unreachableResolver))
+      .resolves.toBe(false)
+  })
+
+  it('does not let a local page force plaintext off-machine either', async () => {
+    await expect(isSafeFaviconUrl('http://93.184.216.34/icon.png', LOCAL_PAGE, unreachableResolver))
+      .resolves.toBe(false)
+  })
+
+  it('refuses a non-http(s) scheme on loopback', async () => {
+    await expect(isSafeFaviconUrl('file:///etc/passwd', LOCAL_PAGE, unreachableResolver)).resolves.toBe(false)
   })
 })
 
@@ -126,12 +200,12 @@ describe('fetchFaviconDataUrl', () => {
     '::1',
     '169.254.169.254',
     '2130706433'
-  ])('never fetches a favicon at the literal address %s', async (literal) => {
-    await expect(fetchFaviconDataUrl(`https://${literal}/icon.png`)).resolves.toBeNull()
+  ])('never fetches a favicon at the literal address %s for a public page', async (literal) => {
+    await expect(fetchFaviconDataUrl(`https://${literal}/icon.png`, PUBLIC_PAGE)).resolves.toBeNull()
   })
 
-  it('never fetches an http:// favicon candidate', async () => {
-    await expect(fetchFaviconDataUrl('http://93.184.216.34/icon.png')).resolves.toBeNull()
+  it('never fetches an http:// favicon candidate off loopback', async () => {
+    await expect(fetchFaviconDataUrl('http://93.184.216.34/icon.png', PUBLIC_PAGE)).resolves.toBeNull()
   })
 })
 
@@ -274,6 +348,6 @@ describe('fetchFaviconDataUrl', () => {
       headers: { get: () => 'image/png' }
     } as never)
 
-    await expect(fetchFaviconDataUrl('https://attacker.example/boom.png')).resolves.toBeNull()
+    await expect(fetchFaviconDataUrl('https://attacker.example/boom.png', PUBLIC_PAGE)).resolves.toBeNull()
   })
 })
