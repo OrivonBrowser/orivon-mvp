@@ -54,6 +54,32 @@ export function createServerRelay (options: ServerRelayOptions): ServerRelay {
     released = true
     transport.registry.remove(origin, server.id)
     port.close()
+    // THE FIX for the leaked-listening-socket finding: `transport.registry`
+    // and `port` are bookkeeping this relay owns outright, but the real OS
+    // listening socket lives behind the HANDLE, released only via
+    // `handleTable.release` (`server.close`'s own body, net-capability.ts).
+    // `pump.stop()` cancelling `server.connections` cannot substitute -- that
+    // stream is hand-rolled with no `cancel` algorithm, so cancelling it is a
+    // spec no-op against the real listener (unlike a `Duplex.toWeb` socket,
+    // where cancelling the reader destroys the duplex as a side effect,
+    // A84). Calling `server.close()` unconditionally here -- on every path
+    // that reaches `cleanup`, an abandoned port with the handle still live,
+    // or `server.onUnlink`/`server.closed` having already released it
+    // moments ago -- is safe because `close()` is idempotent
+    // (contracts/handles.ts's `Handle`): `handleTable.release` is a no-op
+    // once the handle has already left the table.
+    //
+    // Reason is always 'closed', never a code from whatever triggered this
+    // teardown -- `close()` takes none, matching every other handle's own
+    // `Handle.close()` shape. `closeTree`'s 'closed' reason is also what
+    // lets each already-accepted socket flush a queued write rather than
+    // truncate it (destroySocket's A84 branch): those sockets are this
+    // server's documented dependents (handle-contracts.md's TcpServer
+    // section -- "closing the server closes every socket it produced that
+    // is still open"), not new casualties of this fix.
+    server.close().catch((error: unknown) => {
+      console.error('[broker] releasing an abandoned server handle failed', error)
+    })
   }
 
   // Same tolerance, and the same reason, as ./socket-relay.ts's failSocket:

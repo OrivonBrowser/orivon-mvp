@@ -16,6 +16,34 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 
 ---
 
+## Week of 2026-09-14
+
+### Done / results
+
+- 2026-09-15: **The revoke button was lying.** Turn off an app's network access after a restart and
+  the row disappeared, but a connection it already had open kept running. Fixed, with a test that
+  fails against the old code.
+- 2026-09-15: **Apps could die on startup because we refused too loudly.** Libraries routinely ask
+  "does this browser have X?" before using it; we had started throwing at the question instead of
+  answering it. Now the question is safe to ask and only actually using the missing thing fails.
+- 2026-09-15: **Deny now means what it looks like it means.** The install prompt listed things the
+  app had already been given, so saying no looked like it took them back. It marks those clearly.
+- 2026-09-15: **Sixteen merged PRs had never been reviewed by anyone but their author.** Eight
+  different review passes over them found nineteen things; the three serious ones are fixed.
+
+### In my head
+
+- **The review tools disagreed, and that is the whole point.** The security pass gave the range a
+  clean bill of health while the worst bug in it sat there untouched -- a handle outliving its
+  revocation just is not what a security-controls review looks at. Cheapest-tool-only would have
+  shipped it.
+- **We let the app decide how much choice the person gets.** Consent can be granted piece by piece
+  only if the app's own manifest asks for that, and the app's incentive is always to ask for
+  all-or-nothing. We already wrote down this exact trap about unlimited network access and did not
+  apply it here.
+- **Two files now sit within six lines of the size limit**, reached by separate PRs that were each
+  fine on their own. The limit keeps breaking on merge rather than on a branch.
+
 ## Week of 2026-09-07
 
 ### Done / results

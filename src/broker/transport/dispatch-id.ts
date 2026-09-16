@@ -30,5 +30,15 @@ export async function dispatchId (
       if (!isIdSignParams(payload)) throw fail('invalid', 'id.sign requires { curve: string, payload: Uint8Array }')
       return await broker.id.sign(origin, { curve: payload.curve, payload: payload.payload })
     }
+    default: {
+      // Exhaustiveness check, same reasoning and shape as ./ipc.ts's own
+      // dispatch() and ./dispatch-net.ts's dispatchNet (A185): if
+      // IdControlMethod ever gains a member no case above names, `method` is
+      // not assignable to `never` and this line fails to compile, instead of
+      // the switch silently falling through and this function resolving
+      // `undefined` for an operation that never ran.
+      const unrouted: never = method
+      throw fail('internal', `unrouted id control method: ${unrouted as string}`)
+    }
   }
 }

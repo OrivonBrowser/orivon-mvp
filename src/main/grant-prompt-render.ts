@@ -317,27 +317,48 @@ function describeCapabilitySet (
   manifest: Manifest,
   declared: PatternSet,
   capabilities: readonly CapabilityKind[],
-  message: string
+  message: string,
+  held: readonly CapabilityKind[]
 ): GrantPromptContent {
   const mergeInbound = capabilities.includes('tcp.listen') && capabilities.includes('udp.bind')
   let inboundRowEmitted = false
   const rows: CapabilityGrantSummary[] = []
+  // Parallel to `rows`, index for index: which declared capability (or,
+  // for the merged inbound row, BOTH capabilities) produced that row --
+  // A170 needs this to know whether a row is fully covered by `held`,
+  // after merging may have combined it with a row that started from a
+  // DIFFERENT capability.
+  const rowCapabilities: Array<readonly CapabilityKind[]> = []
   for (const capability of capabilities) {
     const isInboundCapability = capability === 'tcp.listen' || capability === 'udp.bind'
     if (mergeInbound && isInboundCapability) {
       if (inboundRowEmitted) continue
       inboundRowEmitted = true
       rows.push(describeInboundAccess(declared['tcp.listen'] ?? [], declared['udp.bind'] ?? []))
+      rowCapabilities.push(['tcp.listen', 'udp.bind'])
       continue
     }
     rows.push(describeCapabilityGrant(capability, declared[capability] ?? []))
+    rowCapabilities.push([capability])
   }
   const mergedRows = mergeRowsWithIdenticalMessage(rows)
   const warning = mergedRows.some((row) => row.warning)
 
   const displayOrigin = formatOriginForDisplay(origin)
   const claim = `Claims to be "${manifest.name}".`
-  const rowLines = mergedRows.map((row) => row.explanation === undefined ? `- ${row.message}` : `- ${row.message}\n  ${row.explanation}`)
+  // A170 (CRITICAL): a row is marked only when EVERY capability that
+  // contributed to it (recovered by matching on `message`, the same key
+  // mergeRowsWithIdenticalMessage itself merges on) is already held -- a
+  // row combining a held capability with a not-yet-decided one still reads
+  // as something Deny genuinely affects. Wording matches
+  // describeCapabilityChoice's own `[Allowed]`/`[Denied]` bracket
+  // convention (grant-prompt-choice.ts) rather than inventing a second one.
+  const rowLines = mergedRows.map((row) => {
+    const contributing = rowCapabilities.filter((_, index) => rows[index]?.message === row.message).flat()
+    const isHeld = contributing.length > 0 && contributing.every((capability) => held.includes(capability))
+    const marker = isHeld ? '[Already allowed] ' : ''
+    return row.explanation === undefined ? `- ${marker}${row.message}` : `- ${marker}${row.message}\n  ${row.explanation}`
+  })
 
   // Owner decision, 2026-09-14: the origin closes `detail`, after the
   // claim and every capability row, rather than opening it -- see the
@@ -360,13 +381,20 @@ function describeCapabilitySet (
  * `describeGrantRequest`'s own (A115, AR-01, AR-03), including the claim-
  * first, address-last order (owner decision 2026-09-14), so every dialog in
  * this file reads as one family, not several designs.
+ *
+ * `held` (A170) names whatever `capabilities` already holds through a
+ * SEPARATE door (`app.requestGrant`) -- each such row is marked, so Deny
+ * visibly does not cover it. Defaults to none, so every pre-existing caller
+ * (including the per-capability overview, ./install-consent-prompt.ts)
+ * keeps rendering exactly as before.
  */
 export function describeInstallConsent (
   origin: string,
   manifest: Manifest,
-  capabilities: readonly CapabilityKind[]
+  capabilities: readonly CapabilityKind[],
+  held: readonly CapabilityKind[] = []
 ): GrantPromptContent {
-  return describeCapabilitySet(origin, manifest, patternSetFromCapabilities(manifest.capabilities), capabilities, 'This app wants to:')
+  return describeCapabilitySet(origin, manifest, patternSetFromCapabilities(manifest.capabilities), capabilities, 'This app wants to:', held)
 }
 
 /**
@@ -387,7 +415,10 @@ export function describeCapabilityPrompt (
   requestedPatterns: PatternSet
 ): GrantPromptContent {
   const capabilities = Object.keys(requestedPatterns) as readonly CapabilityKind[]
-  return describeCapabilitySet(origin, manifest, requestedPatterns, capabilities, 'This app wants to do more than you already allowed:')
+  // A170 is scoped to describeInstallConsent's own dialog -- this screen's
+  // `capabilities` is already exactly what is being asked about here, so
+  // there is no held-vs-outstanding distinction of the SAME kind to mark.
+  return describeCapabilitySet(origin, manifest, requestedPatterns, capabilities, 'This app wants to do more than you already allowed:', [])
 }
 
 /**

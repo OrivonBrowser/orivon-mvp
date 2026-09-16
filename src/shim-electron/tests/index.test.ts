@@ -90,13 +90,14 @@ describe('electron exports this package has not yet considered', () => {
     expect(mod[name]).toBeDefined()
   })
 
-  it.each(NOT_YET_CONSIDERED)('%s.someMethod throws a named error, never a bare TypeError', async (name) => {
+  it.each(NOT_YET_CONSIDERED)('%s.someMethod: reading it is safe (A169); calling it throws a named error, never a bare TypeError', async (name) => {
     vi.stubGlobal('orivon', fakeOrivon())
     const mod = await import('../index.js')
-    const member = (mod as unknown as Record<string, Record<string, unknown>>)[name]!
-    expect(() => member.someMethod).toThrow(mod.ElectronShimError)
+    const member = (mod as unknown as Record<string, Record<string, () => unknown>>)[name]!
+    expect(() => member.someMethod).not.toThrow()
+    expect(() => member.someMethod!()).toThrow(mod.ElectronShimError)
     try {
-      void member.someMethod
+      member.someMethod!()
     } catch (error) {
       expect((error as Error).name).not.toBe('TypeError')
       expect((error as Error).name).toBe('ElectronShimError')
@@ -116,11 +117,12 @@ describe('the default export', () => {
     expect(mod.default.shell).toBe(mod.shell)
   })
 
-  it('throws for a name this package has never even listed -- genuinely total, not curated', async () => {
+  it('reading a name this package has never even listed is safe (A169); calling it throws -- genuinely total, not curated', async () => {
     vi.stubGlobal('orivon', fakeOrivon())
     const mod = await import('../index.js')
-    const asAny = mod.default as unknown as Record<string, unknown>
-    expect(() => asAny.autoUpdater).toThrow(mod.ElectronShimError)
+    const asAny = mod.default as unknown as Record<string, () => unknown>
+    expect(() => asAny.autoUpdater).not.toThrow()
+    expect(() => asAny.autoUpdater!()).toThrow(mod.ElectronShimError)
   })
 
   it('the same unlisted name read off the plain namespace stays undefined -- a real ESM limit, not an oversight (see README)', async () => {

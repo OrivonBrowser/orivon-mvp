@@ -224,7 +224,7 @@ describe('createServerRelay -- teardown', () => {
     expect(port.sent).toContainEqual({ kind: 'end', handleId: fake.server.id, code: 'revoked' })
   })
 
-  it('the renderer-side port closing frees the server\'s registry slot too', () => {
+  it('the renderer-side port closing frees the server\'s registry slot AND actually releases the underlying handle -- fails against the unfixed code, which only cleared the registry', async () => {
     const fake = fakeTcpServer()
     const port = fakePort()
     const transport = fakeMultiTransport()
@@ -233,8 +233,36 @@ describe('createServerRelay -- teardown', () => {
     expect(transport.registry.get(ORIGIN, fake.server.id)).toBeDefined()
 
     port.simulateClose()
+    await tick()
 
     expect(transport.registry.get(ORIGIN, fake.server.id)).toBeUndefined()
+    // THE ACTUAL LEAK: `fake.closeSpy` is `FailableTcpServer.close`, the one
+    // route to `handleTable.release` -> `ListenedServer.destroy` -> the real
+    // OS listening socket closing (server-relay.ts's own fix comment). The
+    // unfixed `cleanup()` only ever called `transport.registry.remove` and
+    // `port.close()` -- this spy is what proves the handle itself, not just
+    // this relay's own bookkeeping, was actually torn down.
+    expect(fake.closeSpy).toHaveBeenCalledTimes(1)
+    expect(fake.failSpy).not.toHaveBeenCalled()
+  })
+
+  it('an abandoned port closes the server handle exactly once even if the handle then also unlinks on its own -- idempotent, not a double teardown', async () => {
+    const fake = fakeTcpServer()
+    const port = fakePort()
+    const transport = fakeMultiTransport()
+
+    createServerRelay({ origin: ORIGIN, server: fake.server, port, transport, readWindowBytes: 1_000, writeWindowBytes: 1_000 })
+
+    port.simulateClose()
+    await tick()
+    // Simulates the handle table's own unlink pass reaching this handle
+    // AFTER the abandoned-port teardown already closed it -- e.g. a grant
+    // revocation racing the port closing. Must not throw, and must not
+    // attempt a second real close.
+    fake.unlink('closed', undefined)
+    await tick()
+
+    expect(fake.closeSpy).toHaveBeenCalledTimes(1)
   })
 
   it('a clean server.closed resolution unregisters the server and closes its port', async () => {
