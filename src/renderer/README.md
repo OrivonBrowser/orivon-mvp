@@ -38,7 +38,7 @@ push and are erased at build time by `verbatimModuleSyntax`.)
 [`src/main/README.md`](../main/README.md).
 
 **Layout constant, kept in three places on purpose.** `CHROME_HEIGHT` in
-[`../main/window.ts`](../main/window.ts) is the sum of the three rows below (native code and
+[`../main/window.ts`](../main/window.ts) is the sum of the rows below (native code and
 CSS must agree on where tab content starts), and `scripts/smoke.mjs` carries its own copy to
 assert against. **If you change one, change all three**, and re-run `npm run smoke`.
 
@@ -47,10 +47,25 @@ tab strip     36px   shares the row with Electron's native window buttons (title
                      macOS traffic lights) — reserved space for them is an approximation, not
                      a measurement; see open-questions.md A34
 toolbar       40px
-bookmarks bar 28px
-                     ────
-                     104px total
+                     ────  76px  CHROME_TOP_ROWS — a profile with no bookmarks
+bookmarks bar 28px   only rendered when there is a bookmark to render
+                     ──── 104px  CHROME_HEIGHT
 ```
+
+**The bookmarks bar is not always there, and that makes the chrome two heights, not one.**
+Owner, 2026-09-15. An empty bar was a row of controls that do nothing, so the row is hidden
+outright until the list is non-empty. The two controls themselves — the apps-grid button and
+the "Other Bookmarks" folder, both carried over from v2's static bar — were **deleted** the
+same day rather than kept as placeholders: neither had a model behind it, and "Other
+Bookmarks" could not be given one without a folder feature nobody has scoped. The bar is now
+the real list and nothing else. **The renderer hiding it is only half the
+fix:** the tab content below starts where the chrome view *ends*, so main must shrink the view
+too or the hidden row becomes a 28px band of empty chrome. `window.ts`'s `chromeHeight()` owns
+that, reading the same `BookmarkStore` the state push comes from; `main.ts` sets
+`data-bookmarks` on `<html>` from the same push, which drives `style.css`'s height override and
+`styles/bookmarks.css`'s hide rule. The two are separate decisions made from one fact, so
+`smoke.mjs` asserts them **together** (`bookmarksBarMatches`) — either alone passes while the
+feature is visibly broken.
 
 **Reserving space for native window buttons.** `env(titlebar-area-*)` and
 `navigator.windowControlsOverlay` both report empty/`false` for this shell's `BaseWindow` +
@@ -76,7 +91,7 @@ TLS, would be the false claim ADR-0007 names as unacceptable, so the dot cannot 
 guessing from the URL scheme once a tab is a pinned app. `main.ts`'s `updateAddressDot` still
 paints the ordinary secure/insecure read first, synchronously (no page ever shows a blank dot
 while a query is in flight), then asks main — via `shell.deliveryProvenanceFor`, a separate round
-trip from the address-bar permissions badge's `appPermissionsFor`, because the two answer
+trip from the toolbar permission key's `appPermissionsFor`, because the two answer
 different questions (what this app may do, versus where its bytes came from) — and upgrades to
 `.cached` if the answer says so. The tooltip text is `"Running from local cache, pinned"`, quoted
 directly from `ADR-0007`'s own wording rather than paraphrased, so the two can never read
@@ -85,11 +100,28 @@ protocol-handler registry, never the broker's `isRegisteredSync` — the latter 
 manifest is registered," not "this origin's scheme is actually being answered from disk," and
 the difference is exactly the false-claim risk this feature exists to avoid.
 
+**Permissions and the Web3 Score are two different questions, so they are two different
+controls in two different places.** Owner's decision, 2026-09-15. The omnibox pill's trailing
+slot is the **Web3 Score's alone** — that is the position `orivon-browser-v2` uses for it
+(visual reference only), and a score is a claim *about* the page, which is what the inside of
+the address bar is for. **Permissions live outside the pill**, first in the right-hand cluster,
+nearest the address they describe: a grant is something the *user* hands out, not a property of
+the site. The icon is a **key**, never a shield — a shield anywhere in this chrome means Web3
+Score, and two shields meaning two unrelated things was the confusion this split fixes.
+
+One consequence worth stating: there is now **one** permission control, not two. It carries both
+halves of queue item 4.4 — the current tab's state (`.has-app` / `.has-warning`, painted from
+`appPermissionsFor`) and the way into the full list — and it always passes the active tab's URL
+to `openSettings`. A URL belonging to no app is harmless there: `settings/main.ts` finds no card
+to scroll to and renders the list unscrolled, which is the ordinary open. The Web3 Score button
+ships `disabled` with an honest title, because [`src/trust/`](../trust/) is build step 6 and
+nothing scores an app yet (`open-questions.md` A32).
+
 **Icons.** Hand-drawn inline SVG, no icon font, no library, no framework — matching the rest of
 this codebase (Rule 8; `ADR-0002`, TypeScript only). Path data for the ones that visually match
 `orivon-browser-v2` is hand-ported from lucide's icon set (ISC licence) onto lucide's own
 default attributes, credited in `icons.ts`. A control with no v0 behaviour yet (extensions, the
-sidebar, the identity/card slot, favorites, shields, the menu) ships `disabled` with an honest
+sidebar, the identity/card slot, favorites, the Web3 Score, the menu) ships `disabled` with an honest
 `title` rather than being omitted or left silently clickable — `open-questions.md` A32.
 
 **Visual reference only, never code:** the prior prototype at

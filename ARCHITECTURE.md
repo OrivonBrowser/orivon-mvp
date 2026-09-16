@@ -1,88 +1,55 @@
 # Architecture
 
-Five minutes. For depth, follow the links.
+[`README.md`](README.md#how-it-is-built) says what Orivon is and what an Electron app means
+here. This document covers what it does not: **how a capability call actually travels, which
+parts of the codebase are meant to survive, and which decisions are already settled.**
 
-## What this repository is
+## What is disposable, and what is not
 
-**An Electron application, built in one month by one person, to test a single claim:** that a
-browser can let ordinary web pages reach the network and the filesystem under per-app
-permissions the user grants — and that people will actually use the result daily.
+Almost all of this is disposable on purpose — the Electron shell, the preload, the renderer
+chrome, the Node shim. Each exists to make the current version work, and each would be rewritten
+if the foundation underneath changed.
 
-It is not a browser engine. It does not contain a fork of anything. It wraps Chromium via
-Electron, the same way VS Code and Slack do, and it is **deliberately, knowingly disposable**.
+One thing would not: **the interface apps program against**, in
+[`src/contracts/`](src/contracts/). An app calls `orivon.net.connect({ host, port })`; today
+that is a Node `net.Socket` in an Electron main process, and the interface is shaped so it could
+be something else later without any app already written having to change.
 
-## What is *not* disposable
+That is a **property of the design, not a plan.** A WASM runtime and a browser-engine fork are
+both out of scope — [`docs/mvp-scope.md`](docs/mvp-scope.md) §LATER.
 
-One thing: **the interface apps program against**, which lives in
-[`src/contracts/`](src/contracts/) as seven files of TypeScript types.
+**The practical rule that follows:** a shortcut in `src/main/` costs a refactor of code that was
+going to be replaced anyway. A shortcut in `src/contracts/` costs every app ever written for
+Orivon. Spend your care accordingly.
 
-An app calls `orivon.net.connect({ host, port })`. Today, underneath, that is a Node
-`net.Socket` in an Electron main process. The interface is designed so that it *could* be
-something else later — a WebAssembly host function, or IPC inside a browser engine — **without
-any app already written having to change**.
-
-That is a property of the design, deliberately engineered for
-([`ADR-0002`](docs/decisions/ADR-0002-capability-api-is-the-durable-asset.md)). It is
-**not a schedule, not a plan for this codebase, and not something anyone is working on.**
-A Wasmtime runtime and a browser-engine fork are both explicitly *out of scope* — see
-[`docs/mvp-scope.md`](docs/mvp-scope.md) §LATER. They may never happen. The design costs
-nothing extra today, and it means that if they ever do happen, the apps survive.
-
-**So the practical rule when working here:** a shortcut in `src/main/` costs a refactor of code
-that was going to be replaced anyway. A shortcut in `src/contracts/` costs every app ever
-written for Orivon. Spend your care accordingly.
-
-## The design choices, and who made them
-
-These are **owner decisions**, made deliberately, each with its reasoning recorded so it is not
-re-litigated. If you disagree with one, read the ADR first — most obvious objections are
-already answered there.
-
-| Decision | Why | Recorded in |
-|---|---|---|
-| **BitTorrent streaming is the flagship** | It is genuinely daily-use, impossible in Chrome, cheap to build, audience-matched, and it demonstrates well in a 30-second clip | [`ADR-0001`](docs/decisions/ADR-0001-flagship-app-bittorrent-streaming.md) |
-| **The capability API is the durable asset; a WASM runtime is deferred, not cancelled** | Containment for untrusted code and mobile portability are both real goals and both post-MVP | [`ADR-0002`](docs/decisions/ADR-0002-capability-api-is-the-durable-asset.md) |
-| **Local-first storage; no Orivon server holds user data** | Per-origin isolation, keys derived on the machine. There is no account to breach because there is no account | [`ADR-0003`](docs/decisions/ADR-0003-local-first-storage.md) |
-| **Telemetry is opt-out, but disclosed in full on first run** | The metric requires measurement. The disclosure shows the literal JSON, two equally-weighted buttons, nothing preselected, nothing sent before you choose | [`ADR-0004`](docs/decisions/ADR-0004-telemetry.md) |
-| **Apps are addressed by URL and cached — never bundled or installed** | No store, no review, no gatekeeper. It also forces the hard problem to be solved rather than avoided | [`ADR-0005`](docs/decisions/ADR-0005-apps-are-url-addressed-not-bundled.md) |
-| **Trust is shown as observed behaviour, never as a grade** | A letter grade invites trusting the grade. Click-through shows the actual evidence | [`ADR-0006`](docs/decisions/ADR-0006-trust-indicator-from-observed-behaviour.md) |
-| **A cached bundle keeps its real origin** | Serving it from a synthetic origin would break the web's own security model | [`ADR-0007`](docs/decisions/ADR-0007-cached-bundles-served-at-their-own-origin.md) |
-| **Handles are WHATWG streams; Node's shapes live in the shim** | Streams give real backpressure. An `EventEmitter` has no way to say "not yet" | [`ADR-0008`](docs/decisions/ADR-0008-handles-are-whatwg-streams.md) |
-
-And four cuts, made on purpose, each of which someone will otherwise propose again:
-
-- **App signing is cut from v0.** With one publisher it is capability-identical to no signing,
-  nothing specified the mechanism, and it would have put a red UNSIGNED badge next to
-  *"connect to any computer on the internet"* in the launch clip. Integrity is hash-pinning.
-- **MKV is out.** Neither MSE nor Chromium's `<video>` can demux Matroska, so there is no
-  fallback path — only a remuxer, which is post-launch work. **v0 plays MP4/H.264.**
-- **Auto-install of updates is cut.** Unsigned `electron-updater` verifies a hash fetched from
-  the same host that serves the binary — a standing remote-code-execution channel, and weaker
-  than what is demanded of third-party apps. v0 **checks and notifies**.
-- **The success metric counts `activeSec`, not uptime.** A torrent client seeds in the
-  background, so measuring "app open" would let someone who pasted one magnet and walked away
-  hit the target on day one. This makes the target harder, which is the point.
-
-## The flow
+## How a capability call reaches the OS
 
 ```
   app page  (renderer process, sandboxed: no Node, no require)
       |
-      |  orivon.*                    the durable interface -> src/contracts/
+      |  window.orivon.*            the durable interface -> src/contracts/
       v
   preload  (isolated world)          contextBridge closures ONLY.
       |                              The raw MessagePortMain never crosses
       |  IPC  +  MessageChannelMain  into the page. Handing it over would be
-      v                              handing over a raw socket.  [T17]
+      |                              handing over a raw socket.  [T17]
+      v
   broker  (main process)             AUTHORISATION: manifest, grants,
       |                              per-origin enforcement, handle tables
       v
   OS  (sockets, filesystem, keychain)
 ```
 
-Two channels, on purpose: **control operations** (open, close, set options) go over normal
-Electron IPC; **bulk bytes** go over a dedicated `MessageChannelMain` port per handle, because
-per-message IPC is far too slow for torrent-rate data.
+**Three transports, on purpose** — per-message IPC is far too slow for torrent-rate data:
+
+| Transport | Carries |
+|---|---|
+| `CONTROL_CHANNEL` — Electron IPC, `invoke`/`handle` | every control method: open, close, read, sign, set options |
+| `SYNC_CONTROL_CHANNEL` — Electron IPC, `sendSync` | `fs.readFileSync` and nothing else ([`ADR-0016`](docs/decisions/ADR-0016-synchronous-file-reads-are-permitted.md)) |
+| `MessageChannelMain` — one port pair per handle | bytes only |
+
+Detail in [`src/broker/transport/README.md`](src/broker/transport/README.md) and
+[`src/preload/README.md`](src/preload/README.md).
 
 **Capability is checked once, at acquisition.** `connect()` either returns a handle or it does
 not; later operations just reference the handle. That avoids re-authorising every call, and it
@@ -98,7 +65,7 @@ throw anything away.
 |---|---|---|
 | [`src/contracts/`](src/contracts/) | The `orivon.*` interface, types only | **No — this is the asset.** It imports nothing, by enforced rule |
 | [`src/broker/policy/`](src/broker/policy/) | Pure decision functions: capability matching, path confinement, origin derivation | **No** — no Electron, no I/O, portable anywhere |
-| [`src/broker/`](src/broker/) | Grants, prompts, session partitions, handle tables | Partly — the decisions are portable, the plumbing is not |
+| [`src/broker/`](src/broker/) | Grants, prompts, session partitions, handle tables | Partly, the decisions are portable, the OS plumbing relies on Electron |
 | [`src/main/`](src/main/) | Window, tabs, omnibox, subsystem registry | **Entirely. Knowingly disposable** |
 | [`src/preload/`](src/preload/) | The privilege boundary | **Entirely** — "preload" is an Electron concept |
 | [`src/loader/`](src/loader/) | Manifest discovery, fetch, cache, hash-pinning, the update decision | Partly — the update decision is pure policy; fetching and serving the cache are Electron-specific machinery |
@@ -135,14 +102,75 @@ privacy-branded browser, to an audience that reads its own traffic. Discovery is
 `<link rel="orivon-manifest">` hint in HTML already delivered — nothing is fetched from a page
 that never included it.
 
+**The grant prompt is origin-first.** Any origin can serve a manifest, and the `name` in it is
+self-asserted, so the origin is the largest and primary element and the app's claimed name is
+visibly subordinate.
+
 > **Corrected 2026-09-03, owner decision.** This used to also name an explicit "Open as app"
 > action as a second discovery path. There is no such action: a Web3site is not a category a
 > user converts a website into, it is the URL. See `docs/architecture/capability-api.md`'s own
 > correction on this same point.
 
-**The grant prompt is origin-first.** Any origin can serve a manifest, and the `name` in it is
-self-asserted, so the origin is the largest and primary element and the app's claimed name is
-visibly subordinate.
+## The design choices
+
+All eight below are **owner decisions**, argued out once and recorded so they are not
+re-litigated. The line given here is the sharpest reason, not the whole case — if you disagree
+with one, the ADR is where the objections are already answered.
+
+**What gets built, and what outlasts it**
+
+- **BitTorrent streaming is the flagship.** Genuinely daily-use, impossible in Chrome, and it
+  demonstrates in a 30-second clip.
+  — [`ADR-0001`](docs/decisions/ADR-0001-flagship-app-bittorrent-streaming.md)
+- **The capability API is the durable asset.** A WASM runtime is deferred, not cancelled:
+  containment for untrusted code and mobile portability are both real goals, and both post-MVP.
+  — [`ADR-0002`](docs/decisions/ADR-0002-capability-api-is-the-durable-asset.md)
+
+**How an app reaches you**
+
+- **Apps are addressed by URL and cached — never bundled or installed.** No store, no review, no
+  gatekeeper. It also forces the hard problem to be solved rather than avoided.
+  — [`ADR-0005`](docs/decisions/ADR-0005-apps-are-url-addressed-not-bundled.md)
+- **A cached bundle keeps its real origin.** Serving it from a synthetic origin would break the
+  web's own security model.
+  — [`ADR-0007`](docs/decisions/ADR-0007-cached-bundles-served-at-their-own-origin.md)
+
+**What you are told, and what is kept**
+
+- **Local-first storage; no Orivon server holds user data.** Per-origin isolation, keys derived
+  on the machine. There is no account to breach because there is no account.
+  — [`ADR-0003`](docs/decisions/ADR-0003-local-first-storage.md)
+- **Telemetry is opt-out, but disclosed in full on first run.** The metric requires measurement;
+  the disclosure shows the literal JSON, nothing preselected, nothing sent before you choose.
+  — [`ADR-0004`](docs/decisions/ADR-0004-telemetry.md)
+- **Trust is shown as observed behaviour, never as a grade.** A letter grade invites trusting
+  the grade. Click-through shows the actual evidence.
+  — [`ADR-0006`](docs/decisions/ADR-0006-trust-indicator-from-observed-behaviour.md)
+
+**How the API behaves**
+
+- **Handles are WHATWG streams; Node's shapes live in the shim.** Streams give real
+  backpressure. An `EventEmitter` has no way to say "not yet".
+  — [`ADR-0008`](docs/decisions/ADR-0008-handles-are-whatwg-streams.md)
+
+## Four things people keep re-proposing
+
+Each was considered and decided against, and each gets suggested again by someone who assumes it
+was simply overlooked. It was not.
+
+- **App signing, cut from v0.** With one publisher it is capability-identical to no signing,
+  nothing specified the mechanism, and it would have put a red UNSIGNED badge next to
+  *"connect to any computer on the internet"* in the launch clip. Integrity is hash-pinning.
+- **MKV playback, cut.** There is no fallback path, only a remuxer, and that is post-launch
+  work. v0 plays MP4/H.264 —
+  [`README.md`](README.md#known-limitations-of-v0) carries the user-facing statement of it.
+- **Auto-install of updates, cut.** Unsigned `electron-updater` verifies a hash fetched from the
+  same host that serves the binary — a standing remote-code-execution channel, and weaker than
+  what is demanded of third-party apps. v0 **checks and notifies**.
+- **`activeSec` rather than uptime**, in the success metric. Not a cut, but the same kind of
+  call: a torrent client seeds in the background, so measuring "app open" would let someone who
+  pasted one magnet and walked away hit the target on day one. This makes the target harder,
+  which is the point.
 
 ## Two facts that are expensive to rediscover
 

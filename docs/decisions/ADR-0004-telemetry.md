@@ -14,7 +14,7 @@
 ## Decision
 Orivon ships usage telemetry that is **self-hosted**, **minimal**, **inspectable in the
 product**, and enabled through a **first-run explicit choice**: the disclosure screen shows
-the literal payload with two equal buttons — **[Keep on] / [Turn off]** — and no preselected
+the literal payload with two buttons — **[Keep on] / [Turn off]** — and no preselected
 default. Nothing is sent before the user chooses. No third-party analytics service is used,
 ever.
 

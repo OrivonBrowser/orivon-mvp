@@ -1,5 +1,7 @@
 // Transcribed from docs/architecture/capability-api.md's "v0 surface" section.
 //
+// capability-api.ts - What an app can ask for
+//
 // THIS IS THE DURABLE ASSET (ADR-0002). Apps call orivon.net.connect; beneath
 // it that is a Node net.Socket in the main process today, a Wasmtime host
 // function later, Mojo IPC in a Chromium fork after that. None of those

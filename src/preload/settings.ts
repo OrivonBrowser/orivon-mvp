@@ -4,9 +4,9 @@ import type { SettingsCommand } from '../main/settings-ipc.js'
 import type { AppPermissions } from '../main/permissions.js'
 import type { CapabilityKind, GrantId } from '../contracts/index.js'
 
-// Loaded ONLY by the settings window's own single WebContentsView
-// (src/main/settings-window.ts) -- queue item 4.4's "full permissions page"
-// half of d-0027. This page never navigates anywhere else (no links, no
+// Loaded ONLY by the permissions panel's own WebContentsView
+// (src/main/permissions-panel.ts) -- queue item 4.4's permissions surface.
+// This page never navigates anywhere else (no links, no
 // address bar), but the check below still runs before exposing anything
 // privileged -- the same defense-in-depth newtab.ts applies for a page that
 // COULD navigate, kept here so this file is not the one preload in the
@@ -33,6 +33,12 @@ if (expectedUrl !== undefined && location.href === expectedUrl) {
     },
     revokePickedPath: async (origin: string, pickId: string): Promise<void> => {
       await ipcRenderer.invoke(SETTINGS_COMMAND_CHANNEL, { type: 'revokePickedPath', origin, pickId } satisfies SettingsCommand)
+    },
+    /** Tells main how tall the rendered content is, so the panel sizes to it
+     * (src/main/permissions-panel.ts). Fire-and-forget: a panel that failed
+     * to resize is cosmetic, and must never break rendering the list. */
+    reportHeight: (height: number): void => {
+      void ipcRenderer.invoke(SETTINGS_COMMAND_CHANNEL, { type: 'contentHeight', height } satisfies SettingsCommand)
     },
     /** Read-only -- which app's card, if any, to scroll to on load. `null`
      * for an ordinary open from the toolbar's own "Permissions" button. */

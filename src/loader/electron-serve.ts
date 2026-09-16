@@ -70,6 +70,34 @@ export function registerAppOrigin (appSession: Session, origin: string, handler:
     appSession.protocol.unhandle(scheme)
   }
   appSession.protocol.handle(scheme, handler)
+  servedPartitions.add(partitionFor(origin))
+}
+
+/** Partitions this process has actually installed a cache handler into.
+ *
+ * Keyed by partition, not origin, so the two sides cannot disagree about
+ * canonical spelling: `partitionFor` is already the one function that decides
+ * what "the same app" means, and tab-view.ts computes the identical string.
+ *
+ * There is no removal, because there is no unregistration -- `registerAppOrigin`
+ * re-registers in place (see its own doc), and a handler lives for the process.
+ */
+const servedPartitions = new Set<string>()
+
+/**
+ * Is `origin` being served from the pinned cache right now -- synchronously,
+ * with no side effect?
+ *
+ * Needed because a tab's partition is fixed when its `WebContentsView` is
+ * constructed, so `isOriginServedFromCache` below (async) cannot answer in
+ * time. Do NOT "simplify" this into asking Electron directly: that means
+ * `session.fromPartition(...)`, which CREATES the session it asks about, and
+ * `partitionFor` yields a `persist:` partition -- so probing it per navigation
+ * would mint an on-disk app partition for every ordinary website visited,
+ * which is the cost A109 removed.
+ */
+export function isOriginServedFromCacheSync (origin: string): boolean {
+  return servedPartitions.has(partitionFor(origin))
 }
 
 /**

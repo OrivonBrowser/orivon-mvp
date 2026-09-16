@@ -11,8 +11,8 @@ the in-product "what has been sent" page.
 the streams that can run concurrently today.
 
 **The disclosure UI is not optional** ([`ADR-0004`](../../docs/decisions/ADR-0004-telemetry.md)):
-the literal JSON that would be sent, two buttons of equal visual weight, **no preselected
-default**, and **nothing transmitted before the choice is made**.
+the literal JSON that would be sent, two buttons, **no preselected default**, and **nothing
+transmitted before the choice is made**.
 
 **`activeSec` and `backgroundSec` are separate numbers, and the metric is stated on
 `activeSec`.** A torrent client seeds in the background — that is what it is for — so measuring

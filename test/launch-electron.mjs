@@ -124,6 +124,12 @@ export function registerLaunchForTeardown (app, { userDataDir } = {}) {
  *   applied on top of this process's own env (after POISON is stripped) --
  *   see ORIVON_WINDOW_NO_FOCUS below for the one caller-visible default this
  *   enables.
+ * @param {(dir: string) => void | Promise<void>} [options.seedProfile] Called
+ *   with the fresh profile directory BEFORE Electron starts, for a test that
+ *   needs the app to boot with state already on disk (a bookmarks.json with
+ *   icons, say). The directory is still created and removed by this file --
+ *   a caller never supplies its own, so the never-touch-the-real-profile
+ *   guarantee below is not something a caller can opt out of.
  * @returns {Promise<import('playwright').ElectronApplication>} Launched
  *   against a fresh, unique --user-data-dir -- never this machine's real
  *   `orivon` profile. See the userDataDir comment below.
@@ -132,7 +138,8 @@ export async function launchElectron ({
   appPath = '.',
   args = [],
   defaultTimeoutMs = DEFAULT_ACTION_TIMEOUT_MS,
-  env: envOverrides = {}
+  env: envOverrides = {},
+  seedProfile
 } = {}) {
   const env = { ...process.env, ...envOverrides }
   const stripped = []
@@ -168,6 +175,9 @@ export async function launchElectron ({
   const userDataDir = await mkdtemp(join(tmpdir(), 'orivon-test-'))
   let app
   try {
+    // Inside the same try as the launch, so a throwing seed is cleaned up by
+    // the same catch rather than leaking the directory it was given.
+    if (seedProfile !== undefined) await seedProfile(userDataDir)
     app = await electron.launch({
       args: [appPath, `--user-data-dir=${userDataDir}`, ...args],
       env

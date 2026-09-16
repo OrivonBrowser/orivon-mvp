@@ -1,6 +1,6 @@
 // Resolves one of electron-vite's multi-entry renderer outputs to a
 // loadable URL. Split out of window.ts's own dashboard-URL resolution
-// (queue item 4.4 adds a second caller, settings-window.ts, so this is now
+// (queue item 4.4 adds a second caller, permissions-panel.ts, so this is now
 // a shared reason, not just a shared shape -- code-guidelines.md Rule 3).
 
 import { join } from 'node:path'

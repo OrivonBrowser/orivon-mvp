@@ -13,6 +13,14 @@ node_modules
 dist/
 out/
 build/
+# ...except electron-builder's buildResources, which is SOURCE despite the name.
+# `build/` is its documented default location and nothing in this repo writes
+# build output there (electron-vite emits to out/, electron-builder to release/).
+# Without this negation the app icon is never committed, and a fresh clone
+# silently packages with the stock Electron icon again -- the exact gap
+# electron-builder.yml used to carry a note about.
+!build/
+!build/icon.png
 *.tsbuildinfo
 
 # Vitest coverage output (`vitest run --coverage`, not currently a wired
@@ -57,3 +65,8 @@ spike/results/
 # enforces this. Example files are allowed and are meant to be committed.
 *.env
 !*.env.example
+
+# codeArbiter regenerates this shim per host and embeds an absolute path in
+# it (its own header says edits are overwritten), so it is local state, not
+# source. .githooks/pre-commit IS tracked and has no absolute paths.
+.githooks/pre-push

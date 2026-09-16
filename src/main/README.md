@@ -40,6 +40,27 @@ context at all. `sandbox: true` is non-negotiable, so the preload must be CJS, a
 main to it avoids a two-format build for no gain. An ESM main process does work — verified
 against Electron 44 — if a reason to switch ever appears.
 
+**Favicons are fetched from loopback, for a page that is itself on loopback.** Owner's
+decision, 2026-09-16, reversing the blanket refusal `favicon.ts` shipped with. The old rule was
+"public unicast https only, no loopback carve-out", which meant a local dev server never showed
+an icon — in a tab or, once bookmarks stored icons, in the bookmarks bar. It also meant
+`scripts/smoke.mjs`'s own two favicon checks could never pass, since its fixtures are
+`http://127.0.0.1`; they had been failing continuously and were read as a known-broken test
+rather than as the policy doing what it said.
+
+The condition is **which page declared the icon**, not just what the icon's address is, and that
+distinction is the whole safety argument. A page fully controls its own `<link rel=icon>`, so
+allowing loopback unconditionally would let any site you visit drive the privileged main process
+into blind, credential-less GETs against every port on your machine — with no origin attached
+and none of the Private Network Access rules the renderer itself is held to. Gating on
+`isLoopbackPage(pageUrl)` gives a local site its own icon and leaves that reach closed. `http` is
+allowed on that path because a dev server is almost never `https`, and an https-only carve-out
+would refuse exactly the case it exists for.
+
+Still refused from a local page: private LAN addresses (`192.168.x.x`, link-local), and plaintext
+off-machine. Only this machine is in scope. `src/main/tests/favicon.test.ts` holds both halves —
+what is now allowed, and the obfuscated-loopback spellings that stay refused to a public page.
+
 ## Design notes
 
 Why the code here has the shape it has. This is the destination

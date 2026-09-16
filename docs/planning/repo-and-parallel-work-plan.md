@@ -1442,7 +1442,7 @@ scope document they cannot be run identically twice, which is the whole reason t
 
 1. **Telemetry first-run disclosure.** Precondition: a clean profile (`app.getPath('userData')`
    removed). Input: first launch. Assertions: the literal JSON that would be sent is displayed;
-   there are exactly two buttons, visually equal weight; **neither is preselected**; and
+   there are exactly two buttons; **neither is preselected**; and
    **nothing is transmitted before the choice is made** — verified by watching outbound requests,
    not by reading the code (`ADR-0004`).
 2. **Launch with no keyring available.** Precondition: `--password-store=basic`. Input: normal

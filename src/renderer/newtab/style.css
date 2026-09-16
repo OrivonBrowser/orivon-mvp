@@ -70,17 +70,13 @@ input:focus-visible {
   align-items: center;
   gap: 12px;
 }
+/* Same reasoning as the chrome view's .mark-badge (styles/toolbar.css): the
+   logo carries its own circular shape and gradient, so it sits on nothing. */
 .mark {
   width: 40px;
   height: 40px;
-  border-radius: 10px;
-  background: var(--wmark);
-  color: #fff;
-  font-size: 18px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  flex: none;
+  background: url('../assets/logo.png') center / contain no-repeat;
 }
 .wordmark {
   margin: 0;
@@ -137,7 +133,11 @@ input:focus-visible {
 .tile:not(:disabled):hover {
   border-color: color-mix(in srgb, var(--waccent) 50%, transparent);
 }
+/* The same box whether the tile got the site's real favicon or the globe
+   fallback (icons.ts's faviconElement) -- a tile whose icon is a different
+   size depending on which one it got would break the grid's rhythm. */
 .tile-icon { width: 22px; height: 22px; color: var(--wink-dim); }
+img.tile-icon { border-radius: 4px; object-fit: contain; }
 .tile-label {
   font-size: 12px;
   font-weight: 500;

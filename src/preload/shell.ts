@@ -4,6 +4,7 @@ import type { ShellCommand } from '../main/ipc.js'
 import type { ShellState } from '../main/tabs.js'
 import type { AppPermissions } from '../main/permissions.js'
 import type { DeliveryProvenance } from '../main/delivery-provenance.js'
+import type { PanelAnchor } from '../main/permissions-panel.js'
 
 // Loaded ONLY by the chrome view (src/main/window.ts) -- the tab strip and
 // toolbar UI. Privileged: this is the one preload that may issue tab
@@ -32,7 +33,7 @@ contextBridge.exposeInMainWorld('orivonShell', {
   back: (id: string) => { send({ type: 'back', id }) },
   forward: (id: string) => { send({ type: 'forward', id }) },
   reload: (id: string) => { send({ type: 'reload', id }) },
-  addBookmark: (url: string, title: string) => { send({ type: 'addBookmark', url, title }) },
+  addBookmark: (url: string, title: string, tabId: string) => { send({ type: 'addBookmark', url, title, tabId }) },
   removeBookmark: (url: string) => { send({ type: 'removeBookmark', url }) },
   openBookmark: (url: string) => { send({ type: 'openBookmark', url }) },
 
@@ -48,7 +49,13 @@ contextBridge.exposeInMainWorld('orivonShell', {
   // different question (what can this app do, not where did its bytes
   // come from).
   deliveryProvenanceFor: async (url: string) => await request<DeliveryProvenance>({ type: 'deliveryProvenanceFor', url }),
-  openSettings: (url?: string) => { send(url === undefined ? { type: 'openSettings' } : { type: 'openSettings', url }) },
+  // `anchor` is the permission key's own rect, read by the chrome view --
+  // main has no way to know where the toolbar put that button. Passed
+  // through verbatim; permissions-panel.ts clamps it to the window rather
+  // than trusting it as a bounds.
+  openSettings: (anchor: PanelAnchor, url?: string) => {
+    send(url === undefined ? { type: 'openSettings', anchor } : { type: 'openSettings', url, anchor })
+  },
 
   /** Subscribes to shell state pushes from main. Returns an unsubscribe
    * function; the listener is a closure, not the raw ipcRenderer, so the
