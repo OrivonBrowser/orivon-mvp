@@ -13,18 +13,19 @@ export const APP = 'https://app.example'
 /**
  * Spread into a hand-built `CreateBrokerOptions['fs']` literal that only
  * means to exercise readFile/writeFile -- BrokerFs.mkdir/readdir/stat/rm/
- * rename must still exist to satisfy the type, but a test built before
- * queue item 2.1 never calls them, so each one fails loudly rather than
- * silently succeeding if that ever stops being true.
+ * rename/open must still exist to satisfy the type, but a test built before
+ * queue item 2.1 (or before orivon.fs.open) never calls them, so each one
+ * fails loudly rather than silently succeeding if that ever stops being true.
  */
-export function unusedFsExtras (): Pick<CreateBrokerOptions['fs'], 'mkdir' | 'readdir' | 'stat' | 'rm' | 'rename'> {
+export function unusedFsExtras (): Pick<CreateBrokerOptions['fs'], 'mkdir' | 'readdir' | 'stat' | 'rm' | 'rename' | 'open'> {
   const notStubbed = (): never => { throw new Error('this stub method was not configured for this test') }
   return {
     mkdir: notStubbed,
     readdir: notStubbed,
     stat: notStubbed,
     rm: notStubbed,
-    rename: notStubbed
+    rename: notStubbed,
+    open: notStubbed
   }
 }
 
@@ -173,6 +174,73 @@ export function stubFs (options: { root?: string, files?: Map<string, Uint8Array
       if (isFile(from)) { files.set(to, files.get(from)!); files.delete(from); return }
       if (isDir(from)) { dirs.add(to); dirs.delete(from); return }
       enoent()
+    },
+    // A positional in-memory descriptor over the same `files` Map --
+    // enough for fs-open.test.ts's confinement/grant/quota/revocation
+    // assertions, which never need real fd/stream mechanics. Those are
+    // node-fs-adapter-open.test.ts's job, against a real temp file.
+    open: async (path, flags) => {
+      const exists = files.has(path)
+      if (flags.startsWith('r') && !exists) enoent()
+      if (flags.includes('x') && exists) throw Object.assign(new Error('EEXIST'), { code: 'EEXIST' })
+      if (!exists) files.set(path, new Uint8Array(0))
+      else if (flags.startsWith('w')) files.set(path, new Uint8Array(0))
+
+      let destroyed = false
+      function live (): Uint8Array {
+        if (destroyed) throw Object.assign(new Error('EBADF'), { code: 'EBADF' })
+        return files.get(path) ?? new Uint8Array(0)
+      }
+
+      return {
+        read: async ({ position, length }) => {
+          const data = live()
+          return data.slice(position, Math.min(position + length, data.length))
+        },
+        write: async ({ position, data }) => {
+          const current = live()
+          const next = new Uint8Array(Math.max(current.length, position + data.length))
+          next.set(current)
+          next.set(data, position)
+          files.set(path, next)
+          return data.length
+        },
+        readable: (opts) => {
+          const data = live()
+          const start = opts?.start ?? 0
+          const end = opts?.end ?? data.length
+          const slice = data.slice(start, Math.max(start, end))
+          return new ReadableStream<Uint8Array>({ start (controller) { controller.enqueue(slice); controller.close() } })
+        },
+        // Writes land immediately -- there is no queue to lose on destroy(),
+        // so this stub has no A84-style conditional teardown to fake.
+        // node-fs-adapter-open.test.ts proves that against a real stream.
+        writable: (opts) => {
+          let offset = opts?.start ?? 0
+          return new WritableStream<Uint8Array>({
+            write (chunk) {
+              const current = live()
+              const next = new Uint8Array(Math.max(current.length, offset + chunk.byteLength))
+              next.set(current)
+              next.set(chunk, offset)
+              files.set(path, next)
+              offset += chunk.byteLength
+            }
+          })
+        },
+        stat: async () => {
+          const data = live()
+          return { size: data.length, isFile: true, isDirectory: false, mtimeMs: 0 }
+        },
+        truncate: async (length) => {
+          const current = live()
+          const next = new Uint8Array(length)
+          next.set(current.subarray(0, Math.min(length, current.length)))
+          files.set(path, next)
+        },
+        sync: async () => { live() },
+        destroy: async () => { destroyed = true }
+      }
     }
   }
 }
@@ -192,6 +260,7 @@ export function baseDeps (overrides: Partial<CreateBrokerOptions> = {}): CreateB
     bind: async () => okUdpSocket(),
     listen: async () => okListenedServer(),
     resolve: async () => [],
+    resolveLookup: async () => [],
     now: () => 0,
     fs: stubFs(),
     keychain: { getSeed: async () => new Uint8Array(32) },

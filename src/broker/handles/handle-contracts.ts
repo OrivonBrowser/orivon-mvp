@@ -5,7 +5,7 @@
 // Spec: docs/architecture/handle-contracts.md. See ./handles.ts's header for
 // why this directory holds state at all and what it may and may not import.
 
-import type { Datagram, GrantId, Handle, OrivonErrorCode, TcpSocket } from '../../contracts/index.js'
+import type { Datagram, FileHandle, GrantId, Handle, OrivonErrorCode, TcpSocket } from '../../contracts/index.js'
 
 /**
  * What kind of resource a handle names.
@@ -311,6 +311,20 @@ export interface FailableTcpServer extends Handle {
   readonly connections: ReadableStream<FailableTcpSocket>
   readonly localAddress: string
   readonly localPort: number
+  fail: (code: OrivonErrorCode, platformCode?: string) => void
+  onUnlink: (listener: (reason: CloseReason, code?: OrivonErrorCode) => void) => void
+}
+
+/**
+ * A `FileHandle` widened with the same broker-internal escape hatch every
+ * other handle kind gets: `fail` and `onUnlink` mean exactly what they mean
+ * on `FailableTcpSocket`, and their docs are not repeated.
+ *
+ * NO `abort`, unlike `FailableTcpSocket` -- see README.md's design notes for
+ * why a FileHandle's `readable()`/`writable()` factories leave this method
+ * with no single stream to mean.
+ */
+export interface FailableFileHandle extends FileHandle {
   fail: (code: OrivonErrorCode, platformCode?: string) => void
   onUnlink: (listener: (reason: CloseReason, code?: OrivonErrorCode) => void) => void
 }

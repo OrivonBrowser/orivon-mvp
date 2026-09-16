@@ -16,12 +16,13 @@
 // touches the real `ipcMain`/`MessageChannelMain` value imports below.
 
 import { ipcMain, MessageChannelMain } from 'electron'
+import type { MessagePortMain } from 'electron'
 import { CONTROL_CHANNEL, PORT_CHANNEL, SYNC_CONTROL_CHANNEL } from '../../main/channels.js'
 import { publishBroker } from '../../main/registry.js'
 import type { Subsystem, SubsystemContext } from '../../main/registry.js'
 import { createBroker } from '../index.js'
 import type { Broker, CreateBrokerOptions } from '../broker-contracts.js'
-import { dialTcp, listenTcp, nodeFs, resolveHost } from '../adapters/node-adapters.js'
+import { dialTcp, listenTcp, nodeFs, resolveHost, resolveLookup } from '../adapters/node-adapters.js'
 import { dialTls } from '../adapters/tls-adapter.js'
 import { bindUdp } from '../adapters/udp-adapter.js'
 import { nodeLedgerStorage } from '../grants/node-ledger-storage.js'
@@ -36,6 +37,7 @@ import { fail } from '../errors.js'
 import { toFailureResponse } from './response-envelope.js'
 import { dispatchApp } from './dispatch-app.js'
 import { dispatchFs } from './dispatch-fs.js'
+import type { FsTransport } from './dispatch-fs.js'
 import { dispatchId } from './dispatch-id.js'
 import { dispatchNet } from './dispatch-net.js'
 import { envelopeId, isControlMethod, isRequestEnvelope, type RequestGrantCtx } from './ipc-validation.js'
@@ -49,8 +51,10 @@ export type {
   NetConnectParams, NetCloseParams, NetSetKeepAliveParams, NetSetNoDelayParams, NetUdpBindParams, RequestGrantCtx
 } from './ipc-validation.js'
 export type {
-  ControlEvent, PortDeliveryFrame, PortLike, PortPair, PortTransport, SocketDescriptor, UdpSocketDescriptor
+  ControlEvent, PortDeliveryFrame, PortLike, PortPair, PortTransport, SocketDescriptor, TcpServerDescriptor,
+  UdpSocketDescriptor
 } from './port-transport.js'
+export type { FsControlMethod, FsHandleDescriptor, FsTransport } from './dispatch-fs.js'
 
 /**
  * One request, dispatched to `broker` with the origin THIS FUNCTION derived
@@ -67,7 +71,8 @@ async function dispatch (
   payload: unknown,
   event: ControlEvent,
   transport: PortTransport | undefined,
-  requestGrantCtx: RequestGrantCtx | undefined
+  requestGrantCtx: RequestGrantCtx | undefined,
+  fsTransport: FsTransport | undefined
 ): Promise<unknown> {
   if (!isControlMethod(method)) throw fail('invalid', `unknown control method: ${method}`)
 
@@ -83,17 +88,36 @@ async function dispatch (
     case 'fs.stat':
     case 'fs.rm':
     case 'fs.rename':
-      return await dispatchFs(broker, origin, method, payload)
+    case 'fs.open':
+    case 'fs.read':
+    case 'fs.write':
+    case 'fs.fstat':
+    case 'fs.truncate':
+    case 'fs.sync':
+    case 'fs.close':
+      return await dispatchFs(broker, origin, method, payload, fsTransport)
     case 'id.publicKey':
     case 'id.sign':
       return await dispatchId(broker, origin, method, payload)
     case 'net.connect':
     case 'net.connectSecure':
     case 'net.udpBind':
+    case 'net.listen':
     case 'net.close':
     case 'net.setNoDelay':
     case 'net.setKeepAlive':
+    case 'net.lookup':
       return await dispatchNet(broker, origin, method, payload, event, transport)
+    default: {
+      // Exhaustiveness check: if ControlMethod (ipc-validation.ts) ever
+      // gains a member no case above names, `method` is not assignable to
+      // `never` here and THIS LINE FAILS TO COMPILE -- the guard A185's
+      // brief asked for, because nothing else in this switch does (no
+      // `assertNever`, no keyed `Record`) and a missed case would otherwise
+      // resolve silently to `undefined` instead of a compile error.
+      const unrouted: never = method
+      throw fail('internal', `unrouted control method: ${unrouted as string}`)
+    }
   }
 }
 
@@ -136,9 +160,10 @@ const ALLOW_ALL_LIMITER: RateLimiter = { tryConsume: () => true }
  * one; dispatch() throws 'internal' if a call that needs it is ever made
  * without one, which is a wiring bug, not a capability decision.
  *
- * `limiter` and `requestGrantCtx` are optional the same way (never
- * throttled; 'internal' from dispatch() if app.requestGrant runs without
- * one) -- real wiring always supplies both, see `brokerIpcSubsystem`.
+ * `limiter`, `requestGrantCtx` and `fsTransport` are optional the same way
+ * (never throttled; 'internal' from dispatch() if a call needing one of the
+ * last two runs without it) -- real wiring always supplies every one of
+ * them, see `brokerIpcSubsystem`.
  */
 export async function handleControlRequest (
   broker: Broker,
@@ -146,7 +171,8 @@ export async function handleControlRequest (
   envelope: RequestEnvelope<unknown>,
   transport?: PortTransport,
   limiter?: RateLimiter,
-  requestGrantCtx?: RequestGrantCtx
+  requestGrantCtx?: RequestGrantCtx,
+  fsTransport?: FsTransport
 ): Promise<ResponseEnvelope<unknown>> {
   // The envelope itself is untrusted, not just its payload. Reading
   // `envelope.id` off a null or non-object value throws a TypeError straight
@@ -172,7 +198,10 @@ export async function handleControlRequest (
   }
 
   try {
-    const result = await withTimeout(dispatch(broker, origin, envelope.method, envelope.payload, event, transport, requestGrantCtx), envelope.timeoutMs)
+    const result = await withTimeout(
+      dispatch(broker, origin, envelope.method, envelope.payload, event, transport, requestGrantCtx, fsTransport),
+      envelope.timeoutMs
+    )
     return { id: envelope.id, ok: true, result }
   } catch (error) {
     return toFailureResponse(envelope.id, error)
@@ -187,9 +216,17 @@ export interface IpcMainLike {
   ): void
 }
 
-/** Thin wiring: one `ipcMain.handle` registration over `handleControlRequest`, sharing one `PortTransport` and `RateLimiter` across every call. */
-export function registerBrokerIpc (ipc: IpcMainLike, broker: Broker, transport: PortTransport, limiter?: RateLimiter, requestGrantCtx?: RequestGrantCtx): void {
-  ipc.handle(CONTROL_CHANNEL, async (event, envelope) => await handleControlRequest(broker, event, envelope, transport, limiter, requestGrantCtx))
+/** Thin wiring: one `ipcMain.handle` registration over `handleControlRequest`, sharing one `PortTransport`, `FsTransport` and `RateLimiter` across every call. */
+export function registerBrokerIpc (
+  ipc: IpcMainLike,
+  broker: Broker,
+  transport: PortTransport,
+  limiter?: RateLimiter,
+  requestGrantCtx?: RequestGrantCtx,
+  fsTransport?: FsTransport
+): void {
+  ipc.handle(CONTROL_CHANNEL, async (event, envelope) =>
+    await handleControlRequest(broker, event, envelope, transport, limiter, requestGrantCtx, fsTransport))
 }
 
 /**
@@ -216,7 +253,26 @@ export function registerSyncFsIpc (ipc: IpcMainOnLike, policy: SyncFsPolicy, lim
 function realPortPair (): PortPair {
   const { port1, port2 } = new MessageChannelMain()
   const wrapped: PortLike = {
-    postMessage: (message) => { port1.postMessage(message) },
+    // `transfer` is `readonly unknown[]` at this structural boundary
+    // (./port-transport.ts's own PortPair.port2, `unknown` for the same
+    // reason) but is ALWAYS, in production, an array of this module's own
+    // freshly-minted MessagePortMain values -- the only thing anything in
+    // this file ever puts in one (server-relay.ts's AcceptedMessage.port,
+    // the sole BrokerToRendererMessage member that carries a transferable
+    // -- contracts/ipc.ts's own header rule 1). Cast at this one real-
+    // Electron call site rather than widening MessagePortMain's own
+    // `.postMessage` signature.
+    // PASSING `undefined` AS THE TRANSFER LIST IS NOT THE SAME AS OMITTING
+    // IT. Electron's MessagePortMain binding validates the argument when it
+    // is present at all, so `postMessage(message, undefined)` throws
+    // "transferables must be an array of MessagePorts" -- and that is every
+    // ordinary data message, not just an accept. A plain object PortLike
+    // accepts `undefined` happily, so unit tests cannot see this; the real
+    // e2e caught it as every socket byte pump failing at once.
+    postMessage: (message, transfer) => {
+      if (transfer === undefined) port1.postMessage(message)
+      else port1.postMessage(message, transfer as MessagePortMain[])
+    },
     onMessage: (listener) => { port1.on('message', (event) => { listener(event.data) }) },
     onClose: (listener) => { port1.on('close', listener) },
     close: () => { port1.close() }
@@ -256,6 +312,7 @@ export const brokerIpcSubsystem: Subsystem = {
       bind: bindUdp,
       listen: listenTcp,
       resolve: resolveHost,
+      resolveLookup,
       now: realNow,
       fs: nodeFs(ctx.app.getPath('userData')),
       ledgerStorage: nodeLedgerStorage(ctx.app.getPath('userData')),
@@ -267,6 +324,11 @@ export const brokerIpcSubsystem: Subsystem = {
       }
     }
     const transport: PortTransport = { createPortPair: realPortPair, registry: createPortRegistry() }
+    // fs.open's own per-origin lookup (A184) -- the same generic
+    // createPortRegistry `transport.registry` above uses, over
+    // FailableFileHandle instead of RegisteredSocket. One instance for the
+    // subsystem's whole lifetime, exactly like `transport`.
+    const fsTransport: FsTransport = { registry: createPortRegistry() }
     const limiter = createTokenBucketLimiter({
       capacity: CONTROL_RATE_LIMIT_CAPACITY,
       refillPerSecond: CONTROL_RATE_LIMIT_REFILL_PER_SECOND,
@@ -279,7 +341,7 @@ export const brokerIpcSubsystem: Subsystem = {
     // instance rather than a second, disagreeing one.
     publishBroker(ctx, broker)
     // `ctx` itself, not a captured `ctx.requestGrant` -- see RequestGrantCtx's own doc (ipc-validation.ts) for why.
-    registerBrokerIpc(ipcMain, broker, transport, limiter, ctx)
+    registerBrokerIpc(ipcMain, broker, transport, limiter, ctx, fsTransport)
 
     // ./sync-fs-policy.ts's createSyncFsPolicy calls straight through to
     // broker.fs.confineSync -- ADR-0016's synchronous grant-check/

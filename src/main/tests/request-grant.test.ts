@@ -69,6 +69,7 @@ describe('requestGrant (stubbed broker)', () => {
     const calls: BrokerCall[] = []
     const broker = stubBroker(calls, {
       manifest: async () => manifestWith({ net: { tcp: { connect: ['*:*'] } } }),
+      declinedCapabilitiesFor: async () => undefined,
       grant: async (origin, capability, patterns) => ({ id: 'g1', origin, capability, patterns, grantedAt: 0 })
     })
     const consent = vi.fn(async () => true)
@@ -126,6 +127,7 @@ describe('requestGrant (stubbed broker)', () => {
     const calls: BrokerCall[] = []
     const broker = stubBroker(calls, {
       manifest: async () => manifestWith({ net: { tcp: { connect: ['api.example.com:443'] } } }),
+      declinedCapabilitiesFor: async () => undefined,
       grant: async (origin, capability, patterns) => ({ id: 'g1', origin, capability, patterns, grantedAt: 0 })
     })
     const consent = vi.fn(async () => true)
@@ -134,6 +136,29 @@ describe('requestGrant (stubbed broker)', () => {
 
     expect(result).toBe(true)
     expect(calls).toContainEqual({ method: 'grant', origin: APP, args: { capability: 'tcp.connect', patterns: ['api.example.com:443'] } })
+  })
+
+  // A172(3), MEDIUM: install-consent.ts's own all-or-nothing accept clears
+  // an origin's WHOLE declined-consent record ("an old no cannot outlive a
+  // yes", that file's header) -- but this is a SECOND door to a grant, and
+  // an accepted requestGrant call used to leave a stale decline in place
+  // for the exact capability it just granted. Only THIS capability is
+  // retired: a yes for tcp.connect must not silently un-decline fs, which
+  // nobody asked about through this door.
+  it('A172(3): an accepted grant retires this capability\'s own decline, leaving any OTHER declined capability alone', async () => {
+    const calls: BrokerCall[] = []
+    const broker = stubBroker(calls, {
+      manifest: async () => manifestWith({ net: { tcp: { connect: ['api.example.com:443'] } }, fs: { quotaBytes: 1024 } }),
+      declinedCapabilitiesFor: async () => ['tcp.connect', 'fs'],
+      recordDeclinedConsent: async () => {},
+      grant: async (origin, capability, patterns) => ({ id: 'g1', origin, capability, patterns, grantedAt: 0 })
+    })
+    const consent = vi.fn(async () => true)
+
+    const result = await requestGrant(broker, consent, APP, { capability: 'tcp.connect' })
+
+    expect(result).toBe(true)
+    expect(calls).toContainEqual({ method: 'recordDeclinedConsent', origin: APP, args: ['fs'] })
   })
 
   it('fails closed if the origin\'s manifest is gone entirely by the time consent returns', async () => {
