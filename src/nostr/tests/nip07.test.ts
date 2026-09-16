@@ -27,7 +27,8 @@ function fakeOrivon (requestIdentity: Orivon['id']['requestIdentity']): Orivon {
       connect: notImplemented('net.connect'),
       connectSecure: notImplemented('net.connectSecure'),
       listen: notImplemented('net.listen'),
-      udpBind: notImplemented('net.udpBind')
+      udpBind: notImplemented('net.udpBind'),
+      lookup: notImplemented('net.lookup')
     },
     fs: {
       readFile: notImplemented('fs.readFile'),

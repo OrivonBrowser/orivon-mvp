@@ -68,22 +68,42 @@ export class Socket extends Duplex {
     this.connectPromise = promise
     promise.then((handle) => {
       if (this.destroyed) { handle.close().catch(() => {}); return }
-      this.handle = handle
-      this.remoteAddress = handle.remoteAddress
-      this.remotePort = handle.remotePort
-      this.localAddress = handle.localAddress
-      this.localPort = handle.localPort
-      this.reader = handle.readable.getReader()
-      this.writer = handle.writable.getWriter()
+      this._attachHandle(handle)
       this.connecting = false
       this.emit('connect')
       this.emit('ready')
-      this._maybePump()
     }).catch((error) => {
       this.connecting = false
       this.destroy(toNodeError(error))
     })
     return this
+  }
+
+  /** Shared by connect()'s own promise resolution and fromAccepted() below -- the one place a resolved TcpSocket becomes this instance's live handle (Rule 3: one wiring implementation, not two). */
+  private _attachHandle (handle: TcpSocket): void {
+    this.handle = handle
+    this.remoteAddress = handle.remoteAddress
+    this.remotePort = handle.remotePort
+    this.localAddress = handle.localAddress
+    this.localPort = handle.localPort
+    this.reader = handle.readable.getReader()
+    this.writer = handle.writable.getWriter()
+    this.connectPromise = Promise.resolve(handle)
+    this._maybePump()
+  }
+
+  /**
+   * Wraps an ALREADY-CONNECTED handle -- net.createServer's accepted
+   * connections (node-net-server.ts) -- as a real net.Socket, without going
+   * through connect()'s dial/'connect'-event machinery. Real Node's own
+   * server-side sockets never fire 'connect' (that event belongs only to a
+   * caller that itself invoked connect()); `dial` is never called here, so
+   * one is still supplied only to satisfy the constructor's own signature.
+   */
+  static fromAccepted (handle: TcpSocket, opts: SocketOptions = {}): Socket {
+    const socket = new Socket(async () => handle, opts)
+    socket._attachHandle(handle)
+    return socket
   }
 
   override _read (): void {

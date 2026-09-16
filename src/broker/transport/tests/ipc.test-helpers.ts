@@ -8,8 +8,8 @@ import { vi } from 'vitest'
 import type { ControlEvent, PortLike, PortPair, PortTransport } from '../ipc.js'
 import type { Broker, RawFileStat } from '../../broker-contracts.js'
 import { createPortRegistry } from '../port-registry.js'
-import type { Datagram, Grant, Manifest, OrivonError, OrivonErrorCode } from '../../../contracts/index.js'
-import type { CloseReason, FailableTcpServer, FailableTcpSocket, FailableUdpSocket } from '../../handles/handle-contracts.js'
+import type { Datagram, Grant, LookupAddress, Manifest, OrivonError, OrivonErrorCode } from '../../../contracts/index.js'
+import type { CloseReason, FailableFileHandle, FailableTcpServer, FailableTcpSocket, FailableUdpSocket } from '../../handles/handle-contracts.js'
 import type { RequestEnvelope } from '../../../contracts/ipc.js'
 
 export const APP = 'https://app.example'
@@ -63,6 +63,7 @@ export function stubBroker (
     connectSecure: (origin: string, opts: { host: string, port: number }) => Promise<FailableTcpSocket>
     udpBind: (origin: string, opts: { port: number }) => Promise<FailableUdpSocket>
     listen: (origin: string, opts: { port: number }) => Promise<FailableTcpServer>
+    lookup: (origin: string, opts: { hostname: string }) => Promise<readonly LookupAddress[]>
     readFile: (origin: string, path: string) => Promise<Uint8Array>
     writeFile: (origin: string, path: string, data: Uint8Array) => Promise<void>
     /** SYNCHRONOUS, unlike every other override here (ADR-0016's Broker.fs.confineSync) -- no test in this suite calls it via handleControlRequest, since it has no CONTROL_CHANNEL method of its own (sync-fs.ts's own channel), but the stub still needs to satisfy Broker's shape. */
@@ -72,6 +73,7 @@ export function stubBroker (
     stat: (origin: string, path: string) => Promise<RawFileStat>
     rm: (origin: string, path: string, opts?: { recursive?: boolean }) => Promise<void>
     rename: (origin: string, from: string, to: string) => Promise<void>
+    open: (origin: string, path: string, flags: string) => Promise<FailableFileHandle>
     idPublicKey: (origin: string, opts: { curve: string }) => Promise<Uint8Array>
     idSign: (origin: string, opts: { curve: string, payload: Uint8Array }) => Promise<Uint8Array>
     registerApp: (origin: string, manifest: Manifest) => Promise<void>
@@ -128,6 +130,13 @@ export function stubBroker (
       listen: async (origin, opts) => {
         calls.push({ method: 'net.listen', origin, args: opts })
         return await (overrides.listen?.(origin, opts) ?? notStubbed())
+      },
+      // Satisfies `Broker`; exercised by whichever suite drives net.lookup
+      // through `overrides.lookup` -- unused elsewhere the same way udpBind
+      // and listen were before their own control methods landed.
+      lookup: async (origin, opts) => {
+        calls.push({ method: 'net.lookup', origin, args: opts })
+        return await (overrides.lookup?.(origin, opts) ?? notStubbed())
       }
     },
     fs: {
@@ -163,6 +172,10 @@ export function stubBroker (
       rename: async (origin, from, to) => {
         calls.push({ method: 'fs.rename', origin, args: { from, to } })
         await (overrides.rename?.(origin, from, to) ?? notStubbed())
+      },
+      open: async (origin, path, flags) => {
+        calls.push({ method: 'fs.open', origin, args: { path, flags } })
+        return await (overrides.open?.(origin, path, flags) ?? notStubbed())
       }
     },
     id: {
@@ -230,20 +243,30 @@ export function stubBroker (
  * to a closed port pass its tests while crashing the real Electron main
  * process the moment it ran for real.
  */
-export function fakePort (): PortLike & { readonly sent: unknown[], emit: (message: unknown) => void, simulateClose: () => void, isClosed: () => boolean } {
+export function fakePort (): PortLike & {
+  readonly sent: unknown[]
+  /** The transfer list passed alongside each `sent` message, same index -- `undefined` where none was given. Only ever non-empty for an AcceptedMessage (server-relay.test.ts). */
+  readonly transfers: Array<readonly unknown[] | undefined>
+  emit: (message: unknown) => void
+  simulateClose: () => void
+  isClosed: () => boolean
+} {
   let listener: ((message: unknown) => void) | undefined
   let closeListener: (() => void) | undefined
   let closed = false
   const sent: unknown[] = []
+  const transfers: Array<readonly unknown[] | undefined> = []
   return {
-    postMessage: (message) => {
+    postMessage: (message, transfer) => {
       if (closed) throw new Error('Object has been destroyed')
       sent.push(message)
+      transfers.push(transfer)
     },
     onMessage: (l) => { listener = l },
     onClose: (l) => { closeListener = l },
     close: () => { closed = true },
     sent,
+    transfers,
     emit: (message) => { listener?.(message) },
     simulateClose: () => { closeListener?.() },
     isClosed: () => closed
@@ -258,6 +281,26 @@ export function fakePortPair (): { readonly pair: PortPair, readonly port1: Retu
 /** A PortTransport whose createPortPair always returns the SAME pair -- fine for tests that make at most one net.connect call. */
 export function fakeTransport (pair: PortPair): PortTransport {
   return { createPortPair: () => pair, registry: createPortRegistry() }
+}
+
+/**
+ * A PortTransport that mints a FRESH `fakePortPair()` on every
+ * `createPortPair()` call, tracking each one in order. `fakeTransport`'s
+ * single fixed pair is not enough wherever a test drives more than one port
+ * at once -- server-relay.test.ts's own server port plus one fresh pair per
+ * accepted connection, distinct from each other and from the server's.
+ */
+export function fakeMultiTransport (): PortTransport & { readonly pairs: ReadonlyArray<ReturnType<typeof fakePortPair>> } {
+  const pairs: Array<ReturnType<typeof fakePortPair>> = []
+  return {
+    createPortPair: () => {
+      const next = fakePortPair()
+      pairs.push(next)
+      return next.pair
+    },
+    registry: createPortRegistry(),
+    pairs
+  }
 }
 
 export interface FakeSocket {
@@ -375,5 +418,68 @@ export function fakeUdpSocket (
     failSpy,
     settleClosed: settle,
     unlink: (reason, code) => { unlinkListener?.(reason, code) }
+  }
+}
+
+export interface FakeTcpServer {
+  readonly server: FailableTcpServer
+  readonly closeSpy: ReturnType<typeof vi.fn>
+  readonly failSpy: ReturnType<typeof vi.fn>
+  readonly settleClosed: (error?: OrivonError) => void
+  readonly unlink: (reason: CloseReason, code?: OrivonErrorCode) => void
+  /** Pushes one accepted connection into `server.connections` -- one per unit of demand a test has already granted, exactly like a real accept(). */
+  readonly acceptOne: (socket: FailableTcpSocket) => void
+  /** Ends `server.connections` cleanly (`controller.close()`). */
+  readonly endConnections: () => void
+  /** Ends `server.connections` abruptly (`controller.error()`). */
+  readonly errorConnections: (error: unknown) => void
+}
+
+/**
+ * ./fakeTcpSocket's/fakeUdpSocket's counterpart for a `FailableTcpServer`.
+ *
+ * `highWaterMark: 0` on `connections`, matching net-capability.ts's own
+ * `entry.connections` exactly (handle-contracts.md's "TcpServer" section) --
+ * a test drives it item by item via `acceptOne`, the same one-per-real-read
+ * shape `createAcceptPump` (./accept-pump.js) expects on the other end.
+ */
+export function fakeTcpServer (): FakeTcpServer {
+  let settle: (error?: OrivonError) => void = () => {}
+  let settled = false
+  let unlinkListener: ((reason: CloseReason, code?: OrivonErrorCode) => void) | undefined
+  const closed = new Promise<void>((resolve, reject) => {
+    settle = (error) => {
+      if (settled) return
+      settled = true
+      if (error === undefined) resolve(); else reject(error)
+    }
+  })
+  const closeSpy = vi.fn(async () => { settle() })
+  const failSpy = vi.fn((code: OrivonErrorCode, platformCode?: string) => {
+    settle({ name: 'OrivonError', message: 'the handle failed', code, platformCode } as OrivonError)
+  })
+  let controller: ReadableStreamDefaultController<FailableTcpSocket> | undefined
+  const connections = new ReadableStream<FailableTcpSocket>({
+    start (c) { controller = c }
+  }, { highWaterMark: 0 })
+  const server: FailableTcpServer = {
+    id: 'handle-server-1',
+    closed,
+    close: closeSpy,
+    fail: failSpy,
+    connections,
+    localAddress: '0.0.0.0',
+    localPort: 4001,
+    onUnlink: (listener) => { unlinkListener = listener }
+  }
+  return {
+    server,
+    closeSpy,
+    failSpy,
+    settleClosed: settle,
+    unlink: (reason, code) => { unlinkListener?.(reason, code) },
+    acceptOne: (socket) => { controller?.enqueue(socket) },
+    endConnections: () => { controller?.close() },
+    errorConnections: (error) => { controller?.error(error) }
   }
 }
