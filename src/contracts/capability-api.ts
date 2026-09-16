@@ -26,9 +26,11 @@
 //   5. No capability is implicit.
 
 import type {
+  DirectoryHandle,
   FileHandle,
   FileStat,
   IdentityHandle,
+  LookupAddress,
   TcpServer,
   TcpSocket,
   UdpSocket
@@ -103,6 +105,45 @@ export interface OrivonNet {
   listen(opts: { port: number }): Promise<TcpServer>
   /** Binds a UDP socket on `port`, checked against `udp.bind`. Same `port: 0` behaviour as `listen`. */
   udpBind(opts: { port: number }): Promise<UdpSocket>
+  /**
+   * Resolves `hostname` on the app's behalf -- DNS resolution happens IN
+   * THE BROKER (D-0006), because a sandboxed renderer has no resolver of
+   * its own and no pure-JS polyfill can answer one (A107): a ported
+   * dependency that calls `dns.lookup` directly is a real, confirmed case
+   * (`k-rpc-socket`, resolving a DHT bootstrap peer named by hostname), not
+   * a hypothetical one.
+   *
+   * BOUNDED BY THE APP'S OWN NETWORK GRANT, NOT A SEPARATE CAPABILITY
+   * (d-0030) -- there is no `dns` grant to request or revoke; this rides
+   * whatever `tcp.connect`, `https.connect` and `udp.send` patterns
+   * (manifest.js) the app already holds. Resolving a name is an
+   * exfiltration channel in its own right: `what-i-stole.attacker.example`
+   * carries data out through the resolution itself, even for a host the
+   * app could never actually connect to. An unbounded resolver would hand
+   * every network-capable app a covert channel to anywhere, so `hostname`
+   * is checked against the HOST portion of the app's held outbound
+   * patterns -- the same patterns `connect`/`connectSecure`/`udpBind`
+   * already check their own resolved or requested addresses against. An
+   * app holding a `"*:*"` pattern on any of those (unlimited network) gets
+   * unlimited lookups, because it can already reach anywhere this opens
+   * nothing new; an app holding only specific hosts may resolve only
+   * those. Rejects with 'denied', uniform and detail-free like every other
+   * 'denied' in this file (errors.ts), when no held pattern's host
+   * authorises `hostname`.
+   *
+   * Rejects with 'unreachable' -- errors.ts already lists a DNS failure
+   * under that code -- and a real `platformCode` (e.g. Node's own
+   * `ENOTFOUND`) when `hostname` was one the app was permitted to resolve
+   * but resolution itself found nothing, the same "true reason for a
+   * permitted attempt" rule `connect`'s own errors already follow.
+   *
+   * Returns every address the resolver gave, IN THE ORDER IT GAVE THEM --
+   * never re-sorted, never reduced to one, so `orivon-node-shim`'s own
+   * `dns.lookup` can present Node's `{ all: true }` shape directly and its
+   * default single-result shape by taking this array's first entry, with
+   * no second round trip either way.
+   */
+  lookup(opts: { hostname: string }): Promise<readonly LookupAddress[]>
 }
 
 /**
@@ -151,8 +192,37 @@ export interface OrivonFs {
   stat(path: string): Promise<FileStat>
   rm(path: string, opts?: { recursive?: boolean }): Promise<void>
   rename(from: string, to: string): Promise<void>
-  /** The OS file picker. The user's choice IS the consent -- no separate grant. */
-  userSelected(opts?: { multiple?: boolean }): Promise<readonly FileHandle[]>
+  /**
+   * The OS picker -- files, or (`directory: true`) a single folder. The
+   * app declares which it needs; native chrome shows the matching dialog.
+   * The user's choice IS the consent for either shape -- no separate
+   * grant.
+   *
+   * FOLDERS ARE NOT FILES, by design, not oversight (d-0029): a picked
+   * folder becomes a `DirectoryHandle` (./handles.js), never a `FileHandle`
+   * wearing a directory's clothes -- see that interface's own doc comment
+   * for what operations it offers and how its confinement works, and
+   * `FileHandle`'s own doc comment for what persists across a restart and
+   * how to revoke it (both handles share the same D-0007 answer).
+   *
+   * OVERLOADED ON THE LITERAL `directory` VALUE, so the return type is
+   * honest for both shapes with no union and no cast at the call site:
+   * pass `directory: true` and the result is already typed
+   * `DirectoryHandle | null`. `multiple` applies only to the file shape -- a
+   * native folder picker offers one folder per pick, so pairing it with
+   * `directory: true` would be an option that silently does nothing,
+   * which is the same "no implicit capability" spirit design rule 5 states
+   * for grants, applied here to an option rather than a permission.
+   *
+   * A picked folder resolves `DirectoryHandle | null` -- null on
+   * cancellation, matching the true cardinality (at most one folder, never
+   * a list of them) rather than forcing an empty array the way the file
+   * shape below does. Cancelling the file picker resolves an empty array;
+   * declining either dialog is never a rejected promise, because declining
+   * a picker is not a failure.
+   */
+  userSelected(opts: { directory: true }): Promise<DirectoryHandle | null>
+  userSelected(opts?: { directory?: false, multiple?: boolean }): Promise<readonly FileHandle[]>
 }
 
 /**

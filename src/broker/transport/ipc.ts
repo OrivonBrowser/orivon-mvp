@@ -1,13 +1,12 @@
-// Wires createBroker (../index.ts) to a real renderer over Electron IPC.
-//
-// SCOPE: app.manifest, app.grants, app.requestGrant, fs.readFile, fs.writeFile, id.publicKey,
-// id.sign, net.connect, net.connectSecure, net.udpBind, net.close, net.setNoDelay, net.setKeepAlive. See ./README.md
-// for the two rules every method here enforces (origin attribution off the
-// sending frame, bytes never over request/response IPC) and
-// ../../contracts/ipc.ts for the timeout and no-transferables rules
-// withTimeout() and dispatch() apply below. net.connect's, net.connectSecure's
-// and net.udpBind's port delivery are the only transferables this file ever
-// sends; everything else on CONTROL_CHANNEL is plain cloned data.
+// Wires createBroker (../index.ts) to a real renderer over Electron IPC:
+// validates the envelope, derives the origin, rate-limits, times out, and
+// routes to the per-capability dispatcher (./dispatch-app.ts, ./dispatch-fs.ts,
+// ./dispatch-id.ts, ./dispatch-net.ts -- see ./README.md's Design notes for
+// why dispatch lives there and wiring stays here). See ./README.md for the
+// two rules every method enforces (origin attribution off the sending
+// frame, bytes never over request/response IPC) and ../../contracts/ipc.ts
+// for the timeout and no-transferables rules withTimeout() and dispatch()
+// below apply.
 //
 // TESTABLE WITHOUT ELECTRON, the way src/main/registry.ts is:
 // `handleControlRequest`, `dispatch` and `registerBrokerIpc` take a
@@ -17,19 +16,17 @@
 // touches the real `ipcMain`/`MessageChannelMain` value imports below.
 
 import { ipcMain, MessageChannelMain } from 'electron'
+import type { MessagePortMain } from 'electron'
 import { CONTROL_CHANNEL, PORT_CHANNEL, SYNC_CONTROL_CHANNEL } from '../../main/channels.js'
 import { publishBroker } from '../../main/registry.js'
 import type { Subsystem, SubsystemContext } from '../../main/registry.js'
 import { createBroker } from '../index.js'
 import type { Broker, CreateBrokerOptions } from '../broker-contracts.js'
-import { dialTcp, listenTcp, nodeFs, resolveHost } from '../adapters/node-adapters.js'
+import { dialTcp, listenTcp, nodeFs, resolveHost, resolveLookup } from '../adapters/node-adapters.js'
 import { dialTls } from '../adapters/tls-adapter.js'
 import { bindUdp } from '../adapters/udp-adapter.js'
 import { nodeLedgerStorage } from '../grants/node-ledger-storage.js'
 import { createPortRegistry } from './port-registry.js'
-import { createSocketRelay } from './socket-relay.js'
-import { createDatagramRelay } from './datagram-relay.js'
-import { deliverPort } from './deliver-port.js'
 import { createTokenBucketLimiter } from './token-bucket.js'
 import type { RateLimiter } from './token-bucket.js'
 import { createSyncFsPolicy } from './sync-fs-policy.js'
@@ -38,19 +35,14 @@ import type { SyncControlEvent, SyncFsPolicy } from './sync-fs.js'
 import { originFromSenderFrame } from '../policy/origin.js'
 import { fail } from '../errors.js'
 import { toFailureResponse } from './response-envelope.js'
-import {
-  envelopeId, isAppRequestGrantParams, isControlMethod, isFsPathWithRecursiveParams, isFsReaddirParams,
-  isFsReadFileParams, isFsRenameParams, isFsStatParams, isFsWriteFileParams,
-  isIdPublicKeyParams, isIdSignParams,
-  isNetCloseParams, isNetConnectParams, isNetSetKeepAliveParams, isNetSetNoDelayParams,
-  isNetUdpBindParams, isRequestEnvelope, type RequestGrantCtx
-} from './ipc-validation.js'
-import type {
-  PortDeliveryFrame, PortLike, PortPair, PortTransport, SocketDescriptor, UdpSocketDescriptor
-} from './port-transport.js'
-import type { FailableTcpSocket } from '../handles/handle-contracts.js'
-import type { CapabilityRequest, RequestEnvelope, ResponseEnvelope } from '../../contracts/index.js'
-import { LIMITS } from '../../contracts/index.js'
+import { dispatchApp } from './dispatch-app.js'
+import { dispatchFs } from './dispatch-fs.js'
+import type { FsTransport } from './dispatch-fs.js'
+import { dispatchId } from './dispatch-id.js'
+import { dispatchNet } from './dispatch-net.js'
+import { envelopeId, isControlMethod, isRequestEnvelope, type RequestGrantCtx } from './ipc-validation.js'
+import type { ControlEvent, PortLike, PortPair, PortTransport } from './port-transport.js'
+import type { RequestEnvelope, ResponseEnvelope } from '../../contracts/index.js'
 
 export { CONTROL_CHANNEL, PORT_CHANNEL }
 export type {
@@ -59,86 +51,19 @@ export type {
   NetConnectParams, NetCloseParams, NetSetKeepAliveParams, NetSetNoDelayParams, NetUdpBindParams, RequestGrantCtx
 } from './ipc-validation.js'
 export type {
-  PortDeliveryFrame, PortLike, PortPair, PortTransport, SocketDescriptor, UdpSocketDescriptor
+  ControlEvent, PortDeliveryFrame, PortLike, PortPair, PortTransport, SocketDescriptor, TcpServerDescriptor,
+  UdpSocketDescriptor
 } from './port-transport.js'
-
-export interface ControlEvent {
-  readonly senderFrame: PortDeliveryFrame | null
-}
+export type { FsControlMethod, FsHandleDescriptor, FsTransport } from './dispatch-fs.js'
 
 /**
- * Everything net.connect and net.connectSecure share once the broker has
- * already handed back an acquired `FailableTcpSocket`: mint a port pair,
- * wire the byte-pump relay, deliver the port to the calling frame (or
- * abandon and release the handle if that fails), and return the plain
- * descriptor. The two control methods differ only in WHICH broker method
- * produced `socket` and which grant authorised it -- both dead ends by the
- * time this runs -- so this is one implementation of "wire an acquired TCP
- * socket to the renderer", not two copies drifting apart
- * (code-guidelines.md Rule 3).
+ * One request, dispatched to `broker` with the origin THIS FUNCTION derived
+ * -- never one from `payload`. Routes by capability prefix to
+ * ./dispatch-app.ts, ./dispatch-fs.ts, ./dispatch-id.ts and ./dispatch-net.ts
+ * -- each case group below narrows `method` to that module's own slice of
+ * `ControlMethod`, so the call is exactly as type-checked as the single
+ * switch this replaced.
  */
-async function deliverTcpSocket (
-  origin: string,
-  socket: FailableTcpSocket,
-  event: ControlEvent,
-  transport: PortTransport
-): Promise<SocketDescriptor> {
-  const pair = transport.createPortPair()
-  // Owns everything mechanical about relaying this socket's bytes in
-  // both directions, registering it for net.close, and releasing it
-  // exactly once -- see ./socket-relay.ts. What stays here is only
-  // what is security-relevant: the transport check above, the origin
-  // re-derivation below, and the port delivery itself.
-  const relay = createSocketRelay({
-    origin,
-    socket,
-    port: pair.port1,
-    registry: transport.registry,
-    readWindowBytes: LIMITS.readWindowBytes,
-    writeWindowBytes: LIMITS.writeWindowBytes
-  })
-
-  // If the port never reaches the frame, the app never learns this
-  // socket's id -- the descriptor below is not returned -- so it can
-  // never call net.close for it either. Releasing it here is the only
-  // remaining chance: handle-contracts.ts's destroy rule is that a
-  // resource is released exactly once, ALWAYS, "including when the
-  // acquisition that would have registered the handle is itself
-  // refused... otherwise one fd leaks per attempt against a limit an
-  // attacker can hit in a loop". A frame that navigated or was disposed
-  // between this request and this line is ordinary, not adversarial.
-  const abandon = async (reason: string): Promise<never> => {
-    // stop(), not a bare cleanup(): cleanup() alone unregisters and closes
-    // the port but leaves the pump free to still be mid-pumpLoop, reading
-    // the OS socket and posting to a port that was just closed.
-    relay.stop('internal')
-    try {
-      await socket.close()
-    } catch {
-      // The handle table is the owner of record and has already been told
-      // to release; a failure here leaves nothing further to do.
-    }
-    throw fail('internal', reason)
-  }
-
-  await deliverPort({
-    origin,
-    handleId: socket.id,
-    frame: event.senderFrame,
-    port2: pair.port2,
-    abandon
-  })
-
-  return {
-    id: socket.id,
-    remoteAddress: socket.remoteAddress,
-    remotePort: socket.remotePort,
-    localAddress: socket.localAddress,
-    localPort: socket.localPort
-  }
-}
-
-/** One request, dispatched to `broker` with the origin THIS FUNCTION derived -- never one from `payload`. */
 async function dispatch (
   broker: Broker,
   origin: string,
@@ -146,159 +71,52 @@ async function dispatch (
   payload: unknown,
   event: ControlEvent,
   transport: PortTransport | undefined,
-  requestGrantCtx: RequestGrantCtx | undefined
+  requestGrantCtx: RequestGrantCtx | undefined,
+  fsTransport: FsTransport | undefined
 ): Promise<unknown> {
   if (!isControlMethod(method)) throw fail('invalid', `unknown control method: ${method}`)
 
   switch (method) {
     case 'app.manifest':
-      return await broker.app.manifest(origin)
     case 'app.grants':
-      return await broker.app.grants(origin)
-    // `capability` is not re-validated here (Rule 3: request-grant.ts's
-    // isCapabilityKind is the one check). Only capability/patterns cross,
-    // never the rest of `payload`, even one naming its own `origin` (T3).
-    case 'app.requestGrant': {
-      if (!isAppRequestGrantParams(payload)) throw fail('invalid', 'app.requestGrant requires { capability: string, patterns?: string[] }')
-      if (requestGrantCtx?.requestGrant === undefined) throw fail('internal', 'requestGrant is not available -- request-grant subsystem failed to start')
-      const request: CapabilityRequest = payload.patterns === undefined
-        ? { capability: payload.capability }
-        : { capability: payload.capability, patterns: payload.patterns }
-      return await requestGrantCtx.requestGrant(origin, request)
-    }
-    case 'fs.readFile': {
-      if (!isFsReadFileParams(payload)) throw fail('invalid', 'fs.readFile requires { path: string }')
-      return await broker.fs.readFile(origin, payload.path)
-    }
-    case 'fs.writeFile': {
-      if (!isFsWriteFileParams(payload)) throw fail('invalid', 'fs.writeFile requires { path: string, data: Uint8Array }')
-      await broker.fs.writeFile(origin, payload.path, payload.data)
-      return undefined
-    }
-    case 'fs.mkdir': {
-      if (!isFsPathWithRecursiveParams(payload)) throw fail('invalid', 'fs.mkdir requires { path: string, recursive?: boolean }')
-      await broker.fs.mkdir(origin, payload.path, payload.recursive === undefined ? undefined : { recursive: payload.recursive })
-      return undefined
-    }
-    case 'fs.readdir': {
-      if (!isFsReaddirParams(payload)) throw fail('invalid', 'fs.readdir requires { path: string }')
-      return await broker.fs.readdir(origin, payload.path)
-    }
-    case 'fs.stat': {
-      if (!isFsStatParams(payload)) throw fail('invalid', 'fs.stat requires { path: string }')
-      return await broker.fs.stat(origin, payload.path)
-    }
-    case 'fs.rm': {
-      if (!isFsPathWithRecursiveParams(payload)) throw fail('invalid', 'fs.rm requires { path: string, recursive?: boolean }')
-      await broker.fs.rm(origin, payload.path, payload.recursive === undefined ? undefined : { recursive: payload.recursive })
-      return undefined
-    }
-    case 'fs.rename': {
-      if (!isFsRenameParams(payload)) throw fail('invalid', 'fs.rename requires { from: string, to: string }')
-      await broker.fs.rename(origin, payload.from, payload.to)
-      return undefined
-    }
-    // id.publicKey/sign carry no port transport of their own -- a plain
-    // Uint8Array response, exactly fs.readFile's shape, unlike net.connect's
-    // below.
-    case 'id.publicKey': {
-      if (!isIdPublicKeyParams(payload)) throw fail('invalid', 'id.publicKey requires { curve: string }')
-      return await broker.id.publicKey(origin, { curve: payload.curve })
-    }
-    case 'id.sign': {
-      if (!isIdSignParams(payload)) throw fail('invalid', 'id.sign requires { curve: string, payload: Uint8Array }')
-      return await broker.id.sign(origin, { curve: payload.curve, payload: payload.payload })
-    }
-    case 'net.connect': {
-      if (!isNetConnectParams(payload)) throw fail('invalid', 'net.connect requires { host: string, port: number }')
-      if (transport === undefined) throw fail('internal', 'no port transport configured for this broker')
-      const socket = await broker.net.connect(origin, { host: payload.host, port: payload.port })
-      return await deliverTcpSocket(origin, socket, event, transport)
-    }
-    // A SIBLING of net.connect above, not a variant: the broker method
-    // (checked against the separate https.connect grant and dialled via
-    // node:tls -- ../net-capability.ts's own connectSecure) is the only
-    // thing that differs. `broker.net.connectSecure` resolves to the exact
-    // same FailableTcpSocket shape net.connect does, so everything past
-    // that call -- the port pair, the byte-pump relay, the port delivery,
-    // the descriptor -- is deliverTcpSocket, unchanged.
-    case 'net.connectSecure': {
-      if (!isNetConnectParams(payload)) throw fail('invalid', 'net.connectSecure requires { host: string, port: number }')
-      if (transport === undefined) throw fail('internal', 'no port transport configured for this broker')
-      const socket = await broker.net.connectSecure(origin, { host: payload.host, port: payload.port })
-      return await deliverTcpSocket(origin, socket, event, transport)
-    }
-    case 'net.udpBind': {
-      if (!isNetUdpBindParams(payload)) throw fail('invalid', 'net.udpBind requires { port: number }')
-      if (transport === undefined) throw fail('internal', 'no port transport configured for this broker')
-      const socket = await broker.net.udpBind(origin, { port: payload.port })
-
-      const pair = transport.createPortPair()
-      const relay = createDatagramRelay({
-        origin,
-        socket,
-        port: pair.port1,
-        registry: transport.registry,
-        inboundWindow: LIMITS.inboundDatagramWindow,
-        inboundWindowBytes: LIMITS.inboundDatagramWindowBytes,
-        outboundWindow: LIMITS.outboundDatagramWindow
-      })
-
-      const abandon = async (reason: string): Promise<never> => {
-        relay.stop('internal')
-        try {
-          await socket.close()
-        } catch {
-          // As net.connect's: the handle table already owns the release.
-        }
-        throw fail('internal', reason)
-      }
-
-      await deliverPort({
-        origin,
-        handleId: socket.id,
-        frame: event.senderFrame,
-        port2: pair.port2,
-        abandon
-      })
-
-      const descriptor: UdpSocketDescriptor = {
-        id: socket.id,
-        localAddress: socket.localAddress,
-        localPort: socket.localPort
-      }
-      return descriptor
-    }
-    case 'net.close': {
-      if (!isNetCloseParams(payload)) throw fail('invalid', 'net.close requires { id: string }')
-      // Idempotent, silent no-op for an id this origin was never handed --
-      // matching TcpSocket.close()'s own contract (handle-contracts.md's
-      // "Common shape" section) -- rather than distinguishing "wrong origin"
-      // from "already gone", either of which would let an app probe for
-      // handles it does not hold.
-      const entry = transport?.registry.get(origin, payload.id)
-      if (entry !== undefined) await entry.close()
-      return undefined
-    }
-    case 'net.setNoDelay': {
-      if (!isNetSetNoDelayParams(payload)) throw fail('invalid', 'net.setNoDelay requires { id: string, on: boolean }')
-      // Same T11c ownership check and same silent-no-op contract as
-      // net.close above, over the same registry -- a handle id from one
-      // origin means nothing presented by another.
-      const entry = transport?.registry.get(origin, payload.id)
-      // 'invalid', not the silent no-op an unknown id gets: the app HOLDS this
-      // handle, so calling a TCP-only option on it is its own bug rather than
-      // a probe for handles it does not have, and telling it so leaks nothing.
-      if (entry?.kind === 'udp') throw fail('invalid', 'setNoDelay is not available on a UDP socket')
-      if (entry !== undefined) await entry.setNoDelay(payload.on)
-      return undefined
-    }
-    case 'net.setKeepAlive': {
-      if (!isNetSetKeepAliveParams(payload)) throw fail('invalid', 'net.setKeepAlive requires { id: string, on: boolean }')
-      const entry = transport?.registry.get(origin, payload.id)
-      if (entry?.kind === 'udp') throw fail('invalid', 'setKeepAlive is not available on a UDP socket')
-      if (entry !== undefined) await entry.setKeepAlive(payload.on, payload.initialDelayMs)
-      return undefined
+    case 'app.requestGrant':
+      return await dispatchApp(broker, origin, method, payload, requestGrantCtx)
+    case 'fs.readFile':
+    case 'fs.writeFile':
+    case 'fs.mkdir':
+    case 'fs.readdir':
+    case 'fs.stat':
+    case 'fs.rm':
+    case 'fs.rename':
+    case 'fs.open':
+    case 'fs.read':
+    case 'fs.write':
+    case 'fs.fstat':
+    case 'fs.truncate':
+    case 'fs.sync':
+    case 'fs.close':
+      return await dispatchFs(broker, origin, method, payload, fsTransport)
+    case 'id.publicKey':
+    case 'id.sign':
+      return await dispatchId(broker, origin, method, payload)
+    case 'net.connect':
+    case 'net.connectSecure':
+    case 'net.udpBind':
+    case 'net.listen':
+    case 'net.close':
+    case 'net.setNoDelay':
+    case 'net.setKeepAlive':
+    case 'net.lookup':
+      return await dispatchNet(broker, origin, method, payload, event, transport)
+    default: {
+      // Exhaustiveness check: if ControlMethod (ipc-validation.ts) ever
+      // gains a member no case above names, `method` is not assignable to
+      // `never` here and THIS LINE FAILS TO COMPILE -- the guard A185's
+      // brief asked for, because nothing else in this switch does (no
+      // `assertNever`, no keyed `Record`) and a missed case would otherwise
+      // resolve silently to `undefined` instead of a compile error.
+      const unrouted: never = method
+      throw fail('internal', `unrouted control method: ${unrouted as string}`)
     }
   }
 }
@@ -342,9 +160,10 @@ const ALLOW_ALL_LIMITER: RateLimiter = { tryConsume: () => true }
  * one; dispatch() throws 'internal' if a call that needs it is ever made
  * without one, which is a wiring bug, not a capability decision.
  *
- * `limiter` and `requestGrantCtx` are optional the same way (never
- * throttled; 'internal' from dispatch() if app.requestGrant runs without
- * one) -- real wiring always supplies both, see `brokerIpcSubsystem`.
+ * `limiter`, `requestGrantCtx` and `fsTransport` are optional the same way
+ * (never throttled; 'internal' from dispatch() if a call needing one of the
+ * last two runs without it) -- real wiring always supplies every one of
+ * them, see `brokerIpcSubsystem`.
  */
 export async function handleControlRequest (
   broker: Broker,
@@ -352,7 +171,8 @@ export async function handleControlRequest (
   envelope: RequestEnvelope<unknown>,
   transport?: PortTransport,
   limiter?: RateLimiter,
-  requestGrantCtx?: RequestGrantCtx
+  requestGrantCtx?: RequestGrantCtx,
+  fsTransport?: FsTransport
 ): Promise<ResponseEnvelope<unknown>> {
   // The envelope itself is untrusted, not just its payload. Reading
   // `envelope.id` off a null or non-object value throws a TypeError straight
@@ -378,7 +198,10 @@ export async function handleControlRequest (
   }
 
   try {
-    const result = await withTimeout(dispatch(broker, origin, envelope.method, envelope.payload, event, transport, requestGrantCtx), envelope.timeoutMs)
+    const result = await withTimeout(
+      dispatch(broker, origin, envelope.method, envelope.payload, event, transport, requestGrantCtx, fsTransport),
+      envelope.timeoutMs
+    )
     return { id: envelope.id, ok: true, result }
   } catch (error) {
     return toFailureResponse(envelope.id, error)
@@ -393,9 +216,17 @@ export interface IpcMainLike {
   ): void
 }
 
-/** Thin wiring: one `ipcMain.handle` registration over `handleControlRequest`, sharing one `PortTransport` and `RateLimiter` across every call. */
-export function registerBrokerIpc (ipc: IpcMainLike, broker: Broker, transport: PortTransport, limiter?: RateLimiter, requestGrantCtx?: RequestGrantCtx): void {
-  ipc.handle(CONTROL_CHANNEL, async (event, envelope) => await handleControlRequest(broker, event, envelope, transport, limiter, requestGrantCtx))
+/** Thin wiring: one `ipcMain.handle` registration over `handleControlRequest`, sharing one `PortTransport`, `FsTransport` and `RateLimiter` across every call. */
+export function registerBrokerIpc (
+  ipc: IpcMainLike,
+  broker: Broker,
+  transport: PortTransport,
+  limiter?: RateLimiter,
+  requestGrantCtx?: RequestGrantCtx,
+  fsTransport?: FsTransport
+): void {
+  ipc.handle(CONTROL_CHANNEL, async (event, envelope) =>
+    await handleControlRequest(broker, event, envelope, transport, limiter, requestGrantCtx, fsTransport))
 }
 
 /**
@@ -422,7 +253,26 @@ export function registerSyncFsIpc (ipc: IpcMainOnLike, policy: SyncFsPolicy, lim
 function realPortPair (): PortPair {
   const { port1, port2 } = new MessageChannelMain()
   const wrapped: PortLike = {
-    postMessage: (message) => { port1.postMessage(message) },
+    // `transfer` is `readonly unknown[]` at this structural boundary
+    // (./port-transport.ts's own PortPair.port2, `unknown` for the same
+    // reason) but is ALWAYS, in production, an array of this module's own
+    // freshly-minted MessagePortMain values -- the only thing anything in
+    // this file ever puts in one (server-relay.ts's AcceptedMessage.port,
+    // the sole BrokerToRendererMessage member that carries a transferable
+    // -- contracts/ipc.ts's own header rule 1). Cast at this one real-
+    // Electron call site rather than widening MessagePortMain's own
+    // `.postMessage` signature.
+    // PASSING `undefined` AS THE TRANSFER LIST IS NOT THE SAME AS OMITTING
+    // IT. Electron's MessagePortMain binding validates the argument when it
+    // is present at all, so `postMessage(message, undefined)` throws
+    // "transferables must be an array of MessagePorts" -- and that is every
+    // ordinary data message, not just an accept. A plain object PortLike
+    // accepts `undefined` happily, so unit tests cannot see this; the real
+    // e2e caught it as every socket byte pump failing at once.
+    postMessage: (message, transfer) => {
+      if (transfer === undefined) port1.postMessage(message)
+      else port1.postMessage(message, transfer as MessagePortMain[])
+    },
     onMessage: (listener) => { port1.on('message', (event) => { listener(event.data) }) },
     onClose: (listener) => { port1.on('close', listener) },
     close: () => { port1.close() }
@@ -462,6 +312,7 @@ export const brokerIpcSubsystem: Subsystem = {
       bind: bindUdp,
       listen: listenTcp,
       resolve: resolveHost,
+      resolveLookup,
       now: realNow,
       fs: nodeFs(ctx.app.getPath('userData')),
       ledgerStorage: nodeLedgerStorage(ctx.app.getPath('userData')),
@@ -473,6 +324,11 @@ export const brokerIpcSubsystem: Subsystem = {
       }
     }
     const transport: PortTransport = { createPortPair: realPortPair, registry: createPortRegistry() }
+    // fs.open's own per-origin lookup (A184) -- the same generic
+    // createPortRegistry `transport.registry` above uses, over
+    // FailableFileHandle instead of RegisteredSocket. One instance for the
+    // subsystem's whole lifetime, exactly like `transport`.
+    const fsTransport: FsTransport = { registry: createPortRegistry() }
     const limiter = createTokenBucketLimiter({
       capacity: CONTROL_RATE_LIMIT_CAPACITY,
       refillPerSecond: CONTROL_RATE_LIMIT_REFILL_PER_SECOND,
@@ -485,7 +341,7 @@ export const brokerIpcSubsystem: Subsystem = {
     // instance rather than a second, disagreeing one.
     publishBroker(ctx, broker)
     // `ctx` itself, not a captured `ctx.requestGrant` -- see RequestGrantCtx's own doc (ipc-validation.ts) for why.
-    registerBrokerIpc(ipcMain, broker, transport, limiter, ctx)
+    registerBrokerIpc(ipcMain, broker, transport, limiter, ctx, fsTransport)
 
     // ./sync-fs-policy.ts's createSyncFsPolicy calls straight through to
     // broker.fs.confineSync -- ADR-0016's synchronous grant-check/

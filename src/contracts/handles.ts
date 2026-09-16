@@ -225,6 +225,21 @@ export interface UdpSocket extends Handle {
   readonly refusals: ReadableStream<SendRefusal>
 }
 
+/**
+ * One address `OrivonNet.lookup` resolved a hostname to (d-0030).
+ *
+ * `family` uses this file's own `Datagram.family` string convention
+ * ('IPv4' | 'IPv6'), not Node's numeric `4 | 6` -- this layer does not
+ * mirror Node's shapes (ADR-0008); presenting `dns.lookup`'s numeric
+ * convention is `orivon-node-shim`'s job, one layer up, the same kind of
+ * deviation `FileHandle`'s own doc comment already names for the file
+ * cursor.
+ */
+export interface LookupAddress {
+  readonly address: string
+  readonly family: 'IPv4' | 'IPv6'
+}
+
 export interface FileStat {
   size: number
   isFile: boolean
@@ -260,8 +275,16 @@ export interface FileStat {
  * EXCEPTION TO THE REVOCATION CASCADE: a FileHandle obtained through
  * orivon.fs.userSelected is authorised by the user's one-time OS picker
  * choice, not by the standing `fs` grant. Revoking `fs` does NOT close it --
- * but it does not survive an app restart either. A session-scoped exception,
- * not a standing grant of its own.
+ * that half is unchanged.
+ *
+ * THE PICKED PATH PERSISTS ACROSS AN APP RESTART (owner decision, D-0007,
+ * 2026-09-09) -- REVERSING this paragraph's own earlier claim that it did
+ * not. It appears in the settings permissions list like any other grant and
+ * is revocable from there like one, even though no `fs` grant authorised
+ * it. Forgetting the choice at app close would mean a torrent app asks for
+ * the same downloads folder on every single launch, which trains a person
+ * to click through a picker dialog without reading it -- the opposite of
+ * what asking at all is for.
  */
 export interface FileHandle extends Handle {
   /** Short read at EOF. */
@@ -277,6 +300,53 @@ export interface FileHandle extends Handle {
   truncate(length: number): Promise<void>
   /** Flushes to durable storage. */
   sync(): Promise<void>
+}
+
+/**
+ * A folder the user picked through `orivon.fs.userSelected({ directory:
+ * true })` -- the other shape that picker can return, alongside
+ * `FileHandle` for a picked file. See that method's own doc comment in
+ * ./capability-api.js for why the two are separate interfaces rather than
+ * one shape wearing two hats.
+ *
+ * Rooted at wherever the OS folder picker chose -- never the app's own
+ * files directory (`OrivonFs`), and never a path the app itself supplied.
+ * Every path this handle's own methods take is resolved and confined to
+ * that root IN THE BROKER, never trusted from the renderer, exactly as
+ * `OrivonFs` and `FileHandle` already confine theirs: `..` segments,
+ * absolute paths, and symlinks that would escape the root are rejected
+ * with 'denied' before any filesystem access (security-model.md T1/T10).
+ * `path` is always relative to THIS root, never to the app's files
+ * directory; omitting it on `readdir`/`stat` targets the root itself.
+ *
+ * SAME METHOD SET AS `OrivonFs`, MINUS `readFileSync` AND `userSelected` --
+ * deliberately, not by omission. `readFileSync`'s one narrow exception
+ * (`OrivonFs.readFileSync`'s own doc comment) is justified by a ported
+ * dependency reading ITS OWN startup config before anything else runs; a
+ * user-picked folder is never that, so the exception has nothing to answer
+ * here. `userSelected` nested inside an already-picked folder has no
+ * meaning -- there is no second OS dialog to open relative to the first.
+ * `open` is the one most worth having: it is what lets a torrent app write
+ * pieces positionally into a chosen downloads folder, the motivating case
+ * for this handle existing at all (D-0007).
+ *
+ * PERSISTENCE AND REVOCATION -- read together with `FileHandle`'s own doc
+ * comment, which carries the full D-0007 reasoning; not repeated a second
+ * time here. The picked root survives an app restart and is revocable from
+ * the settings permissions list, and is NOT in the revocation cascade of
+ * any `fs` grant -- the user's picker choice authorised it, not that
+ * grant.
+ */
+export interface DirectoryHandle extends Handle {
+  readdir(path?: string): Promise<readonly string[]>
+  stat(path?: string): Promise<FileStat>
+  mkdir(path: string, opts?: { recursive?: boolean }): Promise<void>
+  rm(path: string, opts?: { recursive?: boolean }): Promise<void>
+  rename(from: string, to: string): Promise<void>
+  readFile(path: string): Promise<Uint8Array>
+  writeFile(path: string, data: Uint8Array): Promise<void>
+  /** Positional access rooted inside this folder -- same shape as `OrivonFs.open`, for the same reason: piece N of a torrent lands at offset N * pieceLength, not appended sequentially. */
+  open(path: string, flags: string): Promise<FileHandle>
 }
 
 /**
