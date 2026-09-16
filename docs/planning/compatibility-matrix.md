@@ -1,8 +1,11 @@
 # App compatibility matrix
 
 **What is wired up right now, and the cheapest next lever.** Derived 2026-09-16 by reading the
-tree at `1352a57`, after seven merged PRs (#199-#205) built `net.listen`'s page half,
-`fs.open`, `orivon.net.lookup` (the capability `dns.lookup` shims onto) and their Node shapes.
+tree at `3bae6b2`, after the run that built `net.listen`'s page half, `fs.open`,
+`orivon.net.lookup` (the capability `dns.lookup` shims onto), their Node shapes, and both shapes
+of `fs.userSelected`. **Table 1 now has no partially-built row left:** every live capability is
+either complete Spec'd -> Broker -> Page, or one of the two rows excluded by owner decision, with
+`id.requestIdentity` the single remaining unbuilt entry.
 [`../architecture/app-compatibility.md`](../architecture/app-compatibility.md) owns *why the
 tiers exist*; this file owns *what works today*. If they disagree, that one is the design and
 this one is stale.
@@ -54,18 +57,16 @@ actually reach):
   entry -- **the old ⚠️-in-the-shim-column exception ("the shim entry exists to refuse, not to
   work") is closed**; the shim entry now works. `dns.resolve4`/`reverse`/`setServers`/... and
   every other `dns.*` member are still named refusals, unchanged.
-- **`fs.userSelected` (the folder picker) did NOT move: still ✅❌❌➖.** Verified directly against
-  the tree, not assumed: no `'fs.userSelected'` case anywhere in `dispatch-fs.ts`, no
-  `userSelected` method on the object `exposeOrivon` builds in `orivon-surface.ts`, and
-  `src/shim-electron/dialog.ts`'s `showOpenDialog` still throws `'not-built'` citing exactly
-  this. **This is deliberate, not an oversight the run ran out of time for:** `A167` item 2
-  recorded real judgment calls behind `d-0029`'s `DirectoryHandle` shape (return-type
-  cardinality, dropping `multiple` from the directory overload, mirroring `OrivonFs`'s own
-  method set rather than the web platform's traversal API) that the owner has not confirmed.
-  `fs.open` no longer blocks this row -- `FileHandle` is fully built -- so the one remaining
-  blocker is that confirmation, not more broker work. **PR #206, which would build this, is
-  OPEN, not merged, at this table's cut commit `1352a57` -- this row reports what `main` shows
-  today, not what is coming.**
+- **`fs.userSelected` moved further than any other row: ✅❌❌➖ -> ✅✅✅➖, in two steps.**
+  Verified against the tree, not inferred from the PRs that claimed it: `dispatch-fs.ts` now
+  carries the `'fs.userSelected'` case **and** eight `fs.dir*` methods, and `orivon-surface.ts`
+  exposes both `fsUserSelected` (files) and `fsUserSelectedDirectory` (a folder, resolving `null`
+  on cancel rather than rejecting). The previous derivation recorded this row as deliberately
+  unbuilt pending an owner wording checkpoint -- **that checkpoint closed (`d-0032`) and the
+  wiring followed.** What has NOT changed is `A167` item 2: `DirectoryHandle`'s method set is
+  still an unconfirmed AI recommendation, so the delivery mechanism is built against a shape the
+  owner has not ratified (A195). That is a real caveat and it is recorded in the row itself
+  rather than smoothed into a green cell.
 - **No other Table 1, 2, 3 or 5 row moved.** `id.requestIdentity`, `app.requestGrant`, every
   `net.connect`/`connectSecure`/`udpBind` row, the `electron` module family and the native-module
   question are exactly where the 2026-09-13 pass left them -- none of #199-#205 touched them.
@@ -121,7 +122,7 @@ every `dup` row automatically**; six rows survive it, and four of those were nev
 | `fs.readFileSync` | ✅ | ✅ | ✅ | ✅ | [ADR-0016](../decisions/ADR-0016-synchronous-file-reads-are-permitted.md), built end to end over `ipcRenderer.sendSync` (#124). Grant check and path confinement are shared with the async path; **the per-origin in-flight budget is not** -- A112 |
 | `fs.mkdir` / `readdir` / `stat` / `rm` / `rename` | ✅ | ✅ | ✅ | ✅ | PROVISIONAL markers removed by the Phase 1 contracts PR; built in #132 |
 | `fs.open` (`FileHandle`) | ✅ | ✅ | ✅ | ✅ | Broker (`fs-capability.ts`'s `open`), dispatch and preload landed in #204; Node shape (`node-fs-handle.ts`, a Node-style cursor over the contract's explicit-position reads/writes) in #205. **One named limitation, not a silent gap:** `readable()`/`writable()` are built in the broker but have no control-channel case and are not on `window.orivon` -- A184. `createReadStream`/`createWriteStream` refuse loudly citing it rather than faking a stream |
-| `fs.userSelected` (picker) | ✅ | ❌ | ❌ | ➖ | The only route outside the app dir. **No longer blocked by a missing `FileHandle`** -- that is built (row above). What blocks it now is an owner confirmation: `d-0029`'s `DirectoryHandle` shape carries real judgment calls (return cardinality, dropping `multiple`, mirroring `OrivonFs`'s own method set) the owner has not yet confirmed -- A167 item 2. **PR #206 would build this and is open, not merged**, at this table's cut commit |
+| `fs.userSelected` (picker) | ✅ | ✅ | ✅ | ➖ | **The only route outside the app dir, and it now works in BOTH shapes.** Files landed in #206 (`dispatch-fs.ts`'s `'fs.userSelected'` case, `orivon-surface.ts`'s `fsUserSelected`); the folder shape in #218 -- all nine `DirectoryHandle` members over eight `fs.dir*` control-channel methods, with `fs.dirOpen` routing through **the same `registerFileHandle` mechanism `fs.open` already built**, asserted by its own test rather than left to convention. The picker choice IS the consent; a picked path persists and is revocable from the settings list beside that app's other permissions (`D-0007`), and its wording names what a folder grant really costs (`d-0032`). **One caveat that is not a gap in the wiring:** `DirectoryHandle`'s own METHOD SET is still an unconfirmed AI recommendation (A167 item 2, A195) -- the delivery is built, the shape is not owner-confirmed |
 | `id.publicKey` / `sign` | ✅ | ✅ | ✅ | ➖ | Wired end to end, e2e-verified (#112). P-256 ECDSA only; secp256k1/Schnorr is the separate A44 question |
 | `id.requestIdentity` | ✅ | ❌ | ❌ | ➖ | The last lane of Phase 4, ready to dispatch. `src/nostr/nip07.ts`'s real wiring calls this and cannot reach a page until it exists -- A111 |
 | `app.manifest` / `grants` | ✅ | ✅ | ✅ | ➖ | Backs Electron's `app.*` -- see Table 2 |
@@ -179,7 +180,7 @@ and a gap are not the same cell:
 |---|---|---|
 | `app.getPath('userData')` | the app's own confined `fs` root | `app.ts` -- built |
 | `app.getVersion()` | `orivon.app.manifest()` | `app.ts` -- built |
-| `dialog.showOpenDialog` | `orivon.fs.userSelected` | `dialog.ts` -- **present but throws** (`'not-built'`): the broker does not implement `fs.userSelected` yet (Table 1) |
+| `dialog.showOpenDialog` | `orivon.fs.userSelected` | `dialog.ts` -- **present but throws, for a DIFFERENT reason than before.** The old refusal said the broker did not implement `fs.userSelected`; that went false in #206/#218 and the file itself already says so. The real remaining gap is a shape mismatch: `showOpenDialog` returns raw host paths (`filePaths: string[]`), while `userSelected` resolves an opaque handle and deliberately never exposes a host path to app code -- A187 |
 | `ipcRenderer.invoke` / `ipcMain.handle`, `.on`/`.send` | a local in-sandbox message bus, no broker round-trip | `ipc.ts` -- built |
 | `BrowserWindow`, `Menu`, `Tray` | nothing -- desktop-shell surface | `desktop-shell.ts` -- refuses by design, tested |
 
