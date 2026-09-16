@@ -150,6 +150,12 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     return ledger.manifestFor(key) !== undefined
   }
 
+  function hasGrantsSync (origin: string): boolean {
+    const key = originFromUrl(origin)
+    if (key === null) return false
+    return ledger.grantsFor(key).length > 0
+  }
+
   /**
    * Re-throws the version-floor write failure (the one thing
    * `GrantLedger.registerApp` throws) rather than swallowing it, but as an
@@ -397,7 +403,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
   }
 
   return {
-    app: { manifest, grants, isRegisteredSync, registeredOriginsSync, persistedAppsSync, hydrateFromPinnedManifest, pickedPaths: pickedPathsFor },
+    app: { manifest, grants, isRegisteredSync, hasGrantsSync, registeredOriginsSync, persistedAppsSync, hydrateFromPinnedManifest, pickedPaths: pickedPathsFor },
     net,
     id,
     fs,

@@ -43,6 +43,20 @@ import {
 import { DEFAULT_ACTION_TIMEOUT_MS } from './launch-electron.mjs'
 import { originFromUrl } from '../src/broker/policy/origin.js'
 import { partitionFor } from '../src/broker/grants/origin-hash.js'
+import type { DevGrantRequest } from '../src/main/dev-grant.js'
+import type { Grant, Manifest } from '../src/contracts/index.js'
+
+/** The smallest manifest the dev-grant hook will register. `id` is the
+ * least interesting capability on purpose: this file is about WHICH
+ * session a granted tab lands in, not about what the grant permits. */
+const FIXTURE_MANIFEST: Manifest = {
+  orivonApiVersion: 0,
+  id: 'app.orivon.partition-fixture',
+  name: 'Session-partition fixture',
+  version: '0.1.0',
+  entry: 'index.html',
+  capabilities: {}
+}
 
 /** A trivial, single-page HTTP origin -- no fixture app, no manifest, this
  * test only needs two distinct real origins to navigate to. Mirrors
@@ -89,7 +103,7 @@ const WAIT_BUDGET_MS =
   APP_CLOSE_RACE_MS // teardown: app.close() race
 const TEST_TIMEOUT_MS = WAIT_BUDGET_MS + 20_000
 
-it('two tabs opened against two different origins use two different, correctly-named Electron session partitions, and wiping one leaves the other\'s storage untouched', async () => {
+it('two tabs opened against two GRANTED origins use two different, correctly-named Electron session partitions, and wiping one leaves the other\'s storage untouched', async () => {
   // Started outside runPhase, deliberately: a fixture-server startup failure
   // should surface as an uncaught test error, not a silently reported phase.
   const startedA = await startOriginServer('origin-a')
@@ -111,6 +125,32 @@ it('two tabs opened against two different origins use two different, correctly-n
 
       const windowsReady = await waitFor(() => (app as NonNullable<typeof app>).windows().length === 2)
       check('the shell reaches its launch-time window count', windowsReady, windowsReady ? undefined : `saw ${app.windows().length} window(s)`)
+
+
+      // ---- Grant both origins, because isolation follows CONSENT ----
+      // ADR-0018 (owner, 2026-09-16): a tab gets its own partition because
+      // the user granted that origin something, not because it is installed.
+      // Two ungranted localhost fixtures deliberately share the default
+      // session (A109 keeps the back button alive on ordinary browsing), so
+      // without this step there is nothing here left to observe.
+      const granted = await app.evaluate(async (_electron, requests: DevGrantRequest[]) => {
+        const hook = (globalThis as unknown as { __orivonDevGrant?: (r: DevGrantRequest) => Promise<Grant> }).__orivonDevGrant
+        if (typeof hook !== 'function') return { installed: false as const }
+        for (const request of requests) await hook(request)
+        return { installed: true as const }
+      }, [originA, originB].map((url) => ({
+        // The hook keys the ledger by canonical origin; these are full URLs.
+        origin: originFromUrl(url) as string,
+        manifest: FIXTURE_MANIFEST,
+        capability: 'id' as const,
+        patterns: []
+      })) satisfies DevGrantRequest[])
+      check(
+        'the developer-only grant hook is installed in this build (npm run test:e2e builds with ORIVON_ENABLE_DEV_GRANT=1)',
+        granted.installed,
+        granted.installed ? undefined : 'globalThis.__orivonDevGrant was not a function in the main process'
+      )
+      if (!granted.installed) throw new Error('dev-grant hook missing -- was this built via npm run test:e2e?')
 
       const chrome = findChrome(app)
 

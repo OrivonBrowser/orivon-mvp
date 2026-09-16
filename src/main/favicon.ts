@@ -280,3 +280,48 @@ export async function fetchFaviconDataUrlCached (url: string, pageUrl: string): 
   if (result !== null) faviconCache.set(url, result)
   return result
 }
+
+/** The mutable favicon slice of a tab record. `TabRecord` (tab-types.ts)
+ * satisfies this structurally, so nothing has to adapt it. */
+export interface FaviconTarget {
+  favicon: string | null
+  faviconOrigin: string | null
+  pendingFaviconUrl: string | null
+}
+
+/** Fetches the favicon for the first http(s) candidate in `favicons` and
+ * stores it on `target`, unless the tab has since closed or moved on to a
+ * different icon.
+ *
+ * `isStillCurrent` is evaluated AFTER the await, never before: that is the
+ * whole point of it. A fetch resolving once the tab has closed, or once a
+ * newer icon was requested, must not win. `pageUrl` is read at call time for
+ * the same reason -- 'page-favicon-updated' fires for the document currently
+ * committed in the view, and that document is what decides whether a
+ * loopback candidate may be fetched at all (isSafeFaviconUrl).
+ */
+export async function captureFaviconInto (
+  target: FaviconTarget,
+  favicons: readonly string[],
+  pageUrl: () => string,
+  isStillCurrent: () => boolean,
+  onUpdated: () => void
+): Promise<void> {
+  const sourceUrl = pickFaviconUrl(favicons)
+  if (sourceUrl === null) return
+
+  target.pendingFaviconUrl = sourceUrl
+  const dataUrl = await fetchFaviconDataUrlCached(sourceUrl, pageUrl())
+
+  if (!isStillCurrent() || target.pendingFaviconUrl !== sourceUrl) return
+  if (dataUrl === null) return
+
+  target.favicon = dataUrl
+  try {
+    target.faviconOrigin = new URL(sourceUrl).origin
+  } catch {
+    target.faviconOrigin = null
+  }
+  onUpdated()
+}
+

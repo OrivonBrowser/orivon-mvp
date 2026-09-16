@@ -65,3 +65,8 @@ spike/results/
 # enforces this. Example files are allowed and are meant to be committed.
 *.env
 !*.env.example
+
+# codeArbiter regenerates this shim per host and embeds an absolute path in
+# it (its own header says edits are overwritten), so it is local state, not
+# source. .githooks/pre-commit IS tracked and has no absolute paths.
+.githooks/pre-push

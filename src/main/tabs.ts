@@ -13,13 +13,14 @@
 // doc comment for the residual this catches late, not early).
 import type { WebContentsView, View } from 'electron'
 import { join } from 'node:path'
-import { fetchFaviconDataUrlCached, pickFaviconUrl, shouldClearFavicon } from './favicon.js'
+import { captureFaviconInto } from './favicon.js'
 import { parseOmniboxInput, sanitizeDirectUrl } from './omnibox.js'
 import type { SubsystemContext } from './registry.js'
-import { appTabArgsFor, makeTabView, partitionChanged, partitionForTarget } from './tab-view.js'
+import { appTabArgsFor, makeTabView, partitionChanged, partitionForTarget, repartitionView, wireView } from './tab-view.js'
+import type { TabViewHost } from './tab-view.js'
 
 export type { TabState, TabsSnapshot, ShellState, Bounds } from './tab-types.js'
-import type { TabState, TabsSnapshot, Bounds } from './tab-types.js'
+import type { TabState, TabsSnapshot, Bounds, TabRecord } from './tab-types.js'
 
 /** The safe fallback for a REJECTED navigation (a dangerous typed scheme,
  * a bad window.open() URL, empty input) -- never the dashboard. Keeping
@@ -45,34 +46,6 @@ function makeTabId (): string {
   return `tab-${nextId++}`
 }
 
-interface TabRecord {
-  /** Mutable, not readonly: repartitionView() (see navigate()) replaces
-   * this with a fresh WebContentsView whenever a navigation changes the
-   * tab's origin -- Electron fixes a partition at construction, so
-   * changing it is only possible by swapping the whole view. */
-  view: WebContentsView
-  favicon: string | null
-  faviconOrigin: string | null
-  /** Guards a fetch that resolves after the tab already closed or
-   * navigated again -- only the record's own most recent request may
-   * write `favicon`. */
-  pendingFaviconUrl: string | null
-  /** The partition currently assigned to `view`, or undefined for the
-   * shell's own default session -- kept alongside `view` so navigate()
-   * can tell "did the origin actually change" without re-deriving it from
-   * `view.webContents.getURL()`, which may still reflect an in-flight
-   * navigation. */
-  partition: string | undefined
-  /** True only for a tab still showing the dashboard. Starts from
-   * createTab()'s own `isDashboard` decision; repartitionView() flips it
-   * to false, ONE-WAY, the moment a navigate() call sends this tab to
-   * real, different-origin content -- never re-derived from a URL a page
-   * could influence (see TabState.isNewTab's own doc comment: `this.
-   * dashboardUrl` is a plain http:// address in dev mode, which a page
-   * could otherwise steer an unrelated tab's `wc.getURL()` to match). */
-  isDashboardTab: boolean
-}
-
 export class TabManager {
   /** One record per tab -- replaces a bare `Map<string, WebContentsView>`
    * (build step 1) so favicon state and the view share one lifetime.
@@ -86,6 +59,8 @@ export class TabManager {
   private activeId: string | null = null
   private readonly listeners = new Set<(state: TabsSnapshot) => void>()
   private readonly preloadPath: string
+  /** The narrow surface tab-view.ts's per-view wiring calls back through. */
+  private readonly viewHost: TabViewHost
   private readonly newTabPreloadPath: string
 
   constructor (
@@ -112,6 +87,20 @@ export class TabManager {
      * remove either. README.md's design notes say what each is for. */
     private readonly ctx: SubsystemContext
   ) {
+    this.viewHost = {
+      preloadPath: join(import.meta.dirname, '../preload/app.js'),
+      contentView,
+      // A GETTER, not a captured value: ctx.broker may still be undefined
+      // when TabManager is constructed and be published afterwards. Reading
+      // it once here would pin 'no broker' for the process lifetime.
+      get broker () { return ctx.broker },
+      isActive: (id) => this.activeId === id,
+      emitState: () => { this.emitState() },
+      captureFavicon: async (id, record, favicons) => { await this.captureFavicon(id, record, favicons) },
+      forgetTab: (id) => { this.forgetTab(id, false) },
+      openTab: (url) => { this.createTab(url) },
+      getTabBounds
+    }
     this.preloadPath = join(import.meta.dirname, '../preload/app.js')
     this.newTabPreloadPath = join(import.meta.dirname, '../preload/newtab.js')
   }
@@ -176,7 +165,7 @@ export class TabManager {
       partition,
       isDashboardTab: isDashboard
     }
-    this.wireView(id, record)
+    wireView(this.viewHost, id, record)
 
     this.tabs.set(id, record)
     this.order.push(id)
@@ -187,118 +176,6 @@ export class TabManager {
     return id
   }
 
-  /** Every event a tab's WebContentsView needs wired -- shared by
-   * createTab() and repartitionView() (Rule 3): a swapped-in replacement
-   * view gets EXACTLY the same favicon/title/loading/crash handling and
-   * the same popup-to-new-tab redirect (T18) as a freshly created one,
-   * because as far as anything downstream (the chrome UI, a popup) can
-   * tell, it IS one. */
-  private wireView (id: string, record: TabRecord): void {
-    const wc = record.view.webContents
-    wc.on('page-title-updated', () => this.emitState())
-    wc.on('did-navigate', (_event, navigatedUrl: string) => {
-      if (shouldClearFavicon(record.faviconOrigin, navigatedUrl)) {
-        record.favicon = null
-        record.faviconOrigin = null
-      }
-      // Never for the dashboard: its own dev-mode URL is a real http(s)
-      // address (partitionChanged would otherwise see a "changed" origin on
-      // the dashboard's OWN first load, since its current partition is
-      // undefined) -- see createTab()'s isDashboard branch and this file's
-      // README-linked design notes for why that tab must stay unpartitioned.
-      if (!record.isDashboardTab) {
-        const swap = partitionChanged(navigatedUrl, record.partition, this.ctx.broker)
-        if (swap !== undefined) {
-          this.repartitionView(id, record, navigatedUrl, swap.to)
-          return
-        }
-      }
-      this.emitState()
-    })
-    wc.on('did-navigate-in-page', () => this.emitState())
-    wc.on('did-start-loading', () => this.emitState())
-    wc.on('did-stop-loading', () => this.emitState())
-    wc.on('page-favicon-updated', (_event, favicons: string[]) => {
-      // captureFavicon calls fetchFaviconDataUrl (favicon.ts), whose doc
-      // comment promises it never throws -- but a bare `void` here would
-      // still turn any future break of that promise into an unhandled
-      // rejection, and index.ts deliberately maps that to app.exit(1), so
-      // a favicon host controlled by any visited page could kill the whole
-      // browser. Same defence as update-check-runner.ts's afterReady and
-      // bookmarks.ts's pendingWrite.
-      void this.captureFavicon(id, record, favicons).catch((error) => {
-        console.error('[orivon] favicon capture failed:', error)
-      })
-    })
-    // A renderer crash or other unexpected teardown destroys the
-    // webContents without going through closeTab(). Without this, the
-    // id stays in `this.tabs`, and the NEXT emitState() -- fired by any
-    // OTHER tab's event -- calls .getURL() etc. on a destroyed native
-    // object and throws inside a main-process Electron callback. There
-    // is no top-level handler anywhere in this app (confirmed: no
-    // uncaughtException, no render-process-gone), so that throw exits
-    // the whole process -- matches the shape of electron/electron#19887.
-    // Cleaning the record out here, proactively, is what makes every
-    // `!isDestroyed()` guard below actually reachable rather than
-    // theatre: by the time anything else runs, a dead tab is already
-    // gone from `this.tabs`. repartitionView() strips this exact listener
-    // from the OLD view before closing it, specifically so this handler
-    // only ever fires for a tab that is GENUINELY gone.
-    wc.on('destroyed', () => { this.forgetTab(id, false) })
-
-    // T18: never let a tab open a real popup window -- route it to a new
-    // tab in this same shell instead.
-    wc.setWindowOpenHandler((details) => {
-      this.createTab(details.url)
-      return { action: 'deny' }
-    })
-  }
-
-  /** Swaps in a fresh WebContentsView for `record`, replacing whatever it
-   * currently shows -- the ONLY way to change a tab's Electron session
-   * partition after creation (Electron fixes `webPreferences.partition` at
-   * construction; there is no live "reassign session" API). Called from two
-   * places, both guarded by `partitionChanged` so neither fires for a same-
-   * origin navigation, a rejected/about:blank fallback or the dashboard:
-   * navigate() (a typed target, pre-fetch) and wireView()'s did-navigate
-   * handler (a redirect, clicked link, form submission or script navigation
-   * -- the target is only known once Chromium has already committed it).
-   * See this directory's README.md, `## Design notes`, for the residual
-   * that late catch leaves open.
-   *
-   * The swap still discards the old view's `navigationHistory` -- Electron
-   * gives no way to carry it across. That is survivable now only because
-   * ordinary browsing no longer swaps at all (A109, resolved 2026-09-15 by
-   * isolating installed apps and nothing else; see tab-view.ts's
-   * `partitionForTarget`). Entering or leaving an app still costs the back
-   * button, which is the narrow residual the owner accepted. */
-  private repartitionView (id: string, record: TabRecord, target: string, nextPartition: string | undefined): void {
-    const oldView = record.view
-    const wasActive = this.activeId === id
-
-    if (wasActive) this.contentView.removeChildView(oldView)
-
-    // This tab is not closing -- only its content is being replaced -- so
-    // the OLD view's own 'destroyed' listener (wired by wireView() above)
-    // must not reach forgetTab() when close() tears it down. Stripped
-    // BEFORE close(), not after: real Electron destruction, like this
-    // file's own test double, can fire it synchronously.
-    oldView.webContents.removeAllListeners('destroyed')
-    if (!oldView.webContents.isDestroyed()) oldView.webContents.close()
-
-    const newView = makeTabView(this.preloadPath, nextPartition, appTabArgsFor(target, this.ctx.broker))
-    record.view = newView
-    record.partition = nextPartition
-    record.isDashboardTab = false
-    this.wireView(id, record)
-
-    if (wasActive) {
-      this.contentView.addChildView(newView)
-      newView.setBounds(this.getTabBounds())
-    }
-
-    void newView.webContents.loadURL(target)
-  }
 
   closeTab (id: string): void {
     this.forgetTab(id, true)
@@ -391,7 +268,7 @@ export class TabManager {
 
     const swap = partitionChanged(target, record.partition, this.ctx.broker)
     if (swap !== undefined) {
-      this.repartitionView(id, record, target, swap.to)
+      repartitionView(this.viewHost, id, record, target, swap.to)
       return
     }
 
@@ -423,35 +300,17 @@ export class TabManager {
     return this.tabs.get(id)?.favicon ?? null
   }
 
-  /** Fetches the favicon for `favicons[0]` (the first http(s) candidate)
-   * and stores it on `record`, unless the tab has since closed or moved
-   * on to a different favicon request. */
+  /** Wires this tab's identity into favicon.ts's capture sequence: which
+   * document declared the icon, and whether this record is still the one
+   * the map holds by the time the fetch lands. */
   private async captureFavicon (id: string, record: TabRecord, favicons: string[]): Promise<void> {
-    const sourceUrl = pickFaviconUrl(favicons)
-    if (sourceUrl === null) return
-
-    record.pendingFaviconUrl = sourceUrl
-    // The page that DECLARED this icon, which is what decides whether a
-    // loopback candidate may be fetched at all (favicon.ts's isSafeFaviconUrl).
-    // Read here rather than passed in: 'page-favicon-updated' fires for the
-    // document currently committed in this view, which is exactly getURL().
-    const pageUrl = record.view.webContents.getURL()
-    const dataUrl = await fetchFaviconDataUrlCached(sourceUrl, pageUrl)
-
-    // The tab may have closed (removed from `this.tabs`) or navigated to
-    // a page with a different favicon (a newer request overwrote
-    // pendingFaviconUrl) while this fetch was in flight -- either way,
-    // this stale result must not win.
-    if (this.tabs.get(id) !== record || record.pendingFaviconUrl !== sourceUrl) return
-    if (dataUrl === null) return
-
-    record.favicon = dataUrl
-    try {
-      record.faviconOrigin = new URL(sourceUrl).origin
-    } catch {
-      record.faviconOrigin = null
-    }
-    this.emitState()
+    await captureFaviconInto(
+      record,
+      favicons,
+      () => record.view.webContents.getURL(),
+      () => this.tabs.get(id) === record,
+      () => { this.emitState() }
+    )
   }
 
   /** Rejected omnibox input (a dangerous scheme, or empty) never reaches
