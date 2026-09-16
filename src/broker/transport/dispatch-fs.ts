@@ -152,5 +152,17 @@ export async function dispatchFs (
       if (entry !== undefined) await entry.close()
       return undefined
     }
+    default: {
+      // Exhaustiveness check, same reasoning and shape as ./ipc.ts's own
+      // dispatch() and ./dispatch-net.ts's dispatchNet (A185): if
+      // FsControlMethod ever gains a member no case above names, `method` is
+      // not assignable to `never` and this line fails to compile, instead of
+      // the switch silently falling through and this function resolving
+      // `undefined` for an operation that never ran -- exactly what A185
+      // found for net.listen, and highest-risk here since seven of this
+      // run's new fs methods route through this file.
+      const unrouted: never = method
+      throw fail('internal', `unrouted fs control method: ${unrouted as string}`)
+    }
   }
 }
