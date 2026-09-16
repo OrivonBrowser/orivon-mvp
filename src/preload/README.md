@@ -102,19 +102,22 @@ the file's overall shape):
   the other side of `CONTROL_CHANNEL`. `app.manifest`, `app.grants`, `app.requestGrant`,
   `fs.readFile`, `fs.writeFile`, `fs.mkdir`/`readdir`/`stat`/`rm`/`rename`, `fs.open` and its
   handle-scoped siblings (`fs.read`/`write`/`fstat`/`truncate`/`sync`/`close`, A184),
-  `id.publicKey`, `id.sign`, `net.connect`, `net.connectSecure`, `net.udpBind`, `net.close`
-  (plus `net.setNoDelay`/`setKeepAlive`) are wired there; `fs.readFileSync` is wired the same way
-  but over its OWN channel (`SYNC_CONTROL_CHANNEL`, `../broker/transport/sync-fs.ts`'s
-  `handleSyncFsReadRequest`), never one more `CONTROL_CHANNEL` method, because it replies via
-  `event.returnValue`, not a resolved `Promise`. **This bullet went stale once before** (it once
-  listed `fs.mkdir`/`readdir`/`stat`/`rm`/`rename`/`app.requestGrant` as absent after they had
-  already landed) -- corrected 2026-09-15 alongside `fs.open`, rather than left for whoever
-  next notices. Everything else in `docs/architecture/capability-api.md`
-  (`net.listen`'s page half, `net.lookup`, `fs.open`'s own `readable()`/`writable()`,
-  `fs.userSelected`, `id.requestIdentity`) is still simply absent -- the broker does not
-  implement the rest yet either (`id.requestIdentity` specifically needs the connect-prompt UI,
-  a later build step), and a method that always threw `'invalid'` would be worse than a method
-  that is not there.
+  `fs.userSelected`'s FILE shape (A194, d-0032 -- reuses those same handle-scoped siblings),
+  `id.publicKey`, `id.sign`, `net.connect`, `net.connectSecure`, `net.udpBind`, `net.listen`,
+  `net.lookup`, `net.close` (plus `net.setNoDelay`/`setKeepAlive`) are wired there;
+  `fs.readFileSync` is wired the same way but over its OWN channel (`SYNC_CONTROL_CHANNEL`,
+  `../broker/transport/sync-fs.ts`'s `handleSyncFsReadRequest`), never one more `CONTROL_CHANNEL`
+  method, because it replies via `event.returnValue`, not a resolved `Promise`. **This bullet went
+  stale twice before** (it once listed `fs.mkdir`/`readdir`/`stat`/`rm`/`rename`/`app.requestGrant`
+  as absent after they had already landed, corrected 2026-09-15 alongside `fs.open`; it then kept
+  listing `net.listen`'s page half and `net.lookup` as absent after THEY had already landed too,
+  caught and corrected here rather than left for whoever next notices) -- **the fix, not tried
+  before either time: update this bullet in the SAME PR that lands a method here, not after.**
+  `fs.userSelected`'s FOLDER shape (`DirectoryHandle`), `fs.open`'s own `readable()`/`writable()`,
+  and `id.requestIdentity` are still simply absent -- the broker does not implement the rest yet
+  either (`id.requestIdentity` specifically needs the connect-prompt UI, a later build step;
+  `fs.userSelected`'s folder shape needs a delivery mechanism nobody has built, A194), and a
+  method that always threw `'invalid'` would be worse than a method that is not there.
 - **`net.connect`'s real shape (readable/writable are actual WHATWG streams) cannot be built in
   the isolated world.** `contextBridge` copies plain values into the main world; it does not
   proxy a stream built on this side intact (checked live via context7 against Electron's own

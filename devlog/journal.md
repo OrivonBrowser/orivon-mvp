@@ -30,6 +30,10 @@ Mark anything that must not leave the team draft as `(Keep private)`.
   app had already been given, so saying no looked like it took them back. It marks those clearly.
 - 2026-09-15: **Sixteen merged PRs had never been reviewed by anyone but their author.** Eight
   different review passes over them found nineteen things; the three serious ones are fixed.
+- 2026-09-16: **The folder-access warning now says what a folder grant actually means.** Picking a
+  folder for an app now reads as "read, change and delete everything in here, including files you
+  add later" instead of a softer "read and write" -- and picking a single file now reaches a real
+  page for the first time, reusing the exact same wiring `fs.open` already proved.
 
 ### In my head
 
