@@ -1,8 +1,11 @@
-// net.connect / connectSecure / udpBind / close / setNoDelay / setKeepAlive,
-// split out of ./ipc.ts's dispatch() switch under code-guidelines.md Rule 2
-// -- see ./dispatch-app.ts's header for the seam this and its siblings
-// share. Also owns deliverTcpSocket, the byte-pump wiring net.connect and
-// net.connectSecure share (code-guidelines.md Rule 3): only they need it.
+// net.connect / connectSecure / udpBind / listen / close / setNoDelay /
+// setKeepAlive, split out of ./ipc.ts's dispatch() switch under
+// code-guidelines.md Rule 2 -- see ./dispatch-app.ts's header for the seam
+// this and its siblings share. Also owns deliverTcpSocket, the byte-pump
+// wiring net.connect and net.connectSecure share (code-guidelines.md Rule
+// 3): only they need it. net.listen's own delivery helper, deliverTcpServer,
+// lives in ./server-relay.ts beside the relay it wires rather than here --
+// see that file's own doc for why.
 
 import { fail } from '../errors.js'
 import type { Broker } from '../broker-contracts.js'
@@ -10,8 +13,10 @@ import type { FailableTcpSocket } from '../handles/handle-contracts.js'
 import { createSocketRelay } from './socket-relay.js'
 import { createDatagramRelay } from './datagram-relay.js'
 import { deliverPort } from './deliver-port.js'
+import { deliverTcpServer } from './server-relay.js'
 import {
-  isNetCloseParams, isNetConnectParams, isNetSetKeepAliveParams, isNetSetNoDelayParams, isNetUdpBindParams
+  isNetCloseParams, isNetConnectParams, isNetLookupParams, isNetSetKeepAliveParams, isNetSetNoDelayParams,
+  isNetUdpBindParams
 } from './ipc-validation.js'
 import type { ControlMethod } from './ipc-validation.js'
 import type { ControlEvent, PortTransport, SocketDescriptor, UdpSocketDescriptor } from './port-transport.js'
@@ -162,13 +167,25 @@ export async function dispatchNet (
       }
       return descriptor
     }
+    // A114/d-0028: the server's own port is delivered the same way a
+    // net.connect socket's is (deliverTcpServer, ./server-relay.ts); each
+    // connection it later accepts arrives over THAT port as an
+    // AcceptedMessage, not through another control-channel round trip --
+    // see ./server-relay.ts's own header for the shape this reuses.
+    case 'net.listen': {
+      if (!isNetUdpBindParams(payload)) throw fail('invalid', 'net.listen requires { port: number }')
+      if (transport === undefined) throw fail('internal', 'no port transport configured for this broker')
+      const server = await broker.net.listen(origin, { port: payload.port })
+      return await deliverTcpServer(origin, server, event, transport)
+    }
     case 'net.close': {
       if (!isNetCloseParams(payload)) throw fail('invalid', 'net.close requires { id: string }')
       // Idempotent, silent no-op for an id this origin was never handed --
       // matching TcpSocket.close()'s own contract (handle-contracts.md's
       // "Common shape" section) -- rather than distinguishing "wrong origin"
       // from "already gone", either of which would let an app probe for
-      // handles it does not hold.
+      // handles it does not hold. Covers a server's own id too: RegisteredSocket's
+      // `kind: 'server'` entry (./port-transport.ts) answers `close` the same way.
       const entry = transport?.registry.get(origin, payload.id)
       if (entry !== undefined) await entry.close()
       return undefined
@@ -183,6 +200,7 @@ export async function dispatchNet (
       // handle, so calling a TCP-only option on it is its own bug rather than
       // a probe for handles it does not have, and telling it so leaks nothing.
       if (entry?.kind === 'udp') throw fail('invalid', 'setNoDelay is not available on a UDP socket')
+      if (entry?.kind === 'server') throw fail('invalid', 'setNoDelay is not available on a TCP server')
       if (entry !== undefined) await entry.setNoDelay(payload.on)
       return undefined
     }
@@ -190,8 +208,24 @@ export async function dispatchNet (
       if (!isNetSetKeepAliveParams(payload)) throw fail('invalid', 'net.setKeepAlive requires { id: string, on: boolean }')
       const entry = transport?.registry.get(origin, payload.id)
       if (entry?.kind === 'udp') throw fail('invalid', 'setKeepAlive is not available on a UDP socket')
+      if (entry?.kind === 'server') throw fail('invalid', 'setKeepAlive is not available on a TCP server')
       if (entry !== undefined) await entry.setKeepAlive(payload.on, payload.initialDelayMs)
       return undefined
+    }
+    // No port pair, no handle registration -- unlike every other case here,
+    // `broker.net.lookup` (d-0030) resolves once and hands back plain data,
+    // never a live resource (net-capability.ts's own `lookup` doc). The
+    // CONTROL_CHANNEL round trip alone is the whole delivery.
+    case 'net.lookup': {
+      if (!isNetLookupParams(payload)) throw fail('invalid', 'net.lookup requires { hostname: string }')
+      return await broker.net.lookup(origin, { hostname: payload.hostname })
+    }
+    default: {
+      // Exhaustiveness check, same reasoning as ./ipc.ts's own dispatch():
+      // if NetControlMethod ever gains a member no case above names, this
+      // line fails to compile instead of silently resolving to `undefined`.
+      const unrouted: never = method
+      throw fail('internal', `unrouted net control method: ${unrouted as string}`)
     }
   }
 }

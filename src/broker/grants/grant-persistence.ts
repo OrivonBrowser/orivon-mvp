@@ -8,8 +8,24 @@
 
 import { decideGrantRequest, isCapabilityKind } from '../policy/request-grant.js'
 import { isPersistableOrigin } from '../policy/origin.js'
+import { sameOwnPatterns } from '../policy/update.js'
 import type { CapabilityKind, Grant, GrantId, Manifest } from '../../contracts/index.js'
 import type { LedgerStorage, PersistedGrant } from './ledger-storage.js'
+
+/**
+ * One capability whose LIVE grant a hydration pass replaced with genuinely
+ * different authority -- either a new id (narrowed, or the persisted patterns
+ * no longer fit the current manifest at all) or nothing (the capability was
+ * dropped outright). `grantId` is the SUPERSEDED id, exactly what
+ * `HandleTable.revoke` (../handles/handles.js) needs to tear down whatever
+ * that id still authorises -- `GrantLedger` has no `HandleTable` reference
+ * (README.md), so it can only report this list; `../index.ts`'s
+ * `createBroker` wrapper is what actually cascades it (A168).
+ */
+export interface SupersededGrant {
+  readonly capability: CapabilityKind
+  readonly grantId: GrantId
+}
 
 /**
  * Reads whatever `origin` persisted and returns only the entries that still
@@ -58,6 +74,27 @@ export function hydrateGrants (
  * already put there (a capability the manifest passed here no longer
  * declares must not survive), never merely add to it. Harmless when
  * `grants` is already empty -- clears nothing, then populates as normal.
+ *
+ * REUSES an existing live grant's id, rather than the fresh one
+ * `hydrateGrants` minted for it, when that capability's restored patterns
+ * are set-equal (`sameOwnPatterns`) to what `grants` already held for it
+ * (A168). Two hydration passes over an unchanged manifest are the common
+ * case -- `hydrateFromPinnedManifest` followed by the first real
+ * `registerApp` for the same bundle -- and without this, that pair alone
+ * mints a NEW GrantId for authority that never actually changed. A handle
+ * already acquired under the OLD id (`HandleTable.byGrant`,
+ * ../handles/handle-store.ts) is frozen at acquire time and never rebinds,
+ * so the id churn alone would leave `revoke`/`revokePersisted` unable to
+ * find it ever again -- the revoke button would lie. This is the same
+ * principle `src/main/grant-changed-capabilities.ts` already applies one
+ * layer up, for the same reason (its own doc comment).
+ *
+ * Every OTHER capability `grants` held before this call -- dropped outright,
+ * or replaced with patterns that are NOT set-equal -- is reported back as a
+ * `SupersededGrant`, because reusing state ends there: unlike an id, a live
+ * handle's actual authority cannot be silently swapped out from under it.
+ * The caller (`GrantLedger`'s own callers, ultimately `createBroker` in
+ * ../index.ts) is responsible for tearing those down.
  */
 export function replaceHydratedGrants (
   storage: LedgerStorage,
@@ -65,11 +102,22 @@ export function replaceHydratedGrants (
   manifest: Manifest,
   grants: Map<CapabilityKind, Grant>,
   newId: () => GrantId
-): void {
-  grants.clear()
-  for (const [capability, grant] of hydrateGrants(storage, origin, manifest, newId)) {
-    grants.set(capability, grant)
+): readonly SupersededGrant[] {
+  const restored = new Map(hydrateGrants(storage, origin, manifest, newId))
+  const superseded: SupersededGrant[] = []
+
+  for (const [capability, existing] of grants) {
+    const next = restored.get(capability)
+    if (next !== undefined && sameOwnPatterns(next.patterns, existing.patterns)) {
+      restored.set(capability, existing) // unchanged authority -- keep the OLD id
+    } else {
+      superseded.push({ capability, grantId: existing.id })
+    }
   }
+
+  grants.clear()
+  for (const [capability, grant] of restored) grants.set(capability, grant)
+  return superseded
 }
 
 /** `GrantLedger`'s live `grants` map, reshaped for `LedgerStorage.writeGrants` -- `id` and `origin` are dropped, since `hydrateGrants` never reads either back. */

@@ -39,6 +39,7 @@ async function realBroker (): Promise<{ broker: Broker, userData: string }> {
     bind: notUsed,
     listen: notUsed,
     resolve: notUsed,
+    resolveLookup: notUsed,
     now: () => Date.now(),
     fs: nodeFs(userData),
     keychain: { getSeed: notUsed }

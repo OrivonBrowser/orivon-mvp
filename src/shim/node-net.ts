@@ -1,27 +1,39 @@
 // `net` module target (module-map.ts). Wires orivon.net.connect into
-// node-net-socket.ts's factory, and exports isIP/isIPv4/isIPv6 -- README.md
+// node-net-socket.ts's factory and orivon.net.listen into
+// node-net-server.ts's, and exports isIP/isIPv4/isIPv6 -- README.md
 // requirement 1's worked example: k-rpc-socket (underneath bittorrent-dht)
 // calls net.isIP() before every send, not a socket method, and its absence
 // is what silently breaks the DHT with no error at all.
 
 import { getOrivon } from './orivon-global.js'
 import { Socket, createConnectFactory } from './node-net-socket.js'
-import { createServer, otherNetMember } from './node-net-unsupported.js'
+import { Server, createServerFactory } from './node-net-server.js'
 import { isIP, isIPv4, isIPv6 } from './node-net-isip.js'
 import { refusingProxy } from './unimplemented.js'
+import { refuseShim } from './errors.js'
 
 export { Socket } from './node-net-socket.js'
-export { createServer } from './node-net-unsupported.js'
+export { Server } from './node-net-server.js'
 export { isIP, isIPv4, isIPv6 } from './node-net-isip.js'
 
 const connect = createConnectFactory((opts) => getOrivon().net.connect(opts))
+const createServer = createServerFactory((opts) => getOrivon().net.listen(opts))
 
-export { connect }
+export { connect, createServer }
 export const createConnection = connect
 
-// A135: anything else read off this default export (net.Server, ...) names
-// the gap instead of reading `undefined` -- see node-net-unsupported.ts.
+/** A135: every OTHER net member -- `getDefaultAutoSelectFamily`, ... -- is real Node net surface this shim has not implemented and has not decided whether it will (compatibility-matrix.md Table 3). `connect`/`createServer`/`Socket`/`Server` above are the decided, built surface; this is everything else. */
+function otherNetMember (prop: string) {
+  return refuseShim(
+    `net.${prop}`, 'unimplemented',
+    `net.${prop} is real Node net surface this shim has not implemented and has not decided ` +
+    'whether it will. See docs/planning/compatibility-matrix.md Table 3.'
+  )
+}
+
+// A135: anything else read off this default export (a bundled CJS
+// `require('net')`'s own shape) names the gap instead of reading `undefined`.
 export default refusingProxy(
-  { connect, createConnection: connect, Socket, createServer, isIP, isIPv4, isIPv6 },
+  { connect, createConnection: connect, Socket, createServer, Server, isIP, isIPv4, isIPv6 },
   otherNetMember
 )

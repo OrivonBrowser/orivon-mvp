@@ -663,6 +663,55 @@ describe('describeInstallConsent', () => {
     expect(content.detail.match(/\n- /g)).toHaveLength(3)
     expect(content.detail.match(/⚠/g)).toHaveLength(2)
   })
+
+  // A170 (CRITICAL): a capability can already be held when this dialog
+  // shows -- app.requestGrant is a second door, reachable before this ever
+  // runs (install-consent.ts's own header). Nothing used to distinguish a
+  // held row from a requested one, so a person could read this dialog,
+  // click Deny, and the app would keep the held capability anyway with no
+  // warning it was possible. Marked the same `[Xxx]` bracket way
+  // describeCapabilityChoice (grant-prompt-choice.ts) already marks an
+  // earlier decision in ITS sequence -- one convention, not two.
+  it('A170: marks a row already held, so Deny visibly does not cover it', () => {
+    const manifest = manifestWith({ net: { https: { connect: ['weather.example:443'] } }, fs: { quotaBytes: 1024 } })
+
+    const content = describeInstallConsent(ORIGIN, manifest, ['https.connect', 'fs'], ['fs'])
+
+    expect(content.detail).toBe(
+      'Claims to be "Test app".\n' +
+      '- Connect to weather.example\n' +
+      '- [Already allowed] Store files in a private folder for this app on this device\n' +
+      'https://app.example'
+    )
+  })
+
+  it('A170: only the row named in `held` is marked -- an unrelated row stays plain', () => {
+    const manifest = manifestWith({ net: { https: { connect: ['weather.example:443'] } }, fs: { quotaBytes: 1024 } })
+
+    const content = describeInstallConsent(ORIGIN, manifest, ['https.connect', 'fs'], ['https.connect'])
+
+    expect(content.detail).toContain('- [Already allowed] Connect to weather.example')
+    expect(content.detail).toContain('- Store files in a private folder for this app on this device')
+    expect(content.detail).not.toContain('[Already allowed] Store files')
+  })
+
+  it('A170: a merged inbound row (tcp.listen+udp.bind) is marked only once BOTH contributing capabilities are held', () => {
+    const manifest = manifestWith({ net: { tcp: { listen: ['6881-6889'] }, udp: { bind: ['6881-6889'] } } })
+
+    const onlyOneHeld = describeInstallConsent(ORIGIN, manifest, ['tcp.listen', 'udp.bind'], ['tcp.listen'])
+    expect(onlyOneHeld.detail).not.toContain('[Already allowed]')
+
+    const bothHeld = describeInstallConsent(ORIGIN, manifest, ['tcp.listen', 'udp.bind'], ['tcp.listen', 'udp.bind'])
+    expect(bothHeld.detail).toContain('- [Already allowed] ⚠ Accepts connections and data from other computers on port 6881-6889')
+  })
+
+  it('A170: `held` defaults to none -- every pre-existing call site here is unaffected', () => {
+    const manifest = manifestWith({ fs: { quotaBytes: 1024 } })
+
+    const content = describeInstallConsent(ORIGIN, manifest, ['fs'])
+
+    expect(content.detail).not.toContain('[Already allowed]')
+  })
 })
 
 // Owner decision, 2026-09-14: every dialog that shows an origin moves it to
