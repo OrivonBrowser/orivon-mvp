@@ -99,17 +99,22 @@ the file's overall shape):
   call this file's `exposeOrivon()`, so there is exactly one `orivon.*` object definition, not
   two copies drifting apart (code-guidelines.md Rule 3).
 - **This is build step 2's control surface** -- `../broker/transport/ipc.ts`'s `handleControlRequest`, on
-  the other side of `CONTROL_CHANNEL`. `app.manifest`, `app.grants`, `fs.readFile`,
-  `fs.writeFile`, `id.publicKey`, `id.sign`, `net.connect`, `net.udpBind`, `net.close` (plus
-  `net.setNoDelay`/`setKeepAlive`) are wired there; `fs.readFileSync` is wired the same way but
-  over its OWN channel (`SYNC_CONTROL_CHANNEL`, `../broker/transport/sync-fs.ts`'s
-  `handleSyncFsReadRequest`), never as a twelfth `CONTROL_CHANNEL` method, because it replies via
-  `event.returnValue`, not a resolved `Promise`. Everything else in
-  `docs/architecture/capability-api.md` (`net.listen`, `fs.open`/`mkdir`/`readdir`/`stat`/`rm`/
-  `rename`/`userSelected`, `id.requestIdentity`, `app.requestGrant`) is simply absent -- the
-  broker does not implement the rest yet either (`id.requestIdentity` specifically needs the
-  connect-prompt UI, a later build step), and a method that always threw `'invalid'` would be
-  worse than a method that is not there.
+  the other side of `CONTROL_CHANNEL`. `app.manifest`, `app.grants`, `app.requestGrant`,
+  `fs.readFile`, `fs.writeFile`, `fs.mkdir`/`readdir`/`stat`/`rm`/`rename`, `fs.open` and its
+  handle-scoped siblings (`fs.read`/`write`/`fstat`/`truncate`/`sync`/`close`, A184),
+  `id.publicKey`, `id.sign`, `net.connect`, `net.connectSecure`, `net.udpBind`, `net.close`
+  (plus `net.setNoDelay`/`setKeepAlive`) are wired there; `fs.readFileSync` is wired the same way
+  but over its OWN channel (`SYNC_CONTROL_CHANNEL`, `../broker/transport/sync-fs.ts`'s
+  `handleSyncFsReadRequest`), never one more `CONTROL_CHANNEL` method, because it replies via
+  `event.returnValue`, not a resolved `Promise`. **This bullet went stale once before** (it once
+  listed `fs.mkdir`/`readdir`/`stat`/`rm`/`rename`/`app.requestGrant` as absent after they had
+  already landed) -- corrected 2026-09-15 alongside `fs.open`, rather than left for whoever
+  next notices. Everything else in `docs/architecture/capability-api.md`
+  (`net.listen`'s page half, `net.lookup`, `fs.open`'s own `readable()`/`writable()`,
+  `fs.userSelected`, `id.requestIdentity`) is still simply absent -- the broker does not
+  implement the rest yet either (`id.requestIdentity` specifically needs the connect-prompt UI,
+  a later build step), and a method that always threw `'invalid'` would be worse than a method
+  that is not there.
 - **`net.connect`'s real shape (readable/writable are actual WHATWG streams) cannot be built in
   the isolated world.** `contextBridge` copies plain values into the main world; it does not
   proxy a stream built on this side intact (checked live via context7 against Electron's own
@@ -191,6 +196,19 @@ platform API is a trap":
   others, rather than left to be discovered.
 - **Only string/`Uint8Array`/`ArrayBuffer`/`URLSearchParams` request bodies are supported** --
   `FormData`, `Blob` and a streamed-upload body are not built here. v0 scope cut (PR #133).
+
+**A second, independent mechanism diverges the same way, for a different class of request.**
+`fetch-route.ts` above only intercepts the page's own JS-level `fetch()` calls. A passive
+subresource load pointed at a granted third-party host -- an `<img>`, `<link>`, or `<video>`
+`src`/`href` -- never reaches `fetch-route.ts` at all: it is intercepted at the
+`protocol.handle` layer instead, inside the app's own partition
+([`src/loader/serve.ts`](../loader/serve.ts)'s `fetchThirdParty`, dialled by
+[`src/loader/serve-reach.ts`](../loader/serve-reach.ts)'s `nodeReachDial`, Node's own `https`
+module). Like the mechanism above, it never follows a redirect: a 3xx response from the granted
+host comes back exactly as received, so a redirecting URL used as an `<img src>` or `<video src>`
+on a granted host renders as a broken load rather than following through -- surprising, since the
+page wrote no network code of its own to suspect. See `src/loader/README.md`'s Design notes for
+the full mechanism; this file's own list above covers only the `fetch()` path.
 
 **`init.signal` (`AbortController`) IS supported**, matching real `fetch()`: an already-aborted
 signal rejects before any dial happens; aborting mid-flight rejects the pending promise (via a

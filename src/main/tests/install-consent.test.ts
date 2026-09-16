@@ -45,7 +45,8 @@ describe('requestInstallConsent (stubbed broker)', () => {
     await requestInstallConsent(broker, consent, APP, manifest)
 
     expect(consent).toHaveBeenCalledOnce()
-    expect(consent).toHaveBeenCalledWith(APP, manifest, expect.arrayContaining(['tcp.connect', 'fs']))
+    // Nothing held -- the fourth argument (A170) is an empty list.
+    expect(consent).toHaveBeenCalledWith(APP, manifest, expect.arrayContaining(['tcp.connect', 'fs']), [])
     expect(calls).toContainEqual({ method: 'grant', origin: APP, args: { capability: 'tcp.connect', patterns: ['api.example.com:443'] } })
     expect(calls).toContainEqual({ method: 'grant', origin: APP, args: { capability: 'fs', patterns: [] } })
     // Accepting clears any earlier decline -- see the "clears a previous
@@ -121,7 +122,9 @@ describe('requestInstallConsent (stubbed broker)', () => {
     await requestInstallConsent(broker, consent, APP, manifest)
 
     expect(consent).toHaveBeenCalledOnce()
-    expect(consent).toHaveBeenCalledWith(APP, manifest, expect.arrayContaining(['tcp.connect', 'fs']))
+    // A170: the fourth argument is exactly the held set -- tcp.connect,
+    // the capability this test grants out of band before the dialog runs.
+    expect(consent).toHaveBeenCalledWith(APP, manifest, expect.arrayContaining(['tcp.connect', 'fs']), ['tcp.connect'])
     // fs is the capability the old check silently withheld forever.
     expect(calls).toContainEqual({ method: 'grant', origin: APP, args: { capability: 'fs', patterns: [] } })
     // tcp.connect is already held with the manifest's own exact pattern --
@@ -163,6 +166,65 @@ describe('requestInstallConsent (stubbed broker)', () => {
       method: 'recordDeclinedConsent',
       origin: APP,
       args: expect.arrayContaining(['tcp.connect', 'fs'])
+    })
+  })
+
+  // A172(1), CRITICAL: the decline branch used to record the WHOLE declared
+  // set, including a capability already held via the second door
+  // (app.requestGrant, ./request-grant.ts) -- the same held-vs-outstanding
+  // gap A170 fixes in the dialog itself. Concrete harm this reproduces: fs
+  // is already held; the person declines this dialog (which only ever
+  // asked about tcp.connect, since fs's row was already held); fs still got
+  // written into the declined record. A later revoke of fs (revokePersisted
+  // touches only `grants`, never `declinedCapabilities`) would then leave
+  // fs's dialog permanently suppressed, with no way to ask again.
+  it('A172(1): a decline records only what was OUTSTANDING, never a capability already held', async () => {
+    const calls: BrokerCall[] = []
+    const broker = stubBroker(calls, {
+      // fs already held, as if requestGrant ran before this dialog did.
+      grants: async () => [grant({ capability: 'fs' })],
+      declinedCapabilitiesFor: async () => undefined,
+      recordDeclinedConsent: async () => {}
+    })
+    const consent = vi.fn(async () => false)
+    const manifest = manifestWith({ net: { tcp: { connect: ['api.example.com:443'] } }, fs: { quotaBytes: 1024 } })
+
+    await requestInstallConsent(broker, consent, APP, manifest)
+
+    // The dialog still shows the whole declared set (A157) -- only the
+    // RECORD must narrow to what was actually outstanding.
+    expect(consent).toHaveBeenCalledOnce()
+    expect(calls).toContainEqual({ method: 'recordDeclinedConsent', origin: APP, args: ['tcp.connect'] })
+  })
+
+  // A172(2), MEDIUM: the all-or-nothing branch REPLACED the whole declined
+  // record; the per-capability branch (runPerCapabilityConsent, below)
+  // APPENDS. A manifest that no longer declares a capability declined in an
+  // earlier round (e.g. a per-capability visit, or consentGranularity
+  // switching) drops out of `capabilities`/`outstanding` entirely for THIS
+  // round -- a REPLACE then erases that earlier "no" even though nothing
+  // just now was ever asked about it, breaking the module's own invariant
+  // ("a refusal is never a decline of anything OUTSIDE this round").
+  it('A172(2): a decline APPENDS to the existing record, never replacing an earlier no this round never asked about', async () => {
+    const calls: BrokerCall[] = []
+    const broker = stubBroker(calls, {
+      grants: async () => [],
+      // 'fs' was declined in an earlier round and is NOT declared by the
+      // manifest below at all -- so it is never part of `capabilities` or
+      // `outstanding` this time, yet must survive in the record.
+      declinedCapabilitiesFor: async () => ['fs'],
+      recordDeclinedConsent: async () => {}
+    })
+    const consent = vi.fn(async () => false)
+    const manifest = manifestWith({ net: { tcp: { connect: ['api.example.com:443'] } } })
+
+    await requestInstallConsent(broker, consent, APP, manifest)
+
+    expect(consent).toHaveBeenCalledOnce()
+    expect(calls).toContainEqual({
+      method: 'recordDeclinedConsent',
+      origin: APP,
+      args: expect.arrayContaining(['fs', 'tcp.connect'])
     })
   })
 
@@ -224,7 +286,8 @@ describe('requestInstallConsent (stubbed broker)', () => {
       await requestInstallConsent(broker, consent, APP, widened)
 
       expect(consent).toHaveBeenCalledOnce()
-      expect(consent).toHaveBeenCalledWith(APP, widened, expect.arrayContaining(['tcp.connect', 'fs']))
+      // Nothing held -- the fourth argument (A170) is an empty list.
+      expect(consent).toHaveBeenCalledWith(APP, widened, expect.arrayContaining(['tcp.connect', 'fs']), [])
     })
 
     it('stays suppressed when the manifest now declares LESS than was declined -- AI recommendation, retunable (A145)', async () => {
@@ -331,7 +394,8 @@ describe('requestInstallConsent (real broker) -- proves "once per origin, ever" 
     await requestInstallConsent(secondRun, accept, APP, wide)
 
     expect(accept).toHaveBeenCalledOnce()
-    expect(accept).toHaveBeenCalledWith(APP, wide, expect.arrayContaining(['tcp.connect', 'fs']))
+    // Nothing held -- the fourth argument (A170) is an empty list.
+    expect(accept).toHaveBeenCalledWith(APP, wide, expect.arrayContaining(['tcp.connect', 'fs']), [])
     const grants = await secondRun.app.grants(APP)
     expect(grants.map((g) => g.capability).sort()).toEqual(['fs', 'tcp.connect'])
   })

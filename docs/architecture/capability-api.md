@@ -228,9 +228,12 @@ has no code path for a missing filesystem grant any more than for a missing netw
 splitting the choice per capability would ask an author to answer a question their code does not
 actually distinguish.
 
-`docs/open-questions.md` A138 carries the fuller argument and is now resolved to this. This
-section is prose only — no broker, install-prompt or renderer code reads this field yet; that is
-implementation, out of scope for the contracts change that added it.
+`docs/open-questions.md` A138 carries the fuller argument and is now resolved to this. The loader
+parses the field (`src/loader/manifest.ts`), and the install-time consent dialog reads it:
+`src/main/install-consent.ts`'s `requestInstallConsent` branches its whole staged Allow-all /
+Choose-individually / Deny-all sequence on `manifest.consentGranularity === 'per-capability'`.
+Three update-time prompts (reconsent, capability-widening, rollback) do not yet honour it — see
+`docs/open-questions.md` A162.
 
 ### `version` — semver, ordering, and what an unparseable one costs
 
