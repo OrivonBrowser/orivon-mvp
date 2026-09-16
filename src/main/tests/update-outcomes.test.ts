@@ -186,6 +186,27 @@ describe('driveLoadResult: needs-capability-prompt', () => {
     expect(calls).toContainEqual({ method: 'grant', origin: APP, args: { capability: 'tcp.connect', patterns: ['api.example.com:443'] } })
   })
 
+  // A172(3), MEDIUM: `requestedPatterns` is the manifest's WHOLE current
+  // declared set (patternSetFromCapabilities(manifest.capabilities),
+  // src/loader/index.ts) -- the same construction install-consent.ts's own
+  // all-or-nothing accept uses for `capabilities` -- so accepting this
+  // prompt is the same kind of "yes to everything declared" as that accept
+  // branch, and must clear an old decline the same way. It did not:
+  // `clearDeclinedConsent`'s only caller anywhere in this tree used to be
+  // install-consent.ts's own accept branch, which this outcome does not
+  // reach when nothing is left unheld once grantChangedCapabilities runs.
+  it('A172(3): accepting clears any earlier declined-consent record for this origin', async () => {
+    const calls: BrokerCall[] = []
+    const pending = capabilityPromptResult()
+    const installed: LoadResult = { outcome: 'installed', canonicalOrigin: APP, manifest: pending.manifest, pin: { schema: 1, origin: APP, bundleHash: pending.tree.root, assets: [], version: pending.manifest.version, pinnedAt: 0 } }
+    const loader = fakeLoader({ outcome: 'rejected', reason: 'unused' }, { installFetched: vi.fn(async () => installed) })
+    const capabilityPrompt = vi.fn(async () => true)
+
+    await driveLoadResult({ broker: fakeBroker({ declinedCapabilities: ['fs'] }, calls), loader, capabilityPrompt }, pending, NO_GRANTS)
+
+    expect(calls).toContainEqual({ method: 'clearDeclinedConsent', origin: APP, args: undefined })
+  })
+
   // capability-api.md design rule 4: a grant can never exceed the manifest.
   // Even if a caller handed driveLoadResult a `requestedPatterns` claiming
   // MORE than the manifest itself declares -- the shape a bug upstream, or

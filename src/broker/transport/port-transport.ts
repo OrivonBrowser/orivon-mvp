@@ -39,12 +39,30 @@ export interface UdpSocketDescriptor {
 }
 
 /**
+ * What `orivon.net.listen` resolves to over CONTROL_CHANNEL. Deliberately not
+ * a `TcpServer`, for the same reason SocketDescriptor is not a `TcpSocket`:
+ * `connections` does not survive structured clone. Accepted connections
+ * arrive over the server's own port instead, as `AcceptedMessage`
+ * (`contracts/ipc.ts`, A114/d-0028) -- see `./server-relay.ts`.
+ */
+export interface TcpServerDescriptor {
+  readonly id: string
+  readonly localAddress: string
+  readonly localPort: number
+}
+
+/**
  * The shape of a real `MessagePortMain` this module needs, structurally --
  * a fake stands in for it in tests the same way `SenderFrameLike` lets a
  * literal stand in for `WebFrameMain`.
+ *
+ * `transfer` is used for exactly one `BrokerToRendererMessage` member,
+ * `AcceptedMessage.port` (contracts/ipc.ts's own header rule 1: never on the
+ * renderer -> main path, only here). Every other message this module posts
+ * carries no transferable and omits it.
  */
 export interface PortLike {
-  postMessage: (message: BrokerToRendererMessage) => void
+  postMessage: (message: BrokerToRendererMessage, transfer?: readonly unknown[]) => void
   onMessage: (listener: (message: unknown) => void) => void
   /**
    * Fires when the OTHER side of the port closes -- a real
@@ -92,6 +110,13 @@ export type RegisteredSocket =
    * success. Here the caller has to say which kind it is holding.
    */
   | { readonly kind: 'udp', readonly close: () => Promise<void> }
+  /**
+   * A `TcpServer` answers `net.close` and nothing else either -- it has no
+   * Nagle or keepalive setting of its own (only the sockets it *produces*
+   * do, each registered separately under its own `kind: 'tcp'` entry by
+   * `./server-relay.ts`'s reuse of `./socket-relay.ts`).
+   */
+  | { readonly kind: 'server', readonly close: () => Promise<void> }
 
 /**
  * Everything net.connect/net.close need beyond `broker` itself: a way to

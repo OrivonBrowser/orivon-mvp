@@ -114,6 +114,17 @@ export async function driveLoadResult (deps: UpdateOutcomeDeps, result: LoadResu
       if (!accepted) return result
       const installed = await deps.loader.installFetched(result.canonicalOrigin, result.manifest, result.tree, result.entries)
       if (installed.outcome !== 'installed') return installed
+      // A172(3): `requestedPatterns` is the manifest's WHOLE current
+      // declared set (patternSetFromCapabilities, src/loader/index.ts) --
+      // the same construction install-consent.ts's own all-or-nothing
+      // accept uses for its `capabilities` -- so this acceptance is the
+      // same kind of "yes to everything declared" as that one, and an
+      // earlier decline for this origin is stale the instant it lands
+      // (that file's header). Cleared BEFORE granting, same reason as
+      // there: grantChangedCapabilities swallows a per-capability failure,
+      // so acting after could leave a capability that failed to grant
+      // still covered by a now-stale decline.
+      await deps.broker.clearDeclinedConsent(installed.canonicalOrigin)
       // Same idiom update.ts's widensAuthority uses for a PatternSet's own
       // keys: every key in `requestedPatterns` was set by
       // patternSetFromCapabilities itself (src/loader/index.ts), so this

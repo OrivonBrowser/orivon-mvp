@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { grantsToPersist, hydrateGrants } from '../grant-persistence.js'
+import { grantsToPersist, hydrateGrants, replaceHydratedGrants } from '../grant-persistence.js'
 import { memoryLedgerStorage } from '../../tests/index.test-helpers.js'
 import type { CapabilityKind, Grant, Manifest } from '../../../contracts/index.js'
 
@@ -152,5 +152,91 @@ describe('grantsToPersist', () => {
       fs: { patterns: [], grantedAt: 1 },
       id: { patterns: [], grantedAt: 2 }
     })
+  })
+})
+
+// A168: replaceHydratedGrants is what two hydration passes over an
+// unchanged manifest (hydrateFromPinnedManifest, then the first real
+// registerApp) both call. Unit-level proof of its two halves, independent
+// of GrantLedger/createBroker's own end-to-end coverage
+// (grant-ledger-pin-hydration.test.ts, index-hydration-grant-identity.test.ts).
+describe('replaceHydratedGrants (A168)', () => {
+  it('reuses the existing grant object -- same id, same grantedAt -- when the restored patterns are set-equal to what `grants` already held', () => {
+    const storage = memoryLedgerStorage()
+    storage.grants.set(APP, { 'tcp.connect': { patterns: ['api.example.com:443'], grantedAt: 1000 } })
+    const manifest = manifestWith({ net: { tcp: { connect: ['api.example.com:443'] } } })
+    const existing: Grant = { id: 'pin-hydrated-id', origin: APP, capability: 'tcp.connect', patterns: ['api.example.com:443'], grantedAt: 1000 }
+    const grants = new Map<CapabilityKind, Grant>([['tcp.connect', existing]])
+
+    const superseded = replaceHydratedGrants(storage, APP, manifest, grants, () => 'freshly-minted-id')
+
+    expect(grants.get('tcp.connect')).toBe(existing) // same object, not just equal
+    expect(superseded).toEqual([])
+  })
+
+  it('treats a different pattern ORDER as still the same authority -- reuses the id rather than reporting it superseded', () => {
+    const storage = memoryLedgerStorage()
+    storage.grants.set(APP, { 'tcp.connect': { patterns: ['b.example.com:443', 'a.example.com:443'], grantedAt: 1 } })
+    const manifest = manifestWith({ net: { tcp: { connect: ['*:*'] } } })
+    const existing: Grant = { id: 'kept-id', origin: APP, capability: 'tcp.connect', patterns: ['a.example.com:443', 'b.example.com:443'], grantedAt: 1 }
+    const grants = new Map<CapabilityKind, Grant>([['tcp.connect', existing]])
+
+    const superseded = replaceHydratedGrants(storage, APP, manifest, grants, () => 'unused')
+
+    expect(grants.get('tcp.connect')?.id).toBe('kept-id')
+    expect(superseded).toEqual([])
+  })
+
+  it('reports a capability as superseded, with its OLD id, when the manifest narrowed and the persisted pattern no longer fits at all', () => {
+    const storage = memoryLedgerStorage()
+    storage.grants.set(APP, { 'tcp.connect': { patterns: ['*:*'], grantedAt: 1 } })
+    const manifest = manifestWith({ net: { tcp: { connect: ['api.example.com:443'] } } }) // narrowed
+    const existing: Grant = { id: 'wide-grant-id', origin: APP, capability: 'tcp.connect', patterns: ['*:*'], grantedAt: 1 }
+    const grants = new Map<CapabilityKind, Grant>([['tcp.connect', existing]])
+
+    const superseded = replaceHydratedGrants(storage, APP, manifest, grants, () => 'unused')
+
+    expect(superseded).toEqual([{ capability: 'tcp.connect', grantId: 'wide-grant-id' }])
+    expect(grants.has('tcp.connect')).toBe(false) // dropped, not replaced
+  })
+
+  it('reports a capability as superseded when a genuinely narrower (but still allowed) pattern set replaces it -- reuse is exact-match only', () => {
+    const storage = memoryLedgerStorage()
+    storage.grants.set(APP, { 'tcp.connect': { patterns: ['api.example.com:443'], grantedAt: 1 } })
+    const manifest = manifestWith({ net: { tcp: { connect: ['api.example.com:443', 'cdn.example.com:443'] } } })
+    const existing: Grant = { id: 'old-id', origin: APP, capability: 'tcp.connect', patterns: ['api.example.com:443', 'cdn.example.com:443'], grantedAt: 1 }
+    const grants = new Map<CapabilityKind, Grant>([['tcp.connect', existing]])
+
+    const superseded = replaceHydratedGrants(storage, APP, manifest, grants, () => 'new-id')
+
+    // The persisted set (just api.example.com) differs from what `grants`
+    // held (both hosts) -- not set-equal, so the fresh id from hydration
+    // wins and the old one is reported superseded.
+    expect(grants.get('tcp.connect')?.id).toBe('new-id')
+    expect(superseded).toEqual([{ capability: 'tcp.connect', grantId: 'old-id' }])
+  })
+
+  it('reports a capability as superseded when hydration drops it outright and nothing takes its place', () => {
+    const storage = memoryLedgerStorage() // nothing persisted at all
+    const manifest = manifestWith({})
+    const existing: Grant = { id: 'orphaned-id', origin: APP, capability: 'fs', patterns: [], grantedAt: 1 }
+    const grants = new Map<CapabilityKind, Grant>([['fs', existing]])
+
+    const superseded = replaceHydratedGrants(storage, APP, manifest, grants, () => 'unused')
+
+    expect(superseded).toEqual([{ capability: 'fs', grantId: 'orphaned-id' }])
+    expect(grants.size).toBe(0)
+  })
+
+  it('reports nothing superseded when `grants` starts empty -- the ordinary first-ever hydration', () => {
+    const storage = memoryLedgerStorage()
+    storage.grants.set(APP, { fs: { patterns: [], grantedAt: 1 } })
+    const manifest = manifestWith({ fs: { quotaBytes: 1 } })
+    const grants = new Map<CapabilityKind, Grant>()
+
+    const superseded = replaceHydratedGrants(storage, APP, manifest, grants, () => 'first-id')
+
+    expect(superseded).toEqual([])
+    expect(grants.get('fs')?.id).toBe('first-id')
   })
 })
