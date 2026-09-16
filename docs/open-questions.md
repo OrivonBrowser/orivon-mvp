@@ -4743,12 +4743,17 @@ all-or-nothing, and turning it into a per-row choice later is a change to the di
 > single app needs a different answer per capability.
 >
 > **What this resolves and what it leaves open.** This settles the *shape of the declaration*
-> only -- a type on `Manifest`, contracts-only, no implementation. It does not build the
+> only -- a type on `Manifest`, contracts-only, no implementation. It does not itself build the
 > per-row prompt UI, teach `decideGrantRequest` or the grant ledger to honor a partial accept,
 > or wire `requestGrant` to pass a per-capability choice through -- that is real engineering
 > against a real dialog, left for whichever build-step-4 lane picks up the install prompt.
-> Until that lands, `'per-capability'` in a manifest is inert: the field types and documents
-> the choice, and nothing reads it yet.
+>
+> **Update 2026-09-14, lane `F-granular`.** That lane landed: `src/loader/manifest.ts` now
+> parses `consentGranularity`, and `src/main/install-consent.ts`'s `requestInstallConsent`
+> branches its staged Allow-all / Choose-individually / Deny-all dialog sequence on
+> `manifest.consentGranularity === 'per-capability'`. `'per-capability'` in a manifest is no
+> longer inert for install-time consent. See A162 for the implementation and for what still
+> is not wired to it (the three update-time prompts).
 
 ### A139 -- asking at install brings back part of the prompt fatigue `ADR-0012` rejected **[AI-REC -- confirm at the 4.2 checkpoint]**
 
@@ -5474,6 +5479,19 @@ mechanism.
 
 **Needed by:** whoever builds build step 6's real trust indicator -- `stream/trust-02-pin-coverage`
 is already the named lane for it as of this writing.
+
+> **Update 2026-09-15.** `stream/trust-02-pin-coverage` (PR #198) landed the measurement this
+> entry asked for: `src/loader/pin-coverage.ts` and `electron-serve.ts`'s `pinCoverageFor` now
+> track, per origin, how many requests and bytes came from the pin versus a granted third-party
+> host, and `src/trust/delivery-ladder.ts`'s `DeliveryHistoryInput`/`DeliveryEvidence` now carry
+> that as a `pinCoverage` field end to end.
+>
+> **What this entry actually asked for is still open.** The new field is evidence only --
+> `metRung` is unchanged, and by the field's own doc comment "no rung here reads it... this
+> scores nothing; see build step 6 for how it renders". Nothing yet reads the number back out
+> in production either (A181). The scoring/rendering decision this entry raised -- how coverage
+> should affect the ladder, or whatever a person actually sees -- is still unmade, still left
+> for build step 6. This entry is not resolved.
 
 ### A149 -- `scripts/smoke.mjs`'s favicon scenario cannot pass under both T12 and "hermetic by construction" at once **[NEEDS OWNER DECISION]**
 
@@ -6479,6 +6497,70 @@ for). It also does not check the reverse direction -- the loader accepting a key
 longer declares -- since that is a different bug class from the one that hit three times today and
 was out of scope for this lane.
 
+### A168 -- a handle acquired under a pin-hydrated grant outlived it: `revoke`/`revokePersisted` could not find it under either the old or a superseded id **[RESOLVED 2026-09-15 -- lane FIX-1]**
+
+**Raised 2026-09-15** by an adversarial review lane against A158's hydration seam, confirmed by
+the conductor re-verifying the whole chain by hand before assigning the fix.
+
+**The gap, precisely.** `hydrateFromPinnedManifest` (A158) deliberately does not set
+`grantsHydrated`, so it is always superseded by the first REAL `registerApp` for the same origin.
+That later `registerApp` call still saw `grantsHydrated` false and ran `replaceHydratedGrants`
+again -- which minted a BRAND-NEW `GrantId` for every capability, even one whose restored
+patterns had not changed at all. A handle's `authorisedBy.grantId`
+(`src/broker/handles/handle-store.ts`) is frozen at acquire time and never rebinds, and
+`HandleTable`'s revocation cascade (`src/broker/handles/handles.ts`) indexes by that frozen id
+(`byGrant`). So: a restored app opens a socket under the pin-hydrated grant `G1`; the page's own
+manifest hint triggers the first real `registerApp`, which re-mints the same authority as `G2`;
+the user clicks Revoke; the ledger row for `G2` disappears; the socket, still filed under `G1`,
+is never touched. The revoke button lied. A sibling of `A84`/`A70`, in the same subsystem, found
+the same way -- by hand-verifying a hydration/handle-identity interaction rather than trusting
+that a green suite meant the cascade actually ran.
+
+**Why the existing suite could not see it.** Every `hydrateFromPinnedManifest` test
+(`grant-ledger-pin-hydration.test.ts`) exercised `GrantLedger` alone, with no `HandleTable` in the
+picture at all -- so a re-minted id with no live handle under it looked identical to a re-minted
+id that quietly orphaned one. Nothing in the suite ever acquired a handle between the two
+hydration calls.
+
+> **Resolved 2026-09-15, lane FIX-1.** Two halves, neither correct alone:
+>
+> **Half 1 -- do not re-mint unchanged authority.** `grant-persistence.ts`'s
+> `replaceHydratedGrants` now compares each newly-restored capability's patterns against
+> whatever `grants` already held for it, using the same order-independent `sameOwnPatterns`
+> check `src/main/grant-changed-capabilities.ts` already used for the identical reason one layer
+> up (A156) -- moved into `src/broker/policy/update.ts`, not duplicated a third time, since
+> `src/broker/` may never import `src/main/` and the shared copy had to live on the broker side.
+> A set-equal match reuses the EXISTING `Grant` object, id included, instead of the fresh one
+> hydration minted for it.
+>
+> **Half 2 -- when authority DID change, the superseded grant's handles are torn down.**
+> `GrantLedger` has no `HandleTable` reference (README.md's own class doc), so it cannot cascade
+> by itself. `replaceHydratedGrants` now returns a `SupersededGrant[]` -- every capability
+> `grants` held before the call that was either dropped outright or replaced with a genuinely
+> different pattern set, paired with its OLD id. `GrantLedger.hydrateFromPinnedManifest` and a
+> new `hydrateGrantsOnFirstRegistration` (the hydration branch pulled out of `registerApp`, so
+> `createBroker` can call it separately and still receive this list even if `registerApp`'s own
+> version-floor write throws afterward) both surface it. `createBroker`'s `registerApp` and
+> `hydrateFromPinnedManifest` wrappers (`src/broker/index.ts`) cascade it through
+> `handleTable.revoke`, unconditionally, matching the ordering `revokePersisted`/`grant`/`revoke`
+> already use: ledger mutation first, cascade after, regardless of whether a disk write failed.
+>
+> **Proven by two tests that fail before the fix**, `src/broker/tests/
+> index-hydration-grant-identity.test.ts`, both against the real `createBroker` surface (not
+> `GrantLedger` alone, closing the coverage gap above): Half 1 -- a handle acquired under a
+> pin-hydrated grant is still torn down by `revokePersisted` after a same-manifest
+> `registerApp`; Half 2 -- a handle acquired under a WIDE pin-hydrated grant is torn down by a
+> narrowing `registerApp` alone, with no explicit revoke call at all. Both time out waiting for
+> `socket.closed` to reject against the unmodified code. Six further unit tests in
+> `grant-persistence.test.ts` prove `replaceHydratedGrants`'s two halves directly (id reuse,
+> order-independence, three distinct supersession shapes, the empty-`grants` baseline case).
+>
+> **Also in scope: `grant-ledger.ts`'s 500-line ceiling (`A177`).** This fix added to a file
+> already at the limit with zero headroom, so `fsBytesWritten`/`reserveFsBytes`/
+> `releaseFsBytes`/`socketAllowance` were pulled out into a new `resource-limits.ts`, continuing
+> the same seam that already produced `grant-persistence.ts`/`update-safety.ts`/
+> `declined-consent.ts`: a "how much may this origin use" concern, distinct from "what was this
+> origin actually granted". `grant-ledger.ts` is 493 lines after this change.
 ### A167 -- three `src/contracts/` shapes landed (A114's delivery shape, the folder picker, `dns.lookup`) -- judgment calls inside each need confirming before the matching implementation lane starts **[AI-REC -- contracts landed this lane; confirm before build]**
 
 **Raised 2026-09-15**, lane L0-contracts (`stream/contracts-05-listen-picker-lookup`), landing
@@ -6586,6 +6668,213 @@ once this lane's shapes are confirmed.
 (item 2, compatibility-matrix.md Table 4 row 6), and whichever lane wires `node-dns.ts` to a real
 broker capability (item 3, `A107`).
 
+### A181 -- pin coverage is measured but nothing reads it yet **[NOTED -- deferred by design, not a defect]**
+
+**Raised 2026-09-15**, docs-correction lane FIX-6, while checking `A166`'s claims against the
+tree.
+
+`stream/trust-02-pin-coverage` (PR #198) built the measurement `A166` asked for --
+`src/loader/pin-coverage.ts` tracks, per origin, how many requests and bytes came from the pin
+versus a granted third-party host -- but nothing in production reads it back out.
+
+**Verified by grep, both claims:**
+- `pinCoverageFor` (`src/loader/electron-serve.ts:49`) has no caller anywhere under `src/`
+  outside its own test file (`src/loader/tests/electron-serve.test.ts`).
+- `deliveryLadder` (`src/trust/delivery-ladder.ts`) has no call site anywhere under `src/`
+  outside its own test file -- so `DeliveryHistoryInput.pinCoverage` is never supplied by
+  production code either; nothing yet constructs the input that would carry a coverage snapshot
+  into the ladder in the first place.
+
+**Not a defect.** The file's own comment on `PinCoverageEvidence` says this plainly: "this
+scores nothing; see build step 6 for how it renders." The measurement was scoped and built
+ahead of the UI that will eventually read it, which is a reasonable order to build in.
+
+**Why it is filed anyway.** PR #198's own title ("measure how much of a served app's pin
+actually covers what it runs") promises a measurement, and a reader who did not also read the
+source comment would reasonably assume the number already reaches somebody -- a person, a log,
+anything. It does not yet. See `A166`'s 2026-09-15 update for the same gap from the ladder's
+side.
+
+**Needed by:** build step 6, same as `A166` -- no new lane implied by this entry; it records
+current state so the next reader does not have to re-derive it from `grep`.
+---
+
+### A170 -- "Deny" on the install dialog did not take back a capability the dialog itself listed **[PARTIALLY RESOLVED 2026-09-15 -- lane FIX-3; the second half needs the owner]**
+
+The all-or-nothing install dialog deliberately shows the **whole declared set**, not the outstanding
+subset -- `src/main/README.md` argues for that explicitly, and it is the right call: a person
+choosing all-or-nothing must see the complete picture. `describeInstallConsent` renders that set
+under the literal heading **"This app wants to:"**.
+
+But a capability can already be **held** at that moment. `app.requestGrant` is a documented second
+door, and `registerApp` runs before `requestInstallConsent` in `app-install.ts`'s `finishInstall`,
+so an app can obtain one declared capability out of band, with its own separate dialog, before the
+install dialog is ever shown -- `install-consent.ts`'s own "not held" filter exists precisely
+because that state is reachable.
+
+So a person read a list containing something the app already had, clicked **Deny**, and the app kept
+it. Nothing in the dialog distinguished a held row from a requested one: `describeInstallConsent`
+was never given the held set, so it **could not** mark them -- while the per-capability screens
+already marked earlier answers `[Allowed]`/`[Denied]`, which made the all-or-nothing dialog the odd
+one out rather than a considered exception.
+
+**Fixed:** the held subset is now passed to the renderer and already-held rows are marked
+`[Already allowed]`, matching the bracket convention `describeCapabilityChoice` already used. Deny
+visibly applies to the rest. A row that merges two capabilities is marked only when **every**
+contributing capability is held.
+
+**STILL OPEN, and it is an owner decision, not an implementation gap:** should Deny also **revoke**
+the already-held capability? Taking away a grant the person separately agreed to, because they
+declined a different question, is a real behaviour change with its own surprise -- so the run
+deliberately did not build it. The dialog now tells the truth either way; the question is whether
+the truth it tells is the one the owner wants.
+
+### A172 -- the declined-consent record was kept three inconsistent ways, and one of them made a capability permanently un-askable **[RESOLVED 2026-09-15 -- lane FIX-3]**
+
+All three in `src/main/install-consent.ts`, found independently by two reviewers and `/code-review`:
+
+1. **It recorded too much.** The decline branch wrote the *entire declared set*, including a
+   capability that was currently **held**. Concrete harm: an origin declares `{tcp.connect, fs}`;
+   `fs` is already held through the second door; the person declines; `fs` is written into the
+   declined record. The person later revokes `fs` from the settings list -- `revokePersisted`
+   touches `grants`, never `declinedCapabilities` -- and on the next visit nothing is outstanding,
+   so **the dialog never returns and `fs` can never be offered again.** A declined entry needs no
+   live grant to suppress a future dialog, which is what made this permanent.
+2. **Replace versus append.** The all-or-nothing branch REPLACED the record; the per-capability
+   branch APPENDED. A manifest switching `consentGranularity` between visits could therefore drop an
+   earlier per-capability "no". The module's own doc claimed a refusal "is never a decline of
+   anything OUTSIDE this round" -- true of one branch only.
+3. **Cleared on one accept path of three.** `clearDeclinedConsent`'s only caller in the tree was
+   this file's own all-or-nothing accept branch. A "yes" reached through `app.requestGrant`, or
+   through `update-outcomes.ts`'s accepted capability prompt, left the persisted decline in place --
+   contradicting the stated invariant that an old "no" cannot outlive a "yes".
+
+**Fixed:** a decline now records only what was actually outstanding this round; both branches write
+through one `recordDeclined` helper that always appends, so "declined" cannot mean different things
+depending on which branch ran; and both other accept paths now retire the relevant decline --
+`request-grant.ts` retires just the one capability it granted, composed from existing `Broker`
+methods so no new broker primitive was needed, and `update-outcomes.ts`'s capability-prompt accept
+clears the whole record, justified because its `requestedPatterns` is the manifest's current
+declared set, the same shape as the all-or-nothing accept.
+### A173 -- `serve-reach.ts`'s outbound request body was buffered unbounded in the main process **[RESOLVED 2026-09-15]**
+
+**Raised and fixed 2026-09-15**, lane FIX-4 (`stream/loader-10-reach-hygiene`), an independent
+review finding re-verified by the fleet conductor reading the code before this lane started.
+`nodeReachDial` (`src/loader/serve-reach.ts`) read an app's own request body with
+`Buffer.from(await request.arrayBuffer())` -- the file's own header carefully argues the
+RESPONSE side needs no size cap (`Readable.toWeb` streams it) and says nothing about the
+request, which is the gap: a page `fetch()`-ing a large or effectively unbounded body to a
+granted `https.connect` host drove unbounded allocation in this **privileged main process**,
+not the sandboxed renderer.
+
+**Fixed by `readCappedBody`**, a streaming reader over `request.body` that rejects the instant
+the running total would exceed `REACH_MAX_REQUEST_BODY_BYTES` (16 MiB), never buffering past
+the cap first -- the same discipline `src/preload/fetch-route.ts`'s own `readAllCapped` already
+uses for its response body. The cap VALUE matches that file's own `ROUTED_FETCH_MAX_BODY_BYTES`
+exactly (16 MiB is the number this repo already chose once for "an unbounded page-supplied body
+must not be buffered whole"), but it is a second literal, not an import: `src/loader/` and
+`src/preload/` sit on opposite sides of a trust boundary neither may import across
+(`src/loader/README.md`'s "what it must never import" / `src/preload/README.md`'s own list),
+and there is no third neutral home for a single numeric constant that would justify the
+cross-boundary wiring -- `src/shared/` exists for exactly this kind of case but is deliberately
+still empty (code-guidelines.md), and adding its first occupant was judged out of scope for a
+three-defect hygiene lane. AI recommendation, not an owner decision: an owner call on whether
+this constant belongs in `src/shared/` once a second real user of it exists would settle this
+more permanently.
+
+**Verified (this lane):** a test sending a body one byte over the cap now rejects with a
+`REACH_MAX_REQUEST_BODY_BYTES`-naming `TypeError`, confirmed to resolve (not reject) against the
+pre-fix code first; a body exactly at the cap still succeeds. `src/loader/tests/serve-reach.test.ts`.
+
+### A174 -- `serve-reach.ts` forwarded hop-by-hop response headers verbatim, including a `transfer-encoding` that was already false **[RESOLVED 2026-09-15]**
+
+**Raised and fixed 2026-09-15**, lane FIX-4, same review pass as A173. `forwardedRequestHeaders`
+already stripped `host`/`connection`/`content-length` with an explicit
+`HOP_BY_HOP_REQUEST_HEADERS` set; `forwardedResponseHeaders` had no strip set at all, so
+`transfer-encoding`, `connection` and `keep-alive` were copied onto the `Response` handed back
+to `serve.ts`'s `fetchThirdParty`. `transfer-encoding: chunked` is the concrete harm: Node's
+`http` parser has already de-chunked the body by the time `IncomingMessage` emits anything, so a
+forwarded `transfer-encoding` header describes wire framing that no longer exists on the stream
+the app actually reads -- simply false, not merely redundant.
+
+**Fixed** with a second strip set, `HOP_BY_HOP_RESPONSE_HEADERS`, covering the full RFC 7230
+SS6.1 hop-by-hop list (`connection`, `keep-alive`, `proxy-authenticate`, `proxy-authorization`,
+`te`, `trailer`, `transfer-encoding`, `upgrade`) rather than only the three the finding named --
+these are all headers describing a hop that has already ended by the time this `Response` is
+built, and there is no principled reason to strip three of the eight and forward the rest. Kept
+as a second, separately-documented set rather than unified with the request side's: the request
+set strips `host`/`content-length` for a DIFFERENT reason (Node computes those itself from what
+it is handed, not because they are hop-by-hop), so a single shared set would either miss those
+two or mis-describe why `transfer-encoding` matters on the response side specifically.
+
+**Verified (this lane):** a test against a real chunked, `Connection: keep-alive`-declaring TLS
+response confirms all three headers are now absent from the `Response` while `content-type`
+still passes through untouched -- confirmed to fail against the pre-fix code first (transfer-
+encoding measured as `'chunked'`, not `null`). `src/loader/tests/serve-reach.test.ts`.
+
+### A175 -- pin coverage counted the whole pinned asset's size even when a Range request served only a slice, or nothing at all **[RESOLVED 2026-09-15]**
+
+**Raised and fixed 2026-09-15**, lane FIX-4, same review pass as A173/A174.
+`createAppRequestHandler` (`src/loader/serve.ts`) called `recordCoverage?.('pinned',
+content.length)` BEFORE `buildResponse` applied the request's `Range` header, so a 10 MB video
+fetched in many range requests recorded the full 10 MB every single time, and an unsatisfiable
+range (416, no body at all) recorded the full asset size for zero bytes actually sent. Third-
+party requests were never affected -- `fetchThirdParty` already records the peer's own
+`content-length`, read after the real response exists -- so this skewed the pinned-vs-third-
+party ratio specifically, the measure `src/trust/README.md` calls load-bearing and the reason
+this whole coverage mechanism (ADR-0006's D-ladder, #198) exists.
+
+**Fixed** by moving the `recordCoverage?.('pinned', ...)` call to AFTER `buildResponse` runs,
+and reading the byte count off the response it actually built (`contentLengthOf`, the same
+helper `fetchThirdParty` already used for the identical purpose on its own side -- one
+implementation of "read the byte count off the `Response` you are about to return," not two).
+`buildResponse` always sets `content-length` on a 200 or 206; a 416 sets none, handled as an
+explicit `0` rather than falling through to `contentLengthOf`'s `undefined` -- a 416's zero
+bytes-sent is a KNOWN value, not a size that could not be measured, so it must not trip
+`pin-coverage.ts`'s own `bytesIncomplete` flag (that file's header: "a missing size sets
+`bytesIncomplete`, never a silent zero" -- which is exactly backwards for a case where the
+silent zero IS the correct, measured answer).
+
+**Verified (this lane):** three tests confirmed failing against the pre-fix code first (a single
+5-byte range recorded 300; fifty 10-byte range requests recorded 15000, not 500; a 416 recorded
+300, not 0), then passing after the fix; a fourth confirms a denied same-origin request still
+adds nothing. `src/loader/tests/pin-coverage.test.ts`.
+
+### A183 -- an app could smuggle a second request past the one host its grant names **[RESOLVED 2026-09-15 -- found by the review run's own security pass]**
+
+`nodeReachDial` (`src/loader/serve-reach.ts`) stripped only `host`, `connection` and
+`content-length` from the OUTBOUND request. RFC 7230 SS6.1's remaining hop-by-hop headers --
+`transfer-encoding` above all -- were forwarded from whatever the app set, and nothing upstream of
+this file restricts an app's headers.
+
+**`nodeReachDial` sets `content-length` itself.** So a forwarded `transfer-encoding: chunked`
+arrives ALONGSIDE it. Measured rather than assumed, with a probe against Node's own client:
+
+    POST / HTTP/1.1
+    transfer-encoding: chunked
+    content-length: 5
+    ...
+    "5\r\nhello\r\n0"
+
+Node sends **both** headers and chunk-frames the body. A front-end and a back-end that disagree
+about which header ends the request is the whole of request smuggling, and here the app controls
+every header and every body byte.
+
+**Why this is a capability escape and not a generic web bug.** The grant authorises one host. A
+smuggled second request is processed by whatever sits behind that host's front-end -- another
+virtual host, another backend -- which the person never granted and the broker never checked.
+`checkConnectSecure` authorises the connection; it cannot see a second request hidden inside the
+first one's body.
+
+**Fixed** by stripping the full RFC 7230 SS6.1 set on the request side, the same set the response
+side had just gained. The regression test asserts on the headers the PEER ACTUALLY RECEIVED --
+echoed back from the test server -- because asserting on the `Request` handed in would only re-read
+the test's own input, never what Node put on the socket. Verified to FAIL against the unfixed strip
+set and pass with it.
+
+**How it was found, because the method is the transferable part:** the fix that landed
+`A174` added a hop-by-hop set for the RESPONSE and left the REQUEST side's three-entry set
+untouched. The asymmetry was the tell. Reading it raised the question; a probe answered it.
 ### A184 -- `orivon.fs.open` is built end to end for its RPC-shaped methods; `readable()`/`writable()` stop at the broker layer, not yet page-reachable **[AI-REC -- readable/writable deferral is a scope call, not a discovered blocker; the other judgment calls below are flagged, not owner-reviewed]**
 
 **Raised 2026-09-15**, lane L2-fsopen (`stream/broker-15-fs-open`). `FileHandle`
