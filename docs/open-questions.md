@@ -6895,3 +6895,98 @@ because the underlying hazard is structural and will recur:** a brief written wh
 in flight goes stale between dispatch and execution, and a lane that trusts it builds on something
 absent. The cheap fix on the conductor's side is to state the dependency's commit, not just its PR
 number, so a lane can verify the claim instead of taking it on faith.
+
+### A189 -- `fs.open`'s `FileHandle` has no abandonment signal at all -- a page that opens and never closes leaks the fd and a capacity slot for the life of the process **[AI-REC -- filed, not fixed]**
+
+**Raised 2026-09-16**, lane ADV-fix (`stream/broker-17-adversarial-fixes`), fixing the sibling
+leak this same lane closed for `TcpServer` (see that fix's own commit and
+`src/broker/transport/server-relay.ts`'s new comment on `cleanup()`). Both bugs share one root
+cause -- a resource whose only abandonment signal is a `MessagePort` closing, reacted to by
+tearing down the underlying handle -- but `FileHandle` is structurally missing the half that made
+the `TcpServer` fix possible.
+
+**The mechanism, or rather its absence.** `orivon.fs.open` (A184) returns a `FailableFileHandle`
+registered in `dispatch-fs.ts`'s own `FsTransport.registry` (`src/broker/transport/dispatch-fs.ts`,
+the `'fs.open'` case), but that registry has no dedicated `MessagePort` per handle the way
+`net.connect`'s socket relay or `net.listen`'s server relay do -- A184's own scope cut left
+`readable()`/`writable()`, and with them any per-handle port, at the broker layer only (this
+document's own A184 entry, and `docs/architecture/handle-contracts.md`'s FileHandle correction).
+Every other handle kind's abandonment fix in this run (`TcpSocket`'s `port.onClose` via A84,
+`TcpServer`'s `port.onClose` via this lane's own fix above) hooks the SAME mechanism: the
+renderer's side of a dedicated port closing, reacted to by releasing the handle. `fs.open` has no
+such port to hook a `port.onClose` onto -- there is nothing to hook, structurally, not merely
+nothing hooked yet.
+
+**Consequence.** A page that calls `orivon.fs.open(...)` and lets the resulting object fall out of
+scope without ever calling `close()` -- ordinary JS garbage-collection behaviour, not misuse --
+leaks the real OS file descriptor and one of `dispatch-fs.ts`'s registry entries for the life of
+the broker process, exactly the same shape of leak this lane's `TcpServer` fix closes, but with no
+available fix of the same shape.
+
+**`handles.ts`'s own `dropOrigin` exists and has ZERO production callers** -- confirmed by
+`grep -rn 'dropOrigin' src/` before filing this: the only references are the method's own
+definition and its unit test. A per-origin reaper that walked `dropOrigin` on navigation
+(`session`-level `did-navigate`, or the app-loader's own teardown once build step 4 exists) would
+close this gap and, incidentally, would also be a second, coarser backstop for the `TcpServer`
+leak this lane just fixed directly -- but nothing today calls it, so navigating away from an origin
+reaps nothing either.
+
+**What would actually fix this, not attempted in this lane per its own brief:** either (a) give
+`fs.open` a dedicated delivery port the way `net.connect`/`net.listen` have, purely to carry an
+abandonment signal (a materially bigger change than this lane's scope -- A184's `readable()`/
+`writable()` deferral would need revisiting too, since the natural place to add a port is the same
+place those stopped), or (b) wire `dropOrigin` to a real navigation/session-teardown event, which
+closes this leak and the general "an origin's handles outlive the page that opened them" class at
+once rather than one handle kind at a time. Neither is a small fix; both are two-sided (a wiring
+change plus, for (a), touching A184's already-shipped scope boundary), which is why this is filed
+rather than attempted here.
+
+**Owner's decision needed:** which of (a)/(b) above, or something else, and whether it is worth
+doing before `fs.open` carries a real page-facing grant in production (no origin holds one today,
+per the standing note at the top of this file's build-step-4 entries).
+
+### A190 -- `net.lookup`'s capability union hands an `https.connect`-only app a DNS-reconnaissance oracle `https.connect` itself never had **[AI-REC -- confirm alongside A167, do not narrow without owner sign-off]**
+
+**Raised 2026-09-16**, lane ADV-fix (`stream/broker-17-adversarial-fixes`), from an independent
+adversarial review (`ADV-boundary`) of PRs #199-#205, confirmed against the code by the conductor
+before this lane was dispatched to fix its two criticals -- this finding was deliberately left
+unfixed and handed here to file, per this lane's own brief, because the correct answer is a
+product decision, not a bug.
+
+**Restates and sharpens A167's own flagged gap** (`policy/README.md:161-182`'s own design note,
+cited there as "the union-of-three-capabilities reading as still unconfirmed") with a concrete
+asymmetry A167 did not spell out: `net.lookup` authorises a hostname if ANY of `tcp.connect`,
+`https.connect` or `udp.send` holds a pattern matching it (`net-capability.ts`'s
+`OUTBOUND_CAPABILITIES`, `:428-478`'s `lookup`). Folding the three together is justified,
+per that same design note, by the claim that a held pattern already lets an app force the broker
+to resolve any name it authorises, by attempting a real connection through it -- **true for
+`tcp.connect`** (`checkConnect` calls the resolver, and `couldAnyPatternMatch` lets a wildcard
+pattern's host through to it before any address is checked) **and true for `udp.send`**
+(`authorisedSend` reuses `checkConnect` verbatim) **but not true for `https.connect`**.
+`connect-secure.ts`'s own header says so directly: `checkConnectSecure` never resolves a hostname
+at all -- TLS certificate verification stands in for the address check `checkConnect` performs --
+so before `net.lookup` existed, an app holding ONLY `https.connect: ["*:*"]` (a real, narrower
+grant than `tcp.connect: ["*:*"]`; ADR-0017 exists specifically to offer it as the narrower
+alternative) had no broker-exposed way to learn what a hostname resolves to. `net.lookup` gives it
+exactly that: a general DNS oracle over any hostname it can guess, returning the real resolved
+public address on success and a uniform `'unreachable'` (by design indistinguishable from "does
+not resolve") when every resolved address is private -- a hostname-based LAN/infrastructure
+reconnaissance primitive (enumerate `printer.local`, `nas.local`, `vpn.company.example`, ... and
+learn which exist) behind a capability whose stated intent, per ADR-0017 and `connect-secure.ts`'s
+own comment, was "let this app fetch over TLS," never "let this app query DNS for arbitrary
+names." This does not let the app connect anywhere new -- the returned addresses are still
+filtered to public-unicast only -- it is reconnaissance, not a connectivity escalation.
+
+**Why this is filed rather than fixed here.** The plausible narrowing -- drop `https.connect` from
+`OUTBOUND_CAPABILITIES` -- is a one-line, low-risk change, but it is a product decision about what
+`https.connect` is understood to grant, not a bug with one correct fix: `policy/README.md` already
+states the union as settled fact while its own cross-reference (A167) says the reading is
+unconfirmed, and this lane's brief was explicit that narrowing it without sign-off would just
+replace one undocumented assumption with another. **This lane did not touch
+`OUTBOUND_CAPABILITIES` or any policy file.**
+
+**Owner's decision needed:** either (a) drop `https.connect` from `net.lookup`'s authorising set,
+accepting that an `https.connect`-only app loses the DNS-lookup convenience `net.lookup` currently
+gives it, or (b) keep the union as built and record, as an explicit owner decision rather than an
+unconfirmed AI reading, that `https.connect: "*:*"` is understood to also grant unrestricted DNS
+resolution. Either closes A167's own cross-reference; neither has been chosen yet.
