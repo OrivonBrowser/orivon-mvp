@@ -95,10 +95,36 @@ describe("orivon.net.lookup is bounded by the app's own held network grant (d-00
     expect(resolveLookupCalled).toBe(false)
   })
 
-  it('resolves under an https.connect-only grant -- the union, not just tcp.connect', async () => {
-    const broker = createBroker(baseDeps({ resolveLookup: async () => [{ address: '93.184.216.34', family: 'IPv4' }] }))
+  // d-0031 (docs/open-questions.md A190/A193): checkConnectSecure never
+  // resolves a hostname at all -- TLS certificate verification stands in
+  // for the address check checkConnect performs -- so unlike tcp.connect
+  // and udp.send below, an https.connect-only app never had a broker-
+  // exposed way to force a name resolved before net.lookup existed.
+  // OUTBOUND_CAPABILITIES (../net-capability.ts) excludes it for exactly
+  // that reason. THIS is the test that would have failed before that fix:
+  // the union used to include https.connect and this call used to resolve.
+  it('denies a lookup under an https.connect-only grant -- https.connect is not a raw-connection capability (d-0031)', async () => {
+    let resolveLookupCalled = false
+    const broker = createBroker(baseDeps({
+      resolveLookup: async () => { resolveLookupCalled = true; return [{ address: '93.184.216.34', family: 'IPv4' }] }
+    }))
     broker.registerApp(APP, manifestWith({ net: { https: { connect: ['api.example.com:443'] } } }))
     await broker.grant(APP, 'https.connect', ['api.example.com:443'])
+
+    const error = await rejection(broker.net.lookup(APP, { hostname: 'api.example.com' }))
+
+    expect(error.code).toBe('denied')
+    expect(error.platformCode).toBeUndefined()
+    expect(resolveLookupCalled).toBe(false)
+  })
+
+  it('resolves when the app holds https.connect AND tcp.connect -- narrowing must not refuse an app that also holds a raw-connection grant', async () => {
+    const broker = createBroker(baseDeps({ resolveLookup: async () => [{ address: '93.184.216.34', family: 'IPv4' }] }))
+    broker.registerApp(APP, manifestWith({
+      net: { https: { connect: ['api.example.com:443'] }, tcp: { connect: ['api.example.com:443'] } }
+    }))
+    await broker.grant(APP, 'https.connect', ['api.example.com:443'])
+    await broker.grant(APP, 'tcp.connect', ['api.example.com:443'])
 
     const addresses = await broker.net.lookup(APP, { hostname: 'api.example.com' })
 
@@ -175,16 +201,17 @@ describe("orivon.net.lookup is bounded by the app's own held network grant (d-00
     const gate = new Promise<readonly LookupAddress[]>((resolve) => { settle = resolve })
     const broker = createBroker(baseDeps({ resolveLookup: async () => await gate }))
     broker.registerApp(APP, manifestWith({
-      net: { tcp: { connect: ['api.example.com:443'] }, https: { connect: ['other.example.com:443'] } }
+      net: { tcp: { connect: ['api.example.com:443'] }, udp: { send: ['other.example.com:6881'] } }
     }))
     await broker.grant(APP, 'tcp.connect', ['api.example.com:443'])
-    const httpsGrant = await broker.grant(APP, 'https.connect', ['other.example.com:443'])
+    const udpGrant = await broker.grant(APP, 'udp.send', ['other.example.com:6881'])
 
     // Authorised via tcp.connect (checked first -- net-capability.ts's own
-    // OUTBOUND_CAPABILITIES order); revoking the UNRELATED https.connect
-    // grant this origin also holds must not touch it.
+    // OUTBOUND_CAPABILITIES order); revoking the UNRELATED udp.send grant
+    // this origin also holds must not touch it, even though udp.send is
+    // still part of the same union.
     const pending = broker.net.lookup(APP, { hostname: 'api.example.com' })
-    await broker.revoke(APP, httpsGrant.id)
+    await broker.revoke(APP, udpGrant.id)
     settle([{ address: '93.184.216.34', family: 'IPv4' }])
 
     await expect(pending).resolves.toEqual([{ address: '93.184.216.34', family: 'IPv4' }])

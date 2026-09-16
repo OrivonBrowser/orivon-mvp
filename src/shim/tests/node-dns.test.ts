@@ -85,6 +85,63 @@ describe('dns.lookup -- failure paths', () => {
     expect(error.code).toBe('denied')
   })
 
+  /** Same shape as installFakeOrivon above, plus a stubbed app.grants() -- describeLookupDenial's only other dependency. */
+  function installFakeOrivonWithGrants (
+    deniedMessage: string,
+    grants: Array<{ capability: string }>
+  ): void {
+    ;(globalThis as GlobalWithOrivon).orivon = {
+      net: { lookup: async () => { throw Object.assign(new Error(deniedMessage), { code: 'denied' }) } },
+      app: { grants: async () => grants }
+    } as unknown as Orivon
+  }
+
+  // d-0031/A193: the broker's own 'denied' stays uniform (checked in
+  // src/broker/tests/net-lookup.test.ts); this is the shim naming the
+  // reason for a ported app, from the app's OWN app.grants() rather than
+  // anything the broker's reply says.
+  it('names an https.connect-only refusal instead of leaving it a bare denial', async () => {
+    installFakeOrivonWithGrants('the hostname was not authorised by any held network grant', [{ capability: 'https.connect' }])
+    const { lookup } = await import('../node-dns.js')
+    const error = await new Promise<Error & { code?: string }>((resolve) => {
+      lookup('blocked.example', (err) => resolve(err as Error & { code?: string }))
+    })
+    expect(error.code).toBe('denied')
+    expect(error.message).toMatch(/https\.connect/)
+    expect(error.message).toMatch(/tcp\.connect|udp\.send/)
+  })
+
+  it('leaves the denial message generic when the app holds no network grant at all -- nothing to name', async () => {
+    installFakeOrivonWithGrants('no grant', [])
+    const { lookup } = await import('../node-dns.js')
+    const error = await new Promise<Error & { code?: string }>((resolve) => {
+      lookup('blocked.example', (err) => resolve(err as Error & { code?: string }))
+    })
+    expect(error.code).toBe('denied')
+    expect(error.message).not.toMatch(/https\.connect/)
+  })
+
+  it('leaves the denial message generic when the app also holds tcp.connect -- narrowing must not misname an ordinary pattern-mismatch denial', async () => {
+    installFakeOrivonWithGrants('no pattern match', [{ capability: 'https.connect' }, { capability: 'tcp.connect' }])
+    const { lookup } = await import('../node-dns.js')
+    const error = await new Promise<Error & { code?: string }>((resolve) => {
+      lookup('blocked.example', (err) => resolve(err as Error & { code?: string }))
+    })
+    expect(error.code).toBe('denied')
+    expect(error.message).not.toMatch(/https\.connect does not authorise/)
+  })
+
+  it('falls back to the generic message, rather than throwing, when app.grants() itself is unavailable', async () => {
+    installFakeOrivon(async () => { throw Object.assign(new Error('no grant'), { code: 'denied' }) })
+    // No .app at all on this fake orivon -- the pre-existing shape every
+    // other test in this file already uses.
+    const { lookup } = await import('../node-dns.js')
+    const error = await new Promise<Error & { code?: string }>((resolve) => {
+      lookup('blocked.example', (err) => resolve(err as Error & { code?: string }))
+    })
+    expect(error.code).toBe('denied')
+  })
+
   it('an unreachable resolution (a permitted name that resolves nowhere, or only to an address the app could never reach) surfaces the real platformCode, e.g. ENOTFOUND', async () => {
     installFakeOrivon(async () => { throw Object.assign(new Error('no records'), { code: 'unreachable', platformCode: 'ENOTFOUND' }) })
     const { lookup } = await import('../node-dns.js')
