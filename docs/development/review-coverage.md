@@ -50,6 +50,30 @@ Per-finding detail is in `open-questions.md` (A153-A158) and this run's own flee
 outside this repository. This row records that the review happened and what it found in
 aggregate, not a re-narration of each finding.
 
+### PRs #183-#198 -- the post-step-4 range (16 PRs, 2026-09-15)
+
+Reviewed as one range rather than per PR, because the prior entry stops at #182 and nothing
+independent had run over anything after it. 100 files, +7572/-587; 40 of those are non-test source
+files at +2254/-345.
+
+| Mechanism | Scope | Outcome |
+|---|---|---|
+| Four adversarial review lanes, split by axis rather than by file count | Consent and grants; loader, pinned-bundle serving, CSP and third-party reach; the Node shim's named refusals, the window/launch path and CI tooling; and the seams between PRs plus alignment against `mvp-scope.md`, the ADRs and the build queue's exit criteria | 10 findings. The axis split is what earned them: the seam lane found a defect no single-PR review can see, and the two tooling reviewers independently found different holes in the same CI gate |
+| Conductor hand-review | Every diff in the range touching `src/broker/` or `src/main/`, per the standing carve-out in `unattended-run-protocol.md` | 3 findings, one of them the range's most serious. Also caught, in review of a fix, a regression test that never awaited the async call whose behaviour it was asserting -- it was passing on scheduling order rather than on the contract |
+| `/code-review`, high effort | The whole range diff | 5 findings, plus six areas explicitly checked and cleared, which is the half of a review that usually goes unrecorded |
+| `ca:security-reviewer` | The range, against `.codearbiter/security-controls.md` | PASS: no critical or high findings. One medium, pre-existing and already tracked, neither introduced nor worsened here. Independently re-derived the pinned-manifest hydration chain and confirmed it never trusts an unverified disk read |
+| Named-persona adversarial review | The range, through three documented engineering and product philosophies | Two findings promoted by concurrence with other mechanisms, and three that no other mechanism produced -- all three from lenses the others did not have: compatibility treated as a contract, and the person's own experience of the consent surface |
+
+**The mechanisms disagreed, and that is the argument for running more than one.** The controls-based
+security review passed the range clean while the most serious defect in it -- a live handle
+surviving the revocation that was supposed to tear it down -- went unseen there, because a handle
+lifecycle bug is outside what a controls review looks at. It was found by an adversarial lane and
+confirmed by hand.
+
+Per-finding detail is in `open-questions.md` (A168-A182). This row records that the review happened
+and what it found in aggregate, not a re-narration of each finding.
+
+
 ## Adding an entry
 
 When an independent review event finishes -- a hand-review, an adversarial pass, a security
