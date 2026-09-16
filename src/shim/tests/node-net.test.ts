@@ -92,16 +92,29 @@ describe('node-net.ts', () => {
   // A135: members read off the default export (a bundled CJS `require('net')`'s
   // own shape) used to be silently absent rather than named. connect/
   // createServer/Socket/Server are now real, decided, built surface --
-  // everything else is still unimplemented.
-  it('names any other unbuilt member, reason unimplemented', async () => {
+  // everything else is still unimplemented. Reading one is safe (A169);
+  // only calling it refuses.
+  it('names any other unbuilt member, reason unimplemented, when called -- reading it first does not throw', async () => {
     installFakeOrivon()
-    const net = (await import('../node-net.js')).default as unknown as Record<string, unknown>
+    const net = (await import('../node-net.js')).default as unknown as Record<string, () => unknown>
     const { OrivonShimError } = await import('../errors.js')
-    expect(() => net.getDefaultAutoSelectFamily).toThrow(OrivonShimError)
+    expect(() => net.getDefaultAutoSelectFamily).not.toThrow()
+    expect(() => net.getDefaultAutoSelectFamily!()).toThrow(OrivonShimError)
     try {
-      void net.getDefaultAutoSelectFamily
+      net.getDefaultAutoSelectFamily!()
     } catch (error) {
       expect((error as InstanceType<typeof OrivonShimError>).reason).toBe('unimplemented')
     }
+  })
+
+  // A169's actual point: a library that merely probes an unbuilt member --
+  // `typeof`, optional chaining, destructuring -- must never crash at
+  // import just because it checked before calling.
+  it('typeof, optional chaining and destructuring over an unbuilt member never throw', async () => {
+    installFakeOrivon()
+    const net = (await import('../node-net.js')).default as unknown as Record<string, unknown>
+    expect(typeof net.getDefaultAutoSelectFamily).toBe('function')
+    expect(() => net.getDefaultAutoSelectFamily ?? undefined).not.toThrow()
+    expect(() => { const { getDefaultAutoSelectFamily } = net as { getDefaultAutoSelectFamily?: unknown }; return getDefaultAutoSelectFamily }).not.toThrow()
   })
 })
