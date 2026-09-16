@@ -47,7 +47,7 @@ import {
 import { HOST, STATIC_PORT } from '../apps/fixture/config.mjs'
 import { createBroker } from '../src/broker/index.js'
 import type { BrokerFs, CreateBrokerOptions, Keychain } from '../src/broker/broker-contracts.js'
-import { dialTcp, listenTcp, resolveHost } from '../src/broker/adapters/node-adapters.js'
+import { dialTcp, listenTcp, resolveHost, resolveLookup } from '../src/broker/adapters/node-adapters.js'
 import { dialTls } from '../src/broker/adapters/tls-adapter.js'
 import { bindUdp } from '../src/broker/adapters/udp-adapter.js'
 import { installDevGrantHook } from '../src/main/dev-grant.js'
@@ -208,7 +208,8 @@ it('Phase 2: the real broker binds a real UDP socket, round-trips a datagram, an
       readdir: async () => { throw new Error('fs is not exercised by this test') },
       stat: async () => { throw new Error('fs is not exercised by this test') },
       rm: async () => { throw new Error('fs is not exercised by this test') },
-      rename: async () => { throw new Error('fs is not exercised by this test') }
+      rename: async () => { throw new Error('fs is not exercised by this test') },
+      open: async () => { throw new Error('fs is not exercised by this test') }
     }
     const keychainStub: Keychain = {
       getSeed: async () => { throw new Error('identity is not exercised by this test') }
@@ -219,6 +220,7 @@ it('Phase 2: the real broker binds a real UDP socket, round-trips a datagram, an
       bind: bindUdp,
       listen: listenTcp,
       resolve: resolveHost,
+      resolveLookup,
       now: () => Date.now(),
       fs: fsStub,
       keychain: keychainStub

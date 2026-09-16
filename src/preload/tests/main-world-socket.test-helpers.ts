@@ -4,7 +4,7 @@
 // out whole, since it is the one concern in that file with no TCP-socket
 // dependency). Not *.test.ts, so vitest does not collect it as its own suite.
 
-import type { MainWorldDatagram, MainWorldUdpBridge } from '../main-world-socket.js'
+import type { MainWorldDatagram, MainWorldFileBridge, MainWorldServerBridge, MainWorldSocketBridge, MainWorldUdpBridge } from '../main-world-socket.js'
 import type { OrivonErrorCode } from '../../contracts/errors.js'
 import type { FileStat, SendRefusal } from '../../contracts/handles.js'
 import type { ResponseEnvelope } from '../../contracts/ipc.js'
@@ -76,11 +76,26 @@ export function fakeSocketBridgeResult (): {
   }
 }
 
+/** A fake `bridge.fsOpen()` result -- everything `buildFile` (main-world-socket.ts) needs. */
+export function fakeFileBridgeResult (overrides: Partial<MainWorldFileBridge> = {}): MainWorldFileBridge {
+  return {
+    id: 'f1',
+    read: async () => new Uint8Array([1, 2, 3]),
+    write: async () => 3,
+    stat: async () => ({ size: 3, isFile: true, isDirectory: false, mtimeMs: 0 }),
+    truncate: async () => {},
+    sync: async () => {},
+    close: async () => {},
+    ...overrides
+  }
+}
+
 export function fakeBridge (
   netConnectResult: ReturnType<typeof fakeSocketBridgeResult>,
   udpResult?: ReturnType<typeof fakeUdpBridgeResult>,
   fsReadFileSync: (path: string) => ResponseEnvelope<Uint8Array> = () => ({ id: '', ok: true, result: new Uint8Array() }),
-  netConnectSecureResult: ReturnType<typeof fakeSocketBridgeResult> = fakeSocketBridgeResult()
+  netConnectSecureResult: ReturnType<typeof fakeSocketBridgeResult> = fakeSocketBridgeResult(),
+  serverResult?: ReturnType<typeof fakeServerBridgeResult>
 ): {
   appManifest: () => Promise<unknown>, appGrants: () => Promise<unknown>
   appRequestGrant: (request: { capability: string, patterns?: readonly string[] }) => Promise<boolean>
@@ -91,10 +106,13 @@ export function fakeBridge (
   fsStat: (path: string) => Promise<FileStat>
   fsRm: (path: string, opts?: { recursive?: boolean }) => Promise<void>
   fsRename: (from: string, to: string) => Promise<void>
+  fsOpen: (path: string, flags: string) => Promise<MainWorldFileBridge>
   idPublicKey: (curve: string) => Promise<Uint8Array>, idSign: (curve: string, payload: Uint8Array) => Promise<Uint8Array>
   netConnect: (opts: { host: string, port: number }) => Promise<ReturnType<typeof fakeSocketBridgeResult>>
   netConnectSecure: (opts: { host: string, port: number }) => Promise<ReturnType<typeof fakeSocketBridgeResult>>
   netUdpBind: (opts: { port: number }) => Promise<MainWorldUdpBridge>
+  netListen: (opts: { port: number }) => Promise<MainWorldServerBridge>
+  netLookup: (opts: { hostname: string }) => Promise<ReadonlyArray<{ address: string, family: 'IPv4' | 'IPv6' }>>
 } {
   return {
     appManifest: async () => ({ orivonApiVersion: 0 }),
@@ -108,6 +126,7 @@ export function fakeBridge (
     fsStat: async () => ({ size: 0, isFile: true, isDirectory: false, mtimeMs: 0 }),
     fsRm: async () => {},
     fsRename: async () => {},
+    fsOpen: async () => fakeFileBridgeResult(),
     idPublicKey: async () => new Uint8Array(),
     idSign: async () => new Uint8Array(),
     netConnect: async (_opts) => netConnectResult,
@@ -116,7 +135,12 @@ export function fakeBridge (
     // called bridge.netConnect instead of bridge.netConnectSecure pass
     // silently, since both fields would then resolve to an identical object.
     netConnectSecure: async (_opts) => netConnectSecureResult,
-    netUdpBind: async (_opts) => udpResult ?? fakeUdpBridgeResult()
+    netUdpBind: async (_opts) => udpResult ?? fakeUdpBridgeResult(),
+    netListen: async (_opts) => serverResult ?? fakeServerBridgeResult(),
+    // Present so this fake still satisfies installOrivon's bridge shape --
+    // no test in this file drives net.lookup (main-world-lookup.test.ts,
+    // this lane's own sibling, does).
+    netLookup: async () => []
   }
 }
 
@@ -157,6 +181,32 @@ export function fakeUdpBridgeResult (): MainWorldUdpBridge & {
     emitFatal: (code) => { onFatal(code) },
     sent,
     consumed
+  }
+}
+
+/** A MainWorldServerBridge double whose callbacks the test drives by hand -- ./fakeUdpBridgeResult's counterpart for net.listen (A114, d-0028). */
+export function fakeServerBridgeResult (): MainWorldServerBridge & {
+  emitConnection: (socket: MainWorldSocketBridge) => void
+  emitEnd: (code?: OrivonErrorCode) => void
+  readonly reportAcceptedCalls: number
+  readonly closeCalls: number
+} {
+  let onConnection: (socket: MainWorldSocketBridge) => void = () => {}
+  let onReadEnd: (code: OrivonErrorCode | undefined) => void = () => {}
+  const state = { reportAcceptedCalls: 0, closeCalls: 0 }
+  return {
+    id: 's1',
+    localAddress: '0.0.0.0',
+    localPort: 6881,
+    onConnection: (cb) => { onConnection = cb },
+    onReadEnd: (cb) => { onReadEnd = cb },
+    reportAccepted: () => { state.reportAcceptedCalls++ },
+    closed: new Promise<void>(() => {}),
+    close: async () => { state.closeCalls++ },
+    emitConnection: (socket) => { onConnection(socket) },
+    emitEnd: (code) => { onReadEnd(code) },
+    get reportAcceptedCalls () { return state.reportAcceptedCalls },
+    get closeCalls () { return state.closeCalls }
   }
 }
 
