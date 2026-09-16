@@ -7667,7 +7667,7 @@ gives it, or (b) keep the union as built and record, as an explicit owner decisi
 unconfirmed AI reading, that `https.connect: "*:*"` is understood to also grant unrestricted DNS
 resolution. Either closes A167's own cross-reference; neither has been chosen yet.
 
-### A194 -- A187's wording gate is closed (`d-0032`); the FILE shape of `orivon.fs.userSelected` now reaches a page, the FOLDER shape deliberately still does not **[RESOLVED: wording. AI-REC: the folder-shape scope call]**
+### A194 -- A187's wording gate is closed (`d-0032`); the FILE shape of `orivon.fs.userSelected` now reaches a page, and the FOLDER shape now does too **[RESOLVED 2026-09-16 -- both shapes wired; the shape question itself continues as A195]**
 
 **Raised 2026-09-16**, lane L5-wording (`stream/main-10-user-selected`), resuming A187's own
 work once the owner ruled on queue item 4.3's wording checkpoint.
@@ -7807,6 +7807,22 @@ own, a design one.
 > `src/contracts/` here even for a doc-only correction -- see A193 below.
 
 ---
+
+**Closed 2026-09-16 by PR #218.** The folder shape reaches a page: nine `DirectoryHandle` members
+over eight `fs.dir*` control-channel methods, with `fs.dirOpen` routing through **the same
+`registerFileHandle` mechanism `fs.open` already built** rather than a second file-handle path --
+asserted by its own test, not left to convention.
+
+**The scope call this entry recorded was right at the time and stopped being right when its reason
+expired.** The folder shape was left unwired because the picker's wording was an open owner
+checkpoint, and wiring it would have let a picker with unreviewed copy reach a real app. `d-0032`
+closed that checkpoint; the wiring followed immediately. Worth keeping as a worked example: the
+lane did not treat "not built" as a permanent verdict, and it did not build ahead of the gate
+either.
+
+**What does NOT close with it:** `DirectoryHandle`'s own method set is still an unconfirmed AI
+recommendation (A167 item 2) -- continued as **A195**. The delivery mechanism is built against a
+shape the owner has not ratified, and if that shape changes the wiring changes with it.
 
 ### A193 -- `capability-api.ts`'s `OrivonNet.lookup` doc comment still names `https.connect` as part of `net.lookup`'s authorising union, now stale under d-0031 **[NEEDS A CONTRACTS-ONLY FOLLOW-UP]**
 
