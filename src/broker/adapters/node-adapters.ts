@@ -16,6 +16,7 @@ import type { PortRange } from '../policy/bind.js'
 import { countPorts, portAt, randomStart } from './port-pick.js'
 import type { Resolver } from '../policy/connect.js'
 import { fail, isOrivonErrorLike } from '../errors.js'
+import type { LookupAddress } from '../../contracts/index.js'
 
 export { nodeFs } from './node-fs-adapter.js'
 
@@ -30,6 +31,24 @@ export const resolveHost: Resolver = async (host) => {
     return answers.map((answer) => answer.address)
   } catch (error) {
     throw fail('unreachable', `could not resolve ${host}`, undefined, errnoCode(error))
+  }
+}
+
+/**
+ * `orivon.net.lookup`'s real DNS call (d-0030) -- the same `dns.lookup`
+ * call as `resolveHost` above, `{ all: true }` so every answer comes back
+ * in resolver order (`broker-contracts.ts`'s own doc on this field: never
+ * re-sorted, never reduced to one). Node's `family` is numeric (`4 | 6`);
+ * `LookupAddress.family` is `handles.ts`'s own string convention (ADR-0008)
+ * -- this is the one place that translation happens on the broker side,
+ * mirrored back to numeric by `orivon-node-shim` one layer up.
+ */
+export async function resolveLookup (hostname: string): Promise<readonly LookupAddress[]> {
+  try {
+    const answers = await lookup(hostname, { all: true })
+    return answers.map((answer) => ({ address: answer.address, family: answer.family === 6 ? 'IPv6' as const : 'IPv4' as const }))
+  } catch (error) {
+    throw fail('unreachable', `could not resolve ${hostname}`, undefined, errnoCode(error))
   }
 }
 
