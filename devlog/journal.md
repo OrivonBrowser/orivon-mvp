@@ -34,9 +34,17 @@ Mark anything that must not leave the team draft as `(Keep private)`.
   folder for an app now reads as "read, change and delete everything in here, including files you
   add later" instead of a softer "read and write" -- and picking a single file now reaches a real
   page for the first time, reusing the exact same wiring `fs.open` already proved.
+- 2026-09-16: **An app keeps its own private storage because you granted it something -- not
+  because it was installed.** That distinction also fixed a real bug: an app served from our own
+  cache that you had not yet granted anything could not open at all.
+- 2026-09-16: **A week of uncommitted work is now a single commit.** The permission engine is
+  roughly 90% done, and everything finally sits in one place to start building actual apps on.
 
 ### In my head
 
+- **Installed and trusted are not the same thing.** We had been treating "this app is installed"
+  as the reason to give it its own private storage. The honest reason is that someone said yes to
+  it -- installing is a separate matter entirely.
 - **The review tools disagreed, and that is the whole point.** The security pass gave the range a
   clean bill of health while the worst bug in it sat there untouched -- a handle outliving its
   revocation just is not what a security-controls review looks at. Cheapest-tool-only would have
