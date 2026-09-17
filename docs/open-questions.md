@@ -6251,7 +6251,7 @@ follow-up, own PR, per its own change-control rule.
 **Needed by:** whoever next reviews `stream/shim-12-named-refusals`, or the next time something
 else in `src/shim/` or `src/shim-electron/` wants to depend on the other.
 
-### A161 -- a fixed three-label origin display still hides the tenant behind a multi-label PRIVATE suffix (cloud/PaaS hosting) **[STILL OPEN -- narrow, not blocking]**
+### A161 -- a fixed three-label origin display still hides the tenant behind a multi-label PRIVATE suffix (cloud/PaaS hosting) **[PARTIALLY RESOLVED 2026-09-17 -- lane FIX-A2; the evidenced cases only, not the general one]**
 
 **Raised 2026-09-14**, `stream/shell-06-three-label-origin`, verifying the owner's "last three
 labels" rule (`formatOriginForDisplay`, `src/main/grant-prompt-render.ts`) against real
@@ -6300,6 +6300,40 @@ together rather than added twice. **Still open:** whether this is worth a depend
 **Needed by:** whenever the owner is ready to review a public-suffix-list dependency for real
 (A142's parked `psl`/`tldts` evaluation applies unchanged), or sooner if an app is ever actually
 served from a multi-label private suffix.
+
+**Update, 2026-09-17, lane FIX-A2 (`stream/shell-11-dialog-address-truth`), `/claude-security`
+scan follow-up, alongside A197/A198 -- AI recommendation, the original three-label rule stays an
+owner decision.** Took a different path than either option this entry's own "AI recommendation"
+above named: not "leave as shipped," and not a public-suffix-list dependency. Added a small,
+evidenced allow-list of multi-label PRIVATE suffixes (`RECOGNISED_PRIVATE_SUFFIXES`,
+`src/main/grant-prompt-render.ts`) -- exactly the three concrete cases this entry itself has
+evidence for (`s3.amazonaws.com`, `compute.amazonaws.com`, and `storage.googleapis.com`, the
+matching Google Cloud Storage case) -- matched label-for-label, never a substring. A host ending
+in a recognised suffix now widens the kept window to that suffix plus ONE more label, instead of
+the plain three: `attacker.storage.googleapis.com` (4 labels) now shows in full, and this entry's
+own worked example, `accounts.google.com.attacker.s3.amazonaws.com`, now elides to
+`...attacker.s3.amazonaws.com` -- the attacker-controlled label survives, where before it was
+dropped entirely behind a string that read as Amazon's own domain.
+
+**Two other shapes were considered and rejected**, both from this entry's own "Find something
+honest within reach" list. Refusing to elide whenever elision would remove the host's single most
+specific label was rejected because, without suffix knowledge, it cannot distinguish a genuine
+platform-suffix risk from an ordinary deep subdomain (`api.mail.google.com` legitimately drops
+`api` under the current rule; refusing that generally would be a real behaviour change to the
+A142-resolved rule for no evidenced gain). Leaving the rule exactly as shipped was rejected because
+it does nothing today for the concrete cases this entry already has evidence for. The allow-list
+was the smallest change that fixes what is evidenced without touching the rule's behaviour for
+anything else.
+
+**This resolves the entry's own worked examples and no more -- explicitly not the general
+problem.** A regional S3 endpoint (`bucket.s3.us-east-1.amazonaws.com`, a different suffix shape,
+the region sitting IN THE MIDDLE rather than at a fixed boundary) and any platform not on the
+list still get the plain three-label cut, exactly as before this fix. This entry stays open for
+that general case; the public-suffix-list dependency it already names is still the only thing
+that closes it for real. **Proven with a failing test first**, per this lane's instructions: 4 new
+cases in `grant-prompt-render.test.ts` (describe block "A161: a multi-label PRIVATE hosting
+suffix no longer swallows the tenant label") failed against the unmodified rule before this fix
+landed -- exact output in this lane's final report / PR body.
 
 ### A163 -- third-party reach (A143) only proxies `https:`; a plain `http:` cross-origin request inside an app's own partition stays denied **[AI-REC -- not an owner decision]**
 
@@ -7940,3 +7974,84 @@ write pump, and what A194's own "ready for one" already named before this lane c
 **Needed by:** the owner, to confirm or revise A167 item 2's `DirectoryHandle` method set now that
 a real page can exercise it -- and whoever builds the settings-permissions UI surface for a picked
 folder, which this lane's dispatch layer is ready for but does not itself build.
+
+### A197 -- the grant prompt folded loopback/private/link-local addresses into "and N other sites", hiding the only thing that ever grants access to them **[RESOLVED 2026-09-17 -- lane FIX-A2, stream/shell-11-dialog-address-truth]**
+
+**Raised and fixed the same lane**, `/claude-security` scan finding, alongside A198 and A161 --
+all three the same underlying failure: the dialog not showing a person what they are actually
+agreeing to.
+
+A manifest can name an address like `127.0.0.1`, `192.168.1.1` or `169.254.169.254` (the cloud
+metadata endpoint), and that manifest entry is the ONLY thing that makes it reachable at all --
+`hostMatches` (`src/broker/policy/connect-patterns.ts`) never lets an ordinary hostname resolve
+onto private address space, even its own. `namedHostsSummary`
+(`src/main/grant-prompt-connect.ts`) nonetheless treated such a pattern exactly like an ordinary
+public hostname: folded into a count the moment it was not the first host declared, and even a
+SOLE private address rendered with `warning: false` and no indication of what it was --
+`describeCapabilityGrant('https.connect', ['api.example.com:443', 'cdn.example.com:443',
+'127.0.0.1:9000'])` rendered `"Connect to api.example.com and 2 other sites"`, with the loopback
+address entirely invisible. Confirmed by a failing test before any fix
+(`grant-prompt-connect.test.ts`, "REGRESSION: the exact defect...") -- 6 new tests failed against
+unmodified code, pasted in this lane's PR body / final report.
+
+**Fixed by treating any address-literal pattern outside public unicast space as its own category,
+never folded and never unwarned.** `nonPublicAddressClassOf` reuses the existing classifier
+(`isPublicUnicast` as the gate, `classifyAddress` for which class -- `src/broker/policy/
+address.ts`, Rule 3: no second classifier written). Every such address is now named explicitly
+and given `warning: true`, matching A134's own unconditional treatment of `tcp.listen`/
+`udp.bind` -- reaching a device on the person's own network is a different KIND of grant, not a
+narrower version of an ordinary one. `describeCapabilityGrant('https.connect', ['127.0.0.1:9000'])`
+now renders `message: "⚠ Connect to 127.0.0.1"`, `explanation: "127.0.0.1 is your own device.
+This is not part of the public internet."` Ordinary public hosts declared alongside a sensitive
+address still fold into a count exactly as before (`... and 2 other sites`) -- only the addresses
+a person cannot safely skim past lose that treatment. Full before/after wording for every case:
+this lane's final report / PR body.
+
+**Not addressed, deliberately out of this fix's scope:** port breadth for a sensitive address (a
+private-address row never shows which port, unlike the single-named-host case, AR-02) and an
+upper bound on how many sensitive addresses get listed (uncapped, unlike A133's threshold for
+ordinary hosts) -- both real but secondary to A197's own claim, which was about addresses being
+hidden entirely, not about the completeness of what is shown once they are not. Left for a
+follow-up if a real manifest ever declares enough sensitive addresses for the second one to
+matter; `MAX_PATTERNS` (256) bounds it regardless.
+
+**Verified:** `grant-prompt-connect.test.ts` (24 tests, including the 6 that failed pre-fix),
+`grant-prompt-render.test.ts`, full suite -- see this lane's final report for exact counts and
+command output.
+
+### A198 -- a blank-line-padded connect pattern was reported to push real content off-screen in the grant prompt **[NOT REPRODUCIBLE -- verified 2026-09-17, lane FIX-A2]**
+
+**Raised and investigated the same lane** as A197/A161, `/claude-security` scan finding. The claim:
+a pattern supplied through `app.requestGrant` could carry blank lines, padding the rendered list
+so the port range and origin scroll out of view.
+
+**Checked directly, not assumed, and found not to hold.** `describeCapabilityGrant` was called
+with deliberately padded patterns -- leading/trailing/internal blank lines, and a pattern that is
+nothing but blank lines -- the MOST permissive path available, since this function does no
+validation of its own and trusts whatever pattern array it is handed. In every case the padding
+either vanished silently or the whole pattern was dropped, never rendered with padding intact:
+
+- `parsePattern` (`src/broker/policy/connect-patterns.ts`) trims the WHOLE pattern before
+  splitting host:port, so leading/trailing blank lines never reach the rendered `host`/`port` at
+  all.
+- `isAsciiHost`, called on the trimmed text, rejects any control character -- including `\n` and
+  `\r` -- ANYWHERE in the string, so a pattern with an INTERNAL blank line fails to parse; the
+  render layer's `parseConnectPatterns` silently skips a pattern it cannot parse (`continue`),
+  dropping it from the summary entirely rather than rendering it padded.
+
+**And this render-layer robustness is redundant with validation that already exists upstream, at
+both real production entry points**, confirmed by reading rather than assumed: `isDeclarableConnectPattern`
+(the `app.requestGrant` gate, `src/broker/policy/request-grant.ts`) and `validateConnectPattern`
+(the manifest-parse gate, `src/loader/manifest-capabilities.ts`) both reject outright any pattern
+where `pattern !== pattern.trim()` -- `validateConnectPattern`'s own comment says this check
+exists specifically "to catch the padding parseConnectPattern's own trim would otherwise hide
+from us." A padded pattern therefore never reaches a real dialog: the whole `app.requestGrant`
+call fails closed before `consent()` is ever invoked (`decideGrantRequest` rejects the entire
+request the moment any one requested pattern fails this check), and a padded manifest declaration
+is rejected at install/load time, never persisted.
+
+**No code changed.** Three tests recording the investigation were added
+(`grant-prompt-connect.test.ts`, "A198: blank-line padding does not survive into the rendered
+text") -- all three pass against unmodified code, which is itself the finding: there was no
+defect to make fail first. Per this lane's own instructions, a non-reproducible claim is reported
+as such rather than having a fix manufactured for it.
