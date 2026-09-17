@@ -321,6 +321,8 @@ export interface Broker {
      * one of these is withdrawn.
      */
     pickedPaths(origin: string): Promise<readonly PickedPath[]>
+    /** A200: `GrantLedger.socketAllowance`, exposed read-only -- same category as `hasGrantsSync` above, never throws. Full reasoning: `src/loader/README.md` Design notes. */
+    socketAllowanceSync(origin: string): number
   }
   readonly net: {
     /** Returns a `FailableTcpSocket` -- a `TcpSocket` plus one broker-internal

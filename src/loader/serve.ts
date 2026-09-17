@@ -35,6 +35,8 @@ import { entryCanonicalPath } from './fetch-bundle.js'
 import { parseManifest } from './manifest.js'
 import type { PinCoverageOutcome } from './pin-coverage.js'
 import { contentTypeFor } from './serve-content-type.js'
+import { guardReachResponse } from './serve-reach-guard.js'
+import type { ReleaseReachSlot, ReserveReachSlot } from './serve-reach-guard.js'
 import { parseRange } from './serve-range.js'
 import { verifyPinnedTree } from './serve-verify.js'
 import type { LoaderStorage } from './storage.js'
@@ -280,12 +282,23 @@ function buildResponse (
  * in this file. Nothing here distinguishes "not granted" from "granted but
  * unreachable" to the page; see `README.md`'s own note on why a denial
  * reason is a local log concern, not a renderer-visible one.
+ *
+ * A199/A200 (docs/open-questions.md): a live authorisation check and a free
+ * allowance slot are only true THIS INSTANT -- neither stayed true for the
+ * request's whole lifetime before this fix. `reserveReachSlot`/
+ * `releaseReachSlot` cap how many of these an app may hold open at once
+ * (A200), and `guardReachResponse` (./serve-reach-guard.js) keeps checking
+ * `authoriseReach` while the body streams so a mid-download revoke actually
+ * stops it (A199) -- see that file's own doc for what a reading page
+ * observes when it does.
  */
 async function fetchThirdParty (
   request: Request,
   authoriseReach: AuthoriseReach | undefined,
   reachDial: ReachDial | undefined,
-  recordCoverage: RecordPinCoverage | undefined
+  recordCoverage: RecordPinCoverage | undefined,
+  reserveReachSlot: ReserveReachSlot | undefined,
+  releaseReachSlot: ReleaseReachSlot | undefined
 ): Promise<Response> {
   if (authoriseReach === undefined || reachDial === undefined) {
     recordCoverage?.('denied')
@@ -305,11 +318,25 @@ async function fetchThirdParty (
     return denyResponse('this host is not granted to this app')
   }
 
+  // A200: checked AFTER authorisation, never before -- a request this
+  // origin was never granted must not consume a slot at all.
+  if (reserveReachSlot !== undefined && !reserveReachSlot()) {
+    recordCoverage?.('denied')
+    return denyResponse('this app has reached its concurrent-connection limit')
+  }
+  let released = false
+  const release = (): void => {
+    if (released) return
+    released = true
+    releaseReachSlot?.()
+  }
+
   try {
     const response = await reachDial(request, decision.host, port)
     recordCoverage?.('third-party', contentLengthOf(response))
-    return response
+    return guardReachResponse(response, url.hostname, port, authoriseReach, release)
   } catch (error) {
+    release()
     recordCoverage?.('denied')
     return denyResponse(`reaching the granted host failed: ${error instanceof Error ? error.message : String(error)}`)
   }
@@ -387,7 +414,9 @@ export async function createAppRequestHandler (
   grantedSecurePatterns?: GrantedSecurePatterns,
   authoriseReach?: AuthoriseReach,
   reachDial?: ReachDial,
-  recordCoverage?: RecordPinCoverage
+  recordCoverage?: RecordPinCoverage,
+  reserveReachSlot?: ReserveReachSlot,
+  releaseReachSlot?: ReleaseReachSlot
 ): Promise<AppRequestHandler> {
   const resolved = await resolveVerifiedBundle(storage, origin)
   if (!resolved.ok) {
@@ -409,7 +438,7 @@ export async function createAppRequestHandler (
     // strength of anything this handler already trusted for its OWN origin
     // (docs/open-questions.md A143).
     if (originFromUrl(request.url) !== origin) {
-      return await fetchThirdParty(request, authoriseReach, reachDial, recordCoverage)
+      return await fetchThirdParty(request, authoriseReach, reachDial, recordCoverage, reserveReachSlot, releaseReachSlot)
     }
 
     const resolved = resolveRequestPath(entryPath, pin, request.url)

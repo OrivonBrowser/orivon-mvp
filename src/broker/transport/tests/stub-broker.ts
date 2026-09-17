@@ -8,6 +8,7 @@
 // change.
 
 import type { Broker, RawFileStat } from '../../broker-contracts.js'
+import { LIMITS } from '../../../contracts/index.js'
 import type { Grant, LookupAddress, Manifest } from '../../../contracts/index.js'
 import type { FailableDirectoryHandle, FailableFileHandle, FailableTcpServer, FailableTcpSocket, FailableUdpSocket } from '../../handles/handle-contracts.js'
 
@@ -41,6 +42,8 @@ export function stubBroker (
     isRegisteredSync: (origin: string) => boolean
     /** SYNCHRONOUS for the same reason, and used for the same kind of decision: which session a tab is built in. */
     hasGrantsSync: (origin: string) => boolean
+    /** SYNCHRONOUS, same reasoning as `isRegisteredSync`/`hasGrantsSync` above -- A200's `Broker.app.socketAllowanceSync` has no CONTROL_CHANNEL method (its one caller is electron-serve.ts's loader-side reach path, never ipc.ts), but the stub still needs to satisfy Broker's shape. */
+    socketAllowanceSync: (origin: string) => number
     connect: (origin: string, opts: { host: string, port: number }) => Promise<FailableTcpSocket>
     connectSecure: (origin: string, opts: { host: string, port: number }) => Promise<FailableTcpSocket>
     udpBind: (origin: string, opts: { port: number }) => Promise<FailableUdpSocket>
@@ -97,6 +100,10 @@ export function stubBroker (
       hasGrantsSync: (origin) => {
         calls.push({ method: 'app.hasGrantsSync', origin, args: undefined })
         return overrides.hasGrantsSync?.(origin) ?? false
+      },
+      socketAllowanceSync: (origin) => {
+        calls.push({ method: 'app.socketAllowanceSync', origin, args: undefined })
+        return overrides.socketAllowanceSync?.(origin) ?? LIMITS.defaultConcurrentSockets
       },
       registeredOriginsSync: () => [],
       persistedAppsSync: () => [],

@@ -4,6 +4,7 @@ import { fromBundleTree, isPinnedPath } from '../../broker/policy/pin.js'
 import type { ConnectSecureDecision } from '../../broker/policy/connect-secure.js'
 import { createAppRequestHandler, resolveRequestPath, verifiedManifestFor } from '../serve.js'
 import type { AuthoriseReach, ReachDial } from '../serve.js'
+import type { ReleaseReachSlot, ReserveReachSlot } from '../serve-reach-guard.js'
 import { manifestJson, memoryStorage, ORIGIN, utf8 } from './test-helpers.js'
 
 const INDEX_HTML = '<h1>hello orivon</h1>'
@@ -291,7 +292,7 @@ describe('createAppRequestHandler -- fetchThirdParty (A143, third-party reach)',
     expect(authoriseReach).toHaveBeenCalledWith('not-granted.example', 443)
   })
 
-  it('a granted host reaches reachDial, dialled at the AUTHORISED (canonical) host/port, and returns exactly what it answers', async () => {
+  it('a granted host reaches reachDial, dialled at the AUTHORISED (canonical) host/port, and returns what it answers', async () => {
     const upstream = new Response('real bytes', { status: 200, headers: { 'content-type': 'font/woff2' } })
     const reachDial: ReachDial = vi.fn(async () => upstream)
     const authoriseReach: AuthoriseReach = async (host, port) => allow(host === 'granted.example' && port === 443 ? host : 'wrong')
@@ -301,7 +302,15 @@ describe('createAppRequestHandler -- fetchThirdParty (A143, third-party reach)',
 
     const response = await handler(new Request('https://granted.example/font.woff2'))
 
-    expect(response).toBe(upstream)
+    // NOT `toBe(upstream)` any more (A199/A200): the response now comes back
+    // wrapped by serve-reach-guard.ts's `guardReachResponse`, a NEW object
+    // with the same status/headers/body -- guarding a streamed body against
+    // a mid-flight revoke means this handler can no longer just hand back
+    // whatever reachDial returned unchanged.
+    expect(response).not.toBe(upstream)
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toBe('font/woff2')
+    expect(await response.text()).toBe('real bytes')
     expect(reachDial).toHaveBeenCalledTimes(1)
     const call = vi.mocked(reachDial).mock.calls[0]
     if (call === undefined) throw new Error('reachDial was never called')
@@ -366,5 +375,165 @@ describe('createAppRequestHandler -- fetchThirdParty (A143, third-party reach)',
     allowed = false // simulates broker.revoke() landing between the two requests
     const after = await handler(new Request('https://granted.example/img.png'))
     expect(after.status).toBe(404)
+  })
+})
+
+describe('createAppRequestHandler -- fetchThirdParty A199 (revoking mid-stream)', () => {
+  function allow (host: string): ConnectSecureDecision {
+    return { allowed: true, host }
+  }
+
+  it('THE DEFECT, PROVEN: revoking the grant while a reach response is still streaming actually stops it, not just the next request', async () => {
+    let allowed = true
+    const authoriseReach: AuthoriseReach = async (host) => (allowed ? allow(host) : { allowed: false, code: 'denied', reason: 'no-pattern-match' })
+
+    // A controllable "slow endpoint" -- the test decides when bytes arrive,
+    // and never closes it on its own, the same shape a large in-progress
+    // download or a live media stream has.
+    const body = new ReadableStream<Uint8Array>({
+      start (controller) { controller.enqueue(new Uint8Array([1, 2, 3])) }
+    })
+    const reachDial: ReachDial = async () => new Response(body, { status: 200 })
+    const handler = await createAppRequestHandler(
+      await installedStorage(), ORIGIN, undefined, undefined, authoriseReach, reachDial
+    )
+
+    const response = await handler(new Request('https://granted.example/video.mp4'))
+    expect(response.status).toBe(200)
+    const reader = response.body?.getReader()
+    if (reader === undefined) throw new Error('the response had no body to stream')
+
+    // Already receiving real bytes -- the request is genuinely in flight,
+    // not merely authorised and idle.
+    expect((await reader.read()).done).toBe(false)
+
+    // The row a person watching the permissions UI would see disappear
+    // right now -- proven by revoking WHILE the response is still open,
+    // never before the request started (that would prove nothing).
+    allowed = false
+
+    // A bounded race against real time: on the fix, the next read rejects
+    // well within this window. On unfixed code there is no mechanism that
+    // ever revisits this decision, so the read hangs forever waiting for
+    // bytes nobody sends -- the timeout branch below is what turns that
+    // hang into a fast, readable failure instead of this test stalling.
+    const raced = await Promise.race([
+      reader.read().then(() => ({ kind: 'resolved' as const })).catch((error: unknown) => ({ kind: 'rejected' as const, error })),
+      new Promise<{ kind: 'timed-out' }>((resolve) => setTimeout(() => resolve({ kind: 'timed-out' }), 1500))
+    ])
+
+    expect(raced.kind).not.toBe('timed-out')
+    expect(raced.kind).not.toBe('resolved')
+    if (raced.kind === 'rejected') {
+      // WHAT THE READING PAGE OBSERVES: a real failure, never a byte count
+      // it could mistake for "that was the whole file".
+      expect(String(raced.error)).toMatch(/revoked/)
+    }
+  })
+})
+
+describe('createAppRequestHandler -- fetchThirdParty A200 (reach socket allowance)', () => {
+  function allow (host: string): ConnectSecureDecision {
+    return { allowed: true, host }
+  }
+
+  /** A tiny in-memory slot pool, the same shape electron-serve.ts's real `reachSlotsFor` builds over `Broker.app.socketAllowanceSync` -- kept local here so this suite tests fetchThirdParty's own enforcement, not that wiring. */
+  function fakeSlots (limit: number): { reserve: ReserveReachSlot, release: ReleaseReachSlot, inUse: () => number } {
+    let inUse = 0
+    return {
+      reserve: () => {
+        if (inUse >= limit) return false
+        inUse += 1
+        return true
+      },
+      release: () => { inUse = Math.max(0, inUse - 1) },
+      inUse: () => inUse
+    }
+  }
+
+  it('THE DEFECT, PROVEN: refuses the (N+1)th concurrent reach request once N are already held open, and restores the slot once they finish', async () => {
+    const slots = fakeSlots(2)
+    const controllers: Array<ReadableStreamDefaultController<Uint8Array>> = []
+    const reachDial: ReachDial = vi.fn(async () => new Response(new ReadableStream<Uint8Array>({ start (c) { controllers.push(c) } })))
+    const authoriseReach: AuthoriseReach = async (host) => allow(host)
+    const handler = await createAppRequestHandler(
+      await installedStorage(), ORIGIN, undefined, undefined, authoriseReach, reachDial, undefined, slots.reserve, slots.release
+    )
+
+    const first = await handler(new Request('https://granted.example/a'))
+    const second = await handler(new Request('https://granted.example/b'))
+    expect(first.status).toBe(200)
+    expect(second.status).toBe(200)
+    expect(reachDial).toHaveBeenCalledTimes(2)
+
+    // Unfixed code never consults an allowance at all, so this third
+    // request would dial too -- the exact unlimited-concurrency defect.
+    const third = await handler(new Request('https://granted.example/c'))
+    expect(third.status).toBe(404)
+    expect(reachDial).toHaveBeenCalledTimes(2)
+
+    // Draining the two held requests to EOF is the "completion" release
+    // path -- the slot must come back.
+    controllers.forEach((c) => { c.close() })
+    await first.text()
+    await second.text()
+
+    const fourth = await handler(new Request('https://granted.example/d'))
+    expect(fourth.status).toBe(200)
+  })
+
+  it('a reach that FAILS TO DIAL still releases its reserved slot -- the failure path is where a leak usually hides', async () => {
+    const slots = fakeSlots(1)
+    let shouldFail = true
+    const reachDial: ReachDial = vi.fn(async () => {
+      if (shouldFail) throw new Error('ECONNREFUSED')
+      return new Response('ok')
+    })
+    const authoriseReach: AuthoriseReach = async (host) => allow(host)
+    const handler = await createAppRequestHandler(
+      await installedStorage(), ORIGIN, undefined, undefined, authoriseReach, reachDial, undefined, slots.reserve, slots.release
+    )
+
+    const failed = await handler(new Request('https://granted.example/a'))
+    expect(failed.status).toBe(404)
+    expect(slots.inUse()).toBe(0)
+
+    shouldFail = false
+    const ok = await handler(new Request('https://granted.example/b'))
+    expect(ok.status).toBe(200)
+  })
+
+  it('cancelling the read (a page navigating away, or an aborted fetch) still releases its reserved slot', async () => {
+    const slots = fakeSlots(1)
+    const reachDial: ReachDial = vi.fn(async () => new Response(new ReadableStream<Uint8Array>({ start () {} })))
+    const authoriseReach: AuthoriseReach = async (host) => allow(host)
+    const handler = await createAppRequestHandler(
+      await installedStorage(), ORIGIN, undefined, undefined, authoriseReach, reachDial, undefined, slots.reserve, slots.release
+    )
+
+    const response = await handler(new Request('https://granted.example/a'))
+    expect(response.status).toBe(200)
+    expect(slots.inUse()).toBe(1)
+
+    if (response.body === null) throw new Error('expected a streamed body')
+    await response.body.cancel('navigated away')
+    expect(slots.inUse()).toBe(0)
+
+    const next = await handler(new Request('https://granted.example/b'))
+    expect(next.status).toBe(200)
+  })
+
+  it('an ungranted host never reserves a slot at all -- refused before the allowance is even consulted', async () => {
+    const slots = fakeSlots(1)
+    const reachDial: ReachDial = vi.fn(async () => new Response('should never be seen'))
+    const authoriseReach: AuthoriseReach = async () => ({ allowed: false, code: 'denied', reason: 'no-pattern-match' })
+    const handler = await createAppRequestHandler(
+      await installedStorage(), ORIGIN, undefined, undefined, authoriseReach, reachDial, undefined, slots.reserve, slots.release
+    )
+
+    const response = await handler(new Request('https://not-granted.example/a'))
+    expect(response.status).toBe(404)
+    expect(reachDial).not.toHaveBeenCalled()
+    expect(slots.inUse()).toBe(0)
   })
 })

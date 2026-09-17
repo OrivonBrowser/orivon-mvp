@@ -7940,3 +7940,87 @@ write pump, and what A194's own "ready for one" already named before this lane c
 **Needed by:** the owner, to confirm or revise A167 item 2's `DirectoryHandle` method set now that
 a real page can exercise it -- and whoever builds the settings-permissions UI surface for a picked
 folder, which this lane's dispatch layer is ready for but does not itself build.
+
+### A199 -- revoking a grant did not stop a third-party reach request already in flight **[FIXED -- stream/loader-11-reach-limits]**
+
+**Raised and fixed 2026-09-17**, `/claude-security` scan finding, lane `stream/loader-11-reach-
+limits`. `fetchThirdParty` (`src/loader/serve.ts`) authorised an app's proxied third-party HTTPS
+request exactly once, before dialling (`AuthoriseReach`) -- after that the request ran to
+completion regardless of anything that happened to the grant. A person who revoked an
+`https.connect` grant, watched the row disappear from the permissions UI, and kept receiving
+bytes from that host from an already-open reach request had been shown something untrue -- the
+same shape this repo already closed twice for raw sockets (`GrantLedger.revokePersisted`'s
+teardown cascade, and A84's unlink-teardown), now closed a third time for a resource that was
+never a `HandleTable` handle at all.
+
+**Fix:** `src/loader/serve-reach-guard.ts` (new file) wraps the streamed `Response` body a
+granted reach returns. While the body is still being read, it re-calls the SAME `authoriseReach`
+function `fetchThirdParty` already called once, on a bounded timer (`REACH_REVOCATION_POLL_MS`,
+200ms) -- a revoke it catches cancels the underlying reader and calls `controller.error()` on the
+wrapped stream. **What a reading page observes:** not a truncated-but-otherwise-normal body --
+`fetch()`'s own body reader gets a REJECTED read, a real failure the page cannot mistake for "that
+was the whole file". A broker fault while polling (the authorisation check itself failing to run)
+fails closed the same way, never leaves the app reading past a check that could not complete.
+
+**Where this hooks in, and why the other two options were worse:** the HANDLER
+(`fetchThirdParty`/`guardReachResponse`), not the dial (`serve-reach.ts`) or the grant ledger's
+own revocation cascade (`HandleTable.revoke`) -- full reasoning in `src/loader/README.md`'s Design
+notes ("Why A199's cancellation hooks in the handler..."), not repeated here. Short version: the
+dial file is deliberately broker-policy-free and network-I/O-only; teaching it about grants would
+duplicate a decision the handler already makes. The ledger's own cascade is the zero-latency,
+"correct" answer in principle, but reaching it means either forcing a long-lived, non-`Handle`-
+shaped streamed response into `HandleTable`'s operation-bucket machinery (real risk of starving
+an origin's OTHER operations against `LIMITS.inFlightOperations` for as long as one download is
+in flight) or adding a bespoke revoke-subscription primitive to core broker files the `broker`
+stream owned and was actively working in at the time (`connect-secure.ts`, `grant-prompt-
+render.ts` specifically off limits to this lane). A bounded poll trades a small, fixed latency
+for zero collision risk and a mechanism entirely containable inside `src/loader/`.
+
+**AI recommendation, not an owner decision** -- the choice of handler-level polling over the
+ledger-cascade alternative, and the 200ms interval, are both AI judgment calls, flagged rather
+than silently chosen (CLAUDE.md Rule 2).
+
+**Verified:** a test that starts a reach response against a controllable ("slow") stream, revokes
+the grant WHILE it is still open (never before the request starts), and asserts the next read
+actually rejects within a bounded real-time race -- proven to FAIL against the pre-fix code
+(`expect(raced.kind).not.toBe('timed-out')` failed: the read hung until the test's own timeout).
+See `src/loader/tests/serve.test.ts`'s `fetchThirdParty A199` suite and
+`src/loader/tests/serve-reach-guard.test.ts` for the direct unit-level proof (fake timers, no
+handler indirection).
+
+### A200 -- third-party reach requests never counted toward an app's declared socket allowance **[FIXED -- stream/loader-11-reach-limits]**
+
+**Raised and fixed 2026-09-17**, `/claude-security` scan finding, same lane as A199. An app's
+simultaneous-socket allowance is declared in its manifest (`net.concurrentSockets`), clamped to
+`LIMITS.concurrentSockets`, and enforced for `net.connect`/`net.connectSecure`/`net.listen` via
+`HandleTable.acquire`'s `socketLimit` (owner decision A80: anything wanting a high ceiling has to
+ask for it in a number the person sees in the prompt). `fetchThirdParty`'s reach path never
+consulted that budget at all -- an app could open unlimited concurrent third-party requests
+regardless of what it declared and what was approved, each one holding a real connection open for
+its own lifetime exactly like a socket does.
+
+**Fix, reusing `GrantLedger.socketAllowance`, not a second counter (code-guidelines.md Rule 3):**
+`Broker.app.socketAllowanceSync` (new, `src/broker/broker-contracts.ts`/`index.ts`) is a one-line,
+synchronous, never-throwing delegate to `GrantLedger.socketAllowance` -- same category as
+`hasGrantsSync`/`isRegisteredSync`, and the same kind of loader-specific seam
+`hydrateFromPinnedManifest` already is (A158). `src/loader/electron-serve.ts`'s `reachSlotsFor`
+keeps the actual per-origin IN-FLIGHT COUNT (necessarily new state: a proxied reach request is
+never a `HandleTable` resource), checked-and-reserved as one synchronous step against that number
+-- the same "check and reserve must not straddle an `await`" discipline
+`GrantLedger.reserveFsBytes`'s own doc names. `src/loader/serve.ts`'s `fetchThirdParty` reserves a
+slot AFTER authorisation (a request never granted must not consume one at all) and BEFORE
+dialling, and `src/loader/serve-reach-guard.ts`'s `guardReachResponse` -- the SAME wrapper A199
+needed anyway -- releases it exactly once, on every path the request can end: a clean EOF, an
+upstream read error, the consumer cancelling its own read (navigation, an aborted `fetch()`), and
+a revoke the A199 poll catches.
+
+**Verified:** a test that grants an allowance of 2, opens two reach requests that hold their
+connections open, and asserts a third is refused with `reachDial` never called -- proven to FAIL
+against the pre-fix code (`expected 200 to be 404`: the third request dialled anyway). A second
+test proves the slot is restored once the two held requests actually finish. A third and fourth
+prove release on the two failure-shaped paths this kind of fix usually gets wrong: a dial that
+throws, and the consumer cancelling its own read -- see
+`src/loader/tests/serve.test.ts`'s `fetchThirdParty A200` suite, `src/loader/tests/serve-reach-
+guard.test.ts`, and `src/loader/tests/electron-serve.test.ts`'s `registerServingFor -- A200 real
+wiring` suite (a REAL `createBroker`, a manifest that actually declares `concurrentSockets`, and
+a real `Broker.app.socketAllowanceSync` reached end to end).
