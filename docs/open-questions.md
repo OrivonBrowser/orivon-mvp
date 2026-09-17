@@ -7940,3 +7940,96 @@ write pump, and what A194's own "ready for one" already named before this lane c
 **Needed by:** the owner, to confirm or revise A167 item 2's `DirectoryHandle` method set now that
 a real page can exercise it -- and whoever builds the settings-permissions UI surface for a picked
 folder, which this lane's dispatch layer is ready for but does not itself build.
+
+### A196 -- a wildcard `https.connect` grant reached loopback, the LAN and the cloud metadata address; `hostMatchesSecure`'s own doc argued the TLS certificate check stood in for an address-class gate it does not have **[RESOLVED 2026-09-17 -- owner decision (via conductor authorisation), lane FIX-A1, `stream/broker-52-secure-private-address-gate`]**
+
+Found by a `/claude-security` scan pass, the most serious live finding it surfaced. Measured, not
+theorised -- the conductor ran both `net.connect` gates against the same wildcard grant on `main`
+before this lane was dispatched:
+
+```
+https *:443  -> 127.0.0.1        ALLOWED
+https *:443  -> 192.168.1.1      ALLOWED
+https *:443  -> 10.0.0.5         ALLOWED
+https *:443  -> 169.254.169.254  ALLOWED     <- cloud metadata endpoint
+tcp   *:*    -> 127.0.0.1        denied (no-pattern-match)
+tcp   *:*    -> 192.168.1.1      denied
+tcp   *:*    -> 10.0.0.5         denied
+tcp   *:*    -> 169.254.169.254  denied
+```
+
+**Root cause.** `hostMatchesSecure` (`src/broker/policy/connect-secure.ts`) returned `true`
+unconditionally whenever a granted pattern's host was `'*'`, whatever the requested address. Its
+own doc comment argued this was deliberate: `'*'` authorises any host "because there is no address
+class left to narrow it against ... the certificate check is what stands in for that here." **That
+argument is wrong, and the reason is specific: a certificate binds a NAME, not an ADDRESS.** An
+attacker's own domain, carrying a perfectly valid, publicly-trusted certificate, can have its A
+record point at `127.0.0.1` or `192.168.1.1` -- TLS validates the name and succeeds regardless of
+where the socket actually connects. The certificate check and an address-class gate answer two
+different questions and passing one says nothing about the other.
+
+**It also contradicted this file's own recorded intent.** A192 (above) states that a `*` grant
+"explicitly does not" reach loopback and the LAN, citing A82 as the source of that rule, and
+`connect-src.ts`'s CSP derivation already omits a `*` host from `connect-src` for exactly that
+reason. `checkConnectSecure` disagreed with its own neighbouring files, and a stale rationale
+comment is what let this pass an earlier automated security review uncaught.
+
+**The decision, already taken.** The conductor's ruling, with the owner's explicit authorisation:
+resolve toward A192/A82's intent rather than re-litigate it. A `*` host in an `https.connect` grant
+must not authorise a request whose target is not public unicast -- matching `checkConnect`'s own
+behaviour for plain `tcp.connect`. **An explicitly-named literal is unaffected**: a pattern like
+`192.168.1.10:443` still authorises exactly that literal, unchanged -- the file's existing rule
+that a named literal is a deliberate, different case from `*` survives; only the wildcard narrows.
+
+**What changed.** `hostMatchesSecure`'s `'*'` branch now requires the requested literal to be
+public unicast, via `isPublicUnicast` (`./address.ts`) -- the SAME helper `checkConnect`/
+`connect-patterns.ts`'s own `hostMatches` already uses for its `'any-public-unicast'` case; no
+second address classifier was written (Rule 3). A new denial reason, `'non-public-address'`, was
+added to `ConnectSecureDenialReason` so the broker's local log (never sent to an app) can tell "your
+grant does not cover this address class" from a plain "nothing named this host" `'no-pattern-match'`.
+The doc comment on `hostMatchesSecure` was rewritten in place to state the new rule and retire the
+old argument explicitly, rather than deleting it silently -- so a future reader sees what was wrong
+and why, not just a diff.
+
+**What this fix does NOT catch -- stated plainly, not papered over. Still open, genuinely, not
+decided here.** `checkConnectSecure` is synchronous and has no resolver, unchanged by this fix
+(its own module header says so, and that absence is load-bearing to why the file is shaped the way
+it is). The new gate only ever sees the address the app directly asked to connect to -- it classifies
+the REQUESTED HOST when that host is itself an address literal (an app calling `https.connect`
+straight against `127.0.0.1`, say). **A hostname that RESOLVES to a private address is not caught by
+this change**, because there is no resolution step in this file for it to be caught at. The
+mechanism is DNS rebinding: an app declares and is granted `https.connect: ["*:*"]`, names
+`evil.example.com` (a domain it controls, with a validly-issued certificate for that name), whose A
+record briefly answers with `127.0.0.1` or `169.254.169.254`, and this synchronous, name-matching
+check has nothing to compare that name's eventual destination against -- the certificate still binds
+the NAME cryptographically, but nothing here binds the ADDRESS the way `checkConnect`'s
+resolve-then-classify order does for plain TCP. Closing this residual would need either (a) a
+resolver wired into this path the way `checkConnect` has one -- a materially bigger change to a
+file whose entire reason for existing is being resolver-free, or (b) a connect-time check inside the
+TLS adapter itself (`../adapters/tls-adapter.ts`) against the socket's actual peer address, alongside
+or before the handshake. Neither is built here. **The owner's call, not this lane's**, on whether
+that residual needs closing before this ships further, and if so which of the two shapes above (or
+another) is preferred.
+
+**Verified.** Test-first: `src/broker/policy/tests/connect-secure.test.ts` gained a new `A196`
+describe block asserting denial for `127.0.0.1`/`192.168.1.1`/`10.0.0.5`/`169.254.169.254`/`::1`
+under a `*:443` grant, an explicit public-address and explicit-literal control, and a parity
+assertion against `checkConnect` for the same address set under the same wildcard grant -- run
+against unmodified `main` code first and confirmed FAILING (10 of 45 tests in the file: all five
+denial cases plus all five parity cases; the four unaffected controls already passed). After the
+fix: all 45 tests in the file pass, the full suite is unaffected (204 files, 4709 passed, 3 skipped),
+and `npm run typecheck` is clean.
+
+**Scope: `https.connect` only**, matching the file this defect lives in. `tcp.connect`/`udp.send`
+were already correct (the conductor's own measurement above) and untouched by this lane.
+
+**Hand-review addition, 2026-09-17 (conductor).** The first implementation gated only address
+LITERALS, which left `localhost` and the whole `.localhost` subtree ALLOWED under a wildcard --
+measured, not inferred. That is not the DNS residual below: RFC 6761 SS6.3 reserves that namespace
+and Chromium resolves it to loopback without consulting DNS, so it is decidable from the name
+alone. It also broke the very parity this entry exists to restore, since `checkConnect` denies
+`localhost` today (it resolves first, then fails the address gate). Closed by reusing
+`isLocalhostName` (`src/broker/policy/origin.ts`), which was already exported for exactly this
+kind of second caller. An explicitly named `localhost:443` pattern still works -- only the
+wildcard narrows.
+
