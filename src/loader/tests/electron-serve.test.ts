@@ -668,3 +668,56 @@ describe('restorePinnedServing across a restart -- A158, resolved for every dire
     vi.doUnmock('electron')
   })
 })
+
+// A200 (docs/open-questions.md): the real wiring, not the fakeBroker-shaped
+// enforcement serve.test.ts's own A200 suite already proves -- a REAL
+// createBroker, a manifest that actually DECLARES net.concurrentSockets,
+// and a REAL Broker.app.socketAllowanceSync reached through
+// registerServingFor's own reachSlotsFor, the same seam authoriseReachFor
+// already uses for the live grant check.
+describe('registerServingFor -- A200 real wiring (reach socket allowance)', () => {
+  it('enforces this origin\'s REAL manifest-declared concurrentSockets end to end, and restores the slot once the held request finishes', async () => {
+    const ORIGIN = 'https://reach-allowance.example'
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-reach-allowance-'))
+    const storage = nodeLoaderStorage(userData)
+    const capabilities = { net: { https: { connect: ['granted.example:443'] }, concurrentSockets: 1 } }
+    await pinRealOrigin(storage, ORIGIN, { capabilities })
+
+    const broker = createBroker(baseDeps({ ledgerStorage: memoryLedgerStorage() }))
+    broker.registerApp(ORIGIN, manifestWith(capabilities))
+    await broker.grant(ORIGIN, 'https.connect', ['granted.example:443'])
+    // The exact number `net.connect`/`net.connectSecure`/`net.listen` already
+    // enforce for a live handle -- proven live, not merely declared.
+    expect(broker.app.socketAllowanceSync(ORIGIN)).toBe(1)
+
+    const session = fakeSession()
+    const controllers: Array<ReadableStreamDefaultController<Uint8Array>> = []
+    vi.resetModules() // see "THE LIVE GATE ALSO WORKS" above for why this precedes mocking serve-reach.js
+    vi.doMock('electron', () => ({ session: { fromPartition: () => session } }))
+    vi.doMock('../serve-reach.js', () => ({
+      nodeReachDial: () => async () => new Response(new ReadableStream<Uint8Array>({ start: (c) => { controllers.push(c) } }))
+    }))
+    const { registerServingFor } = await import('../electron-serve.js')
+    await registerServingFor(storage, ORIGIN, broker)
+    const handler = session.handlers.get('https')
+    if (handler === undefined) throw new Error('no handler was registered')
+
+    const first = await handler(new Request('https://granted.example/a'))
+    expect(first.status).toBe(200)
+
+    // The allowance is 1: a second CONCURRENT reach must be refused, not
+    // silently dialled alongside the first.
+    const second = await handler(new Request('https://granted.example/b'))
+    expect(second.status).toBe(404)
+
+    controllers.forEach((c) => { c.close() })
+    await first.text()
+
+    // Restored once the held request actually finished.
+    const third = await handler(new Request('https://granted.example/c'))
+    expect(third.status).toBe(200)
+
+    vi.doUnmock('../serve-reach.js')
+    vi.doUnmock('electron')
+  })
+})

@@ -287,3 +287,54 @@ this origin, right now, actually being served from the pinned cache" -- and `Bro
 Electron's own `session.protocol.isProtocolHandled` instead is the only way to avoid a false
 positive -- ADR-0007 is explicit that showing "local cache, pinned" for bytes that did not
 actually come from it is precisely the false claim this feature exists to prevent.
+
+**Why A199's cancellation hooks in the handler, not the dial or the grant ledger's own cascade**
+(`docs/open-questions.md` A199/A200). `fetchThirdParty` (`serve.ts`) authorised a third-party
+reach only ONCE, before dialling -- a person who revoked the grant, watched the row disappear
+from the permissions UI, and then kept receiving bytes from that host had been shown something
+untrue. Three places could have hooked the fix in:
+
+- **The handler (`serve.ts`, chosen).** [`serve-reach-guard.ts`](serve-reach-guard.ts)'s
+  `guardReachResponse` wraps the streamed `Response` body and re-calls the SAME `authoriseReach`
+  the handler already calls once, on a short timer, for as long as the body is still being read.
+  A revoke it catches cancels the underlying reader and errors the wrapped stream -- what a
+  page's own `fetch()` then observes is a rejected read, never a byte count it could mistake for
+  a complete file. This keeps the one thing that already knows about grants (the handler, the
+  only caller of `authoriseReach`) the only thing that still has to.
+- **The dial (`serve-reach.ts`, rejected).** That file's own header commits to staying free of
+  broker policy and Electron entirely -- it is the one place in this directory doing real network
+  I/O, kept small and auditable on purpose. Teaching it "is this still authorised" would mean
+  either importing broker policy into it (duplicating a decision the handler already makes) or
+  threading a live callback into it from the handler anyway, at which point the polling loop is
+  still handler-driven, just relocated into a file with no other reason to know about grants.
+- **The grant ledger's own cascade (`HandleTable.revoke`, rejected).** The most architecturally
+  "pure" option -- zero-latency, push-based, the exact mechanism `net.connect`/`net.connectSecure`
+  already get from `HandleTable.run`'s grant-scoped operation bucket. Reaching it for a reach
+  request means either registering a proxied HTTP response as a `HandleTable` resource it was
+  never shaped for (no app-visible `Handle`, and a lifetime measured in a streamed download rather
+  than a quick dial -- a real risk of starving that origin's OTHER operations against
+  `LIMITS.inFlightOperations` for as long as one large download is in flight), or adding a
+  bespoke revoke-notification path to the broker's core revocation cascade -- a change to files
+  the `broker` stream owns and was actively working in at the time this landed. A bounded poll
+  costs latency (`REACH_REVOCATION_POLL_MS`, currently 200ms) for a benefit (true push) that does
+  not change what the reading page observes qualitatively: it still sees a real failure, just up
+  to one poll interval later.
+
+**Why A200's allowance reuses `GrantLedger.socketAllowance` through a new `Broker.app
+.socketAllowanceSync`, rather than re-deriving the clamp in the loader.** An app's simultaneous-
+socket allowance is declared in its manifest, clamped to `LIMITS.concurrentSockets`, and enforced
+for `net.connect`/`net.connectSecure`/`net.listen` via `HandleTable.acquire`'s `socketLimit` --
+but `fetchThirdParty`'s reach path never consulted it, so an app could hold unlimited concurrent
+third-party requests regardless of the number it declared and the person approved. The clamp
+itself (`resource-limits.ts`'s `socketAllowance`) is two lines of arithmetic, cheap enough to be
+tempting to copy -- but code-guidelines.md Rule 3 and this lane's own brief are explicit that the
+NUMBER must be reused, not re-derived, so a future change to the clamp (or to what counts as
+"declared") cannot silently drift between the two enforcement points. `Broker.app
+.socketAllowanceSync` is a one-line, synchronous, never-throwing delegate to
+`GrantLedger.socketAllowance` -- the same category as `hasGrantsSync`/`isRegisteredSync`, and the
+same kind of loader-specific seam `hydrateFromPinnedManifest` already is (A158). The actual
+IN-FLIGHT COUNT is new state, by necessity: a proxied reach request is never a `HandleTable`
+resource (no app-visible `Handle`, no revocation cascade of its own), so `electron-serve.ts`'s
+`reachSlotsFor` keeps a small per-origin counter, checked-and-reserved as one synchronous step
+against that same number -- the identical discipline `GrantLedger.reserveFsBytes`'s own doc
+names for why a quota check and its reservation must never straddle an `await`.
