@@ -8,8 +8,9 @@
 
 import { describe, expect, it } from 'vitest'
 import { checkConnectSecure } from '../connect-secure.js'
-import { MAX_PATTERNS } from '../connect.js'
+import { checkConnect, MAX_PATTERNS } from '../connect.js'
 import { RESERVED_PORTS } from '../reserved-ports.js'
+import { noResolution, PUBLIC_A } from './connect.test-helpers.js'
 
 describe('checkConnectSecure authorises by hostname, never by resolved address', () => {
   it('denies when nothing was granted', () => {
@@ -144,4 +145,55 @@ describe('checkConnectSecure -- A82 must be decided per pattern, not per grant',
     const decision = checkConnectSecure(['a.example:25', '*:*'], 'somewhere.example', 8080)
     expect(decision).toEqual({ allowed: true, host: 'somewhere.example' })
   })
+})
+
+// A196 -- measured on main before this fix: a wildcard https.connect grant
+// (`*:443`) reached loopback, the LAN and the cloud metadata address, because
+// hostMatchesSecure's own doc argued the TLS certificate check stood in for
+// an address-class gate. It cannot: a certificate binds a NAME, and an
+// attacker's own domain, validly certified, can have its A record point at
+// 127.0.0.1. checkConnect already refuses every one of these under the same
+// `*:*` grant (../connect.ts's `isPublicUnicast` gate on the resolved
+// answer) -- this suite is the ConnectSecure twin, matching that behaviour
+// for the one case this synchronous, resolver-less path CAN see: the
+// requested host is itself an address literal. See ../connect-secure.ts's
+// header for what this deliberately does NOT catch (a hostname that
+// resolves to a private address -- DNS rebinding, docs/open-questions.md
+// A196).
+describe('A196 -- a "*" host must not reach private, loopback or link-local address space', () => {
+  const PRIVATE_LITERALS: ReadonlyArray<{ readonly host: string, readonly why: string }> = [
+    { host: '127.0.0.1', why: 'loopback' },
+    { host: '192.168.1.1', why: 'RFC 1918 private' },
+    { host: '10.0.0.5', why: 'RFC 1918 private' },
+    { host: '169.254.169.254', why: 'link-local -- the cloud metadata endpoint' },
+    { host: '::1', why: 'IPv6 loopback' }
+  ]
+
+  it.each(PRIVATE_LITERALS)('denies a "*:443" grant reaching $host ($why)', ({ host }) => {
+    const decision = checkConnectSecure(['*:443'], host, 443)
+    expect(decision.allowed).toBe(false)
+  })
+
+  it('still allows a "*:443" grant to reach an ordinary public address', () => {
+    const decision = checkConnectSecure(['*:443'], PUBLIC_A, 443)
+    expect(decision).toEqual({ allowed: true, host: PUBLIC_A })
+  })
+
+  it('still allows an explicitly-named private literal -- only the wildcard narrows, per the file\'s own rule that a literal in the grant gets exactly that literal', () => {
+    const decision = checkConnectSecure(['192.168.1.10:443'], '192.168.1.10', 443)
+    expect(decision).toEqual({ allowed: true, host: '192.168.1.10' })
+  })
+
+  // The property that was actually violated: checkConnect and
+  // checkConnectSecure must agree on the same address set under the same
+  // wildcard grant. noResolution is safe here -- every host below is an
+  // address literal, so checkConnect never reaches its resolver.
+  it.each([...PRIVATE_LITERALS.map((t) => t.host), PUBLIC_A])(
+    'parity: checkConnect and checkConnectSecure agree on %s under a "*:443" grant',
+    async (host) => {
+      const secure = checkConnectSecure(['*:443'], host, 443)
+      const plain = await checkConnect(['*:443'], host, 443, noResolution)
+      expect(secure.allowed).toBe(plain.allowed)
+    }
+  )
 })
