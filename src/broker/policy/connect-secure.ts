@@ -23,6 +23,7 @@
 // same rules, same reasons, applied to a different comparison.
 
 import type { OrivonErrorCode, Pattern } from '../../contracts/index.js'
+import { classifyAddress, isPublicUnicast } from './address.js'
 import { normalizeHost } from './canonical-host.js'
 import { portMatches } from './connect-patterns.js'
 import type { ParsedPattern } from './connect-patterns.js'
@@ -54,6 +55,16 @@ export type ConnectSecureDenialReason =
   | 'non-canonical-host'
   | 'reserved-port'
   | 'no-pattern-match'
+  /**
+   * A `'*'` pattern matched host and port, but the requested address
+   * literal is not public unicast (A196). Distinct from `'no-pattern-match'`
+   * so the broker's local log can say "your grant does not cover this
+   * address class" instead of "nothing named this host at all" -- both are
+   * denials for the exact same reason checkConnect's own `isPublicUnicast`
+   * gate exists, but only one of them tells a debugging app author which
+   * rule they hit.
+   */
+  | 'non-public-address'
 
 export interface ConnectSecureDenied {
   readonly allowed: false
@@ -68,23 +79,67 @@ function deny (reason: ConnectSecureDenialReason): ConnectSecureDenied {
 }
 
 /**
- * One pattern's host part against the requested hostname. `'*'` authorises
- * any host -- ADR-0017's unlimited-HTTPS declaration -- because there is no
- * address class left to narrow it against, unlike checkConnect's own
- * `isPublicUnicast` gate on the resolved answer: the certificate check is
- * what stands in for that here, for every host alike, including `'*'`.
+ * True if `requested` is an address literal (not a hostname) that is NOT
+ * ordinary public internet space -- loopback, RFC 1918, link-local
+ * (169.254.169.254 included), or any other class `./address.ts`'s
+ * `isPublicUnicast` denies for checkConnect. False for a hostname, because
+ * this file has no resolver and cannot classify what a name resolves to --
+ * see this module's header and A196 for that residual.
+ */
+function isNonPublicAddressLiteral (requested: string): boolean {
+  return classifyAddress(requested) !== 'unparseable' && !isPublicUnicast(requested)
+}
+
+/**
+ * One pattern's host part against the requested hostname.
  *
- * Every other pattern (hostname or address-literal) requires an EXACT
+ * `'*'` authorises PUBLIC UNICAST ONLY (A196, resolving toward A82/A192's
+ * intent) -- matching checkConnect's own `isPublicUnicast` gate on the
+ * resolved answer, not the weaker rule this function used to state.
+ *
+ * THE REASONING THAT USED TO JUSTIFY NO GATE HERE WAS WRONG, and saying so is
+ * the point of this comment surviving the fix rather than being deleted: it
+ * argued the certificate/hostname check (ADR-0017, ../adapters/tls-adapter.ts)
+ * "stands in for" an address-class gate, for every host including `'*'`. It
+ * does not, and the reason is specific -- A CERTIFICATE BINDS A NAME, NOT AN
+ * ADDRESS. An attacker's own domain, with a valid, publicly-trusted
+ * certificate, can point its A record at 127.0.0.1 or 192.168.1.1; TLS
+ * validates the name and succeeds regardless of where the socket actually
+ * connects. The certificate check and an address-class gate answer two
+ * different questions -- "is this really who it claims to be" and "is this
+ * address one a `*` grant was ever meant to reach" -- and passing the first
+ * says nothing about the second. A stale version of this comment is what let
+ * an earlier automated security review clear this exact defect; do not
+ * repeat that by trusting a rationale comment over what the code does.
+ *
+ * THE LIMIT OF WHAT THIS CAN CATCH, because it matters more here than almost
+ * anywhere else in this file: this path is SYNCHRONOUS and has no resolver
+ * (this module's own header). So the gate above only ever sees the address
+ * the app directly asked to connect to -- when `requested` is itself an
+ * address literal. A HOSTNAME THAT RESOLVES TO A PRIVATE ADDRESS IS NOT
+ * CAUGHT HERE; there is no resolution step in this file for it to be caught
+ * at. That is DNS rebinding, the same attack checkConnect's own header names
+ * as the reason it resolves before checking. Recorded as an open residual in
+ * A196, not papered over.
+ *
+ * Every other pattern (hostname or address-literal) still requires an EXACT
  * string match against the normalised request -- no sub-glob support, same
- * as connect-patterns.ts's own `hostMatches`, and no separate address-class
+ * as connect-patterns.ts's own `hostMatches`, and STILL no address-class
  * rule for a literal: an app that named a literal in its https.connect
- * grant gets exactly that literal, nothing it might resolve to.
+ * grant gets exactly that literal, nothing it might resolve to. Only the
+ * wildcard narrows -- a person who explicitly granted a specific private
+ * address chose that, and this fix does not revisit that choice.
  */
 function hostMatchesSecure (parsed: ParsedPattern | null, requested: string, port: number): boolean {
   if (parsed === null) return false
   if (!portMatches(parsed.port, port)) return false
-  if (parsed.host === '*') return true
+  if (parsed.host === '*') return !isNonPublicAddressLiteral(requested)
   return normalizeHost(parsed.host) === requested
+}
+
+/** True if some eligible pattern is a bare `'*'` covering `port` -- used only to pick a denial reason, never to decide `allowed` (that stays `hostMatchesSecure`'s job). */
+function wildcardEligibleAt (eligible: ReadonlyArray<ParsedPattern | null>, port: number): boolean {
+  return eligible.some((pattern) => pattern !== null && pattern.host === '*' && portMatches(pattern.port, port))
 }
 
 /**
@@ -111,6 +166,15 @@ export function checkConnectSecure (
   const { requested, eligible } = pre
 
   if (!eligible.some((pattern) => hostMatchesSecure(pattern, requested, port))) {
+    // A wildcard pattern matched host and port syntactically, and the only
+    // reason it still refused is the address-class gate above -- report
+    // that specifically rather than the generic 'no-pattern-match', so a
+    // debugging app author (and the broker's own local log) can tell "your
+    // grant does not cover this address class" from "nothing named this
+    // host at all".
+    if (wildcardEligibleAt(eligible, port) && isNonPublicAddressLiteral(requested)) {
+      return deny('non-public-address')
+    }
     return deny('no-pattern-match')
   }
 
