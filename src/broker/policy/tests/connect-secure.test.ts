@@ -196,4 +196,24 @@ describe('A196 -- a "*" host must not reach private, loopback or link-local addr
       expect(secure.allowed).toBe(plain.allowed)
     }
   )
+
+  describe('A196, conductor hand-review: a reserved loopback NAME is loopback too', () => {
+    // RFC 6761 SS6.3 reserves the whole `.localhost` namespace, and Chromium
+    // resolves the subtree to loopback without consulting DNS -- so this is
+    // not the unresolved-hostname residual A196 records, it is statically
+    // knowable. The plain path already denies it (it resolves, then fails the
+    // address gate), so leaving it allowed here breaks the very parity this
+    // file's own parity test exists to assert.
+    for (const host of ['localhost', 'app.localhost', 'anything.deeply.nested.localhost']) {
+      it(`denies a "*:443" grant reaching '${host}'`, () => {
+        const decision = checkConnectSecure(['*:443'], host, 443)
+        expect(decision.allowed).toBe(false)
+      })
+    }
+
+    it('still allows a localhost name a pattern NAMED explicitly -- only the wildcard narrows', () => {
+      const decision = checkConnectSecure(['localhost:443'], 'localhost', 443)
+      expect(decision.allowed).toBe(true)
+    })
+  })
 })

@@ -28,6 +28,7 @@ import { normalizeHost } from './canonical-host.js'
 import { portMatches } from './connect-patterns.js'
 import type { ParsedPattern } from './connect-patterns.js'
 import { preflightConnect } from './connect-preflight.js'
+import { isLocalhostName } from './origin.js'
 
 export interface ConnectSecureAllowed {
   readonly allowed: true
@@ -129,11 +130,23 @@ function isNonPublicAddressLiteral (requested: string): boolean {
  * grant gets exactly that literal, nothing it might resolve to. Only the
  * wildcard narrows -- a person who explicitly granted a specific private
  * address chose that, and this fix does not revisit that choice.
+ *
+ * A LOOPBACK NAME IS LOOPBACK, and is excluded for the same reason as a
+ * loopback literal. RFC 6761 SS6.3 reserves the whole `.localhost` namespace,
+ * and Chromium resolves that subtree without consulting DNS at all, so
+ * `app.localhost` is as reachable-and-private as `127.0.0.1` --
+ * `isLocalhostName` (./origin.ts) is exported precisely so this is the
+ * second caller rather than a second copy. This is NOT the unresolved-
+ * hostname residual A196 records: that one genuinely cannot be decided
+ * without resolving, and this one is decided by the name alone. Leaving it
+ * out would have broken the very parity with `checkConnect` this change
+ * exists to restore -- the plain path denies `localhost` today, because it
+ * resolves first and then fails the address gate.
  */
 function hostMatchesSecure (parsed: ParsedPattern | null, requested: string, port: number): boolean {
   if (parsed === null) return false
   if (!portMatches(parsed.port, port)) return false
-  if (parsed.host === '*') return !isNonPublicAddressLiteral(requested)
+  if (parsed.host === '*') return !isNonPublicAddressLiteral(requested) && !isLocalhostName(requested)
   return normalizeHost(parsed.host) === requested
 }
 
