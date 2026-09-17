@@ -68,6 +68,33 @@ const ELISION_MARKER = '...'
 // without a public-suffix-list dependency.
 const DISPLAYED_LABEL_COUNT = 3
 
+// A161: a small, evidenced list of multi-label PRIVATE hosting suffixes the
+// fixed three-label cut can land entirely inside -- each checked directly
+// against the live Public Suffix List's private section, not assumed. NOT
+// an attempt at public-suffix-list coverage (A142 is parked precisely
+// because that needs a dependency this file does not carry); each entry
+// here is one this codebase has concrete evidence for. See the README
+// (Design notes) for why the fix is "show one more label", not a fuller
+// suffix-matching scheme.
+const RECOGNISED_PRIVATE_SUFFIXES: ReadonlyArray<readonly string[]> = [
+  ['s3', 'amazonaws', 'com'],
+  ['compute', 'amazonaws', 'com'],
+  ['storage', 'googleapis', 'com']
+]
+
+/** The recognised suffix `labels` ends with, longest match first, or null.
+ * Compared label-for-label, never as a substring -- `nots3.amazonaws.com`
+ * must not match `s3.amazonaws.com`. */
+function matchingPrivateSuffix (labels: readonly string[]): readonly string[] | null {
+  const candidates = [...RECOGNISED_PRIVATE_SUFFIXES].sort((a, b) => b.length - a.length)
+  for (const suffix of candidates) {
+    if (labels.length < suffix.length) continue
+    const tail = labels.slice(-suffix.length)
+    if (tail.every((label, i) => label === suffix[i])) return suffix
+  }
+  return null
+}
+
 /**
  * The origin, formatted for a person rather than for an exact match --
  * A115/T25: `accounts.google.com.attacker.example` reads reassuringly
@@ -110,7 +137,16 @@ export function formatOriginForDisplay (origin: string): string {
   const labels = withoutRoot.split('.')
   if (labels.length <= DISPLAYED_LABEL_COUNT) return origin
 
-  const tail = labels.slice(-DISPLAYED_LABEL_COUNT).join('.')
+  // A161: a host ending in a RECOGNISED private suffix widens the kept
+  // window to that suffix plus one more label, so the label an attacker
+  // actually controls (a bucket name, an EC2 region) is what survives,
+  // rather than a string that reads as the platform's own domain. Every
+  // other host keeps the plain three-label cut, unchanged.
+  const suffix = matchingPrivateSuffix(labels)
+  const keepCount = suffix !== null ? suffix.length + 1 : DISPLAYED_LABEL_COUNT
+  if (labels.length <= keepCount) return origin
+
+  const tail = labels.slice(-keepCount).join('.')
   const port = parsed.port === '' ? '' : `:${parsed.port}`
   return `${parsed.protocol}//${ELISION_MARKER}${tail}${port}`
 }
