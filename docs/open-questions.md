@@ -6251,7 +6251,7 @@ follow-up, own PR, per its own change-control rule.
 **Needed by:** whoever next reviews `stream/shim-12-named-refusals`, or the next time something
 else in `src/shim/` or `src/shim-electron/` wants to depend on the other.
 
-### A161 -- a fixed three-label origin display still hides the tenant behind a multi-label PRIVATE suffix (cloud/PaaS hosting) **[STILL OPEN -- narrow, not blocking]**
+### A161 -- a fixed three-label origin display still hides the tenant behind a multi-label PRIVATE suffix (cloud/PaaS hosting) **[PARTIALLY RESOLVED 2026-09-17 -- lane FIX-A2; the evidenced cases only, not the general one]**
 
 **Raised 2026-09-14**, `stream/shell-06-three-label-origin`, verifying the owner's "last three
 labels" rule (`formatOriginForDisplay`, `src/main/grant-prompt-render.ts`) against real
@@ -6300,6 +6300,40 @@ together rather than added twice. **Still open:** whether this is worth a depend
 **Needed by:** whenever the owner is ready to review a public-suffix-list dependency for real
 (A142's parked `psl`/`tldts` evaluation applies unchanged), or sooner if an app is ever actually
 served from a multi-label private suffix.
+
+**Update, 2026-09-17, lane FIX-A2 (`stream/shell-11-dialog-address-truth`), `/claude-security`
+scan follow-up, alongside A197/A198 -- AI recommendation, the original three-label rule stays an
+owner decision.** Took a different path than either option this entry's own "AI recommendation"
+above named: not "leave as shipped," and not a public-suffix-list dependency. Added a small,
+evidenced allow-list of multi-label PRIVATE suffixes (`RECOGNISED_PRIVATE_SUFFIXES`,
+`src/main/grant-prompt-render.ts`) -- exactly the three concrete cases this entry itself has
+evidence for (`s3.amazonaws.com`, `compute.amazonaws.com`, and `storage.googleapis.com`, the
+matching Google Cloud Storage case) -- matched label-for-label, never a substring. A host ending
+in a recognised suffix now widens the kept window to that suffix plus ONE more label, instead of
+the plain three: `attacker.storage.googleapis.com` (4 labels) now shows in full, and this entry's
+own worked example, `accounts.google.com.attacker.s3.amazonaws.com`, now elides to
+`...attacker.s3.amazonaws.com` -- the attacker-controlled label survives, where before it was
+dropped entirely behind a string that read as Amazon's own domain.
+
+**Two other shapes were considered and rejected**, both from this entry's own "Find something
+honest within reach" list. Refusing to elide whenever elision would remove the host's single most
+specific label was rejected because, without suffix knowledge, it cannot distinguish a genuine
+platform-suffix risk from an ordinary deep subdomain (`api.mail.google.com` legitimately drops
+`api` under the current rule; refusing that generally would be a real behaviour change to the
+A142-resolved rule for no evidenced gain). Leaving the rule exactly as shipped was rejected because
+it does nothing today for the concrete cases this entry already has evidence for. The allow-list
+was the smallest change that fixes what is evidenced without touching the rule's behaviour for
+anything else.
+
+**This resolves the entry's own worked examples and no more -- explicitly not the general
+problem.** A regional S3 endpoint (`bucket.s3.us-east-1.amazonaws.com`, a different suffix shape,
+the region sitting IN THE MIDDLE rather than at a fixed boundary) and any platform not on the
+list still get the plain three-label cut, exactly as before this fix. This entry stays open for
+that general case; the public-suffix-list dependency it already names is still the only thing
+that closes it for real. **Proven with a failing test first**, per this lane's instructions: 4 new
+cases in `grant-prompt-render.test.ts` (describe block "A161: a multi-label PRIVATE hosting
+suffix no longer swallows the tenant label") failed against the unmodified rule before this fix
+landed -- exact output in this lane's final report / PR body.
 
 ### A163 -- third-party reach (A143) only proxies `https:`; a plain `http:` cross-origin request inside an app's own partition stays denied **[AI-REC -- not an owner decision]**
 
@@ -7940,6 +7974,179 @@ write pump, and what A194's own "ready for one" already named before this lane c
 **Needed by:** the owner, to confirm or revise A167 item 2's `DirectoryHandle` method set now that
 a real page can exercise it -- and whoever builds the settings-permissions UI surface for a picked
 folder, which this lane's dispatch layer is ready for but does not itself build.
+
+### A196 -- a wildcard `https.connect` grant reached loopback, the LAN and the cloud metadata address; `hostMatchesSecure`'s own doc argued the TLS certificate check stood in for an address-class gate it does not have **[RESOLVED 2026-09-17 -- owner decision (via conductor authorisation), lane FIX-A1, `stream/broker-52-secure-private-address-gate`]**
+
+Found by a `/claude-security` scan pass, the most serious live finding it surfaced. Measured, not
+theorised -- the conductor ran both `net.connect` gates against the same wildcard grant on `main`
+before this lane was dispatched:
+
+```
+https *:443  -> 127.0.0.1        ALLOWED
+https *:443  -> 192.168.1.1      ALLOWED
+https *:443  -> 10.0.0.5         ALLOWED
+https *:443  -> 169.254.169.254  ALLOWED     <- cloud metadata endpoint
+tcp   *:*    -> 127.0.0.1        denied (no-pattern-match)
+tcp   *:*    -> 192.168.1.1      denied
+tcp   *:*    -> 10.0.0.5         denied
+tcp   *:*    -> 169.254.169.254  denied
+```
+
+**Root cause.** `hostMatchesSecure` (`src/broker/policy/connect-secure.ts`) returned `true`
+unconditionally whenever a granted pattern's host was `'*'`, whatever the requested address. Its
+own doc comment argued this was deliberate: `'*'` authorises any host "because there is no address
+class left to narrow it against ... the certificate check is what stands in for that here." **That
+argument is wrong, and the reason is specific: a certificate binds a NAME, not an ADDRESS.** An
+attacker's own domain, carrying a perfectly valid, publicly-trusted certificate, can have its A
+record point at `127.0.0.1` or `192.168.1.1` -- TLS validates the name and succeeds regardless of
+where the socket actually connects. The certificate check and an address-class gate answer two
+different questions and passing one says nothing about the other.
+
+**It also contradicted this file's own recorded intent.** A192 (above) states that a `*` grant
+"explicitly does not" reach loopback and the LAN, citing A82 as the source of that rule, and
+`connect-src.ts`'s CSP derivation already omits a `*` host from `connect-src` for exactly that
+reason. `checkConnectSecure` disagreed with its own neighbouring files, and a stale rationale
+comment is what let this pass an earlier automated security review uncaught.
+
+**The decision, already taken.** The conductor's ruling, with the owner's explicit authorisation:
+resolve toward A192/A82's intent rather than re-litigate it. A `*` host in an `https.connect` grant
+must not authorise a request whose target is not public unicast -- matching `checkConnect`'s own
+behaviour for plain `tcp.connect`. **An explicitly-named literal is unaffected**: a pattern like
+`192.168.1.10:443` still authorises exactly that literal, unchanged -- the file's existing rule
+that a named literal is a deliberate, different case from `*` survives; only the wildcard narrows.
+
+**What changed.** `hostMatchesSecure`'s `'*'` branch now requires the requested literal to be
+public unicast, via `isPublicUnicast` (`./address.ts`) -- the SAME helper `checkConnect`/
+`connect-patterns.ts`'s own `hostMatches` already uses for its `'any-public-unicast'` case; no
+second address classifier was written (Rule 3). A new denial reason, `'non-public-address'`, was
+added to `ConnectSecureDenialReason` so the broker's local log (never sent to an app) can tell "your
+grant does not cover this address class" from a plain "nothing named this host" `'no-pattern-match'`.
+The doc comment on `hostMatchesSecure` was rewritten in place to state the new rule and retire the
+old argument explicitly, rather than deleting it silently -- so a future reader sees what was wrong
+and why, not just a diff.
+
+**What this fix does NOT catch -- stated plainly, not papered over. Still open, genuinely, not
+decided here.** `checkConnectSecure` is synchronous and has no resolver, unchanged by this fix
+(its own module header says so, and that absence is load-bearing to why the file is shaped the way
+it is). The new gate only ever sees the address the app directly asked to connect to -- it classifies
+the REQUESTED HOST when that host is itself an address literal (an app calling `https.connect`
+straight against `127.0.0.1`, say). **A hostname that RESOLVES to a private address is not caught by
+this change**, because there is no resolution step in this file for it to be caught at. The
+mechanism is DNS rebinding: an app declares and is granted `https.connect: ["*:*"]`, names
+`evil.example.com` (a domain it controls, with a validly-issued certificate for that name), whose A
+record briefly answers with `127.0.0.1` or `169.254.169.254`, and this synchronous, name-matching
+check has nothing to compare that name's eventual destination against -- the certificate still binds
+the NAME cryptographically, but nothing here binds the ADDRESS the way `checkConnect`'s
+resolve-then-classify order does for plain TCP. Closing this residual would need either (a) a
+resolver wired into this path the way `checkConnect` has one -- a materially bigger change to a
+file whose entire reason for existing is being resolver-free, or (b) a connect-time check inside the
+TLS adapter itself (`../adapters/tls-adapter.ts`) against the socket's actual peer address, alongside
+or before the handshake. Neither is built here. **The owner's call, not this lane's**, on whether
+that residual needs closing before this ships further, and if so which of the two shapes above (or
+another) is preferred.
+
+**Verified.** Test-first: `src/broker/policy/tests/connect-secure.test.ts` gained a new `A196`
+describe block asserting denial for `127.0.0.1`/`192.168.1.1`/`10.0.0.5`/`169.254.169.254`/`::1`
+under a `*:443` grant, an explicit public-address and explicit-literal control, and a parity
+assertion against `checkConnect` for the same address set under the same wildcard grant -- run
+against unmodified `main` code first and confirmed FAILING (10 of 45 tests in the file: all five
+denial cases plus all five parity cases; the four unaffected controls already passed). After the
+fix: all 45 tests in the file pass, the full suite is unaffected (204 files, 4709 passed, 3 skipped),
+and `npm run typecheck` is clean.
+
+**Scope: `https.connect` only**, matching the file this defect lives in. `tcp.connect`/`udp.send`
+were already correct (the conductor's own measurement above) and untouched by this lane.
+
+**Hand-review addition, 2026-09-17 (conductor).** The first implementation gated only address
+LITERALS, which left `localhost` and the whole `.localhost` subtree ALLOWED under a wildcard --
+measured, not inferred. That is not the DNS residual below: RFC 6761 SS6.3 reserves that namespace
+and Chromium resolves it to loopback without consulting DNS, so it is decidable from the name
+alone. It also broke the very parity this entry exists to restore, since `checkConnect` denies
+`localhost` today (it resolves first, then fails the address gate). Closed by reusing
+`isLocalhostName` (`src/broker/policy/origin.ts`), which was already exported for exactly this
+kind of second caller. An explicitly named `localhost:443` pattern still works -- only the
+wildcard narrows.
+
+### A197 -- the grant prompt folded loopback/private/link-local addresses into "and N other sites", hiding the only thing that ever grants access to them **[RESOLVED 2026-09-17 -- lane FIX-A2, stream/shell-11-dialog-address-truth]**
+
+**Raised and fixed the same lane**, `/claude-security` scan finding, alongside A198 and A161 --
+all three the same underlying failure: the dialog not showing a person what they are actually
+agreeing to.
+
+A manifest can name an address like `127.0.0.1`, `192.168.1.1` or `169.254.169.254` (the cloud
+metadata endpoint), and that manifest entry is the ONLY thing that makes it reachable at all --
+`hostMatches` (`src/broker/policy/connect-patterns.ts`) never lets an ordinary hostname resolve
+onto private address space, even its own. `namedHostsSummary`
+(`src/main/grant-prompt-connect.ts`) nonetheless treated such a pattern exactly like an ordinary
+public hostname: folded into a count the moment it was not the first host declared, and even a
+SOLE private address rendered with `warning: false` and no indication of what it was --
+`describeCapabilityGrant('https.connect', ['api.example.com:443', 'cdn.example.com:443',
+'127.0.0.1:9000'])` rendered `"Connect to api.example.com and 2 other sites"`, with the loopback
+address entirely invisible. Confirmed by a failing test before any fix
+(`grant-prompt-connect.test.ts`, "REGRESSION: the exact defect...") -- 6 new tests failed against
+unmodified code, pasted in this lane's PR body / final report.
+
+**Fixed by treating any address-literal pattern outside public unicast space as its own category,
+never folded and never unwarned.** `nonPublicAddressClassOf` reuses the existing classifier
+(`isPublicUnicast` as the gate, `classifyAddress` for which class -- `src/broker/policy/
+address.ts`, Rule 3: no second classifier written). Every such address is now named explicitly
+and given `warning: true`, matching A134's own unconditional treatment of `tcp.listen`/
+`udp.bind` -- reaching a device on the person's own network is a different KIND of grant, not a
+narrower version of an ordinary one. `describeCapabilityGrant('https.connect', ['127.0.0.1:9000'])`
+now renders `message: "⚠ Connect to 127.0.0.1"`, `explanation: "127.0.0.1 is your own device.
+This is not part of the public internet."` Ordinary public hosts declared alongside a sensitive
+address still fold into a count exactly as before (`... and 2 other sites`) -- only the addresses
+a person cannot safely skim past lose that treatment. Full before/after wording for every case:
+this lane's final report / PR body.
+
+**Not addressed, deliberately out of this fix's scope:** port breadth for a sensitive address (a
+private-address row never shows which port, unlike the single-named-host case, AR-02) and an
+upper bound on how many sensitive addresses get listed (uncapped, unlike A133's threshold for
+ordinary hosts) -- both real but secondary to A197's own claim, which was about addresses being
+hidden entirely, not about the completeness of what is shown once they are not. Left for a
+follow-up if a real manifest ever declares enough sensitive addresses for the second one to
+matter; `MAX_PATTERNS` (256) bounds it regardless.
+
+**Verified:** `grant-prompt-connect.test.ts` (24 tests, including the 6 that failed pre-fix),
+`grant-prompt-render.test.ts`, full suite -- see this lane's final report for exact counts and
+command output.
+
+### A198 -- a blank-line-padded connect pattern was reported to push real content off-screen in the grant prompt **[NOT REPRODUCIBLE -- verified 2026-09-17, lane FIX-A2]**
+
+**Raised and investigated the same lane** as A197/A161, `/claude-security` scan finding. The claim:
+a pattern supplied through `app.requestGrant` could carry blank lines, padding the rendered list
+so the port range and origin scroll out of view.
+
+**Checked directly, not assumed, and found not to hold.** `describeCapabilityGrant` was called
+with deliberately padded patterns -- leading/trailing/internal blank lines, and a pattern that is
+nothing but blank lines -- the MOST permissive path available, since this function does no
+validation of its own and trusts whatever pattern array it is handed. In every case the padding
+either vanished silently or the whole pattern was dropped, never rendered with padding intact:
+
+- `parsePattern` (`src/broker/policy/connect-patterns.ts`) trims the WHOLE pattern before
+  splitting host:port, so leading/trailing blank lines never reach the rendered `host`/`port` at
+  all.
+- `isAsciiHost`, called on the trimmed text, rejects any control character -- including `\n` and
+  `\r` -- ANYWHERE in the string, so a pattern with an INTERNAL blank line fails to parse; the
+  render layer's `parseConnectPatterns` silently skips a pattern it cannot parse (`continue`),
+  dropping it from the summary entirely rather than rendering it padded.
+
+**And this render-layer robustness is redundant with validation that already exists upstream, at
+both real production entry points**, confirmed by reading rather than assumed: `isDeclarableConnectPattern`
+(the `app.requestGrant` gate, `src/broker/policy/request-grant.ts`) and `validateConnectPattern`
+(the manifest-parse gate, `src/loader/manifest-capabilities.ts`) both reject outright any pattern
+where `pattern !== pattern.trim()` -- `validateConnectPattern`'s own comment says this check
+exists specifically "to catch the padding parseConnectPattern's own trim would otherwise hide
+from us." A padded pattern therefore never reaches a real dialog: the whole `app.requestGrant`
+call fails closed before `consent()` is ever invoked (`decideGrantRequest` rejects the entire
+request the moment any one requested pattern fails this check), and a padded manifest declaration
+is rejected at install/load time, never persisted.
+
+**No code changed.** Three tests recording the investigation were added
+(`grant-prompt-connect.test.ts`, "A198: blank-line padding does not survive into the rendered
+text") -- all three pass against unmodified code, which is itself the finding: there was no
+defect to make fail first. Per this lane's own instructions, a non-reproducible claim is reported
+as such rather than having a fix manufactured for it.
 
 ### A199 -- revoking a grant did not stop a third-party reach request already in flight **[FIXED -- stream/loader-11-reach-limits]**
 

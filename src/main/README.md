@@ -434,6 +434,93 @@ question -- and it would not by itself have saved the feed-reader case anyway, s
 different news outlets are twelve different registrable domains; the fix that actually matters
 here is the threshold's size, not the unit it counts in).
 
+**[`grant-prompt-connect.ts`](grant-prompt-connect.ts) — a manifest pattern naming a loopback/
+private/link-local address is never folded into "and N other sites" (A197).** A pattern like
+`127.0.0.1:9000` or `169.254.169.254:80` is the ONLY thing that makes that address reachable at
+all -- `hostMatches` (`../broker/policy/connect-patterns.ts`) never lets a plain hostname resolve
+onto private space, even its own, so an address-literal pattern is a deliberate, specific grant,
+never incidental. Before this fix `namedHostsSummary` treated it exactly like an ordinary public
+hostname: folded into a count once it was not the first host in the list, and even alone it
+rendered with `warning: false` and no indication of what kind of address it was -- `"Connect to
+127.0.0.1"` read no differently from `"Connect to api.example.com"`. **A person can reasonably
+skim a domain name; they cannot skim "your own device" the same way**, which is why this can
+never be summarised the way an ordinary host count can.
+
+- **Reuses the existing address classifier (`../broker/policy/address.ts`), not a second one
+  (Rule 3).** `isPublicUnicast` is the gate (an address-literal pattern is "sensitive" exactly
+  when that returns false); `classifyAddress`, the same file, supplies which class it is in
+  (loopback, private, link-local, ...) for the wording. `hostSpecKind(host) === 'address-literal'`
+  gates entry to this check at all -- a non-canonical literal (`0177.0.0.1`) already authorises
+  nothing at connect time (`hostSpecKind`'s own doc), so it is left rendering as an ordinary named
+  host, exactly as before; this fix is about addresses that actually grant something.
+- **`warning: true` unconditionally, the same shape `tcp.listen`/`udp.bind` already use (A134).**
+  Reaching a device on the person's own network is a categorically different kind of grant from
+  reaching an ordinary public site, not a narrower version of the same one -- there is no "safe,
+  narrow" private-address grant the way a single named public host is a narrow one.
+- **Every sensitive address is named, with its class stated plainly, in a register matching
+  `tcp.listen`/`udp.bind`'s own explanation ("your device", "your network") rather than a second
+  vocabulary.** `"127.0.0.1 is your own device. This is not part of the public internet."` Ordinary
+  PUBLIC hosts declared alongside a sensitive one still fold into a count exactly as before --
+  only the addresses a person cannot afford to skim past lose that treatment.
+- **A public IP literal (`93.184.216.34:443`) is untouched -- this only ever fires for address
+  space `isPublicUnicast` already says no to (T12's own boundary), never for an ordinary public
+  address that happens to be written as a literal instead of a name.**
+
+**A198, investigated and NOT reproduced: a blank-line-padded pattern cannot reach a rendered
+dialog.** The claim was that a pattern supplied through `app.requestGrant` could carry blank
+lines, padding the rendered list so real content scrolls out of view. Checked directly, not
+assumed: `describeCapabilityGrant` was called with deliberately padded patterns (leading/
+trailing/internal blank lines, and a pattern that is nothing but blank lines) -- the MOST
+permissive path available, since this function has no validation of its own and every production
+caller validates first. `parsePattern` (`../broker/policy/connect-patterns.ts`) trims the whole
+pattern before splitting host:port, so leading/trailing padding is silently stripped and never
+rendered; a pattern carrying an INTERNAL blank line fails `isAsciiHost` (which rejects any control
+character, including `\n`/`\r`, anywhere in the trimmed text) and the whole pattern is dropped
+from the summary, never rendered padded. Separately, and before rendering is ever reached: both
+`isDeclarableConnectPattern` (the `app.requestGrant` gate, `../broker/policy/request-grant.ts`)
+and `validateConnectPattern` (the manifest-parse gate, `../loader/manifest-capabilities.ts`)
+already reject any pattern where `pattern !== pattern.trim()` outright -- a check that file's own
+comment says exists specifically "to catch the padding parseConnectPattern's own trim would
+otherwise hide from us." No render-side change was made; the test suite records the investigation
+(`tests/grant-prompt-connect.test.ts`) so it does not need re-deriving.
+
+**[`grant-prompt-render.ts`](grant-prompt-render.ts) — a multi-label PRIVATE hosting suffix no
+longer swallows the tenant label (A161, AI recommendation).** A142/the three-label rule (above)
+is correct for a ccTLD registry suffix (`example.co.uk`), but some cloud/PaaS platforms register
+a PRIVATE suffix -- not a registry one -- that is itself three or more labels long:
+`s3.amazonaws.com`, `storage.googleapis.com`, and AWS's regional compute suffixes
+(`<region>.compute.amazonaws.com`), all confirmed against the live Public Suffix List, not
+assumed. The fixed three-label cut can land entirely inside one of these, dropping the
+tenant/bucket label -- the one an attacker actually controls -- and leaving a string
+(`...s3.amazonaws.com`) that reads as the platform's own domain rather than a truncated one.
+
+- **The fix is a small, evidenced allow-list (`RECOGNISED_PRIVATE_SUFFIXES`), not a public-suffix-
+  list dependency.** A142 already established why a naive guess is wrong and a real PSL is a
+  dependency this repo does not carry (parked); this list is neither -- it names only the specific
+  suffixes this codebase has concrete evidence for, matched label-for-label (never a substring, so
+  `nots3.amazonaws.com` does not match), and costs nothing to extend or wrong nothing it does not
+  recognise -- an unrecognised host keeps the plain three-label cut, unchanged.
+- **A host ending in a recognised suffix widens the kept window to that suffix plus ONE more
+  label**, rather than showing the suffix alone: `attacker.storage.googleapis.com` (4 labels) now
+  shows in full; the owner's own worked example, an A115-style confusable relocated behind a real
+  S3 suffix (`accounts.google.com.attacker.s3.amazonaws.com`), now elides to
+  `...attacker.s3.amazonaws.com` -- the attacker-controlled label survives even though the
+  confusable prefix ahead of it still does not, which the `...` marker (unchanged, always present
+  on any truncation) continues to flag honestly as incomplete.
+- **Alternatives considered, both viable, neither chosen:** refusing to elide at all whenever
+  elision would remove the host's single most specific label (simpler, no suffix knowledge
+  needed, but would also widen the window for hosts with no actual platform-suffix risk, which is
+  a real behaviour change to the A142-resolved rule for no evidenced gain), and leaving the rule
+  exactly as shipped, treating this as fully subsumed by A142's eventual PSL dependency (does
+  nothing today for the concrete cases this entry has evidence for). The allow-list was chosen as
+  the smallest change that actually fixes the evidenced cases without touching the rule's
+  behaviour for anything else.
+- **Still open, by design:** this is a narrow, evidenced list, not comprehensive -- a regional S3
+  endpoint (`bucket.s3.us-east-1.amazonaws.com`, a different suffix shape entirely) and any
+  platform not on the list still get the plain three-label cut, unchanged from before this fix.
+  Closing the general case needs the same public-suffix-list dependency A142 parked; this entry
+  does not attempt to substitute for it.
+
 **[`install-consent.ts`](install-consent.ts) — "once per origin, ever" (A139) is derived from the
 grant ledger's own hydration, not tracked as a second piece of state.** `requestInstallConsent`
 could have kept its own persisted "was this origin ever asked" flag. It does not, because
