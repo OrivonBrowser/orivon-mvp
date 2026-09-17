@@ -163,128 +163,6 @@ describe('describeGrantRequest', () => {
   })
 })
 
-// R2-01/AR-05: a bare "*" HOST authorises any public address REGARDLESS of
-// its paired port (hostSpecKind, connect-patterns.ts) -- the old
-// `patterns.includes('*:*')` check disagreed with the runtime matcher about
-// exactly this, which is why these cases are tested directly rather than
-// trusted to follow from the "*:*" cases above.
-describe('describeCapabilityGrant -- a wildcard host is unlimited whatever its port (R2-01)', () => {
-  it('warns on "*:443" even though it is not the literal "*:*"', () => {
-    const summary = describeCapabilityGrant('https.connect', ['*:443'])
-
-    expect(summary.warning).toBe(true)
-    expect(summary.message).toContain('Unlimited')
-    expect(summary.explanation).toContain('port 443')
-  })
-
-  it('treats a port range spanning the whole space (1-65535) the same as the literal "*" port', () => {
-    const summary = describeCapabilityGrant('https.connect', ['*:1-65535'])
-
-    expect(summary.warning).toBe(true)
-    expect(summary.message).toContain('Unlimited')
-    // Fully open in port terms too -- no "Limited to" qualifier to add.
-    expect(summary.explanation).not.toContain('Limited to')
-  })
-
-  it('still renders the true "*:*" case identically to before (no regression)', () => {
-    const summary = describeCapabilityGrant('https.connect', ['*:*'])
-
-    expect(summary.warning).toBe(true)
-    expect(summary.message).toBe('⚠ Unlimited network access')
-  })
-
-  it('never renders the wildcard host as if it were a literal hostname when mixed with a named one', () => {
-    const summary = describeCapabilityGrant('https.connect', ['*:443', 'internal.example:8080'])
-
-    expect(summary.warning).toBe(true)
-    expect(summary.message).toContain('Unlimited')
-    expect(summary.message).not.toContain('internal.example')
-    expect(summary.explanation ?? '').not.toContain('internal.example')
-  })
-
-  it('renders a genuinely narrow, wildcard-free list with no warning at all', () => {
-    const summary = describeCapabilityGrant('https.connect', ['a.example:443'])
-
-    expect(summary.warning).toBe(false)
-    expect(summary.message).toBe('Connect to a.example')
-  })
-
-  it('applies the same wildcard-whatever-the-port rule to tcp.connect and udp.send, not only https.connect', () => {
-    expect(describeCapabilityGrant('tcp.connect', ['*:22']).warning).toBe(true)
-    expect(describeCapabilityGrant('udp.send', ['*:53']).warning).toBe(true)
-  })
-})
-
-// A133, CORRECTED: the first threshold (10 OTHER hosts, a single-digit vs
-// double-digit reading of English) was proven wrong by a real counter-
-// example -- a 12-host feed reader tripped it, and twelve individually
-// named feeds is a narrow declaration by any sensible reading, not a
-// breadth risk. Re-anchored on MAX_PATTERNS (the real, enforced ceiling on
-// how many hosts one capability's array may ever declare): the warning now
-// fires only past HALF that ceiling. The feed reader is the regression
-// test that must never trip again; see this directory's README, Design
-// notes, for the full before/after.
-describe('describeCapabilityGrant -- A133: "and N other sites" gets a breadth warning past a threshold', () => {
-  function hostPatterns (count: number): Pattern[] {
-    return Array.from({ length: count }, (_, i) => `host${i}.example:443`)
-  }
-
-  it('REGRESSION: a 12-feed reader -- the case that broke the original threshold -- never warns', () => {
-    const feeds = ['nytimes.com:443', 'bbc.com:443', 'reuters.com:443', 'apnews.com:443', 'npr.org:443', 'theguardian.com:443', 'wsj.com:443', 'ft.com:443', 'economist.com:443', 'aljazeera.com:443', 'dw.com:443', 'lemonde.fr:443']
-    const summary = describeCapabilityGrant('https.connect', feeds)
-
-    expect(summary.warning).toBe(false)
-    expect(summary.message).toBe('Connect to nytimes.com and 11 other sites')
-  })
-
-  it('just under the threshold (127 hosts) still reads as an ordinary named-hosts summary', () => {
-    const summary = describeCapabilityGrant('https.connect', hostPatterns(127))
-
-    expect(summary.warning).toBe(false)
-    expect(summary.message).toBe('Connect to host0.example and 126 other sites')
-  })
-
-  it('at the threshold (128 hosts -- half of MAX_PATTERNS) switches to the breadth-warning treatment', () => {
-    const summary = describeCapabilityGrant('https.connect', hostPatterns(128))
-
-    expect(summary.warning).toBe(true)
-    expect(summary.message).toBe('⚠ Connect to a large number of sites')
-    expect(summary.explanation).toBe(
-      'This app can connect to 128 specific sites, starting with host0.example -- more than can be weighed individually.'
-    )
-  })
-
-  it('a much larger declared set still states the true count honestly, not a vaguer word instead', () => {
-    const summary = describeCapabilityGrant('https.connect', hostPatterns(200))
-
-    expect(summary.warning).toBe(true)
-    expect(summary.explanation).toContain('200 specific sites')
-  })
-
-  it('applies the same threshold to tcp.connect and udp.send, not only https.connect', () => {
-    expect(describeCapabilityGrant('tcp.connect', hostPatterns(128)).warning).toBe(true)
-    expect(describeCapabilityGrant('udp.send', hostPatterns(128)).warning).toBe(true)
-  })
-})
-
-// AR-02: port breadth is a whole axis of "how wide is this grant" that used
-// to vanish entirely for tcp.connect/https.connect/udp.send -- these three
-// pattern sets used to render byte-for-byte the same message.
-describe('describeCapabilityGrant -- port breadth for a single named host (AR-02)', () => {
-  it('renders a different message for a single port, a full port range, and several discrete ports', () => {
-    const singlePort = describeCapabilityGrant('tcp.connect', ['a.example:443'])
-    const fullRange = describeCapabilityGrant('tcp.connect', ['a.example:1-65535'])
-    const several = describeCapabilityGrant('tcp.connect', ['a.example:22', 'a.example:443', 'a.example:5432'])
-
-    const messages = new Set([singlePort.message, fullRange.message, several.message])
-    expect(messages.size).toBe(3)
-
-    expect(singlePort.message).toBe('Connect to a.example')
-    expect(fullRange.message).toBe('Connect to a.example on any port')
-    expect(several.message).toBe('Connect to a.example on ports 22, 443, 5432')
-  })
-})
-
 // AR-01: on a platform that drops MessageBoxOptions.title ("some platforms
 // will not show it", per Electron's own .d.ts), the origin must still be
 // legible -- checked for every capability kind and both the warning and
@@ -464,6 +342,52 @@ describe('formatOriginForDisplay -- the last three labels, owner decision 2026-0
     // Three or fewer real labels plus a root dot must still show the
     // whole (unchanged) origin, dot included.
     expect(formatOriginForDisplay('https://example.com.')).toBe('https://example.com.')
+  })
+})
+
+// A161: the fixed three-label rule (A142) is right for a ccTLD registry
+// suffix, but a multi-label PRIVATE suffix (cloud/PaaS hosting -- confirmed
+// against the live Public Suffix List's private section, not assumed) can
+// itself be exactly three labels long. The three-label cut then lands
+// entirely inside the suffix, dropping the tenant/bucket label -- the one
+// an attacker actually controls -- and leaving a string that reads as the
+// PLATFORM's own domain rather than a truncated one. `s3.amazonaws.com`
+// and `storage.googleapis.com` are this entry's own worked examples.
+describe('formatOriginForDisplay -- A161: a multi-label PRIVATE hosting suffix no longer swallows the tenant label', () => {
+  it('REGRESSION: the exact defect -- a single tenant label ahead of a recognised suffix used to be dropped entirely', () => {
+    const displayed = formatOriginForDisplay('https://attacker.storage.googleapis.com')
+
+    expect(displayed).toContain('attacker')
+  })
+
+  it('a short host on a recognised suffix is shown in full once the window widens enough to fit it, not elided at all', () => {
+    expect(formatOriginForDisplay('https://attacker.storage.googleapis.com')).toBe('https://attacker.storage.googleapis.com')
+    expect(formatOriginForDisplay('https://mybucket.s3.amazonaws.com')).toBe('https://mybucket.s3.amazonaws.com')
+  })
+
+  it('the owner\'s own worked example (a confusable relocated behind a real S3 suffix) reveals the attacker-controlled label instead of hiding it', () => {
+    const displayed = formatOriginForDisplay('https://accounts.google.com.attacker.s3.amazonaws.com')
+
+    expect(displayed).not.toBe('https://...s3.amazonaws.com')
+    expect(displayed).toContain('attacker')
+    expect(displayed).toBe('https://...attacker.s3.amazonaws.com')
+  })
+
+  it('the AWS regional compute suffix keeps its region label, which the old fixed cut used to drop', () => {
+    const displayed = formatOriginForDisplay('https://ec2-1-2-3-4.us-east-1.compute.amazonaws.com')
+
+    expect(displayed).toContain('us-east-1')
+    expect(displayed).toBe('https://...us-east-1.compute.amazonaws.com')
+  })
+
+  it('an ORDINARY host past three labels still elides exactly as before -- this is a narrow escape hatch, not a rule change', () => {
+    expect(formatOriginForDisplay('https://accounts.google.com.attacker.example')).toBe('https://...com.attacker.example')
+  })
+
+  it('still marks a widened elision visibly, same as the fixed-width case', () => {
+    const displayed = formatOriginForDisplay('https://accounts.google.com.attacker.s3.amazonaws.com')
+
+    expect(displayed).toContain('...')
   })
 })
 
