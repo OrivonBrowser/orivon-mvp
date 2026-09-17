@@ -157,6 +157,19 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
   }
 
   /**
+   * A200: `Broker.app.socketAllowanceSync`'s implementation -- a thin,
+   * never-throwing delegate to `GrantLedger.socketAllowance`, same shape as
+   * `hasGrantsSync` above. `ledger.socketAllowance` already answers the
+   * platform default for a row it holds nothing for, so a malformed
+   * `origin` (falling back to the raw, un-canonicalised string) still gets
+   * a safe number rather than a broker fault.
+   */
+  function socketAllowanceSync (origin: string): number {
+    const key = originFromUrl(origin)
+    return ledger.socketAllowance(key ?? origin)
+  }
+
+  /**
    * Re-throws the version-floor write failure (the one thing
    * `GrantLedger.registerApp` throws) rather than swallowing it, but as an
    * OrivonError: `canonical` above already rejects with one, and one method
@@ -403,7 +416,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
   }
 
   return {
-    app: { manifest, grants, isRegisteredSync, hasGrantsSync, registeredOriginsSync, persistedAppsSync, hydrateFromPinnedManifest, pickedPaths: pickedPathsFor },
+    app: { manifest, grants, isRegisteredSync, hasGrantsSync, registeredOriginsSync, persistedAppsSync, hydrateFromPinnedManifest, pickedPaths: pickedPathsFor, socketAllowanceSync },
     net,
     id,
     fs,
