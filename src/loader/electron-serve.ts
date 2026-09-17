@@ -32,6 +32,7 @@ import type { PinCoverageSnapshot } from './pin-coverage.js'
 import { createAppRequestHandler, verifiedManifestFor } from './serve.js'
 import type { AppRequestHandler, AuthoriseReach } from './serve.js'
 import { nodeReachDial } from './serve-reach.js'
+import type { ReleaseReachSlot, ReserveReachSlot } from './serve-reach-guard.js'
 import type { LoaderStorage } from './storage.js'
 
 /**
@@ -48,6 +49,47 @@ const coverageTrackers = new Map<string, ReturnType<typeof createPinCoverageTrac
 /** `origin`'s pin-coverage counts for the current process run, or `undefined` when nothing has registered serving for it yet -- src/trust/'s consumer end of pin-coverage.ts's "agreed shape" (that module's own header). */
 export function pinCoverageFor (origin: string): PinCoverageSnapshot | undefined {
   return coverageTrackers.get(origin)?.snapshot()
+}
+
+/**
+ * A200 (docs/open-questions.md): per-origin count of third-party reach
+ * requests currently in flight -- module state mirroring `coverageTrackers`
+ * above, for the identical reason: `registerServingFor` resets this
+ * origin's entry on every call, so a reinstall within one run starts a
+ * fresh count rather than inheriting a stale one from the session it
+ * replaced.
+ */
+const reachSlotsInUse = new Map<string, number>()
+
+/**
+ * Builds the (reserve, release) pair `serve.ts`'s `fetchThirdParty` uses to
+ * cap this origin's concurrent third-party reach requests at its
+ * manifest-declared socket allowance -- `Broker.app.socketAllowanceSync`,
+ * the SAME clamp `net.connect`/`net.connectSecure`/`net.listen` already
+ * enforce for a live handle (`GrantLedger.socketAllowance`, never
+ * reimplemented here -- code-guidelines.md Rule 3).
+ *
+ * CHECK-AND-RESERVE IN ONE SYNCHRONOUS STEP, the discipline
+ * `GrantLedger.reserveFsBytes`'s own doc names: two reach requests racing
+ * this function must not both read the same pre-reservation count and both
+ * pass.
+ */
+function reachSlotsFor (broker: Broker, origin: string): { reserve: ReserveReachSlot, release: ReleaseReachSlot } {
+  return {
+    reserve: () => {
+      const inUse = reachSlotsInUse.get(origin) ?? 0
+      if (inUse >= broker.app.socketAllowanceSync(origin)) return false
+      reachSlotsInUse.set(origin, inUse + 1)
+      return true
+    },
+    release: () => {
+      const inUse = reachSlotsInUse.get(origin) ?? 0
+      // Clamped at zero, mirroring GrantLedger.releaseFsBytes's own
+      // reasoning: a mismatched caller degrades to an over-strict budget,
+      // never a negative count a future reserve could exploit.
+      reachSlotsInUse.set(origin, Math.max(0, inUse - 1))
+    }
+  }
 }
 
 /**
@@ -219,6 +261,10 @@ export async function registerServingFor (storage: LoaderStorage, origin: string
 
   const tracker = createPinCoverageTracker()
   coverageTrackers.set(origin, tracker)
+  // A200: a reinstall within this run starts a fresh count too -- see
+  // `reachSlotsInUse`'s own doc, mirroring `coverageTrackers` just above.
+  reachSlotsInUse.set(origin, 0)
+  const reachSlots = broker === undefined ? undefined : reachSlotsFor(broker, origin)
 
   const handler = await createAppRequestHandler(
     storage,
@@ -227,7 +273,9 @@ export async function registerServingFor (storage: LoaderStorage, origin: string
     broker === undefined ? undefined : async () => await secureHeaderPatternsFor(broker, origin),
     broker === undefined ? undefined : authoriseReachFor(broker, origin),
     nodeReachDial(),
-    tracker.record
+    tracker.record,
+    reachSlots?.reserve,
+    reachSlots?.release
   )
   const { session } = await import('electron')
   registerAppOrigin(session.fromPartition(partitionFor(origin)), origin, handler)
