@@ -14,9 +14,10 @@
 // style choice (R2-01/AR-05).
 
 import type { Pattern } from '../contracts/index.js'
-import { MAX_PORT } from '../broker/policy/canonical-host.js'
+import { MAX_PORT, normalizeHost } from '../broker/policy/canonical-host.js'
 import { MAX_PATTERNS } from '../broker/policy/connect.js'
 import { hostSpecKind, parsePattern as parseConnectPattern, parsePortSpec } from '../broker/policy/connect-patterns.js'
+import { classifyAddress, isPublicUnicast, type AddressClass } from '../broker/policy/address.js'
 
 /**
  * One already-granted capability's plain-language summary -- exported for
@@ -33,8 +34,9 @@ export interface CapabilityGrantSummary {
   readonly message: string
   /** Present only alongside `warning: true` -- the sentence explaining what
    * this row's warning actually means: unlimited reach, a host set too
-   * large to weigh individually (A133), or a listening/binding capability
-   * accepting inbound traffic (A134). */
+   * large to weigh individually (A133), a listening/binding capability
+   * accepting inbound traffic (A134), or a manifest pattern naming a
+   * private/loopback/link-local address directly (A197). */
   readonly explanation?: string
 }
 
@@ -59,6 +61,25 @@ interface ConnectPatternInfo {
    * host REGARDLESS of the paired port (R2-01): the runtime matcher grants
    * reach to any public address on that basis alone. */
   readonly hostIsWildcard: boolean
+  /** A197: non-null only for an ADDRESS-LITERAL pattern reaching
+   * outside ordinary public unicast space (T12) -- the ONLY way such an
+   * address becomes reachable at all (`hostMatches`, connect-patterns.ts:
+   * a hostname never authorises a private address, even its own). Null for
+   * an ordinary hostname and for a literal that IS public space, so both
+   * keep rendering exactly as before. */
+  readonly nonPublicAddressClass: AddressClass | null
+}
+
+/** `hostSpecKind(host) === 'address-literal'` and `isPublicUnicast` says no
+ * -- the one shape `hostMatches` will actually honour for a private
+ * address (an app-controlled hostname never resolves onto one, by
+ * design). `isPublicUnicast` is the gate, reused rather than
+ * reimplemented (code-guidelines.md Rule 3); `classifyAddress`, the same
+ * file, supplies which class it is in for the wording below. */
+function nonPublicAddressClassOf (host: string): AddressClass | null {
+  if (hostSpecKind(host) !== 'address-literal') return null
+  const address = normalizeHost(host)
+  return isPublicUnicast(address) ? null : classifyAddress(address)
 }
 
 function parseConnectPatterns (patterns: readonly Pattern[]): readonly ConnectPatternInfo[] {
@@ -66,9 +87,37 @@ function parseConnectPatterns (patterns: readonly Pattern[]): readonly ConnectPa
   for (const pattern of patterns) {
     const parsed = parseConnectPattern(pattern)
     if (parsed === null) continue
-    infos.push({ host: parsed.host, port: parsed.port, hostIsWildcard: hostSpecKind(parsed.host) === 'any-public-unicast' })
+    infos.push({
+      host: parsed.host,
+      port: parsed.port,
+      hostIsWildcard: hostSpecKind(parsed.host) === 'any-public-unicast',
+      nonPublicAddressClass: nonPublicAddressClassOf(parsed.host)
+    })
   }
   return infos
+}
+
+/** A197: plain language for an address class a manifest pattern named
+ * directly -- the register `tcp.listen`/`udp.bind`'s own explanation uses
+ * ("your device", "your network"), not a second vocabulary. Every class
+ * `nonPublicAddressClassOf` can actually return gets a line here; the
+ * exhaustiveness guard below is what makes a new `AddressClass` (`public`/
+ * `unparseable` excluded by construction) a compile error instead of a
+ * silent `undefined`. */
+function describeAddressClass (cls: Exclude<AddressClass, 'public' | 'unparseable'>): string {
+  switch (cls) {
+    case 'loopback': return 'your own device'
+    case 'private': return 'a computer on your local network'
+    case 'link-local': return 'a device on your local network'
+    case 'unspecified': return 'an unspecified address'
+    case 'multicast': return 'a group of devices on your network'
+    case 'broadcast': return 'every device on your network'
+    case 'reserved': return 'a reserved address, not part of the ordinary internet'
+    default: {
+      const exhaustive: never = cls
+      throw new Error(`grant-prompt-connect: unhandled address class ${JSON.stringify(exhaustive)}`)
+    }
+  }
 }
 
 /** A port spec that reaches every port a connection could ever name -- the
@@ -156,6 +205,51 @@ function namedHostsSummary (verb: string, singular: string, plural: string, info
 }
 
 /**
+ * A197: at least one declared host is a loopback/private/link-local/...
+ * address literal. Every one is named explicitly and NEVER folded into
+ * "and N other sites" -- unlike an ordinary public host, a person cannot
+ * reasonably skim past "your own device" or "a computer on your network"
+ * the way they can past a domain name, so hiding it behind a count is the
+ * A197 defect itself, not a presentation shortcut. `warning: true`
+ * unconditionally, matching `tcp.listen`/`udp.bind`'s own unconditional
+ * case (A134): reaching a device on the person's own network is a
+ * categorically different kind of grant than reaching an ordinary public
+ * site, not a narrower version of the same one.
+ *
+ * Ordinary public hosts alongside a sensitive one still fold into a count
+ * exactly as `namedHostsSummary` already does -- only the sensitive
+ * addresses lose that treatment, because only they are the ones a person
+ * cannot afford to skim past.
+ */
+function namedHostsSummaryWithSensitiveAddresses (verb: string, singular: string, plural: string, infos: readonly ConnectPatternInfo[]): CapabilityGrantSummary {
+  const sensitive = infos.filter((info): info is ConnectPatternInfo & { nonPublicAddressClass: AddressClass } => info.nonPublicAddressClass !== null)
+  const sensitiveHosts = Array.from(new Set(sensitive.map((info) => info.host)))
+  const classByHost = new Map(sensitive.map((info) => [info.host, info.nonPublicAddressClass]))
+
+  const ordinaryHosts = Array.from(new Set(
+    infos.filter((info) => info.nonPublicAddressClass === null).map((info) => info.host)
+  ))
+  const otherSitesClause = ordinaryHosts.length === 0
+    ? ''
+    : ` and ${ordinaryHosts.length} other ${ordinaryHosts.length === 1 ? singular : plural}`
+
+  const sentences = sensitiveHosts.map((host) => {
+    const cls = classByHost.get(host)
+    // Every entry in sensitiveHosts came from `sensitive`, so `cls` is
+    // always defined here -- the `as` below is not a type escape hatch,
+    // just TypeScript not following that through a Map lookup.
+    return `${host} is ${describeAddressClass(cls as Exclude<AddressClass, 'public' | 'unparseable'>)}.`
+  })
+  const closingSentence = sensitiveHosts.length === 1 ? 'This is not part of the public internet.' : 'These are not part of the public internet.'
+
+  return {
+    warning: true,
+    message: `⚠ ${verb} ${sensitiveHosts.join(', ')}${otherSitesClause}`,
+    explanation: `${sentences.join(' ')} ${closingSentence}`
+  }
+}
+
+/**
  * `tcp.connect` / `https.connect` / `udp.send` share one shape: host:port
  * patterns, a host wildcard that means "any public address" REGARDLESS of
  * its paired port (R2-01), and port breadth that must stay visible even
@@ -190,6 +284,10 @@ export function describeConnectCapability (
       ? unlimitedExplanation
       : `${unlimitedExplanation} Limited to ${portsListPhrase(wildcard.map((info) => info.port))}.`
     return { warning: true, message: WARNING_HEADLINE, explanation }
+  }
+
+  if (named.some((info) => info.nonPublicAddressClass !== null)) {
+    return namedHostsSummaryWithSensitiveAddresses(verb, singular, plural, named)
   }
 
   return namedHostsSummary(verb, singular, plural, named)
