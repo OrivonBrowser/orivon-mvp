@@ -8022,3 +8022,14 @@ and `npm run typecheck` is clean.
 
 **Scope: `https.connect` only**, matching the file this defect lives in. `tcp.connect`/`udp.send`
 were already correct (the conductor's own measurement above) and untouched by this lane.
+
+**Hand-review addition, 2026-09-17 (conductor).** The first implementation gated only address
+LITERALS, which left `localhost` and the whole `.localhost` subtree ALLOWED under a wildcard --
+measured, not inferred. That is not the DNS residual below: RFC 6761 SS6.3 reserves that namespace
+and Chromium resolves it to loopback without consulting DNS, so it is decidable from the name
+alone. It also broke the very parity this entry exists to restore, since `checkConnect` denies
+`localhost` today (it resolves first, then fails the address gate). Closed by reusing
+`isLocalhostName` (`src/broker/policy/origin.ts`), which was already exported for exactly this
+kind of second caller. An explicitly named `localhost:443` pattern still works -- only the
+wildcard narrows.
+
