@@ -123,6 +123,7 @@ async function dispatch (
     case 'web.openContext':
     case 'web.evaluate':
     case 'web.close':
+    case 'web.awaitClose':
       return await dispatchWeb(broker, origin, method, payload)
     default: {
       // Exhaustiveness check: if ControlMethod (ipc-validation.ts) ever

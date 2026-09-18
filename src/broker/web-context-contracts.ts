@@ -48,4 +48,18 @@ export interface BrokerWebMethods {
   evaluate(origin: string, opts: { id: string, script: string }): Promise<unknown>
   /** Idempotent, matching `Handle.close()` -- closing an id this origin does not hold is a silent no-op. */
   close(origin: string, opts: { id: string }): Promise<void>
+  /**
+   * Resolves once `opts.id` actually leaves the broker's tables -- a clean
+   * close resolves, a revoke or the idle timer's own close settles the same
+   * way `HandleEntry.closed` itself would. NOT part of ADR-0019's three
+   * named control methods; added because `contracts/handles.ts`'s
+   * `WebContext.closed` promises the same LIVE behaviour every other
+   * Handle's `closed` has, and `orivon.web` carries no port channel of its
+   * own for the broker to push that notification through unprompted
+   * (../../preload/web-surface.ts's own header explains the polling loop
+   * this drives). Rejects 'denied'/'closed' immediately for an id this
+   * origin does not currently hold, matching every other handle-scoped
+   * method's own ownership check (T11c).
+   */
+  awaitClose(origin: string, opts: { id: string }): Promise<void>
 }

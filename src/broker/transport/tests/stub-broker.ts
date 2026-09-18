@@ -74,6 +74,7 @@ export function stubBroker (
     webOpenContext: (origin: string, opts: { origin: string, width?: number, height?: number }) => Promise<{ id: string, origin: string }>
     webEvaluate: (origin: string, opts: { id: string, script: string }) => Promise<unknown>
     webClose: (origin: string, opts: { id: string }) => Promise<void>
+    webAwaitClose: (origin: string, opts: { id: string }) => Promise<void>
     registerApp: (origin: string, manifest: Manifest) => Promise<void>
     versionFloorFor: (origin: string) => Promise<string>
     rollbackAcknowledgedVersionFor: (origin: string) => Promise<string | undefined>
@@ -215,6 +216,10 @@ export function stubBroker (
       close: async (origin, opts) => {
         calls.push({ method: 'web.close', origin, args: opts })
         await (overrides.webClose?.(origin, opts) ?? notStubbed())
+      },
+      awaitClose: async (origin, opts) => {
+        calls.push({ method: 'web.awaitClose', origin, args: opts })
+        await (overrides.webAwaitClose?.(origin, opts) ?? notStubbed())
       }
     },
     registerApp: async (origin, manifest) => {

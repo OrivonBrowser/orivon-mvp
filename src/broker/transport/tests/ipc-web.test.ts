@@ -131,3 +131,36 @@ describe('web.close', () => {
     expect(calls).toEqual([])
   })
 })
+
+describe('web.awaitClose (the live-push seam WebContext.closed needs -- see web-context-contracts.ts)', () => {
+  it('dispatches to broker.web.awaitClose with the sender-frame origin and the handle id, replying with no result once it resolves', async () => {
+    const calls: BrokerCall[] = []
+    const broker = stubBroker(calls, { webAwaitClose: async () => {} })
+
+    const response = await handleControlRequest(broker, frameFor(APP), envelope('web.awaitClose', { id: 'ctx-1' }))
+
+    expect(response).toEqual({ id: 'req-1', ok: true, result: undefined })
+    expect(calls).toEqual([{ method: 'web.awaitClose', origin: APP, args: { id: 'ctx-1' } }])
+  })
+
+  it('rejects a payload missing id as invalid, without reaching the broker', async () => {
+    const calls: BrokerCall[] = []
+    const response = await handleControlRequest(stubBroker(calls), frameFor(APP), envelope('web.awaitClose', {}))
+
+    expect(response).toEqual({ id: 'req-1', ok: false, code: 'invalid', message: expect.any(String) })
+    expect(calls).toEqual([])
+  })
+
+  it('crosses a broker revoked rejection as the closed enum', async () => {
+    const calls: BrokerCall[] = []
+    const broker = stubBroker(calls, {
+      webAwaitClose: async () => { throw Object.assign(new Error('the grant authorising this context was withdrawn'), { code: 'revoked' }) }
+    })
+
+    const response = await handleControlRequest(broker, frameFor(APP), envelope('web.awaitClose', { id: 'ctx-1' }))
+
+    expect(response).toEqual({
+      id: 'req-1', ok: false, code: 'revoked', message: 'the grant authorising this context was withdrawn'
+    })
+  })
+})

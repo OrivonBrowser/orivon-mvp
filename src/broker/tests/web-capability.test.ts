@@ -242,6 +242,36 @@ describe('WebContext.close (via orivon.web.close)', () => {
   })
 })
 
+describe('WebContext.closed (via orivon.web.awaitClose -- the live-push seam WebContext.closed needs)', () => {
+  it('resolves once the app explicitly closes the context', async () => {
+    const broker = await grantedBroker(fakeHost())
+    const context = await broker.web.openContext(APP, { origin: CONTEXT_ORIGIN })
+
+    const awaited = broker.web.awaitClose(APP, { id: context.id })
+    await broker.web.close(APP, { id: context.id })
+
+    await expect(awaited).resolves.toBeUndefined()
+  })
+
+  it('rejects with revoked once the grant is withdrawn', async () => {
+    const broker = await grantedBroker(fakeHost())
+    const context = await broker.web.openContext(APP, { origin: CONTEXT_ORIGIN })
+
+    const awaited = broker.web.awaitClose(APP, { id: context.id })
+    const grants = await broker.app.grants(APP)
+    const webGrant = grants.find((g) => g.capability === 'web.context')
+    if (webGrant === undefined) throw new Error('expected a live web.context grant')
+    await broker.revoke(APP, webGrant.id)
+
+    await expect(awaited).rejects.toMatchObject({ code: 'revoked' })
+  })
+
+  it('rejects immediately for an id this origin does not hold', async () => {
+    const broker = await grantedBroker(fakeHost())
+    await expect(broker.web.awaitClose(APP, { id: 'never-opened' })).rejects.toMatchObject({ code: 'denied' })
+  })
+})
+
 describe('revocation follows the same mechanism as a net.connect socket', () => {
   it('revoking the web.context grant closes every open context for that origin, calling the host, and refuses a subsequent evaluate against it', async () => {
     const host = fakeHost()

@@ -244,5 +244,17 @@ export function createWebCapability ({ deps, handleTable, ledger, canonical }: W
     await handleTable.release(key, opts.id)
   }
 
-  return { openContext, evaluate, close }
+  /** See broker-contracts.ts's own doc on why this exists beyond ADR-0019's three named control methods. */
+  async function awaitClose (origin: string, opts: { id: string }): Promise<void> {
+    const key = canonical(origin)
+    // Throws 'denied'/'closed' immediately for an id this origin does not
+    // currently hold -- the same T11c ownership re-check `evaluate` runs.
+    // Otherwise `entry.closed` IS the canonical promise `handleTable`
+    // settles from `closeTree` (handle-store.ts), so awaiting it here
+    // observes the real close, not a copy of it.
+    const entry = handleTable.lookup(key, opts.id)
+    await entry.closed
+  }
+
+  return { openContext, evaluate, close, awaitClose }
 }
