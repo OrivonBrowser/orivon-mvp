@@ -516,3 +516,107 @@ describe('createWebContextHost -- close', () => {
   })
 })
 
+// Finding 3 of the security review: before this, nothing reacted to a
+// crashed context's renderer until LIMITS.webContextIdleMs closed it as
+// merely idle. `wc.listeners['render-process-gone']` is populated by the
+// SAME fake `.on()` every other listener test above already exercises.
+describe('createWebContextHost -- a crashed renderer (render-process-gone)', () => {
+  // `handleRenderProcessGone` runs fire-and-forget (`void ...`) off the
+  // Electron event, so tests give its own two `await`s (teardown's two
+  // sequential awaits) a real tick to settle before asserting.
+  async function flushTeardown (): Promise<void> {
+    await new Promise((resolve) => { setTimeout(resolve, 0) })
+  }
+
+  it('tears the context down at once -- view closed, connections closed, session cleared -- without waiting for the idle timer', async () => {
+    const wc = setNextWebContents(ORIGIN)
+    const host = createWebContextHost(stubBroker)
+    await host.open(OPENER, ORIGIN, { width: 100, height: 100 })
+    const contextSession = sessionsByPartition.get(fromPartitionCalls[0] as string) as FakeSession
+
+    const goneHandler = wc.listeners['render-process-gone']?.[0]
+    if (goneHandler === undefined) throw new Error('render-process-gone listener not registered')
+    goneHandler({}, { reason: 'crashed', exitCode: 1 })
+    await flushTeardown()
+
+    expect(wc.close).toHaveBeenCalledTimes(1)
+    expect(contextSession.closeAllConnections).toHaveBeenCalledTimes(1)
+    expect(contextSession.clearData).toHaveBeenCalledTimes(1)
+  })
+
+  it('notifies a registered onGone listener with the host id and the engine\'s own reason', async () => {
+    setNextWebContents(ORIGIN)
+    const host = createWebContextHost(stubBroker)
+    const id = await host.open(OPENER, ORIGIN, { width: 100, height: 100 })
+    const wc = lastWebContents.current as FakeWebContents
+
+    const seen: Array<{ id: string, platformCode: string }> = []
+    host.onGone?.((goneId, platformCode) => { seen.push({ id: goneId, platformCode }) })
+
+    const goneHandler = wc.listeners['render-process-gone']?.[0]
+    if (goneHandler === undefined) throw new Error('render-process-gone listener not registered')
+    goneHandler({}, { reason: 'oom', exitCode: -1 })
+    await flushTeardown()
+
+    expect(seen).toEqual([{ id, platformCode: 'oom' }])
+  })
+
+  it('frees the slot for reuse once a crashed context is torn down', async () => {
+    setNextWebContents(ORIGIN)
+    const host = createWebContextHost(stubBroker)
+    await host.open(OPENER, ORIGIN, { width: 100, height: 100 })
+    const wc = lastWebContents.current as FakeWebContents
+    const firstPartition = fromPartitionCalls[0]
+
+    const goneHandler = wc.listeners['render-process-gone']?.[0]
+    if (goneHandler === undefined) throw new Error('render-process-gone listener not registered')
+    goneHandler({}, { reason: 'crashed', exitCode: 1 })
+    await flushTeardown()
+
+    setNextWebContents(ORIGIN)
+    await host.open(OPENER, ORIGIN, { width: 100, height: 100 })
+    expect(fromPartitionCalls).toHaveLength(2)
+    expect(fromPartitionCalls[1]).toBe(firstPartition)
+  })
+
+  it('is a silent no-op if close() already won the race against the crash event', async () => {
+    const wc = setNextWebContents(ORIGIN)
+    const host = createWebContextHost(stubBroker)
+    const id = await host.open(OPENER, ORIGIN, { width: 100, height: 100 })
+    await host.close(id)
+    wc.close.mockClear()
+
+    const goneHandler = wc.listeners['render-process-gone']?.[0]
+    if (goneHandler === undefined) throw new Error('render-process-gone listener not registered')
+    expect(() => { goneHandler({}, { reason: 'crashed', exitCode: 1 }) }).not.toThrow()
+    await flushTeardown()
+
+    expect(wc.close).not.toHaveBeenCalled() // already torn down; not torn down twice
+  })
+
+  it('still notifies onGone, and still quarantines the slot, even if the crash\'s own teardown fails', async () => {
+    setNextWebContents(ORIGIN)
+    const host = createWebContextHost(stubBroker)
+    const id = await host.open(OPENER, ORIGIN, { width: 100, height: 100 })
+    const wc = lastWebContents.current as FakeWebContents
+    const contextSession = sessionsByPartition.get(fromPartitionCalls[0] as string) as FakeSession
+    contextSession.closeAllConnections.mockRejectedValueOnce(new Error('closeAllConnections boom'))
+
+    const seen: string[] = []
+    host.onGone?.((goneId) => { seen.push(goneId) })
+
+    const goneHandler = wc.listeners['render-process-gone']?.[0]
+    if (goneHandler === undefined) throw new Error('render-process-gone listener not registered')
+    goneHandler({}, { reason: 'crashed', exitCode: 1 })
+    await flushTeardown()
+
+    expect(seen).toEqual([id])
+
+    // Same quarantine as a failed open() -- the other slot is still free,
+    // but a third context for this opener has nowhere to go.
+    setNextWebContents(ORIGIN)
+    await expect(host.open(OPENER, ORIGIN, { width: 100, height: 100 })).resolves.toBeDefined()
+    setNextWebContents(ORIGIN)
+    await expect(host.open(OPENER, ORIGIN, { width: 100, height: 100 })).rejects.toThrow(/no free web-context slot/)
+  })
+})
