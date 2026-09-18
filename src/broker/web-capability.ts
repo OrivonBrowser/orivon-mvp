@@ -217,8 +217,21 @@ export function createWebCapability ({ deps, handleTable, ledger, canonical }: W
     clearIdle(opts.id)
     busy.add(opts.id)
     try {
-      const result = await handleTable.run(key, { on: 'handle', handleId: opts.id }, async () =>
-        await withEvaluateTimeout(host.evaluate(hostId, opts.script), LIMITS.webContextEvaluateMs))
+      let result: unknown
+      try {
+        result = await handleTable.run(key, { on: 'handle', handleId: opts.id }, async () =>
+          await withEvaluateTimeout(host.evaluate(hostId, opts.script), LIMITS.webContextEvaluateMs))
+      } catch (error) {
+        // Already ours (the timeout above, or 'revoked' from handleTable.run's
+        // own cascade) -- pass through unchanged. Anything else reaching here
+        // is the host's raw rejection: contracts/handles.ts's own doc is
+        // explicit that "a throw inside the script rejects 'invalid' carrying
+        // the thrown message" -- an app mistake, not a broker fault, so it is
+        // wrapped as 'invalid' rather than surfacing whatever shape Electron's
+        // own executeJavaScript rejection happens to take.
+        if (isOrivonErrorLike(error)) throw error
+        throw fail('invalid', error instanceof Error ? error.message : String(error))
+      }
 
       const text = jsonText(result)
       if (text === undefined) throw fail('invalid', 'the script\'s result is not JSON-compatible')

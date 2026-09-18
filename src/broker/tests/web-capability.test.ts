@@ -169,6 +169,15 @@ describe('WebContext.evaluate (via orivon.web.evaluate)', () => {
       .rejects.toMatchObject({ code: 'denied' })
   })
 
+  it('a raw throw from the host (the evaluated script itself throwing) rejects invalid, carrying the thrown message', async () => {
+    const host = fakeHost({ evaluate: async () => { throw new Error('ReferenceError: x is not defined') } })
+    const broker = await grantedBroker(host)
+    const context = await broker.web.openContext(APP, { origin: CONTEXT_ORIGIN })
+
+    await expect(broker.web.evaluate(APP, { id: context.id, script: 'x.y' }))
+      .rejects.toMatchObject({ code: 'invalid', message: 'ReferenceError: x is not defined' })
+  })
+
   it('rejects a script over LIMITS.webContextScriptBytes with limit', async () => {
     const broker = await grantedBroker(fakeHost())
     const context = await broker.web.openContext(APP, { origin: CONTEXT_ORIGIN })

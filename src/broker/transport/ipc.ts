@@ -26,6 +26,7 @@ import { dialTcp, listenTcp, nodeFs, resolveHost, resolveLookup } from '../adapt
 import { dialTls } from '../adapters/tls-adapter.js'
 import { bindUdp } from '../adapters/udp-adapter.js'
 import { nodeLedgerStorage } from '../grants/node-ledger-storage.js'
+import { createWebContextHost } from '../../main/web-context-host.js'
 import { createPortRegistry } from './port-registry.js'
 import { createTokenBucketLimiter } from './token-bucket.js'
 import type { RateLimiter } from './token-bucket.js'
@@ -395,7 +396,16 @@ export const brokerIpcSubsystem: Subsystem = {
       // control operations reach `orivon.id`.
       keychain: {
         getSeed: async () => { throw fail('internal', 'identity key derivation is not implemented yet (ADR-0010)') }
-      }
+      },
+      // ADR-0019's Electron escape hatch. A LAZY GETTER, not `ctx.broker`
+      // itself -- `deps` is built here to CONSTRUCT the broker a few lines
+      // below, so `ctx.broker` is not published yet; `web-context-host.ts`'s
+      // own header explains why this must stay a thunk, resolved only once
+      // `web.openContext` actually runs, well after `publishBroker` below.
+      webContextHost: createWebContextHost(() => {
+        if (ctx.broker === undefined) throw fail('internal', 'the broker is not published yet')
+        return ctx.broker
+      })
     }
     const transport: PortTransport = { createPortPair: realPortPair, registry: createPortRegistry() }
     // fs.open's own per-origin lookup (A184) -- the same generic
