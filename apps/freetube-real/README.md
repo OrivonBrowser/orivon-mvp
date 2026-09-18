@@ -220,37 +220,29 @@ The granted origin carries both the pre-existing `https.connect` grant and a `we
 for `https://www.youtube.com` (`orivon.app.grants()`, confirmed from the same run) -- the second is
 what makes the mint above possible at all.
 
-**Flaky against the live network, not against this path.** Across repeated same-day runs (about
-half failed), the watch page occasionally never populates within the test's fixed 45s budget, with
-no console error and no rejection anywhere -- not a smaller, silent version of the web-localapi
-build's failure, a genuinely open promise. Re-running against the same build and the same code
-passes more often than not; treat one failed run as a retry candidate, not a regression, unless
-`generatePoToken` itself logs an error.
+**About half of all mints stall inside BotGuard, and the bridge retries them.** Measured
+2026-09-18 on the headless harness (`scripts/run-headless.mjs`: Xvfb, no GPU), against live YouTube.
+In a stalled mint:
 
-**Measured 2026-09-18, and this corrects an earlier guess here**: the slow party is not
-`GenerateIT`. Two hung runs were instrumented end to end (temporary logging in
-`fetch-route.ts`'s routed fetch, `serve.ts`'s `fetchThirdParty`, and `WebContextHost.open`/
-`evaluate`, spaced three minutes apart against live YouTube, removed again afterwards). In both,
-every routed fetch the app tab itself made (the InnerTube `/player`/`/next` calls, the doomed
-`api.github.com` update check, the player `base.js`) completed in well under two seconds combined.
-`openContext` resolved in ~35ms. `evaluate(mintScript)` -- BotGuard's rewritten script, ~600KB
-once `context`/`initialAttestationData`/`ytConfig` are spliced in -- then started and never
-resolved or rejected for the rest of the test. Exactly one network request was ever observed from
-inside that context: BotGuard's own interpreter, `www.google.com/js/th/*.js`, fetched in ~200ms.
-**`GenerateIT` itself is never called in a hung run** -- it cannot be answering slowly if nothing
-ever asked it anything, which is what the previous paragraph's guess assumed. The hang is inside
-BotGuard's own client-side execution, after it loads its interpreter and before (or instead of)
-its own mint call -- almost certainly its snapshot/entropy-collection step, which is opaque,
-obfuscated, and Google's own code, not Orivon's or FreeTube's. Every run measured, hung or clean,
-logs Chromium's `WebGL1 blocklisted` in this headless Xvfb harness; that alone cannot be the whole
-story (it is present in clean runs too), but it is the strongest lead for why a fallback path
-inside BotGuard's snapshot would stall only sometimes. Neither network path exercised (the app
-tab's routed fetch, nor the context's own reach-only fetch) showed any defect -- wrong header,
-premature close, dropped byte -- in either hung run, so this is not scored as a `web.context` or
-routed-fetch bug. **This reproduction is headless** (`scripts/run-headless.mjs`, Xvfb, no real
-GPU); a real desktop run, with a real display and a real WebGL implementation, may not hit this
-anywhere near as often -- the ~50% figure above may be substantially a property of the CI-style
-harness this was measured in, not of `web.context`, the bridge, or what an end user would see.
+- BotGuard fetches its interpreter (`www.google.com/js/th/*.js`, ~150 ms);
+- it calls `GenerateIT`, which **answers** (`200`, ~150 ms);
+- then its own synchronous code never yields again. A 1-second heartbeat injected into the context
+  ticked **zero times in 46 s**, while the context stayed open.
+
+So the stall is a non-yielding block in Google's obfuscated script, after its server answered. It is
+not a slow server, and not a stuck request. Nothing in the app tab's routed fetch, the context's
+reach-only fetch, `openContext`, `evaluate` or the CORS wrapper showed a defect in stalled or clean
+runs. The WebRTC guard is ruled out by an A/B: 10 of 10 mints succeeded with and without it. So is
+the environment on its own: `WebGL1 blocklisted`, "No available adapters" and a 0x0 offscreen
+viewport appear in clean runs exactly as in stalled ones.
+
+**`generatePoToken` therefore gives each attempt 15 s**, far above the ~0.5 s a clean mint takes.
+On the deadline it closes that context, which also ends the blocked renderer, and retries in a fresh
+one, up to 3 attempts, one at a time. A real rejection is never retried. When every attempt stalls,
+it throws a named `PoTokenMintStalledError`.
+
+Measured over 4 real runs: **4 of 4 played**, 2 needing exactly one retry, none needing a second.
+Whether a real desktop, with a GPU and a visible window, stalls as often is not measured.
 
 ## What else is measured
 
