@@ -172,7 +172,7 @@
     }
   }
 
-  // #region generatePoToken -- ADR-0019 (web.context), not yet implemented in this branch
+  // #region generatePoToken -- ADR-0019 (web.context)
 
   let cachedBotGuardScript
 
@@ -224,11 +224,67 @@
   }
 
   /**
-   * Not implemented in this branch: `orivon.web` (ADR-0019, web-context-spec.md
-   * section 1) lands in a separate PR. Written against that contract so the
-   * only thing that changes once it lands is which branch runs -- see
-   * apps/freetube-real/README.md.
+   * BotGuard's own snapshot/entropy step is observed to hang inside its own
+   * opaque code roughly half the time under headless Xvfb with no real GPU
+   * (README.md's "Playback on the Electron-renderer build" -- a real mint
+   * takes 440-520ms end to end, and a hung one never resolves or rejects at
+   * all). `LIMITS.webContextEvaluateMs` (60s, capability-api.ts) is the
+   * broker's own outer bound and exists to protect the broker's own
+   * bookkeeping, not to make a stalled mint usable -- it is far longer than
+   * FreeTube's own 45s watch-page budget, so waiting for it strands the
+   * whole page. This deadline is this bridge's own, well inside both.
    */
+  const MINT_ATTEMPT_DEADLINE_MS = 15_000
+
+  // One initial attempt plus up to two retries, each in a fresh context --
+  // README.md's own measurement is that a real mint is about half as likely
+  // to stall as to succeed, so three independent attempts leaves roughly a
+  // one-in-eight chance every one of them stalls.
+  const MINT_MAX_ATTEMPTS = 3
+
+  const MINT_DEADLINE_HIT = Symbol('mint-attempt-deadline-hit')
+
+  /** Internal control-flow signal: this one attempt hit its own deadline. Never thrown past generatePoToken -- see its own retry loop. */
+  class PoTokenMintAttemptTimeoutError extends Error {}
+
+  /** The named error generatePoToken throws once every attempt has stalled -- see its own doc. */
+  class PoTokenMintStalledError extends Error {
+    constructor (attempts) {
+      super(`generatePoToken: BotGuard did not answer within ${String(MINT_ATTEMPT_DEADLINE_MS)}ms in any of ${String(attempts)} attempt(s), each in its own context`)
+      this.name = 'PoTokenMintStalledError'
+      this.attempts = attempts
+    }
+  }
+
+  /**
+   * One mint attempt, in its own fresh context, bounded by
+   * MINT_ATTEMPT_DEADLINE_MS. `ctx.close()` always runs, on every exit path
+   * (success, a real rejection, or a timeout) -- closing a context whose
+   * `evaluate` is still pending is what makes that pending call settle at
+   * all (handle-store.ts's `closeTree` cancels every in-flight operation
+   * scoped to the handle being closed), which is also why `evaluated` is
+   * given its own `.catch(() => {})` here: on the timeout path this
+   * function has already moved on by the time that cancellation rejects it,
+   * and nothing else is left to observe that rejection.
+   */
+  async function attemptMintOnce (orivon, mintScript) {
+    const ctx = await orivon.web.openContext('https://www.youtube.com', { width: 1920, height: 1080 })
+    try {
+      const evaluated = ctx.evaluate(mintScript)
+      evaluated.catch(() => {})
+      let deadlineTimer
+      const deadline = new Promise((resolve) => {
+        deadlineTimer = setTimeout(resolve, MINT_ATTEMPT_DEADLINE_MS, MINT_DEADLINE_HIT)
+      })
+      const outcome = await Promise.race([evaluated, deadline])
+      clearTimeout(deadlineTimer)
+      if (outcome === MINT_DEADLINE_HIT) throw new PoTokenMintAttemptTimeoutError()
+      return outcome
+    } finally {
+      await ctx.close()
+    }
+  }
+
   function generatePoToken (getOrivon, videoId, context, initialAttestationData, ytConfig) {
     return queueMint(async () => {
       const orivon = getOrivon()
@@ -237,12 +293,24 @@
       }
       const script = await fetchBotGuardScript()
       const mintScript = rewriteBotGuardScript(script, videoId, context, initialAttestationData, ytConfig)
-      const ctx = await orivon.web.openContext('https://www.youtube.com', { width: 1920, height: 1080 })
-      try {
-        return await ctx.evaluate(mintScript)
-      } finally {
-        await ctx.close()
+
+      for (let attempt = 1; attempt <= MINT_MAX_ATTEMPTS; attempt += 1) {
+        try {
+          return await attemptMintOnce(orivon, mintScript)
+        } catch (error) {
+          // A real rejection (a script error, a denied/closed grant) is not
+          // this attempt's own deadline -- propagate it immediately, since
+          // retrying cannot fix a script that already ran and failed.
+          if (!(error instanceof PoTokenMintAttemptTimeoutError)) throw error
+          if (attempt === MINT_MAX_ATTEMPTS) throw new PoTokenMintStalledError(attempt)
+          // Else: this attempt's own deadline fired (attemptMintOnce's own
+          // `finally` already closed it) and attempts remain -- retry in a
+          // fresh context, the top of the loop.
+        }
       }
+      // Unreachable: MINT_MAX_ATTEMPTS >= 1, so the loop above always either
+      // returns or throws before falling off its own end.
+      throw new PoTokenMintStalledError(MINT_MAX_ATTEMPTS)
     })
   }
 
@@ -285,6 +353,13 @@
   // they build a second bridge against a fake `orivon` without touching the
   // real `window.ftElectron`.
   if (typeof globalThis !== 'undefined') {
-    globalThis.__ftElectronBridgeInternals = { installFtElectronBridge, FtBridgeError, rewriteBotGuardScript }
+    globalThis.__ftElectronBridgeInternals = {
+      installFtElectronBridge,
+      FtBridgeError,
+      rewriteBotGuardScript,
+      PoTokenMintStalledError,
+      MINT_ATTEMPT_DEADLINE_MS,
+      MINT_MAX_ATTEMPTS
+    }
   }
 })()
