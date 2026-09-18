@@ -100,12 +100,12 @@ it('a context whose opener holds https.connect for example.com:443 can fetch its
 
       const result = await evaluateRetrying(view, async () => {
         const orivon = (window as unknown as {
-          orivon: { web: { openContext: (opts: { origin: string }) => Promise<{
+          orivon: { web: { openContext: (origin: string, options?: { width?: number, height?: number }) => Promise<{
             evaluate: (script: string) => Promise<unknown>
             close: () => Promise<void>
           }> } }
         }).orivon
-        const context = await orivon.web.openContext({ origin: 'https://example.com' })
+        const context = await orivon.web.openContext('https://example.com')
         try {
           return await context.evaluate(
             'fetch(\'https://example.com/\').then(r => ({ok: r.ok, status: r.status})).catch(e => ({threw: String(e && e.message)}))'
@@ -156,12 +156,12 @@ it('a context gathers no srflx or relay ICE candidate against a real STUN server
 
       const result = await evaluateRetrying(view, async () => {
         const orivon = (window as unknown as {
-          orivon: { web: { openContext: (opts: { origin: string }) => Promise<{
+          orivon: { web: { openContext: (origin: string, options?: { width?: number, height?: number }) => Promise<{
             evaluate: (script: string) => Promise<unknown>
             close: () => Promise<void>
           }> } }
         }).orivon
-        const context = await orivon.web.openContext({ origin: 'https://example.com' })
+        const context = await orivon.web.openContext('https://example.com')
         try {
           // Gathers for ~5s against a real public STUN server, then reports
           // every DISTINCT ICE candidate `.type` seen ('host', 'srflx',

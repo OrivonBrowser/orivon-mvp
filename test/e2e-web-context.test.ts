@@ -87,13 +87,13 @@ it(
         // ---- (1) origin / no orivon.* / no cookies / an ungranted fetch / navigation refusal.
         const basics = await evaluateRetrying(view, async () => {
           const orivon = (window as unknown as {
-            orivon: { web: { openContext: (opts: { origin: string }) => Promise<{
+            orivon: { web: { openContext: (origin: string, options?: { width?: number, height?: number }) => Promise<{
               id: string
               evaluate: (script: string) => Promise<unknown>
               close: () => Promise<void>
             }> } }
           }).orivon
-          const context = await orivon.web.openContext({ origin: 'https://example.com' })
+          const context = await orivon.web.openContext('https://example.com')
 
           const originResult = await context.evaluate('location.origin')
           const orivonType = await context.evaluate('typeof orivon')
@@ -129,18 +129,18 @@ it(
         // ---- (2) the partition is empty on reopen (localStorage set before, gone after).
         const reopen = await evaluateRetrying(view, async () => {
           const orivon = (window as unknown as {
-            orivon: { web: { openContext: (opts: { origin: string }) => Promise<{
+            orivon: { web: { openContext: (origin: string, options?: { width?: number, height?: number }) => Promise<{
               evaluate: (script: string) => Promise<unknown>
               close: () => Promise<void>
             }> } }
           }).orivon
 
-          const first = await orivon.web.openContext({ origin: 'https://example.com' })
+          const first = await orivon.web.openContext('https://example.com')
           await first.evaluate('localStorage.setItem(\'orivon-e2e\', \'set-before-close\'); \'ok\'')
           const before = await first.evaluate('localStorage.getItem(\'orivon-e2e\')')
           await first.close()
 
-          const second = await orivon.web.openContext({ origin: 'https://example.com' })
+          const second = await orivon.web.openContext('https://example.com')
           const after = await second.evaluate('localStorage.getItem(\'orivon-e2e\')')
           await second.close()
 
@@ -153,11 +153,11 @@ it(
         // ---- (3) revoking the grant rejects a PENDING closed with 'revoked'.
         await evaluateRetrying(view, async () => {
           const orivon = (window as unknown as {
-            orivon: { web: { openContext: (opts: { origin: string }) => Promise<{
+            orivon: { web: { openContext: (origin: string, options?: { width?: number, height?: number }) => Promise<{
               closed: Promise<void>
             }> } }
           }).orivon
-          const context = await orivon.web.openContext({ origin: 'https://example.com' })
+          const context = await orivon.web.openContext('https://example.com')
           ;(window as unknown as { __orivonE2eClosed: Promise<{ rejected: boolean, code: string | undefined }> }).__orivonE2eClosed =
             context.closed.then(() => ({ rejected: false, code: undefined }))
               .catch((e: { code?: string }) => ({ rejected: true, code: e?.code }))
@@ -183,6 +183,27 @@ it(
           'the pending closed promise rejects with \'revoked\' once the grant is withdrawn',
           closedOutcome.rejected && closedOutcome.code === 'revoked',
           JSON.stringify(closedOutcome)
+        )
+
+        // ---- (4) pins the contract's own positional-origin shape (capability-api.ts's
+        // `openContext(origin: string, options?: WebContextOptions)`): the OLD, WRONG
+        // single-object call this file itself used to make must be refused, not silently
+        // accepted as `{ origin: undefined }` (0faed54's own bug).
+        const wrongShape = await evaluateRetrying(view, async () => {
+          const orivon = (window as unknown as {
+            orivon: { web: { openContext: (origin: unknown, options?: { width?: number, height?: number }) => Promise<unknown> } }
+          }).orivon
+          try {
+            await orivon.web.openContext({ origin: 'https://example.com' })
+            return { rejected: false, code: undefined as string | undefined }
+          } catch (e) {
+            return { rejected: true, code: (e as { code?: string } | null)?.code }
+          }
+        }, OPEN_TIMEOUT_MS)
+        check(
+          'openContext called with the old, wrong { origin } object shape is refused with \'invalid\', not silently accepted',
+          wrongShape.rejected && wrongShape.code === 'invalid',
+          JSON.stringify(wrongShape)
         )
       } finally {
         await closeElectronApp(app)
