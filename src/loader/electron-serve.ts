@@ -29,7 +29,7 @@ import { checkConnectSecure } from '../broker/policy/connect-secure.js'
 import type { CapabilityKind, Pattern } from '../contracts/index.js'
 import { createPinCoverageTracker } from './pin-coverage.js'
 import type { PinCoverageSnapshot } from './pin-coverage.js'
-import { createAppRequestHandler, verifiedManifestFor } from './serve.js'
+import { createAppRequestHandler, fetchThirdParty, verifiedManifestFor } from './serve.js'
 import type { AppRequestHandler, AuthoriseReach } from './serve.js'
 import { nodeReachDial } from './serve-reach.js'
 import type { ReleaseReachSlot, ReserveReachSlot } from './serve-reach-guard.js'
@@ -217,6 +217,31 @@ function authoriseReachFor (broker: Broker, origin: string): AuthoriseReach {
       return { allowed: false, code: 'denied', reason: 'not-declared' }
     }
   }
+}
+
+/**
+ * ADR-0019's whole network path for an isolated context: builds a
+ * REACH-ONLY request handler for `opener`'s own `https.connect` grant,
+ * reusing `authoriseReachFor`/`reachSlotsFor` UNCHANGED (code-guidelines.md
+ * Rule 3) -- so a context's fetch is checked and budgeted on the exact same
+ * live grant and concurrent-reach allowance as any other third-party
+ * request the opener's own document makes, never a copy of that logic.
+ *
+ * NO CSP, NO PIN LOOKUP, NO SAME-ORIGIN BRANCH -- unlike
+ * `createAppRequestHandler`'s own handler, a context's document has no
+ * pinned bundle of its own; every request it makes is, by construction,
+ * "third-party" from the opener's point of view (ADR-0019: "every request
+ * it makes is authorised against THIS app's own https.connect grant").
+ * `src/main/web-context-host.ts` is the one caller -- it wraps this in the
+ * CORS headers a context's own origin needs (this file's own job stops at
+ * the reach decision, not the response shape a context's fetch() expects).
+ */
+export function reachOnlyHandlerFor (broker: Broker, opener: string): (request: Request) => Promise<Response> {
+  const authoriseReach = authoriseReachFor(broker, opener)
+  const reachDial = nodeReachDial()
+  const { reserve, release } = reachSlotsFor(broker, opener)
+  return async (request: Request): Promise<Response> =>
+    await fetchThirdParty(request, authoriseReach, reachDial, undefined, reserve, release)
 }
 
 /**
