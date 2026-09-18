@@ -15,7 +15,7 @@ expects.
 
 | File | What it is |
 |---|---|
-| [`orivon.json`](orivon.json) | The manifest. No `web` key yet -- see [What waits on `web.context`](#what-waits-on-webcontext) |
+| [`orivon.json`](orivon.json) | The manifest, including `web.contexts: ["https://www.youtube.com"]` (ADR-0019) -- see [How `generatePoToken` uses `web.context`](#how-generatepotoken-uses-webcontext) |
 | [`prepare.mjs`](prepare.mjs) | Turns a build into an Orivon app (manifest + discovery hint), and (`--build`) runs the Electron-renderer build itself first |
 | [`serve.mjs`](serve.mjs) | A plain static file server. Also decodes a pre-compressed `.br` asset via `Content-Encoding`, which upstream's own Electron build relies on -- see below |
 | [`webpack.orivon.config.cjs`](webpack.orivon.config.cjs) | Our own build wrapper, moved out of the clone's untracked `_scripts/webpack.web-localapi.config.js` |
@@ -44,7 +44,7 @@ is already on disk, not transforming it).
 |---|---|---|---|
 | `dist/orivon-web` | `pnpm run pack:web`, verbatim | **Invidious only** | n/a (no Local API) |
 | `dist/orivon-web-localapi` | the same build with the Local API left in | YouTube directly, via `youtubei.js` | silently absent; metadata still loads, playback does not (see below) |
-| `dist/orivon-electron` | upstream's **Electron renderer**, `window.ftElectron` rebuilt over `orivon.*` | YouTube directly | refused by name; metadata does not load either (see below) -- a real, different failure mode from the row above |
+| `dist/orivon-electron` | upstream's **Electron renderer**, `window.ftElectron` rebuilt over `orivon.*` | YouTube directly | real, minted through `orivon.web.openContext` (ADR-0019); metadata loads and playback works (see below) |
 
 **Upstream compiles the web target with `SUPPORTS_LOCAL_API: false` and `externals:
 {'youtubei.js': '{}'}`** -- the Local API is stripped, because a browser cannot reach YouTube
@@ -193,44 +193,45 @@ This is the same `GENERATE_PO_TOKEN` handler
 and it is now assessed twice over: it is load-bearing, and it is the single thing between this
 build and working playback.
 
-### Playback on the Electron-renderer build: a different failure, one step earlier
+### Playback on the Electron-renderer build: it plays
 
 On `dist/orivon-electron`, `IS_ELECTRON` is compiled IN rather than out, so `local.js`'s own
 branch actually runs: `window.ftElectron.generatePoToken(...)` -- `bridge/ft-electron-bridge.js`'s
-own implementation, written against the `web.context` contract (ADR-0019,
-`docs/decisions/ADR-0019-*.md` once the stacked contracts PR lands) -- opens a private, empty
-document at `https://www.youtube.com`, evaluates FreeTube's own BotGuard script inside it, and
-returns the token. **`orivon.web` does not exist on this branch**, so this call **refuses by name**
-(`FtBridgeError`, reason `not-built`) instead of silently returning nothing -- see
-`docs/development/code-guidelines.md` on refusing by name versus by absence.
+own implementation -- opens a private, empty document at `https://www.youtube.com` through
+`orivon.web.openContext` (`OrivonWeb`, ADR-0019, `docs/decisions/ADR-0019-*.md`), evaluates
+FreeTube's own BotGuard script inside it, and returns the token. `getLocalVideoInfo` calls this
+BEFORE it fetches either the player response or the `/next` metadata response (the second needs
+`contentPoToken` for `serviceIntegrityDimensions`), so a working mint is load-bearing for the
+whole video, not only its stream -- see
+[How `generatePoToken` uses `web.context`](#how-generatepotoken-uses-webcontext) for the mechanism.
 
-Upstream's own `local.js` catches that rejection, logs it, and **re-throws it**:
+Measured 2026-09-18, live YouTube, `dist/orivon-electron`, `#/watch/dQw4w9WgXcQ`, through
+`test/e2e-freetube-real.test.ts`:
 
-```js
-try {
-  contentPoToken = await window.ftElectron.generatePoToken(...)
-  player.po_token = contentPoToken
-} catch (error) {
-  console.error('Local API, poToken generation failed', error)
-  throw error
-}
-```
+| | |
+|---|---|
+| Watch page populated (title, description, view count) | yes |
+| `generatePoToken` (fetch the script once, open the context, evaluate, close) | ~440-450 ms |
+| Minted token length | 132 characters |
+| Navigating to `#/watch/...` to `<video>.currentTime > 0` | ~3.2-3.9 s |
+| `<video>.currentTime` past 3 s and still advancing 2 s later | yes |
 
-`getLocalVideoInfo` calls this BEFORE it fetches either the player response or the `/next`
-metadata response -- both need `contentPoToken` (the second, for `serviceIntegrityDimensions`) --
-so the whole function throws, and **no watch-page metadata loads either**, not only playback.
-`Watch.js`'s catch for this does have a `backendFallback` setting that would retry over Invidious,
-but it defaults `false`, and every bundled instance is down regardless (below) -- so today the
-watch page shows an error state, not a title, not a thumbnail.
+The granted origin carries both the pre-existing `https.connect` grant and a `web.context` grant
+for `https://www.youtube.com` (`orivon.app.grants()`, confirmed from the same run) -- the second is
+what makes the mint above possible at all.
 
-**This is a genuinely different failure from the web-localapi build's**, not a smaller version of
-it: there, a silently-absent token lets metadata load and only playback fails, three frames deep
-in the player component. Here, an honestly-refused token stops metadata from loading at all,
-because `IS_ELECTRON` being compiled in makes upstream's own control flow treat a token as
-load-bearing for the whole video, not only its stream. Neither is a bridge gap -- both are
-upstream's own code doing exactly what it says -- but the task of "populate the watch page with
-real video details" needs `web.context` to actually exist, on this specific build, in a way the
-older build did not.
+**Flaky against the live network, not against this path.** Across repeated same-day runs (about
+half failed), the watch page occasionally never populates within the test's fixed 45s budget, with
+no console error and no rejection anywhere -- not a smaller, silent version of the web-localapi
+build's failure, a genuinely open promise. Every instrumented run of `generatePoToken` itself
+(fetch, `openContext`, `evaluate`, `close`) that DID complete within the window did so cleanly, in
+well under a second, with no error at any hop; the plausible read is that repeated automated mint
+requests in a short window (this measurement made several in under twenty minutes) slow down
+BotGuard's own live `GenerateIT` round trip past the test's 45s patience -- exactly the kind of
+request pattern YouTube's own bot-detection is built to notice -- not a defect in `web.context` or
+the bridge. Re-running against the same build and the same code passes more often than not; treat
+one failed run as a retry candidate, not a regression, unless `generatePoToken` itself logs an
+error.
 
 ## What else is measured
 
@@ -271,33 +272,53 @@ npx vitest run apps/freetube-real/bridge/ft-electron-bridge.test.ts
 
 ### Running the real build against a real window
 
+To see it play, from a clean checkout:
+
+```bash
+node apps/freetube-real/prepare.mjs --build          # builds dist/orivon-electron, under the clone lock
+node apps/freetube-real/serve.mjs --root ~/git/freetube-src/dist/orivon-electron
+npm run dev
+```
+
+Then open `http://127.0.0.1:8875` (or whatever port `serve.mjs` printed) and accept the consent
+prompt -- it now lists both `https.connect` and *"Run code as www.youtube.com, in a private, empty
+session"* (`web.context`). Navigate to a video (e.g. the Trending tab, or `#/watch/dQw4w9WgXcQ`
+typed into the page itself) and it plays.
+
+To drive the same thing headlessly, as CI does:
+
 ```bash
 node scripts/build-ordinary.mjs
 ORIVON_FREETUBE_REAL_ROOT=~/git/freetube-src/dist/orivon-electron ORIVON_ORDINARY_BUILD=1 \
   npx vitest run --config test/vitest.e2e.config.ts test/e2e-freetube-real.test.ts
 ```
 
-The playback assertion (`<video>.currentTime` exceeds 3s and is still advancing 2s later) is
-guarded behind `ORIVON_FREETUBE_REAL_PLAYBACK=1` and stays off by default -- see
-[What waits on `web.context`](#what-waits-on-webcontext). With it on, against `dist/orivon-electron`
-today, it fails exactly as expected: the watch page never populates (above), so there is no
-`<video>` to sample.
+The playback assertion (`<video>.currentTime` exceeds 3s and is still advancing 2s later) is now
+**on by default whenever the prepared build's own manifest declares `web`** -- true for
+`dist/orivon-electron` since `orivon.json` gained `web.contexts` above, still false for
+`dist/orivon-web`/`dist/orivon-web-localapi`, which get only the metadata checks. Override either
+way: `ORIVON_FREETUBE_REAL_PLAYBACK=0` forces it off, `=1` forces it on regardless of the manifest.
 
-## What waits on `web.context`
+## How `generatePoToken` uses `web.context`
 
-**`generatePoToken` needs `orivon.web` (`OrivonWeb.openContext`, ADR-0019), which is not built on
-this branch.** `bridge/ft-electron-bridge.js`'s implementation is written against that contract
-(`web-context-spec.md` section 1: fetch and cache `botGuardScript.js` once, rewrite its
+`bridge/ft-electron-bridge.js`'s `generatePoToken` is written against `OrivonWeb.openContext`
+(`capability-api.ts`, ADR-0019): fetch and cache `botGuardScript.js` once, rewrite its
 `export{X as default};` tail into a call carrying this mint's own arguments -- exactly
-`src/main/poTokenGenerator.js`'s own rewrite -- open a context at `https://www.youtube.com`,
+`src/main/poTokenGenerator.js`'s own rewrite, except the video id is `JSON.stringify`-encoded
+rather than spliced as a bare string (below) -- open a context at `https://www.youtube.com`,
 evaluate the rewritten script, close the context in a `finally`, and queue mints one at a time as
-upstream does) and unit-tested against a fake `orivon.web`, so the only thing that changes once
-the capability lands is which branch runs, not this file. Two things stay true until then:
+upstream does. Unit-tested against a fake `orivon.web` (`bridge/ft-electron-bridge.test.ts`) and,
+end to end against the real capability, measured above.
 
-- **`orivon.json` does not declare `"web"` yet.** The loader on this branch rejects that key; the
-  planner adds it once the implementation PR lands, since this work is stacked on it.
-- **The watch page does not populate, and playback cannot be measured**, for the reason above --
-  not a narrower "playback only" gap the way the web-localapi build's was.
+**The video id is JSON-encoded, not spliced as a literal, unlike `context`/
+`initialAttestationData`/`ytConfig`.** Those three arrive already `JSON.stringify`d by FreeTube's
+own call site (`local.js`), so splicing them verbatim reproduces upstream's own Electron build
+exactly. The video id does not: it traces back to the URL (`#/watch/<id>`, a route a page
+navigates FreeTube to, including this app's own address bar), so a bare `"${videoId}"` splice would
+let a crafted id break out of the string literal and inject script into the youtube.com context
+this runs in. `JSON.stringify(videoId)` closes that -- covered by
+`bridge/ft-electron-bridge.test.ts`'s hostile-id test, which proves the payload lands as one inert
+string argument, not executable code.
 
 ## Spike results: can BotGuard run in an isolated child?
 
