@@ -120,6 +120,51 @@ export function createWebContextHost (getBroker: () => Broker): WebContextHost {
   }
 
   /**
+   * The ONE teardown, used by `close()` AND by every failure path inside
+   * `open()` (Finding 1 of the security review this fixes -- before this,
+   * `open()`'s own `catch` released the slot without ever calling this,
+   * leaving the view alive and handing the next `open()` for that slot a
+   * partition that was never cleared). Same order both callers need:
+   * destroy the view FIRST -- a still-open connection when `clearData`/
+   * `closeAllConnections` run is exactly what `avoidClosingConnections`
+   * exists to protect against, and this context owns nothing worth
+   * protecting -- then clear the partition, so it holds nothing (ADR-0019's
+   * own contract) by the time anyone can reuse the slot.
+   *
+   * `webContents` is `undefined` when a failure happened before the view
+   * was even created (`configureSession` throwing) -- there is then nothing
+   * to close, so that step is skipped rather than guarded with a throw.
+   *
+   * THE SLOT IS RELEASED ONLY ON THE WAY OUT, past both awaits -- if either
+   * one throws, `releaseSlot` never runs and the slot is quarantined for
+   * the rest of this process's life (never reallocated: `allocateSlot`
+   * only ever sees it as still in use). That is deliberate, not a missed
+   * case: `closeAllConnections`/`clearData` failing means this partition's
+   * contents are now unknown, and handing the slot back would let the very
+   * next `open()` for it inherit whatever that is -- the exact leak this
+   * function exists to close. `LIMITS.webContexts` is a small per-opener
+   * cap (2), so losing one slot this way is cheap; guessing the partition
+   * is actually clean is not safe at any price. The caller decides what to
+   * do with the original failure; this function only ever throws the
+   * teardown's own error, never swallows it.
+   */
+  async function teardown (
+    opener: string,
+    slot: number,
+    webContents: WebContents | undefined,
+    contextSession: Session
+  ): Promise<void> {
+    try {
+      if (webContents !== undefined && !webContents.isDestroyed()) webContents.close()
+    } catch { /* already gone */ }
+
+    await contextSession.closeAllConnections()
+    await contextSession.clearData()
+
+    releaseSlot(opener, slot)
+  }
+
+  /**
    * Wires (or rewires, on slot reuse) one partition's session: deny every
    * permission outright, cancel every download, cancel ws:/wss:, and answer
    * https/http through the reach-only path for `opener`, CORS-wrapped for
@@ -158,8 +203,9 @@ export function createWebContextHost (getBroker: () => Broker): WebContextHost {
 
   async function open (opener: string, origin: string, size: { width: number, height: number }): Promise<string> {
     const slot = allocateSlot(opener)
+    const contextSession = electronSession.fromPartition(partitionName(opener, slot), { cache: false })
+    let webContents: WebContents | undefined
     try {
-      const contextSession = electronSession.fromPartition(partitionName(opener, slot), { cache: false })
       await configureSession(contextSession, opener, origin)
 
       const view = new WebContentsView({
@@ -173,7 +219,7 @@ export function createWebContextHost (getBroker: () => Broker): WebContextHost {
         }
       })
       view.setBounds({ x: 0, y: 0, width: size.width, height: size.height })
-      const webContents = view.webContents
+      webContents = view.webContents
       webContents.setAudioMuted(true)
       webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
       // The other belt against A41 -- see WEBRTC_ESCAPE_PROXY's own comment
@@ -185,7 +231,6 @@ export function createWebContextHost (getBroker: () => Broker): WebContextHost {
 
       const actualOrigin = await webContents.executeJavaScript('self.origin')
       if (actualOrigin !== origin) {
-        if (!webContents.isDestroyed()) webContents.close()
         throw new Error(`the context document settled at ${String(actualOrigin)}, not the requested ${origin}`)
       }
 
@@ -203,7 +248,11 @@ export function createWebContextHost (getBroker: () => Broker): WebContextHost {
       contexts.set(id, { webContents, session: contextSession, opener, slot })
       return id
     } catch (error) {
-      releaseSlot(opener, slot)
+      try {
+        await teardown(opener, slot, webContents, contextSession)
+      } catch (teardownError) {
+        console.error('[web-context-host] teardown failed after a failed open; its slot is quarantined', teardownError)
+      }
       throw error
     }
   }
@@ -218,22 +267,7 @@ export function createWebContextHost (getBroker: () => Broker): WebContextHost {
     const entry = contexts.get(id)
     if (entry === undefined) return // idempotent, matching Handle.close()'s own contract
     contexts.delete(id)
-
-    // Close the webContents FIRST, then clear the session -- spec item 5's
-    // own ordering: a context still holding an open connection when
-    // clearData/closeAllConnections run is exactly the case
-    // avoidClosingConnections exists to protect against, and this context
-    // owns nothing worth protecting.
-    try {
-      if (!entry.webContents.isDestroyed()) entry.webContents.close()
-    } catch { /* already gone */ }
-
-    await entry.session.closeAllConnections()
-    await entry.session.clearData()
-
-    // Only now -- a fresh open() for this same slot must never reuse the
-    // session while its own clear is still in flight.
-    releaseSlot(entry.opener, entry.slot)
+    await teardown(entry.opener, entry.slot, entry.webContents, entry.session)
   }
 
   return { open, evaluate, close }

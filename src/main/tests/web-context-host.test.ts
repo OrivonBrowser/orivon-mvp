@@ -218,12 +218,85 @@ describe('createWebContextHost -- open', () => {
     })
   })
 
-  it('rejects and closes the view when the document does not settle at the requested origin', async () => {
+  // Finding 1 of the security review: before the fix, this branch closed
+  // the view but skipped closeAllConnections/clearData entirely, so the
+  // slot went back with an uncleared partition.
+  it('rejects, and fully tears down (view closed, connections closed, session cleared), when the document does not settle at the requested origin', async () => {
     const wc = setNextWebContents('https://wrong.example')
     const host = createWebContextHost(stubBroker)
 
     await expect(host.open(OPENER, ORIGIN, { width: 100, height: 100 })).rejects.toThrow(/wrong.example/)
+
     expect(wc.close).toHaveBeenCalledTimes(1)
+    const contextSession = sessionsByPartition.get(fromPartitionCalls[0] as string) as FakeSession
+    expect(contextSession.closeAllConnections).toHaveBeenCalledTimes(1)
+    expect(contextSession.clearData).toHaveBeenCalledTimes(1)
+  })
+
+  // Finding 1: every OTHER failure path (a rejecting loadURL or
+  // executeJavaScript, not just the origin-mismatch branch above) must tear
+  // down exactly like close() does, IN close()'s OWN ORDER, and must free
+  // the slot only once that teardown has actually finished.
+  it('on a failed executeJavaScript: tears down in close()\'s own order (view, then closeAllConnections, then clearData), and only then frees the slot for reuse', async () => {
+    const wc = setNextWebContents(ORIGIN)
+    wc.executeJavaScript.mockImplementation(async (script: string) => {
+      if (script === 'self.origin') throw new Error('executeJavaScript boom')
+      return undefined
+    })
+    const host = createWebContextHost(stubBroker)
+
+    await expect(host.open(OPENER, ORIGIN, { width: 100, height: 100 })).rejects.toThrow('executeJavaScript boom')
+
+    const contextSession = sessionsByPartition.get(fromPartitionCalls[0] as string) as FakeSession
+    expect(wc.close).toHaveBeenCalledTimes(1)
+    expect(contextSession.closeAllConnections).toHaveBeenCalledTimes(1)
+    expect(contextSession.clearData).toHaveBeenCalledTimes(1)
+
+    const closeOrder = wc.close.mock.invocationCallOrder[0] as number
+    const connectionsOrder = contextSession.closeAllConnections.mock.invocationCallOrder[0] as number
+    const clearOrder = contextSession.clearData.mock.invocationCallOrder[0] as number
+    expect(closeOrder).toBeLessThan(connectionsOrder)
+    expect(connectionsOrder).toBeLessThan(clearOrder)
+
+    // The slot is freed only AFTER that teardown -- a fresh open() for the
+    // same opener reuses the very same partition rather than a new slot.
+    const firstPartition = fromPartitionCalls[0]
+    setNextWebContents(ORIGIN)
+    await host.open(OPENER, ORIGIN, { width: 100, height: 100 })
+    expect(fromPartitionCalls).toHaveLength(2)
+    expect(fromPartitionCalls[1]).toBe(firstPartition)
+  })
+
+  // Finding 1's own quarantine decision: if the teardown that follows a
+  // failed open ALSO fails, the slot must not be handed back as if it were
+  // clean -- its partition's contents are now unknown. LIMITS.webContexts
+  // is 2 for a fresh opener, which this test uses to prove the quarantined
+  // slot never comes back: one further open() lands on the other slot, and
+  // a third has nowhere left to go.
+  it('quarantines the slot for the rest of this process\'s life if teardown itself fails after a failed open', async () => {
+    setNextWebContents(ORIGIN)
+    const host = createWebContextHost(stubBroker)
+    const first = await host.open(OPENER, ORIGIN, { width: 100, height: 100 })
+    await host.close(first)
+
+    const contextSession = sessionsByPartition.get(fromPartitionCalls[0] as string) as FakeSession
+    contextSession.closeAllConnections.mockRejectedValueOnce(new Error('closeAllConnections boom'))
+
+    const wc = setNextWebContents(ORIGIN)
+    wc.executeJavaScript.mockImplementation(async (script: string) => {
+      if (script === 'self.origin') throw new Error('open boom')
+      return undefined
+    })
+    await expect(host.open(OPENER, ORIGIN, { width: 100, height: 100 })).rejects.toThrow()
+
+    // The other slot is still available...
+    setNextWebContents(ORIGIN)
+    await expect(host.open(OPENER, ORIGIN, { width: 100, height: 100 })).resolves.toBeDefined()
+
+    // ...but the quarantined one never comes back, so a third context for
+    // this opener has nowhere to go.
+    setNextWebContents(ORIGIN)
+    await expect(host.open(OPENER, ORIGIN, { width: 100, height: 100 })).rejects.toThrow(/no free web-context slot/)
   })
 
   it('prevents top-frame navigation, redirect and frame-navigate ONLY after the first load resolves', async () => {
@@ -247,6 +320,14 @@ describe('createWebContextHost -- open', () => {
     wc.listeners['will-frame-navigate']?.[0]?.(mainFrameEvent)
     expect(mainFrameEvent.preventDefault).toHaveBeenCalledTimes(1)
 
+    // Sub-frame navigation is NOT prevented -- ADR-0019's own decision, not
+    // an oversight: a subframe the context's document creates may load
+    // another site over the SAME grant, exactly as any ordinary page may
+    // embed another site, and that frame then runs the embedded site's own
+    // code under the web's ordinary same-origin rules, never the app's.
+    // BotGuard itself creates such a subframe, which is why this stays
+    // unrefused rather than being locked down like the main-frame cases
+    // above.
     const subFrameEvent = { preventDefault: vi.fn(), isMainFrame: false }
     wc.listeners['will-frame-navigate']?.[0]?.(subFrameEvent)
     expect(subFrameEvent.preventDefault).not.toHaveBeenCalled()
@@ -434,3 +515,4 @@ describe('createWebContextHost -- close', () => {
     expect(contextSession.downloadListenerCount).toBe(1)
   })
 })
+
