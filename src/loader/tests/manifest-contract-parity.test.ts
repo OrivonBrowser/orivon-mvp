@@ -27,8 +27,15 @@ import type {
 
 type Full<T> = Required<T>
 
+// 'web' is left out of the kitchen sink below, deliberately -- ADR-0019's
+// Capabilities.web is declared in the contracts-only PR, and the real parser
+// this file drives does not accept it yet (its own DELIBERATELY_DEFERRED
+// entry in scripts/check-manifest-parity.mjs is the same fact, checked a
+// different way). Add it here once the implementation PR makes the parser
+// accept it -- until then, exercising it would fail this test for the right
+// reason and the wrong reason at once.
 type FullManifest = Omit<Full<Manifest>, 'capabilities'> & {
-  readonly capabilities: Omit<Full<Capabilities>, 'net' | 'fs' | 'id'> & {
+  readonly capabilities: Omit<Full<Capabilities>, 'net' | 'fs' | 'id' | 'web'> & {
     readonly net: Omit<Full<NetCapability>, 'tcp' | 'udp' | 'https'> & {
       readonly tcp: Full<TcpCapability>
       readonly udp: Full<UdpCapability>

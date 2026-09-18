@@ -120,7 +120,17 @@ export const LIMITS = {
    * datagram cannot be split without ceasing to be the packet the app asked
    * to send.
    */
-  maxDatagramBytes: 65507
+  maxDatagramBytes: 65507,
+  /** Isolated contexts (ADR-0019) one origin may hold open at once. */
+  webContexts: 2,
+  /** How long one `WebContext.evaluate` may run before it rejects 'timeout'. */
+  webContextEvaluateMs: 60_000,
+  /** How long a context may sit with no `evaluate` before the platform closes it. */
+  webContextIdleMs: 300_000,
+  /** The largest script `WebContext.evaluate` accepts, in UTF-8 bytes. */
+  webContextScriptBytes: 4 * 1024 * 1024,
+  /** The largest result `WebContext.evaluate` returns, measured as JSON text. */
+  webContextResultBytes: 1024 * 1024
 } as const
 
 export type Limits = typeof LIMITS

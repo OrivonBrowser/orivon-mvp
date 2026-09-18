@@ -117,6 +117,13 @@ export function describeCapabilityGrant (capability: CapabilityKind, patterns: r
       return { warning: false, message: 'Store files in a private folder for this app on this device' }
     case 'id':
       return { warning: false, message: 'Create a digital identity for you to use with this app' }
+    case 'web.context':
+      // ADR-0019: contract-only so far -- the loader does not parse
+      // Capabilities.web yet (check-manifest-parity.mjs's own
+      // DELIBERATELY_DEFERRED entry), so no live grant can reach this
+      // switch. Thrown, not rendered, until the implementation PR gives
+      // this its real per-origin copy.
+      throw new Error('grant-prompt-render: web.context is not renderable yet (ADR-0019)')
     default: {
       // Exhaustiveness guard, matching app-install.ts's own pattern: a new
       // CapabilityKind added without a case here fails to compile.

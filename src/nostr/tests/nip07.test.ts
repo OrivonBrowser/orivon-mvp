@@ -46,6 +46,9 @@ function fakeOrivon (requestIdentity: Orivon['id']['requestIdentity']): Orivon {
       publicKey: notImplemented('id.publicKey'),
       sign: notImplemented('id.sign'),
       requestIdentity
+    },
+    web: {
+      openContext: notImplemented('web.openContext')
     }
   }
 }
