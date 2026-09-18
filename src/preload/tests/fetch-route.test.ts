@@ -344,6 +344,52 @@ describe('installFetchRoute -- response body cap (R3-01)', () => {
   }, 15000)
 })
 
+/** A socket whose `readable` stays empty until `unlock()` is called, and whose `writable` records whether its sink's `close()` has ever fired -- used to prove the request side stays open across the whole time the response is still pending. */
+function orderTrackingSocket (responseChunks: Uint8Array[]): FetchRouteSocket & { written: Uint8Array[], writableClosed: boolean, unlock: () => void } {
+  const state = { written: [] as Uint8Array[], writableClosed: false }
+  let release: () => void = () => {}
+  const gate = new Promise<void>((resolve) => { release = resolve })
+  const readable = new ReadableStream<Uint8Array>({
+    async start (controller) {
+      await gate
+      for (const chunk of responseChunks) controller.enqueue(chunk)
+      controller.close()
+    }
+  })
+  const writable = new WritableStream<Uint8Array>({
+    write (chunk) { state.written.push(chunk) },
+    close () { state.writableClosed = true }
+  })
+  return {
+    readable,
+    writable,
+    close: async () => {},
+    get written () { return state.written },
+    get writableClosed () { return state.writableClosed },
+    unlock: () => { release() }
+  }
+}
+
+describe('installFetchRoute -- half-close (the request writable must outlive the write phase)', () => {
+  it('does not close the request writable before the response has been read -- a server that treats an early FIN as an abort would otherwise cut the response short', async () => {
+    let socket: ReturnType<typeof orderTrackingSocket> | undefined
+    const target = fakeTarget({
+      connectSecure: async () => { socket = orderTrackingSocket(CANNED_RESPONSE_CHUNKS()); return socket }
+    })
+    installFetchRoute(true, target)
+    const promise = target.fetch!('https://api.example/x')
+    // Give the write phase every chance to run (and, on the pre-fix code, an
+    // eager writer.close() to fire) before the response is ever unlocked --
+    // two macrotask ticks flushes any number of chained microtask awaits.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(socket!.writableClosed).toBe(false)
+    socket!.unlock()
+    const response = await promise
+    expect(await response.text()).toBe('hello')
+  })
+})
+
 describe('installFetchRoute -- init.signal / AbortController (R3-01)', () => {
   it('rejects immediately when the signal is already aborted before the call, and never dials', async () => {
     let dialAttempts = 0
