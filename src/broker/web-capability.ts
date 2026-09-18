@@ -25,6 +25,7 @@
 import { LIMITS } from '../contracts/index.js'
 import { fail, isOrivonErrorLike } from './errors.js'
 import { isExactWebContextOrigin } from './policy/web-context-origin.js'
+import { webContextResultRejection } from './policy/web-context-result.js'
 import type { HandleTable } from './handles/handles.js'
 import type { DestroyResource } from './handles/handle-contracts.js'
 import type { GrantLedger } from './grants/grant-ledger.js'
@@ -51,24 +52,6 @@ function clampDimension (value: number | undefined, fallback: number): number {
 /** UTF-8 byte length, the unit both `LIMITS.webContextScriptBytes` and `LIMITS.webContextResultBytes` are measured in. */
 function utf8Bytes (text: string): number {
   return new TextEncoder().encode(text).length
-}
-
-/**
- * A JSON-compatible value, `WebContext.evaluate`'s own contract
- * (contracts/handles.ts) -- checked here by the cheapest test that actually
- * proves it: `JSON.stringify` succeeds and round-trips to something that is
- * not `undefined` (the one JS value `JSON.stringify` silently drops, which
- * would otherwise let a non-JSON result -- a function, a symbol -- sail
- * through as if it had serialised to nothing).
- */
-function jsonText (value: unknown): string | undefined {
-  if (value === undefined) return 'null'
-  try {
-    const text = JSON.stringify(value)
-    return text === undefined ? undefined : text
-  } catch {
-    return undefined
-  }
 }
 
 /**
@@ -233,12 +216,21 @@ export function createWebCapability ({ deps, handleTable, ledger, canonical }: W
         throw fail('invalid', error instanceof Error ? error.message : String(error))
       }
 
-      const text = jsonText(result)
-      if (text === undefined) throw fail('invalid', 'the script\'s result is not JSON-compatible')
+      // A bare top-level `undefined` completion resolves `null`
+      // (contracts/handles.ts's own carve-out); anything else must already
+      // be strictly JSON-compatible -- checked structurally, not via
+      // JSON.stringify, because Electron hands back real Date/Map/Set/...
+      // instances and real NaN/Infinity, none of which JSON.stringify
+      // would catch (see ./policy/web-context-result.ts's header).
+      const value = result === undefined ? null : result
+      const rejection = webContextResultRejection(value)
+      if (rejection !== null) throw fail('invalid', `the script's result is not JSON-compatible (${rejection})`)
+
+      const text = JSON.stringify(value) // safe: `value` just proved strictly JSON-compatible
       if (utf8Bytes(text) > LIMITS.webContextResultBytes) {
         throw fail('limit', `result exceeds ${String(LIMITS.webContextResultBytes)} bytes`)
       }
-      return result
+      return value
     } finally {
       busy.delete(opts.id)
       // Only reschedule if the context is still ours -- a revoke or an
