@@ -1,13 +1,17 @@
-// web.openContext / web.evaluate / web.close, split out of ./ipc.ts's
-// dispatch() switch under code-guidelines.md Rule 2 -- see ./dispatch-app.ts's
-// header for the seam this and its siblings (dispatch-id.ts, dispatch-net.ts,
-// dispatch-fs.ts) share.
+// web.openContext / web.evaluate / web.close / web.awaitClose, split out of
+// ./ipc.ts's dispatch() switch under code-guidelines.md Rule 2 -- see
+// ./dispatch-app.ts's header for the seam this and its siblings
+// (dispatch-id.ts, dispatch-net.ts, dispatch-fs.ts) share.
 //
 // NO PORT TRANSPORT, UNLIKE net.connect -- exactly dispatch-id.ts's own
 // precedent: a plain request/reply round trip over CONTROL_CHANNEL, since
 // `orivon.web`'s own methods are all ID-ADDRESSED, JSON-shaped calls
 // (broker-contracts.ts's WebContextHost doc), never a live handle object
-// crossing the wire.
+// crossing the wire. `web.awaitClose` is the one exception to "request,
+// then reply promptly": it is a deliberate long-poll, held open by
+// ./ipc.ts's own withTimeout until `Broker['web'].awaitClose` settles or the
+// caller's own budget runs out -- see web-context-contracts.ts's own doc on
+// why `WebContext.closed` needs it at all.
 
 import { fail } from '../errors.js'
 import type { Broker } from '../broker-contracts.js'
@@ -51,6 +55,14 @@ export async function dispatchWeb (
     case 'web.close': {
       if (!isWebCloseParams(payload)) throw fail('invalid', 'web.close requires { id: string }')
       await broker.web.close(origin, { id: payload.id })
+      return undefined
+    }
+    case 'web.awaitClose': {
+      // Shape-identical to web.close -- reused rather than a second
+      // validator (code-guidelines.md Rule 3, this file's own precedent for
+      // WebCloseParams).
+      if (!isWebCloseParams(payload)) throw fail('invalid', 'web.awaitClose requires { id: string }')
+      await broker.web.awaitClose(origin, { id: payload.id })
       return undefined
     }
     default: {

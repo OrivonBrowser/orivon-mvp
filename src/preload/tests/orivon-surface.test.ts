@@ -87,6 +87,11 @@ describe('exposeOrivon -- P-F10: the fail-closed fallback covers BOTH "absent" a
     expect(typeof (surface.app as Record<string, unknown>).requestGrant).toBe('function')
     expect(typeof (surface.id as Record<string, unknown>).publicKey).toBe('function')
     expect(typeof (surface.id as Record<string, unknown>).sign).toBe('function')
+    // orivon.web.openContext (ADR-0019) needs no main-world stream wrapping
+    // either -- web-surface.ts's own header -- so, like the extended fs
+    // surface below, it is genuinely wired in the fallback too, not merely
+    // present as an unreachable placeholder.
+    expect(typeof (surface.web as Record<string, unknown>).openContext).toBe('function')
     // ADR-0016's sync call is present even in the net-less fallback --
     // ../preload/README.md's rule that a method always absent from
     // window.orivon is worse than one that is not there does not apply here:
@@ -120,6 +125,32 @@ describe('exposeOrivon -- P-F10: the fail-closed fallback covers BOTH "absent" a
     exposeOrivon()
 
     expect(exposeInMainWorld).not.toHaveBeenCalled()
+  })
+})
+
+// orivon.web.openContext (ADR-0019) through the REAL executeInMainWorld
+// path end to end: web-surface.ts's webOpenContextBridge, control-call.ts's
+// call(), and main-world-socket.ts's buildWebContext all wired together via
+// installViaFakeMainWorld's real installOrivon call -- not a unit-level
+// double for any of them.
+describe('exposeOrivon -- orivon.web.openContext, real wiring end to end', () => {
+  it('opens a context and evaluates a script through it', async () => {
+    const target = installViaFakeMainWorld()
+    invoke.mockImplementation(async (_channel: string, envelope: { method: string, payload: unknown }) => {
+      if (envelope.method === 'web.openContext') return okEnvelope({ id: 'ctx-1', origin: 'https://example.com' })
+      if (envelope.method === 'web.evaluate') return okEnvelope('https://example.com')
+      return okEnvelope(undefined) // web.awaitClose's own watch loop: left pending is fine, this stubs it settled
+    })
+    exposeOrivon()
+
+    const orivon = target.orivon as {
+      web: { openContext: (opts: { origin: string }) => Promise<{ id: string, origin: string, evaluate: (s: string) => Promise<unknown> }> }
+    }
+    const context = await orivon.web.openContext({ origin: 'https://example.com' })
+    const result = await context.evaluate('location.origin')
+
+    expect(context.id).toBe('ctx-1')
+    expect(result).toBe('https://example.com')
   })
 })
 

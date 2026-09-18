@@ -36,7 +36,7 @@ export type ControlMethod =
   | 'id.publicKey' | 'id.sign'
   | 'net.connect' | 'net.connectSecure' | 'net.udpBind' | 'net.listen' | 'net.close'
   | 'net.setNoDelay' | 'net.setKeepAlive' | 'net.lookup'
-  | 'web.openContext' | 'web.evaluate' | 'web.close'
+  | 'web.openContext' | 'web.evaluate' | 'web.close' | 'web.awaitClose'
 
 export function isControlMethod (method: string): method is ControlMethod {
   return method === 'app.manifest' || method === 'app.grants' || method === 'app.requestGrant' ||
@@ -54,7 +54,7 @@ export function isControlMethod (method: string): method is ControlMethod {
     method === 'net.udpBind' || method === 'net.listen' || method === 'net.close' ||
     method === 'net.setNoDelay' || method === 'net.setKeepAlive' ||
     method === 'net.lookup' ||
-    method === 'web.openContext' || method === 'web.evaluate' || method === 'web.close'
+    method === 'web.openContext' || method === 'web.evaluate' || method === 'web.close' || method === 'web.awaitClose'
 }
 
 export interface FsReadFileParams { readonly path: string }
@@ -100,7 +100,7 @@ export interface IdSignParams { readonly curve: string, readonly payload: Uint8A
 /** `web.openContext` (ADR-0019) -- `origin` is the CONTEXT's own origin, never this call's caller (that one is derived from the sender frame, T3, same as every other control method); `width`/`height` optional, `WebContextOptions`'s own default. */
 export interface WebOpenContextParams { readonly origin: string, readonly width?: number, readonly height?: number }
 export interface WebEvaluateParams { readonly id: string, readonly script: string }
-/** Structurally identical to `NetCloseParams`/`FsHandleIdParams` -- kept as its own name rather than reused, matching this file's own precedent of one name per surface even where two payload shapes happen to coincide. */
+/** Shared by web.close and web.awaitClose -- both take exactly `{ id }` (code-guidelines.md Rule 3: same shape, same reason, `NetConnectParams`'s own precedent). Structurally identical to `NetCloseParams`/`FsHandleIdParams` too, but kept as its own name -- one name per surface even where payload shapes happen to coincide. */
 export interface WebCloseParams { readonly id: string }
 /** Shared by net.connect and net.connectSecure -- both take exactly { host, port }, and isNetConnectParams below validates either call's payload (code-guidelines.md Rule 3: same shape, same reason). */
 export interface NetConnectParams { readonly host: string, readonly port: number }

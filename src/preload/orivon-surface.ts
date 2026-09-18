@@ -4,6 +4,7 @@ import { installOrivon } from './main-world-socket.js'
 import type { MainWorldDirectoryBridge, MainWorldFileBridge } from './main-world-socket.js'
 import { call, TIMEOUT_MS } from './control-call.js'
 import { netConnectBridge, netConnectSecureBridge, netListenBridge, netLookupBridge, netUdpBindBridge } from './net-surface.js'
+import { webOpenContextBridge } from './web-surface.js'
 import type { CapabilityRequest, FileStat, Grant, Manifest, OrivonErrorCode } from '../contracts/index.js'
 import { LIMITS } from '../contracts/index.js'
 import type { ResponseEnvelope } from '../contracts/ipc.js'
@@ -239,6 +240,13 @@ function exposeFallback (): void {
     },
     net: {
       lookup: async (opts: { hostname: string }) => await netLookupBridge(opts)
+    },
+    // Included here despite net.connect/etc. above being excluded: unlike
+    // those, WebContext needs no main-world-native stream (web-surface.ts's
+    // own header) -- exactly fs.open's own reasoning for staying in this
+    // fallback path.
+    web: {
+      openContext: webOpenContextBridge
     }
   })
 }
@@ -283,6 +291,7 @@ export function exposeOrivon (): void {
     fsUserSelectedDirectory,
     idPublicKey,
     idSign,
+    webOpenContext: webOpenContextBridge,
     netConnect: netConnectBridge,
     netConnectSecure: netConnectSecureBridge,
     netUdpBind: netUdpBindBridge,

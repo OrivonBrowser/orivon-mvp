@@ -40,6 +40,23 @@ export interface MainWorldFileBridge {
 }
 
 /**
+ * What ./web-surface.ts's webOpenContext bridge closure resolves to
+ * (ADR-0019) -- `MainWorldFileBridge`'s own sibling: no `readable`/
+ * `writable`, no native stream machinery, because every member here is a
+ * plain request/reply CONTROL_CHANNEL round trip, `web.evaluate`/`web.close`
+ * included. `closed` is a REAL, live-settling promise despite that -- see
+ * ./web-surface.ts's own header for the `web.awaitClose` long-poll it is
+ * built from.
+ */
+export interface MainWorldWebContextBridge {
+  readonly id: string
+  readonly origin: string
+  readonly closed: Promise<void>
+  evaluate: (script: string) => Promise<unknown>
+  close: () => Promise<void>
+}
+
+/**
  * What orivon-surface.ts's fsUserSelectedDirectory bridge closure resolves
  * to (A195) -- `MainWorldFileBridge`'s own counterpart for `DirectoryHandle`
  * (contracts/handles.ts), same reasoning: every member is a plain
