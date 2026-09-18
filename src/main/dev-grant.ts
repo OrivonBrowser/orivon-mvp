@@ -17,7 +17,7 @@
 
 import type { SubsystemContext, Subsystem } from './registry.js'
 import type { Broker } from '../broker/broker-contracts.js'
-import type { CapabilityKind, Grant, Manifest, Pattern } from '../contracts/index.js'
+import type { CapabilityKind, Grant, GrantId, Manifest, Pattern } from '../contracts/index.js'
 
 /**
  * Folded to a literal boolean by electron.vite.config.ts's `define` inside a
@@ -43,10 +43,19 @@ declare global {
   // augmentation. Undefined except inside a process this hook was installed
   // in -- see installDevGrantHook.
   var __orivonDevGrant: ((request: DevGrantRequest) => Promise<Grant>) | undefined
+  /**
+   * ADR-0019's own e2e need: proving "revocation closes the context"
+   * (WebContext.closed rejecting 'revoked') needs a real revoke against the
+   * SAME broker instance the real launched app's real IPC is wired to --
+   * exactly `__orivonDevGrant`'s own reasoning, one call further. Takes the
+   * `GrantId` `__orivonDevGrant`'s own resolved `Grant.id` already carries,
+   * so no new lookup mechanism is needed to pair the two.
+   */
+  var __orivonDevRevoke: ((origin: string, grantId: GrantId) => Promise<void>) | undefined
 }
 
 /**
- * Installs the hook on `globalThis`, reachable only by code with direct
+ * Installs both hooks on `globalThis`, reachable only by code with direct
  * access to this Node process's global scope -- not by any IPC channel, not
  * by any preload, not by window.orivon. `registerApp` is safe to call again
  * for an origin already registered (GrantLedger.registerApp replaces the
@@ -57,6 +66,9 @@ export function installDevGrantHook (broker: Broker): void {
   globalThis.__orivonDevGrant = async (request) => {
     await broker.registerApp(request.origin, request.manifest)
     return await broker.grant(request.origin, request.capability, request.patterns)
+  }
+  globalThis.__orivonDevRevoke = async (origin, grantId) => {
+    await broker.revoke(origin, grantId)
   }
 }
 
