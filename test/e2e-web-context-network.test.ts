@@ -125,3 +125,76 @@ it('a context whose opener holds https.connect for example.com:443 can fetch its
     }
   })
 }, TEST_TIMEOUT_MS)
+
+// A context "has no network of its own" (ADR-0019), and WebRTC's ICE/STUN/
+// TURN dial is the one path docs/open-questions.md A41 already names as not
+// passing through protocol.handle/webRequest -- src/main/web-context-host.ts's
+// own two belts (setWebRTCIPHandlingPolicy + a session proxy pointed at the
+// loopback discard port) are what closes it. Proven here against a REAL
+// STUN server, not a fake one: a server-reflexive or relay candidate would
+// mean the context reached the real internet over UDP/TCP outside every
+// grant this app holds.
+it('a context gathers no srflx or relay ICE candidate against a real STUN server -- WebRTC has no path out', async () => {
+  await runPhase('web.context WebRTC e2e', async (check) => {
+    const app = await launchElectron({ appPath: '.' })
+    try {
+      const grantOutcome = await app.evaluate(async (_electron, request: DevGrantRequest) => {
+        const hook = (globalThis as unknown as { __orivonDevGrant?: (r: DevGrantRequest) => Promise<Grant> }).__orivonDevGrant
+        if (typeof hook !== 'function') return { installed: false as const }
+        return { installed: true as const, grant: await hook(request) }
+      }, {
+        origin: FIXTURE_ORIGIN, manifest: testManifest(), capability: 'web.context', patterns: [CONTEXT_ORIGIN]
+      } satisfies DevGrantRequest)
+      check(
+        'the developer-only grant hook is installed in this build (npm run test:e2e builds with ORIVON_ENABLE_DEV_GRANT=1)',
+        grantOutcome.installed,
+        grantOutcome.installed ? undefined : 'globalThis.__orivonDevGrant was not a function in the main process'
+      )
+      if (!grantOutcome.installed) throw new Error('dev-grant hook missing -- was this built via npm run test:e2e?')
+
+      const view = await navigateToFixture(app, FIXTURE_URL, 'Orivon fixture app')
+
+      const result = await evaluateRetrying(view, async () => {
+        const orivon = (window as unknown as {
+          orivon: { web: { openContext: (opts: { origin: string }) => Promise<{
+            evaluate: (script: string) => Promise<unknown>
+            close: () => Promise<void>
+          }> } }
+        }).orivon
+        const context = await orivon.web.openContext({ origin: 'https://example.com' })
+        try {
+          // Gathers for ~5s against a real public STUN server, then reports
+          // every DISTINCT ICE candidate `.type` seen ('host', 'srflx',
+          // 'prflx', 'relay') -- a plain array of strings, so the result
+          // stays JSON-compatible per WebContext.evaluate's own contract.
+          return await context.evaluate(`
+            new Promise((resolve) => {
+              const types = new Set();
+              const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+              pc.onicecandidate = (event) => {
+                if (event.candidate && event.candidate.type) types.add(event.candidate.type);
+              };
+              pc.createDataChannel('probe');
+              pc.createOffer().then((offer) => pc.setLocalDescription(offer)).catch(() => {});
+              setTimeout(() => {
+                try { pc.close() } catch (e) {}
+                resolve({ types: Array.from(types) });
+              }, 5000);
+            })
+          `)
+        } finally {
+          await context.close()
+        }
+      }, 20_000)
+
+      const types = (result as { types?: string[] }).types ?? []
+      check(
+        'no server-reflexive or relay candidate was gathered -- WebRTC never reached the real internet',
+        !types.includes('srflx') && !types.includes('relay'),
+        `candidate types observed: ${JSON.stringify(types)}`
+      )
+    } finally {
+      await closeElectronApp(app)
+    }
+  })
+}, TEST_TIMEOUT_MS)
