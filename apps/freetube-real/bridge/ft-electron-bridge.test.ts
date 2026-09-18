@@ -31,10 +31,22 @@ interface Sandbox {
   document: FakeDocument
   navigator: { language: string, wakeLock?: { request: (kind: string) => Promise<{ release: () => Promise<void> }> } }
   fetch: (input: string) => Promise<{ ok: boolean, status: number, text: () => Promise<string> }>
+  // generatePoToken's own per-attempt deadline (attemptMintOnce) needs real
+  // globals here -- a `vm` context gets V8's own built-ins (Promise, Symbol,
+  // ...) for free, but NOT Node's globals, `setTimeout`/`clearTimeout`
+  // included. Forwarding to the OUTER `globalThis` rather than binding the
+  // function values once means these keep working after a test calls
+  // `vi.useFakeTimers()`, which replaces what `globalThis.setTimeout` points
+  // to -- a value captured before that call would still be the real one.
+  setTimeout: typeof setTimeout
+  clearTimeout: typeof clearTimeout
   __ftElectronBridgeInternals?: {
     installFtElectronBridge: (getOrivon: () => Record<string, unknown> | undefined) => { bridge: Record<string, any>, recordedListeners: Record<string, unknown> }
     FtBridgeError: new (member: string, reason: string, detail?: string) => Error & { member: string, reason: string }
     rewriteBotGuardScript: (script: string, videoId: string, context: string, attestation: string, ytConfig: string) => string
+    PoTokenMintStalledError: new (attempts: number) => Error & { attempts: number }
+    MINT_ATTEMPT_DEADLINE_MS: number
+    MINT_MAX_ATTEMPTS: number
   }
 }
 
@@ -53,7 +65,9 @@ function load (opts: { orivon?: Record<string, unknown>, document?: Partial<Fake
     window: { orivon: opts.orivon },
     document: fakeDocument(opts.document),
     navigator: { language: 'en-US', ...opts.navigator },
-    fetch: opts.fetch ?? (async () => { throw new Error('fetch not stubbed for this test') })
+    fetch: opts.fetch ?? (async () => { throw new Error('fetch not stubbed for this test') }),
+    setTimeout: ((...args: Parameters<typeof setTimeout>) => globalThis.setTimeout(...args)) as typeof setTimeout,
+    clearTimeout: ((...args: Parameters<typeof clearTimeout>) => { globalThis.clearTimeout(...args) }) as typeof clearTimeout
   } as Sandbox
   vm.createContext(sandbox as unknown as object)
   vm.runInContext(SOURCE, sandbox as unknown as object, { filename: 'ft-electron-bridge.js' })
@@ -296,14 +310,85 @@ describe('generatePoToken (ADR-0019, web.context -- not implemented in this bran
     expect(evaluate).toHaveBeenLastCalledWith('var a=1;;a("vid2",{},{},{})')
   })
 
-  it('closes the context even when evaluate throws', async () => {
+  it('closes the context even when evaluate throws, and does not retry a real rejection', async () => {
     const close = vi.fn(async () => {})
     const openContext = vi.fn(async () => ({ evaluate: async () => { throw new Error('bad token') }, close }))
     const fetchSpy = vi.fn(async () => ({ ok: true, status: 200, text: async () => 'export{x as default};' }))
     const { bridge } = freshBridge({ orivon: { web: { openContext } }, fetch: fetchSpy })
 
+    // A script that ran and threw is not this attempt's own deadline (below)
+    // -- retrying cannot fix it, so it propagates on the first attempt.
     await expect(bridge.generatePoToken('vid', '{}', '{}', '{}')).rejects.toThrow('bad token')
     expect(close).toHaveBeenCalledTimes(1)
+    expect(openContext).toHaveBeenCalledTimes(1)
+  })
+
+  // PoToken stall investigation, Part B (apps/freetube-real/README.md): BotGuard's
+  // own opaque snapshot step is observed to hang -- `evaluate` neither resolves
+  // nor rejects -- roughly half the time under headless Xvfb with no real GPU.
+  // These drive that exact shape: a fake `orivon.web` whose `evaluate` never
+  // settles at all.
+  describe('a stalled attempt (evaluate never settles)', () => {
+    it('retries in a fresh context once an attempt exceeds its own deadline, and returns the next attempt\'s token', async () => {
+      vi.useFakeTimers()
+      try {
+        const opened: number[] = []
+        const closed: number[] = []
+        let openCount = 0
+        const openContext = vi.fn(async () => {
+          const mine = ++openCount
+          opened.push(mine)
+          return {
+            // The first context stalls forever; the second answers at once.
+            evaluate: async () => mine === 1 ? await new Promise(() => {}) : 'TOKEN_FROM_ATTEMPT_2',
+            close: async () => { closed.push(mine) }
+          }
+        })
+        const fetchSpy = vi.fn(async () => ({ ok: true, status: 200, text: async () => 'export{x as default};' }))
+        const { sandbox, bridge } = freshBridge({ orivon: { web: { openContext } }, fetch: fetchSpy })
+        const { MINT_ATTEMPT_DEADLINE_MS } = internals(sandbox)
+
+        const pending = bridge.generatePoToken('vid', '{}', '{}', '{}')
+        const assertion = expect(pending).resolves.toBe('TOKEN_FROM_ATTEMPT_2')
+        await vi.advanceTimersByTimeAsync(MINT_ATTEMPT_DEADLINE_MS + 1)
+        await assertion
+
+        expect(opened).toEqual([1, 2])
+        // The stalled first context is closed (freeing its LIMITS.webContexts
+        // slot) before the second one ever opens -- never both at once.
+        expect(closed).toEqual([1, 2])
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('gives up with a named, counted error once every attempt has stalled', async () => {
+      vi.useFakeTimers()
+      try {
+        const closed: number[] = []
+        let openCount = 0
+        const openContext = vi.fn(async () => {
+          const mine = ++openCount
+          return { evaluate: async () => await new Promise(() => {}), close: async () => { closed.push(mine) } }
+        })
+        const fetchSpy = vi.fn(async () => ({ ok: true, status: 200, text: async () => 'export{x as default};' }))
+        const { sandbox, bridge } = freshBridge({ orivon: { web: { openContext } }, fetch: fetchSpy })
+        const { MINT_ATTEMPT_DEADLINE_MS, MINT_MAX_ATTEMPTS, PoTokenMintStalledError } = internals(sandbox)
+
+        const pending = bridge.generatePoToken('vid', '{}', '{}', '{}')
+        const assertion = expect(pending).rejects.toMatchObject({ name: 'PoTokenMintStalledError', attempts: MINT_MAX_ATTEMPTS })
+        for (let attempt = 0; attempt < MINT_MAX_ATTEMPTS; attempt += 1) {
+          await vi.advanceTimersByTimeAsync(MINT_ATTEMPT_DEADLINE_MS + 1)
+        }
+        await assertion
+
+        expect(openContext).toHaveBeenCalledTimes(MINT_MAX_ATTEMPTS)
+        expect(closed).toHaveLength(MINT_MAX_ATTEMPTS)
+        await expect(pending).rejects.toBeInstanceOf(PoTokenMintStalledError)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
   })
 
   it('queues mints one at a time, as poTokenGenerator.js does', async () => {
