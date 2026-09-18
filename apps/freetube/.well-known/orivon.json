@@ -1,0 +1,46 @@
+{
+  "orivonApiVersion": 0,
+  "id": "dev.orivon.apps.freetube",
+  "name": "FreeTube (Orivon port)",
+  "version": "0.1.0",
+  "entry": "index.html",
+  "assets": [
+    "styles.css",
+    "lib/main.js",
+    "lib/platform.js",
+    "lib/ft-electron.js",
+    "lib/store.js",
+    "lib/innertube.js",
+    "lib/parse.js",
+    "lib/invidious.js",
+    "lib/backend.js",
+    "lib/playback.js",
+    "lib/router.js",
+    "lib/ui.js",
+    "lib/views.js"
+  ],
+  "consentGranularity": "per-capability",
+  "capabilities": {
+    "net": {
+      "https": {
+        "connect": [
+          "www.youtube.com:443",
+          "youtubei.googleapis.com:443",
+          "i.ytimg.com:443",
+          "yt3.ggpht.com:443",
+          "yt4.ggpht.com:443",
+          "lh3.googleusercontent.com:443",
+          "yt3.googleusercontent.com:443",
+          "inv.nadeko.net:443",
+          "invidious.nerdvpn.de:443",
+          "yewtu.be:443",
+          "invidious.jing.rocks:443"
+        ]
+      },
+      "concurrentSockets": 24
+    },
+    "fs": {
+      "quotaBytes": 33554432
+    }
+  }
+}

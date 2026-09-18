@@ -238,6 +238,34 @@ describe('installFetchRoute -- header input shapes', () => {
   })
 })
 
+describe('installFetchRoute -- request input shapes', () => {
+  /** WHATWG fetch takes `Request | USVString`; everything that is not a Request is converted with ToString. All three of these are ordinary fetch inputs in any browser, so all three must reach the same wire request. */
+  it('accepts a string, a URL object and a Request-like alike', async () => {
+    const heads: string[] = []
+    async function fetchWith (input: unknown): Promise<void> {
+      let socket: ReturnType<typeof fakeSocket> | undefined
+      const target = fakeTarget({ connectSecure: async () => { socket = fakeSocket(CANNED_RESPONSE_CHUNKS()); return socket } })
+      installFetchRoute(true, target)
+      await target.fetch!(input)
+      heads.push(writtenHead(socket!))
+    }
+    await fetchWith('https://api.example/x')
+    await fetchWith(new URL('https://api.example/x'))
+    await fetchWith({ url: 'https://api.example/x' })
+
+    for (const head of heads) expect(head).toContain('GET /x HTTP/1.1')
+    expect(new Set(heads).size).toBe(1)
+  })
+
+  it('rejects an input that names no URL at all, rather than inventing one', async () => {
+    const target = fakeTarget({ connectSecure: async () => fakeSocket(CANNED_RESPONSE_CHUNKS()) })
+    installFetchRoute(true, target)
+    for (const input of [null, undefined]) {
+      await expect(target.fetch!(input)).rejects.toThrow(/requires a URL/)
+    }
+  })
+})
+
 describe('installFetchRoute -- response body framing', () => {
   it('decodes a chunked-transfer response body correctly', async () => {
     const chunked = bytes('HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n6\r\n world\r\n0\r\n\r\n')

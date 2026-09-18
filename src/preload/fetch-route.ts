@@ -379,9 +379,16 @@ export function installFetchRoute (
 
   async function routedFetch (input: unknown, init?: { method?: string, headers?: unknown, body?: unknown, signal?: AbortSignal }): Promise<Response> {
     const requestLike = input as { url?: string, method?: string, headers?: unknown }
-    const rawUrl = typeof input === 'string' ? input : requestLike?.url
+    // WHATWG fetch takes `Request | USVString`, and ANYTHING that is not a
+    // Request is converted with ToString -- which is why `fetch(new URL(...))`
+    // works in every browser. Reading `.url` alone (a Request's own property,
+    // which a URL object does not have) rejected URL objects outright, and
+    // real libraries pass them.
+    let rawUrl: string | undefined
+    if (typeof requestLike?.url === 'string') rawUrl = requestLike.url
+    else if (input !== null && input !== undefined && typeof input !== 'symbol') rawUrl = String(input)
     if (typeof rawUrl !== 'string') {
-      throw new TypeError('orivon: fetch requires a URL string, or an object with a string .url property')
+      throw new TypeError('orivon: fetch requires a URL, a URL string, or a Request')
     }
     const base = typeof target.location?.href === 'string' ? target.location.href : undefined
     const url = new URL(rawUrl, base)
