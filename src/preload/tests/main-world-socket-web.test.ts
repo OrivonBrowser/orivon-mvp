@@ -11,7 +11,7 @@ import { LIMITS, fakeBridge, fakeSocketBridgeResult, fakeWebContextBridgeResult 
 
 interface OrivonWebSurface {
   web: {
-    openContext: (opts: { origin: string, width?: number, height?: number }) => Promise<{
+    openContext: (origin: string, options?: { width?: number, height?: number }) => Promise<{
       id: string
       origin: string
       closed: Promise<void>
@@ -42,7 +42,7 @@ describe('installOrivon -- web.openContext', () => {
     }
     const orivon = install(bridge)
 
-    const context = await orivon.web.openContext({ origin: 'https://example.com', width: 800, height: 600 })
+    const context = await orivon.web.openContext('https://example.com', { width: 800, height: 600 })
 
     expect(calls).toEqual([{ origin: 'https://example.com', width: 800, height: 600 }])
     expect(context.id).toBe('ctx-9')
@@ -57,7 +57,7 @@ describe('installOrivon -- web.openContext', () => {
     })
     const orivon = install(bridge)
 
-    const context = await orivon.web.openContext({ origin: 'https://example.com' })
+    const context = await orivon.web.openContext('https://example.com')
     const result = await context.evaluate('location.origin')
 
     expect(calls).toEqual(['location.origin'])
@@ -70,7 +70,7 @@ describe('installOrivon -- web.openContext', () => {
     bridge.webOpenContext = async () => fakeWebContextBridgeResult({ close: async () => { closed = true } })
     const orivon = install(bridge)
 
-    const context = await orivon.web.openContext({ origin: 'https://example.com' })
+    const context = await orivon.web.openContext('https://example.com')
     await context.close()
 
     expect(closed).toBe(true)
@@ -83,7 +83,7 @@ describe('installOrivon -- web.openContext', () => {
     bridge.webOpenContext = async () => fakeWebContextBridgeResult({ closed: closedSource })
     const orivon = install(bridge)
 
-    const context = await orivon.web.openContext({ origin: 'https://example.com' })
+    const context = await orivon.web.openContext('https://example.com')
     let settled = false
     void context.closed.then(() => { settled = true })
     expect(settled).toBe(false)
@@ -104,7 +104,7 @@ describe('installOrivon -- web.openContext', () => {
     })
     const orivon = install(bridge)
 
-    const context = await orivon.web.openContext({ origin: 'https://example.com' })
+    const context = await orivon.web.openContext('https://example.com')
     let caught: unknown
     try {
       await context.evaluate('slow()')
@@ -125,7 +125,7 @@ describe('installOrivon -- web.openContext', () => {
     bridge.webOpenContext = async () => fakeWebContextBridgeResult({ closed: closedSource })
     const orivon = install(bridge)
 
-    const context = await orivon.web.openContext({ origin: 'https://example.com' })
+    const context = await orivon.web.openContext('https://example.com')
     let caught: unknown
     try {
       await context.closed
@@ -139,7 +139,7 @@ describe('installOrivon -- web.openContext', () => {
 
   it('resolves an object whose fields cannot be reassigned (Object.freeze)', async () => {
     const orivon = install(fakeBridge(fakeSocketBridgeResult()))
-    const context = await orivon.web.openContext({ origin: 'https://example.com' }) as unknown as MainWorldWebContextBridge
+    const context = await orivon.web.openContext('https://example.com') as unknown as MainWorldWebContextBridge
     expect(Object.isFrozen(context)).toBe(true)
   })
 })

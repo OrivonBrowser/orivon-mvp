@@ -73,7 +73,7 @@ export function installOrivon (
     fsUserSelectedDirectory: () => Promise<MainWorldDirectoryBridge | null>
     idPublicKey: (curve: string) => Promise<Uint8Array>
     idSign: (curve: string, payload: Uint8Array) => Promise<Uint8Array>
-    /** ADR-0019 -- resolves a `MainWorldWebContextBridge`, `fsOpen`'s own shape of counterpart (a plain object of MORE proxied closures, no native stream). `buildWebContext` below wraps it the same way `buildFile` wraps `fsOpen`'s. */
+    /** ADR-0019 -- resolves a `MainWorldWebContextBridge`, `fsOpen`'s own shape of counterpart (a plain object of MORE proxied closures, no native stream). `buildWebContext` below wraps it the same way `buildFile` wraps `fsOpen`'s. Takes `origin` folded into `opts`, unlike the public `openContext(origin, options?)` two-argument shape below, which merges them back in before calling this. */
     webOpenContext: (opts: { origin: string, width?: number, height?: number }) => Promise<MainWorldWebContextBridge>
     netConnect: (opts: { host: string, port: number }) => Promise<MainWorldSocketBridge>
     /** net.connectSecure's own closure -- resolves to the identical bridge shape netConnect does; buildSocket below is shared by both (Rule 3). */
@@ -481,7 +481,7 @@ export function installOrivon (
       sign: async (opts: { curve: string, payload: Uint8Array }) => await callRevived(bridge.idSign(opts.curve, opts.payload))
     }),
     web: Object.freeze({
-      openContext: async (opts: { origin: string, width?: number, height?: number }) => buildWebContext(await callRevived(bridge.webOpenContext(opts)))
+      openContext: async (origin: string, options?: { width?: number, height?: number }) => buildWebContext(await callRevived(bridge.webOpenContext({ origin, ...options })))
     }),
     net: Object.freeze({
       connect: async (opts: { host: string, port: number }) => buildSocket(await callRevived(bridge.netConnect(opts))),
