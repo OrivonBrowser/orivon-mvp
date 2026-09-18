@@ -264,10 +264,13 @@ boundary working correctly, not a bug:
 `node:vm` context per test (it is a classic script, not a module, so it has nothing to `import`).
 **Not picked up by `npm test` yet** -- `vitest.config.ts`'s include pattern is `src/**/*.test.ts`
 and `scripts/**/*.test.ts`, and `apps/` is neither (the same gap `apps/fixture/manifest.test.ts`
-already notes). Run it directly:
+already notes, with whether `apps/**` should join that include left open). Naming the file on
+the command line does not help, because vitest filters inside its include pattern rather than
+widening it. A temporary config outside the repository does work:
 
 ```bash
-npx vitest run apps/freetube-real/bridge/ft-electron-bridge.test.ts
+printf "export default { test: { environment: 'node', include: ['apps/freetube-real/**/*.test.ts'] } }\n" > /tmp/vitest.apps.mjs
+npx vitest run --config /tmp/vitest.apps.mjs --root .
 ```
 
 ### Running the real build against a real window
