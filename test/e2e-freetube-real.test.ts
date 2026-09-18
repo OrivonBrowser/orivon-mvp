@@ -23,7 +23,7 @@
 //   ORIVON_ORDINARY_BUILD=1 npx vitest run --config test/vitest.e2e.config.ts test/e2e-freetube-real.test.ts
 import { afterAll, expect, it } from 'vitest'
 import type { ChildProcess } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from './launch-electron.mjs'
 import { findChrome, tabViews, waitFor } from './smoke-helpers.mjs'
@@ -34,16 +34,28 @@ const ORDINARY_BUILD = process.env['ORIVON_ORDINARY_BUILD'] === '1'
 const ROOT = process.env['ORIVON_FREETUBE_REAL_ROOT'] ?? '/home/jhon/git/freetube-src/dist/orivon-web-localapi'
 const BUILT = existsSync(join(ROOT, 'index.html'))
 
-// Playback needs a minted PoToken (ftElectron.generatePoToken, ADR-0019's
-// web.context), which does not exist on this branch: apps/freetube-real/
-// bridge/ft-electron-bridge.js's generatePoToken rejects 'not-built', and --
-// found building this file -- that rejection then makes upstream's own
-// getLocalVideoInfo (helpers/api/local.js) throw before it ever fetches the
-// watch page's metadata, not only before playback. So with the flag off this
-// assertion is skipped, and it stays off here: it is the planner's to flip,
-// once the stacked web.context implementation PR lands and a real token can
-// be minted. See README.md's "What waits on web.context".
-const REQUIRE_PLAYBACK = process.env['ORIVON_FREETUBE_REAL_PLAYBACK'] === '1'
+/**
+ * Playback needs a minted PoToken (ftElectron.generatePoToken, ADR-0019's
+ * web.context). ON BY DEFAULT once the prepared build's own manifest
+ * declares `web` -- that is the build that can actually mint one -- so a
+ * build without it (`dist/orivon-web`, `dist/orivon-web-localapi`) still
+ * only gets the metadata checks above, exactly as before. `=0` forces it
+ * off even against a `web`-declaring build; `=1` forces it on regardless
+ * (a manifest edit not yet re-prepared, say). See README.md's "Playback on
+ * the Electron-renderer build" for what this build now measures.
+ */
+function manifestDeclaresWeb (): boolean {
+  if (!BUILT) return false
+  try {
+    const manifest: { capabilities?: { web?: unknown } } = JSON.parse(readFileSync(join(ROOT, '.well-known', 'orivon.json'), 'utf8'))
+    return manifest.capabilities?.web !== undefined
+  } catch {
+    return false
+  }
+}
+const REQUIRE_PLAYBACK = process.env['ORIVON_FREETUBE_REAL_PLAYBACK'] === '0'
+  ? false
+  : process.env['ORIVON_FREETUBE_REAL_PLAYBACK'] === '1' || manifestDeclaresWeb()
 
 const HOST = '127.0.0.1'
 const PORT = Number(process.env['ORIVON_FREETUBE_REAL_PORT'] ?? PORT_APP_FREETUBE_REAL)
