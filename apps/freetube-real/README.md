@@ -1,13 +1,26 @@
 # `apps/freetube-real/`: upstream FreeTube, unmodified, as an Orivon app
 
-**What lives here.** Three small files that turn a stock FreeTube web build into an Orivon app:
-a manifest, a prepare step, and a plain static server. **No FreeTube source and no FreeTube build
-output is in this repository** -- it is AGPL-3.0-or-later and it stays in its own clone.
+**What lives here.** A manifest, a prepare/build step, a plain static server, and the bridge that
+lets upstream's own **Electron renderer** run as an Orivon app: a manifest, a webpack config that
+compiles that renderer instead of the browser build, and `window.ftElectron` rebuilt over
+`orivon.*`. **No FreeTube source and no FreeTube build output is in this repository** -- it is
+AGPL-3.0-or-later and it stays in its own clone (`~/git/freetube-src` below).
 
 **What this answers, that [`../freetube/`](../freetube/) cannot.** That directory is an app
 written for Orivon. This one is somebody else's real application, built by its own toolchain,
-with the manifest and the discovery hint added and **nothing else changed**. It measures how much
-of a third-party app works when the only thing done for it is granting its URL the network.
+with the manifest, the discovery hint, and (for the Electron build) a bridge script added and
+**nothing else changed**. It measures how much of a third-party app works when the only thing
+done for it is granting its URL the network and standing in for the Electron main process it
+expects.
+
+| File | What it is |
+|---|---|
+| [`orivon.json`](orivon.json) | The manifest. No `web` key yet -- see [What waits on `web.context`](#what-waits-on-webcontext) |
+| [`prepare.mjs`](prepare.mjs) | Turns a build into an Orivon app (manifest + discovery hint), and (`--build`) runs the Electron-renderer build itself first |
+| [`serve.mjs`](serve.mjs) | A plain static file server. Also decodes a pre-compressed `.br` asset via `Content-Encoding`, which upstream's own Electron build relies on -- see below |
+| [`webpack.orivon.config.cjs`](webpack.orivon.config.cjs) | Our own build wrapper, moved out of the clone's untracked `_scripts/webpack.web-localapi.config.js` |
+| [`bridge/ft-electron-bridge.js`](bridge/ft-electron-bridge.js) | `window.ftElectron`, the 34 members upstream's renderer calls, rebuilt over `orivon.*` |
+| [`bridge/ft-electron-bridge.test.ts`](bridge/ft-electron-bridge.test.ts) | Unit coverage for all 34 -- see [Testing the bridge](#testing-the-bridge) for how to run it |
 
 ## Setting it up
 
@@ -22,23 +35,26 @@ node apps/freetube-real/serve.mjs      # http://127.0.0.1:8875
 Then `npm run dev` in another terminal, navigate to `http://127.0.0.1:8875`, and accept the
 prompt. `prepare.mjs` copies the build, injects `<link rel="orivon-manifest">` into `index.html`
 and drops [`orivon.json`](orivon.json) at `/.well-known/`. The server reads files off disk and
-does nothing else.
+does nothing else (plus, for a `.br` asset, sets `Content-Encoding` -- still just describing what
+is already on disk, not transforming it).
 
-## Two builds, because they answer different questions
+## Three builds, because they answer different questions
 
-| Build | What it is | Backend |
-|---|---|---|
-| `dist/orivon-web` | `pnpm run pack:web`, verbatim | **Invidious only** |
-| `dist/orivon-web-localapi` | the same build with the Local API left in | YouTube directly, via `youtubei.js` |
+| Build | What it is | Backend | PoToken |
+|---|---|---|---|
+| `dist/orivon-web` | `pnpm run pack:web`, verbatim | **Invidious only** | n/a (no Local API) |
+| `dist/orivon-web-localapi` | the same build with the Local API left in | YouTube directly, via `youtubei.js` | silently absent; metadata still loads, playback does not (see below) |
+| `dist/orivon-electron` | upstream's **Electron renderer**, `window.ftElectron` rebuilt over `orivon.*` | YouTube directly | refused by name; metadata does not load either (see below) -- a real, different failure mode from the row above |
 
 **Upstream compiles the web target with `SUPPORTS_LOCAL_API: false` and `externals:
 {'youtubei.js': '{}'}`** -- the Local API is stripped, because a browser cannot reach YouTube
 directly: CORS refuses the origin and the request needs headers a page is forbidden to set. That
-is the exact wall Orivon removes, so the second build asks what removing it buys. It is a
-config-level change (`_scripts/webpack.web-localapi.config.js` in the clone, which requires
-upstream's own config and flips two settings), not a fork.
+is the exact wall Orivon removes, so the second and third builds ask what removing it buys.
 
-Build it with:
+### `dist/orivon-web-localapi`: the web build, Local API left in
+
+A config-level change (`_scripts/webpack.web-localapi.config.js` in the clone, which requires
+upstream's own config and flips two settings), not a fork:
 
 ```bash
 cd ~/git/freetube-src && npx webpack --mode=production --config-node-env=production \
@@ -47,7 +63,77 @@ cd - && node apps/freetube-real/prepare.mjs --out ~/git/freetube-src/dist/orivon
 node apps/freetube-real/serve.mjs --root ~/git/freetube-src/dist/orivon-web-localapi
 ```
 
-## Opening a video works
+### `dist/orivon-electron`: upstream's own Electron renderer
+
+Why this build exists rather than stopping at the one above: the web build compiles
+`IS_ELECTRON` to `false`, and that removes the only code path that mints a PoToken
+(`src/renderer/helpers/api/local.js`'s `window.ftElectron.generatePoToken`) -- without one,
+YouTube's SABR stream cannot start. Compiling with `IS_ELECTRON: true` restores that path and
+makes the renderer call `window.ftElectron.*` for everything privileged, which is what
+`bridge/ft-electron-bridge.js` supplies. This is **still the same renderer source FreeTube ships
+in its desktop app** -- nothing here is a fork.
+
+```bash
+node apps/freetube-real/prepare.mjs --build --clone ~/git/freetube-src
+node apps/freetube-real/serve.mjs --root ~/git/freetube-src/dist/orivon-electron --port 8876
+```
+
+`--build` runs, inside the clone and under its own lock: `webpack.orivon.config.cjs` (which
+requires the clone's own `_scripts/webpack.web.config.js` and patches it, never forks it) into
+`dist/orivon-electron-web`, then `pnpm run pack:botGuardScript` for `dist/botGuardScript.js`. It
+then does what the plain `prepare.mjs` above does, plus: injects
+`<script src="/orivon/ft-electron-bridge.js">` as the first script in `<head>` (classic,
+synchronous, so it exists before FreeTube's own bundle -- `src/renderer/main.js` calls
+`window.ftElectron.handleChangeView` at module top level), and copies `bridge/ft-electron-bridge.js`
+and `botGuardScript.js` under `dist/orivon-electron/orivon/`.
+
+`webpack.orivon.config.cjs` changes exactly four things in upstream's own web config, each guarded
+by an assertion that fails loudly if upstream's config shape changes: `SUPPORTS_LOCAL_API` and
+`IS_ELECTRON` true in the one `DefinePlugin`; `externals` deleted (so `youtubei.js` is bundled);
+the same Node-builtin `resolve.fallback` list the web-localapi wrapper already uses; and two fixes
+the plain "flip two defines" approach does not mention, both found by actually running the build
+end to end rather than assumed from reading the source -- see
+[What running the build found wrong with that plan](#what-running-the-build-found-wrong-with-that-plan).
+
+The entry list stays upstream's single `main.js`, with no `orivon-sig-eval.js` added: with
+`IS_ELECTRON` true, `local.js`'s own branch posts to `#sigFrame` for n/sig deciphering, and that
+branch is now compiled IN rather than eliminated, so the override this repo's other two builds
+need does not apply here. `prepare.mjs`'s existing sigFrame-injection code stays harmless dead
+code for this build (it checks for `id="sigFrame"` first, and finds it already there).
+
+### What running the build found wrong with that plan
+
+Two things the "flip `IS_ELECTRON` and `SUPPORTS_LOCAL_API`, otherwise reuse the web config as-is"
+plan did not anticipate, both discovered by running the build and driving the result in a real
+window rather than reading source:
+
+1. **Compiled locales, not the plain ones.** `src/renderer/i18n/index.js` fetches
+   `${locale}.json.br` instead of `${locale}.json` once `IS_ELECTRON` is true ("locales are only
+   compressed in our production Electron builds" -- its own comment). Upstream reaches that by
+   constructing `ProcessLocalesPlugin` with `compress: true` in its OWN Electron config
+   (`_scripts/webpack.renderer.config.js`); the web config's instance is built with `compress:
+   false` and constructed before this wrapper ever sees it. `webpack.orivon.config.cjs` patches the
+   already-built instance's `.compress` field instead of forking the config to construct a new
+   one. Missing this made every locale fetch 404 before the renderer ever mounted (`SyntaxError:
+   Unexpected token 'o', "not found" is not valid JSON` -- serve.mjs's own 404 body, parsed as
+   JSON) -- `#app` never got past Vue's initial `<!---->` placeholder, with **zero console errors**,
+   because the failing dispatch was never awaited by its caller. `serve.mjs` gained matching
+   support: a `.br` file on disk is pre-compressed, so it is served with `Content-Encoding: br`
+   and Chromium decodes it exactly as it would over a real network.
+2. **A second `CopyWebpackPlugin` writes to a HARDCODED path, not `output.path`.** Upstream's web
+   config copies `static/` (locales aside), `pwabuilder-sw.js`, and the Shaka Player locale files
+   via absolute `to:` paths built from `path.join(__dirname, '../dist/web/...')` -- unlike its
+   first `CopyWebpackPlugin` (the swiper CSS, a relative `to:` that DOES follow `output.path`).
+   Changing `config.output.path` to this build's own directory does nothing to those hardcoded
+   ones. **Caught only because it happened**: an early build here wrote into `dist/web/static`,
+   the directory `parallel-work.md`'s own rule says never to touch, because another agent's run
+   may depend on its contents. `webpack.orivon.config.cjs` now rewrites every `CopyWebpackPlugin`
+   pattern whose `to:` starts with the old `dist/web` prefix onto this build's own output path.
+   Left unfixed, this build would have `/static/invidious-instances.json`,
+   `/static/geolocations/*.json`, and `/static/external-player-map.json` all 404 -- three of the
+   Vuex actions `App.vue`'s `onMounted` fires (unawaited) throw as unhandled rejections for each.
+
+## Opening a video works (`dist/orivon-web-localapi`)
 
 Measured 2026-09-17, `dist/orivon-web-localapi`, against live YouTube:
 
@@ -80,7 +166,7 @@ Getting there needed three fixes, and only the first was Orivon's:
 Neither 2 nor 3 is an Orivon gap: both are upstream build decisions that follow from "the web
 cannot reach YouTube", which is the premise Orivon removes.
 
-### Playback: blocked on the PoToken, traced to the exact line
+### Playback on the web-localapi build: blocked on the PoToken, traced to the exact line
 
 **Not blocked by Orivon.** Measured with an unminified build, the failure is three frames deep:
 
@@ -95,55 +181,123 @@ YouTube now serves the Local API path over **SABR** (server-side ABR), and SABR 
 proof-of-origin token. `Watch.js` takes the SABR branch whenever
 `streaming_data.server_abr_streaming_url` exists, passing the `poToken` it was given.
 `local.js` only ever produces one inside `if (process.env.IS_ELECTRON)`, by calling
-`window.ftElectron.generatePoToken(...)` -- BotGuard, executed in FreeTube's main process. A web
-build compiles that block out, so the token is `undefined`, `base64ToU8(undefined)` throws, and
+`window.ftElectron.generatePoToken(...)` -- BotGuard, executed in FreeTube's main process. **This
+build compiles that block out**, so the token is `undefined`, `base64ToU8(undefined)` throws, and
 the throw takes the whole player component's `setup()` with it. **That is why no `<video>`
-element exists at all** -- the player never mounts, so only the thumbnail shows.
+element exists at all** on this build -- the player never mounts, so only the thumbnail shows.
+Metadata (title, description, view count) loads fine first, because it is fetched before the
+player component ever runs.
 
 This is the same `GENERATE_PO_TOKEN` handler
 [`freetube-port-recon.md`](../../docs/planning/freetube-port-recon.md) listed as *Unassessed*,
 and it is now assessed twice over: it is load-bearing, and it is the single thing between this
 build and working playback.
 
-**Two routes to playback. The first is closed; the second is untried.**
+### Playback on the Electron-renderer build: a different failure, one step earlier
 
-1. **Generate the token in the page: closed.** YouTube binds the token to the document origin.
-   BotGuard runs to completion anywhere, but `GenerateIT` issues a token only to a document at
-   `https://www.youtube.com`, and no page, iframe or sandbox page can be at that origin. See
-   §Spike results.
-2. **Avoid SABR.** `Watch.js` has an `else if` branch for adaptive formats carrying a `url` or
-   `signature_cipher`, which is the older DASH path, and n/sig deciphering already works here.
-   Whether YouTube still serves those without a token is an open question -- probing
-   `ANDROID_VR` directly (2026-09-17) returned unciphered, token-free URLs for some videos and
-   `LOGIN_REQUIRED` for most. Cheaper to try, and it needs a source patch rather than a config
-   change, because the SABR branch is chosen before `poToken` is checked.
+On `dist/orivon-electron`, `IS_ELECTRON` is compiled IN rather than out, so `local.js`'s own
+branch actually runs: `window.ftElectron.generatePoToken(...)` -- `bridge/ft-electron-bridge.js`'s
+own implementation, written against the `web.context` contract (ADR-0019,
+`docs/decisions/ADR-0019-*.md` once the stacked contracts PR lands) -- opens a private, empty
+document at `https://www.youtube.com`, evaluates FreeTube's own BotGuard script inside it, and
+returns the token. **`orivon.web` does not exist on this branch**, so this call **refuses by name**
+(`FtBridgeError`, reason `not-built`) instead of silently returning nothing -- see
+`docs/development/code-guidelines.md` on refusing by name versus by absence.
 
-### Two console errors that remain, and what they mean
+Upstream's own `local.js` catches that rejection, logs it, and **re-throws it**:
 
-- `fetch to api.github.com refused (the secure connection was not authorised)` -- FreeTube's
-  update check. `api.github.com` is **not** in [`orivon.json`](orivon.json), so the broker refused
-  it. That is the capability boundary working, not a bug, and it is left undeclared on purpose:
-  an app asking whether a desktop release exists has no business reaching GitHub here.
-- `TypeError: Cannot read properties of undefined (reading 'replace')` in the player `setup`
-  path. Metadata is fully populated by this point, so this is downstream of it -- the player, not
-  the API. **Playback is not measured yet**; see [`../freetube/README.md`](../freetube/README.md)
-  §Wall 2 for the ceiling it will hit anyway.
+```js
+try {
+  contentPoToken = await window.ftElectron.generatePoToken(...)
+  player.po_token = contentPoToken
+} catch (error) {
+  console.error('Local API, poToken generation failed', error)
+  throw error
+}
+```
+
+`getLocalVideoInfo` calls this BEFORE it fetches either the player response or the `/next`
+metadata response -- both need `contentPoToken` (the second, for `serviceIntegrityDimensions`) --
+so the whole function throws, and **no watch-page metadata loads either**, not only playback.
+`Watch.js`'s catch for this does have a `backendFallback` setting that would retry over Invidious,
+but it defaults `false`, and every bundled instance is down regardless (below) -- so today the
+watch page shows an error state, not a title, not a thumbnail.
+
+**This is a genuinely different failure from the web-localapi build's**, not a smaller version of
+it: there, a silently-absent token lets metadata load and only playback fails, three frames deep
+in the player component. Here, an honestly-refused token stops metadata from loading at all,
+because `IS_ELECTRON` being compiled in makes upstream's own control flow treat a token as
+load-bearing for the whole video, not only its stream. Neither is a bridge gap -- both are
+upstream's own code doing exactly what it says -- but the task of "populate the watch page with
+real video details" needs `web.context` to actually exist, on this specific build, in a way the
+older build did not.
 
 ## What else is measured
 
-**It boots.** `test/e2e-freetube-real.test.ts` drives the real shell against the prepared
-build: the app is granted from its URL, FreeTube mounts its Vue app inside the resulting app tab,
-and it renders its real chrome -- top nav, side nav, Subscriptions/Channels/Trending/Playlists/
-History/Settings -- with no console errors and `document.title` of `Subscriptions - FreeTube`.
+**It boots, mounts, and renders its real chrome, on both builds.** `test/e2e-freetube-real.test.ts`
+drives the real shell against a prepared build (`ORIVON_FREETUBE_REAL_ROOT` selects which one):
+the app is granted from its URL, FreeTube mounts its Vue app inside the resulting app tab, and it
+renders its real chrome -- top nav, side nav, Subscriptions/Channels/Trending/Playlists/History/
+Settings -- with `document.title` of `Subscriptions - FreeTube` and exactly the two known,
+expected console errors below.
 
-**Nothing about its data layer is measured yet**, and one thing about it is already known to be
-broken through no fault of Orivon's: **all seven Invidious instances FreeTube bundles are down**
-(measured 2026-09-17: three fail DNS, one 401, two 404, one 502). The stock web build has no
-other backend, so it can render and cannot fetch. That is why the Local API build exists.
+**Nothing about its data layer is measured yet beyond that**, and one thing about it is already
+known to be broken through no fault of Orivon's: **all seven Invidious instances FreeTube bundles
+are down** (measured 2026-09-17: three fail DNS, one 401, two 404, one 502). The stock web build
+has no other backend, so it can render and cannot fetch. That is why the Local API builds exist.
 
-**The Local API build's own ceiling is YouTube's bot-guard**, not Orivon: most videos need a
-proof-of-origin token, which needs somewhere to execute YouTube's own script. See
-[`../freetube/README.md`](../freetube/README.md) §Wall 2, where that was measured.
+Two console errors are present and expected on every build here, both already the capability
+boundary working correctly, not a bug:
+
+- `fetch to api.github.com refused` (or, on the Electron build, the same refusal surfacing as a
+  JSON-parse error on the refusal body) -- FreeTube's update check. `api.github.com` is **not** in
+  [`orivon.json`](orivon.json), left undeclared on purpose: an app asking whether a desktop
+  release exists has no business reaching GitHub here.
+- A `fetchInvidiousInstances` JSON-parse error -- one of the seven bundled Invidious instances
+  answered with a body FreeTube could not parse. Not Orivon's: the instances are down, above.
+
+### Testing the bridge
+
+`bridge/ft-electron-bridge.test.ts` covers all 34 `window.ftElectron` members against a fake
+`window`/`document`/`navigator`/`fetch`/`orivon`, loading the bridge's own source into a fresh
+`node:vm` context per test (it is a classic script, not a module, so it has nothing to `import`).
+**Not picked up by `npm test` yet** -- `vitest.config.ts`'s include pattern is `src/**/*.test.ts`
+and `scripts/**/*.test.ts`, and `apps/` is neither (the same gap `apps/fixture/manifest.test.ts`
+already notes). Run it directly:
+
+```bash
+npx vitest run apps/freetube-real/bridge/ft-electron-bridge.test.ts
+```
+
+### Running the real build against a real window
+
+```bash
+node scripts/build-ordinary.mjs
+ORIVON_FREETUBE_REAL_ROOT=~/git/freetube-src/dist/orivon-electron ORIVON_ORDINARY_BUILD=1 \
+  npx vitest run --config test/vitest.e2e.config.ts test/e2e-freetube-real.test.ts
+```
+
+The playback assertion (`<video>.currentTime` exceeds 3s and is still advancing 2s later) is
+guarded behind `ORIVON_FREETUBE_REAL_PLAYBACK=1` and stays off by default -- see
+[What waits on `web.context`](#what-waits-on-webcontext). With it on, against `dist/orivon-electron`
+today, it fails exactly as expected: the watch page never populates (above), so there is no
+`<video>` to sample.
+
+## What waits on `web.context`
+
+**`generatePoToken` needs `orivon.web` (`OrivonWeb.openContext`, ADR-0019), which is not built on
+this branch.** `bridge/ft-electron-bridge.js`'s implementation is written against that contract
+(`web-context-spec.md` section 1: fetch and cache `botGuardScript.js` once, rewrite its
+`export{X as default};` tail into a call carrying this mint's own arguments -- exactly
+`src/main/poTokenGenerator.js`'s own rewrite -- open a context at `https://www.youtube.com`,
+evaluate the rewritten script, close the context in a `finally`, and queue mints one at a time as
+upstream does) and unit-tested against a fake `orivon.web`, so the only thing that changes once
+the capability lands is which branch runs, not this file. Two things stay true until then:
+
+- **`orivon.json` does not declare `"web"` yet.** The loader on this branch rejects that key; the
+  planner adds it once the implementation PR lands, since this work is stacked on it.
+- **The watch page does not populate, and playback cannot be measured**, for the reason above --
+  not a narrower "playback only" gap the way the web-localapi build's was.
 
 ## Spike results: can BotGuard run in an isolated child?
 
@@ -248,7 +402,9 @@ necessary was not tested: for an opaque context it cannot change the outcome.
 
 **Why `prepare.mjs` injects rather than the server.** A server that rewrites what it serves is
 executing app logic, and the owner's standing position is that an app's host is a plain static
-file server. Injection is a build step; serving is a file read.
+file server. Injection is a build step; serving is a file read. `serve.mjs`'s `.br` handling stays
+on the read side of that line -- it describes an existing file's encoding, the same way the
+`MIME_TYPES` table already does, rather than transforming any file's bytes.
 
 **Why the manifest declares `*:*` next to sixteen literal hosts.** Video bytes come from
 googlevideo.com hosts whose names rotate per video and per request
@@ -263,3 +419,8 @@ the served CSP omits it, which costs the app its images, for the reason
 setting for an app that never knew Orivon existed: FreeTube has no code path for a capability it
 declared being refused, and the manifest contract says silence means exactly this. The port next
 door declares `per-capability` because it was written to degrade.
+
+**Why the bridge duplicates `FtBridgeError`/`REFUSAL_REASONS` instead of importing
+`apps/freetube/lib/ft-electron.js`'s.** Each app stands alone (parallel-work.md); the pattern is
+copied, the code is not. It is also a classic `<script>`, not a module, so it has no `import` to
+reach for regardless.

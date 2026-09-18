@@ -34,6 +34,17 @@ const ORDINARY_BUILD = process.env['ORIVON_ORDINARY_BUILD'] === '1'
 const ROOT = process.env['ORIVON_FREETUBE_REAL_ROOT'] ?? '/home/jhon/git/freetube-src/dist/orivon-web-localapi'
 const BUILT = existsSync(join(ROOT, 'index.html'))
 
+// Playback needs a minted PoToken (ftElectron.generatePoToken, ADR-0019's
+// web.context), which does not exist on this branch: apps/freetube-real/
+// bridge/ft-electron-bridge.js's generatePoToken rejects 'not-built', and --
+// found building this file -- that rejection then makes upstream's own
+// getLocalVideoInfo (helpers/api/local.js) throw before it ever fetches the
+// watch page's metadata, not only before playback. So with the flag off this
+// assertion is skipped, and it stays off here: it is the planner's to flip,
+// once the stacked web.context implementation PR lands and a real token can
+// be minted. See README.md's "What waits on web.context".
+const REQUIRE_PLAYBACK = process.env['ORIVON_FREETUBE_REAL_PLAYBACK'] === '1'
+
 const HOST = '127.0.0.1'
 const PORT = Number(process.env['ORIVON_FREETUBE_REAL_PORT'] ?? PORT_APP_FREETUBE_REAL)
 const ORIGIN = `http://${HOST}:${PORT}`
@@ -51,7 +62,8 @@ function viewAtOrigin (app: Parameters<typeof tabViews>[0], chrome: Parameters<t
 }
 
 const TEST_TIMEOUT_MS =
-  ADDRESS_BAR_STABLE_TIMEOUT_MS + DEFAULT_ACTION_TIMEOUT_MS * 3 + 8_000 * 8 + 120_000 + APP_CLOSE_RACE_MS + 60_000
+  ADDRESS_BAR_STABLE_TIMEOUT_MS + DEFAULT_ACTION_TIMEOUT_MS * 3 + 8_000 * 8 + 120_000 + APP_CLOSE_RACE_MS + 60_000 +
+  (REQUIRE_PLAYBACK ? 40_000 : 0)
 
 it.skipIf(!ORDINARY_BUILD || !BUILT)(
   'upstream FreeTube, unmodified, boots as an Orivon app from a plain static server',
@@ -157,6 +169,32 @@ it.skipIf(!ORDINARY_BUILD || !BUILT)(
           populated,
           populated ? undefined : JSON.stringify({ watch, consoleErrors: consoleErrors.slice(0, 6) })
         )
+
+        if (REQUIRE_PLAYBACK) {
+          // readyState/a mounted <video> is not enough: a manifest with no
+          // media fetched satisfies that too. currentTime advancing across
+          // two samples is the one signal that bytes are actually flowing.
+          const currentTime = async (): Promise<number> => {
+            const view = viewAtOrigin(app as NonNullable<typeof app>, chrome, ORIGIN)
+            if (view === undefined) return -1
+            try { return await view.evaluate(() => document.querySelector('video')?.currentTime ?? -1) } catch { return -1 }
+          }
+          const pastThreeSeconds = populated && await waitFor(async () => (await currentTime()) > 3, 30_000)
+          let stillAdvancing = false
+          let first = -1
+          let second = -1
+          if (pastThreeSeconds) {
+            first = await currentTime()
+            await new Promise((resolve) => setTimeout(resolve, 2_000))
+            second = await currentTime()
+            stillAdvancing = second > first
+          }
+          check(
+            'playback: <video>.currentTime exceeds 3s and is still advancing 2s later',
+            pastThreeSeconds && stillAdvancing,
+            pastThreeSeconds && stillAdvancing ? undefined : JSON.stringify({ populated, first, second })
+          )
+        }
       } finally {
         if (app !== undefined) await closeElectronApp(app)
         if (server !== undefined) await killChild(server)
