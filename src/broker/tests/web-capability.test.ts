@@ -269,6 +269,40 @@ describe('WebContext.evaluate (via orivon.web.evaluate)', () => {
       vi.useRealTimers()
     }
   })
+
+  it('a timed-out evaluate closes the context: the handle is gone, a second evaluate rejects closed, and `closed` rejects timeout too', async () => {
+    vi.useFakeTimers()
+    try {
+      const host = fakeHost({ evaluate: async () => await new Promise(() => {}) })
+      const broker = await grantedBroker(host)
+      const context = await broker.web.openContext(APP, { origin: CONTEXT_ORIGIN })
+
+      // Registered BEFORE the timeout fires -- see WebContext.closed's own
+      // doc note in ../web-capability.ts for why a timed-out evaluate
+      // REJECTS `closed` (with 'timeout') rather than resolving it the way
+      // an idle close does.
+      const closedAssertion = expect(broker.web.awaitClose(APP, { id: context.id }))
+        .rejects.toMatchObject({ code: 'timeout' })
+
+      const pending = broker.web.evaluate(APP, { id: context.id, script: 'while(true){}' })
+      const timeoutAssertion = expect(pending).rejects.toMatchObject({ code: 'timeout' })
+
+      await vi.advanceTimersByTimeAsync(LIMITS.webContextEvaluateMs + 1)
+      await timeoutAssertion
+      await closedAssertion
+      // The destroy callback's own `await host.close(hostId)` runs one
+      // microtask hop after `closed` rejects (handle-store.ts's own
+      // ordering: reject THEN teardown) -- let it settle before asserting
+      // on the fake host's own side-effect.
+      await Promise.resolve()
+
+      expect(host.closed).toEqual(['host-1'])
+      await expect(broker.web.evaluate(APP, { id: context.id, script: '1' }))
+        .rejects.toMatchObject({ code: 'closed' })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
 
 describe('WebContext.close (via orivon.web.close)', () => {

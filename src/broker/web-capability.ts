@@ -212,7 +212,22 @@ export function createWebCapability ({ deps, handleTable, ledger, canonical }: W
         // the thrown message" -- an app mistake, not a broker fault, so it is
         // wrapped as 'invalid' rather than surfacing whatever shape Electron's
         // own executeJavaScript rejection happens to take.
-        if (isOrivonErrorLike(error)) throw error
+        if (isOrivonErrorLike(error)) {
+          // contracts/handles.ts: a timeout "AND CLOSES THE CONTEXT" -- a
+          // running script cannot be interrupted any other way. Reused
+          // rather than invented: handleTable.fail is the SAME "resource
+          // died on its own" mechanism a socket's own I/O fault already
+          // uses, which is what makes `closed` REJECT 'timeout' here too
+          // instead of the ordinary resolve an idle or app-initiated close
+          // gets -- see README.md's Design notes for why reject was chosen.
+          // Guarded: a concurrent revoke may have already closed this exact
+          // handle through its own cascade, in which case there is nothing
+          // left to fail and the timeout is still the right thing to throw.
+          if (error.code === 'timeout') {
+            try { handleTable.fail(key, opts.id, 'timeout') } catch { /* already gone via another path */ }
+          }
+          throw error
+        }
         throw fail('invalid', error instanceof Error ? error.message : String(error))
       }
 
