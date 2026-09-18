@@ -254,6 +254,27 @@ describe('generatePoToken (ADR-0019, web.context -- not implemented in this bran
     expect(rewritten).toBe('var a=1;;a("vid",{"c":1},{"a":2},{"y":3})')
   })
 
+  it('rewriteBotGuardScript JSON-encodes a hostile video id instead of splicing it as a literal', () => {
+    const { sandbox } = freshBridge()
+    // A videoId crafted to break out of the naive `"${videoId}"` splice: were
+    // it spliced raw, the `"` right after `#/watch/` would close the string
+    // literal early and the rest would run as script inside the
+    // youtube.com context.
+    const hostileId = '");globalThis.pwned=true;("'
+    const rewritten = internals(sandbox).rewriteBotGuardScript('var a=1;export{a as default};', hostileId, '{"c":1}', '{"a":2}', '{"y":3}')
+    // JSON.stringify escapes every `"` in hostileId, so the whole payload
+    // stays inside ONE string argument -- proven by executing the rewrite
+    // for real and checking `a` receives it as a single string, not
+    // multiple statements.
+    expect(rewritten).toBe(`var a=1;;a(${JSON.stringify(hostileId)},{"c":1},{"a":2},{"y":3})`)
+    const context: { received?: unknown[], pwned?: boolean } = {}
+    vm.createContext(context)
+    vm.runInContext('function a (...args) { received = args }', context)
+    vm.runInContext(rewritten.replace('var a=1;', ''), context)
+    expect(context.received).toEqual([hostileId, { c: 1 }, { a: 2 }, { y: 3 }])
+    expect(context.pwned).toBeUndefined()
+  })
+
   it('given a fake orivon.web, fetches the script once, opens a youtube.com context, evaluates the rewritten script, and always closes', async () => {
     const evaluate = vi.fn(async () => 'THE_TOKEN')
     const close = vi.fn(async () => {})

