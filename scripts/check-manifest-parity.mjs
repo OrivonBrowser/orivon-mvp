@@ -50,25 +50,15 @@ export const PARITY_MAP = [
  * (rather than existing but missing this one field) is also covered here,
  * not treated as `unreadable`, PROVIDED every field the interface declares
  * has its own entry below -- see the loop in {@link checkManifestParity}.
- * That is the ADR-0019 case: `WebCapability` is a brand-new interface whose
- * loader array (`WEB_CAPABILITY_KEYS`) is added by the implementation PR
- * that follows this one, so there is nothing yet for a partial check to
- * find a partial match against.
+ * That is what let ADR-0019's `WebCapability` -- a brand-new interface whose
+ * loader array did not exist yet -- land in a contracts-only PR without
+ * tripping this check: its two fields were named here, with a reason, until
+ * the implementation PR that followed added `WEB_CAPABILITY_KEYS` and
+ * removed them. Empty today -- nothing is currently deferred -- but the
+ * whole-interface logic above stays, for the next capability that ships
+ * contracts-first the same way.
  */
-export const DELIBERATELY_DEFERRED = [
-  {
-    interfaceName: 'Capabilities',
-    field: 'web',
-    reason: 'ADR-0019: web.context is declared in this contracts-only PR. The loader starts ' +
-      'accepting `web` in the implementation PR that follows, which removes this entry.'
-  },
-  {
-    interfaceName: 'WebCapability',
-    field: 'contexts',
-    reason: 'ADR-0019: WEB_CAPABILITY_KEYS does not exist yet -- added by the implementation PR ' +
-      'that follows this one, which removes this entry.'
-  }
-]
+export const DELIBERATELY_DEFERRED = []
 
 // Re-implemented rather than imported from check-contracts-pure.mjs -- see
 // cli.mjs's own header on why the check:* scripts duplicate small
