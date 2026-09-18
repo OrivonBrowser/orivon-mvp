@@ -18,11 +18,14 @@ import type {
   NetCapability,
   Pattern,
   TcpCapability,
-  UdpCapability
+  UdpCapability,
+  WebCapability
 } from '../contracts/index.js'
 import { MAX_HOST_LENGTH, MAX_PORT } from '../broker/policy/canonical-host.js'
 import { declarableConnectHostRejection, parsePattern as parseConnectPattern } from '../broker/policy/connect-patterns.js'
 import { ownProperty } from '../broker/policy/own-property.js'
+import { classifyAddress } from '../broker/policy/address.js'
+import { isLocalhostName } from '../broker/policy/origin.js'
 import { UNSAFE_TEXT_CHARS, describeValue, extraKey, isAny, isRecord, optionalStringArray, reject } from './manifest.js'
 
 // --- bounds ----------------------------------------------------------------
@@ -41,13 +44,14 @@ const MAX_CURVES = 8
 /** capability-api.md's open item A9, point 1: privileged ports denied outright, at every tier. */
 const MIN_UNPRIVILEGED_PORT = 1024
 
-const CAPABILITIES_KEYS = ['net', 'fs', 'id', 'protocols']
+const CAPABILITIES_KEYS = ['net', 'fs', 'id', 'web', 'protocols']
 const NET_KEYS = ['tcp', 'udp', 'https', 'concurrentSockets']
 const TCP_KEYS = ['connect', 'listen']
 const UDP_KEYS = ['bind', 'send']
 const HTTPS_KEYS = ['connect']
 const FS_KEYS = ['quotaBytes']
 const ID_CAPABILITY_KEYS = ['curves']
+const WEB_CAPABILITY_KEYS = ['contexts']
 
 const SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*$/
 const PORT_RANGE_PATTERN = /^([1-9][0-9]{0,4})(?:-([1-9][0-9]{0,4}))?$/
@@ -306,6 +310,67 @@ function readFs (raw: unknown, path: string): FsCapability {
   return quotaBytes === undefined ? {} : { quotaBytes }
 }
 
+/**
+ * ADR-0019's `web.contexts` grammar: each entry is an EXACT
+ * `https://host[:port]` origin -- no wildcard, no path, no userinfo, no
+ * query or fragment -- and `url.origin === input` is what makes the
+ * canonical form the ONLY accepted spelling (capability-api.ts's own doc on
+ * `WebCapability.contexts`), the same "write it exactly as it will be
+ * compared" rule `validateConnectHost`'s `not-canonical` case already
+ * enforces for a connect pattern's host, applied here to a whole origin
+ * string. A grant's `patterns` for `web.context` compare these strings
+ * exactly (manifest.ts's own doc), so a second spelling of the same origin
+ * would silently fail to match the one the person actually consented to.
+ */
+function validateWebContextOrigin (origin: string, field: string): void {
+  let url: URL
+  try {
+    url = new URL(origin)
+  } catch {
+    reject(`${field} is not a valid URL: ${describeValue(origin)}`)
+  }
+  if (url.protocol !== 'https:') reject(`${field} must be an https origin: ${describeValue(origin)}`)
+  // `*` is not a forbidden host code point to the URL parser itself (a
+  // wildcard host would otherwise sail through the canonical-form check
+  // below unchanged), so ADR-0019's "no wildcard" rule needs its own line
+  // here rather than falling out of url.origin === input for free.
+  if (url.hostname.includes('*')) reject(`${field} must be an EXACT origin -- no wildcard host is accepted: ${describeValue(origin)}`)
+  if (url.username !== '' || url.password !== '') reject(`${field} must carry no userinfo: ${describeValue(origin)}`)
+  if (url.search !== '' || url.hash !== '') reject(`${field} must carry no query or fragment: ${describeValue(origin)}`)
+  if (url.pathname !== '/') reject(`${field} must carry no path beyond the bare origin: ${describeValue(origin)}`)
+  if (url.origin !== origin) {
+    reject(
+      `${field} is not written in its own canonical origin form -- write it exactly as ` +
+      `${describeValue(url.origin)} (capability-api.ts's WebCapability.contexts): ${describeValue(origin)}`
+    )
+  }
+
+  // T12/ADR-0019: reused rather than reimplemented (code-guidelines.md Rule
+  // 3) -- the same classifier `net-capability.ts`'s own `isPublicUnicast`
+  // is built from. An ordinary DNS name classifies 'unparseable', which is
+  // correctly neither denied here nor treated as public: only a HOSTNAME
+  // that is actually an address literal, but not a public-unicast one, is
+  // refused on this ground.
+  const cls = classifyAddress(url.hostname)
+  if (cls !== 'unparseable' && cls !== 'public') {
+    reject(`${field} host is an address literal outside public unicast (security-model.md T12): ${describeValue(origin)}`)
+  }
+  if (isLocalhostName(url.hostname)) {
+    reject(`${field} host may not be a localhost name (RFC 6761 SS6.3, the whole .localhost namespace): ${describeValue(origin)}`)
+  }
+}
+
+function readWeb (raw: unknown, path: string): WebCapability {
+  if (!isRecord(raw)) reject(`${path} must be an object, got ${describeValue(raw)}`)
+  const extra = extraKey(raw, WEB_CAPABILITY_KEYS)
+  if (extra !== null) reject(`${path} has an unrecognised field: ${describeValue(extra)}`)
+
+  const contexts = optionalStringArray(raw, path, 'contexts', MAX_PATTERNS, (origin, i) => {
+    validateWebContextOrigin(origin, `${path}.contexts[${i}]`)
+  })
+  return contexts === undefined ? {} : { contexts }
+}
+
 function readIdCapability (raw: unknown, path: string): IdCapability {
   if (!isRecord(raw)) reject(`${path} must be an object, got ${describeValue(raw)}`)
   const extra = extraKey(raw, ID_CAPABILITY_KEYS)
@@ -329,14 +394,16 @@ export function readCapabilities (raw: unknown, path: string): Capabilities {
   const netRaw = ownProperty(raw, 'net', isAny)
   const fsRaw = ownProperty(raw, 'fs', isAny)
   const idRaw = ownProperty(raw, 'id', isAny)
+  const webRaw = ownProperty(raw, 'web', isAny)
   const protocols = optionalStringArray(raw, path, 'protocols', MAX_PROTOCOLS, (scheme, i) => {
     validateSchemeName(scheme, `${path}.protocols[${i}]`)
   })
 
-  const result: { net?: NetCapability, fs?: FsCapability, id?: IdCapability, protocols?: readonly string[] } = {}
+  const result: { net?: NetCapability, fs?: FsCapability, id?: IdCapability, web?: WebCapability, protocols?: readonly string[] } = {}
   if (netRaw !== undefined) result.net = readNet(netRaw, `${path}.net`)
   if (fsRaw !== undefined) result.fs = readFs(fsRaw, `${path}.fs`)
   if (idRaw !== undefined) result.id = readIdCapability(idRaw, `${path}.id`)
+  if (webRaw !== undefined) result.web = readWeb(webRaw, `${path}.web`)
   if (protocols !== undefined) result.protocols = protocols
   return result
 }
