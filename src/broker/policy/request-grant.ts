@@ -85,15 +85,18 @@ export function decideGrantRequest (
   capability: CapabilityKind,
   requestedPatterns: readonly Pattern[] | undefined
 ): GrantRequestDecision {
-  // ADR-0019, spec item 6: `web.context` is declared-in-the-manifest-only in
-  // this version, whatever the manifest declares -- `app.requestGrant` must
-  // never mint one dynamically. The install-consent dialog (grant-prompt-
-  // render.ts's own `web.context` copy) is the only door; this function is
-  // that OTHER door (main/request-grant.ts's `requestGrant`), and it stays
-  // shut here regardless of `isCapabilityKind`/`patternSetFromCapabilities`
-  // both recognising the kind for persistence and the permissions panel.
-  if (capability === 'web.context') return { allowed: false, patterns: [] }
-
+  // NOT where ADR-0019's "web.context is declared-in-the-manifest-only"
+  // rule lives, despite this being the obvious-looking place for it: this
+  // function is reused by grant-persistence.ts's hydrateGrants (does a
+  // RESTORED grant still fit the current manifest) and by main/grant-
+  // changed-capabilities.ts's grantChangedCapabilities (install-consent's
+  // OWN grant call, the only door web.context is meant to have) -- neither
+  // of those is app.requestGrant, and a blanket refusal here silently
+  // broke both: a persisted web.context grant would never survive a
+  // restart, and install consent could never grant one at all. The refusal
+  // belongs in main/request-grant.ts's own requestGrant, the one caller
+  // that actually is app.requestGrant, checked before this function is
+  // ever reached from there.
   const declared = patternSetFromCapabilities(manifest.capabilities)
   const declaredForKind = declared[capability]
   // Absent means "not declared" -- capability-api.ts's own wording, and the
