@@ -197,6 +197,44 @@ describe('WebContext.evaluate (via orivon.web.evaluate)', () => {
       .rejects.toMatchObject({ code: 'limit' })
   })
 
+  it('resolves a completion value of undefined as null, per contracts/handles.ts\'s own carve-out', async () => {
+    const host = fakeHost({ evaluate: async () => undefined })
+    const broker = await grantedBroker(host)
+    const context = await broker.web.openContext(APP, { origin: CONTEXT_ORIGIN })
+
+    await expect(broker.web.evaluate(APP, { id: context.id, script: '1' })).resolves.toBeNull()
+  })
+
+  // Electron's executeJavaScript hands back real, live V8 values via
+  // structured clone, not JSON text (measured against Electron 44 -- see
+  // ../policy/web-context-result.ts's own header) -- these are exactly the
+  // shapes a real host can legitimately hand this file, not synthetic ones.
+  it.each([
+    ['NaN, which JSON.stringify would silently turn into null', NaN],
+    ['Infinity', Infinity],
+    ['a Date (a real instance after structured clone, not a string)', new Date(0)],
+    ['a Map', new Map([['a', 1]])],
+    ['undefined nested in an array', [undefined, 1]],
+    ['undefined nested in an object', { a: undefined, b: 1 }],
+    ['a function nested in an array', [1, () => {}]]
+  ])('rejects invalid for %s rather than silently coercing or letting it through', async (_label, value) => {
+    const host = fakeHost({ evaluate: async () => value })
+    const broker = await grantedBroker(host)
+    const context = await broker.web.openContext(APP, { origin: CONTEXT_ORIGIN })
+
+    await expect(broker.web.evaluate(APP, { id: context.id, script: '1' }))
+      .rejects.toMatchObject({ code: 'invalid' })
+  })
+
+  it('returns a JSON-compatible result unchanged', async () => {
+    const value = { a: [1, 'x', true, null], b: {} }
+    const host = fakeHost({ evaluate: async () => value })
+    const broker = await grantedBroker(host)
+    const context = await broker.web.openContext(APP, { origin: CONTEXT_ORIGIN })
+
+    await expect(broker.web.evaluate(APP, { id: context.id, script: '1' })).resolves.toEqual(value)
+  })
+
   it('rejects a second concurrent evaluate on the same context with limit, one-at-a-time', async () => {
     let releaseFirst: (() => void) | undefined
     const host = fakeHost({
