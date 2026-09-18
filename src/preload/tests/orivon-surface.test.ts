@@ -106,6 +106,27 @@ describe('exposeOrivon -- P-F10: the fail-closed fallback covers BOTH "absent" a
     }
   })
 
+  // web.context: the fallback's `web.openContext` used to wire
+  // `webOpenContextBridge` straight through as `openContext`, so calling it
+  // with the contract's real `(origin, options?)` shape lost `origin`
+  // entirely (a bare string has no `.origin` field) and every call reached
+  // the broker as `{ origin: undefined }`. Proven here by inspecting the
+  // actual CONTROL_CHANNEL payload, not just that the method exists.
+  it('web.openContext forwards origin and options to the CONTROL_CHANNEL call, not { origin: undefined }', () => {
+    executeInMainWorld = undefined
+    invoke.mockResolvedValue(okEnvelope({ id: 'ctx-1', origin: 'https://example.com' }))
+
+    exposeOrivon()
+
+    const [, surface] = exposeInMainWorld.mock.calls[0] as [string, Record<string, unknown>]
+    const openContext = (surface.web as { openContext: (origin: string, options?: { width?: number, height?: number }) => Promise<unknown> }).openContext
+    void openContext('https://example.com', { width: 800, height: 600 })
+
+    const [, envelope] = invoke.mock.calls[0] as [string, { method: string, payload: unknown }]
+    expect(envelope.method).toBe('web.openContext')
+    expect(envelope.payload).toEqual({ origin: 'https://example.com', width: 800, height: 600 })
+  })
+
   it('falls back to the SAME surface when executeInMainWorld exists but throws', () => {
     executeInMainWorld = vi.fn(() => { throw new Error('CSP refused it') })
 
@@ -144,9 +165,9 @@ describe('exposeOrivon -- orivon.web.openContext, real wiring end to end', () =>
     exposeOrivon()
 
     const orivon = target.orivon as {
-      web: { openContext: (opts: { origin: string }) => Promise<{ id: string, origin: string, evaluate: (s: string) => Promise<unknown> }> }
+      web: { openContext: (origin: string) => Promise<{ id: string, origin: string, evaluate: (s: string) => Promise<unknown> }> }
     }
-    const context = await orivon.web.openContext({ origin: 'https://example.com' })
+    const context = await orivon.web.openContext('https://example.com')
     const result = await context.evaluate('location.origin')
 
     expect(context.id).toBe('ctx-1')
