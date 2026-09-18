@@ -40,6 +40,7 @@ import { dispatchFs } from './dispatch-fs.js'
 import type { FsTransport } from './dispatch-fs.js'
 import { dispatchId } from './dispatch-id.js'
 import { dispatchNet } from './dispatch-net.js'
+import { dispatchWeb } from './dispatch-web.js'
 import { envelopeId, isControlMethod, isRequestEnvelope, type RequestGrantCtx } from './ipc-validation.js'
 import type { ControlEvent, PortLike, PortPair, PortTransport } from './port-transport.js'
 import type { RequestEnvelope, ResponseEnvelope } from '../../contracts/index.js'
@@ -48,13 +49,15 @@ export { CONTROL_CHANNEL, PORT_CHANNEL }
 export type {
   AppRequestGrantParams, ControlMethod, FsPathWithRecursiveParams, FsReaddirParams, FsReadFileParams, FsRenameParams,
   FsStatParams, FsWriteFileParams, IdPublicKeyParams, IdSignParams,
-  NetConnectParams, NetCloseParams, NetSetKeepAliveParams, NetSetNoDelayParams, NetUdpBindParams, RequestGrantCtx
+  NetConnectParams, NetCloseParams, NetSetKeepAliveParams, NetSetNoDelayParams, NetUdpBindParams, RequestGrantCtx,
+  WebCloseParams, WebEvaluateParams, WebOpenContextParams
 } from './ipc-validation.js'
 export type {
   ControlEvent, PortDeliveryFrame, PortLike, PortPair, PortTransport, SocketDescriptor, TcpServerDescriptor,
   UdpSocketDescriptor
 } from './port-transport.js'
 export type { FsControlMethod, FsHandleDescriptor, FsTransport } from './dispatch-fs.js'
+export type { WebControlMethod } from './dispatch-web.js'
 
 /**
  * One request, dispatched to `broker` with the origin THIS FUNCTION derived
@@ -117,6 +120,10 @@ async function dispatch (
     case 'net.setKeepAlive':
     case 'net.lookup':
       return await dispatchNet(broker, origin, method, payload, event, transport)
+    case 'web.openContext':
+    case 'web.evaluate':
+    case 'web.close':
+      return await dispatchWeb(broker, origin, method, payload)
     default: {
       // Exhaustiveness check: if ControlMethod (ipc-validation.ts) ever
       // gains a member no case above names, `method` is not assignable to

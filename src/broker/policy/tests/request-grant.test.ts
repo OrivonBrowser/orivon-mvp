@@ -134,15 +134,36 @@ describe('decideGrantRequest -- a request may never declare a shape the manifest
     const decision = decideGrantRequest(manifest, 'tcp.listen', ['6881-6889'])
     expect(decision).toEqual({ allowed: true, patterns: ['6881-6889'] })
   })
+
+  // ADR-0019, spec item 6: web.context is declared-in-the-manifest-only in
+  // this version -- app.requestGrant must never mint one dynamically, even
+  // when the manifest declares exactly the origin being asked for.
+  it('refuses web.context even when the manifest declares exactly the requested origin', () => {
+    const manifest = manifestWith({ web: { contexts: ['https://example.com'] } })
+    const decision = decideGrantRequest(manifest, 'web.context', ['https://example.com'])
+    expect(decision).toEqual({ allowed: false, patterns: [] })
+  })
+
+  it('refuses web.context with no requested patterns at all (the "whatever is declared" shorthand)', () => {
+    const manifest = manifestWith({ web: { contexts: ['https://example.com'] } })
+    const decision = decideGrantRequest(manifest, 'web.context', undefined)
+    expect(decision).toEqual({ allowed: false, patterns: [] })
+  })
+
+  it('refuses web.context when the manifest never declares it either', () => {
+    const manifest = manifestWith({})
+    const decision = decideGrantRequest(manifest, 'web.context', ['https://example.com'])
+    expect(decision).toEqual({ allowed: false, patterns: [] })
+  })
 })
 
 // Shared by main/request-grant.ts (an app's raw IPC payload) and
 // grants/grant-persistence.ts (a JSON property name read off disk) -- both
-// need the same "is this untrusted string one of the seven real
+// need the same "is this untrusted string one of the eight real
 // CapabilityKind literals" check, moved here so a third copy is never
 // tempting.
 describe('isCapabilityKind', () => {
-  it.each(['tcp.connect', 'tcp.listen', 'udp.bind', 'udp.send', 'https.connect', 'fs', 'id'])(
+  it.each(['tcp.connect', 'tcp.listen', 'udp.bind', 'udp.send', 'https.connect', 'fs', 'id', 'web.context'])(
     'accepts %s',
     (kind) => { expect(isCapabilityKind(kind)).toBe(true) }
   )
@@ -151,4 +172,14 @@ describe('isCapabilityKind', () => {
     'refuses %j',
     (value) => { expect(isCapabilityKind(value)).toBe(false) }
   )
+
+  // isCapabilityKind must recognise web.context (for persistence and the
+  // permissions panel, buildPersistedAppPermissions's own isCapabilityKind
+  // filter) even though decideGrantRequest refuses it unconditionally above
+  // -- the two are DIFFERENT questions ("is this a real capability kind" vs
+  // "may app.requestGrant mint one"), and conflating them would have made
+  // a persisted web.context grant vanish on restore.
+  it('accepting web.context here is independent of decideGrantRequest refusing it', () => {
+    expect(isCapabilityKind('web.context')).toBe(true)
+  })
 })

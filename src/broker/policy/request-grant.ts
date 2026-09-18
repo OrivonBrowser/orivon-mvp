@@ -13,7 +13,7 @@ import { isDeclarableConnectPattern } from './connect-patterns.js'
 import type { CapabilityKind, Manifest, Pattern } from '../../contracts/index.js'
 
 const CAPABILITY_KINDS: readonly CapabilityKind[] = [
-  'tcp.connect', 'tcp.listen', 'udp.bind', 'udp.send', 'https.connect', 'fs', 'id'
+  'tcp.connect', 'tcp.listen', 'udp.bind', 'udp.send', 'https.connect', 'fs', 'id', 'web.context'
 ]
 
 /** The three `host:port` capability kinds -- the only ones
@@ -25,7 +25,7 @@ const CAPABILITY_KINDS: readonly CapabilityKind[] = [
 const CONNECT_SHAPED_CAPABILITIES: ReadonlySet<CapabilityKind> = new Set(['tcp.connect', 'https.connect', 'udp.send'])
 
 /**
- * True for exactly the seven `CapabilityKind` literals -- the guard an
+ * True for exactly the eight `CapabilityKind` literals -- the guard an
  * UNTRUSTED string needs before it may be treated as one. Two independent
  * callers need it: `../../main/request-grant.ts`'s `request.capability` (an
  * app's raw IPC payload) and `../grants/grant-persistence.ts`'s hydration
@@ -85,6 +85,15 @@ export function decideGrantRequest (
   capability: CapabilityKind,
   requestedPatterns: readonly Pattern[] | undefined
 ): GrantRequestDecision {
+  // ADR-0019, spec item 6: `web.context` is declared-in-the-manifest-only in
+  // this version, whatever the manifest declares -- `app.requestGrant` must
+  // never mint one dynamically. The install-consent dialog (grant-prompt-
+  // render.ts's own `web.context` copy) is the only door; this function is
+  // that OTHER door (main/request-grant.ts's `requestGrant`), and it stays
+  // shut here regardless of `isCapabilityKind`/`patternSetFromCapabilities`
+  // both recognising the kind for persistence and the permissions panel.
+  if (capability === 'web.context') return { allowed: false, patterns: [] }
+
   const declared = patternSetFromCapabilities(manifest.capabilities)
   const declaredForKind = declared[capability]
   // Absent means "not declared" -- capability-api.ts's own wording, and the

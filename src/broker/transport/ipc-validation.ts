@@ -36,6 +36,7 @@ export type ControlMethod =
   | 'id.publicKey' | 'id.sign'
   | 'net.connect' | 'net.connectSecure' | 'net.udpBind' | 'net.listen' | 'net.close'
   | 'net.setNoDelay' | 'net.setKeepAlive' | 'net.lookup'
+  | 'web.openContext' | 'web.evaluate' | 'web.close'
 
 export function isControlMethod (method: string): method is ControlMethod {
   return method === 'app.manifest' || method === 'app.grants' || method === 'app.requestGrant' ||
@@ -52,7 +53,8 @@ export function isControlMethod (method: string): method is ControlMethod {
     method === 'net.connect' || method === 'net.connectSecure' ||
     method === 'net.udpBind' || method === 'net.listen' || method === 'net.close' ||
     method === 'net.setNoDelay' || method === 'net.setKeepAlive' ||
-    method === 'net.lookup'
+    method === 'net.lookup' ||
+    method === 'web.openContext' || method === 'web.evaluate' || method === 'web.close'
 }
 
 export interface FsReadFileParams { readonly path: string }
@@ -95,6 +97,11 @@ export interface FsDirWriteFileParams { readonly id: string, readonly path: stri
 export interface FsDirOpenParams { readonly id: string, readonly path: string, readonly flags: string }
 export interface IdPublicKeyParams { readonly curve: string }
 export interface IdSignParams { readonly curve: string, readonly payload: Uint8Array }
+/** `web.openContext` (ADR-0019) -- `origin` is the CONTEXT's own origin, never this call's caller (that one is derived from the sender frame, T3, same as every other control method); `width`/`height` optional, `WebContextOptions`'s own default. */
+export interface WebOpenContextParams { readonly origin: string, readonly width?: number, readonly height?: number }
+export interface WebEvaluateParams { readonly id: string, readonly script: string }
+/** Structurally identical to `NetCloseParams`/`FsHandleIdParams` -- kept as its own name rather than reused, matching this file's own precedent of one name per surface even where two payload shapes happen to coincide. */
+export interface WebCloseParams { readonly id: string }
 /** Shared by net.connect and net.connectSecure -- both take exactly { host, port }, and isNetConnectParams below validates either call's payload (code-guidelines.md Rule 3: same shape, same reason). */
 export interface NetConnectParams { readonly host: string, readonly port: number }
 /**
@@ -277,6 +284,26 @@ export function isIdSignParams (payload: unknown): payload is IdSignParams {
   return typeof payload === 'object' && payload !== null &&
     typeof (payload as { curve?: unknown }).curve === 'string' &&
     (payload as { payload?: unknown }).payload instanceof Uint8Array
+}
+
+/** `width`/`height` bounded to a safe finite number when present -- broker/web-capability.ts clamps to 1..7680 regardless, so this is shape hygiene, not the real range check. */
+export function isWebOpenContextParams (payload: unknown): payload is WebOpenContextParams {
+  if (typeof payload !== 'object' || payload === null) return false
+  const { origin, width, height } = payload as { origin?: unknown, width?: unknown, height?: unknown }
+  return typeof origin === 'string' &&
+    (width === undefined || (typeof width === 'number' && Number.isFinite(width))) &&
+    (height === undefined || (typeof height === 'number' && Number.isFinite(height)))
+}
+
+export function isWebEvaluateParams (payload: unknown): payload is WebEvaluateParams {
+  return typeof payload === 'object' && payload !== null &&
+    typeof (payload as { id?: unknown }).id === 'string' &&
+    typeof (payload as { script?: unknown }).script === 'string'
+}
+
+export function isWebCloseParams (payload: unknown): payload is WebCloseParams {
+  return typeof payload === 'object' && payload !== null &&
+    typeof (payload as { id?: unknown }).id === 'string'
 }
 
 export function isNetConnectParams (payload: unknown): payload is NetConnectParams {

@@ -24,8 +24,7 @@ import type {
 import { MAX_HOST_LENGTH, MAX_PORT } from '../broker/policy/canonical-host.js'
 import { declarableConnectHostRejection, parsePattern as parseConnectPattern } from '../broker/policy/connect-patterns.js'
 import { ownProperty } from '../broker/policy/own-property.js'
-import { classifyAddress } from '../broker/policy/address.js'
-import { isLocalhostName } from '../broker/policy/origin.js'
+import { webContextOriginRejection } from '../broker/policy/web-context-origin.js'
 import { UNSAFE_TEXT_CHARS, describeValue, extraKey, isAny, isRecord, optionalStringArray, reject } from './manifest.js'
 
 // --- bounds ----------------------------------------------------------------
@@ -313,50 +312,57 @@ function readFs (raw: unknown, path: string): FsCapability {
 /**
  * ADR-0019's `web.contexts` grammar: each entry is an EXACT
  * `https://host[:port]` origin -- no wildcard, no path, no userinfo, no
- * query or fragment -- and `url.origin === input` is what makes the
- * canonical form the ONLY accepted spelling (capability-api.ts's own doc on
+ * query or fragment, no address literal outside public unicast (T12) and no
+ * localhost name -- and `url.origin === input` is what makes the canonical
+ * form the ONLY accepted spelling (capability-api.ts's own doc on
  * `WebCapability.contexts`), the same "write it exactly as it will be
  * compared" rule `validateConnectHost`'s `not-canonical` case already
  * enforces for a connect pattern's host, applied here to a whole origin
  * string. A grant's `patterns` for `web.context` compare these strings
  * exactly (manifest.ts's own doc), so a second spelling of the same origin
  * would silently fail to match the one the person actually consented to.
+ *
+ * The GRAMMAR itself is `webContextOriginRejection`
+ * (`../broker/policy/web-context-origin.js`), shared with `../broker/
+ * web-capability.ts`'s own runtime gate -- one implementation of the rule
+ * (code-guidelines.md Rule 3, the same split `declarableConnectHostRejection`
+ * already uses for tcp.connect/https.connect); this function owns only the
+ * developer-facing MESSAGE per reason.
  */
 function validateWebContextOrigin (origin: string, field: string): void {
-  let url: URL
-  try {
-    url = new URL(origin)
-  } catch {
-    reject(`${field} is not a valid URL: ${describeValue(origin)}`)
-  }
-  if (url.protocol !== 'https:') reject(`${field} must be an https origin: ${describeValue(origin)}`)
-  // `*` is not a forbidden host code point to the URL parser itself (a
-  // wildcard host would otherwise sail through the canonical-form check
-  // below unchanged), so ADR-0019's "no wildcard" rule needs its own line
-  // here rather than falling out of url.origin === input for free.
-  if (url.hostname.includes('*')) reject(`${field} must be an EXACT origin -- no wildcard host is accepted: ${describeValue(origin)}`)
-  if (url.username !== '' || url.password !== '') reject(`${field} must carry no userinfo: ${describeValue(origin)}`)
-  if (url.search !== '' || url.hash !== '') reject(`${field} must carry no query or fragment: ${describeValue(origin)}`)
-  if (url.pathname !== '/') reject(`${field} must carry no path beyond the bare origin: ${describeValue(origin)}`)
-  if (url.origin !== origin) {
-    reject(
-      `${field} is not written in its own canonical origin form -- write it exactly as ` +
-      `${describeValue(url.origin)} (capability-api.ts's WebCapability.contexts): ${describeValue(origin)}`
-    )
-  }
-
-  // T12/ADR-0019: reused rather than reimplemented (code-guidelines.md Rule
-  // 3) -- the same classifier `net-capability.ts`'s own `isPublicUnicast`
-  // is built from. An ordinary DNS name classifies 'unparseable', which is
-  // correctly neither denied here nor treated as public: only a HOSTNAME
-  // that is actually an address literal, but not a public-unicast one, is
-  // refused on this ground.
-  const cls = classifyAddress(url.hostname)
-  if (cls !== 'unparseable' && cls !== 'public') {
-    reject(`${field} host is an address literal outside public unicast (security-model.md T12): ${describeValue(origin)}`)
-  }
-  if (isLocalhostName(url.hostname)) {
-    reject(`${field} host may not be a localhost name (RFC 6761 SS6.3, the whole .localhost namespace): ${describeValue(origin)}`)
+  const rejection = webContextOriginRejection(origin)
+  if (rejection === null) return
+  switch (rejection) {
+    case 'unparseable':
+      reject(`${field} is not a valid URL: ${describeValue(origin)}`)
+      break
+    case 'not-https':
+      reject(`${field} must be an https origin: ${describeValue(origin)}`)
+      break
+    case 'wildcard-host':
+      reject(`${field} must be an EXACT origin -- no wildcard host is accepted: ${describeValue(origin)}`)
+      break
+    case 'userinfo':
+      reject(`${field} must carry no userinfo: ${describeValue(origin)}`)
+      break
+    case 'query-or-fragment':
+      reject(`${field} must carry no query or fragment: ${describeValue(origin)}`)
+      break
+    case 'path':
+      reject(`${field} must carry no path beyond the bare origin: ${describeValue(origin)}`)
+      break
+    case 'not-canonical':
+      reject(
+        `${field} is not written in its own canonical origin form -- write it exactly as its ` +
+        `own \`new URL(...).origin\` (capability-api.ts's WebCapability.contexts): ${describeValue(origin)}`
+      )
+      break
+    case 'address-not-public-unicast':
+      reject(`${field} host is an address literal outside public unicast (security-model.md T12): ${describeValue(origin)}`)
+      break
+    case 'localhost-name':
+      reject(`${field} host may not be a localhost name (RFC 6761 SS6.3, the whole .localhost namespace): ${describeValue(origin)}`)
+      break
   }
 }
 

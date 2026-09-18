@@ -11,6 +11,7 @@ export const APP = 'https://app.example'
 export const OTHER = 'https://other.example'
 export const TCP_GRANT = 'grant-tcp-connect'
 export const FS_GRANT = 'grant-fs'
+export const WEB_GRANT = 'grant-web-context'
 
 export function table (): HandleTable {
   return new HandleTable()
@@ -72,4 +73,8 @@ export async function outcomeNow<T> (promise: Promise<T>): Promise<
 
 export function acquireSocket (t: HandleTable, origin = APP, grantId = TCP_GRANT): ReturnType<HandleTable['acquire']> {
   return t.acquire({ origin, kind: 'tcpSocket', authorisedBy: { by: 'grant', grantId }, destroy: noop })
+}
+
+export function acquireWebContext (t: HandleTable, origin = APP, grantId = WEB_GRANT): ReturnType<HandleTable['acquire']> {
+  return t.acquire({ origin, kind: 'webContext', authorisedBy: { by: 'grant', grantId }, destroy: noop })
 }
