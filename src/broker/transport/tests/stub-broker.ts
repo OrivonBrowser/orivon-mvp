@@ -71,6 +71,9 @@ export function stubBroker (
     userSelected: (origin: string, opts?: { directory?: boolean, multiple?: boolean }) => Promise<FailableDirectoryHandle | null | readonly FailableFileHandle[]>
     idPublicKey: (origin: string, opts: { curve: string }) => Promise<Uint8Array>
     idSign: (origin: string, opts: { curve: string, payload: Uint8Array }) => Promise<Uint8Array>
+    webOpenContext: (origin: string, opts: { origin: string, width?: number, height?: number }) => Promise<{ id: string, origin: string }>
+    webEvaluate: (origin: string, opts: { id: string, script: string }) => Promise<unknown>
+    webClose: (origin: string, opts: { id: string }) => Promise<void>
     registerApp: (origin: string, manifest: Manifest) => Promise<void>
     versionFloorFor: (origin: string) => Promise<string>
     rollbackAcknowledgedVersionFor: (origin: string) => Promise<string | undefined>
@@ -198,6 +201,20 @@ export function stubBroker (
       sign: async (origin, opts) => {
         calls.push({ method: 'id.sign', origin, args: opts })
         return await (overrides.idSign?.(origin, opts) ?? notStubbed())
+      }
+    },
+    web: {
+      openContext: async (origin, opts) => {
+        calls.push({ method: 'web.openContext', origin, args: opts })
+        return await (overrides.webOpenContext?.(origin, opts) ?? notStubbed())
+      },
+      evaluate: async (origin, opts) => {
+        calls.push({ method: 'web.evaluate', origin, args: opts })
+        return await (overrides.webEvaluate?.(origin, opts) ?? notStubbed())
+      },
+      close: async (origin, opts) => {
+        calls.push({ method: 'web.close', origin, args: opts })
+        await (overrides.webClose?.(origin, opts) ?? notStubbed())
       }
     },
     registerApp: async (origin, manifest) => {
