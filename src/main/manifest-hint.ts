@@ -23,6 +23,7 @@ import { MANIFEST_HINT_CHANNEL } from './channels.js'
 import { originFromSenderFrame } from '../broker/policy/origin.js'
 import type { SenderFrameLike } from '../broker/policy/origin.js'
 import type { LoadResult } from '../loader/index.js'
+import type { DevGranted } from './dev-app-origin.js'
 import { createTokenBucketLimiter } from '../broker/transport/token-bucket.js'
 import type { RateLimiter } from '../broker/transport/token-bucket.js'
 import type { Subsystem, SubsystemContext } from './registry.js'
@@ -30,11 +31,17 @@ import type { Subsystem, SubsystemContext } from './registry.js'
 /** The one shape this file needs from an ipcMain.on event -- structural, matching origin.ts's own SenderFrameLike so a test never needs a real Electron event. */
 export interface ManifestHintEvent {
   readonly senderFrame: SenderFrameLike | null
+  /**
+   * The tab that reported the hint, when the caller has one. Optional and
+   * structural so a test drives this listener with a plain object, exactly
+   * as `senderFrame` already is.
+   */
+  readonly sender?: { reload: () => void, isDestroyed: () => boolean }
 }
 
 /** The one method this module needs from electron's real `IpcMain` for this channel -- structural, matching ../broker/transport/ipc.ts's own IpcMainLike/IpcMainOnLike, so a test double never needs the real type. */
 /** The published `ctx.installApp` (registry.ts) -- the ONE install entry point, already closing over the real consent prompt. */
-export type InstallApp = (hintingOrigin: string, hintedUrl: string) => Promise<LoadResult>
+export type InstallApp = (hintingOrigin: string, hintedUrl: string) => Promise<LoadResult | DevGranted>
 
 export interface IpcMainOnLike {
   on: (channel: string, listener: (event: ManifestHintEvent, hintedUrl: unknown) => void) => void
@@ -91,6 +98,19 @@ export function createManifestHintListener (
         // job (this file's own header), not this one's -- but a real
         // outcome nobody acts on yet must still be visible, never silently
         // dropped.
+        if (result.outcome === 'dev-granted') {
+          // ADR-0018: isolation follows consent. The app-tab flag and the
+          // partition are both fixed when a view is built, so the tab that
+          // asked for these grants is still an ordinary one. `tab-view.ts`'s
+          // own did-navigate handler repartitions on the next navigation --
+          // so one reload is what turns this tab into the app tab the person
+          // just consented to, and without it nothing appears to have
+          // happened.
+          const reloadable = event.sender !== undefined && !event.sender.isDestroyed()
+          console.log(`[orivon] developer mode: granted ${origin} without installing (newly registered: ${String(result.newlyRegistered)}, reloading: ${String(result.newlyRegistered && reloadable)})`)
+          if (result.newlyRegistered && reloadable) event.sender?.reload()
+          return
+        }
         if (result.outcome !== 'installed') {
           console.log(`[orivon] manifest hint from ${origin} did not install: ${result.outcome}`)
         }
