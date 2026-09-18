@@ -24,6 +24,7 @@ interface FakeSession {
   readonly webRequest: { onBeforeRequest: ReturnType<typeof vi.fn> }
   setPermissionCheckHandler: ReturnType<typeof vi.fn>
   setPermissionRequestHandler: ReturnType<typeof vi.fn>
+  setProxy: ReturnType<typeof vi.fn>
   on: ReturnType<typeof vi.fn>
   removeAllListeners: ReturnType<typeof vi.fn>
   closeAllConnections: ReturnType<typeof vi.fn>
@@ -50,6 +51,7 @@ function fakeSession (partition: string): FakeSession {
     webRequest: { onBeforeRequest: vi.fn() },
     setPermissionCheckHandler: vi.fn(),
     setPermissionRequestHandler: vi.fn(),
+    setProxy: vi.fn(async () => {}),
     on: vi.fn((event: string) => { if (event === 'will-download') s.downloadListenerCount += 1 }),
     removeAllListeners: vi.fn((event: string) => { if (event === 'will-download') s.downloadListenerCount = 0 }),
     closeAllConnections: vi.fn(async () => {}),
@@ -64,6 +66,7 @@ interface FakeWebContents {
   executeJavaScript: ReturnType<typeof vi.fn>
   setAudioMuted: ReturnType<typeof vi.fn>
   setWindowOpenHandler: ReturnType<typeof vi.fn>
+  setWebRTCIPHandlingPolicy: ReturnType<typeof vi.fn>
   on: ReturnType<typeof vi.fn>
   close: ReturnType<typeof vi.fn>
   isDestroyed: ReturnType<typeof vi.fn>
@@ -85,6 +88,7 @@ function fakeWebContents (resolvedOrigin: string): FakeWebContents {
     }),
     setAudioMuted: vi.fn(),
     setWindowOpenHandler: vi.fn(),
+    setWebRTCIPHandlingPolicy: vi.fn(),
     on: vi.fn((event: string, listener: (...args: unknown[]) => void) => {
       listeners[event] = [...(listeners[event] ?? []), listener]
     }),
@@ -187,6 +191,31 @@ describe('createWebContextHost -- open', () => {
     expect(wc.setWindowOpenHandler).toHaveBeenCalledTimes(1)
     const handler = wc.setWindowOpenHandler.mock.calls[0]?.[0] as () => { action: string }
     expect(handler()).toEqual({ action: 'deny' })
+  })
+
+  // A41 (docs/open-questions.md): WebRTC's own UDP/TCP dial never passes
+  // through protocol.handle or webRequest.onBeforeRequest, so it needs its
+  // own two belts rather than being covered by the handlers above.
+  it('disables non-proxied UDP for WebRTC on the context\'s own webContents', async () => {
+    const wc = setNextWebContents(ORIGIN)
+    const host = createWebContextHost(stubBroker)
+
+    await host.open(OPENER, ORIGIN, { width: 100, height: 100 })
+
+    expect(wc.setWebRTCIPHandlingPolicy).toHaveBeenCalledWith('disable_non_proxied_udp')
+  })
+
+  it('points the context\'s own session at a proxy that cannot answer, so a native connection escaping the handlers above dies there', async () => {
+    setNextWebContents(ORIGIN)
+    const host = createWebContextHost(stubBroker)
+
+    await host.open(OPENER, ORIGIN, { width: 100, height: 100 })
+
+    const contextSession = sessionsByPartition.get(fromPartitionCalls[0] as string) as FakeSession
+    expect(contextSession.setProxy).toHaveBeenCalledWith({
+      mode: 'fixed_servers',
+      proxyRules: 'http://127.0.0.1:9'
+    })
   })
 
   it('rejects and closes the view when the document does not settle at the requested origin', async () => {

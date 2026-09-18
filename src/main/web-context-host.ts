@@ -21,6 +21,17 @@ import type { Broker, WebContextHost } from '../broker/broker-contracts.js'
 
 const EMPTY_DOCUMENT = 'data:text/html,<!DOCTYPE html><html><head><title></title></head><body></body></html>'
 
+/**
+ * The discard port (RFC 863) on loopback -- nothing answers there. Every
+ * native connection this session's own network stack dials OUTSIDE
+ * `protocol.handle`/`webRequest` (WebRTC's ICE/STUN/TURN dial is the known
+ * one, `docs/open-questions.md` A41) is routed here and dies rather than
+ * reaching the real network -- `protocol.handle`'s https/http responses
+ * never consult a session's proxy at all, so the context's own `fetch()` is
+ * unaffected. See README.md's Design notes for why, and what was measured.
+ */
+const WEBRTC_ESCAPE_PROXY = 'http://127.0.0.1:9'
+
 /** 128 bits from the platform CSPRNG, as hex -- the host's OWN id, never a caller-supplied one (WebContextHost's own doc). Same construction as handle-store.ts's newHandleId, duplicated rather than imported: that one is broker-internal and this module must not reach into src/broker/handles/. */
 function newHostId (): string {
   const bytes = new Uint8Array(16)
@@ -117,7 +128,7 @@ export function createWebContextHost (getBroker: () => Broker): WebContextHost {
    * precedent), and `will-download` is a plain EventEmitter listener that
    * would otherwise accumulate one per reuse of this slot's session.
    */
-  function configureSession (contextSession: Session, opener: string, origin: string): void {
+  async function configureSession (contextSession: Session, opener: string, origin: string): Promise<void> {
     contextSession.setPermissionCheckHandler(() => false)
     contextSession.setPermissionRequestHandler((_webContents, _permission, callback) => { callback(false) })
 
@@ -133,6 +144,11 @@ export function createWebContextHost (getBroker: () => Broker): WebContextHost {
       }
     })
 
+    // Awaited BEFORE anything loads: the belt against A41 for whatever
+    // escapes the handlers below (WebRTC's own dial, chiefly) must be live
+    // from the context's very first moment, not raced against it.
+    await contextSession.setProxy({ mode: 'fixed_servers', proxyRules: WEBRTC_ESCAPE_PROXY })
+
     const reach = withContextCors(reachOnlyHandlerFor(getBroker(), opener), origin)
     if (contextSession.protocol.isProtocolHandled('https')) contextSession.protocol.unhandle('https')
     contextSession.protocol.handle('https', reach)
@@ -144,7 +160,7 @@ export function createWebContextHost (getBroker: () => Broker): WebContextHost {
     const slot = allocateSlot(opener)
     try {
       const contextSession = electronSession.fromPartition(partitionName(opener, slot), { cache: false })
-      configureSession(contextSession, opener, origin)
+      await configureSession(contextSession, opener, origin)
 
       const view = new WebContentsView({
         webPreferences: {
@@ -160,6 +176,10 @@ export function createWebContextHost (getBroker: () => Broker): WebContextHost {
       const webContents = view.webContents
       webContents.setAudioMuted(true)
       webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+      // The other belt against A41 -- see WEBRTC_ESCAPE_PROXY's own comment
+      // and README.md's Design notes. A context has no reason to use WebRTC
+      // at all, so this is refused outright rather than merely constrained.
+      webContents.setWebRTCIPHandlingPolicy('disable_non_proxied_udp')
 
       await webContents.loadURL(EMPTY_DOCUMENT, { baseURLForDataURL: `${origin}/` })
 
