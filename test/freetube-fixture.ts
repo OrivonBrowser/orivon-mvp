@@ -39,6 +39,9 @@ const SERVER_START_TIMEOUT_MS = 10_000
  */
 export async function startOwnServer (label: string, script: string, args: readonly string[]): Promise<ChildProcess> {
   const child = spawn(process.execPath, [script, ...args], { stdio: 'pipe' })
+  // A test that times out never reaches its own `finally`, so its server
+  // would outlive the run and hold the port against the next one.
+  process.once('exit', () => { child.kill() })
   forwardOutput(label, child)
   let output = ''
   await new Promise<void>((resolve, reject) => {
