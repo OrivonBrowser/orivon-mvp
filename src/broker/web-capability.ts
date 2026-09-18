@@ -63,8 +63,13 @@ function utf8Bytes (text: string): number {
  * with a real OrivonError rather than leaving `work` to keep running past its
  * budget; `work` itself is not cancelled, the same accepted trade `withTimeout`
  * documents.
+ *
+ * Used for BOTH `openContext`'s own `host.open` and `evaluate`'s own
+ * `host.evaluate` -- one budget, one wrapper, per code-guidelines.md's "one
+ * implementation per idea" (the security review's Finding 2: `openContext`
+ * had no timeout at all before this, while `evaluate` already did).
  */
-async function withEvaluateTimeout<T> (promise: Promise<T>, ms: number): Promise<T> {
+async function withWebContextTimeout<T> (promise: Promise<T>, ms: number): Promise<T> {
   return await new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => { reject(fail('timeout', `evaluate exceeded its ${String(ms)}ms budget`)) }, ms)
     timer.unref?.()
@@ -138,10 +143,29 @@ export function createWebCapability ({ deps, handleTable, ledger, canonical }: W
     return await handleTable.run(key, { on: 'grant', grantId: current.id }, async (signal) => {
       if (signal.aborted) throw fail('revoked', 'the grant authorising this context was withdrawn')
 
+      // Bounded by the SAME budget `evaluate` already uses (Finding 2: this
+      // call had no timeout at all before -- `deps.webContextHost` is
+      // Electron, and a hung `WebContentsView` creation would otherwise wait
+      // forever). `openPromise` is kept apart from the awaited, timed race
+      // so a LATE resolve is still reachable below: `work` itself is not
+      // cancelled by a timeout (withWebContextTimeout's own doc), so the
+      // host can still hand back a real context after the caller has
+      // already given up on it.
+      const openPromise = host.open(key, opts.origin, { width, height })
       let hostId: string
       try {
-        hostId = await host.open(key, opts.origin, { width, height })
+        hostId = await withWebContextTimeout(openPromise, LIMITS.webContextEvaluateMs)
       } catch (error) {
+        if (isOrivonErrorLike(error) && error.code === 'timeout') {
+          // Close whatever the host eventually opens, the moment it does --
+          // this caller is never coming back for it, and leaving it open
+          // would leak exactly the resource `LIMITS.webContexts` exists to
+          // cap. Never awaited: nothing here is still around to await it.
+          openPromise.then(
+            (lateId) => { host.close(lateId).catch(() => {}) },
+            () => { /* the host itself failed -- nothing to close */ }
+          )
+        }
         throw isOrivonErrorLike(error) ? error : fail('internal', 'the web-context host failed to open a context')
       }
 
@@ -203,7 +227,7 @@ export function createWebCapability ({ deps, handleTable, ledger, canonical }: W
       let result: unknown
       try {
         result = await handleTable.run(key, { on: 'handle', handleId: opts.id }, async () =>
-          await withEvaluateTimeout(host.evaluate(hostId, opts.script), LIMITS.webContextEvaluateMs))
+          await withWebContextTimeout(host.evaluate(hostId, opts.script), LIMITS.webContextEvaluateMs))
       } catch (error) {
         // Already ours (the timeout above, or 'revoked' from handleTable.run's
         // own cascade) -- pass through unchanged. Anything else reaching here

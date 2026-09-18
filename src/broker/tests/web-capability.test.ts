@@ -141,6 +141,51 @@ describe('orivon.web.openContext', () => {
   })
 })
 
+// Finding 2 of the security review: `openContext` awaited `host.open`
+// unbounded while `evaluate` was already bounded by the same
+// LIMITS.webContextEvaluateMs budget -- a hung host could stall a caller
+// forever.
+describe('orivon.web.openContext -- a slow or stalled host', () => {
+  it('times out after LIMITS.webContextEvaluateMs when host.open never resolves', async () => {
+    vi.useFakeTimers()
+    try {
+      const host = fakeHost({ open: async () => await new Promise(() => {}) })
+      const broker = await grantedBroker(host)
+
+      const pending = broker.web.openContext(APP, { origin: CONTEXT_ORIGIN })
+      const assertion = expect(pending).rejects.toMatchObject({ code: 'timeout' })
+      await vi.advanceTimersByTimeAsync(LIMITS.webContextEvaluateMs + 1)
+      await assertion
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('closes a context that the host resolves AFTER openContext already timed out, so nothing leaks', async () => {
+    vi.useFakeTimers()
+    try {
+      let resolveOpen: ((id: string) => void) | undefined
+      const host = fakeHost({ open: async () => await new Promise<string>((resolve) => { resolveOpen = resolve }) })
+      const broker = await grantedBroker(host)
+
+      const pending = broker.web.openContext(APP, { origin: CONTEXT_ORIGIN })
+      const assertion = expect(pending).rejects.toMatchObject({ code: 'timeout' })
+      await vi.advanceTimersByTimeAsync(LIMITS.webContextEvaluateMs + 1)
+      await assertion
+
+      resolveOpen?.('host-late')
+      // Two ticks: one for the `.then()` this file's own late-resolve
+      // handler runs on, one for `host.close`'s own async body.
+      await Promise.resolve()
+      await Promise.resolve()
+
+      expect(host.closed).toEqual(['host-late'])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
 describe('WebContext.evaluate (via orivon.web.evaluate)', () => {
   it('runs the script through the host and returns its result', async () => {
     const host = fakeHost({ evaluate: async (_id, script) => `ran:${script}` })
