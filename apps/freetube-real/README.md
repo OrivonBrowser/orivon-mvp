@@ -223,15 +223,34 @@ what makes the mint above possible at all.
 **Flaky against the live network, not against this path.** Across repeated same-day runs (about
 half failed), the watch page occasionally never populates within the test's fixed 45s budget, with
 no console error and no rejection anywhere -- not a smaller, silent version of the web-localapi
-build's failure, a genuinely open promise. Every instrumented run of `generatePoToken` itself
-(fetch, `openContext`, `evaluate`, `close`) that DID complete within the window did so cleanly, in
-well under a second, with no error at any hop; the plausible read is that repeated automated mint
-requests in a short window (this measurement made several in under twenty minutes) slow down
-BotGuard's own live `GenerateIT` round trip past the test's 45s patience -- exactly the kind of
-request pattern YouTube's own bot-detection is built to notice -- not a defect in `web.context` or
-the bridge. Re-running against the same build and the same code passes more often than not; treat
-one failed run as a retry candidate, not a regression, unless `generatePoToken` itself logs an
-error.
+build's failure, a genuinely open promise. Re-running against the same build and the same code
+passes more often than not; treat one failed run as a retry candidate, not a regression, unless
+`generatePoToken` itself logs an error.
+
+**Measured 2026-09-18, and this corrects an earlier guess here**: the slow party is not
+`GenerateIT`. Two hung runs were instrumented end to end (temporary logging in
+`fetch-route.ts`'s routed fetch, `serve.ts`'s `fetchThirdParty`, and `WebContextHost.open`/
+`evaluate`, spaced three minutes apart against live YouTube, removed again afterwards). In both,
+every routed fetch the app tab itself made (the InnerTube `/player`/`/next` calls, the doomed
+`api.github.com` update check, the player `base.js`) completed in well under two seconds combined.
+`openContext` resolved in ~35ms. `evaluate(mintScript)` -- BotGuard's rewritten script, ~600KB
+once `context`/`initialAttestationData`/`ytConfig` are spliced in -- then started and never
+resolved or rejected for the rest of the test. Exactly one network request was ever observed from
+inside that context: BotGuard's own interpreter, `www.google.com/js/th/*.js`, fetched in ~200ms.
+**`GenerateIT` itself is never called in a hung run** -- it cannot be answering slowly if nothing
+ever asked it anything, which is what the previous paragraph's guess assumed. The hang is inside
+BotGuard's own client-side execution, after it loads its interpreter and before (or instead of)
+its own mint call -- almost certainly its snapshot/entropy-collection step, which is opaque,
+obfuscated, and Google's own code, not Orivon's or FreeTube's. Every run measured, hung or clean,
+logs Chromium's `WebGL1 blocklisted` in this headless Xvfb harness; that alone cannot be the whole
+story (it is present in clean runs too), but it is the strongest lead for why a fallback path
+inside BotGuard's snapshot would stall only sometimes. Neither network path exercised (the app
+tab's routed fetch, nor the context's own reach-only fetch) showed any defect -- wrong header,
+premature close, dropped byte -- in either hung run, so this is not scored as a `web.context` or
+routed-fetch bug. **This reproduction is headless** (`scripts/run-headless.mjs`, Xvfb, no real
+GPU); a real desktop run, with a real display and a real WebGL implementation, may not hit this
+anywhere near as often -- the ~50% figure above may be substantially a property of the CI-style
+harness this was measured in, not of `web.context`, the bridge, or what an end user would see.
 
 ## What else is measured
 
