@@ -29,7 +29,8 @@ export type {
   FileHandle,
   FileStat,
   DirectoryHandle,
-  IdentityHandle
+  IdentityHandle,
+  WebContext
 } from './handles.js'
 
 export type {
@@ -41,6 +42,7 @@ export type {
   HttpsCapability,
   FsCapability,
   IdCapability,
+  WebCapability,
   Grant,
   GrantId,
   CapabilityKind,
@@ -54,6 +56,8 @@ export type {
   OrivonNet,
   OrivonFs,
   OrivonId,
+  OrivonWeb,
+  WebContextOptions,
   CapabilityRequest
 } from './capability-api.js'
 

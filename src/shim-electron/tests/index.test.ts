@@ -31,7 +31,8 @@ function fakeOrivon (): Orivon {
       rename: async () => {},
       userSelected: unused
     },
-    id: { publicKey: async () => new Uint8Array(), sign: async () => new Uint8Array(), requestIdentity: async () => null }
+    id: { publicKey: async () => new Uint8Array(), sign: async () => new Uint8Array(), requestIdentity: async () => null },
+    web: { openContext: unused }
   }
 }
 

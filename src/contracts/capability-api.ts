@@ -35,7 +35,8 @@ import type {
   LookupAddress,
   TcpServer,
   TcpSocket,
-  UdpSocket
+  UdpSocket,
+  WebContext
 } from './handles.js'
 import type { Grant, Manifest, Pattern } from './manifest.js'
 
@@ -46,6 +47,7 @@ export interface Orivon {
   readonly net: OrivonNet
   readonly fs: OrivonFs
   readonly id: OrivonId
+  readonly web: OrivonWeb
 }
 
 export interface OrivonApp {
@@ -252,4 +254,37 @@ export interface OrivonId {
   sign(opts: { curve: string, payload: Uint8Array }): Promise<Uint8Array>
   /** derive(seed, "identity", identityId). Triggers the connect prompt. */
   requestIdentity(opts: { kind: string }): Promise<IdentityHandle | null>
+}
+
+/**
+ * ADR-0019. What this adds over `https.connect` is exactly one thing: a script
+ * environment whose `location.origin` is a site the person named at consent.
+ * An app holding `https.connect` for that host can already send it any request
+ * and read any response (ADR-0017); it cannot, without this, run a script AS
+ * that site -- which is what a site's own origin-bound bot-check requires.
+ */
+export interface OrivonWeb {
+  /**
+   * Opens an isolated context: an empty document whose origin is `origin`, in
+   * a storage partition that holds nothing when it opens and is cleared when
+   * it closes.
+   *
+   * THE CONTEXT HAS NO `orivon.*`, NO COOKIES, AND IS NEVER DISPLAYED. It
+   * cannot navigate, open windows, download, or be granted any web
+   * permission. It has no network of its own: every request it makes is
+   * authorised against THIS app's `https.connect` grant, exactly as if the
+   * app had made it, so a host the app may not reach, the context may not
+   * reach either.
+   *
+   * Rejects 'invalid' unless `origin` is an exact https origin; 'denied'
+   * unless a live `web.context` grant names it exactly (never saying which of
+   * the two failed); 'limit' past `LIMITS.webContexts` open at once.
+   */
+  openContext(origin: string, options?: WebContextOptions): Promise<WebContext>
+}
+
+export interface WebContextOptions {
+  /** The viewport the document reports, in CSS pixels. Default 1920 x 1080; each clamped to 1..7680. */
+  readonly width?: number
+  readonly height?: number
 }
