@@ -19,24 +19,12 @@
 // a response body capped -- are catalogued in README.md's Design notes
 // (ADR-0017: "a silent divergence in a web platform API is a trap").
 import { contextBridge } from 'electron'
+import type { FetchRouteSocket, FetchRouteTarget } from './fetch-route-types.js'
 
-/** The one shape this file needs from `window.orivon` -- a subset of `../contracts/capability-api.js`'s `Orivon`, repeated here because a serialised main-world function cannot import that type's runtime companions across the boundary (only used for typechecking; erased at compile time). */
-export interface FetchRouteSocket {
-  readonly readable: ReadableStream<Uint8Array>
-  readonly writable: WritableStream<Uint8Array>
-  close: () => Promise<void>
-}
-
-export interface FetchRouteTarget {
-  orivon?: {
-    net?: {
-      connect: (opts: { host: string, port: number }) => Promise<FetchRouteSocket>
-      connectSecure: (opts: { host: string, port: number }) => Promise<FetchRouteSocket>
-    }
-  }
-  fetch?: (input: unknown, init?: unknown) => Promise<Response>
-  location?: { origin: string, href: string }
-}
+// Re-exported so no import site changes -- ./fetch-route-types.ts's own
+// header has why splitting these out is safe despite the serialisation
+// constraint below.
+export type { FetchRouteSocket, FetchRouteTarget } from './fetch-route-types.js'
 
 /**
  * Mirrors the two literal caps `installFetchRoute` keeps INSIDE its own
@@ -443,7 +431,12 @@ export function installFetchRoute (
       try {
         await raceAbort(writer.write(head), signal)
         if (requestBodyBytes.length > 0) await raceAbort(writer.write(requestBodyBytes), signal)
-        await raceAbort(writer.close(), signal)
+        // NOT writer.close(): that would send a TCP half-close (FIN) on the
+        // write side while the response is still in flight, and a real
+        // server can read an early FIN as an abort and truncate what it
+        // sends back -- no browser's own fetch() ever does this. socket.close()
+        // below already sends the FIN as its own last step, once the whole
+        // exchange, request AND response, is actually finished.
       } catch (error) {
         await socket.close().catch(() => {})
         if (isAborted()) throw abortReason(signal)
