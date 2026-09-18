@@ -29,6 +29,22 @@ export interface WebContextHost {
   evaluate (id: string, script: string): Promise<unknown>
   /** Idempotent, matching `Handle.close()`'s own contract -- closing an id already closed is a no-op. */
   close (id: string): Promise<void>
+  /**
+   * Registers the one listener told when a context's own renderer dies on
+   * its own -- Electron's `render-process-gone` (a crash, an OOM kill) --
+   * rather than through `close()` or the broker's own revoke. Finding 3 of
+   * the ADR-0019 security review: without this seam, nothing reacted to a
+   * crashed context until `LIMITS.webContextIdleMs` closed it as merely
+   * idle. Called with the host's OWN id (never the broker's handle id --
+   * see this interface's own header) and the engine's own reason
+   * (`RenderProcessGoneDetails.reason`) as the `platformCode`.
+   *
+   * OPTIONAL, not a fourth named control method: every existing fake host
+   * in this codebase's tests predates this event and keeps compiling
+   * unchanged, and a host that never calls this simply leaves the broker to
+   * fall back on the idle timer alone, exactly today's behaviour.
+   */
+  onGone? (listener: (id: string, platformCode: string) => void): void
 }
 
 /**

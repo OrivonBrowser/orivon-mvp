@@ -89,8 +89,33 @@ export function createWebCapability ({ deps, handleTable, ledger, canonical }: W
   // contracts.ts's WebContextHost doc for why this file holds no live
   // object reference to the real context, only these small maps.
   const hostIdByHandle = new Map<string, string>()
+  // The reverse of the map above, ONLY so `host.onGone`'s callback -- which
+  // knows only the host's own id, never this file's handle id or which
+  // origin opened it -- can find its way back to a `handleTable.fail` call.
+  // Populated and cleared in lockstep with `hostIdByHandle` below.
+  const handleByHostId = new Map<string, { readonly handleId: string, readonly key: string }>()
   const idleTimers = new Map<string, ReturnType<typeof setTimeout>>()
   const busy = new Set<string>()
+
+  // Finding 3 of the ADR-0019 security review: registered ONCE, for the
+  // life of this broker, rather than per-context -- `WebContextHost.onGone`
+  // is one listener slot, matching the one real host this file is ever
+  // wired to. `host?.` guards the no-host-wired-in build the same way every
+  // other method here does; `?.onGone` guards a fake host in a test that
+  // predates this event (broker-contracts.ts's own doc on why it is
+  // optional).
+  host?.onGone?.((hostId, platformCode) => {
+    const mapped = handleByHostId.get(hostId)
+    if (mapped === undefined) return // already closed through another path
+    // Reused, not invented: the SAME "resource died on its own" mechanism
+    // evaluate's own timeout handling below already uses. 'reset' -- "the
+    // peer terminated an established connection abruptly" -- is what a
+    // socket's own I/O fault answers for the same shape of event (an
+    // ECONNRESET, io-errors.ts's own mapping); a context's renderer dying
+    // out from under it is that same shape, not a broker fault ('internal')
+    // and not the app's own doing ('closed').
+    try { handleTable.fail(mapped.key, mapped.handleId, 'reset', platformCode) } catch { /* already gone via another path */ }
+  })
 
   function clearIdle (handleId: string): void {
     const timer = idleTimers.get(handleId)
@@ -181,6 +206,7 @@ export function createWebCapability ({ deps, handleTable, ledger, canonical }: W
           hostIdByHandle.delete(entryId)
           busy.delete(entryId)
         }
+        handleByHostId.delete(hostId)
         await host.close(hostId)
       }
 
@@ -197,6 +223,7 @@ export function createWebCapability ({ deps, handleTable, ledger, canonical }: W
       })
       entryId = entry.id
       hostIdByHandle.set(entry.id, hostId)
+      handleByHostId.set(hostId, { handleId: entry.id, key })
       scheduleIdle(key, entry.id)
 
       return { id: entry.id, origin: opts.origin }

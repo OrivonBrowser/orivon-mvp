@@ -97,6 +97,7 @@ interface OpenContextRecord {
 export function createWebContextHost (getBroker: () => Broker): WebContextHost {
   const contexts = new Map<string, OpenContextRecord>()
   const slotsInUse = new Map<string, Set<number>>()
+  const goneListeners = new Set<(id: string, platformCode: string) => void>()
 
   function allocateSlot (opener: string): number {
     const used = slotsInUse.get(opener) ?? new Set<number>()
@@ -201,6 +202,33 @@ export function createWebContextHost (getBroker: () => Broker): WebContextHost {
     contextSession.protocol.handle('http', async () => httpRefusalResponse())
   }
 
+  /**
+   * A context's own renderer dying on its own -- Electron's
+   * `render-process-gone`, normally a crash or an OOM kill -- rather than
+   * through `close()` or a revoke. Finding 3 of the security review this
+   * fixes: before this, nothing reacted until `LIMITS.webContextIdleMs`
+   * closed it as merely idle.
+   *
+   * `contexts.get(id)` can already be gone here -- `close()` racing this
+   * same event is exactly why this is a lookup-and-bail, not an assumption.
+   * Teardown failing does not stop the broker from being told: an app
+   * learning late that its context is gone is still better than one that
+   * never learns at all, so this only logs (`console.error`, this
+   * codebase's own convention for a swallowed fault -- see e.g.
+   * ../broker/transport/socket-relay.ts) and still notifies every listener.
+   */
+  async function handleRenderProcessGone (id: string, platformCode: string): Promise<void> {
+    const entry = contexts.get(id)
+    if (entry === undefined) return
+    contexts.delete(id)
+    try {
+      await teardown(entry.opener, entry.slot, entry.webContents, entry.session)
+    } catch (error) {
+      console.error('[web-context-host] teardown failed after a crashed context; its slot is quarantined', error)
+    }
+    goneListeners.forEach((listener) => { listener(id, platformCode) })
+  }
+
   async function open (opener: string, origin: string, size: { width: number, height: number }): Promise<string> {
     const slot = allocateSlot(opener)
     const contextSession = electronSession.fromPartition(partitionName(opener, slot), { cache: false })
@@ -239,12 +267,22 @@ export function createWebContextHost (getBroker: () => Broker): WebContextHost {
       // so these listeners never see it; attaching them any earlier would
       // only be defensive, never load-bearing, and attaching them here
       // matches the spec's own ordering exactly.
+      const id = newHostId()
+
       const preventTopFrameNavigation = (event: { preventDefault: () => void }): void => { event.preventDefault() }
       webContents.on('will-navigate', preventTopFrameNavigation)
       webContents.on('will-redirect', preventTopFrameNavigation)
       webContents.on('will-frame-navigate', (event) => { if (event.isMainFrame) event.preventDefault() })
+      // Finding 3: react to the renderer dying on its own (a crash, an OOM
+      // kill) rather than learning about it only from the idle timer.
+      // Registered here, alongside the navigation guards above, rather than
+      // earlier -- a crash during loadURL/executeJavaScript above already
+      // surfaces as a rejection there, which the catch block below already
+      // tears down; this listener is for AFTER open() has already returned.
+      webContents.on('render-process-gone', (_event, details) => {
+        void handleRenderProcessGone(id, details.reason)
+      })
 
-      const id = newHostId()
       contexts.set(id, { webContents, session: contextSession, opener, slot })
       return id
     } catch (error) {
@@ -270,5 +308,9 @@ export function createWebContextHost (getBroker: () => Broker): WebContextHost {
     await teardown(entry.opener, entry.slot, entry.webContents, entry.session)
   }
 
-  return { open, evaluate, close }
+  function onGone (listener: (id: string, platformCode: string) => void): void {
+    goneListeners.add(listener)
+  }
+
+  return { open, evaluate, close, onGone }
 }

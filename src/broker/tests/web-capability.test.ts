@@ -28,12 +28,15 @@ const OTHER_CONTEXT_ORIGIN = 'https://other.example'
 interface FakeHost extends WebContextHost {
   readonly opened: Array<{ opener: string, origin: string, size: { width: number, height: number } }>
   readonly closed: string[]
+  /** Test-only trigger for `onGone` -- simulates the host reporting that `id`'s own renderer died on its own (Finding 3). A no-op if nothing ever registered a listener. */
+  simulateGone: (id: string, platformCode: string) => void
 }
 
 function fakeHost (overrides: Partial<WebContextHost> = {}): FakeHost {
   const opened: FakeHost['opened'] = []
   const closed: string[] = []
   let counter = 0
+  let goneListener: ((id: string, platformCode: string) => void) | undefined
   return {
     opened,
     closed,
@@ -44,6 +47,8 @@ function fakeHost (overrides: Partial<WebContextHost> = {}): FakeHost {
     },
     evaluate: async (_id, script) => `evaluated:${script}`,
     close: async (id) => { closed.push(id) },
+    onGone: (listener) => { goneListener = listener },
+    simulateGone: (id, platformCode) => { goneListener?.(id, platformCode) },
     ...overrides
   }
 }
@@ -439,6 +444,55 @@ describe('revocation follows the same mechanism as a net.connect socket', () => 
 
     await expect(pending).rejects.toMatchObject({ code: 'revoked' })
     hostResolve?.('too late')
+  })
+})
+
+// Finding 3 of the security review: before this, a context's own renderer
+// dying on its own (WebContextHost.onGone -- Electron's render-process-gone,
+// wired up in src/main/web-context-host.ts) went unnoticed until
+// LIMITS.webContextIdleMs closed it as merely idle. `host.simulateGone`
+// stands in for the real host calling the listener it registered via
+// `onGone`.
+describe('a crashed context renderer (WebContextHost.onGone)', () => {
+  it('fails the handle at once: `closed` rejects reset promptly, and a later evaluate rejects closed, not a generic error', async () => {
+    const host = fakeHost()
+    const broker = await grantedBroker(host)
+    const context = await broker.web.openContext(APP, { origin: CONTEXT_ORIGIN })
+
+    const closedAssertion = expect(broker.web.awaitClose(APP, { id: context.id }))
+      .rejects.toMatchObject({ code: 'reset', platformCode: 'crashed' })
+
+    host.simulateGone('host-1', 'crashed')
+    await closedAssertion
+
+    await expect(broker.web.evaluate(APP, { id: context.id, script: '1' }))
+      .rejects.toMatchObject({ code: 'closed' })
+  })
+
+  it('rejects a pending evaluate with reset when the renderer dies mid-call', async () => {
+    let hostResolve: ((value: unknown) => void) | undefined
+    const host = fakeHost({
+      evaluate: async () => await new Promise((resolve) => { hostResolve = resolve })
+    })
+    const broker = await grantedBroker(host)
+    const context = await broker.web.openContext(APP, { origin: CONTEXT_ORIGIN })
+
+    const pending = broker.web.evaluate(APP, { id: context.id, script: 'slow()' })
+    await new Promise((resolve) => { setTimeout(resolve, 0) })
+
+    host.simulateGone('host-1', 'oom')
+
+    await expect(pending).rejects.toMatchObject({ code: 'reset' })
+    hostResolve?.('too late')
+  })
+
+  it('is a silent no-op if the reported hostId has no live bookkeeping -- already closed through another path', async () => {
+    const host = fakeHost()
+    const broker = await grantedBroker(host)
+    const context = await broker.web.openContext(APP, { origin: CONTEXT_ORIGIN })
+    await broker.web.close(APP, { id: context.id })
+
+    expect(() => { host.simulateGone('host-1', 'crashed') }).not.toThrow()
   })
 })
 
