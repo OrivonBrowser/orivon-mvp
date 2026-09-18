@@ -135,24 +135,37 @@ describe('decideGrantRequest -- a request may never declare a shape the manifest
     expect(decision).toEqual({ allowed: true, patterns: ['6881-6889'] })
   })
 
-  // ADR-0019, spec item 6: web.context is declared-in-the-manifest-only in
-  // this version -- app.requestGrant must never mint one dynamically, even
-  // when the manifest declares exactly the origin being asked for.
-  it('refuses web.context even when the manifest declares exactly the requested origin', () => {
+  // web.context gets NO special refusal here -- ADR-0019, spec item 6's
+  // "declared-in-the-manifest-only" rule belongs in main/request-grant.ts's
+  // own requestGrant (the actual app.requestGrant entry point), not here:
+  // this function is also grant-persistence.ts's hydrateGrants's own
+  // "does a restored grant still fit the current manifest" check and
+  // main/grant-changed-capabilities.ts's install-consent grant call, and a
+  // blanket refusal here would have silently broken both -- a persisted
+  // web.context grant never surviving a restart, and install consent never
+  // being able to grant one at all. So web.context behaves exactly like
+  // every other capability from this function's own point of view.
+  it('allows web.context for exactly what the manifest declares, same as any other capability', () => {
     const manifest = manifestWith({ web: { contexts: ['https://example.com'] } })
     const decision = decideGrantRequest(manifest, 'web.context', ['https://example.com'])
-    expect(decision).toEqual({ allowed: false, patterns: [] })
+    expect(decision).toEqual({ allowed: true, patterns: ['https://example.com'] })
   })
 
-  it('refuses web.context with no requested patterns at all (the "whatever is declared" shorthand)', () => {
+  it('allows web.context with no requested patterns at all -- "whatever is declared"', () => {
     const manifest = manifestWith({ web: { contexts: ['https://example.com'] } })
     const decision = decideGrantRequest(manifest, 'web.context', undefined)
+    expect(decision).toEqual({ allowed: true, patterns: ['https://example.com'] })
+  })
+
+  it('refuses web.context when the manifest never declares it', () => {
+    const manifest = manifestWith({})
+    const decision = decideGrantRequest(manifest, 'web.context', ['https://example.com'])
     expect(decision).toEqual({ allowed: false, patterns: [] })
   })
 
-  it('refuses web.context when the manifest never declares it either', () => {
-    const manifest = manifestWith({})
-    const decision = decideGrantRequest(manifest, 'web.context', ['https://example.com'])
+  it('refuses a web.context request naming an origin outside what the manifest declared', () => {
+    const manifest = manifestWith({ web: { contexts: ['https://example.com'] } })
+    const decision = decideGrantRequest(manifest, 'web.context', ['https://evil.example'])
     expect(decision).toEqual({ allowed: false, patterns: [] })
   })
 })
