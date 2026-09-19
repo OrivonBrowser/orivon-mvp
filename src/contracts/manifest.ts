@@ -128,6 +128,13 @@ export interface Capabilities {
   readonly fs?: FsCapability
   readonly id?: IdCapability
   /**
+   * Isolated contexts (ADR-0019): an empty document at an origin the app
+   * names, for running that site's own script as that site would -- with
+   * none of the person's data there, and no network beyond this app's own
+   * `https.connect` grant. See `capability-api.ts`'s `OrivonWeb`.
+   */
+  readonly web?: WebCapability
+  /**
    * Schemes the shell may route to this app, e.g. `["magnet"]`. Declaration
    * alone never wins the default: routing requires its own user prompt, first
    * registrant is the default, and conflicts are resolved by the user. The URI
@@ -255,6 +262,21 @@ export interface IdCapability {
 }
 
 /**
+ * ADR-0019. The prompt names every origin listed here, in words that say what
+ * it means: "run code as www.youtube.com, in a private, empty session".
+ */
+export interface WebCapability {
+  /**
+   * Origins the app may open an isolated context at. Each is an EXACT
+   * `https://host` or `https://host:port` origin -- no wildcard, no path, no
+   * userinfo, and never an address literal outside public unicast
+   * (security-model.md T12) or a `localhost` name. A grant's `patterns` for
+   * `web.context` are these strings, compared exactly.
+   */
+  readonly contexts?: readonly string[]
+}
+
+/**
  * One capability actually granted to one origin.
  *
  * KEYED ON (origin, capability, pattern set) -- capability-api.md's open item A9, point 2. The
@@ -284,3 +306,4 @@ export type CapabilityKind =
   | 'https.connect'
   | 'fs'
   | 'id'
+  | 'web.context'
