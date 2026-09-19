@@ -35,7 +35,8 @@ export const PARITY_MAP = [
   { interfaceName: 'UdpCapability', loaderFile: 'src/loader/manifest-capabilities.ts', arrayName: 'UDP_KEYS' },
   { interfaceName: 'HttpsCapability', loaderFile: 'src/loader/manifest-capabilities.ts', arrayName: 'HTTPS_KEYS' },
   { interfaceName: 'FsCapability', loaderFile: 'src/loader/manifest-capabilities.ts', arrayName: 'FS_KEYS' },
-  { interfaceName: 'IdCapability', loaderFile: 'src/loader/manifest-capabilities.ts', arrayName: 'ID_CAPABILITY_KEYS' }
+  { interfaceName: 'IdCapability', loaderFile: 'src/loader/manifest-capabilities.ts', arrayName: 'ID_CAPABILITY_KEYS' },
+  { interfaceName: 'WebCapability', loaderFile: 'src/loader/manifest-capabilities.ts', arrayName: 'WEB_CAPABILITY_KEYS' }
 ]
 
 /**
@@ -45,10 +46,17 @@ export const PARITY_MAP = [
  * "forgotten". An entry here is a decision someone recorded, not a guess
  * this script made on its own.
  *
- * Empty today -- every field either interface currently declares is already
- * accepted (A164, the consentGranularity fix). Add a row here, with why,
- * the day that stops being true:
- * `{ interfaceName: 'NetCapability', field: 'example', reason: '...' }`.
+ * A field on a PARITY_MAP row whose loader array does not exist AT ALL
+ * (rather than existing but missing this one field) is also covered here,
+ * not treated as `unreadable`, PROVIDED every field the interface declares
+ * has its own entry below -- see the loop in {@link checkManifestParity}.
+ * That is what let ADR-0019's `WebCapability` -- a brand-new interface whose
+ * loader array did not exist yet -- land in a contracts-only PR without
+ * tripping this check: its two fields were named here, with a reason, until
+ * the implementation PR that followed added `WEB_CAPABILITY_KEYS` and
+ * removed them. Empty today -- nothing is currently deferred -- but the
+ * whole-interface logic above stays, for the next capability that ships
+ * contracts-first the same way.
  */
 export const DELIBERATELY_DEFERRED = []
 
@@ -201,6 +209,15 @@ export function checkManifestParity (root, options = {}) {
     const loaderSource = readSafe(join(root, loaderFile))
     const loaderKeys = arrayLiteralItems(loaderSource, arrayName)
     if (loaderKeys === null) {
+      // Two reasons this array can be unreadable: this check's own regex is
+      // stale (a real bug -- fail closed), or the array has not been written
+      // yet because every field the interface declares is a recorded,
+      // reasoned DELIBERATELY_DEFERRED entry (ADR-0019's WebCapability). Only
+      // the second is fine, and only when EVERY field says so -- a mix of
+      // deferred and forgotten fields must still fail loud.
+      const entirelyDeferred = contractFields.length > 0 && contractFields.every((field) =>
+        deferred.some((d) => d.interfaceName === interfaceName && d.field === field))
+      if (entirelyDeferred) continue
       unreadable.push(`${arrayName} in ${loaderFile}`)
       continue
     }

@@ -217,3 +217,28 @@ Windows root gets Windows separator rules even on a Linux test runner. And every
 Windows-specific about the *requested* path — backslashes, drive letters, UNC prefixes, reserved
 device names — is rejected on every platform: `..\..\Windows` is a legal filename on POSIX, but a
 security boundary cannot have an answer that depends on where the broker happens to be running.
+
+**[`web-context-result.ts`](web-context-result.ts) walks the value instead of trusting
+`JSON.stringify`, because `WebContext.evaluate`'s result is not JSON to begin with.** Electron's
+`executeJavaScript` hands the result back through V8's structured-clone algorithm (the same one
+`postMessage` uses), not JSON -- measured directly against Electron 44 rather than assumed, with a
+throwaway main-process probe calling `executeJavaScript` on a real offscreen `BrowserWindow`. A
+`Date`/`Map`/`Set`/`RegExp`/`Error`/`TypedArray` completion value comes back as a REAL instance of
+that class; `NaN`/`Infinity`/`-Infinity` come back as real, live non-finite numbers; and an object
+or array with an `undefined`-valued property or element comes back with that key or slot genuinely
+present and genuinely `undefined`. Structured clone preserves all of this; only `JSON.stringify`
+(the old check this file replaces, in `../web-capability.ts`) silently turned the first group into
+strings-or-`{}` and the second into `null`, and returned the ORIGINAL value regardless -- so a
+script's `NaN` or a live `Date` object used to sail straight through to the app. A result that IS
+or CONTAINS a function, a symbol, a `bigint`, or a DOM object (`window`, `document`) never reaches
+this file at all: Electron's own structured-clone step refuses to clone those, so the whole
+`executeJavaScript` call rejects first, which `web-capability.ts`'s existing catch-all already
+turns into `'invalid'`.
+
+Cycle detection walks the CURRENT PATH only (a `Set` of ancestor objects, added on entry and
+removed on exit), not every object seen -- structured clone can legitimately hand back a DAG where
+the same object is reachable twice through two different branches, which is sharing, not a cycle,
+and an ancestor-only check is what tells the two apart without rejecting valid non-circular reuse.
+Depth is bounded (64) for the same reason a network-facing parser bounds recursion: a script
+inside the context is untrusted input to the broker's own process, and an unbounded walk trades a
+clean `'invalid'` rejection for a `RangeError` stack overflow instead.

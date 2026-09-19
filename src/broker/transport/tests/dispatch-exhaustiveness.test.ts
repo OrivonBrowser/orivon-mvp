@@ -5,6 +5,8 @@ import { dispatchFs } from '../dispatch-fs.js'
 import type { FsControlMethod } from '../dispatch-fs.js'
 import { dispatchId } from '../dispatch-id.js'
 import type { IdControlMethod } from '../dispatch-id.js'
+import { dispatchWeb } from '../dispatch-web.js'
+import type { WebControlMethod } from '../dispatch-web.js'
 import { APP, stubBroker } from './ipc.test-helpers.js'
 
 // The exhaustiveness guard added to dispatch-fs.ts/dispatch-app.ts/
@@ -41,6 +43,13 @@ describe('dispatchFs/dispatchApp/dispatchId fail closed on an unrouted method, i
     const broker = stubBroker([])
 
     await expect(dispatchId(broker, APP, UNROUTED as unknown as IdControlMethod, {}))
+      .rejects.toMatchObject({ code: 'internal' })
+  })
+
+  it('dispatchWeb throws internal rather than resolving undefined -- fails against the unfixed code (no default case), which resolves undefined', async () => {
+    const broker = stubBroker([])
+
+    await expect(dispatchWeb(broker, APP, UNROUTED as unknown as WebControlMethod, {}))
       .rejects.toMatchObject({ code: 'internal' })
   })
 })

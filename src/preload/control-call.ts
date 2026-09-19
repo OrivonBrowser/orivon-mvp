@@ -6,6 +6,7 @@
 
 import { ipcRenderer } from 'electron'
 import { CONTROL_CHANNEL } from '../main/channels.js'
+import { LIMITS } from '../contracts/index.js'
 import type { RequestEnvelope, ResponseEnvelope } from '../contracts/ipc.js'
 import { toOrivonError } from './orivon-error.js'
 
@@ -34,7 +35,23 @@ export const TIMEOUT_MS = {
    * this call's own resolved value -- see that function's own doc. AI
    * recommendation, not an owner decision -- open-questions.md A140.
    */
-  grant: 120_000
+  grant: 120_000,
+  /** web.openContext (ADR-0019): opens a real WebContentsView and loads a data: URL at the requested origin -- no LIMITS constant bounds this explicitly, so a generous, net.connect-shaped budget is used instead. */
+  webOpen: 35_000,
+  /** web.evaluate -- MUST EXCEED LIMITS.webContextEvaluateMs, the broker's own real 'timeout', for the same reason `net`'s own budget must exceed node-adapters.ts's DIAL_TIMEOUT_MS: otherwise this transport-level fallback fires first and discards the broker's more specific answer. */
+  webEvaluate: LIMITS.webContextEvaluateMs + 5_000,
+  /** web.close -- a plain teardown, no I/O of its own beyond closing the host's view. */
+  webClose: 10_000,
+  /**
+   * web.awaitClose -- ./web-surface.ts's own long-poll loop (see that
+   * file's header): each iteration waits this long for the context to
+   * actually close before the loop reissues the call, so a context that
+   * simply never closes costs one request roughly every LIMITS.
+   * webContextIdleMs, not an unbounded pending IPC call. Set just past the
+   * idle timer itself so an idle-close is normally caught on the FIRST
+   * iteration rather than always looping once.
+   */
+  webAwaitClose: LIMITS.webContextIdleMs + 5_000
 } as const
 
 /**

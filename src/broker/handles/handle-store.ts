@@ -251,6 +251,13 @@ export class OriginTable {
     if (kind === 'identity' && counts.identities >= MAX_IDENTITY_HANDLES) {
       throw fail('limit', `origin holds ${String(MAX_IDENTITY_HANDLES)} identity handles`)
     }
+    // ADR-0019's own budget, LIMITS.webContexts -- a flat platform ceiling,
+    // not a manifest-declared allowance the way socketLimit is: an app never
+    // declares how many contexts it wants, so there is nothing for a caller
+    // to widen the way `socketLimit` can widen the socket cap.
+    if (kind === 'webContext' && counts.webContexts >= LIMITS.webContexts) {
+      throw fail('limit', `origin holds ${String(LIMITS.webContexts)} web contexts`)
+    }
   }
 
   insert (
@@ -421,11 +428,21 @@ export class OriginTable {
     return created
   }
 
-  /** What this origin currently holds. Drives the permissions UI. */
+  /**
+   * What this origin currently holds. Drives the permissions UI.
+   *
+   * Picks fields explicitly rather than spreading `#census()`'s own result:
+   * `webContexts` (below) has no slot in `OriginCounts` -- nothing consumes
+   * a public count of it yet (ADR-0019's seven security properties do not
+   * ask for one) -- and a bare spread would carry it across silently,
+   * invisible to this method's own declared return type.
+   */
   counts (): OriginCounts {
     const live = this.#census()
     return {
-      ...live,
+      sockets: live.sockets,
+      files: live.files,
+      identities: live.identities,
       handles: this.handles.size,
       inFlight: this.inFlight,
       grants: this.byGrant.size,
@@ -441,15 +458,17 @@ export class OriginTable {
    * that had to agree, one of them documented as being the other, and only one
    * of them enforcing anything.
    */
-  #census (): { sockets: number, files: number, identities: number } {
+  #census (): { sockets: number, files: number, identities: number, webContexts: number } {
     let sockets = 0
     let files = 0
     let identities = 0
+    let webContexts = 0
     for (const record of this.handles.values()) {
       if (SOCKET_KINDS.has(record.entry.kind)) sockets += 1
       else if (record.entry.kind === 'file') files += 1
+      else if (record.entry.kind === 'webContext') webContexts += 1
       else identities += 1
     }
-    return { sockets, files, identities }
+    return { sockets, files, identities, webContexts }
   }
 }

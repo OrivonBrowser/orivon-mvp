@@ -238,6 +238,34 @@ describe('installFetchRoute -- header input shapes', () => {
   })
 })
 
+describe('installFetchRoute -- request input shapes', () => {
+  /** WHATWG fetch takes `Request | USVString`; everything that is not a Request is converted with ToString. All three of these are ordinary fetch inputs in any browser, so all three must reach the same wire request. */
+  it('accepts a string, a URL object and a Request-like alike', async () => {
+    const heads: string[] = []
+    async function fetchWith (input: unknown): Promise<void> {
+      let socket: ReturnType<typeof fakeSocket> | undefined
+      const target = fakeTarget({ connectSecure: async () => { socket = fakeSocket(CANNED_RESPONSE_CHUNKS()); return socket } })
+      installFetchRoute(true, target)
+      await target.fetch!(input)
+      heads.push(writtenHead(socket!))
+    }
+    await fetchWith('https://api.example/x')
+    await fetchWith(new URL('https://api.example/x'))
+    await fetchWith({ url: 'https://api.example/x' })
+
+    for (const head of heads) expect(head).toContain('GET /x HTTP/1.1')
+    expect(new Set(heads).size).toBe(1)
+  })
+
+  it('rejects an input that names no URL at all, rather than inventing one', async () => {
+    const target = fakeTarget({ connectSecure: async () => fakeSocket(CANNED_RESPONSE_CHUNKS()) })
+    installFetchRoute(true, target)
+    for (const input of [null, undefined]) {
+      await expect(target.fetch!(input)).rejects.toThrow(/requires a URL/)
+    }
+  })
+})
+
 describe('installFetchRoute -- response body framing', () => {
   it('decodes a chunked-transfer response body correctly', async () => {
     const chunked = bytes('HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n6\r\n world\r\n0\r\n\r\n')
@@ -314,6 +342,52 @@ describe('installFetchRoute -- response body cap (R3-01)', () => {
     installFetchRoute(true, target)
     await expect(target.fetch!('https://api.example/x')).rejects.toThrow(/MAX_BODY_BYTES/)
   }, 15000)
+})
+
+/** A socket whose `readable` stays empty until `unlock()` is called, and whose `writable` records whether its sink's `close()` has ever fired -- used to prove the request side stays open across the whole time the response is still pending. */
+function orderTrackingSocket (responseChunks: Uint8Array[]): FetchRouteSocket & { written: Uint8Array[], writableClosed: boolean, unlock: () => void } {
+  const state = { written: [] as Uint8Array[], writableClosed: false }
+  let release: () => void = () => {}
+  const gate = new Promise<void>((resolve) => { release = resolve })
+  const readable = new ReadableStream<Uint8Array>({
+    async start (controller) {
+      await gate
+      for (const chunk of responseChunks) controller.enqueue(chunk)
+      controller.close()
+    }
+  })
+  const writable = new WritableStream<Uint8Array>({
+    write (chunk) { state.written.push(chunk) },
+    close () { state.writableClosed = true }
+  })
+  return {
+    readable,
+    writable,
+    close: async () => {},
+    get written () { return state.written },
+    get writableClosed () { return state.writableClosed },
+    unlock: () => { release() }
+  }
+}
+
+describe('installFetchRoute -- half-close (the request writable must outlive the write phase)', () => {
+  it('does not close the request writable before the response has been read -- a server that treats an early FIN as an abort would otherwise cut the response short', async () => {
+    let socket: ReturnType<typeof orderTrackingSocket> | undefined
+    const target = fakeTarget({
+      connectSecure: async () => { socket = orderTrackingSocket(CANNED_RESPONSE_CHUNKS()); return socket }
+    })
+    installFetchRoute(true, target)
+    const promise = target.fetch!('https://api.example/x')
+    // Give the write phase every chance to run (and, on the pre-fix code, an
+    // eager writer.close() to fire) before the response is ever unlocked --
+    // two macrotask ticks flushes any number of chained microtask awaits.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(socket!.writableClosed).toBe(false)
+    socket!.unlock()
+    const response = await promise
+    expect(await response.text()).toBe('hello')
+  })
 })
 
 describe('installFetchRoute -- init.signal / AbortController (R3-01)', () => {

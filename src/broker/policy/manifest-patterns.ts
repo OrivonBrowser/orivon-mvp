@@ -46,6 +46,14 @@ export function patternSetFromCapabilities (capabilities: Capabilities): Pattern
   if (capabilities.fs !== undefined) set.fs = []
   if (capabilities.id !== undefined) set.id = []
 
+  // ADR-0019: web.contexts IS the pattern list for 'web.context' -- each
+  // declared origin is compared exactly against a grant's own patterns
+  // (manifest.ts's WebCapability.contexts doc), the same "presence carries
+  // the patterns" shape tcp.connect/https.connect already have, unlike
+  // fs/id's presence-only rows above.
+  const contexts = capabilities.web?.contexts
+  if (contexts !== undefined) set['web.context'] = contexts
+
   // capabilities.protocols is deliberately not mapped: it is not a
   // CapabilityKind (contracts/manifest.ts's Capabilities.protocols is
   // routing, not a grant) and update.ts's PatternSet has no slot for it.

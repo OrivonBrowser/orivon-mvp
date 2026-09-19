@@ -1,8 +1,13 @@
 // Type-only shapes for ./main-world-socket.ts's `installOrivon` bridge
-// argument and its own return values. Split out under code-guidelines.md
-// Rule 2 -- by concern (this is "what crosses the bridge", separate from
-// "how a real WHATWG stream is built over it", which that file still owns),
-// not by line count.
+// argument (MainWorldBridge, below) and its own members' return values (the
+// rest of this file). Split out under code-guidelines.md Rule 2 -- by
+// concern (this is "what crosses the bridge", separate from "how a real
+// WHATWG stream is built over it", which that file still owns), not by line
+// count. MainWorldBridge itself moved out of installOrivon's own signature
+// for the identical reason (A178's precedent: continue an existing split
+// seam rather than cut a file arbitrarily) -- installOrivon's parameter list
+// carried this whole shape inline, which is most of what pushed that file to
+// Rule 2's 500-line ceiling.
 //
 // SAFE DESPITE installOrivon's OWN SERIALISED-FUNCTION CONSTRAINT (that
 // file's own header: every helper `installOrivon` needs must be declared
@@ -13,7 +18,9 @@
 // ever reaches the main world; only installOrivon's own compiled body does.
 
 import type { OrivonErrorCode } from '../contracts/errors.js'
-import type { FileStat, SendRefusal } from '../contracts/handles.js'
+import type { FileStat, LookupAddress, SendRefusal } from '../contracts/handles.js'
+import type { CapabilityRequest } from '../contracts/capability-api.js'
+import type { ResponseEnvelope } from '../contracts/ipc.js'
 
 /**
  * What orivon-surface.ts's fsOpen bridge closure resolves to (A184) --
@@ -36,6 +43,23 @@ export interface MainWorldFileBridge {
   stat: () => Promise<FileStat>
   truncate: (length: number) => Promise<void>
   sync: () => Promise<void>
+  close: () => Promise<void>
+}
+
+/**
+ * What ./web-surface.ts's webOpenContext bridge closure resolves to
+ * (ADR-0019) -- `MainWorldFileBridge`'s own sibling: no `readable`/
+ * `writable`, no native stream machinery, because every member here is a
+ * plain request/reply CONTROL_CHANNEL round trip, `web.evaluate`/`web.close`
+ * included. `closed` is a REAL, live-settling promise despite that -- see
+ * ./web-surface.ts's own header for the `web.awaitClose` long-poll it is
+ * built from.
+ */
+export interface MainWorldWebContextBridge {
+  readonly id: string
+  readonly origin: string
+  readonly closed: Promise<void>
+  evaluate: (script: string) => Promise<unknown>
   close: () => Promise<void>
 }
 
@@ -145,4 +169,64 @@ export interface MainWorldSocketBridge {
   readonly close: () => Promise<void>
   readonly setNoDelay: (on: boolean) => Promise<void>
   readonly setKeepAlive: (on: boolean, initialDelayMs?: number) => Promise<void>
+}
+
+/**
+ * The full shape `orivon-surface.ts` passes as installOrivon's `bridge`
+ * argument -- one plain proxied closure per orivon.* method that needs a
+ * main-world build step, each wrapped exactly once (`./main-world-socket.ts`'s
+ * own `buildSocket`/`buildFile`/`buildWebContext`/`buildUdpSocket`/
+ * `buildServer`/`buildDirectory`, or called directly for the methods that
+ * need no such wrapping). Moved here from installOrivon's own signature --
+ * see this file's own header.
+ */
+export interface MainWorldBridge {
+  appManifest: () => Promise<unknown>
+  appGrants: () => Promise<unknown>
+  appRequestGrant: (request: CapabilityRequest) => Promise<boolean>
+  fsReadFile: (path: string) => Promise<Uint8Array>
+  fsWriteFile: (path: string, data: Uint8Array) => Promise<void>
+  /**
+   * ADR-0016's one synchronous call. Returns the raw envelope, NEVER
+   * throws -- a value THROWN by this closure would cross the
+   * contextBridge proxy boundary back into this main-world code stripped
+   * of everything but `.message` (found live; see orivon-surface.ts's own
+   * `fsReadFileSyncEnvelope` for the full argument), so the failure shape
+   * is built and thrown by `./main-world-socket.ts`'s own `installOrivon`,
+   * entirely inside that already-main-world function, from data that
+   * crossed intact instead.
+   */
+  fsReadFileSync: (path: string) => ResponseEnvelope<Uint8Array>
+  // The extended fs surface (queue item 2.1) -- no main-world stream
+  // wrapping needed, exactly like fsReadFile/fsWriteFile above, so these
+  // four are plain proxied closures too.
+  fsMkdir: (path: string, opts?: { recursive?: boolean }) => Promise<void>
+  fsReaddir: (path: string) => Promise<readonly string[]>
+  fsStat: (path: string) => Promise<FileStat>
+  fsRm: (path: string, opts?: { recursive?: boolean }) => Promise<void>
+  fsRename: (from: string, to: string) => Promise<void>
+  /**
+   * Resolves to a `MainWorldFileBridge` -- itself a plain object of MORE
+   * proxied closures (read/write/stat/truncate/sync/close), each its own
+   * round trip. Needs no main-world stream wrapping, same reasoning as
+   * fsMkdir/fsReaddir/etc. above; `./main-world-socket.ts`'s own `buildFile`
+   * still wraps each nested closure in `callRevived`, because EVERY one of
+   * them crosses back into the isolated world independently and could reject.
+   */
+  fsOpen: (path: string, flags: string) => Promise<MainWorldFileBridge>
+  /** `orivon.fs.userSelected`'s FILE shape (A194, d-0032). `installOrivon`'s own `api.fs.userSelected` routes here for every call except `{ directory: true }`. Resolves the same raw `MainWorldFileBridge` shape `fsOpen` does; `buildFile` wraps each entry. */
+  fsUserSelected: (opts?: { multiple?: boolean }) => Promise<readonly MainWorldFileBridge[]>
+  /** `orivon.fs.userSelected`'s FOLDER shape (A195) -- a separate closure, not a widened `fsUserSelected`, since the two resolve genuinely different shapes (capability-api.ts's own overload split). `buildDirectory` is this one's `buildFile`. */
+  fsUserSelectedDirectory: () => Promise<MainWorldDirectoryBridge | null>
+  idPublicKey: (curve: string) => Promise<Uint8Array>
+  idSign: (curve: string, payload: Uint8Array) => Promise<Uint8Array>
+  /** ADR-0019 -- resolves a `MainWorldWebContextBridge`, `fsOpen`'s own shape of counterpart (a plain object of MORE proxied closures, no native stream). `./main-world-socket.ts`'s own `buildWebContext` wraps it the same way `buildFile` wraps `fsOpen`'s. Takes `origin` folded into `opts`, unlike the public `openContext(origin, options?)` two-argument shape `installOrivon` builds, which merges them back in before calling this. */
+  webOpenContext: (opts: { origin: string, width?: number, height?: number }) => Promise<MainWorldWebContextBridge>
+  netConnect: (opts: { host: string, port: number }) => Promise<MainWorldSocketBridge>
+  /** net.connectSecure's own closure -- resolves to the identical bridge shape netConnect does; `./main-world-socket.ts`'s own `buildSocket` is shared by both (Rule 3). */
+  netConnectSecure: (opts: { host: string, port: number }) => Promise<MainWorldSocketBridge>
+  netUdpBind: (opts: { port: number }) => Promise<MainWorldUdpBridge>
+  netListen: (opts: { port: number }) => Promise<MainWorldServerBridge>
+  /** `net.lookup` (d-0030) -- plain data, not a bridge: no per-socket state to wrap, unlike every other `net*` entry above. */
+  netLookup: (opts: { hostname: string }) => Promise<readonly LookupAddress[]>
 }

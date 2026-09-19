@@ -30,6 +30,22 @@ describe('requestGrant (stubbed broker)', () => {
     expect(calls.some((call) => call.method === 'grant')).toBe(false)
   })
 
+  // ADR-0019, spec item 6: 'web.context' is declared-in-the-manifest-only --
+  // app.requestGrant must never mint one dynamically, even when the
+  // manifest declares exactly the origin being asked for. Checked BEFORE
+  // manifest.() is ever read, so this never even reaches the broker.
+  it('resolves false without prompting for web.context, even when the manifest declares exactly the requested origin', async () => {
+    const calls: BrokerCall[] = []
+    const broker = stubBroker(calls, { manifest: async () => manifestWith({ web: { contexts: ['https://example.com'] } }) })
+    const consent = vi.fn(async () => true)
+
+    const result = await requestGrant(broker, consent, APP, { capability: 'web.context', patterns: ['https://example.com'] })
+
+    expect(result).toBe(false)
+    expect(consent).not.toHaveBeenCalled()
+    expect(calls.some((call) => call.method === 'grant')).toBe(false)
+  })
+
   it('resolves false without prompting when the request is not a recognised capability kind', async () => {
     const calls: BrokerCall[] = []
     const broker = stubBroker(calls, { manifest: async () => manifestWith({ net: { tcp: { connect: ['*:*'] } } }) })

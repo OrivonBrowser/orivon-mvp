@@ -370,6 +370,22 @@ type ParsedPattern =
  * network at all. Do not merge them.
  */
 function covers (granted: Pattern, requested: Pattern): boolean {
+  // web.context's own patterns (ADR-0019; manifest.ts's own doc: "compared
+  // exactly") are whole `https://host[:port]` origin strings -- a shape
+  // this file's host:port/port-range grammar was never built for, and
+  // parsing one through it anyway is unreliable rather than merely wrong:
+  // an origin naming a NON-DEFAULT port happens to parse as a (nonsensical)
+  // host:port pattern via parsePattern's own last-colon split, while one at
+  // the default port (the common case -- the canonical origin form omits
+  // it) does not parse at all, so whether a match was found would silently
+  // depend on that accident rather than on a real subset relation. Checked
+  // first and only for this one recognisable shape -- nothing else in
+  // contracts/manifest.ts's pattern grammars ever starts with a scheme --
+  // so it never reaches the connect grammar below at all. Exact string
+  // equality is the correct (and only) "covers" relation for a pattern kind
+  // with none of host:port's own subset structure.
+  if (granted.startsWith('https://') || requested.startsWith('https://')) return granted === requested
+
   const from = parsePattern(granted)
   const to = parsePattern(requested)
   if (from === null || to === null) return false
