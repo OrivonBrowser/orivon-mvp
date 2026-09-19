@@ -54,8 +54,21 @@ function installFakeOrivon (): {
       userSelected: async () => { throw new Error('not used in this test') },
       // fs.open's own cursor/callback-family behaviour is
       // node-fs-handle.test.ts's job; this stub only proves node-fs.ts's
-      // re-export ROUTES to it correctly.
-      open: async (path: string, flags: string) => { openCalls.push({ path, flags }); return createFakeFileHandle().handle }
+      // re-export ROUTES to it correctly. Seeded from `files` (so an
+      // append-mode open's initialCursor() sees the real current size) and
+      // every write mirrored back into `files`, so appendFile's round trip
+      // is observable through the same map readFile/writeFile already use.
+      open: async (path: string, flags: string) => {
+        openCalls.push({ path, flags })
+        const fake = createFakeFileHandle(files.get(path) ?? new Uint8Array(0))
+        const write = fake.handle.write.bind(fake.handle)
+        fake.handle.write = async (opts) => {
+          const written = await write(opts)
+          files.set(path, fake.bytes())
+          return written
+        }
+        return fake.handle
+      }
     }
   } as unknown as Orivon
 
@@ -256,6 +269,129 @@ describe('every other synchronous export', () => {
     expect(() => fs.mkdirSync('/x')).toThrow(/ADR-0016/)
     expect(() => fs.writeFileSync('/x', 'y')).toThrow(/ADR-0016/)
     expect(() => fs.existsSync('/x')).toThrow(/ADR-0016/)
+    expect(() => fs.accessSync('/x')).toThrow(/ADR-0016/)
+    expect(() => fs.appendFileSync('/x', 'y')).toThrow(/ADR-0016/)
+    expect(() => fs.unlinkSync('/x')).toThrow(/ADR-0016/)
+  })
+})
+
+describe('fs.appendFile', () => {
+  it('opens with flags \'a\' and writes once -- a real append, not read-modify-write', async () => {
+    const { files, openCalls } = installFakeOrivon()
+    files.set('/log', new TextEncoder().encode('first\n'))
+    const fs = await import('../node-fs.js')
+    await new Promise<void>((resolve, reject) => {
+      fs.appendFile('/log', 'second\n', (err) => (err !== null ? reject(err) : resolve()))
+    })
+    expect(openCalls).toEqual([{ path: '/log', flags: 'a' }])
+    expect(new TextDecoder().decode(files.get('/log'))).toBe('first\nsecond\n')
+  })
+
+  it('creates a new file when none exists yet', async () => {
+    const { files } = installFakeOrivon()
+    const fs = await import('../node-fs.js')
+    await new Promise<void>((resolve, reject) => {
+      fs.appendFile('/new-log', 'hello', (err) => (err !== null ? reject(err) : resolve()))
+    })
+    expect(new TextDecoder().decode(files.get('/new-log'))).toBe('hello')
+  })
+
+  it('respects options.encoding, matching writeFile\'s own overload', async () => {
+    const { files } = installFakeOrivon()
+    const fs = await import('../node-fs.js')
+    await new Promise<void>((resolve, reject) => {
+      fs.appendFile('/x', 'deadbeef', { encoding: 'hex' }, (err) => (err !== null ? reject(err) : resolve()))
+    })
+    expect([...(files.get('/x') ?? [])]).toEqual([0xde, 0xad, 0xbe, 0xef])
+  })
+})
+
+describe('fs.access', () => {
+  it('resolves when the path exists, regardless of which mode is asked', async () => {
+    const { stats } = installFakeOrivon()
+    stats.set('/x', { size: 1, isFile: true, isDirectory: false, mtimeMs: 0 })
+    const fs = await import('../node-fs.js')
+    const { constants } = fs.default
+    await new Promise<void>((resolve, reject) => {
+      fs.access('/x', constants.F_OK, (err) => (err !== null ? reject(err) : resolve()))
+    })
+    await new Promise<void>((resolve, reject) => {
+      fs.access('/x', constants.R_OK | constants.W_OK, (err) => (err !== null ? reject(err) : resolve()))
+    })
+  })
+
+  it('a notFound failure maps to a Node-shaped error, matching every other fs call', async () => {
+    installFakeOrivon()
+    const fs = await import('../node-fs.js')
+    const error = await new Promise<Error & { code?: string }>((resolve) => {
+      fs.access('/missing', (err) => resolve(err as Error & { code?: string }))
+    })
+    expect(error.code).toBe('notFound')
+  })
+})
+
+describe('fs.unlink', () => {
+  it('rides fs.rm with no options -- real Node\'s unlink never takes one either', async () => {
+    const { rmCalls } = installFakeOrivon()
+    const fs = await import('../node-fs.js')
+    await new Promise<void>((resolve, reject) => {
+      fs.unlink('/x', (err) => (err !== null ? reject(err) : resolve()))
+    })
+    expect(rmCalls).toEqual([{ path: '/x', opts: undefined }])
+  })
+})
+
+describe('fs.constants', () => {
+  it('is a real object carrying the four access() modes nedb\'s existsAsync reads (fs.constants.F_OK)', async () => {
+    installFakeOrivon()
+    const fs = (await import('../node-fs.js')).default
+    expect(fs.constants).toEqual({ F_OK: 0, R_OK: 4, W_OK: 2, X_OK: 1 })
+  })
+
+  it('is the SAME object on fs.promises.constants, matching real Node', async () => {
+    installFakeOrivon()
+    const fs = (await import('../node-fs.js')).default
+    expect(fs.promises.constants).toBe(fs.constants)
+  })
+})
+
+// A relative path like nedb's own 'settings.db' must reach orivon.fs
+// completely unchanged -- no leading slash added, no join against a cwd,
+// no path.resolve. The broker (never this shim) is what confines it to the
+// app's own files directory root (capability-api.ts's OrivonFs doc).
+describe('a relative path is passed to orivon.fs verbatim', () => {
+  it('readFile / writeFile / mkdir / stat / rm / rename', async () => {
+    const { files, mkdirCalls, rmCalls, renameCalls, stats } = installFakeOrivon()
+    files.set('settings.db', new Uint8Array([1]))
+    stats.set('settings.db', { size: 1, isFile: true, isDirectory: false, mtimeMs: 0 })
+    const fs = await import('../node-fs.js')
+
+    await new Promise<void>((resolve, reject) => fs.readFile('settings.db', (err) => (err !== null ? reject(err) : resolve())))
+    await new Promise<void>((resolve, reject) => fs.writeFile('settings.db', 'x', (err) => (err !== null ? reject(err) : resolve())))
+    // NOT '.' -- a root-resolving path is its own case now, covered by
+    // node-fs-root.test.ts; this test's own job is proving an ordinary
+    // relative path is untouched, so it uses one that is not the root.
+    await new Promise<void>((resolve, reject) => fs.mkdir('settings-dir', (err) => (err !== null ? reject(err) : resolve())))
+    await new Promise<void>((resolve, reject) => fs.stat('settings.db', (err) => (err !== null ? reject(err) : resolve())))
+    await new Promise<void>((resolve, reject) => fs.rm('settings.db', (err) => (err !== null ? reject(err) : resolve())))
+    await new Promise<void>((resolve, reject) => fs.rename('settings.db', 'settings.db~', (err) => (err !== null ? reject(err) : resolve())))
+
+    expect([...files.keys()]).toContain('settings.db')
+    expect(mkdirCalls).toEqual([{ path: 'settings-dir', opts: undefined }])
+    expect(rmCalls).toEqual([{ path: 'settings.db', opts: undefined }])
+    expect(renameCalls).toEqual([{ from: 'settings.db', to: 'settings.db~' }])
+  })
+
+  it('fs.open / fs.appendFile', async () => {
+    const { openCalls } = installFakeOrivon()
+    const fs = await import('../node-fs.js')
+    await new Promise<number>((resolve, reject) => {
+      fs.open('settings.db', 'r+', (err, fd) => (err !== null ? reject(err) : resolve(fd as number)))
+    })
+    await new Promise<void>((resolve, reject) => {
+      fs.appendFile('settings.db', 'x', (err) => (err !== null ? reject(err) : resolve()))
+    })
+    expect(openCalls).toEqual([{ path: 'settings.db', flags: 'r+' }, { path: 'settings.db', flags: 'a' }])
   })
 })
 
@@ -278,13 +414,16 @@ describe('fs.open / fs.promises.open', () => {
     expect(openCalls).toEqual([{ path: '/piece-0', flags: 'r+' }])
   })
 
+  // readFile/writeFile/access/appendFile/rename/unlink/mkdir/readdir/stat/rm
+  // are all real now (node-fs-promises.test.ts) -- `watch` stands in here as
+  // a member still genuinely unbuilt.
   it('fs.promises\'s other members are named, not silently absent (A135) -- reading one is safe (A169), only calling it refuses', async () => {
     installFakeOrivon()
     const fs = await import('../node-fs.js')
     const { OrivonShimError } = await import('../errors.js')
     const promisesRec = fs.promises as unknown as Record<string, () => unknown>
-    expect(() => promisesRec.readFile).not.toThrow()
-    expect(() => promisesRec.readFile!()).toThrow(OrivonShimError)
+    expect(() => promisesRec.watch).not.toThrow()
+    expect(() => promisesRec.watch!()).toThrow(OrivonShimError)
   })
 })
 
@@ -371,22 +510,9 @@ describe('fs\'s other members -- named refusal instead of absence (A135), readin
     }
   )
 
-  it.each(['createReadStream', 'createWriteStream'])(
-    'names %s reason not-built when called, citing A184 -- FileHandle.readable()/writable() are not page-reachable yet; reading it first is safe',
-    async (member) => {
-      installFakeOrivon()
-      const fs = (await import('../node-fs.js')).default as unknown as Record<string, () => unknown>
-      const { OrivonShimError } = await import('../errors.js')
-      expect(() => fs[member]).not.toThrow()
-      expect(() => fs[member]!()).toThrow(OrivonShimError)
-      try {
-        fs[member]!()
-      } catch (error) {
-        expect((error as InstanceType<typeof OrivonShimError>).reason).toBe('not-built')
-        expect((error as InstanceType<typeof OrivonShimError>).message).toMatch(/A184/)
-      }
-    }
-  )
+  // createReadStream/createWriteStream are real now (node-fs-streams.ts,
+  // node-fs-streams.test.ts) -- see this file's own default export for why
+  // they no longer route through otherFsMember.
 
   // A169's actual point: a library that merely probes an unbuilt member --
   // `typeof`, optional chaining, destructuring -- must never crash at
@@ -413,14 +539,4 @@ describe('fs\'s other members -- named refusal instead of absence (A135), readin
     expect('copyFile' in fs).toBe(false)
   })
 
-  // A169: fs.constants is data (POSIX flag numbers), not a function -- a
-  // throwing-function refusal would misreport its own type, so it is
-  // genuinely absent instead, the same as real Node reports a method this
-  // shim has never even considered.
-  it('reads fs.constants as undefined rather than a throwing function, since real Node exposes it as data, not a function', async () => {
-    installFakeOrivon()
-    const fs = (await import('../node-fs.js')).default as unknown as Record<string, unknown>
-    expect(fs.constants).toBeUndefined()
-    expect('constants' in fs).toBe(true)
-  })
 })

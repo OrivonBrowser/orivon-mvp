@@ -96,6 +96,16 @@ describe('fs.promises.open -- the local cursor', () => {
     await handle.read(new Uint8Array(1), 0, 1, -1)
     expect(fake.readCalls).toEqual([{ position: 0, length: 1 }])
   })
+
+  // Real Node's FileHandle#datasync -- orivon.fs has one durability
+  // primitive (sync()), not two, so this is that same call under a second
+  // name (node-fs-handle.ts's own comment on datasync()).
+  it('datasync() succeeds on an ordinary file handle, the same as sync()', async () => {
+    installFakeOrivon()
+    const { openHandle } = await import('../node-fs-handle.js')
+    const handle = await openHandle('/piece-0', 'r+')
+    await expect(handle.datasync()).resolves.toBeUndefined()
+  })
 })
 
 describe('fs.promises.open -- FileHandle stream gap (A184)', () => {
@@ -119,6 +129,38 @@ describe('fs.promises.open -- FileHandle stream gap (A184)', () => {
     const handle = await openHandle('/piece-0', 'w')
     const { OrivonShimError } = await import('../errors.js')
     expect(() => handle.createWriteStream()).toThrow(OrivonShimError)
+  })
+})
+
+// @seald-io/nedb's own flushToStorageAsync opens a PATH WITH FLAGS 'r' TO
+// FSYNC A DIRECTORY (crashSafeWriteFileLinesAsync fsyncs the datafile's
+// parent dir before and after every rewrite) -- open()/sync()/close() below
+// have no file-vs-directory branch of their own (node-fs-handle.ts's own
+// comment on `sync()`), so whatever orivon.fs.open does with a directory
+// path is exactly what a caller sees. Real Node's own fsync-a-directory
+// support is itself platform-dependent (works on Linux/macOS, EISDIR on
+// some others); nedb's own flushToStorageAsync already tolerates that.
+describe('fs.promises.open -- opening a directory path for fsync, not a regular file', () => {
+  it('open("r") + sync() + close() on a directory succeeds when the broker\'s own open does (Linux/macOS)', async () => {
+    installFakeOrivon()
+    const { openHandle } = await import('../node-fs-handle.js')
+    const handle = await openHandle('/torrents', 'r')
+    await expect(handle.sync()).resolves.toBeUndefined()
+    await expect(handle.close()).resolves.toBeUndefined()
+  })
+
+  it('a platform where opening a directory fails (e.g. EISDIR on Windows) surfaces as a Node-shaped error, not a crash', async () => {
+    // Shaped the way the broker's own mapIoError (io-errors.ts) would hand
+    // it here: EISDIR is not in that table's errno list, so it fails closed
+    // as 'internal' with the real errno preserved as platformCode --
+    // toNodeError then prefers platformCode over the closed-enum code
+    // (node-http-errors.ts rule 2), so this shim sees 'EISDIR', not
+    // 'internal'.
+    (globalThis as GlobalWithOrivon).orivon = {
+      fs: { open: async () => { throw Object.assign(new Error('is a directory'), { code: 'internal', platformCode: 'EISDIR' }) } }
+    } as unknown as Orivon
+    const { openHandle } = await import('../node-fs-handle.js')
+    await expect(openHandle('/torrents', 'r')).rejects.toMatchObject({ code: 'EISDIR' })
   })
 })
 
