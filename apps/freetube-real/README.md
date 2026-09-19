@@ -133,6 +133,37 @@ window rather than reading source:
    `/static/geolocations/*.json`, and `/static/external-player-map.json` all 404 -- three of the
    Vuex actions `App.vue`'s `onMounted` fires (unawaited) throw as unhandled rejections for each.
 
+## Storage: nedb files under Orivon's `fs`, not IndexedDB
+
+`dist/orivon-electron`'s alias switch (above) already gets `IS_ELECTRON`/`SUPPORTS_LOCAL_API`
+right for playback. Storage needed a second, independent decision: upstream's web webpack config
+aliases `DB_HANDLERS_ELECTRON_RENDERER_OR_WEB$` to `src/datastores/handlers/web.js`, which loads
+nedb's **browser** build (`localForage`, IndexedDB) regardless of `IS_ELECTRON`. `orivon.json`
+declares an `fs` grant and the consent prompt shows it, but nothing used it. `webpack.orivon.config.cjs`
+now points that same alias at `src/datastores/handlers/electron.js` instead -- upstream's own
+Electron-renderer handler, which dispatches through `window.ftElectron.db*` exactly as it does in
+real FreeTube desktop.
+
+### The renderer-vs-web config diff, and what each difference is
+
+`_scripts/webpack.renderer.config.js` (upstream's own Electron config) and `_scripts/webpack.web.config.js`
+(the one this build wraps) were diffed in full. Four differences were already handled by the
+existing wrapper before this change (`SUPPORTS_LOCAL_API`/`IS_ELECTRON`, the `externals` deletion,
+the locale-compression patch, the `CopyWebpackPlugin` rewrite -- all above). Everything else found:
+
+| Difference | Decision |
+|---|---|
+| `DB_HANDLERS_ELECTRON_RENDERER_OR_WEB$` alias (`handlers/web.js` vs `handlers/electron.js`) | **Applied.** The subject of this section. |
+| `dompurify$` alias (renderer only, stubs the module to `export default undefined`) | **Applied.** Its one consumer, `vSaferHtml.js`, gates every `DOMPurify.sanitize(...)` call behind `USE_NATIVE_SANITIZER = process.env.IS_ELECTRON \|\| (...)`, which is already `true` here (`IS_ELECTRON` is compiled in) -- confirmed by reading that file, not assumed. The alias only stops webpack bundling an already-dead dependency; it changes no runtime behaviour. |
+| `process.platform` define (`'${process.platform}'` vs the literal `undefined`) | **Not applied.** This would bake the machine that RUNS THE BUILD's own OS into one bundle served to every visitor, regardless of theirs -- `TopNav.vue`, `SideNav.vue`, `ft-shaka-video-player.js` and `helpers/utils.js` all branch on it for Cmd-vs-Ctrl shortcut labels. Real Electron gets this right because electron-builder compiles a separate binary per target OS; a single served bundle cannot. Left as upstream's web config already has it (`undefined`), so every one of those checks reads consistently false rather than reading one build machine's OS for every visitor. |
+| `webpack.ProvidePlugin({ process: 'process/browser.js' })` (web only) | **Kept (already present, unchanged).** Real Electron's renderer has a native `process` global; this build runs as an ordinary page with none, so the polyfill web.config already carries stays load-bearing here for the same reason it is in the other two builds. |
+| `'youtubei.js$': 'youtubei.js/web'` alias (renderer only) | **Not needed.** Checked the installed package's own `exports` map: the `"."` export's `browser` AND `default` conditions both already point at `dist/src/platform/web.js` -- the same file this alias would force. With `target: 'web'` (unchanged from web.config) webpack already resolves there without it. |
+| `HtmlWebpackPlugin`'s `excludeChunks: ['processTaskWorker']` (web only) | **Left as web.config has it.** No entry or dynamically-imported chunk named `processTaskWorker` exists anywhere in the current source tree (checked), so this is inert either way; not worth a risk for zero effect. |
+| `JsonMinimizerPlugin` in `optimization.minimizer` (web only) | **Left as web.config has it.** Minification-only, no behavioural difference. |
+| `name: 'web'` vs `'renderer'`, `entry` key name, `output.path`, `infrastructureLogging` | **Cosmetic / already handled generically.** Webpack's own internal bundle name and the entry's output filename; `output.path` is already rewritten to this build's own directory regardless. |
+| `target: 'web'` | **No difference at all** -- both configs already set the same value. |
+| Everything else (`module.rules`, `VueLoaderPlugin`, `MiniCssExtractPlugin`, the swiper `CopyWebpackPlugin` pattern, `resolve.extensions`, the Vue/Vite defines) | **Identical between the two configs.** |
+
 ## Opening a video works (`dist/orivon-web-localapi`)
 
 Measured 2026-09-17, `dist/orivon-web-localapi`, against live YouTube:
