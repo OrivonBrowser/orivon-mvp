@@ -202,6 +202,79 @@ FreeTube's main process uses) into a second, independent bundle:
 - The result is `dist/orivon-electron-datastore/datastore.js`, copied to `orivon/ft-datastore.js`
   and exposed on `globalThis.__orivonFtDatastore` (see `bridge/ft-datastore-entry.js`).
 
+### The bridge: six `db*` members, one script
+
+`bridge/ft-electron-bridge-db.js` (spliced into the single served `ft-electron-bridge.js` by
+`bridge/splice-bridge-source.mjs` -- see its own header for why this is two source files but one
+runtime script) adds `dbSettings`, `dbHistory`, `dbProfiles`, `dbPlaylists`, `dbSearchHistory` and
+`dbSubscriptionCache`, each `(action, data)`. Every action name, value and `switch` is copied from
+FreeTube's own `ipcMain.handle(IpcChannels.DB_*, ...)` handlers (`src/main/index.js`, around line
+1699) and `DBActions`/`IpcChannels` (`src/constants.js`) -- read directly, not guessed. Two things
+upstream's handlers do that these deliberately do not:
+
+- **`syncOtherWindows(...)` calls are dropped.** They exist to keep a second open Electron window's
+  renderer in sync after a write; this bridge has exactly one window, the one FreeTube's own chrome
+  already assumes throughout.
+- **The `DB_SETTINGS` menu/tray/theme side effects are dropped**, not reproduced as a no-op
+  (`setMenu()`, tray visibility, native theme on `baseTheme`) -- Electron-shell state this bridge
+  has no shell to update, the same category `refusedApi()` already excludes elsewhere in this file.
+
+The `screenshotFolderPath` upsert guard IS reproduced verbatim (upstream reserves that write for
+its `CHOOSE_DEFAULT_FOLDER` flow alone), and so is the error handling: `ipcMain.handle`'s own
+`catch (err) { throw typeof err === 'string' ? err : err.toString() }`, an IPC-serialisation habit
+kept here for parity even though nothing here crosses that boundary.
+
+**Read lazily, not at install time.** `prepare.mjs` injects three `<script>` tags in order: the
+bridge, then `ft-datastore.js`, then FreeTube's own bundle. The bridge's own top-level
+`installFtElectronBridge(...)` call runs before the second script has, so each `db*` member reads
+`globalThis.__orivonFtDatastore` fresh, at call time -- not once, captured early as `undefined`.
+When it is missing (an older prepared build, or `prepare.mjs` run without `--build`), every `db*`
+member refuses by name (`FtBridgeError`, reason `not-built`) instead of throwing a bare
+`TypeError`, synchronously, the same convention `refusedApi()` already uses.
+
+### Where the data lands
+
+`app.getPath('userData')` (`src/shim-electron/app.ts`) deliberately returns `'.'`, not an absolute
+path -- `orivon.fs` rejects an absolute path outright. With `IS_ELECTRON_MAIN` false, nedb never
+actually calls that: `src/datastores/index.js`'s own `else` branch already produces the bare
+relative filenames `settings.db`, `profiles.db`, `playlists.db`, `history.db`, `search-history.db`
+and `subscription-cache.db`, which land at exactly the same place `getPath('userData')` names --
+the app's own confined `fs` root, under the `fs.quotaBytes` grant `orivon.json` already declares.
+These are the same NDJSON-per-line files FreeTube desktop keeps in its own `userData` folder,
+written by upstream's own nedb code, unmodified.
+
+### The dependency this needed, and the exact failure without it
+
+`src/shim/node-fs.ts` refuses every `fs.promises.*` member except `open` (`refuseShim(..., 'unimplemented')`),
+and nedb's real Node storage layer (`lib/storage.js`) uses `fsPromises.access`, `.rename`,
+`.writeFile`, `.unlink`, `.appendFile`, `.readFile`, `.mkdir` and `.open` exclusively -- never the
+callback-style `fs.*` this shim already implements. **Measured against the real compiled datastore
+bundle** (a fake `orivon.fs` that resolves `mkdir` and refuses everything else, loaded and run
+under plain Node): the first call nedb's own autoload sequence makes is
+`ensureParentDirectoryExistsAsync`'s `fs.promises.mkdir`, refused with reason `unimplemented`, not
+`fs.promises.access` as a plain top-to-bottom read of `storage.js` would suggest -- nedb creates
+the parent directory before it ever checks whether the datafile itself exists. Every `settings.find()`
+call currently rejects for exactly this reason, unhandled, until that gap closes.
+
+**A second, separate gap, found the same way, not yet reached by the first:** `node-fs.ts`'s
+default export sets `constants: undefined` explicitly (not routed through its usual named-refusal
+proxy, since `fs.constants` is data, not a function). `storage.js`'s `existsAsync` reads
+`fs.constants.F_OK` -- once `fs.promises.mkdir`/`.access` are real, this throws next
+(`TypeError: Cannot read properties of undefined (reading 'F_OK')`) unless `fs.constants` is added
+too. Not fixed here (`src/shim/` is out of this stream's paths); flagging it so it is not
+rediscovered from scratch once the first gap closes.
+
+### Testing the datastore bundle and bridge
+
+`bridge/ft-electron-bridge-db.test.ts` covers all six `db*` members and every one of their actions
+against a fake `globalThis.__orivonFtDatastore`, split from `ft-electron-bridge.test.ts` the same
+way the source is (`code-guidelines.md` Rule 2); both share `ft-electron-bridge.test-helpers.ts`'s
+vm-sandbox harness. Same run command as below, since both are `apps/freetube-real/**/*.test.ts`.
+
+`webpack.orivon-datastore.config.cjs` and `build-shim.mjs` are exercised by `prepare.mjs --build`
+itself (below) -- there is no separate unit test for the webpack config, the same way
+`webpack.orivon.config.cjs` has none: both are config, verified by actually building with them.
+
 ## Opening a video works (`dist/orivon-web-localapi`)
 
 Measured 2026-09-17, `dist/orivon-web-localapi`, against live YouTube:

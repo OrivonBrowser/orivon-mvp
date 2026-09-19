@@ -172,6 +172,8 @@
     }
   }
 
+  // #include ft-electron-bridge-db.js -- splice-bridge-source.mjs concatenates that file's content here (DBActions/datastore()/withDbErrors/the six db* functions/dbApi()), so it counts against code-guidelines.md Rule 2 as its own file while staying one script at runtime.
+
   // #region generatePoToken -- ADR-0019 (web.context)
 
   let cachedBotGuardScript
@@ -339,6 +341,7 @@
       ...listeners.api,
       ...sessionStateApi(),
       ...refusedApi(),
+      ...dbApi(),
       generatePoToken: (videoId, contextJson, attestationJson, ytConfigJson) =>
         generatePoToken(getOrivon, videoId, contextJson, attestationJson, ytConfigJson)
     }
@@ -359,7 +362,8 @@
       rewriteBotGuardScript,
       PoTokenMintStalledError,
       MINT_ATTEMPT_DEADLINE_MS,
-      MINT_MAX_ATTEMPTS
+      MINT_MAX_ATTEMPTS,
+      DBActions
     }
   }
 })()

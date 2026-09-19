@@ -20,6 +20,7 @@ import { spawnSync } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { buildShimBundle } from './build-shim.mjs'
+import { buildBridgeSource } from './bridge/splice-bridge-source.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const DEFAULT_CLONE = '/home/jhon/git/freetube-src'
@@ -163,7 +164,10 @@ async function main () {
 
   if (BUILD) {
     await mkdir(join(out, 'orivon'), { recursive: true })
-    await cp(join(HERE, 'bridge', 'ft-electron-bridge.js'), join(out, 'orivon', 'ft-electron-bridge.js'))
+    // buildBridgeSource(), not a plain cp: the served bridge is ONE script,
+    // spliced from two source files kept under code-guidelines.md's 500-line
+    // limit (splice-bridge-source.mjs's own header).
+    await writeFile(join(out, 'orivon', 'ft-electron-bridge.js'), buildBridgeSource())
     await cp(join(clone, 'dist', 'botGuardScript.js'), join(out, 'orivon', 'botGuardScript.js'))
     await cp(join(clone, 'dist', 'orivon-electron-datastore', 'datastore.js'), join(out, 'orivon', 'ft-datastore.js'))
   }
