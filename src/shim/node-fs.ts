@@ -36,6 +36,9 @@ import { refuseShim } from './errors.js'
 export { open, close, read, write, fstat, ftruncate, fsync } from './node-fs-handle.js'
 export { createReadStream, createWriteStream } from './node-fs-streams.js'
 export { promises } from './node-fs-promises.js'
+// Named as well as on the default export below: a bundled `require('fs')`
+// reads named exports only, so data living solely on `default` is undefined.
+export { FS_CONSTANTS as constants } from './node-fs-constants.js'
 
 /** Pops a trailing callback and an optional options object from a variadic tail -- the shape every fs.* call below shares once its own required leading args are removed. */
 function splitTail<Options> (args: readonly unknown[]): { options: Options | undefined, callback: NodeCallback<unknown> } {
