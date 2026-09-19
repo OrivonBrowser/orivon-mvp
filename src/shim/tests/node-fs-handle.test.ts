@@ -96,6 +96,16 @@ describe('fs.promises.open -- the local cursor', () => {
     await handle.read(new Uint8Array(1), 0, 1, -1)
     expect(fake.readCalls).toEqual([{ position: 0, length: 1 }])
   })
+
+  // Real Node's FileHandle#datasync -- orivon.fs has one durability
+  // primitive (sync()), not two, so this is that same call under a second
+  // name (node-fs-handle.ts's own comment on datasync()).
+  it('datasync() succeeds on an ordinary file handle, the same as sync()', async () => {
+    installFakeOrivon()
+    const { openHandle } = await import('../node-fs-handle.js')
+    const handle = await openHandle('/piece-0', 'r+')
+    await expect(handle.datasync()).resolves.toBeUndefined()
+  })
 })
 
 describe('fs.promises.open -- FileHandle stream gap (A184)', () => {

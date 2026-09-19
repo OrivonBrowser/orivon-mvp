@@ -23,6 +23,11 @@ import { tmpdir } from 'node:os'
 import { join, sep } from 'node:path'
 import type { Orivon } from '../../../contracts/capability-api.js'
 import type { FileHandle, FileStat } from '../../../contracts/handles.js'
+// The SHIM's own root-detection, reused rather than a second copy: this
+// fake stands in for the broker's confinement policy, and the one thing
+// that must never drift between the two is which paths COUNT as the root
+// -- a test where the two disagreed about that would validate nothing.
+import { isRootPath } from '../../node-fs-root.js'
 
 /** Mirrors io-errors.ts's ERRNO_TO_CODE -- see this file's own header for why it is re-derived, not imported. */
 const ERRNO_TO_CODE: Readonly<Record<string, string>> = {
@@ -37,6 +42,25 @@ function mapError (error: unknown): never {
   const code = typeof errno === 'string' ? (ERRNO_TO_CODE[errno] ?? 'internal') : 'internal'
   const message = error instanceof Error ? error.message : String(error)
   throw Object.assign(new Error(message), { name: 'OrivonError', code, platformCode: errno })
+}
+
+/**
+ * The real broker's own `confineForOrigin` denial, verbatim
+ * (`src/broker/fs-capability.ts`: `fail(CONFINEMENT_ERROR_CODE, "the path
+ * is outside this app's files directory")`) -- this fake throws the EXACT
+ * same shape for a root-resolving path (`paths.ts`'s `deny('is-root')` is
+ * one of several reasons that message covers; the app-facing shape never
+ * distinguishes which). Called first, inside EVERY method below: a fix
+ * that forgot to special-case even one orivon.fs entry point for the root
+ * would still be caught here, exactly as it would be by a real broker.
+ */
+function denyIfRoot (path: string): void {
+  if (isRootPath(path)) {
+    throw Object.assign(new Error("the path is outside this app's files directory"), {
+      name: 'OrivonError',
+      code: 'denied'
+    })
+  }
 }
 
 function toFileStat (real: { size: number, mtimeMs: number, isFile: () => boolean, isDirectory: () => boolean }): FileStat {
@@ -84,15 +108,15 @@ export async function createRealDiskFs (): Promise<RealDiskFs> {
   const resolve = (path: string): string => join(root, path)
 
   const fs: Orivon['fs'] = {
-    readFile: async (path) => { try { return new Uint8Array(await readFile(resolve(path))) } catch (error) { mapError(error) } },
-    writeFile: async (path, data) => { try { await writeFile(resolve(path), data) } catch (error) { mapError(error) } },
+    readFile: async (path) => { denyIfRoot(path); try { return new Uint8Array(await readFile(resolve(path))) } catch (error) { mapError(error) } },
+    writeFile: async (path, data) => { denyIfRoot(path); try { await writeFile(resolve(path), data) } catch (error) { mapError(error) } },
     readFileSync: () => { throw new Error('not used by nedb-storage.test.ts') },
-    open: async (path, flags) => { try { return wrapHandle(await open(resolve(path), flags)) } catch (error) { mapError(error) } },
-    mkdir: async (path, opts) => { try { await mkdir(resolve(path), { recursive: opts?.recursive }) } catch (error) { mapError(error) } },
-    readdir: async (path) => { try { return await readdir(resolve(path)) } catch (error) { mapError(error) } },
-    stat: async (path) => { try { return toFileStat(await stat(resolve(path))) } catch (error) { mapError(error) } },
-    rm: async (path, opts) => { try { await rm(resolve(path), { recursive: opts?.recursive ?? false }) } catch (error) { mapError(error) } },
-    rename: async (from, to) => { try { await rename(resolve(from), resolve(to)) } catch (error) { mapError(error) } },
+    open: async (path, flags) => { denyIfRoot(path); try { return wrapHandle(await open(resolve(path), flags)) } catch (error) { mapError(error) } },
+    mkdir: async (path, opts) => { denyIfRoot(path); try { await mkdir(resolve(path), { recursive: opts?.recursive }) } catch (error) { mapError(error) } },
+    readdir: async (path) => { denyIfRoot(path); try { return await readdir(resolve(path)) } catch (error) { mapError(error) } },
+    stat: async (path) => { denyIfRoot(path); try { return toFileStat(await stat(resolve(path))) } catch (error) { mapError(error) } },
+    rm: async (path, opts) => { denyIfRoot(path); try { await rm(resolve(path), { recursive: opts?.recursive ?? false }) } catch (error) { mapError(error) } },
+    rename: async (from, to) => { denyIfRoot(from); denyIfRoot(to); try { await rename(resolve(from), resolve(to)) } catch (error) { mapError(error) } },
     userSelected: (async () => { throw new Error('not used by nedb-storage.test.ts') }) as Orivon['fs']['userSelected']
   }
 
