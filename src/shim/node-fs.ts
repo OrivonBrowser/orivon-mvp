@@ -1,48 +1,41 @@
 // `fs` module target (module-map.ts). Wraps orivon.fs's promise-returning
-// methods (capability-api.ts) in Node's callback shape, since every
-// confirmed caller in the target graph (fs-chunk-store, webtorrent's own
-// torrent.js) uses plain callback-style fs, never fs.promises.
+// methods (capability-api.ts) in Node's callback shape -- every confirmed
+// caller (fs-chunk-store, webtorrent's own torrent.js, and now
+// @seald-io/nedb's Node storage layer) uses plain callback-style fs or
+// fs.promises, never a hand-rolled one.
 //
-// ENCODING IS THIS FILE'S JOB, NOT ORIVON'S. orivon.fs is deliberately
-// byte-oriented (handles.ts's OrivonFs doc comment, A12) -- readFile/
-// writeFile here decode/encode against `options.encoding` themselves, the
-// same layer split node-http-message.ts already draws between wire bytes
-// and the Node shape presented on top.
+// ENCODING IS node-fs-core.ts's JOB, NOT ORIVON'S (handles.ts's OrivonFs doc,
+// A12) -- every callback export below is a thin wrapper over that file's
+// do*() functions, the SAME core fs.promises (node-fs-promises.ts) calls, so
+// the two surfaces cannot drift (code-guidelines.md Rule 3). fs.open
+// (node-fs-handle.ts) and fs.createReadStream/createWriteStream
+// (node-fs-streams.ts, over that same local FileHandle) are real; see each
+// file's own header. FileHandle#createReadStream/createWriteStream -- a
+// different surface -- still refuses; that did not change. Every synchronous
+// export except readFileSync (ADR-0016) is a named refusal
+// (node-fs-unsupported.ts).
 //
-// fs.open (node-fs-handle.ts) is real now: a local cursor over
-// orivon.fs.open's FileHandle, exposed as fs.promises.open and the callback
-// open/read/write/close family -- see that file's own header for why the
-// cursor lives there. Every synchronous export except readFileSync
-// (ADR-0016) is still a named refusal (node-fs-unsupported.ts).
-//
-// EVERY OTHER fs MEMBER (A135) names its gap rather than reading
-// `undefined` off the default export: `chmod`/`chown` are 'not-applicable'
-// (no POSIX uid/gid/mode model), `createReadStream`/`createWriteStream` are
-// A184 (node-fs-handle.ts's FileHandle refuses the same broker-stream gap),
-// everything else is 'unimplemented'.
+// EVERY OTHER fs MEMBER (A135) names its gap: `chmod`/`chown` are
+// 'not-applicable' (no POSIX uid/gid/mode model), everything else is
+// 'unimplemented'.
 
-import { getOrivon } from './orivon-global.js'
-import { toNodeError } from './node-http-errors.js'
-import { toBytes } from './node-stream-bytes.js'
-import { toNodeStats, type NodeStats } from './node-fs-stats.js'
+import { type NodeStats } from './node-fs-stats.js'
 import { syncUnsupported } from './node-fs-unsupported.js'
 import { open, openHandle, close, read, write, fstat, ftruncate, fsync, type NodeCallback } from './node-fs-handle.js'
+import { createReadStream, createWriteStream } from './node-fs-streams.js'
+import { promises } from './node-fs-promises.js'
+import { FS_CONSTANTS } from './node-fs-constants.js'
+import { getOrivon } from './orivon-global.js'
+import {
+  decode, doAccess, doAppendFile, doMkdir, doReaddir, doReadFile, doRename, doRm, doStat, doUnlink, doWriteFile,
+  type MkdirOptions, type ReadFileOptions, type RmOptions, type WriteFileOptions
+} from './node-fs-core.js'
 import { refusingProxy } from './unimplemented.js'
 import { refuseShim } from './errors.js'
-import { Buffer } from 'buffer'
 
 export { open, close, read, write, fstat, ftruncate, fsync } from './node-fs-handle.js'
-export const promises = refusingProxy({ open: openHandle }, (prop) => refuseShim(
-  `fs.promises.${prop}`, 'unimplemented',
-  `fs.promises.${prop} is real Node fs surface this shim has not implemented and has not ` +
-  'decided whether it will -- distinct from fs.promises.open, which is built. See ' +
-  'docs/planning/compatibility-matrix.md Table 3.'
-))
-
-interface ReadFileOptions { encoding?: string }
-interface WriteFileOptions { encoding?: string }
-interface MkdirOptions { recursive?: boolean }
-interface RmOptions { recursive?: boolean }
+export { createReadStream, createWriteStream } from './node-fs-streams.js'
+export { promises } from './node-fs-promises.js'
 
 /** Pops a trailing callback and an optional options object from a variadic tail -- the shape every fs.* call below shares once its own required leading args are removed. */
 function splitTail<Options> (args: readonly unknown[]): { options: Options | undefined, callback: NodeCallback<unknown> } {
@@ -52,22 +45,8 @@ function splitTail<Options> (args: readonly unknown[]): { options: Options | und
   return { options, callback }
 }
 
-// hex/base64/base64url are Node's binary-to-text encodings, not character
-// sets -- TextDecoder only knows the latter (WHATWG Encoding Standard) and
-// throws RangeError on these three. Buffer (the `buffer` package) already
-// implements Node's own encoding table, so those three are routed there and
-// everything else keeps going through TextDecoder.
-const BUFFER_TEXT_ENCODINGS = new Set(['hex', 'base64', 'base64url'])
-
-function decode (bytes: Uint8Array, encoding: string | undefined): Uint8Array | string {
-  if (encoding === undefined) return Buffer.from(bytes)
-  if (BUFFER_TEXT_ENCODINGS.has(encoding)) return Buffer.from(bytes).toString(encoding as 'hex' | 'base64' | 'base64url')
-  return new TextDecoder(encoding).decode(bytes)
-}
-
-/** writeFile's mirror of decode() above -- Buffer.from already knows every Node encoding, hex/base64/base64url included, so unlike decode() this needs no special-cased subset. */
-function encode (data: unknown, encoding: string | undefined): Uint8Array {
-  return typeof data === 'string' ? Buffer.from(data, (encoding ?? 'utf8') as BufferEncoding) : toBytes(data)
+function encodingOf (options: ReadFileOptions | WriteFileOptions | string | undefined): string | undefined {
+  return typeof options === 'string' ? options : options?.encoding
 }
 
 // Every function below is declared with real Node-shaped overloads (options
@@ -80,40 +59,25 @@ export function readFile (path: string, callback: NodeCallback<Uint8Array | stri
 export function readFile (path: string, options: ReadFileOptions | string, callback: NodeCallback<Uint8Array | string>): void
 export function readFile (path: string, ...args: readonly unknown[]): void {
   const { options, callback } = splitTail<ReadFileOptions | string>(args)
-  const encoding = typeof options === 'string' ? options : options?.encoding
   // `.then(onFulfilled, onRejected)`, never `.then(onFulfilled).catch(onRejected)`:
   // the two-callback form is the only one where a throw INSIDE onFulfilled
   // (here, inside the user's own callback) does not fall into onRejected and
   // re-invoke callback a second time. Node calls a callback exactly once --
   // every wrapper below relies on this same shape for that guarantee.
-  getOrivon().fs.readFile(path).then(
-    (bytes) => callback(null, decode(bytes, encoding)),
-    (error) => callback(toNodeError(error))
+  doReadFile(path, encodingOf(options)).then(
+    (result) => callback(null, result),
+    (error) => callback(error as Error)
   )
 }
 
 export function readFileSync (path: string, options?: ReadFileOptions | string): Uint8Array | string {
+  // Still the one call with no async core to share: ADR-0016's synchronous
+  // exception exists because orivon.fs.readFileSync itself is the only
+  // synchronous orivon.fs entry point, so there is no async do*() version
+  // of this call for node-fs-core.ts to hold -- decode() is shared, the
+  // orivon.fs call underneath it is not.
   const encoding = typeof options === 'string' ? options : options?.encoding
-  const bytes = getOrivon().fs.readFileSync(path)
-  return decode(bytes, encoding)
-}
-
-export function writeFile (path: string, data: unknown, callback: NodeCallback<void>): void
-export function writeFile (path: string, data: unknown, options: WriteFileOptions | string, callback: NodeCallback<void>): void
-export function writeFile (path: string, data: unknown, ...args: readonly unknown[]): void {
-  const { options, callback } = splitTail<WriteFileOptions | string>(args)
-  const encoding = typeof options === 'string' ? options : options?.encoding
-  let bytes: Uint8Array
-  try {
-    bytes = encode(data, encoding)
-  } catch (error) {
-    callback(error as Error)
-    return
-  }
-  getOrivon().fs.writeFile(path, bytes).then(
-    () => callback(null),
-    (error) => callback(toNodeError(error))
-  )
+  return decode(getOrivon().fs.readFileSync(path), encoding)
 }
 
 export const writeFileSync = syncUnsupported('fs.writeFileSync')
@@ -123,56 +87,74 @@ export const readdirSync = syncUnsupported('fs.readdirSync')
 export const rmSync = syncUnsupported('fs.rmSync')
 export const renameSync = syncUnsupported('fs.renameSync')
 export const existsSync = syncUnsupported('fs.existsSync')
+export const accessSync = syncUnsupported('fs.accessSync')
+export const appendFileSync = syncUnsupported('fs.appendFileSync')
+export const unlinkSync = syncUnsupported('fs.unlinkSync')
+
+export function writeFile (path: string, data: unknown, callback: NodeCallback<void>): void
+export function writeFile (path: string, data: unknown, options: WriteFileOptions | string, callback: NodeCallback<void>): void
+export function writeFile (path: string, data: unknown, ...args: readonly unknown[]): void {
+  const { options, callback } = splitTail<WriteFileOptions | string>(args)
+  doWriteFile(path, data, encodingOf(options)).then(
+    () => callback(null),
+    (error) => callback(error as Error)
+  )
+}
+
+export function appendFile (path: string, data: unknown, callback: NodeCallback<void>): void
+export function appendFile (path: string, data: unknown, options: WriteFileOptions | string, callback: NodeCallback<void>): void
+export function appendFile (path: string, data: unknown, ...args: readonly unknown[]): void {
+  const { options, callback } = splitTail<WriteFileOptions | string>(args)
+  doAppendFile(path, data, encodingOf(options)).then(
+    () => callback(null),
+    (error) => callback(error as Error)
+  )
+}
 
 export function mkdir (path: string, callback: NodeCallback<void>): void
 export function mkdir (path: string, options: MkdirOptions, callback: NodeCallback<void>): void
 export function mkdir (path: string, ...args: readonly unknown[]): void {
   const { options, callback } = splitTail<MkdirOptions>(args)
-  getOrivon().fs.mkdir(path, options).then(
-    () => callback(null),
-    (error) => callback(toNodeError(error))
-  )
+  doMkdir(path, options).then(() => callback(null), (error) => callback(error as Error))
 }
 
 export function readdir (path: string, callback: NodeCallback<readonly string[]>): void
 export function readdir (path: string, ...args: readonly unknown[]): void {
   const { callback } = splitTail<unknown>(args)
-  getOrivon().fs.readdir(path).then(
-    (entries) => callback(null, entries),
-    (error) => callback(toNodeError(error))
-  )
+  doReaddir(path).then((entries) => callback(null, entries), (error) => callback(error as Error))
 }
 
 export function stat (path: string, callback: NodeCallback<NodeStats>): void
 export function stat (path: string, ...args: readonly unknown[]): void {
   const { callback } = splitTail<unknown>(args)
-  getOrivon().fs.stat(path).then(
-    (result) => callback(null, toNodeStats(result)),
-    (error) => callback(toNodeError(error))
-  )
+  doStat(path).then((result) => callback(null, result), (error) => callback(error as Error))
 }
 
 export function rm (path: string, callback: NodeCallback<void>): void
 export function rm (path: string, options: RmOptions, callback: NodeCallback<void>): void
 export function rm (path: string, ...args: readonly unknown[]): void {
   const { options, callback } = splitTail<RmOptions>(args)
-  getOrivon().fs.rm(path, options).then(
-    () => callback(null),
-    (error) => callback(toNodeError(error))
-  )
+  doRm(path, options).then(() => callback(null), (error) => callback(error as Error))
 }
 
 export function rename (from: string, to: string, callback: NodeCallback<void>): void {
-  getOrivon().fs.rename(from, to).then(
-    () => callback(null),
-    (error) => callback(toNodeError(error))
-  )
+  doRename(from, to).then(() => callback(null), (error) => callback(error as Error))
+}
+
+export function unlink (path: string, callback: NodeCallback<void>): void {
+  doUnlink(path).then(() => callback(null), (error) => callback(error as Error))
+}
+
+export function access (path: string, callback: NodeCallback<void>): void
+export function access (path: string, mode: number, callback: NodeCallback<void>): void
+export function access (path: string, ...args: readonly unknown[]): void {
+  const { callback } = splitTail<unknown>(args)
+  doAccess(path).then(() => callback(null), (error) => callback(error as Error))
 }
 
 export type { NodeStats }
 
 const POSIX_PERMISSION_MEMBERS = new Set(['chmod', 'chmodSync', 'chown', 'chownSync'])
-const STREAM_GAP_MEMBERS = new Set(['createReadStream', 'createWriteStream'])
 
 function otherFsMember (prop: string) {
   if (POSIX_PERMISSION_MEMBERS.has(prop)) {
@@ -180,14 +162,6 @@ function otherFsMember (prop: string) {
       `fs.${prop}`, 'not-applicable',
       `fs.${prop} sets a POSIX permission/ownership bit -- this shim's confined fs has no uid, ` +
       'gid or mode to set one on (compatibility-matrix.md Table 3).'
-    )
-  }
-  if (STREAM_GAP_MEMBERS.has(prop)) {
-    return refuseShim(
-      `fs.${prop}`, 'not-built',
-      `fs.${prop} needs FileHandle.readable()/writable(), which the broker builds but does not ` +
-      'expose to a page yet -- see docs/open-questions.md A184. Use fs.readFile/writeFile for ' +
-      'whole-file access, or fs.open plus positional read/write, instead.'
     )
   }
   return refuseShim(
@@ -199,11 +173,12 @@ function otherFsMember (prop: string) {
 }
 
 export default refusingProxy({
-  readFile, readFileSync, writeFile, writeFileSync,
+  readFile, readFileSync, writeFile, writeFileSync, appendFile, unlink, access,
   mkdir, readdir, stat, rm, rename, open, close, read, write, fstat, ftruncate, fsync, promises,
-  statSync, mkdirSync, readdirSync, rmSync, renameSync, existsSync,
+  createReadStream, createWriteStream,
+  statSync, mkdirSync, readdirSync, rmSync, renameSync, existsSync, accessSync, appendFileSync, unlinkSync,
   // fs.constants is data (POSIX flag numbers), not a function -- a
   // throwing-function refusal (A169) would misreport its own type, so this
-  // is explicitly undefined rather than routed through otherFsMember.
-  constants: undefined
+  // is a real object rather than routed through otherFsMember.
+  constants: FS_CONSTANTS
 }, otherFsMember)

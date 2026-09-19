@@ -78,6 +78,11 @@ export class NodeFileHandle {
     this.cursor = cursor
   }
 
+  // `path` reaches orivon.fs.open EXACTLY as given, relative or not -- never
+  // resolved or joined here. A relative path (e.g. 'settings.db') lands
+  // wherever the broker confines it: the app's own files directory root
+  // (capability-api.ts's OrivonFs doc). This file has no cwd concept to
+  // resolve one against even if it wanted to.
   static async open (path: string, flags: string): Promise<NodeFileHandle> {
     return await guarded(async () => {
       const handle = await getOrivon().fs.open(path, flags)
@@ -106,6 +111,12 @@ export class NodeFileHandle {
 
   async stat (): Promise<NodeStats> { return await guarded(async () => toNodeStats(await this.handle.stat())) }
   async truncate (length = 0): Promise<void> { await guarded(async () => { await this.handle.truncate(length) }) }
+  // No file-vs-directory branch, on purpose: whatever `getOrivon().fs.open`
+  // does with a directory path and flags 'r' (real Node's own fsync-a-
+  // directory support is platform-dependent -- works on Linux/macOS, EISDIR
+  // on some others) is exactly what this passes through. @seald-io/nedb's
+  // own crashSafeWriteFileLinesAsync fsyncs a directory's fd this way, and
+  // already tolerates the platforms where opening one fails.
   async sync (): Promise<void> { await guarded(async () => { await this.handle.sync() }) }
 
   async close (): Promise<void> {
