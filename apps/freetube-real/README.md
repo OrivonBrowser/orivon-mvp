@@ -19,8 +19,13 @@ expects.
 | [`prepare.mjs`](prepare.mjs) | Turns a build into an Orivon app (manifest + discovery hint), and (`--build`) runs the Electron-renderer build itself first |
 | [`serve.mjs`](serve.mjs) | A plain static file server. Also decodes a pre-compressed `.br` asset via `Content-Encoding`, which upstream's own Electron build relies on -- see below |
 | [`webpack.orivon.config.cjs`](webpack.orivon.config.cjs) | Our own build wrapper, moved out of the clone's untracked `_scripts/webpack.web-localapi.config.js` |
-| [`bridge/ft-electron-bridge.js`](bridge/ft-electron-bridge.js) | `window.ftElectron`, the 34 members upstream's renderer calls, rebuilt over `orivon.*` |
-| [`bridge/ft-electron-bridge.test.ts`](bridge/ft-electron-bridge.test.ts) | Unit coverage for all 34 -- see [Testing the bridge](#testing-the-bridge) for how to run it |
+| [`webpack.orivon-datastore.config.cjs`](webpack.orivon-datastore.config.cjs) | Compiles upstream's own main-process datastore code (nedb) to run in the page -- see [Storage](#storage-nedb-files-under-orivons-fs-not-indexeddb) |
+| [`build-shim.mjs`](build-shim.mjs) | Pre-compiles the one `src/shim/` module the datastore bundle needs (`node-fs.ts`) into plain JS with esbuild, since the datastore bundle's own webpack has no TypeScript loader |
+| [`bridge/ft-datastore-entry.js`](bridge/ft-datastore-entry.js) | The datastore bundle's own entry point -- exposes upstream's datastore handlers on `globalThis.__orivonFtDatastore` |
+| [`bridge/ft-electron-bridge.js`](bridge/ft-electron-bridge.js) | `window.ftElectron`, 34 members upstream's renderer calls, rebuilt over `orivon.*`, plus a splice point for the six `db*` members below |
+| [`bridge/ft-electron-bridge-db.js`](bridge/ft-electron-bridge-db.js) | The six `db*` members (`dbSettings`, `dbHistory`, `dbProfiles`, `dbPlaylists`, `dbSearchHistory`, `dbSubscriptionCache`), spliced into the served script above by `bridge/splice-bridge-source.mjs` |
+| [`bridge/ft-electron-bridge.test.ts`](bridge/ft-electron-bridge.test.ts) | Unit coverage for the original 34 -- see [Testing the bridge](#testing-the-bridge) for how to run it |
+| [`bridge/ft-electron-bridge-db.test.ts`](bridge/ft-electron-bridge-db.test.ts) | Unit coverage for the six `db*` members and every one of their actions |
 
 ## Setting it up
 
@@ -412,9 +417,12 @@ boundary working correctly, not a bug:
 
 ### Testing the bridge
 
-`bridge/ft-electron-bridge.test.ts` covers all 34 `window.ftElectron` members against a fake
-`window`/`document`/`navigator`/`fetch`/`orivon`, loading the bridge's own source into a fresh
-`node:vm` context per test (it is a classic script, not a module, so it has nothing to `import`).
+`bridge/ft-electron-bridge.test.ts` covers all 34 original `window.ftElectron` members and
+`bridge/ft-electron-bridge-db.test.ts` covers the six `db*` members against a fake
+`globalThis.__orivonFtDatastore`, against a fake `window`/`document`/`navigator`/`fetch`/`orivon`,
+loading the bridge's own (spliced) source into a fresh `node:vm` context per test (it is a classic
+script, not a module, so it has nothing to `import` at runtime -- `bridge/ft-electron-bridge.test-helpers.ts`
+is the one exception, a real ES module only the tests themselves import).
 **Not picked up by `npm test` yet** -- `vitest.config.ts`'s include pattern is `src/**/*.test.ts`
 and `scripts/**/*.test.ts`, and `apps/` is neither (the same gap `apps/fixture/manifest.test.ts`
 already notes, with whether `apps/**` should join that include left open). Naming the file on
@@ -439,7 +447,14 @@ npm run dev
 Then open `http://127.0.0.1:8875` (or whatever port `serve.mjs` printed) and accept the consent
 prompt -- it now lists both `https.connect` and *"Run code as www.youtube.com, in a private, empty
 session"* (`web.context`). Navigate to a video (e.g. the Trending tab, or `#/watch/dQw4w9WgXcQ`
-typed into the page itself) and it plays.
+typed into the page itself) and it plays. `index.html` now loads three scripts in order: the
+bridge, `orivon/ft-datastore.js`, then FreeTube's own bundle (see
+[Storage](#storage-nedb-files-under-orivons-fs-not-indexeddb) for why that order matters).
+
+**Storage will not work yet on an unpatched `src/shim/`.** Every `db*` call currently rejects at
+`fs.promises.mkdir` (see [The dependency this needed](#the-dependency-this-needed-and-the-exact-failure-without-it))
+until `src/shim/`'s `fs.promises` gap closes -- playback, metadata and the rest of the chrome are
+unaffected, since none of those read or write through nedb.
 
 To drive the same thing headlessly, as CI does:
 
