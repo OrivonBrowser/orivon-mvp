@@ -32,6 +32,9 @@
     },
     "fs": {
       "quotaBytes": 67108864
+    },
+    "web": {
+      "contexts": ["https://www.youtube.com"]
     }
   }
 }
