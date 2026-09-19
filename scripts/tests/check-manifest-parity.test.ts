@@ -211,6 +211,42 @@ describe('checkManifestParity', () => {
     expect(result.unreadable).toEqual(['WIDGET_KEYS in src/loader/widget.ts'])
   })
 
+  // ADR-0019: a brand-new interface's loader array does not exist at all
+  // yet, on purpose, in the contracts-only PR that declares it -- this must
+  // not read as the same "unreadable" failure a stale regex would produce.
+  it('does not fail on a missing loader array when every field of the interface is deliberately deferred', () => {
+    const root = fixture({
+      'src/contracts/manifest.ts': 'export interface Widget { readonly a?: string }',
+      'src/loader/widget.ts': "const SOME_OTHER_ARRAY = ['z']"
+    })
+    const deferred = [{ interfaceName: 'Widget', field: 'a', reason: 'not implemented yet, test fixture' }]
+    const result = checkManifestParity(root, { parityMap, deferred })
+    expect(result.ok).toBe(true)
+    expect(result.unreadable).toEqual([])
+    expect(result.gaps).toEqual([])
+  })
+
+  it('still fails closed on a missing loader array when only SOME fields are deferred', () => {
+    const root = fixture({
+      'src/contracts/manifest.ts': 'export interface Widget { readonly a?: string\n readonly b?: number }',
+      'src/loader/widget.ts': "const SOME_OTHER_ARRAY = ['z']"
+    })
+    const deferred = [{ interfaceName: 'Widget', field: 'a', reason: 'not implemented yet, test fixture' }]
+    const result = checkManifestParity(root, { parityMap, deferred })
+    expect(result.ok).toBe(false)
+    expect(result.unreadable).toEqual(['WIDGET_KEYS in src/loader/widget.ts'])
+  })
+
+  it('still fails closed on a missing loader array when no field is deferred at all', () => {
+    const root = fixture({
+      'src/contracts/manifest.ts': 'export interface Widget { readonly a?: string }',
+      'src/loader/widget.ts': "const SOME_OTHER_ARRAY = ['z']"
+    })
+    const result = checkManifestParity(root, { parityMap, deferred: [] })
+    expect(result.ok).toBe(false)
+    expect(result.unreadable).toEqual(['WIDGET_KEYS in src/loader/widget.ts'])
+  })
+
   // A176 point 2, at the checkManifestParity level: the field is no longer
   // dropped, so it now also surfaces as an ordinary gap when the loader
   // array does not list it either.

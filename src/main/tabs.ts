@@ -94,6 +94,7 @@ export class TabManager {
       // when TabManager is constructed and be published afterwards. Reading
       // it once here would pin 'no broker' for the process lifetime.
       get broker () { return ctx.broker },
+      dashboardUrl,
       isActive: (id) => this.activeId === id,
       emitState: () => { this.emitState() },
       captureFavicon: async (id, record, favicons) => { await this.captureFavicon(id, record, favicons) },

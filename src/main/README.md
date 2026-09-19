@@ -672,3 +672,35 @@ whole record with just this round's answer would un-decline `fs` nobody revisite
 round accepts or refuses was ever a member of it — so the new record is simply the old one plus
 exactly this round's fresh refusals, never a subtraction. An accept is never separately recorded;
 `grantsHydrated`'s own derivation (`A139`, above) already covers it once the grant lands.
+
+**[`web-context-host.ts`](web-context-host.ts)'s two WebRTC belts, and why a proxy pointed at the
+discard port does not also break the context's own `fetch()`.** ADR-0019 promises an isolated
+context "no network of its own"; `protocol.handle('https'/'http', ...)` and
+`webRequest.onBeforeRequest` (cancelling `ws:`/`wss:`) cover everything that passes through
+Electron's own protocol/request layer, but WebRTC's ICE/STUN/TURN dial does not -- it is Chromium's
+network service talking raw UDP/TCP, a gap `docs/open-questions.md` A41 already names as
+unsolved and platform-wide for app tabs generally. A context has no legitimate reason to use
+WebRTC at all, so rather than trying to scope a partial allowance the way A41's own open item
+frames the harder app-tab problem, it is closed outright, with two independent belts so that a
+single missed path does not silently reopen it:
+
+- `webContents.setWebRTCIPHandlingPolicy('disable_non_proxied_udp')` forces WebRTC to route
+  through a proxy or not run at all.
+- `session.setProxy({ mode: 'fixed_servers', proxyRules: 'http://127.0.0.1:9' })` on the
+  partition, pointed at the loopback discard port (RFC 863) -- nothing answers there, so whatever
+  that policy hands to a proxy dies on arrival, and so does anything else this session's own
+  network stack might dial outside the two handlers above.
+
+**Why the proxy does not intercept the context's own `fetch()` to a granted origin.** Proven
+against the real shell, not assumed: `test/e2e-web-context-network.test.ts` fetches
+`https://example.com` through a context with both belts active and still gets a real response.
+This holds because `protocol.handle` REPLACES Chromium's network stack for the scheme it
+registers -- a request answered by a custom protocol handler never reaches the proxy-resolution
+step at all, the same reason `serve.ts`'s own app-origin handler never needed proxy awareness.
+The proxy only ever sees a connection attempt that `protocol.handle` did NOT intercept, which for
+`https:`/`http:` from inside a context should never happen -- so the discard-port proxy is a
+belt for exactly the gap outside those two schemes, not a second gate in front of them.
+
+Verified against Electron 44's own `electron.d.ts`, not assumed: both APIs are documented there
+with these exact shapes (`WebContents.setWebRTCIPHandlingPolicy`, `Session.setProxy` taking a
+`ProxyConfig` with `mode`/`proxyRules`).

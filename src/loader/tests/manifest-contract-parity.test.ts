@@ -8,7 +8,8 @@ import type {
   Manifest,
   NetCapability,
   TcpCapability,
-  UdpCapability
+  UdpCapability,
+  WebCapability
 } from '../../contracts/index.js'
 
 // docs/open-questions.md A164: a manifest field the contract allows and the
@@ -28,7 +29,7 @@ import type {
 type Full<T> = Required<T>
 
 type FullManifest = Omit<Full<Manifest>, 'capabilities'> & {
-  readonly capabilities: Omit<Full<Capabilities>, 'net' | 'fs' | 'id'> & {
+  readonly capabilities: Omit<Full<Capabilities>, 'net' | 'fs' | 'id' | 'web'> & {
     readonly net: Omit<Full<NetCapability>, 'tcp' | 'udp' | 'https'> & {
       readonly tcp: Full<TcpCapability>
       readonly udp: Full<UdpCapability>
@@ -36,6 +37,7 @@ type FullManifest = Omit<Full<Manifest>, 'capabilities'> & {
     }
     readonly fs: Full<FsCapability>
     readonly id: Full<IdCapability>
+    readonly web: Full<WebCapability>
   }
 }
 
@@ -62,7 +64,8 @@ const KITCHEN_SINK: FullManifest = {
       https: { connect: ['*:*'] }
     },
     fs: { quotaBytes: 104857600 },
-    id: { curves: ['secp256k1'] }
+    id: { curves: ['secp256k1'] },
+    web: { contexts: ['https://kitchen-sink.example'] }
   }
 }
 

@@ -1,10 +1,8 @@
 // The broker's own vocabulary -- pure type and interface declarations with no
 // runtime behaviour, split out of ./index.ts so that file could stay under
-// the 500-line guideline (docs/development/code-guidelines.md Rule 2). No
-// state lives here.
-//
-// See ./index.ts's header for what createBroker actually does, why its
-// dependency shape is fixed, and what `Broker` is for.
+// the 500-line guideline (docs/development/code-guidelines.md Rule 2). See
+// ./index.ts's header for what createBroker actually does, why its
+// dependency shape is fixed, and what `Broker` is for. No state lives here.
 
 import type { PersistedApp } from './grants/ledger-storage.js'
 import type { DestroyResource, FailableTcpServer, FailableTcpSocket, FailableUdpSocket } from './handles/handle-contracts.js'
@@ -12,6 +10,7 @@ import type { LedgerStorage } from './grants/ledger-storage.js'
 import type { PortRange } from './policy/bind.js'
 import type { Resolver } from './policy/connect.js'
 import type { BrokerFs, BrokerFsMethods } from './fs-contracts.js'
+import type { BrokerWebMethods, WebContextHost } from './web-context-contracts.js'
 import type { PickedPath } from './grants/picked-path-ledger.js'
 import type {
   CapabilityKind,
@@ -31,6 +30,7 @@ import type {
 // -- re-exported so no existing `from '../broker-contracts.js'` import site
 // needs to change.
 export type { BrokerFs, BrokerFsMethods, OpenedFile, RawFileStat } from './fs-contracts.js'
+export type { BrokerWebMethods, WebContextHost } from './web-context-contracts.js'
 export type { PickedPath } from './grants/picked-path-ledger.js'
 
 /**
@@ -244,6 +244,7 @@ export interface CreateBrokerOptions {
    * exactly today's in-memory-only behaviour, not a degraded mode.
    */
   readonly ledgerStorage?: LedgerStorage
+  readonly webContextHost?: WebContextHost
 }
 
 /**
@@ -381,6 +382,8 @@ export interface Broker {
     /** Same per-origin key `publicKey` returns for this `curve`. Same error shape as `publicKey`. */
     sign(origin: string, opts: { curve: string, payload: Uint8Array }): Promise<Uint8Array>
   }
+  /** `BrokerWebMethods` -- ./web-context-contracts.js, alongside `WebContextHost`. */
+  readonly web: BrokerWebMethods
   /**
    * Registers -- or replaces -- an origin's manifest. Called once per app
    * session, before any capability call for that origin. Existing grants are

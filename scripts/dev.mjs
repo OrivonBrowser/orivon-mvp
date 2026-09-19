@@ -1,7 +1,10 @@
 /**
  * `npm run dev`, with ORIVON_WINDOW_NO_FOCUS=1 set (docs/development/setup.md
  * "The no-focus switch") so a dev-server launch does not steal the owner's
- * keyboard focus while they are working on something else.
+ * keyboard focus while they are working on something else, and
+ * ORIVON_DEV_ORIGINS=1, which lets a loopback-literal origin be granted
+ * without installing it (src/main/dev-app-origin.ts). Only this script sets
+ * it: `npm start` is what a run-from-source user runs, and it stays off there.
  *
  * NO `--watch`, deliberately -- owner, 2026-09-15. Consequence, stated here
  * so nobody re-adds the flag to "fix" it: a main-process or preload edit
@@ -22,6 +25,6 @@ import { spawnSync } from 'node:child_process'
 const command = process.platform === 'win32' ? 'electron-vite.cmd' : 'electron-vite'
 const result = spawnSync(command, ['dev'], {
   stdio: 'inherit',
-  env: { ...process.env, ORIVON_WINDOW_NO_FOCUS: '1' }
+  env: { ...process.env, ORIVON_WINDOW_NO_FOCUS: '1', ORIVON_DEV_ORIGINS: '1' }
 })
 process.exit(result.status ?? 1)

@@ -31,6 +31,7 @@ import { GrantLedger } from './grants/grant-ledger.js'
 import { originFromUrl } from './policy/origin.js'
 import { createNetCapability } from './net-capability.js'
 import { createIdCapability } from './id-capability.js'
+import { createWebCapability } from './web-capability.js'
 import { createFsCapability } from './fs-capability.js'
 import { createUserSelectedCapability } from './user-selected-capability.js'
 import { PickedPathLedger } from './grants/picked-path-ledger.js'
@@ -82,6 +83,14 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
   // net-capability.ts from the start rather than inlined here first, for
   // the same Rule 2 reason: this file was already 264 lines before `id`.
   const id = createIdCapability({ deps, ledger, canonical })
+
+  // orivon.web's three entry points (ADR-0019) -- built the same shape as
+  // `id` above, over the SAME `handleTable`/`ledger`/`canonical` every other
+  // capability shares, so a web.context grant's revocation reaches
+  // `handleTable.revoke` the identical, already-wired way this file's own
+  // `grant`/`revoke`/`revokePersisted` below already cascade to every other
+  // capability's live handles -- see ./web-capability.ts's own header.
+  const web = createWebCapability({ deps, handleTable, ledger, canonical })
 
   // orivon.fs's eight entry points -- readFile, writeFile, confineSync
   // (ADR-0016) plus queue item 2.1's mkdir/readdir/stat/rm/rename. Lifted to
@@ -419,6 +428,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     app: { manifest, grants, isRegisteredSync, hasGrantsSync, registeredOriginsSync, persistedAppsSync, hydrateFromPinnedManifest, pickedPaths: pickedPathsFor, socketAllowanceSync },
     net,
     id,
+    web,
     fs,
     registerApp,
     versionFloorFor,
