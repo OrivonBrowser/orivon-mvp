@@ -11,11 +11,15 @@
 // first). `src/shim/` itself is never edited or copied by this script, only
 // read -- see README.md's "Where the shim comes from".
 //
-// `buffer` stays external: node-fs.ts imports it from the npm `buffer`
-// package (module-map.ts's own approved entry, kind: 'package'), and the
-// downstream webpack config aliases that specifier itself, the same way it
-// aliases path/events/stream/crypto -- there is no TypeScript there, so no
-// reason to fold it into this step's own output.
+// `buffer` and `stream` stay external: node-fs.ts (via node-fs-streams.ts's
+// real fs.createReadStream/createWriteStream) imports them from the npm
+// `buffer`/`stream-browserify` packages (module-map.ts's own approved
+// entries, kind: 'package'), and the downstream webpack config already
+// aliases both specifiers itself -- `stream$` was already there for
+// nedb's OWN `Readable` import in its real storage.js, so this is widening
+// an existing entry to cover a second, later caller, not adding a new one.
+// There is no TypeScript in that downstream build, so no reason to fold
+// either package into this step's own output.
 import { build } from 'esbuild'
 import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -37,7 +41,7 @@ export async function buildShimBundle () {
     format: 'esm',
     platform: 'browser',
     target: 'es2022',
-    external: ['buffer'],
+    external: ['buffer', 'stream'],
     logLevel: 'silent'
   })
   console.log(`[build-shim] ${join(OUT_DIR, 'fs.js')}`)
