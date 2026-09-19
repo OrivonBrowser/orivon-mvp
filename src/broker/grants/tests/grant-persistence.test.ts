@@ -41,6 +41,39 @@ describe('hydrateGrants', () => {
     })
   })
 
+  // ADR-0019 regression: web.context's own exact-origin patterns broke
+  // widensAuthority's underlying covers() (update.ts), which was built only
+  // for host:port/port-range grammar -- an identical persisted origin was
+  // silently treated as "widening" and dropped on every restart. Fixed in
+  // update.ts's covers(); pinned here against the REAL hydration path, not
+  // just the pattern-comparison function directly (see update-web-context.
+  // test.ts for that half).
+  it('restores a persisted web.context grant whose origin the current manifest still declares (ADR-0019)', () => {
+    const storage = memoryLedgerStorage()
+    storage.grants.set(APP, { 'web.context': { patterns: ['https://example.com'], grantedAt: 1000 } })
+    const manifest = manifestWith({ web: { contexts: ['https://example.com'] } })
+
+    const restored = hydrateGrants(storage, APP, manifest, () => 'fresh-id')
+
+    expect(restored.get('web.context')).toEqual({
+      id: 'fresh-id',
+      origin: APP,
+      capability: 'web.context',
+      patterns: ['https://example.com'],
+      grantedAt: 1000
+    })
+  })
+
+  it('drops a persisted web.context grant whose origin the current manifest no longer declares', () => {
+    const storage = memoryLedgerStorage()
+    storage.grants.set(APP, { 'web.context': { patterns: ['https://example.com'], grantedAt: 1000 } })
+    const manifest = manifestWith({ web: { contexts: ['https://other.example'] } })
+
+    const restored = hydrateGrants(storage, APP, manifest, () => 'id')
+
+    expect(restored.has('web.context')).toBe(false)
+  })
+
   it('mints a FRESH id for every restored grant, never trusting one read off disk', () => {
     const storage = memoryLedgerStorage()
     storage.grants.set(APP, { fs: { patterns: [], grantedAt: 1 } })

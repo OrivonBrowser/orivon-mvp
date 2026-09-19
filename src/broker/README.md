@@ -458,3 +458,30 @@ discovered as a blocker -- see `docs/open-questions.md` A184 and this lane's own
 that means a page cannot do yet: `window.orivon.fs.open(...)`'s returned object is deliberately
 narrower than `FileHandle`, with no `readable`/`writable`, and its `closed` is not live-pushed
 (revocation surfaces on the next operation attempted against the handle, not proactively).
+
+### `web-capability.ts` -- why a timed-out `evaluate` makes `closed` REJECT, not resolve
+
+ADR-0019's own contract only names two `WebContext.closed` outcomes: reject `'revoked'` on
+revocation, resolve on an *idle* close (`LIMITS.webContextIdleMs` with nothing running). A timed-
+out `evaluate` is neither -- it is the broker force-closing a context that was doing something,
+because a running script cannot be interrupted any other way. Two readings were possible, and
+the resolving one was rejected:
+
+- **Resolve, like the idle case.** Reads as "the platform's routine housekeeping recycled this,
+  nothing is wrong" -- true for idle, false here. The app's own script overran its budget and got
+  killed mid-flight; folding that into the same outcome as ordinary resource recycling would hide
+  the one signal that tells an app it needs to write a faster or more defensive script.
+- **Reject 'timeout' (chosen).** Matches what `evaluate` itself already rejects with, so an app
+  awaiting `closed` learns the same thing an app awaiting `evaluate` learns, with no separate
+  polling needed to tell "idle" from "killed" apart. It also reuses the exact mechanism this
+  codebase already has for "a handle died rather than closed cleanly" --
+  `HandleTable.fail(origin, handleId, code)`, the same call `net-capability.ts`'s socket wrapper
+  makes on a real I/O fault (a peer RST) -- rather than inventing a second one. `fail`'s own
+  `CloseReason` is `'failed'`, which `handle-store.ts`'s `closeTree` already routes to a REJECTING
+  `closed` (only `'closed'` resolves it); nothing new had to be taught to that file.
+
+Guarded against a narrow race: if a concurrent revoke already closed the same handle through its
+own cascade by the time the timeout branch runs, `handleTable.fail` throws (the id is no longer
+registered) rather than silently doing nothing -- caught and discarded here, because the timeout
+error is still the right thing for `evaluate` to reject with regardless of which path actually
+tore the context down.

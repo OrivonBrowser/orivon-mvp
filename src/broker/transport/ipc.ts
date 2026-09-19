@@ -26,6 +26,7 @@ import { dialTcp, listenTcp, nodeFs, resolveHost, resolveLookup } from '../adapt
 import { dialTls } from '../adapters/tls-adapter.js'
 import { bindUdp } from '../adapters/udp-adapter.js'
 import { nodeLedgerStorage } from '../grants/node-ledger-storage.js'
+import { createWebContextHost } from '../../main/web-context-host.js'
 import { createPortRegistry } from './port-registry.js'
 import { createTokenBucketLimiter } from './token-bucket.js'
 import type { RateLimiter } from './token-bucket.js'
@@ -40,6 +41,7 @@ import { dispatchFs } from './dispatch-fs.js'
 import type { FsTransport } from './dispatch-fs.js'
 import { dispatchId } from './dispatch-id.js'
 import { dispatchNet } from './dispatch-net.js'
+import { dispatchWeb } from './dispatch-web.js'
 import { envelopeId, isControlMethod, isRequestEnvelope, type RequestGrantCtx } from './ipc-validation.js'
 import type { ControlEvent, PortLike, PortPair, PortTransport } from './port-transport.js'
 import type { RequestEnvelope, ResponseEnvelope } from '../../contracts/index.js'
@@ -48,13 +50,15 @@ export { CONTROL_CHANNEL, PORT_CHANNEL }
 export type {
   AppRequestGrantParams, ControlMethod, FsPathWithRecursiveParams, FsReaddirParams, FsReadFileParams, FsRenameParams,
   FsStatParams, FsWriteFileParams, IdPublicKeyParams, IdSignParams,
-  NetConnectParams, NetCloseParams, NetSetKeepAliveParams, NetSetNoDelayParams, NetUdpBindParams, RequestGrantCtx
+  NetConnectParams, NetCloseParams, NetSetKeepAliveParams, NetSetNoDelayParams, NetUdpBindParams, RequestGrantCtx,
+  WebCloseParams, WebEvaluateParams, WebOpenContextParams
 } from './ipc-validation.js'
 export type {
   ControlEvent, PortDeliveryFrame, PortLike, PortPair, PortTransport, SocketDescriptor, TcpServerDescriptor,
   UdpSocketDescriptor
 } from './port-transport.js'
 export type { FsControlMethod, FsHandleDescriptor, FsTransport } from './dispatch-fs.js'
+export type { WebControlMethod } from './dispatch-web.js'
 
 /**
  * One request, dispatched to `broker` with the origin THIS FUNCTION derived
@@ -117,6 +121,11 @@ async function dispatch (
     case 'net.setKeepAlive':
     case 'net.lookup':
       return await dispatchNet(broker, origin, method, payload, event, transport)
+    case 'web.openContext':
+    case 'web.evaluate':
+    case 'web.close':
+    case 'web.awaitClose':
+      return await dispatchWeb(broker, origin, method, payload)
     default: {
       // Exhaustiveness check: if ControlMethod (ipc-validation.ts) ever
       // gains a member no case above names, `method` is not assignable to
@@ -387,7 +396,16 @@ export const brokerIpcSubsystem: Subsystem = {
       // control operations reach `orivon.id`.
       keychain: {
         getSeed: async () => { throw fail('internal', 'identity key derivation is not implemented yet (ADR-0010)') }
-      }
+      },
+      // ADR-0019's Electron escape hatch. A LAZY GETTER, not `ctx.broker`
+      // itself -- `deps` is built here to CONSTRUCT the broker a few lines
+      // below, so `ctx.broker` is not published yet; `web-context-host.ts`'s
+      // own header explains why this must stay a thunk, resolved only once
+      // `web.openContext` actually runs, well after `publishBroker` below.
+      webContextHost: createWebContextHost(() => {
+        if (ctx.broker === undefined) throw fail('internal', 'the broker is not published yet')
+        return ctx.broker
+      })
     }
     const transport: PortTransport = { createPortPair: realPortPair, registry: createPortRegistry() }
     // fs.open's own per-origin lookup (A184) -- the same generic

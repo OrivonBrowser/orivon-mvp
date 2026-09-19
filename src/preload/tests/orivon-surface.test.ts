@@ -87,6 +87,11 @@ describe('exposeOrivon -- P-F10: the fail-closed fallback covers BOTH "absent" a
     expect(typeof (surface.app as Record<string, unknown>).requestGrant).toBe('function')
     expect(typeof (surface.id as Record<string, unknown>).publicKey).toBe('function')
     expect(typeof (surface.id as Record<string, unknown>).sign).toBe('function')
+    // orivon.web.openContext (ADR-0019) needs no main-world stream wrapping
+    // either -- web-surface.ts's own header -- so, like the extended fs
+    // surface below, it is genuinely wired in the fallback too, not merely
+    // present as an unreachable placeholder.
+    expect(typeof (surface.web as Record<string, unknown>).openContext).toBe('function')
     // ADR-0016's sync call is present even in the net-less fallback --
     // ../preload/README.md's rule that a method always absent from
     // window.orivon is worse than one that is not there does not apply here:
@@ -99,6 +104,27 @@ describe('exposeOrivon -- P-F10: the fail-closed fallback covers BOTH "absent" a
     for (const method of ['mkdir', 'readdir', 'stat', 'rm', 'rename', 'open', 'userSelected']) {
       expect(typeof (surface.fs as Record<string, unknown>)[method]).toBe('function')
     }
+  })
+
+  // web.context: the fallback's `web.openContext` used to wire
+  // `webOpenContextBridge` straight through as `openContext`, so calling it
+  // with the contract's real `(origin, options?)` shape lost `origin`
+  // entirely (a bare string has no `.origin` field) and every call reached
+  // the broker as `{ origin: undefined }`. Proven here by inspecting the
+  // actual CONTROL_CHANNEL payload, not just that the method exists.
+  it('web.openContext forwards origin and options to the CONTROL_CHANNEL call, not { origin: undefined }', () => {
+    executeInMainWorld = undefined
+    invoke.mockResolvedValue(okEnvelope({ id: 'ctx-1', origin: 'https://example.com' }))
+
+    exposeOrivon()
+
+    const [, surface] = exposeInMainWorld.mock.calls[0] as [string, Record<string, unknown>]
+    const openContext = (surface.web as { openContext: (origin: string, options?: { width?: number, height?: number }) => Promise<unknown> }).openContext
+    void openContext('https://example.com', { width: 800, height: 600 })
+
+    const [, envelope] = invoke.mock.calls[0] as [string, { method: string, payload: unknown }]
+    expect(envelope.method).toBe('web.openContext')
+    expect(envelope.payload).toEqual({ origin: 'https://example.com', width: 800, height: 600 })
   })
 
   it('falls back to the SAME surface when executeInMainWorld exists but throws', () => {
@@ -120,6 +146,32 @@ describe('exposeOrivon -- P-F10: the fail-closed fallback covers BOTH "absent" a
     exposeOrivon()
 
     expect(exposeInMainWorld).not.toHaveBeenCalled()
+  })
+})
+
+// orivon.web.openContext (ADR-0019) through the REAL executeInMainWorld
+// path end to end: web-surface.ts's webOpenContextBridge, control-call.ts's
+// call(), and main-world-socket.ts's buildWebContext all wired together via
+// installViaFakeMainWorld's real installOrivon call -- not a unit-level
+// double for any of them.
+describe('exposeOrivon -- orivon.web.openContext, real wiring end to end', () => {
+  it('opens a context and evaluates a script through it', async () => {
+    const target = installViaFakeMainWorld()
+    invoke.mockImplementation(async (_channel: string, envelope: { method: string, payload: unknown }) => {
+      if (envelope.method === 'web.openContext') return okEnvelope({ id: 'ctx-1', origin: 'https://example.com' })
+      if (envelope.method === 'web.evaluate') return okEnvelope('https://example.com')
+      return okEnvelope(undefined) // web.awaitClose's own watch loop: left pending is fine, this stubs it settled
+    })
+    exposeOrivon()
+
+    const orivon = target.orivon as {
+      web: { openContext: (origin: string) => Promise<{ id: string, origin: string, evaluate: (s: string) => Promise<unknown> }> }
+    }
+    const context = await orivon.web.openContext('https://example.com')
+    const result = await context.evaluate('location.origin')
+
+    expect(context.id).toBe('ctx-1')
+    expect(result).toBe('https://example.com')
   })
 })
 

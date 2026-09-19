@@ -4,6 +4,8 @@ import { installOrivon } from './main-world-socket.js'
 import type { MainWorldDirectoryBridge, MainWorldFileBridge } from './main-world-socket.js'
 import { call, TIMEOUT_MS } from './control-call.js'
 import { netConnectBridge, netConnectSecureBridge, netListenBridge, netLookupBridge, netUdpBindBridge } from './net-surface.js'
+import { webOpenContextBridge } from './web-surface.js'
+import type { MainWorldWebContextBridge } from './web-surface.js'
 import type { CapabilityRequest, FileStat, Grant, Manifest, OrivonErrorCode } from '../contracts/index.js'
 import { LIMITS } from '../contracts/index.js'
 import type { ResponseEnvelope } from '../contracts/ipc.js'
@@ -203,6 +205,23 @@ async function idSign (curve: string, payload: Uint8Array): Promise<Uint8Array> 
 }
 
 /**
+ * web.context: `OrivonWeb.openContext(origin, options?)` (capability-api.ts)
+ * takes `origin` as its own argument -- unlike every other method on this
+ * surface, which takes one options object -- so it needs this thin wrapper
+ * around `webOpenContextBridge`, which still wants them merged into one
+ * `{ origin, width?, height? }` for the CONTROL_CHANNEL payload
+ * (web-surface.ts's own `exactOptionalPropertyTypes` flattening). See
+ * `exposeFallback`'s own doc on this method for what wiring
+ * `webOpenContextBridge` straight through used to do instead.
+ */
+async function webOpenContext (origin: string, options?: { width?: number, height?: number }): Promise<MainWorldWebContextBridge> {
+  const opts: { origin: string, width?: number, height?: number } = { origin }
+  if (options?.width !== undefined) opts.width = options.width
+  if (options?.height !== undefined) opts.height = options.height
+  return await webOpenContextBridge(opts)
+}
+
+/**
  * The stream-less `net` surface: used both when `executeInMainWorld` is
  * absent and when it exists but throws -- one implementation, not two
  * copies quietly drifting apart. `net.lookup` (d-0030) is included here,
@@ -239,6 +258,23 @@ function exposeFallback (): void {
     },
     net: {
       lookup: async (opts: { hostname: string }) => await netLookupBridge(opts)
+    },
+    // Included here despite net.connect/etc. above being excluded: unlike
+    // those, WebContext needs no main-world-native stream (web-surface.ts's
+    // own header) -- exactly fs.open's own reasoning for staying in this
+    // fallback path.
+    //
+    // web.context: `OrivonWeb.openContext` (capability-api.ts) is the one
+    // capability on this whole surface that DOESN'T take a single options
+    // object -- `origin` is its own positional argument, `options` a
+    // separate, optional one. Wiring `webOpenContextBridge` (which takes one
+    // merged `{ origin, width?, height? }`) straight through as `openContext`
+    // silently dropped `origin` (a bare string has no `.origin` field), so
+    // every call reached the broker as `{ origin: undefined }` and was
+    // rejected 'invalid'. `webOpenContext` above restores the contract's
+    // own two-argument shape.
+    web: {
+      openContext: webOpenContext
     }
   })
 }
@@ -283,6 +319,7 @@ export function exposeOrivon (): void {
     fsUserSelectedDirectory,
     idPublicKey,
     idSign,
+    webOpenContext: webOpenContextBridge,
     netConnect: netConnectBridge,
     netConnectSecure: netConnectSecureBridge,
     netUdpBind: netUdpBindBridge,

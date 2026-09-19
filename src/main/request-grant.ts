@@ -57,6 +57,18 @@ export async function requestGrant (
 ): Promise<boolean> {
   if (!isCapabilityKind(request.capability)) return false
 
+  // ADR-0019, spec item 6: 'web.context' is declared-in-the-manifest-only in
+  // this version, whatever the manifest declares -- app.requestGrant must
+  // never mint one dynamically. THIS is the one door that stays shut; the
+  // install-consent dialog (grant-prompt-render.ts's own 'web.context'
+  // copy, via main/grant-changed-capabilities.ts) is the only door left.
+  // Checked here rather than inside decideGrantRequest (../broker/policy/
+  // request-grant.js): that function is ALSO grant-persistence.ts's own
+  // "does a restored grant still fit the current manifest" check and this
+  // file's own sibling's real grant call, and a blanket refusal there once
+  // silently broke both -- see decideGrantRequest's own doc for the finding.
+  if (request.capability === 'web.context') return false
+
   let manifest
   try {
     manifest = await broker.app.manifest(origin)
