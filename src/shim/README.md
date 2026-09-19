@@ -188,3 +188,41 @@ permission `mode` names. `orivon.fs` has no POSIX permission model at all (the s
 that the way a real permission check would. nedb, the only caller today, passes `F_OK` alone.
 **Still open:** what a future dependency asking `W_OK` to mean something narrower should get,
 which `orivon.fs`'s contract currently gives this file nothing to answer with.
+
+**A path resolving to the app's own ROOT is answered locally, never sent to orivon.fs.**
+**AI recommendation, not owner-reviewed.** The broker's own confinement policy
+(`src/broker/policy/paths.ts`) refuses ANY requested path that resolves to the root itself
+(`deny('is-root')`), unconditionally, regardless of grant -- by design, not a gap: `orivon.fs`
+confines every call to somewhere STRICTLY INSIDE the root. But the root always exists (the broker
+creates it), exactly the way a process's cwd always exists in real Node, and a ported dependency
+routinely asks for it: `@seald-io/nedb`'s `lib/storage.js` computes `path.dirname('settings.db')`
+(`'.'`) for its parent-directory `mkdir`, and fsyncs that same `'.'` after every crash-safe
+rename. Both calls failed outright before this fix -- FreeTube never mounted a database.
+`node-fs-root.ts` now answers both ENTIRELY IN THE SHIM, never calling `orivon.fs`:
+`fs.mkdir(root, {recursive:true})` is a no-op success (the broker already created it);
+without `recursive` it fails `EEXIST`, matching Node for any other already-existing directory.
+`fs.open(root, 'r')` returns a local directory handle whose `sync()`/`datasync()`/`close()`
+succeed and whose `read()`/`write()`/`truncate()` fail `EISDIR`/`EBADF`/`EINVAL` respectively --
+checked against real Node on Linux, not assumed (`stat()` on that handle SUCCEEDS, which a naive
+"directories refuse everything" guess would have gotten wrong). Any other open flag on the root
+fails `EISDIR` immediately, matching Node's own refusal to open a directory for writing.
+
+**A directory fsync of the root is therefore a NO-OP, not a real fsync of anything.**
+`orivon.fs` exposes no handle on the root at all, so there is nothing this shim can actually ask
+the OS to flush on the app's behalf -- a rename's directory entry is only as durable as the
+broker's own `rename()` call already makes it, no more. nedb's own crash-safety model (documented
+in `persistence.js`) already tolerates a platform where opening a directory for fsync fails
+outright (its own EISDIR handling), so this no-op costs it nothing further than that platform
+already costs it; nothing here promises a stronger durability guarantee than the broker's rename
+itself provides.
+
+**`fs.stat('.')` and `fs.readdir('.')` are deliberately left passing through to the broker's
+ordinary `'denied'` refusal, not special-cased.** nedb needs neither on the root -- its `existsAsync`
+reads `fs.constants.F_OK` via `access()`, which itself only ever targets a real datafile path, and
+its `readdir` reach is `readdir(dirname(filename))`'s NON-root case (an app that stores files in a
+subdirectory) that this fix does not touch. Special-casing every root-targeting call, not only the
+two a confirmed caller needs, would mean guessing at Node semantics with nothing to check them
+against -- `mkdir`/`open`+`sync`+`close` are the two this branch could actually verify against real
+Node and a real caller. **Still open:** whether a future caller needs `stat('.')`/`readdir('.')`
+answered locally too, and if so, with what synthetic content -- this file has no real metadata for
+the root beyond "it is a directory" without asking the broker for the one path it always refuses.

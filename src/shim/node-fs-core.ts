@@ -12,22 +12,23 @@
 // is already a platform errno (not one of OrivonErrorCode's closed values)
 // would silently overwrite it with toNodeError's 'internal' fallback.
 //
-// PATHS ARE NEVER RESOLVED, JOINED OR NORMALISED HERE. `path` reaches
-// `getOrivon().fs.*` exactly as the caller wrote it -- a relative path like
-// `settings.db` lands wherever the BROKER resolves it, which is the app's
-// own files directory root (capability-api.ts's OrivonFs doc: "Rooted at the
-// app's files directory... resolved and confined IN THE BROKER, never
-// trusted from the renderer"). Calling path.resolve/path.normalize on `path`
-// before handing it over would be wrong, not merely redundant: it could
-// change which root a relative path resolves against, or defeat the
-// broker's own confinement check by pre-resolving a traversal this layer has
-// no authority to approve.
+// PATHS ARE NEVER RESOLVED, JOINED OR NORMALISED TO CHANGE WHERE THEY LAND.
+// `path` reaches `getOrivon().fs.*` exactly as the caller wrote it -- a
+// relative path like `settings.db` lands wherever the BROKER resolves it,
+// the app's own files directory root (capability-api.ts's OrivonFs doc).
+// Pre-resolving `path` before handing it over would be wrong, not merely
+// redundant: it could change which root it resolves against, or defeat the
+// broker's own confinement check. `doMkdir`'s `isRootPath` check below is
+// not an exception -- it normalises only to DETECT the one path the broker
+// refuses unconditionally (node-fs-root.ts), never to rewrite what reaches
+// orivon.fs.
 
 import { getOrivon } from './orivon-global.js'
 import { toNodeError } from './node-http-errors.js'
 import { toBytes } from './node-stream-bytes.js'
 import { toNodeStats, type NodeStats } from './node-fs-stats.js'
 import { openHandle } from './node-fs-handle.js'
+import { assertRootMkdirAllowed, isRootPath } from './node-fs-root.js'
 import { Buffer } from 'buffer'
 
 export interface ReadFileOptions { encoding?: string }
@@ -98,7 +99,16 @@ export async function doAppendFile (path: string, data: unknown, encoding: strin
   await handle.close()
 }
 
+/**
+ * A path resolving to the ROOT ITSELF never reaches orivon.fs -- the
+ * broker's own confinement policy refuses it unconditionally
+ * (node-fs-root.ts's own header: `path.dirname('settings.db')` is `'.'`,
+ * exactly this case, for @seald-io/nedb's own parent-directory mkdir).
+ * The root always exists (the broker creates it), so this answers Node's
+ * own "mkdir an existing directory" outcome locally instead.
+ */
 export async function doMkdir (path: string, opts: MkdirOptions | undefined): Promise<void> {
+  if (isRootPath(path)) { assertRootMkdirAllowed(opts); return }
   try {
     await getOrivon().fs.mkdir(path, opts)
   } catch (error) {

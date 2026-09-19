@@ -368,13 +368,16 @@ describe('a relative path is passed to orivon.fs verbatim', () => {
 
     await new Promise<void>((resolve, reject) => fs.readFile('settings.db', (err) => (err !== null ? reject(err) : resolve())))
     await new Promise<void>((resolve, reject) => fs.writeFile('settings.db', 'x', (err) => (err !== null ? reject(err) : resolve())))
-    await new Promise<void>((resolve, reject) => fs.mkdir('.', (err) => (err !== null ? reject(err) : resolve())))
+    // NOT '.' -- a root-resolving path is its own case now, covered by
+    // node-fs-root.test.ts; this test's own job is proving an ordinary
+    // relative path is untouched, so it uses one that is not the root.
+    await new Promise<void>((resolve, reject) => fs.mkdir('settings-dir', (err) => (err !== null ? reject(err) : resolve())))
     await new Promise<void>((resolve, reject) => fs.stat('settings.db', (err) => (err !== null ? reject(err) : resolve())))
     await new Promise<void>((resolve, reject) => fs.rm('settings.db', (err) => (err !== null ? reject(err) : resolve())))
     await new Promise<void>((resolve, reject) => fs.rename('settings.db', 'settings.db~', (err) => (err !== null ? reject(err) : resolve())))
 
     expect([...files.keys()]).toContain('settings.db')
-    expect(mkdirCalls).toEqual([{ path: '.', opts: undefined }])
+    expect(mkdirCalls).toEqual([{ path: 'settings-dir', opts: undefined }])
     expect(rmCalls).toEqual([{ path: 'settings.db', opts: undefined }])
     expect(renameCalls).toEqual([{ from: 'settings.db', to: 'settings.db~' }])
   })
