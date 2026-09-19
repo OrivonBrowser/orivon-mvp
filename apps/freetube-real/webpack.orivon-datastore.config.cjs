@@ -22,6 +22,11 @@ function requireFromClone (specifier) {
   return require(require.resolve(specifier, { paths: [CLONE] }))
 }
 
+/** Same resolution as requireFromClone, but the path only -- for a plugin option (ProvidePlugin, below) that wants a module to resolve to, not one to execute here. */
+function resolveFromClone (specifier) {
+  return require.resolve(specifier, { paths: [CLONE] })
+}
+
 const webpack = requireFromClone('webpack')
 
 const OUTPUT_PATH = path.join(CLONE, 'dist', 'orivon-electron-datastore')
@@ -117,6 +122,21 @@ module.exports = {
       // mechanism FreeTube's own webpack.main.config.js relies on to set
       // this flag true for the real main-process bundle.
       'process.env.IS_ELECTRON_MAIN': false
+    }),
+    // Found by actually running this build in a real page, not assumed:
+    // some Node-history package in this graph (a crypto-browserify
+    // transitive dependency, going by the minified stack) reads bare
+    // `process` -- `process.browser`/`process.nextTick`-style
+    // environment checks, the standard Browserify-era pattern -- and
+    // target 'web' provides no such global on its own, unlike Electron's
+    // real main process, which has real Node's. `web.config.js` already
+    // solves this the identical way for the renderer bundle, for the
+    // identical reason (a plain page has no `process` either): resolved
+    // from the clone rather than requiring this repo to add a `process`
+    // devDependency of its own for one polyfill already sitting in the
+    // clone's own node_modules.
+    new webpack.ProvidePlugin({
+      process: resolveFromClone('process/browser.js')
     })
   ]
 }
