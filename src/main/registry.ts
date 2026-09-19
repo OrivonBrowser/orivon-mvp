@@ -23,6 +23,7 @@
 import type { App } from 'electron'
 import type { Broker } from '../broker/broker-contracts.js'
 import type { Loader, LoadResult } from '../loader/index.js'
+import type { DevGranted } from './dev-app-origin.js'
 import type { CapabilityRequest } from '../contracts/index.js'
 
 export interface SubsystemContext {
@@ -81,7 +82,7 @@ export interface SubsystemContext {
    * be listed after it, which itself must be listed after both
    * `brokerIpcSubsystem` and `loaderSubsystem`.
    */
-  readonly installApp: ((hintingOrigin: string, hintedUrl: string) => Promise<LoadResult>) | undefined
+  readonly installApp: ((hintingOrigin: string, hintedUrl: string) => Promise<LoadResult | DevGranted>) | undefined
 }
 
 /**
@@ -111,7 +112,7 @@ function createPublishedSlot<T> (label: string, hazard: string): {
 const brokerSlot = createPublishedSlot<Broker>('broker', 'a second Broker would create two disagreeing grant ledgers for one running app')
 const loaderSlot = createPublishedSlot<Loader>('loader', 'a second Loader would create two disagreeing ideas of what is installed for one running app')
 const requestGrantSlot = createPublishedSlot<(origin: string, request: CapabilityRequest) => Promise<boolean>>('requestGrant', 'a second one could close over a different Broker instance than the one every other subsystem reads')
-const installAppSlot = createPublishedSlot<(hintingOrigin: string, hintedUrl: string) => Promise<LoadResult>>('installApp', 'a second one could close over a different Broker or Loader instance than the one every other subsystem reads')
+const installAppSlot = createPublishedSlot<(hintingOrigin: string, hintedUrl: string) => Promise<LoadResult | DevGranted>>('installApp', 'a second one could close over a different Broker or Loader instance than the one every other subsystem reads')
 
 class SubsystemContextImpl implements SubsystemContext {
   readonly app: App
@@ -132,7 +133,7 @@ class SubsystemContextImpl implements SubsystemContext {
     return requestGrantSlot.get(this)
   }
 
-  get installApp (): ((hintingOrigin: string, hintedUrl: string) => Promise<LoadResult>) | undefined {
+  get installApp (): ((hintingOrigin: string, hintedUrl: string) => Promise<LoadResult | DevGranted>) | undefined {
     return installAppSlot.get(this)
   }
 }
@@ -169,7 +170,7 @@ export function publishRequestGrant (ctx: SubsystemContext, requestGrant: (origi
 }
 
 /** The one sanctioned way to set `ctx.installApp` -- see `publishBroker`'s own doc; same guarantee, same reason. */
-export function publishInstallApp (ctx: SubsystemContext, installApp: (hintingOrigin: string, hintedUrl: string) => Promise<LoadResult>): void {
+export function publishInstallApp (ctx: SubsystemContext, installApp: (hintingOrigin: string, hintedUrl: string) => Promise<LoadResult | DevGranted>): void {
   installAppSlot.publish(ctx, installApp)
 }
 

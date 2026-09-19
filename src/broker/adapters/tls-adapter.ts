@@ -12,6 +12,7 @@
 // verification, which is the whole security property ADR-0017 rests on.
 
 import { connect as tlsConnect } from 'node:tls'
+import { isIP } from 'node:net'
 import { Duplex } from 'node:stream'
 import type { DialedSocket, DialSecure } from '../broker-contracts.js'
 import { DIAL_TIMEOUT_MS, destroySocket } from './node-adapters.js'
@@ -46,11 +47,27 @@ export interface DialTlsOptions {
  * validation and hostname verification against `host` itself, using the
  * runtime's own OpenSSL binding (`rejectUnauthorized` defaults to true, and
  * nothing here overrides `checkServerIdentity`: weakening either is not this
- * file's decision to make). No explicit `servername` is passed -- `tls.
- * connect` already defaults it to `host`, and passing an IP literal there
- * explicitly trips a Node deprecation warning for no behavioural gain
- * (confirmed against a real handshake, not assumed: verification behaves
- * identically either way).
+ * file's decision to make).
+ *
+ * `servername` MUST be passed explicitly for a hostname, and omitting it does
+ * not merely lose a nicety -- it breaks the handshake against most of the
+ * public web. `tls.connect` does NOT default it from `host` in this object
+ * form (`socket.servername` reads `false`), so no SNI extension is sent, and
+ * a name-based virtual host answers with whatever default certificate it
+ * keeps for clients that send none. Measured against real Google: the reply
+ * is a self-signed `CN = invalid2.invalid` whose subject reads
+ * "No SNI provided - please fix your client.", which verification then
+ * correctly refuses. It fails closed, so this was never a security hole --
+ * it made `connectSecure` unable to reach ordinary HTTPS hosts at all.
+ *
+ * An IP literal is excluded because SNI's grammar has no place for one and
+ * passing it trips a Node deprecation warning; `isIP` is the same check
+ * `src/shim/node-net-isip.ts` already relies on.
+ *
+ * A LOCAL TEST SERVER CANNOT CATCH THIS, which is why the suite did not:
+ * a single-certificate server presents the same certificate whether or not
+ * SNI arrives. Only a name-based virtual host distinguishes the two, so the
+ * regression test for this belongs against a real multi-tenant host.
  *
  * Mirrors ./node-adapters.ts's `dialOne` structure deliberately -- same
  * timeout race, same abort wiring -- because this is that function's sibling
@@ -63,7 +80,7 @@ function dialOneSecure (
   options: DialTlsOptions
 ): Promise<DialedSocket> {
   return new Promise((resolve, reject) => {
-    const socket = tlsConnect({ host, port, ca: options.ca })
+    const socket = tlsConnect({ host, port, ca: options.ca, ...(isIP(host) === 0 ? { servername: host } : {}) })
     const onAbort = (): void => { socket.destroy() }
     signal.addEventListener('abort', onAbort, { once: true })
     let timer: NodeJS.Timeout

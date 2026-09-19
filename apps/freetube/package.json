@@ -1,0 +1,11 @@
+{
+  "name": "@orivon-app/freetube",
+  "version": "0.1.0",
+  "private": true,
+  "description": "FreeTube port for Orivon: a YouTube frontend delivered as an ordinary web app over orivon.* capabilities. No dependencies and no build step, by design.",
+  "type": "module",
+  "scripts": {
+    "serve": "node serve.mjs",
+    "verify": "node verify.mjs"
+  }
+}
