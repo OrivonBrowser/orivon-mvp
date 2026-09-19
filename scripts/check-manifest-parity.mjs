@@ -35,7 +35,8 @@ export const PARITY_MAP = [
   { interfaceName: 'UdpCapability', loaderFile: 'src/loader/manifest-capabilities.ts', arrayName: 'UDP_KEYS' },
   { interfaceName: 'HttpsCapability', loaderFile: 'src/loader/manifest-capabilities.ts', arrayName: 'HTTPS_KEYS' },
   { interfaceName: 'FsCapability', loaderFile: 'src/loader/manifest-capabilities.ts', arrayName: 'FS_KEYS' },
-  { interfaceName: 'IdCapability', loaderFile: 'src/loader/manifest-capabilities.ts', arrayName: 'ID_CAPABILITY_KEYS' }
+  { interfaceName: 'IdCapability', loaderFile: 'src/loader/manifest-capabilities.ts', arrayName: 'ID_CAPABILITY_KEYS' },
+  { interfaceName: 'WebCapability', loaderFile: 'src/loader/manifest-capabilities.ts', arrayName: 'WEB_CAPABILITY_KEYS' }
 ]
 
 /**
@@ -45,12 +46,29 @@ export const PARITY_MAP = [
  * "forgotten". An entry here is a decision someone recorded, not a guess
  * this script made on its own.
  *
- * Empty today -- every field either interface currently declares is already
- * accepted (A164, the consentGranularity fix). Add a row here, with why,
- * the day that stops being true:
- * `{ interfaceName: 'NetCapability', field: 'example', reason: '...' }`.
+ * A field on a PARITY_MAP row whose loader array does not exist AT ALL
+ * (rather than existing but missing this one field) is also covered here,
+ * not treated as `unreadable`, PROVIDED every field the interface declares
+ * has its own entry below -- see the loop in {@link checkManifestParity}.
+ * That is the ADR-0019 case: `WebCapability` is a brand-new interface whose
+ * loader array (`WEB_CAPABILITY_KEYS`) is added by the implementation PR
+ * that follows this one, so there is nothing yet for a partial check to
+ * find a partial match against.
  */
-export const DELIBERATELY_DEFERRED = []
+export const DELIBERATELY_DEFERRED = [
+  {
+    interfaceName: 'Capabilities',
+    field: 'web',
+    reason: 'ADR-0019: web.context is declared in this contracts-only PR. The loader starts ' +
+      'accepting `web` in the implementation PR that follows, which removes this entry.'
+  },
+  {
+    interfaceName: 'WebCapability',
+    field: 'contexts',
+    reason: 'ADR-0019: WEB_CAPABILITY_KEYS does not exist yet -- added by the implementation PR ' +
+      'that follows this one, which removes this entry.'
+  }
+]
 
 // Re-implemented rather than imported from check-contracts-pure.mjs -- see
 // cli.mjs's own header on why the check:* scripts duplicate small
@@ -201,6 +219,15 @@ export function checkManifestParity (root, options = {}) {
     const loaderSource = readSafe(join(root, loaderFile))
     const loaderKeys = arrayLiteralItems(loaderSource, arrayName)
     if (loaderKeys === null) {
+      // Two reasons this array can be unreadable: this check's own regex is
+      // stale (a real bug -- fail closed), or the array has not been written
+      // yet because every field the interface declares is a recorded,
+      // reasoned DELIBERATELY_DEFERRED entry (ADR-0019's WebCapability). Only
+      // the second is fine, and only when EVERY field says so -- a mix of
+      // deferred and forgotten fields must still fail loud.
+      const entirelyDeferred = contractFields.length > 0 && contractFields.every((field) =>
+        deferred.some((d) => d.interfaceName === interfaceName && d.field === field))
+      if (entirelyDeferred) continue
       unreadable.push(`${arrayName} in ${loaderFile}`)
       continue
     }

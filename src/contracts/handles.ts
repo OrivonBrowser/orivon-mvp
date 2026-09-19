@@ -384,3 +384,36 @@ export interface IdentityHandle extends Handle {
   /** Structured; the broker serialises and screens `kind`. */
   signEvent(event: object): Promise<object>
 }
+
+/**
+ * An open isolated context -- capability-api.ts's `OrivonWeb.openContext`,
+ * ADR-0019. `closed` rejects 'revoked' if the `web.context` grant is
+ * withdrawn, rejects 'timeout' if a timed-out `evaluate` closed it, rejects
+ * 'reset' if the context's own renderer dies on its own (a crash or an OOM
+ * kill -- the platform notices this at once, not only once the context has
+ * sat idle), and resolves on `close()` or when the platform closes an idle
+ * context (`LIMITS.webContextIdleMs`); every way, the partition is cleared.
+ */
+export interface WebContext extends Handle {
+  /** The origin the document runs at, exactly as opened. */
+  readonly origin: string
+  /**
+   * Runs `script` as a classic script in the context's document and resolves
+   * with its completion value, awaited if it is a promise. The value must be
+   * JSON-compatible -- null, boolean, finite number, string, and arrays or
+   * plain objects of those -- or the call rejects 'invalid'; a completion
+   * value of `undefined` resolves `null`. A throw inside the script rejects
+   * 'invalid' carrying the thrown message.
+   *
+   * Rejects 'timeout' after `LIMITS.webContextEvaluateMs` AND CLOSES THE
+   * CONTEXT: a running script cannot be interrupted any other way, and a
+   * context left running it would answer nothing else. 'limit' if the
+   * script exceeds `LIMITS.webContextScriptBytes`, the serialised result
+   * exceeds `LIMITS.webContextResultBytes`, or another `evaluate` on this
+   * context is still running; 'closed' after close, or if the context's own
+   * renderer already died on its own (`closed`'s own 'reset' doc above -- a
+   * *later* `evaluate` sees the ordinary post-close 'closed', matching every
+   * other handle); 'revoked' if the grant is withdrawn meanwhile.
+   */
+  evaluate(script: string): Promise<unknown>
+}
