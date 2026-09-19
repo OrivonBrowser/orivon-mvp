@@ -113,11 +113,35 @@ if (copyPluginsPatched === 0) {
   throw new Error('expected at least one CopyWebpackPlugin pattern targeting dist/web -- upstream\'s web config changed shape')
 }
 
+// FreeTube's own alias, patched from '.../handlers/web.js' (localForage,
+// browser nedb -> IndexedDB) to '.../handlers/electron.js' (window.ftElectron
+// dispatch, real nedb over real files) -- this is the whole point of this
+// build. Asserted first, the same defensive style as every patch above:
+// upstream restructuring this key should fail the build loudly, not
+// silently keep pointing at the web handler.
+const DB_HANDLERS_KEY = 'DB_HANDLERS_ELECTRON_RENDERER_OR_WEB$'
+const EXPECTED_WEB_HANDLER = path.join(CLONE, 'src', 'datastores', 'handlers', 'web.js')
+config.resolve = config.resolve ?? {}
+config.resolve.alias = config.resolve.alias ?? {}
+if (config.resolve.alias[DB_HANDLERS_KEY] !== EXPECTED_WEB_HANDLER) {
+  throw new Error(`expected ${DB_HANDLERS_KEY} to point at handlers/web.js -- upstream's web config changed shape`)
+}
+config.resolve.alias[DB_HANDLERS_KEY] = path.join(CLONE, 'src', 'datastores', 'handlers', 'electron.js')
+
+// Present only in upstream's OWN renderer.config.js, absent from web.config.js
+// -- see README.md's renderer-vs-web diff table. Safe here for a reason
+// confirmed by reading the one consumer, not assumed: vSaferHtml.js's
+// `USE_NATIVE_SANITIZER = process.env.IS_ELECTRON || (...)` is `true` as
+// soon as IS_ELECTRON is (already the case, above), which makes every
+// `DOMPurify.sanitize(...)` call site dead code -- this alias only stops
+// webpack bundling the real (unused) dompurify package, exactly as
+// upstream's own Electron build does.
+config.resolve.alias.dompurify$ = path.join(CLONE, '_scripts', '_undefinedDefaultExport.mjs')
+
 // youtubei.js reaches for a few node builtins on its isomorphic paths. Same
 // fallback list as the clone's web-localapi wrapper: an empty fallback is
 // the honest setting for a browser bundle, which checks for these rather
 // than assuming them.
-config.resolve = config.resolve ?? {}
 config.resolve.fallback = {
   ...config.resolve.fallback,
   fs: false,
