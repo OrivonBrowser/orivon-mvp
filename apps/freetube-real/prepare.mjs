@@ -19,6 +19,7 @@ import { createRequire } from 'node:module'
 import { spawnSync } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { buildShimBundle } from './build-shim.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const DEFAULT_CLONE = '/home/jhon/git/freetube-src'
@@ -67,26 +68,51 @@ const out = argValue('--out', BUILD ? join(clone, 'dist', 'orivon-electron') : j
 
 const HINT = '<link rel="orivon-manifest" href="/.well-known/orivon.json">'
 const BRIDGE_SCRIPT = '<script src="/orivon/ft-electron-bridge.js"></script>'
+// Loaded classic, synchronous, and AFTER the bridge's own <script> tag but
+// BEFORE FreeTube's bundle -- the bridge's db* members read
+// `globalThis.__orivonFtDatastore` lazily, at call time rather than at
+// install time, precisely because this script has not run yet when the
+// bridge's own top-level `installFtElectronBridge(...)` call does (see
+// bridge/ft-datastore-entry.js's own header).
+const DATASTORE_SCRIPT = '<script src="/orivon/ft-datastore.js"></script>'
 
 /**
  * Runs upstream's OWN webpack, through ./webpack.orivon.config.cjs, then
- * upstream's OWN `pnpm run pack:botGuardScript` -- both in the clone, both
- * needing the clone lock (agent-rules.md). Neither writes anything into this
- * repository; the config file is the only thing of ours involved.
+ * the second bundle (upstream's own main-process datastore code, over this
+ * repo's Node shim) through ./webpack.orivon-datastore.config.cjs, then
+ * upstream's OWN `pnpm run pack:botGuardScript` -- all three in the clone,
+ * all three needing the clone lock (agent-rules.md). None of them writes
+ * anything into this repository; the two config files are the only things
+ * of ours involved. The datastore bundle's own shim dependency is compiled
+ * FIRST, from whatever src/shim/ is in THIS repo's tree right now (README.md's
+ * "Where the shim comes from") -- webpack has no TypeScript loader, so it
+ * can only consume that step's plain-JS output, never src/shim/ directly.
  */
 function buildElectronRenderer () {
-  const configPath = join(HERE, 'webpack.orivon.config.cjs')
   const env = { ...process.env, FREETUBE_CLONE: clone, NODE_ENV: 'production' }
 
-  const webpack = spawnSync('npx', ['webpack', '--mode=production', '--config', configPath], { cwd: clone, env, stdio: 'inherit' })
+  const webpack = spawnSync('npx', ['webpack', '--mode=production', '--config', join(HERE, 'webpack.orivon.config.cjs')], { cwd: clone, env, stdio: 'inherit' })
   if (webpack.status !== 0) throw new Error(`[prepare] webpack build failed (exit ${String(webpack.status)})`)
 
-  const botGuard = spawnSync('pnpm', ['run', 'pack:botGuardScript'], { cwd: clone, env, stdio: 'inherit' })
-  if (botGuard.status !== 0) throw new Error(`[prepare] pack:botGuardScript failed (exit ${String(botGuard.status)})`)
+  return buildShimBundle()
+    .then(() => {
+      const datastore = spawnSync('npx', ['webpack', '--mode=production', '--config', join(HERE, 'webpack.orivon-datastore.config.cjs')], { cwd: clone, env, stdio: 'inherit' })
+      if (datastore.status !== 0) throw new Error(`[prepare] datastore webpack build failed (exit ${String(datastore.status)})`)
+
+      const botGuard = spawnSync('pnpm', ['run', 'pack:botGuardScript'], { cwd: clone, env, stdio: 'inherit' })
+      if (botGuard.status !== 0) throw new Error(`[prepare] pack:botGuardScript failed (exit ${String(botGuard.status)})`)
+    })
 }
 
 async function main () {
-  if (BUILD) buildElectronRenderer()
+  // Awaited now, unlike the single-webpack version this replaced: that one
+  // returned after two synchronous spawnSync calls, so the function had
+  // already finished its own work by the time it returned even unawaited.
+  // buildElectronRenderer() now also runs buildShimBundle() (a real async
+  // esbuild call), so skipping the await would let main() read `src`
+  // before the datastore bundle -- and even the botGuard pack after it --
+  // had finished.
+  if (BUILD) await buildElectronRenderer()
 
   let indexHtml
   try {
@@ -121,9 +147,13 @@ async function main () {
     // FIRST script in <head>, classic and synchronous: FreeTube's own
     // bundle calls window.ftElectron.handleChangeView at module top level
     // (src/renderer/main.js), so the bridge has to already exist by then.
+    // The datastore bundle goes right after it, still before FreeTube's own
+    // bundle -- DATASTORE_SCRIPT's own comment says why the order between
+    // these first two does not actually matter at runtime, only that both
+    // precede FreeTube's.
     indexHtml = indexHtml.includes('<head>')
-      ? indexHtml.replace('<head>', `<head>\n    ${BRIDGE_SCRIPT}`)
-      : `${BRIDGE_SCRIPT}\n${indexHtml}`
+      ? indexHtml.replace('<head>', `<head>\n    ${BRIDGE_SCRIPT}\n    ${DATASTORE_SCRIPT}`)
+      : `${BRIDGE_SCRIPT}\n${DATASTORE_SCRIPT}\n${indexHtml}`
   }
   await writeFile(join(out, 'index.html'), indexHtml)
 
@@ -135,6 +165,7 @@ async function main () {
     await mkdir(join(out, 'orivon'), { recursive: true })
     await cp(join(HERE, 'bridge', 'ft-electron-bridge.js'), join(out, 'orivon', 'ft-electron-bridge.js'))
     await cp(join(clone, 'dist', 'botGuardScript.js'), join(out, 'orivon', 'botGuardScript.js'))
+    await cp(join(clone, 'dist', 'orivon-electron-datastore', 'datastore.js'), join(out, 'orivon', 'ft-datastore.js'))
   }
 
   const hosts = JSON.parse(manifest).capabilities.net.https.connect.length
