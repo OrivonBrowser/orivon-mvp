@@ -135,6 +135,34 @@ describe('fs.createWriteStream', () => {
     expect(fake.closed()).toBe(true)
   })
 
+  // The identical scenario above, but with the SAME polyfill
+  // webpack.orivon-datastore.config.cjs actually aliases 'stream' to in the
+  // real page (stream-browserify), not Node's own -- vi.doMock, scoped to
+  // this one test via the dynamic import below, since the file's own
+  // vi.resetModules() in afterEach means every test already gets a fresh
+  // module graph. Node's own stream.Writable emits 'close' automatically
+  // once 'finish' fires (emitClose/autoDestroy, both default true); this
+  // proves the same holds under the actual browser polyfill this stream
+  // is bundled against, which is not guaranteed by construction.
+  it('close(cb) still reports under stream-browserify, the polyfill the real page actually bundles', async () => {
+    const { fake } = installFakeOrivon()
+    vi.doMock('stream', async () => await vi.importActual('stream-browserify'))
+    const { createWriteStream } = await import('../node-fs-streams.js')
+    const stream = createWriteStream('/x')
+    stream.write('a\n')
+    stream.write('b\n')
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('close(cb) never reported -- stream-browserify does not auto-emit \'close\' after \'finish\'')), 2_000)
+      stream.close((err: Error | null | undefined) => {
+        clearTimeout(timer)
+        if (err !== null && err !== undefined) reject(err)
+        else resolve()
+      })
+    })
+    expect(new TextDecoder().decode(fake.bytes())).toBe('a\nb\n')
+    expect(fake.closed()).toBe(true)
+  })
+
   it('a write failure reaches the \'error\' event, matching what @seald-io/nedb\'s own storage.js listens for', async () => {
     const { fake } = installFakeOrivon()
     fake.handle.write = async () => { throw orivonError('limit', 'quota exceeded') }

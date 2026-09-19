@@ -108,7 +108,6 @@ export class WriteStream extends Writable {
       (handle) => { this.emit('open', handle.fd); this.emit('ready') },
       (error) => this.destroy(error as Error)
     ).catch(() => {})
-    this.once('close', () => { this.didClose = true })
   }
 
   override _write (chunk: unknown, _encoding: BufferEncoding, callback: (error?: Error | null) => void): void {
@@ -134,18 +133,43 @@ export class WriteStream extends Writable {
 
   /**
    * Real Node's fs.WriteStream#close -- not part of the base Writable,
-   * since a generic stream has no fd to release. `err` is never populated
-   * on the 'close' event this waits for (Node's own Writable never carries
-   * one there); a real write/open/close failure still reaches the caller
-   * through the ordinary 'error' event every Writable already emits, which
-   * is the path @seald-io/nedb's own storage.js itself relies on.
+   * since a generic stream has no fd to release.
+   *
+   * DRIVEN BY end()+destroy()'S OWN CALLBACKS, NEVER THE 'close' EVENT.
+   * Node's real Writable emits 'close' automatically once 'finish' fires
+   * (emitClose/autoDestroy, both default true there), which the previous
+   * version of this method relied on -- correct against real Node, but not
+   * guaranteed by the Writable contract itself, and the specific polyfill
+   * this repository's own build actually bundles (`stream-browserify`,
+   * aliased in webpack.orivon-datastore.config.cjs) does not emit it:
+   * confirmed by running exactly this method against it, not assumed
+   * (src/shim/tests/node-fs-streams.test.ts's own stream-browserify case).
+   * `end()`'s callback (fires on 'finish') and `destroy()`'s own second
+   * argument (fires once `_destroy` -- which actually closes the fd --
+   * completes) are both part of Writable's documented public API on every
+   * implementation, not an emergent behaviour one polyfill happens to
+   * match, so chaining them here works the same under either.
    */
   close (callback?: (error?: Error | null) => void): void {
-    if (callback !== undefined) {
-      if (this.didClose) queueMicrotask(() => callback())
-      else this.once('close', () => callback())
+    if (this.didClose) {
+      if (callback !== undefined) queueMicrotask(() => callback())
+      return
     }
-    this.end()
+    this.end(() => {
+      // @types/node's own `destroy(error?: Error): this` omits the second,
+      // callback argument its REAL runtime signature accepts (and this
+      // method depends on) -- a documented Node stream API
+      // (`writable.destroy([error], [callback])`), just missing from this
+      // declaration file. Cast `this`, not the extracted method: destroy()
+      // reads `this._writableState` internally, so the call must still go
+      // through real method-call syntax (`x.destroy(...)`), never a
+      // standalone function reference, which loses that binding.
+      interface DestroyWithCallback { destroy: (error: undefined, callback: (error?: Error | null) => void) => void }
+      ;(this as unknown as DestroyWithCallback).destroy(undefined, (error) => {
+        this.didClose = true
+        callback?.(error ?? null)
+      })
+    })
   }
 }
 
