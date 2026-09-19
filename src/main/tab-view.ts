@@ -115,6 +115,8 @@ export interface TabViewHost {
   readonly preloadPath: string
   readonly contentView: View
   readonly broker: Broker | undefined
+  /** Read only to tell "still showing the dashboard" from "navigated away", in `wireView`'s did-navigate below. Never used to decide that a tab IS the dashboard -- `TabRecord.isDashboardTab` owns that, and only creation sets it. */
+  readonly dashboardUrl: string
   isActive: (id: string) => boolean
   emitState: () => void
   captureFavicon: (id: string, record: TabRecord, favicons: string[]) => Promise<void>
@@ -141,6 +143,21 @@ export function wireView (host: TabViewHost, id: string, record: TabRecord): voi
     // the dashboard's OWN first load, since its current partition is
     // undefined) -- see createTab()'s isDashboard branch and this file's
     // README-linked design notes for why that tab must stay unpartitioned.
+    // A tab showing somebody else's origin is not the dashboard any more,
+    // whatever it was created as. Cleared HERE and not left to
+    // repartitionView(), which used to be the only thing that cleared it:
+    // the repartition check below is itself gated on this flag, so a tab
+    // that navigated away WITHOUT needing a partition swap (an origin with
+    // no grants yet -- every app's first visit) kept the flag, and therefore
+    // kept skipping this check, for the rest of its life. It could never
+    // become an app tab afterwards, however it was later granted.
+    //
+    // ONLY EVER CLEARED, NEVER SET, so no URL a page can influence can win
+    // dashboard treatment -- the direction TabRecord.isDashboardTab's own
+    // one-way rule exists to protect.
+    if (record.isDashboardTab && originFromUrl(navigatedUrl) !== originFromUrl(host.dashboardUrl)) {
+      record.isDashboardTab = false
+    }
     if (!record.isDashboardTab) {
       const swap = partitionChanged(navigatedUrl, record.partition, host.broker)
       if (swap !== undefined) {
