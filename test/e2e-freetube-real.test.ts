@@ -23,7 +23,7 @@
 //   ORIVON_ORDINARY_BUILD=1 npx vitest run --config test/vitest.e2e.config.ts test/e2e-freetube-real.test.ts
 import { afterAll, expect, it } from 'vitest'
 import type { ChildProcess } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from './launch-electron.mjs'
 import { findChrome, tabViews, waitFor } from './smoke-helpers.mjs'
@@ -33,6 +33,29 @@ import { PORT_APP_FREETUBE_REAL, startOwnServer } from './freetube-fixture.js'
 const ORDINARY_BUILD = process.env['ORIVON_ORDINARY_BUILD'] === '1'
 const ROOT = process.env['ORIVON_FREETUBE_REAL_ROOT'] ?? '/home/jhon/git/freetube-src/dist/orivon-web-localapi'
 const BUILT = existsSync(join(ROOT, 'index.html'))
+
+/**
+ * Playback needs a minted PoToken (ftElectron.generatePoToken, ADR-0019's
+ * web.context). ON BY DEFAULT once the prepared build's own manifest
+ * declares `web` -- that is the build that can actually mint one -- so a
+ * build without it (`dist/orivon-web`, `dist/orivon-web-localapi`) still
+ * only gets the metadata checks above, exactly as before. `=0` forces it
+ * off even against a `web`-declaring build; `=1` forces it on regardless
+ * (a manifest edit not yet re-prepared, say). See README.md's "Playback on
+ * the Electron-renderer build" for what this build now measures.
+ */
+function manifestDeclaresWeb (): boolean {
+  if (!BUILT) return false
+  try {
+    const manifest: { capabilities?: { web?: unknown } } = JSON.parse(readFileSync(join(ROOT, '.well-known', 'orivon.json'), 'utf8'))
+    return manifest.capabilities?.web !== undefined
+  } catch {
+    return false
+  }
+}
+const REQUIRE_PLAYBACK = process.env['ORIVON_FREETUBE_REAL_PLAYBACK'] === '0'
+  ? false
+  : process.env['ORIVON_FREETUBE_REAL_PLAYBACK'] === '1' || manifestDeclaresWeb()
 
 const HOST = '127.0.0.1'
 const PORT = Number(process.env['ORIVON_FREETUBE_REAL_PORT'] ?? PORT_APP_FREETUBE_REAL)
@@ -51,7 +74,8 @@ function viewAtOrigin (app: Parameters<typeof tabViews>[0], chrome: Parameters<t
 }
 
 const TEST_TIMEOUT_MS =
-  ADDRESS_BAR_STABLE_TIMEOUT_MS + DEFAULT_ACTION_TIMEOUT_MS * 3 + 8_000 * 8 + 120_000 + APP_CLOSE_RACE_MS + 60_000
+  ADDRESS_BAR_STABLE_TIMEOUT_MS + DEFAULT_ACTION_TIMEOUT_MS * 3 + 8_000 * 8 + 120_000 + APP_CLOSE_RACE_MS + 60_000 +
+  (REQUIRE_PLAYBACK ? 40_000 : 0)
 
 it.skipIf(!ORDINARY_BUILD || !BUILT)(
   'upstream FreeTube, unmodified, boots as an Orivon app from a plain static server',
@@ -157,6 +181,32 @@ it.skipIf(!ORDINARY_BUILD || !BUILT)(
           populated,
           populated ? undefined : JSON.stringify({ watch, consoleErrors: consoleErrors.slice(0, 6) })
         )
+
+        if (REQUIRE_PLAYBACK) {
+          // readyState/a mounted <video> is not enough: a manifest with no
+          // media fetched satisfies that too. currentTime advancing across
+          // two samples is the one signal that bytes are actually flowing.
+          const currentTime = async (): Promise<number> => {
+            const view = viewAtOrigin(app as NonNullable<typeof app>, chrome, ORIGIN)
+            if (view === undefined) return -1
+            try { return await view.evaluate(() => document.querySelector('video')?.currentTime ?? -1) } catch { return -1 }
+          }
+          const pastThreeSeconds = populated && await waitFor(async () => (await currentTime()) > 3, 30_000)
+          let stillAdvancing = false
+          let first = -1
+          let second = -1
+          if (pastThreeSeconds) {
+            first = await currentTime()
+            await new Promise((resolve) => setTimeout(resolve, 2_000))
+            second = await currentTime()
+            stillAdvancing = second > first
+          }
+          check(
+            'playback: <video>.currentTime exceeds 3s and is still advancing 2s later',
+            pastThreeSeconds && stillAdvancing,
+            pastThreeSeconds && stillAdvancing ? undefined : JSON.stringify({ populated, first, second })
+          )
+        }
       } finally {
         if (app !== undefined) await closeElectronApp(app)
         if (server !== undefined) await killChild(server)

@@ -1,18 +1,22 @@
 #!/usr/bin/env node
-// Turns an upstream FreeTube web build into an Orivon app, WITHOUT modifying
-// a line of FreeTube's own source.
+// Turns an upstream FreeTube build into an Orivon app, WITHOUT modifying a
+// line of FreeTube's own source.
 //
-// Two things a stock web build has no reason to carry, added here as a build
+// Three things a stock build has no reason to carry, added here as a build
 // step so the server that later hosts this stays a plain file server:
 //   1. `/.well-known/orivon.json` -- the manifest, ./orivon.json, copied in.
 //   2. a `<link rel="orivon-manifest">` in index.html -- the ONLY discovery
 //      trigger Orivon has; without it nothing ever prompts.
+//   3. (--build only) the ft-electron-bridge.js <script> and botGuardScript.js
+//      the Electron-renderer build needs -- see README.md's "Why the
+//      Electron renderer, not the web build".
 //
 // FreeTube is AGPL-3.0-or-later and its build output is deliberately NOT
 // copied into this repository: source and destination both default to
 // directories inside the clone. Point them elsewhere with --src/--out.
 import { cp, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
+import { spawnSync } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -55,13 +59,35 @@ function argValue (name, fallback) {
   return index === -1 ? fallback : process.argv[index + 1]
 }
 
+const BUILD = process.argv.includes('--build')
+
 const clone = argValue('--clone', DEFAULT_CLONE)
-const src = argValue('--src', join(clone, 'dist', 'web'))
-const out = argValue('--out', join(clone, 'dist', 'orivon-web'))
+const src = argValue('--src', BUILD ? join(clone, 'dist', 'orivon-electron-web') : join(clone, 'dist', 'web'))
+const out = argValue('--out', BUILD ? join(clone, 'dist', 'orivon-electron') : join(clone, 'dist', 'orivon-web'))
 
 const HINT = '<link rel="orivon-manifest" href="/.well-known/orivon.json">'
+const BRIDGE_SCRIPT = '<script src="/orivon/ft-electron-bridge.js"></script>'
+
+/**
+ * Runs upstream's OWN webpack, through ./webpack.orivon.config.cjs, then
+ * upstream's OWN `pnpm run pack:botGuardScript` -- both in the clone, both
+ * needing the clone lock (agent-rules.md). Neither writes anything into this
+ * repository; the config file is the only thing of ours involved.
+ */
+function buildElectronRenderer () {
+  const configPath = join(HERE, 'webpack.orivon.config.cjs')
+  const env = { ...process.env, FREETUBE_CLONE: clone, NODE_ENV: 'production' }
+
+  const webpack = spawnSync('npx', ['webpack', '--mode=production', '--config', configPath], { cwd: clone, env, stdio: 'inherit' })
+  if (webpack.status !== 0) throw new Error(`[prepare] webpack build failed (exit ${String(webpack.status)})`)
+
+  const botGuard = spawnSync('pnpm', ['run', 'pack:botGuardScript'], { cwd: clone, env, stdio: 'inherit' })
+  if (botGuard.status !== 0) throw new Error(`[prepare] pack:botGuardScript failed (exit ${String(botGuard.status)})`)
+}
 
 async function main () {
+  if (BUILD) buildElectronRenderer()
+
   let indexHtml
   try {
     indexHtml = await readFile(join(src, 'index.html'), 'utf8')
@@ -90,11 +116,26 @@ async function main () {
       ? indexHtml.replace('</head>', `  ${HINT}\n</head>`)
       : `${HINT}\n${indexHtml}`
   }
+
+  if (BUILD && !indexHtml.includes(BRIDGE_SCRIPT)) {
+    // FIRST script in <head>, classic and synchronous: FreeTube's own
+    // bundle calls window.ftElectron.handleChangeView at module top level
+    // (src/renderer/main.js), so the bridge has to already exist by then.
+    indexHtml = indexHtml.includes('<head>')
+      ? indexHtml.replace('<head>', `<head>\n    ${BRIDGE_SCRIPT}`)
+      : `${BRIDGE_SCRIPT}\n${indexHtml}`
+  }
   await writeFile(join(out, 'index.html'), indexHtml)
 
   await mkdir(join(out, '.well-known'), { recursive: true })
   const manifest = await readFile(join(HERE, 'orivon.json'), 'utf8')
   await writeFile(join(out, '.well-known', 'orivon.json'), manifest)
+
+  if (BUILD) {
+    await mkdir(join(out, 'orivon'), { recursive: true })
+    await cp(join(HERE, 'bridge', 'ft-electron-bridge.js'), join(out, 'orivon', 'ft-electron-bridge.js'))
+    await cp(join(clone, 'dist', 'botGuardScript.js'), join(out, 'orivon', 'botGuardScript.js'))
+  }
 
   const hosts = JSON.parse(manifest).capabilities.net.https.connect.length
   console.log(`[prepare] ${out}\n[prepare] manifest declares ${String(hosts)} hosts; discovery hint injected into index.html`)

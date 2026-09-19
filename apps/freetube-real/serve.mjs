@@ -43,10 +43,22 @@ function resolveRequestPath (pathname) {
   return resolved
 }
 
+/**
+ * A `.br` file on disk is pre-compressed -- upstream's own build does this
+ * for locale JSON under IS_ELECTRON (_scripts/ProcessLocalesPlugin.js's
+ * `compress` option), which apps/freetube-real/webpack.orivon.config.cjs
+ * turns on because it inherits IS_ELECTRON true wholesale rather than
+ * picking branches apart. Content-Encoding is the standard way a static
+ * server hands a browser a pre-compressed asset; Chromium decodes it the
+ * same way for http as for https.
+ */
 async function sendFile (res, filePath) {
   const body = await readFile(filePath)
-  const type = MIME_TYPES[extname(filePath)] ?? 'application/octet-stream'
-  res.writeHead(200, { 'content-type': type }).end(body)
+  const compressed = filePath.endsWith('.br')
+  const type = MIME_TYPES[extname(compressed ? filePath.slice(0, -3) : filePath)] ?? 'application/octet-stream'
+  const headers = { 'content-type': type }
+  if (compressed) headers['content-encoding'] = 'br'
+  res.writeHead(200, headers).end(body)
 }
 
 async function handleRequest (req, res) {
