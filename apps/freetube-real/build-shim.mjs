@@ -11,15 +11,24 @@
 // first). `src/shim/` itself is never edited or copied by this script, only
 // read -- see README.md's "Where the shim comes from".
 //
-// `buffer` and `stream` stay external: node-fs.ts (via node-fs-streams.ts's
-// real fs.createReadStream/createWriteStream) imports them from the npm
-// `buffer`/`stream-browserify` packages (module-map.ts's own approved
-// entries, kind: 'package'), and the downstream webpack config already
-// aliases both specifiers itself -- `stream$` was already there for
-// nedb's OWN `Readable` import in its real storage.js, so this is widening
-// an existing entry to cover a second, later caller, not adding a new one.
-// There is no TypeScript in that downstream build, so no reason to fold
-// either package into this step's own output.
+// EXTERNAL, deliberately, rather than folded into this step's own output:
+// every specifier below is one of module-map.ts's own approved
+// kind: 'package' entries, and webpack.orivon-datastore.config.cjs already
+// aliases every one of them to its real npm polyfill (originally for
+// nedb's OWN imports -- buffer/events/stream/crypto/path in its real
+// storage.js/byline.js/customUtils.js). There is no TypeScript in that
+// downstream build, so nothing would be gained by bundling these here
+// instead of letting webpack resolve them the same way it already does for
+// nedb's own copies.
+//
+// THE LIST GREW TWICE ALREADY, each time silently ("Could not resolve
+// 'stream'", then 'path'), as src/shim/'s own dependency graph for fs.ts
+// changed shape on its own timeline -- once for real fs.createReadStream/
+// createWriteStream (node-fs-streams.ts), once for the root-mkdir/root-open
+// answer (node-fs-root.ts). Listing every already-aliased specifier now,
+// not only the ones node-fs.ts happens to reach TODAY, means the next
+// src/shim/ change that adds a new caller of one of these doesn't repeat
+// that cycle a third time.
 import { build } from 'esbuild'
 import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -41,7 +50,7 @@ export async function buildShimBundle () {
     format: 'esm',
     platform: 'browser',
     target: 'es2022',
-    external: ['buffer', 'stream'],
+    external: ['buffer', 'stream', 'path', 'events', 'crypto', 'util'],
     logLevel: 'silent'
   })
   console.log(`[build-shim] ${join(OUT_DIR, 'fs.js')}`)
