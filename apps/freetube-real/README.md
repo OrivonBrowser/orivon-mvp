@@ -203,7 +203,14 @@ FreeTube's main process uses) into a second, independent bundle:
   repo's own `esbuild` -- webpack has no TypeScript loader, so it can only consume that output, never
   `src/shim/` directly. Whatever is in `src/shim/` in the tree being built is what gets compiled in;
   nothing here copies or forks it (`prepare.mjs`'s `--build` step runs this before the datastore
-  webpack build, every time).
+  webpack build, every time). Its own `external` list names every module-map.ts `kind: 'package'`
+  specifier the datastore webpack config already aliases (buffer, stream, path, events, crypto,
+  util), not only the ones `node-fs.ts` happens to import today -- this broke twice in a row
+  ("Could not resolve 'stream'", then 'path') as `src/shim/`'s own dependency graph for `fs.ts`
+  changed shape on a timeline this repository does not control, each time only caught by rebuilding
+  against a real merge and reading the esbuild error. Listing every already-aliased specifier up
+  front, whether or not anything reaches it yet, is cheaper than a third silent break -- esbuild
+  never resolves an external specifier nothing imports, so this costs nothing today.
 - The result is `dist/orivon-electron-datastore/datastore.js`, copied to `orivon/ft-datastore.js`
   and exposed on `globalThis.__orivonFtDatastore` (see `bridge/ft-datastore-entry.js`).
 
