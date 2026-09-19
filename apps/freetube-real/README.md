@@ -164,6 +164,44 @@ the locale-compression patch, the `CopyWebpackPlugin` rewrite -- all above). Eve
 | `target: 'web'` | **No difference at all** -- both configs already set the same value. |
 | Everything else (`module.rules`, `VueLoaderPlugin`, `MiniCssExtractPlugin`, the swiper `CopyWebpackPlugin` pattern, `resolve.extensions`, the Vue/Vite defines) | **Identical between the two configs.** |
 
+### The second bundle: FreeTube's own main-process datastore code, running in the page
+
+`src/datastores/handlers/electron.js` only dispatches to `window.ftElectron.db*` -- something has to
+answer those calls. Rather than reimplement FreeTube's storage logic, `webpack.orivon-datastore.config.cjs`
+compiles upstream's **own, unmodified** `src/datastores/handlers/base.js` (the same module real
+FreeTube's main process uses) into a second, independent bundle:
+
+- **`process.env.IS_ELECTRON_MAIN` is defined `false`.** `src/datastores/index.js` branches on it:
+  false takes the `dbPath = (dbName) => \`${dbName}.db\`` / `autoload: true` path (a bare relative
+  filename, nedb loading itself on construction) instead of the real main process's
+  `app.getPath('userData')` + `require('electron')` branch -- which that same `false` also folds
+  away as dead code during webpack's own parse, so `electron` is never even resolved.
+- **`resolve.aliasFields: []`** disables webpack's default browser-field remapping for every
+  package in the graph, not only a top-level one -- `@seald-io/nedb`'s own `package.json` remaps
+  `lib/storage.js`/`customUtils.js`/`byline.js` to its `browser-version/` (localForage) files, and
+  webpack applies that remap during nedb's own internal `require()`s too, not only at import time.
+  This is the actual mechanism behind "the Node build, not the browser field".
+- **Every Node builtin nedb's real storage layer imports** -- read directly from
+  `lib/storage.js`/`persistence.js`/`byline.js`/`datastore.js`/`cursor.js`/`customUtils.js`, not
+  guessed: `fs`, `path`, `stream`, `events`, `buffer`, `crypto`, `util`, `timers` -- is aliased.
+  `fs` is the one `src/shim/` module this needs (`node-fs.ts`, over `orivon.fs`); `path`, `stream`,
+  `events`, `buffer` and `crypto` are `module-map.ts`'s own already-approved packages
+  (`path-browserify`, `stream-browserify`, `events`, `buffer`, `crypto-browserify`); `util` is the
+  real npm `util` package (also already approved, previously unused) rather than
+  `src/shim/node-util.ts`, which is deliberately narrowed to one export (`inherits`) for a
+  different dependency graph and has neither `deprecate` nor `callbackify`, both of which nedb
+  needs. `timers` (`timers.setImmediate`, one call site in `byline.js`) has no `src/shim/` entry at
+  all and needs none: a five-line local polyfill (`bridge/ft-datastore-timers-shim.js`,
+  `setTimeout(fn, 0, ...args)`) covers the one call, and stays out of `src/shim/` on purpose.
+- **`build-shim.mjs` runs first**, always, compiling THIS repository's `src/shim/node-fs.ts` (and
+  everything it imports inside `src/shim/`/`src/shim-electron/`) into one plain ES module with this
+  repo's own `esbuild` -- webpack has no TypeScript loader, so it can only consume that output, never
+  `src/shim/` directly. Whatever is in `src/shim/` in the tree being built is what gets compiled in;
+  nothing here copies or forks it (`prepare.mjs`'s `--build` step runs this before the datastore
+  webpack build, every time).
+- The result is `dist/orivon-electron-datastore/datastore.js`, copied to `orivon/ft-datastore.js`
+  and exposed on `globalThis.__orivonFtDatastore` (see `bridge/ft-datastore-entry.js`).
+
 ## Opening a video works (`dist/orivon-web-localapi`)
 
 Measured 2026-09-17, `dist/orivon-web-localapi`, against live YouTube:
