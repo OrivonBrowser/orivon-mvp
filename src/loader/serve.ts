@@ -292,7 +292,7 @@ function buildResponse (
  * stops it (A199) -- see that file's own doc for what a reading page
  * observes when it does.
  */
-async function fetchThirdParty (
+export async function fetchThirdParty (
   request: Request,
   authoriseReach: AuthoriseReach | undefined,
   reachDial: ReachDial | undefined,

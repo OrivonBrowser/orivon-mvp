@@ -1,91 +1,40 @@
 // The one function handed to `contextBridge.executeInMainWorld`. SERIALISED
-// (Function.prototype.toString) and re-evaluated fresh in the main world,
-// so every helper it needs must be declared INSIDE its own body -- no free
+// (Function.prototype.toString) and re-evaluated fresh in the main world, so
+// every helper it needs must be declared INSIDE its own body -- no free
 // variables, no imports, no module-level consts. That is what makes
-// `ReadableStream`/`WritableStream`/`ByteLengthQueuingStrategy` inside it
-// the PAGE's own constructors, not the preload's isolated-world ones --
+// `ReadableStream`/`WritableStream`/`ByteLengthQueuingStrategy` inside it the
+// PAGE's own constructors, not the preload's isolated-world ones --
 // contextBridge copies plain values across, but a stream built in the
 // isolated world crosses broken, which is the whole reason this exists
-// rather than building streams directly in ./socket-port.ts.
+// rather than building streams directly in ./socket-port.ts. `web.
+// openContext` needs none of that (web-surface.ts's header) but stays here
+// too: `window.orivon` freezes non-configurable below, nothing bolts on later.
 //
-// `bridge` is a plain object of proxied closures orivon-surface.ts built:
-// one per app.manifest/app.grants/fs.readFile/fs.writeFile/id.publicKey/
-// id.sign, plus `netConnect`, resolving to a per-socket bag shaped like
-// ./socket-port.ts's own SocketPort plus the connection descriptor and the
-// three control-channel operations (close/setNoDelay/setKeepAlive)
-// net.connect doesn't otherwise expose.
-//
-// `target` defaults to the real `window` (this runs IN the main world) but
-// is overridable, the same pattern src/shim/globals.ts uses for the same
-// reason: never mutate the one real global environment a whole test run
-// shares.
+// `bridge` is a plain object of proxied closures orivon-surface.ts built,
+// one per CONTROL_CHANNEL method; `target` defaults to the real `window`
+// (overridable, matching src/shim/globals.ts) so a test never mutates the
+// one shared global environment.
 
 import type { OrivonErrorCode } from '../contracts/errors.js'
-import type { FileStat, LookupAddress, SendRefusal, UdpSocket } from '../contracts/handles.js'
-import type { ResponseEnvelope } from '../contracts/ipc.js'
+import type { SendRefusal, UdpSocket } from '../contracts/handles.js'
 import type { CapabilityRequest } from '../contracts/capability-api.js'
 import type {
-  MainWorldDatagram, MainWorldDirectoryBridge, MainWorldFileBridge, MainWorldServerBridge,
-  MainWorldSocketBridge, MainWorldUdpBridge, OrivonLimits
+  MainWorldBridge, MainWorldDatagram, MainWorldDirectoryBridge, MainWorldFileBridge, MainWorldServerBridge,
+  MainWorldSocketBridge, MainWorldUdpBridge, MainWorldWebContextBridge, OrivonLimits
 } from './main-world-bridges.js'
 
-// The bridge shapes live in ./main-world-bridges.ts -- split out under
-// code-guidelines.md Rule 2, safe despite this file's own serialised-
+// The bridge shapes -- including installOrivon's own `bridge` PARAMETER
+// shape, `MainWorldBridge` -- live in ./main-world-bridges.ts, split out
+// under code-guidelines.md Rule 2, safe despite this file's own serialised-
 // function constraint below since an `interface` produces no JS at all
 // (that file's own header). Re-exported so no import site changes.
 export type {
-  MainWorldDatagram, MainWorldDirectoryBridge, MainWorldFileBridge, MainWorldServerBridge,
-  MainWorldSocketBridge, MainWorldUdpBridge, OrivonLimits
+  MainWorldBridge, MainWorldDatagram, MainWorldDirectoryBridge, MainWorldFileBridge, MainWorldServerBridge,
+  MainWorldSocketBridge, MainWorldUdpBridge, MainWorldWebContextBridge, OrivonLimits
 } from './main-world-bridges.js'
 
 export function installOrivon (
-  bridge: {
-    appManifest: () => Promise<unknown>
-    appGrants: () => Promise<unknown>
-    appRequestGrant: (request: CapabilityRequest) => Promise<boolean>
-    fsReadFile: (path: string) => Promise<Uint8Array>
-    fsWriteFile: (path: string, data: Uint8Array) => Promise<void>
-    /**
-     * ADR-0016's one synchronous call. Returns the raw envelope, NEVER
-     * throws -- a value THROWN by this closure would cross the
-     * contextBridge proxy boundary back into this main-world code stripped
-     * of everything but `.message` (found live; see orivon-surface.ts's own
-     * `fsReadFileSyncEnvelope` for the full argument), so the failure shape
-     * is built and thrown below, entirely inside this already-main-world
-     * function, from data that crossed intact instead.
-     */
-    fsReadFileSync: (path: string) => ResponseEnvelope<Uint8Array>
-    // The extended fs surface (queue item 2.1) -- no main-world stream
-    // wrapping needed, exactly like fsReadFile/fsWriteFile above, so these
-    // four are plain proxied closures too.
-    fsMkdir: (path: string, opts?: { recursive?: boolean }) => Promise<void>
-    fsReaddir: (path: string) => Promise<readonly string[]>
-    fsStat: (path: string) => Promise<FileStat>
-    fsRm: (path: string, opts?: { recursive?: boolean }) => Promise<void>
-    fsRename: (from: string, to: string) => Promise<void>
-    /**
-     * Resolves to a `MainWorldFileBridge` -- itself a plain object of MORE
-     * proxied closures (read/write/stat/truncate/sync/close), each its own
-     * round trip. Needs no main-world stream wrapping, same reasoning as
-     * fsMkdir/fsReaddir/etc. above; `buildFile` below still wraps each
-     * nested closure in `callRevived`, because EVERY one of them crosses
-     * back into the isolated world independently and could reject.
-     */
-    fsOpen: (path: string, flags: string) => Promise<MainWorldFileBridge>
-    /** `orivon.fs.userSelected`'s FILE shape (A194, d-0032). `api.fs.userSelected` below routes here for every call except `{ directory: true }`. Resolves the same raw `MainWorldFileBridge` shape `fsOpen` does; `buildFile` wraps each entry. */
-    fsUserSelected: (opts?: { multiple?: boolean }) => Promise<readonly MainWorldFileBridge[]>
-    /** `orivon.fs.userSelected`'s FOLDER shape (A195) -- a separate closure, not a widened `fsUserSelected`, since the two resolve genuinely different shapes (capability-api.ts's own overload split). `buildDirectory` is this one's `buildFile`. */
-    fsUserSelectedDirectory: () => Promise<MainWorldDirectoryBridge | null>
-    idPublicKey: (curve: string) => Promise<Uint8Array>
-    idSign: (curve: string, payload: Uint8Array) => Promise<Uint8Array>
-    netConnect: (opts: { host: string, port: number }) => Promise<MainWorldSocketBridge>
-    /** net.connectSecure's own closure -- resolves to the identical bridge shape netConnect does; buildSocket below is shared by both (Rule 3). */
-    netConnectSecure: (opts: { host: string, port: number }) => Promise<MainWorldSocketBridge>
-    netUdpBind: (opts: { port: number }) => Promise<MainWorldUdpBridge>
-    netListen: (opts: { port: number }) => Promise<MainWorldServerBridge>
-    /** `net.lookup` (d-0030) -- plain data, not a bridge: no per-socket state to wrap, unlike every other `net*` entry above. */
-    netLookup: (opts: { hostname: string }) => Promise<readonly LookupAddress[]>
-  },
+  bridge: MainWorldBridge,
   limits: OrivonLimits,
   target: { orivon?: unknown } = typeof window === 'undefined' ? {} : window as unknown as { orivon?: unknown }
 ): void {
@@ -411,6 +360,15 @@ export function installOrivon (
     })
   }
 
+  /** `buildFile`'s own web.openContext counterpart (ADR-0019) -- `closed` is already live by the time it crosses here (web-surface.ts's watchClose), so `callRevived` is all it needs, same as `s.closed` in `buildSocket`. */
+  function buildWebContext (w: Awaited<ReturnType<typeof bridge.webOpenContext>>): MainWorldWebContextBridge {
+    return Object.freeze({
+      id: w.id, origin: w.origin, closed: callRevived(w.closed),
+      evaluate: async (script: string) => await callRevived(w.evaluate(script)),
+      close: async () => { await callRevived(w.close()) }
+    })
+  }
+
   /** `buildFile`'s own DirectoryHandle counterpart (A195) -- `open` reuses `buildFile` on whatever it resolves, so a folder-opened file gets the identical wrapped shape `orivon.fs.open()` itself would hand it. */
   function buildDirectory (d: MainWorldDirectoryBridge): MainWorldDirectoryBridge {
     return Object.freeze({
@@ -473,6 +431,9 @@ export function installOrivon (
     id: Object.freeze({
       publicKey: async (opts: { curve: string }) => await callRevived(bridge.idPublicKey(opts.curve)),
       sign: async (opts: { curve: string, payload: Uint8Array }) => await callRevived(bridge.idSign(opts.curve, opts.payload))
+    }),
+    web: Object.freeze({
+      openContext: async (origin: string, options?: { width?: number, height?: number }) => buildWebContext(await callRevived(bridge.webOpenContext({ origin, ...options })))
     }),
     net: Object.freeze({
       connect: async (opts: { host: string, port: number }) => buildSocket(await callRevived(bridge.netConnect(opts))),

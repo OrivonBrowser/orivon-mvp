@@ -6,7 +6,7 @@
 
 import type {
   MainWorldDatagram, MainWorldDirectoryBridge, MainWorldFileBridge, MainWorldServerBridge,
-  MainWorldSocketBridge, MainWorldUdpBridge
+  MainWorldSocketBridge, MainWorldUdpBridge, MainWorldWebContextBridge
 } from '../main-world-socket.js'
 import type { OrivonErrorCode } from '../../contracts/errors.js'
 import type { FileStat, SendRefusal } from '../../contracts/handles.js'
@@ -93,6 +93,18 @@ export function fakeFileBridgeResult (overrides: Partial<MainWorldFileBridge> = 
   }
 }
 
+/** A fake `bridge.webOpenContext()` result (ADR-0019) -- everything `buildWebContext` (main-world-socket.ts) needs. */
+export function fakeWebContextBridgeResult (overrides: Partial<MainWorldWebContextBridge> = {}): MainWorldWebContextBridge {
+  return {
+    id: 'ctx1',
+    origin: 'https://example.com',
+    closed: new Promise(() => {}),
+    evaluate: async () => 'https://example.com',
+    close: async () => {},
+    ...overrides
+  }
+}
+
 /** A fake `bridge.fsUserSelectedDirectory()` result (A195) -- everything `buildDirectory` (main-world-socket.ts) needs. */
 export function fakeDirectoryBridgeResult (overrides: Partial<MainWorldDirectoryBridge> = {}): MainWorldDirectoryBridge {
   return {
@@ -130,6 +142,7 @@ export function fakeBridge (
   fsUserSelected: (opts?: { multiple?: boolean }) => Promise<readonly MainWorldFileBridge[]>
   fsUserSelectedDirectory: () => Promise<MainWorldDirectoryBridge | null>
   idPublicKey: (curve: string) => Promise<Uint8Array>, idSign: (curve: string, payload: Uint8Array) => Promise<Uint8Array>
+  webOpenContext: (opts: { origin: string, width?: number, height?: number }) => Promise<MainWorldWebContextBridge>
   netConnect: (opts: { host: string, port: number }) => Promise<ReturnType<typeof fakeSocketBridgeResult>>
   netConnectSecure: (opts: { host: string, port: number }) => Promise<ReturnType<typeof fakeSocketBridgeResult>>
   netUdpBind: (opts: { port: number }) => Promise<MainWorldUdpBridge>
@@ -158,6 +171,10 @@ export function fakeBridge (
     fsUserSelectedDirectory: async () => fakeDirectoryBridgeResult(),
     idPublicKey: async () => new Uint8Array(),
     idSign: async () => new Uint8Array(),
+    // Present so this fake still satisfies installOrivon's bridge shape --
+    // no test in this file drives web.openContext (main-world-socket-web.
+    // test.ts, this lane's own sibling, does).
+    webOpenContext: async () => fakeWebContextBridgeResult(),
     netConnect: async (_opts) => netConnectResult,
     // A SEPARATE fake result by default (its own fakeSocketBridgeResult(),
     // not netConnectResult) -- reusing the same one would let a bug that

@@ -7,7 +7,9 @@ import {
   FS_GRANT,
   OTHER,
   TCP_GRANT,
+  WEB_GRANT,
   acquireSocket,
+  acquireWebContext,
   never,
   noop,
   outcomeNow,
@@ -66,6 +68,41 @@ describe('per-origin limits (T11, T11b)', () => {
 
     // One origin exhausting its budget must not deny every other tab.
     expect(() => acquireSocket(t, OTHER)).not.toThrow()
+  })
+
+  // ADR-0019: web.context's own budget (LIMITS.webContexts), a NEW HandleKind
+  // added by this lane -- own row in handle-store.ts's #census, not lumped
+  // into IdentityHandle's uncapped backstop below (the failure that same
+  // backstop exists to prevent for every OTHER uncapped kind, applied here
+  // to keep this one capped from day one instead).
+  it('allows exactly LIMITS.webContexts web contexts and refuses the next', () => {
+    const t = table()
+    for (let i = 0; i < LIMITS.webContexts; i += 1) {
+      acquireWebContext(t)
+    }
+
+    expect(thrown(() => acquireWebContext(t)).code).toBe('limit')
+  })
+
+  it('web contexts have their own budget, separate from sockets, files and identities', () => {
+    const t = table()
+    for (let i = 0; i < LIMITS.webContexts; i += 1) {
+      acquireWebContext(t)
+    }
+
+    expect(thrown(() => acquireWebContext(t)).code).toBe('limit')
+    expect(() => acquireSocket(t)).not.toThrow()
+    expect(() => t.acquire({ origin: APP, kind: 'file', authorisedBy: { by: 'grant', grantId: FS_GRANT }, destroy: noop })).not.toThrow()
+    expect(() => t.acquire({ origin: APP, kind: 'identity', authorisedBy: { by: 'grant', grantId: 'grant-id' }, destroy: noop })).not.toThrow()
+  })
+
+  it('counts web contexts per origin, not globally', () => {
+    const t = table()
+    for (let i = 0; i < LIMITS.webContexts; i += 1) {
+      acquireWebContext(t)
+    }
+
+    expect(() => acquireWebContext(t, OTHER, WEB_GRANT)).not.toThrow()
   })
 
   it('allows exactly LIMITS.concurrentFileHandles files and refuses the next', () => {

@@ -31,7 +31,7 @@ import { isInvokedDirectly, relativeToRoot } from './cli.mjs'
  * it. The flag they share is what makes one list correct -- anything gated
  * on a different flag needs its own reasoning, not an extra entry here.
  */
-export const DEV_MARKERS = ['__orivonDevGrant', '__orivonDevRegisterServing']
+export const DEV_MARKERS = ['__orivonDevGrant', '__orivonDevRegisterServing', '__orivonDevRevoke']
 
 /** Retained as the single-marker name earlier callers import. */
 export const DEV_GRANT_MARKER = DEV_MARKERS[0]

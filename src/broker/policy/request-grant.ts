@@ -13,7 +13,7 @@ import { isDeclarableConnectPattern } from './connect-patterns.js'
 import type { CapabilityKind, Manifest, Pattern } from '../../contracts/index.js'
 
 const CAPABILITY_KINDS: readonly CapabilityKind[] = [
-  'tcp.connect', 'tcp.listen', 'udp.bind', 'udp.send', 'https.connect', 'fs', 'id'
+  'tcp.connect', 'tcp.listen', 'udp.bind', 'udp.send', 'https.connect', 'fs', 'id', 'web.context'
 ]
 
 /** The three `host:port` capability kinds -- the only ones
@@ -25,7 +25,7 @@ const CAPABILITY_KINDS: readonly CapabilityKind[] = [
 const CONNECT_SHAPED_CAPABILITIES: ReadonlySet<CapabilityKind> = new Set(['tcp.connect', 'https.connect', 'udp.send'])
 
 /**
- * True for exactly the seven `CapabilityKind` literals -- the guard an
+ * True for exactly the eight `CapabilityKind` literals -- the guard an
  * UNTRUSTED string needs before it may be treated as one. Two independent
  * callers need it: `../../main/request-grant.ts`'s `request.capability` (an
  * app's raw IPC payload) and `../grants/grant-persistence.ts`'s hydration
@@ -85,6 +85,18 @@ export function decideGrantRequest (
   capability: CapabilityKind,
   requestedPatterns: readonly Pattern[] | undefined
 ): GrantRequestDecision {
+  // NOT where ADR-0019's "web.context is declared-in-the-manifest-only"
+  // rule lives, despite this being the obvious-looking place for it: this
+  // function is reused by grant-persistence.ts's hydrateGrants (does a
+  // RESTORED grant still fit the current manifest) and by main/grant-
+  // changed-capabilities.ts's grantChangedCapabilities (install-consent's
+  // OWN grant call, the only door web.context is meant to have) -- neither
+  // of those is app.requestGrant, and a blanket refusal here silently
+  // broke both: a persisted web.context grant would never survive a
+  // restart, and install consent could never grant one at all. The refusal
+  // belongs in main/request-grant.ts's own requestGrant, the one caller
+  // that actually is app.requestGrant, checked before this function is
+  // ever reached from there.
   const declared = patternSetFromCapabilities(manifest.capabilities)
   const declaredForKind = declared[capability]
   // Absent means "not declared" -- capability-api.ts's own wording, and the

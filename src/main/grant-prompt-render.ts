@@ -57,6 +57,37 @@ export interface GrantPromptContent {
   readonly detail: string
 }
 
+/**
+ * ADR-0019's `web.context`. AT THE WARNING LEVEL OF `tcp.listen`
+ * (unconditional, never folded into a count): every granted origin gets its
+ * OWN LINE, literally -- never "site.example and N others". Unlike an
+ * ordinary `https.connect` host a person can skim past, "this app can act
+ * AS this site" is exactly the fact A197's own sensitive-address handling
+ * (grant-prompt-connect.ts) already argues cannot be folded away, applied
+ * here to every origin this capability ever names. Wording is the ADR's own
+ * (its Reasoning section: "The prompt can say it honestly and plainly").
+ */
+function describeWebContextGrant (patterns: readonly Pattern[]): CapabilityGrantSummary {
+  const hosts = patterns.map((origin) => {
+    try {
+      return new URL(origin).host
+    } catch {
+      // Never reached for a genuinely granted pattern -- manifest-
+      // capabilities.ts's readWeb already rejects anything that is not a
+      // real URL before a grant naming it can exist. The raw string is the
+      // safe fallback for a hand-edited or corrupted persisted grant
+      // (permissions.ts's own buildPersistedAppPermissions reads these off
+      // disk without re-validating them).
+      return origin
+    }
+  })
+  return {
+    warning: true,
+    message: hosts.map((host) => `⚠ Run code as ${host}, in a private, empty session.`).join('\n'),
+    explanation: 'It cannot see your account or anything you keep there.'
+  }
+}
+
 // `tcp.listen`/`udp.bind` never reach a wildcard-host branch: the contract
 // itself rejects a bare `"*"` port range (manifest.ts), and a listen/bind
 // pattern has no host at all -- only which ports.
@@ -118,12 +149,7 @@ export function describeCapabilityGrant (capability: CapabilityKind, patterns: r
     case 'id':
       return { warning: false, message: 'Create a digital identity for you to use with this app' }
     case 'web.context':
-      // ADR-0019: contract-only so far -- the loader does not parse
-      // Capabilities.web yet (check-manifest-parity.mjs's own
-      // DELIBERATELY_DEFERRED entry), so no live grant can reach this
-      // switch. Thrown, not rendered, until the implementation PR gives
-      // this its real per-origin copy.
-      throw new Error('grant-prompt-render: web.context is not renderable yet (ADR-0019)')
+      return describeWebContextGrant(patterns)
     default: {
       // Exhaustiveness guard, matching app-install.ts's own pattern: a new
       // CapabilityKind added without a case here fails to compile.

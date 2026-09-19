@@ -36,6 +36,7 @@ function fakeBroker (): { broker: Broker, registerApp: ReturnType<typeof vi.fn>,
 
 afterEach(() => {
   globalThis.__orivonDevGrant = undefined
+  globalThis.__orivonDevRevoke = undefined
 })
 
 describe('shouldInstallDevGrant', () => {
@@ -75,6 +76,17 @@ describe('installDevGrantHook', () => {
     await globalThis.__orivonDevGrant?.({ origin: 'http://x.test', manifest: testManifest, capability: 'id', patterns: [] })
 
     expect(order).toEqual(['registerApp', 'grant'])
+  })
+
+  it('also installs __orivonDevRevoke, calling broker.revoke on the SAME broker instance', async () => {
+    const revoke = vi.fn(async () => {})
+    const broker = { revoke } as unknown as Broker
+    installDevGrantHook(broker)
+
+    expect(globalThis.__orivonDevRevoke).toBeTypeOf('function')
+    await globalThis.__orivonDevRevoke?.('http://example.test', 'g1')
+
+    expect(revoke).toHaveBeenCalledWith('http://example.test', 'g1')
   })
 })
 
