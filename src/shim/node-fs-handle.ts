@@ -24,6 +24,7 @@ import { getOrivon } from './orivon-global.js'
 import { toNodeError } from './node-http-errors.js'
 import { toNodeStats, type NodeStats } from './node-fs-stats.js'
 import { refuseShim } from './errors.js'
+import { assertRootOpenAllowed, isRootPath, rootDirectoryHandle, rootReadError, rootTruncateError, rootWriteError } from './node-fs-root.js'
 
 export type NodeCallback<T> = (error: Error | null, result?: T) => void
 
@@ -71,14 +72,34 @@ export class NodeFileHandle {
   readonly fd: number
   private readonly handle: FileHandle
   private readonly cursor: LocalCursor
+  /** True only for the root-directory handle node-fs-root.ts builds -- read/write/truncate short-circuit before ever reaching `this.handle`'s own (unreachable in practice) versions of them, so their fabricated Node errno codes reach the caller unmangled by guarded()'s toNodeError, which only knows how to translate a real OrivonError. */
+  private readonly isRoot: boolean
 
-  private constructor (fd: number, handle: FileHandle, cursor: LocalCursor) {
+  private constructor (fd: number, handle: FileHandle, cursor: LocalCursor, isRoot = false) {
     this.fd = fd
     this.handle = handle
     this.cursor = cursor
+    this.isRoot = isRoot
   }
 
+  // `path` reaches orivon.fs.open EXACTLY as given, relative or not -- never
+  // resolved or joined here. A relative path (e.g. 'settings.db') lands
+  // wherever the broker confines it: the app's own files directory root
+  // (capability-api.ts's OrivonFs doc). This file has no cwd concept to
+  // resolve one against even if it wanted to.
+  //
+  // ONE EXCEPTION: a path that resolves to the root ITSELF never reaches
+  // orivon.fs at all -- the broker's own confinement policy refuses it
+  // unconditionally (node-fs-root.ts's own header), so this answers Node's
+  // own cwd-like semantics for it locally instead. See node-fs-root.ts.
   static async open (path: string, flags: string): Promise<NodeFileHandle> {
+    if (isRootPath(path)) {
+      assertRootOpenAllowed(flags)
+      const fd = nextFd++
+      const wrapped = new NodeFileHandle(fd, rootDirectoryHandle(), new LocalCursor(0), true)
+      openByFd.set(fd, wrapped)
+      return wrapped
+    }
     return await guarded(async () => {
       const handle = await getOrivon().fs.open(path, flags)
       const cursor = new LocalCursor(await initialCursor(handle, flags))
@@ -90,6 +111,7 @@ export class NodeFileHandle {
   }
 
   async read (buffer: Uint8Array, offset = 0, length: number = buffer.length - offset, position: number | null = null): Promise<NodeFsReadResult> {
+    if (this.isRoot) rootReadError()
     const bytesRead = await guarded(async () => await this.cursor.run(position, async (at) => {
       const bytes = await this.handle.read({ position: at, length })
       buffer.set(bytes, offset)
@@ -99,14 +121,31 @@ export class NodeFileHandle {
   }
 
   async write (buffer: Uint8Array, offset = 0, length: number = buffer.length - offset, position: number | null = null): Promise<NodeFsWriteResult> {
+    if (this.isRoot) rootWriteError()
     const data = offset === 0 && length === buffer.length ? buffer : buffer.subarray(offset, offset + length)
     const bytesWritten = await guarded(async () => await this.cursor.run(position, async (at) => await this.handle.write({ position: at, data })))
     return { bytesWritten, buffer }
   }
 
   async stat (): Promise<NodeStats> { return await guarded(async () => toNodeStats(await this.handle.stat())) }
-  async truncate (length = 0): Promise<void> { await guarded(async () => { await this.handle.truncate(length) }) }
+
+  async truncate (length = 0): Promise<void> {
+    if (this.isRoot) rootTruncateError()
+    await guarded(async () => { await this.handle.truncate(length) })
+  }
+
+  // No file-vs-directory branch, on purpose: whatever `getOrivon().fs.open`
+  // does with a directory path and flags 'r' (real Node's own fsync-a-
+  // directory support is platform-dependent -- works on Linux/macOS, EISDIR
+  // on some others) is exactly what this passes through. @seald-io/nedb's
+  // own crashSafeWriteFileLinesAsync fsyncs a directory's fd this way, and
+  // already tolerates the platforms where opening one fails. For the ROOT
+  // specifically (this.isRoot), `this.handle` is node-fs-root.ts's own fake,
+  // whose sync() already resolves -- no branch needed here either.
   async sync (): Promise<void> { await guarded(async () => { await this.handle.sync() }) }
+
+  /** Real Node's FileHandle#datasync -- fdatasync, a lighter-weight sync. orivon.fs's FileHandle contract has one durability primitive, not two (handles.ts's own FileHandle doc), so this is the same call as sync() under a second name, matching what a ported dependency expects to find. */
+  async datasync (): Promise<void> { await guarded(async () => { await this.handle.sync() }) }
 
   async close (): Promise<void> {
     openByFd.delete(this.fd)
