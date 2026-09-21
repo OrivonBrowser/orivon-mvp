@@ -25,15 +25,9 @@ Build steps 1-4 are done: shell, capability broker, node shim, app loader. A per
 an app from a URL, read one consent dialog before any of the app's code runs, grant capabilities,
 and revoke them afterwards from a permissions panel. The owner's framing that day: *"the
 permission engine is roughly 90% done, and everything finally sits in one place to start building
-actual apps on."* Build step 5, the flagship torrent app, is next.
+actual apps on."*
 
-`id.requestIdentity` is the only unbuilt row left in the capability surface, and `window.nostr`
-(step 7) is blocked on it (A111). Steps 5, 6, 8, 9 and 10 are open.
-
-**For what works today read `docs/planning/compatibility-matrix.md`, not this section.** It is
-re-derived from the tree rather than from PR bodies, and its Table 6 gives the recipe. It scores
-each capability in four columns because **a module existing is not the same fact as a page being
-able to reach it** (A151).
+**For what works today use `docs/planning/compatibility-matrix.md`, not this section.**
 
 ## What this repository is
 
@@ -62,30 +56,19 @@ implementation underneath could change without any app already written having to
 **Practical consequence: a shortcut in `src/main/` costs a refactor of code that was replaceable
 anyway. A shortcut in `src/contracts/` costs every app ever written for Orivon.**
 
-> **Never write this as a roadmap.** A WASM runtime and an engine fork are explicitly out of
-> scope (`mvp-scope.md` §LATER), nobody is working on either, and nothing here depends on them.
-> The engine-independence is a *property of the design*, not a plan. `orivon-runtime` is
-> deferred, not cancelled. The owner has more than once flagged wording that blurred this.
-
 ## Rules
 
-1. **Do not silently promote assumptions into architecture.** If a choice is load-bearing and
+1. **Do not silently promote assumptions into architecture.**  
+If a choice is load-bearing and
    reversible only at cost, write an ADR (`docs/decisions/ADR-0000-template.md`).
-2. **A page says how Orivon works now: never who decided it, and never how it got there.**
-   Provenance — the date, the decision ID, who took it — goes in `docs/decisions/decision-log.md`
-   or an ADR, never inline in the prose. **So does change history.** None of these belong in a
-   page: "what changed since the last derivation", "was X, now Y", "moved from ❌ to ✅", "the
-   first version did...", "corrected <date>", "added <date>", PR numbers, "this lane / this run /
-   this pass", struck-through rows, "moved here from its header". A newcomer needs the current
-   state; git, `CHANGELOG.md` and the decision log hold how it got there. A rejected alternative
-   may stay as rationale when stated as a reason ("gating on X would race"), never as a story. A
-   settled thing is just how it works. The one status a page must still carry is *provisional*:
-   never present an unconfirmed call as settled, and say what would settle it.
-   **Pages whose subject is change keep their history**, and only these: `CHANGELOG.md`,
-   `docs/decisions/`, `docs/open-questions.md` (each entry's status and date),
-   `docs/development/readability-log.md`, `docs/development/review-coverage.md`, `devlog/`, and
-   the records under `docs/planning/`: every file there except `build-plan.md` and
-   `compatibility-matrix.md`, which describe the present and follow this rule.
+2. **Public code and docs say how Orivon works now: never who decided it, never how it got there.**
+   Dates, decision IDs and names go in `docs/decisions/decision-log.md` or an ADR; change history
+   stays in git. So: no "what changed since", no "used to", no "corrected <date>", no PR numbers,
+   no lane or run narration, no struck-through rows. A rejected alternative may stay as a reason
+   ("gating on X would race"), never as a story. Mark an unconfirmed call *provisional*, and say
+   what would settle it. **Exempt, since their subject is change:** `CHANGELOG.md`,
+   `docs/decisions/`, `open-questions.md`, the readability and review-coverage logs, `devlog/`,
+   and `docs/planning/` apart from `build-plan.md` and `compatibility-matrix.md`.
 3. **Surface contradictions, never smooth them over.** Append to `docs/open-questions.md`. When a
    page turns out to be wrong, **rewrite it to be right** rather than appending a correction
    block beneath the wrong text — the page states what is true now, and the change earns a row
