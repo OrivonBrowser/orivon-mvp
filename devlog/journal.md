@@ -39,6 +39,28 @@ Mark anything that must not leave the team draft as `(Keep private)`.
   cache that you had not yet granted anything could not open at all.
 - 2026-09-16: **A week of uncommitted work is now a single commit.** The permission engine is
   roughly 90% done, and everything finally sits in one place to start building actual apps on.
+- 2026-09-17: **The reviewer briefing was telling reviewers to skip code that now exists.** Written
+  for one scan, pinned to one commit, indexed nowhere, and swept into the freeze commit by accident.
+  Within four days three of its eight "already known" findings had been fixed and two of its three
+  "nothing here yet" areas had been built. Rewritten to carry no finding list and no build status at
+  all -- it points at the two documents that re-derive both -- and moved into `docs/` where the
+  index owns it.
+- 2026-09-17: **A133 and A134 marked resolved, three days late.** Both were closed by the same
+  commit, the PR body said so, and nothing came back to the ledger to say it.
+- 2026-09-17: **A humanizer pass over every public document, 75 files.** Em dashes, decorative
+  bold and staged openers out; ~2,000 dash-as-connector uses became the punctuation the sentence
+  actually needed. Every code block, link target, A-number, ADR id and figure verified unchanged
+  before and after.
+- 2026-09-17: **Decision provenance is out of the pages and into a register.** Every "owner
+  decision, <date>" stamp and every "this used to say X" correction block left the reader-facing
+  docs; `docs/decisions/decision-log.md` now holds the dates, the IDs and who decided, which
+  also gives `d-NNNN` its first real target and closes A90. `CLAUDE.md` Rules 2 and 3 were
+  rewritten, or the pattern grows straight back.
+- 2026-09-19: **The live docs stopped narrating their own history.** "What changed since the last
+  derivation", PR numbers, "the first version did", "this lane" -- about 180 instances across 26
+  pages, gone. Removing them surfaced a dozen stale claims underneath (a folder picker described as
+  missing that shipped, a security row waiting on a prompt that exists), now fixed. A new hookify
+  warning plus Rule 2 keep it from coming back; the matrix's own recipe had been asking for it.
 
 ### In my head
 
@@ -55,6 +77,10 @@ Mark anything that must not leave the team draft as `(Keep private)`.
   apply it here.
 - **Two files now sit within six lines of the size limit**, reached by separate PRs that were each
   fine on their own. The limit keeps breaking on merge rather than on a branch.
+- **The written record drifts in one direction: things get fixed and stay marked broken.** Two
+  findings sat at "still open" for three days after the commit that closed them, and a briefing kept
+  warning reviewers off subsystems that had since been built. The code was right both times -- the
+  cost lands on whoever reads next and believes it.
 
 ## Week of 2026-09-07
 

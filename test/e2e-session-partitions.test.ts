@@ -1,5 +1,5 @@
 // The end-to-end proof for build-plan.md step 2's last deliverable
-// (docs/planning/unattended-build-queue.md item 0.4): "tabs open in the
+// (.claude/unattended-build-queue.md item 0.4): "tabs open in the
 // app's own partition; a test proves two origins share no storage."
 //
 // WHY THIS DOES NOT JUST READ localStorage FROM TWO PAGES. Two unrelated

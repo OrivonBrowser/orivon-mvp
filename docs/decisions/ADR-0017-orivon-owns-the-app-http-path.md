@@ -1,4 +1,4 @@
-# ADR-0017: Orivon owns the app's HTTP path -- it terminates TLS, routes `fetch`, and lets apps set their own headers
+# ADR-0017: Orivon owns the app's HTTP path, terminating TLS, routing `fetch`, and letting apps set their own headers
 
 - **Status:** accepted
 - **Date:** 2026-09-09
@@ -15,11 +15,11 @@ Three parts of one decision, because they only work together:
    unaffected.
 2. **The page's own `fetch()` is routed through the capability** for hosts the app has been granted.
 3. **An app may set any request header on a granted host**, including headers a page is normally
-   forbidden to set -- `Origin`, `Referer`, `User-Agent`, `Cookie`.
+   forbidden to set: `Origin`, `Referer`, `User-Agent`, `Cookie`.
 
 Network permission stays **declared in the manifest and granted once at install**. There is no
 just-in-time prompt for a new host: a host outside the declaration is denied, as today. A manifest
-may declare unlimited HTTPS, and **the prompt must make breadth visible** -- a narrow declaration
+may declare unlimited HTTPS, and **the prompt must make breadth visible**: a narrow declaration
 must not look like an unlimited one.
 
 ## Context
@@ -32,7 +32,7 @@ preference into a requirement, and corrected an assumption in the process:
 
 - Its renderer imports **zero** Node builtins and **zero** Electron APIs. All 32 of its network
   calls are the browser's own `fetch`. The Node compatibility layer does nothing for it.
-- Those calls only work because its **main process rewrites the outgoing headers** -- setting
+- Those calls only work because its **main process rewrites the outgoing headers**, setting
   `Origin: https://www.youtube.com` for some hosts and deleting `Origin` for others. Those are
   headers a page cannot set, which is precisely why that code lives in main.
 - It also contacts whatever alternative server the **user** types into its settings, which no
@@ -40,14 +40,14 @@ preference into a requirement, and corrected an assumption in the process:
 
 So: routing `fetch` is the difference between working and not working; routing without app-chosen
 headers still fails, because the far end rejects the requests; and prompting per new host fails
-because **an app that does not know Orivon exists cannot wait for a decision** -- it fires parallel
+because **an app that does not know Orivon exists cannot wait for a decision**: it fires parallel
 requests with its own timeouts and retries.
 
 ## Alternatives considered
 
 **A TLS stack in JavaScript over raw TCP.** No new capability needed. Rejected: the mature
 pure-JavaScript options are dated and unaudited for this use, and a subtly wrong certificate check
-is indistinguishable from a correct one until it is exploited -- in our code, in the
+is indistinguishable from a correct one until it is exploited, in our code, in the
 security-critical path, for every app.
 
 **Leave `https` out of v0.** Apps use the browser's `fetch` where the far end permits it. Rejected:
@@ -57,7 +57,7 @@ flagship.
 **Route `fetch` but keep the browser's forbidden-header rules.** Rejected: it leaves FreeTube-class
 apps broken even with CORS solved, which is the whole point of routing.
 
-**Ask just in time for each new host.** Precise and honest, and rejected for the reason above --
+**Ask just in time for each new host.** Precise and honest, and rejected for the reason above;
 plus it would ask several times before the first video plays, which teaches people to click yes
 without reading.
 
@@ -71,7 +71,7 @@ a prompt can name it truthfully. A JavaScript TLS stack inside the app would lea
 say what the app is talking to.
 
 Header freedom is safe *because of a property this design already has*: these connections carry no
-cookies and no ambient credentials. Nothing can ride the user's existing logins -- the app must
+cookies and no ambient credentials. Nothing can ride the user's existing logins: the app must
 supply everything itself, which makes it closer to a command-line tool than to a browser tab.
 
 And the breadth is not new. Any desktop application on the machine can already reach any host.
@@ -84,27 +84,27 @@ replaces.
   rather than found one at a time.** This must be documented plainly for developers; a silent
   divergence in a web platform API is a trap.
     - **CORS.** A routed request never becomes a browser-mediated network load, so none of the
-      renderer's cross-origin machinery -- preflight, the forbidden-header list, the
-      simple-request rules -- applies to it. Deliberate, and most of the point of routing (see
+      renderer's cross-origin machinery (preflight, the forbidden-header list, the
+      simple-request rules) applies to it. Deliberate, and most of the point of routing (see
       Context and Reasoning above): an app reaching a granted host gets the same header freedom a
       native client would have.
     - **CSP.** For the identical reason, a page's own declared Content-Security-Policy (a
       `connect-src` directive, set via a `<meta>` tag or a response header) has no effect on a
       routed request either. Enforcement moves entirely to the broker's own check on
-      `orivon.net.connectSecure` -- the manifest pattern match, not the page's CSP, is what
+      `orivon.net.connectSecure`: the manifest pattern match, not the page's CSP, is what
       actually bounds the request.
     - **Mixed content** (`docs/open-questions.md` A117, filed 2026-09-10). A page served over
       `https:` can reach an `http:` granted host through this same routed path, which the
       renderer's own mixed-content blocking would have refused for a native `fetch`. This is not
-      "Orivon allows mixed content" as a general property -- only this one routed path skips an
+      "Orivon allows mixed content" as a general property: only this one routed path skips an
       enforcement the renderer otherwise performs, and only for a host the manifest declared and
       a person approved at install. An app that declared a plaintext host and had that reviewed
       has been through more scrutiny than the browser's blanket rule provides, which is why this
       is recorded as a documented, deliberate consequence rather than changed.
 
   `src/preload/README.md`'s Design notes (owned by the `broker` stream) catalogue the further,
-  per-call-shape divergences this same requirement produced -- the response body cap, unfollowed
-  redirects, and the limited request-body types -- alongside this one.
+  per-call-shape divergences this same requirement produced (the response body cap, unfollowed
+  redirects, and the limited request-body types) alongside this one.
 - **Unlimited HTTPS is the widest permission in the system.** If the prompt renders it the same way
   as a narrow declaration, every manifest will declare unlimited and the prompt stops meaning
   anything. Making breadth visible is therefore load-bearing, not polish.
@@ -120,4 +120,4 @@ replaces.
 **Medium.** The capability could be narrowed later, but withdrawing `fetch` routing would break
 every app that came to depend on it, and withdrawing header freedom would break them
 individually and silently. The parts to revisit deliberately are the *breadth* a manifest may
-declare and how the prompt presents it -- not whether the path exists.
+declare and how the prompt presents it, not whether the path exists.

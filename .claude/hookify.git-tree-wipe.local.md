@@ -8,7 +8,7 @@ action: block
 
 **Tree-wide discard blocked: this checkout permanently carries the owner's uncommitted work.**
 
-The primary checkout at `/home/jhon/Desktop/Develop/Claude/orivon-mvp` is **not** a scratch
+The primary checkout (`<primary-checkout>`) is **not** a scratch
 tree. It routinely holds 25-30 modified files of live, unpushed work across docs,
 `src/contracts/` and `src/telemetry/` -- that was true for the whole of 2026-09-10..16 and is
 the normal state, not a mess to clean up. Nothing warns you before it is gone.

@@ -1,4 +1,4 @@
-# `src/loader/` — the app loader
+# `src/loader/`: the app loader
 
 **What lives here.** Manifest discovery at `/.well-known/orivon.json`, asset fetch and cache,
 per-version hash pinning, and the update decision (silent / re-consent / capability prompt /
@@ -9,18 +9,18 @@ reject).
 
 **What it must never import.** [`src/shim/`](../shim/).
 
-**Owner stream.** `loader` — build step 4.
+**Owner stream.** `loader`, build step 4.
 
 **Never probe automatically.** An unsolicited request to every origin the user visits is an
 active, attributable *"this visitor runs Orivon"* signal, sent from a privacy-branded browser.
-Discovery is a `<link rel="orivon-manifest">` hint in HTML already delivered — the only
+Discovery is a `<link rel="orivon-manifest">` hint in HTML already delivered, the only
 trigger; there is no separate user action, a Web3site is the URL, not a thing to convert a
-website into (`capability-api.md`'s 2026-09-03 correction). The well-known path is fetched
+website into (`capability-api.md` §How a URL becomes an app). The well-known path is fetched
 **only after** seeing that hint.
 
 **The install origin's hostname must resolve as public-unicast before that fetch, no exception**
 ([`install-origin.ts`](install-origin.ts), T12/A46). This is the shell itself, unsandboxed,
-making the very first request — with no grant and no manifest yet to gate it — so a hint pointing
+making the very first request, with no grant and no manifest yet to gate it, so a hint pointing
 at a loopback, private, link-local or cloud-metadata address is refused outright, even the
 loopback case `docs/open-questions.md` A46 otherwise permits for a *user-typed* address: the only
 discovery trigger here is a page-supplied hint, which is exactly the provenance A46 says loopback
@@ -29,7 +29,7 @@ must never be reachable from.
 **The update decision is where a silent failure is a security failure.** Its failure mode is
 "no prompt appeared", which no manual checklist catches, and the capability at stake is
 `tcp.connect *:*`. Re-consent triggers on a **subset check over the granted pattern set**, not
-on capability kinds — see [`capability-api.md`](../../docs/architecture/capability-api.md) A9 §2.
+on capability kinds; see [`capability-api.md`](../../docs/architecture/capability-api.md) A9 §2.
 
 ## Design notes
 
@@ -39,71 +39,60 @@ source comment protects a specific line from a specific mistake; the case for a 
 shape belongs here instead.
 
 **Why [`fetch-bundle.ts`](fetch-bundle.ts) is its own file, not part of `index.ts`.** Split out
-per [`code-guidelines.md`](../../docs/development/code-guidelines.md) Rule 2 — it owns exactly
+per [`code-guidelines.md`](../../docs/development/code-guidelines.md) Rule 2: it owns exactly
 one concern: turning `(fetch, hintedUrl)` into a validated bundle. TOFU versus `decideUpdate()`
 branching, and persistence, are `index.ts`'s job, not this file's.
 
-**Corrected 2026-09-04 -- `assetPaths` is no longer a parameter anywhere in this directory; the
-two paragraphs below describe what replaced the design this section used to document.**
+**There is no `assetPaths` parameter anywhere in this directory.**
 `fetchBundle` reads the app's file list off the manifest itself (`manifest.entry` unioned with
 `manifest.assets`, [`ADR-0011`](../../docs/decisions/ADR-0011-manifests-declare-their-own-asset-list.md))
-once it has fetched and parsed it -- never supplied by a caller. `ADR-0011`'s own Consequences
-section originally kept `assetPaths` as an explicit parameter to `Loader.load()`, on the
-assumption that whatever eventually wires the discovery trigger would fetch the manifest itself
-first and pass the resulting list in. That assumption doesn't hold: the well-known manifest path
-is fixed and known only to `fetchBundle` itself (this file's own header, above), so nothing
-external ever has a parsed manifest to read `assets` off *before* calling `load()` -- the caller
-of `load()` only ever has `hintedUrl`, the same thing a passive hint listener has. See
-`ADR-0011`'s own amendment for the full account.
+once it has fetched and parsed it, never supplied by a caller. It cannot be a caller's job: the
+well-known manifest path is fixed and known only to `fetchBundle` itself (this file's own
+header, above), so nothing external ever has a parsed manifest to read `assets` off *before*
+calling `load()`; the caller of `load()` only ever has `hintedUrl`, the same thing a passive
+hint listener has.
 
-`entry` is unioned into the fetched set unconditionally, not only when convenient -- it is a leaf
+`entry` is unioned into the fetched set unconditionally, not only when convenient: it is a leaf
 of the bundle like any other declared asset, and the entry-leaf check needs it fetched to find
-it. One consequence worth knowing if you're reading `fetch-bundle.ts` next to its tests: several
-checks that used to guard against a hostile *caller-supplied* `assetPaths` array (an absolute
-cross-origin URL, a path-traversal string, two names that collide under case-folding, too many
-entries) are now unreachable through the public two-argument API, because `manifest.ts`'s own
-validation (`readAssets`/`validateRelativePath`/`MAX_ASSETS`) already rejects every one of those
-shapes before `fetchBundle` ever sees them -- one layer earlier than before. Those checks are
-still in `fetch-bundle.ts`, kept as defence in depth rather than removed (this function must not
-quietly start trusting that `manifest.ts`'s validation is airtight), but their dedicated test
-coverage moved to [`manifest.test.ts`](./tests/manifest.test.ts), which already exercised the same input
-shapes independently. **Corrected by A141 (below): a *redirect* landing two distinct declared
-names, or a redirected entry, at a different canonical path than declared, is no longer something
-this file's own suite can produce at all** -- the paragraph immediately above described that as
-still directly tested here; A141 removed the mechanism the tests used to simulate it.
+it. **Some of `fetch-bundle.ts`'s checks are unreachable through the public API, on purpose.**
+Several guard against a hostile asset list (an absolute cross-origin URL, a path-traversal string,
+two names that collide under case-folding, too many entries), but `manifest.ts`'s own validation
+(`readAssets`/`validateRelativePath`/`MAX_ASSETS`) rejects every one of those shapes before
+`fetchBundle` ever sees them. They stay in `fetch-bundle.ts` as defence in depth (this function
+must not quietly trust that `manifest.ts`'s validation is airtight), and their test coverage lives
+in [`manifest.test.ts`](./tests/manifest.test.ts), which exercises the same input shapes. A
+*redirect* landing two distinct declared names, or a redirected entry, at a different canonical
+path than declared cannot be produced by this file's suite at all, for the reason below.
 
-**A141 (2026-09-13) -- `fetchBundle` cannot depend on `response.url`, because real Electron's
+**`fetchBundle` cannot depend on `response.url`, because real Electron's
 `net.fetch` reports it as the empty string on every ordinary response, not only a redirected one**
 (measured, `docs/open-questions.md` A59/A141). The same-origin and canonical-path checks in
-`fetch-bundle.ts` now trust the url they *requested* (`manifestUrl`, `assetUrl`) instead --
+`fetch-bundle.ts` trust the url they *requested* (`manifestUrl`, `assetUrl`) instead, which is
 provably safe only because [`electron-fetch.ts`](electron-fetch.ts)'s `redirect: 'error'` makes a
-followed redirect response impossible to receive in the first place, which is now a hard
-requirement on any `Fetch` implementation (see that type's own doc comment,
+followed redirect response impossible to receive in the first place. That is a hard requirement
+on any `Fetch` implementation (see that type's own doc comment,
 [`fetch-budget.ts`](fetch-budget.ts)), not only the real one.
 
-This closes off two things this suite used to be able to exercise, both by the same mechanism
-(the redirect-signalling `RouteSpec.url` override losing its effect): `fetch-bundle.ts`'s
-entry-leaf check (`ADR-0009` amendment #2) is unreachable through the public API for the same
-reason the checks above are -- `entryPath` and the asset loop's own canonical path are now the
+Two more checks are unreachable through the public API for the same reason: `fetch-bundle.ts`'s
+entry-leaf check (`ADR-0009` amendment #2), because `entryPath` and the asset loop's own canonical path are the
 identical computation for the entry's own asset, so they cannot disagree without a bug in that
-computation itself, which no test can manufacture without reintroducing the bug. `bundleTree()`'s
-own case-folding collision check lost its only exercise through `fetchBundle` for the same
-reason; it keeps direct coverage in
-[`bundle-hash.test.ts`](../broker/policy/tests/bundle-hash.test.ts) instead. Neither check was
-deleted -- both stay as defence in depth against their own computations ever drifting apart.
+computation itself, which no test can manufacture without reintroducing the bug; and
+`bundleTree()`'s own case-folding collision check, which has direct coverage in
+[`bundle-hash.test.ts`](../broker/policy/tests/bundle-hash.test.ts) instead. Both stay as defence
+in depth against their own computations ever drifting apart.
 
-The real adapter itself (`electronFetch`/`netFetch`) was never exercised by any test before this
--- every test injected a stub `Fetch`. [`test/e2e-loader-adapter.test.ts`](../../test/e2e-loader-adapter.test.ts)
-is what closes that: it drives the real `net.fetch` (and, for the one case its own address guard
+**The real adapter (`electronFetch`/`netFetch`) is tested for real, not only through a stub
+`Fetch`.** [`test/e2e-loader-adapter.test.ts`](../../test/e2e-loader-adapter.test.ts) drives the
+real `net.fetch` (and, for the one case its own address guard
 allows, the real `electronFetch`) inside a real Electron process against a real local server,
 including a real redirecting response, so the `redirect: 'error'` guarantee this section depends
 on is proven rather than assumed.
 
 **Why [`install-origin.ts`](install-origin.ts) is its own file.** Split out of `fetch-bundle.ts`
-per Rule 2 (adding the T12/A46 guard pushed that file to 524 lines) — it owns exactly one
+per Rule 2 (adding the T12/A46 guard pushed that file to 524 lines): it owns exactly one
 question, "may this hostname be installed at all," independent of everything else `fetchBundle()`
 does once that question is answered. Tested through `fetch-bundle.test.ts` rather than a file of
-its own, the same way `manifest-capabilities.ts` is tested through `manifest.test.ts` — it has no
+its own, the same way `manifest-capabilities.ts` is tested through `manifest.test.ts`, since it has no
 caller-visible contract beyond what `fetchBundle()` already exercises.
 
 **Why `pruneAssets` compares folded paths, and why folding is the safe direction.**
@@ -115,7 +104,7 @@ carries). APFS and NTFS are also case-insensitive but case-preserving, so a bund
 changes only an asset path's case rewrites the *same* physical file while `readdir` keeps
 reporting the original spelling. Both are supported run-from-source targets
 ([`CLAUDE.md`](../../CLAUDE.md) Rule 8). Both sides of the comparison therefore go through
-`canonical-path.ts`'s `foldForIdentity` (NFC, then case-fold) -- the same folding
+`canonical-path.ts`'s `foldForIdentity` (NFC, then case-fold), the same folding
 `collisionKey` applies, minus its percent-decode step, which would corrupt a literal `%` in an
 already-decoded real filename.
 
@@ -135,32 +124,32 @@ interrupted earlier run survives until a prune deletes from it again.
 
 **Why a fresh install does not prune.** `install()` skips `pruneAssets` on the TOFU path: no
 earlier pin exists for that origin, so there is nothing a previous bundle could have left behind,
-and the walk would only re-read every file the write loop just wrote -- one `realpath` per
+and the walk would only re-read every file the write loop just wrote: one `realpath` per
 declared asset, up to `MAX_BUNDLE_ENTRIES` of them. The one state this gives up on is an origin
 whose `code/` tree survived while its pin record did not (a crash between the two writes): those
 files are not swept by the re-install that follows, but the re-install does write a pin, so the
 next update prunes them.
 
-**Re-verification cost: whole-tree, once, at handler creation -- not one leaf hash per request.**
+**Re-verification cost: whole-tree, once, at handler creation, not one leaf hash per request.**
 [`ADR-0007`](../../docs/decisions/ADR-0007-cached-bundles-served-at-their-own-origin.md) requires
 the cached tree be "re-verified at every load, not only at fetch," and a large bundle makes that
 sentence a real cost decision, not a formality. [`serve-verify.ts`](serve-verify.ts) re-hashes
 every pinned asset and compares the result against `pin.bundleHash` exactly once, when
 [`serve.ts`](serve.ts)'s `createAppRequestHandler` builds the handler that
 [`electron-serve.ts`](electron-serve.ts) then registers with
-`session.fromPartition(...).protocol.handle(...)` -- not on every individual request that handler
+`session.fromPartition(...).protocol.handle(...)`, not on every individual request that handler
 later answers. Two things make this the right cost to pay, not merely the cheap one: `protocol
 .handle` registrations do not survive an Electron process restart (confirmed against
-`electron/electron`'s `protocol_registry.cc` -- a session's handler map is process-local), so a
+`electron/electron`'s `protocol_registry.cc`: a session's handler map is process-local), so a
 fresh handler, and therefore a fresh whole-tree check, is unavoidable once per app **per launch**
 regardless of how many requests that launch makes; and the ADR's own phrase is "**between runs**",
 which this satisfies exactly. What it does **not** catch is a file rewritten on disk mid-session,
-after the handler for that origin has already been built -- a narrower, TOCTOU-shaped risk this
-lane accepts rather than pays for on every request: a per-leaf hash on every single asset fetch
+after the handler for that origin has already been built, a narrower TOCTOU-shaped risk this
+loader accepts rather than pays for on every request: a per-leaf hash on every single asset fetch
 would mean re-hashing an app's whole JS bundle on every navigation and every repeated image
 request, for a threat (local write access to a running browser's own profile directory, in a
-window of an already-open app) that has larger consequences than a stale cached file. AI
-recommendation, not an owner decision -- flagged rather than silently chosen, the same as
+window of an already-open app) that has larger consequences than a stale cached file. Provisional,
+flagged rather than silently chosen, the same as
 `bundle-hash.ts`'s own `MAX_ASSET_BYTES`/`MAX_BUNDLE_BYTES`.
 
 **Why `readAsset` collapses every failure into one `undefined`, unlike `readPin`.** `readPin`'s
@@ -172,7 +161,7 @@ permissions error, or a directory where a file was expected. One contract, not t
 is only one caller-visible outcome.
 
 **Why `/` maps to `manifest.entry` and nothing else does.** A pinned bundle is a fixed, hashed
-asset map, not a filesystem with directory listings -- `isValidCanonicalPath` already refuses
+asset map, not a filesystem with directory listings; `isValidCanonicalPath` already refuses
 every path ending in `/` except the bare root (a trailing empty segment fails `isSafeDecodedPath`),
 so there is no directory-index fallback to design for beyond that one case. `serve.ts`'s
 `resolveRequestPath` special-cases exactly `url.pathname === '/'`; every other request, directory-
@@ -188,17 +177,17 @@ unhandles first so the session always answers with a handler built from the fres
 pin.
 
 **Why a cross-origin request inside an app's own partition reaches `fetchThirdParty`, not an
-automatic denial (A143, resolved 2026-09-14).** `session.fromPartition(...).protocol.handle('https',
-...)` intercepts the WHOLE scheme for that session, not merely requests to the app's own host -- so
+automatic denial (A143).** `session.fromPartition(...).protocol.handle('https',
+...)` intercepts the WHOLE scheme for that session, not merely requests to the app's own host, so
 a page in its own partition fetching a third-party `https://` URL (a CDN font, an `<img>` pointing
-elsewhere) reaches this same handler. Owner decision: let an app reach a host it holds a granted
+elsewhere) reaches this same handler, and an app may reach a host it holds a granted
 `https.connect` for. `serve.ts`'s `fetchThirdParty` authorises against the LIVE grant via
-`checkConnectSecure` -- the SAME function `orivon.net.connectSecure` itself calls -- and, if
+`checkConnectSecure`, the SAME function `orivon.net.connectSecure` itself calls, and, if
 allowed, performs the real fetch through [`serve-reach.ts`](serve-reach.ts)'s `nodeReachDial`
 (Node's own `https` module, chosen over Electron's `net.fetch` specifically so this path could be
-proven end to end over a real TLS handshake in a real Electron launch -- see that file's own
-header). Everything else -- an ungranted host, a plain `http:` request (A163, a deliberate,
-narrower scope decision, not a gap), a redirect from the granted host -- still gets the same
+proven end to end over a real TLS handshake in a real Electron launch; see that file's own
+header). Everything else, whether an ungranted host, a plain `http:` request (A163, a deliberate,
+narrower scope decision, not a gap), or a redirect from the granted host, still gets the same
 fail-closed `denyResponse` this handler has always answered with. `img-src`/`font-src`/`media-src`
 widen alongside it, from the same `https.connect` grant (`connect-src.ts`'s `appReachCspHeaderValue`)
 -- without that, `default-src 'self'`'s fallback would keep refusing the very requests this
@@ -206,11 +195,11 @@ decision exists to allow, before they could ever reach the handler.
 
 **Why [`serve-reach.ts`](serve-reach.ts) uses Node's own `https` module, not Electron's `net.fetch`
 or a hand-rolled HTTP/1.1 client.** `test/e2e-fetch-routing.test.ts`'s own header records why an
-unmodified Electron build cannot be made to trust a locally generated test certificate -- which is
+unmodified Electron build cannot be made to trust a locally generated test certificate, which is
 why that file proves its own byte round trip over plain HTTP rather than HTTPS. Node's own `https`
 module takes a per-request `ca` override (`../broker/adapters/tls-adapter.ts`'s own established
 seam, same shape, same "testing only" rule), so this mechanism can be proven end to end over a real
-TLS handshake in a real Electron launch (`tests/serve-reach.test.ts`) -- a real advantage Electron's
+TLS handshake in a real Electron launch (`tests/serve-reach.test.ts`), a real advantage Electron's
 own `net.fetch` does not have. A hand-rolled client (the shape `src/preload/fetch-route.ts` is
 forced into by its own `contextBridge` serialisation constraint) was rejected because nothing here
 needs that constraint: Rule 6 says prefer the mature, already-audited component once a hand-rolled
@@ -218,7 +207,7 @@ one is not actually required, and Node's own client already handles chunked enco
 correctly. Two further properties this choice buys for free: `https.request` has no concept of a
 session or a cookie jar at all, so there is nothing to remember to set (contrast Chromium's
 `fetch()`, which needs an explicit `credentials: 'omit'` for the identical guarantee); and it never
-auto-follows a redirect -- a 3xx from the granted host is handed back to the page as an ordinary 3xx
+auto-follows a redirect: a 3xx from the granted host is handed back to the page as an ordinary 3xx
 response, so a granted host can never hand a request off to one nobody approved.
 
 **Why `restorePinnedServing` runs at startup rather than only after a fresh `load()`.** `load()`
@@ -228,7 +217,7 @@ for pre-cached apps" (this document's own line, from `ADR-0007`) would be false 
 app installed in one run would stop being servable from cache the moment the browser restarts,
 since nothing else re-registers its handler. `subsystem.ts`'s `afterReady` calls
 `electron-serve.ts`'s `restorePinnedServing` once, reading every origin `node-storage.ts`'s
-`listPinnedOrigins` finds a self-consistent pin for, and registers each independently -- one
+`listPinnedOrigins` finds a self-consistent pin for, and registers each independently, so one
 origin's corrupted pin or unreadable asset is logged and does not stop the rest, the same
 per-item-failure stance `runAfterReady` (`main/registry.ts`) already takes for subsystems.
 
@@ -239,40 +228,32 @@ them. A grant is different: `broker/grant-ledger.ts`'s `grant()`/`revoke()` can 
 `connect-src.ts` should say for an origin whose handler is ALREADY registered, with no
 re-registration event to hook. `electron-serve.ts`'s `grantedConnectPatternsFor` is therefore
 called from inside the returned handler, once per request, not captured in the closure the way
-the pin and manifest are -- so a revoke narrows the very next request's CSP, and a fresh grant
+the pin and manifest are, so a revoke narrows the very next request's CSP, and a fresh grant
 widens it, without waiting for the app to be reinstalled or the browser to restart. **What this
 still cannot fix, because nothing implementation-side can:** a document already loaded keeps
-whatever CSP its own navigation response carried, until the next load -- that is how CSP
+whatever CSP its own navigation response carried, until the next load. That is how CSP
 delivery works in every browser, not a gap this design left open.
 
-**Why `img-src`/`font-src`/`media-src` and `connect-src` no longer diverge right after a restart
-(A158, resolved 2026-09-14).** They used to, on purpose: `electron-serve.ts`'s
-`secureHeaderPatternsFor` (`https.connect`) fell back to a persisted-but-not-yet-hydrated grant
-read straight off disk, safely, because `serve.ts`'s `fetchThirdParty` independently LIVE-checks
-every actual third-party request regardless of what the header claimed -- widening only what the
-browser ATTEMPTS, never what is actually served. `grantedConnectPatternsFor` (`connect-src`,
-`tcp.connect`) could not share that fallback: `connect-src` is the sole gate for `WebSocket`
-(`docs/open-questions.md` A42), which has no live handler behind it to catch a wrong guess, so
-reading disk there would have widened a REAL authorisation from an unverified source (`A137`).
+**Why every CSP directive reads the live grant ledger, even right after a restart (A158).**
+`electron-serve.ts`'s `registerServingFor` hydrates `origin`'s persisted grants from its pinned,
+hash-verified manifest (`verifiedManifestFor` below, `GrantLedger.hydrateFromPinnedManifest`)
+BEFORE `registerAppOrigin` wires anything onto the session, so the ledger is already the true
+answer by the time any header is computed. Both header functions share one
+`liveGrantedPatternsFor` helper that simply reads `broker.app.grants`, with no disk fallback and
+no special-casing.
 
-That gap is closed differently now, not by adding a matching fallback to `connect-src` (which
-would still have been unsafe) but by making the LEDGER ITSELF correct before either function can
-ever be asked: `electron-serve.ts`'s `registerServingFor` hydrates `origin`'s persisted grants
-from its pinned, hash-verified manifest (`verifiedManifestFor` below, `GrantLedger
-.hydrateFromPinnedManifest`) BEFORE `registerAppOrigin` wires anything onto the session. Both
-header functions now share one `liveGrantedPatternsFor` helper that simply reads
-`broker.app.grants` -- no disk fallback, no special-casing, because there is no longer a window in
-which the ledger is not already the true answer. See `docs/open-questions.md` A158's 2026-09-14
-resolution for the full reasoning (why a manifest that is a leaf of a hash-pinned bundle is not
-the kind of "saved value" `A137` forbids trusting), and A137 itself for why the withdrawn attempt
-this lane is not a repeat of was wrong.
+A disk fallback would be unsafe for `connect-src` in particular: `connect-src` is the sole gate
+for `WebSocket` (`docs/open-questions.md` A42), which has no live handler behind it to catch a
+wrong guess, so reading disk there would widen a REAL authorisation from an unverified source
+(`A137`). A manifest that is a leaf of a hash-pinned bundle is not the kind of "saved value"
+`A137` forbids trusting; A158 has the full reasoning.
 
 **Why `verifiedManifestFor` (`serve.ts`) exists alongside `createAppRequestHandler`, sharing one
 `resolveVerifiedBundle` helper rather than each re-deriving the same verification.** A158's
 early-hydration seam needs the EXACT, already-verified manifest `createAppRequestHandler` itself
-derives -- an output, not an input, which is why `serve.ts`'s own header calls out this one
+derives: an output, not an input, which is why `serve.ts`'s own header calls out this one
 exception to "no `Manifest` argument, ever". `registerServingFor` calls it, then hydrates
-`GrantLedger` from the result, before building the handler at all -- accepting a second, bounded
+`GrantLedger` from the result, before building the handler at all, accepting a second, bounded
 whole-tree re-verification per `registerServingFor` call (this directory's own accepted per-launch
 cost, doubled rather than multiplied per request) instead of threading a pre-resolved manifest
 through `createAppRequestHandler`'s public signature, which every test and `dev-serve.ts` already
@@ -280,12 +261,12 @@ depend on staying `storage`+`origin`-only.
 
 **Why `isOriginServedFromCache` (`electron-serve.ts`) asks Electron's protocol-handler registry
 instead of the broker.** S4-6's address-bar provenance signal needs to answer "is a request to
-this origin, right now, actually being served from the pinned cache" -- and `Broker
+this origin, right now, actually being served from the pinned cache", and `Broker
 .app.isRegisteredSync` cannot answer that: it means "a manifest is in the grant ledger," which
 `registerApp` sets independently of `registerServingFor` actually intercepting the scheme
 (`subsystem.ts`'s `onInstalled` calls both, but a future caller is not guaranteed to). Asking
 Electron's own `session.protocol.isProtocolHandled` instead is the only way to avoid a false
-positive -- ADR-0007 is explicit that showing "local cache, pinned" for bytes that did not
+positive: ADR-0007 is explicit that showing "local cache, pinned" for bytes that did not
 actually come from it is precisely the false claim this feature exists to prevent.
 
 **Why A199's cancellation hooks in the handler, not the dial or the grant ledger's own cascade**
@@ -327,7 +308,7 @@ for `net.connect`/`net.connectSecure`/`net.listen` via `HandleTable.acquire`'s `
 but `fetchThirdParty`'s reach path never consulted it, so an app could hold unlimited concurrent
 third-party requests regardless of the number it declared and the person approved. The clamp
 itself (`resource-limits.ts`'s `socketAllowance`) is two lines of arithmetic, cheap enough to be
-tempting to copy -- but code-guidelines.md Rule 3 and this lane's own brief are explicit that the
+tempting to copy -- but code-guidelines.md Rule 3 is explicit that the
 NUMBER must be reused, not re-derived, so a future change to the clamp (or to what counts as
 "declared") cannot silently drift between the two enforcement points. `Broker.app
 .socketAllowanceSync` is a one-line, synchronous, never-throwing delegate to

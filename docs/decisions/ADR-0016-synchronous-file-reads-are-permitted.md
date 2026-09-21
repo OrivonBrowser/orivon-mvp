@@ -7,14 +7,14 @@
 
 ## Decision
 
-`orivon.fs` gains a **synchronous read**, and [`capability-api.md`](../architecture/capability-api.md) design rule 2 -- *"Everything is
-async"* -- is narrowed to apply to **network operations only**.
+`orivon.fs` gains a **synchronous read**, and [`capability-api.md`](../architecture/capability-api.md) design rule 2, *"Everything is
+async"*, is narrowed to apply to **network operations only**.
 
 The mechanism is the runtime's synchronous renderer-to-main channel (`ipcRenderer.sendSync`),
 which blocks the renderer until the reply arrives. That blocking is the required behaviour, not a
 tolerated side effect.
 
-The alternative mechanism -- `Atomics.wait` on a `SharedArrayBuffer` with app code in a Worker --
+The alternative mechanism, `Atomics.wait` on a `SharedArrayBuffer` with app code in a Worker,
 is **deferred, not rejected**, and is recorded here as the escape hatch. Both present the same
 interface to an app, so switching later changes nothing an app can observe.
 
@@ -24,7 +24,7 @@ interface to an app, so switching later changes nothing an app can observe.
 
 [`open-questions.md`](../open-questions.md) A94. Design rule 2's stated justification is narrow: *"Node constructs
 sockets synchronously; across an IPC boundary we cannot."* That is sound for a dial, which cannot
-complete without a DNS round trip. It was then generalised to `fs`, where it does not follow -- a
+complete without a DNS round trip. It was then generalised to `fs`, where it does not follow: a
 local file read is sub-millisecond, and blocking for it is not the same cost at all.
 
 The consequence of an async-only `fs` is not slow apps, it is **absent calls**: `readFileSync` and
@@ -41,7 +41,7 @@ mechanically after auditing the dependency tree", which is a different and much 
 **Stay async-only.** The status quo. Rejected: it fails apps at startup, at the exact point a new
 user is deciding whether Orivon works.
 
-**Route B now (`Atomics.wait` in a Worker).** Proven technology -- it is how StackBlitz
+**Route B now (`Atomics.wait` in a Worker).** Proven technology: it is how StackBlitz
 WebContainers gives Node programs synchronous `fs` in an ordinary browser tab. Deferred rather
 than chosen: it decides *where app code runs*, which is a larger change than the problem currently
 justifies, and it depends on cross-origin isolation headers that are ours to set under [ADR-0007](./ADR-0007-cached-bundles-served-at-their-own-origin.md)
@@ -70,7 +70,7 @@ already written will notice.
 - The renderer blocks for the duration of each synchronous read. Accepted.
 - `src/contracts/` changes, so it merges as its own PR before any implementation.
 - The shim can present `readFileSync` and `existsSync`, which is what a ported app actually calls.
-- Design rule 2's text must be amended where it stands, not contradicted elsewhere -- a rule that
+- Design rule 2's text must be amended where it stands, not contradicted elsewhere, since a rule that
   says two things is worse than either.
 - If a real app is measurably harmed by the freeze, that is the trigger to build route B, and the
   trigger should be a measurement rather than a worry.

@@ -22,10 +22,6 @@ Under `npm run dev`, opening its URL raises the real consent prompt and acceptin
 step -- see §Consent without installing. Playback still depends on YouTube serving a stream at
 all, which for most videos it will not (§Wall 2).
 
-**Getting there required a one-line fix in the broker's TLS adapter**, outside this directory:
-`orivon.net.connectSecure` sent no SNI, so no name-based virtual host -- which is most of the
-public web -- could complete a handshake with it. See §Wall 0.
-
 ## Consent without installing
 
 **Capabilities are granted to a URL. Installing is a separate feature**, and this app needs only
@@ -94,43 +90,10 @@ Verified by `node verify.mjs`, 11/11 passing on 2026-09-17 against live YouTube:
 
 ## The two walls
 
-### Wall 0: `connectSecure` sent no SNI (platform-side, FOUND AND FIXED)
-
-Not a FreeTube problem, and not a wall any more -- recorded because it was invisible until a real
-app talked to a real public host, and because the reason the test suite could not see it is
-structural rather than an oversight.
-
-[`tls-adapter.ts`](../../src/broker/adapters/tls-adapter.ts) called
-`tls.connect({ host, port })` and documented that choice: *"`tls.connect` already defaults
-[`servername`] to `host` ... verification behaves identically either way."* **It does not.** In
-this object form Node leaves `socket.servername` as `false`, so no SNI extension goes on the
-wire, and a name-based virtual host answers with its no-SNI default certificate. Google's reply
-says so in as many words:
-
-```
-subject=OU = No SNI provided - please fix your client., CN = invalid2.invalid
-```
-
-Verification then correctly refused it, surfacing as `unreachable` /
-`UNABLE_TO_VERIFY_LEAF_SIGNATURE`. **It failed closed, so this was never a security hole** -- it
-simply made `connectSecure`, and therefore every routed `fetch`, unable to reach ordinary HTTPS
-hosts.
-
-**Why 4,696 passing tests missed it.** `tls-adapter.ts`'s own suite tests against a real local
-TLS server with a freshly generated certificate, which is the right way to test verification --
-but a single-certificate server presents the same certificate whether SNI arrives or not. Only a
-name-based virtual host can tell the two apart, and every e2e test here runs under
-`HERMETIC_RESOLVER`, which blackholes the public internet by design. The gap was between the two
-kinds of coverage, not inside either.
-
-The fix passes `servername` for a hostname and omits it for an IP literal. Full suite (4,696
-tests) and `e2e-connect-secure-capability` still pass.
-
 ### Wall 1: the served CSP cannot name a video CDN host -- **INSTALLED APPS ONLY**
 
-**Corrected 2026-09-17, after an earlier version of this document overstated it as a property of
-the platform.** It is a property of ONE serving path. Granting capabilities to a URL and
-installing an app are separate features; this app only ever needed the first, and on a live
+**This is a property of one serving path, not of the platform.** Granting capabilities to a URL
+and installing an app are separate features; this app only ever needed the first, and on a live
 origin **playback works**:
 
 ```

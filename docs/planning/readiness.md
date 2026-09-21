@@ -1,7 +1,7 @@
 # Readiness report
 
 **Purpose:** the gate before implementation. Owner signs off, or corrects, and then code starts.
-This is a synthesis — it does not restate what the linked documents already say.
+This is a synthesis; it does not restate what the linked documents already say.
 
 **Date:** 2026-08-18 · **Recommendation: ready to build, conditional on the week-0 spike.**
 
@@ -11,7 +11,7 @@ This is a synthesis — it does not restate what the linked documents already sa
 
 **Clear.**
 - What the MVP proves, and the metric that judges it: 100 active users in EU/USA at
-  25 h/month. The metric — not the long-term vision — decides scope (`mvp-scope.md`).
+  25 h/month. The metric, not the long-term vision, decides scope (`mvp-scope.md`).
 - The flagship, with reasoning recorded so it is not re-litigated (`ADR-0001`).
 - Three journeys that must work: the clip, the identity, the developer.
 - Everything classified: in / deferrable / later / unrelated, plus explicit public non-goals.
@@ -27,7 +27,7 @@ This is a synthesis — it does not restate what the linked documents already sa
 
 ## Technical readiness
 
-**Decided** — six ADRs, all with reversibility recorded:
+**Decided**: six ADRs, all with reversibility recorded:
 
 | | |
 |---|---|
@@ -45,9 +45,9 @@ with a testing and platform policy (`build-plan.md`).
 **Uncertain.**
 - **Renderer-side webtorrent throughput.** The one unknown that changes the architecture.
   Resolved by a 2-day timeboxed spike before anything else starts, with a documented fallback.
-- **NIP-07 conformance** across real Nostr clients — cheap to verify, small blast radius.
-- **The `+Privacy` level placement** and the canonical **DDOC** expansion — both awaiting an
-  owner decision in `glossary.md`. Neither blocks code.
+- **NIP-07 conformance** across real Nostr clients: cheap to verify, small blast radius.
+- **The `+Privacy` level placement** and the canonical **DDOC** expansion, both awaiting an
+  decision in `glossary.md`. Neither blocks code.
 
 ## Major risks
 
@@ -58,7 +58,7 @@ with a testing and platform policy (`build-plan.md`).
    carry real workloads. Detected in week 0 for 2 days' cost.
 3. **Scope creep out of the vision docs.** The corpus is large, coherent and seductive, and
    the developer is solo. Mitigated by non-goals and by "absent from IN means out".
-4. **A broker vulnerability.** Authorisation, not containment — stated openly rather than
+4. **A broker vulnerability.** Authorisation, not containment, stated openly rather than
    papered over. T1, T3 and T12 in `security-model.md` are the ones most likely to be got
    wrong; T12 (DNS rebinding against manifest patterns) is the subtlest.
 5. **Telemetry discovered rather than announced.** Cheap to avoid, expensive if mishandled.
@@ -75,7 +75,7 @@ renderer (sandboxed)  →  orivon.* capability API  →  broker (main process)  
 ```
 
 The interface is the asset. The Electron shell is disposable, and the implementation beneath
-the API moves — Node now, Wasmtime later, Mojo in a Chromium fork after that — without any app
+the API moves (Node now, Wasmtime later, Mojo in a Chromium fork after that) without any app
 noticing. That property, not the choice of Electron, is what keeps the Chromium path open.
 
 ## Implementation phases

@@ -134,7 +134,7 @@ jobs:
       - name: Build
         run: npm run build
 
-      # Item 0.3's exit criterion (docs/planning/unattended-build-queue.md)
+      # Item 0.3's exit criterion (.claude/unattended-build-queue.md)
       # has two clauses: a developer-only grant path, AND "CI fails if the
       # path is reachable once packaged." The script has existed and passed
       # by hand since it landed, but was never wired into CI -- this step is

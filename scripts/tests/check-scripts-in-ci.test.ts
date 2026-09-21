@@ -7,7 +7,7 @@ import { join } from 'node:path'
  * .github/workflows/ci.yml -- a guard nobody runs protects nothing. This
  * lane (F4) exists because check:dev-grant-absent was exactly that: written,
  * passing by hand, and never wired in. See
- * docs/planning/unattended-build-queue.md item 0.3.
+ * .claude/unattended-build-queue.md item 0.3.
  *
  * Deliberately a vitest test, not an eighth check:* script: `npm test` is
  * already unconditional in ci.yml's `check` job, so this guard cannot itself

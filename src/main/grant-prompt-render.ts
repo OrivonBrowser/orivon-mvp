@@ -1,6 +1,6 @@
 // Turns one (origin, manifest, capability, patterns) grant decision into
 // the exact words a person reads before approving it -- item 4.2's whole
-// deliverable (docs/planning/unattended-build-queue.md, owner decision 8).
+// deliverable (.claude/unattended-build-queue.md, owner decision 8).
 // Pure and I/O-free on purpose: request-grant-prompt.ts owns showing this
 // content in a real dialog; this file owns only what it SAYS, so it is
 // unit-tested against real Manifest values with no Electron process.

@@ -4,22 +4,22 @@
 
 **Please do not open a public issue.**
 
-1. **Preferred:** [GitHub private vulnerability reporting](https://github.com/OrivonBrowser/orivon-mvp/security/advisories/new)
-   — the *Security* tab of this repository. It is private, it threads properly, and it produces
+1. **Preferred:** [GitHub private vulnerability reporting](https://github.com/OrivonBrowser/orivon-mvp/security/advisories/new),
+   the *Security* tab of this repository. It is private, it threads properly, and it produces
    a CVE if one is warranted.
 2. **Fallback:** accauntacaso57@gmail.com
 
 Please include what you did, what happened, what you expected, and the commit or version you
-tested. A proof of concept is welcome but not required — a clear description of the flaw is
+tested. A proof of concept is welcome but not required; a clear description of the flaw is
 worth more than a working exploit.
 
-**Response.** This is currently a one-person project, so: acknowledgement within **7 days**,
-and an assessment within **30**. If you do not hear back in 7 days, assume the message was
-lost and send it again through the other channel.
+**Response.** This is currently a one-person project, so: acknowledgement within 7 days, and an
+assessment within 30. If you do not hear back in 7 days, assume the message was lost and send
+it again through the other channel.
 
 **Disclosure.** Coordinated. Tell us first, give us a reasonable window to fix it, and we will
 credit you in the advisory and the changelog unless you prefer otherwise. There is no bounty
-programme — this project has no money.
+programme; this project has no money.
 
 ---
 
@@ -29,20 +29,20 @@ programme — this project has no money.
 
 This is stated plainly because it changes what counts as a vulnerability.
 
-Orivon decides **whether an app may do a thing**. It does not, in this version, contain the app
-if that decision is wrong. An app granted `tcp.connect: ["*:*"]` genuinely can connect anywhere
-— that is the grant working, not failing. Containment for untrusted code is a real goal, and it
+Orivon decides whether an app may do a thing. It does not, in this version, contain the app if
+that decision is wrong. An app granted `tcp.connect: ["*:*"]` genuinely can connect anywhere.
+That is the grant working, not failing. Containment for untrusted code is a real goal, and it
 is deferred to a future runtime, not cancelled
 ([`ADR-0002`](docs/decisions/ADR-0002-capability-api-is-the-durable-asset.md)).
 
-So the highest-value bugs are ones where **the decision itself is wrong or bypassable**:
+So the highest-value bugs are ones where the decision itself is wrong or bypassable:
 
 | | |
 |---|---|
 | **The broker's authorisation logic** | [`src/broker/`](src/broker/) and especially [`src/broker/policy/`](src/broker/policy/). The crown jewels |
 | **Origin derivation** | If an origin can be spoofed or confused, every grant, every storage domain and every derived key is keyed on a lie |
 | **Path confinement** | `..`, symlinks, and the platform-specific forms of both |
-| **DNS rebinding** | Patterns must be matched against **resolved addresses**. A correct glob matcher fed a *hostname* is completely defeated, and this is the subtlest one |
+| **DNS rebinding** | Patterns must be matched against resolved addresses. A correct glob matcher fed a *hostname* is completely defeated, and this is the subtlest one |
 | **The preload boundary** | Anything that gets `require`, `process`, or a raw `MessagePortMain` into a page's main world |
 | **The update path** | An update that should have prompted and did not. Its failure mode is *"no prompt appeared"*, which nothing else catches |
 
@@ -67,10 +67,11 @@ Please don't report these; they are documented design positions.
 
 ### Current state
 
-**Pre-alpha. The capability broker is not written yet.** As of now the shell exists and the
-contracts are defined. There is nothing released, nothing packaged, and no users to protect —
-so the most useful reports today are about the *design* in
-[`docs/architecture/`](docs/architecture/) rather than about the code.
+**Pre-alpha, and unreleased.** The shell, the capability broker, the Node shim and the app
+loader are built; nothing is packaged or released, and there are no users to protect yet. Reports
+about the code and about the *design* in [`docs/architecture/`](docs/architecture/) are both
+useful. In the code, a flaw costs most in the broker ([`src/broker/`](src/broker/)) and the
+preload boundary ([`src/preload/`](src/preload/)).
 
 Design-level reports are genuinely welcome. A flaw found in `capability-api.md` costs an
 afternoon; the same flaw found after apps exist costs a migration.

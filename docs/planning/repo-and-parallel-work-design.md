@@ -1,4 +1,4 @@
-# Repo openness and parallel work — design
+# Repo openness and parallel work: design
 
 **Status: design approved in outline by the owner 2026-08-26; awaiting review of this
 document before an implementation plan is written.**
@@ -41,7 +41,7 @@ Revisit if the stream count exceeds roughly six, or if a boundary violation actu
 
 ---
 
-## Part A — the human path
+## Part A: the human path
 
 ### The problem
 
@@ -93,17 +93,17 @@ Directories to cover: `src/`, `src/main/`, `src/contracts/`, `src/preload/`, `sr
 The existing `architecture/`, `decisions/` and `planning/` split is sound and stays. Two
 additions:
 
-- **`docs/README.md`** — the reading order, currently buried in `CLAUDE.md`. Distinguishes
+- **`docs/README.md`**. The reading order, currently buried in `CLAUDE.md`. Distinguishes
   "read this to understand the product" from "read this to understand a decision" from "read
   this to start working".
-- **`docs/development/`** — new, holding the material a contributor needs:
-  - `setup.md` — prerequisites, install, run, the `ELECTRON_RUN_AS_NODE` trap
-  - `testing.md` — what is tested and why so little is (per `build-plan.md` §Testing)
-  - `parallel-work.md` — Part C of this document, as an operational guide
-  - `release-checklist.md` — referenced by `build-plan.md` §Testing but **does not exist**;
+- **`docs/development/`**. New, holding the material a contributor needs:
+  - `setup.md`: prerequisites, install, run, the `ELECTRON_RUN_AS_NODE` trap
+  - `testing.md`: what is tested and why so little is (per `build-plan.md` §Testing)
+  - `parallel-work.md`: Part C of this document, as an operational guide
+  - `release-checklist.md`: referenced by `build-plan.md` §Testing but **does not exist**;
     creating it closes a real gap, with a precondition, a fixed input and a falsifiable
     assertion per item
-  - `readability-log.md` — Part D
+  - `readability-log.md`: Part D
 
 ### CLAUDE.md after the change
 
@@ -115,7 +115,7 @@ would look for it.
 
 ---
 
-## Part B — `src/contracts/`
+## Part B: `src/contracts/`
 
 ### What it is
 
@@ -158,20 +158,20 @@ src/contracts/
 
 ### Why this also serves goal 1
 
-A developer who reads seven short files understands the entire product surface — what an app
+A developer who reads seven short files understands the entire product surface: what an app
 can ask for, what it gets back, how failures are named, what the limits are. Per `ADR-0002`
 that surface *is* the durable asset; the Electron shell beneath it is explicitly disposable.
 Making the durable asset the most readable thing in the repository is the correct ordering.
 
 ---
 
-## Part C — the parallel work system
+## Part C: the parallel work system
 
 ### The underlying problem
 
 `build-plan.md` is dependency-ordered: shell → broker → shim → app loader → torrent app. Step 3
 cannot begin before step 2 exists. Parallelism is therefore not discovered, it is
-**manufactured** — by freezing the interfaces (Part B) so a stream can build against a contract
+**manufactured**, by freezing the interfaces (Part B) so a stream can build against a contract
 and a stub instead of against another stream's half-finished code.
 
 ### Prevention
@@ -193,7 +193,7 @@ disjoint set of paths and may not write outside them.
 | Stream | Owns | Build step | Status |
 |---|---|---|---|
 | `shell` | `src/main/{window,tabs,omnibox,ipc}.ts`, `src/renderer/`, `src/preload/shell.ts` | 1 | done; maintenance only |
-| `contracts` | `src/contracts/` | — | change-controlled, see Part B |
+| `contracts` | `src/contracts/` | n/a | change-controlled, see Part B |
 | `broker` | `src/broker/`, `src/broker/policy/`, `src/preload/app.ts` | 2 | critical path |
 | `shim` | `src/shim/` | 3 | |
 | `loader` | `src/loader/` | 4 | |
@@ -203,7 +203,7 @@ disjoint set of paths and may not write outside them.
 | `nostr` | `src/nostr/` | 7 | |
 | `telemetry` | `src/telemetry/` | 8 | |
 | `packaging` | `electron-builder` config, `scripts/` | 10 | independent of everything |
-| `docs` | `docs/`, root markdown | — | always available |
+| `docs` | `docs/`, root markdown | n/a | always available |
 
 `src/broker/policy/` is called out separately because `build-plan.md` §Week 0 already requires
 it to hold pure functions with no Electron imports and no I/O, constructed as
@@ -220,8 +220,8 @@ rule most likely to be forgotten under time pressure.
 **4. Composition roots.** Two files are structural conflict magnets, because every stream must
 register itself in them:
 
-- `src/main/index.ts` — where each subsystem is wired into the app lifecycle
-- `electron.vite.config.ts` — where each build entry point is declared
+- `src/main/index.ts`: where each subsystem is wired into the app lifecycle
+- `electron.vite.config.ts`: where each build entry point is declared
 
 Both are restructured so that adding a subsystem **appends two lines** rather than editing
 logic. Concretely: each subsystem exports a `register(ctx)` function, and `index.ts` holds a
@@ -233,7 +233,7 @@ the repository into the mildest one, and it costs a few lines now versus a recur
 
 Conflicts will still happen. Three mechanisms, in order of how often they will fire:
 
-**1. `package-lock.json` — never hand-merge.** This is the most common parallel-work conflict
+**1. `package-lock.json`: never hand-merge.** This is the most common parallel-work conflict
 and the most dangerous, because a hand-merged lockfile can look correct and produce a broken or
 subtly different dependency tree. The rule, written into `CONTRIBUTING.md`: take either side
 wholesale, run `npm install`, commit the regenerated file. Never resolve it hunk by hunk.
@@ -280,13 +280,13 @@ the brief and the public record in the same place rather than duplicating them.
 
 ---
 
-## Part D — the readability test as standing policy
+## Part D: the readability test as standing policy
 
 Goal 1 is a policy, not a task, so it needs a recurring check. The owner is the human in the
 loop and has asked to be used as one.
 
-**The protocol.** At the end of every build step, exactly one artefact is handed to the owner —
-the document a newcomer would hit at that point in the project — with one question:
+**The protocol.** At the end of every build step, exactly one artefact is handed to the owner,
+the document a newcomer would hit at that point in the project, with one question:
 
 > Read this cold. Where is the first place you got lost, or had to guess?
 
@@ -352,33 +352,33 @@ Stated explicitly so they are not quietly added later.
 
 ---
 
-## Open items — not decided, blocking or near-blocking
+## Open items: not decided, blocking or near-blocking
 
 1. **The GitHub token cannot do this job.** `gh` authenticates from `GITHUB_TOKEN` exported at
    `~/.bashrc:164`, a classic PAT scoped `read:user` and `repo:status` only. Creating the
    repository, pushing, and opening pull requests all require `repo`; and because
    `.github/workflows/ci.yml` is tracked, **the first push fails without `workflow` scope**.
    While `GITHUB_TOKEN` is set in the environment, `gh auth login` and `gh auth refresh` are
-   both ignored. Blocks D2 only — every other part of this design proceeds without it.
+   both ignored. Blocks D2 only; every other part of this design proceeds without it.
 2. **Two dead repositories sit beside the live one.** The org already contains
    `orivon-browser` and `orivon-browser-v2`; the latter is the failed prior MVP that
    `CLAUDE.md` explicitly says is not a baseline. A person landing on
    `github.com/OrivonBrowser` and seeing three similarly-named repositories cannot tell which
    is alive, which directly defeats goal 1 before they ever reach this repository's README.
-   **AI recommendation:** archive both and say so in the new README. Awaiting the owner.
-3. **The two specification documents both say "DRAFT, needs owner review before any code is
+   **Recommended, not yet confirmed:** archive both and say so in the new README.
+3. **The two specification documents both say "DRAFT, needs review before any code is
    written."** `capability-api.md` and `handle-contracts.md` carry that header, and Part B
    transcribes them into code. Transcription is not implementation and does not require the
-   review to have happened first — but the review is now on the critical path for build step 2,
+   review to have happened first, but the review is now on the critical path for build step 2,
    and is worth doing while the contracts are being written rather than after.
 
 ---
 
 ## Reference
 
-- `docs/planning/build-plan.md` — the dependency order this design manufactures parallelism from
-- `docs/architecture/capability-api.md`, `docs/architecture/handle-contracts.md` — the sources
+- `docs/planning/build-plan.md`: the dependency order this design manufactures parallelism from
+- `docs/architecture/capability-api.md`, `docs/architecture/handle-contracts.md`: the sources
   `src/contracts/` transcribes
-- `docs/decisions/ADR-0002-capability-api-is-the-durable-asset.md` — why the contracts, not the
+- `docs/decisions/ADR-0002-capability-api-is-the-durable-asset.md`: why the contracts, not the
   shell, are the thing to make readable
-- `docs/planning/readiness.md` — the standing caveat about where the owner's month is best spent
+- `docs/planning/readiness.md`: the standing caveat about where the owner's month is best spent

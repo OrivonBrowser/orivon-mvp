@@ -6,12 +6,12 @@ when someone checks them. Explored with the owner on 2026-09-08 and 2026-09-09.
 
 ## The idea
 
-Run an existing native desktop application -- JVM, Qt, GTK -- unmodified, inside a Linux
+Run an existing native desktop application (JVM, Qt, GTK) unmodified, inside a Linux
 container, with a virtual screen inside that container, and stream its windows into an ordinary
 Orivon tab. The user sees the app in a tab. The app sees a normal Linux desktop.
 
 `app-compatibility.md` places these in **tier 3** ("must rewrite the frontend, bundle a
-supervised helper process") and cuts them from the MVP for that reason -- Bisq is its worked
+supervised helper process") and cuts them from the MVP for that reason, with Bisq as its worked
 example. This approach is a fourth path that document does not consider: **tier 3 stops costing
 a rewrite and starts costing an image build.**
 
@@ -28,13 +28,13 @@ Two consequences worth stating, because neither is obvious:
 Estimated at 5-8 weeks standalone, which the owner judged too expensive. That number was then
 found to be wrong in a way that matters: **3-5 of those weeks were the permission machinery and
 the mediated transport, both of which the capability broker already builds.** See the estimate
-below. The owner has not restated a go/no-go decision on the corrected number; the status here
+below. No go/no-go has been restated against the corrected number; the status here
 is "parked with the cost basis corrected", not "rejected".
 
 ## The hard constraint that came out of this
 
-**Owner's decision, 2026-09-09: rendering inside a tab is a property of the product, not a
-feature of any build step.** A cheaper variant was proposed and rejected -- Orivon launches the
+**Rendering inside a tab is a property of the product, not a
+feature of any build step.** A cheaper variant was proposed and rejected: Orivon launches the
 native app as its own operating-system window and acts only as launcher and permission manager.
 That captures most of the compatibility win for a fraction of the work, which is exactly why it
 will keep being proposed. It is rejected because an app that opens its own window outside the
@@ -51,18 +51,18 @@ Three pieces, and only the first is code written in this repository.
 |---|---|
 | Orivon main process | A supervisor that starts and stops the container, and bridges it to the tab |
 | Inside the container | Virtual screen, minimal window manager, the app, and **xpra** |
-| The tab | xpra's web client -- an ordinary web page |
+| The tab | xpra's web client, an ordinary web page |
 
 ### Podman, not Docker
 
-*AI recommendation.* Daemonless, runs without administrator rights, and Apache-2.0 with no
+*Recommended, not yet confirmed.* Daemonless, runs without administrator rights, and Apache-2.0 with no
 licence threshold for companies above a certain size. Docker Desktop has one.
 
 ### xpra, not neko or Kasm
 
-*AI recommendation, and two independent reasons point the same way.*
+*Recommended, not yet confirmed; two independent reasons point the same way.*
 
-1. **It sends windows, not a desktop.** neko and Kasm put a whole Linux desktop in the tab --
+1. **It sends windows, not a desktop.** neko and Kasm put a whole Linux desktop in the tab:
    wallpaper, taskbar, window frames. xpra has a seamless mode that forwards the application's
    own windows. For "the app is in the tab", the second is the product; the first looks like a
    computer inside a computer.
@@ -72,8 +72,8 @@ licence threshold for companies above a certain size. Docker Desktop has one.
 ### The transport, and why it is not a localhost port
 
 Every off-the-shelf streaming stack serves on a local port. `security-model.md` **T15** already
-rules that out for a weaker case -- torrent media is served renderer-locally precisely so no
-other local process can reach it -- and a container holding a wallet is a stronger case, not a
+rules that out for a weaker case (torrent media is served renderer-locally precisely so no
+other local process can reach it) and a container holding a wallet is a stronger case, not a
 weaker one. An unauthenticated local port carrying a live wallet session that accepts input is
 the whole threat in one sentence.
 
@@ -99,10 +99,10 @@ Linux only. The right-hand column assumes the broker and shim have landed as pla
 | | Standalone | After the broker |
 |---|---|---|
 | Image built by hand, app and xpra inside, opened in an ordinary browser | 2-4 days | unchanged |
-| Container lifecycle: start, stop, mount, clean up | folded into the rows below | **~1 week** -- the only genuinely new capability |
+| Container lifecycle: start, stop, mount, clean up | folded into the rows below | **~1 week**, the only genuinely new capability |
 | Bridge between xpra's WebSocket client and `orivon.net` | | **days** |
 | Attach to Orivon with no exposed port | 2-3 weeks | absorbed by the two rows above |
-| Manifest, prompt, grant, revocation | 1-2 weeks | **days** -- the machinery exists |
+| Manifest, prompt, grant, revocation | 1-2 weeks | **days**; the machinery exists |
 | The user does not have Podman: what they see | not estimated | **still not estimated** |
 | **Total** | **5-8 weeks** | **2-4 weeks** |
 
@@ -140,7 +140,7 @@ The container adds a fixed few seconds. Everything else is the application's own
 
 | Situation | Time |
 |---|---|
-| First run ever -- downloads the image (700 MB - 1.5 GB) | 3-10 min, almost entirely download |
+| First run ever, downloading the image (700 MB - 1.5 GB) | 3-10 min, almost entirely download |
 | App stopped, image already present | ~5 s of system, plus the app's own start |
 | App already running in the background, tab reopened | **under a second** |
 | macOS or Windows with the VM stopped | plus 10-30 s to start it |
@@ -150,7 +150,7 @@ inside the container and reopening the tab reattaches to the session already the
 wait is paid once per session, not once per tab open.
 
 The price is memory: roughly 500 MB - 1 GB per warm app, plus the VM on macOS and Windows. That
-implies a ceiling on how many stay warm -- and following the pattern set by the socket allowance
+implies a ceiling on how many stay warm, and following the pattern set by the socket allowance
 (`open-questions.md` A80), that ceiling should be something the user sees and consents to rather
 than a number chosen silently.
 
@@ -158,14 +158,14 @@ Bisq is the worst case in its class: JVM, JavaFX, and a Tor bootstrap, which is 
 even when launched normally on the host. A lighter app with no network bootstrap is 2-5 seconds.
 
 **An ordinary Orivon app opens in a fifth of a second.** A container app does not. This is
-starting an application, not navigating -- acceptable, but only if the interface says so rather
+starting an application, not navigating: acceptable, but only if the interface says so rather
 than looking like a tab that has hung. That work sits in the row that is still not estimated.
 
 ## The unestimated row
 
 "The user does not have Podman: what they see" was never estimated, and it is the row that
 decides whether anyone uses this. On Linux it is an annoyance, on Windows a reboot, on macOS a
-1.5 GB download -- and Windows and macOS are where the users are.
+1.5 GB download, and Windows and macOS are where the users are.
 
 ## Assumptions, and what is not verified
 
@@ -189,7 +189,7 @@ shows dialogs and resizing working or it does not.
 ## The alternative not taken, still worth two hours
 
 **CheerpJ**, which runs compiled Java inside a web page. Bisq is Java, so it would run in a tab
-and on every platform *by construction* -- no container, no virtual machine, no prerequisite --
+and on every platform *by construction*, with no container, no virtual machine and no prerequisite,
 and the sockets it needs would come from `orivon.net`, meaning the MVP being built now would be
 the engine.
 

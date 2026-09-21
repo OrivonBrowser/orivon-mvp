@@ -19,7 +19,7 @@
 // different (ungranted) curve is still denied, and that revoking the grant
 // denies a subsequent call.
 //
-// UPDATED (docs/planning/unattended-build-queue.md item 0.3): the grant
+// UPDATED (.claude/unattended-build-queue.md item 0.3): the grant
 // itself now goes through src/main/dev-grant.ts's hook rather than this file
 // calling broker.registerApp()/grant() directly. revoke() and app.grants()
 // below stay direct broker calls -- neither has a page-facing equivalent (a

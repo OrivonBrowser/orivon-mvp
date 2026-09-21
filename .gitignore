@@ -35,6 +35,12 @@ release/
 
 # Local agent + editor state
 .claude/settings.local.json
+# Machine-absolute paths belong here, never in a tracked document -- this repo is
+# public, and the tracked docs previously published the owner's home directory
+# layout. See .claude/local-paths.md for the placeholder table.
+.claude/local-paths.md
+# Kilo Code's local agent state: per-agent worktrees and machine-local config.
+.kilo/
 .vscode/
 .idea/
 

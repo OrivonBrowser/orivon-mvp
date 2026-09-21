@@ -41,10 +41,15 @@ export function relativeToRoot (root, full) {
  * that as a clean scan. A guard that scans nothing must fail loudly, not pass.
  */
 export function trackedFiles (root) {
+  // stderr is piped, not inherited: a failing git then lands in the thrown
+  // error's message (which both callers report) instead of the console of an
+  // otherwise-quiet run -- the R-S5-04 negative tests run git outside a work
+  // tree on purpose, and its fatal line is theirs, not the suite's.
   const out = execFileSync('git', ['ls-files', '-z'], {
     cwd: root,
     encoding: 'utf8',
-    maxBuffer: 64 * 1024 * 1024
+    maxBuffer: 64 * 1024 * 1024,
+    stdio: ['ignore', 'pipe', 'pipe']
   })
   return out.split('\0').filter(Boolean)
 }

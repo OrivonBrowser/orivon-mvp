@@ -100,7 +100,7 @@ None of these block starting the week-0 spike.
 | A7 | **RESOLVED 2026-09-03 (owner): *Domain Data Ownership Confirmation***, canonical everywhere. Already the published spelling, so the live docs need no change; *Certification* was rejected because it implies an authority vouching for the data and none exists — which would oversell exactly the DNS trust root `C1` flags as forgeable | Action outstanding: correct the two internal documents (`glossary.md`) |
 | A8 | **WITHDRAWN 2026-09-03 — not a decision.** `+Privacy` attaches to the top rung of each ladder, and the private website ladder simply has one more rung than the public one. Reinstating that rung (already decided in `ADR-0006`/`B3`) moves it to L5 by itself | Folded into `B3`'s existing public-docs correction |
 | A9 | Three capability-API items. **Defaults now proposed** in `architecture/capability-api.md` — `net.listen` grantable to unsigned apps with a declared port range and no privileged ports · grants keyed on `(origin, capability, pattern set)`, a **subset check** over the pattern set (not a kind comparison), with bundle-hash changes handled by the separate re-consent prompt · `fs.quotaBytes` enforced via a running per-origin counter | **Build proceeds on these unless overruled.** Cheap to change before any third-party app exists |
-| A12 | **RESOLVED 2026-09-09 (owner): `orivon.fs` stays byte-oriented, no encoding option at the capability layer.** Confirms the provisional reading already in `src/contracts/capability-api.ts`; text decoding belongs to `orivon-node-shim`. See `planning/unattended-build-queue.md` decision 1 | Phase 1 contracts PR removes the PROVISIONAL markers; see below |
+| A12 | **RESOLVED 2026-09-09 (owner): `orivon.fs` stays byte-oriented, no encoding option at the capability layer.** Confirms the provisional reading already in `src/contracts/capability-api.ts`; text decoding belongs to `orivon-node-shim`. See `.claude/unattended-build-queue.md` decision 1 | Phase 1 contracts PR removes the PROVISIONAL markers; see below |
 | A14 | **RESOLVED 2026-08-26 (owner):** a trailing DNS dot is stripped, so `https://x.example.` and `https://x.example` are ONE origin. Deliberately deviates from `URL.origin`. Exactly one dot; a host still carrying an empty label is rejected | Implemented in `src/broker/policy/origin.ts` |
 | A13 | **RESOLVED 2026-08-27 (owner): Promises**, per design rule 2. Widening a Promise to a plain value later is a smaller break than the reverse. Original question: `capability-api.md` §v0 surface writes them as `=> Manifest` and `=> Grant[]`, but design rule 2 in the same document says *"All entry points return Promises"* | **Build step 2.** Transcribed as Promises; see below |
 | A15 | **The four bundle-hash caps are guesses, not decisions** — `MAX_PATH_BYTES` 1024, `MAX_ASSET_BYTES` 16 MiB, `MAX_BUNDLE_BYTES` 64 MiB, `MAX_BUNDLE_ENTRIES` 4096 (`src/broker/policy/bundle-hash.ts`, `architecture/bundle-hash.md` §Caps). They are labelled AI-recommendation in the source, but a cap decides which bundles are *refusable*, so two implementations disagreeing on one disagree about whether an app can exist at all. **2026-09-03:** `src/loader/fetch-bundle.ts` (`stream/loader-02-fetch-cache`) is the first real caller of all four, and they are being carried forward uncalibrated | **Before the app loader ships (build step 4).** Needs one real frontend's shape to calibrate against; guessing again now would not be better than the current guess |
@@ -152,7 +152,7 @@ silently would be exactly the failure `CLAUDE.md` Rule 1 exists to prevent.
 > **Owner decision, 2026-09-09.** `orivon.fs` stays byte-oriented — no encoding option at the
 > capability layer, confirming the provisional reading above exactly as implemented. Text
 > decoding is the shim's job, not the capability's, matching `ADR-0008`'s split. Recorded as
-> decision 1 of thirteen in `planning/unattended-build-queue.md`; the Phase 1 contracts PR
+> decision 1 of thirteen in `.claude/unattended-build-queue.md`; the Phase 1 contracts PR
 > removes the PROVISIONAL markers without changing the shape underneath them.
 
 ### A13 — synchronous or async app introspection **[AI-REC]**
@@ -840,7 +840,7 @@ while designing `src/broker/transport/port-pump.ts`, which relays the READ direc
 `MessageChannelMain` port: `DataMessage` (broker -> renderer, bytes arriving), `CreditMessage`
 (renderer -> broker, bytes consumed) and `StreamEndMessage` (broker -> renderer, once, at a
 terminal state). All three exist to make the READ side's credit window work, and
-`handle-contracts.md`'s "Backpressure — a credit window" section — the one place this whole
+`handle-contracts.md`'s "Backpressure: a credit window" section, the one place this whole
 mechanism is specified in detail — describes the read side exhaustively and the write side in
 exactly one sentence, an outcome rather than a protocol: *"`writable`'s `write()` resolves only
 once the broker has accepted the bytes into the OS socket send buffer, so an app that `await`s
@@ -879,7 +879,7 @@ renderer), and the half-close/abort pair `WriteEndMessage`/`WriteAbortMessage` t
 recommendation above did not anticipate needing. `LIMITS.writeWindowBytes`
 (`src/contracts/limits.ts`, 256 KiB) is the write-side credit window the AI recommendation's
 sketch omitted; `WRITE_HEARTBEAT_MS`/`WRITE_SILENCE_TIMEOUT_MS` are the timing pair that tells
-a slow peer apart from a dead transport. `handle-contracts.md`'s new "Backpressure — write
+a slow peer apart from a dead transport. `handle-contracts.md`'s new "Backpressure: write
 direction" section specifies all of this at the wire level, matching how the read side was
 already documented, and its `§Limits` table now carries the write window alongside the read
 one.
@@ -1276,7 +1276,7 @@ its re-export (`src/contracts/index.ts:66`). A re-export statement is technicall
 binding, so "never imported" overstates it; the precise claim is: defined once and re-exported
 once, and no file anywhere in `src/` or `test/` actually reads or consumes the value.
 
-`handle-contracts.md`'s "Backpressure — a credit window" section specifies two halves: the broker
+`handle-contracts.md`'s "Backpressure: a credit window" section specifies two halves: the broker
 stops reading the underlying OS socket once outstanding credit reaches zero, and the renderer
 coalesces its own credit acknowledgements ("at most one credit message per 64 KiB consumed, or
 once per animation frame") so a fast stream does not emit a broker message per chunk. The first
@@ -3347,7 +3347,7 @@ in-product statement and the behaviour agree. Nothing before that blocks on it.
 
 ---
 
-### A90 — owner-decision IDs (`d-NNNN`) are cited in source with no register **[STILL OPEN — AI recommendation]**
+### A90 — owner-decision IDs (`d-NNNN`) are cited in source with no register **[RESOLVED 2026-09-17]**
 
 **Raised 2026-09-07**, by the repo-wide comment sweep (`stream/backlog-15-comment-sweep`). Source
 comments cite `d-0017`, `d-0020`, `d-0021` and `d-0022` as if they named entries in some decision
@@ -3368,6 +3368,14 @@ right shape than one file per decision.
 
 **Needed by:** whenever the next `d-NNNN` is about to be minted. Not blocking anything today —
 existing citations are self-contained now.
+
+**Resolved 2026-09-17.** The register exists: [`decisions/decision-log.md`](decisions/decision-log.md),
+a single running table, which is the second of the two shapes this entry named. It was built as part
+of stripping decision provenance out of the reader-facing pages: `CLAUDE.md` Rule 2 now says a page
+states how Orivon works and never who decided it, so the log is where dates, IDs and attribution
+live. Consistent with this entry's own warning, the subjects in it are recovered from the citations
+that use each token rather than from a register kept at the time, and the log says so; dates that
+could not be recovered are left empty rather than guessed.
 
 ### A91 — `§` is used 185 times across 27 docs files; `CLAUDE.md` states docs are ASCII-only prose **[STILL OPEN]**
 
@@ -3490,7 +3498,7 @@ is a `src/contracts/` change — own PR, merged first.
 >
 > Route B is not rejected — it stays available later as a swap for the same mechanism, **with no
 > app-visible difference**: an app calling the synchronous read cannot tell which implementation
-> answered it. Recorded as decision 2 of thirteen in `planning/unattended-build-queue.md`. This
+> answered it. Recorded as decision 2 of thirteen in `.claude/unattended-build-queue.md`. This
 > is architectural (`CLAUDE.md` Rule 1), and is now recorded as
 > [`ADR-0016`](decisions/ADR-0016-synchronous-file-reads-are-permitted.md), authored by the owner
 > through the sanctioned path on 2026-09-10.
@@ -3538,13 +3546,13 @@ discovers it also owes an `electron` shim has already committed to a scope nobod
 > **Owner decision, 2026-09-09: the `electron` module gets its own compatibility package**,
 > separate from `orivon-node-shim`. Buildable in parallel with the Node-stdlib shim, and that
 > shim's declared scope (`net`, `dgram`, `fs`) stays exactly as written — it gains no new
-> responsibility. Recorded as decision 3 of thirteen in `planning/unattended-build-queue.md`.
+> responsibility. Recorded as decision 3 of thirteen in `.claude/unattended-build-queue.md`.
 
 ---
 
 ## Owner decisions taken 2026-09-09 (unattended-build-queue session)
 
-The remaining ten of the thirteen owner decisions behind `planning/unattended-build-queue.md`,
+The remaining ten of the thirteen owner decisions behind `.claude/unattended-build-queue.md`,
 recorded here per `CLAUDE.md` Rule 2 — each is the **owner's** decision, not an AI
 recommendation, and each states its own consequence and what it closes. Decisions 1-3 above
 close A12/A94/A95; decisions 4, 6 and 7 are architectural and are now recorded as
@@ -3553,7 +3561,7 @@ decision 2's own [`ADR-0016`](decisions/ADR-0016-synchronous-file-reads-are-perm
 
 ### A96 — Orivon terminates TLS on the app's behalf **[RESOLVED 2026-09-09 — owner decision]**
 
-Decision 4 of thirteen, `planning/unattended-build-queue.md`. Orivon performs the TLS
+Decision 4 of thirteen, `.claude/unattended-build-queue.md`. Orivon performs the TLS
 handshake and certificate/hostname verification on the trusted side, using the encryption
 stack already in the shipped runtime, rather than handing an app raw bytes and making it do
 this itself. One new capability; no new dependency, so Rule 8 is unaffected. Because the
@@ -3563,18 +3571,18 @@ Architectural (`CLAUDE.md` Rule 1); one part of [`ADR-0017`](decisions/ADR-0017-
 with decisions 6 and 7 and was authored by the owner on 2026-09-10.
 
 **Needed by:** Phase 1 (the contracts PR) and Phase 2 item 2.3 (secure connect),
-`planning/unattended-build-queue.md`.
+`.claude/unattended-build-queue.md`.
 
 ### A97 — `net.listen` is built in this round **[RESOLVED 2026-09-09 — owner decision]**
 
 Decision 5 of thirteen. `net.listen` is not deferred: it is already fully specified, including
 the unsigned-app port-range rules (`capability-api.md` §1, "Is `net.listen` grantable to
-unsigned apps?"), and is the largest single item in `planning/unattended-build-queue.md`
+unsigned apps?"), and is the largest single item in `.claude/unattended-build-queue.md`
 (Phase 2 item 2.4). It lets the flagship seed as well as download, not receive only.
 
 `build-plan.md` step 2 is amended accordingly (owner decision `d-0023`).
 
-**Needed by:** Phase 2, `planning/unattended-build-queue.md` — item 2.4 is called out there to
+**Needed by:** Phase 2, `.claude/unattended-build-queue.md` — item 2.4 is called out there to
 start first.
 
 ### A98 — the page's own `fetch()` is routed through the capability for granted hosts **[RESOLVED 2026-09-09 — owner decision]**
@@ -3587,7 +3595,7 @@ so without this routing the app does not function at all.
 Architectural (`CLAUDE.md` Rule 1); covered by [`ADR-0017`](decisions/ADR-0017-orivon-owns-the-app-http-path.md), the same ADR as A96 and A99,
 authored by the owner on 2026-09-10.
 
-**Needed by:** Phase 3 item 3.4, `planning/unattended-build-queue.md`.
+**Needed by:** Phase 3 item 3.4, `.claude/unattended-build-queue.md`.
 
 ### A99 — an app may set any request header on a granted host **[RESOLVED 2026-09-09 — owner decision]**
 
@@ -3600,7 +3608,7 @@ must supply everything itself.
 Architectural (`CLAUDE.md` Rule 1); the third part of [`ADR-0017`](decisions/ADR-0017-orivon-owns-the-app-http-path.md), the same ADR as A96
 and A98, authored by the owner on 2026-09-10.
 
-**Needed by:** Phase 3 item 3.4, `planning/unattended-build-queue.md`.
+**Needed by:** Phase 3 item 3.4, `.claude/unattended-build-queue.md`.
 
 ### A100 — network permission is declared in the manifest and granted once at install; no just-in-time prompting **[RESOLVED 2026-09-09 — owner decision]**
 
@@ -3612,9 +3620,9 @@ retries. A host outside the declaration is still denied with no prompt, as today
 **The prompt must make breadth visible:** a narrow declaration and an unlimited one must be
 unmistakably different to look at, or every manifest will simply declare unlimited. This is a
 direct requirement on Phase 4 item 4.2's install prompt, whose own exit criterion already says
-so (`planning/unattended-build-queue.md`).
+so (`.claude/unattended-build-queue.md`).
 
-**Needed by:** Phase 4 item 4.2, `planning/unattended-build-queue.md`.
+**Needed by:** Phase 4 item 4.2, `.claude/unattended-build-queue.md`.
 
 ### A101 — a grant lasts until the user revokes it, visible in a list they can revoke from **[RESOLVED 2026-09-09 — owner decision]**
 
@@ -3623,7 +3631,7 @@ what is currently granted. Chosen to keep prompts rare enough that the ones whic
 still get read. Direct requirement on Phase 4 item 4.4 (the grant list), whose exit criterion
 already ties to it: revoking from the list must tear down live handles, proven by test.
 
-**Needed by:** Phase 4 item 4.4, `planning/unattended-build-queue.md`.
+**Needed by:** Phase 4 item 4.4, `.claude/unattended-build-queue.md`.
 
 ### A102 — the run builds the platform only; FreeTube and webtorrent are test subjects, not porting projects **[RESOLVED 2026-09-09 — owner decision]**
 
@@ -3644,12 +3652,12 @@ the capability" comes up during Phases 2-5.
 Decision 11 of thirteen. The prompt is built now, in this round, and the owner gives feedback
 as it is built rather than seeing it only once finished. This is what turns the platform work
 above into something a person can actually use, and it is why Phase 4 exists as its own phase
-with five owner checkpoints (`planning/unattended-build-queue.md`) instead of one review at the
+with five owner checkpoints (`.claude/unattended-build-queue.md`) instead of one review at the
 end.
 
 `build-plan.md` step 4 is amended accordingly (owner decision `d-0024`).
 
-**Needed by:** Phase 4, `planning/unattended-build-queue.md`.
+**Needed by:** Phase 4, `.claude/unattended-build-queue.md`.
 
 ### A104 — a parked question never halts the run **[RESOLVED 2026-09-09 — owner decision]**
 
@@ -3659,7 +3667,7 @@ in one batch when they return. Prevents the failure this was written to prevent:
 asleep, and the run idling for hours on one unanswered question.
 
 The full mechanism, and the map of what stays workable when each known question is parked, is
-in `docs/development/unattended-run-protocol.md` — this entry is the index pointer, following
+in `.claude/unattended-run-protocol.md` — this entry is the index pointer, following
 the same convention the 2026-09-03 backlog session used above (A46/A36/A29/A33/A7): the
 authoritative text lives at the linked document, not duplicated here.
 
@@ -3674,7 +3682,7 @@ resume point and schedules resumption for the known reset time. The 7-day window
 visibility only and is never a gate. Concurrency stays capped independently, because
 utilization is a level, not a rate.
 
-Full mechanism in `docs/development/unattended-run-protocol.md`, landed the same day as commit
+Full mechanism in `.claude/unattended-run-protocol.md`, landed the same day as commit
 `a572570` ("Gate the unattended run on the live 5-hour usage window at 90 percent") — this
 entry is the index pointer, per the same convention as A104.
 
@@ -4448,7 +4456,7 @@ pointer to T26, and for build step 9 to inherit when app-author documentation is
 API was built to distinguish the two** -- the entry itself rules that out as a contracts change,
 and this lane agrees: the honest fix here is the label, not new surface.
 
-### A133 — the grant prompt's "and N other sites" summary has no cap **[STILL OPEN]**
+### A133 — the grant prompt's "and N other sites" summary has no cap **[RESOLVED 2026-09-14 — stream/shell-05-listen-prompt]**
 
 **Raised 2026-09-10**, post-merge audit; carried over from PR #130's own review, where it was
 raised with the owner and then recorded only in a fleet ledger outside this repository. Filed here
@@ -4472,7 +4480,23 @@ sentence above some N, or something else is the owner's call, in the same regist
 **Related:** A115 (a confusable in the same title), and the port-breadth gap fixed in PR #143 — which
 was the *other* axis of the same problem and is why this one is now the remaining half.
 
-### A134 — `manifest.ts` promises a "distinct, more serious prompt" for listening that does not exist **[STILL OPEN]**
+> **Resolved 2026-09-14, `stream/shell-05-listen-prompt` (PR #183), commit `fffe060`.** The
+> threshold this entry deliberately declined to propose was set at **ten other hosts**: past it the
+> summary stops being an ever-growing integer and switches to a breadth warning, while still
+> stating the true count honestly in its explanation. `describeConnectCapability`
+> (`src/main/grant-prompt-render.ts`) carries it, a dedicated `describe` block in
+> `grant-prompt-render.test.ts` pins both sides of the threshold, and `src/main/README.md` records
+> why the count itself was never the defect -- it was always honest; what it failed to do was make
+> a broad declaration and a narrow one *unmistakably different at a glance*, which is what D-0004
+> actually requires.
+>
+> **This entry stayed at `[STILL OPEN]` for three days after it was fixed**, as did A134 from the
+> same commit. That is a ledger defect, not a technical one: the fix landed, the PR body said so,
+> and nothing came back here. It is the direct reason
+> [`development/security-review-briefing.md`](development/security-review-briefing.md) no longer
+> keeps its own copy of a finding list and points at this file instead.
+
+### A134 — `manifest.ts` promises a "distinct, more serious prompt" for listening that does not exist **[RESOLVED 2026-09-14 — stream/shell-05-listen-prompt]**
 
 **Raised 2026-09-10**, post-merge audit; same provenance as A133 — raised during PR #130's review,
 recorded only in a fleet ledger, filed here at the owner's request.
@@ -4491,6 +4515,21 @@ pressure.
 
 **Either the prompt gets built or the promise comes out of the contract.** Both are small; leaving
 them disagreeing is the bad outcome, because the contract is what an app author trusts.
+
+> **Resolved 2026-09-14, `stream/shell-05-listen-prompt` (PR #183), commit `fffe060`.** Of the two
+> exits this entry named -- build the prompt or take the promise out of the contract -- the prompt
+> was built, because the contract's underlying reasoning held up on inspection rather than being
+> assumed correct. `describeCapabilityGrant` now renders `tcp.listen` and `udp.bind` with
+> `warning: true` and their own sentence (`"⚠ Accept incoming connections on port 6881-6889"`),
+> whose detail spells out that any other computer able to reach the port can use it, worded for
+> "receive" rather than "connect" on the `udp.bind` side. Five tests in
+> `grant-prompt-render.test.ts` pin the distinction, including that listening and unlimited
+> outbound survive as two separately warned rows rather than one swallowing the other.
+>
+> **No longer ahead of its own capability.** This entry noted that A114 left `net.listen`
+> unreachable from a page, so there was time to decide unhurried. A114 was itself resolved
+> 2026-09-15 (`d-0028`, PRs #199 and #203) and `net.listen` now scores Page ✅ in
+> `planning/compatibility-matrix.md` -- the prompt is on the live path.
 
 ### A135 -- the shim refuses an unimplemented member by absence, not by name **[RESOLVED 2026-09-14 -- stream/shim-12-named-refusals]**
 
@@ -4891,7 +4930,7 @@ wants ("this is google.com" / "this is not google.com") -- which needs a public 
 compute correctly. `example.co.uk`'s registrable domain is `example.co.uk`, not `co.uk`; a naive
 "last two labels" guess gets this backwards, in the direction that hides the real registrant, so
 it is worse than not computing it at all. This repo has no such dependency, and adding one is a
-stop condition for the current run (`docs/planning/unattended-build-queue.md` stop condition 4:
+stop condition for the current run (`.claude/unattended-build-queue.md` stop condition 4:
 license, provenance and pure-JS status reviewed by the owner first) -- so it is parked here
 rather than added.
 
@@ -6702,7 +6741,7 @@ boundary-drawing CLAUDE.md Rule 2 says must not blur into "the owner decided thi
 failure." No new `OrivonErrorCode` was added.
 
 **Verified, this lane:** `npm run typecheck` finds exactly 3 pre-existing-mock breaks (listed in
-this lane's own log, `/home/jhon/.claude/orivon-fleet/lanes/L0-contracts/log.md`, and repeated
+this lane's own log, `~/.claude/orivon-fleet/lanes/L0-contracts/log.md`, and repeated
 in this PR's body) -- `src/nostr/tests/nip07.test.ts` and `src/shim-electron/tests/index.test.ts`,
 both constructing a hand-written `OrivonNet`/`OrivonFs` mock missing the new `lookup` method and
 the widened `userSelected` overload. Not fixed here (test code outside `src/contracts/`, and
@@ -7260,7 +7299,7 @@ files / 4300 passed / 3 skipped, the difference being this lane's own new test f
 all green, no regressions; `npm run check:size`, `check:comments`, `check:contracts`,
 `check:natives`, `check:secrets`, `check:questions` and `check:manifest-parity` all pass. Full
 numbers and the PR body are in this lane's own log
-(`/home/jhon/.claude/orivon-fleet/lanes/L2-fsopen/log.md`).
+(`~/.claude/orivon-fleet/lanes/L2-fsopen/log.md`).
 
 **A separate, fleet-level numbering collision, not this lane's to resolve:** an unmerged sibling
 branch (`stream/shim-13-refuse-on-call-not-read`, commit `96962c8`) also claims A184, for an
@@ -7518,7 +7557,7 @@ mechanism (the real `dialog.showOpenDialog` call, deliberately carrying no `titl
 `message` yet) and a settings-list row renderer that reuses the existing plain `.permission-row`
 markup verbatim (no new CSS). The PROPOSED wording for both -- the native dialog's own text and
 the settings-list row's message -- is written out in full in this lane's own log
-(`/home/jhon/.claude/orivon-fleet/lanes/L5-userselected/log.md`), per the owner's standing
+(`~/.claude/orivon-fleet/lanes/L5-userselected/log.md`), per the owner's standing
 instruction that they review wording during development rather than at the end. Nothing here is
 finalised; `describePickedPath` (`src/main/permissions.ts`) carries the same "PROPOSED, NOT
 OWNER-REVIEWED" marker in its own doc comment.

@@ -1,11 +1,7 @@
-# Week-0 spike — execution plan
-
-> **For agentic workers:** REQUIRED SUB-SKILL: use `superpowers:executing-plans` (inline) or
-> `superpowers:subagent-driven-development` to work through this task-by-task. Steps use
-> checkbox (`- [ ]`) syntax.
+# Week-0 spike: execution plan
 
 **Goal:** Decide, in two days, whether `webtorrent` can run inside a sandboxed Electron
-renderer over a shimmed `net`/`dgram` — fetching *ordinary* (non-WebRTC) torrents, with no
+renderer over a shimmed `net`/`dgram`, fetching *ordinary* (non-WebRTC) torrents, with no
 native modules in the shell tree and a working video path.
 
 **Architecture:** A throwaway Electron app. The renderer runs `webtorrent` with per-module
@@ -20,22 +16,19 @@ stream shapes.
 **Spec:** [`build-plan.md`](build-plan.md) §Week 0 · [`audit-2026-08-25.md`](audit-2026-08-25.md) ·
 [`capability-api.md`](../architecture/capability-api.md) §Throughput
 
-**Location note:** the `writing-plans` skill defaults to `docs/superpowers/plans/`. This repo
-keeps planning documents in `docs/planning/`, so it lives here instead.
-
 ---
 
-## STATE AS OF 2026-08-25 — read this before doing anything
+## STATE AS OF 2026-08-25: read this before doing anything
 
 | | Status |
 |---|---|
-| Task 1 — scaffold + Rule 8 guard | **DONE**, committed, 18 tests green |
-| Gate 0 — `MessagePortMain` fidelity | **PASS** — 1134.8 MB/s up, 313.4 MB/s down, byte-exact |
-| Gate 1a — ordinary TCP peer | **PASS** — wire type `tcpOutgoing`, piece verified in 505 ms |
-| Gate 1b — DHT over shimmed `dgram` | **PASS** — peer in 11 ms, 2 sends / 2 receives of real KRPC |
-| Gate 2 — no native modules | Largely pre-answered |
-| Gate 3 — video plays | Not started |
-| Gate 4 — throughput | Not started |
+| Task 1, scaffold + Rule 8 guard | **DONE**, committed, 18 tests green |
+| Gate 0, `MessagePortMain` fidelity | **PASS**: 1134.8 MB/s up, 313.4 MB/s down, byte-exact |
+| Gate 1a, ordinary TCP peer | **PASS**: wire type `tcpOutgoing`, piece verified in 505 ms |
+| Gate 1b, DHT over shimmed `dgram` | **PASS**: peer in 11 ms, 2 sends / 2 receives of real KRPC |
+| Gate 2, no native modules | Largely pre-answered |
+| Gate 3, video plays | Not started |
+| Gate 4, throughput | Not started |
 
 > **The remaining work has its own execution plan:**
 > [`spike-remaining-gates-plan.md`](spike-remaining-gates-plan.md). Work from that.
@@ -55,8 +48,8 @@ Gate 1a solved the bundling problem. **Reuse this exactly**; it is in
 | `bittorrent-dht` → `shim/dht-disabled.js` | **Gate 1b replaces this with the real package** |
 
 Plus, all mandatory:
-- `base: './'` — Vite's default `/` resolves to the filesystem root under `file://`.
-- `shim/globals.js` imported **first** in the entry — a sandboxed renderer has no
+- `base: './'`, because Vite's default `/` resolves to the filesystem root under `file://`.
+- `shim/globals.js` imported **first** in the entry, because a sandboxed renderer has no
   `process`/`global`/`Buffer`, and dependencies read them at module-evaluation time.
 - A `package.json` in each gate directory, or Electron cannot find the app.
 - Launch **only** via `spike/launch.mjs`.
@@ -64,7 +57,7 @@ Plus, all mandatory:
 ### Traps that cost real time today
 
 1. **`ELECTRON_RUN_AS_NODE=1` is set in this environment.** It makes the Electron binary run as
-   plain Node — no windows, no `require('electron')`, no `MessagePortMain`. It presented as a
+   plain Node: no windows, no `require('electron')`, no `MessagePortMain`. It presented as a
    *module-format error*. `spike/launch.mjs` strips it and asserts `MessageChannelMain` exists;
    never launch Electron any other way.
 2. **Rollup gives two browser-externalized modules the same generated identifier.** A missing
@@ -73,34 +66,34 @@ Plus, all mandatory:
 3. **`MessagePortMain` fails by silence.** A dropped message never arrives and never errors, so
    any reply-carrying protocol needs a timeout or it hangs forever.
 4. **Assertions must be able to fail.** A test that only exercises the path that already works
-   proves nothing — that error was made twice today, once on a security control.
+   proves nothing, and that error was made twice today, once on a security control.
 
 ### What each remaining gate still needs
 
-**Gate 1b** — copy `spike/gate1a/` to `spike/gate1b/`; write `shim/dgram.js` (an `EventEmitter`,
+**Gate 1b.** Copy `spike/gate1a/` to `spike/gate1b/`; write `shim/dgram.js` (an `EventEmitter`,
 *not* a stream: `bind()`, `send(msg, port, host, cb)`, `'message'`/`'listening'`/`'error'`);
 add a `dgram` broker handler mirroring the TCP one in `spike/gate1a/main.cjs`; point
 `bittorrent-dht` at `spike/app/node_modules/bittorrent-dht/index.js` (pure JS, no natives).
 **PASS = `peer` events for a well-known infohash within 60 s with `tracker: false`.** A failure
-may be NAT rather than the shim — **re-run from a second network before calling it.**
+may be NAT rather than the shim, so **re-run from a second network before calling it.**
 
-**Gate 1b follow-on** — the public-swarm re-test of gate 1a, deferred here on purpose: finding
+**Gate 1b follow-on.** The public-swarm re-test of gate 1a, deferred here on purpose: finding
 real TCP peers needs DHT, which is what 1b builds.
 
-**Gate 2** — mostly answered already. The shell tree is clean; the app tree has 8 offenders
+**Gate 2.** Mostly answered already. The shell tree is clean; the app tree has 8 offenders
 including `node-datachannel`, whose install script is
-`prebuild-install -r napi || (... npm run _prebuild)` — it **falls back to compiling with
+`prebuild-install -r napi || (... npm run _prebuild)`, and it **falls back to compiling with
 CMake**, which is exactly the Rule 8 threat. The gate-1a bundle contains **zero**
 `node-datachannel` references. What remains: run `npm install --omit=optional` versus a plain
 install on the shell tree and record any difference.
 
-**Gate 3** — try the service-worker path first, with the newly-found `force` parameter:
+**Gate 3.** Try the service-worker path first, with the newly-found `force` parameter:
 `client.createServer({ controller }, 'browser')`. Fall back to `protocol.handle` with a
 registered privileged scheme (`standard`, `secure`, `supportFetchAPI`, `stream`) honouring
 `Range` with `206` + `Content-Range`. **PASS = plays end to end AND seeking to 75% starts there
 within 5 s.** Record time-to-first-frame; the clip depends on it.
 
-**Gate 4** — control (`webtorrent` natively in Node) versus shimmed, same fixture, same local
+**Gate 4.** Control (`webtorrent` natively in Node) versus shimmed, same fixture, same local
 seeder, measured **through the `contextBridge` closures**. Record every sub-criterion
 separately. **Transferables are unavailable (gate 0), so batching is the only day-2 lever.**
 
@@ -108,10 +101,10 @@ separately. **Transferables are unavailable (gate 0), so batching is the only da
 
 ## What this plan is not
 
-Tasks 2–7 build **throwaway code**. It is deleted when the spike resolves, and it is not held to
+Tasks 2-7 build **throwaway code**. It is deleted when the spike resolves, and it is not held to
 the standards the real broker will be. Test-driven development applies to exactly two things
 here, and both survive the spike: the **native-module guard** (Task 1) and the **scaffold's test
-wiring**. Everything else is measurement code, and its "test" is the gate criterion — a recorded
+wiring**. Everything else is measurement code, and its "test" is the gate criterion: a recorded
 number or a byte-comparison, written to `spike/results/*.json` so the verdict is reproducible
 rather than remembered.
 
@@ -127,13 +120,13 @@ Copied verbatim from the specs. Every task inherits these.
 - **Pure-JS dependencies only.** Zero `binding.gyp` and zero `prebuilds/` anywhere under
   `node_modules` (Rule 8, `build-plan.md` §Platform policy).
 - **`contextIsolation: true`, `sandbox: true`, `nodeIntegration: false`.** The raw
-  `MessagePort` **never** crosses into the main world — the preload holds it in the isolated
+  `MessagePort` **never** crosses into the main world; the preload holds it in the isolated
   world and exposes only closures (`capability-api.md` §Throughput; `security-model.md` T17).
 - **All storage through `app.getPath('userData')`.** Never a hardcoded XDG path (`ADR-0003`).
-- **Video is MP4/H.264 only.** MKV has no path in v0 (owner decision, 2026-08-25).
+- **Video is MP4/H.264 only.** MKV has no path in v0.
 - **Toolchain:** Node 24.11.1, npm 11.6.2 (verified present 2026-08-25).
 - **Timebox: 2 days.** Gates run in order. **Stop at the first gate that fails** and write the
-  verdict — do not proceed to later gates to "see if they would have passed".
+  verdict, and do not proceed to later gates to "see if they would have passed".
 - **Fallback if a gate fails:** run `webtorrent` in an Electron **`utilityProcess`**, never in
   the main process (`build-plan.md`).
 
@@ -146,35 +139,35 @@ stale here. **Three of these correct the spec.**
 
 | Fact | Status |
 |---|---|
-| webtorrent is at **3.0.21** | **Corrects the spec** — `build-plan.md` and `CLAUDE.md` both say "webtorrent 2.x" |
-| webtorrent's `browser` field maps to `false`: `net`, `bittorrent-dht`, `ut_pex`, `./lib/conn-pool.js`, `./lib/utp.cjs`, `@silentbot1/nat-api`, `load-ip-set`, `crypto`, `fs`, `http`, `os` — and maps `fs-chunk-store` → `fsa-chunk-store` | Confirmed, and **wider than the spec listed**. `dgram` is *not* in the map; it is reached only through `bittorrent-dht`, which is |
-| `webtorrent → @thaunknown/simple-peer@10.1.2 → webrtc-polyfill@1.2.2 → node-datachannel@^0.32.3`, built with `cmake-js` | Confirmed — a **hard, non-optional** chain, exactly as the audit found |
-| `bittorrent-dht@11.0.12` has **no native dependencies** | Confirmed — pure JS, so DHT over a shimmed `dgram` is plausible |
-| `client.createServer(opts, force)` accepts `force: 'browser' \| 'node'`, documented as being *"for environments which run both Node and Browser like NW.js or Electron"* | **New — not in any project doc.** Directly relevant to Gate 3 |
-| `electron#34905` is **still open** | Confirmed. See below — this is the finding that reorders the plan |
+| webtorrent is at **3.0.21** | **Corrects the spec**: `build-plan.md` and `CLAUDE.md` both say "webtorrent 2.x" |
+| webtorrent's `browser` field maps to `false`: `net`, `bittorrent-dht`, `ut_pex`, `./lib/conn-pool.js`, `./lib/utp.cjs`, `@silentbot1/nat-api`, `load-ip-set`, `crypto`, `fs`, `http`, `os`, and maps `fs-chunk-store` → `fsa-chunk-store` | Confirmed, and **wider than the spec listed**. `dgram` is *not* in the map; it is reached only through `bittorrent-dht`, which is |
+| `webtorrent → @thaunknown/simple-peer@10.1.2 → webrtc-polyfill@1.2.2 → node-datachannel@^0.32.3`, built with `cmake-js` | Confirmed: a **hard, non-optional** chain, exactly as the audit found |
+| `bittorrent-dht@11.0.12` has **no native dependencies** | Confirmed: pure JS, so DHT over a shimmed `dgram` is plausible |
+| `client.createServer(opts, force)` accepts `force: 'browser' \| 'node'`, documented as being *"for environments which run both Node and Browser like NW.js or Electron"* | **New, and not in any project doc.** Directly relevant to Gate 3 |
+| `electron#34905` is **still open** | Confirmed. See below; this is the finding that reorders the plan |
 
 ### The finding that reorders the plan
 
 `electron#34905` is not merely "transfers may lose data". The reporter's diagnosis is that
-**`MessagePortMain.postMessage` only accepts `MessagePortMain` objects in its transfer list** —
+**`MessagePortMain.postMessage` only accepts `MessagePortMain` objects in its transfer list**,
 so transferring an `ArrayBuffer` renderer → main may not be *possible*, not just unreliable.
 
 `build-plan.md` §Week 0 structures Gate 4 as "day 1 naive → day 2 with transferable
-`ArrayBuffer`s and 64–256 KB batching", and calls "passes, but only with transferables" the
+`ArrayBuffer`s and 64-256 KB batching", and calls "passes, but only with transferables" the
 likeliest outcome. **If transferables are unavailable on this path, that mitigation does not
 exist** and a Gate-4 failure would have no day-2 rescue.
 
 This is cheap to settle and everything else depends on it, so it becomes **Gate 0**, run before
 any webtorrent work. The likely result is fine: structured clone *copies* the buffer, and the
-audit already measured ~310 MB/s against the 1–5 MB/s that 1080p needs. But it must be measured,
-not assumed — and if copying is the only path, that belongs in `capability-api.md` before the
+audit already measured ~310 MB/s against the 1-5 MB/s that 1080p needs. But it must be measured,
+not assumed, and if copying is the only path, that belongs in `capability-api.md` before the
 real shim is written.
 
 ---
 
 ## File structure
 
-**Kept** — survives the spike whatever the verdict, because it is engine-agnostic:
+**Kept**, meaning it survives the spike whatever the verdict, because it is engine-agnostic:
 
 | File | Responsibility |
 |---|---|
@@ -183,13 +176,13 @@ real shim is written.
 | `electron.vite.config.ts` | Three build targets; the renderer's resolution overrides |
 | `vitest.config.ts` | `environment: 'node'`, unit tests only |
 | `scripts/check-no-native-modules.mjs` | Fails the build on any `binding.gyp` / `prebuilds/` |
-| `scripts/tests/check-no-native-modules.test.ts` | Its tests — this one is TDD |
+| `scripts/tests/check-no-native-modules.test.ts` | Its tests; this one is TDD |
 | `.github/workflows/ci.yml` | Typecheck + unit tests + the guard, on push |
 | `src/main/index.ts` | Window creation, secure `webPreferences` |
 | `src/preload/index.ts` | `contextBridge` surface |
 | `src/renderer/` | Placeholder page |
 
-**Throwaway** — deleted when the spike resolves, all under one directory so removal is one
+**Throwaway**, deleted when the spike resolves, all under one directory so removal is one
 `git rm -r`:
 
 | File | Responsibility |
@@ -199,7 +192,7 @@ real shim is written.
 | `spike/shim/net.ts` | Node `net`-shaped surface over the bridge |
 | `spike/shim/dgram.ts` | Node `dgram`-shaped surface over the bridge |
 | `spike/renderer/gate-*.ts` | One driver per gate |
-| `spike/fixtures/seeder.mjs` | Local TCP-only seeder — removes swarm health as an input |
+| `spike/fixtures/seeder.mjs` | Local TCP-only seeder, removing swarm health as an input |
 | `spike/results/gate-*.json` | Recorded measurements; the verdict's evidence |
 | `docs/planning/spike-verdict.md` | Written at the end, whatever the outcome |
 
@@ -215,7 +208,7 @@ real shim is written.
 - Create: `.github/workflows/ci.yml`
 
 **Interfaces:**
-- Produces: `checkNoNativeModules(root: string) => { ok: boolean; offenders: string[] }` —
+- Produces: `checkNoNativeModules(root: string) => { ok: boolean; offenders: string[] }`,
   used by the `postinstall` hook and by Gate 2 in Task 5.
 
 - [ ] **Step 1: Write the failing test for the guard**
@@ -275,7 +268,7 @@ describe('checkNoNativeModules', () => {
 - [ ] **Step 2: Run it and confirm it fails**
 
 Run: `npx vitest run scripts/tests/check-no-native-modules.test.ts`
-Expected: FAIL — `Failed to resolve import "../check-no-native-modules.mjs"`.
+Expected: FAIL, with `Failed to resolve import "../check-no-native-modules.mjs"`.
 
 - [ ] **Step 3: Write the guard**
 
@@ -328,7 +321,7 @@ Expected: PASS, 5 tests.
 
 - [ ] **Step 5: Wire up the project**
 
-`package.json` — note `webtorrent` is a **devDependency** here. It is a pre-built app asset, not
+`package.json`: note `webtorrent` is a **devDependency** here. It is a pre-built app asset, not
 a shell dependency (`build-plan.md` §Platform policy), and the spike only needs it locally.
 
 ```json
@@ -358,7 +351,7 @@ a shell dependency (`build-plan.md` §Platform policy), and the spike only needs
 }
 ```
 
-`electron.vite.config.ts` — the renderer aliases are what Gate 1 turns on. They are written here
+`electron.vite.config.ts`: the renderer aliases are what Gate 1 turns on. They are written here
 but only *populated* in Task 3, so this file starts with the shim entries commented out and a
 pointer to the task that fills them in.
 
@@ -385,7 +378,7 @@ export default defineConfig({
 })
 ```
 
-`src/main/index.ts` — the `webPreferences` here are load-bearing, and there is a hookify rule
+`src/main/index.ts`: the `webPreferences` here are load-bearing, and there is a hookify rule
 that will reject the file if they are weakened.
 
 ```ts
@@ -424,7 +417,7 @@ git commit -m "Scaffold: electron-vite + TypeScript + Vitest, with the native-mo
 
 ---
 
-## Task 2 — GATE 0: does `MessagePortMain` carry bytes renderer → main at all?
+## Task 2: GATE 0: does `MessagePortMain` carry bytes renderer → main at all?
 
 **Why first:** `electron#34905` is open, and the reporter's diagnosis is that
 `MessagePortMain.postMessage` accepts *only* `MessagePortMain` in its transfer list. Every later
@@ -437,7 +430,7 @@ clone renderer → main is also broken, nothing else in the plan matters.
 
 **Interfaces:**
 - Produces: `spike/results/gate-0.json` with shape
-  `{ clone: { sizeBytes, ok, mbPerSec }[], transfer: { sizeBytes, ok, error }[], verdict }` —
+  `{ clone: { sizeBytes, ok, mbPerSec }[], transfer: { sizeBytes, ok, error }[], verdict }`,
   Task 7 reads `mbPerSec` from here as its baseline.
 
 - [ ] **Step 1: Build the echo harness**
@@ -543,7 +536,7 @@ Run: `npm run dev`, trigger `runGate0()`, write the returned object to
 `spike/results/gate-0.json`.
 
 **PASS** = every `clone` entry has `ok: true` **and** `mbPerSec >= 50` at 256 KB. Fifty is
-twenty-five times the 1–5 MB/s that 1080p needs, so it leaves ample room for the shim's overhead.
+twenty-five times the 1-5 MB/s that 1080p needs, so it leaves ample room for the shim's overhead.
 
 **Whatever `transfer` shows, it is a finding, not a gate.** If transfers fail, record that
 `capability-api.md` §Throughput must drop its transferable-`ArrayBuffer` language and
@@ -561,7 +554,7 @@ git add spike/ && git commit -m "Gate 0: measure MessagePortMain byte fidelity r
 
 ---
 
-## Task 3 — GATE 1a: does a renderer bundle reach an ordinary TCP peer?
+## Task 3: GATE 1a: does a renderer bundle reach an ordinary TCP peer?
 
 **This is the real risk.** A naive renderer bundle is WebRTC-only, which is Brave parity.
 
@@ -590,7 +583,7 @@ grep -rn "require('net')\|from 'net'\|require('dgram')\|from 'dgram'" \
   node_modules/torrent-discovery 2>/dev/null
 ```
 Record which files need which alias in `spike/results/module-map.md`. **If this contradicts the
-alias list below, the grep wins** — it is reading the installed version.
+alias list below, the grep wins**: it is reading the installed version.
 
 - [ ] **Step 2: Write the seeder fixture**
 
@@ -631,7 +624,7 @@ out.on('close', () => {
 
 - [ ] **Step 3: Write the broker and the `net` shim**
 
-Broker side, in the main process — real Node sockets, one port per socket:
+Broker side, in the main process, with real Node sockets, one port per socket:
 
 ```ts
 // spike/main/broker.ts
@@ -664,7 +657,7 @@ export function installNetBroker (win: BrowserWindow): void {
 }
 ```
 
-Renderer side — a `streamx` `Duplex`, because that is the stream library webtorrent already
+Renderer side, a `streamx` `Duplex`, because that is the stream library webtorrent already
 uses, so no `readable-stream` polyfill enters the bundle:
 
 ```ts
@@ -708,10 +701,10 @@ export default { connect, Socket }
 ```
 
 > **Known unknown, resolve here rather than guessing:** Node's `net.connect` is *synchronous* in
-> shape — callers get a socket object immediately. Across IPC we cannot be. `capability-api.md`
+> shape: callers get a socket object immediately. Across IPC we cannot be. `capability-api.md`
 > design rule 2 says the shim reconciles this by buffering, and `bridge.pendingHandle()` above is
 > where that happens. If webtorrent writes before `connect` resolves, the handle must queue.
-> **Confirm empirically in Step 5 and record the answer** — it is the first real test of design
+> **Confirm empirically in Step 5 and record the answer**: it is the first real test of design
 > rule 2, and it will recur in the production shim.
 
 - [ ] **Step 4: Populate the resolution overrides**
@@ -732,7 +725,7 @@ alias: {
 
 > `./lib/conn-pool.js` and `./lib/utp.cjs` are **relative** specifiers inside webtorrent, and
 > Vite aliases match module specifiers, not a dependency's internal relative paths. They are
-> the *incoming* connection path, which Gate 1a does not need. **Do not fight this now** —
+> the *incoming* connection path, which Gate 1a does not need. **Do not fight this now**;
 > record it as debt for the seeding story and move on.
 
 - [ ] **Step 5: Run the gate**
@@ -746,7 +739,7 @@ npm run dev                          # then run gate-1a.ts against that port
 `torrent.addPeer('127.0.0.1:<port>')`, and waits for the first piece.
 
 **PASS** = a `verified` piece event fires from a peer whose `type` is **not** `webrtc`, and
-`torrent.downloaded > 0`. Record the peer type explicitly — a WebRTC peer completing a piece
+`torrent.downloaded > 0`. Record the peer type explicitly, because a WebRTC peer completing a piece
 looks identical in every other respect and would be a false pass.
 
 **FAIL** = stop. Fallback is `utilityProcess`. Record which specific resolution the bundler
@@ -756,7 +749,7 @@ layer.
 - [ ] **Step 6: Repeat against a real public torrent**
 
 The local seeder proves the shim. A public MP4 torrent with healthy TCP seeds proves the shim
-against real peers that negotiate real extensions. Both must pass. Record the magnet URI used —
+against real peers that negotiate real extensions. Both must pass. Record the magnet URI used;
 Gate 3 reuses it.
 
 - [ ] **Step 7: Commit**
@@ -768,7 +761,7 @@ git commit -m "Gate 1a: webtorrent reaches an ordinary TCP peer through the shim
 
 ---
 
-## Task 4 — GATE 1b: DHT lookup over shimmed `dgram`
+## Task 4: GATE 1b: DHT lookup over shimmed `dgram`
 
 **Files:**
 - Create: `spike/shim/dgram.ts`, `spike/renderer/gate-1b.ts`
@@ -787,7 +780,7 @@ network only through `dgram`, so this alias is the whole of what DHT needs.
 - [ ] **Step 2: Write the shim to `dgram`'s shape**
 
 `dgram.Socket` is an `EventEmitter`, not a stream. `send` takes a completion callback; `bind`
-emits `'listening'`. Match those shapes exactly — `k-rpc` depends on them.
+emits `'listening'`. Match those shapes exactly; `k-rpc` depends on them.
 
 - [ ] **Step 3: Run the gate**
 
@@ -797,7 +790,7 @@ Look up a well-known, heavily-seeded infohash over DHT with trackers disabled.
 `dgram`, with `tracker: false`. Record the peer count.
 
 **FAIL** = stop. DHT is how `ADR-0001`'s "ordinary torrents" claim is met without trackers.
-Record whether the failure is the shim or NAT — a machine behind symmetric NAT can fail DHT for
+Record whether the failure is the shim or NAT: a machine behind symmetric NAT can fail DHT for
 reasons unrelated to the shim, so **re-run once from a second network before calling it**.
 
 - [ ] **Step 4: Commit**
@@ -808,7 +801,7 @@ git add spike/ && git commit -m "Gate 1b: DHT lookup completes over the shimmed 
 
 ---
 
-## Task 5 — GATE 2: the shell tree is free of native modules
+## Task 5: GATE 2: the shell tree is free of native modules
 
 **Files:**
 - Modify: `package.json` (confirm `webtorrent` is not a shell dependency)
@@ -852,7 +845,7 @@ git commit -m "Gate 2: shell dependency tree is free of native build artefacts"
 
 ---
 
-## Task 6 — GATE 3: video plays, with seeking
+## Task 6: GATE 3: video plays, with seeking
 
 **Files:**
 - Create: `spike/renderer/gate-3.ts`, `spike/renderer/player.html`
@@ -862,7 +855,7 @@ git commit -m "Gate 2: shell dependency tree is free of native build artefacts"
 
 Newly confirmed and not in any project document: `client.createServer(opts, force)` takes
 `force: 'browser' | 'node'`, documented for *"environments which run both Node and Browser like
-NW.js or Electron"* — which is exactly this situation, and without it webtorrent may pick the
+NW.js or Electron"*, which is exactly this situation, and without it webtorrent may pick the
 Node implementation and try to open a real listening socket.
 
 ```ts
@@ -873,18 +866,18 @@ const file = torrent.files.find(f => f.name.endsWith('.mp4'))
 file.streamTo(document.querySelector('video')!)
 ```
 
-This is renderer-local and origin-scoped, so no other local process can reach it — strictly
+This is renderer-local and origin-scoped, so no other local process can reach it, strictly
 stronger than the token mitigation `security-model.md` T15 describes for a localhost server.
 
 - [ ] **Step 2: If service workers do not register, fall back to `protocol.handle`**
 
 A custom scheme must be registered **before** `app.whenReady()`, with
 `{ standard: true, secure: true, supportFetchAPI: true, stream: true }`, and the handler must
-honour `Range` and return `206` with `Content-Range` — Chromium will not seek otherwise.
+honour `Range` and return `206` with `Content-Range`, because Chromium will not seek otherwise.
 
 - [ ] **Step 3: Run the gate**
 
-Play a **named, pinned** MP4/H.264 torrent — the same one `build-plan.md` requires for the
+Play a **named, pinned** MP4/H.264 torrent, the same one `build-plan.md` requires for the
 release checklist, so the fixture is chosen once.
 
 **PASS** = the file plays end to end, **and** seeking to 75% starts playback there within
@@ -902,7 +895,7 @@ git add spike/ && git commit -m "Gate 3: MP4/H.264 plays with seeking through th
 
 ---
 
-## Task 7 — GATE 4: throughput
+## Task 7: GATE 4: throughput
 
 **Files:**
 - Create: `spike/fixtures/control.mjs`, `spike/renderer/gate-4.ts`, `spike/results/gate-4.json`
@@ -919,7 +912,7 @@ node spike/fixtures/control.mjs      # → { mbps, peakRssMb, durationSec }
 
 - [ ] **Step 2: Measure the shimmed path**
 
-Identical fixture, through the renderer, **through the `contextBridge` closures** — not through
+Identical fixture, through the renderer, **through the `contextBridge` closures**, not through
 a raw port. `capability-api.md` is explicit: measuring the raw port measures something the
 product cannot ship.
 
@@ -936,11 +929,11 @@ have different fallbacks:
 | Main-process CPU | headroom intact; no renderer frame drops |
 | Memory | RSS stable across 10 minutes |
 
-- [ ] **Step 4: If it fails, try batching — but not transferables unless Gate 0 allowed them**
+- [ ] **Step 4: If it fails, try batching, but not transferables unless Gate 0 allowed them**
 
-64–256 KB batching is available regardless. Transferable `ArrayBuffer`s are available **only if
+64-256 KB batching is available regardless. Transferable `ArrayBuffer`s are available **only if
 Task 2 recorded `transfer.ok: true`**. If Gate 0 found transfers unavailable, say so in the
-verdict rather than reporting a generic throughput failure — they are different findings with
+verdict rather than reporting a generic throughput failure: they are different findings with
 different fixes.
 
 - [ ] **Step 5: Commit**
@@ -983,7 +976,7 @@ behaviour, the custom-scheme media path. That knowledge exists nowhere else.
 git rm -r spike/ && git commit -m "Remove the week-0 spike; findings live in spike-verdict.md"
 ```
 
-Keep `spike/results/` by moving it to `docs/planning/spike-results/` first — the numbers are
+Keep `spike/results/` by moving it to `docs/planning/spike-results/` first, because the numbers are
 the evidence for the verdict and they outlive the code that produced them.
 
 ---

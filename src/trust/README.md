@@ -1,18 +1,18 @@
-# `src/trust/` — the trust indicator
+# `src/trust/`: the trust indicator
 
 **What lives here.** The delivery ladder, the connection ladder built from the broker's
 per-app connection log, and operation scoring. Click-through shows **the actual evidence, not
 a grade** ([`ADR-0006`](../../docs/decisions/ADR-0006-trust-indicator-from-observed-behaviour.md)).
 
 **What it depends on.** [`src/contracts/`](../contracts/), and the broker's connection log
-*through a contract* — never by reaching into broker internals.
+*through a contract*, never by reaching into broker internals.
 
 **What it must never import.** [`src/broker/`](../broker/) internals.
 
-**Owner stream.** `trust` — build step 6. First to be cut if the shell or broker overruns.
+**Owner stream.** `trust`, build step 6. First to be cut if the shell or broker overruns.
 
 **What this component exists to prevent.** Overclaiming. It must never present something as
-safer than it is — the honesty note about MSE being *obfuscation, not privacy* is the worked
+safer than it is; the honesty note about MSE being *obfuscation, not privacy* is the worked
 example.
 
 ## Design notes
@@ -26,7 +26,7 @@ a design belongs here instead.
 ([`connection-log.ts`](connection-log.ts)). A network connect, an `orivon.fs` operation and an
 `orivon.id` operation differ in almost every respect, but they are alike in the one respect
 this component cares about: each is a broker decision the app cannot see around. Three separate
-entry types would force every consumer — the connection ladder, operation scoring — to merge
+entry types would force every consumer, the connection ladder and operation scoring, to merge
 three arrays back together to answer "what did this app do, in order". One shape with a
 `surface` discriminant avoids that.
 
@@ -35,7 +35,7 @@ three arrays back together to answer "what did this app do, in order". One shape
 2026-08-25 amendment found the connection ladder was cheaper to fake than to earn: an app
 exfiltrating a user's files by opening many short connections to many distinct hosts would
 classify at the best available grade, *earned by the attack itself*. The accepted fix was byte
-accounting per endpoint plus a byte-asymmetry signal — real swarm traffic is roughly symmetric,
+accounting per endpoint plus a byte-asymmetry signal: real swarm traffic is roughly symmetric,
 exfiltration is not.
 
 **Omitted connect patterns are carried alongside entries, not folded into them.** An omission is
@@ -49,30 +49,30 @@ than at one timestamp ([`open-questions.md`](../../docs/open-questions.md) A43).
 a user's files over many short connections to many distinct hosts classified at the *best*
 available grade, earned by the attack itself. The fix the owner accepted is byte accounting per
 endpoint plus a byte-asymmetry signal (real swarm traffic is roughly symmetric, exfiltration is
-not) — so [`connection-ladder.ts`](connection-ladder.ts)'s `connectionLadder` always returns
+not), so [`connection-ladder.ts`](connection-ladder.ts)'s `connectionLadder` always returns
 `evidence` (the raw counts) and `patternHeuristic` (the label) together, in one object, on every
 path. There is no exported function that returns the label alone, and there must never be one.
 
 **`allAllowedWereGranted` checks granted patterns, not declared ones.**
 [`A18`](../../docs/open-questions.md) resolved this one layer down
 ([`connect-src.ts`](../broker/policy/connect-src.ts) derives CSP from what the user actually
-granted, never from the manifest's wider declaration) — the manifest itself may claim far more
+granted, never from the manifest's wider declaration), because the manifest itself may claim far more
 than was approved. This module follows that precedent structurally: it never sees a `Manifest`
 at all, only `ConnectionLogEntry.grantedPattern`, so there is no declared set it could
 accidentally compare against instead.
 
 **`OmittedConnectReason` is deliberately smaller than the broker's own vocabulary.**
 [`connect-src.ts`](../broker/policy/connect-src.ts)'s `ConnectSrcOmissionReason` distinguishes
-reasons an app *author* needs — a malformed pattern is their bug to fix. A trust screen showing
+reasons an app *author* needs: a malformed pattern is their bug to fix. A trust screen showing
 a *user* what broke has no use for that distinction, so whoever wires the real derivation to
 this module maps those reasons down to these.
 
-**Pin coverage is counted in bytes, not requests — AI recommendation, deliberately easy to
+**Pin coverage is counted in bytes, not requests. Provisional, and deliberately easy to
 change.** [`delivery-ladder.ts`](delivery-ladder.ts)'s `PinCoverageEvidence` (owner's framing,
 2026-09-15: fetching third-party code is not a violation the pin fails to catch, but it costs
 trust score, and D2 had no way to say by how much) keeps both a request count and a byte count
 per bucket, but byte totals are the one that answers "how much of the running app". A single
-enormous remote script and forty tiny pinned icons are not well described by a request count —
+enormous remote script and forty tiny pinned icons are not well described by a request count:
 by that measure the pinned side would dominate 40:1 while the app's actual weight ran almost
 entirely unpinned. Bytes read that correctly. Both counts are kept anyway, at no extra cost,
 so build step 6 can weigh by whichever it renders.
@@ -80,19 +80,19 @@ so build step 6 can weigh by whichever it renders.
 **Byte totals are a floor, never a guess, when a size could not be read.**
 [`src/loader/pin-coverage.ts`](../loader/pin-coverage.ts) reads a pinned asset's exact size (the
 bytes are already in hand to serve it) but a third-party response's size only from its own
-`content-length` header — never by buffering the body to measure it, which would defeat the
+`content-length` header, never by buffering the body to measure it, which would defeat the
 streaming `serve-reach.ts` exists for. A chunked or compressed response carries no such header;
-its request is still counted, but `bytesIncomplete` is set rather than treating it as zero bytes
-— the same "undefined, not zero" discipline `connection-log.ts`'s own `bytesSent`/`bytesReceived`
+its request is still counted, but `bytesIncomplete` is set rather than treating it as zero bytes,
+the same "undefined, not zero" discipline `connection-log.ts`'s own `bytesSent`/`bytesReceived`
 already use, for the identical reason: an unmeasured byte count is not evidence of a small one.
 
 **`PinCoverageEvidence` is defined once in each direction, not imported across.**
 `delivery-ladder.ts`'s copy and `src/loader/pin-coverage.ts`'s `PinCoverageSnapshot` are
-structurally identical on purpose — this directory's own README says never reach into another
+structurally identical on purpose: this directory's own README says never reach into another
 stream's internals, and `src/loader/README.md` does not list this directory as something it may
 import either. The two modules agree on a shape rather than sharing a type, the same relationship
 `connection-log.ts` already has with the broker's own (still-unwired) connection log. Running
-totals only, kept in memory per origin for the current process run and discarded on restart —
+totals only, kept in memory per origin for the current process run and discarded on restart,
 never a per-request history, and never which third-party host was reached beyond what
 `connection-log.ts` already legitimately records. This is a count for the indicator, not browsing
 history.

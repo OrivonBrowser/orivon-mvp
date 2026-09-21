@@ -9,7 +9,10 @@
 # accepted different trust model (a human is present to notice a runaway
 # edit), not an oversight. See R-S5-01.
 set -u
-REPO="/home/jhon/Desktop/Develop/Claude/orivon-mvp"
+# Derived from this script's own location so no machine-absolute path is
+# committed -- this repo is public. Override with ORIVON_REPO if the script is
+# ever run from outside a checkout.
+REPO="${ORIVON_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 CLAUDE_BIN="$HOME/.local/bin/claude"
 LOG="$REPO/devlog/.cron.log"
 SCRATCH="$(mktemp -d)"

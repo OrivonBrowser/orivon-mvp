@@ -325,8 +325,7 @@ drag continues, so one tick of latency per frame is not observable. Only a singl
 
 ## Match windows by URL via `app.windows()`, never `app.firstWindow()`
 
-Already stated in full in `CLAUDE.md` §Start here, with the underlying research in
-`docs/open-questions.md` C6 — read those; this is only the pointer. Once a `BaseWindow` holds
+The underlying research is `docs/open-questions.md` C6; this is only the pointer. Once a `BaseWindow` holds
 more than one `WebContentsView` (the shell's actual composition), match windows by URL via
 `app.windows()`, never `app.firstWindow()`: view-add order is an implementation detail, not a
 contract.
@@ -430,7 +429,7 @@ parent**, never the process count:
 
     ps -eo pid,ppid,cmd | grep -F node_modules/electron/dist/electron | grep -oE 'user-data-dir=[^ ]*'
 
-`--user-data-dir=/home/jhon/.config/orivon` with a live `electron-vite dev` parent is the **owner's
+`--user-data-dir=~/.config/orivon` with a live `electron-vite dev` parent is the **owner's
 own session — leave it alone.** A `/tmp/orivon-test-*` profile is a test run and is yours to clean.
 
 **2. `pgrep -f` matches your own shell command.** The D-0002 post-run check

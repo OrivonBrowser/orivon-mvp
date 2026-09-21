@@ -4,13 +4,13 @@
 criterion per item, the owner checkpoints, and the conditions under which the run must stop.
 Written 2026-09-09, from one decision session plus one reconnaissance task.
 
-**Read these two first.** [`compatibility-matrix.md`](compatibility-matrix.md) -- this document
+**Read these two first.** [`compatibility-matrix.md`](../docs/planning/compatibility-matrix.md) -- this document
 plans the closing of rows in its Tables 1 and 3 and uses its vocabulary throughout.
-[`freetube-port-recon.md`](freetube-port-recon.md) -- queue item 0.1, already done, and it
+[`freetube-port-recon.md`](../docs/planning/freetube-port-recon.md) -- queue item 0.1, already done, and it
 changed two items below.
 
 **How the run behaves is separate from what it builds:**
-[`../development/unattended-run-protocol.md`](../development/unattended-run-protocol.md) carries
+[`unattended-run-protocol.md`](unattended-run-protocol.md) carries
 decisions 12 and 13 -- questions never halt the run, and a usage limit pauses it rather than
 ending it.
 
@@ -34,7 +34,7 @@ permanent interface and therefore merge as one PR before any implementation.
 | 9 | **A grant lasts until the user revokes it**, and is visible in a list they can revoke from | Keeps prompts rare enough to still be read |
 | 10 | **The run builds the platform only.** FreeTube and `webtorrent` are test subjects proving the broker and shim are built right, not porting projects | Porting is per-app work that shifts upstream continuously, and it is what quietly consumes an unattended run |
 | 11 | **The permission prompt is in scope**, with the owner giving feedback during its development rather than reviewing it at the end | This is what lets the run reach something a person can actually use. It is why Phase 4 exists |
-| 12 | **A parked question never halts the run.** An agent needing an owner decision registers it and moves immediately to work that does not depend on the answer; parked questions are asked in one batch when the owner returns | The failure being prevented: the owner sleeps and the run idles for ten hours on an unanswered question. Full mechanism, and the map of what stays workable when each known question is parked, in [`../development/unattended-run-protocol.md`](../development/unattended-run-protocol.md) |
+| 12 | **A parked question never halts the run.** An agent needing an owner decision registers it and moves immediately to work that does not depend on the answer; parked questions are asked in one batch when the owner returns | The failure being prevented: the owner sleeps and the run idles for ten hours on an unanswered question. Full mechanism, and the map of what stays workable when each known question is parked, in [`unattended-run-protocol.md`](unattended-run-protocol.md) |
 | 13 | **A usage limit pauses the run, it never ends it.** The **5-hour session window** is read live at every checkpoint; at **90%** the run stops dispatching, commits in-flight work, writes its resume point and schedules resumption for the known reset time | Measured with `claude-status-mcp`, which has a command-line mode, so it needs no MCP connection and works in any unattended session. The 7-day window is logged for visibility and is never a gate -- owner's decision. Concurrency stays capped as well, because utilization is a level and not a rate |
 
 Decisions 2, 4, 6 and 7 are architectural. **They need ADRs authored through the sanctioned path
@@ -56,7 +56,7 @@ and that is a review gate rather than a comment.
 
 | # | Item | Exit criterion |
 |---|---|---|
-| 0.1 | ~~FreeTube network reconnaissance~~ | **Done** -- [`freetube-port-recon.md`](freetube-port-recon.md). Findings folded into 3.1, 3.4 and Phase 5 |
+| 0.1 | ~~FreeTube network reconnaissance~~ | **Done** -- [`freetube-port-recon.md`](../docs/planning/freetube-port-recon.md). Findings folded into 3.1, 3.4 and Phase 5 |
 | 0.2 | Record decisions 1-11 in `docs/open-questions.md` (resolutions for A12/A94/A95, new entries for the rest) and amend `build-plan.md` for decisions 5 and 11 | Each entry dated, owner-attributed, stating what it closes |
 | 0.3 | **Developer-only grant path**, gated so it cannot exist in a packaged build, with a CI check proving its absence | The e2e suite grants without the broker's test-only API. CI fails if the path is reachable once packaged |
 | 0.4 | Per-app `session` partitions wired -- build step 2's last unbuilt deliverable | Tabs open in the app's own partition; a test proves two origins share no storage |

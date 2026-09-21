@@ -1,26 +1,22 @@
-# Repo openness and parallel work — implementation plan
-
-> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development`
-> (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use
-> checkbox (`- [ ]`) syntax for tracking.
+# Repo openness and parallel work: implementation plan
 
 **Goal:** Make this repository something a developer can start working in alone without AI, and
 make it safe for several Claude Code sessions to work in it at once.
 
 **Architecture:** Three layers, built in dependency order. First a **types-only
 `src/contracts/`** transcribed from the two specification documents, guarded by a CI check that
-proves it imports nothing — this is what turns the build plan's *sequential* steps into
+proves it imports nothing. This is what turns the build plan's *sequential* steps into
 *concurrent* streams. Then the **parallel-work machinery**: a composition root in
 `src/main/` that subsystems append to rather than edit, one directory per stream each carrying
 its own boundary README, and a `.gitattributes` that auto-resolves the append-only files. Then
-the **human entry path** — README, ARCHITECTURE, CONTRIBUTING, LICENSE and a docs index —
+the **human entry path** (README, ARCHITECTURE, CONTRIBUTING, LICENSE and a docs index),
 written last, deliberately, because describing a structure that already exists is far more
 accurate than describing an intended one. Publishing to GitHub is the final task.
 
 **Tech Stack:** TypeScript 7, Node 24, Electron 44, electron-vite 5, Vitest 4, GitHub Actions.
 
-**Spec:** `docs/planning/repo-and-parallel-work-design.md` — read it before starting. It records
-the five owner decisions this plan implements and the reasoning behind each.
+**Spec:** `docs/planning/repo-and-parallel-work-design.md`; read it before starting. It records
+the five decisions this plan implements and the reasoning behind each.
 
 ## Global Constraints
 
@@ -236,7 +232,7 @@ describe('checkContractsArePure', () => {
 - [ ] **Step 2: Run the test to verify it fails**
 
 Run: `npx vitest run scripts/tests/check-contracts-pure.test.ts`
-Expected: FAIL — cannot resolve `../check-contracts-pure.mjs`.
+Expected: FAIL, cannot resolve `../check-contracts-pure.mjs`.
 
 - [ ] **Step 3: Write the implementation**
 
@@ -394,11 +390,11 @@ EOF
 
 ---
 
-## Task 2: Contracts — errors and handles
+## Task 2: Contracts: errors and handles
 
 Transcription, not design. The source documents contain literal TypeScript; copy it, do not
 improve it. Where transcription is impossible because the source is ambiguous, **stop and
-append the ambiguity to `docs/open-questions.md`** rather than deciding it here — these are the
+append the ambiguity to `docs/open-questions.md`** rather than deciding it here: these are the
 two highest-care artefacts in the repository (`ADR-0002`).
 
 **Files:**
@@ -468,7 +464,7 @@ export interface OrivonError extends Error {
    * NEVER present when `code` is 'denied'. That is deliberate: if denials
    * varied by reason, an app could iterate through them and map exactly which
    * pattern, port or address class is blocked, turning the permission boundary
-   * itself into a probe target (SSErrors, owner decision 2026-08-26).
+   * itself into a probe target (SSErrors).
    */
   readonly platformCode?: string
   readonly handleId?: string
@@ -507,12 +503,12 @@ future implementer will otherwise violate:
 1. **Handles are never transferable** (§Common shape). A `MessagePort` is transferable and
    carries no sender identity, so a transferred handle would be a bearer capability the broker
    cannot see.
-2. **`TcpSocket.remoteAddress` is the RESOLVED address**, not the hostname the app asked for —
-   the same address the T12 policy check ran against.
+2. **`TcpSocket.remoteAddress` is the RESOLVED address**, not the hostname the app asked for,
+   and the same address the T12 policy check ran against.
 3. **Every synchronous-looking property is populated before the acquisition promise settles.**
    Never a cache filled in by a later event. This is the fix for the `address()` problem
    `spike/gate1b/shim/dgram.js` had to work around.
-4. **`FileHandle` has no implicit cursor** — `position` is explicit and required on every
+4. **`FileHandle` has no implicit cursor**: `position` is explicit and required on every
    positional call, because a shared cursor across an async IPC boundary is a race the instant
    two writes are in flight, which a torrent writer does routinely.
 
@@ -541,12 +537,12 @@ export type {
 
 > **Note the exception:** `index.ts` is the one contracts file that legitimately contains
 > `export ... from`. Task 1's guard will flag it. That is correct behaviour to *discover*, not
-> to work around — Step 4 fixes the guard.
+> to work around; Step 4 fixes the guard.
 
 - [ ] **Step 4: Exempt `index.ts` from the module-reference rule**
 
 The barrel file must re-export, and re-exporting is a module reference. Add the exemption to
-`scripts/check-contracts-pure.mjs`, narrowly — `index.ts` may only re-export from siblings in
+`scripts/check-contracts-pure.mjs`, narrowly: `index.ts` may only re-export from siblings in
 the same directory, never from outside:
 
 In `checkContractsArePure`, replace the `offenders` computation with:
@@ -611,7 +607,7 @@ Run: `npm run typecheck && npx vitest run scripts/tests/check-contracts-pure.tes
 Expected: typecheck PASS (contracts compile), all guard tests PASS.
 
 Run: `node scripts/check-contracts-pure.mjs`
-Expected: FAIL, listing exactly the four not-yet-written files —
+Expected: FAIL, listing exactly the four not-yet-written files:
 `src/contracts/capability-api.ts`, `ipc.ts`, `limits.ts`, `manifest.ts`. This is the correct
 state at the end of Task 2; Task 3 makes it green.
 
@@ -637,7 +633,7 @@ EOF
 
 ---
 
-## Task 3: Contracts — the capability surface, manifest, limits and IPC
+## Task 3: Contracts: the capability surface, manifest, limits and IPC
 
 **Files:**
 - Create: `src/contracts/manifest.ts`, `src/contracts/capability-api.ts`, `src/contracts/limits.ts`, `src/contracts/ipc.ts`
@@ -654,10 +650,10 @@ EOF
 
 Transcribe the JSON shape at `capability-api.md:72-96`. Carry these facts in as comments:
 
-- `publisherKey` is **cut from v0** (owner decision 2026-08-25) — do not add a field for it.
+- `publisherKey` is **cut from v0**. Do not add a field for it.
   v0 integrity is hash-pinning alone, and there is no UNSIGNED badge anywhere, because
   "unsigned" is not a distinction when everything is.
-- `id` is reverse-DNS and **informational**. The **origin** is the real key — it keys storage,
+- `id` is reverse-DNS and **informational**. The **origin** is the real key: it keys storage,
   the session partition, the grant ledger and the derived identity key.
 - `"connect": ["*:*"]` is what the torrent app genuinely needs. The grant prompt must render it
   as *"connect to any computer on the internet"*, not as a pattern string.
@@ -682,13 +678,13 @@ export interface Manifest {
 
 Then `Capabilities`, `NetCapability`, `TcpCapability`, `UdpCapability`, `FsCapability`,
 `IdCapability`, and `Grant` (an origin, a capability kind, the granted pattern set, and its
-`GrantId` — the pattern set is what the re-consent subset check at `capability-api.md:346-366`
+`GrantId`). The pattern set is what the re-consent subset check at `capability-api.md:346-366`
 compares against).
 
 - [ ] **Step 2: Write `src/contracts/limits.ts`**
 
-Transcribe the table at `handle-contracts.md:342-347`. These are runtime *values*, not types —
-`limits.ts` is therefore the one contracts file that emits code, and that is fine: it emits a
+Transcribe the table at `handle-contracts.md:342-347`. These are runtime *values*, not types, so
+`limits.ts` is the one contracts file that emits code, and that is fine: it emits a
 frozen object literal and still imports nothing.
 
 ```typescript
@@ -726,7 +722,7 @@ across every Nostr client or the identity fragments per site.
 
 And the binding rule: `IdentityHandle.signEvent` takes a structured object, never raw bytes.
 A raw-signing oracle would let a compromised client wipe a follow list (kind 3), delete posts
-(kind 5), replace the profile (kind 0) or authenticate to relays (kind 22242) — and `ADR-0003`
+(kind 5), replace the profile (kind 0) or authenticate to relays (kind 22242), and `ADR-0003`
 excludes export, so the user could not rotate away from it.
 
 - [ ] **Step 4: Write `src/contracts/ipc.ts`**
@@ -757,7 +753,7 @@ per `handle-contracts.md:353-390`:
    total silence, not an error. A promise awaiting a reply with no timeout hangs forever.
 2. **No transferables on the renderer to main path, ever.** `electron#34905` reproduces: an
    `ArrayBuffer` in a `postMessage` transfer list renderer to main silently never arrives.
-   Structured clone is the only mechanism, and at 313–1134 MB/s measured against a 1–5 MB/s
+   Structured clone is the only mechanism, and at 313-1134 MB/s measured against a 1-5 MB/s
    product need, it is entirely sufficient.
 
 - [ ] **Step 5: Extend `src/contracts/index.ts`**
@@ -783,7 +779,7 @@ In `.github/workflows/ci.yml`, after the Rule 8 step:
 - [ ] **Step 7: Run everything**
 
 Run: `npm run check:contracts`
-Expected: PASS — `src/contracts/ is complete (7 files) and imports nothing.`
+Expected: PASS, with `src/contracts/ is complete (7 files) and imports nothing.`
 
 Run: `npm run typecheck && npm test && npm run build`
 Expected: all PASS. The build must still produce `out/main/index.js`; contracts emit no runtime
@@ -833,7 +829,7 @@ Converts `src/main/index.ts` from a file every stream must *edit* into one every
 
 **Why two phases:** `protocol.registerSchemesAsPrivileged` must be called *before* `app` is
 ready, and build step 5's range-capable custom media scheme (`build-plan.md` §5) needs it. One
-phase would force that stream to restructure `index.ts` — exactly what this task exists to
+phase would force that stream to restructure `index.ts`, exactly what this task exists to
 prevent.
 
 - [ ] **Step 1: Write the failing test**
@@ -925,7 +921,7 @@ describe('runAfterReady', () => {
 - [ ] **Step 2: Run the test to verify it fails**
 
 Run: `npx vitest run src/main/tests/registry.test.ts`
-Expected: FAIL — cannot resolve `./registry.js`.
+Expected: FAIL, cannot resolve `./registry.js`.
 
 - [ ] **Step 3: Write `src/main/registry.ts`**
 
@@ -1030,7 +1026,7 @@ export const subsystems: Subsystem[] = [
 
 - [ ] **Step 6: Rewire `src/main/index.ts`**
 
-Keep every existing comment block — the CJS/ESM note, the `BrowserWindow -> BaseWindow` note
+Keep every existing comment block: the CJS/ESM note, the `BrowserWindow -> BaseWindow` note
 and the tried-and-reverted `ozone-platform` warning are all load-bearing history. Replace only
 the bottom section:
 
@@ -1091,7 +1087,7 @@ Expected: PASS, including the pre-existing `src/main/tests/omnibox.test.ts`.
 
 Run: `npm run smoke`
 Expected: PASS. This builds and drives the real shell with real clicks. **Read the JSON result
-and the failure list it prints — never trust the exit code alone** (`CLAUDE.md` traps). A window
+and the failure list it prints, never trusting the exit code alone** (`CLAUDE.md` traps). A window
 must actually appear; if nothing does, check `ELECTRON_RUN_AS_NODE` is being stripped by
 `test/launch-electron.mjs`.
 
@@ -1124,7 +1120,7 @@ EOF
 ## Task 5: Stream directories and their boundary READMEs
 
 Creates the skeleton the ownership map refers to. Git does not track empty directories, so
-**the README is what makes each directory exist** — which is convenient, because the README is
+**the README is what makes each directory exist**, which is convenient, because the README is
 also the boundary declaration.
 
 **Files:**
@@ -1167,11 +1163,11 @@ The specific content per directory:
 | `src/trust/` | `src/contracts/` | `src/broker/` internals | Reads the broker's connection log through a contract, per `ADR-0006` |
 | `src/nostr/` | `src/contracts/` | `src/broker/` internals | |
 | `src/telemetry/` | `src/contracts/` | `src/broker/` internals | |
-| `apps/torrent/` | `src/contracts/` (types only) | anything under `src/` at runtime | It is an ordinary URL-delivered app (`ADR-0005`) and must have no privileged path. **Ships as a pre-built app asset, never a shell dependency** — webtorrent reaches `node-datachannel`, which needs CMake (Rule 8) |
-| `apps/fixture/` | nothing | — | The e2e fixture app, also app #3 for the genericity test and the developer-mode example |
+| `apps/torrent/` | `src/contracts/` (types only) | anything under `src/` at runtime | It is an ordinary URL-delivered app (`ADR-0005`) and must have no privileged path. **Ships as a pre-built app asset, never a shell dependency**: webtorrent reaches `node-datachannel`, which needs CMake (Rule 8) |
+| `apps/fixture/` | nothing | n/a | The e2e fixture app, also app #3 for the genericity test and the developer-mode example |
 | `scripts/` | `node:*` | `src/` | Build and CI guards. Two live here: Rule 8's native-module check and the contracts-purity check |
-| `test/` | `@playwright/test`, `electron` | — | `launch-electron.mjs` is the only correct way to start Electron in this repo |
-| `spike/` | — | — | **Historical evidence, not live code.** Seven gate directories behind `docs/planning/spike-verdict.md`. Do not import from it, do not modernise it, do not fix its lint. It is the record of what was measured on 2026-08-25 and must stay as it was when measured |
+| `test/` | `@playwright/test`, `electron` | n/a | `launch-electron.mjs` is the only correct way to start Electron in this repo |
+| `spike/` | n/a | n/a | **Historical evidence, not live code.** Seven gate directories behind `docs/planning/spike-verdict.md`. Do not import from it, do not modernise it, do not fix its lint. It is the record of what was measured on 2026-08-25 and must stay as it was when measured |
 
 `src/README.md` is the index: a table of the subdirectories, each with its one-line purpose and
 its build step, plus the one-paragraph data flow (renderer → `orivon.*` → preload
@@ -1228,23 +1224,23 @@ Required sections, in order:
    cannot begin before step 2 exists. Freezing the interfaces in `src/contracts/` is what lets a
    stream build against a contract and a stub instead of against another stream's half-finished
    code.
-2. **The ownership map** — the eleven-row table from the spec, verbatim, with each `Owns` path
+2. **The ownership map**: the eleven-row table from the spec, verbatim, with each `Owns` path
    now real on disk.
-3. **Starting a stream** — the exact commands:
+3. **Starting a stream**: the exact commands:
    ```bash
    git worktree add ../orivon-broker -b stream/broker
    cd ../orivon-broker && npm install
    ```
    plus: run `npm run typecheck && npm test` before opening the PR, and rebase on `main` first.
-4. **The four prevention rules** — worktrees; stay inside your owned paths; contracts changes
+4. **The four prevention rules**: worktrees; stay inside your owned paths; contracts changes
    are their own PR merged first; append at the append points, never edit them.
-5. **The three repair mechanisms** — the lockfile rule, `merge=union`, CI. State the lockfile
+5. **The three repair mechanisms**: the lockfile rule, `merge=union`, CI. State the lockfile
    rule as an imperative, because it is the one most often got wrong: *take either side whole,
-   run `npm install`, commit the regenerated file. Never resolve it hunk by hunk — a hand-merged
+   run `npm install`, commit the regenerated file. Never resolve it hunk by hunk: a hand-merged
    lockfile can look correct and install a different tree.*
-6. **The merge protocol** — branch, work, rebase, PR with the four-part body (goal, paths
+6. **The merge protocol**: branch, work, rebase, PR with the four-part body (goal, paths
    touched, contracts depended on, how it was verified), CI green, owner merges.
-7. **What is concurrent right now** — `broker`, `packaging`, `telemetry`, `docs`.
+7. **What is concurrent right now**: `broker`, `packaging`, `telemetry`, `docs`.
 
 - [ ] **Step 2: Write `.gitattributes`**
 
@@ -1264,9 +1260,9 @@ package-lock.json   -diff
 
 - [ ] **Step 3: Write `docs/development/readability-log.md`**
 
-The running record for the spec's Part D. Header explaining the protocol — *one artefact, one
+The running record for the spec's Part D. Header explaining the protocol, *one artefact, one
 question: "where is the first place you got lost, or had to guess?"*, because "is this good?"
-reliably returns a useless answer — then a table with columns: Date, Artefact, First confusion
+reliably returns a useless answer, then a table with columns: Date, Artefact, First confusion
 point, Fix made. One seeded row is added in Task 9 when the first check actually runs; the file
 ships with the protocol and an empty table.
 
@@ -1289,7 +1285,7 @@ lines. Then clean up:
 git checkout -q master && git branch -qD tmp/union-a tmp/union-b
 ```
 
-If it conflicted, `.gitattributes` was not in effect on both branches — commit it first, then
+If it conflicted, `.gitattributes` was not in effect on both branches; commit it first, then
 retest.
 
 - [ ] **Step 5: Commit**
@@ -1332,11 +1328,11 @@ EOF
 Must contain, concretely:
 
 - **Prerequisites:** Node `>=22.12.0` (24 recommended, matching CI), git. **No compiler, no
-  Python, no CMake** — and if `npm install` ever asks for one, that is a Rule 8 violation and
+  Python, no CMake**, and if `npm install` ever asks for one, that is a Rule 8 violation and
   `npm run check:natives` should have caught it.
 - **Install and run:** `git clone`, `npm install`, `npm run dev`.
 - **The `ELECTRON_RUN_AS_NODE` trap**, in full and prominently. On a machine where it is set in
-  the ambient shell, the Electron binary runs as plain Node — no window, no `MessagePortMain` —
+  the ambient shell, the Electron binary runs as plain Node, with no window and no `MessagePortMain`,
   and **it does not fail loudly.** Never launch Electron directly; use `test/launch-electron.mjs`,
   which strips it and verifies the launch is real. This costs hours if discovered by debugging.
 - **Every script in `package.json`**, one line each: `dev`, `build`, `start`, `typecheck`,
@@ -1353,7 +1349,7 @@ Must explain the *reasoning*, because the surprising thing about this repo is ho
 tested and a newcomer will otherwise assume neglect:
 
 - Testing is deliberately minimal, concentrated where silent failure is plausible and costly
-  (`build-plan.md` §Testing). **No UI tests, no coverage targets** — at this scale they cost
+  (`build-plan.md` §Testing). **No UI tests, no coverage targets**: at this scale they cost
   more than they return.
 - **The six unit-tested areas**, listed with why each is security-critical: capability checking
   at the call site (not just the matcher); `fs` path-traversal rejection; origin derivation,
@@ -1364,7 +1360,7 @@ tested and a newcomer will otherwise assume neglect:
   fails if capability enforcement degrades to allow-all.
 - **How to run each:** `npm test` (Vitest, `environment: 'node'`, `src/**/*.test.ts` and
   `scripts/**/*.test.ts`), `npm run smoke` (real Electron), `npm run typecheck`.
-- **The known e2e risk:** spike gate 3 is BLOCKED, not failed — the app works, but Playwright's
+- **The known e2e risk:** spike gate 3 is BLOCKED, not failed: the app works, but Playwright's
   `_electron` driver could not attach to that window for an unidentified reason. Build step 2's
   e2e uses the same driver. Check early.
 
@@ -1375,7 +1371,7 @@ documents:
 
 - **To understand the product:** `mvp-scope.md` → `architecture/capability-api.md` →
   `architecture/handle-contracts.md`
-- **To understand a decision:** `decisions/` — eight ADRs. Warn that **ADR-0002 and ADR-0005
+- **To understand a decision:** `decisions/`, eight ADRs. Warn that **ADR-0002 and ADR-0005
   carry amendments superseding parts of their own text**, and ADR-0008 rescopes ADR-0002's
   Node-shape rule to the shim.
 - **To start working:** `development/setup.md` → `development/parallel-work.md` →
@@ -1424,8 +1420,8 @@ EOF
 
 `build-plan.md` §Testing references `docs/testing/release-checklist.md`, which does not exist.
 This closes the gap for the items that can be written completely today. Three of its eventual
-items depend on artefacts that will not exist until build steps 5 and 7 — a named, pinned,
-well-seeded MP4 torrent and three pinned Nostr clients — and are recorded as scheduled
+items depend on artefacts that will not exist until build steps 5 and 7 (a named, pinned,
+well-seeded MP4 torrent and three pinned Nostr clients) and are recorded as scheduled
 additions rather than written as placeholders.
 
 Note the path: the plan uses `docs/development/release-checklist.md`, keeping all
@@ -1437,13 +1433,13 @@ contributor-facing material in one directory. Task 10 updates `build-plan.md`'s 
 
 - [ ] **Step 1: Write the three decidable items**
 
-Each needs a **precondition**, a **fixed input** and a **falsifiable assertion** — as prose in a
+Each needs a **precondition**, a **fixed input** and a **falsifiable assertion**, because as prose in a
 scope document they cannot be run identically twice, which is the whole reason this file exists.
 
 1. **Telemetry first-run disclosure.** Precondition: a clean profile (`app.getPath('userData')`
    removed). Input: first launch. Assertions: the literal JSON that would be sent is displayed;
    there are exactly two buttons; **neither is preselected**; and
-   **nothing is transmitted before the choice is made** — verified by watching outbound requests,
+   **nothing is transmitted before the choice is made**, verified by watching outbound requests,
    not by reading the code (`ADR-0004`).
 2. **Launch with no keyring available.** Precondition: `--password-store=basic`. Input: normal
    launch, then create an identity. Assertion: the seed is **never written in plaintext**;
@@ -1460,12 +1456,12 @@ scope document they cannot be run identically twice, which is the whole reason t
 A short section stating exactly what gets added and when, so this is a known-partial document
 rather than a forgotten one:
 
-- **Journey 1 (the clip)** — added at build step 5. Needs a *named, pinned, well-seeded MP4
+- **Journey 1 (the clip)**. Added at build step 5. Needs a *named, pinned, well-seeded MP4
   torrent*; "a magnet link" makes pass/fail track that day's swarm health instead of the code.
-- **Journey 3 (the identity)** — added at build step 7. Needs *three Nostr clients pinned at a
-  version*, asserting the displayed npub is **byte-identical across two of them** — the check
+- **Journey 3 (the identity)**. Added at build step 7. Needs *three Nostr clients pinned at a
+  version*, asserting the displayed npub is **byte-identical across two of them**, the check
   that would have caught the per-origin-key contradiction (`open-questions.md` B4).
-- **Journey 2 (the app from a URL)** — added at build step 4.
+- **Journey 2 (the app from a URL)**. Added at build step 4.
 
 - [ ] **Step 3: Fix the stale reference in `build-plan.md`**
 
@@ -1502,7 +1498,7 @@ EOF
 
 ## Task 9: The human entry path
 
-The tasks above built the structure; this one describes it. Written in this order deliberately —
+The tasks above built the structure; this one describes it. Written in this order deliberately:
 a README describing a layout that already exists is accurate, one describing an intended layout
 is a wish.
 
@@ -1511,12 +1507,12 @@ is a wish.
 - Modify: `package.json`
 
 **Interfaces:**
-- Consumes: everything from Tasks 1–8.
+- Consumes: everything from Tasks 1-8.
 - Produces: the repository's front door. Task 11 publishes it.
 
 - [ ] **Step 1: Write `LICENSE`**
 
-The verbatim GNU AGPL v3 text. Do not paraphrase or abbreviate it — a modified licence
+The verbatim GNU AGPL v3 text. Do not paraphrase or abbreviate it: a modified licence
 is not the licence. The copyright line, kept in README.md rather than in LICENSE, is:
 
 ```
@@ -1532,7 +1528,7 @@ Copyright 2026 Davide Martinico
   "homepage": "https://github.com/OrivonBrowser/orivon-mvp#readme",
 ```
 
-`"private": true` **stays** — this is an application, not an npm package, and the flag only
+`"private": true` **stays**: this is an application, not an npm package, and the flag only
 prevents accidental `npm publish`. It has nothing to do with the repository being public.
 
 - [ ] **Step 3: Write `README.md`**
@@ -1540,11 +1536,11 @@ prevents accidental `npm publish`. It has nothing to do with the repository bein
 Required sections, in this order. Total target: readable in five minutes.
 
 1. **One-sentence definition**, then the thesis in a short paragraph: a browser that runs
-   applications *impossible in Chrome* — reaching the network and filesystem under
-   user-granted, per-app capabilities — while those applications are ordinary web frontends
+   applications *impossible in Chrome*, reaching the network and filesystem under
+   user-granted, per-app capabilities, while those applications are ordinary web frontends
    delivered from a URL.
 2. **Status, honestly and near the top.** Pre-alpha. Build step 1 of 10 (the shell) is done.
-   Nothing is packaged, nothing is released, and the capability broker — the actual product —
+   Nothing is packaged, nothing is released, and the capability broker, the actual product,
    is not written yet. A reader must not have to infer this.
 3. **Quickstart:** `git clone`, `npm install`, `npm run dev`. Note that no compiler is needed,
    on any platform, and that this is deliberate.
@@ -1553,7 +1549,7 @@ Required sections, in this order. Total target: readable in five minutes.
    no Orivon server holding user data.
 5. **The flagship**, in two sentences: BitTorrent streaming in a tab, no client installed, with
    the real grant prompt shown rather than hidden. Link `ADR-0001`.
-6. **Where to go next** — three links: `ARCHITECTURE.md`, `docs/README.md`, `CONTRIBUTING.md`.
+6. **Where to go next**: three links, `ARCHITECTURE.md`, `docs/README.md`, `CONTRIBUTING.md`.
 7. **Known limitations of v0**, stated rather than buried: MP4/H.264 only; swarm peers see the
    user's IP (no Tor); reduced seeding behind NAT (no UPnP); non-address input in the address
    bar goes to DuckDuckGo, so search text leaves the machine.
@@ -1568,7 +1564,7 @@ The five-minute "how does this work". Required content:
 
 1. **The one load-bearing idea.** The durable asset is the capability API (`orivon.*`), not the
    engine beneath it: Node broker now, Wasmtime later, Chromium/Mojo later, invisible to apps
-   already written. That property — not Electron — is what keeps the Chromium path open
+   already written. That property, not Electron, is what keeps the Chromium path open
    (`ADR-0002`).
 2. **The diagram**, as a fenced ASCII block:
    ```
@@ -1583,7 +1579,7 @@ The five-minute "how does this work". Required content:
         v
    OS (sockets, filesystem, keychain)
    ```
-3. **Directory map** — a table of every top-level directory and its one-line purpose, matching
+3. **Directory map**: a table of every top-level directory and its one-line purpose, matching
    the boundary READMEs from Task 5. Mark `spike/` explicitly as historical evidence.
 4. **What survives a Chromium fork and what is knowingly disposable** (`CLAUDE.md` Rule 5):
    `src/contracts/` and the broker's policy functions survive; the Electron shell, the preload
@@ -1597,28 +1593,28 @@ The five-minute "how does this work". Required content:
 
 - [ ] **Step 5: Write `CONTRIBUTING.md`**
 
-1. **Setup** — link `docs/development/setup.md`, do not duplicate it.
+1. **Setup**: link `docs/development/setup.md`, do not duplicate it.
 2. **The eight rules**, copied from `CLAUDE.md` with their reasons. Rule 8 (pure-JS
    dependencies) and the TypeScript-only rule (`ADR-0002`) are the two a newcomer breaks first.
 3. **Before you open a PR:** `npm run typecheck && npm test && npm run check:natives && npm run check:contracts`,
    and `npm run smoke` if anything under `src/main/` changed.
-4. **Working in parallel** — link `docs/development/parallel-work.md`. State the lockfile rule
+4. **Working in parallel**: link `docs/development/parallel-work.md`. State the lockfile rule
    here too; it is the one thing worth duplicating.
-5. **PR body format** — goal, paths touched, contracts depended on, how it was verified.
-6. **Writing an ADR** — when (a load-bearing choice reversible only at cost), and how
+5. **PR body format**: goal, paths touched, contracts depended on, how it was verified.
+6. **Writing an ADR**: when (a load-bearing choice reversible only at cost), and how
    (`docs/decisions/ADR-0000-template.md`, monotonically numbered, never renumbered).
-7. **Commit style** — imperative subject, a body explaining *why*, matching the existing log.
+7. **Commit style**: imperative subject, a body explaining *why*, matching the existing log.
 8. **A note on the AI-assisted workflow**, stated plainly rather than hidden: much of this
    repository was written with Claude Code, `CLAUDE.md` is its instruction file, and none of
    that is required to contribute. The human docs are the contract.
 
 - [ ] **Step 6: Write `SECURITY.md` and `CODE_OF_CONDUCT.md`**
 
-`SECURITY.md`: how to report (a private channel — GitHub private vulnerability reporting, plus
+`SECURITY.md`: how to report (a private channel: GitHub private vulnerability reporting, plus
 an email address the owner supplies), what is in scope (the broker's authorisation logic is the
 crown jewel; `docs/architecture/security-model.md` lists the threat model), expected response
 time, and an explicit statement that **the MVP's security model is authorisation, not
-containment** — a granted capability is genuinely granted, and that is stated openly rather than
+containment**, so a granted capability is genuinely granted, and that is stated openly rather than
 papered over.
 
 > **Owner input needed:** the security contact address. Leave a clearly-marked line for it and
@@ -1646,13 +1642,13 @@ grep -rhoE '\]\([^)#][^)]*\)' README.md ARCHITECTURE.md CONTRIBUTING.md docs/REA
 ```
 Expected: no output.
 
-- [ ] **Step 9: Run the readability check — this is a gate, not a formality**
+- [ ] **Step 9: Run the readability check. This is a gate, not a formality**
 
 Hand the owner **`README.md` and `ARCHITECTURE.md`**, with exactly one question:
 
 > Read these cold. Where is the first place you got lost, or had to guess?
 
-Everything after the first confusion point is unreliable, because the reader is already lost —
+Everything after the first confusion point is unreliable, because the reader is already lost,
 so fix that point, and only then ask about what follows. Record the date, the artefact, the
 confusion point and the fix in `docs/development/readability-log.md`. **Do not proceed to
 Task 10 until this has been run and its fixes applied.**
@@ -1694,7 +1690,7 @@ moved to `docs/README.md`. Leaving both means two maps that will drift apart.
 - [ ] **Step 1: Remove what moved**
 
 Delete the §Sources of truth table and the numbered reading list from §Start here. Replace with
-a short pointer: *the human documentation is the map — read `README.md`, `ARCHITECTURE.md` and
+a short pointer: *the human documentation is the map: read `README.md`, `ARCHITECTURE.md` and
 `docs/README.md` first; this file adds only what is specific to working here as an agent.*
 
 Keep, unchanged: the phase pointer, the spike-resolved summary, the `ELECTRON_RUN_AS_NODE`
@@ -1708,8 +1704,8 @@ Work in a worktree on `stream/<name>`, stay inside your owned paths, never modif
 `src/contracts/` in the same PR as an implementation, and append at the append points
 (`src/main/subsystems.ts`) rather than editing shared logic.
 
-**The readability check.** At the end of every build step, hand the owner exactly one artefact —
-the document a newcomer would hit at that point — and ask *"where is the first place you got
+**The readability check.** At the end of every build step, hand the owner exactly one artefact,
+the document a newcomer would hit at that point, and ask *"where is the first place you got
 lost, or had to guess?"* Not "is this good?", which reliably returns a useless answer. Record
 the result in `docs/development/readability-log.md`. This is a standing policy from the owner,
 2026-08-26, and it does not lapse.
@@ -1762,7 +1758,7 @@ without `workflow` scope.** While `GITHUB_TOKEN` is set in the environment, `gh 
 ```bash
 gh auth status
 ```
-Expected: scopes include `repo` and `workflow`. **If they do not, stop and tell the owner** —
+Expected: scopes include `repo` and `workflow`. **If they do not, stop and tell the owner**:
 pushing will fail partway and leave a half-published repository.
 
 - [ ] **Step 2: Confirm the tree is clean and green**
@@ -1784,8 +1780,8 @@ git log --oneline | wc -l
 ```
 
 Show the owner the count and confirm, one last time, that decision D1 stands: the full history
-and the planning corpus — `readiness.md`, `audit-2026-08-25.md`, `mvp-scope.md`'s funnel
-arithmetic, and `devlog/` — all become public.
+and the planning corpus (`readiness.md`, `audit-2026-08-25.md`, `mvp-scope.md`'s funnel
+arithmetic, and `devlog/`) all become public.
 
 - [ ] **Step 4: Create the repository and push**
 
@@ -1804,7 +1800,7 @@ gh repo create OrivonBrowser/orivon-mvp \
 gh run list --limit 1
 gh run watch
 ```
-Expected: the `check` job passes all six steps — `npm ci`, typecheck, unit tests, Rule 8 guard,
+Expected: the `check` job passes all six steps: `npm ci`, typecheck, unit tests, Rule 8 guard,
 contracts guard, build. If `npm ci` fails on a fresh runner but works locally, the likely cause
 is a `package-lock.json` out of sync with `package.json`; regenerate it, do not edit it.
 
@@ -1826,7 +1822,7 @@ fix directly if CI itself breaks.
 
 > **Note:** the local branch is `master`. Either rename it to `main` before this step
 > (`git branch -m master main`) or substitute `master` in the command above. Renaming is
-> recommended — `main` is what a contributor will assume, and `CLAUDE.md` already records `main`
+> recommended, since `main` is what a contributor will assume, and `CLAUDE.md` already records `main`
 > as the PR target.
 
 - [ ] **Step 7: Raise the two org-level questions**
@@ -1875,9 +1871,9 @@ Recorded so they are not silently forgotten, and not done because each fails a t
 **Spec coverage.** Every section of `repo-and-parallel-work-design.md` maps to a task:
 Part A → Tasks 5, 7, 8, 9, 10. Part B → Tasks 1, 2, 3. Part C prevention → Tasks 4, 5, 6;
 repair → Task 6. Part D → Tasks 6 and 9 Step 9, made durable in Task 10. D1/D2 → Task 11.
-D3 → Task 9 Steps 1–2. D4 → the whole shape of Tasks 2–5. D5 → Task 11 Step 6. The spec's six
+D3 → Task 9 Steps 1-2. D4 → the whole shape of Tasks 2-5. D5 → Task 11 Step 6. The spec's six
 definition-of-done items are covered by, in order: Task 9 Step 9, Task 11 Step 5, Task 3 Step 7,
-Task 6 Step 1, Task 6 Step 4, Task 9 Steps 1–2.
+Task 6 Step 1, Task 6 Step 4, Task 9 Steps 1-2.
 
 **Two deviations**, both recorded at the top of this plan with reasoning:
 `electron.vite.config.ts` is annotated rather than restructured, and the release checklist
