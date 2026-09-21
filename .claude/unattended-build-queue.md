@@ -6,7 +6,7 @@ Written 2026-09-09, from one decision session plus one reconnaissance task.
 
 **Read these two first.** [`compatibility-matrix.md`](../docs/planning/compatibility-matrix.md) -- this document
 plans the closing of rows in its Tables 1 and 3 and uses its vocabulary throughout.
-[`freetube-port-recon.md`](../docs/planning/freetube-port-recon.md) -- queue item 0.1, already done, and it
+the FreeTube recon (`orivon-ports`'s `docs/freetube-recon.md`) -- queue item 0.1, already done, and it
 changed two items below.
 
 **How the run behaves is separate from what it builds:**
@@ -56,7 +56,7 @@ and that is a review gate rather than a comment.
 
 | # | Item | Exit criterion |
 |---|---|---|
-| 0.1 | ~~FreeTube network reconnaissance~~ | **Done** -- [`freetube-port-recon.md`](../docs/planning/freetube-port-recon.md). Findings folded into 3.1, 3.4 and Phase 5 |
+| 0.1 | ~~FreeTube network reconnaissance~~ | **Done** -- `orivon-ports`'s `docs/freetube-recon.md`. Findings folded into 3.1, 3.4 and Phase 5 |
 | 0.2 | Record decisions 1-11 in `docs/open-questions.md` (resolutions for A12/A94/A95, new entries for the rest) and amend `build-plan.md` for decisions 5 and 11 | Each entry dated, owner-attributed, stating what it closes |
 | 0.3 | **Developer-only grant path**, gated so it cannot exist in a packaged build, with a CI check proving its absence | The e2e suite grants without the broker's test-only API. CI fails if the path is reachable once packaged |
 | 0.4 | Per-app `session` partitions wired -- build step 2's last unbuilt deliverable | Tabs open in the app's own partition; a test proves two origins share no storage |

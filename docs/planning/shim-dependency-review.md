@@ -7,7 +7,7 @@ lane can decide on its own. This document is the review that gate asks for, and 
 question it produces is parked in lane P3-1's log rather than asked eight separate times.
 
 **Method.** Rather than trust [`compatibility-matrix.md`](compatibility-matrix.md) Table 3's
-six-module list (plus [`freetube-port-recon.md`](freetube-port-recon.md)'s `zlib`/`util`
+six-module list (plus the FreeTube recon's `zlib`/`util`
 correction) as a closed set, this review re-derived need from the real, live dependency tree of
 `webtorrent@3.0.21` (the current npm `latest`, published 2026-07-27) and its own dependencies,
 fetched from the public registry and read directly (`unpkg`). Every "confirmed" row below has a
@@ -88,7 +88,7 @@ surface). This is a sequencing recommendation, not a rejection.
 
 **`browserify-zlib` + `pako`: recommend defer, and flag a real gap underneath it.** No
 confirmed live caller in the Node lane (`webtorrent`'s tree, traced directly). The
-`freetube-port-recon.md` finding that flagged `zlib` is FreeTube's **main process**
+The FreeTube recon finding that flagged `zlib` is FreeTube's **main process**
 (`brotliDecompress`, for Invidious API responses), and FreeTube's renderer, the half that
 would actually run inside an Orivon app tab, imports zero Node builtins at all (recon's own
 headline finding). Whether that main-process handler ever needs a renderer-side equivalent is a

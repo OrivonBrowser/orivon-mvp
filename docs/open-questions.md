@@ -3589,7 +3589,7 @@ start first.
 
 Decision 6 of thirteen. An ordinary page's `fetch()` call is routed through the secure-connect
 capability for any host the app has been granted. Not an optimisation: the FreeTube
-reconnaissance (`planning/freetube-port-recon.md`) found its entire network layer is `fetch`,
+reconnaissance (`orivon-ports`'s `docs/freetube-recon.md`) found its entire network layer is `fetch`,
 so without this routing the app does not function at all.
 
 Architectural (`CLAUDE.md` Rule 1); covered by [`ADR-0017`](decisions/ADR-0017-orivon-owns-the-app-http-path.md), the same ADR as A96 and A99,

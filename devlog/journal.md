@@ -21,7 +21,10 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 ### Done / results
 
 - Port method captured as the `orivon-porting` skill: triage, recon greps, five buckets, the escape test, two silent build traps.
+- Ports split into `orivon-ports`: recipe-driven harness clones, builds and serves an app; FreeTube moved, 34 bridge tests green.
 
 ### In my head
+
+- Built the harness but not the bridge generator: with one port done it is tooling for a sample of one.
 
 ### Non-repo

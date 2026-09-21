@@ -31,7 +31,7 @@ The consequence of an async-only `fs` is not slow apps, it is **absent calls**: 
 `existsSync` are how Node programs read their own configuration, usually inside a dependency the
 porting developer does not control. The app throws before it renders.
 
-This is not hypothetical. The FreeTube reconnaissance ([`freetube-port-recon.md`](../planning/freetube-port-recon.md))
+This is not hypothetical. The FreeTube reconnaissance (`orivon-ports`'s `docs/freetube-recon.md`)
 found `existsSync` in its own main process, and its datastore (`@seald-io/nedb`) is file-backed.
 [ADR-0002](./ADR-0002-capability-api-is-the-durable-asset.md)'s bet is that Electron apps port mechanically; without this, the bet becomes "port
 mechanically after auditing the dependency tree", which is a different and much weaker claim.

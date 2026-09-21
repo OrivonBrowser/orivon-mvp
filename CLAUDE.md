@@ -46,6 +46,10 @@ not the long-term vision.
 - **`docs/inventory.md` indexes all prior material. Do not re-crawl the filesystem for it.**
 - **`<prior-mvp>` is a failed prior MVP.** Not a baseline and not a
   reference architecture; its GUI is a *visual* reference only.
+- **Ported third-party apps live in `orivon-ports`**, with the harness that clones, builds and
+  serves them, and the porting guide. A port is a consumer of `orivon.*`, never part of it, so
+  nothing here may depend on that checkout being present. `apps/` here holds only the flagship
+  and the fixtures the test suite needs.
 
 ## The load-bearing idea
 
@@ -181,7 +185,6 @@ at the step named here. **Check this table at the start of every build step.**
 | `claude-md-management` | **Manual — `/revise-claude-md` at the end of any session that changed an assumption in this file** | Keeps this file true as the code moves |
 | `orivon-electron` (project skill) | **Manual — before writing or debugging any Electron+webtorrent code** | The renderer-bundling alias recipe, the `app.windows()`-not-`app.firstWindow()` rule, `MessagePortMain`'s silent failures, and why to check `electron.d.ts` before trusting any claim about `BaseWindow` options. Exists nowhere else |
 | `orivon-comments` (project skill) | **Manual — before writing or editing a comment in `src/`** | Where rationale goes when it is not a "you will break this line" comment, and how to handle a header over budget |
-| `orivon-porting` (project skill) | **Manual — before porting a third-party Electron app, or touching an `apps/<app>/bridge/`** | Triage before committing to an app, the recon greps, the five buckets a bridge member falls into, the escape test, and the two build traps that fail silently |
 | `adversarial-reviewer` (user skill) | **Manual — after each build step lands** | The multi-perspective review that produced `docs/planning/audit-2026-08-25.md`. Run it on the broker and the app loader at minimum |
 | `/code-review`, `/security-review`, `/simplify` | Manual | Per-diff review before each commit on the critical path |
 
