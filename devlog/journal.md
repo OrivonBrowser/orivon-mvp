@@ -16,6 +16,25 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 
 ---
 
+## Week of 2026-09-21
+
+### Done / results
+
+- 2026-09-21: **The documentation sync went out as one PR (#233, 108 files).** Everything the tree
+  had been carrying: the humanizer pass, the decision register, the history removal and its guard,
+  the agent-only documents moved into `.claude/`, and machine-absolute paths out of public files.
+
+### In my head
+
+- **A dirty tree is a slow collision with everyone else's work.** `main` moved 44 commits under
+  this checkout while the docs work sat uncommitted, and one of the files waiting there was an
+  unfinished test rewrite asserting a developer-mode path that only runs behind an env flag the
+  test never sets. Nothing local said so: the unit suite is green, because the e2e suite is the
+  only place that runs it, and CI was the first thing to notice. The longer work waits in the
+  tree, the more of it is someone else's half-finished idea that nobody remembers owning.
+
+---
+
 ## Week of 2026-09-14
 
 ### Done / results
