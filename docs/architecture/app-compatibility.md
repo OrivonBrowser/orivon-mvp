@@ -10,7 +10,7 @@ one for free; apps that don't, don't.
 | Tier | App's current form | Frontend | Backend | Examples |
 |---|---|---|---|---|
 | **1** | Already a web app | **reuse as-is** | none needed | Nostr clients (snort, noStrudel, Coracle), DeFi frontends |
-| **2** | Electron / Node desktop app | **reuse as-is**, since it is already HTML | swap Node calls for `orivon-node-shim` | IPFS Desktop. The hardware-wallet cluster (Ledger Live, Trezor Suite, Frame) is tier 2 in form but blocked on `hid` |
+| **2** | Electron / Node desktop app | **reuse as-is**, since it is already HTML | swap Node calls for `orivon-node-shim`, plus one small per-app bridge (below) | IPFS Desktop. The hardware-wallet cluster (Ledger Live, Trezor Suite, Frame) is tier 2 in form but blocked on `hid` |
 | **3** | Native / JVM / Qt desktop app | **must rewrite** | bundle a supervised helper process | Bisq, Monero GUI, Electrum, Sparrow, Wasabi |
 | **4** | Does not exist yet | **must write** | **must write** | torrent streaming in a browser |
 
@@ -52,6 +52,39 @@ polyfills alongside the capability-backed `net`/`dgram`/`fs`, plus an HTTP clien
 and web seeds, since a renderer's `fetch` is CORS-bound. The capability-backed part is the small
 part. Telling developers it is one import is the same category of dishonesty the trust indicator
 exists to prevent.
+
+## Tier 2 needs one small file per app
+
+An Electron app is really two programs: a **web page** you see, and a **helper** that does what a
+web page is not allowed to do, like opening network sockets or writing files. The page asks the
+helper for favours over a private channel the app invented for itself, usually `window.<something>`.
+
+Orivon takes the helper's place. The page does not know that. It still calls
+`window.ftElectron.chooseDefaultFolder()`, or whatever names that app picked, and if nothing
+answers it stops on its first line.
+
+So every ported tier-2 app ships **one small file** that answers those calls and passes them on to
+`orivon.*`. It belongs with the app, under `apps/<app>/`, never in `src/`.
+
+**It cannot be written once for all apps.** The names are each app's own inventions, with no
+standard behind them. Only that app's own source says what `chooseDefaultFolder` was meant to do.
+
+**It stays small.** Most calls are not missing powers. In the one measured port
+([`apps/freetube-real/`](../../apps/freetube-real/)), of 34 calls: 7 the browser already does
+itself, 19 are answered inertly because there is no second program left to talk to, 5 are refused
+by design, 2 use `orivon.fs`, and 1 needs `orivon.web.context`.
+
+**Three ways to make it smaller**, cheapest first:
+
+1. Declare the file in the manifest, instead of injecting a `<script>` tag into the app's HTML.
+2. Cover more of the `electron` module in [`src/shim-electron/`](../../src/shim-electron/).
+   Whatever the shim covers, the per-app file does not have to.
+3. Record the calls at runtime behind a `Proxy` and generate the stub, leaving only the
+   judgement calls to a person.
+
+**What stays manual.** Anywhere an Orivon capability is deliberately shaped differently from the
+Electron one. A picked folder resolves to a handle and never to a host path, so an app that builds
+a path string and writes to it has to be re-shaped by hand, not translated.
 
 ## The genericity test
 

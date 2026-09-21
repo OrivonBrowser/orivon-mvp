@@ -95,10 +95,16 @@ Two sessions in two directories physically cannot write the same file.
 ```bash
 git worktree add ../orivon-broker -b stream/broker
 cd ../orivon-broker
-npm install
+npm install      # or symlink the main checkout's: ln -s <repo>/node_modules node_modules
 ```
 
+A new worktree starts without `node_modules`, so it needs one of those two.
+
 Branch naming: `stream/<name>`, matching the table above.
+
+**A PR stacked on another branch** starts from that branch, not from `main`:
+`git worktree add <path> -b <branch> <base>`. An agent's built-in worktree tool cannot do this,
+because it only branches from `origin/<default>` or the current HEAD.
 
 When the stream is merged and done:
 
@@ -222,7 +228,8 @@ With no dedicated code reviewer, **CI is the reviewer**, so a red PR does not me
 
 ## The merge protocol
 
-1. **Branch** from `main`, in a worktree: `stream/<name>`.
+1. **Branch** from `main` (or from the branch you are stacked on), in a worktree:
+   `stream/<name>`.
 2. **Work.** Stay in your paths. Commit often; a small PR is reviewed in seconds and a large one
    is not reviewed at all.
 3. **Rebase on `main`** before opening the PR, and run the full gate locally:
@@ -236,10 +243,35 @@ With no dedicated code reviewer, **CI is the reviewer**, so a red PR does not me
    this page cares about: the stream, the paths and whether the PR is independent or stacked on
    another. **Its labels are how you see which streams are open at once**.
 5. **CI must be green.**
-6. **The owner merges.**
+6. **The owner merges.** Branch protection is `strict`, so merging PR N+1 always needs a fresh
+   merge of `main` into its branch first, even when it touches none of PR N's files.
 
 The pull requests are also the public record of the work. Someone arriving in six months reads
 them to find out not just what was built, but what was tried and why it is shaped this way.
+
+---
+
+## Syncing `main` with `origin`
+
+Never a bare `git pull`: it refuses to run on a dirty tree, and the obvious recoveries
+(`git checkout -- .`, a badly resolved rebase) destroy the uncommitted work silently. Check first:
+
+```bash
+git fetch origin --prune
+git rev-list --left-right --count main...origin/main
+```
+
+- **Clean tree: sync, without asking first.** `git merge --ff-only origin/main`. Never a merge
+  commit, never `--force`.
+- **Dirty tree: report, do not act.** Say which files are dirty locally **and** changed upstream;
+  that is where conflicts come from. If told to go ahead, back the tree up outside the repository
+  first: `git diff > <scratch>/uncommitted.patch` **plus** a tarball, since no stash captures
+  untracked files. Then stash, `git merge --ff-only origin/main`, `git stash pop`. A conflict
+  keeps the stash, so nothing is lost.
+
+Afterwards run `npm run typecheck` and `npm run check:contracts`, plus `npm install` if
+`package-lock.json` moved. **Re-read anything that auto-merged**: it can be textually clean and
+semantically stale on its new base.
 
 ---
 
@@ -247,7 +279,8 @@ them to find out not just what was built, but what was tried and why it is shape
 
 Read this page before starting any build step. Then:
 
-- Work in a worktree on `stream/<name>`.
+- Work in a worktree on `stream/<name>`, with `node_modules`; base it on the branch you are
+  stacked on, if any (§1).
 - Stay inside your owned paths.
 - **Open one or two PRs per working day, not one per feature.**
   This applies to AI sessions only. An outside contributor sending a single change
@@ -257,5 +290,7 @@ Read this page before starting any build step. Then:
 - Never modify `src/contracts/` in the same PR as an implementation. **This holds regardless of
   cadence**: it is the one carve-out, so a day that touches contracts gets an extra PR.
 - Append at the append points rather than editing shared logic.
+- Sync `main` only as §Syncing `main` with `origin` says: never `git pull`, and on a dirty tree
+  report rather than act.
 - Surface contradictions rather than smoothing them over, appending to
   [`open-questions.md`](../open-questions.md) ([`CLAUDE.md`](../../CLAUDE.md) Rule 3).

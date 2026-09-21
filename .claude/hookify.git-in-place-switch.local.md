@@ -27,7 +27,7 @@ Do this instead:
   symlink -- `docs/development/parallel-work.md`.
 - **Reviewing a PR?** `gh pr checkout` in a fresh worktree, or fetch the ref:
   `git -C <worktree> fetch origin pull/<n>/head`.
-- **Syncing `main` with `origin`?** Never `git pull` -- CLAUDE.md gives the exact procedure
+- **Syncing `main` with `origin`?** Never `git pull` -- `docs/development/parallel-work.md` §Syncing `main` with `origin` gives the exact procedure
   (fetch, back the tree up to a patch, `git stash push`, `git merge --ff-only origin/main`,
   `git stash pop`, verify with `git diff --numstat`). Owner's decision, 2026-09-15: run it
   unprompted **only when the tree is clean**, and **report rather than act when it is dirty**.

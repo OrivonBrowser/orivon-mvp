@@ -80,6 +80,7 @@ moved here so those documents can state the behaviour without the provenance.
 | 2026-09-04 | Rule 2 is enforced in CI by `check:size`; Rule 3 stays unenforced | `../development/code-guidelines.md` |
 | 2026-09-05 | An acknowledged rollback that also widens authority still prompts | ADR-0013, `../architecture/security-model.md` T19 |
 | 2026-09-10 | The async rule narrows to network operations; `fs` gains `readFileSync` | ADR-0016, `../architecture/capability-api.md` |
+| 2026-09-15 | `main` syncs with `origin` by `--ff-only`, unprompted on a clean tree; on a dirty tree the agent reports and does not act | `CLAUDE.md` |
 
 ## Adding a row
 

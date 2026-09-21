@@ -16,7 +16,7 @@ those belongs to a stream, not here.
 
 **Owner stream.** None; it is **change-controlled**, the way [`src/contracts/`](../contracts/)
 is. A change here goes in its **own PR and merges first**, never mixed with an implementation
-([`CLAUDE.md`](../../CLAUDE.md) §Parallel work). One edit here can touch every stream at once,
+([`parallel-work.md`](../../docs/development/parallel-work.md) §3). One edit here can touch every stream at once,
 which is the whole reason for the ceremony.
 
 ---

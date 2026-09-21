@@ -9,7 +9,7 @@ an agent.**
 | `ARCHITECTURE.md` | proposing a design — how the pieces fit, and which are disposable |
 | `docs/README.md` | hunting for a document — it is the index and the sources-of-truth table |
 | `src/contracts/` | writing against the API — the product surface in seven files, faster than any prose |
-| `docs/development/parallel-work.md` | starting a build step |
+| `docs/development/parallel-work.md` | starting a build step, or syncing `main` |
 | `docs/development/code-guidelines.md` | writing code |
 | `docs/development/pr-blueprint.md` | opening a PR |
 | `docs/decisions/decision-log.md` | asking *why* or *who decided* — pages do not carry that |
@@ -76,6 +76,7 @@ If a choice is load-bearing and
 4. **Scope discipline. Anything absent from `mvp-scope.md`'s IN table is out by default.** The
    vision corpus is large, coherent and seductive, and the developer is solo — scope creep out
    of it is the single biggest risk this project has.
+   When this is the cause of interrupting a work, state it clearly
 5. **Label every component disposable or durable** — say whether it is tied to Electron or
    would outlive it. `ARCHITECTURE.md` has the table. This is about spending care in the right
    place, not about a planned migration.
@@ -94,35 +95,19 @@ If a choice is load-bearing and
 
 Four owner policies. Nothing below is a suggestion.
 
-### Before starting a build step — parallel work
+### Parallel work, and syncing `main`
 
-Read `docs/development/parallel-work.md`. Its "If you are an agent" section is the checklist,
-and its numbered rules cover worktrees, path ownership, contracts and `src/shared` PRs, the
-append points, and `package-lock.json`. Four things it does not cover:
+Read `docs/development/parallel-work.md` before starting a build step. Its "If you are an agent"
+section is the checklist; worktree setup, stacked PRs and branch protection are in the page.
 
-- **A new worktree needs `node_modules`**: `ln -s <repo>/node_modules <worktree>/node_modules`.
-- **A stacked PR needs a base ref the native worktree tool cannot take** — it only branches from
-  `origin/<default>` or current HEAD. Use `git worktree add <path> -b <branch> <base>` instead.
-- **Branch protection is `strict`:** merging PR N+1 always needs a fresh `main`-merge into its
-  branch first, even when it touches none of N's files.
-- **Syncing `main` with `origin`** — the procedure below.
+**Syncing `main` with `origin`: never a bare `git pull`.** It refuses on a dirty tree, and the
+usual recoveries (`git checkout -- .`, a botched rebase) destroy uncommitted work silently. The
+procedure is in that page's §Syncing `main` with `origin`.
 
-**Syncing `main`, owner's decision 2026-09-15.** Never a bare `git pull`: it refuses to run on a
-dirty tree, and the obvious recoveries (`git checkout -- .`, a badly resolved rebase) destroy the
-uncommitted work silently. Check first with `git fetch origin --prune`, then
-`git rev-list --left-right --count main...origin/main`.
-
-- **Clean tree — sync unprompted.** `git merge --ff-only origin/main`. Never a merge commit,
-  never `--force`.
-- **Dirty tree — report, do not act.** Say which files are dirty locally **and** changed
-  upstream; that is where conflicts come from. If told to go ahead: back the tree up outside the
-  repo first — `git diff > <scratch>/uncommitted.patch` **plus** a tarball, since no stash
-  captures untracked files — then stash, `--ff-only`, `git stash pop`. A conflict keeps the
-  stash, so nothing is lost.
-
-Afterwards run `npm run typecheck` and `npm run check:contracts`, plus `npm install` if
-`package-lock.json` moved. **Re-read anything that auto-merged**: it can be textually clean and
-semantically stale on its new base.
+- **Clean tree: sync without asking** (`git merge --ff-only origin/main`; never a merge commit,
+  never `--force`).
+- **Dirty tree: report, do not act.** Name the files that are dirty locally **and** changed
+  upstream. Back up and stash only if told to go ahead.
 
 ### Before writing code — code guidelines
 
@@ -133,14 +118,10 @@ background, and its §Status is the current enforcement state — read those two
 
 ### Before opening a PR — the PR blueprint
 
-**Open one or two PRs per working day, not one per feature** — owner's decision `d-0033`,
-2026-09-17. This is an **agent rule and lives here on purpose**: a human contributor sending one
-change still opens one PR, so `CONTRIBUTING.md` and the PR template say nothing about cadence.
-The reason is volume — continuous AI work merged 423 PRs over 17 days here, about 25 a day, and
-nobody reviews that.
+**Open one or two PRs per working day, not one per feature**.  
+This is an **agent rule and lives here on purpose**: a human contributor sending one change still opens one PR, so `CONTRIBUTING.md` and the PR template say nothing about cadence.
 
-- Default to one PR for the day; open a second when the day splits into two unrelated themes, or
-  when one body would be too tangled to follow.
+- Default to one PR for the day; open a second when the day splits into two unrelated themes, or when one body would be too tangled to follow.
 - `stream/` branches and worktrees are unchanged — they converge into the day's PR instead of
   each opening their own.
 - **`src/contracts/` and `src/shared/` are the one carve-out**, still alone and merged first. A
@@ -200,6 +181,7 @@ at the step named here. **Check this table at the start of every build step.**
 | `claude-md-management` | **Manual — `/revise-claude-md` at the end of any session that changed an assumption in this file** | Keeps this file true as the code moves |
 | `orivon-electron` (project skill) | **Manual — before writing or debugging any Electron+webtorrent code** | The renderer-bundling alias recipe, the `app.windows()`-not-`app.firstWindow()` rule, `MessagePortMain`'s silent failures, and why to check `electron.d.ts` before trusting any claim about `BaseWindow` options. Exists nowhere else |
 | `orivon-comments` (project skill) | **Manual — before writing or editing a comment in `src/`** | Where rationale goes when it is not a "you will break this line" comment, and how to handle a header over budget |
+| `orivon-porting` (project skill) | **Manual — before porting a third-party Electron app, or touching an `apps/<app>/bridge/`** | Triage before committing to an app, the recon greps, the five buckets a bridge member falls into, the escape test, and the two build traps that fail silently |
 | `adversarial-reviewer` (user skill) | **Manual — after each build step lands** | The multi-perspective review that produced `docs/planning/audit-2026-08-25.md`. Run it on the broker and the app loader at minimum |
 | `/code-review`, `/security-review`, `/simplify` | Manual | Per-diff review before each commit on the critical path |
 
