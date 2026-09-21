@@ -26,14 +26,10 @@
 // substitutes for and why). What is NOT exercised: a real grant reaching that
 // pipe via a real, accepted install. src/loader/install-origin.ts's A46 (no
 // loopback/non-https carve-out, deliberate, must not be weakened) means
-// Loader.load() can never accept ANY hermetic fixture's own origin -- so no
-// INSTALL happens here, and none can. What the real hint is proven to do
-// instead is take src/main/dev-app-origin.ts's grant-without-install path,
-// which an unpackaged build offers a loopback origin: the URL is granted its
-// declared capabilities, with no bundle, no hash and no pin behind it.
-// Refusing an install and refusing an origin stopped being the same thing.
-// The granted round trip below is still enabled separately, through
-// src/main/dev-grant.ts's developer-only hook (the same
+// Loader.load() can never accept ANY hermetic fixture's own origin -- so the
+// real hint above is proven to reach the real loader and be correctly
+// REFUSED for being non-public, and the granted round trip below is enabled
+// instead through src/main/dev-grant.ts's developer-only hook (the same
 // substitution test/e2e-capability-boundary.test.ts already makes, and for
 // the identical reason), acting on the SAME broker instance the real launched
 // shell's real IPC pipe uses. d-0025's own consent-gating logic is proven
@@ -194,7 +190,7 @@ function isShimFailure (result: ShimRoundTripResult | ShimRoundTripFailure): res
 }
 
 it(
-  'a real page drives require(\'net\') through the real shim: denied with no grant, a granted round trip moves real bytes, an out-of-manifest attempt is refused -- and the real discovery-hint listener is separately observed granting this loopback origin without installing it',
+  'a real page drives require(\'net\') through the real shim: denied with no grant, a granted round trip moves real bytes, an out-of-manifest attempt is refused -- and the real discovery-hint listener is separately observed refusing this http origin',
   async () => {
     await runPhase('app-loader journey', async (check) => {
       const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
@@ -257,27 +253,22 @@ it(
         // ---- the real discovery-hint listener, observed for real --------
         // Fires automatically on load (src/preload/app.ts's fallback branch
         // calls installManifestHintWatcher() unconditionally) -- no action
-        // from this test triggers it.
-        //
-        // A loopback origin in an unpackaged build takes src/main/
-        // dev-app-origin.ts's grant-without-install path: capabilities are
-        // granted to the URL, and NOTHING is installed -- no bundle fetch,
-        // no hash, no pin. install-origin.ts still refuses this origin for a
-        // real install, exactly as A46 requires; what changed is that
-        // refusing an install is no longer the same as refusing the origin.
-        // This origin is already registered by this test's own dev-grant
-        // hook above, so consent finds nothing unheld and raises no dialog.
-        const hintGranted = await waitFor(
-          () => mainStdout.includes(`developer mode: granted ${fixtureOrigin} without installing`),
+        // from this test triggers it. installFromHint's own same-origin
+        // check passes (this http origin matches its own hint), so the
+        // rejection below is install-origin.ts's A46 (https/public-unicast
+        // only, no exception) refusing the loader's own fetch, not an
+        // earlier, less meaningful failure.
+        const hintRejected = await waitFor(
+          () => mainStdout.includes(`manifest hint from ${fixtureOrigin} did not install: rejected`),
           10_000
         )
         check(
           'the real <link rel="orivon-manifest"> hint reaches the real, production-wired discovery ' +
-          'listener (preload manifest-hint.ts -> main manifest-hint.ts -> the real published ' +
-          'installApp), and this loopback origin takes the developer-mode grant path -- granted as a ' +
-          'URL, with no install and no pin behind it',
-          hintGranted,
-          hintGranted ? undefined : `stdout so far: ${mainStdout}`
+          'listener (preload manifest-hint.ts -> main manifest-hint.ts -> the real installFromHint), ' +
+          'and is refused -- A46 has no loopback/non-https carve-out, so this http origin can never ' +
+          'complete a real install through this path (see this file\'s header)',
+          hintRejected,
+          hintRejected ? undefined : `stdout so far: ${mainStdout}`
         )
 
         // ---- denied before any grant, through the real shim --------------

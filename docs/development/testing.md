@@ -162,10 +162,12 @@ appeared to work perfectly. Do not drop it.
 and the refusal goes through the real shim (`src/shim/node-net.ts`), not only the raw capability
 API. One link is substituted, and the file's header says exactly where: the fixture is served
 from loopback, and [`install-origin.ts`](../../src/loader/install-origin.ts) refuses a loopback
-origin outright (A46), so nothing is installed. The real `<link rel="orivon-manifest">` hint
-instead takes `src/main/dev-app-origin.ts`'s grant-without-install path, and the granted round
-trip is enabled through `src/main/dev-grant.ts`'s developer-only hook, acting on the same broker
-the launched shell's IPC uses. Consent gating itself is proven separately, in
+origin outright (A46), so no install can succeed. The real `<link rel="orivon-manifest">` hint is
+proven to reach the real loader and be refused for being non-public; the granted round trip is
+enabled separately, through `src/main/dev-grant.ts`'s developer-only hook, acting on the same
+broker the launched shell's IPC uses. The developer-mode grant-without-install path
+(`src/main/dev-app-origin.ts`, behind `ORIVON_DEV_ORIGINS=1`) has its own test,
+[`test/e2e-dev-origin-grant.test.ts`](../../test/e2e-dev-origin-grant.test.ts). Consent gating itself is proven separately, in
 [`test/e2e-install-consent-journey.test.ts`](../../test/e2e-install-consent-journey.test.ts).
 
 The raw capability API has its own boundary suites, one file per transport, because Rule 2 caps
