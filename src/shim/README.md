@@ -97,15 +97,15 @@ that is the right answer anyway, since real Node genuinely does expose them as f
 `typeof` reporting `'function'` is the TRUTHFUL answer for those, matching what real Node itself
 would say, and merely reading the member never throws.
 The one place a throwing function would be dishonest is a member real Node exposes as DATA, not a
-function, such as `fs.constants` and `dns.promises`, where `typeof` should say `'object'`/`'undefined'`,
-which no throwing function can do. `node-fs.ts` and `node-dns.ts` handle these two by name,
-listing them in `refusingProxy`'s own `known` object with an explicit `undefined` value rather
-than routing them through `otherFsMember`/`otherDnsMember`: genuinely absent, the same as a
-member never considered at all, rather than faked as callable. This does mean `'constants' in fs`
-and `'promises' in dns` report `true` (the key exists, valued `undefined`) where every other
-unbuilt member reports `false`, a deliberate, narrow exception for the two names this package
-has explicitly decided it cannot honestly present as functions, not a hole in the `in`-truthful
-guarantee for anything else.
+function -- `fs.constants`, `dns.promises` -- where `typeof` should say `'object'`, which no
+throwing function can do. `node-fs.ts` and `node-dns.ts` handle both by name in `refusingProxy`'s
+own `known` object rather than routing them through `otherFsMember`/`otherDnsMember`. **Both hold
+real values**: `fs.constants` (`node-fs-constants.ts`) carries the four `access()` mode flags a
+ported dependency reads directly (`fs.constants.F_OK`, `@seald-io/nedb`'s own `storage.js`), and
+`dns.promises.lookup` is built. The mechanism this paragraph documents -- listing a data-shaped
+member in `known` with an explicit value rather than a throwing-function stand-in -- stays
+available for a member real Node exposes as data and this package has not built. No member is in
+that state today.
 
 **Why this package's own `OrivonShimError`/`ShimRefusalReason`, not `shim-electron`'s
 `ElectronShimError`.** Same shape, deliberately not the same union: a Node-stdlib gap and an
@@ -157,3 +157,62 @@ environment): throwing would be strictly worse than today's absence for any call
 already guards them defensively. The rest (`setTimeout`, `setBroadcast`, the multicast family)
 throw when called: a silent no-op there would misreport a real capability as applied instead of
 naming the gap, which is the exact failure A135 exists to fix.
+
+**`fs.createReadStream`/`fs.createWriteStream` run over the local per-open cursor, not A184's
+broker `readable()`/`writable()`.** **AI recommendation, not owner-reviewed.** `@seald-io/nedb`'s
+`lib/storage.js` captures both at module load and its persistence layer calls them on every
+database load and every compaction, so they could not stay refused the way `FileHandle`'s own
+instance `createReadStream`/`createWriteStream` still are (A184). `node-fs-streams.ts` builds them
+as real `stream.Readable`/`Writable` subclasses over `node-fs-handle.ts`'s positional `read`/
+`write`, which are page-reachable today: one 64 KiB chunk per round trip. The cost is N round trips
+instead of one continuous WHATWG transfer, and a fixed chunk size instead of the broker's own
+credit window. For nedb's small line-oriented files that should not matter. Once A184 makes
+`readable()`/`writable()` reachable from the page, this file can be rewritten over them with no
+app-facing change. **Still open:** whether this is the permanent shape or a placeholder.
+
+**`fs.access`'s `mode` is not distinguished: every mode checks existence only.** **AI
+recommendation, not owner-reviewed.** Node fails `access(path, mode)` when the process lacks the
+permission `mode` names. `orivon.fs` has no POSIX permission model at all (the same reason
+`chmod`/`chown` refuse as `'not-applicable'`), so `node-fs-core.ts`'s `doAccess` answers `F_OK`,
+`R_OK`, `W_OK` and `X_OK` alike with one `stat()`. A confined or grant-denied path already fails
+that the way a real permission check would. nedb, the only caller today, passes `F_OK` alone.
+**Still open:** what a future dependency asking `W_OK` to mean something narrower should get,
+which `orivon.fs`'s contract currently gives this file nothing to answer with.
+
+**A path resolving to the app's own ROOT is answered locally, never sent to orivon.fs.**
+**AI recommendation, not owner-reviewed.** The broker's own confinement policy
+(`src/broker/policy/paths.ts`) refuses ANY requested path that resolves to the root itself
+(`deny('is-root')`), unconditionally, regardless of grant -- by design, not a gap: `orivon.fs`
+confines every call to somewhere STRICTLY INSIDE the root. But the root always exists (the broker
+creates it), exactly the way a process's cwd always exists in real Node, and a ported dependency
+routinely asks for it: `@seald-io/nedb`'s `lib/storage.js` computes `path.dirname('settings.db')`
+(`'.'`) for its parent-directory `mkdir`, and fsyncs that same `'.'` after every crash-safe
+rename. Both calls failed outright before this fix -- FreeTube never mounted a database.
+`node-fs-root.ts` now answers both ENTIRELY IN THE SHIM, never calling `orivon.fs`:
+`fs.mkdir(root, {recursive:true})` is a no-op success (the broker already created it);
+without `recursive` it fails `EEXIST`, matching Node for any other already-existing directory.
+`fs.open(root, 'r')` returns a local directory handle whose `sync()`/`datasync()`/`close()`
+succeed and whose `read()`/`write()`/`truncate()` fail `EISDIR`/`EBADF`/`EINVAL` respectively --
+checked against real Node on Linux, not assumed (`stat()` on that handle SUCCEEDS, which a naive
+"directories refuse everything" guess would have gotten wrong). Any other open flag on the root
+fails `EISDIR` immediately, matching Node's own refusal to open a directory for writing.
+
+**A directory fsync of the root is therefore a NO-OP, not a real fsync of anything.**
+`orivon.fs` exposes no handle on the root at all, so there is nothing this shim can actually ask
+the OS to flush on the app's behalf -- a rename's directory entry is only as durable as the
+broker's own `rename()` call already makes it, no more. nedb's own crash-safety model (documented
+in `persistence.js`) already tolerates a platform where opening a directory for fsync fails
+outright (its own EISDIR handling), so this no-op costs it nothing further than that platform
+already costs it; nothing here promises a stronger durability guarantee than the broker's rename
+itself provides.
+
+**`fs.stat('.')` and `fs.readdir('.')` are deliberately left passing through to the broker's
+ordinary `'denied'` refusal, not special-cased.** nedb needs neither on the root -- its `existsAsync`
+reads `fs.constants.F_OK` via `access()`, which itself only ever targets a real datafile path, and
+its `readdir` reach is `readdir(dirname(filename))`'s NON-root case (an app that stores files in a
+subdirectory) that this fix does not touch. Special-casing every root-targeting call, not only the
+two a confirmed caller needs, would mean guessing at Node semantics with nothing to check them
+against -- `mkdir`/`open`+`sync`+`close` are the two this branch could actually verify against real
+Node and a real caller. **Still open:** whether a future caller needs `stat('.')`/`readdir('.')`
+answered locally too, and if so, with what synthetic content -- this file has no real metadata for
+the root beyond "it is a directory" without asking the broker for the one path it always refuses.
