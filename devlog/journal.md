@@ -20,7 +20,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 
 ### Done / results
 
-- 2026-09-21: **The documentation sync went out as one PR (#233, 108 files).** Everything the tree
+- 2026-09-21: **The documentation sync went out as one PR (#2, 108 files).** Everything the tree
   had been carrying: the humanizer pass, the decision register, the history removal and its guard,
   the agent-only documents moved into `.claude/`, and machine-absolute paths out of public files.
 
