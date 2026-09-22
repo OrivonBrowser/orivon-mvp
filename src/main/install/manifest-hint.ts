@@ -120,7 +120,7 @@ export function createManifestHintListener (
           }
           return
         }
-        console.log(`[orivon] manifest hint from ${origin} did not install: ${result.outcome}`)
+        if (result.outcome !== 'up-to-date') console.log(`[orivon] manifest hint from ${origin} did not install: ${result.outcome}`)
       })
       .catch((error: unknown) => {
         console.error('[orivon] installFromHint threw unexpectedly for a manifest hint', origin, error)

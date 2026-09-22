@@ -281,10 +281,14 @@ export function reachOnlyHandlerFor (broker: Broker, opener: string): (request: 
  * deny every request for this origin, so there is nothing to hydrate FROM.
  */
 export async function registerServingFor (storage: LoaderStorage, origin: string, broker?: Broker): Promise<void> {
-  if (broker !== undefined) {
-    const pinnedManifest = await verifiedManifestFor(storage, origin)
-    if (pinnedManifest !== undefined) await broker.app.hydrateFromPinnedManifest(origin, pinnedManifest)
+  const pinnedManifest = await verifiedManifestFor(storage, origin)
+  if (pinnedManifest === undefined && !carriesLiveAuthority(origin, broker)) {
+    // README.md, "When the cached bundle fails verification": serve nothing,
+    // so the origin loads as an ordinary website and its hint reinstalls it.
+    console.warn(`[loader] ${origin}'s cached bundle is missing or failed verification; not serving it, so its next visit can reinstall it`)
+    return
   }
+  if (broker !== undefined && pinnedManifest !== undefined) await broker.app.hydrateFromPinnedManifest(origin, pinnedManifest)
 
   const tracker = createPinCoverageTracker()
   coverageTrackers.set(origin, tracker)
@@ -306,6 +310,16 @@ export async function registerServingFor (storage: LoaderStorage, origin: string
   )
   const { session } = await import('electron')
   registerAppOrigin(session.fromPartition(partitionFor(origin)), origin, handler)
+}
+
+/**
+ * Whether `origin`'s partition already carries authority this session -- it
+ * is being served from cache, or holds a live grant. Such an origin whose
+ * bundle then fails verification keeps a handler that denies everything:
+ * its partition must never fall through to whatever the network serves.
+ */
+function carriesLiveAuthority (origin: string, broker: Broker | undefined): boolean {
+  return isOriginServedFromCacheSync(origin) || broker?.app.hasGrantsSync(origin) === true
 }
 
 /**

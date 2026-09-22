@@ -82,6 +82,7 @@ export async function driveLoadResult (deps: UpdateOutcomeDeps, result: LoadResu
       return await finishInstall(deps, result)
 
     case 'rejected':
+    case 'up-to-date':
       return result
 
     case 'needs-reconsent': {

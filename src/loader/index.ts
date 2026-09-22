@@ -5,11 +5,11 @@
 // the Manifest.capabilities -> PatternSet mapping is update-patterns.ts, and
 // the storage seam is storage.ts. See src/loader/README.md.
 //
-// THE FIVE OUTCOMES (grown by one 2026-09-04 -- see LoadNeedsRollbackChoice
-// below): `installed` (TOFU, a `silent` decideUpdate() verdict, or an
-// ALREADY-ACKNOWLEDGED rollback -- all three mean "ready to run, nothing
-// new to ask the user"), `needs-reconsent`, `needs-capability-prompt`,
-// `needs-rollback-choice`, `rejected`. Showing UI for the middle three, or
+// THE SIX OUTCOMES: `installed` (TOFU, a `silent` decideUpdate() verdict,
+// or an ALREADY-ACKNOWLEDGED rollback -- all three mean "ready to run,
+// nothing new to ask the user"), `needs-reconsent`, `needs-capability-
+// prompt`, `needs-rollback-choice`, `rejected`, and `up-to-date` (checked
+// too recently to check again). Showing UI for the three prompts, or
 // wiring the broker's grant prompt, is explicitly out of scope here
 // (src/loader/README.md) -- this function returns the verdict and stops.
 //
@@ -31,6 +31,7 @@ import type { Fetch, StagedAsset } from './fetch-bundle.js'
 import { installAndNotify } from './install.js'
 import type { LoaderStorage } from './storage.js'
 import { patternSetFromCapabilities } from './update-patterns.js'
+import { originFromUrl } from '../broker/policy/origin.js'
 
 export type { Fetch, FetchResponse } from './fetch-bundle.js'
 export type { LoaderStorage } from './storage.js'
@@ -66,7 +67,22 @@ export interface CreateLoaderOptions {
    * `installOrReject` itself already takes for storage failures.
    */
   readonly onInstalled?: (origin: string) => Promise<void>
+  /**
+   * When set, `load()` answers `'up-to-date'` without fetching anything for
+   * an origin whose last completed check (any outcome but `'rejected'`) was
+   * less than this many milliseconds ago -- so an app's every page load
+   * does not re-download its whole bundle. Unset means every call checks.
+   */
+  readonly updateCheckIntervalMs?: number
 }
+
+/**
+ * The interval `subsystem.ts` passes as `updateCheckIntervalMs`: an app is
+ * checked for an update at most once an hour, and on its first visit after
+ * each start (the record is in memory only). AI-recommended; the owner
+ * confirms the number.
+ */
+export const UPDATE_CHECK_INTERVAL_MS = 60 * 60_000
 
 /**
  * What decideUpdate() needs that this file cannot derive on its own,
@@ -193,7 +209,13 @@ export interface LoadRejected {
   readonly reason: string
 }
 
-export type LoadResult = LoadInstalled | LoadNeedsReconsent | LoadNeedsCapabilityPrompt | LoadNeedsRollbackChoice | LoadRejected
+/** This origin was checked less than `updateCheckIntervalMs` ago; nothing was fetched and nothing changed. */
+export interface LoadUpToDate {
+  readonly outcome: 'up-to-date'
+  readonly canonicalOrigin: string
+}
+
+export type LoadResult = LoadInstalled | LoadNeedsReconsent | LoadNeedsCapabilityPrompt | LoadNeedsRollbackChoice | LoadRejected | LoadUpToDate
 
 export interface Loader {
   /**
@@ -330,10 +352,20 @@ async function decideAndRoute (
 }
 
 export function createLoader (options: CreateLoaderOptions): Loader {
+  const lastChecked = new Map<string, number>()
+
   async function load (hintedUrl: string, context: LoadContext): Promise<LoadResult> {
+    const origin = originFromUrl(hintedUrl)
+    const checkedAt = origin === null ? undefined : lastChecked.get(origin)
+    if (origin !== null && checkedAt !== undefined && options.updateCheckIntervalMs !== undefined &&
+        options.now() - checkedAt < options.updateCheckIntervalMs) {
+      return { outcome: 'up-to-date', canonicalOrigin: origin }
+    }
     const fetched = await fetchBundle(options.fetch, hintedUrl, options.resolve, options.storage)
     if (!fetched.ok) return { outcome: 'rejected', reason: fetched.reason }
-    return await decideAndRoute(options, fetched.canonicalOrigin, fetched.manifest, fetched.tree, fetched.entries, context)
+    const result = await decideAndRoute(options, fetched.canonicalOrigin, fetched.manifest, fetched.tree, fetched.entries, context)
+    if (result.outcome !== 'rejected') lastChecked.set(fetched.canonicalOrigin, options.now())
+    return result
   }
 
   async function reconsider (

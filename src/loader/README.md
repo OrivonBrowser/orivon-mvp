@@ -259,6 +259,26 @@ since nothing else re-registers its handler. `subsystem.ts`'s `afterReady` calls
 origin's corrupted pin or unreadable asset is logged and does not stop the rest, the same
 per-item-failure stance `runAfterReady` (`main/registry.ts`) already takes for subsystems.
 
+**When the cached bundle fails verification, nothing is served, and the next visit reinstalls
+it.** A pin whose files no longer hash to it (a crash part-way through an install, a damaged
+disk, a hand edit) used to get a handler that denied every request, forever: the app's page
+could never load, so its hint never fired and nothing could ever repair the cache. Now
+`electron-serve.ts`'s `registerServingFor` registers nothing for such an origin at startup and
+hydrates nothing, so it loads as an ordinary website, with no grants live and no app-tab flag.
+Its hint then runs `load()` as usual: the pin still names the bundle, the fetched bundle is
+compared against it, and [`install.ts`](install.ts) rewrites exactly the files that no longer
+match; serving, grants and registration come back through `onInstalled`, and the tab reloads
+into the app. The one exception stays fail-closed: an origin already served from cache, or
+holding a live grant, this session keeps a handler that denies everything, since its partition
+carries authority and must never fall through to whatever the network serves next.
+
+**An app is checked for an update at most once an hour.** Every page load of an app reports its
+hint, and each used to re-download the whole bundle. `createLoader`'s `updateCheckIntervalMs`
+(`UPDATE_CHECK_INTERVAL_MS`, one hour, AI-recommended) answers `'up-to-date'` without fetching
+while the last completed check for that origin is younger than that. The record is in memory, so
+the first visit after every start still checks; a rejected check is not recorded, so a failure
+is retried on the next visit.
+
 **A restored app is a registered app from startup.** Serving alone is not enough: the app-tab
 flag (`src/main/shell/tab-view.ts`'s `appTabArgsFor`) and `orivon.app.manifest()` both ask
 whether the broker has a manifest for the origin, and a tab's flag is fixed when the tab is

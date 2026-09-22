@@ -638,6 +638,29 @@ describe('restorePinnedServing across a restart -- A158, resolved for every dire
     vi.doUnmock('electron')
   })
 
+  it('A BUNDLE THAT FAILS VERIFICATION AT STARTUP IS NOT SERVED AT ALL -- no deny-all handler, nothing hydrated or registered, so the next visit can reinstall it', async () => {
+    const origin = 'https://never-served-before.example'
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-restart-tampered-'))
+    const storage = nodeLoaderStorage(userData)
+    await pinRealOrigin(storage, origin)
+    await storage.writeAsset(origin, '/index.html', utf8('tampered'))
+    const broker = createBroker(baseDeps({ ledgerStorage: memoryLedgerStorage() }))
+    const warned = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const session = fakeSession()
+    vi.doMock('electron', () => ({ session: { fromPartition: () => session } }))
+    const { restorePinnedServing, isOriginServedFromCacheSync } = await import('../electron-serve.js')
+    await restorePinnedServing(storage, broker)
+
+    expect(session.calls.handle).toEqual([])
+    expect(isOriginServedFromCacheSync(origin)).toBe(false)
+    expect(broker.app.isRegisteredSync(origin)).toBe(false)
+    expect(warned).toHaveBeenCalled()
+
+    warned.mockRestore()
+    vi.doUnmock('electron')
+  })
+
   it('DOES NOT WIDEN AN ORIGIN WHOSE PIN FAILS RE-VERIFICATION -- a tampered bundle gets nothing hydrated and stays denied', async () => {
     const userData = await mkdtemp(join(tmpdir(), 'orivon-restart-csp-'))
     const storage = nodeLoaderStorage(userData)
