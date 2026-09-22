@@ -47,12 +47,10 @@ describe('createApp', () => {
     expect(app.getVersion()).toBe('1.2.3')
   })
 
-  it('serves getPath("userData") as a value safe to join with a relative orivon.fs path', async () => {
+  it('serves getPath("userData") as the virtual root the fs shim maps onto the app\'s files', async () => {
     const app = createApp(fakeOrivon())
     await app.whenReady()
-    const userData = app.getPath('userData')
-    expect(typeof userData).toBe('string')
-    expect(userData.startsWith('/')).toBe(false)
+    expect(app.getPath('userData')).toBe('/orivon/app')
   })
 
   it('refuses any getPath name other than userData, naming the ambient-fs reason', async () => {

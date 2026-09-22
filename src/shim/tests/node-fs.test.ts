@@ -44,7 +44,7 @@ function installFakeOrivon (): {
         return data
       },
       mkdir: async (path: string, opts: unknown) => { mkdirCalls.push({ path, opts }) },
-      readdir: async (path: string) => (path === '/torrents' ? ['a.bin', 'b.bin'] : []),
+      readdir: async (path: string) => (path === 'torrents' ? ['a.bin', 'b.bin'] : []),
       stat: async (path: string) => {
         const stat = stats.get(path)
         if (stat === undefined) throw orivonError('notFound', 'no such file')
@@ -86,12 +86,12 @@ describe('fs.readFile / fs.writeFile', () => {
     const { files } = installFakeOrivon()
     const fs = await import('../node-fs.js')
     await new Promise<void>((resolve, reject) => {
-      fs.writeFile('/piece-0', new Uint8Array([1, 2, 3]), (err) => (err !== null ? reject(err) : resolve()))
+      fs.writeFile('piece-0', new Uint8Array([1, 2, 3]), (err) => (err !== null ? reject(err) : resolve()))
     })
-    expect(files.get('/piece-0')).toEqual(new Uint8Array([1, 2, 3]))
+    expect(files.get('piece-0')).toEqual(new Uint8Array([1, 2, 3]))
 
     const data = await new Promise<Buffer>((resolve, reject) => {
-      fs.readFile('/piece-0', (err, result) => (err !== null ? reject(err) : resolve(result as Buffer)))
+      fs.readFile('piece-0', (err, result) => (err !== null ? reject(err) : resolve(result as Buffer)))
     })
     expect(PageBuffer.isBuffer(data)).toBe(true)
     expect([...data]).toEqual([1, 2, 3])
@@ -101,10 +101,10 @@ describe('fs.readFile / fs.writeFile', () => {
     installFakeOrivon()
     const fs = await import('../node-fs.js')
     await new Promise<void>((resolve, reject) => {
-      fs.writeFile('/config.json', '{"ok":true}', (err) => (err !== null ? reject(err) : resolve()))
+      fs.writeFile('config.json', '{"ok":true}', (err) => (err !== null ? reject(err) : resolve()))
     })
     const text = await new Promise<string>((resolve, reject) => {
-      fs.readFile('/config.json', 'utf8', (err, result) => (err !== null ? reject(err) : resolve(result as string)))
+      fs.readFile('config.json', 'utf8', (err, result) => (err !== null ? reject(err) : resolve(result as string)))
     })
     expect(text).toBe('{"ok":true}')
   })
@@ -113,7 +113,7 @@ describe('fs.readFile / fs.writeFile', () => {
     installFakeOrivon()
     const fs = await import('../node-fs.js')
     const error = await new Promise<Error & { code?: string }>((resolve) => {
-      fs.readFile('/missing', (err) => resolve(err as Error & { code?: string }))
+      fs.readFile('missing', (err) => resolve(err as Error & { code?: string }))
     })
     expect(error.code).toBe('notFound')
   })
@@ -125,30 +125,30 @@ describe('fs.readFile / fs.writeFile', () => {
 describe('fs.readFile -- binary-to-text encodings', () => {
   it('decodes hex', async () => {
     const { files } = installFakeOrivon()
-    files.set('/x', new Uint8Array([0xde, 0xad, 0xbe, 0xef]))
+    files.set('x', new Uint8Array([0xde, 0xad, 0xbe, 0xef]))
     const fs = await import('../node-fs.js')
     const text = await new Promise<string>((resolve, reject) => {
-      fs.readFile('/x', 'hex', (err, result) => (err !== null ? reject(err) : resolve(result as string)))
+      fs.readFile('x', 'hex', (err, result) => (err !== null ? reject(err) : resolve(result as string)))
     })
     expect(text).toBe('deadbeef')
   })
 
   it('decodes base64', async () => {
     const { files } = installFakeOrivon()
-    files.set('/x', new TextEncoder().encode('hello'))
+    files.set('x', new TextEncoder().encode('hello'))
     const fs = await import('../node-fs.js')
     const text = await new Promise<string>((resolve, reject) => {
-      fs.readFile('/x', 'base64', (err, result) => (err !== null ? reject(err) : resolve(result as string)))
+      fs.readFile('x', 'base64', (err, result) => (err !== null ? reject(err) : resolve(result as string)))
     })
     expect(text).toBe('aGVsbG8=')
   })
 
   it('decodes base64url', async () => {
     const { files } = installFakeOrivon()
-    files.set('/x', new TextEncoder().encode('hello'))
+    files.set('x', new TextEncoder().encode('hello'))
     const fs = await import('../node-fs.js')
     const text = await new Promise<string>((resolve, reject) => {
-      fs.readFile('/x', 'base64url', (err, result) => (err !== null ? reject(err) : resolve(result as string)))
+      fs.readFile('x', 'base64url', (err, result) => (err !== null ? reject(err) : resolve(result as string)))
     })
     expect(text).toBe('aGVsbG8')
   })
@@ -163,22 +163,22 @@ describe('fs.writeFile -- respects options.encoding', () => {
     const { files } = installFakeOrivon()
     const fs = await import('../node-fs.js')
     await new Promise<void>((resolve, reject) => {
-      fs.writeFile('/x', 'deadbeef', { encoding: 'hex' }, (err) => (err !== null ? reject(err) : resolve()))
+      fs.writeFile('x', 'deadbeef', { encoding: 'hex' }, (err) => (err !== null ? reject(err) : resolve()))
     })
     // Compared as a plain byte array, not via toEqual against a literal
     // Uint8Array: encode() returns a `buffer`-package Buffer, whose own
     // toJSON() makes vitest's structural equality see a mismatched shape
     // even though the underlying bytes are identical.
-    expect([...(files.get('/x') ?? [])]).toEqual([0xde, 0xad, 0xbe, 0xef])
+    expect([...(files.get('x') ?? [])]).toEqual([0xde, 0xad, 0xbe, 0xef])
   })
 
   it('accepts the encoding-as-string shorthand, matching readFile\'s own overload', async () => {
     const { files } = installFakeOrivon()
     const fs = await import('../node-fs.js')
     await new Promise<void>((resolve, reject) => {
-      fs.writeFile('/x', 'aGVsbG8=', 'base64', (err) => (err !== null ? reject(err) : resolve()))
+      fs.writeFile('x', 'aGVsbG8=', 'base64', (err) => (err !== null ? reject(err) : resolve()))
     })
-    expect([...(files.get('/x') ?? [])]).toEqual([...new TextEncoder().encode('hello')])
+    expect([...(files.get('x') ?? [])]).toEqual([...new TextEncoder().encode('hello')])
   })
 })
 
@@ -210,55 +210,55 @@ describe('fs.* -- a throwing callback is invoked exactly once', () => {
 
   it('readFile', async () => {
     const { files } = installFakeOrivon()
-    files.set('/x', new Uint8Array([1]))
+    files.set('x', new Uint8Array([1]))
     const fs = await import('../node-fs.js')
-    expect(await countCallsWhenCallbackThrows((cb) => fs.readFile('/x', cb))).toBe(1)
+    expect(await countCallsWhenCallbackThrows((cb) => fs.readFile('x', cb))).toBe(1)
   })
 
   it('writeFile', async () => {
     installFakeOrivon()
     const fs = await import('../node-fs.js')
-    expect(await countCallsWhenCallbackThrows((cb) => fs.writeFile('/x', 'data', cb))).toBe(1)
+    expect(await countCallsWhenCallbackThrows((cb) => fs.writeFile('x', 'data', cb))).toBe(1)
   })
 
   it('mkdir', async () => {
     installFakeOrivon()
     const fs = await import('../node-fs.js')
-    expect(await countCallsWhenCallbackThrows((cb) => fs.mkdir('/x', cb))).toBe(1)
+    expect(await countCallsWhenCallbackThrows((cb) => fs.mkdir('x', cb))).toBe(1)
   })
 
   it('readdir', async () => {
     installFakeOrivon()
     const fs = await import('../node-fs.js')
-    expect(await countCallsWhenCallbackThrows((cb) => fs.readdir('/torrents', cb))).toBe(1)
+    expect(await countCallsWhenCallbackThrows((cb) => fs.readdir('torrents', cb))).toBe(1)
   })
 
   it('stat', async () => {
     const { stats } = installFakeOrivon()
-    stats.set('/x', { size: 1, isFile: true, isDirectory: false, mtimeMs: 0 })
+    stats.set('x', { size: 1, isFile: true, isDirectory: false, mtimeMs: 0 })
     const fs = await import('../node-fs.js')
-    expect(await countCallsWhenCallbackThrows((cb) => fs.stat('/x', cb))).toBe(1)
+    expect(await countCallsWhenCallbackThrows((cb) => fs.stat('x', cb))).toBe(1)
   })
 
   it('rm', async () => {
     installFakeOrivon()
     const fs = await import('../node-fs.js')
-    expect(await countCallsWhenCallbackThrows((cb) => fs.rm('/x', cb))).toBe(1)
+    expect(await countCallsWhenCallbackThrows((cb) => fs.rm('x', cb))).toBe(1)
   })
 
   it('rename', async () => {
     installFakeOrivon()
     const fs = await import('../node-fs.js')
-    expect(await countCallsWhenCallbackThrows((cb) => fs.rename('/a', '/b', cb))).toBe(1)
+    expect(await countCallsWhenCallbackThrows((cb) => fs.rename('a', 'b', cb))).toBe(1)
   })
 })
 
 describe('fs.readFileSync', () => {
   it('is the one real synchronous call (ADR-0016)', async () => {
     const { files } = installFakeOrivon()
-    files.set('/config', new TextEncoder().encode('hello'))
+    files.set('config', new TextEncoder().encode('hello'))
     const fs = await import('../node-fs.js')
-    expect(fs.readFileSync('/config', 'utf8')).toBe('hello')
+    expect(fs.readFileSync('config', 'utf8')).toBe('hello')
   })
 })
 
@@ -266,58 +266,58 @@ describe('every other synchronous export', () => {
   it('throws a named ADR-0016 error rather than faking a sync capability the broker does not have', async () => {
     installFakeOrivon()
     const fs = await import('../node-fs.js')
-    expect(() => fs.statSync('/tmp')).toThrow(/ADR-0016/)
-    expect(() => fs.mkdirSync('/x')).toThrow(/ADR-0016/)
-    expect(() => fs.writeFileSync('/x', 'y')).toThrow(/ADR-0016/)
-    expect(() => fs.existsSync('/x')).toThrow(/ADR-0016/)
-    expect(() => fs.accessSync('/x')).toThrow(/ADR-0016/)
-    expect(() => fs.appendFileSync('/x', 'y')).toThrow(/ADR-0016/)
-    expect(() => fs.unlinkSync('/x')).toThrow(/ADR-0016/)
+    expect(() => fs.statSync('tmp')).toThrow(/ADR-0016/)
+    expect(() => fs.mkdirSync('x')).toThrow(/ADR-0016/)
+    expect(() => fs.writeFileSync('x', 'y')).toThrow(/ADR-0016/)
+    expect(() => fs.existsSync('x')).toThrow(/ADR-0016/)
+    expect(() => fs.accessSync('x')).toThrow(/ADR-0016/)
+    expect(() => fs.appendFileSync('x', 'y')).toThrow(/ADR-0016/)
+    expect(() => fs.unlinkSync('x')).toThrow(/ADR-0016/)
   })
 })
 
 describe('fs.appendFile', () => {
   it('opens with flags \'a\' and writes once -- a real append, not read-modify-write', async () => {
     const { files, openCalls } = installFakeOrivon()
-    files.set('/log', new TextEncoder().encode('first\n'))
+    files.set('log', new TextEncoder().encode('first\n'))
     const fs = await import('../node-fs.js')
     await new Promise<void>((resolve, reject) => {
-      fs.appendFile('/log', 'second\n', (err) => (err !== null ? reject(err) : resolve()))
+      fs.appendFile('log', 'second\n', (err) => (err !== null ? reject(err) : resolve()))
     })
-    expect(openCalls).toEqual([{ path: '/log', flags: 'a' }])
-    expect(new TextDecoder().decode(files.get('/log'))).toBe('first\nsecond\n')
+    expect(openCalls).toEqual([{ path: 'log', flags: 'a' }])
+    expect(new TextDecoder().decode(files.get('log'))).toBe('first\nsecond\n')
   })
 
   it('creates a new file when none exists yet', async () => {
     const { files } = installFakeOrivon()
     const fs = await import('../node-fs.js')
     await new Promise<void>((resolve, reject) => {
-      fs.appendFile('/new-log', 'hello', (err) => (err !== null ? reject(err) : resolve()))
+      fs.appendFile('new-log', 'hello', (err) => (err !== null ? reject(err) : resolve()))
     })
-    expect(new TextDecoder().decode(files.get('/new-log'))).toBe('hello')
+    expect(new TextDecoder().decode(files.get('new-log'))).toBe('hello')
   })
 
   it('respects options.encoding, matching writeFile\'s own overload', async () => {
     const { files } = installFakeOrivon()
     const fs = await import('../node-fs.js')
     await new Promise<void>((resolve, reject) => {
-      fs.appendFile('/x', 'deadbeef', { encoding: 'hex' }, (err) => (err !== null ? reject(err) : resolve()))
+      fs.appendFile('x', 'deadbeef', { encoding: 'hex' }, (err) => (err !== null ? reject(err) : resolve()))
     })
-    expect([...(files.get('/x') ?? [])]).toEqual([0xde, 0xad, 0xbe, 0xef])
+    expect([...(files.get('x') ?? [])]).toEqual([0xde, 0xad, 0xbe, 0xef])
   })
 })
 
 describe('fs.access', () => {
   it('resolves when the path exists, regardless of which mode is asked', async () => {
     const { stats } = installFakeOrivon()
-    stats.set('/x', { size: 1, isFile: true, isDirectory: false, mtimeMs: 0 })
+    stats.set('x', { size: 1, isFile: true, isDirectory: false, mtimeMs: 0 })
     const fs = await import('../node-fs.js')
     const { constants } = fs.default
     await new Promise<void>((resolve, reject) => {
-      fs.access('/x', constants.F_OK, (err) => (err !== null ? reject(err) : resolve()))
+      fs.access('x', constants.F_OK, (err) => (err !== null ? reject(err) : resolve()))
     })
     await new Promise<void>((resolve, reject) => {
-      fs.access('/x', constants.R_OK | constants.W_OK, (err) => (err !== null ? reject(err) : resolve()))
+      fs.access('x', constants.R_OK | constants.W_OK, (err) => (err !== null ? reject(err) : resolve()))
     })
   })
 
@@ -325,7 +325,7 @@ describe('fs.access', () => {
     installFakeOrivon()
     const fs = await import('../node-fs.js')
     const error = await new Promise<Error & { code?: string }>((resolve) => {
-      fs.access('/missing', (err) => resolve(err as Error & { code?: string }))
+      fs.access('missing', (err) => resolve(err as Error & { code?: string }))
     })
     expect(error.code).toBe('notFound')
   })
@@ -336,9 +336,9 @@ describe('fs.unlink', () => {
     const { rmCalls } = installFakeOrivon()
     const fs = await import('../node-fs.js')
     await new Promise<void>((resolve, reject) => {
-      fs.unlink('/x', (err) => (err !== null ? reject(err) : resolve()))
+      fs.unlink('x', (err) => (err !== null ? reject(err) : resolve()))
     })
-    expect(rmCalls).toEqual([{ path: '/x', opts: undefined }])
+    expect(rmCalls).toEqual([{ path: 'x', opts: undefined }])
   })
 })
 
@@ -401,18 +401,18 @@ describe('fs.open / fs.promises.open', () => {
     const { openCalls } = installFakeOrivon()
     const fs = await import('../node-fs.js')
     const fd = await new Promise<number>((resolve, reject) => {
-      fs.open('/piece-0', 'r+', (err, result) => (err !== null ? reject(err) : resolve(result as number)))
+      fs.open('piece-0', 'r+', (err, result) => (err !== null ? reject(err) : resolve(result as number)))
     })
     expect(typeof fd).toBe('number')
-    expect(openCalls).toEqual([{ path: '/piece-0', flags: 'r+' }])
+    expect(openCalls).toEqual([{ path: 'piece-0', flags: 'r+' }])
   })
 
   it('fs.promises.open routes through the same orivon.fs.open', async () => {
     const { openCalls } = installFakeOrivon()
     const fs = await import('../node-fs.js')
-    const handle = await fs.promises.open('/piece-0', 'r+')
+    const handle = await fs.promises.open('piece-0', 'r+')
     expect(typeof handle.fd).toBe('number')
-    expect(openCalls).toEqual([{ path: '/piece-0', flags: 'r+' }])
+    expect(openCalls).toEqual([{ path: 'piece-0', flags: 'r+' }])
   })
 
   // readFile/writeFile/access/appendFile/rename/unlink/mkdir/readdir/stat/rm
@@ -433,26 +433,26 @@ describe('mkdir / readdir / stat / rm / rename', () => {
     const { mkdirCalls } = installFakeOrivon()
     const fs = await import('../node-fs.js')
     await new Promise<void>((resolve, reject) => {
-      fs.mkdir('/torrents/abc', { recursive: true }, (err) => (err !== null ? reject(err) : resolve()))
+      fs.mkdir('torrents/abc', { recursive: true }, (err) => (err !== null ? reject(err) : resolve()))
     })
-    expect(mkdirCalls).toEqual([{ path: '/torrents/abc', opts: { recursive: true } }])
+    expect(mkdirCalls).toEqual([{ path: 'torrents/abc', opts: { recursive: true } }])
   })
 
   it('readdir returns the entry list', async () => {
     installFakeOrivon()
     const fs = await import('../node-fs.js')
     const entries = await new Promise<readonly string[]>((resolve, reject) => {
-      fs.readdir('/torrents', (err, result) => (err !== null ? reject(err) : resolve(result as readonly string[])))
+      fs.readdir('torrents', (err, result) => (err !== null ? reject(err) : resolve(result as readonly string[])))
     })
     expect(entries).toEqual(['a.bin', 'b.bin'])
   })
 
   it('stat wraps the flat FileStat into Node-shaped Stats with real methods', async () => {
     const { stats } = installFakeOrivon()
-    stats.set('/piece-0', { size: 10, isFile: true, isDirectory: false, mtimeMs: 1000 })
+    stats.set('piece-0', { size: 10, isFile: true, isDirectory: false, mtimeMs: 1000 })
     const fs = await import('../node-fs.js')
     const stat = await new Promise<import('../node-fs-stats.js').NodeStats>((resolve, reject) => {
-      fs.stat('/piece-0', (err, result) => (err !== null ? reject(err) : resolve(result as import('../node-fs-stats.js').NodeStats)))
+      fs.stat('piece-0', (err, result) => (err !== null ? reject(err) : resolve(result as import('../node-fs-stats.js').NodeStats)))
     })
     expect(stat.isFile()).toBe(true)
     expect(stat.mtime.getTime()).toBe(1000)
@@ -462,18 +462,18 @@ describe('mkdir / readdir / stat / rm / rename', () => {
     const { rmCalls } = installFakeOrivon()
     const fs = await import('../node-fs.js')
     await new Promise<void>((resolve, reject) => {
-      fs.rm('/torrents/abc', { recursive: true }, (err) => (err !== null ? reject(err) : resolve()))
+      fs.rm('torrents/abc', { recursive: true }, (err) => (err !== null ? reject(err) : resolve()))
     })
-    expect(rmCalls).toEqual([{ path: '/torrents/abc', opts: { recursive: true } }])
+    expect(rmCalls).toEqual([{ path: 'torrents/abc', opts: { recursive: true } }])
   })
 
   it('rename forwards both paths', async () => {
     const { renameCalls } = installFakeOrivon()
     const fs = await import('../node-fs.js')
     await new Promise<void>((resolve, reject) => {
-      fs.rename('/tmp/x', '/torrents/x', (err) => (err !== null ? reject(err) : resolve()))
+      fs.rename('tmp/x', 'torrents/x', (err) => (err !== null ? reject(err) : resolve()))
     })
-    expect(renameCalls).toEqual([{ from: '/tmp/x', to: '/torrents/x' }])
+    expect(renameCalls).toEqual([{ from: 'tmp/x', to: 'torrents/x' }])
   })
 })
 

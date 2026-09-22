@@ -25,7 +25,7 @@ describe('fs.promises.open -- the local cursor', () => {
   it('every positional call sends an EXPLICIT position underneath -- the contract has no cursor of its own', async () => {
     const fake = installFakeOrivon()
     const { openHandle } = await import('../node-fs-handle.js')
-    const handle = await openHandle('/piece-0', 'w+')
+    const handle = await openHandle('piece-0', 'w+')
     await handle.write(new Uint8Array([1, 2, 3]), 0, 3, 0)
     expect(fake.writeCalls).toEqual([{ position: 0, length: 3 }])
   })
@@ -33,7 +33,7 @@ describe('fs.promises.open -- the local cursor', () => {
   it('a null position write lands at 0 on a fresh handle, then a second null-position write continues from where the first left off', async () => {
     const fake = installFakeOrivon()
     const { openHandle } = await import('../node-fs-handle.js')
-    const handle = await openHandle('/piece-0', 'w+')
+    const handle = await openHandle('piece-0', 'w+')
     await handle.write(new Uint8Array([1, 2, 3]))
     await handle.write(new Uint8Array([4, 5]))
     expect(fake.writeCalls).toEqual([{ position: 0, length: 3 }, { position: 3, length: 2 }])
@@ -43,7 +43,7 @@ describe('fs.promises.open -- the local cursor', () => {
   it('interleaved null-position reads and writes on the SAME handle advance one shared cursor correctly', async () => {
     const fake = installFakeOrivon(new Uint8Array([9, 9, 9, 9, 9, 9]))
     const { openHandle } = await import('../node-fs-handle.js')
-    const handle = await openHandle('/piece-0', 'r+')
+    const handle = await openHandle('piece-0', 'r+')
 
     const first = await handle.read(new Uint8Array(2)) // reads [0,2) -> cursor now 2
     const write = await handle.write(new Uint8Array([7, 7])) // writes at 2 -> cursor now 4
@@ -59,7 +59,7 @@ describe('fs.promises.open -- the local cursor', () => {
   it('an explicit-position call does NOT touch the shared cursor -- a later null-position call is unaffected by it', async () => {
     const fake = installFakeOrivon()
     const { openHandle } = await import('../node-fs-handle.js')
-    const handle = await openHandle('/piece-0', 'w+')
+    const handle = await openHandle('piece-0', 'w+')
     await handle.write(new Uint8Array([1, 2])) // cursor now 2
     await handle.write(new Uint8Array([99]), 0, 1, 100) // explicit position 100 -- cursor untouched
     await handle.write(new Uint8Array([3])) // should still land at 2, not 101
@@ -73,7 +73,7 @@ describe('fs.promises.open -- the local cursor', () => {
   it('a short read at EOF advances the cursor by the ACTUAL bytes read, not the requested length', async () => {
     const fake = installFakeOrivon(new Uint8Array([1, 2, 3]))
     const { openHandle } = await import('../node-fs-handle.js')
-    const handle = await openHandle('/piece-0', 'r')
+    const handle = await openHandle('piece-0', 'r')
     const short = await handle.read(new Uint8Array(10)) // only 3 bytes exist
     expect(short.bytesRead).toBe(3)
     const next = await handle.read(new Uint8Array(10))
@@ -84,7 +84,7 @@ describe('fs.promises.open -- the local cursor', () => {
   it('append-mode flags seed the cursor at the file\'s current size, not 0', async () => {
     const fake = installFakeOrivon(new Uint8Array([1, 2, 3, 4]))
     const { openHandle } = await import('../node-fs-handle.js')
-    const handle = await openHandle('/piece-0', 'a')
+    const handle = await openHandle('piece-0', 'a')
     await handle.write(new Uint8Array([9]))
     expect(fake.writeCalls).toEqual([{ position: 4, length: 1 }])
   })
@@ -92,7 +92,7 @@ describe('fs.promises.open -- the local cursor', () => {
   it('a -1 position is treated as "use the cursor", matching real Node\'s own read() contract', async () => {
     const fake = installFakeOrivon(new Uint8Array([1, 2, 3]))
     const { openHandle } = await import('../node-fs-handle.js')
-    const handle = await openHandle('/piece-0', 'r')
+    const handle = await openHandle('piece-0', 'r')
     await handle.read(new Uint8Array(1), 0, 1, -1)
     expect(fake.readCalls).toEqual([{ position: 0, length: 1 }])
   })
@@ -103,7 +103,7 @@ describe('fs.promises.open -- the local cursor', () => {
   it('datasync() succeeds on an ordinary file handle, the same as sync()', async () => {
     installFakeOrivon()
     const { openHandle } = await import('../node-fs-handle.js')
-    const handle = await openHandle('/piece-0', 'r+')
+    const handle = await openHandle('piece-0', 'r+')
     await expect(handle.datasync()).resolves.toBeUndefined()
   })
 })
@@ -112,7 +112,7 @@ describe('fs.promises.open -- FileHandle stream gap (A184)', () => {
   it('createReadStream refuses loudly, citing A184, rather than returning a stream that can never move a byte', async () => {
     installFakeOrivon()
     const { openHandle } = await import('../node-fs-handle.js')
-    const handle = await openHandle('/piece-0', 'r')
+    const handle = await openHandle('piece-0', 'r')
     const { OrivonShimError } = await import('../errors.js')
     expect(() => handle.createReadStream()).toThrow(OrivonShimError)
     try {
@@ -126,7 +126,7 @@ describe('fs.promises.open -- FileHandle stream gap (A184)', () => {
   it('createWriteStream refuses the same way', async () => {
     installFakeOrivon()
     const { openHandle } = await import('../node-fs-handle.js')
-    const handle = await openHandle('/piece-0', 'w')
+    const handle = await openHandle('piece-0', 'w')
     const { OrivonShimError } = await import('../errors.js')
     expect(() => handle.createWriteStream()).toThrow(OrivonShimError)
   })
@@ -144,7 +144,7 @@ describe('fs.promises.open -- opening a directory path for fsync, not a regular 
   it('open("r") + sync() + close() on a directory succeeds when the broker\'s own open does (Linux/macOS)', async () => {
     installFakeOrivon()
     const { openHandle } = await import('../node-fs-handle.js')
-    const handle = await openHandle('/torrents', 'r')
+    const handle = await openHandle('torrents', 'r')
     await expect(handle.sync()).resolves.toBeUndefined()
     await expect(handle.close()).resolves.toBeUndefined()
   })
@@ -160,7 +160,7 @@ describe('fs.promises.open -- opening a directory path for fsync, not a regular 
       fs: { open: async () => { throw Object.assign(new Error('is a directory'), { code: 'internal', platformCode: 'EISDIR' }) } }
     } as unknown as Orivon
     const { openHandle } = await import('../node-fs-handle.js')
-    await expect(openHandle('/torrents', 'r')).rejects.toMatchObject({ code: 'EISDIR' })
+    await expect(openHandle('torrents', 'r')).rejects.toMatchObject({ code: 'EISDIR' })
   })
 })
 
@@ -169,7 +169,7 @@ describe('the callback open/read/write/close family', () => {
     installFakeOrivon()
     const fs = await import('../node-fs-handle.js')
     const fd = await new Promise<number>((resolve, reject) => {
-      fs.open('/piece-0', 'w+', (err, result) => (err !== null ? reject(err) : resolve(result as number)))
+      fs.open('piece-0', 'w+', (err, result) => (err !== null ? reject(err) : resolve(result as number)))
     })
     expect(typeof fd).toBe('number')
 
@@ -193,7 +193,7 @@ describe('the callback open/read/write/close family', () => {
     installFakeOrivon()
     const fs = await import('../node-fs-handle.js')
     const fd = await new Promise<number>((resolve, reject) => {
-      fs.open('/piece-0', 'w+', (err, result) => (err !== null ? reject(err) : resolve(result as number)))
+      fs.open('piece-0', 'w+', (err, result) => (err !== null ? reject(err) : resolve(result as number)))
     })
     const bytesWritten = await new Promise<number>((resolve, reject) => {
       fs.write(fd, new Uint8Array([1, 2, 3, 4]), (err, n) => (err !== null ? reject(err) : resolve(n)))
@@ -205,7 +205,7 @@ describe('the callback open/read/write/close family', () => {
     installFakeOrivon(new Uint8Array([1, 2, 3]))
     const fs = await import('../node-fs-handle.js')
     const fd = await new Promise<number>((resolve, reject) => {
-      fs.open('/piece-0', 'r+', (err, result) => (err !== null ? reject(err) : resolve(result as number)))
+      fs.open('piece-0', 'r+', (err, result) => (err !== null ? reject(err) : resolve(result as number)))
     })
 
     const stat = await new Promise<import('../node-fs-stats.js').NodeStats>((resolve, reject) => {
@@ -264,7 +264,7 @@ describe('the callback open/read/write/close family', () => {
       installFakeOrivon()
       const fs = await import('../node-fs-handle.js')
       const fd = await new Promise<number>((resolve, reject) => {
-        fs.open('/piece-0', 'r+', (err, result) => (err !== null ? reject(err) : resolve(result as number)))
+        fs.open('piece-0', 'r+', (err, result) => (err !== null ? reject(err) : resolve(result as number)))
       })
       await new Promise<void>((resolve, reject) => {
         fs.close(fd, (err) => (err !== null ? reject(err) : resolve()))
@@ -279,6 +279,6 @@ describe('the callback open/read/write/close family', () => {
   it('fs.open(path, callback) -- the flags-defaults-to-\'r\' form -- refuses loudly instead of silently misreading the callback as flags', async () => {
     installFakeOrivon()
     const fs = await import('../node-fs-handle.js')
-    expect(() => (fs.open as (path: string, callback: unknown) => void)('/piece-0', () => {})).toThrow(TypeError)
+    expect(() => (fs.open as (path: string, callback: unknown) => void)('piece-0', () => {})).toThrow(TypeError)
   })
 })

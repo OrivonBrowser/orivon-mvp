@@ -44,16 +44,16 @@ describe('fs.createReadStream', () => {
   it('opens read-only and streams the whole file as Buffer chunks by default', async () => {
     const { openCalls } = installFakeOrivon(new TextEncoder().encode('hello world'))
     const { createReadStream } = await import('../node-fs-streams.js')
-    const stream = createReadStream('/x')
+    const stream = createReadStream('x')
     const chunks = await collect(stream)
     expect(Buffer.concat(chunks).toString('utf8')).toBe('hello world')
-    expect(openCalls).toEqual([{ path: '/x', flags: 'r' }])
+    expect(openCalls).toEqual([{ path: 'x', flags: 'r' }])
   })
 
   it('decodes to strings when an encoding is given, matching fs.readFile\'s own behaviour', async () => {
     installFakeOrivon(new TextEncoder().encode('line one\nline two\n'))
     const { createReadStream } = await import('../node-fs-streams.js')
-    const stream = createReadStream('/x', { encoding: 'utf8' })
+    const stream = createReadStream('x', { encoding: 'utf8' })
     const text = await new Promise<string>((resolve, reject) => {
       let out = ''
       stream.on('data', (chunk) => { out += chunk })
@@ -66,7 +66,7 @@ describe('fs.createReadStream', () => {
   it('start/end are INCLUSIVE of end, matching real Node\'s own fs.createReadStream contract', async () => {
     installFakeOrivon(new TextEncoder().encode('0123456789'))
     const { createReadStream } = await import('../node-fs-streams.js')
-    const stream = createReadStream('/x', { start: 2, end: 4 })
+    const stream = createReadStream('x', { start: 2, end: 4 })
     const chunks = await collect(stream)
     expect(Buffer.concat(chunks).toString('utf8')).toBe('234')
   })
@@ -74,7 +74,7 @@ describe('fs.createReadStream', () => {
   it('emits open/ready with the real fd before any data', async () => {
     installFakeOrivon(new Uint8Array([1, 2, 3]))
     const { createReadStream } = await import('../node-fs-streams.js')
-    const stream = createReadStream('/x')
+    const stream = createReadStream('x')
     const fd = await new Promise<number>((resolve) => stream.once('open', resolve))
     expect(typeof fd).toBe('number')
     await collect(stream)
@@ -83,7 +83,7 @@ describe('fs.createReadStream', () => {
   it('closes the underlying handle once the stream ends', async () => {
     const { fake } = installFakeOrivon(new Uint8Array([1, 2, 3]))
     const { createReadStream } = await import('../node-fs-streams.js')
-    await collect(createReadStream('/x'))
+    await collect(createReadStream('x'))
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(fake.closed()).toBe(true)
   })
@@ -94,7 +94,7 @@ describe('fs.createReadStream', () => {
   it('emits close after end, with the handle already released', async () => {
     const { fake } = installFakeOrivon(new Uint8Array([1, 2, 3]))
     const { createReadStream } = await import('../node-fs-streams.js')
-    const stream = createReadStream('/x')
+    const stream = createReadStream('x')
     const order: string[] = []
     stream.on('end', () => order.push('end'))
     const closed = new Promise<void>((resolve) => stream.once('close', () => { order.push(`close:${String(fake.closed())}`); resolve() }))
@@ -108,7 +108,7 @@ describe('fs.createReadStream', () => {
       fs: { open: async () => { throw orivonError('notFound', 'no such file') } }
     } as unknown as Orivon
     const { createReadStream } = await import('../node-fs-streams.js')
-    const stream = createReadStream('/missing')
+    const stream = createReadStream('missing')
     const error = await new Promise<Error & { code?: string }>((resolve) => stream.once('error', resolve))
     expect(error.code).toBe('notFound')
   })
@@ -118,18 +118,18 @@ describe('fs.createWriteStream', () => {
   it('opens with flags \'w\' by default and writes chunks positionally from 0', async () => {
     const { fake, openCalls } = installFakeOrivon()
     const { createWriteStream } = await import('../node-fs-streams.js')
-    const stream = createWriteStream('/x')
+    const stream = createWriteStream('x')
     stream.write('hel')
     stream.write('lo')
     await new Promise<void>((resolve, reject) => stream.end((err: Error | null) => (err !== null && err !== undefined ? reject(err) : resolve())))
-    expect(openCalls).toEqual([{ path: '/x', flags: 'w' }])
+    expect(openCalls).toEqual([{ path: 'x', flags: 'w' }])
     expect(new TextDecoder().decode(fake.bytes())).toBe('hello')
   })
 
   it('honours a custom start position', async () => {
     const { fake } = installFakeOrivon(new TextEncoder().encode('XXXXXXXXXX'))
     const { createWriteStream } = await import('../node-fs-streams.js')
-    const stream = createWriteStream('/x', { start: 3 })
+    const stream = createWriteStream('x', { start: 3 })
     stream.end('abc')
     await new Promise<void>((resolve) => stream.once('finish', resolve))
     expect(new TextDecoder().decode(fake.bytes())).toBe('XXXabcXXXX')
@@ -141,7 +141,7 @@ describe('fs.createWriteStream', () => {
   it('close(cb) ends the stream and reports once the handle is actually closed', async () => {
     const { fake } = installFakeOrivon()
     const { createWriteStream } = await import('../node-fs-streams.js')
-    const stream = createWriteStream('/x')
+    const stream = createWriteStream('x')
     stream.write('a\n')
     stream.write('b\n')
     await new Promise<void>((resolve, reject) => {
@@ -154,7 +154,7 @@ describe('fs.createWriteStream', () => {
   it('emits close after finish, with the handle already released', async () => {
     const { fake } = installFakeOrivon()
     const { createWriteStream } = await import('../node-fs-streams.js')
-    const stream = createWriteStream('/x')
+    const stream = createWriteStream('x')
     const order: string[] = []
     stream.on('finish', () => order.push('finish'))
     const closed = new Promise<void>((resolve) => stream.once('close', () => { order.push(`close:${String(fake.closed())}`); resolve() }))
@@ -166,7 +166,7 @@ describe('fs.createWriteStream', () => {
   it('close(cb) on an already closed stream still calls back', async () => {
     installFakeOrivon()
     const { createWriteStream } = await import('../node-fs-streams.js')
-    const stream = createWriteStream('/x')
+    const stream = createWriteStream('x')
     await new Promise<void>((resolve) => stream.close(() => resolve()))
     await new Promise<void>((resolve) => stream.close(() => resolve()))
   })
@@ -175,7 +175,7 @@ describe('fs.createWriteStream', () => {
     const { fake } = installFakeOrivon()
     fake.handle.write = async () => { throw orivonError('limit', 'quota exceeded') }
     const { createWriteStream } = await import('../node-fs-streams.js')
-    const stream = createWriteStream('/x')
+    const stream = createWriteStream('x')
     const errorSeen = new Promise<Error & { code?: string }>((resolve) => stream.once('error', resolve))
     stream.write('too much')
     const error = await errorSeen
@@ -185,7 +185,7 @@ describe('fs.createWriteStream', () => {
     const { fake } = installFakeOrivon()
     fake.handle.write = async () => { throw orivonError('limit', 'quota exceeded') }
     const { createWriteStream } = await import('../node-fs-streams.js')
-    const stream = createWriteStream('/x')
+    const stream = createWriteStream('x')
     const order: string[] = []
     stream.on('error', () => order.push('error'))
     const closed = new Promise<void>((resolve) => stream.once('close', () => { order.push(`close:${String(fake.closed())}`); resolve() }))

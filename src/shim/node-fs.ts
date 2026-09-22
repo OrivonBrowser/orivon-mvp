@@ -32,6 +32,8 @@ import {
   type MkdirOptions, type ReadFileOptions, type RmOptions, type WriteFileOptions
 } from './node-fs-core.js'
 import { decode, encodingOf } from './node-fs-encoding.js'
+import { toConfinedPath, type PathLike } from './node-fs-path.js'
+import { isRootPath, rootIsDirectoryError } from './node-fs-root.js'
 import { refusingProxy } from './unimplemented.js'
 import { refuseShim } from './errors.js'
 
@@ -57,9 +59,9 @@ function splitTail<Options> (args: readonly unknown[]): { options: Options | und
 // the implementation signature (the last one) still accepts the same
 // variadic tail every overload above it can produce.
 
-export function readFile (path: string, callback: NodeCallback<Uint8Array | string>): void
-export function readFile (path: string, options: ReadFileOptions | string, callback: NodeCallback<Uint8Array | string>): void
-export function readFile (path: string, ...args: readonly unknown[]): void {
+export function readFile (path: PathLike, callback: NodeCallback<Uint8Array | string>): void
+export function readFile (path: PathLike, options: ReadFileOptions | string, callback: NodeCallback<Uint8Array | string>): void
+export function readFile (path: PathLike, ...args: readonly unknown[]): void {
   const { options, callback } = splitTail<ReadFileOptions | string>(args)
   // `.then(onFulfilled, onRejected)`, never `.then(onFulfilled).catch(onRejected)`:
   // the two-callback form is the only one where a throw INSIDE onFulfilled
@@ -72,13 +74,15 @@ export function readFile (path: string, ...args: readonly unknown[]): void {
   )
 }
 
-export function readFileSync (path: string, options?: ReadFileOptions | string): Uint8Array | string {
+export function readFileSync (path: PathLike, options?: ReadFileOptions | string | null): Uint8Array | string {
   // Still the one call with no async core to share: ADR-0016's synchronous
   // exception exists because orivon.fs.readFileSync itself is the only
   // synchronous orivon.fs entry point, so there is no async do*() version
   // of this call for node-fs-core.ts to hold -- decode() is shared, the
   // orivon.fs call underneath it is not.
-  return decode(getOrivon().fs.readFileSync(path), encodingOf(options))
+  const confined = toConfinedPath(path, 'open')
+  if (isRootPath(confined)) rootIsDirectoryError('read')
+  return decode(getOrivon().fs.readFileSync(confined), encodingOf(options))
 }
 
 export const writeFileSync = syncUnsupported('fs.writeFileSync')
@@ -92,9 +96,9 @@ export const accessSync = syncUnsupported('fs.accessSync')
 export const appendFileSync = syncUnsupported('fs.appendFileSync')
 export const unlinkSync = syncUnsupported('fs.unlinkSync')
 
-export function writeFile (path: string, data: unknown, callback: NodeCallback<void>): void
-export function writeFile (path: string, data: unknown, options: WriteFileOptions | string, callback: NodeCallback<void>): void
-export function writeFile (path: string, data: unknown, ...args: readonly unknown[]): void {
+export function writeFile (path: PathLike, data: unknown, callback: NodeCallback<void>): void
+export function writeFile (path: PathLike, data: unknown, options: WriteFileOptions | string, callback: NodeCallback<void>): void
+export function writeFile (path: PathLike, data: unknown, ...args: readonly unknown[]): void {
   const { options, callback } = splitTail<WriteFileOptions | string>(args)
   doWriteFile(path, data, encodingOf(options)).then(
     () => callback(null),
@@ -102,9 +106,9 @@ export function writeFile (path: string, data: unknown, ...args: readonly unknow
   )
 }
 
-export function appendFile (path: string, data: unknown, callback: NodeCallback<void>): void
-export function appendFile (path: string, data: unknown, options: WriteFileOptions | string, callback: NodeCallback<void>): void
-export function appendFile (path: string, data: unknown, ...args: readonly unknown[]): void {
+export function appendFile (path: PathLike, data: unknown, callback: NodeCallback<void>): void
+export function appendFile (path: PathLike, data: unknown, options: WriteFileOptions | string, callback: NodeCallback<void>): void
+export function appendFile (path: PathLike, data: unknown, ...args: readonly unknown[]): void {
   const { options, callback } = splitTail<WriteFileOptions | string>(args)
   doAppendFile(path, data, encodingOf(options)).then(
     () => callback(null),
@@ -112,43 +116,43 @@ export function appendFile (path: string, data: unknown, ...args: readonly unkno
   )
 }
 
-export function mkdir (path: string, callback: NodeCallback<void>): void
-export function mkdir (path: string, options: MkdirOptions, callback: NodeCallback<void>): void
-export function mkdir (path: string, ...args: readonly unknown[]): void {
+export function mkdir (path: PathLike, callback: NodeCallback<void>): void
+export function mkdir (path: PathLike, options: MkdirOptions, callback: NodeCallback<void>): void
+export function mkdir (path: PathLike, ...args: readonly unknown[]): void {
   const { options, callback } = splitTail<MkdirOptions>(args)
   doMkdir(path, options).then(() => callback(null), (error) => callback(error as Error))
 }
 
-export function readdir (path: string, callback: NodeCallback<readonly string[]>): void
-export function readdir (path: string, ...args: readonly unknown[]): void {
+export function readdir (path: PathLike, callback: NodeCallback<readonly string[]>): void
+export function readdir (path: PathLike, ...args: readonly unknown[]): void {
   const { callback } = splitTail<unknown>(args)
   doReaddir(path).then((entries) => callback(null, entries), (error) => callback(error as Error))
 }
 
-export function stat (path: string, callback: NodeCallback<NodeStats>): void
-export function stat (path: string, ...args: readonly unknown[]): void {
+export function stat (path: PathLike, callback: NodeCallback<NodeStats>): void
+export function stat (path: PathLike, ...args: readonly unknown[]): void {
   const { callback } = splitTail<unknown>(args)
   doStat(path).then((result) => callback(null, result), (error) => callback(error as Error))
 }
 
-export function rm (path: string, callback: NodeCallback<void>): void
-export function rm (path: string, options: RmOptions, callback: NodeCallback<void>): void
-export function rm (path: string, ...args: readonly unknown[]): void {
+export function rm (path: PathLike, callback: NodeCallback<void>): void
+export function rm (path: PathLike, options: RmOptions, callback: NodeCallback<void>): void
+export function rm (path: PathLike, ...args: readonly unknown[]): void {
   const { options, callback } = splitTail<RmOptions>(args)
   doRm(path, options).then(() => callback(null), (error) => callback(error as Error))
 }
 
-export function rename (from: string, to: string, callback: NodeCallback<void>): void {
+export function rename (from: PathLike, to: PathLike, callback: NodeCallback<void>): void {
   doRename(from, to).then(() => callback(null), (error) => callback(error as Error))
 }
 
-export function unlink (path: string, callback: NodeCallback<void>): void {
+export function unlink (path: PathLike, callback: NodeCallback<void>): void {
   doUnlink(path).then(() => callback(null), (error) => callback(error as Error))
 }
 
-export function access (path: string, callback: NodeCallback<void>): void
-export function access (path: string, mode: number, callback: NodeCallback<void>): void
-export function access (path: string, ...args: readonly unknown[]): void {
+export function access (path: PathLike, callback: NodeCallback<void>): void
+export function access (path: PathLike, mode: number, callback: NodeCallback<void>): void
+export function access (path: PathLike, ...args: readonly unknown[]): void {
   const { callback } = splitTail<unknown>(args)
   doAccess(path).then(() => callback(null), (error) => callback(error as Error))
 }

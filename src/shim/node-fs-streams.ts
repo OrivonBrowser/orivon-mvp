@@ -27,6 +27,7 @@ import { Readable, Writable } from 'stream'
 import { Buffer } from 'buffer'
 import { NodeFileHandle } from './node-fs-handle.js'
 import { toBytes } from './node-stream-bytes.js'
+import type { PathLike } from './node-fs-path.js'
 
 const DEFAULT_CHUNK_SIZE = 64 * 1024
 
@@ -55,7 +56,7 @@ export class ReadStream extends Readable {
   private remaining: number
   private pulling = false
 
-  constructor (path: string, opts: ReadStreamOptions = {}) {
+  constructor (path: PathLike, opts: ReadStreamOptions = {}) {
     super()
     this.once('end', () => this.destroy())
     if (opts.encoding !== undefined) this.setEncoding(opts.encoding as BufferEncoding)
@@ -108,7 +109,7 @@ export class WriteStream extends Writable {
   private position: number
   private didClose = false
 
-  constructor (path: string, opts: WriteStreamOptions = {}) {
+  constructor (path: PathLike, opts: WriteStreamOptions = {}) {
     super()
     this.once('finish', () => this.destroy())
     this.once('close', () => { this.didClose = true })
@@ -160,10 +161,10 @@ export class WriteStream extends Writable {
   }
 }
 
-export function createReadStream (path: string, opts?: ReadStreamOptions): ReadStream {
+export function createReadStream (path: PathLike, opts?: ReadStreamOptions): ReadStream {
   return new ReadStream(path, opts)
 }
 
-export function createWriteStream (path: string, opts?: WriteStreamOptions): WriteStream {
+export function createWriteStream (path: PathLike, opts?: WriteStreamOptions): WriteStream {
   return new WriteStream(path, opts)
 }

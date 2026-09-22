@@ -29,15 +29,13 @@ export interface ElectronApp {
 }
 
 /**
- * The value `getPath('userData')` returns. Deliberately NOT an absolute
- * path: `orivon.fs.readFile`/`writeFile` reject an absolute path outright
- * (src/broker/policy/paths.ts, 'absolute'), so a value a porting app's own
- * `path.join(app.getPath('userData'), 'x')` could turn into a rejected
- * request would be a trap, not a convenience. `'.'` joins to a plain relative
- * path under every `path.join` implementation, including a future Node `path`
- * shim (Table 2's other adapter family, not this one).
+ * The value `getPath('userData')` returns: the virtual root that
+ * process.cwd(), os.homedir() and $HOME also name, which the `fs` shim maps
+ * onto the app's own confined files. A second copy of src/shim/virtual-root.ts's
+ * VIRTUAL_ROOT, since this package may not import src/shim/;
+ * src/shim/tests/virtual-root.test.ts fails if the two drift apart.
  */
-const USER_DATA_PATH = '.'
+export const USER_DATA_PATH = '/orivon/app'
 
 export function createApp (orivon: Pick<Orivon, 'app'>): ElectronApp {
   let manifest: Manifest | undefined

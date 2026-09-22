@@ -12,48 +12,49 @@ import {
 import type { NodeStats } from './node-fs-stats.js'
 import { FS_CONSTANTS } from './node-fs-constants.js'
 import { encodingOf } from './node-fs-encoding.js'
+import type { PathLike } from './node-fs-path.js'
 import { refusingProxy } from './unimplemented.js'
 import { refuseShim } from './errors.js'
 
 
-async function readFile (path: string, options?: ReadFileOptions | string): Promise<Uint8Array | string> {
+async function readFile (path: PathLike, options?: ReadFileOptions | string): Promise<Uint8Array | string> {
   return await doReadFile(path, encodingOf(options))
 }
 
-async function writeFile (path: string, data: unknown, options?: WriteFileOptions | string): Promise<void> {
+async function writeFile (path: PathLike, data: unknown, options?: WriteFileOptions | string): Promise<void> {
   await doWriteFile(path, data, encodingOf(options))
 }
 
-async function appendFile (path: string, data: unknown, options?: WriteFileOptions | string): Promise<void> {
+async function appendFile (path: PathLike, data: unknown, options?: WriteFileOptions | string): Promise<void> {
   await doAppendFile(path, data, encodingOf(options))
 }
 
-async function mkdir (path: string, opts?: MkdirOptions): Promise<void> {
+async function mkdir (path: PathLike, opts?: MkdirOptions): Promise<void> {
   await doMkdir(path, opts)
 }
 
-async function readdir (path: string): Promise<readonly string[]> {
+async function readdir (path: PathLike): Promise<readonly string[]> {
   return await doReaddir(path)
 }
 
-async function stat (path: string): Promise<NodeStats> {
+async function stat (path: PathLike): Promise<NodeStats> {
   return await doStat(path)
 }
 
-async function rm (path: string, opts?: RmOptions): Promise<void> {
+async function rm (path: PathLike, opts?: RmOptions): Promise<void> {
   await doRm(path, opts)
 }
 
-async function rename (from: string, to: string): Promise<void> {
+async function rename (from: PathLike, to: PathLike): Promise<void> {
   await doRename(from, to)
 }
 
-async function unlink (path: string): Promise<void> {
+async function unlink (path: PathLike): Promise<void> {
   await doUnlink(path)
 }
 
 /** `mode` is accepted for Node signature parity; doAccess's own header says why it cannot be distinguished. */
-async function access (path: string, _mode?: number): Promise<void> {
+async function access (path: PathLike, _mode?: number): Promise<void> {
   await doAccess(path)
 }
 

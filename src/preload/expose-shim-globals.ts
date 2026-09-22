@@ -17,8 +17,8 @@
 // different and wider kind of leak this file must not create.
 
 import { contextBridge } from 'electron'
-import { installGlobals } from '../shim/globals.js'
-import type { GlobalsErrorReporter } from '../shim/globals.js'
+import { installGlobals, VIRTUAL_ROOT, VIRTUAL_TMPDIR } from '../shim/globals.js'
+import type { GlobalsErrorReporter, InstallGlobalsOptions } from '../shim/globals.js'
 
 /** Duplicated from expose-fetch-route.ts rather than imported -- src/preload/README.md forbids importing anything under src/main/ except ./channels.ts, and this is not a channel. */
 const APP_TAB_FLAG = '--orivon-app-tab'
@@ -33,8 +33,9 @@ const APP_TAB_FLAG = '--orivon-app-tab'
 export function exposeShimGlobals (): void {
   if (!process.argv.includes(APP_TAB_FLAG)) return
   const reportError: GlobalsErrorReporter = (error, origin) => { console.error(`[orivon-shim:${origin}]`, error) }
+  const options: InstallGlobalsOptions = { reportError, root: VIRTUAL_ROOT, tmpdir: VIRTUAL_TMPDIR }
   try {
-    contextBridge.executeInMainWorld({ func: installGlobals, args: [{ reportError }] })
+    contextBridge.executeInMainWorld({ func: installGlobals, args: [options] })
   } catch (error) {
     console.error('[orivon] shim globals not installed', error)
   }

@@ -33,7 +33,12 @@ export type GlobalsErrorReporter = (error: unknown, origin: GlobalsErrorOrigin) 
 
 export interface InstallGlobalsOptions {
   readonly reportError: GlobalsErrorReporter
+  /** virtual-root.ts's VIRTUAL_ROOT and VIRTUAL_TMPDIR, passed in: installGlobals may not name a module-level value (its serialisation-safety test says why). */
+  readonly root: string
+  readonly tmpdir: string
 }
+
+export { VIRTUAL_ROOT, VIRTUAL_TMPDIR } from './virtual-root.js'
 
 /**
  * Node's own process.platform is a closed union of real OS names, and
@@ -51,10 +56,10 @@ export interface ShimProcess {
   readonly platform: ShimPlatform
 
   /**
-   * Starts empty on every install and is never seeded from any ambient
-   * process.env. This process runs code for one app under one capability
-   * grant; inheriting the host's real environment variables would be a
-   * disclosure bug wearing an API-shape improvement as a disguise.
+   * Fresh on every install and never seeded from any ambient process.env:
+   * this process runs code for one app under one capability grant, and
+   * inheriting the host's real environment would be a disclosure bug. It
+   * holds only the directory variables, all naming the virtual root.
    */
   readonly env: Record<string, string | undefined>
 
@@ -88,19 +93,7 @@ export interface ShimProcess {
   readonly nextTick: <Args extends readonly unknown[]>(callback: (...args: Args) => void, ...args: Args) => void
   readonly emitWarning: (warning: string | Error, typeOrOptions?: string | EmitWarningOptions, code?: string) => void
 
-  /**
-   * Always '/', never a real filesystem path -- there is no ambient Node
-   * process to read one from (same reasoning as `platform` above), and
-   * ADR-0003's storage model gives an app exactly one root, not a tree of
-   * directories it navigates between. `orivon.fs`'s own confinement
-   * (`policy/paths.ts`'s `confinePath`) rejects an ABSOLUTE path outright --
-   * "always rejected, never re-rooted" -- so every path an app is meant to
-   * pass `orivon.fs.*` is relative already, and this value exists only so
-   * `path.resolve()` (see below) has something to prefix instead of
-   * throwing. Chosen over a fabricated app-specific string for the same
-   * reason `version` above is '': a value that looks meaningful invites a
-   * library to branch on it in a way this shim cannot actually back.
-   */
+  /** The virtual root (virtual-root.ts), which the fs shim maps onto the app's own files. */
   readonly cwd: () => string
 }
 
@@ -160,7 +153,7 @@ export function installGlobals (
   options: InstallGlobalsOptions,
   target: GlobalsTarget = typeof window === 'undefined' ? {} : window as unknown as GlobalsTarget
 ): void {
-  const { reportError } = options
+  const { reportError, root, tmpdir } = options
 
   // THE RULE THIS FILE EXISTS FOR. Node's real process.nextTick surfaces an
   // exception escaping its callback to the process, loudly. A bare
@@ -257,12 +250,12 @@ export function installGlobals (
 
   target.process = {
     platform: 'browser',
-    env: {},
+    env: { HOME: root, USERPROFILE: root, APPDATA: root, TMPDIR: tmpdir, TMP: tmpdir, TEMP: tmpdir },
     version: '',
     browser: true,
     nextTick,
     emitWarning,
-    cwd: () => '/'
+    cwd: () => root
   }
   target.setImmediate = shimSetImmediate
   target.clearImmediate = shimClearImmediate

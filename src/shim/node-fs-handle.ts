@@ -21,8 +21,8 @@
 
 import type { FileHandle } from '../contracts/handles.js'
 import { getOrivon } from './orivon-global.js'
-import { toNodeError } from './node-http-errors.js'
 import { toNodeStats, type NodeStats } from './node-fs-stats.js'
+import { confine, fsError, guarded, type PathLike } from './node-fs-path.js'
 import { refuseShim } from './errors.js'
 import { assertRootOpenAllowed, isRootPath, rootDirectoryHandle, rootReadError, rootTruncateError, rootWriteError } from './node-fs-root.js'
 
@@ -33,14 +33,6 @@ export interface NodeFsWriteResult { bytesWritten: number, buffer: Uint8Array }
 
 /** Node's own append-mode flag spellings -- the only ones that start the local cursor anywhere but 0. */
 const APPEND_FLAGS = new Set(['a', 'ax', 'a+', 'ax+', 'as', 'as+'])
-
-async function guarded<T> (run: () => Promise<T>): Promise<T> {
-  try {
-    return await run()
-  } catch (error) {
-    throw toNodeError(error)
-  }
-}
 
 class LocalCursor {
   private position: number
@@ -64,8 +56,8 @@ async function initialCursor (handle: FileHandle, flags: string): Promise<number
 const openByFd = new Map<number, NodeFileHandle>()
 let nextFd = 4
 
-function badFd (fd: number): Error & { code: string } {
-  return Object.assign(new Error(`orivon-node-shim: EBADF, bad file descriptor (fd ${fd})`), { code: 'EBADF' })
+function badFd (syscall: string): Error & { code: string } {
+  return fsError('EBADF', 'bad file descriptor', syscall)
 }
 
 export class NodeFileHandle {
@@ -82,18 +74,11 @@ export class NodeFileHandle {
     this.isRoot = isRoot
   }
 
-  // `path` reaches orivon.fs.open EXACTLY as given, relative or not -- never
-  // resolved or joined here. A relative path (e.g. 'settings.db') lands
-  // wherever the broker confines it: the app's own files directory root
-  // (capability-api.ts's OrivonFs doc). This file has no cwd concept to
-  // resolve one against even if it wanted to.
-  //
-  // ONE EXCEPTION: a path that resolves to the root ITSELF never reaches
-  // orivon.fs at all -- the broker's own confinement policy refuses it
-  // unconditionally (node-fs-root.ts's own header), so this answers Node's
-  // own cwd-like semantics for it locally instead. See node-fs-root.ts.
-  static async open (path: string, flags: string): Promise<NodeFileHandle> {
-    if (isRootPath(path)) {
+  // `path` is mapped by node-fs-path.ts's `confine`, the same as every other
+  // fs call; the root ITSELF never reaches orivon.fs (node-fs-root.ts).
+  static async open (path: PathLike, flags: string): Promise<NodeFileHandle> {
+    const confined = await confine(path, 'open')
+    if (isRootPath(confined)) {
       assertRootOpenAllowed(flags)
       const fd = nextFd++
       const wrapped = new NodeFileHandle(fd, rootDirectoryHandle(), new LocalCursor(0), true)
@@ -101,7 +86,7 @@ export class NodeFileHandle {
       return wrapped
     }
     return await guarded(async () => {
-      const handle = await getOrivon().fs.open(path, flags)
+      const handle = await getOrivon().fs.open(confined, flags)
       const cursor = new LocalCursor(await initialCursor(handle, flags))
       const fd = nextFd++
       const wrapped = new NodeFileHandle(fd, handle, cursor)
@@ -172,16 +157,16 @@ export class NodeFileHandle {
 
 // ---- fs.promises.open --------------------------------------------------
 
-export async function openHandle (path: string, flags: string, _mode?: number): Promise<NodeFileHandle> {
+export async function openHandle (path: PathLike, flags: string, _mode?: number): Promise<NodeFileHandle> {
   return await NodeFileHandle.open(path, flags)
 }
 
 // ---- callback fs.open/fs.read/fs.write/fs.close/fs.fstat/... ----------
 
 /** `fs.open(path, flags[, mode], callback)`. `mode` is a POSIX permission bit this confined fs has nothing to set it on (node-fs.ts's own `not-applicable` reasoning for chmod/chown) -- accepted and ignored, never silently misread as the callback. */
-export function open (path: string, flags: string, callback: NodeCallback<number>): void
-export function open (path: string, flags: string, mode: number, callback: NodeCallback<number>): void
-export function open (path: string, flags: string, ...args: readonly unknown[]): void {
+export function open (path: PathLike, flags: string, callback: NodeCallback<number>): void
+export function open (path: PathLike, flags: string, mode: number, callback: NodeCallback<number>): void
+export function open (path: PathLike, flags: string, ...args: readonly unknown[]): void {
   if (typeof flags === 'function') {
     throw new TypeError(
       'orivon-node-shim: fs.open(path, callback), defaulting flags to \'r\', is not supported -- ' +
@@ -197,7 +182,7 @@ export function open (path: string, flags: string, ...args: readonly unknown[]):
 
 export function close (fd: number, callback: NodeCallback<void>): void {
   const handle = openByFd.get(fd)
-  if (handle === undefined) { callback(badFd(fd)); return }
+  if (handle === undefined) { callback(badFd('close')); return }
   handle.close().then(() => callback(null), (error) => callback(error as Error))
 }
 
@@ -206,7 +191,7 @@ export function read (
   callback: (error: Error | null, bytesRead: number, buffer: Uint8Array) => void
 ): void {
   const handle = openByFd.get(fd)
-  if (handle === undefined) { callback(badFd(fd), 0, buffer); return }
+  if (handle === undefined) { callback(badFd('read'), 0, buffer); return }
   handle.read(buffer, offset, length, position).then(
     (result) => callback(null, result.bytesRead, result.buffer),
     (error) => callback(error as Error, 0, buffer)
@@ -227,7 +212,7 @@ export function write (fd: number, buffer: Uint8Array, ...args: readonly unknown
   const length = typeof rest[1] === 'number' ? rest[1] : buffer.length - offset
   const position = rest.length > 2 ? rest[2] as number | null : null
   const handle = openByFd.get(fd)
-  if (handle === undefined) { callback(badFd(fd), 0, buffer); return }
+  if (handle === undefined) { callback(badFd('write'), 0, buffer); return }
   handle.write(buffer, offset, length, position).then(
     (result) => callback(null, result.bytesWritten, result.buffer),
     (error) => callback(error as Error, 0, buffer)
@@ -236,7 +221,7 @@ export function write (fd: number, buffer: Uint8Array, ...args: readonly unknown
 
 export function fstat (fd: number, callback: NodeCallback<NodeStats>): void {
   const handle = openByFd.get(fd)
-  if (handle === undefined) { callback(badFd(fd)); return }
+  if (handle === undefined) { callback(badFd('fstat')); return }
   handle.stat().then((stat) => callback(null, stat), (error) => callback(error as Error))
 }
 
@@ -246,12 +231,12 @@ export function ftruncate (fd: number, ...args: readonly unknown[]): void {
   const callback = args[args.length - 1] as NodeCallback<void>
   const length = args.length > 1 ? args[0] as number : 0
   const handle = openByFd.get(fd)
-  if (handle === undefined) { callback(badFd(fd)); return }
+  if (handle === undefined) { callback(badFd('ftruncate')); return }
   handle.truncate(length).then(() => callback(null), (error) => callback(error as Error))
 }
 
 export function fsync (fd: number, callback: NodeCallback<void>): void {
   const handle = openByFd.get(fd)
-  if (handle === undefined) { callback(badFd(fd)); return }
+  if (handle === undefined) { callback(badFd('fsync')); return }
   handle.sync().then(() => callback(null), (error) => callback(error as Error))
 }

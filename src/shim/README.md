@@ -187,6 +187,22 @@ that the way a real permission check would. nedb, the only caller today, passes 
 **Still open:** what a future dependency asking `W_OK` to mean something narrower should get,
 which `orivon.fs`'s contract currently gives this file nothing to answer with.
 
+**One virtual root: `/orivon/app` ([`virtual-root.ts`](virtual-root.ts)).** **AI recommendation,
+not owner-reviewed.** Node code builds paths from `process.cwd()`, `os.homedir()`, `os.tmpdir()`,
+`$HOME`/`$APPDATA` and, in an Electron port, `app.getPath('userData')`, then hands them to `fs`.
+All of them name `/orivon/app` (the tmpdir is `/orivon/app/tmp`), and
+[`node-fs-path.ts`](node-fs-path.ts)'s `confine` strips that prefix before any `orivon.fs` call,
+so `path.join(os.homedir(), 'settings.json')` lands in the app's own files. `orivon.fs` itself
+still takes only relative paths: the broker rejects every absolute one
+([`src/broker/policy/paths.ts`](../broker/policy/paths.ts)), and the mapping lives here, one layer
+up, where the Node-shaped paths are. A relative path passes through exactly as written. A path
+outside the root, absolute or by `..`, fails `EACCES` in the shim without reaching the broker:
+the errno Node gives for a directory the process may not enter, where the broker would only say
+`'denied'`. The tmpdir is created with one `mkdir -p` the first time a path inside it is used,
+since Node's always exists and the app's files start empty. The value is not a real host path
+and is not meant to look like one: a library branching on it cannot mistake it for a platform
+directory it knows.
+
 **A path resolving to the app's own ROOT is answered locally, never sent to orivon.fs.**
 **AI recommendation, not owner-reviewed.** The broker's own confinement policy
 (`src/broker/policy/paths.ts`) refuses ANY requested path that resolves to the root itself
@@ -195,15 +211,21 @@ confines every call to somewhere STRICTLY INSIDE the root. But the root always e
 creates it), exactly the way a process's cwd always exists in real Node, and a ported dependency
 routinely asks for it: `@seald-io/nedb`'s `lib/storage.js` computes `path.dirname('settings.db')`
 (`'.'`) for its parent-directory `mkdir`, and fsyncs that same `'.'` after every crash-safe
-rename. Both calls failed outright before this fix -- FreeTube never mounted a database.
-`node-fs-root.ts` now answers both ENTIRELY IN THE SHIM, never calling `orivon.fs`:
-`fs.mkdir(root, {recursive:true})` is a no-op success (the broker already created it);
-without `recursive` it fails `EEXIST`, matching Node for any other already-existing directory.
-`fs.open(root, 'r')` returns a local directory handle whose `sync()`/`datasync()`/`close()`
-succeed and whose `read()`/`write()`/`truncate()` fail `EISDIR`/`EBADF`/`EINVAL` respectively --
-checked against real Node on Linux, not assumed (`stat()` on that handle SUCCEEDS, which a naive
-"directories refuse everything" guess would have gotten wrong). Any other open flag on the root
-fails `EISDIR` immediately, matching Node's own refusal to open a directory for writing.
+rename. [`node-fs-root.ts`](node-fs-root.ts) answers every call on the root in the shim:
+`stat`/`access` succeed with a directory (size and mtime 0: the broker has no metadata to give
+for the one path it refuses); `mkdir(root, {recursive:true})` is a no-op success and fails
+`EEXIST` without it; `readFile`/`writeFile`/`appendFile` fail `EISDIR`; `rm`/`unlink`/`rename`
+fail `EACCES`, since nothing may remove or move the app's files. `fs.open(root, 'r')` returns a
+local directory handle whose `sync()`/`datasync()`/`close()` succeed and whose
+`read()`/`write()`/`truncate()` fail `EISDIR`/`EBADF`/`EINVAL` respectively -- checked against
+real Node on Linux, not assumed (`stat()` on that handle SUCCEEDS). Any other open flag on the
+root fails `EISDIR`, matching Node's own refusal to open a directory for writing.
+
+**`readdir` of the root is the one root call the shim cannot answer.** Listing it needs the
+broker, which refuses the root itself, and the shim has no listing of its own. It fails `EACCES`
+with a message naming the gap rather than returning a fabricated empty list. Closing it is a
+broker policy change (a read-only listing of the root), not a shim one. A folder inside the root
+lists normally.
 
 **A directory fsync of the root is therefore a NO-OP, not a real fsync of anything.**
 `orivon.fs` exposes no handle on the root at all, so there is nothing this shim can actually ask
@@ -213,14 +235,3 @@ in `persistence.js`) already tolerates a platform where opening a directory for 
 outright (its own EISDIR handling), so this no-op costs it nothing further than that platform
 already costs it; nothing here promises a stronger durability guarantee than the broker's rename
 itself provides.
-
-**`fs.stat('.')` and `fs.readdir('.')` are deliberately left passing through to the broker's
-ordinary `'denied'` refusal, not special-cased.** nedb needs neither on the root -- its `existsAsync`
-reads `fs.constants.F_OK` via `access()`, which itself only ever targets a real datafile path, and
-its `readdir` reach is `readdir(dirname(filename))`'s NON-root case (an app that stores files in a
-subdirectory) that this fix does not touch. Special-casing every root-targeting call, not only the
-two a confirmed caller needs, would mean guessing at Node semantics with nothing to check them
-against -- `mkdir`/`open`+`sync`+`close` are the two this branch could actually verify against real
-Node and a real caller. **Still open:** whether a future caller needs `stat('.')`/`readdir('.')`
-answered locally too, and if so, with what synthetic content -- this file has no real metadata for
-the root beyond "it is a directory" without asking the broker for the one path it always refuses.
