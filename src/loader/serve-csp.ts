@@ -12,11 +12,11 @@ import type { Pattern } from '../contracts/index.js'
 const LOCAL_SCHEMES = ['data:', 'blob:'] as const
 
 /**
- * `'wasm-unsafe-eval'` compiles WebAssembly the page already fetched from
- * its own pinned, hash-verified bundle. `'unsafe-eval'` is withheld pending
- * an owner decision; admitting it is adding it to this list.
+ * The bundle's own code is pinned and hash-verified, `'unsafe-inline'`
+ * already grants the script power `'unsafe-eval'` adds, and the broker, not
+ * this header, is the security boundary.
  */
-const SCRIPT_SOURCES = ["'self'", "'unsafe-inline'", "'wasm-unsafe-eval'"] as const
+const SCRIPT_SOURCES = ["'self'", "'unsafe-inline'", "'unsafe-eval'", "'wasm-unsafe-eval'"] as const
 
 function directive (name: string, sources: readonly string[]): string {
   return `${name} ${sources.join(' ')}`

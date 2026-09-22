@@ -13,8 +13,8 @@ function directive (header: string, name: string): string[] | undefined {
 const EMPTY = cspHeaderValue([], [])
 
 describe('cspHeaderValue -- what a pinned bundle may do with its own bytes', () => {
-  it('admits WebAssembly compilation, and still withholds eval', () => {
-    expect(directive(EMPTY, 'script-src')).toEqual(["'self'", "'unsafe-inline'", "'wasm-unsafe-eval'"])
+  it('admits inline script, eval and WebAssembly compilation', () => {
+    expect(directive(EMPTY, 'script-src')).toEqual(["'self'", "'unsafe-inline'", "'unsafe-eval'", "'wasm-unsafe-eval'"])
   })
 
   it('admits data: and blob: images, fonts and media -- local schemes with no network reach', () => {
@@ -68,7 +68,17 @@ describe('cspHeaderValue -- reach from the live grants', () => {
     expect(onlyHttps).not.toMatch(/\bwss?:/)
   })
 
-  it('a `*` https.connect grant still contributes nothing (the ANY_HOST_EMITS_HTTPS_SCHEME switch is off)', () => {
-    expect(cspHeaderValue([], ['*:443'])).toBe(EMPTY)
+  it('a `*` https.connect grant emits the https: scheme source in the four reach directives, and nowhere else', () => {
+    const anyHost = cspHeaderValue([], ['*:443'])
+    for (const name of ['connect-src', 'img-src', 'font-src', 'media-src']) {
+      expect([name, directive(anyHost, name)]).toEqual([name, ["'self'", 'data:', 'blob:', 'https:']])
+    }
+    expect(directive(anyHost, 'frame-src')).toEqual(["'self'", 'data:', 'blob:'])
+    expect(directive(anyHost, 'script-src')).not.toContain('https:')
+    expect(anyHost).not.toMatch(/\bwss?:/)
+  })
+
+  it('a `*` tcp.connect grant still adds nothing to connect-src (A43)', () => {
+    expect(cspHeaderValue(['*:*'], [])).toBe(EMPTY)
   })
 })

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ANY_HOST_EMITS_HTTPS_SCHEME, connectSrcFor, reachSourcesFor } from '../connect-src.js'
+import { connectSrcFor, reachSourcesFor } from '../connect-src.js'
 import { checkConnect } from '../connect.js'
 import { hostSpecKind } from '../connect-patterns.js'
 import { PUBLIC_A, PUBLIC_B, noResolution, resolverFor } from './connect.test-helpers.js'
@@ -556,29 +556,21 @@ describe('reachSourcesFor -- what an https.connect grant contributes to the reac
     expect(result.omitted.map((o) => o.reason)).toEqual(['host-ipv6-literal', 'port-range-too-wide'])
   })
 
-  it('a `*` host contributes nothing while ANY_HOST_EMITS_HTTPS_SCHEME is off (A43/A192) -- the shipped setting', () => {
-    expect(ANY_HOST_EMITS_HTTPS_SCHEME).toBe(false)
-    const result = reachSourcesFor(['*:443', 'cdn.example.com:443'])
-    expect(result.sources).toEqual(['https://cdn.example.com:443'])
-    expect(result.omitted).toEqual([{ pattern: '*:443', reason: 'host-any-public-unicast' }])
-  })
-
-  it('with the switch on, a `*` host emits the https: scheme source alone, and nothing that source covers is still reported as omitted', () => {
-    const result = reachSourcesFor(['*:443', 'cdn.example.com:443', '[2001:db8::1]:443', '*.bad.example:443'], true)
+  it('a `*` host emits the https: scheme source alone, and nothing that source covers is still reported as omitted', () => {
+    const result = reachSourcesFor(['*:443', 'cdn.example.com:443', '[2001:db8::1]:443', '*.bad.example:443'])
     expect(result.sources).toEqual(['https:'])
     // A sub-glob authorises nothing in the grant itself, so https: does not
     // make the header wider than the grant for it -- it stays reported.
     expect(result.omitted).toEqual([{ pattern: '*.bad.example:443', reason: 'host-authorises-nothing' }])
   })
 
-  it('with the switch on, a `*` host whose port authorises nothing still emits nothing', () => {
-    const result = reachSourcesFor(['*:0443', '*:0'], true)
-    expect(result.sources).toEqual([])
+  it('a `*` host whose port authorises nothing emits nothing', () => {
+    expect(reachSourcesFor(['*:0443', '*:0']).sources).toEqual([])
   })
 
-  it('with the switch on, a grant checkConnectSecure refuses outright (too many patterns) still emits nothing', () => {
+  it('a grant checkConnectSecure refuses outright (too many patterns) emits nothing, `*` included', () => {
     const many = ['*:443', ...Array.from({ length: 300 }, (_, i) => `host${i}.example:443`)]
-    expect(reachSourcesFor(many, true)).toEqual({ sources: [], omitted: [{ reason: 'too-many-patterns' }] })
+    expect(reachSourcesFor(many)).toEqual({ sources: [], omitted: [{ reason: 'too-many-patterns' }] })
   })
 })
 

@@ -196,7 +196,7 @@ describe('registerServingFor -- the served bundle\'s CSP reads the LIVE broker g
     const response = await handler(new Request('https://app.example/'))
 
     expect(response.headers.get('content-security-policy')).toBe(
-      "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' data: blob:; " +
+      "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' data: blob:; " +
       "img-src 'self' data: blob:; font-src 'self' data: blob:; media-src 'self' data: blob:; worker-src 'self' blob:; frame-src 'self' data: blob:"
     )
 
@@ -301,7 +301,7 @@ describe('registerServingFor -- the served bundle\'s CSP reads the LIVE broker g
     const response = await handler(new Request('https://app.example/'))
 
     expect(response.headers.get('content-security-policy')).toBe(
-      "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' data: blob:; " +
+      "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' data: blob:; " +
       "img-src 'self' data: blob:; font-src 'self' data: blob:; media-src 'self' data: blob:; worker-src 'self' blob:; frame-src 'self' data: blob:"
     )
 
@@ -516,7 +516,7 @@ describe('restorePinnedServing across a restart -- A158, resolved for every dire
     const response = await handler(new Request(`${ORIGIN}/`))
 
     expect(response.headers.get('content-security-policy')).toBe(
-      "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; " +
+      "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; " +
       "connect-src 'self' data: blob: https://granted.example:443; " +
       "img-src 'self' data: blob: https://granted.example:443; font-src 'self' data: blob: https://granted.example:443; " +
       "media-src 'self' data: blob: https://granted.example:443; worker-src 'self' blob:; frame-src 'self' data: blob:"
@@ -667,7 +667,7 @@ describe('restorePinnedServing across a restart -- A158, resolved for every dire
     if (handler === undefined) throw new Error('no handler was registered')
     const response = await handler(new Request(`${ORIGIN}/`))
     expect(response.headers.get('content-security-policy')).toBe(
-      "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' data: blob:; " +
+      "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' data: blob:; " +
       "img-src 'self' data: blob:; font-src 'self' data: blob:; media-src 'self' data: blob:; worker-src 'self' blob:; frame-src 'self' data: blob:"
     )
 

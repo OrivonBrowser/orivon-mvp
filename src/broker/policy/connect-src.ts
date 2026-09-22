@@ -11,7 +11,7 @@
 // than the grant costs the user the grant they refused; that is the only
 // one of the two directions that is a security bug. Being narrower is not
 // free either -- see `omitted` on `ConnectSrcPolicy`, below. The one
-// deliberate exception is `ANY_HOST_EMITS_HTTPS_SCHEME`, off.
+// deliberate exception is `reachSourcesFor`'s `https:` for a `*` host.
 //
 // DERIVES FROM THE GRANTED PATTERNS, NEVER THE MANIFEST'S DECLARED ONES
 // (../index.ts's own connect() precedent, A18): using the manifest here
@@ -245,16 +245,6 @@ export function connectSrcFor (granted: readonly Pattern[]): ConnectSrcPolicy {
   return emit(granted.map(translate))
 }
 
-/**
- * Whether a `*` host in an `https.connect` grant contributes the `https:`
- * scheme source to the reach directives. Off: A43/A192 are the owner's to
- * decide, and turning it on is this one line. Every `https:` request such a
- * source admits reaches the app's own `protocol.handle` and is re-authorised
- * live there; a WebSocket is not intercepted, see src/loader/README.md's
- * Design notes for what that means for `connect-src`.
- */
-export const ANY_HOST_EMITS_HTTPS_SCHEME = false
-
 /** Omission reasons the `https:` scheme source covers: each names reach the grant really holds. */
 const COVERED_BY_HTTPS_SCHEME: ReadonlySet<ConnectSrcOmissionReason> = new Set<ConnectSrcOmissionReason>([
   'host-any-public-unicast', 'host-ipv6-literal', 'port-range-too-wide', 'over-budget'
@@ -273,17 +263,19 @@ function isAnyHostThatAuthorises (entry: OmittedPattern): boolean {
  * the requests `src/loader/serve.ts`'s `fetchThirdParty` authorises against
  * that same grant. No `'self'` -- the caller assembles each directive.
  *
- * SCHEME-QUALIFIED, `https://host:port`, never a bare `host:port`: from an
- * https page a bare source also admits `wss:` in Chromium, and a WebSocket
- * never reaches the handler that re-checks the grant. `ws:`/`wss:` are
- * never emitted from this grant.
+ * SCHEME-QUALIFIED, `https://host:port`, never a bare `host:port`, and
+ * never `ws:`/`wss:`: a WebSocket never reaches the handler that re-checks
+ * the grant.
+ *
+ * A `*` host emits the `https:` scheme source instead, the one source here
+ * wider than the grant: every `https:` request it admits reaches the app's
+ * own `protocol.handle` and is re-authorised live there, which still
+ * refuses loopback and private addresses. See src/loader/README.md's
+ * Design notes for what it admits beyond that handler.
  */
-export function reachSourcesFor (
-  granted: readonly Pattern[],
-  anyHostEmitsHttpsScheme: boolean = ANY_HOST_EMITS_HTTPS_SCHEME
-): ConnectSrcPolicy {
+export function reachSourcesFor (granted: readonly Pattern[]): ConnectSrcPolicy {
   const { sources, omitted } = connectSrcFor(granted)
-  if (anyHostEmitsHttpsScheme && omitted.some(isAnyHostThatAuthorises)) {
+  if (omitted.some(isAnyHostThatAuthorises)) {
     return { sources: ['https:'], omitted: omitted.filter((entry) => !COVERED_BY_HTTPS_SCHEME.has(entry.reason)) }
   }
   return { sources: sources.slice(1).map((token) => `https://${token}`), omitted }
