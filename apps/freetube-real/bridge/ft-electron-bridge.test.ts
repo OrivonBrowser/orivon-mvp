@@ -13,77 +13,9 @@
 // `navigator`/`fetch`, exactly as a browser would provide them, and drives
 // the internals the script exposes for this purpose only
 // (`globalThis.__ftElectronBridgeInternals`).
-import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
 import vm from 'node:vm'
 import { describe, expect, it, vi } from 'vitest'
-
-const SOURCE = readFileSync(fileURLToPath(new URL('./ft-electron-bridge.js', import.meta.url)), 'utf8')
-
-interface FakeDocument {
-  title: string
-  documentElement: { style: Record<string, string>, requestFullscreen: () => Promise<void> }
-  querySelector: (selector: string) => { requestPictureInPicture: () => Promise<void> } | null
-}
-
-interface Sandbox {
-  window: { orivon?: Record<string, unknown> }
-  document: FakeDocument
-  navigator: { language: string, wakeLock?: { request: (kind: string) => Promise<{ release: () => Promise<void> }> } }
-  fetch: (input: string) => Promise<{ ok: boolean, status: number, text: () => Promise<string> }>
-  // generatePoToken's own per-attempt deadline (attemptMintOnce) needs real
-  // globals here -- a `vm` context gets V8's own built-ins (Promise, Symbol,
-  // ...) for free, but NOT Node's globals, `setTimeout`/`clearTimeout`
-  // included. Forwarding to the OUTER `globalThis` rather than binding the
-  // function values once means these keep working after a test calls
-  // `vi.useFakeTimers()`, which replaces what `globalThis.setTimeout` points
-  // to -- a value captured before that call would still be the real one.
-  setTimeout: typeof setTimeout
-  clearTimeout: typeof clearTimeout
-  __ftElectronBridgeInternals?: {
-    installFtElectronBridge: (getOrivon: () => Record<string, unknown> | undefined) => { bridge: Record<string, any>, recordedListeners: Record<string, unknown> }
-    FtBridgeError: new (member: string, reason: string, detail?: string) => Error & { member: string, reason: string }
-    rewriteBotGuardScript: (script: string, videoId: string, context: string, attestation: string, ytConfig: string) => string
-    PoTokenMintStalledError: new (attempts: number) => Error & { attempts: number }
-    MINT_ATTEMPT_DEADLINE_MS: number
-    MINT_MAX_ATTEMPTS: number
-  }
-}
-
-function fakeDocument (overrides: Partial<FakeDocument> = {}): FakeDocument {
-  return {
-    title: 'FreeTube',
-    documentElement: { style: {}, requestFullscreen: async () => {} },
-    querySelector: () => null,
-    ...overrides
-  }
-}
-
-/** Runs the bridge's own source in a fresh realm, so each test starts from a clean window.ftElectron with no state left over from another test. */
-function load (opts: { orivon?: Record<string, unknown>, document?: Partial<FakeDocument>, navigator?: Partial<Sandbox['navigator']>, fetch?: Sandbox['fetch'] } = {}): Sandbox {
-  const sandbox = {
-    window: { orivon: opts.orivon },
-    document: fakeDocument(opts.document),
-    navigator: { language: 'en-US', ...opts.navigator },
-    fetch: opts.fetch ?? (async () => { throw new Error('fetch not stubbed for this test') }),
-    setTimeout: ((...args: Parameters<typeof setTimeout>) => globalThis.setTimeout(...args)) as typeof setTimeout,
-    clearTimeout: ((...args: Parameters<typeof clearTimeout>) => { globalThis.clearTimeout(...args) }) as typeof clearTimeout
-  } as Sandbox
-  vm.createContext(sandbox as unknown as object)
-  vm.runInContext(SOURCE, sandbox as unknown as object, { filename: 'ft-electron-bridge.js' })
-  return sandbox
-}
-
-function internals (sandbox: Sandbox): NonNullable<Sandbox['__ftElectronBridgeInternals']> {
-  const found = sandbox.__ftElectronBridgeInternals
-  if (found === undefined) throw new Error('bridge did not expose __ftElectronBridgeInternals')
-  return found
-}
-
-function freshBridge (opts: Parameters<typeof load>[0] = {}) {
-  const sandbox = load(opts)
-  return { sandbox, ...internals(sandbox).installFtElectronBridge(() => sandbox.window.orivon) }
-}
+import { freshBridge, internals } from './ft-electron-bridge.test-helpers.js'
 
 describe('web platform group', () => {
   it('requestFullscreen calls document.documentElement.requestFullscreen()', async () => {

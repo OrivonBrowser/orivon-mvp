@@ -18,6 +18,15 @@
 // Requires a prepared build and an ORDINARY shell build; skipped otherwise,
 // for the same reason e2e-dev-origin-grant.test.ts is.
 //
+// NO RESTART-PERSISTENCE CHECK: proving a settings change survives an app
+// restart needs a second launchElectron() call against the SAME
+// --user-data-dir as the first. launch-electron.mjs has no such capability
+// today -- userDataDir is generated fresh with mkdtemp() inside
+// launchElectron() itself, never exposed to a caller, and unconditionally
+// removed by closeElectron()'s own finally block. Adding that is a change
+// to test/, owned by the shell stream, not this one -- checked, not
+// guessed, before leaving it out.
+//
 // RUN THIS WITH:
 //   node scripts/build-ordinary.mjs
 //   ORIVON_ORDINARY_BUILD=1 npx vitest run --config test/vitest.e2e.config.ts test/e2e-freetube-real.test.ts
@@ -57,6 +66,17 @@ const REQUIRE_PLAYBACK = process.env['ORIVON_FREETUBE_REAL_PLAYBACK'] === '0'
   ? false
   : process.env['ORIVON_FREETUBE_REAL_PLAYBACK'] === '1' || manifestDeclaresWeb()
 
+/**
+ * Unlike REQUIRE_PLAYBACK, deliberately NOT overridable by an env var: the
+ * checks this gates (below) read real files through `window.orivon.fs`, so
+ * running them against a build whose manifest does not actually declare
+ * `web` -- meaning `prepare.mjs --build` never wired the Electron datastore
+ * bundle in at all -- would just fail on a missing global, not prove
+ * anything about storage. `dist/orivon-electron` is the one build where
+ * this is true (apps/freetube-real/README.md's "Storage").
+ */
+const USES_ELECTRON_DATASTORE = manifestDeclaresWeb()
+
 const HOST = '127.0.0.1'
 const PORT = Number(process.env['ORIVON_FREETUBE_REAL_PORT'] ?? PORT_APP_FREETUBE_REAL)
 const ORIGIN = `http://${HOST}:${PORT}`
@@ -75,7 +95,19 @@ function viewAtOrigin (app: Parameters<typeof tabViews>[0], chrome: Parameters<t
 
 const TEST_TIMEOUT_MS =
   ADDRESS_BAR_STABLE_TIMEOUT_MS + DEFAULT_ACTION_TIMEOUT_MS * 3 + 8_000 * 8 + 120_000 + APP_CLOSE_RACE_MS + 60_000 +
-  (REQUIRE_PLAYBACK ? 40_000 : 0)
+  (REQUIRE_PLAYBACK ? 40_000 : 0) + (USES_ELECTRON_DATASTORE ? 25_000 : 0)
+
+/** The six nedb datafiles `src/datastores/index.js` names when `IS_ELECTRON_MAIN` is falsy -- see apps/freetube-real/README.md's "Where the data lands". Bare relative filenames: they land directly at the app's own fs root, not inside a subdirectory. */
+const NEDB_FILES = ['settings.db', 'profiles.db', 'playlists.db', 'history.db', 'search-history.db', 'subscription-cache.db'] as const
+
+interface OrivonPageGlobal {
+  orivon: {
+    fs: {
+      readFile: (path: string) => Promise<Uint8Array>
+      stat: (path: string) => Promise<{ size: number }>
+    }
+  }
+}
 
 it.skipIf(!ORDINARY_BUILD || !BUILT)(
   'upstream FreeTube, unmodified, boots as an Orivon app from a plain static server',
@@ -207,6 +239,97 @@ it.skipIf(!ORDINARY_BUILD || !BUILT)(
             'playback: <video>.currentTime exceeds 3s and is still advancing 2s later',
             pastThreeSeconds && stillAdvancing,
             pastThreeSeconds && stillAdvancing ? undefined : JSON.stringify({ populated, first, second })
+          )
+        }
+
+        if (USES_ELECTRON_DATASTORE && populated) {
+          // (a) All six nedb files exist at the app's own fs root.
+          //
+          // NOT orivon.fs.readdir at the root: confinePath (src/broker/policy/
+          // paths.ts) denies EVERY root-resolving path -- '.', '', 'a/..', a
+          // trailing-slash-only root -- with reason 'is-root', unconditionally,
+          // for every fs.* method, not only readdir (src/broker/policy/tests/
+          // paths.test.ts's 'rejects degenerate input' table;
+          // src/broker/tests/index-fs-extended.test.ts carries the identical
+          // rule with its own "Not readdir('.')" comment). There is no string
+          // that names the root to readdir; `DirectoryHandle`'s own root-omission
+          // convenience (handles.ts) is a different type, reachable only through
+          // a user-picked OS folder, never the app's own confined fs. `stat` per
+          // known filename is the one call shape that both proves a root-level
+          // file exists and reports its size, which is what this checks instead.
+          const rootView = viewAtOrigin(app, chrome, ORIGIN)
+          const statResults: Record<string, { ok: boolean, size?: number, error?: string }> = rootView === undefined
+            ? {}
+            : await rootView.evaluate(async (files: readonly string[]) => {
+              const orivon = (globalThis as unknown as OrivonPageGlobal).orivon
+              const out: Record<string, { ok: boolean, size?: number, error?: string }> = {}
+              for (const file of files) {
+                try {
+                  const stat = await orivon.fs.stat(file)
+                  out[file] = { ok: true, size: stat.size }
+                } catch (error) {
+                  out[file] = { ok: false, error: error instanceof Error ? error.message : String(error) }
+                }
+              }
+              return out
+            }, NEDB_FILES)
+          const allFilesPresent = NEDB_FILES.every((file) => statResults[file]?.ok === true)
+          check(
+            'all six nedb datastore files exist at the app fs root (orivon.fs.stat per file)',
+            allFilesPresent,
+            JSON.stringify(statResults)
+          )
+
+          // (b) history.db actually contains the watched video's id.
+          //
+          // Bounded poll, not a fixed sleep: FreeTube writes the history
+          // record from Watch.js's handleVideoLoaded() -> addToHistory(), which
+          // fires once the player component signals it has loaded (guarded by
+          // the rememberHistory setting, true by default) -- read directly from
+          // the clone's source, not assumed. That should already have happened
+          // by the time the playback check above passed, but this polls for the
+          // real bytes on disk instead of inferring it from a timing
+          // coincidence.
+          const readHistoryText = async (): Promise<string | undefined> => {
+            const view = viewAtOrigin(app as NonNullable<typeof app>, chrome, ORIGIN)
+            if (view === undefined) return undefined
+            try {
+              return await view.evaluate(async () => {
+                const orivon = (globalThis as unknown as OrivonPageGlobal).orivon
+                const bytes = await orivon.fs.readFile('history.db')
+                return new TextDecoder().decode(bytes)
+              })
+            } catch {
+              return undefined
+            }
+          }
+          const historyWritten = await waitFor(async () => {
+            const text = await readHistoryText()
+            return text !== undefined && text.includes('dQw4w9WgXcQ')
+          }, 20_000)
+          const historyExcerpt = (await readHistoryText())?.slice(0, 400)
+          check(
+            "history.db's NDJSON contains the watched video's id (dQw4w9WgXcQ)",
+            historyWritten,
+            JSON.stringify({ historyExcerpt })
+          )
+
+          // (c) Nothing landed in IndexedDB. localForage's own default
+          // database name is 'localforage' -- exactly what handlers/web.js's
+          // browser nedb build would have used, had the DB_HANDLERS alias
+          // still pointed there.
+          const idbView = viewAtOrigin(app, chrome, ORIGIN)
+          const idbDatabaseNames: string[] | null = idbView === undefined
+            ? null
+            : await idbView.evaluate(async () => {
+              if (typeof indexedDB === 'undefined' || typeof indexedDB.databases !== 'function') return null
+              const databases = await indexedDB.databases()
+              return databases.map((database) => database.name ?? '')
+            })
+          check(
+            "no localForage/nedb-browser IndexedDB database exists (indexedDB.databases() names none 'localforage')",
+            idbDatabaseNames !== null && !idbDatabaseNames.includes('localforage'),
+            JSON.stringify({ idbDatabaseNames })
           )
         }
       } finally {
