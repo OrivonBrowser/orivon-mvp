@@ -10,7 +10,7 @@ import { buildAliasEntries, SHIM_MODULE_MAP } from '../module-map.js'
 const shimDir = resolve(fileURLToPath(new URL('.', import.meta.url)), '..')
 
 // The floor this stream was dispatched to close (compatibility-matrix.md
-// Table 3's six, plus zlib/util from freetube-port-recon.md's correction 1),
+// Table 3's six, plus zlib/util from the FreeTube recon's correction 1),
 // plus 'electron' -- a sibling stream's alias entry this stream owns the map
 // for. A row silently disappearing from the table should fail a test, not
 // wait for someone to notice compatibility-matrix.md and the tree disagree.

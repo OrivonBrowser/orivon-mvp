@@ -27,7 +27,7 @@ must not look like an unlimited one.
 `orivon.net` offers raw TCP only, and nothing in `src/contracts/` mentions TLS. Meanwhile the
 renderer's own `fetch` is CORS-bound, which is the wall [ADR-0001](./ADR-0001-flagship-app-bittorrent-streaming.md) reason 3 exists to beat.
 
-The FreeTube reconnaissance ([`freetube-port-recon.md`](../planning/freetube-port-recon.md)) turned this from a design
+The FreeTube reconnaissance (`orivon-ports`'s `docs/freetube-recon.md`) turned this from a design
 preference into a requirement, and corrected an assumption in the process:
 
 - Its renderer imports **zero** Node builtins and **zero** Electron APIs. All 32 of its network

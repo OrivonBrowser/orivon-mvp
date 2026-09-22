@@ -72,7 +72,7 @@ throw anything away.
 | [`src/loader/`](src/loader/) | Manifest discovery, fetch, cache, hash-pinning, the update decision | Partly: the update decision is pure policy; fetching and serving the cache are Electron-specific machinery |
 | [`src/shim/`](src/shim/) | Node's `net`/`dgram`/`fs` over `orivon.*` | **Entirely.** A compatibility layer, by design temporary |
 | [`src/renderer/`](src/renderer/) | Browser chrome UI | **Entirely** |
-| [`apps/`](apps/) | The torrent flagship and the test fixture | **No.** They touch only `orivon.*`, exactly like a third-party app |
+| [`apps/`](apps/) | The torrent flagship and the test fixtures. Ported third-party apps live in `orivon-ports` | **No.** They touch only `orivon.*`, exactly like a third-party app |
 | [`spike/`](spike/) | Week-0 evidence. **Historical, not live code** | n/a |
 
 Every directory carries a `README.md` saying what it depends on and what it must never import.

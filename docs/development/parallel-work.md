@@ -177,6 +177,15 @@ This is correct **only** where every change is an append and order does not matt
 never be extended to source files, because union-merging code produces something syntactically valid
 and semantically wrong, which is strictly worse than a conflict you can see.
 
+**The driver is local. GitHub does not apply it**, so two branches that both appended to one of
+those files show as conflicting on the pull request while `git merge` here reports nothing to
+resolve. The PR is not broken and there is nothing to hand-resolve: merge `origin/main` into the
+branch locally, where the driver runs, and push the merge commit. GitHub then has no divergence
+left to compute and the PR goes clean.
+
+Read the merged file afterwards rather than trusting the driver. Union keeps both sides blindly,
+so two branches that each opened the same heading get it twice.
+
 ### Open-question numbers: renumber yours, never main's
 
 `open-questions.md` is the one shared file every stream appends to, and its rows are
