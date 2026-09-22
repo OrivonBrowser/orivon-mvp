@@ -9,7 +9,7 @@
 // is ROW-PER-DECLARED-CAPABILITY instead -- the manifest is the source of
 // what to show a switch for; whether it is on comes from the live grants.
 
-import type { CapabilityKind, Grant, Manifest, Pattern } from '../../contracts/index.js'
+import type { CapabilityKind, ConsentGranularity, Grant, Manifest, Pattern } from '../../contracts/index.js'
 import type { PickedPath } from '../../broker/broker-contracts.js'
 import { decideGrantRequest } from '../../broker/policy/request-grant.js'
 import { patternSetFromCapabilities } from '../../broker/policy/manifest-patterns.js'
@@ -53,6 +53,13 @@ export interface SiteInfo {
   readonly asked: boolean
   readonly capabilityRows: readonly SiteCapabilityRow[]
   readonly pickedPathRows: readonly PickedPathRow[]
+  /**
+   * `manifest.consentGranularity`, with the contract's own "omitted means
+   * `'all-or-nothing'`" applied here rather than left for a renderer to
+   * remember -- the popup's staged-footer warning ("this app asked for
+   * these together") only makes sense for an all-or-nothing app.
+   */
+  readonly consentGranularity: ConsentGranularity
 }
 
 /**
@@ -101,6 +108,7 @@ export function buildSiteInfo (
     claimedName: manifest.name,
     asked: capabilityRows.length > 0 || pickedPathRows.length > 0,
     capabilityRows,
-    pickedPathRows
+    pickedPathRows,
+    consentGranularity: manifest.consentGranularity ?? 'all-or-nothing'
   }
 }

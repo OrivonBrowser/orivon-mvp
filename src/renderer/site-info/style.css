@@ -1,0 +1,231 @@
+/* The site-info popup's own stylesheet -- a separate Vite entry from the
+   chrome view, so these tokens are a small, literal duplicate of
+   style.css's palette rather than a cross-entry import
+   (../settings/style.css's own header explains why that is the
+   established pattern here, not a Rule 3 violation: design DATA, not
+   logic). Connection colours match the toolbar's own dot/shield exactly
+   -- --wok/--winsecure/--waccent are the SAME values style.css defines. */
+
+:root {
+  --wbg: #e5e5ec;
+  --wsurface: #f2f2f7;
+  --wborder: color-mix(in srgb, var(--wbg) 85%, black);
+  --wink: rgba(0, 0, 0, 0.90);
+  --wink-dim: rgba(0, 0, 0, 0.50);
+  --waccent: #4f46e5;
+  --wdanger: #dc2626;
+  --wwarn: #f97316;
+  --wwarn-bg: color-mix(in srgb, var(--wwarn) 12%, transparent);
+  --wok: #00c950;
+  --winsecure: #f97316;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --wbg: #1e1f24;
+    --wsurface: #2b2c31;
+    --wborder: #3b3c42;
+    --wink: #e6e7e8;
+    --wink-dim: #9a9ba5;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--wbg);
+  color: var(--wink);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+button:focus-visible {
+  outline: 2px solid var(--waccent);
+  outline-offset: 2px;
+}
+
+/* Sized for a ~380px popup (popover-view.ts), not a full window --
+   tighter padding, smaller type. The rounded outer corners are the
+   native view's own (setBorderRadius); this only has to not paint into
+   them. */
+.page {
+  height: 100%;
+  overflow-y: auto;
+  padding: 12px 14px 16px;
+}
+
+.screen { display: flex; flex-direction: column; gap: 10px; }
+
+hr {
+  margin: 2px 0;
+  border: none;
+  border-top: 1px solid var(--wborder);
+}
+
+.empty-state, .disclaimer {
+  color: var(--wink-dim);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* --- Header and connection row ------------------------------------ */
+
+.site-header { display: flex; flex-direction: column; gap: 2px; }
+.site-origin { font-weight: 600; font-size: 14px; word-break: break-all; }
+.site-claim { color: var(--wink-dim); font-size: 12px; }
+
+.connection-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--wsurface);
+  border: 1px solid var(--wborder);
+  text-align: left;
+  width: 100%;
+}
+.connection-row .icon-shield { width: 20px; height: 20px; flex: none; }
+.connection-row.secure .icon-shield { color: var(--wok); }
+.connection-row.insecure .icon-shield { color: var(--winsecure); }
+.connection-row.cached .icon-shield { color: var(--waccent); }
+.connection-row.unknown .icon-shield { color: var(--wink-dim); }
+.connection-text { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
+.connection-label { font-weight: 500; }
+.connection-glance { color: var(--wink-dim); font-size: 11px; }
+.icon-chevron { width: 16px; height: 16px; flex: none; color: var(--wink-dim); }
+
+/* --- Rows: capability switches, picked paths ----------------------- */
+
+.row-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--wsurface);
+  flex-wrap: wrap;
+}
+.row.warning { background: var(--wwarn-bg); border: 1px solid color-mix(in srgb, var(--wwarn) 40%, transparent); }
+.row-message { flex: 1; min-width: 0; }
+.row-note { flex-basis: 100%; color: var(--wwarn); font-size: 11px; }
+
+.section-heading { margin: 4px 0 0; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em; color: var(--wink-dim); }
+
+/* --- The switch itself --------------------------------------------- */
+
+.switch {
+  flex: none;
+  width: 34px;
+  height: 20px;
+  border-radius: 10px;
+  background: var(--wborder);
+  position: relative;
+  transition: background 0.15s;
+}
+.switch.on { background: var(--waccent); }
+.switch:disabled { opacity: 0.5; cursor: not-allowed; }
+.switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: white;
+  transition: left 0.15s;
+}
+.switch.on .switch-thumb { left: 16px; }
+
+/* --- Staged footer, reload banner ----------------------------------- */
+
+.staged-footer { display: flex; flex-direction: column; gap: 6px; padding-top: 2px; }
+.staged-warning { margin: 0; color: var(--wwarn); font-size: 11px; }
+.staged-buttons { display: flex; justify-content: flex-end; gap: 8px; }
+.reload-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--waccent) 12%, transparent);
+  font-size: 12px;
+}
+
+.btn-primary, .btn-secondary {
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 12px;
+}
+.btn-primary { background: var(--waccent); color: white; }
+.btn-primary:hover { background: color-mix(in srgb, var(--waccent) 85%, black); }
+.btn-secondary { border: 1px solid var(--wborder); }
+.btn-secondary:hover { background: var(--wsurface); }
+
+/* --- Nav rows: Cookies and site data / Site settings ---------------- */
+
+.nav-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 2px;
+  width: 100%;
+  text-align: left;
+}
+.nav-row:hover { color: var(--waccent); }
+
+/* --- Back-header pages: Web3 Score, Cookies and site data ----------- */
+
+.back-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  padding: 2px 0 4px;
+}
+.icon-back { width: 18px; height: 18px; flex: none; }
+
+.rung-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.rung { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 6px; }
+.rung-badge {
+  flex: none;
+  width: 26px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.rung.met { background: color-mix(in srgb, var(--wok) 10%, transparent); }
+.rung.met .rung-badge { background: var(--wok); color: white; }
+.rung.unmet .rung-badge { background: var(--wborder); color: var(--wink-dim); }
+.rung.unmet .rung-label { color: var(--wink-dim); }
+
+.evidence-list { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; font-size: 12px; }
+.evidence-list dt { color: var(--wink-dim); }
+.evidence-list dd { margin: 0; text-align: right; }
+.evidence-list.unknown dd { color: var(--wink-dim); font-style: italic; }
+
+/* --- Data page stat rows --------------------------------------------- */
+
+.stat-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.stat-row { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; padding: 4px 2px; }
+.stat-label { color: var(--wink-dim); }
