@@ -139,6 +139,28 @@ Debugging: `echo "${ORIVON_WINDOW_NO_FOCUS:-not set}"` inside whatever launched 
 
 ---
 
+## Developer origins
+
+Two environment variables, both off unless you set them. `npm run dev` sets the first; nothing
+sets the second for you.
+
+| Variable | What it turns on |
+|---|---|
+| `ORIVON_DEV_ORIGINS=1` | An origin may be granted capabilities **without being installed** (`src/main/dev-app-origin.ts`), so a page served from your own static server can hold real grants. Loopback literals and `.eth` names only, `http:` only. It is also the master switch for the row below |
+| `ORIVON_ETH_NAMES_FILE=<path>` | A JSON file of `{"name.eth": port}` that `src/main/eth-resolver.ts` turns into Chromium DNS overrides, so `http://name.eth` reaches `127.0.0.1:<port>`. Ignored unless `ORIVON_DEV_ORIGINS=1` is also set. `orivon-ports`' `orivon-port names` writes this file; nothing points the shell at it for you |
+
+A name in that file is also declared a **secure context**, which is not cosmetic. Its origin is
+plain `http:` on a non-loopback host, and Chromium judges trustworthiness by the origin, not by
+where the name resolves -- so without that declaration the page loses `crypto.subtle`,
+`crypto.randomUUID`, service workers and `navigator.clipboard` outright, while the identical
+bundle at `127.0.0.1` keeps all four because loopback is exempt by host. Only names the resolver
+also mapped are declared, so a malformed entry is dropped from both.
+
+This is a development convenience layered over the capability boundary, never part of it. An
+installed app needs none of it: its origin is really `https:` (`ADR-0007`).
+
+---
+
 ## Platform notes
 
 **Linux is the packaged target**: AppImage and deb. No code-signing cost, and the audience

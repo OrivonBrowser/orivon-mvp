@@ -357,6 +357,29 @@ describe('createWebContextHost -- open', () => {
     expect(downloadEvent.preventDefault).toHaveBeenCalledTimes(1)
   })
 
+  // permission-gate.ts allows 'clipboard-sanitized-write' on every ordinary
+  // session, so this override is what keeps it off an isolated context.
+  // Named explicitly rather than left to the 'geolocation' case above: a
+  // permission the rest of the browser GRANTS is the one that would slip
+  // through unnoticed if these handlers were ever dropped as duplication.
+  it('denies clipboard write to an isolated context, though the rest of the browser allows it', async () => {
+    setNextWebContents(ORIGIN)
+    const host = createWebContextHost(stubBroker)
+
+    await host.open(OPENER, ORIGIN, { width: 100, height: 100 })
+
+    const contextSession = sessionsByPartition.get(fromPartitionCalls[0] as string) as FakeSession
+    const checkHandler = contextSession.setPermissionCheckHandler.mock.calls[0]?.[0] as
+      (wc: unknown, permission: string) => boolean
+    expect(checkHandler(undefined, 'clipboard-sanitized-write')).toBe(false)
+
+    const requestHandler = contextSession.setPermissionRequestHandler.mock.calls[0]?.[0] as
+      (wc: unknown, permission: unknown, callback: (granted: boolean) => void) => void
+    const callback = vi.fn()
+    requestHandler(undefined, 'clipboard-sanitized-write', callback)
+    expect(callback).toHaveBeenCalledWith(false)
+  })
+
   it('cancels a ws:/wss: request via webRequest.onBeforeRequest, and lets an ordinary one through', async () => {
     setNextWebContents(ORIGIN)
     const host = createWebContextHost(stubBroker)
