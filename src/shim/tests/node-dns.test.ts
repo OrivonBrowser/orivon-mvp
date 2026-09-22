@@ -247,3 +247,61 @@ describe('dns\'s other members -- named refusal instead of absence (A135), readi
     expect('resolve4' in dns).toBe(false)
   })
 })
+
+describe('dns.lookup -- answered without a capability call, and Node\'s argument forms', () => {
+  it.each([
+    ['67.215.246.10', 4],
+    ['2001:db8::1', 6]
+  ] as const)('returns the literal %s itself, never asking orivon.net.lookup', async (literal, family) => {
+    const { calls } = installFakeOrivon(async () => ROUTER)
+    const { lookup } = await import('../node-dns.js')
+    const result = await new Promise<[Error | null, string, number]>((resolve) => {
+      lookup(literal, (error, address, fam) => resolve([error, address, fam]))
+    })
+    expect(result).toEqual([null, literal, family])
+    expect(calls).toHaveLength(0)
+  })
+
+  it('answers localhost with loopback, and { all: true } over a literal with a one-entry list', async () => {
+    const { calls } = installFakeOrivon(async () => ROUTER)
+    const { lookup } = await import('../node-dns.js')
+    const local = await new Promise<[string, number]>((resolve) => { lookup('localhost', (_e, address, family) => resolve([address, family])) })
+    expect(local).toEqual(['127.0.0.1', 4])
+    const all = await new Promise<Array<{ address: string, family: number }>>((resolve) => { lookup('10.0.0.1', { all: true }, (_e, addresses) => resolve(addresses)) })
+    expect(all).toEqual([{ address: '10.0.0.1', family: 4 }])
+    expect(calls).toHaveLength(0)
+  })
+
+  it('takes a bare family number as its options argument', async () => {
+    installFakeOrivon(async () => DUAL_STACK)
+    const { lookup } = await import('../node-dns.js')
+    const result = await new Promise<[string, number]>((resolve) => { lookup('example.com', 6, (_e, address, family) => resolve([address, family])) })
+    expect(result).toEqual(['2001:db8::1', 6])
+  })
+
+  it('a name that resolves nowhere fails like Node\'s getaddrinfo: ENOTFOUND, errno, syscall and hostname', async () => {
+    installFakeOrivon(async () => [])
+    const { lookup } = await import('../node-dns.js')
+    const error = await new Promise<Error | null>((resolve) => { lookup('nowhere.example', (e) => resolve(e)) })
+    expect(error).toMatchObject({ code: 'ENOTFOUND', errno: -3008, syscall: 'getaddrinfo', hostname: 'nowhere.example', message: 'getaddrinfo ENOTFOUND nowhere.example' })
+  })
+
+  it('an unreachable resolution with no platformCode still reads as ENOTFOUND', async () => {
+    installFakeOrivon(async () => { throw Object.assign(new Error('no records'), { code: 'unreachable' }) })
+    const { lookup } = await import('../node-dns.js')
+    const error = await new Promise<Error | null>((resolve) => { lookup('nowhere.example', (e) => resolve(e)) })
+    expect(error).toMatchObject({ code: 'ENOTFOUND', hostname: 'nowhere.example' })
+  })
+})
+
+describe('dns/promises', () => {
+  it('exports the same lookup as dns.promises, named and default', async () => {
+    installFakeOrivon(async () => ROUTER)
+    const dns = await import('../node-dns.js')
+    const dnsPromises = await import('../node-dns-promises.js')
+    expect(dnsPromises.lookup).toBe(dns.promises.lookup)
+    expect(dnsPromises.default).toBe(dns.promises)
+    expect(await dnsPromises.lookup('router.bittorrent.com')).toEqual({ address: '82.221.103.244', family: 4 })
+    expect(await dnsPromises.lookup('::1')).toEqual({ address: '::1', family: 6 })
+  })
+})
