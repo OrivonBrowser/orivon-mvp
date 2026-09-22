@@ -103,7 +103,11 @@ the same read (a `Proxy`'s callability, and hence its `typeof`, is fixed by its 
 construction, not by any trap; verified empirically, not just from the spec). For the vast majority of this surface (`fs.watchFile`, `dns.resolve4`, ...)
 that is the right answer anyway, since real Node genuinely does expose them as functions --
 `typeof` reporting `'function'` is the TRUTHFUL answer for those, matching what real Node itself
-would say, and merely reading the member never throws.
+would say, and merely reading the member never throws. The stand-in is an ordinary `function`,
+never an arrow, and the same one for every read of a member through one proxy: `new member()` and
+`class X extends member` construct fine at definition and refuse by name at construction,
+`x instanceof member` answers `false`, and two reads compare equal. An arrow has no prototype,
+so each of those would otherwise fail with a bare `TypeError` naming nothing.
 The one place a throwing function would be dishonest is a member real Node exposes as DATA, not a
 function -- `fs.constants`, `dns.promises` -- where `typeof` should say `'object'`, which no
 throwing function can do. `node-fs.ts` and `node-dns.ts` handle both by name in `refusingProxy`'s
@@ -157,14 +161,80 @@ object. That structural reason, not the now-fixed throw-on-read behaviour, is wh
 stay on their own mechanism. `node-net-socket.ts` and `node-dgram-socket.ts` add the handful of
 real Node members a porting app is likely to hit as actual present methods: the same "present,
 throws when called" shape `node-fs-unsupported.ts`'s `syncUnsupported`,
-`node-http-unsupported.ts`/`node-net-unsupported.ts`'s `createServer`, and `refusingProxy` itself
-(post-A169) all use for their own decided gaps. Two of those (`ref`/`unref`) are safe NO-OPS
-rather than throws: real Node's contract for them is "no meaning, returns `this`", so a no-op is
-the objectively correct behaviour here too (there is no event-loop handle to ref/unref in this
-environment): throwing would be strictly worse than today's absence for any caller that
-already guards them defensively. The rest (`setTimeout`, `setBroadcast`, the multicast family)
-throw when called: a silent no-op there would misreport a real capability as applied instead of
-naming the gap, which is the exact failure A135 exists to fix.
+`node-http-unsupported.ts`'s `createServer`, and `refusingProxy` itself all use for their own
+decided gaps. `ref`/`unref` are safe NO-OPS rather than throws: real Node's contract for them is
+"no meaning, returns `this`", and there is no event-loop handle to ref/unref here. The dgram
+socket options (`setBroadcast`, the multicast family) throw when called: a silent no-op there
+would misreport a real capability as applied instead of naming the gap, which is the exact
+failure A135 exists to fix.
+
+**Every stream here passes `autoDestroy` and `emitClose` explicitly.** The renderer's `stream` is
+readable-stream 3 (`stream-browserify`), which defaults `autoDestroy` to false; without the
+option, a `net.Socket` whose two sides have both ended never emits `'close'` and never closes its
+broker handle, and vitest, which resolves `node:stream`, would not show it. `ClientRequest` is the one
+exception, with `autoDestroy: false` on purpose: Node's request emits `'close'` when the whole
+exchange is over, not when its body has been sent, so it is destroyed explicitly once the response
+ends or fails. Every `destroy()` override is idempotent, because readable-stream 3 re-emits
+`'error'` when a destroyed stream is destroyed again with one, and that second `'error'` is an
+uncaught exception for an app that already handled the first. `tests/support/`'s lifecycle
+suites run each check under both stream implementations for this reason.
+
+**[`node-tls.ts`](node-tls.ts) accepts `rejectUnauthorized: false` and refuses the other trust
+overrides.** **AI recommendation, not owner-reviewed.** The broker verifies every certificate
+against the system store and the dialled host, and `connectSecure` takes no option that changes
+that. An option that would change *who* is trusted (`ca`, `cert`/`key`/`pfx`, `secureContext`,
+`checkServerIdentity`, a `servername` other than the host, or upgrading an existing socket, which
+is how `pg` and SMTP clients start TLS) refuses by name through `'error'` before any dial, because
+dropping it silently would either break the connection with no stated cause or, for a pinning
+`checkServerIdentity`, quietly trust more than the app meant to. `rejectUnauthorized: false` is
+different: it asks for *less* checking, verification staying on is strictly safer, and Electrum
+and similar clients pass it unconditionally, including against properly certified servers. It is
+accepted, and when the handshake then fails the error says the override was not applied, so a
+self-signed server still fails with a message naming the cause. ALPN is not negotiated:
+`ALPNProtocols` is accepted, and `alpnProtocol` stays `false`, Node's own value for "none". A
+per-connection trust anchor would be a `src/contracts/` change to `connectSecure`.
+
+**[`node-net-server.ts`](node-net-server.ts) refuses a loopback-only `listen()` host rather than
+widening it.** **AI recommendation, not owner-reviewed.** `orivon.net.listen` binds every
+interface and has no host parameter. A listener an app binds to `127.0.0.1`, `::1` or `localhost`
+is usually an unauthenticated local control surface (an RPC port, an OAuth redirect catcher);
+binding it on every interface instead would expose it to the network, which neither the app's
+code nor anything the user was shown asked for. Refusing by name is loud and names the fix (omit
+the host); accepting with a warning would be quiet exactly where a mistake is a security one. A
+host meaning "every interface" (`0.0.0.0`, `::`) is accepted, since that is what happens anyway.
+Accepted sockets close when the server closes, unlike Node: they are derived handles the broker
+closes with the server handle (handle-contracts.md's "TcpServer" section).
+
+**[`node-http-client.ts`](node-http-client.ts) runs every request over a real `net.Socket` and
+never pools.** `'socket'`, `'upgrade'`/`'connect'` and `res.socket` therefore hand the app the same
+kind of object Node would, and a `createConnection` option is honoured. Every request opens its
+own connection and closes it once the response ends, whatever `agent` it was given:
+`http.Agent`/`https.Agent` exist so code can construct, pass and subclass them, and their
+options are stored, never enforced. The one agent behaviour honoured is Node's merge of an
+https agent's options into the TLS options, so `new https.Agent({ ca })` is refused the same way
+as the request option. The request never half-closes its side after the body, because some servers
+treat that FIN as an abort. `http.createServer` is not built: `net.createServer` is, but there is
+no HTTP request parser or `ServerResponse` on top of it, and the refusal says so.
+
+**[`node-http-errors.ts`](node-http-errors.ts) gives a mapped error Node's `errno`, in Linux
+numbering.** A real `platformCode` is always used when the broker sends one. When it is absent,
+the Node code is synthesised from the Orivon code and the operation: `timeout` becomes
+`ETIMEDOUT`, `reset` becomes `ECONNRESET`, `unreachable` becomes `ENOTFOUND` during a lookup and
+`ECONNREFUSED` otherwise, and `closed` during a write becomes `EPIPE`. `denied` never becomes an
+errno. The negative numbers are Linux's (and libuv's `EAI_*`); Node's own differ on macOS and
+Windows, but code branches on `err.code`, and the renderer has no platform table to read. An error
+that already carries a string `code` keeps it.
+
+**[`node-dns.ts`](node-dns.ts) answers an IP literal and `localhost` itself.** Node's `lookup`
+never asks a resolver about a literal, and routing one through `orivon.net.lookup` would let a
+grant deny a lookup that reaches nothing. `localhost` answers `127.0.0.1` (or `::1` when family 6
+is asked for) for the same reason: resolving it leaves the machine for no one.
+
+**[`node-dgram-socket.ts`](node-dgram-socket.ts) validates a send the way Node does, before the
+broker sees it.** A bad port or a non-string address throws synchronously, as in Node; a payload
+past 65507 bytes calls back with `EMSGSIZE` (or emits `'error'` when there is no callback); a
+hostname is resolved through `dns.lookup` first, as Node's own `send` does. The broker's
+write path would otherwise drop a malformed datagram silently.
 
 **`fs.createReadStream`/`fs.createWriteStream` run over the local per-open cursor, not A184's
 broker `readable()`/`writable()`.** **AI recommendation, not owner-reviewed.** `@seald-io/nedb`'s
