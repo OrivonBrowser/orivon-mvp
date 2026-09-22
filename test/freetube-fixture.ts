@@ -22,8 +22,9 @@ const APP_DIR = join(process.cwd(), 'apps', 'freetube')
 
 /**
  * Ports for the servers these tests spawn -- deliberately NOT 8874/8875, which
- * are the ports a person running `apps/freetube` or `apps/freetube-real` by
- * hand uses. A test sharing them would test that person's server instead.
+ * are the ports a person running `apps/freetube` by hand, or `orivon-port
+ * serve freetube` in the sibling ports checkout, is already using. A test
+ * sharing one would test that person's server instead.
  */
 export const PORT_APP_FREETUBE = 8877
 export const PORT_APP_FREETUBE_REAL = 8876

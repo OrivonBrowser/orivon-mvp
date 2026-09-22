@@ -64,15 +64,16 @@ Orivon takes the helper's place. The page does not know that. It still calls
 answers it stops on its first line.
 
 So every ported tier-2 app ships **one small file** that answers those calls and passes them on to
-`orivon.*`. It belongs with the app, under `apps/<app>/`, never in `src/`.
+`orivon.*`. It belongs with the app, never in `src/`. Ports live in the `orivon-ports`
+repository, one directory per app, alongside the harness that builds and serves them.
 
 **It cannot be written once for all apps.** The names are each app's own inventions, with no
 standard behind them. Only that app's own source says what `chooseDefaultFolder` was meant to do.
 
 **It stays small.** Most calls are not missing powers. In the one measured port
-([`apps/freetube-real/`](../../apps/freetube-real/)), of 34 calls: 7 the browser already does
-itself, 19 are answered inertly because there is no second program left to talk to, 5 are refused
-by design, 2 use `orivon.fs`, and 1 needs `orivon.web.context`.
+(`orivon-ports`'s `apps/freetube/`), of 34 calls: 7 the browser already does itself, 19 are
+answered inertly because there is no second program left to talk to, 5 are refused by design,
+2 use `orivon.fs`, and 1 needs `orivon.web.context`.
 
 **Three ways to make it smaller**, cheapest first:
 

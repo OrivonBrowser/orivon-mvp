@@ -1718,6 +1718,30 @@ wallets.
 
 ---
 
+### B5. ADR-0020 says a port couples to the shell only through a test path -- storage is a second coupling
+ADR-0020 states that the only coupling between this repository and a port was a path in a test,
+and that is why the split is cheap. `test/e2e-freetube-real.test.ts` contradicts it: its
+`USES_ELECTRON_DATASTORE` checks assert that six nedb files exist at the app's own fs root and
+that `history.db` holds a watched video's id. Those are assertions in this repository about a
+bundle wired in `orivon-ports`, so the two repositories are coupled through storage behaviour as
+well as through a path.
+
+The coupling is currently unsatisfied. The FreeTube bridge in `orivon-ports` declares no `db`
+members -- not in `behaviours`, `refused`, `hand`, nor `unclassified` -- and its prepared build
+ships no datastore bundle, so those checks fail and FreeTube stores through the browser instead.
+The third check, which asserts no IndexedDB database is named `localforage`, passes anyway: the
+database that exists is named `NeDB`, so the check reports a pass for a condition that is false.
+
+**CI cannot see any of this.** It runs the e2e build and never checks out `orivon-ports`, so the
+file skips. The gap is only visible to someone running the test locally against a sibling
+checkout.
+
+**Two things to settle.** Whether storage assertions belong here at all, or in `orivon-ports`
+beside the bundle they test; and, while they are here, what the IndexedDB check should assert so
+that it fails when storage regresses rather than passing on a name it never finds.
+
+---
+
 ## C. Technical unknowns
 
 ### C1. DDOC's trust root is DNS — worth anything on ICANN domains? **[RESEARCH]**
@@ -3589,7 +3613,7 @@ start first.
 
 Decision 6 of thirteen. An ordinary page's `fetch()` call is routed through the secure-connect
 capability for any host the app has been granted. Not an optimisation: the FreeTube
-reconnaissance (`planning/freetube-port-recon.md`) found its entire network layer is `fetch`,
+reconnaissance (`orivon-ports`'s `docs/freetube-recon.md`) found its entire network layer is `fetch`,
 so without this routing the app does not function at all.
 
 Architectural (`CLAUDE.md` Rule 1); covered by [`ADR-0017`](decisions/ADR-0017-orivon-owns-the-app-http-path.md), the same ADR as A96 and A99,
