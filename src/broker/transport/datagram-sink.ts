@@ -25,6 +25,8 @@ export interface DatagramSinkOptions {
 
 export interface DatagramSink {
   readonly handleSend: (message: SendMessage) => void
+  /** Refuses a send that failed shape validation, as 'invalid', so the renderer's window slot for it is released like any other refusal. */
+  readonly refuseInvalid: (address: string, port: number) => void
   readonly stop: () => void
 }
 
@@ -115,6 +117,10 @@ export function createDatagramSink (options: DatagramSinkOptions): DatagramSink 
           console.error('[broker] a udp send rejected, which it must not', error)
         }
       )
+    },
+    refuseInvalid (address, port) {
+      if (stopped) return
+      reportRefusal({ sent: false, code: 'invalid' }, address, port)
     },
     stop () {
       stopped = true

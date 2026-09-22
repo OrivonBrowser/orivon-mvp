@@ -45,7 +45,8 @@ export interface DatagramPort {
    * Queues one datagram. Resolves once it has been POSTED and the outbound
    * window has room -- not once it reached the peer, which UDP never tells
    * anyone. NEVER REJECTS for a refusal: a datagram the broker declined
-   * resolves like any other and shows up in `droppedOutbound` instead.
+   * resolves like any other and shows up in `droppedOutbound` instead. Rejects
+   * 'invalid' only for a datagram that cannot be posted to the port at all.
    */
   send: (datagram: WireDatagram) => Promise<void>
   /** Fires whenever either loss counter moves. Push-based so the main world never has to call back synchronously. */
@@ -242,11 +243,18 @@ export function createDatagramPort (options: DatagramPortOptions): DatagramPort 
         await new Promise<void>((resolve) => { waiting.push(resolve) })
         if (terminated) return
       }
+      try {
+        port.postMessage({
+          kind: 'send', handleId, data: datagram.data, address: datagram.address, port: datagram.port
+        })
+      } catch {
+        // Never posted, so no reply will ever settle it: it must hold no
+        // window slot and arm no silence timer, or the socket dies 15 s later.
+        drainWaiting()
+        throw toOrivonError('invalid', { message: 'the datagram could not be handed to the broker' })
+      }
       outstanding += 1
       armSilence()
-      port.postMessage({
-        kind: 'send', handleId, data: datagram.data, address: datagram.address, port: datagram.port
-      })
     },
     dispose () {
       if (disposed) return

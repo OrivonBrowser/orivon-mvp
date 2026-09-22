@@ -5,7 +5,7 @@ import type { PortRegistry } from './port-registry.js'
 import { createDatagramPump } from './datagram-pump.js'
 import { createDatagramSink } from './datagram-sink.js'
 import { mapSocketError } from './socket-relay.js'
-import { parseRendererToBrokerMessage } from './port-messages.js'
+import { malformedSendDestination, parseRendererToBrokerMessage } from './port-messages.js'
 import { isOrivonErrorLike } from '../errors.js'
 
 // Everything mechanical about relaying ONE UDP socket's datagrams over its
@@ -91,7 +91,13 @@ export function createDatagramRelay (options: DatagramRelayOptions): DatagramRel
 
   port.onMessage((raw) => {
     const message = parseRendererToBrokerMessage(raw)
-    if (message === undefined) return
+    if (message === undefined) {
+      // Answered rather than dropped: the renderer counts every posted send
+      // against its window until a reply settles it.
+      const refused = malformedSendDestination(raw, socket.id)
+      if (refused !== undefined) sink.refuseInvalid(refused.address, refused.port)
+      return
+    }
     switch (message.kind) {
       case 'datagram-credit': pump.handleCredit(message); break
       case 'send': sink.handleSend(message); break
