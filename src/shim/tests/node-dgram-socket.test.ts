@@ -147,7 +147,7 @@ describe('dgram.Socket over a fake UdpSocket', () => {
     socket.on('close', closes)
     socket.close()
     await new Promise<void>((resolve) => setTimeout(resolve, 10))
-    expect(() => socket.close()).toThrow(/not running/)
+    expect(() => socket.close()).toThrow(/not running/i)
     await new Promise<void>((resolve) => setTimeout(resolve, 10))
     expect(closes).toHaveBeenCalledTimes(1)
   })
@@ -222,5 +222,76 @@ describe('dgram.Socket -- named refusal without breaking duck-typing (A135)', ()
       expect((error as OrivonShimError).api).toBe(`dgram.Socket#${method}`)
       expect((error as OrivonShimError).reason).toBe('unimplemented')
     }
+  })
+})
+
+describe('dgram.Socket#send -- validated in the shim, as Node validates it, before anything reaches the broker', () => {
+  async function bound (lookup?: (host: string) => Promise<string>): Promise<{ socket: Socket, fake: ReturnType<typeof createFakeUdpSocket> }> {
+    const fake = createFakeUdpSocket()
+    const socket = lookup === undefined
+      ? new Socket(async () => fake.socket)
+      : new Socket(async () => fake.socket, async (host) => await lookup(host))
+    socket.bind(0)
+    await new Promise<void>((resolve) => socket.once('listening', resolve))
+    return { socket, fake }
+  }
+
+  it.each([0, 70000, -1, '', 'abc'])('throws ERR_SOCKET_BAD_PORT for port %j and sends nothing', async (port) => {
+    const { socket, fake } = await bound()
+    expect(() => socket.send(new Uint8Array([1]), port, '1.2.3.4')).toThrow(expect.objectContaining({ code: 'ERR_SOCKET_BAD_PORT' }))
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    expect(fake.sent).toHaveLength(0)
+  })
+
+  it('coerces a numeric string port', async () => {
+    const { socket, fake } = await bound()
+    socket.send(new Uint8Array([1]), '6881', '1.2.3.4')
+    await vi.waitFor(() => expect(fake.sent).toHaveLength(1))
+    expect(fake.sent[0]).toMatchObject({ port: 6881, address: '1.2.3.4' })
+  })
+
+  it('throws ERR_INVALID_ARG_TYPE for a non-string address', async () => {
+    const { socket } = await bound()
+    expect(() => socket.send(new Uint8Array([1]), 6881, 1234 as unknown as string)).toThrow(expect.objectContaining({ code: 'ERR_INVALID_ARG_TYPE' }))
+  })
+
+  it('calls back with EMSGSIZE for a payload over 65507 bytes, never sending it', async () => {
+    const { socket, fake } = await bound()
+    const error = await new Promise<Error | null>((resolve) => socket.send(new Uint8Array(65508), 6881, '1.2.3.4', resolve))
+    expect(error).toMatchObject({ code: 'EMSGSIZE', syscall: 'send', address: '1.2.3.4', port: 6881 })
+    expect(fake.sent).toHaveLength(0)
+  })
+
+  it('an oversized send with no callback surfaces as the socket\'s "error", as Node does', async () => {
+    const { socket } = await bound()
+    const error = new Promise<Error & { code?: string }>((resolve) => socket.once('error', resolve))
+    socket.send(new Uint8Array(70000), 6881, '1.2.3.4')
+    expect((await error).code).toBe('EMSGSIZE')
+  })
+
+  it('resolves a hostname before sending, and reports a failed lookup instead of sending', async () => {
+    const { socket, fake } = await bound(async (host) => {
+      if (host === 'router.example') return '67.215.246.10'
+      throw Object.assign(new Error('no records'), { code: 'ENOTFOUND' })
+    })
+    socket.send(new Uint8Array([1]), 6881, 'router.example')
+    await vi.waitFor(() => expect(fake.sent).toHaveLength(1))
+    expect(fake.sent[0]).toMatchObject({ address: '67.215.246.10', family: 'IPv4' })
+    const error = await new Promise<Error | null>((resolve) => socket.send(new Uint8Array([1]), 6881, 'nowhere.example', resolve))
+    expect(error).toMatchObject({ code: 'ENOTFOUND' })
+    expect(fake.sent).toHaveLength(1)
+  })
+
+  it('accepts any ArrayBufferView, as Node does', async () => {
+    const { socket, fake } = await bound()
+    socket.send(new DataView(new Uint8Array([7, 8]).buffer), 6881, '1.2.3.4')
+    await vi.waitFor(() => expect(fake.sent).toHaveLength(1))
+    expect([...(fake.sent[0] as Datagram).data]).toEqual([7, 8])
+  })
+
+  it('throws ERR_SOCKET_DGRAM_NOT_RUNNING for a send after close()', async () => {
+    const { socket } = await bound()
+    socket.close()
+    expect(() => socket.send(new Uint8Array([1]), 6881, '1.2.3.4')).toThrow(expect.objectContaining({ code: 'ERR_SOCKET_DGRAM_NOT_RUNNING' }))
   })
 })
