@@ -19,10 +19,8 @@ group cleanly; both exist to make the two above reachable at all.
 dependencies in `package.json`.
 [`docs/planning/shim-dependency-review.md`](../../docs/planning/shim-dependency-review.md)'s
 `## Status` says why the full set was chosen over that review's own five-package
-recommendation. `util` is the one exception worth knowing about: the `util` package is installed
-and approved, but `module-map.ts` points `util` at a hand-written, `inherits`-only file
-(`node-util.ts`) rather than the package. Rule 6 reasoning is in that file and the review, and
-clearing the dependency gate does not change it. The `zlib` row is
+recommendation. `os` and `util` point at local wrappers over their packages (`node-os.ts`,
+`node-util.ts`) that correct or complete them; see §Design notes. The `zlib` row is
 gzip/deflate only (`browserify-zlib` predates Node's brotli support); see the review before
 assuming brotli works.
 
@@ -186,6 +184,20 @@ permission `mode` names. `orivon.fs` has no POSIX permission model at all (the s
 that the way a real permission check would. nedb, the only caller today, passes `F_OK` alone.
 **Still open:** what a future dependency asking `W_OK` to mean something narrower should get,
 which `orivon.fs`'s contract currently gives this file nothing to answer with.
+
+**[`node-util.ts`](node-util.ts) stands on the `util` package, and corrects it.** **AI
+recommendation, not owner-reviewed.** Rule 6: `format`, `inspect` and the `types` predicates are
+the parts of `util` most costly to get right by hand, and the package already has them,
+approved and installed. The cost is its dependency tree (about thirty small, pure-JS packages
+from the `is-*`/`get-intrinsic` family) in any bundle that imports `util`, which includes every
+bundle using `stream`: readable-stream reads `util.debuglog` and `util.inspect`. Its
+`util.js` also reads `process.env.NODE_DEBUG` at load, so it needs the `process` global the
+preload installs. Four members are this file's own: `promisify` (the package keys its custom
+form on a private `Symbol`, so a library marking one with
+`Symbol.for('nodejs.util.promisify.custom')` goes unseen), `inherits` (the package's replaces
+`ctor.prototype`, dropping methods already on it; Node's uses `setPrototypeOf`),
+`isDeepStrictEqual` (newer than the package; [`node-deep-equal.ts`](node-deep-equal.ts), shared
+with `assert`) and `TextEncoder`/`TextDecoder` (the platform's own).
 
 **One virtual root: `/orivon/app` ([`virtual-root.ts`](virtual-root.ts)).** **AI recommendation,
 not owner-reviewed.** Node code builds paths from `process.cwd()`, `os.homedir()`, `os.tmpdir()`,

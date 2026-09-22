@@ -9,3 +9,10 @@ declare module 'os-browserify/browser.js' {
     'networkInterfaces' | 'platform' | 'release' | 'tmpdir' | 'totalmem' | 'type' | 'uptime'>
   export default browserOs
 }
+
+declare module 'util/util.js' {
+  import type * as util from 'node:util'
+  const utilPackage: Pick<typeof util,
+    'callbackify' | 'debuglog' | 'deprecate' | 'format' | 'inherits' | 'inspect' | 'promisify' | 'types'>
+  export default utilPackage
+}
