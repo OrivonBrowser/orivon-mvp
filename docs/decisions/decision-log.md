@@ -84,6 +84,8 @@ moved here so those documents can state the behaviour without the provenance.
 | 2026-09-15 | `main` syncs with `origin` by `--ff-only`, unprompted on a clean tree; on a dirty tree the agent reports and does not act | `CLAUDE.md` |
 | 2026-09-21 | Ported third-party apps and the porting harness move to `orivon-ports`; `apps/` here keeps the flagship and the test fixtures | ADR-0020, `CLAUDE.md`, `ARCHITECTURE.md` |
 | 2026-09-22 | A port couples to the shell through storage assertions, not only a test path; where those assertions belong is unsettled | ADR-0020, open-questions B5 |
+| 2026-09-22 | The apps the test suite serves move to `test/apps/`; there is no top-level `apps/` directory. `test/apps/` is carved out of Rule 2's "test file" definition so the comment and size guards keep covering it | ADR-0020, `CLAUDE.md`, `ARCHITECTURE.md`, `../development/code-guidelines.md` |
+| 2026-09-22 | `apps/torrent/` is removed; the flagship has no directory here until build step 5 opens, and `build-plan.md` holds its design | ADR-0001, `../planning/build-plan.md`, `../mvp-scope.md` |
 
 ## Adding a row
 

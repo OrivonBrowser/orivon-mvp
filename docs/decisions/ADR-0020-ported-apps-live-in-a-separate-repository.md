@@ -1,16 +1,27 @@
 # ADR-0020: Ported third-party apps live in a separate repository
 
-- **Status:** accepted
+- **Status:** accepted; **amended 2026-09-22: the apps this repository's own tests serve moved
+  to `test/apps/`, and there is no top-level `apps/` directory**, chosen by the owner
 - **Date:** 2026-09-21
 - **Type:** process
 - **Decided by:** owner
+
+> **Reversal recorded.** "Alternatives considered" below rejects **moving all of `apps/`**,
+> on the ground that it would make this repository's test suite depend on a second checkout.
+> The owner reversed the placement without reversing that ground: the fixture and the
+> Orivon-native demo moved *down*, into `test/apps/`, not *out*. Nothing here gained a
+> dependency on `orivon-ports`, so the reason the alternative was refused is still live -- and
+> it is exactly why the destination is `test/apps/` and not the other repository. The rejected
+> bullet is left as written, because it is the record this note refers to.
 
 ## Decision
 
 Ported third-party applications live in `orivon-ports`, together with the harness that clones,
 builds, prepares and serves them, and the porting guide. This repository keeps the shell, the
-capability broker, the contracts, and only the apps its own test suite needs: the fixture, the
-Orivon-native demo, and the torrent flagship.
+capability broker, the contracts, and only the apps its own test suite needs — the fixture and
+the Orivon-native demo — which live under `test/apps/`, beside the suites that serve them.
+There is no top-level `apps/` directory. The torrent flagship has no directory here;
+`ADR-0001` and `build-plan.md` step 5 hold its design until it is built.
 
 ## Context
 
@@ -72,6 +83,14 @@ require touching the browser.
   repository by name. Those references cannot be checked by a link checker here.
 - `orivon-ports` is AGPL-3.0-only, matching this repository, so contracts and shared types can
   cross without analysis.
+- `test/apps/` is carved out of the "anything under `test/` is a test file" definition in
+  `../development/code-guidelines.md` Rule 2, in both guards and in the hookify comment rule.
+  Without that carve-out the move would silently exempt the apps from `npm run check:comments`
+  and raise their line limit from 500 to 800; they are app code that tests serve, not test code.
+- `test/apps/fixture/manifest.test.ts` is excluded from `test/vitest.e2e.config.ts`, so a pure
+  validator check does not sit behind an Electron build. No runner selects it; whether
+  `test/apps/**/*.test.ts` should join `vitest.config.ts`'s include is **provisional**, and
+  adding it there would settle it.
 
 ## Reversibility
 

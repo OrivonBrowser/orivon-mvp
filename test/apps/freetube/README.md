@@ -1,4 +1,4 @@
-# `apps/freetube/`: the FreeTube port
+# `test/apps/freetube/`: the FreeTube demo app
 
 **What lives here.** A YouTube frontend written as an ordinary Orivon app: search, channel
 pages, watch metadata, related videos, watch history, and a player. No dependencies, no build
@@ -6,7 +6,7 @@ step, no `src/` import at runtime -- it holds exactly the privileges its manifes
 person granted, the same as any third-party app would.
 
 **What it depends on.** `orivon.*` at runtime, and nothing else. Not even
-[`src/contracts/`](../../src/contracts/), which it reads as documentation rather than importing.
+[`src/contracts/`](../../../src/contracts/), which it reads as documentation rather than importing.
 
 **What it must never import.** Anything under `src/`.
 
@@ -29,12 +29,12 @@ the first. `tab-view.ts`'s `appTabArgsFor` gates the app-tab flag, and therefore
 `broker.app.isRegisteredSync(origin)` alone -- no pin, no cached bundle.
 
 **The install path refuses a loopback origin, by design, and still does by default.**
-`<link rel="orivon-manifest">` -> [`manifest-hint.ts`](../../src/main/manifest-hint.ts) ->
-`installApp` -> [`app-install.ts`](../../src/main/app-install.ts)'s `installFromHint` ->
+`<link rel="orivon-manifest">` -> [`manifest-hint.ts`](../../../src/main/manifest-hint.ts) ->
+`installApp` -> [`app-install.ts`](../../../src/main/app-install.ts)'s `installFromHint` ->
 `Loader.load()`, which applies `ensurePublicUnicastOrigin` before any manifest is read (A46, T12).
 
 **Under `npm run dev` a loopback origin takes a second path instead:**
-[`dev-app-origin.ts`](../../src/main/dev-app-origin.ts) fetches only the manifest, registers the
+[`dev-app-origin.ts`](../../../src/main/dev-app-origin.ts) fetches only the manifest, registers the
 origin, and raises the same consent prompt an install raises. Nothing is fetched as a bundle,
 hashed, pinned or served from cache; this directory's own `serve.mjs` keeps serving the page. It
 is bounded:
@@ -59,7 +59,7 @@ an owner-level decision this directory does not settle.
 `orivon-ports`'s `docs/freetube-recon.md` read FreeTube 0.25.3 and
 concluded: its renderer is a pure browser app over 32 `fetch` call sites, so the Node shim does
 nothing for it, and routing `fetch` with app-chosen forbidden headers is the whole difference
-between working and not working. [`ADR-0017`](../../docs/decisions/ADR-0017-orivon-owns-the-app-http-path.md)
+between working and not working. [`ADR-0017`](../../../docs/decisions/ADR-0017-orivon-owns-the-app-http-path.md)
 was accepted on that basis.
 
 **Both halves of that hold, measured rather than assumed.** This app reaches YouTube's private
@@ -109,16 +109,16 @@ constraint on that path, not on running an app.
 YouTube serves media from `rr1---sn-uxaxpu5ap5-2hve.googlevideo.com` and a different
 subdomain on the next request. A manifest cannot name that host:
 
-- [`connect-patterns.ts`](../../src/broker/policy/connect-patterns.ts)'s `hostSpecKind` returns
+- [`connect-patterns.ts`](../../../src/broker/policy/connect-patterns.ts)'s `hostSpecKind` returns
   `authorises-nothing` for any host containing `*`, and `patternRejection` names `sub-glob`
   explicitly. `*.googlevideo.com:443` is a rejected pattern, deliberately -- "a wildcard that
   silently spans a registry boundary" is the reason given, and it is a good one.
 - The remaining option is `*:*`, and
-  [`connect-src.ts`](../../src/broker/policy/connect-src.ts) omits exactly that from the emitted
+  [`connect-src.ts`](../../../src/broker/policy/connect-src.ts) omits exactly that from the emitted
   CSP (`host-any-public-unicast`), because a bare CSP `*` would also permit loopback and the LAN.
 
 So `img-src`/`font-src`/`media-src`, which
-[`serve.ts`](../../src/loader/serve.ts)'s `cspHeaderValue` builds from the `https.connect` grant,
+[`serve.ts`](../../../src/loader/serve.ts)'s `cspHeaderValue` builds from the `https.connect` grant,
 can be `'self'` plus literal hosts, or `'self'` alone -- never a pattern that covers a rotating
 CDN. **A `<video src>` pointing at a googlevideo URL is refused by the page's own CSP before any
 request leaves, no matter what was granted.**

@@ -36,7 +36,7 @@ import { requestInstallConsent } from '../src/main/install-consent.js'
 import type { InstallConsentPrompt } from '../src/main/install-consent.js'
 
 const ORIGIN = 'https://install-consent-journey-e2e.orivon.test'
-/** An address literal, matching apps/fixture's own manifest convention (its README:
+/** An address literal, matching test/apps/fixture's own manifest convention (its README:
  * "127.0.0.1, never localhost... as an address literal") -- unreachable from this
  * process (nothing listens there), and it never needs to be reachable: checkConnect
  * denies or allows on the pattern match alone, before deps.dial (a stub here) is ever

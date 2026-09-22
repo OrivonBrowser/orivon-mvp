@@ -176,10 +176,10 @@ describe('checkComments', () => {
       expect(checkComments(root).ok).toBe(true)
     })
 
-    it('does check ordinary files under scripts/ and apps/', () => {
-      const root = repo({ 'scripts/a.mjs': preamble(80), 'apps/fixture/b.js': preamble(80) })
+    it('does check ordinary files under scripts/ and test/apps/', () => {
+      const root = repo({ 'scripts/a.mjs': preamble(80), 'test/apps/fixture/b.js': preamble(80) })
       expect(checkComments(root).offenders.map((o) => o.file))
-        .toEqual(['apps/fixture/b.js', 'scripts/a.mjs'])
+        .toEqual(['scripts/a.mjs', 'test/apps/fixture/b.js'])
     })
 
     it('ignores declaration files and non-source files', () => {

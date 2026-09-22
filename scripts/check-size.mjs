@@ -11,9 +11,9 @@
  * reversal of the earlier "rules first, enforcement later" deferral.
  *
  * "Test file" is exactly what code-guidelines.md Rule 2 defines, no more:
- * a `*.test.ts` file, anything under `test/`, and
+ * a `*.test.ts` file, anything under `test/` except `test/apps/`, and
  * `scripts/smoke.mjs` specifically. Everything else -- including the rest of
- * `scripts/` -- is source, at the 500-line limit.
+ * `scripts/` and the apps under `test/apps/` -- is source, at 500 lines.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
@@ -52,10 +52,12 @@ const SKIPPED_DIRECTORIES = new Set(['node_modules', 'out', 'dist', 'build', 're
 /**
  * @param {string} file Root-relative, forward-slashed path.
  * @returns {boolean} True if `file` is a test file under the guideline's own
- *   definition: `*.test.ts`, anything under `test/`, or `scripts/smoke.mjs`.
+ *   definition: `*.test.ts`, anything under `test/` except `test/apps/`, or
+ *   `scripts/smoke.mjs`.
  */
 function isTestFile (file) {
-  return file.endsWith('.test.ts') || file === 'scripts/smoke.mjs' || file.startsWith('test/')
+  return file.endsWith('.test.ts') || file === 'scripts/smoke.mjs' ||
+    (file.startsWith('test/') && !file.startsWith('test/apps/'))
 }
 
 /**

@@ -8294,3 +8294,19 @@ throws, and the consumer cancelling its own read -- see
 guard.test.ts`, and `src/loader/tests/electron-serve.test.ts`'s `registerServingFor -- A200 real
 wiring` suite (a REAL `createBroker`, a manifest that actually declares `concurrentSockets`, and
 a real `Broker.app.socketAllowanceSync` reached end to end).
+
+### A201 -- two different apps are both called `freetube`, in two repositories
+
+**Raised 2026-09-22.** `test/apps/freetube/` here is a YouTube frontend written from scratch as
+an ordinary Orivon app -- its own README calls it "a **test subject, not a porting project**".
+`orivon-ports`'s `apps/freetube/` is upstream FreeTube, unmodified, reached through a recipe and
+a bridge. They share a name, a subject and a directory shape, and since `ADR-0020` gave "port" a
+specific meaning the two are easy to confuse in prose that names neither repository.
+
+`test/e2e-freetube-app.test.ts` and `test/e2e-freetube-live-origin.test.ts` drive the demo here;
+`test/e2e-freetube-real.test.ts` drives the port in the sibling checkout. A reader who sees
+"the FreeTube test" cannot tell which is meant without opening it.
+
+**What would settle it:** renaming one of the two directories, or adopting a convention that
+every mention carries its repository. Not taken here, because the name belongs as much to
+`orivon-ports` as to this repository and the decision is not one-sided.

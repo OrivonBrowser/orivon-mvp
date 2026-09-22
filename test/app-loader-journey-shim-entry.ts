@@ -60,7 +60,7 @@ export interface ShimRoundTripFailure {
  * One full round trip through the real shim `net` module: connect, write
  * `message`, half-close this side, then read until the peer's own FIN --
  * the fixture echo server carries no framing, so EOF is the only way to
- * know the reply is complete (same reasoning as apps/fixture/app.js's own
+ * know the reply is complete (same reasoning as test/apps/fixture/app.js's own
  * roundTrip()). Resolves on success; on a denial or a real connect failure,
  * resolves to a plain, structurally-typed failure object instead of
  * rejecting, because this function is called from `page.evaluate()` and a

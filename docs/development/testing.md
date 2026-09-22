@@ -179,7 +179,7 @@ the *next datagram* on an already-bound socket). The shared harness (the fixture
 children, the address-bar navigation dance, the per-phase reporter) lives in
 [`test/e2e-helpers.ts`](../../test/e2e-helpers.ts).
 
-**They run automatically.** `npm run test:e2e` runs every `test/**/*.test.ts` under
+**They run automatically.** `npm run test:e2e` runs every `test/**/*.test.ts` outside `test/apps/` under
 `test/vitest.e2e.config.ts`, and `.github/workflows/ci.yml`'s `e2e` job runs it on every push and
 pull request (see §How to run above).
 

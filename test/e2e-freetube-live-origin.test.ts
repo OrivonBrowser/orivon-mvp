@@ -6,7 +6,7 @@
 // serve-from-cache path does, and proves an INSTALLED app works. This one
 // proves the thing installation was never supposed to be a precondition for:
 // capabilities attach to a URL, the page keeps being served by whoever hosts
-// it, and `apps/freetube/serve.mjs` stays a file server that executes no
+// it, and `test/apps/freetube/serve.mjs` stays a file server that executes no
 // logic of its own.
 //
 // The grant is issued through `__orivonDevGrant` rather than the consent
@@ -45,8 +45,8 @@ it(
       let app: Awaited<ReturnType<typeof launchElectron>> | undefined
       let server: ChildProcess | undefined
       try {
-        server = await startOwnServer('freetube-server', join(process.cwd(), 'apps', 'freetube', 'serve.mjs'), ['--port', String(PORT)])
-        check('a plain static file server is up, serving apps/freetube/ and nothing else', true)
+        server = await startOwnServer('freetube-server', join(process.cwd(), 'test', 'apps', 'freetube', 'serve.mjs'), ['--port', String(PORT)])
+        check('a plain static file server is up, serving test/apps/freetube/ and nothing else', true)
 
         app = await launchElectron({ appPath: '.' })
 

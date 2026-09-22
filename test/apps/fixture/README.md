@@ -1,4 +1,4 @@
-# `apps/fixture/`: the test fixture app
+# `test/apps/fixture/`: the test fixture app
 
 **What lives here.** A minimal Orivon app: a real `/.well-known/orivon.json` and a frontend
 that requests one capability and uses it.
@@ -41,8 +41,8 @@ apps/fixture/
 Two independent servers, no build step, no Electron:
 
 ```bash
-node apps/fixture/echo-server.mjs   # TCP echo server on 127.0.0.1:8873
-node apps/fixture/serve.mjs         # static file server on http://127.0.0.1:8872
+node test/apps/fixture/echo-server.mjs   # TCP echo server on 127.0.0.1:8873
+node test/apps/fixture/serve.mjs         # static file server on http://127.0.0.1:8872
 ```
 
 Then open `http://127.0.0.1:8872/` in any browser. Both ports, and the loopback host,
@@ -82,12 +82,11 @@ rules, and checks that the checked-in manifest is accepted, declares **exactly o
 no `udp`, no `fs`, no `id`, no `protocols`), because the e2e out-of-manifest rejection test in
 `test/e2e-capability-boundary.test.ts` depends on the manifest staying this narrow.
 
-**Not currently run by `npm test`.** `vitest.config.ts`'s `include` is `src/**/*.test.ts` and
-`scripts/**/*.test.ts`, and `apps/**` is neither. Run it directly:
+**No runner picks it up.** `vitest.config.ts`'s `include` is `src/**/*.test.ts` and
+`scripts/**/*.test.ts`, and `test/vitest.e2e.config.ts` excludes `test/apps/**` so a pure
+validator check does not sit behind an Electron build. Selecting it needs a config whose
+`include` covers it: `vitest run <path>` does **not** bypass `include` (confirmed on vitest
+4.1.11 -- it reports "No test files found").
 
-```bash
-npx vitest run --config <a temporary config pointing include at apps/fixture/**/*.test.ts>
-```
-
-**Provisional:** whether `apps/**` should join `vitest.config.ts`'s `include` is undecided.
-Adding it there would settle it, and make this command unnecessary.
+**Provisional:** whether `test/apps/**/*.test.ts` should join `vitest.config.ts`'s `include`
+is undecided. Adding it there would settle it, and would run this file under `npm test`.

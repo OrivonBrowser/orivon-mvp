@@ -146,10 +146,12 @@ higher budget for the same reason), and `spike/` (documented throwaway).
 | | Limit |
 |---|---|
 | Source | **500** |
-| Test files (`*.test.ts`, anything under [`test/`](../../test/), and [`scripts/smoke.mjs`](../../scripts/smoke.mjs)) | **800** |
+| Test files (`*.test.ts`, anything under [`test/`](../../test/) except [`test/apps/`](../../test/apps/), and [`scripts/smoke.mjs`](../../scripts/smoke.mjs)) | **800** |
 
 Everything else in `scripts/` is source and gets 500
-([`parallel-work.md`](parallel-work.md) §Why `scripts/` is split).
+([`parallel-work.md`](parallel-work.md) §Why `scripts/` is split). So are the apps under
+[`test/apps/`](../../test/apps/): the suites serve them, which makes them app code sitting
+beside the tests, not test code.
 
 Two reasons, and the second is easy to underrate:
 

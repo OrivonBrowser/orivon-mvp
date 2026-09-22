@@ -60,12 +60,14 @@ const IMPORT_STATEMENT = /^import\b/
 const EXEMPT_DIRECTORY = /^(src\/contracts|spike)\//
 
 /**
- * "Test file" exactly as code-guidelines.md Rule 2 defines it.
- * Duplicated from scripts/check-size.mjs; consolidating the two is tracked
- * as A54.
+ * "Test file" exactly as code-guidelines.md Rule 2 defines it: the apps under
+ * `test/apps/` are served to the suites, not suites, so they stay at the
+ * source budget. Duplicated from scripts/check-size.mjs; consolidating the
+ * two is tracked as A54.
  */
 function isTestFile (file) {
-  return file.endsWith('.test.ts') || file === 'scripts/smoke.mjs' || file.startsWith('test/')
+  return file.endsWith('.test.ts') || file === 'scripts/smoke.mjs' ||
+    (file.startsWith('test/') && !file.startsWith('test/apps/'))
 }
 
 /** True for a line this guard treats as a comment line: `//`, `/*`, or a block-comment continuation (`*`). */

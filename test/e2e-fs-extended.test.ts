@@ -48,11 +48,11 @@ import {
   ADDRESS_BAR_STABLE_TIMEOUT_MS, closeElectronApp, forwardOutput, killChild,
   navigateToFixture, runPhase, waitForTcpReady
 } from './e2e-helpers.js'
-import { HOST, STATIC_PORT } from '../apps/fixture/config.mjs'
+import { HOST, STATIC_PORT } from './apps/fixture/config.mjs'
 import type { DevGrantRequest } from '../src/main/dev-grant.js'
 import type { Grant, Manifest } from '../src/contracts/index.js'
 
-const FIXTURE_DIR = fileURLToPath(new URL('../apps/fixture/', import.meta.url)).replace(/[/\\]$/, '')
+const FIXTURE_DIR = fileURLToPath(new URL('./apps/fixture/', import.meta.url)).replace(/[/\\]$/, '')
 const FIXTURE_ORIGIN = `http://${HOST}:${STATIC_PORT}`
 const FIXTURE_URL = `${FIXTURE_ORIGIN}/`
 

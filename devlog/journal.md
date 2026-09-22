@@ -26,6 +26,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Routed `fetch` now carries the platform's descriptor: a locked one killed any app using a `fetch` ponyfill, and guarded nothing.
 - Dock icon found to be a desktop-entry problem, not a window one: Electron's window `icon` never reaches X11 `_NET_WM_ICON` here (verified live, and Codium shows the same), so the fix is a `orivon.desktop` with `StartupWMClass=orivon` matching the WM_CLASS Electron already derives from the app name.
 - `merge=union` is local only: GitHub ignores it, so append-only files show conflicts on a PR that `git merge` resolves silently here.
+- Top-level `apps/` removed: fixture and demo moved to `test/apps/`, carved out of Rule 2's test-file definition so the guards still cover them.
 
 ### In my head
 

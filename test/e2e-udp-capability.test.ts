@@ -14,8 +14,8 @@
 // datagrams -- just not carried over Electron IPC, because nothing grants the
 // fixture's origin anything on that path either.
 //
-// THE FIXTURE IS NOT EXTENDED FOR THIS. apps/fixture/.well-known/orivon.json
-// declares only tcp.connect, and apps/fixture/ belongs to the `fixture-app`
+// THE FIXTURE IS NOT EXTENDED FOR THIS. test/apps/fixture/.well-known/orivon.json
+// declares only tcp.connect, and test/apps/fixture/ belongs to the `fixture-app`
 // stream (parallel-work.md's ownership map). It does not need to change:
 // GrantLedger.grant does not check the manifest declaration -- the subset check
 // is the permission prompt's job -- so Phase 2's grant works without it, and
@@ -44,7 +44,7 @@ import {
 import {
   evaluateRetrying, findChrome, findViewShowing, HERMETIC_RESOLVER, waitFor, waitForTab
 } from './smoke-helpers.mjs'
-import { HOST, STATIC_PORT } from '../apps/fixture/config.mjs'
+import { HOST, STATIC_PORT } from './apps/fixture/config.mjs'
 import { createBroker } from '../src/broker/index.js'
 import type { BrokerFs, CreateBrokerOptions, Keychain } from '../src/broker/broker-contracts.js'
 import { dialTcp, listenTcp, resolveHost, resolveLookup } from '../src/broker/adapters/node-adapters.js'
@@ -55,11 +55,11 @@ import type { DevGrantRequest } from '../src/main/dev-grant.js'
 import type { Datagram, Manifest } from '../src/contracts/index.js'
 
 const TEST_DIR = fileURLToPath(new URL('./', import.meta.url)).replace(/[/\\]$/, '')
-const FIXTURE_DIR = fileURLToPath(new URL('../apps/fixture/', import.meta.url)).replace(/[/\\]$/, '')
+const FIXTURE_DIR = fileURLToPath(new URL('./apps/fixture/', import.meta.url)).replace(/[/\\]$/, '')
 const FIXTURE_ORIGIN = `http://${HOST}:${STATIC_PORT}`
 const FIXTURE_URL = `${FIXTURE_ORIGIN}/`
 
-/** The echo server's port. Distinct from apps/fixture/config.mjs's TCP ports so a stray process from either suite cannot be mistaken for the other. */
+/** The echo server's port. Distinct from test/apps/fixture/config.mjs's TCP ports so a stray process from either suite cannot be mistaken for the other. */
 const UDP_ECHO_PORT = 8875
 /** A second port nothing listens on. Used only as a destination the grant does not cover -- it never has to answer. */
 const UNGRANTED_PORT = 8876

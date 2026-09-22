@@ -45,7 +45,7 @@ import {
   ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, forwardOutput,
   killChild, runPhase, waitForAddressBarStable, waitForTcpReady
 } from './e2e-helpers.js'
-import { HOST, STATIC_PORT } from '../apps/fixture/config.mjs'
+import { HOST, STATIC_PORT } from './apps/fixture/config.mjs'
 import { createBroker } from '../src/broker/index.js'
 import type { BrokerFs, CreateBrokerOptions, Keychain } from '../src/broker/broker-contracts.js'
 import { dialTcp, listenTcp, resolveHost, resolveLookup } from '../src/broker/adapters/node-adapters.js'
@@ -56,9 +56,9 @@ import { installDevGrantHook } from '../src/main/dev-grant.js'
 import type { Manifest } from '../src/contracts/index.js'
 
 // Trailing separator stripped -- fileURLToPath on a directory URL keeps it
-// (apps/fixture/serve.mjs's own header documents this), which would make
-// join() below point at apps/fixture//serve.mjs instead of inside it.
-const FIXTURE_DIR = fileURLToPath(new URL('../apps/fixture/', import.meta.url)).replace(/[/\\]$/, '')
+// (test/apps/fixture/serve.mjs's own header documents this), which would make
+// join() below point at test/apps/fixture//serve.mjs instead of inside it.
+const FIXTURE_DIR = fileURLToPath(new URL('./apps/fixture/', import.meta.url)).replace(/[/\\]$/, '')
 const FIXTURE_ORIGIN = `http://${HOST}:${STATIC_PORT}`
 const FIXTURE_URL = `${FIXTURE_ORIGIN}/`
 

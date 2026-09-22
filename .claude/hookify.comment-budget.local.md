@@ -9,9 +9,12 @@ conditions:
   # the rule never fires. Verified against the engine, not assumed.
   # Exclusions ride along as a lookahead: hookify has no `not_regex_match`
   # operator, and an unknown operator evaluates to false, killing the rule.
+  # `test/` is excluded except `test/apps/`, which is app code the suites
+  # serve rather than test code -- same carve-out scripts/check-comments.mjs
+  # and scripts/check-size.mjs make.
   - field: file_path
     operator: regex_match
-    pattern: ^(?!.*(?:src/contracts/|(?:^|/)test/|\.test\.ts$|\.d\.ts$|scripts/smoke\.mjs$))(?:.*/)?(?:src|scripts|apps)/.*\.(?:ts|tsx|mts|cts|js|mjs|cjs)$
+    pattern: ^(?!.*(?:src/contracts/|(?:^|/)test/(?!apps/)|\.test\.ts$|\.d\.ts$|scripts/smoke\.mjs$))(?:.*/)?(?:src|scripts|test/apps)/.*\.(?:ts|tsx|mts|cts|js|mjs|cjs)$
   - field: content
     operator: regex_match
     pattern: ^(?:[ \t]*(?://|/\*|\*)[^\n]*\n|[ \t]*\n){26,}

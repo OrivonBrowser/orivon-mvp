@@ -1,11 +1,16 @@
 # `test/` — shared test infrastructure
 
-**What lives here.** Helpers used by the smoke check and, later, the end-to-end test.
+**What lives here.** Three things: the shared harness (`e2e-helpers.ts`,
+`launch-electron.mjs` and friends), the end-to-end suites that use it, and
+[`apps/`](apps/) — the apps those suites serve. Unit tests are colocated
+(`src/**/*.test.ts`) and do not belong here.
 
 **What it depends on.** `@playwright/test`, `electron`.
 
-**What it must never import.** Nothing is forbidden here, but keep assertions out — this
-directory holds the machinery, not the tests. Unit tests are colocated (`src/**/*.test.ts`).
+**What it must never import.** Nothing is forbidden in the harness or the suites.
+[`apps/`](apps/) is the exception and the point: nothing under it may import anything from
+`src/` at runtime, because each one is an ordinary URL-delivered app holding only the
+capabilities its manifest declares.
 
 ## `launch-electron.mjs` — the only correct way to start Electron in this repo
 

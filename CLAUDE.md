@@ -13,6 +13,7 @@ an agent.**
 | `docs/development/code-guidelines.md` | writing code |
 | `docs/development/pr-blueprint.md` | opening a PR |
 | `docs/decisions/decision-log.md` | asking *why* or *who decided* — pages do not carry that |
+| `../orivon-ports` | working, interacting, updating, and porting third-party apps |
 
 **Every page states only what is true now**, except the change records Rule 2 lists. It will not
 tell you that it changed, or who decided it: that is git, the decision log and the ADRs. **ADRs are the exception**
@@ -48,8 +49,9 @@ not the long-term vision.
   reference architecture; its GUI is a *visual* reference only.
 - **Ported third-party apps live in `orivon-ports`**, with the harness that clones, builds and
   serves them, and the porting guide. A port is a consumer of `orivon.*`, never part of it, so
-  nothing here may depend on that checkout being present. `apps/` here holds only the flagship
-  and the fixtures the test suite needs.
+  nothing here may depend on that checkout being present. The apps this repository serves to its
+  own tests live under `test/apps/`; there is no top-level `apps/` directory, and the torrent
+  flagship has no directory here until build step 5 opens.
 
 ## The load-bearing idea
 

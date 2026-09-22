@@ -56,8 +56,8 @@ it.skipIf(!ORDINARY_BUILD)(
       let app: Awaited<ReturnType<typeof launchElectron>> | undefined
       let server: ChildProcess | undefined
       try {
-        server = await startOwnServer('freetube-server', join(process.cwd(), 'apps', 'freetube', 'serve.mjs'), ['--port', String(PORT)])
-        check('a plain static file server is serving apps/freetube/, executing no logic of its own', true)
+        server = await startOwnServer('freetube-server', join(process.cwd(), 'test', 'apps', 'freetube', 'serve.mjs'), ['--port', String(PORT)])
+        check('a plain static file server is serving test/apps/freetube/, executing no logic of its own', true)
 
         // The opt-in `npm run dev` sets. Without it this hint takes the
         // install path and A46 refuses the loopback origin outright --

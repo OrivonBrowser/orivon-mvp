@@ -60,22 +60,22 @@ import { join } from 'node:path'
 import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
 import { evaluateRetrying, HERMETIC_RESOLVER } from './smoke-helpers.mjs'
 import { closeElectronApp, forwardOutput, killChild, navigateToFixture, runPhase, waitForTcpReady } from './e2e-helpers.js'
-import { HOST, STATIC_PORT } from '../apps/fixture/config.mjs'
+import { HOST, STATIC_PORT } from './apps/fixture/config.mjs'
 import { generateTlsFixture } from '../src/broker/adapters/tests/tls-adapter.test-helpers.js'
 import type { DevGrantRequest } from '../src/main/dev-grant.js'
 import type { Grant, Manifest } from '../src/contracts/index.js'
 
 // fileURLToPath on a directory URL keeps the trailing separator (the same
 // gotcha e2e-capability-boundary.test.ts's own header documents) -- stripped
-// here so join(FIXTURE_DIR, 'serve.mjs') points inside apps/fixture/, not
-// apps/.
-const FIXTURE_DIR = fileURLToPath(new URL('../apps/fixture/', import.meta.url)).replace(/[/\\]$/, '')
+// here so join(FIXTURE_DIR, 'serve.mjs') points inside test/apps/fixture/, not
+// test/apps/.
+const FIXTURE_DIR = fileURLToPath(new URL('./apps/fixture/', import.meta.url)).replace(/[/\\]$/, '')
 const FIXTURE_ORIGIN = `http://${HOST}:${STATIC_PORT}`
 const FIXTURE_URL = `${FIXTURE_ORIGIN}/`
 
 /**
  * A FIXED port, not an ephemeral one bound at runtime -- deliberately, the
- * same choice apps/fixture/config.mjs's ECHO_PORT and
+ * same choice test/apps/fixture/config.mjs's ECHO_PORT and
  * e2e-udp-capability.test.ts's UDP_ECHO_PORT already make. `evaluateRetrying`
  * calls `page.evaluate(fn)` with no argument channel of its own, and a value
  * closed over from outside `fn` does not survive Playwright's own
@@ -201,8 +201,8 @@ it('Phase 2: a real https.connect grant, issued through the dev-only path, reach
       const view = await navigateToFixture(app, FIXTURE_URL, 'Orivon fixture app')
 
       // A manifest CONSTRUCTED for this test, not fetched from the real
-      // fixture (apps/fixture/.well-known/orivon.json declares only
-      // tcp.connect, and apps/fixture/ belongs to the fixture-app stream --
+      // fixture (test/apps/fixture/.well-known/orivon.json declares only
+      // tcp.connect, and test/apps/fixture/ belongs to the fixture-app stream --
       // same reasoning as e2e-udp-capability.test.ts's own fixtureManifest).
       // GrantLedger.grant does not check the manifest declaration against
       // what it grants -- the subset check is the permission prompt's job --

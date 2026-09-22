@@ -2,20 +2,16 @@ import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vitest/config'
 
 // vitest.config.ts's own `include` is `src/**/*.test.ts` / `scripts/**/*.test.ts`
-// (docs/development/testing.md, "picks up src/**/*.test.ts and
-// scripts/**/*.test.ts") -- test/ is neither, and that file is root-owned,
-// not this lane's to edit (docs/development/parallel-work.md: stay inside
-// owned paths). Confirmed empirically (vitest 4.1.11): unlike an older
-// assumption recorded in apps/fixture/README.md ("Run directly with `npx
-// vitest run apps/fixture/manifest.test.ts`"), an explicit path argument
-// does NOT bypass `include` in this version -- `vitest run <path>` still
-// reports "No test files found" against a path the include globs do not
-// cover. This file is exactly the escape hatch that same README names:
-// "or use whatever mechanism the owner decides on... a temporary config
-// pointing include at apps/fixture/**/*.test.ts". Scoped to test/**/*.test.ts
-// specifically (not apps/fixture/**, which is a separate, narrower unit
-// test with its own already-working situation) because this file exists
-// for THIS lane's own e2e test.
+// (docs/development/testing.md), so the e2e files under test/ are not in the
+// unit suite -- each one launches a real Electron binary and must not run
+// there. Confirmed empirically (vitest 4.1.11): an explicit path argument does
+// NOT bypass `include` in this version -- `vitest run <path>` still reports "No
+// test files found" against a path the include globs do not cover, so a second
+// config is the only way to select these files.
+//
+// `test/apps/**` is excluded below. Those are the apps these suites serve, not
+// suites themselves, and test/apps/fixture/manifest.test.ts is a pure validator
+// check that has no business behind an Electron build.
 //
 // Run with: npx vitest run --config test/vitest.e2e.config.ts
 export default defineConfig({
@@ -23,7 +19,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['test/**/*.test.ts'],
-    exclude: ['node_modules', 'out', 'dist', 'spike/**'],
+    exclude: ['node_modules', 'out', 'dist', 'spike/**', 'test/apps/**'],
     // Vitest's default reporter swallows a passing test's console.log --
     // confirmed empirically, the report only appeared with `--reporter
     // verbose` on the command line. This test's whole point (acceptance
@@ -34,7 +30,7 @@ export default defineConfig({
     reporters: ['verbose'],
     // THE E2E SUITES CANNOT RUN CONCURRENTLY, and vitest's default is that
     // they do. Each one spawns its own fixture servers on FIXED ports
-    // (apps/fixture/config.mjs) and launches a real Electron binary; two
+    // (test/apps/fixture/config.mjs) and launches a real Electron binary; two
     // files doing that at once collide three ways, all of them observed on
     // CI in one run: the second `serve.mjs` cannot bind STATIC_PORT, the
     // first suite's own fetch of the fixture manifest then fails, and the

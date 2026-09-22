@@ -1,4 +1,4 @@
-// Shared setup for the e2e files that put apps/freetube/ into a real shell:
+// Shared setup for the e2e files that put test/apps/freetube/ into a real shell:
 // the installed-app run (e2e-freetube-app.test.ts, `pinRealApp` +
 // `grantAndServe`) and the live-origin run (e2e-freetube-live-origin.test.ts,
 // `grantOriginOnly`). One copy, so the two cannot drift in how they set up
@@ -18,11 +18,11 @@ import { fromBundleTree } from '../src/broker/policy/pin.js'
 import { nodeLoaderStorage } from '../src/loader/node-storage.js'
 
 export const FREETUBE_ORIGIN = 'https://freetube-e2e.orivon.test'
-const APP_DIR = join(process.cwd(), 'apps', 'freetube')
+const APP_DIR = join(process.cwd(), 'test', 'apps', 'freetube')
 
 /**
  * Ports for the servers these tests spawn -- deliberately NOT 8874/8875, which
- * are the ports a person running `apps/freetube` by hand, or `orivon-port
+ * are the ports a person running `test/apps/freetube` by hand, or `orivon-port
  * serve freetube` in the sibling ports checkout, is already using. A test
  * sharing one would test that person's server instead.
  */
@@ -32,7 +32,7 @@ export const PORT_APP_FREETUBE_REAL = 8876
 const SERVER_START_TIMEOUT_MS = 10_000
 
 /**
- * Spawns one of the static servers under `apps/` and resolves only once THAT
+ * Spawns one of the static servers under `test/apps/` and resolves only once THAT
  * process reports it is serving. Waiting on the port alone is not enough: it
  * accepts any listener, so a server orphaned by an earlier timed-out run would
  * silently become the server under test -- and a timeout is exactly what

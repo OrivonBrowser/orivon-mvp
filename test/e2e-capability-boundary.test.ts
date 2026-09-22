@@ -13,7 +13,7 @@
 // specifier to the `index.ts` file that is actually on disk; vitest already does this for
 // every other *.test.ts in this repo. Exact precedent for "a *.test.ts
 // under a directory vitest.config.ts's `include` does not cover, run
-// directly rather than via `npm test`": apps/fixture/manifest.test.ts
+// directly rather than via `npm test`": test/apps/fixture/manifest.test.ts
 // (fixture-01-app, merged). That file's own suggested escape hatch --
 // `npx vitest run <path>` -- turned out not to work against this repo's
 // installed vitest (4.1.11): an explicit path argument does NOT bypass
@@ -31,7 +31,7 @@
 //
 // THE GAP THIS TEST WORKS AROUND, READ BEFORE CHANGING THE SHAPE OF THIS
 // FILE. docs/development/testing.md's ideal end-to-end test drives the
-// fixture app's own frontend (apps/fixture/app.js) through
+// fixture app's own frontend (test/apps/fixture/app.js) through
 // `window.orivon.net.connect()`, loaded via a real app loader, and completes
 // a real granted round trip. The app loader half still does not exist,
 // verified by reading the actual code rather than assumed:
@@ -91,16 +91,16 @@ import {
   ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, forwardOutput,
   killChild, navigateToFixture, runPhase, waitForAddressBarStable, waitForTcpReady
 } from './e2e-helpers.js'
-import { HOST, ECHO_PORT, STATIC_PORT } from '../apps/fixture/config.mjs'
+import { HOST, ECHO_PORT, STATIC_PORT } from './apps/fixture/config.mjs'
 import { parseManifest } from '../src/loader/manifest.js'
 import type { DevGrantRequest } from '../src/main/dev-grant.js'
 import type { Grant } from '../src/contracts/index.js'
 
 // fileURLToPath on a directory URL keeps the trailing separator (the same
-// gotcha apps/fixture/serve.mjs's own header documents) -- stripped here so
-// join(FIXTURE_DIR, 'echo-server.mjs') below points inside apps/fixture/,
-// not apps/.
-const FIXTURE_DIR = fileURLToPath(new URL('../apps/fixture/', import.meta.url)).replace(/[/\\]$/, '')
+// gotcha test/apps/fixture/serve.mjs's own header documents) -- stripped here so
+// join(FIXTURE_DIR, 'echo-server.mjs') below points inside test/apps/fixture/,
+// not test/apps/.
+const FIXTURE_DIR = fileURLToPath(new URL('./apps/fixture/', import.meta.url)).replace(/[/\\]$/, '')
 const FIXTURE_ORIGIN = `http://${HOST}:${STATIC_PORT}`
 const FIXTURE_URL = `${FIXTURE_ORIGIN}/`
 const MANIFEST_URL = `${FIXTURE_URL}.well-known/orivon.json`
@@ -287,7 +287,7 @@ it('Phase 1: the real shell launches, and a real net.connect through the full IP
           // A SECOND, INDEPENDENT connect attempt, made directly here rather
           // than relying only on the fixture's own display text (which
           // stringifies a plain OrivonError-shaped rejection as "[object
-          // Object]" -- apps/fixture/app.js's `error instanceof Error` check
+          // Object]" -- test/apps/fixture/app.js's `error instanceof Error` check
           // is false for it by design, see orivon-surface.ts's own header).
           // This is what actually proves the full pipe: window.orivon.net.
           // connect -> the real preload/main-world wiring -> real Electron
@@ -471,9 +471,9 @@ it('Phase 2: a real grant, issued through the dev-only path rather than test cod
 
         // (a) THE GRANTED PATH, driven from the real page over the real IPC
         // pipe: write, then read back exactly as many bytes as were sent
-        // (the echo server carries no framing) -- apps/fixture/app.js's own
+        // (the echo server carries no framing) -- test/apps/fixture/app.js's own
         // roundTrip() shape, exercised here through window.orivon.net.connect
-        // directly. Port 8873 matches ECHO_PORT (apps/fixture/config.mjs) --
+        // directly. Port 8873 matches ECHO_PORT (test/apps/fixture/config.mjs) --
         // hardcoded rather than closed over, the same reason Phase 1 above
         // hardcodes its own literal port: a value crossing evaluate()'s
         // serialization boundary as a closure, rather than as an explicit

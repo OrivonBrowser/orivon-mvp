@@ -34,14 +34,14 @@ change belongs in their stream.
 
 | Stream | Owns | Build step | State |
 |---|---|---|---|
-| `shell` | `src/main/{index,window,tabs,omnibox,ipc}.ts`, `src/renderer/`, `src/preload/shell.ts`, **`scripts/smoke.mjs`**, **`test/`** | 1 | **done**, maintenance only |
+| `shell` | `src/main/{index,window,tabs,omnibox,ipc}.ts`, `src/renderer/`, `src/preload/shell.ts`, **`scripts/smoke.mjs`**, **`test/` except `test/apps/`** | 1 | **done**, maintenance only |
 | `contracts` | `src/contracts/` | n/a | **change-controlled**, see below |
 | `shared` | `src/shared/` | n/a | **change-controlled**, same rules as `contracts`. Empty by design; see its `README.md` |
 | `broker` | `src/broker/` and its five directories (`policy/`, `grants/`, `handles/`, `transport/`, `adapters/`), `src/preload/app.ts`, `src/preload/orivon-surface.ts`, `src/preload/socket-bridge.ts`, `src/preload/socket-port.ts`, `src/preload/main-world-socket.ts` | 2 | critical path |
 | `shim` | `src/shim/`, the `renderer.resolve.alias` map in `electron.vite.config.ts` | 3 | |
 | `loader` | `src/loader/` | 4 | |
-| `torrent-app` | `apps/torrent/` | 5 | ships as a pre-built app asset |
-| `fixture-app` | `apps/fixture/` | testing | also app #3 and the dev-mode example |
+| `torrent-app` | n/a until build step 5 opens | 5 | ships as a pre-built app asset |
+| `fixture-app` | `test/apps/` | testing | the e2e fixture (also app #3 and the dev-mode example) and the Orivon-native demo |
 | `trust` | `src/trust/` | 6 | first to cut if the schedule slips |
 | `nostr` | `src/nostr/` | 7 | second to cut |
 | `telemetry` | `src/telemetry/` | 8 | independent of the critical path |

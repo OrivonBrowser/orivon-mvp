@@ -1,7 +1,7 @@
-// End-to-end proof for apps/freetube/: the app, loaded from a URL, inside a
+// End-to-end proof for test/apps/freetube/: the app, loaded from a URL, inside a
 // REAL app tab, reaching the REAL network through the broker.
 //
-// WHY THIS EXISTS AND apps/freetube/verify.mjs IS NOT ENOUGH. That script
+// WHY THIS EXISTS AND test/apps/freetube/verify.mjs IS NOT ENOUGH. That script
 // runs the app's API layer under Node, which shares two properties with a
 // routed fetch (no CORS, no forbidden-header list) and nothing else. It
 // cannot show that the broker was involved at all. This test navigates a real
@@ -45,7 +45,7 @@ it(
 
         const userDataDir = await app.evaluate(({ app: electronApp }) => electronApp.getPath('userData'))
         const { manifest, fileCount } = await pinRealApp(userDataDir)
-        check(`the real app bundle pins (${fileCount} files from apps/freetube/)`, fileCount > 10)
+        check(`the real app bundle pins (${fileCount} files from test/apps/freetube/)`, fileCount > 10)
 
         const wired = await grantAndServe(app.evaluate.bind(app), manifest)
 

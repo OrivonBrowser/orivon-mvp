@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // A local UDP echo server: send it a datagram, get the same bytes back from
-// wherever it was bound. The UDP counterpart of apps/fixture/echo-server.mjs,
-// living under test/ rather than apps/fixture/ because apps/fixture/ belongs
-// to the `fixture-app` stream (docs/development/parallel-work.md's ownership
-// map) and this is the `broker` stream's own e2e fixture.
+// wherever it was bound. The UDP counterpart of test/apps/fixture/echo-server.mjs,
+// kept out of test/apps/fixture/ because that directory belongs to the
+// `fixture-app` stream (docs/development/parallel-work.md's ownership map) and
+// this is the `broker` stream's own e2e fixture.
 //
 // PRINTS A READY LINE ON STDOUT, and the test waits for it. There is no UDP
 // equivalent of "poll a connect until it succeeds" -- a datagram to an unbound
