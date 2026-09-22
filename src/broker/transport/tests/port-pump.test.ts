@@ -282,7 +282,7 @@ describe('onStreamFailed marks a stream that died, and only that', () => {
     await tick(10)
 
     expect(onStreamFailed).toHaveBeenCalledWith('reset', rawError)
-    expect(endMessages(send)).toEqual([{ kind: 'end', handleId: HANDLE, code: 'reset' }])
+    expect(endMessages(send)).toEqual([{ kind: 'end', handleId: HANDLE, code: 'reset', platformCode: 'ECONNRESET' }])
   })
 
   it('does NOT fire on a clean EOF -- a peer FIN leaves the socket writable (half-close)', async () => {
