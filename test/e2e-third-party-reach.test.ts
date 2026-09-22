@@ -27,7 +27,7 @@
 // WHAT THE UNGRANTED-HOST CHECK ACTUALLY PROVES, MEASURED RATHER THAN
 // ASSUMED. `img-src`/`font-src`/`media-src` are derived from the SAME live
 // `https.connect` grant `fetchThirdParty`'s own `authoriseReach` checks
-// (`connect-src.ts`'s `appReachCspHeaderValue`, `electron-serve.ts`'s
+// (`connect-src.ts`'s `reachSourcesFor`, `electron-serve.ts`'s
 // `secureHeaderPatternsFor`) -- so in ordinary operation an ungranted host
 // is refused TWICE, by CSP first (the browser never even attempts the
 // request) and by `fetchThirdParty` second, and this file's own real-server
