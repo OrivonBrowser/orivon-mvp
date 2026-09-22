@@ -34,7 +34,7 @@ be an address literal outside public unicast (T12), and must not be an Orivon-in
 
 ## Context
 
-Measured, not reasoned (`apps/freetube-real/README.md` §Spike results):
+Measured, not reasoned (`orivon-ports`'s `apps/freetube/README.md` §Spike results):
 
 - YouTube's integrity token (`GenerateIT`) is issued **only to a document at
   `https://www.youtube.com`**. The same view at `https://example.org` or at an opaque origin got

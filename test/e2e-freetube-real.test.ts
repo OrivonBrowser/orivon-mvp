@@ -1,22 +1,16 @@
-// Upstream FreeTube's own web build, unmodified, running as an Orivon app.
+// Upstream FreeTube, unmodified, running as an Orivon app.
 //
-// Nothing here is a port: `apps/freetube-real/prepare.mjs` adds a manifest and
-// a discovery hint to a stock `pnpm run pack:web` output and changes nothing
-// else. What this measures is how much of a real, third-party application
-// works when the only thing done for it is granting its URL the network.
+// Nothing here is a fork: the `orivon-ports` repository clones FreeTube at a
+// pinned commit, builds it with its own toolchain, and adds a manifest, a
+// discovery hint and a bridge script. What this measures is how much of a
+// real, third-party application works when the only thing done for it is
+// granting its URL the network and standing in for the Electron main process.
 //
-// TWO BUILDS EXIST AND THEY ANSWER DIFFERENT QUESTIONS.
-//   - `dist/orivon-web` is upstream's web build verbatim. Upstream compiles
-//     it with `SUPPORTS_LOCAL_API: false` and stubs `youtubei.js` out, so its
-//     ONLY backend is Invidious.
-//   - `dist/orivon-web-localapi` is the same build with those two settings
-//     flipped (`_scripts/webpack.web-localapi.config.js` in the clone, which
-//     patches upstream's own config rather than forking it). Upstream turns
-//     the Local API off for the web because a browser cannot reach YouTube
-//     directly. Inside Orivon it can, so this build asks what that buys.
+// THE APP LIVES IN THE SIBLING REPOSITORY, not here. This file drives it
+// because the shell is what has to load it, and the shell is here.
 //
-// Requires a prepared build and an ORDINARY shell build; skipped otherwise,
-// for the same reason e2e-dev-origin-grant.test.ts is.
+// Requires a prepared build in that checkout and an ORDINARY shell build;
+// skipped otherwise, for the same reason e2e-dev-origin-grant.test.ts is.
 //
 // NO RESTART-PERSISTENCE CHECK: proving a settings change survives an app
 // restart needs a second launchElectron() call against the SAME
@@ -28,7 +22,8 @@
 // guessed, before leaving it out.
 //
 // RUN THIS WITH:
-//   node scripts/build-ordinary.mjs
+//   cd ../orivon-ports && node src/cli.ts build freetube
+//   cd -  &&  node scripts/build-ordinary.mjs
 //   ORIVON_ORDINARY_BUILD=1 npx vitest run --config test/vitest.e2e.config.ts test/e2e-freetube-real.test.ts
 import { afterAll, expect, it } from 'vitest'
 import type { ChildProcess } from 'node:child_process'
@@ -40,18 +35,23 @@ import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetryi
 import { PORT_APP_FREETUBE_REAL, startOwnServer } from './freetube-fixture.js'
 
 const ORDINARY_BUILD = process.env['ORIVON_ORDINARY_BUILD'] === '1'
-const ROOT = process.env['ORIVON_FREETUBE_REAL_ROOT'] ?? '/home/jhon/git/freetube-src/dist/orivon-web-localapi'
+
+/**
+ * The sibling checkout of `orivon-ports`, which owns the app. A path rather
+ * than a dependency: this repository must build, test and ship without that
+ * one present, so an absent sibling skips this file rather than failing it.
+ */
+const PORTS_ROOT = process.env['ORIVON_PORTS_ROOT'] ?? join(process.cwd(), '..', 'orivon-ports')
+const ROOT = process.env['ORIVON_FREETUBE_REAL_ROOT'] ?? join(PORTS_ROOT, 'out', 'freetube', 'static')
 const BUILT = existsSync(join(ROOT, 'index.html'))
 
 /**
  * Playback needs a minted PoToken (ftElectron.generatePoToken, ADR-0019's
  * web.context). ON BY DEFAULT once the prepared build's own manifest
  * declares `web` -- that is the build that can actually mint one -- so a
- * build without it (`dist/orivon-web`, `dist/orivon-web-localapi`) still
- * only gets the metadata checks above, exactly as before. `=0` forces it
- * off even against a `web`-declaring build; `=1` forces it on regardless
- * (a manifest edit not yet re-prepared, say). See README.md's "Playback on
- * the Electron-renderer build" for what this build now measures.
+ * build without it still only gets the metadata checks above. `=0` forces
+ * it off even against a `web`-declaring build; `=1` forces it on regardless
+ * (a manifest edit not yet re-prepared, say).
  */
 function manifestDeclaresWeb (): boolean {
   if (!BUILT) return false
@@ -70,10 +70,10 @@ const REQUIRE_PLAYBACK = process.env['ORIVON_FREETUBE_REAL_PLAYBACK'] === '0'
  * Unlike REQUIRE_PLAYBACK, deliberately NOT overridable by an env var: the
  * checks this gates (below) read real files through `window.orivon.fs`, so
  * running them against a build whose manifest does not actually declare
- * `web` -- meaning `prepare.mjs --build` never wired the Electron datastore
+ * `web` -- meaning the ports build never wired the Electron datastore
  * bundle in at all -- would just fail on a missing global, not prove
  * anything about storage. `dist/orivon-electron` is the one build where
- * this is true (apps/freetube-real/README.md's "Storage").
+ * this is true (`orivon-ports`'s `apps/freetube/README.md`, "Storage").
  */
 const USES_ELECTRON_DATASTORE = manifestDeclaresWeb()
 
@@ -97,7 +97,7 @@ const TEST_TIMEOUT_MS =
   ADDRESS_BAR_STABLE_TIMEOUT_MS + DEFAULT_ACTION_TIMEOUT_MS * 3 + 8_000 * 8 + 120_000 + APP_CLOSE_RACE_MS + 60_000 +
   (REQUIRE_PLAYBACK ? 40_000 : 0) + (USES_ELECTRON_DATASTORE ? 25_000 : 0)
 
-/** The six nedb datafiles `src/datastores/index.js` names when `IS_ELECTRON_MAIN` is falsy -- see apps/freetube-real/README.md's "Where the data lands". Bare relative filenames: they land directly at the app's own fs root, not inside a subdirectory. */
+/** The six nedb datafiles `src/datastores/index.js` names when `IS_ELECTRON_MAIN` is falsy -- see `orivon-ports`'s `apps/freetube/README.md`, "Where the data lands". Bare relative filenames: they land directly at the app's own fs root, not inside a subdirectory. */
 const NEDB_FILES = ['settings.db', 'profiles.db', 'playlists.db', 'history.db', 'search-history.db', 'subscription-cache.db'] as const
 
 interface OrivonPageGlobal {
@@ -116,7 +116,9 @@ it.skipIf(!ORDINARY_BUILD || !BUILT)(
       let app: Awaited<ReturnType<typeof launchElectron>> | undefined
       let server: ChildProcess | undefined
       try {
-        server = await startOwnServer('freetube-real-server', join(process.cwd(), 'apps', 'freetube-real', 'serve.mjs'), ['--root', ROOT, '--port', String(PORT)])
+        // The sibling's own executor, not a server of ours: what it serves
+        // is what a person running `orivon-port serve freetube` gets.
+        server = await startOwnServer('freetube-real-server', join(PORTS_ROOT, 'src', 'cli.ts'), ['serve', 'freetube', '--port', String(PORT)])
         check(`a plain static server is serving the prepared upstream build (${ROOT})`, true)
 
         // The opt-in `npm run dev` sets, so the loopback origin is granted

@@ -263,7 +263,7 @@ of that decision (the page's own `fetch()` reaching a granted host, and an app b
 set headers a page normally cannot) are **compatibility-layer work, not a new capability**,
 confirmed rather than assumed:
 
-- The FreeTube reconnaissance (`planning/freetube-port-recon.md`) found that app's entire
+- The FreeTube reconnaissance (`orivon-ports`'s `docs/freetube-recon.md`) found that app's entire
   network layer is 32 ordinary `fetch(` call sites, made to work only because its Electron
   main process rewrites outgoing headers (`Origin`, `Referer`) before they leave the process.
   That rewriting has to happen somewhere trusted; it does not need a new grantable capability

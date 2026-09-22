@@ -56,7 +56,7 @@ an owner-level decision this directory does not settle.
 
 ## What this port answers
 
-[`freetube-port-recon.md`](../../docs/planning/freetube-port-recon.md) read FreeTube 0.25.3 and
+`orivon-ports`'s `docs/freetube-recon.md` read FreeTube 0.25.3 and
 concluded: its renderer is a pure browser app over 32 `fetch` call sites, so the Node shim does
 nothing for it, and routing `fetch` with app-chosen forbidden headers is the whole difference
 between working and not working. [`ADR-0017`](../../docs/decisions/ADR-0017-orivon-owns-the-app-http-path.md)
