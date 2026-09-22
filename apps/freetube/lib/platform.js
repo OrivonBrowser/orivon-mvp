@@ -7,15 +7,14 @@
 // one flag reports "not in Orivon" for a tab that is merely ungranted.
 
 /**
- * A routed fetch is installed with `writable: false, configurable: false`;
- * the platform's native `fetch` is a plain writable, configurable property.
- * That difference is the only observable tell before a request is made, and
- * reading it costs no network round trip.
+ * The routed fetch is an ordinary JavaScript function; the platform's own
+ * reports `[native code]`. That is the only tell before a request is made,
+ * and reading it costs no network round trip. It answers "this is not the
+ * platform's fetch" and no more -- the routed binding carries the platform's
+ * own descriptor, so a page that installed its own fetch reads the same way.
  */
 function hasRoutedFetch () {
-  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'fetch')
-  if (descriptor === undefined) return false
-  return descriptor.writable === false && descriptor.configurable === false
+  return !/\[native code\]/.test(String(globalThis.fetch))
 }
 
 function capabilityKinds (grants) {

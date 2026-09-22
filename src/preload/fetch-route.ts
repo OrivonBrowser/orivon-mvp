@@ -2,8 +2,8 @@
 // (see ./main-world-socket.ts's own header for why: SERIALISED via
 // Function.prototype.toString() and re-run fresh in the main world -- no
 // imports, no module-level consts, no closures over anything outside its
-// own body). `exposeFetchRoute` at the bottom is the ordinary,
-// non-serialised wiring shared by preload/app.ts and preload/newtab.ts.
+// own body). ./expose-fetch-route.ts holds the ordinary, non-serialised
+// wiring shared by preload/app.ts and preload/newtab.ts.
 //
 // ADR-0017: an app's own `fetch()` is routed through `window.orivon.net`
 // for any cross-origin http(s) request, carrying whatever headers the app
@@ -487,5 +487,9 @@ export function installFetchRoute (
   // before this function ever ran (this file's own header). A page script
   // that runs immediately cannot outrun this the way it could outrun the
   // async `orivon.app.manifest()` check this replaced.
-  Object.defineProperty(target, 'fetch', { value: routedFetch, writable: false, configurable: false, enumerable: true })
+  //
+  // The descriptor is the platform's own, deliberately -- a page can replace
+  // this binding exactly as it can in a browser. See README.md's Design notes
+  // for why, and for why `window.orivon` is locked where this is not.
+  Object.defineProperty(target, 'fetch', { value: routedFetch, writable: true, configurable: true, enumerable: true })
 }

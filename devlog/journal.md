@@ -23,6 +23,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Port method captured as the `orivon-porting` skill: triage, recon greps, five buckets, the escape test, two silent build traps.
 - Ports split into `orivon-ports`: recipe-driven harness clones, builds and serves an app; FreeTube moved, 34 bridge tests green.
 - Ports split merge dropped FreeTube's new datastore work: it never reached `orivon-ports`, and CI cannot see the gap.
+- Routed `fetch` now carries the platform's descriptor: a locked one killed any app using a `fetch` ponyfill, and guarded nothing.
 
 ### In my head
 

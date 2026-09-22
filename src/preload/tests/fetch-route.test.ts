@@ -114,12 +114,28 @@ describe('installFetchRoute -- gating on isAppTab, synchronously', () => {
     expect(target.fetch).toBe(nativeFetch)
   })
 
-  it('installs a routed fetch that is non-configurable and non-writable', () => {
+  it('installs the routed fetch under the descriptor the platform itself uses, so a page can replace it', () => {
     const target = fakeTarget({ connect: async () => fakeSocket(CANNED_RESPONSE_CHUNKS()) })
     installFetchRoute(true, target)
     const descriptor = Object.getOwnPropertyDescriptor(target, 'fetch')
-    expect(descriptor?.writable).toBe(false)
-    expect(descriptor?.configurable).toBe(false)
+    expect(descriptor?.writable).toBe(true)
+    expect(descriptor?.configurable).toBe(true)
+    expect(descriptor?.enumerable).toBe(true)
+  })
+
+  // The bug this guards against, and the reason the descriptor above is the
+  // platform's: cross-fetch's browser ponyfill (reached through much of the
+  // JS crypto ecosystem) builds a surrogate whose prototype IS the window and
+  // shadows `fetch` on it rather than touching the global. Shadowing a
+  // NON-WRITABLE inherited data property is a TypeError in strict mode, and
+  // an ES module -- including this one -- is always strict, so a locked
+  // `fetch` kills such a bundle while its module graph is still evaluating.
+  it('lets a page shadow the routed fetch on a surrogate global, as cross-fetch does', () => {
+    const target = fakeTarget({ connect: async () => fakeSocket(CANNED_RESPONSE_CHUNKS()) })
+    installFetchRoute(true, target)
+    function Surrogate (this: { fetch: unknown }): void { this.fetch = false }
+    Surrogate.prototype = target
+    expect(() => new (Surrogate as unknown as new () => unknown)()).not.toThrow()
   })
 
   it('does nothing when isAppTab is true but orivon.net is absent (no capability surface to route through)', () => {
