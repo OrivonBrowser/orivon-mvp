@@ -354,15 +354,24 @@ describe('net.Socket#setTimeout -- an idle timer', () => {
   it('inbound data counts as activity and postpones the timeout', async () => {
     const { socket, fake } = await connectedSocket()
     socket.resume()
-    const onTimeout = vi.fn()
-    socket.setTimeout(40, onTimeout)
-    for (let i = 0; i < 4; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 20))
-      fake.push(new Uint8Array([i]))
+    // Fake timers: a real-time version of this depends on 20 ms sleeps
+    // staying under a 40 ms budget, which a loaded machine does not promise.
+    vi.useFakeTimers()
+    try {
+      const onTimeout = vi.fn()
+      socket.setTimeout(100, onTimeout)
+      for (let i = 0; i < 4; i++) {
+        await vi.advanceTimersByTimeAsync(60)
+        fake.push(new Uint8Array([i]))
+        for (let hop = 0; hop < 10; hop++) await Promise.resolve()
+      }
+      expect(onTimeout).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(150)
+      expect(onTimeout).toHaveBeenCalledOnce()
+    } finally {
+      vi.useRealTimers()
+      socket.destroy()
     }
-    expect(onTimeout).not.toHaveBeenCalled()
-    await vi.waitFor(() => expect(onTimeout).toHaveBeenCalledOnce())
-    socket.destroy()
   })
 
   it('setTimeout(0) disables it', async () => {
