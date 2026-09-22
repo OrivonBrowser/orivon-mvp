@@ -28,6 +28,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - `merge=union` is local only: GitHub ignores it, so append-only files show conflicts on a PR that `git merge` resolves silently here.
 - Top-level `apps/` removed: fixture and demo moved to `test/apps/`, carved out of Rule 2's test-file definition so the guards still cover them.
 - Copy was broken on every website, not just apps: the gate now allows clipboard write, and dev `.eth` tabs are secure contexts.
+- Page globals must now carry the platform's descriptor, guarded by a check; an app tab that dies on load finally says so.
 
 ### In my head
 
