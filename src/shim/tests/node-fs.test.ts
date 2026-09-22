@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Orivon } from '../../contracts/capability-api.js'
 import type { FileStat } from '../../contracts/handles.js'
 import { createFakeFileHandle } from './support/fake-file-handle.js'
+import { PageBuffer } from './support/page-buffer.js'
 
 type GlobalWithOrivon = typeof globalThis & { orivon?: Orivon }
 
@@ -92,7 +93,7 @@ describe('fs.readFile / fs.writeFile', () => {
     const data = await new Promise<Buffer>((resolve, reject) => {
       fs.readFile('/piece-0', (err, result) => (err !== null ? reject(err) : resolve(result as Buffer)))
     })
-    expect(Buffer.isBuffer(data)).toBe(true)
+    expect(PageBuffer.isBuffer(data)).toBe(true)
     expect([...data]).toEqual([1, 2, 3])
   })
 

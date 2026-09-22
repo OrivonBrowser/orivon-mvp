@@ -4,14 +4,15 @@
 // @seald-io/nedb's Node storage layer) uses plain callback-style fs or
 // fs.promises, never a hand-rolled one.
 //
-// ENCODING IS node-fs-core.ts's JOB, NOT ORIVON'S (handles.ts's OrivonFs doc,
-// A12) -- every callback export below is a thin wrapper over that file's
-// do*() functions, the SAME core fs.promises (node-fs-promises.ts) calls, so
-// the two surfaces cannot drift (code-guidelines.md Rule 3). fs.open
+// ENCODING IS THE SHIM'S JOB, NOT ORIVON'S (handles.ts's OrivonFs doc, A12):
+// node-fs-encoding.ts. Every callback export below is a thin wrapper over
+// node-fs-core.ts's do*() functions, the SAME core fs.promises
+// (node-fs-promises.ts) calls, so the two surfaces cannot drift
+// (code-guidelines.md Rule 3). fs.open
 // (node-fs-handle.ts) and fs.createReadStream/createWriteStream
 // (node-fs-streams.ts, over that same local FileHandle) are real; see each
 // file's own header. FileHandle#createReadStream/createWriteStream -- a
-// different surface -- still refuses; that did not change. Every synchronous
+// different surface -- still refuses. Every synchronous
 // export except readFileSync (ADR-0016) is a named refusal
 // (node-fs-unsupported.ts).
 //
@@ -27,9 +28,10 @@ import { promises } from './node-fs-promises.js'
 import { FS_CONSTANTS } from './node-fs-constants.js'
 import { getOrivon } from './orivon-global.js'
 import {
-  decode, doAccess, doAppendFile, doMkdir, doReaddir, doReadFile, doRename, doRm, doStat, doUnlink, doWriteFile,
+  doAccess, doAppendFile, doMkdir, doReaddir, doReadFile, doRename, doRm, doStat, doUnlink, doWriteFile,
   type MkdirOptions, type ReadFileOptions, type RmOptions, type WriteFileOptions
 } from './node-fs-core.js'
+import { decode, encodingOf } from './node-fs-encoding.js'
 import { refusingProxy } from './unimplemented.js'
 import { refuseShim } from './errors.js'
 
@@ -48,9 +50,6 @@ function splitTail<Options> (args: readonly unknown[]): { options: Options | und
   return { options, callback }
 }
 
-function encodingOf (options: ReadFileOptions | WriteFileOptions | string | undefined): string | undefined {
-  return typeof options === 'string' ? options : options?.encoding
-}
 
 // Every function below is declared with real Node-shaped overloads (options
 // optional, before the callback) rather than one loose `...args: unknown[]`
@@ -79,8 +78,7 @@ export function readFileSync (path: string, options?: ReadFileOptions | string):
   // synchronous orivon.fs entry point, so there is no async do*() version
   // of this call for node-fs-core.ts to hold -- decode() is shared, the
   // orivon.fs call underneath it is not.
-  const encoding = typeof options === 'string' ? options : options?.encoding
-  return decode(getOrivon().fs.readFileSync(path), encoding)
+  return decode(getOrivon().fs.readFileSync(path), encodingOf(options))
 }
 
 export const writeFileSync = syncUnsupported('fs.writeFileSync')

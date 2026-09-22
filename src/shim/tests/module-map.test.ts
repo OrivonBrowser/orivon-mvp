@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { buildAliasEntries, SHIM_MODULE_MAP } from '../module-map.js'
+import { aliasPattern, buildAliasEntries, SHIM_MODULE_MAP } from '../module-map.js'
 
 // Every 'local' implementation path is resolved from here (src/shim/tests/),
 // one directory below src/shim/ itself -- matching how electron.vite.config.ts
@@ -73,5 +73,32 @@ describe('buildAliasEntries', () => {
     const entries = buildAliasEntries()
     const util = entries.find((entry) => entry.specifier === 'util')
     expect(util).toEqual({ specifier: 'util', kind: 'local', implementation: './node-util.js' })
+  })
+})
+
+describe('aliasPattern', () => {
+  it('matches the bare specifier and its node: form', () => {
+    expect(aliasPattern('fs').test('fs')).toBe(true)
+    expect(aliasPattern('fs').test('node:fs')).toBe(true)
+  })
+
+  // A string alias would capture `fs/promises` too and rewrite it to
+  // `<shim>/node-fs.js/promises`, a path that does not exist.
+  it('never captures a subpath or a longer name', () => {
+    expect(aliasPattern('fs').test('fs/promises')).toBe(false)
+    expect(aliasPattern('fs').test('node:fs/promises')).toBe(false)
+    expect(aliasPattern('fs').test('fs-extra')).toBe(false)
+    expect(aliasPattern('buffer').test('buffer/')).toBe(false)
+  })
+
+  it('matches a subpath row exactly', () => {
+    expect(aliasPattern('fs/promises').test('fs/promises')).toBe(true)
+    expect(aliasPattern('fs/promises').test('node:fs/promises')).toBe(true)
+    expect(aliasPattern('fs/promises').test('fs')).toBe(false)
+  })
+
+  it('treats a specifier as literal text, not a pattern', () => {
+    expect(aliasPattern('string_decoder').test('string_decoder')).toBe(true)
+    expect(aliasPattern('a.b').test('axb')).toBe(false)
   })
 })

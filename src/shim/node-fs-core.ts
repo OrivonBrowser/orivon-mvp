@@ -25,36 +25,17 @@
 
 import { getOrivon } from './orivon-global.js'
 import { toNodeError } from './node-http-errors.js'
-import { toBytes } from './node-stream-bytes.js'
 import { toNodeStats, type NodeStats } from './node-fs-stats.js'
 import { openHandle } from './node-fs-handle.js'
 import { assertRootMkdirAllowed, isRootPath } from './node-fs-root.js'
-import { Buffer } from 'buffer'
+import { decode, encode } from './node-fs-encoding.js'
 
-export interface ReadFileOptions { encoding?: string }
-export interface WriteFileOptions { encoding?: string }
+export interface ReadFileOptions { encoding?: string | null }
+export interface WriteFileOptions { encoding?: string | null }
 export interface MkdirOptions { recursive?: boolean }
 export interface RmOptions { recursive?: boolean }
 
-// hex/base64/base64url are Node's binary-to-text encodings, not character
-// sets -- TextDecoder only knows the latter (WHATWG Encoding Standard) and
-// throws RangeError on these three. Buffer (the `buffer` package) already
-// implements Node's own encoding table, so those three are routed there and
-// everything else keeps going through TextDecoder.
-const BUFFER_TEXT_ENCODINGS = new Set(['hex', 'base64', 'base64url'])
-
-export function decode (bytes: Uint8Array, encoding: string | undefined): Uint8Array | string {
-  if (encoding === undefined) return Buffer.from(bytes)
-  if (BUFFER_TEXT_ENCODINGS.has(encoding)) return Buffer.from(bytes).toString(encoding as 'hex' | 'base64' | 'base64url')
-  return new TextDecoder(encoding).decode(bytes)
-}
-
-/** writeFile's mirror of decode() above -- Buffer.from already knows every Node encoding, hex/base64/base64url included, so unlike decode() this needs no special-cased subset. */
-export function encode (data: unknown, encoding: string | undefined): Uint8Array {
-  return typeof data === 'string' ? Buffer.from(data, (encoding ?? 'utf8') as BufferEncoding) : toBytes(data)
-}
-
-export async function doReadFile (path: string, encoding: string | undefined): Promise<Uint8Array | string> {
+export async function doReadFile (path: string, encoding: string | null | undefined): Promise<Uint8Array | string> {
   try {
     return decode(await getOrivon().fs.readFile(path), encoding)
   } catch (error) {
@@ -62,7 +43,7 @@ export async function doReadFile (path: string, encoding: string | undefined): P
   }
 }
 
-export async function doWriteFile (path: string, data: unknown, encoding: string | undefined): Promise<void> {
+export async function doWriteFile (path: string, data: unknown, encoding: string | null | undefined): Promise<void> {
   // encode() can throw synchronously (an unsupported encoding name, a chunk
   // that is neither a string nor bytes) -- inside this async function body
   // that becomes a normal rejection, exactly like every I/O failure below,
@@ -87,7 +68,7 @@ export async function doWriteFile (path: string, data: unknown, encoding: string
  * effort, swallowing a close error so it cannot hide the real one) before
  * the original error propagates.
  */
-export async function doAppendFile (path: string, data: unknown, encoding: string | undefined): Promise<void> {
+export async function doAppendFile (path: string, data: unknown, encoding: string | null | undefined): Promise<void> {
   const bytes = encode(data, encoding)
   const handle = await openHandle(path, 'a')
   try {

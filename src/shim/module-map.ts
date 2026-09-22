@@ -47,6 +47,15 @@ export interface ShimAliasEntry {
   readonly implementation: string
 }
 
+/**
+ * Matches `specifier` whole, bare or `node:`-prefixed. Never a string alias:
+ * Vite's string form also captures every subpath, rewriting `fs/promises` to
+ * `<shim>/node-fs.js/promises`, which does not exist. A subpath is its own row.
+ */
+export function aliasPattern (specifier: string): RegExp {
+  return new RegExp(`^(?:node:)?${specifier.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}$`)
+}
+
 /** Every 'ready' row, in the shape electron.vite.config.ts resolves into its alias map. Silently drops every 'pending-dependency' row -- there is nothing yet to point an alias at. */
 export function buildAliasEntries (): readonly ShimAliasEntry[] {
   const entries: ShimAliasEntry[] = []

@@ -11,12 +11,10 @@ import {
 } from './node-fs-core.js'
 import type { NodeStats } from './node-fs-stats.js'
 import { FS_CONSTANTS } from './node-fs-constants.js'
+import { encodingOf } from './node-fs-encoding.js'
 import { refusingProxy } from './unimplemented.js'
 import { refuseShim } from './errors.js'
 
-function encodingOf (options: ReadFileOptions | WriteFileOptions | string | undefined): string | undefined {
-  return typeof options === 'string' ? options : options?.encoding
-}
 
 async function readFile (path: string, options?: ReadFileOptions | string): Promise<Uint8Array | string> {
   return await doReadFile(path, encodingOf(options))

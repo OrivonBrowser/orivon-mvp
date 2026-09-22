@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Orivon } from '../../contracts/capability-api.js'
 import type { FileStat } from '../../contracts/handles.js'
 import { createFakeFileHandle } from './support/fake-file-handle.js'
+import { PageBuffer } from './support/page-buffer.js'
 
 type GlobalWithOrivon = typeof globalThis & { orivon?: Orivon }
 
@@ -66,7 +67,7 @@ describe('fs.promises', () => {
     await promises.writeFile('/x', new Uint8Array([1, 2, 3]))
     expect(files.get('/x')).toEqual(new Uint8Array([1, 2, 3]))
     const data = await promises.readFile('/x')
-    expect(Buffer.isBuffer(data)).toBe(true)
+    expect(PageBuffer.isBuffer(data)).toBe(true)
   })
 
   it('readFile respects an encoding option', async () => {
