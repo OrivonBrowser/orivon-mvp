@@ -58,6 +58,14 @@ Also read [`.claude/skills/orivon-electron/SKILL.md`](../../.claude/skills/orivo
 
 ## Design notes
 
+**[`globals.ts`](globals.ts) writes `process`, `setImmediate` and `clearImmediate` with a plain
+assignment, not `Object.defineProperty`, on purpose.** That is the descriptor Node gives its own:
+ordinary, writable, replaceable. ADR-0021 makes it a rule rather than an accident -- an app may
+shadow or replace any of the three, and a locked one would kill a bundle that ponyfills it while
+its module graph is still evaluating, naming no cause. `npm run check:page-globals` guards the
+source and [`tests/globals.test.ts`](tests/globals.test.ts) guards the behaviour.
+
+
 **Polyfill-grade vs Orivon-grade primitives, and why the gap is documented rather than closed
 here (A132, T26 in `docs/architecture/security-model.md`).** The placement is the mitigation, and
 it is the right one: the eight core polyfills (`Buffer`, `stream`, `events`, `path`, `os`,

@@ -489,7 +489,8 @@ export function installFetchRoute (
   // async `orivon.app.manifest()` check this replaced.
   //
   // The descriptor is the platform's own, deliberately -- a page can replace
-  // this binding exactly as it can in a browser. See README.md's Design notes
-  // for why, and for why `window.orivon` is locked where this is not.
+  // this binding exactly as it can in a browser (ADR-0021, which governs
+  // every global installed here). README.md's Design notes has the short
+  // version, and why `window.orivon` is locked where this is not.
   Object.defineProperty(target, 'fetch', { value: routedFetch, writable: true, configurable: true, enumerable: true })
 }
