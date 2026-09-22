@@ -15,10 +15,10 @@ Five storage tiers, deliberately distinct:
 | Tier | What | Where | Who can read it |
 |---|---|---|---|
 | **App code cache** | manifest + frontend assets fetched per ADR-0005 | `<userData>/apps/<origin>/code/` | broker only; apps cannot write here |
-| **App files** | app-managed data — torrent payloads, caches, resume state | `<userData>/apps/<origin>/files/` | that app, via `orivon.fs` |
+| **App files** | app-managed data: torrent payloads, caches, resume state | `<userData>/apps/<origin>/files/` | that app, via `orivon.fs` |
 | **App web storage** | localStorage, IndexedDB, cookies, cache | a dedicated Electron `session` partition per origin | that app's renderer only |
 | **Browser secrets** | identity seed, grant ledger, settings | `<userData>/`, encrypted via Electron `safeStorage` (OS keychain) | **no app, ever** |
-| **Browser state** | ordinary shell state that is neither secret nor app-owned — bookmarks are the first thing in this tier | `<userData>/bookmarks.json`, plain JSON, no `safeStorage` | the shell only, never an app. **Added 2026-08-28** — the four original tiers had no row for this, and bookmarks were the first thing to fall into the gap. Not encrypted: a bookmark list is not a secret, and encrypting it would buy nothing while making the file harder to inspect or hand-edit |
+| **Browser state** | ordinary shell state that is neither secret nor app-owned, and bookmarks are the first thing in this tier | `<userData>/bookmarks.json`, plain JSON, no `safeStorage` | the shell only, never an app. **Added 2026-08-28.** The four original tiers had no row for this, and bookmarks were the first thing to fall into the gap. Not encrypted: a bookmark list is not a secret, and encrypting it would buy nothing while making the file harder to inspect or hand-edit |
 
 ## Context
 The owner asked directly whether data for apps opened by URL is stored locally or remotely.
@@ -39,7 +39,7 @@ trustlessness, and remote storage is by definition a party the user must trust.
   and read-only to the app.
 
 ## Reasoning
-Local-first is not a close call — four independent arguments converge:
+Local-first is not a close call: four independent arguments converge:
 1. **Trustlessness.** Local data requires trusting nobody. This is the product thesis.
 2. **The flagship demands it.** Torrent payloads, DHT routing tables and resume state are
    inherently local.
@@ -60,11 +60,11 @@ every app's data. This is the single most consequential detail in the storage mo
 ## Consequences
 - **No cross-device continuity.** A user's torrents and Nostr identity do not follow them to
   another machine. Accepted for the MVP; sync is out of scope.
-- When sync is eventually built, the honest design is a **user-chosen backend** — their own
-  server, Nostr relays, or IPFS — never an Orivon-operated one. Recorded now so a future
+- When sync is eventually built, the honest design is a **user-chosen backend**: their own
+  server, Nostr relays, or IPFS, never an Orivon-operated one. Recorded now so a future
   contributor does not reach for the easy centralised option.
 - **Disk usage becomes a first-class UI concern**, because torrent payloads are large. The
-  MVP needs a visible per-app disk usage view and a way to delete data — a real, small scope
+  MVP needs a visible per-app disk usage view and a way to delete data, a real, small scope
   item that follows directly from the flagship choice.
 - **Uninstalling an app must remove all four tiers** for that origin. Partial deletion would
   leave a tracking surface behind.
@@ -77,6 +77,6 @@ every app's data. This is the single most consequential detail in the storage mo
 ## Reversibility
 - **Cost to reverse:** cheap in one direction (adding optional user-chosen sync later),
   expensive and values-breaking in the other (moving app data to an Orivon server).
-  The origin-key definition is the expensive part — see Reasoning.
-- **What would make us revisit:** users asking for cross-device continuity in numbers — at
+  The origin-key definition is the expensive part; see Reasoning.
+- **What would make us revisit:** users asking for cross-device continuity in numbers, at
   which point the answer is user-chosen backends, not an Orivon service.

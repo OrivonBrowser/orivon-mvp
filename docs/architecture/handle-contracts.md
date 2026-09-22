@@ -1,63 +1,19 @@
-# Handle contracts — v0 specification
+# Handle contracts: v0 specification
 
-> **Status: partially implemented, corrected 2026-09-03.** This replaces a blanket
-> "IMPLEMENTED" set 2026-09-01 (PR #46), which was checked section by section for this
-> correction and found true for `TcpSocket` and the kind-agnostic mechanics underneath every
-> handle type, but false for the other four handle types this document specifies. The
-> per-section markers below say which is which; this paragraph gives the shape.
->
-> **Genuinely built and tested**, against `src/broker/handles/handles.ts`, `handle-store.ts`,
-> `handle-contracts.ts` and `errors.ts`: the §Common shape ownership check, the 11-code closed
-> error enum in §Errors (every code verified to match exactly), the kind-agnostic §Revocation
-> cascade (tombstoning, graceful session teardown, the `fs.userSelected` exception), and
-> §TcpSocket in full, including its close/half-close wire table (`src/broker/adapters/node-adapters.ts`'s
-> `destroySocket`) — exercised by `handles.test.ts`, `handles-limits.test.ts` and
-> `node-adapters.test.ts`.
->
-> **Corrected 2026-09-10.** The version of this banner replaced here listed `TcpServer`,
-> `UdpSocket` and `IdentityHandle` as existing only as contract types. All three have since been
-> built, and a banner that says otherwise sends a reader looking for code they will not find —
-> or, worse, stops them looking for code that is there. Current state, per handle:
->
-> - **`TcpSocket`** — built and page-reachable, as before, including the close/half-close wire
->   table (`node-adapters.ts`'s `destroySocket`).
-> - **`UdpSocket`** — built and page-reachable. See §UdpSocket's own correction below.
-> - **`TcpServer`** — **built and reachable from a page** (corrected 2026-09-15; A114 resolved). See §TcpServer.
-> - **`IdentityHandle`** — `orivon.id.publicKey`/`sign` are built and page-reachable
->   (`src/broker/id-capability.ts`, wired through the control channel and the preload surface).
->   `requestIdentity` and the named-identity `signEvent` shape below are **not** built: they need
->   the connect prompt, which is build step 4 (`docs/open-questions.md` A111).
-> - **`FileHandle`** — **corrected again 2026-09-15 (A184, `stream/broker-15-fs-open`).** The
->   positional `read`/`write`, `stat`, `truncate`, `sync`, `readable()` and `writable()` shape
->   below is now built and page-reachable via `orivon.fs.open` — `src/broker/fs-capability.ts`,
->   the control-channel cases in `src/broker/transport/dispatch-fs.ts`, and
->   `src/preload/orivon-surface.ts`. **`readable()`/`writable()` are the one part that stopped at
->   the broker layer, same shape as `TcpServer`'s own note above:** they are real WHATWG streams,
->   tested directly against a real fd (`src/broker/adapters/tests/node-fs-adapter-open.test.ts`),
->   but there is no CONTROL_CHANNEL case yet to deliver one to a page, so
->   `window.orivon.fs.open(...)`'s returned object is deliberately narrower than `FileHandle`
->   here — no `readable`/`writable`, and `closed` is not live-pushed (it settles on an explicit
->   `close()`, not on a broker-side revocation the app never asked for). `orivon.fs.userSelected`
->   is untouched by this lane and still does not exist.
->
-> Each section's own marker is the authority for that handle; this list is a summary and will go
-> stale before they do.
->
 > This document defines the five handle types named but not specified in
 > `capability-api.md` §v0 surface: `TcpSocket`, `TcpServer`, `UdpSocket`, `FileHandle`,
-> `IdentityHandle`. It is a sibling of that document, not a section inside it — the same
+> `IdentityHandle`. It is a sibling of that document, not a section inside it, and the same
 > care level applies (ADR-0002: the Electron shell is disposable, this interface is not),
 > kept separate so the policy content in `capability-api.md` stays readable at its current
 > length.
 >
-> Direction decided by the owner, 2026-08-25 (`open-questions.md` A10, `ADR-0008`): **WHATWG
-> streams are the durable interface. Node shapes are presented by `orivon-node-shim` on top,
-> not by this layer.** `orivonApiVersion: 0` still applies — breaking changes are permitted
-> here while it is 0.
+> **WHATWG streams are the durable interface. Node shapes are presented by `orivon-node-shim`
+> on top, not by this layer** (`ADR-0008`). `orivonApiVersion: 0` still applies: breaking
+> changes are permitted here while it is 0.
 >
-> Every `file:line` and function-name claim above was hand-verified against the tree on
-> 2026-09-03; nothing keeps it in sync automatically, so it can go stale silently the next time
-> the code it describes changes — re-check before trusting it.
+> **Per-handle build status is not tracked here.**
+> [`../planning/compatibility-matrix.md`](../planning/compatibility-matrix.md) carries it,
+> re-derived from the tree. This document says what each handle *does*.
 
 ## §Common shape
 
@@ -80,7 +36,7 @@ interface Handle {
 - **Every handle records the grant ID that authorised it**, captured at acquisition. This is
   what §Revocation walks.
 
-## §Errors — a closed enum
+## §Errors: a closed enum
 
 ```ts
 class OrivonError extends Error {
@@ -92,14 +48,14 @@ class OrivonError extends Error {
 
 | code | meaning |
 |---|---|
-| `denied` | outside what was granted — pattern mismatch, undeclared capability, privileged port, blocked address range |
+| `denied` | outside what was granted: pattern mismatch, undeclared capability, privileged port, blocked address range |
 | `revoked` | the grant authorising this handle was withdrawn |
 | `unreachable` | the peer could not be reached (refused, no route, DNS failure) |
 | `timeout` | the operation exceeded its deadline |
 | `reset` | the peer terminated an established connection abruptly |
 | `closed` | operation attempted on a handle that is already closed |
 | `limit` | a resource limit was hit (quota, socket count, in-flight cap) |
-| `invalid` | malformed argument — bad path, bad address, bad option |
+| `invalid` | malformed argument: bad path, bad address, bad option |
 | `notFound` | the named file or directory does not exist |
 | `exists` | the named file or directory already exists |
 | `internal` | a broker fault; should never be observed by an app, always logged |
@@ -108,8 +64,8 @@ class OrivonError extends Error {
 
 - **Closed.** An app may switch on `code` exhaustively and treat an unrecognised value as a
   bug, not a case to silently ignore. Adding a code is a breaking change once
-  `orivonApiVersion` reaches 1 — see §Versioning.
-- `platformCode` carries the underlying engine's own detail — a Node errno today
+  `orivonApiVersion` reaches 1; see §Versioning.
+- `platformCode` carries the underlying engine's own detail, a Node errno today
   (`ECONNREFUSED`, `ENOENT`, ...), whatever WASI or Mojo expose later. **Advisory and
   unversioned.** An app that branches on `platformCode` is coding against the engine
   underneath, not against Orivon, and that code may need adjustment across the Node →
@@ -117,43 +73,42 @@ class OrivonError extends Error {
   `orivon-node-shim` can reconstruct a faithful Node `Error` (`err.code === 'ECONNREFUSED'`
   is a real Node idiom and must keep working through the shim).
 - **`denied` never carries a `platformCode`, and is uniform across every reason for denial.**
-  This is deliberate, not an oversight — see the owner decision below.
+  This is deliberate, not an oversight; see §How much failure detail an app receives below.
 - Every other code, for an address or resource the app was **permitted** to attempt, carries
-  the real `platformCode`. See the owner decision immediately below for why.
+  the real `platformCode`. See the section immediately below for why.
 
-### Owner decision, 2026-08-26 — how much failure detail an app receives
+### How much failure detail an app receives
 
-**Decided by the owner:** apps get the true, specific reason for a failure — refused,
-timed out, no route, name doesn't resolve — whenever the attempt was one the app was
-permitted to make. Detail is not withheld across the board to frustrate network scanning.
+Apps get the true, specific reason for a failure (refused, timed out, no route, name doesn't
+resolve) whenever the attempt was one the app was permitted to make. Detail is not withheld
+across the board to frustrate network scanning.
 
-**Reasoning recorded, not re-litigated:** withholding detail everywhere breaks the large
+**Why.** Withholding detail everywhere breaks the large
 body of existing Node code that branches on specific error codes (`ECONNREFUSED` vs.
 `ETIMEDOUT` vs. `EHOSTUNREACH` drive real retry and fallback logic), which directly costs
 `orivon-node-shim`'s mechanical-port goal (design rule 1) and `app-compatibility.md`'s
 tier-2 porting cost. Address policy (T12) already denies private ranges unless the manifest
 explicitly declares them and the user grants it, so the addresses an app can legally probe
-are addresses any ordinary web page can already probe via `fetch` timing side channels —
+are addresses any ordinary web page can already probe via `fetch` timing side channels, so
 detailed TCP errors add little that is not already leakable. Where a user *has* explicitly
 granted a private-range pattern, detailed errors inside that range are what consenting to
 the grant means.
 
-**Refinement, AI-applied, not re-asked:** the decision above is about attempts the app was
-*allowed* to make. A `denied` result — the attempt itself was outside the grant — carries no
+**That covers attempts the app was *allowed* to make.** A `denied` result, where the attempt itself was outside the grant, carries no
 detail and is identical regardless of *why* it was denied (privileged port, pattern
 mismatch, blocked private range, capability absent from the manifest). If `denied` varied by
 reason, an app could iterate through denials and map exactly which pattern, port, or address
-class is blocked, turning the permission boundary itself into a probe target. This costs
-nothing against the owner's decision, because `denied` is precisely the boundary the owner's
-own reasoning says should stay uninformative.
+class is blocked, turning the permission boundary itself into a probe target. The two rules do
+not conflict: detail is owed for attempts inside the grant, and the boundary itself stays
+uninformative.
 
 ## §TcpSocket
 
-> **Implemented in the broker and Electron's main-process IPC layer** — `src/broker/index.ts`'s
+> **Implemented in the broker and Electron's main-process IPC layer**: `src/broker/index.ts`'s
 > `net.connect`, `src/broker/transport/ipc.ts`'s control-channel dispatch and real `MessageChannelMain`
 > port, `src/broker/transport/port-pump.ts`'s read-side credit pump. TCP only. **Not yet reachable from a
-> page**: `net.connect` is absent from `window.orivon` — `src/preload/orivon-surface.ts`'s own
-> header explains why (no way to hand back a socket that could not be closed) — until the
+> page**: `net.connect` is absent from `window.orivon`, and `src/preload/orivon-surface.ts`'s own
+> header explains why (no way to hand back a socket that could not be closed), until the
 > write-side of the byte pump lands.
 
 ```ts
@@ -170,13 +125,13 @@ interface TcpSocket extends Handle {
 ```
 
 - `orivon.net.connect()` resolves **after** the TCP handshake completes. There is no
-  `connect` event and no observable "connecting" state on the returned object — the
+  `connect` event and no observable "connecting" state on the returned object: the
   resolution of the promise *is* the connect event (design rule 2: everything is async).
-- **General rule — and the fix for the gate-1b `address()` problem below:** anything Node
+- **General rule, and the fix for the gate-1b `address()` problem below:** anything Node
   exposes as a *synchronous* property is resolved by the broker before the acquisition
   promise settles, and handed to the app as a plain, already-populated value. It is never a
   cache that starts empty and fills in from a later event.
-- `remoteAddress` is the address the connection actually reached — the **resolved** address,
+- `remoteAddress` is the address the connection actually reached: the **resolved** address,
   not the hostname the app asked for. This is required by T12: manifest patterns are checked
   against resolved addresses, and an app inspecting what it actually connected to must see
   the same address the policy check saw, or DNS-rebinding-style confusion becomes possible
@@ -187,23 +142,21 @@ interface TcpSocket extends Handle {
 | action | wire effect | `readable` | `writable` | `closed` |
 |---|---|---|---|---|
 | `writable.close()` | FIN sent | open | closed | pending |
-| peer sends FIN | — | ends (EOF, no error) | open | pending |
-| both of the above | — | closed | closed | resolves |
+| peer sends FIN | n/a | ends (EOF, no error) | open | pending |
+| both of the above | n/a | closed | closed | resolves |
 | `socket.close()` | FIN sent, then handle released | closed | closed | resolves |
 | `writable.abort(e)` | RST sent | errored | errored | rejects `reset` |
 | peer resets | RST received | errored | errored | rejects `reset` |
 | grant revoked | RST sent | errored | errored | rejects `revoked` |
 
-Closing the writable side does **not** close the readable side — that pairing is Node's
+Closing the writable side does **not** close the readable side; that pairing is Node's
 `socket.end()`, and half-close is load-bearing: a BitTorrent peer connection sends a
 choke/interested handshake and keeps reading long after it has stopped writing new requests.
 `closed` only settles once both directions have reached a terminal state.
 
-### Backpressure — a credit window
+### Backpressure: a credit window
 
-> **Status: implemented, corrected 2026-09-06.** This supersedes a "split status" block that
-> said the renderer-side half "is still not wired up" — true when written, false since the
-> preload byte pump landed, and left uncorrected for three days. Both halves now exist:
+> **Where each half lives.**
 >
 > - Broker read side: `src/broker/transport/port-pump.ts`'s `pumpLoop` stops reading the OS socket at
 >   credit zero.
@@ -219,8 +172,8 @@ choke/interested handshake and keeps reading long after it has stopped writing n
 > ordinary case for this browser rather than an edge one. Coalescing must not depend on the tab
 > being visible. `open-questions.md` A48 records the whole resolution.
 
-This answers `capability-api.md` §Throughput's open note: *"`MessagePortMain` has no
-documented backpressure, so the shim must implement its own flow control."*
+This is the flow control `capability-api.md` §Throughput requires, because `MessagePortMain` has
+no documented backpressure of its own.
 
 - The broker sends at most `WINDOW` bytes (default **1 MiB**) ahead of what the renderer has
   acknowledged consuming.
@@ -230,7 +183,7 @@ documented backpressure, so the shim must implement its own flow control."*
   a credit message back to the broker carrying the number of bytes consumed since the last
   credit update.
 - When the outstanding-credit budget reaches zero, the broker **stops reading the underlying
-  OS socket** — it does not keep reading and buffer in the main process. This propagates real
+  OS socket**, and it does not keep reading and buffer in the main process. This propagates real
   TCP backpressure to the remote peer, which is the whole point: buffering in the broker just
   moves the memory-growth problem from the renderer to the main process instead of solving
   it.
@@ -239,10 +192,10 @@ documented backpressure, so the shim must implement its own flow control."*
   backpressure too.
 - Credit updates are **coalesced**: at most one credit message per 64 KiB consumed, or once
   per animation frame, whichever comes first. A 52 MB/s stream (gate 4's measured throughput)
-  must not emit a broker message per chunk of data — that reintroduces the per-message IPC
+  must not emit a broker message per chunk of data, because that reintroduces the per-message IPC
   cost `capability-api.md` §Throughput moved off the main channel in the first place.
 
-### Backpressure — write direction
+### Backpressure: write direction
 
 The write direction is the read-side credit window run backwards: instead of the broker
 granting the renderer permission to receive, the broker grants the renderer a byte budget to
@@ -250,18 +203,18 @@ granting the renderer permission to receive, the broker grants the renderer a by
 transport layer would otherwise stop a hostile renderer posting bytes faster than the OS
 socket drains (`security-model.md` T11b). The wire messages are `src/contracts/ipc.ts`'s
 `WriteMessage`, `WriteAckMessage`, `WriteFailedMessage`, `WriteEndMessage` and
-`WriteAbortMessage` — this section describes only the contract those types encode, not how any
+`WriteAbortMessage`. This section describes only the contract those types encode, not how any
 particular broker or preload implements them.
 
 - **The write window (`LIMITS.writeWindowBytes`, 256 KiB)** bounds how many bytes the renderer
-  may have outstanding on one handle — posted via `WriteMessage`, not yet accepted into the OS
+  may have outstanding on one handle: posted via `WriteMessage`, not yet accepted into the OS
   socket's send buffer via a matching `WriteAckMessage`. A single `WriteMessage.chunk` must not
   itself exceed this many bytes; a caller with a larger buffer splits it into
   `writeWindowBytes`-sized or smaller pieces before posting, and posting an oversized chunk is
   a protocol error, not something the broker is obliged to accept, truncate, or buffer.
 - **Ack coalescing.** `WriteAckMessage.bytesAccepted` is cumulative since the last ack on that
   handle and may be coalesced under the same `CREDIT_COALESCE_BYTES` threshold the read
-  direction uses (`src/contracts/ipc.ts`) — one number both directions agree on, per
+  direction uses (`src/contracts/ipc.ts`): one number both directions agree on, per
   `code-guidelines.md` Rule 3, rather than a second constant that could drift from it.
 - **The heartbeat (`WRITE_HEARTBEAT_MS`, 5 s).** While a write is posted and not yet accepted,
   the broker emits a `bytesAccepted: 0` `WriteAckMessage` at this interval. This is what lets a
@@ -269,17 +222,17 @@ particular broker or preload implements them.
   minutes) be told apart from a dead transport, whose failure mode is silence rather than an
   error (see §What the shim must do).
 - **The silence timeout (`WRITE_SILENCE_TIMEOUT_MS`, 15 s).** Scoped to **outstanding writes
-  only** — it runs while at least one posted `WriteMessage` has not yet been resolved by a
+  only**, so it runs while at least one posted `WriteMessage` has not yet been resolved by a
   `WriteAckMessage` (including a heartbeat) or a `WriteFailedMessage`, and is cleared the
   instant nothing is outstanding on that handle. **It is not a whole-port idle timeout**: a
-  socket with no write in flight — an ordinary request/response pause, or a choked peer between
-  writes — has nothing armed and cannot trip it. Firing it is terminal for the write direction:
+  socket with no write in flight (an ordinary request/response pause, or a choked peer between
+  writes) has nothing armed and cannot trip it. Firing it is terminal for the write direction:
   both streams error and `closed` rejects with `'timeout'`. Deliberately more than double the
   heartbeat interval, so a heartbeat has a real chance to land first (`src/contracts/tests/ipc.test.ts`
   asserts the ratio).
 - **No sequence number.** A `MessagePort` delivers in order without loss on this path, a
   `WritableStream`'s sink is never re-entered before the previous write settles, and write
-  silence is terminal rather than something to resynchronise after — so nothing needs a
+  silence is terminal rather than something to resynchronise after, so nothing needs a
   sequence number to recover.
 
 ## §TcpServer
@@ -292,18 +245,17 @@ particular broker or preload implements them.
 > accepted socket's handle and the server's handle both reject `'revoked'` and puts a real RST on
 > the wire (the client sees `ECONNRESET`).
 >
-> **CORRECTED 2026-09-15 — it IS reachable from a page now; A114 is resolved.** This paragraph
-> used to say the opposite, and the reasoning it recorded is kept because it explains the shape
-> that was chosen. `TcpServer.connections` has to hand the renderer a fresh port *per accepted
+> **Why the delivery shape is what it is** (A114). `TcpServer.connections` has to hand the
+> renderer a fresh port *per accepted
 > socket*, nested inside the server's own port, and none of the three delivery mechanisms that
 > existed covered it: the control channel's structured-clone reply carries no transferable,
 > `deliverPort` only answers a control-channel request, and a socket's dedicated port carried a
 > **closed union** with no "here is a new handle and its port" shape.
 >
-> The owner chose to **hand the accepted socket over immediately** rather than have the renderer
-> fetch it on request (`d-0028`): the alternative left every inbound peer waiting a round trip and
+> The accepted socket is **handed over immediately** rather than fetched on request:
+> the alternative left every inbound peer waiting a round trip and
 > briefly existing in the broker with no renderer end, which under seeding load reads as peers that
-> connect and immediately drop. `src/contracts/ipc.ts` gained `AcceptedMessage` — **the only
+> connect and immediately drop. `src/contracts/ipc.ts` gained `AcceptedMessage`, **the only
 > transferable member of `BrokerToRendererMessage`**, and that asymmetry is deliberate and load-
 > bearing: transferables are permanently banned on the renderer → main path (electron#34905 loses
 > them silently), and this is the main → renderer direction, the one that works.
@@ -323,17 +275,17 @@ interface TcpServer extends Handle {
   payoff of the streams decision: if the app stops reading `connections`, the broker stops
   *accepting* new connections, and the OS listen backlog itself applies pressure back to
   whoever is trying to connect. An `EventEmitter`'s `'connection'` event has no way to say
-  "not yet" — every accepted connection is delivered whether the app is ready or not, which
+  "not yet": every accepted connection is delivered whether the app is ready or not, which
   is exactly the unbounded-growth failure mode design rule 3's "handles, not ambient
-  authority" and the owner's streams decision both exist to avoid.
-- `connections` is created with `highWaterMark: 0` — the broker never pre-accepts a
+  authority" and the streams interface (`ADR-0008`) both exist to avoid.
+- `connections` is created with `highWaterMark: 0`, so the broker never pre-accepts a
   connection the app has not asked for by reading. Each `read()` on the stream accepts
   exactly one pending connection.
 - Sockets delivered through `connections` are **derived handles**: they inherit the server's
   grant (see §Revocation), and closing the server closes every socket it produced that is
   still open.
 - The bound `localPort` is resolved before the acquisition promise for the server settles, so
-  requesting `port: 0` (ask the OS to pick one) still yields a real, populated `localPort` —
+  requesting `port: 0` (ask the OS to pick one) still yields a real, populated `localPort`,
   the same synchronous-property rule as `TcpSocket`.
 
 ## §UdpSocket
@@ -366,66 +318,56 @@ interface UdpSocket extends Handle {
 }
 ```
 
-- Message-oriented, not byte-oriented — this mirrors `WebTransport.datagrams` rather than a
+- Message-oriented, not byte-oriented: this mirrors `WebTransport.datagrams` rather than a
   `Duplex`. One `Datagram` chunk is exactly one UDP packet, on both `readable` and `writable`;
   the broker never splits or coalesces a datagram.
 - `localPort` is resolved and populated at acquisition. **This is what removes the
   synchronous-`address()` problem** that `spike/gate1b/shim/dgram.js` had to work around with
-  a cache filled in by the `'listening'` event — under this contract there is no cache to
+  a cache filled in by the `'listening'` event. Under this contract there is no cache to
   fill, because the value is already there when the handle is returned.
 - **Datagram loss is expected, and unsignalled as an error.** If the app is not reading fast
   enough and the `readable` internal queue is full, further inbound datagrams are dropped and
-  `droppedInbound` increments — no error, no rejected promise, no dropped-datagram event.
+  `droppedInbound` increments, with no error, no rejected promise and no dropped-datagram event.
   This is stated explicitly because it is the one place in this document where "backpressure"
   means *discard the data* rather than *slow the sender down*: UDP already has no delivery
   guarantee, and DHT/tracker traffic is designed to tolerate loss. Buffering to avoid losing a
   datagram would convert a protocol built to tolerate loss into an unbounded memory growth
-  path — the exact failure this whole document exists to prevent.
+  path, the exact failure this whole document exists to prevent.
 - **The inbound window has two bounds, and needs both.** A count
   (`LIMITS.inboundDatagramWindow`) and a byte total (`LIMITS.inboundDatagramWindowBytes`);
-  whichever is exhausted first starts the dropping described above. Added 2026-09-07 with the
-  wire, because this section's original "the `readable` internal queue is full" describes a count
-  alone, and a count large enough for real DHT traffic has a worst case of
-  count x `maxDatagramBytes` — far more memory than a TCP socket may pin. A byte bound alone has
+  whichever is exhausted first starts the dropping described above. A count alone is not
+  enough: a count large enough for real DHT traffic has a worst case of
+  count x `maxDatagramBytes`, far more memory than a TCP socket may pin. A byte bound alone has
   the mirror-image worst case: a flood of one-byte datagrams, a million messages inside a
   megabyte. See `src/contracts/ipc.ts`'s `DatagramCreditMessage`.
 - **Outbound loss is counted too, and this is a deliberate asymmetry with every other failure in
-  this document.** A datagram the broker does not send — a destination the granted `udp.send`
-  patterns do not authorise, an oversized payload, an OS refusal — increments `droppedOutbound`
+  this document.** A datagram the broker does not send (a destination the granted `udp.send`
+  patterns do not authorise, an oversized payload, an OS refusal) increments `droppedOutbound`
   and does **not** reject the write. Rejecting the sink's promise is the only way a
   `WritableStream` can report one failed write, and it errors the stream permanently; a DHT peer
   list routinely names addresses outside a grant, so the first excluded peer would kill a working
-  swarm. Counting keeps `denied` uniform as well — the app learns *that* a send was dropped, never
-  which pattern excluded it (§Errors). Owner sign-off pending, `open-questions.md` A87.
+  swarm. Counting keeps `denied` uniform as well: the app learns *that* a send was dropped, never
+  which pattern excluded it (§Errors). Not yet confirmed; `open-questions.md` A87.
 - No multicast support in v0 (`addMembership`/`dropMembership` are not part of this
   contract), matching the recorded v0 limitation that local peer discovery is unavailable.
 
 ## §FileHandle
 
-> **Partially implemented, corrected 2026-09-15 (A184).** `orivon.fs.open` now builds the whole
-> `FileHandle` shape below at the broker layer (`src/broker/fs-capability.ts`,
-> `src/broker/adapters/node-fs-adapter.ts`) — positional `read`/`write` (no implicit cursor,
+> **Where this shape stops today.** `orivon.fs.open` and `orivon.fs.userSelected`'s FILE shape
+> both produce the `FileHandle` below (`src/broker/fs-capability.ts`,
+> `src/broker/adapters/node-fs-adapter.ts`): positional `read`/`write` (no implicit cursor,
 > confined once at open time), `stat`, `truncate`, `sync`, and real WHATWG `readable()`/
-> `writable()` streams over the same fd. `read`/`write`/`stat`/`truncate`/`sync`/`close` are
-> page-reachable via `src/broker/transport/dispatch-fs.ts`'s control-channel cases and
-> `src/preload/orivon-surface.ts`. **`readable()`/`writable()` stop at the broker layer**: they
-> are real, tested streams, but nothing yet delivers one to a page over a port the way
-> `net.connect`'s byte pump does for `TcpSocket` — see the banner above and this lane's own PR
-> body. The kind-agnostic handle-table accounting for a `file`-kind handle (§Limits, the
-> `userSelected` revocation exception) was already built and tested before this lane, and is now
-> exercised by a real acquisition rather than only its own unit tests.
+> `writable()` streams over the same fd, sharing one `FailableFileHandle` shape and one set of
+> handle-scoped control cases in `src/broker/transport/dispatch-fs.ts`. **`readable()`/
+> `writable()` stop at the broker layer**: they are real, tested streams, but nothing delivers one
+> to a page over a port the way `net.connect`'s byte pump does for `TcpSocket` (A184).
 >
-> **`orivon.fs.userSelected` corrected 2026-09-16 (A187, A194, d-0032, `stream/main-10-
-> user-selected`).** Built end to end at the broker layer for both shapes (confinement rooted at
-> the picked path, persistence across a restart, both revocation-cascade halves), and page-
-> reachable for the FILE shape only, over the SAME `fs.read`/`write`/`fstat`/`truncate`/`sync`/
-> `close` control cases `fs.open` already uses (one `FailableFileHandle` shape, shared). The
-> FOLDER shape (`DirectoryHandle` — `src/contracts/handles.ts`'s own doc comment, not repeated as
-> a section of its own here) is real and tested at the broker layer but NOT page-reachable —
-> `dispatch-fs.ts`'s own `'fs.userSelected'` case refuses `directory: true`
-> explicitly: its eight-method RPC surface has no existing handle-scoped dispatch precedent to
-> reuse, unlike `FileHandle`'s, and building one would mean inventing a delivery mechanism for a
-> method set A167 already flags as an unconfirmed AI recommendation — see A194.
+> The FOLDER shape, a `DirectoryHandle` (described in `src/contracts/handles.ts`'s own doc
+> comment, not repeated as a section here), reaches a page over eight `fs.dir*` control-channel
+> methods, with `fs.dirOpen` resolving files inside it through the same mechanism as `fs.open`.
+> **Provisional:** its method set is not yet confirmed (A167 item 2, A195). A picked path is
+> confined to what was picked, persists across a restart, and is revocable from the settings
+> list; §Revocation's cascade covers both shapes.
 
 ```ts
 interface FileStat {
@@ -447,17 +389,17 @@ interface FileHandle extends Handle {
 ```
 
 - Positional `read`/`write` mirror `fs.promises.FileHandle` and match what a torrent writer
-  actually does — piece *N* is written at offset `N × pieceLength`, not appended sequentially.
+  actually does: piece *N* is written at offset `N × pieceLength`, not appended sequentially.
   The stream factories (`readable`/`writable`) serve the bulk-transfer paths, such as feeding
   `<video>` from a downloaded region (`build-plan.md` §5, the range-capable custom-scheme
   media path).
-- **`position` is explicit and required on every positional call — there is no implicit file
+- **`position` is explicit and required on every positional call, and there is no implicit file
   cursor on this handle.** A cursor is mutable state shared across an async IPC boundary,
   which is a race the instant two writes to the same handle are in flight at once, and a
   torrent writer routinely has many pieces in flight concurrently. Node's familiar
   `position: null` "use the current cursor" form is presented by `orivon-node-shim`, which
   owns and advances a local cursor itself and always sends an explicit `position` underneath.
-  **This is a deliberate, recorded deviation from design rule 1** ("mirror Node's shapes") —
+  **This is a deliberate, recorded deviation from design rule 1** ("mirror Node's shapes"):
   the shim absorbs the difference, so no app-facing code changes, but the durable interface
   underneath does not carry Node's shared-cursor hazard forward.
 - Paths are resolved and confined to the app's files directory **in the broker, never trusted
@@ -468,22 +410,22 @@ interface FileHandle extends Handle {
 - **Exception to the revocation cascade:** a `FileHandle` obtained through
   `orivon.fs.userSelected` is authorised by the user's one-time OS picker choice, not by the
   standing `fs` grant. Revoking the `fs` capability does **not** close a handle obtained this
-  way — but it also does not survive an app restart; it is a session-scoped exception, not a
+  way, but it also does not survive an app restart; it is a session-scoped exception, not a
   standing grant of its own. Stated explicitly here because §Revocation's cascade rule would
   otherwise silently and incorrectly include it.
 
 ## §IdentityHandle
 
-> **No `IdentityHandle` is ever constructed, and no `orivon.id.*` method is callable** —
+> **No `IdentityHandle` is ever constructed, and no `orivon.id.*` method is callable.**
 > `src/broker/transport/ipc.ts`'s control dispatch has no `'id.'` case, so `publicKey()`/`signEvent()` exist
 > only as the contract type. The P-256 half of the key math those methods would need is real and
 > tested (`src/broker/policy/derive.ts`'s `derivePrivateScalar`, `derive-p256.ts`'s
 > `derivePublicKey`, exercised by `derive.test.ts`'s frozen golden vectors), but nothing calls it
-> from a control method, and secp256k1 — Nostr's curve — has no point derivation or signing code
+> from a control method, and secp256k1, Nostr's curve, has no point derivation or signing code
 > at all: `derivePublicKey` throws `'internal'` for any curve but `'P-256'`. `src/nostr/kind-
 > screening.ts`'s silent/prompt table is a real, tested policy module built one layer up, in
 > anticipation of this handle, but its own header calls it explicitly "NOT THE ENFORCEMENT
-> BOUNDARY" — a UI hint only — and `src/nostr/nip07.ts`'s own header records it was built and
+> BOUNDARY" (a UI hint only) and `src/nostr/nip07.ts`'s own header records it was built and
 > tested against a stubbed signer, not a running broker. All three wait on this section's build
 > step.
 
@@ -495,7 +437,7 @@ interface IdentityHandle extends Handle {
 }
 ```
 
-- No `readable`/`writable` — an `IdentityHandle` is not a byte channel. It is modelled as a
+- No `readable`/`writable`, because an `IdentityHandle` is not a byte channel. It is modelled as a
   handle because it is revocable and origin-scoped like every other capability, not because
   it streams anything.
 - **No raw-bytes signing oracle.** Restated here as a binding contract rule, not just a note
@@ -506,12 +448,12 @@ interface IdentityHandle extends Handle {
 - Event-kind screening is unchanged from `capability-api.md`: kinds 1/6/7 sign silently after
   the initial connect; kinds 0, 3, 5, 22242, and any delegation event prompt every time.
 - `close()` releases *this app's* reference to the handle. It does **not** disconnect the
-  named identity from the origin — disconnecting an identity is a user-initiated action in
+  named identity from the origin, since disconnecting an identity is a user-initiated action in
   browser chrome, not something an app can trigger by closing its own handle. Without this
   rule, an app could force a fresh connect prompt on demand by closing and immediately
   re-requesting, which is exactly the prompt-fatigue outcome named identities exist to avoid.
 
-## §Revocation — the cascade
+## §Revocation: the cascade
 
 - The broker maintains, per origin, a map from `grantId` to the set of live handle IDs it
   authorised.
@@ -524,8 +466,8 @@ interface IdentityHandle extends Handle {
   - `closed` rejects with an `OrivonError` of code `revoked`.
   - Every promise the app is currently awaiting on that handle (a pending `read`, `write`,
     `connect`) rejects with `revoked`.
-- **Immediate rather than graceful is an AI recommendation, not something the owner has
-  separately ruled on — flagged as such.** The alternative, letting in-flight operations
+- **Immediate rather than graceful is provisional, and not separately ruled on.** The
+  alternative, letting in-flight operations
   finish before tearing the handle down, has two costs: the revoke button in the UI would not
   mean what it visibly says ("this app can no longer do this," qualified by "...once it
   finishes what it's doing"), and completion time is entirely under the app's control, so a
@@ -533,11 +475,11 @@ interface IdentityHandle extends Handle {
   whatever it claims to be doing. The cost of immediate revocation is a discarded in-flight
   torrent piece, which is cheap to re-fetch from another peer.
 - Revocation is **idempotent** and safe to call against an origin holding zero live handles.
-- **Exception:** `fs.userSelected` handles are not in any grant's set — see §FileHandle.
+- **Exception:** `fs.userSelected` handles are not in any grant's set; see §FileHandle.
 
 ### Revocation is not a one-shot sweep
 
-**Amendment, AI-recommended, applied 2026-08-27.** Closing the handles a grant authorised is not
+Closing the handles a grant authorised is not
 sufficient on its own, because the sweep has an edge in time. An acquisition that passed the
 policy check *before* the revoke and whose socket completes *after* it registers a live handle
 under a grant the user has already withdrawn, and the permissions UI fires exactly one revoke, so
@@ -547,13 +489,13 @@ completion.
 
 **The broker therefore remembers which grants were revoked, per origin, and refuses to register
 anything against them.** The set is bounded, like every other memory in the table. A capability
-granted again after being withdrawn clears its entry — see `open-questions.md` A16 for the
+granted again after being withdrawn clears its entry; see `open-questions.md` A16 for the
 `GrantId`-stability question this depends on.
 
 ### Revocation does not wait for teardown
 
-**Amendment, AI-recommended, applied 2026-08-27.** The revoke call settles as soon as the app has
-been told — that is, after the synchronous unlink and promise-rejection pass — and does *not* wait
+The revoke call settles as soon as the app has
+been told, that is, after the synchronous unlink and promise-rejection pass, and does *not* wait
 for the injected teardown callbacks to finish. The broker awaits it on the UI thread to update the
 permissions panel, and §What the shim must do rule 3 records that this transport's failure mode is
 silence rather than an error, so a revoke that waited would leave the permissions UI stuck
@@ -561,9 +503,9 @@ mid-revoke with no timeout anywhere in the path. Teardown failures are reported 
 
 ### Session teardown is not revocation
 
-**Amendment, AI-recommended, applied 2026-08-27.** An app being closed, navigated away from, or
+An app being closed, navigated away from, or
 restarted takes *all* its handles, including the `fs.userSelected` ones a grant revocation cannot
-reach — that is the other half of the §FileHandle exception, and what "does not survive a restart"
+reach, which is the other half of the §FileHandle exception, and what "does not survive a restart"
 means. But it is **graceful**: FIN rather than RST, buffered writes flushed rather than discarded.
 Nobody withdrew anything, and treating a user clicking a link away from the torrent app as a
 revocation would reset every peer connection and drop a half-written piece on the floor.
@@ -574,9 +516,9 @@ dead origin, and the `fs.userSelected` handle it registered survived the session
 
 ### A handle can also die on its own
 
-**Amendment, AI-recommended, applied 2026-08-27.** Every path above is initiated by the app or by
+Every path above is initiated by the app or by
 the user. §TcpSocket's close table also requires `closed` to reject with `reset` when the peer
-resets or aborts, which no app-initiated or user-initiated path can express — so the broker needs
+resets or aborts, which no app-initiated or user-initiated path can express, so the broker needs
 an entry point for "this resource died underneath us", carrying the real `platformCode`. Without
 it a peer RST is reported to the app as a clean, successful close, which is the *common* way a
 socket ends.
@@ -596,35 +538,33 @@ sockets exercised cleanly) with headroom:
 | concurrent open `IdentityHandle`s | 64 |
 | in-flight broker operations, **per origin** | 256 |
 | per-socket read window (§TcpSocket backpressure `WINDOW`) | 1 MiB |
-| per-socket write window (`LIMITS.writeWindowBytes`, §Backpressure — write direction) | 256 KiB |
+| per-socket write window (`LIMITS.writeWindowBytes`, §Backpressure: write direction) | 256 KiB |
 
 Exceeding any of these yields `limit`.
 
-**The write window is a quarter of the read window, not a symmetric 1 MiB — deliberately.**
+**The write window is a quarter of the read window, not a symmetric 1 MiB, and that is deliberate.**
 The read window already commits `concurrentSockets * readWindowBytes` = 512 MiB of worst-case
 per-origin exposure; doubling that for a write window nobody asked for would be an unforced
 increase to an aggregate this document already flags as unbounded rather than fixed
 (`src/contracts/limits.ts`'s own comment carries the same reasoning).
 
-**Two amendments, AI-recommended and applied in `src/broker/handles/handles.ts` (2026-08-27), flagged
-rather than folded in silently:**
+**Two refinements to the table above, both provisional:**
 
-1. **A `TcpServer`'s listening socket counts against the socket budget.** This table originally
-   read "`TcpSocket` + `UdpSocket` + accepted connections", which omits the listener. A listener
+1. **A `TcpServer`'s listening socket counts against the socket budget.** A listener
    is an open fd like any other, manifest `listen` patterns are port *ranges* rather than single
    ports, and leaving servers uncounted lets one origin hold unbounded listeners inside its
    declared range. Counting it is strictly more conservative and costs a real app one slot in 512.
-2. **`IdentityHandle` gets its own budget**, equal to the file budget. It was previously capped by
-   nothing at all, and an unbounded row count is T11 whatever the row holds. It is a *per-kind*
-   budget rather than a cap on total rows: a total-row backstop was tried first and had the
-   failure mode backwards -- identity handles, free to acquire and capped by nothing, exhausted
-   the total and left the origin unable to open a single socket or file.
+2. **`IdentityHandle` gets its own budget**, equal to the file budget. Uncapped, an unbounded row
+   count is T11 whatever the row holds. It is a *per-kind*
+   budget rather than a cap on total rows, because a total-row backstop has the failure mode
+   backwards: identity handles, free to acquire and capped by nothing, would exhaust the total and
+   leave the origin unable to open a single socket or file.
 
 **The in-flight cap is per origin, and this is load-bearing rather than incidental.** A single
 global counter would mean one origin holding 256 slow operations makes every *other* tab's
-`orivon.*` call fail with `limit` -- the T11b freeze arriving by a different route, and attributed
-to the victim. **Calls beyond the in-flight cap reject immediately —
-they do not queue.** An unbounded queue on the broker's UI thread is precisely how one
+`orivon.*` call fail with `limit`, the T11b freeze arriving by a different route, and attributed
+to the victim. **Calls beyond the in-flight cap reject immediately; they do not
+queue.** An unbounded queue on the broker's UI thread is precisely how one
 misbehaving origin freezes every tab (T11b); a rejection the app must retry keeps the broker
 responsive to every other origin.
 
@@ -638,7 +578,7 @@ in `.claude/skills/orivon-electron/SKILL.md`. Promoted here to binding requireme
    this document's anticipated surface.** The worked example: `bittorrent-dht`'s RPC layer
    calls `net.isIP()` before every send. It is not a socket operation and is easy to omit
    from a design doc, but its absence made the DHT bind its listening socket successfully and
-   then send nothing, ever — no error, no warning. **No shim module may be declared complete
+   then send nothing, ever, with no error and no warning. **No shim module may be declared complete
    without checking it against the real source of every dependency it serves**, not just
    against the methods this specification happened to anticipate.
 2. **Error visibility through a polyfill must be louder than Node's default, never quieter.**
@@ -647,21 +587,21 @@ in `.claude/skills/orivon-electron/SKILL.md`. Promoted here to binding requireme
    callback to the process, but `queueMicrotask` does not route into the same handlers, so
    the exception vanished silently. Any polyfilled Node timing primitive
    (`nextTick`, `setImmediate`, microtask ordering) must be audited for this class of
-   behavioural change and must route uncaught exceptions to a broker-visible log — API-shape
+   behavioural change and must route uncaught exceptions to a broker-visible log. API-shape
    compatibility alone is not sufficient for anything touching error handling in
    security-relevant code.
 3. **Every reply-carrying message sent over a `MessagePortMain` needs an explicit timeout.**
-   Gate 0 confirmed this transport's failure mode is total silence, not an error — a dropped
+   Gate 0 confirmed this transport's failure mode is total silence, not an error: a dropped
    transferable never arrives, and never throws. A promise awaiting a reply with no timeout
    hangs forever on exactly this failure.
 4. **No transferables on the renderer → main path, ever, as an optimisation or otherwise.**
    Gate 0 confirmed [electron#34905](https://github.com/electron/electron/issues/34905):
    passing an `ArrayBuffer` in a `postMessage` transfer list renderer→main silently drops the
    message. Structured clone is the only mechanism on this path, and it is fast enough on its
-   own (313–1134 MB/s measured, against a 1–5 MB/s product need).
+   own (313-1134 MB/s measured, against a 1-5 MB/s product need).
 5. Every synchronous Node accessor this shim presents (`socket.address()`,
    `socket.remoteAddress`, and equivalents) is served from a value captured at handle
-   acquisition, per §TcpSocket and §UdpSocket above — never from a cache an event fills in
+   acquisition, per §TcpSocket and §UdpSocket above, never from a cache an event fills in
    later.
 6. **The raw `MessagePortMain` never crosses into the main world.** The preload holds it in
    the isolated world and exposes only `contextBridge` closures over it (T17). This is a
@@ -669,8 +609,8 @@ in `.claude/skills/orivon-electron/SKILL.md`. Promoted here to binding requireme
 
 ## §Versioning
 
-The versioned surface — subject to `orivonApiVersion` major-bump-plus-ADR rules once it
-reaches 1 — is: the `OrivonErrorCode` enum, the five handle interfaces in this document, and
+The versioned surface, subject to `orivonApiVersion` major-bump-plus-ADR rules once it
+reaches 1, is: the `OrivonErrorCode` enum, the five handle interfaces in this document, and
 the close/half-close semantics table. `platformCode` string values are explicitly **not**
 part of the versioned surface; they may change as the underlying engine changes (Node errno
 today, WASI or Mojo equivalents later) without that counting as a breaking change to this
@@ -700,20 +640,20 @@ Testable assertions build steps 2 (broker) and 3 (shim) should drive as TDD targ
 10. A handle whose acquisition completes *after* its grant was revoked is refused, not registered.
 11. `close()` is idempotent for any handle id, including one closed long enough ago that the
     broker no longer remembers it.
-12. A peer reset rejects `closed` with `reset` and the real `platformCode` — not a clean resolve.
+12. A peer reset rejects `closed` with `reset` and the real `platformCode`, not a clean resolve.
 13. One origin holding the in-flight cap does not stop a different origin from operating.
 14. Session teardown closes handles gracefully (FIN, writes flushed), unlike a revocation.
 
 ## Reference
 
-- `docs/architecture/capability-api.md` — the parent specification; §v0 surface names these
+- `docs/architecture/capability-api.md`: the parent specification; §v0 surface names these
   five handle types, §Throughput records the backpressure question this document answers.
-- `docs/decisions/ADR-0008-handles-are-whatwg-streams.md` — why streams, not `EventEmitter`
+- `docs/decisions/ADR-0008-handles-are-whatwg-streams.md`: why streams, not `EventEmitter`
   or raw `MessagePort`, and the alternatives rejected.
-- `docs/architecture/security-model.md` — T1, T10 (path confinement), T11/T11b (resource
+- `docs/architecture/security-model.md`: T1, T10 (path confinement), T11/T11b (resource
   exhaustion, broker freeze), T11c (cross-origin handle forgery), T12 (resolved-address
   policy), T17 (port isolation).
-- `spike/gate1b/shim/net.js`, `spike/gate1b/shim/dgram.js` — the spike's working shims;
+- `spike/gate1b/shim/net.js`, `spike/gate1b/shim/dgram.js`: the spike's working shims;
   verified against this document's shape (see the design session's verification notes) rather
   than copied from, since they predate the streams decision and target `EventEmitter`/
   `streamx` shapes that the *shim* still presents, one layer up from what this document

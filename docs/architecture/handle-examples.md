@@ -2,7 +2,7 @@
 
 One short, working example per handle type defined in `handle-contracts.md`. That document is
 the specification and `src/contracts/handles.ts` is the same contract as TypeScript; this file
-is neither — it is what calling either of them from an app actually looks like. Every snippet
+is neither: it is what calling either of them from an app actually looks like. Every snippet
 below typechecks against `src/contracts/` as it stands today, not merely reads as consistent
 with the prose.
 
@@ -21,7 +21,7 @@ declare const orivon: Orivon // the preload injects this; not written by app cod
 
 ## §TcpSocket
 
-Connect, write with real backpressure, half-close, then keep reading — the peer-wire shape
+Connect, write with real backpressure, half-close, then keep reading: the peer-wire shape
 `handle-contracts.md` §TcpSocket calls out: a BitTorrent peer keeps sending choke/interested
 messages long after this side has sent its last request, so closing `writable` must not take
 `readable` down with it.
@@ -64,7 +64,7 @@ declare function handlePeerMessage(chunk: Uint8Array): void
 
 Accept by reading `connections`, not by listening for an event. The read *is* the accept: stop
 calling it and the broker stops accepting, and the OS listen backlog pushes back on whoever is
-trying to connect — the practical payoff of streams over an `EventEmitter`'s `'connection'`.
+trying to connect, which is the practical payoff of streams over an `EventEmitter`'s `'connection'`.
 
 ```ts
 async function acceptLoop(port: number): Promise<void> {
@@ -123,7 +123,7 @@ declare function reportDroppedDatagrams(count: number): void
 
 `position` is explicit and required on every call, because a torrent writes piece *N* at
 `N × pieceLength`, not wherever a cursor happens to be, and several pieces are routinely in
-flight on the same handle at once — there is no shared cursor state for two concurrent writes
+flight on the same handle at once, so there is no shared cursor state for two concurrent writes
 to race over.
 
 ```ts
@@ -148,11 +148,11 @@ declare function verifyPieceHash(pieceIndex: number, data: Uint8Array): void
 
 ## §IdentityHandle
 
-`signEvent` takes and returns a structured event object, never raw bytes to sign — the broker
+`signEvent` takes and returns a structured event object, never raw bytes to sign. The broker
 itself performs the serialisation and screens `kind`. Note that `object` is a loose enough type
 that a raw `Uint8Array` would still satisfy the signature; nothing in the type system stops the
 misuse. The rule is enforced by what the broker does with the value, not by what TypeScript
-will accept, which is exactly why a raw-bytes signing oracle would be dangerous — it would let
+will accept, which is exactly why a raw-bytes signing oracle would be dangerous: it would let
 anything that can reach this handle sign literally anything under the user's identity.
 
 ```ts
@@ -181,7 +181,7 @@ declare function publishToRelay(event: object): Promise<void>
 
 ## Reference
 
-- `docs/architecture/handle-contracts.md` — the specification these examples illustrate.
-- `src/contracts/handles.ts` — the same five interfaces as TypeScript.
-- `src/contracts/capability-api.ts` — the acquisition calls used above (`orivon.net.*`,
+- `docs/architecture/handle-contracts.md`: the specification these examples illustrate.
+- `src/contracts/handles.ts`: the same five interfaces as TypeScript.
+- `src/contracts/capability-api.ts`: the acquisition calls used above (`orivon.net.*`,
   `orivon.fs.*`, `orivon.id.*`).

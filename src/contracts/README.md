@@ -1,4 +1,4 @@
-# `src/contracts/` — the durable interface
+# `src/contracts/`: the durable interface
 
 **What lives here.** The complete `orivon.*` surface that apps program against, as TypeScript
 types. Seven files, and reading them in order (`errors` -> `handles` -> `manifest` ->
@@ -18,7 +18,7 @@ directory. Two reasons, and the first is the important one:
 
 Enforced by `npm run check:contracts`, which runs in CI.
 
-**Owner stream.** `contracts` — **change-controlled**. A change here touches every stream, so
+**Owner stream.** `contracts`, **change-controlled**. A change here touches every stream, so
 it goes in its **own pull request, merged before** anything builds on it. Never modify this
 directory in the same PR as an implementation.
 

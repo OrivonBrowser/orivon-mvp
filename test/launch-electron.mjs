@@ -367,7 +367,7 @@ export async function waitForPidExit (pid, timeoutMs = 5_000) {
  * procRoot does not exist at all).
  *
  * Resolving this, rather than trusting a command-line string, is the whole
- * point (docs/development/unattended-run-protocol.md, the survivor-check
+ * point (.claude/unattended-run-protocol.md, the survivor-check
  * section): `pgrep -f node_modules/electron/dist/electron` also matches
  * whatever process is doing the matching, because that exact string sits in
  * ITS OWN argv too -- a false positive that costs a session hunting for a
@@ -513,7 +513,7 @@ export async function closeElectron (app, { raceMs = APP_CLOSE_RACE_MS, beforeCl
 }
 
 /**
- * The suite-level self-check (docs/development/unattended-run-protocol.md's
+ * The suite-level self-check (.claude/unattended-run-protocol.md's
  * survivor-check section): fails loudly if any pid this file has EVER
  * closeElectron()'d is still a live Electron process. Deliberately scoped
  * to the pids THIS FILE spawned, not "is Electron running anywhere on this

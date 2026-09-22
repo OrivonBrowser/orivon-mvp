@@ -7,15 +7,15 @@
 
 ## Decision
 `Manifest` gains an explicit field, `assets: readonly string[]`, naming every frontend file that
-makes up the app's leaf set — the same set `ADR-0009`'s bundle hash is computed over. The
+makes up the app's leaf set: the same set `ADR-0009`'s bundle hash is computed over. The
 publisher declares this list; the loader never infers it. An app's frontend that later fetches or
-loads additional files or code of its own accord is not this field's concern — that behaviour is
+loads additional files or code of its own accord is not this field's concern, because that behaviour is
 judged after the fact by the trust/Web3-Score system (`ADR-0006`), not predicted or enumerated
 up front by the manifest.
 
 ## Context
 `docs/open-questions.md` A45. `ADR-0009` and `docs/architecture/bundle-hash.md` both assume a leaf
-set is already in hand — they specify how to hash one, never how to obtain one — and
+set is already in hand, specifying how to hash one but never how to obtain one, and
 `src/loader/index.ts`'s `createLoader().load()` was built taking that set as an injected parameter
 specifically because nothing decided where it should come from. `Manifest` as it stood named only
 `entry`, the one HTML file; nothing named the rest of a real app's frontend, which for any built
@@ -23,11 +23,11 @@ SPA (the tier-1 Nostr web clients `app-compatibility.md` pins "as-is") is routin
 JS/CSS/asset files.
 
 ## Alternatives considered
-**A crawl heuristic** — fetch `entry`, parse it for same-origin references
+**A crawl heuristic**, meaning fetch `entry` and parse it for same-origin references
 (`<script src>`/`<link href>`/`<img src>`, recursing into fetched CSS/JS), and build the set from
 what is found. Rejected: it is a content-parsing surface over adversarial input running before any
 capability has been granted, it cannot see anything referenced only at runtime (a dynamic
-`import()`, a service-worker `fetch()`), and — the decisive reason — the discovered set feeds
+`import()`, a service-worker `fetch()`), and, the decisive reason, the discovered set feeds
 directly into `ADR-0009`'s bundle hash, which is a one-way door once the first pin exists. Two
 independent implementations of "what counts as this app's content" that disagree would disagree
 about the app's own identity, the exact class of problem `ADR-0009`'s own amendment record already
@@ -36,14 +36,14 @@ Web3-Score model this ADR leans on: a provider re-verifying a bundle would have 
 crawl exactly, byte for byte, rather than simply re-fetching a declared list.
 
 ## Reasoning
-The manifest already declares capabilities the same way — statically, explicitly, publisher-owned
+The manifest already declares capabilities the same way: statically, explicitly, publisher-owned
 (`capability-api.ts`'s design rule 4: "declare statically, grant dynamically"). An asset list is
 the same shape of fact about the same document, not a new kind of thing for a publisher to
 maintain. It keeps the loader's job over the declared set purely mechanical: fetch under the byte
-caps, hash, pin, done — with no code path that inspects a fetched file's contents to decide
+caps, hash, pin, done, with no code path that inspects a fetched file's contents to decide
 whether it belongs to the app.
 
-The genuine cost — a publisher must keep this list in sync with what they actually ship — is
+The genuine cost, that a publisher must keep this list in sync with what they actually ship, is
 deliberately not compensated for here, because the compensating mechanism already exists one
 layer up: if an app's own code goes on to load a materially different set of resources than what
 was declared and hashed, that is exactly the kind of undisclosed behaviour the trust/Web3-Score
@@ -51,7 +51,7 @@ system (`ADR-0006`) is built to notice and score down, not something the manifes
 prevent by trying to enumerate every possible resource in advance. Static declaration bounds what
 gets a TOFU'd identity and a permission prompt; the score bounds what a page can get away with
 afterward. Splitting the concern this way keeps each mechanism doing the one thing it can actually
-verify — the manifest can verify a list matches what was fetched; it cannot verify that a list is
+verify: the manifest can verify a list matches what was fetched; it cannot verify that a list is
 *complete*, and should not pretend to.
 
 ## Consequences
@@ -61,7 +61,7 @@ verify — the manifest can verify a list matches what was fetched; it cannot ve
   validated (structurally sound array of canonical-path-shaped strings; the existing per-path
   canonical-path validator, `src/broker/policy/canonical-path.ts`, is reused, not duplicated).
 - `src/loader/index.ts`'s `createLoader().load()` keeps taking `assetPaths` as an explicit
-  parameter — this ADR does not change that function's shape. What changes is where the caller
+  parameter, and this ADR does not change that function's shape. What changes is where the caller
   gets the value: read off `manifest.assets` after `parseManifest` succeeds, rather than the
   caller inventing or discovering it. `docs/open-questions.md` A45 is resolved by this ADR, cited
   from its own entry.
@@ -69,7 +69,7 @@ verify — the manifest can verify a list matches what was fetched; it cannot ve
   **Amended 2026-09-04.** This bullet assumed a caller would fetch and parse the manifest itself
   before calling `load()`, then hand in `manifest.assets`. That assumption does not hold: the
   well-known manifest path (`/.well-known/orivon.json`) is fixed, and only `fetchBundle` (inside
-  `load()`) ever fetches it -- nothing upstream of `load()` has a parsed manifest to read `assets`
+  `load()`) ever fetches it, so nothing upstream of `load()` has a parsed manifest to read `assets`
   off. The caller of `load()` only ever has `hintedUrl`, the same thing the passive
   `<link rel="orivon-manifest">` discovery trigger this ADR was written to eventually support
   has. Found while wiring that trigger's prerequisites (`stream/loader-06-assets-from-manifest`,
@@ -77,13 +77,13 @@ verify — the manifest can verify a list matches what was fetched; it cannot ve
   `Loader.load()`; `fetchBundle` derives it internally as `[manifest.entry,
   ...(manifest.assets ?? [])]` once it has fetched and parsed the manifest on its own. Every
   consequence of *declaring* the asset list on the manifest (the rest of this section, and the
-  Decision/Reasoning above) is unaffected -- only where the declared list gets read off the
+  Decision/Reasoning above) is unaffected. Only where the declared list gets read off the
   manifest moves, from an external caller to `fetchBundle` itself. See `src/loader/README.md`'s
   Design notes for the fuller account, including which of `fetch-bundle.ts`'s own
   adversarial-input checks became defence-in-depth rather than the primary enforcement point as
   a result.
 - `entry` itself is unchanged and still separately required to have a corresponding leaf
-  (`ADR-0009`'s amendment §2: checked by the app loader, not the hash) — `assets` does not need to
+  (`ADR-0009`'s amendment §2: checked by the app loader, not the hash). `assets` does not need to
   duplicate `entry` in its own list; the loader fetches the union of the two.
 - No change to `ADR-0009`'s hash construction, `bundle-hash.ts`, or any frozen vector. The leaf
   set's *source* changes; nothing about how a leaf set is hashed does.

@@ -1,6 +1,6 @@
 # Working in parallel
 
-How several people — or several agent sessions — work in this repository at the same time
+How several people, or several agent sessions, work in this repository at the same time
 without corrupting each other's work.
 
 If you are working alone and sequentially, you need only §The merge protocol. The rest costs
@@ -17,7 +17,7 @@ spike -> shell -> broker -> shim -> app loader -> torrent app -> THE CLIP
 ```
 
 Step 3 cannot begin before step 2 exists. So parallelism here is not *discovered* by finding
-independent work — there is very little. It is **manufactured**, by freezing the interfaces in
+independent work; there is very little. It is **manufactured**, by freezing the interfaces in
 [`src/contracts/`](../../src/contracts/) so that a stream can build against a **contract and a
 stub** instead of against another stream's half-finished code.
 
@@ -29,14 +29,14 @@ this page is bookkeeping around it.
 ## The ownership map
 
 Each stream owns a disjoint set of paths and **writes nowhere else**. If your change needs a
-file another stream owns, that is a signal — either the boundary is wrong (raise it), or the
+file another stream owns, that is a signal: either the boundary is wrong (raise it), or the
 change belongs in their stream.
 
 | Stream | Owns | Build step | State |
 |---|---|---|---|
 | `shell` | `src/main/{index,window,tabs,omnibox,ipc}.ts`, `src/renderer/`, `src/preload/shell.ts`, **`scripts/smoke.mjs`**, **`test/`** | 1 | **done**, maintenance only |
-| `contracts` | `src/contracts/` | — | **change-controlled**, see below |
-| `shared` | `src/shared/` | — | **change-controlled**, same rules as `contracts`. Empty by design; see its `README.md` |
+| `contracts` | `src/contracts/` | n/a | **change-controlled**, see below |
+| `shared` | `src/shared/` | n/a | **change-controlled**, same rules as `contracts`. Empty by design; see its `README.md` |
 | `broker` | `src/broker/` and its five directories (`policy/`, `grants/`, `handles/`, `transport/`, `adapters/`), `src/preload/app.ts`, `src/preload/orivon-surface.ts`, `src/preload/socket-bridge.ts`, `src/preload/socket-port.ts`, `src/preload/main-world-socket.ts` | 2 | critical path |
 | `shim` | `src/shim/`, the `renderer.resolve.alias` map in `electron.vite.config.ts` | 3 | |
 | `loader` | `src/loader/` | 4 | |
@@ -46,51 +46,43 @@ change belongs in their stream.
 | `nostr` | `src/nostr/` | 7 | second to cut |
 | `telemetry` | `src/telemetry/` | 8 | independent of the critical path |
 | `packaging` | `electron-builder` config, `scripts/` **except `smoke.mjs`** | 10 | independent of everything |
-| `docs` | `docs/`, root markdown, **`.github/`**, **`.claude/`** | — | always available |
+| `docs` | `docs/`, root markdown, **`.github/`**, **`.claude/`** | n/a | always available |
 
 > **`.claude/` is owned by `docs` for want of a better home, and the fit is imperfect.** It holds
-> agent instructions and the project skill — read by tooling, not shipped — so it belongs to no
-> build step and has no natural stream. It was unowned until 2026-08-27 — the same oversight
-> `.github/` had, found the same week: a path nobody owns is a path two streams edit on the same
-> afternoon without either noticing. If a session is editing `.claude/skills/`, say so before
-> starting.
+> agent instructions and the project skill, read by tooling rather than shipped, so it belongs to no
+> build step and has no natural stream. It still needs an owner, because a path nobody owns is a
+> path two streams edit on the same afternoon without either noticing. If a session is editing
+> `.claude/skills/`, say so before starting.
 
-> **`src/preload/` outside `app.ts` is `broker`'s too, not unowned.** Corrected 2026-09-06 — a
-> review found `src/preload/README.md` already documenting `orivon-surface.ts` as belonging to
-> `broker` (build step 2) while this table's `broker` row still listed only `app.ts`, so the
-> authoritative map and the directory's own `README.md` disagreed. Left alone, a future stream
-> could read this table, see `src/preload/app.ts` as the only claimed path, and treat the rest
-> of the directory as free to write to. `socket-bridge.ts`, `socket-port.ts` and
-> `main-world-socket.ts` are the main-world stream-building surface added alongside
-> `orivon-surface.ts` for `window.orivon`'s `net` capability (`ADR-0014`) — all four files are
-> `broker`'s; see `src/preload/README.md` for what each one does.
+> **`src/preload/` outside `app.ts` is `broker`'s too, not unowned.** `orivon-surface.ts` is
+> `window.orivon`'s surface, and `socket-bridge.ts`, `socket-port.ts` and `main-world-socket.ts`
+> are the main-world stream-building surface for its `net` capability (`ADR-0014`). All four
+> files are `broker`'s, as the table says; see `src/preload/README.md` for what each one does.
 
 Every directory above carries its own `README.md` stating what it depends on and **what it must
 never import**. Those are the real boundary; this table is the index.
 
 **Why `scripts/` is split.** `scripts/` holds two unrelated things. The guards
 (`check-no-*.mjs`) and the release tooling are packaging's. `smoke.mjs` and `test/` are the
-shell's own regression check — they exist to catch shell regressions, they change when the
-shell changes, and a packaging change never touches them. Corrected 2026-08-27, after
-`stream/backlog-05-smoke-coverage` edited `smoke.mjs` and the table said packaging owned it.
+shell's own regression check: they exist to catch shell regressions, they change when the
+shell changes, and a packaging change never touches them.
 
-**Why `docs` owns `.github/`.** It was in nobody's column until 2026-08-27, by oversight rather
-than design, and two changes had already landed there. Its contents are process and
-documentation infrastructure — the pull request template, the issue templates — and `docs` is
+**Why `docs` owns `.github/`.** Its contents are process and
+documentation infrastructure (the pull request template, the issue templates) and `docs` is
 the stream that is always available. **`ci.yml` is the awkward exception**: a change to it is far
 likelier to come from `packaging`, or from whichever stream adds the check it runs. Treated as a
-borrow rather than a split, on the same terms as a `backlog-NN` branch — name it in the PR.
+borrow rather than a split, on the same terms as a `backlog-NN` branch: name it in the PR.
 
 ### `backlog-NN` branches
 
 Not every task belongs to a build step. Maintenance and follow-up work runs on
-`stream/backlog-NN-<slug>` branches, which own **no paths of their own** — a backlog branch
+`stream/backlog-NN-<slug>` branches, which own **no paths of their own**. A backlog branch
 borrows the paths of whichever stream the work belongs to, and its PR body must name that
 stream. If the work would touch two streams' paths, it is two branches.
 
 ### Concurrent right now
 
-`broker` · `packaging` · `telemetry` · `docs` — four streams, no path overlap.
+`broker` · `packaging` · `telemetry` · `docs`: four streams, no path overlap.
 
 ---
 
@@ -128,12 +120,12 @@ genuinely required.
 - Other streams then rebase onto `main` and pick it up.
 
 **Never modify `src/contracts/` in the same PR as an implementation.** If you find you need to,
-split the PR — the contract change is almost always the more consequential half and deserves to
+split the PR. The contract change is almost always the more consequential half and deserves to
 be reviewed alone.
 
 **[`src/shared/`](../../src/shared/) follows the same three rules**, for the same reason: one
 edit there can break every stream that imports it. It holds pure helpers needed on both sides of
-a trust boundary — added 2026-08-27, empty by design, and the bar for putting something in it is
+a trust boundary, it is empty by design, and the bar for putting something in it is
 in [its `README.md`](../../src/shared/README.md). See
 [`code-guidelines.md`](code-guidelines.md) Rule 3 for why it exists.
 
@@ -147,14 +139,14 @@ Two files exist purely so that streams can register themselves without editing s
 | `electron.vite.config.ts` → `preload.build.rollupOptions.input` | One key |
 
 Git merges appends at different positions of a list cleanly. It cannot merge two edits to the
-same conditional. **Do not add logic to `subsystems.ts`** — if a subsystem needs conditional
+same conditional. **Do not add logic to `subsystems.ts`**: if a subsystem needs conditional
 behaviour, that belongs inside the subsystem.
 
 ---
 
 ## Repair: for when prevention fails
 
-### `package-lock.json` — regenerate, never hand-merge
+### `package-lock.json`: regenerate, never hand-merge
 
 **This is the most common parallel-work conflict and the most dangerous.** A hand-merged
 lockfile can look entirely correct and install a different dependency tree than either side
@@ -176,10 +168,10 @@ derived, so derive it again.
 merge.
 
 This is correct **only** where every change is an append and order does not matter. It must
-never be extended to source files — union-merging code produces something syntactically valid
+never be extended to source files, because union-merging code produces something syntactically valid
 and semantically wrong, which is strictly worse than a conflict you can see.
 
-### Open-question numbers — renumber yours, never main's
+### Open-question numbers: renumber yours, never main's
 
 `open-questions.md` is the one shared file every stream appends to, and its rows are
 **numbered**. Four streams branched from the same main, each read "A14 is the highest", and
@@ -188,7 +180,7 @@ to A16 and two to A17, across four branches.
 
 **A number allocated on a branch is provisional until that branch merges.** So on a conflict:
 
-- **main's numbers win**, always. They are already merged, and other documents cite them —
+- **main's numbers win**, always. They are already merged, and other documents cite them:
   `smoke.mjs` names A16 in an assertion label, `ADR-0010` and `capability-api.md` cite A17.
   Renumbering a merged question silently breaks every one of those.
 - **Your branch's questions take the next free numbers**, above everything on main *and* above
@@ -196,14 +188,14 @@ to A16 and two to A17, across four branches.
 - **Never renumber to fill a gap.** Numbers are permanent identifiers, not an ordering. A4 and
   A10 are already absent because they resolved.
 
-**Renumbering is not a table edit.** Grep the number before you finish — a question is cited
+**Renumbering is not a table edit.** Grep the number before you finish, because a question is cited
 from section headings further down the same file, from source comments, and from other
 documents. A renumber that stops at the table leaves code pointing at a stranger's question,
 which is worse than the collision, because it looks right. This happened for real:
 `origin.ts` cited `open-questions.md A16` for a rule about persisting loopback grants, and by
 the time it merged, A16 was "what should closing the last tab do".
 
-Cheapest prevention, if you are about to file one — take the next number above what **main**
+Cheapest prevention, if you are about to file one: take the next number above what **main**
 has, not above what your branch has:
 
 ```bash
@@ -224,7 +216,7 @@ class of conflict git cannot see, and CI is what catches it:
 | `npm run check:contracts` | `src/contracts/` grew an edge out of the directory |
 | `npm run build` | The bundle no longer builds |
 
-With no dedicated code reviewer, **CI is the reviewer** — so a red PR does not merge, ever.
+With no dedicated code reviewer, **CI is the reviewer**, so a red PR does not merge, ever.
 
 ---
 
@@ -241,8 +233,8 @@ With no dedicated code reviewer, **CI is the reviewer** — so a red PR does not
 4. **Open the PR**, titled and described per
    [`pr-blueprint.md`](pr-blueprint.md). GitHub pre-fills the form, so in practice this is
    filling in what is already there. Its `## Stream, paths and merge order` block is the part
-   this page cares about — the stream, the paths and whether the PR is independent or stacked on
-   another — and **its labels are how you see which streams are open at once**.
+   this page cares about: the stream, the paths and whether the PR is independent or stacked on
+   another. **Its labels are how you see which streams are open at once**.
 5. **CI must be green.**
 6. **The owner merges.**
 
@@ -257,7 +249,13 @@ Read this page before starting any build step. Then:
 
 - Work in a worktree on `stream/<name>`.
 - Stay inside your owned paths.
-- Never modify `src/contracts/` in the same PR as an implementation.
+- **Open one or two PRs per working day, not one per feature.**
+  This applies to AI sessions only. An outside contributor sending a single change
+  still opens a single PR, which is why §The merge protocol above is unchanged. The reason is
+  volume: continuous AI work merged 423 PRs over 17 days here, about 25 a day, and nobody
+  reviews that. Branches still converge rather than each opening their own.
+- Never modify `src/contracts/` in the same PR as an implementation. **This holds regardless of
+  cadence**: it is the one carve-out, so a day that touches contracts gets an extra PR.
 - Append at the append points rather than editing shared logic.
-- Surface contradictions rather than smoothing them over — append to
+- Surface contradictions rather than smoothing them over, appending to
   [`open-questions.md`](../open-questions.md) ([`CLAUDE.md`](../../CLAUDE.md) Rule 3).

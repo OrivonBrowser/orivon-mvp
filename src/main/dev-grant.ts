@@ -1,4 +1,4 @@
-// Developer-only grant path (docs/planning/unattended-build-queue.md item
+// Developer-only grant path (.claude/unattended-build-queue.md item
 // 0.3). Reachable ONLY from Node code already running inside this process --
 // e.g. Playwright's ElectronApplication.evaluate(), which the e2e suite uses
 // instead of calling the broker's own grant()/registerApp() directly from

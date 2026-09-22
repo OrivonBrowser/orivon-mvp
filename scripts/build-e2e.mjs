@@ -1,6 +1,6 @@
 /**
  * Runs `electron-vite build` with the developer-only grant path compiled in
- * (docs/planning/unattended-build-queue.md item 0.3, src/main/dev-grant.ts).
+ * (.claude/unattended-build-queue.md item 0.3, src/main/dev-grant.ts).
  * `npm run test:e2e`'s only build step -- `npm run build`, `npm run smoke`
  * and `npm run package:linux` all go through scripts/build-ordinary.mjs
  * instead, which strips this flag even if the calling shell already had it

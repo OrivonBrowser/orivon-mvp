@@ -1,6 +1,6 @@
 /**
  * Runs `electron-vite build` with the developer-only grant path (src/main/
- * dev-grant.ts, docs/planning/unattended-build-queue.md item 0.3)
+ * dev-grant.ts, .claude/unattended-build-queue.md item 0.3)
  * guaranteed absent, regardless of what ORIVON_ENABLE_DEV_GRANT happens to
  * already be set to in the calling shell.
  *

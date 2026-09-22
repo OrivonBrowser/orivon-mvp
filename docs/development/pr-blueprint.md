@@ -1,16 +1,18 @@
 # The pull request blueprint
 
-How a pull request is titled, described and labelled here. One shape, followed by everyone —
+How a pull request is titled, described and labelled here. One shape, followed by everyone:
 human contributors and AI sessions alike.
 
 This is the **source of truth**. [`.github/pull_request_template.md`](../../.github/pull_request_template.md)
 is the same thing as a fill-in form, and the pinned issue on the Issues tab is a signpost to
 both. **If the three ever disagree, this document wins** and the other two get corrected.
 
-> **Provenance**, per [`CLAUDE.md`](../../CLAUDE.md) Rule 2. The title rule, the section list,
-> the label taxonomy and the enforcement decision are the **owner's decision**, taken
-> 2026-08-27. §Open points is what is **still open**. Nothing here is an unconfirmed AI
-> recommendation.
+> The title rule, the section list, the label taxonomy and the enforcement position are
+> settled. §Open points is what is **still open**.
+
+> **The body scales to a PR carrying several changes.** A single-change PR has a single entry
+> and reads almost as simply; every anti-pattern below holds at any size, and
+> `src/contracts/`/`src/shared/` still go alone and merge first.
 
 ---
 
@@ -22,20 +24,15 @@ place where the reasoning behind a change is written down for a human, and
 arriving in six months reads them to find out not just what was built, but what was tried and
 why it is shaped this way.*
 
-A four-item body was already specified, in two places, before this document existed. It was
-followed about half the time. [#13](https://github.com/OrivonBrowser/orivon-mvp/pull/13) used
-it well; [#17](https://github.com/OrivonBrowser/orivon-mvp/pull/17) shipped a generic
-"Summary / Test plan" instead. **Neither of the eighteen merged PRs said what any of it meant
-for a user, and not one carried a label.** That is the gap this closes.
-
-Two changes make it stick where the old spec did not:
+Two things make the shape stick:
 
 - **The template is pre-filled.** GitHub's web UI and `gh pr create` both open
   `.github/pull_request_template.md` automatically. A rule you have to remember loses to a form
   that is already in the box.
-- **One copy.** The spec used to live in two documents that could drift.
-  [`CONTRIBUTING.md`](../../CONTRIBUTING.md) and [`parallel-work.md`](parallel-work.md) now link
-  here instead of restating.
+- **One copy.** [`CONTRIBUTING.md`](../../CONTRIBUTING.md) and [`parallel-work.md`](parallel-work.md)
+  link here instead of restating, so there is nothing to drift.
+
+---
 
 ---
 
@@ -57,7 +54,7 @@ Weak   broker-02-address: the blocked-address-range table (T12)
 
 The weak one fails twice. The `broker-02-address` prefix duplicates what the `stream:broker`
 label and the branch name already say, and it costs characters in every list view. And "the
-blocked-address-range table" names a *noun*, not a change — it could equally be adding one,
+blocked-address-range table" names a *noun*, not a change: it could equally be adding one,
 deleting one, or fixing one.
 
 **Aim for 72 characters.** `gh pr list` and GitHub's notification emails truncate past roughly
@@ -67,59 +64,105 @@ Where a title states the change **and its consequence** in one breath, it is doi
 available: *"never the hostname"* and *"not capability kind"* each tell a reader what was
 rejected, which is usually the interesting half.
 
+**Where a PR carries several major changes, the title names the theme rather than one of them.**
+The imperative rule and the 72 characters are unchanged; the object may simply be plural. Where
+one change dominates, name it and let the rest sit in `## Changes`.
+
+```
+Good   Land the folder picker and close three broker defects
+Good   Finish the loader cache path, and stop trusting the manifest's own hash
+
+Weak   2026-09-17
+Weak   Various fixes and improvements
+```
+
+The weak ones fail the original test: someone who was not there cannot tell what changed. A date
+is not a change, and "various" is the absence of a title.
+
 ---
 
 ## The body
 
-Seven required sections, two optional. In order:
+Five required sections, two optional. In order:
 
 ```markdown
 ## What changes for the user
-## Goal
-## What it achieves
-## How it works
-## Stream, paths and merge order
+## Changes                     <- one ### entry per major change
+## Streams, paths and merge order
 ## Decisions and open questions
 ## How it was verified
 ## Risk and rollback          (optional)
 ## Deliberately not done      (optional)
 ```
 
-`## Goal` and `## What it achieves` look adjacent and are not. Goal is one sentence of
-**intent** — what this is for. Achieves is a short list of **outcome** — what is now true that
-was not. A PR can hit its goal and achieve less than it set out to; keeping them apart is what
-makes that visible instead of blurred.
+> Goal, what it achieves and how it works are asked *per change*, inside `## Changes`, one
+> entry each. **A PR with one change has one entry.**
+
+### `## Changes`
+
+**One `###` entry per major change, each titled like a PR**: imperative, naming a change. Under each, in as much room as it needs:
+
+- **Goal**. One sentence of *intent*. What is this for?
+- **What it achieves**. A short list of *outcome*. What is now true that was not?
+- **How it works**. The mechanism, for a reader who will maintain it.
+
+`Goal` and `What it achieves` look adjacent and are not. A change can hit its goal and achieve
+less than it set out to; keeping them apart is what makes that visible instead of blurred.
+
+**"Major" is the filter.** Incidental fixes, renames and test tweaks do not each need an entry;
+they belong in one closing line, or in the commit log where they already are. If a PR has so many
+major changes that the section stops being readable, that is the signal to split it.
 
 ### `## What changes for the user`
 
-**Plain language, present tense. What can someone do, see, or no longer do?**
+**Plain language, present tense. What can someone do, see, or no longer do?** Answer for two
+audiences, both named:
 
-**Most pull requests here change nothing a user experiences, and that is the expected answer.**
-Write `None — <why>`, then say when it *will* become visible. An honest "none" is worth more
-than a paragraph of invention, and inventing one is the specific failure this section is written
-to prevent.
+- **User**. A person using Orivon.
+- **Dev**. A person building an app *on* Orivon. [`src/contracts/`](../../src/contracts/) is
+  their product surface, so a change there is as user-facing as moving a button.
 
-> **"Improves security" is not an answer.** Neither is "better performance", "more robust", or
-> "improves UX". Those describe the change's category. Say what the **user experiences**.
+> **A bare "None" is not an answer.** If a paragraph of explanation exists, the effect was
+> derivable and the "None" was a skipped question rather than an honest one.
+
+**Every change reaches somebody. Derive it.** Take the first rung that is true:
+
+1. **Direct.** Someone can now do, see, or no longer do something. Say what.
+2. **Second-order.** Nothing is visible yet, but something is now faster, cheaper, more
+   reliable, or harder to get wrong. Say which, and for whom.
+3. **Enabling.** This is a step toward something a person will feel. Name that thing and when
+   it arrives. *"From step 5 the loader refuses an app whose files changed"* is an answer;
+   *"groundwork"* is not.
+
+**Rung 3 is the floor.** A change that cannot reach even rung 3 for either audience is a change
+worth questioning.
+
+> **Still not answers:** "Improves security", "better performance", "more robust", "improves
+> UX", "groundwork", "no user impact". Those name a *category*. Say what somebody experiences.
+> The old anti-invention rule has not gone anywhere: **deriving a real second-order effect is
+> the opposite of inventing a direct one you do not have.** Where an audience genuinely has
+> nothing today, write *"nothing today, and <when> it becomes <what>"*, never a bare "None".
 
 | Instead of | Write |
 |---|---|
-| "Improves security around app filesystem access" | "An app can no longer read files outside its own folder, even if it asks for `../../`. Nothing an honest app does changes." |
-| "Adds the bundle hash" | "None — this is broker-internal. The user first feels it at build step 5, when the loader starts refusing an app whose files changed without its version changing." |
-| "Documentation only" | "None — this documents a rule the code already follows. No behaviour changes now or later." |
+| "Improves security around app filesystem access" | **User:** an app can no longer read files outside its own folder, even if it asks for `../../`. Nothing an honest app does changes. **Dev:** a path outside your app root now fails with `OrivonError`; ask for access deliberately via `fs.userSelected`. |
+| "None — this is broker-internal" (the bundle hash) | **User:** nothing today. From build step 5 an app whose files changed without its version changing stops loading, so a tampered update fails instead of running silently. **Dev:** bump your version with any file change, or the loader rejects the bundle. |
+| "Documentation only" | **User:** nothing today, and nothing later, since this records a rule the code already enforces. **Dev:** the rule your app already had to follow is now written where you will find it, instead of only in the code. |
 
-The section pairs with the `ux:visible` / `ux:none` label, so the answer is also filterable.
+The section pairs with the `ux:` label, so the answer is also filterable.
 
-**Why it is mandatory even when the answer is always "none".** The metric this project is judged
-by is **100 active users at 25 h/month** ([`mvp-scope.md`](../mvp-scope.md)), not lines of code.
-A section that forces the question on every change is cheap; noticing six months late that
-nothing shipped touched a user is not. Writing `None` takes ten seconds and is a respected
-answer — the point is that somebody looked.
+**Why it is mandatory.** The metric this project is judged by is **100 active users at
+25 h/month** ([`mvp-scope.md`](../mvp-scope.md)), not lines of code. A section that forces the
+question on every change is cheap; noticing six months late that nothing shipped touched anybody
+is not. The point is that somebody looked, and answered.
 
-### `## How it works`
+### `## How it works`: now one part of each `## Changes` entry
+
+> Asked once per `###` entry under `## Changes`, not once per PR.
+
 
 **The mechanism, and the choices that were not obvious.** Not a file-by-file narration of the
-diff — the diff is right there.
+diff; the diff is right there.
 
 Three rules:
 
@@ -130,28 +173,32 @@ Three rules:
 2. **Name the one file to read first.** With no dedicated reviewer, the highest-value sentence
    in a large PR is often "if you read one thing, read `handles.ts` §ownership check".
 3. **Explain *why*, not *what*.** This is [`code-guidelines.md`](code-guidelines.md) Rule 1 in a
-   different medium, and the standard is the same — that document carries the reasoning and is
+   different medium, and the standard is the same: that document carries the reasoning and is
    not restated here.
 
-### `## Stream, paths and merge order`
+### `## Streams, paths and merge order`
 
 Four short lines. This is the block that makes parallel work safe, so it stays terse:
 
 ```markdown
-- **Stream:** broker
-- **Paths touched:** src/broker/handles/handles.ts, src/broker/handles/tests/handles.test.ts -- both mine
+- **Streams:** broker, loader, docs
+- **Paths touched:** src/broker/handles/, src/loader/cache.ts, docs/development/ -- all mine
 - **Contracts:** depends on LIMITS, Handle, OrivonError, GrantId. None changed.
-- **Merge order:** stacked on #1 -- review that first
+- **Merge order:** independent -- but after #204, which moved fs.open's dispatch
 ```
 
-- **Stream** — from the ownership map in [`parallel-work.md`](parallel-work.md). A
+> A PR may span several streams, and each one it touched gets named. This block matters *more*
+> the more a PR carries: it is the only place a reader learns the real footprint before opening
+> the diff.
+
+- **Streams**. From the ownership map in [`parallel-work.md`](parallel-work.md). A
   `backlog-NN` branch owns no paths of its own, so it **names the stream it borrows**.
-- **Paths touched** — and confirmation they are yours. If a path is not, that is a signal to
+- **Paths touched**. And confirmation they are yours. If a path is not, that is a signal to
   raise, not a line to write apologetically.
-- **Contracts** — which types from [`src/contracts/`](../../src/contracts/) this depends on. If
+- **Contracts**. Which types from [`src/contracts/`](../../src/contracts/) this depends on. If
   any **changed**, this PR contains no implementation, it merges first, and it gets the
   `contracts-change` label. [`src/shared/`](../../src/shared/) follows the same rule.
-- **Merge order** — `independent`, or `stacked on #N`, or `must merge after #M`. Four streams
+- **Merge order**: `independent`, or `stacked on #N`, or `must merge after #M`. Four streams
   run concurrently; a PR that silently depends on another is how a green branch merges into a
   red `main`.
 
@@ -159,22 +206,22 @@ Four short lines. This is the block that makes parallel work safe, so it stays t
 
 [`CLAUDE.md`](../../CLAUDE.md) Rules 1 and 2, applied at pull request level. Anywhere you:
 
-- **deviated from a document** — say which, say why, and offer the literal reading as an option;
-- **chose between two defensible options** — name the one not taken;
-- **made a call the owner has not** — label it.
+- **deviated from a document**. Say which, say why, and offer the literal reading as an option;
+- **chose between two defensible options**. Name the one not taken;
+- **made a call nobody has confirmed**. Label it.
 
-Label each one **owner's decision** / **AI recommendation** / **still open**. Never blur them: a
-recommendation presented as a decision is how a project ends up defending a choice nobody made.
+Mark anything provisional as provisional. Presenting an unconfirmed call as settled is how a
+project ends up defending a choice nobody made.
 
 If the change files anything in [`open-questions.md`](../open-questions.md), **list the
-A-numbers here**. Take them from `main`'s highest, not your branch's — on 2026-08-27 four
+A-numbers here**. Take them from `main`'s highest, not your branch's: on 2026-08-27 four
 branches each claimed A15, and a merged renumber left `origin.ts` citing a stranger's question.
 [`parallel-work.md`](parallel-work.md) §Open-question numbers has the one-liner that prevents it.
 Taking the number from `main`'s highest reduces the collision, but two branches opened at the
-same time can still both take the same next number — `npm run check:questions` catches it in CI;
+same time can still both take the same next number, and `npm run check:questions` catches it in CI;
 the fix is to renumber whichever branch merges later and move its citations with it.
 
-If a change is architectural and load-bearing, this section is **not** where it goes — write an
+If a change is architectural and load-bearing, this section is **not** where it goes; write an
 ADR ([`CLAUDE.md`](../../CLAUDE.md) Rule 1) and cite it here.
 
 `None.` is a valid answer. It still has to be written, because writing it is what forces the
@@ -195,16 +242,15 @@ npm run smoke     # only if you touched src/main/
 > by the difference.** `Tests 1265 passed (1265)` is evidence. "All green" is a summary of
 > evidence you are asking the reader to take on trust.
 
-If a command was **not** run, say so and say why — "`smoke` not run, `src/main/` untouched" is a
+If a command was **not** run, say so and say why: "`smoke` not run, `src/main/` untouched" is a
 complete answer. A silently omitted check reads as a passed one.
 
-Where the PR's value depends on a test *noticing* something, say how you know it would. Several
-PRs here have used mutation testing for exactly that, and it repeatedly found suites that were
-dense, green and blind ([#13](https://github.com/OrivonBrowser/orivon-mvp/pull/13),
-[#17](https://github.com/OrivonBrowser/orivon-mvp/pull/17)). Not required — but "a passing suite
-proves nothing until it has been watched to fail" is the standard those PRs set.
+Where the PR's value depends on a test *noticing* something, say how you know it would.
+Mutation testing is the strongest answer: it repeatedly finds suites that are dense, green and
+blind. Not required, but the standard is that a passing suite proves nothing until it has been
+watched to fail.
 
-### `## Risk and rollback` — optional
+### `## Risk and rollback`: optional
 
 **What breaks if this is wrong, and how to undo it.** One or two lines.
 
@@ -212,7 +258,7 @@ Worth writing whenever the change touches the critical path, a security boundary
 frozen (key derivation, the bundle hash, `src/contracts/`), or anything a user's stored data
 depends on. Skip it for documentation.
 
-### `## Deliberately not done` — optional
+### `## Deliberately not done`: optional
 
 **Follow-ups left out, and why.** An omission that is stated is not a gap; an omission that is
 silent is indistinguishable from an oversight.
@@ -225,22 +271,34 @@ out of scope" from "not thought about".
 
 ## Labels
 
-Three axes and two flags. Every PR gets **one `stream:`, one `type:`, one `ux:`**, plus a flag
-if it applies.
+Three axes and two flags. Every PR gets **at least one `stream:`, at least one `type:`, and
+exactly one `ux:`**, plus a flag if it applies.
+
+> **`ux:` has three values, because `## What changes for the user` answers for two audiences.**
+> Precedence, highest first: **`ux:visible`** if any part is visible to a person using Orivon;
+> **`ux:dev`** if not, but it changes what an app developer can write against: a capability, an
+> error, anything in `src/contracts/`; **`ux:none`** only when neither is true, which should
+> be rare and is worth a second look when you reach for it. *The third value is
+> provisional: the section and the label were explicitly paired, so leaving `ux:` at two values
+> would have split them.*
 
 | Axis | Labels |
 |---|---|
 | `stream:` | `shell` · `contracts` · `shared` · `broker` · `shim` · `loader` · `torrent-app` · `fixture-app` · `trust` · `nostr` · `telemetry` · `packaging` · `docs` |
 | `type:` | `feature` · `fix` · `docs` · `security` · `test` · `chore` |
-| `ux:` | `visible` · `none` |
+| `ux:` | `visible` · `dev` · `none` |
 | flags | `contracts-change` · `needs-owner-decision` |
 
-**`stream:` mirrors the ownership map exactly** — nothing is invented, and adding a stream there
+**`stream:` and `type:` are multi-valued**: carry every stream the PR touched and every type it
+contains. **`ux:` is single**, because it answers one question, "does any part of this change
+what a person sees?", so `ux:visible` wins whenever any part of the PR is user-visible.
+
+**`stream:` mirrors the ownership map exactly**: nothing is invented, and adding a stream there
 means adding a label here. A `backlog-NN` branch takes the label of the stream it borrows. The
 payoff is that "which streams are open right now, and do any of them overlap?" becomes one
 filtered view instead of a reading of branch names.
 
-**`type:security`** is not exclusive with the others — a change that fixes a vulnerability takes
+**`type:security`** is not exclusive with the others: a change that fixes a vulnerability takes
 `type:security` rather than `type:fix`, because the distinction is what makes it findable later.
 
 **`contracts-change`** means the PR touches `src/contracts/` or `src/shared/`. Those merge
@@ -250,7 +308,7 @@ first, alone, with no implementation in them.
 `## Decisions and open questions` contains something marked *still open* that changes what
 merges.
 
-GitHub's stock `bug`, `documentation` and `enhancement` labels are removed — they duplicated
+GitHub's stock `bug`, `documentation` and `enhancement` labels are removed, because they duplicated
 `type:fix`, `type:docs` and `type:feature`, and two names for one idea is
 [`code-guidelines.md`](code-guidelines.md) Rule 3 in a different costume. `good first issue`,
 `help wanted` and `question` remain; they do not overlap and they are useful on a public repo.
@@ -275,7 +333,7 @@ that will pattern-match whatever it sees. Anti-examples work better than princip
 
 **Every claim in `## How it was verified` must be something you ran**, in this tree, on this
 branch. If you are an agent and you did not run it, the honest sentence is "not run" plus the
-reason — never a plausible-looking command block.
+reason, never a plausible-looking command block.
 
 **Do not invent a user impact.** `None` is the common answer and it is respected. See the
 worked table above.
@@ -294,17 +352,21 @@ subsections for three unrelated things, that is three PRs.
 
 ### The short form
 
-**A `type:chore` PR, or a fix of a line or two, may collapse to three sections:** `## Goal`,
-`## What changes for the user`, `## How it was verified`.
+**A PR that genuinely stands alone and is small (a revert, a hotfix, a `type:chore`) may
+collapse to three sections:** `## What changes for the user`, `## Changes` with a single entry,
+and `## How it was verified`.
 
-The carve-out is deliberate and narrow. A blueprint that demands seven sections for a typo fix
+> A `src/contracts/` PR is never a candidate for the short form: it is on the critical path and
+> takes the full form.
+
+The carve-out is deliberate and narrow. A blueprint that demands the full form for a typo fix
 is a blueprint that gets skipped on small PRs, and then on medium ones. Everything on the
-critical path — `src/broker/`, `src/contracts/`, `src/shared/`, `src/loader/`, `src/shim/`, and
-anything labelled `type:security` — takes the full form regardless of size.
+critical path (`src/broker/`, `src/contracts/`, `src/shared/`, `src/loader/`, `src/shim/`, and
+anything labelled `type:security`) takes the full form regardless of size.
 
 ### Nothing enforces this mechanically
 
-**Owner's decision, 2026-08-27: rules first, enforcement later** — the same call, for the same
+**Rules first, enforcement later.** The same call, for the same
 reason, as [`code-guidelines.md`](code-guidelines.md) §Status. No CI check parses the PR
 body, no workflow requires a label.
 
@@ -313,7 +375,7 @@ failing a build. The cost, recorded rather than left to be discovered: a PR open
 `gh pr create --body "..."` bypasses the template entirely, and nothing will say so.
 
 **The signal to revisit** is a merged PR that skipped a required section without saying why. The
-check is short — `scripts/` already holds four guards of exactly this kind — and can be written
+check is short (`scripts/` already holds four guards of exactly this kind) and can be written
 whenever it is wanted.
 
 ### Where the three copies live, and which one wins
@@ -321,7 +383,7 @@ whenever it is wanted.
 | | |
 |---|---|
 | This document | **Canonical.** Rules, reasoning, worked examples, anti-patterns |
-| [`.github/pull_request_template.md`](../../.github/pull_request_template.md) | The form. Section headings and inline guidance only — no reasoning |
+| [`.github/pull_request_template.md`](../../.github/pull_request_template.md) | The form. Section headings and inline guidance only, no reasoning |
 | The pinned issue | A signpost: what this is, the checklist, links to the two above |
 
 **They are ordered.** A correction goes into this document first; the other two are derived from
@@ -331,29 +393,9 @@ it. The template deliberately carries no reasoning, because reasoning is the par
 
 ## Open points
 
-Raised under [`CLAUDE.md`](../../CLAUDE.md) Rule 3 rather than smoothed over.
-
-**1. `.github/` had no owner in the ownership map. Resolved 2026-08-27 by assigning it to
-`docs`.**
-
-The map in [`parallel-work.md`](parallel-work.md) covers every path under `src/`, `scripts/`,
-`apps/`, `test/`, `docs/` and root markdown — but not `.github/`, which already held `ci.yml`
-before this PR added the template. Two changes have now landed in a directory nobody owned.
-
-`docs` is the right home: the contents are process and documentation infrastructure, and `docs`
-is the stream that is always available. **The CI workflow is the awkward part** — a change to
-`ci.yml` is far more likely to come from `packaging` or from whichever stream added the check it
-runs. Recorded as a split worth watching rather than pre-emptively divided.
-
-**2. The template cannot be enforced on `gh pr create --body`.** See §Nothing enforces this
+**The template cannot be enforced on `gh pr create --body`.** See §Nothing enforces this
 mechanically. Known, accepted, and the reason the blueprint is also a document an agent reads
 rather than only a file GitHub injects.
-
-**3. Whether `## What changes for the user` survives contact with a run of infrastructure PRs
-is genuinely unknown.** Build step 2 is broker-internal end to end, so the honest expectation is
-`None — ...` on nearly every PR until the loader lands at step 5. If that section becomes
-copy-paste, it has stopped working and should be reconsidered rather than tolerated — the
-failure mode of a mandatory field is that it gets filled, not that it gets skipped.
 
 ---
 
@@ -365,4 +407,4 @@ failure mode of a mandatory field is that it gets filled, not that it gets skipp
 | [`code-guidelines.md`](code-guidelines.md) | How code is written here. Rule 1 is the same standard `## How it works` is held to |
 | [`CONTRIBUTING.md`](../../CONTRIBUTING.md) | The eight rules, the pre-commit hook, and the gate to run before opening a PR |
 | [`readability-log.md`](readability-log.md) | Why "state omissions as omissions" is a rule here |
-| [`review-coverage.md`](review-coverage.md) | Where an independent review pass -- a hand-review, an adversarial pass, a security scan, a clean-checkout run -- gets recorded once it happens |
+| [`review-coverage.md`](review-coverage.md) | Where an independent review pass (a hand-review, an adversarial pass, a security scan, a clean-checkout run) gets recorded once it happens |

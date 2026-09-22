@@ -4,7 +4,7 @@ import { CREDIT_COALESCE_BYTES, WRITE_HEARTBEAT_MS } from '../../contracts/ipc.j
 import { errnoOf } from '../errors.js'
 
 // The WRITE half of the credit-window relay (contracts/ipc.ts,
-// handle-contracts.md's "Backpressure -- a credit window"), run BACKWARDS
+// handle-contracts.md's "Backpressure: a credit window"), run BACKWARDS
 // from ./port-pump.ts's read side: the BROKER grants the byte window here.
 // Pure and Electron-free like ./port-pump.ts -- `writable` is already a
 // real WHATWG WritableStream, `send` is injected. See

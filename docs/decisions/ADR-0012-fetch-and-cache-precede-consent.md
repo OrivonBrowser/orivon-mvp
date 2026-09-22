@@ -6,10 +6,10 @@
 - **Decided by:** owner
 
 ## Decision
-Once the browser sees a `<link rel="orivon-manifest">` hint in a page's own delivered HTML — the
+Once the browser sees a `<link rel="orivon-manifest">` hint in a page's own delivered HTML, the
 only discovery trigger that exists (`ADR-0005` amended below; the old second path, an explicit
 "Open as app" menu action, never had an implementation and is cut, `docs/architecture/
-capability-api.md`) — it fetches, hashes and caches that app's declared files **automatically and
+capability-api.md`), it fetches, hashes and caches that app's declared files **automatically and
 silently**: no popup, no confirmation, nothing visible to the user. This happens purely because the
 hint was seen, with no judgment yet made about whether the user wants anything to do with the app.
 
@@ -18,8 +18,8 @@ requests a capability (`orivon.net.connect`, `orivon.fs.readFile`, and so on). U
 the cached files are inert: present on disk, hash-pinned, but unable to do anything, because no
 capability is usable without a grant and grants are unaffected by any of this.
 
-**Stated plainly, because it is the uncomfortable part:** an origin the user merely visited — one
-carrying a manifest hint, nothing more — can have its code written to the user's disk with **zero
+**Stated plainly, because it is the uncomfortable part:** an origin the user merely visited, one
+carrying a manifest hint and nothing more, can have its code written to the user's disk with **zero
 explicit consent** at that point. This ADR accepts that consequence deliberately, for the reasons
 in §Reasoning, and states its one currently-unmitigated cost in §Consequences rather than treating
 it as free.
@@ -27,14 +27,14 @@ it as free.
 > **Amendment, 2026-09-13 (owner decision `d-0025`). The second half of this decision is
 > reversed; the first half stands.** Consent is no longer deferred to the first capability
 > call. It is asked **once, before the app's own code runs**, for the whole set its manifest
-> declares -- the shape owner decision 8 (`A100`) already required of the install prompt and
+> declares: the shape owner decision 8 (`A100`) already required of the install prompt and
 > that this ADR, written six days earlier, contradicted. Where the two disagreed, this is the
 > reading that wins.
 >
 > **What still stands, unchanged:** fetch-and-cache on seeing a `<link rel="orivon-manifest">`
-> hint is automatic and silent, and the uncomfortable consequence this ADR states plainly --
+> hint is automatic and silent, and the uncomfortable consequence this ADR states plainly,
 > that a merely-visited origin's code reaches the user's disk with no explicit consent at that
-> point -- is still accepted, for the reasons in this ADR's own Reasoning. Caching is not the
+> point, is still accepted, for the reasons in this ADR's own Reasoning. Caching is not the
 > thing being re-decided; only the moment of the ask is.
 >
 > **The owner's reason, in their words:** *"better to grant once at install, to prevent app
@@ -51,7 +51,7 @@ it as free.
 > things bound it, and they are requirements on the implementation, not hopes:
 >
 > 1. **Only an origin that actually declares capabilities is ever asked about.** A manifest
->    with an empty `capabilities` block installs silently and shows nothing -- there is no
+>    with an empty `capabilities` block installs silently and shows nothing, because there is no
 >    question to put to the user.
 > 2. **Once per origin, ever.** A grant lasts until revoked (`A101`), so a second visit is
 >    silent. Only a manifest that *widens* what it asks for comes back, through the existing
@@ -61,7 +61,7 @@ it as free.
 >    ADR named, reproduced at a finer grain.
 >
 > **Still open, parked rather than guessed** (`A138`): whether a person may accept *part* of
-> what an app asks for -- allow the network, refuse the filesystem -- or whether the choice is
+> what an app asks for (allow the network, refuse the filesystem) or whether the choice is
 > all-or-nothing. All-or-nothing is what is being built, because it is what the grant ledger
 > and `decideGrantRequest` already express and because a partially-granted app hits exactly the
 > mid-flight denial this amendment exists to remove. A per-row choice is a real product
@@ -71,86 +71,86 @@ it as free.
 `ADR-0005`'s original "Delivery model" line specified the opposite order: *"fetch → show the
 capability grant prompt → cache → run from cache thereafter."* That line was never touched when
 PR #63 cut the "Open as app" menu action and rewrote `capability-api.md`, `mvp-scope.md` and
-`ARCHITECTURE.md` around the fetch-then-cache-then-defer-consent model — so as of that PR, two
+`ARCHITECTURE.md` around the fetch-then-cache-then-defer-consent model, so as of that PR, two
 accepted documents in this repository stated incompatible answers to the same question: does the
 browser ever put a website's files on the user's disk before asking them anything?
 
 A review pass (`rev-63`) caught the contradiction (finding B1) before merge: `capability-api.md`
-cited "the ADR-0005 flow (fetch → cache → pin)" by name, as though ADR-0005 already said that —
-it did not. This is not a new disagreement invented by that PR; the *old* `capability-api.md` text
+cited "the ADR-0005 flow (fetch → cache → pin)" by name, as though ADR-0005 already said that.
+It did not. This is not a new disagreement invented by that PR; the *old* `capability-api.md` text
 ("grant prompt → fetch → cache → pin") already used a different order than ADR-0005's own text
-("fetch → grant prompt → cache"). PR #63 made the drift materially worse — full decoupling of the
-prompt from install, not just a swap of two adjacent steps — while asserting the two documents
+("fetch → grant prompt → cache"). PR #63 made the drift materially worse, fully decoupling the
+prompt from install rather than swapping two adjacent steps, while asserting the two documents
 already agreed.
 
 The owner has now decided, in plain language: *"Download quietly first; ask permission only when
-the app actually tries to do something. This is what #63 already assumes — ADR-0005 gets formally
+the app actually tries to do something. This is what #63 already assumes, and ADR-0005 gets formally
 amended (in place, dated correction block, this repo's own convention) to match, not the other way
 around."* This ADR records that decision formally and amends `ADR-0005` to agree with it (see
 §Consequences and the amendment block in `ADR-0005` itself).
 
 ## Alternatives considered
 
-**Ask permission before any fetch happens at all** — `ADR-0005` as originally written; show the
+**Ask permission before any fetch happens at all**, `ADR-0005` as originally written: show the
 grant prompt, then fetch and cache only after the user accepts. Rejected. Every page that carries
 a manifest hint would trigger a popup before the user has any idea whether they even want to use
-that app — reached the instant a page loads, based on nothing the user did. Two failure modes
+that app, reached the instant a page loads, based on nothing the user did. Two failure modes
 follow from that, and both defeat the point of asking at all:
 
 - **Prompt fatigue.** A popup appearing on ordinary browsing, disconnected from any action the
-  user took, trains users to reflexively dismiss it — exactly the "click through cargo cult" this
+  user took, trains users to reflexively dismiss it: exactly the "click through cargo cult" this
   repo's own `ADR-0005` amendment (publisher-key continuity) already named as a real failure mode
   in a narrower case. Training that reflex on installation makes the *later*, meaningful prompt
   (the one that actually grants network or filesystem access) less likely to get real attention,
   not more.
 - **A permission gauntlet.** If simply loading a page that happens to carry a manifest hint can
-  interrupt browsing, ordinary use of the web starts to feel adversarial toward the user — the
+  interrupt browsing, ordinary use of the web starts to feel adversarial toward the user, the
   opposite of what a trust indicator (`ADR-0006`) is trying to build.
 
 The prompt is only meaningful when it is tied to something the user can concretely understand:
 *"this wants network access,"* not *"this MIGHT eventually want something, from a page you just
 happened to load."* Deferring the ask to the moment a real capability is actually requested keeps
 every prompt shown backed by a concrete, nameable thing. This is also not a novel move for a
-browser to make: an ordinary web browser already caches an ordinary page's own assets — HTML, JS,
-CSS, images, service-worker resources — with no permission dialog of any kind, because caching a
+browser to make: an ordinary web browser already caches an ordinary page's own assets (HTML, JS,
+CSS, images, service-worker resources) with no permission dialog of any kind, because caching a
 page's own inert files carries no capability. Orivon's fetch-and-cache step is the same kind of
 event; what changes at the next step (a capability request) is genuinely new, and that is where
 this design puts the prompt.
 
-**Fetch but do not cache to disk until first capability use** — keep the manifest-declared files
+**Fetch but do not cache to disk until first capability use**, keeping the manifest-declared files
 in memory (or refetch them) until the app's code first asks for a capability, and only persist to
 disk at that point. Considered as a middle option between "prompt before anything" and "cache
 silently, always." Rejected: it would mean re-fetching the app's files from the network on every
 single visit to a site the user has not yet granted any capability to, since nothing durable is
-kept between visits. That defeats the actual point of a local, hash-pinned cache — offline
-availability and fast repeat loads — for exactly the population of sites (browsed once or twice,
+kept between visits. That defeats the actual point of a local, hash-pinned cache (offline
+availability and fast repeat loads) for exactly the population of sites (browsed once or twice,
 capability never yet requested) where a user is most likely to eventually accept the app and most
 benefits from it already being on disk. It also does not remove the "code was written to disk
 before consent" property this ADR accepts; it only delays it by one visit, at the cost of
 network traffic and latency on every visit before that, while gaining nothing for privacy or
-consent — the fetch itself is still unsolicited and still happens before any user decision.
+consent, since the fetch itself is still unsolicited and still happens before any user decision.
 
 ## Reasoning
 The core argument is the popup-fatigue one above, stated once more directly: **consent is only
 worth asking for when it is legible.** "This site wants to connect to a server" is a decision a
 user can actually reason about. "This site might, at some future point, want something" is not a
-decision at all — it is a checkbox nobody reads, on a browser whose entire differentiator is that
+decision at all: it is a checkbox nobody reads, on a browser whose entire differentiator is that
 its permission prompts are supposed to *mean something* (`mvp-scope.md`'s journey 1, the flagship
 clip, exists specifically to put a real, legible grant prompt on camera). Moving consent to
 install time would cheapen the one moment this product is built around.
 
 Separately, this mirrors how the web already works. Nothing asks a user's permission for an
-ordinary page to populate its own browser cache or `Cache Storage` — caching is understood to be
+ordinary page to populate its own browser cache or `Cache Storage`, because caching is understood to be
 inert, reversible, and not itself a capability. Orivon's fetch-and-cache step has exactly that
 shape: it places files on disk, and those files can do nothing until a capability is granted. The
-thing that is actually new relative to the ordinary web — an app *reaching* the network or
-filesystem under a real grant — is exactly the thing this design still gates, at exactly the
+thing that is actually new relative to the ordinary web, an app *reaching* the network or
+filesystem under a real grant, is exactly the thing this design still gates, at exactly the
 moment it starts to matter.
 
 **What this explicitly does NOT change:** capability *grants* remain exactly as gated as before
 this ADR. Nothing about network access, filesystem access, or any other capability becomes easier
 to obtain, is granted implicitly, or skips the grant prompt. The only thing that moved is the
-fetch-and-cache step — getting the app's inert files onto disk — which now happens earlier and
+fetch-and-cache step, getting the app's inert files onto disk, which now happens earlier and
 unconditionally, decoupled from any grant decision. `security-model.md`'s threat model for T18
 (origin spoofing in the grant prompt) and T21 (unpinned code reaching the app) are unaffected:
 both concern what happens once a capability is requested, and this ADR does not touch that path.
@@ -161,9 +161,9 @@ both concern what happens once a capability is requested, and this ADR does not 
 grant prompt → cache into that app's storage domain → run from cache thereafter."* That line is
 now wrong and is corrected in place, with a dated amendment block pointing here, following this
 repository's convention for a reversed decision (`ADR-0004`'s "Reversal recorded" block). The
-original wording is kept, visible, not deleted — see `ADR-0005` itself for the exact diff.
+original wording is kept, visible, not deleted; see `ADR-0005` itself for the exact diff.
 
-**Known, currently-unmitigated gap — accepted anyway, with a condition.** Two real problems exist
+**Known, currently-unmitigated gap, accepted anyway with a condition.** Two real problems exist
 in the design as specified, and neither is fixed by this ADR:
 
 1. **No cross-app disk quota.** Each app's bundle is capped individually at 64 MiB
@@ -175,10 +175,10 @@ in the design as specified, and neither is fixed by this ADR:
    `ADR-0009`), the loader pins the new bundle; nothing removes the old one. Every version an app
    has ever shipped that this browser fetched stays on disk indefinitely.
 
-Both gaps are filed as one entry, `docs/open-questions.md` A58 — found independently by a parallel
+Both gaps are filed as one entry, `docs/open-questions.md` A58, found independently by a parallel
 review pass on PR #62 while this ADR was being written, covering exactly these two sub-cases.
 (`A57` was claimed at the same time by a different, unrelated fix, `GrantLedger`'s own missing
-persistence — the two-lane numbering collision this caused was resolved by keeping A58's single
+persistence. The two-lane numbering collision this caused was resolved by keeping A58's single
 entry rather than duplicating it under a second number.)
 
 Neither is fixed here, and that is a deliberate, bounded acceptance rather than an oversight:
@@ -191,17 +191,17 @@ matters, and it was a deadline, not an indefinite pass: **both gaps must be clos
 discovery trigger is ever wired to the real browser shell.** Wiring the trigger while either gap
 is open would ship an unbounded, unauthenticated disk-fill vector to real users on day one.
 
-**Gap 1 closed 2026-09-04, owner decision -- not by building a quota, by deciding not to have
+**Gap 1 closed 2026-09-04, owner decision: not by building a quota, but by deciding not to have
 one.** Asked directly, with concrete numbers on the table (512 MiB / 1 GiB / 256 MiB), the owner
 chose no aggregate cross-origin disk cap at all: per-origin `MAX_BUNDLE_BYTES` (64 MiB) remains
 the only bound, permanently, matching how mainstream browsers already behave (a per-origin
 storage quota, no user-facing total-cache ceiling, with OS/browser storage-pressure eviction as
 the real backstop, which Orivon's MVP does not attempt to build its own version of). This is not
-"gap 1 deferred again" -- it is closed, on the merits, as a considered choice rather than an
+"gap 1 deferred again": it is closed, on the merits, as a considered choice rather than an
 unexamined one. `docs/open-questions.md` A58 carries the full record.
 
 Gap 2 (superseded-version cleanup) was not part of that question, and this paragraph previously
-said it remained open -- stale: `docs/open-questions.md` A58 was corrected 2026-09-04 (fix-67,
+said it remained open, which is stale: `docs/open-questions.md` A58 was corrected 2026-09-04 (fix-67,
 `stream/loader-07-prune-superseded-assets`) to record gap 2 as resolved in the same PR that
 already fixed gap 1's own follow-up. See that entry for the two real defects review caught in the
 first `pruneAssets` implementation before calling it done.
@@ -214,16 +214,16 @@ turn one visit into an unbounded stream of fetches.
 
 ## Reversibility
 - **Cost to reverse:** moderate. Reverting to "prompt before fetch" is a design and UX change, not
-  a data-format or protocol change — no cached bundle, grant record, or hash pin depends on
+  a data-format or protocol change. No cached bundle, grant record, or hash pin depends on
   *when* consent was asked, only on *whether* it was. The cost is mostly in re-litigating the UX
   (a prompt has to reappear somewhere, and journey 2 in `mvp-scope.md` would need rewriting again)
   and in the fact that, once real users have experienced silent installs, reintroducing an
-  install-time prompt reads as the product becoming more invasive, not less — a harder sell than
+  install-time prompt reads as the product becoming more invasive, not less, which is a harder sell than
   shipping it that way from the start.
 - **What would make us revisit:** either (a) the quota/cleanup work in §Consequences turns out to
   be genuinely hard to build correctly before the discovery trigger needs wiring, making "ship
-  fetch-then-defer without a quota" the practical default under schedule pressure — at which point
+  fetch-then-defer without a quota" the practical default under schedule pressure, at which point
   the tradeoff this ADR accepts needs re-examining with real deadline pressure in the room, not
   hypothetically; or (b) telemetry or user reports after launch show disk usage from
   never-consented-to apps is a real, noticed problem rather than a theoretical one. Not "if it
-  turns out badly" in the abstract — a specific, checkable signal in either case.
+  turns out badly" in the abstract, but a specific, checkable signal in either case.

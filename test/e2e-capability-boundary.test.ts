@@ -27,7 +27,7 @@
 //
 // NOT a bare `electron-vite build` -- that omits ORIVON_ENABLE_DEV_GRANT=1,
 // so Phase 2's dev-grant hook (below) would be absent and it would fail
-// immediately, by design (docs/planning/unattended-build-queue.md item 0.3).
+// immediately, by design (.claude/unattended-build-queue.md item 0.3).
 //
 // THE GAP THIS TEST WORKS AROUND, READ BEFORE CHANGING THE SHAPE OF THIS
 // FILE. docs/development/testing.md's ideal end-to-end test drives the
@@ -58,7 +58,7 @@
 // a permission-prompt UI a person actually approved -- is still build step
 // 4's job, not this file's.
 //
-// UPDATED (docs/planning/unattended-build-queue.md item 0.3): Phase 2 used
+// UPDATED (.claude/unattended-build-queue.md item 0.3): Phase 2 used
 // to build its own, separate Broker instance and call its registerApp()/
 // grant() directly from test code, disconnected from the real launched
 // shell -- so it proved the broker's OWN logic under a grant, but never

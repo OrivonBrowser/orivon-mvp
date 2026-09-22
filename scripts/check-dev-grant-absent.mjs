@@ -129,7 +129,7 @@ if (isInvokedDirectly(import.meta.url)) {
     console.error(
       '\nsrc/main/dev-grant.ts must be compiled out unless ORIVON_ENABLE_DEV_GRANT=1 was set' +
       "\nat build time (electron.vite.config.ts's `define`, scripts/build-e2e.mjs). See" +
-      '\ndocs/planning/unattended-build-queue.md item 0.3.\n'
+      '\n.claude/unattended-build-queue.md item 0.3.\n'
     )
     process.exit(1)
   }

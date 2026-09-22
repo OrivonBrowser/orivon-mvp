@@ -1,7 +1,7 @@
 // app.requestGrant's policy (contracts/capability-api.ts's own doc: "Resolves
 // false if declined or not declared."). This file is the "not declared" half
 // AND the half that proves a grant can never exceed the manifest -- item
-// 4.1's own security shape, point 1 (docs/planning/unattended-build-queue.md).
+// 4.1's own security shape, point 1 (.claude/unattended-build-queue.md).
 // Pure, no I/O -- see ../README.md's "policy/ decides" convention. The
 // consent question ("did a person actually accept?") is deliberately NOT
 // this file's job; see ../../main/request-grant.ts for where that and the

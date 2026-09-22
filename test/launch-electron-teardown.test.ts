@@ -5,7 +5,7 @@
 // (stream/test-01-launch-hygiene) does not hold the conductor's Electron
 // launch token, and launching Electron incorrectly from a lane that is
 // fixing launch-hygiene bugs is exactly how the owner's machine gets a new
-// orphan (docs/development/unattended-run-protocol.md).
+// orphan (.claude/unattended-run-protocol.md).
 //
 // Every test below spawns ordinary `node` child processes -- never
 // `electron` -- to exercise collectProcessTree/killProcessTree's generic

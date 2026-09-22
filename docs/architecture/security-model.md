@@ -5,8 +5,8 @@ an ordinary browser never does.
 
 ## The honest headline
 
-**A Node broker is not a sandbox.** Orivon's boundary is *authorisation* — apps only reach what
-they were granted — not *containment*. If the broker has a hole, a hostile app has the user's
+**A Node broker is not a sandbox.** Orivon's boundary is *authorisation* (apps only reach what
+they were granted) rather than *containment*. If the broker has a hole, a hostile app has the user's
 machine.
 
 This is stated in the product (`mvp-scope.md` non-goals), it is why developer mode carries a
@@ -19,54 +19,54 @@ arbitrary hosts) · identity seed and derived keys · other apps' data · attent
 
 ## Adversaries
 1. **A hostile app**, installed via developer mode. The primary adversary.
-2. **A compromised app host** — legitimate app, attacker-controlled server, serving new code.
+2. **A compromised app host.** A legitimate app, an attacker-controlled server, serving new code.
 3. **A hostile peer** in the torrent swarm.
 4. **A network observer.**
 5. **An ordinary hostile website** in a normal tab, attempting to reach `orivon.*`.
 6. **A same-user local process.** The relevant attacker for the seed, the grant ledger and the
-   app cache — `safeStorage` does not defend against it (T24).
+   app cache. `safeStorage` does not defend against it (T24).
 
 ## Trust boundaries
-- **renderer ↔ broker** — *the* boundary. Everything below hangs off it.
-- **broker ↔ OS** — the broker holds full user authority and must never widen it.
-- **app ↔ app** — enforced by per-origin storage and session partitions (`ADR-0003`).
-- **browser ↔ network** — untrusted by definition.
+- **renderer ↔ broker**: *the* boundary. Everything below hangs off it.
+- **broker ↔ OS**: the broker holds full user authority and must never widen it.
+- **app ↔ app**: enforced by per-origin storage and session partitions (`ADR-0003`).
+- **browser ↔ network**: untrusted by definition.
 
 ## Threats and mitigations
 
 | # | Threat | Mitigation |
 |---|---|---|
-| T1 | Hostile app reads or writes outside its directory | `fs` rooted per origin; resolve then verify prefix; reject `..`. **Unit-tested** — a silent bug here is a full compromise |
+| T1 | Hostile app reads or writes outside its directory | `fs` rooted per origin; resolve then verify prefix; reject `..`. **Unit-tested**, because a silent bug here is a full compromise |
 | T2 | Hostile app obtains a capability it never declared | Grants are checked against the *pinned* manifest, not a runtime-supplied one. Absence means denial; there is no default-allow |
-| T3 | Compromised renderer forges IPC to impersonate another app | The broker derives origin from **`event.senderFrame`, captured synchronously at message receipt** — per *frame*, never per `WebContents`, and re-derived on every call. It reads **both `url` and `origin`, and denies when they disagree** (see the T3/T13b note below). **An origin in the IPC *payload* is never trusted** — that is the renderer-supplied identity this threat is about. See the corrections below |
-| T4 | Ordinary website reaches `orivon.*` | **Two separate preload files**, chosen by the broker from the app registry and never from anything renderer-supplied. The ordinary-tab preload exposes `window.nostr` only and does not reference `orivon.*` at all. See the correction below |
+| T3 | Compromised renderer forges IPC to impersonate another app | The broker derives origin from **`event.senderFrame`, captured synchronously at message receipt**: per *frame*, never per `WebContents`, and re-derived on every call. It reads **both `url` and `origin`, and denies when they disagree** (see the T3/T13b note below). **An origin in the IPC *payload* is never trusted**, since that is the renderer-supplied identity this threat is about |
+| T4 | Ordinary website reaches `orivon.*` | **Two separate preload files**, chosen by the broker from the app registry and never from anything renderer-supplied. The ordinary-tab preload exposes `window.nostr` only and does not reference `orivon.*` at all. See the T4 note below |
 | T5 | Renderer escape into Node | `sandbox: true`, `contextIsolation: true`, `nodeIntegration: false`, no remote module. Non-negotiable |
 | T6 | Compromised host silently swaps app code that already holds grants | Bundle hash pinned at install; any change re-prompts before running (`ADR-0005`, `ADR-0006` D2) |
 | T7 | App escapes its manifest by rewriting its own code | Code cache is **read-only to the app**; only the broker writes it (`ADR-0003`) |
-| T8 | Identity key exfiltration | Seed in `safeStorage`, never exposed; apps receive **derived** keys only; raw export is not a capability at any tier. **Scope of that protection:** `safeStorage` defends against another OS user and against offline disk access — not against same-user code (T24) |
-| T8b | A connected site silently signs destructive or authenticating events with a named identity | Named identities expose `signEvent(obj)`, **never raw-payload signing**. The broker screens `kind`: 1/6/7 silent; **0, 3, 5, 22242 and any delegation prompt**. Derive a separate secret per `(label, curve)` via length-prefixed HKDF — never one scalar across two schemes. `nip04`/`nip44` decrypt, if offered at all, is a **separate grant** from signing. A local append-only signing log (origin, identity, kind, time) with a viewer is the missing repudiation control |
-| T9 | Cross-app identity correlation | App keys derive per origin, so apps cannot link a user silently. **Named identities** (e.g. Nostr) are cross-origin *by explicit consent only* — the connect prompt is the boundary (`capability-api.md`) |
-| T10 | Hostile peer serves corrupt torrent data | Piece verification against the infohash — inherent to BitTorrent, not something Orivon adds |
+| T8 | Identity key exfiltration | Seed in `safeStorage`, never exposed; apps receive **derived** keys only; raw export is not a capability at any tier. **Scope of that protection:** `safeStorage` defends against another OS user and against offline disk access, but not against same-user code (T24) |
+| T8b | A connected site silently signs destructive or authenticating events with a named identity | Named identities expose `signEvent(obj)`, **never raw-payload signing**. The broker screens `kind`: 1/6/7 silent; **0, 3, 5, 22242 and any delegation prompt**. Derive a separate secret per `(label, curve)` via length-prefixed HKDF, never one scalar across two schemes. `nip04`/`nip44` decrypt, if offered at all, is a **separate grant** from signing. A local append-only signing log (origin, identity, kind, time) with a viewer is the missing repudiation control |
+| T9 | Cross-app identity correlation | App keys derive per origin, so apps cannot link a user silently. **Named identities** (e.g. Nostr) are cross-origin *by explicit consent only*; the connect prompt is the boundary (`capability-api.md`) |
+| T10 | Hostile peer serves corrupt torrent data | Piece verification against the infohash, inherent to BitTorrent and not something Orivon adds |
 | T11 | Resource exhaustion (disk, sockets, bandwidth) | `fs.quotaBytes` enforcement, socket count limits, disk-usage UI (`ADR-0003`). Quota default must be a fraction of **free disk measured at grant time**, not the absolute 50 GiB constant in the manifest example |
 | T11b | One app saturates the broker and freezes every tab | The broker runs on the UI thread, so a loop of `orivon.fs.stat()` hangs the whole browser. Per-origin in-flight cap and a token-bucket rate limit on IPC dispatch; all `fs` work genuinely async |
 | T11c | Handle IDs are forgeable across origins | **Per-origin handle tables** plus an ownership check on every operation. A single global map with sequential integers lets one app read another's open file or write its socket |
-| T12 | App reaches localhost or the LAN to attack other services | **Manifest patterns must be checked against resolved addresses, not hostnames** — otherwise DNS rebinding defeats them. Private ranges denied unless explicitly declared |
-| T13 | Telemetry endpoint used to correlate users | Random install ID, no third party, **monthly aggregate rather than a per-session timeline** — session timestamps against a stable ID are a daily activity pattern, and the metric needs a sum (`ADR-0004`). The client **ignores the response body entirely**: no server-driven config, no kill switch, no remote-control channel |
-| T13b | Origin-as-path collapses distinct origins, or escapes the app root | Directory names are `sha256(canonical_origin)`, never the origin string — otherwise `https://Example.com` and `https://example.com` share a directory on macOS/Windows. Code and data live under **separate roots**, so a one-level `fs` escape reaches an empty parent rather than executable code. Opaque origins (`data:`, `blob:`, `file:`, sandboxed frames) are rejected outright |
-| T13c | Developer-mode grants persist on a loopback origin and are inherited by an unrelated local server | Never persist grants for loopback, `file:` or plain-`http` origins — session-scoped only, re-prompt each launch, permanent insecure marker in the tab. Developer mode must be UI-only: unreachable from renderer IPC *and* from any command-line flag |
+| T12 | App reaches localhost or the LAN to attack other services | **Manifest patterns must be checked against resolved addresses, not hostnames**, because otherwise DNS rebinding defeats them. Private ranges denied unless explicitly declared |
+| T13 | Telemetry endpoint used to correlate users | Random install ID, no third party, **monthly aggregate rather than a per-session timeline**, since session timestamps against a stable ID are a daily activity pattern, and the metric needs a sum (`ADR-0004`). The client **ignores the response body entirely**: no server-driven config, no kill switch, no remote-control channel |
+| T13b | Origin-as-path collapses distinct origins, or escapes the app root | Directory names are `sha256(canonical_origin)`, never the origin string, because otherwise `https://Example.com` and `https://example.com` share a directory on macOS/Windows. Code and data live under **separate roots**, so a one-level `fs` escape reaches an empty parent rather than executable code. Opaque origins (`data:`, `blob:`, `file:`, sandboxed frames) are rejected outright |
+| T13c | Developer-mode grants persist on a loopback origin and are inherited by an unrelated local server | Never persist grants for loopback, `file:` or plain-`http` origins. Session-scoped only, re-prompt each launch, permanent insecure marker in the tab. Developer mode must be UI-only: unreachable from renderer IPC *and* from any command-line flag |
 | T14 | Electron CVEs | Track upstream releases. A browser is a high-value target; upgrading is maintenance, not optional |
-| T15 | An app-run localhost server (e.g. media streaming) is reachable by every local process and every other app | **No localhost socket.** Media is served over a range-capable custom scheme via `protocol.handle()`, or webtorrent's Service-Worker `createServer({controller})` — both renderer-local and origin-scoped, so no local process can reach them. Strictly stronger than the token-on-127.0.0.1 mitigation this row previously settled for |
-| T16 | Any website probes `window.nostr` to fingerprint Orivon or read the user's pubkey | Presence is detectable — true of every NIP-07 extension. The pubkey and signing are gated behind a per-site connect prompt; no identity data leaks without consent. **Note the disanalogy:** an extension is a deliberate install of a key the user generated and can back up; this identity is silent, shipped to 100% of installs, and not exportable in v0 |
-| T17 | An app transfers a live socket `MessagePort` to an unauthorised origin | **The raw port never crosses into the main world.** The preload holds it in the isolated world and exposes only `contextBridge` closures. `MessagePort` is transferable and carries **no sender identity**, so a transferred port is a bearer capability — the fast implementation is the insecure one |
-| T18 | Compromised host navigates a granted app to attacker content, or embeds it in a subframe | Block navigation away from the app's own origin (`will-navigate`, `setWindowOpenHandler`); **reject `orivon.*` from subframes outright in v0**; `webviewTag: false`. Without this, a 302 defeats the publisher-key pinning entirely — no signing key required |
-| T19 | Silent update widens capability *patterns* without adding a capability *kind* | Re-consent triggers on a **subset check over granted patterns**, not a kind comparison. `["api.example.com:443"]` → `["*:*"]` must prompt. Plus a per-origin **version floor** that only ever rises, so a validly-signed older bundle is never installed unnoticed (see the 2026-09-04 correction below — it is warned and chosen, not silently replayed, but it is never silent either) |
+| T15 | An app-run localhost server (e.g. media streaming) is reachable by every local process and every other app | **No localhost socket.** Media is served over a range-capable custom scheme via `protocol.handle()`, or webtorrent's Service-Worker `createServer({controller})`, both renderer-local and origin-scoped, so no local process can reach them. Strictly stronger than guarding a 127.0.0.1 server with a token |
+| T16 | Any website probes `window.nostr` to fingerprint Orivon or read the user's pubkey | Presence is detectable, as it is for every NIP-07 extension. The pubkey and signing are gated behind a per-site connect prompt; no identity data leaks without consent. **Note the disanalogy:** an extension is a deliberate install of a key the user generated and can back up; this identity is silent, shipped to 100% of installs, and not exportable in v0 |
+| T17 | An app transfers a live socket `MessagePort` to an unauthorised origin | **The raw port never crosses into the main world.** The preload holds it in the isolated world and exposes only `contextBridge` closures. `MessagePort` is transferable and carries **no sender identity**, so a transferred port is a bearer capability: the fast implementation is the insecure one |
+| T18 | Compromised host navigates a granted app to attacker content, or embeds it in a subframe | Block navigation away from the app's own origin (`will-navigate`, `setWindowOpenHandler`); **reject `orivon.*` from subframes outright in v0**; `webviewTag: false`. Without this, a 302 defeats the publisher-key pinning entirely, with no signing key required |
+| T19 | Silent update widens capability *patterns* without adding a capability *kind* | Re-consent triggers on a **subset check over granted patterns**, not a kind comparison. `["api.example.com:443"]` → `["*:*"]` must prompt. Plus a per-origin **version floor** that only ever rises, so a validly-signed older bundle is never installed unnoticed (see the T19 note below: it is warned and chosen, never silent) |
 | T20 | `orivon.net` bypasses a configured proxy, de-anonymising the user | Node `net`/`dgram` do not honour Chromium's proxy settings. **Fail closed:** if a proxy is configured, socket capabilities refuse to open and the prompt says why. Never silently direct-connect around a proxy. Same for DNS resolution |
-| T21 | Cached app code is served in a way that loses the pin | Serve cached assets at the app's own https origin via a session `protocol` interceptor and **fail closed** — a same-origin request whose path is not in the pinned asset set is denied, not fetched. Re-verify the cached tree hash **at every load**, not only at fetch |
-| T22 | App reaches arbitrary hosts via `fetch`/WebSocket/WebRTC, invisible to the broker | Broker-injected CSP on each app's session partition (`connect-src` limited to the bundle plus the origin's *granted* patterns — see the correction below), applied via `onHeadersReceived` so the app cannot relax it. Bounds `fetch`/WebSocket only; WebRTC is unmitigated (`docs/open-questions.md` A41) and the name-vs-address gap is open (A42). Without this the grant does not bound network reach and the trust indicator reports what it cannot see (`ADR-0006`) |
-| T23 | `magnet:` handler abused | Validate the URI against a strict grammar before it reaches any other code, and drop argv entries that do not parse (protocol-handler argument injection is a known Electron class). Magnet navigation from web content requires a confirm dialog — otherwise any page can silently place the user's IP in a swarm of its choosing. Manifest protocol claims need their own prompt; declaration alone never wins the default |
-| T24 | A same-user local process reads the seed, grant ledger, or app cache | Named explicitly as an adversary. `safeStorage` protects against *another OS user* and offline disk access — **not** against code running as the same user, which can simply ask the OS to decrypt |
-| T25 | The address bar displays a misleading origin (IDN/punycode homograph, embedded userinfo, an overlong subdomain pushing the real host out of view) | Newly reachable at build step 1 (2026-08-26) — the shell is the first component to render an origin to the user, and `capability-api.md`'s grant-prompt-must-be-origin-first requirement (T18-adjacent) exists for exactly this reason, one layer later. Mitigation not yet implemented in the shell itself: the address bar must show the resolved host distinctly from path/query, punycode must render in a form that reveals homograph confusables rather than the decoded Unicode alone, and userinfo (`user:pass@host`) must never be allowed to visually stand in for the host. Not consequential yet — nothing hangs a trust decision on the address bar's display until build step 4's grant prompt exists — but recorded now, before that step, rather than found late: the grant prompt cannot be trusted to be origin-first if the address bar one layer below it already is not |
-| T26 | An app cannot tell an Orivon-vetted cryptographic primitive from a third-party polyfill reached through the identical name (`docs/open-questions.md` A132) | **The placement is the mitigation, and it is why admitting third-party polyfills is survivable at all.** The shim runs inside the untrusted renderer -- on the app's own side of the renderer/broker boundary this document opens with -- so a backdoored polyfill has no reach beyond what the app itself already had; it cannot make an unauthorised socket appear, only misbehave within a boundary the broker still enforces. **What is not mitigated:** `src/shim/module-map.ts` presents `crypto-browserify` to apps as `crypto`, with no marking that distinguishes it from Orivon's own identity cryptography (`policy/derive.ts`, WebCrypto, golden vectors checked in CI against an independent implementation). An app calling `crypto.createHash()` cannot tell, from the name alone, which footing it is standing on, and the two differ -- `crypto-browserify` carries a third-party advisory today (A121) that WebCrypto does not. No API distinguishes them, and building one is a `src/contracts/` change outside this entry's scope; recorded as an honest, open naming gap rather than a defect in the boundary itself |
+| T21 | Cached app code is served in a way that loses the pin | Serve cached assets at the app's own https origin via a session `protocol` interceptor and **fail closed**: a same-origin request whose path is not in the pinned asset set is denied, not fetched. Re-verify the cached tree hash **at every load**, not only at fetch |
+| T22 | App reaches arbitrary hosts via `fetch`/WebSocket/WebRTC, invisible to the broker | Broker-injected CSP on each app's session partition (`connect-src` limited to the bundle plus the origin's *granted* patterns; see the T22 note below), applied via `onHeadersReceived` so the app cannot relax it. Bounds `fetch`/WebSocket only; WebRTC is unmitigated (`docs/open-questions.md` A41) and the name-vs-address gap is open (A42). Without this the grant does not bound network reach and the trust indicator reports what it cannot see (`ADR-0006`) |
+| T23 | `magnet:` handler abused | Validate the URI against a strict grammar before it reaches any other code, and drop argv entries that do not parse (protocol-handler argument injection is a known Electron class). Magnet navigation from web content requires a confirm dialog, because otherwise any page can silently place the user's IP in a swarm of its choosing. Manifest protocol claims need their own prompt; declaration alone never wins the default |
+| T24 | A same-user local process reads the seed, grant ledger, or app cache | Named explicitly as an adversary. `safeStorage` protects against *another OS user* and offline disk access, but **not** against code running as the same user, which can simply ask the OS to decrypt |
+| T25 | The address bar displays a misleading origin (IDN/punycode homograph, embedded userinfo, an overlong subdomain pushing the real host out of view) | The shell is the first component to render an origin to the user, and `capability-api.md` requires the grant prompt to be origin-first (T18-adjacent). An IDN host is punycoded and userinfo stripped before an origin is rendered. The grant prompt keeps only the host's last three dot-separated labels (`src/main/grant-prompt-render.ts`'s `formatOriginForDisplay`, A115), so the label that decides authority is always visible and `accounts.google.com.attacker.example` cannot pass for Google. The prompt shows the origin only in its `title`, a field some platforms drop (A127, partially resolved). The address bar itself shows the tab's full URL as Electron reports it (`src/renderer/main.ts`); showing the host distinctly from path and query there is not built |
+| T26 | An app cannot tell an Orivon-vetted cryptographic primitive from a third-party polyfill reached through the identical name (`docs/open-questions.md` A132) | **The placement is the mitigation, and it is why admitting third-party polyfills is survivable at all.** The shim runs inside the untrusted renderer, on the app's own side of the renderer/broker boundary this document opens with, so a backdoored polyfill has no reach beyond what the app itself already had; it cannot make an unauthorised socket appear, only misbehave within a boundary the broker still enforces. **What is not mitigated:** `src/shim/module-map.ts` presents `crypto-browserify` to apps as `crypto`, with no marking that distinguishes it from Orivon's own identity cryptography (`policy/derive.ts`, WebCrypto, golden vectors checked in CI against an independent implementation). An app calling `crypto.createHash()` cannot tell, from the name alone, which footing it is standing on, and the two differ: `crypto-browserify` carries a third-party advisory today (A121) that WebCrypto does not. No API distinguishes them, and building one is a `src/contracts/` change outside this entry's scope; recorded as an honest, open naming gap rather than a defect in the boundary itself |
 
 T12 is the one most likely to be got wrong: a naive `net` implementation that matches on the
 hostname string lets an app declare `example.com` and then have DNS resolve it to `127.0.0.1`.
@@ -81,38 +81,36 @@ Three precision requirements, since the general statement permits a wrong implem
   the service to the whole LAN; the prompt must distinguish "reachable from the internet" from
   "reachable from your local network".
 
-## Corrections found in the 2026-08-25 audit
+## Notes on the subtlest rows
 
-Recorded rather than silently rewritten, because both were load-bearing claims.
+Four rows above have reasoning that does not fit in a table cell.
 
-**T3 said "the broker derives origin from the `WebContents`."** A `WebContents` is a *tab*, not
+**T3, why origin is per-frame and captured synchronously.** A `WebContents` is a *tab*, not
 an origin, and Electron re-injects preloads on **every navigation**. An app holding
 `tcp.connect *:*` could navigate itself to a hostile origin, which would then run with the
 Orivon preload while the grant ledger still resolved to the app. This also defeated
 `ADR-0005`'s publisher-key amendment outright: a compromised host does not need the signing
-key, it serves a redirect. Origin is now per-frame, captured synchronously (an async handler
-can resolve after the frame is detached or navigated).
+key, it serves a redirect. Origin is therefore derived per-frame and captured synchronously (an
+async handler can resolve after the frame is detached or navigated).
 
-> **Amended 2026-08-27, twice, while implementing `src/broker/policy/origin.ts`.**
+> **Why the mitigation reads both `url` and `origin`.**
 >
-> **This correction said preloads are re-injected "into iframes by default."** They are not.
+> Preloads are **not** re-injected into iframes by default.
 > Electron injects the preload into subframes only when `nodeIntegrationInSubFrames: true`,
 > which this project does not set and `.claude/hookify.electron-webprefs.local.md` blocks.
-> Verified against real Electron 44. The **navigation** half of the correction stands and is
-> the load-bearing half; the iframe half was wrong and is withdrawn.
+> Verified against real Electron 44. Navigation is the load-bearing half.
 >
-> **T3 named `event.senderFrame.origin` as the source, and the first implementation read
-> `frame.url` instead, on the grounds that `.origin` is renderer-supplied.** Neither is
-> renderer-supplied — Electron computes both in the browser process, from
+> Neither `event.senderFrame.origin` nor `frame.url` is
+> renderer-supplied: Electron computes both in the browser process, from
 > `GetLastCommittedURL()` and the RFC 6454 serialisation of `GetLastCommittedOrigin()`. A
 > renderer can set neither. The renderer-supplied identity T3 is actually about is an origin
 > field in the **IPC payload**.
 >
-> **Neither field is sufficient alone**, which is why the mitigation now reads *both*:
+> **Neither field is sufficient alone**, which is why the mitigation reads *both*:
 >
 > - `url` alone cannot see an **opaque** origin. A top-level document served with
 >   `Content-Security-Policy: sandbox` keeps its ordinary `https:` URL while Chromium gives it
->   no origin at all — measured: url `http://127.0.0.1:PORT/sandboxed`, origin `null`.
+>   no origin at all. Measured: url `http://127.0.0.1:PORT/sandboxed`, origin `null`.
 >   Deriving from the URL alone hands it the embedding app's entire grant set, which is exactly
 >   what **T13b** forbids when it names sandboxed frames.
 > - `origin` alone cannot see a **borrowed** origin. `blob:https://x.example/u` serialises to
@@ -121,50 +119,39 @@ can resolve after the frame is detached or navigated).
 >   ordinary.
 >
 > So: derive from `url`, require `origin` to agree, deny otherwise. Compare **after**
-> canonicalisation — A14 strips the trailing DNS root label and Chromium does not, so a raw
+> canonicalisation, because A14 strips the trailing DNS root label and Chromium does not, so a raw
 > string comparison would deny every trailing-dot app by way of our own deviation.
 
-**T4 said "normal tabs get no preload and therefore no API."** That mitigation does not exist —
-`window.nostr` is injected into ordinary tabs by design (`capability-api.md`). The real
-invariant is two distinct preload files, and it had never been written down. A single wrong
+**T4, why the invariant is two preload files.** Ordinary tabs are not preload-free:
+`window.nostr` is injected into them by design (`capability-api.md`). The invariant that
+actually holds is two distinct preload files. A single wrong
 `webPreferences.preload` path, or one shared preload branching on renderer-influenced state,
 would turn every website into a fully capable Orivon app.
 
-**T22 said "manifest-declared hosts."** That predates A18's resolution and is wider than what
-actually ships: `src/broker/policy/connect-src.ts` derives `connect-src` from the origin's
-*granted* `tcp.connect` patterns, never `manifest.capabilities.net.tcp.connect` directly — the
+**T22, why CSP is derived from grants rather than the manifest.**
+`src/broker/policy/connect-src.ts` derives `connect-src` from the origin's
+*granted* `tcp.connect` patterns, never `manifest.capabilities.net.tcp.connect` directly, the
 same distinction `src/broker/index.ts`'s own `connect()` already draws (a manifest may *declare*
 `*:*` while the user grants a single host). Deriving CSP from the manifest instead would let the
-header permit network reach the user explicitly refused. Docs-borrow precedent: A31 (following
-A38's own resolution, which corrected this same file for a different threat row). Found and
-fixed while writing T22's implementation, 2026-09-02.
+header permit network reach the user explicitly refused.
 
-**T19 said the version floor stops a replayed older bundle from being "installed."** That
-overstated it in the direction of silence, which is the wrong direction for a security row to be
-wrong in. **Reversed 2026-09-04, owner decision (`ADR-0013`):** a below-floor version was never
-meant to be a silent, no-prompt block — the code shipped that way, but the intent was always to
-warn the user and let them choose. It now does: the first time a given origin offers a below-floor
-version, the user is warned and asked whether to proceed with it or keep the cached version; once
-they have said yes once for that origin, every later below-floor version from it that asks for
-nothing new — same authority, same bytes as what's already pinned — installs with an ongoing,
-passive, non-blocking notice rather than asking again. The floor itself is unchanged and still only
-ever rises (`GrantLedger.versionFloor`, persisted, A57) — what changed is that reaching it is now a
-user decision, never a silent outcome in either direction. See `ADR-0013` for the full reasoning
-and the mechanics `src/broker/policy/update.ts`'s `decideUpdate()` now implements.
+**T19, what reaching the version floor actually does.** A below-floor version is never silently
+blocked and never silently installed. The first time a given origin offers one, the user is
+warned and asked whether to proceed with it or keep the cached version. Once they have said yes
+once for that origin, a later below-floor version from it that asks for nothing new (same
+authority, same bytes as what is already pinned) installs with an ongoing, passive,
+non-blocking notice rather than asking again.
 
-**Correction, 2026-09-05 (`ADR-0013`'s own amendment of the same date):** "every later below-floor
-version from it installs with an ongoing, passive, non-blocking notice" was true only for a
-version asking for nothing new, and the row above did not say so until this correction — the gap
-was a real defect, not a wording nit. An acknowledged rollback that ALSO widens the granted pattern
-set, or serves bytes that don't match what's actually pinned, still produces `capability-prompt` or
-`reconsent` exactly as an ordinary, at-or-above-floor update carrying the same change would; the
-passive notice never overrides those. Before this fix, `rollbackAcknowledged` becoming true for an
-origin (from one benign, user-approved rollback) was enough to let anyone who later controlled that
-origin serve arbitrarily different code or a widened capability set under an already-forgiven
-version number, with no prompt at all.
+A below-floor version that ALSO widens the granted pattern set, or serves bytes that do not match
+what is pinned, still produces `capability-prompt` or `reconsent` exactly as an ordinary
+at-or-above-floor update carrying the same change would; the passive notice never overrides
+those. Without that rule, one benign user-approved rollback would set `rollbackAcknowledged` for
+the origin and let anyone who later controlled it serve arbitrarily different code, or a widened
+capability set, under an already-forgiven version number with no prompt at all. The floor itself
+only ever rises (`GrantLedger.versionFloor`, persisted, A57). See `ADR-0013` for the full
+reasoning and the mechanics `src/broker/policy/update.ts`'s `decideUpdate()` implements.
 
-**A granted IPv6 literal cannot be represented in CSP at all**, found on review of the same file,
-2026-09-02. CSP's host grammar is `ALPHA / DIGIT / "-"` — no `[`, `]` or `:` — and Chromium drops
+**A granted IPv6 literal cannot be represented in CSP at all.** CSP's host grammar is `ALPHA / DIGIT / "-"`, with no `[`, `]` or `:`, and Chromium drops
 a bracketed source outright rather than partially honouring it (confirmed in Electron 44.0.0 /
 Chrome 152). `connectSrcFor` omits an IPv6 pattern with reason `host-ipv6-literal` rather than
 emitting a token the browser silently discards. Same consequence as a `*` grant (open-questions.md
@@ -172,7 +159,7 @@ A43): the pattern is `fetch`-blocked, not merely CSP-uncovered, and `omitted` is
 build step explain why.
 
 ## Capabilities excluded from v0, on security grounds
-`subprocess` and `hid` are absent from the v0 API entirely — for signed apps too, not merely
+`subprocess` and `hid` are absent from the v0 API entirely, for signed apps too, not merely
 unsigned ones (`capability-api.md`). No MVP app needs them, and they are the largest available
 attack surface. Adding either requires an ADR.
 

@@ -1,6 +1,6 @@
 # The bundle hash
 
-**Audience: anyone reimplementing this outside this repository** — a third-party Web3 Score
+**Audience: anyone reimplementing this outside this repository.** A third-party Web3 Score
 provider, an independent auditor, a future port. If you are working inside this codebase, read
 `ADR-0009` for *why*; this document is the *what*, precise enough to reimplement bug-for-bug
 without reading a line of TypeScript.
@@ -20,9 +20,9 @@ pin already persisted and orphans every attestation issued against the old root.
 
 **Leaf set** = the app's manifest (`/.well-known/orivon.json`, exact fetched bytes) plus every
 frontend asset in the app's code cache. Never the app's mutable file storage (`files/`,
-`ADR-0003`) — that is user data, not app identity.
+`ADR-0003`): that is user data, not app identity.
 
-A bundle is **rejected before hashing** — no root is computed — if any of the following hold:
+A bundle is **rejected before hashing**, with no root computed, if any of the following hold:
 
 - It contains zero entries.
 - No entry's canonical path is `/.well-known/orivon.json`.
@@ -31,16 +31,15 @@ A bundle is **rejected before hashing** — no root is computed — if any of th
 - It exceeds a stated leaf-count or byte cap (see *Caps*, below).
 
 > **Not in this list, deliberately:** *"no entry's canonical path equals `Manifest.entry`"*.
-> An earlier draft of this document required it. It was cut on 2026-08-27 (owner decision):
-> checking it means JSON-parsing the app's own manifest — untrusted bytes from a possibly
-> hostile host — inside what is otherwise a pure byte-level function with no parse step and no
+> Checking it means JSON-parsing the app's own manifest (untrusted bytes from a possibly
+> hostile host) inside what is otherwise a pure byte-level function with no parse step and no
 > interesting failure modes. **The check still happens; it belongs to the app loader**
 > (`build-plan.md` step 4), which must parse the manifest anyway. A reimplementer of *this*
 > document is not expected to perform it, and an implementation that skips it is conformant.
 
 ## Canonical path
 
-The canonical path for an asset is `new URL(assetUrl).pathname` — the WHATWG URL Standard's
+The canonical path for an asset is `new URL(assetUrl).pathname`: the WHATWG URL Standard's
 path-percent-encoded, `/`-prefixed pathname, computed from the URL the asset was fetched from,
 **never from a local filesystem path**. Filesystem paths differ by separator on Windows and
 case-fold on macOS/APFS; both are supported run-from-source targets, and deriving the canonical
@@ -49,23 +48,23 @@ path from the filesystem would make the hash depend on which OS installed the ap
 Percent-encoding is preserved, not decoded: `/a%2Fb` and `/a/b` are distinct canonical paths. This
 keeps the hashed string byte-identical to what a request line actually carries, which is what
 lets the fail-closed membership check (`security-model.md` T21) compare like for like. (They are
-nonetheless *colliding* for storage purposes and cannot appear in the same bundle — see
+nonetheless *colliding* for storage purposes and cannot appear in the same bundle; see
 *Collision key*. Distinct-for-hashing and colliding-for-storage are different questions.)
 
 **A note for whoever builds the publishing tool.** These rules *reject*, they never repair, so a
 build step that percent-encodes more aggressively than the WHATWG URL Standard produces a bundle
 that is refused outright and can never be pinned. `new URL(...).pathname` leaves `@`, `~`, `(`,
-`)`, `,`, `=`, `+`, `$`, `&` and `'` **unencoded** — so `/img/logo@2x.png` is canonical and
+`)`, `,`, `=`, `+`, `$`, `&` and `'` **unencoded**, so `/img/logo@2x.png` is canonical and
 `/img/logo%402x.png` is not, even though a server would serve either. Derive asset paths by
 running the fetch URL through a URL parser, never by encoding a filename yourself.
 
 **Only `https:` and `http:` URLs yield a canonical path.** Every other scheme returns nothing.
-A `file:` URL parses perfectly well and has a `pathname` that reads exactly like an asset path —
-`file:///etc/passwd` gives `/etc/passwd` — and must never be able to produce one. App assets are
+A `file:` URL parses perfectly well and has a `pathname` that reads exactly like an asset path,
+since `file:///etc/passwd` gives `/etc/passwd`, and must never be able to produce one. App assets are
 fetched over https at the app's real origin (`ADR-0007`); `http:` is admitted only for the
 localhost dev fixture (`build-plan.md` step 4).
 
-Verified empirically (Node 24.11.1, 2026-08-26 — see `ADR-0009`'s coordination notes for the
+Verified empirically (Node 24.11.1, 2026-08-26; see `ADR-0009`'s coordination notes for the
 Electron-context caveat):
 
 ```
@@ -92,21 +91,21 @@ A canonical path is rejected (the whole bundle is refused) if it:
 - contains a percent-escape that does not decode (`/%zz.js`). The URL parser passes such a
   sequence through untouched, so the path is "canonical" by the next rule, but no filename can be
   recovered from it and the collision key below cannot be computed for it;
-- **is not itself already in canonical form** — re-deriving the canonical path from the canonical
+- **is not itself already in canonical form**, since re-deriving the canonical path from the canonical
   path must be a no-op. **Reject; never normalise.**
 
 That last rule is the load-bearing one and the easiest to skip. It is what guarantees a hashed
 path can still be *matched* later: `security-model.md` T21's membership check compares a pinned
 path against a freshly derived canonical path by exact string equality. A path hashed in any
-other spelling — `/a b.js` where the wire carries `/a%20b.js`, or a raw `ä` where the wire carries
-`%C3%A4` — can never equal the request that asks for it. The asset is pinned and then permanently
+other spelling (`/a b.js` where the wire carries `/a%20b.js`, or a raw `ä` where the wire carries
+`%C3%A4`) can never equal the request that asks for it. The asset is pinned and then permanently
 denied. That fails closed, so it is not a serving bypass; the app simply does not work, on every
 platform, forever.
 
 ### The decoded form must also be safe
 
 Every rule above tests the canonical path *as written*. **They must all be applied again to its
-percent-decoded form**, because that is the string a cache writer turns into a filename — it has
+percent-decoded form**, because that is the string a cache writer turns into a filename, and it has
 to decode, or `/fonts/Inter%20Regular.woff2` lands on disk with a literal `%20` in its name.
 
 A canonical path is additionally rejected if its **decoded** form:
@@ -115,17 +114,17 @@ A canonical path is additionally rejected if its **decoded** form:
 - contains `\` (a separator on Windows), `:` (opens an NTFS alternate data stream), or `|`;
 - has any **empty** path segment (`/a//b.js` is `/a/b.js` on every filesystem there is);
 - has a `.` or `..` segment (`/..%2F..%2Fevil.js` decodes to a traversal out of the cache root);
-- has any segment ending in a **dot or a space** — Win32 strips both, so `/a.js.`, `/a.js%20`
+- has any segment ending in a **dot or a space**, because Win32 strips both, so `/a.js.`, `/a.js%20`
   and `/a.js` are one file there;
 - has any segment whose name before the first dot is a **Windows reserved device**: `CON`,
-  `PRN`, `AUX`, `NUL`, `COM1`–`COM9`, `LPT1`–`LPT9`, case-insensitively. (`CON.txt` is the
+  `PRN`, `AUX`, `NUL`, `COM1`-`COM9`, `LPT1`-`LPT9`, case-insensitively. (`CON.txt` is the
   device; `CONFIG.js` is not.)
 - is exactly `/`, which names the cache directory rather than a file.
 
-> **This is the same argument as the collision key, and it was made in only one of the two
-> places.** The first implementation of these rules decoded in order to *detect aliasing* and then
-> validated only the encoded string — so `/%00.js` and `/..%2F..%2Fevil.js` were "canonical",
-> were hashed, and entered the pinned asset set. Corrected 2026-08-27, from the same review.
+> **This is the same argument as the collision key, and it is easy to apply in only one of the two
+> places.** An implementation that decodes in order to *detect aliasing* but then validates only
+> the encoded string treats `/%00.js` and `/..%2F..%2Fevil.js` as "canonical", hashes them, and
+> admits them to the pinned asset set.
 
 **Enforced on every platform**, including ones where a given hazard does not exist. A bundle has
 one identity or it has none, and a rule that fires only on Windows produces a bundle that hashes
@@ -141,7 +140,7 @@ platform, including ones where the collision would not actually occur.
 
 > **The percent-decode step comes first, and omitting it makes the whole rule inert.** This is
 > not a refinement; it is the difference between the rule working and not working at all. A
-> canonical path is `new URL(...).pathname`, which is **always pure ASCII** — every non-ASCII
+> canonical path is `new URL(...).pathname`, which is **always pure ASCII**, so every non-ASCII
 > byte is already percent-encoded. So on real input, NFC normalisation of the *encoded* string is
 > a no-op, and case folding reaches only the ASCII that survived encoding. An implementation that
 > folds before decoding will accept every one of these:
@@ -157,34 +156,33 @@ platform, including ones where the collision would not actually occur.
 >
 > The last row is the one that matters. Both leaves reach the pinned asset set under a single
 > root; both decode to one path in the code cache; whichever wins the write is the manifest whose
-> capabilities are actually enforced — while the user consented to a root computed over the other
+> capabilities are actually enforced, while the user consented to a root computed over the other
 > one. That is a widened manifest inheriting a judged identity, the exact failure `ADR-0006` and
 > `ADR-0009` chose manifest-as-leaf to prevent, reintroduced through the spelling of a path.
 >
-> This implementation shipped the fold-without-decode version and was corrected on 2026-08-27
-> before any pin existed. It is called out at this length because the bug is invisible in testing
-> unless the test data is written as `canonicalAssetPath()` output rather than as raw Unicode
-> string literals — which is precisely how it survived its own test suite.
+> It is called out at this length because the bug is invisible in testing unless the test data is
+> written as `canonicalAssetPath()` output rather than as raw Unicode string literals: a suite of
+> raw literals passes against the fold-without-decode version.
 
 Worked examples of the rule firing: `/App.js` and `/app.js`; the six pairs in the table above.
-Note that `/a%2Fb` and `/a/b` **still hash as distinct resources** (see *Canonical path*) — both
+Note that `/a%2Fb` and `/a/b` **still hash as distinct resources** (see *Canonical path*), and both
 statements are true at once. They are distinct for hashing and colliding for storage, and a
 bundle may therefore contain either but not both.
 
 **Known limits of `.toLowerCase()`, stated so they are not mistaken for coverage.** It is not the
-full Unicode Default Case Folding table. The two commonly-cited divergences — German `ß`/`SS` and
-the Turkish dotted/dotless `İ`/`i` — are *not* gaps here: NTFS's `$UpCase` table and the simple
+full Unicode Default Case Folding table. The two commonly-cited divergences, German `ß`/`SS` and
+the Turkish dotted/dotless `İ`/`i`, are *not* gaps here: NTFS's `$UpCase` table and the simple
 case folding APFS uses also leave those pairs distinct, so there is no filesystem on which they
 alias and nothing for the rule to catch. The Kelvin sign `U+212A` versus `K` **is** folded
 correctly. Separator- and escape-level aliasing is handled by the decoded-form rules below, not
 here.
 
 This is deliberate, not a compatibility shim: the on-disk cache on macOS (HFS+ normalised stored
-names to NFD; APFS stores names as given but compares them *normalisation-insensitively* — either
+names to NFD; APFS stores names as given but compares them *normalisation-insensitively*, so either
 way two spellings are one file) and Windows (case-insensitive filesystems) can hold only one of
 two colliding paths, so a bundle that "works" on Linux would silently reconstruct to a different
 pinned tree elsewhere. The normalisation *direction* is irrelevant to this rule, which only ever
-compares two paths to each other and never uses the key as a filename. **The hash itself is never case-folded or Unicode-normalised** —
+compares two paths to each other and never uses the key as a filename. **The hash itself is never case-folded or Unicode-normalised**;
 only the collision check is. `/App.js` and `/app.js`, when they do not collide with anything else
 in the same bundle, hash as the distinct resources they are.
 
@@ -192,7 +190,7 @@ in the same bundle, hash as the distinct resources they are.
 
 Leaf content is the **raw fetched bytes**, unmodified: no line-ending translation, no
 minification, no re-serialisation of JSON (including the manifest itself). Any content
-normalisation would build a collision into an integrity function by construction — two different
+normalisation would build a collision into an integrity function by construction: two different
 byte sequences a browser could legitimately receive would hash identically.
 
 ## The construction
@@ -219,20 +217,18 @@ VERSION_STRING = "orivon-bundle-v1"   (UTF-8 bytes)
   concatenated into the root.** This is byte-order comparison of the UTF-8 encoding, explicitly
   **not** a comparison of UTF-16 code units (as `Array.prototype.sort()` performs by default in
   JavaScript). The two orders disagree for any path containing a character above U+FFFF: a
-  supplementary-plane character encodes as a UTF-16 surrogate pair (`0xD800`–`0xDFFF`) that sorts
-  *before* U+E000–U+FFFF in UTF-16 code-unit order, but its UTF-8 encoding (starting `0xF0`–`0xF4`)
-  sorts *after* U+E000–U+FFFF's UTF-8 encoding (starting `0xEE`–`0xEF`).
+  supplementary-plane character encodes as a UTF-16 surrogate pair (`0xD800`-`0xDFFF`) that sorts
+  *before* U+E000-U+FFFF in UTF-16 code-unit order, but its UTF-8 encoding (starting `0xF0`-`0xF4`)
+  sorts *after* U+E000-U+FFFF's UTF-8 encoding (starting `0xEE`-`0xEF`).
 
-  > **Corrected 2026-08-27: this cannot currently be reached, and an earlier version of this
-  > document oversold it.** The canonical-form rule requires every path to be
-  > `new URL(...).pathname`, which is always pure ASCII — and for ASCII the two orders are
-  > identical. So no *legal bundle* can distinguish them, and no test vector can either; vector
-  > V5 below used to appear to, only because it hashed raw non-ASCII paths that the rejection
-  > table now (and always should have) refuses. Specify and implement the byte comparison anyway
-  > — it costs nothing, it is correct for any future construction that admits raw paths, and the
-  > default-sort trap is real for anyone who relaxes canonicalisation later. But do not spend
-  > review effort here: **the collision key above is where the Unicode risk actually lives**, and
-  > it is where this implementation actually had a bug.
+  > **This cannot currently be reached.** The canonical-form rule requires every path to be
+  > `new URL(...).pathname`, which is always pure ASCII, and for ASCII the two orders are
+  > identical. So no *legal bundle* can distinguish them, and no test vector can either, because
+  > the rejection table refuses raw non-ASCII paths. Specify and implement the byte comparison
+  > anyway: it costs nothing, it is correct for any future construction that admits raw paths,
+  > and the default-sort trap is real for anyone who relaxes canonicalisation later. But do not
+  > spend review effort here: **the collision key above is where the Unicode risk actually
+  > lives.**
 - `n` is the number of leaves (after sorting; sorting does not change `n`).
 
 ### Why each element is present
@@ -247,13 +243,13 @@ VERSION_STRING = "orivon-bundle-v1"   (UTF-8 bytes)
 
 ## Encoding the root as a string
 
-`"sha256:" + lowercase-hex(root)` — 7 + 64 = 71 ASCII characters, e.g.
+`"sha256:" + lowercase-hex(root)`, which is 7 + 64 = 71 ASCII characters, e.g.
 `sha256:2ff5baaa794301118be4270755686fd1438501332ab3b1a199af90815ca4c4fd`.
 
 **Lowercase hex only.** `src/broker/policy/update.ts`'s `isSameBundle` already normalises both
 sides of its comparison with `.trim().toLowerCase()`, on the stated assumption that this can only
 merge two spellings of the *same* digest, never two different ones. That assumption is true for a
-single-case alphabet (hex) and false for a mixed-case one (base64) — a base64 root would silently
+single-case alphabet (hex) and false for a mixed-case one (base64): a base64 root would silently
 turn that comparison into a bug. The `"sha256:"` prefix is itself lowercase and survives
 `trim()`/`toLowerCase()` unchanged.
 
@@ -262,7 +258,7 @@ prefix is a namespace reserved for future algorithm agility, not a field to nego
 
 ## Empty and single-file bundles
 
-A bundle with **zero** leaves is rejected before hashing (see above) — it is not given the root
+A bundle with **zero** leaves is rejected before hashing (see above), and it is not given the root
 the formula would otherwise produce, because every empty bundle would then share one universal
 hash matching any other empty response, truncated fetch, or 404-served-as-index.
 
@@ -272,21 +268,18 @@ prefix on the root computation guarantees the root differs from that single leaf
 
 ## Frozen test vectors
 
-Computed 2026-08-26 by an independent reference implementation (`node:crypto`'s `createHash`,
+Computed by an independent reference implementation (`node:crypto`'s `createHash`,
 not `bundle-hash.ts`), so this table cannot be a recording of that implementation's own bugs. If
-a change to `bundle-hash.ts` makes any vector below fail, **the change is wrong** — do not
+a change to `bundle-hash.ts` makes any vector below fail, **the change is wrong**; do not
 regenerate the vector. A genuine v2 construction adds a new table under a new version string; it
 never edits this one.
 
-> **V5 was revised once, on 2026-08-27, and the window is now closed.** Its original inputs were
-> raw supplementary-plane and private-use characters, which the rejection table refuses — the
-> vector could not be produced by a conforming implementation. Re-expressed in the percent-encoded
-> form a browser actually emits, and recomputed by the same independent reference implementation.
-> This was possible only because **no pin had ever been written to disk**: build step 4 writes the
-> first one, and after that no row here may be edited for any reason, including this one.
-> V1–V4 did not move. V6 was added at the same time.
+> **No row here may be edited, for any reason.** Pins exist on disk, so a changed vector would
+> change what an already-pinned bundle's identity means. Every vector uses the percent-encoded
+> paths a browser actually emits: the rejection table refuses raw non-ASCII paths, and a vector
+> no conforming implementation can produce proves nothing.
 
-### V1 — three-file bundle, including the manifest
+### V1: three-file bundle, including the manifest
 
 ```
 [
@@ -297,12 +290,12 @@ never edits this one.
 ```
 → `sha256:2ff5baaa794301118be4270755686fd1438501332ab3b1a199af90815ca4c4fd`
 
-### V2 — order independence
+### V2: order independence
 
 The same three entries as V1, supplied in the order `[app.js, manifest, index.html]`.
 → `sha256:2ff5baaa794301118be4270755686fd1438501332ab3b1a199af90815ca4c4fd` (identical to V1)
 
-### V3 — single-leaf bundle
+### V3: single-leaf bundle
 
 ```
 [ { path: "/.well-known/orivon.json", content: "{}" } ]
@@ -311,7 +304,7 @@ The same three entries as V1, supplied in the order `[app.js, manifest, index.ht
 → that single leaf's own digest (must differ from the root above):
   `4c1f4a74edebb25f62e547b5741793f5f759fdadd631fac073557ef8e78e5deb`
 
-### V4 — injectivity of length-prefixing
+### V4: injectivity of length-prefixing
 
 ```
 A: [ { path: "/a",  content: "bc" } ]  -> sha256:295023c3aee9987672b4ea79cf418b70355f1ed3fca9c35242a7e9d63a772c65
@@ -319,12 +312,12 @@ B: [ { path: "/ab", content: "c"  } ]  -> sha256:cb8d15aeab6efe4cce6370edea69ec6
 ```
 A and B **must** produce different roots.
 
-**These two are *formula-level* vectors and are not legal bundles** — neither carries a leaf at
+**These two are *formula-level* vectors and are not legal bundles**: neither carries a leaf at
 `/.well-known/orivon.json`, so a conforming implementation rejects both before hashing. They
 exercise the length-prefix boundary in isolation. Check them against your `root`/`leaf`
 computation directly, not through your bundle validator.
 
-### V5 — non-ASCII paths, in the form they actually take
+### V5: non-ASCII paths, in the form they actually take
 
 ```
 [
@@ -335,19 +328,13 @@ computation directly, not through your bundle validator.
 ```
 → `sha256:9aebeec88db79ddc4244d8026f0f93aee26d8bcd686da283c77db35617467af9`
 
-Sorted order is `/%EE%80%80.js`, then `/%F0%90%80%80.js`, then the manifest — because `%` is
-`0x25` and `.` is `0x2e`, so **both encoded paths sort before the manifest**, which is the
-opposite of what the original version of this vector showed. That inversion is the clearest
-demonstration of the point: once paths are percent-encoded, sorting is plain ASCII sorting and
+Sorted order is `/%EE%80%80.js`, then `/%F0%90%80%80.js`, then the manifest, because `%` is
+`0x25` and `.` is `0x2e`, so **both encoded paths sort before the manifest**, the opposite of
+where their decoded characters would put them. That inversion is the clearest demonstration of
+the point: once paths are percent-encoded, sorting is plain ASCII sorting and
 the UTF-8-versus-UTF-16 question does not arise.
 
-**Revised 2026-08-27** — see the note under *Frozen test vectors*. The original V5 hashed the raw
-characters (`/\u{10000}.js`, `/\u{E000}.js`) and produced
-`sha256:2cb9aeca099886230482a7d8ea0fb3338aaf146466f301817c42f81306a8d53c`. Recorded here so an
-implementation that computed the old value can tell which vector it matched, and so nobody
-re-derives it and assumes drift. **Do not use the old value.**
-
-### V6 — the per-path leaf table
+### V6: the per-path leaf table
 
 The same three entries as V1. A root alone cannot answer T21's membership question, so an
 implementation must also expose the per-path leaf digests it built the root from; these are
@@ -382,7 +369,7 @@ place a second implementation is most likely to go wrong.
 
 The pinned asset set is persisted and later **read back from disk as JSON**, and per
 `security-model.md` T24 the local filesystem is not a trusted store. **A parser reading a pin
-record must refuse everything the bundle validator refuses** — every path rule above, the
+record must refuse everything the bundle validator refuses**: every path rule above, the
 collision rule, the leaf-count cap, the requirement of a leaf at `/.well-known/orivon.json`, and
 a non-empty asset set. If the reader is the more permissive of the two, then the untrusted input
 path is the one deciding what the code cache reconstructs, which inverts the whole design.
@@ -397,6 +384,6 @@ Two further properties, learned the hard way here:
 
 ## What this document does not define
 
-Signature formats, attestation verification, provider trust, or any second hash algorithm — see
+Signature formats, attestation verification, provider trust, or any second hash algorithm: see
 `ADR-0009` for why those are deliberately out of scope. This document defines an identifier and
 proves it stable; it says nothing about who may make a claim about that identifier.

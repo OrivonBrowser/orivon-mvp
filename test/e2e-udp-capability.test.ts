@@ -21,7 +21,7 @@
 // is the permission prompt's job -- so Phase 2's grant works without it, and
 // Phase 1's denial does not depend on what the manifest says.
 //
-// UPDATED (docs/planning/unattended-build-queue.md item 0.3): Phase 2 used to
+// UPDATED (.claude/unattended-build-queue.md item 0.3): Phase 2 used to
 // call broker.registerApp()/broker.grant() directly, as bespoke test code. It
 // now grants through src/main/dev-grant.ts's hook instead -- the same
 // developer-only path a real launched app exposes only to a debugger attached

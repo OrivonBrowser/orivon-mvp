@@ -1,7 +1,7 @@
 # Unattended run protocol
 
 **Two owner rules, taken 2026-09-09, and stated as absolutes.** They govern any long unattended
-run in this repository -- the fleet runs out of `/home/jhon/.claude/orivon-fleet/`, and any loop
+run in this repository -- the fleet runs out of `~/.claude/orivon-fleet/`, and any loop
 or scheduled agent.
 
 1. **A question never halts the run.** An agent that needs an owner decision parks the question
@@ -46,7 +46,7 @@ without the owner being present.
 ### What this looks like against the current queue
 
 The point of the table is that **there is always unblocked work**. Taken from
-[`../planning/unattended-build-queue.md`](../planning/unattended-build-queue.md):
+[`unattended-build-queue.md`](unattended-build-queue.md):
 
 | If this is parked | Genuinely blocked | Still fully workable |
 |---|---|---|

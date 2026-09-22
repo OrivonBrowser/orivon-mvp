@@ -6,14 +6,14 @@
 - **Decided by:** owner (options and recommendation prepared by AI)
 
 ## Decision
-Cached app assets are served **under the app's real web origin** — `https://app.example.com` —
+Cached app assets are served **under the app's real web origin**, `https://app.example.com`,
 by intercepting requests **inside that app's `session` partition only**. The bundle keeps the
 origin it was fetched from, whether it is running from the network or from disk. No custom
 scheme is introduced for app delivery.
 
 Because the address bar's padlock would otherwise assert a live TLS connection that did not
-happen, **the trust indicator must show delivery provenance explicitly** — "running from local
-cache, pinned" — rather than a padlock, whenever the bytes came from cache.
+happen, **the trust indicator must show delivery provenance explicitly**, as "running from local
+cache, pinned", rather than a padlock, whenever the bytes came from cache.
 
 ## Context
 Closes `open-questions.md` **A11**, which recorded that this was *"unspecified anywhere"* and
@@ -28,32 +28,32 @@ entry, and the derived identity key from `orivon.id`.
 So the question is not cosmetic. It decides whether an app loaded from cache is the *same app*
 as the one loaded from the network.
 
-`ADR-0005`'s evening amendment already assumed this answer — it says *"cached assets served at
-the app's own origin with a fail-closed rule"* — but assumed it without recording the
+`ADR-0005`'s evening amendment already assumed this answer, saying *"cached assets served at
+the app's own origin with a fail-closed rule"*, but assumed it without recording the
 alternative or the cost. That is precisely the failure mode CLAUDE.md Rule 1 exists to prevent,
 so it is written down here properly.
 
 ## Alternatives considered
 
 **A custom scheme, `orivon-app://app.example.com/`.** Rejected. It is honest about the bytes
-being local, and it makes the address bar unambiguous, but it changes the origin — and origin is
+being local, and it makes the address bar unambiguous, but it changes the origin, and origin is
 the isolation key. The consequences are not edge cases:
 
 - The same app fetched live and run from cache would be **two different origins**, and therefore
   two grant ledgers, two storage domains, and **two different derived identity keys**. Since
   `ADR-0003` excludes identity export and backup, a user whose app moved between the two states
   would have no way to recover the key they lost.
-- It abandons `capability-api.md`'s deliberate commitment to *"the standard web origin — scheme
+- It abandons `capability-api.md`'s deliberate commitment to *"the standard web origin: scheme
   + host + port. Deliberately the web's definition, not a new one."*
 - Custom schemes carry their own quirks around cookies, CORS, service workers and secure-context
-  eligibility, each of which would need separate handling — and Gate 3 of the week-0 spike
+  eligibility, each of which would need separate handling, and Gate 3 of the week-0 spike
   depends on service workers being available.
 
 **Serve from cache at a synthetic subdomain** (`app-example-com.orivon.local`). Rejected for the
 same origin-change reason as above, plus it invents a namespace Orivon would have to own and
 defend, and it leaks the app's identity into DNS-shaped strings that look resolvable and are not.
 
-**Do not cache; always fetch.** Already rejected in `ADR-0005` — it breaks offline use, breaks
+**Do not cache; always fetch.** Already rejected in `ADR-0005`: it breaks offline use, breaks
 local executability, and re-introduces per-load trust in a remote server, which is the exact
 thing the Trustlessity ladder penalises.
 
@@ -66,7 +66,7 @@ and key stability is unrecoverable while identity export stays out of scope.
 The honesty cost is real but it is **payable elsewhere, and better**. `ADR-0006` already decided
 the trust indicator is built from observed behaviour with an evidence-first UI. "Where did these
 bytes come from" is exactly the kind of evidence it exists to display, and displaying it there is
-strictly more informative than a padlock — which, on an ordinary web page, tells the user only
+strictly more informative than a padlock, which on an ordinary web page tells the user only
 that *some* TLS connection succeeded.
 
 ## Consequences
@@ -92,7 +92,7 @@ that *some* TLS connection succeeded.
 
   > **Confirmed 2026-09-10, by a live probe, against this ADR's own real partition naming
   > scheme** (`persist:app-<sha256hex(origin)>`, `src/broker/grants/origin-hash.ts`, landed
-  > since this ADR was written) — `spike/adr7-probe/` (throwaway, not shipped), run under
+  > since this ADR was written), using `spike/adr7-probe/` (throwaway, not shipped), run under
   > `env -u ELECTRON_RUN_AS_NODE xvfb-run -a electron`, Electron 44.0.0. Full result:
   > `docs/open-questions.md` A110.
   >
@@ -108,7 +108,7 @@ that *some* TLS connection succeeded.
   >   intercepted origin, and `navigator.serviceWorker.register()` both resolved and reached
   >   `navigator.serviceWorker.ready`.
   >
-  > These three are the ones this ADR's own Reversibility section keys on, and all three pass —
+  > These three are the ones this ADR's own Reversibility section keys on, and all three pass:
   > **this ADR's decision stands, confirmed rather than merely argued.**
   >
   > A fourth question, added by the build queue's own framing rather than by this ADR's original
@@ -118,20 +118,20 @@ that *some* TLS connection succeeded.
   > for a response served through `protocol.handle`, and no injected header reached the page.
   > This matches a confirmed, open Electron defect (`electron/electron#45865`; a fix,
   > `electron/electron#45915`, merged to Electron's `main` on 2026-03-10 with no stated backport
-  > as of that merge) — not a probe error. **This does not trigger this ADR's own Reversibility
+  > as of that merge), not a probe error. **This does not trigger this ADR's own Reversibility
   > clause**, which names only the interception/secure-context pair above. It is a separate,
   > real gap for whichever mechanism ends up enforcing CSP or other response headers on a cached
-  > bundle — parked as `docs/open-questions.md` A110 rather than resolved here, per `CLAUDE.md`
+  > bundle, and is parked as `docs/open-questions.md` A110 rather than resolved here, per `CLAUDE.md`
   > Rule 1 (an agent may not amend this ADR's decision or reasoning, only record a result it
   > asked for).
 - Offline first-run keeps working for pre-cached apps, unchanged from `ADR-0005`.
 
 ## Reversibility
-- **Cost to reverse:** **one-way door once the first grant is persisted.** Before that, cheap —
-  it is a routing decision with no stored state behind it. After that, changing the origin
+- **Cost to reverse:** **one-way door once the first grant is persisted.** Before that it is cheap,
+  a routing decision with no stored state behind it. After that, changing the origin
   invalidates every stored grant, orphans every app's storage, and rotates every derived
   identity key with no export path to recover them.
 - **What would make us revisit:** Electron proving unable to intercept a standard scheme within
-  a single partition while keeping the origin a secure context — the assumption flagged above.
+  a single partition while keeping the origin a secure context, the assumption flagged above.
   That is a mechanism failure, not a change of mind, and it must be settled in build step 2,
   before any grant is written to disk.

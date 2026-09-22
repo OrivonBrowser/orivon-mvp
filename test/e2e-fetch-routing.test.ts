@@ -1,4 +1,4 @@
-// Queue item 3.4 (docs/planning/unattended-build-queue.md), ADR-0017: the
+// Queue item 3.4 (.claude/unattended-build-queue.md), ADR-0017: the
 // page's own `fetch()` is routed through orivon.net for a granted host,
 // carrying app-chosen headers a page cannot normally set, and refusing an
 // ungranted host without a prompt.

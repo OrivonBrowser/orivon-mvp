@@ -1,414 +1,220 @@
 # Orivon MVP — agent operating instructions
 
-## Start here
+**The human documentation is the map. This file only adds what is specific to working here as
+an agent.**
 
-**Phase: step 2's remaining scope is the permission/grant prompt, now attributed to build step
-4** -- `build-plan.md`'s own step-2 entry carries the amendment (owner decision `d-0022`), so
-the earlier note here that `main` "still lists it under step 2" is obsolete and has been
-removed. `dial`/`resolve`/`fs` are real Node I/O (not
-stubs) and the broker is wired to a real `ipcMain` control channel -- both already true on
-`main` today, independent of anything below. **Landed via #79-#82** (four stacked PRs, merged
-in order: #79 contracts -> #80 broker write half -> #81 preload/main-world surface -> #82 the
-e2e test's Phase 1, updated to match): `orivon.net.connect` is reachable from a real page, and
-the byte pump's write direction (A37, resolved) is built, tested and wired onto `window.orivon`
-via a `contextBridge.executeInMainWorld` main-world stream wrapper, verified end to end via a
-real Electron launch, not just unit tests -- a real grant, a real local echo server and a real
-denial of an out-of-manifest address all pass under `xvfb-run npm run test:e2e`.
-**Still open, by design, not a gap in this work:** no origin has a grant yet in production
-(`broker.grant()` has no production caller) -- that is build step 4's job (the app loader and
-the permission prompt), and it is *why* a page's own `net.connect` call is correctly `'denied'`
-today, not a completed byte transfer (the e2e test's own grant is test-only, via the broker's
-own API, not a production path). A half-close fix for `allowHalfOpen` was found to break
-`Duplex.toWeb`'s own EOF detection and was reverted rather than shipped broken -- filed as
-**A69**, now on `main`. A review pass across this whole landing found and fixed two CRITICAL
-defects (an idle-socket silence-timeout misfire, `close()` never resolving) plus a proven
-main-process-crash path and a message-count DoS gap -- see the PR bodies for #80/#81 and
-`docs/open-questions.md` A70/A80-A85 for what was found, fixed, and filed rather than fixed.
-**A second 2026-09-06 round closed step 2's known defects** (#89-#92, plus this docs PR).
-A84 (HIGH) is fixed with both shapes the owner chose: a socket now tears down when its handle
-is unlinked rather than when the peer drains, so `close()`/revocation can no longer be defeated
-by a peer that stops reading -- and A70 closed structurally with it. **The teardown is
-conditional on the close reason, and that is load-bearing:** cancelling the read half of a
-`Duplex.toWeb` destroys the socket and drops its write queue, so acting at unlink on a reason
-that flushes truncates the app's own final bytes (measured: 8 MiB queued, 8 MiB lost). Review
-caught this after the first implementation; see A84 and `src/broker/README.md`. Two owner decisions became
-policy: a blanket `*:*` grant no longer reaches the mail/DNS/IRC/remote-access ports unless a
-pattern names the exact port (A82), and an app's simultaneous-socket allowance is now declared
-in its manifest, clamped, and enforced, with a modest default so anything needing the ceiling
-has to ask in a number the user sees (A80). A48 was found stale -- both credit-window halves
-have existed since the preload pump landed -- and `handle-contracts.md` corrected to match.
-**The line-count note that used to live here is obsolete:** `stream/backlog-15-comment-sweep`'s
-header trim brought `src/broker/handles/handles.ts` from 491 to 456 lines, so there is real
-headroom against Rule 2's 500 again -- no split is imminent.
-
-Last updated 2026-09-06 (two rounds: the write-pump landing across #79-#82, then the step-2
-defect closeout in #89-#92; see PR bodies for the full verification trail; prior pass:
-A27-A31, `docs/open-questions.md`).
-
-**The human documentation is the map. Read it first — this file adds only what is specific to
-working here as an agent.**
-
-| | |
+| Read | Before |
 |---|---|
-| `README.md` | What Orivon is, its status, its roadmap, how it relates to Web3 |
-| `ARCHITECTURE.md` | How the pieces fit, which are disposable, and the owner's design choices |
-| `docs/README.md` | **The documentation index** — three reading tracks and the sources-of-truth table |
-| `docs/development/parallel-work.md` | **Read before starting any build step** |
-| `docs/development/code-guidelines.md` | **Read before writing any code** — comments, the 500-line limit, one implementation per idea |
-| `docs/development/pr-blueprint.md` | **Read before opening a PR** — the title rule, the seven sections, the labels |
-| `src/contracts/` | The product surface in seven files. Faster than any prose |
+| `README.md` | anything — what Orivon is, its status, its roadmap |
+| `ARCHITECTURE.md` | proposing a design — how the pieces fit, and which are disposable |
+| `docs/README.md` | hunting for a document — it is the index and the sources-of-truth table |
+| `src/contracts/` | writing against the API — the product surface in seven files, faster than any prose |
+| `docs/development/parallel-work.md` | starting a build step |
+| `docs/development/code-guidelines.md` | writing code |
+| `docs/development/pr-blueprint.md` | opening a PR |
+| `docs/decisions/decision-log.md` | asking *why* or *who decided* — pages do not carry that |
 
-That index is deliberately *not* duplicated here. Two copies drift, and the human one is the
-one a contributor will actually find.
+**Every page states only what is true now**, except the change records Rule 2 lists. It will not
+tell you that it changed, or who decided it: that is git, the decision log and the ADRs. **ADRs are the exception**
+and still carry their amendments in place, because an ADR is itself a decision record; nine of
+the eighteen carry one, and where an ADR contradicts itself the amendment is the current text.
 
-Three things load-bearing enough to repeat:
+## Status — 2026-09-16
 
-1. `docs/planning/audit-2026-08-25.md` records five independent audits, and **several documents
-   carry corrections reversing their own earlier claims.** Where a document says two things,
-   the correction block is the current one.
-2. `docs/decisions/` — nine ADRs. Read before proposing anything architectural; most obvious
-   ideas have already been considered and rejected for recorded reasons. **ADR-0002, ADR-0005
-   and ADR-0009 carry amendments superseding parts of their own text; ADR-0008 rescopes
-   ADR-0002's Node-shape-mirroring rule to the shim, not the capability layer; ADR-0009 fully
-   specifies the bundle hash that ADR-0005/ADR-0006 already relied on — read its 2026-08-27
-   amendment before its §Reasoning, which overstates the sort-order rule.**
-3. `docs/mvp-scope.md` — **anything absent from the IN table is out by default.**
+Build steps 1-4 are done: shell, capability broker, node shim, app loader. A person can install
+an app from a URL, read one consent dialog before any of the app's code runs, grant capabilities,
+and revoke them afterwards from a permissions panel. The owner's framing that day: *"the
+permission engine is roughly 90% done, and everything finally sits in one place to start building
+actual apps on."*
 
-**The spike resolved.** Verdict and evidence: `docs/planning/spike-verdict.md` (read this, not
-the older `week-0-spike-plan.md`, for current status). Gates 0/1a/1b/2 **PASS** with hard
-evidence; gate 4 (throughput) fails its literal relative-to-native-control threshold but beats
-the actual product requirement 10x — read past the verdict field; gate 3 (video playback) is
-**BLOCKED**, not failed — the app works (confirmed via a direct, non-Playwright launch), but
-Playwright's `_electron` driver can't attach to that window, for an unidentified reason. This
-is a real, currently-unresolved risk for build step 2's e2e test, which uses the same driver —
-check early. **`utilityProcess` fallback was not needed.**
-
-**Narrowed at build step 1 (2026-08-26):** a minimal `BaseWindow` with multiple
-`WebContentsView`s (the shell's actual composition) attaches to `_electron` cleanly — so the
-cause is specific to gate 3's video/service-worker setup, not `BaseWindow` in general. Practical
-consequence: once a window holds more than one view, match windows by URL via `app.windows()`,
-never `app.firstWindow()` (view-add order is an implementation detail, not a contract) —
-`open-questions.md` C6, `scripts/smoke.mjs` for the pattern in use.
-
-**This machine has `ELECTRON_RUN_AS_NODE=1` set in the ambient shell environment.** It makes
-the Electron binary run as plain Node — no windows, no `MessagePortMain`. It does not fail
-loudly. Never launch Electron directly; see `.claude/skills/orivon-electron/` for the pattern
-that strips it and verifies the launch is real.
-
-**Electron's `.d.ts` sometimes types an option/event on `BrowserWindow` only, even when it
-works identically on `BaseWindow`** — confirmed for `ready-to-show` only (2026-08-26 probe
-app). **Corrected 2026-09-01 (A30):** the earlier claim that `titleBarStyle`/`titleBarOverlay`/
-`trafficLightPosition` are the same case was wrong — all three are declared on
-`BaseWindowConstructorOptions` in electron 44.0.0's own `.d.ts`. context7 was silent on this
-rather than wrong, and that silence got over-generalized into a false "family" claim. **Check
-`node_modules/electron/electron.d.ts` directly first** — context7 is a second check, not a
-substitute.
-
-**`contextBridge.executeInMainWorld` (marked `@experimental`) is accepted as the main-world
-stream wrapper's mechanism -- owner's decision, formally recorded in ADR-0014** (docs-alignment
-branch, not yet on `main`; landing in a follow-up PR after this one). Confirmed live
-2026-09-05 via a throwaway probe app, including in a `sandbox: true` preload: a function passed
-in `args` is proxied and callable from the main world, a callback passed back through it works,
-and a real main-world `ReadableStream` built this way behaves normally for page code, failing
-closed rather than leaving a stream half-open on error. The alternative,
-`webFrame.executeJavaScript`, was rejected as weaker and was not built. See PR #81 for the
-probe.
-
-Open owner decisions are in `docs/open-questions.md` §A. A11 is closed (`ADR-0007`: cached
-bundles keep their real origin, intercepted inside the app's partition). **A10 is closed**
-(`docs/architecture/handle-contracts.md`, `ADR-0008`): WHATWG streams underneath, Node shapes
-presented by the shim on top, full specification written — the closed error enum, close/half-
-close semantics, a credit-window backpressure design, and the revocation cascade. Build step 2
-is unblocked.
+**For what works today use `docs/planning/compatibility-matrix.md`, not this section.**
 
 ## What this repository is
-The MVP implementation of **Orivon**. It is *not* the vision documentation.
 
-The MVP proves one thing: that a browser can run applications **impossible in Chrome** —
-reaching the network and filesystem under user-granted, per-app capabilities — while those
-applications are ordinary web frontends delivered from a URL.
+The MVP implementation of **Orivon** — not the vision documentation.
 
-Success metric: **100 active users in EU/USA, active = 25 h/month.** The metric, not the
-long-term vision, decides scope.
+It proves one thing: that a browser can run applications **impossible in Chrome** — reaching the
+network and filesystem under user-granted, per-app capabilities — while those applications
+remain ordinary web frontends delivered from a URL.
 
-## Sources of truth
+Success metric: **100 active users in EU/USA, active = 25 h/month.** The metric decides scope,
+not the long-term vision.
 
-**In `docs/README.md`.** Not repeated here — see the note in §Start here.
-
-Two things that are agent-specific and belong in this file rather than that one:
-
-- **The long-term vision lives at `/home/jhon/Desktop/Develop/orivon-docs/docs/`** (canonical,
-  deployed at docs.orivonstack.com). **Do not duplicate it into this repository** — summarise
-  and link. This repo is deliberately narrower.
-- **`docs/inventory.md` indexes all prior material. Do not re-crawl the filesystem** looking
-  for it.
-
-`/home/jhon/git/orivon-browser-v2` is a **failed prior MVP**. Not a baseline, not a reference
-architecture. Its GUI may be used as *visual reference only*.
+- **The vision corpus lives at `<vision-corpus>`** (canonical,
+  deployed at docs.orivonstack.com). Summarise and link — **never copy it into this repository**,
+  which is deliberately narrower.
+- **`docs/inventory.md` indexes all prior material. Do not re-crawl the filesystem for it.**
+- **`<prior-mvp>` is a failed prior MVP.** Not a baseline and not a
+  reference architecture; its GUI is a *visual* reference only.
 
 ## The load-bearing idea
 
-The durable asset is the **capability API** (`orivon.*`), now written as types in
-`src/contracts/`. The Electron shell beneath it is knowingly disposable.
+The durable asset is the **capability API** (`orivon.*`), written as types in `src/contracts/`.
+The Electron shell beneath it is knowingly disposable, and the interface is designed so the
+implementation underneath could change without any app already written having to change.
 
-The interface is designed so the implementation underneath could change — a WASM runtime, or
-IPC inside a browser engine — without any app already written having to change.
-
-> **State this carefully, and never as a roadmap.** The owner flagged the earlier wording
-> (readability check 1, 2026-08-26) for implying this repository is on its way to becoming a
-> browser-engine fork. It is not. A WASM runtime and an engine fork are **explicitly out of
-> scope** (`mvp-scope.md` §LATER), nobody is working on either, and nothing here depends on
-> them happening. The engine-independence is a *property of the design* that costs nothing
-> today — not a plan. `orivon-runtime` is deferred, not cancelled; its jobs are containment for
-> untrusted code and mobile portability, both post-MVP.
-
-**Practical consequence:** a shortcut in `src/main/` costs a refactor of code that was
-replaceable anyway. A shortcut in `src/contracts/` costs every app ever written for Orivon.
+**Practical consequence: a shortcut in `src/main/` costs a refactor of code that was replaceable
+anyway. A shortcut in `src/contracts/` costs every app ever written for Orivon.**
 
 ## Rules
-1. **Do not silently promote assumptions into architecture.** If a choice is load-bearing and
+
+1. **Do not silently promote assumptions into architecture.**  
+If a choice is load-bearing and
    reversible only at cost, write an ADR (`docs/decisions/ADR-0000-template.md`).
-2. **Label uncertainty explicitly.** Distinguish owner's decision / AI recommendation / still
-   open. Never blur them.
-3. **Contradictions get surfaced, not smoothed over.** Append to `docs/open-questions.md` and
-   raise it with the owner.
-4. **Scope discipline.** The vision corpus is large, coherent and seductive, and the developer
-   is solo — scope creep out of it is the single biggest risk. **Anything absent from the IN
-   table in `mvp-scope.md` is out by default.**
-5. **Label every component disposable or durable.** Say, per component, whether it is tied to
-   Electron or would outlive it — `ARCHITECTURE.md` has the current table. This is about
-   spending care in the right place, **not** about a planned migration; see §The load-bearing
-   idea before writing anything that sounds like a roadmap.
-6. **Prefer mature components.** Per subsystem decide: build / library / fork / embed /
-   interface. Do not reinvent without a written reason.
-7. **Don't over-document trivia**, and don't create abstractions for elegance alone. In code
-   specifically, this is Rule 1 of `docs/development/code-guidelines.md` — see §Code guidelines.
-8. **Pure-JS dependencies only.** Native modules break run-from-source on Windows and macOS,
-   which is a supported path (`build-plan.md`).
+2. **Public code and docs say how Orivon works now: never who decided it, never how it got there.**
+   Dates, decision IDs and names go in `docs/decisions/decision-log.md` or an ADR; change history
+   stays in git. So: no "what changed since", no "used to", no "corrected <date>", no PR numbers,
+   no lane or run narration, no struck-through rows. A rejected alternative may stay as a reason
+   ("gating on X would race"), never as a story. Mark an unconfirmed call *provisional*, and say
+   what would settle it. **Exempt, since their subject is change:** `CHANGELOG.md`,
+   `docs/decisions/`, `open-questions.md`, the readability and review-coverage logs, `devlog/`,
+   and `docs/planning/` apart from `build-plan.md` and `compatibility-matrix.md`.
+3. **Surface contradictions, never smooth them over.** Append to `docs/open-questions.md`. When a
+   page turns out to be wrong, **rewrite it to be right** rather than appending a correction
+   block beneath the wrong text — the page states what is true now, and the change earns a row
+   in the decision log.
+4. **Scope discipline. Anything absent from `mvp-scope.md`'s IN table is out by default.** The
+   vision corpus is large, coherent and seductive, and the developer is solo — scope creep out
+   of it is the single biggest risk this project has.
+5. **Label every component disposable or durable** — say whether it is tied to Electron or
+   would outlive it. `ARCHITECTURE.md` has the table. This is about spending care in the right
+   place, not about a planned migration.
+6. **Prefer mature components.** For each subsystem, decide: build, use a library, fork, embed,
+   or define an interface. Do not reinvent without a written reason.
+7. **Don't over-document trivia**, and don't create abstractions for elegance alone.
+8. **Pure-JS dependencies only.** Native modules break run-from-source, which is how Windows
+   and macOS are supported (`docs/planning/build-plan.md` §Platform policy).
+9. **Say which scope a sentence bounds** — this build, this repository, or the project. Never
+   state an MVP boundary as a permanent property of Orivon, and never state a long-term
+   aspiration as a plan for this repository. A reader cannot recover which you meant from
+   context, and will believe whichever the sentence implies. Two worked examples, both real
+   mistakes made here: `docs/development/readability-log.md` §What these rounds changed.
 
-## Four standing rules, all owner policies
+## Working here
 
-Parallel work and the readability check are from 2026-08-26; the code guidelines and the PR
-blueprint from 2026-08-27.
+Four owner policies. Nothing below is a suggestion.
 
-### The PR blueprint
+### Before starting a build step — parallel work
 
-**Read `docs/development/pr-blueprint.md` before opening a pull request.** GitHub pre-fills
-`.github/pull_request_template.md` for you, so in practice this is filling in a form that is
-already there — but the blueprint carries the reasoning and the anti-patterns, and it is the
-copy that wins if the two ever disagree.
+Read `docs/development/parallel-work.md`. Its "If you are an agent" section is the checklist,
+and its numbered rules cover worktrees, path ownership, contracts and `src/shared` PRs, the
+append points, and `package-lock.json`. Four things it does not cover:
 
-- **Title:** imperative, present tense, **no prefix**, about 72 characters. The stream is
-  carried by the label and the branch name; repeating it in the title wastes list-view
-  characters. Name a *change*, not a noun.
-- **Body:** seven sections — what changes for the user, goal, what it achieves, how it works,
-  stream/paths/merge order, decisions and open questions, how it was verified. Two optional:
-  risk and rollback, deliberately not done. A `type:chore` or one-line fix may keep only goal,
-  user impact and verification; anything on the critical path takes the full form.
-- **Labels:** one `stream:`, one `type:`, one `ux:`, plus `contracts-change` or
-  `needs-owner-decision` if they apply.
+- **A new worktree needs `node_modules`**: `ln -s <repo>/node_modules <worktree>/node_modules`.
+- **A stacked PR needs a base ref the native worktree tool cannot take** — it only branches from
+  `origin/<default>` or current HEAD. Use `git worktree add <path> -b <branch> <base>` instead.
+- **Branch protection is `strict`:** merging PR N+1 always needs a fresh `main`-merge into its
+  branch first, even when it touches none of N's files.
+- **Syncing `main` with `origin`** — the procedure below.
 
-Three failure modes worth naming, because an agent will hit all three:
+**Syncing `main`, owner's decision 2026-09-15.** Never a bare `git pull`: it refuses to run on a
+dirty tree, and the obvious recoveries (`git checkout -- .`, a badly resolved rebase) destroy the
+uncommitted work silently. Check first with `git fetch origin --prune`, then
+`git rev-list --left-right --count main...origin/main`.
 
-1. **Do not invent a user impact.** Most PRs here change nothing anyone experiences.
-   `None — <why>, and here is when it will be visible` is the expected answer and a respected
-   one. "Improves security" names a category, not an effect.
-2. **Every claim under *how it was verified* must be something you ran**, in this tree, on this
-   branch. Paste the actual numbers. If a check was skipped, say so and why — a silently omitted
-   check reads as a passed one.
-3. **`Decisions and open questions` is Rules 1 and 2 at PR level.** Label each entry owner's
-   decision / AI recommendation / still open, and list any `open-questions.md` A-numbers filed,
-   taken from **main's** highest rather than your branch's.
+- **Clean tree — sync unprompted.** `git merge --ff-only origin/main`. Never a merge commit,
+  never `--force`.
+- **Dirty tree — report, do not act.** Say which files are dirty locally **and** changed
+  upstream; that is where conflicts come from. If told to go ahead: back the tree up outside the
+  repo first — `git diff > <scratch>/uncommitted.patch` **plus** a tarball, since no stash
+  captures untracked files — then stash, `--ff-only`, `git stash pop`. A conflict keeps the
+  stash, so nothing is lost.
 
-Nothing enforces this mechanically, by owner's decision — same call as the code guidelines. The
-template does the work by being already in the box. Note it is bypassed entirely by
-`gh pr create --body`, which is exactly how an agent tends to open one.
+Afterwards run `npm run typecheck` and `npm run check:contracts`, plus `npm install` if
+`package-lock.json` moved. **Re-read anything that auto-merged**: it can be textually clean and
+semantically stale on its new base.
 
-**`gh pr edit` fails here with a GraphQL "Projects (classic)" error** (also true of
-`--label`/`--add-label` on `gh pr create`), unrelated to auth or content -- but plain
-`gh pr create --title ... --body-file ...` with no `--label` works fine, confirmed
-repeatedly 2026-09-05. To edit an existing PR's body, use
-`gh api -X PATCH repos/OrivonBrowser/orivon-mvp/pulls/<n> -F body=@file` instead (`-F` reads
-`@file`'s contents; `-f` would send the literal string `@file`). To label a PR, use
-`gh api -X POST repos/OrivonBrowser/orivon-mvp/issues/<n>/labels -f labels[]=<label>` instead
-(repeat `-f labels[]=` per label, or send a JSON array body) -- confirmed working for all of
-#79-#83's labels.
+### Before writing code — code guidelines
 
-### Code guidelines
+Read `docs/development/code-guidelines.md`. Three rules: **comments earn their place**, **no
+source file over 500 lines** (800 for tests), **one implementation per idea**. That page says
+outright that its §Rules 1-3 is all you need in order to write code here and everything below is
+background, and its §Status is the current enforcement state — read those two and nothing else.
 
-**Read `docs/development/code-guidelines.md` before writing any code.** The three rules, in
-short — the document carries the full reasoning and the worked examples:
+### Before opening a PR — the PR blueprint
 
-1. **Comments earn their place.** A comment explains *why*; the code already says *what*. If it
-   restates the line below it, delete it. Long comments are allowed where length is genuinely
-   what makes a section understandable — not by default. Plain language: the reader may be new
-   to the project or a model with a small context window. **Carve-out:** doc comments on
-   exported declarations in `src/contracts/` are exempt — they are the product's documentation.
-   Inline comments inside function bodies are not exempt anywhere.
+**Open one or two PRs per working day, not one per feature** — owner's decision `d-0033`,
+2026-09-17. This is an **agent rule and lives here on purpose**: a human contributor sending one
+change still opens one PR, so `CONTRIBUTING.md` and the PR template say nothing about cadence.
+The reason is volume — continuous AI work merged 423 PRs over 17 days here, about 25 a day, and
+nobody reviews that.
 
-   **Two more tests, added 2026-09-03, because the one above cannot see the failure that
-   actually happened here — a file-header essay passes it, and half the source files had grown
-   one.** First: **a comment that stops a maintainer breaking the line in front of them belongs
-   in the source; a comment explaining why the file has the shape it has belongs in the
-   directory's `README.md` (`## Design notes`) or an ADR.** Ask *would someone editing this line
-   get it wrong without this comment?* — no means it is rationale, and rationale moves. Second:
-   **a source file may open with at most 25 lines of comment**, enforced in CI by
-   `npm run check:comments`. If a block genuinely cannot be shortened, keep it and say why in
-   the file — `// orivon:comment-budget -- <reason>`; the reason is required, and
-   `npm run check:comments -- --exemptions` lists every one. `src/trust/` is the worked example
-   for all of it.
-2. **500 lines for source, 800 for tests** (`*.test.ts`, `test/`, `scripts/smoke.mjs`). Split by
-   concern, never by line count — `foo-part2.ts` is worse than the long file. The limit exists so
-   a smaller model can hold a whole file and reason about it confidently.
-3. **One implementation per idea.** Before writing a helper, `grep -rn "function <name>" src/`.
-   Extract when the *reason* is shared, not when the shape is (Rule 7 still applies).
+- Default to one PR for the day; open a second when the day splits into two unrelated themes, or
+  when one body would be too tangled to follow.
+- `stream/` branches and worktrees are unchanged — they converge into the day's PR instead of
+  each opening their own.
+- **`src/contracts/` and `src/shared/` are the one carve-out**, still alone and merged first. A
+  day that touches contracts has an extra PR; that is expected, not a slip.
+- **State what the size costs.** A day PR is harder to revert and harder to bisect. `## Changes`
+  must make each piece separately findable, and `## How it was verified` must cover the whole
+  day, not the last thing touched. A day PR whose body is one paragraph is worse than the
+  twenty-five it replaced.
 
-**Applied to the whole codebase 2026-08-27**, across two branches: `stream/backlog-06-rule2-
-violations` (the two files that had already broken Rule 2 — `handles.ts` at 1045 lines,
-`connect.ts` at 622 — plus their test files) and `stream/backlog-07-guidelines-cleanup` (the four
-that were close enough to break it next, the comment cuts, and eight Rule-3 duplicates including
-the `concat`/`encodeField` pair this rule was written from). Every source file is now under 500
-lines and every test file under 800; `docs/development/code-guidelines.md` §Where each rule
-came from has the full before/after per file. Two known duplicates (a hex encoder, the
-`MAX_HOST_LENGTH`/`MAX_PORT` constants) were found and deliberately left for a follow-up rather
-than fixed mid-refactor, because both cross into files the other branch was restructuring at the
-same time — see that document's §Status.
+Read `docs/development/pr-blueprint.md` for the shape itself — the title rule, the five body
+sections, labels, and the anti-patterns an agent actually hits. Its §Where the three copies live
+settles precedence: that document is canonical and `.github/pull_request_template.md` derives
+from it.
 
-**`src/shared/` exists for a helper needed on both sides of a trust boundary** — `src/broker/`
-and `src/shim/` may not import each other, and `check:contracts` rules out `src/contracts/`. It
-is **change-controlled like contracts** (own PR, merges first) and **imports nothing**. Still
-empty: the audit above confirmed nothing in the current tree actually crosses that boundary.
+Worth knowing before you get there, because it is what stops you reading the rest: **a PR opened
+with `gh pr create --body` bypasses the template entirely, and nothing will say so.** Use
+`--body-file`, and see §Local quirks for the `gh pr edit` and labelling workarounds.
 
-**Rule 1's comment budget is enforced in CI (`npm run check:comments`) as of 2026-09-03. Rules 2
-and 3 still are not, by owner's decision (rules first, enforcement later).** The deferral expired
-for Rule 1 for the reason it named: the rule was being followed and the codebase drifted anyway,
-because comment *quality* is not mechanically checkable but a comment *budget* is. No linter or
-formatter exists. The one place conventions had already drifted — 14 declarations in `derive.ts`
-and its test written `function name(args)` against 115 elsewhere written `function name (args)`
-— was normalised as part of the 2026-08-27 refactor. A **second** such split is the signal the
-deferral has expired for style too.
+### At the end of a build step — the readability check
 
-**A hookify rule that anchors `file_path` at the repo root never fires.** `Write`/`Edit` always
-pass an absolute path, so `^src/...` cannot match; the rule loads, reports no error, and is
-simply dead. Two were (`comment-narration`, `scope-creep`), including the one added on
-2026-09-02 for this exact problem — fixed 2026-09-03 to `^(?:.*/)?(?:src|...)/`, and verified
-against the engine rather than assumed. There is also **no `not_regex_match` operator**: an
-unknown operator evaluates to false and silently kills the whole rule. Valid ones are
-`regex_match`, `contains`, `equals`, `not_contains`, `starts_with`, `ends_with` — exclusions go
-in a lookahead inside a single `regex_match`.
-
-### Parallel work
-
-**Read `docs/development/parallel-work.md` before starting any build step.** Then:
-
-- Work in a **worktree** on `stream/<name>`, matching the ownership map.
-- **A stacked PR (branch B needs branch A's unmerged commits) needs a base ref a native
-  worktree tool can't take** -- it only branches from `origin/<default>` or the current HEAD.
-  Use `git worktree add <path> -b <new-branch> <base-branch>` directly instead.
-- **Stay inside your owned paths.** If a change needs a file another stream owns, that is a
-  signal — raise it, do not just edit it.
-- **Never modify `src/contracts/` in the same PR as an implementation.** A contracts change
-  touches every stream at once; it goes in its own PR and merges first.
-- **Append at the append points** (`src/main/subsystems.ts`, the preload input map) rather than
-  editing shared logic. Do not add logic to `subsystems.ts`.
-- **Never hand-merge `package-lock.json`.** Take either side whole, run `npm install`, commit
-  the result.
-- **A new worktree needs `node_modules` symlinked manually**:
-  `ln -s <repo>/node_modules <worktree>/node_modules`.
-- **Branch protection is `strict`.** Merging PR N+1 always needs a fresh `main`-merge into its
-  branch first, even if N+1 touches none of N's files — expect this on every sequential merge.
-- **Syncing `main` with `origin` never uses a bare `git pull`.** Local `main` is always `0`
-  ahead here, so the sync is a fast-forward — but the working tree is routinely dirty with
-  uncommitted work (14 files across docs, `src/contracts/` and `src/telemetry/` for the whole of
-  2026-09-10..15), and on a dirty tree `git pull` aborts with *"local changes would be
-  overwritten"*. The obvious recoveries — `git checkout -- .`, or a rebase resolved badly —
-  destroy that work silently. **Owner's decision (2026-09-15): the procedure below is the
-  default, and an agent that finds `main` behind runs it unprompted when the tree is clean, and
-  reports rather than acts when the tree is dirty.** A clean tree makes the fast-forward
-  risk-free; a dirty one carries stash/pop conflict risk, and a conflicted tree nobody asked for
-  is a bad surprise with this many worktrees live.
-
-  1. `git fetch origin --prune`, then `git rev-list --left-right --count main...origin/main`.
-  2. Back the dirty tree up outside the repo first — `git diff > <scratch>/uncommitted.patch`
-     plus a tarball that also captures the untracked files, which no stash takes by default.
-  3. `git stash push -m "pre-sync <date>: ..."`. Leave untracked files in place; they only
-     block the merge if `origin/main` adds a file at the same path, which is worth checking
-     (`git cat-file -e origin/main:<path>`) rather than assuming.
-  4. `git merge --ff-only origin/main` — **never** a merge commit, and never `--force`.
-  5. `git stash pop`. On conflict the stash is **kept**, not dropped, so nothing is lost; a
-     clean pop drops it, which is the signal the reapply worked.
-  6. Verify before reporting: per-file `git diff --numstat` against the backup patch (hunk
-     counts must match, or the difference must be explained), then `npm run typecheck` and
-     `npm run check:contracts`. Check `package.json`/`package-lock.json` in the pulled range —
-     a lock change needs `npm install`, a scripts-only change does not.
-
-  Two things this catches that a hunk-count check alone does not: a file whose local edit
-  **auto-merged** now sits on a newer base and may be textually clean but semantically stale
-  (`ARCHITECTURE.md` after a 162-commit jump is the worked example — re-read it, don't trust the
-  clean merge), and a dirty file that upstream **also** changed, which is where every real
-  conflict comes from. List those before stashing, not after.
-
-### The readability check
-
-**At the end of every build step**, hand the owner **exactly one artefact** — the document a
-newcomer would hit at that point — and ask:
+Give the owner one document — the one a newcomer would hit at that point — and ask only this:
 
 > *Read this cold. Where is the first place you got lost, or had to guess?*
 
-**Not "is this good?"**, which reliably returns a useless answer. And only the *first* point:
-everything after it is unreliable, because the reader is already reconstructing from context.
+Record the answer in `docs/development/readability-log.md`, which has the full method in its
+§The protocol. This happens at **every** build step, and "nothing confused me" is a real result
+that still gets logged.
 
-Record the date, artefact, confusion point and fix in `docs/development/readability-log.md`.
-**This does not lapse**, and it is a gate rather than a courtesy — the first round caught a
-missing roadmap, an unexplained Web3 relationship, and an `ARCHITECTURE.md` section that
-actively implied the wrong thing.
+## Local quirks
 
-Lessons from the first rounds, now binding on anything written here:
+- **`gh pr edit` fails with a GraphQL "Projects (classic)" error**, as does `--label` on
+  `gh pr create`; this is unrelated to auth or content. Creating a PR is fine — plain
+  `gh pr create --title ... --body-file ...` with no `--label` works. To edit an existing body,
+  use `gh api -X PATCH repos/OrivonBrowser/orivon-mvp/pulls/<n> -F body=@file` (`-F` reads the
+  file; `-f` would send the literal string `@file`). To label one, use
+  `gh api -X POST repos/OrivonBrowser/orivon-mvp/issues/<n>/labels -f labels[]=<label>`.
+- **`ELECTRON_RUN_AS_NODE=1` is set in this machine's ambient shell**, which turns the Electron
+  binary into windowless plain Node without erroring. Every launch must go through
+  `scripts/run-headless.mjs`; the hookify rule that blocks anything else explains why, and
+  `.claude/skills/orivon-electron/` has the rest.
 
-- **State omissions as omissions, with reasons.** Two README findings were absences, not
-  errors — and the reader could not tell "deliberately out of scope" from "not thought about".
-- **Never state an MVP scope boundary as a permanent property of Orivon, and never state a
-  long-term aspiration as a plan for this repository.** This was caught twice, in opposite
-  directions: `ARCHITECTURE.md` implied this repo was becoming a browser-engine fork (it is
-  not — that is out of scope), and `README.md` said "not a wallet, no DAO, there won't be one"
-  when **both are real long-term goals** with their own designs in the vision corpus
-  (`wallet-system.md`, `dao-plan.mdx`); only *this MVP* excludes them.
+## Tooling — what fires when (`.claude/settings.json`)
 
-  Every sentence about scope must make clear **which** thing it bounds — this month's build,
-  this repository, or the project. A reader cannot recover that from context and will believe
-  whichever the sentence implies. Both errors read as confident and precise; neither was.
-
-## Tooling — what fires when (installed 2026-08-25, `.claude/settings.json`)
-
-Plugins are project-scoped and travel with the repo. Some are automatic, the rest must be
-invoked at the step named here. **Check this table at the start of every build step.**
+Plugins are project-scoped and travel with the repo. Some are automatic; the rest must be invoked
+at the step named here. **Check this table at the start of every build step.**
 
 | Tool | Fires | Use it for |
 |---|---|---|
-| `npm run check:contracts` | **CI, and on demand** | Fails if `src/contracts/` is incomplete or references anything outside itself. A sibling (`./errors.js`) is fine; `electron`, `node:*` or any package is not |
-| `npm run check:natives` | **Automatic on `postinstall`, and CI** | Rule 8. Fails if any dependency needs a compiler at install time |
+| The `npm run check:*` gates | **CI, and on demand** | Ten of them, all run by CI: `check:contracts` (`src/contracts/` complete and referencing only its own siblings — `./errors.js` is fine, `electron`, `node:*` or any package is not), `check:natives` (Rule 8, also on `postinstall`), `check:size` (Rule 2), `check:comments` (Rule 1), `check:secrets`, `check:questions` (no duplicate A-number), `check:vectors`, `check:manifest-parity`, `check:dev-grant-absent`, `check:advisories` |
 | `typescript-lsp` | Automatic on `.ts` edits | Type errors across main / preload / renderer. Trust its diagnostics over your own reading of a type |
-| `security-guidance` | Automatic: warns on edits, reviews the diff when you stop, reviews every `git commit` | Path traversal (T1/T10), SSRF / private-address (T12), secrets. Address or explicitly acknowledge every finding |
-| `hookify` rules in `.claude/hookify.*.local.md` | Automatic on edits and shell | Block native modules (Rule 8), insecure `webPreferences`, non-TypeScript sources (ADR-0002); warn on hardcoded storage paths (ADR-0003) and out-of-scope features (Rule 4). Add a rule with `/hookify` whenever the owner corrects the same thing twice |
+| `security-guidance` | Automatic: on edits, when you stop, and on every `git commit` | Path traversal (T1/T10), SSRF / private-address (T12), secrets. Address or explicitly acknowledge every finding |
+| `hookify` rules in `.claude/hookify.*.local.md` | Automatic on edits and shell | Thirteen rules. **Block (8):** native modules (in code and in `package.json`), insecure `webPreferences`, non-TypeScript sources, any Electron launch that bypasses `scripts/run-headless.mjs` or could steal window focus, in-place branch switches (`git pull`/`checkout`/`switch`, `gh pr checkout`) and tree-wide discards (`reset --hard`, `clean -f`, `stash drop`). **Warn (5):** hardcoded storage paths, out-of-scope features, file-header essays, comments that narrate the change rather than the code, and live pages that narrate their own history (Rule 2). Add a rule with `/hookify` whenever the owner corrects the same thing twice. Writing one: anchor `file_path` as `^(?:.*/)?(?:src|...)/`, since a repo-root anchor never matches an absolute path and the rule dies silently; and there is no `not_regex_match` operator — an unknown operator kills the whole rule (`docs/open-questions.md`) |
 | `superpowers` | Process, automatic via its session hook | `brainstorming` before new work, `writing-plans` for anything multi-step, `test-driven-development` for every broker / policy function, `systematic-debugging` on any failure, `verification-before-completion` before claiming done |
-| `context7` (MCP) | **Manual — call it before writing code against Electron or webtorrent APIs.** | `protocol.handle`, `utilityProcess`, `MessagePortMain`, `WebContentsView`, `session` partitions, `safeStorage`; **webtorrent 3.x** internals and its `browser` field. Training data is stale here — a live check on 2026-08-25 found four wrong assumptions in the docs, including the version itself (`week-0-spike-plan.md` §Verified facts) |
-| `playwright` (MCP) | **Manual — build steps 4 and 7.** | Drive the localhost fixture app (step 4) and the three pinned Nostr web clients (journey 3, step 7). The Electron e2e uses the `_electron` library, not this |
-| `claude-security` | **Manual — run `/claude-security` at the end of build step 2 (broker) and again before packaging (step 10).** | Whole-repo multi-agent vulnerability scan with verified findings. Expensive: twice, not continuously |
-| `claude-md-management` | **Manual — `/revise-claude-md` at the end of any session that changed an assumption in this file.** | Keeps this file true once code exists |
-| `orivon-electron` (project skill) | **Manual — read before writing or debugging any Electron+webtorrent code.** | The renderer-bundling alias recipe, the `ELECTRON_RUN_AS_NODE` trap, `MessagePortMain` silent-failure behaviour, and the unresolved Playwright attach issue. Captured 2026-08-25; exists nowhere else |
-| `adversarial-reviewer` (user skill) | Manual — after each build step lands | The multi-perspective review that produced `audit-2026-08-25.md`; run it on the broker and the app loader at minimum |
-| Built-ins `/code-review`, `/security-review`, `/simplify` | Manual | Per-diff review before each commit on the critical path |
+| `context7` (MCP) | **Manual — before writing code against Electron or webtorrent APIs** | `protocol.handle`, `utilityProcess`, `MessagePortMain`, `WebContentsView`, `session` partitions, `safeStorage`; webtorrent 3.x internals. Training data is stale here — a live check once found four wrong assumptions in the docs, including the version number |
+| `playwright` (MCP) | **Manual — the localhost fixture app, and journey 3's pinned Nostr clients (step 7)** | Driving a real web page. The Electron e2e uses the `_electron` library, not this |
+| `claude-security` | **Manual — before packaging (step 10)** | Whole-repo multi-agent vulnerability scan with verified findings. Expensive: run it at milestones, not continuously |
+| `claude-md-management` | **Manual — `/revise-claude-md` at the end of any session that changed an assumption in this file** | Keeps this file true as the code moves |
+| `orivon-electron` (project skill) | **Manual — before writing or debugging any Electron+webtorrent code** | The renderer-bundling alias recipe, the `app.windows()`-not-`app.firstWindow()` rule, `MessagePortMain`'s silent failures, and why to check `electron.d.ts` before trusting any claim about `BaseWindow` options. Exists nowhere else |
+| `orivon-comments` (project skill) | **Manual — before writing or editing a comment in `src/`** | Where rationale goes when it is not a "you will break this line" comment, and how to handle a header over budget |
+| `adversarial-reviewer` (user skill) | **Manual — after each build step lands** | The multi-perspective review that produced `docs/planning/audit-2026-08-25.md`. Run it on the broker and the app loader at minimum |
+| `/code-review`, `/security-review`, `/simplify` | Manual | Per-diff review before each commit on the critical path |
 
 ## Devlog capture
-`devlog/journal.md` feeds the Sunday team devlog (compiled by `/devlog`). At the end of
-any session where something notable happened — a milestone reached, a decision taken or
-reversed, a direction change, a worry or idea the owner kept returning to — append a
-dated one-liner to the current week's section (**Done / results** for outcomes,
-**In my head** for thinking). Skip routine sessions; one line per notable thing, no prose.
+
+`devlog/journal.md` feeds the Sunday team devlog (compiled by `/devlog`). At the end of any
+session where something notable happened — a milestone, a decision taken or reversed, a direction
+change, a worry the owner kept returning to — append a dated one-liner to the current week's
+section: **Done / results** for outcomes, **In my head** for thinking. Skip routine sessions. One
+line per notable thing, no prose.
 
 ## Conventions
+
 - Docs are Markdown, `kebab-case.md`, ASCII-only prose.
-- ADRs: `docs/decisions/ADR-NNNN-short-slug.md`, monotonically numbered, never renumbered.
-  Superseded ADRs are rewritten in place with the reversal recorded (see ADR-0004).
-- The MVP is **TypeScript only**. No Rust, no C++ (`ADR-0002`).
+- ADRs: `docs/decisions/ADR-NNNN-short-slug.md`, monotonically numbered, never renumbered. A
+  superseded ADR is rewritten in place with the reversal recorded (see ADR-0004).
+- The MVP is **TypeScript only**. No Rust, no C++ (ADR-0002).
 - Prior material is quoted in English; the private planning docs are partly Italian.

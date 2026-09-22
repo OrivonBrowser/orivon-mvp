@@ -3,7 +3,7 @@
 Run before every release.
 
 **Why this file exists.** [`mvp-scope.md`](../mvp-scope.md) describes the user journeys as
-prose, and prose cannot be run identically twice — two people reading "paste a magnet link"
+prose, and prose cannot be run identically twice: two people reading "paste a magnet link"
 test two different things, and the same person tests something different next month. Every item
 here therefore has a **precondition**, a **fixed input**, and a **falsifiable assertion**.
 
@@ -23,7 +23,7 @@ The one item where getting it wrong is a reputational event rather than a bug
 rm -rf ~/.config/orivon        # Linux; use app.getPath('userData') on other platforms
 ```
 
-Have a way to observe outbound network traffic before launching — a proxy, `tcpdump`, or the
+Have a way to observe outbound network traffic before launching: a proxy, `tcpdump`, or the
 devtools network panel. **Reading the source is not sufficient for the last assertion.**
 
 **Input.** Launch the app for the first time.
@@ -31,7 +31,7 @@ devtools network panel. **Reading the source is not sufficient for the last asse
 **Assertions.** All four must hold:
 
 1. The disclosure screen appears **before** any other UI is usable.
-2. It shows the **literal JSON** that would be sent — not a description of it, not a summary.
+2. It shows the **literal JSON** that would be sent, not a description of it, not a summary.
 3. **Neither is preselected**, and no keyboard default activates one.
 4. **Nothing has been transmitted** at the moment the screen is displayed. Verified from the
    traffic observation, not from the code.
@@ -53,7 +53,7 @@ otherwise. The failure mode this catches is a **silent downgrade to plaintext**
 npm start -- --password-store=basic
 ```
 
-**Input.** Launch, then create or use an identity — anything that causes the seed to be
+**Input.** Launch, then create or use an identity: anything that causes the seed to be
 persisted.
 
 **Assertions.**
@@ -77,7 +77,7 @@ platforms are supported from day one via run-from-source rather than signed inst
 ([`build-plan.md`](../planning/build-plan.md) §Platform policy), and those users count toward
 the success metric.
 
-**Precondition.** A machine with **no C++ toolchain installed** — no Visual Studio Build Tools
+**Precondition.** A machine with **no C++ toolchain installed**: no Visual Studio Build Tools
 on Windows, no Xcode command-line tools beyond git on macOS. A machine that already has them
 cannot perform this test, because it will succeed for the wrong reason.
 
@@ -101,7 +101,7 @@ npm start
    ([`ADR-0003`](../decisions/ADR-0003-local-first-storage.md)).
 
 **Fails if:** `npm install` needs any compiler at all. That is a Rule 8 violation and it means
-`check:natives` has a gap — fix the guard as well as the dependency.
+`check:natives` has a gap; fix the guard as well as the dependency.
 
 ---
 
@@ -118,7 +118,7 @@ npm run smoke
 **Assertions.** All reported checks pass, and the `leakChecks` section shows `require` and
 `process` as `undefined` in **every** renderer listed.
 
-**Read the JSON output and the failure list — not the exit code alone.**
+**Read the JSON output and the failure list, not the exit code alone.**
 
 **Fails if:** any renderer leaks `require` or `process`. That is a `contextIsolation` /
 `sandbox` regression ([`security-model.md`](../architecture/security-model.md) T17) and it is a
@@ -133,9 +133,9 @@ forgotten.
 
 | Item | Added at | What it needs first, and why |
 |---|---|---|
-| **Journey 2 — the app from a URL** | build step 4 | The app loader, plus the torrent app served from a **second origin**. Journey 1 runs a pre-cached app and journey 4 loads a local directory, so without this **no journey demonstrates URL delivery** — which is the thesis |
-| **Journey 1 — the clip** | build step 5 | A **named, pinned, well-seeded MP4/H.264 torrent**, recorded here by name. Not "a magnet link": with an unpinned torrent, pass/fail tracks that day's swarm health rather than the code. Assertion: video playing in **under 30 seconds** from a cold start, with the grant prompt shown |
-| **Journey 3 — the identity** | build step 7 | **Three Nostr clients, pinned at a version**, named here. Assertion: the displayed npub is **byte-identical across two of them**. That is the check which would have caught the per-origin-key contradiction ([`open-questions.md`](../open-questions.md) B4) |
+| **Journey 2: the app from a URL** | build step 4 | The app loader, plus the torrent app served from a **second origin**. Journey 1 runs a pre-cached app and journey 4 loads a local directory, so without this **no journey demonstrates URL delivery**, which is the thesis |
+| **Journey 1: the clip** | build step 5 | A **named, pinned, well-seeded MP4/H.264 torrent**, recorded here by name. Not "a magnet link": with an unpinned torrent, pass/fail tracks that day's swarm health rather than the code. Assertion: video playing in **under 30 seconds** from a cold start, with the grant prompt shown |
+| **Journey 3: the identity** | build step 7 | **Three Nostr clients, pinned at a version**, named here. Assertion: the displayed npub is **byte-identical across two of them**. That is the check which would have caught the per-origin-key contradiction ([`open-questions.md`](../open-questions.md) B4) |
 
 ---
 
