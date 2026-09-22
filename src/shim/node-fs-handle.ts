@@ -47,8 +47,10 @@ class LocalCursor {
   }
 }
 
+export function isAppendFlag (flags: string): boolean { return APPEND_FLAGS.has(flags) }
+
 async function initialCursor (handle: FileHandle, flags: string): Promise<number> {
-  if (!APPEND_FLAGS.has(flags)) return 0
+  if (!isAppendFlag(flags)) return 0
   return (await handle.stat()).size
 }
 
@@ -157,30 +159,34 @@ export class NodeFileHandle {
 
 // ---- fs.promises.open --------------------------------------------------
 
-export async function openHandle (path: PathLike, flags: string, _mode?: number): Promise<NodeFileHandle> {
-  return await NodeFileHandle.open(path, flags)
+/** Node's default open flag, when the caller gives none. */
+const DEFAULT_FLAGS = 'r'
+
+export async function openHandle (path: PathLike, flags: string | null = DEFAULT_FLAGS, _mode?: number): Promise<NodeFileHandle> {
+  return await NodeFileHandle.open(path, flags ?? DEFAULT_FLAGS)
 }
 
 // ---- callback fs.open/fs.read/fs.write/fs.close/fs.fstat/... ----------
 
-/** `fs.open(path, flags[, mode], callback)`. `mode` is a POSIX permission bit this confined fs has nothing to set it on (node-fs.ts's own `not-applicable` reasoning for chmod/chown) -- accepted and ignored, never silently misread as the callback. */
-export function open (path: PathLike, flags: string, callback: NodeCallback<number>): void
-export function open (path: PathLike, flags: string, mode: number, callback: NodeCallback<number>): void
-export function open (path: PathLike, flags: string, ...args: readonly unknown[]): void {
-  if (typeof flags === 'function') {
-    throw new TypeError(
-      'orivon-node-shim: fs.open(path, callback), defaulting flags to \'r\', is not supported -- ' +
-      "pass flags explicitly, e.g. fs.open(path, 'r', callback)."
-    )
-  }
-  const callback = (args.length > 1 ? args[1] : args[0]) as NodeCallback<number>
-  NodeFileHandle.open(path, flags).then(
+/** `fs.open(path[, flags[, mode]], callback)`. The callback is always the last argument; `mode` is a POSIX permission bit this confined fs has nothing to set it on (node-fs.ts's own `not-applicable` reasoning for chmod/chown), so it is accepted and ignored. */
+export function open (path: PathLike, callback: NodeCallback<number>): void
+export function open (path: PathLike, flags: string | null, callback: NodeCallback<number>): void
+export function open (path: PathLike, flags: string | null, mode: number, callback: NodeCallback<number>): void
+export function open (path: PathLike, ...args: readonly unknown[]): void {
+  const callback = args[args.length - 1] as NodeCallback<number>
+  const flags = args.length > 1 ? args[0] as string | null : null
+  openHandle(path, flags).then(
     (handle) => callback(null, handle.fd),
     (error) => callback(error as Error)
   )
 }
 
-export function close (fd: number, callback: NodeCallback<void>): void {
+/** Node's own default when close is given no callback: success is silent, a failure is thrown where nothing can catch it, as an uncaught error. */
+function throwUncaught (error: Error | null): void {
+  if (error !== null) queueMicrotask(() => { throw error })
+}
+
+export function close (fd: number, callback: NodeCallback<void> = throwUncaught): void {
   const handle = openByFd.get(fd)
   if (handle === undefined) { callback(badFd('close')); return }
   handle.close().then(() => callback(null), (error) => callback(error as Error))

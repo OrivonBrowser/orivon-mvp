@@ -275,10 +275,4 @@ describe('the callback open/read/write/close family', () => {
       expect(error.code).toBe('EBADF')
     })
   })
-
-  it('fs.open(path, callback) -- the flags-defaults-to-\'r\' form -- refuses loudly instead of silently misreading the callback as flags', async () => {
-    installFakeOrivon()
-    const fs = await import('../node-fs-handle.js')
-    expect(() => (fs.open as (path: string, callback: unknown) => void)('piece-0', () => {})).toThrow(TypeError)
-  })
 })

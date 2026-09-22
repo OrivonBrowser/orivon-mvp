@@ -7,9 +7,9 @@
 import { openHandle } from './node-fs-handle.js'
 import {
   doAccess, doAppendFile, doMkdir, doReaddir, doReadFile, doRename, doRm, doStat, doUnlink, doWriteFile,
-  type MkdirOptions, type ReadFileOptions, type RmOptions, type WriteFileOptions
+  type MkdirOptions, type ReaddirOptions, type ReadFileOptions, type RmOptions, type WriteFileOptions
 } from './node-fs-core.js'
-import type { NodeStats } from './node-fs-stats.js'
+import type { NodeDirent, NodeStats } from './node-fs-stats.js'
 import { FS_CONSTANTS } from './node-fs-constants.js'
 import { encodingOf } from './node-fs-encoding.js'
 import type { PathLike } from './node-fs-path.js'
@@ -22,19 +22,22 @@ async function readFile (path: PathLike, options?: ReadFileOptions | string): Pr
 }
 
 async function writeFile (path: PathLike, data: unknown, options?: WriteFileOptions | string): Promise<void> {
-  await doWriteFile(path, data, encodingOf(options))
+  await doWriteFile(path, data, options)
 }
 
 async function appendFile (path: PathLike, data: unknown, options?: WriteFileOptions | string): Promise<void> {
-  await doAppendFile(path, data, encodingOf(options))
+  await doAppendFile(path, data, options)
 }
 
 async function mkdir (path: PathLike, opts?: MkdirOptions): Promise<void> {
   await doMkdir(path, opts)
 }
 
-async function readdir (path: PathLike): Promise<readonly string[]> {
-  return await doReaddir(path)
+async function readdir (path: PathLike, options: ReaddirOptions & { withFileTypes: true }): Promise<readonly NodeDirent[]>
+async function readdir (path: PathLike, options: ReaddirOptions & { encoding: 'buffer' }): Promise<readonly Uint8Array[]>
+async function readdir (path: PathLike, options?: ReaddirOptions | string | null): Promise<readonly string[]>
+async function readdir (path: PathLike, options?: ReaddirOptions | string | null): Promise<ReadonlyArray<string | Uint8Array | NodeDirent>> {
+  return await doReaddir(path, options)
 }
 
 async function stat (path: PathLike): Promise<NodeStats> {

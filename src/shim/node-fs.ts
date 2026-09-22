@@ -29,8 +29,9 @@ import { FS_CONSTANTS } from './node-fs-constants.js'
 import { getOrivon } from './orivon-global.js'
 import {
   doAccess, doAppendFile, doMkdir, doReaddir, doReadFile, doRename, doRm, doStat, doUnlink, doWriteFile,
-  type MkdirOptions, type ReadFileOptions, type RmOptions, type WriteFileOptions
+  type MkdirOptions, type ReaddirOptions, type ReadFileOptions, type RmOptions, type WriteFileOptions
 } from './node-fs-core.js'
+import type { NodeDirent } from './node-fs-stats.js'
 import { decode, encodingOf } from './node-fs-encoding.js'
 import { toConfinedPath, type PathLike } from './node-fs-path.js'
 import { isRootPath, rootIsDirectoryError } from './node-fs-root.js'
@@ -128,7 +129,7 @@ export function writeFile (path: PathLike, data: unknown, callback: NodeCallback
 export function writeFile (path: PathLike, data: unknown, options: WriteFileOptions | string, callback: NodeCallback<void>): void
 export function writeFile (path: PathLike, data: unknown, ...args: readonly unknown[]): void {
   const { options, callback } = splitTail<WriteFileOptions | string>(args)
-  doWriteFile(path, data, encodingOf(options)).then(
+  doWriteFile(path, data, options).then(
     () => callback(null),
     (error) => callback(error as Error)
   )
@@ -138,7 +139,7 @@ export function appendFile (path: PathLike, data: unknown, callback: NodeCallbac
 export function appendFile (path: PathLike, data: unknown, options: WriteFileOptions | string, callback: NodeCallback<void>): void
 export function appendFile (path: PathLike, data: unknown, ...args: readonly unknown[]): void {
   const { options, callback } = splitTail<WriteFileOptions | string>(args)
-  doAppendFile(path, data, encodingOf(options)).then(
+  doAppendFile(path, data, options).then(
     () => callback(null),
     (error) => callback(error as Error)
   )
@@ -151,10 +152,13 @@ export function mkdir (path: PathLike, ...args: readonly unknown[]): void {
   doMkdir(path, options).then(() => callback(null), (error) => callback(error as Error))
 }
 
-export function readdir (path: PathLike, callback: NodeCallback<readonly string[]>): void
+type ReaddirEntries = ReadonlyArray<string | Uint8Array | NodeDirent>
+
+export function readdir (path: PathLike, callback: NodeCallback<ReaddirEntries>): void
+export function readdir (path: PathLike, options: ReaddirOptions | string | null, callback: NodeCallback<ReaddirEntries>): void
 export function readdir (path: PathLike, ...args: readonly unknown[]): void {
-  const { callback } = splitTail<unknown>(args)
-  doReaddir(path).then((entries) => callback(null, entries), (error) => callback(error as Error))
+  const { options, callback } = splitTail<ReaddirOptions | string | null>(args)
+  doReaddir(path, options).then((entries) => callback(null, entries), (error) => callback(error as Error))
 }
 
 export function stat (path: PathLike, callback: NodeCallback<NodeStats>): void

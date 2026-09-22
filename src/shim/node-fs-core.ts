@@ -18,18 +18,21 @@
 // The root itself never reaches orivon.fs (node-fs-root.ts).
 
 import { getOrivon } from './orivon-global.js'
-import { toNodeStats, type NodeStats } from './node-fs-stats.js'
+import { NodeDirent, toNodeStats, type NodeStats } from './node-fs-stats.js'
 import { openHandle } from './node-fs-handle.js'
 import {
   assertRootMkdirAllowed, isRootPath, rootIsDirectoryError, rootNotRemovableError, rootReaddirError, rootStat
 } from './node-fs-root.js'
 import { confine, guarded, type PathLike } from './node-fs-path.js'
-import { decode, encode } from './node-fs-encoding.js'
+import { decode, encode, encodingOf } from './node-fs-encoding.js'
+import { Buffer } from 'buffer'
+import { join } from 'path'
 
 export interface ReadFileOptions { encoding?: string | null }
-export interface WriteFileOptions { encoding?: string | null }
+export interface WriteFileOptions { encoding?: string | null, flag?: string }
 export interface MkdirOptions { recursive?: boolean }
-export interface RmOptions { recursive?: boolean }
+export interface RmOptions { recursive?: boolean, force?: boolean }
+export interface ReaddirOptions { encoding?: string | null, withFileTypes?: boolean }
 
 export async function doReadFile (path: PathLike, encoding: string | null | undefined): Promise<Uint8Array | string> {
   const confined = await confine(path, 'open')
@@ -37,28 +40,32 @@ export async function doReadFile (path: PathLike, encoding: string | null | unde
   return decode(await guarded(async () => await getOrivon().fs.readFile(confined)), encoding)
 }
 
-export async function doWriteFile (path: PathLike, data: unknown, encoding: string | null | undefined): Promise<void> {
-  const bytes = encode(data, encoding)
+/** Node's writeFile flag: 'w' (the default) is one whole-file write; any other flag opens the file with it, so 'a' appends and 'wx' is an exclusive create. */
+export async function doWriteFile (path: PathLike, data: unknown, options: WriteFileOptions | string | null | undefined): Promise<void> {
+  const bytes = encode(data, encodingOf(options))
+  const flag = typeof options === 'object' && options !== null ? options.flag : undefined
+  if (flag !== undefined && flag !== 'w') { await writeThroughHandle(path, bytes, flag); return }
   const confined = await confine(path, 'open')
   if (isRootPath(confined)) rootIsDirectoryError('open')
   await guarded(async () => { await getOrivon().fs.writeFile(confined, bytes) })
 }
 
+/** appendFile is writeFile with the flag defaulting to 'a'. */
+export async function doAppendFile (path: PathLike, data: unknown, options: WriteFileOptions | string | null | undefined): Promise<void> {
+  const flag = typeof options === 'object' && options !== null ? options.flag : undefined
+  await writeThroughHandle(path, encode(data, encodingOf(options)), flag ?? 'a')
+}
+
 /**
- * A REAL append, through fs.open(path, 'a') plus one positional write --
- * never read-modify-write. node-fs-handle.ts's `initialCursor` already seeds
- * the local cursor at the file's current size for every append-mode flag
- * (APPEND_FLAGS), and 'a' is one of `VALID_OPEN_FLAGS`
- * (fs-handle-wrapper.ts) the broker already accepts -- so a single
- * cursor-relative write (position omitted) lands exactly at EOF with no
- * extra read, no extra round trip, and no quota charge for bytes this call
- * never touches. On a write failure the handle is still closed (best
- * effort, swallowing a close error so it cannot hide the real one) before
- * the original error propagates.
+ * One open plus one cursor-relative write -- never read-modify-write.
+ * node-fs-handle.ts's `initialCursor` seeds the cursor at the file's current
+ * size for an append flag and at 0 otherwise, so the write lands at EOF for
+ * 'a' with no extra read and no quota charge for bytes it never touches. On a
+ * write failure the handle is still closed (best effort, swallowing a close
+ * error so it cannot hide the real one) before the original error propagates.
  */
-export async function doAppendFile (path: PathLike, data: unknown, encoding: string | null | undefined): Promise<void> {
-  const bytes = encode(data, encoding)
-  const handle = await openHandle(path, 'a')
+async function writeThroughHandle (path: PathLike, bytes: Uint8Array, flags: string): Promise<void> {
+  const handle = await openHandle(path, flags)
   try {
     await handle.write(bytes, 0, bytes.length)
   } catch (error) {
@@ -75,10 +82,18 @@ export async function doMkdir (path: PathLike, opts: MkdirOptions | undefined): 
   await guarded(async () => { await getOrivon().fs.mkdir(confined, opts) })
 }
 
-export async function doReaddir (path: PathLike): Promise<readonly string[]> {
+export async function doReaddir (path: PathLike, options: ReaddirOptions | string | null | undefined): Promise<ReadonlyArray<string | Uint8Array | NodeDirent>> {
   const confined = await confine(path, 'scandir')
   if (isRootPath(confined)) rootReaddirError()
-  return await guarded(async () => await getOrivon().fs.readdir(confined))
+  const names = await guarded(async () => await getOrivon().fs.readdir(confined))
+  if (typeof options === 'object' && options?.withFileTypes === true) {
+    const parentPath = typeof path === 'string' ? path : confined
+    return await Promise.all(names.map(async (name) => {
+      const stat = await getOrivon().fs.stat(join(confined, name)).catch(() => undefined)
+      return new NodeDirent(name, parentPath, stat)
+    }))
+  }
+  return encodingOf(options) === 'buffer' ? names.map((name) => Buffer.from(name)) : names
 }
 
 export async function doStat (path: PathLike): Promise<NodeStats> {
@@ -87,10 +102,17 @@ export async function doStat (path: PathLike): Promise<NodeStats> {
   return toNodeStats(await guarded(async () => await getOrivon().fs.stat(confined)))
 }
 
+/** `force` is Node's, not the broker's: it is applied here, by ignoring ENOENT, and never forwarded. */
 export async function doRm (path: PathLike, opts: RmOptions | undefined): Promise<void> {
   const confined = await confine(path, 'rm')
   if (isRootPath(confined)) rootNotRemovableError('rm')
-  await guarded(async () => { await getOrivon().fs.rm(confined, opts) })
+  const brokerOpts = opts?.recursive === undefined ? undefined : { recursive: opts.recursive }
+  try {
+    await guarded(async () => { await getOrivon().fs.rm(confined, brokerOpts) })
+  } catch (error) {
+    if (opts?.force === true && (error as { code?: string }).code === 'ENOENT') return
+    throw error
+  }
 }
 
 export async function doRename (from: PathLike, to: PathLike): Promise<void> {

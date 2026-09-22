@@ -25,7 +25,7 @@
 
 import { Readable, Writable } from 'stream'
 import { Buffer } from 'buffer'
-import { NodeFileHandle } from './node-fs-handle.js'
+import { isAppendFlag, NodeFileHandle } from './node-fs-handle.js'
 import { toBytes } from './node-stream-bytes.js'
 import type { PathLike } from './node-fs-path.js'
 
@@ -106,15 +106,18 @@ export class ReadStream extends Readable {
 
 export class WriteStream extends Writable {
   private readonly opening: Promise<NodeFileHandle>
-  private position: number
+  /** null writes at the handle's own cursor, which an append flag starts at EOF. */
+  private position: number | null
   private didClose = false
 
   constructor (path: PathLike, opts: WriteStreamOptions = {}) {
     super()
     this.once('finish', () => this.destroy())
     this.once('close', () => { this.didClose = true })
-    this.position = opts.start ?? 0
-    this.opening = NodeFileHandle.open(path, opts.flags ?? 'w')
+    const flags = opts.flags ?? 'w'
+    // An append flag writes at EOF, whatever `start` says, as in Node.
+    this.position = isAppendFlag(flags) ? null : opts.start ?? 0
+    this.opening = NodeFileHandle.open(path, flags)
     this.opening.then(
       (handle) => { this.emit('open', handle.fd); this.emit('ready') },
       (error) => this.destroy(error as Error)
@@ -141,7 +144,7 @@ export class WriteStream extends Writable {
   private async writeChunk (bytes: Uint8Array): Promise<void> {
     const handle = await this.opening
     const { bytesWritten } = await handle.write(bytes, 0, bytes.length, this.position)
-    this.position += bytesWritten
+    if (this.position !== null) this.position += bytesWritten
   }
 
   override _destroy (error: Error | null, callback: (error?: Error | null) => void): void {
