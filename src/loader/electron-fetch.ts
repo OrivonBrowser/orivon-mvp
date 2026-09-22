@@ -37,7 +37,7 @@ export const electronFetch: Fetch = async (url, pinnedAddresses, signal) => {
   // What IS still done here, on top of the shared resolver above:
   // re-resolve via `net.resolveHost` immediately before THIS request, and
   // refuse if the host no longer resolves as public. The asset loop can run
-  // for up to BUNDLE_TIMEOUT_MS (10 minutes) after the guard's own
+  // for up to BUNDLE_TIMEOUT_MS (30 minutes) after the guard's own
   // resolution; this re-check is what keeps each of possibly many later
   // fetches honest against a resolution that changed (a TTL genuinely
   // expiring, or a rebinding attacker exploiting exactly that) since the

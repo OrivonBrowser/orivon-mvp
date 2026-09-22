@@ -41,7 +41,44 @@ shape belongs here instead.
 **Why [`fetch-bundle.ts`](fetch-bundle.ts) is its own file, not part of `index.ts`.** Split out
 per [`code-guidelines.md`](../../docs/development/code-guidelines.md) Rule 2: it owns exactly
 one concern: turning `(fetch, hintedUrl)` into a validated bundle. TOFU versus `decideUpdate()`
-branching, and persistence, are `index.ts`'s job, not this file's.
+branching is `index.ts`'s job, and persistence is [`install.ts`](install.ts)'s.
+[`fetch-asset.ts`](fetch-asset.ts) holds the one-asset half and the bounded pool.
+
+**A bundle never sits whole in memory: bytes stream to staging and are hashed from there.**
+The byte caps (`bundle-hash.ts`'s `MAX_ASSET_BYTES`, 64 MiB, and `MAX_BUNDLE_BYTES`, 512 MiB;
+an owner decision, sized for a real built frontend with a 31 MB wasm-heavy chunk and room to
+grow) bound download and disk, so memory must stay flat however close a bundle comes to them.
+Each response body is written chunk by chunk into the origin's **staging area**
+(`apps/<origin-hash>/staging/`, a sibling of `code/`, never inside it), then hashed by reading
+that file back through [`leaf-hash.ts`](leaf-hash.ts): node:crypto's incremental SHA-256 fed
+`bundle-hash.ts`'s own `leafPrefix`, so the byte layout stays defined once and only the engine
+differs from the WebCrypto one `bundleTree` uses. Hashing reads the file back rather than hashing
+as bytes arrive because the leaf preimage puts the content's length BEFORE the content, and a
+declared `Content-Length` is advisory. The root comes from `bundleTreeFromLeaves`, which applies
+exactly the validation `bundleTree` does. Only the manifest is held in memory, and it is bounded
+by `MAX_MANIFEST_BYTES`. A fetched bundle waiting on a prompt waits in staging too
+(`StagedAsset` names its bytes, never carries them); the next fetch for that origin, or a
+refused one, clears it.
+
+**Assets are fetched four at a time, and a download ends for going quiet, never for being
+long.** `FETCH_CONCURRENCY` (4) assets share one `ByteBudget`, taken chunk by chunk in one
+synchronous step, so parallel fetches can never together pass `MAX_BUNDLE_BYTES`; the first
+failure aborts the rest. Each fetch has an idle deadline (`FETCH_IDLE_TIMEOUT_MS`, 20 s without
+a response or a new chunk), so a 64 MiB asset on a slow but steady link finishes, and the whole
+operation has `BUNDLE_TIMEOUT_MS` (30 minutes, about 300 KB/s for a full 512 MiB bundle), so a
+peer trickling one byte just inside the idle deadline is still cut off. Both numbers are
+AI-recommended and uncalibrated (A15).
+
+**An install writes only what changed, one atomic rename per file, and a crash heals itself.**
+[`install.ts`](install.ts) compares each staged leaf with a streaming hash of the file already in
+`code/` at that path and commits (renames) only those that differ; an unchanged bundle writes
+nothing at all and keeps its pin record, so a repeat visit no longer rewrites the cache. Every
+write is a rename from staging (`node-storage.ts`'s `writeAtomically`, `commitStaged`), so a
+reader sees the old file or the new one, never a partial one (A62's second half). Comparing
+against the bytes on disk, not the old pin's leaf, is what lets a damaged cache heal: a file that
+no longer matches is rewritten even when its pinned leaf did not change. A crash part-way through
+leaves some files new and the old pin in place; the next start's verification then fails and the
+app recovers as described under "When the cached bundle fails verification" below.
 
 **There is no `assetPaths` parameter anywhere in this directory.**
 `fetchBundle` reads the app's file list off the manifest itself (`manifest.entry` unioned with
@@ -134,7 +171,8 @@ next update prunes them.
 [`ADR-0007`](../../docs/decisions/ADR-0007-cached-bundles-served-at-their-own-origin.md) requires
 the cached tree be "re-verified at every load, not only at fetch," and a large bundle makes that
 sentence a real cost decision, not a formality. [`serve-verify.ts`](serve-verify.ts) re-hashes
-every pinned asset and compares the result against `pin.bundleHash` exactly once, when
+every pinned asset, streaming it through [`leaf-hash.ts`](leaf-hash.ts) so memory stays flat,
+checks each leaf and the root against the pin exactly once, when
 [`serve.ts`](serve.ts)'s `createAppRequestHandler` builds the handler that
 [`electron-serve.ts`](electron-serve.ts) then registers with
 `session.fromPartition(...).protocol.handle(...)`, not on every individual request that handler

@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { appRootDirectoryName, createLoader } from '../index.js'
-import type { LoadContext } from '../index.js'
+import type { LoadContext, LoadResult, LoaderStorage } from '../index.js'
 import { nodeLoaderStorage } from '../node-storage.js'
 import { MANIFEST_URL, ORIGIN, PUBLIC_RESOLVER, manifestJson, memoryStorage, stubFetch, utf8 } from './test-helpers.js'
 import type { RouteSpec } from './test-helpers.js'
@@ -69,7 +69,7 @@ describe('createLoader: fresh install (TOFU, ADR-0005)', () => {
     const base = memoryStorage()
     const storage = {
       ...base,
-      writeAsset: vi.fn(async (): Promise<void> => { throw new Error(`EACCES: permission denied, open '${hostPath}'`) })
+      commitStaged: vi.fn(async (): Promise<void> => { throw new Error(`EACCES: permission denied, rename '${hostPath}'`) })
     }
     const routes: Record<string, RouteSpec> = {
       [MANIFEST_URL]: { body: utf8(manifestJson()) },
@@ -113,27 +113,32 @@ describe('createLoader: refetch against an existing pin', () => {
     if (result.outcome !== 'installed') throw new Error('fixture setup failed')
   }
 
-  it('calls pruneAssets with the new bundle\'s own paths, after every writeAsset and before writePin', async () => {
-    const storage = memoryStorage()
-    await install(storage)
-    vi.clearAllMocks() // only the refetch's own calls, not the install fixture's
-
+  /** A second version of the fixture (same authority, different entry bytes), fetched and approved: the path that replaces a pin. */
+  async function approveChangedBundle (storage: LoaderStorage, now: number): Promise<LoadResult> {
     const routes: Record<string, RouteSpec> = {
       [MANIFEST_URL]: { body: utf8(manifestJson()) },
-      [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
+      [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html><p>v2</p>') }
     }
-    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(1_700_000_001_000), resolve: PUBLIC_RESOLVER })
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(now), resolve: PUBLIC_RESOLVER })
+    const pending = await loader.load(ORIGIN, NO_GRANTS)
+    if (pending.outcome !== 'needs-reconsent') throw new Error(`fixture expected needs-reconsent, got ${pending.outcome}`)
+    return await loader.installFetched(ORIGIN, pending.manifest, pending.tree, pending.entries)
+  }
 
-    await loader.load(ORIGIN, NO_GRANTS)
+  it('replacing a pin prunes to the new bundle\'s own paths, after every commit and before writePin', async () => {
+    const storage = memoryStorage()
+    await install(storage)
+    vi.clearAllMocks() // only the update's own calls, not the install fixture's
+
+    await approveChangedBundle(storage, 1_700_000_001_000)
 
     expect(storage.pruneAssets).toHaveBeenCalledWith(ORIGIN, ['/.well-known/orivon.json', '/index.html'])
     // Ordering matters, not just occurrence: pruneAssets must see every asset
-    // this install just wrote (or it would delete one), and writePin must
-    // not run until pruning is done (docs/open-questions.md A58 gap 2's own
-    // reasoning for why install() calls these in this order).
+    // this install just committed (or it would delete one), and writePin must
+    // not run until pruning is done (A58 gap 2).
     const order = (fn: unknown): number => (fn as { mock: { invocationCallOrder: number[] } }).mock.invocationCallOrder[0]!
-    const lastWriteAssetCall = Math.max(...(storage.writeAsset as unknown as { mock: { invocationCallOrder: number[] } }).mock.invocationCallOrder)
-    expect(lastWriteAssetCall).toBeLessThan(order(storage.pruneAssets))
+    const lastCommit = Math.max(...(storage.commitStaged as unknown as { mock: { invocationCallOrder: number[] } }).mock.invocationCallOrder)
+    expect(lastCommit).toBeLessThan(order(storage.pruneAssets))
     expect(order(storage.pruneAssets)).toBeLessThan(order(storage.writePin))
   })
 
@@ -142,27 +147,22 @@ describe('createLoader: refetch against an existing pin', () => {
     await install(base)
     vi.clearAllMocks()
     const storage = { ...base, pruneAssets: vi.fn(async (): Promise<void> => { throw new Error('disk full') }) }
-    const routes: Record<string, RouteSpec> = {
-      [MANIFEST_URL]: { body: utf8(manifestJson()) },
-      [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
-    }
-    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(1_700_000_001_000), resolve: PUBLIC_RESOLVER })
     const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
 
-    const result = await loader.load(ORIGIN, NO_GRANTS)
+    const result = await approveChangedBundle(storage, 1_700_000_001_000)
     logged.mockRestore()
 
     expect(result.outcome).toBe('rejected')
-    // A failed prune must not re-pin: the assets of the refetch are already
-    // written, and a pin naming them while the prune left the previous
-    // version's files in place is a record the disk does not back.
+    // A failed prune must not re-pin: a pin naming the new files while the
+    // prune left the previous version's in place is a record the disk does
+    // not back.
     expect(base.writePin).not.toHaveBeenCalled()
   })
 
-  it('an unchanged bundle, still within the granted patterns, installs silently again', async () => {
+  it('an unchanged bundle installs silently again without rewriting a single file or the pin', async () => {
     const storage = memoryStorage()
     await install(storage)
-    const writeAssetCallsBefore = (storage.writeAsset as unknown as { mock: { calls: unknown[] } }).mock.calls.length
+    vi.clearAllMocks()
 
     const routes: Record<string, RouteSpec> = {
       [MANIFEST_URL]: { body: utf8(manifestJson()) },
@@ -172,10 +172,28 @@ describe('createLoader: refetch against an existing pin', () => {
     const result = await loader.load(ORIGIN, NO_GRANTS)
 
     expect(result.outcome).toBe('installed')
-    // Re-affirmed, not skipped -- but this is a real, if redundant, write:
-    // more calls than before the refetch.
-    const writeAssetCallsAfter = (storage.writeAsset as unknown as { mock: { calls: unknown[] } }).mock.calls.length
-    expect(writeAssetCallsAfter).toBeGreaterThan(writeAssetCallsBefore)
+    expect(storage.commitStaged).not.toHaveBeenCalled()
+    expect(storage.writePin).not.toHaveBeenCalled()
+    expect(storage.staged.size).toBe(0)
+    if (result.outcome === 'installed') expect(result.pin.pinnedAt).toBe(fixedNow()())
+  })
+
+  it('an unchanged bundle rewrites a cached file that no longer matches its leaf -- a corrupted cache heals on the next check', async () => {
+    const storage = memoryStorage()
+    await install(storage)
+    await storage.writeAsset(ORIGIN, '/index.html', utf8('corrupted on disk'))
+    vi.clearAllMocks()
+
+    const routes: Record<string, RouteSpec> = {
+      [MANIFEST_URL]: { body: utf8(manifestJson()) },
+      [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
+    }
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(1_700_000_001_000), resolve: PUBLIC_RESOLVER })
+    const result = await loader.load(ORIGIN, NO_GRANTS)
+
+    expect(result.outcome).toBe('installed')
+    expect(storage.commitStaged).toHaveBeenCalledOnce()
+    expect(new TextDecoder().decode(storage.assets.get(ORIGIN)?.get('/index.html'))).toBe('<!doctype html>')
   })
 
   it('changed bytes (same authority) -> needs-reconsent, and nothing is persisted', async () => {
@@ -410,13 +428,17 @@ describe('createLoader: against the real node:fs storage', () => {
     expect(first.outcome).toBe('installed')
 
     // Left behind by an earlier install and since made unreadable: the prune
-    // on the refetch below walks straight into it.
+    // on the update below walks straight into it.
     await mkdir(join(appDir, 'code', 'sealed'), { recursive: true })
     await writeFile(join(appDir, 'code', 'sealed', 'stale.css'), 'stale')
     await chmod(join(appDir, 'code', 'sealed'), 0o000)
     const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
 
-    const again = await createLoader({ fetch: stubFetch(ROUTES), storage, now: fixedNow(1_700_000_009_000), resolve: PUBLIC_RESOLVER }).load(ORIGIN, NO_GRANTS)
+    const updated: Record<string, RouteSpec> = { ...ROUTES, [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html><p>v2</p>') } }
+    const loader = createLoader({ fetch: stubFetch(updated), storage, now: fixedNow(1_700_000_009_000), resolve: PUBLIC_RESOLVER })
+    const pending = await loader.load(ORIGIN, NO_GRANTS)
+    if (pending.outcome !== 'needs-reconsent') throw new Error(`fixture expected needs-reconsent, got ${pending.outcome}`)
+    const again = await loader.installFetched(ORIGIN, pending.manifest, pending.tree, pending.entries)
 
     logged.mockRestore()
     await chmod(join(appDir, 'code', 'sealed'), 0o755) // so a later run can clean up /tmp
