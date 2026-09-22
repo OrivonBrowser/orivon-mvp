@@ -23,3 +23,21 @@ export interface FetchRouteTarget {
   fetch?: (input: unknown, init?: unknown) => Promise<Response>
   location?: { origin: string, href: string }
 }
+
+/** The `init` members a routed request reads. */
+export interface RoutedFetchInit {
+  method?: string
+  headers?: unknown
+  body?: unknown
+  signal?: AbortSignal | null
+}
+
+/** A `Request`, or anything else `fetch()` accepts, read only for the members a `Request` carries. */
+export interface RoutedFetchRequestLike {
+  url?: string
+  method?: string
+  headers?: unknown
+  signal?: AbortSignal | null
+  body?: unknown
+  arrayBuffer?: () => Promise<ArrayBuffer>
+}
