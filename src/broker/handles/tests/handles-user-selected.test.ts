@@ -72,9 +72,9 @@ describe('the fs.userSelected exception', () => {
     await t.revokeUserSelected(APP, 'pick-A')
 
     expect(picked).toHaveBeenCalledWith('revoked')
-    // 'closed', not 'denied': the id is remembered as recently-closed, the
-    // same distinction an ordinary grant revoke's own lookup draws (above).
-    expect(thrown(() => t.lookup(APP, handle.id)).code).toBe('closed')
+    // 'revoked', not 'denied': the id is remembered as revoked, the same
+    // answer an ordinary grant revoke's own lookup gives (above).
+    expect(thrown(() => t.lookup(APP, handle.id)).code).toBe('revoked')
   })
 
   it('leaves a DIFFERENT pick from the same origin untouched', async () => {

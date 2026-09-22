@@ -417,13 +417,12 @@ describe('revocation follows the same mechanism as a net.connect socket', () => 
     await broker.revoke(APP, webGrant.id)
 
     expect(host.closed).toContain('host-1')
-    // 'closed', not 'denied' -- HandleTable.lookup's own uniform answer for
-    // an id THIS ORIGIN held and has already closed (handle-store.ts's own
-    // NOT_YOURS doc), exactly the same code a socket's own post-revoke read
+    // 'revoked', not 'denied' -- HandleTable.lookup remembers how an id THIS
+    // ORIGIN held ended, exactly the code a socket's own post-revoke read
     // gets. A truly unrecognised or foreign id still answers 'denied' -- see
     // the ownership tests above.
     await expect(broker.web.evaluate(APP, { id: context.id, script: '1' }))
-      .rejects.toMatchObject({ code: 'closed' })
+      .rejects.toMatchObject({ code: 'revoked' })
   })
 
   it('rejects a pending evaluate with revoked when the grant is withdrawn mid-call', async () => {

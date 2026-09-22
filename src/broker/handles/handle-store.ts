@@ -116,19 +116,33 @@ export interface HandleRecord {
   unlink: ((reason: CloseReason, code?: OrivonErrorCode) => void) | undefined
 }
 
+/** Drops the oldest entry once `memory` is at `bound`. Sets and Maps iterate in insertion order, so the first key is oldest. */
+function makeRoom<T> (memory: Set<T> | Map<T, unknown>, bound: number): void {
+  if (memory.size < bound) return
+  const oldest = memory.keys().next()
+  if (oldest.done !== true) memory.delete(oldest.value)
+}
+
 /**
- * FIFO eviction. Sets iterate in insertion order, so the first is oldest.
- * Stateless -- exported so ./handles.ts's revoke() can tombstone a grant id
- * against REVOKED_GRANT_MEMORY with the same eviction rule closeTree() uses
- * below for recently-closed ids.
+ * FIFO eviction. Stateless -- exported so ./handles.ts's revoke() can
+ * tombstone a grant id against REVOKED_GRANT_MEMORY with the same eviction
+ * rule closeTree() uses below for recently-closed ids.
  */
 export function remember<T> (memory: Set<T>, value: T, bound: number): void {
   if (memory.has(value)) return
-  if (memory.size >= bound) {
-    const oldest = memory.values().next()
-    if (oldest.done !== true) memory.delete(oldest.value)
-  }
+  makeRoom(memory, bound)
   memory.add(value)
+}
+
+/**
+ * How a handle ended, as its owner is told on a later operation: 'revoked'
+ * when a grant or the session was withdrawn from under it, 'closed' for
+ * everything the app or the resource itself ended.
+ */
+export type EndedAs = 'closed' | 'revoked'
+
+function endedAs (reason: CloseReason): EndedAs {
+  return reason === 'revoked' || reason === 'sessionEnded' ? 'revoked' : 'closed'
 }
 
 /**
@@ -192,7 +206,7 @@ export class OriginTable {
   readonly byPickedPath = new Map<string, Set<string>>()
   /** Operations attributed to a grant rather than a handle: acquisitions in flight. */
   readonly grantOperations = new Map<GrantId, Set<PendingOperation>>()
-  readonly recentlyClosed = new Set<string>()
+  readonly recentlyClosed = new Map<string, EndedAs>()
   /**
    * Grants this origin held and no longer does.
    *
@@ -218,9 +232,10 @@ export class OriginTable {
     const record = this.handles.get(handleId)
     if (record !== undefined) return record
 
-    if (this.recentlyClosed.has(handleId)) {
-      throw fail('closed', 'the handle is already closed', handleId)
-    }
+    // EBADF so the shim hands Node code the errno it gets for an fd it closed.
+    const ended = this.recentlyClosed.get(handleId)
+    if (ended === 'revoked') throw fail('revoked', 'the grant authorising this handle was withdrawn', handleId)
+    if (ended === 'closed') throw fail('closed', 'the handle is already closed', handleId, 'EBADF')
     throw fail('denied', NOT_YOURS, handleId)
   }
 
@@ -367,7 +382,8 @@ export class OriginTable {
         if (set !== undefined && set.size === 0) this.byPickedPath.delete(authorisedBy.pickId)
       }
       if (parentId !== null) this.handles.get(parentId)?.children.delete(id)
-      remember(this.recentlyClosed, id, CLOSED_ID_MEMORY)
+      if (!this.recentlyClosed.has(id)) makeRoom(this.recentlyClosed, CLOSED_ID_MEMORY)
+      this.recentlyClosed.set(id, endedAs(reason))
 
       const error = failure ?? (reason === 'closed'
         ? fail('closed', 'the handle was closed', id)

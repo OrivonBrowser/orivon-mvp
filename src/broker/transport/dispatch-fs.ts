@@ -62,20 +62,21 @@ export interface FsTransport {
 
 /**
  * The ownership check every handle-scoped case below shares: an id this
- * origin was never handed -- wrong origin, already closed, or never real --
- * is refused, never silently ignored (T11c). `close` is the one exception,
- * matching `Handle.close()`'s own idempotent contract; see its own case.
+ * origin does not hold live is refused, never silently ignored (T11c), with
+ * what happened to it -- closed, revoked, or never this origin's (see
+ * `BrokerFsMethods.handleGone`). `close` is the one exception, matching
+ * `Handle.close()`'s own idempotent contract; see its own case.
  */
-function requireFile (transport: FsTransport | undefined, origin: string, id: string): FailableFileHandle {
+function requireFile (broker: Broker, transport: FsTransport | undefined, origin: string, id: string): FailableFileHandle {
   const entry = transport?.registry.get(origin, id)
-  if (entry === undefined) throw fail('denied', 'no such file handle for this origin', id)
+  if (entry === undefined) throw broker.fs.handleGone(origin, id)
   return entry
 }
 
 /** `requireFile`'s own DirectoryHandle counterpart (A195) -- identical reasoning, over `dirRegistry` instead. */
-function requireDirectory (transport: FsTransport | undefined, origin: string, id: string): FailableDirectoryHandle {
+function requireDirectory (broker: Broker, transport: FsTransport | undefined, origin: string, id: string): FailableDirectoryHandle {
   const entry = transport?.dirRegistry?.get(origin, id)
-  if (entry === undefined) throw fail('denied', 'no such directory handle for this origin', id)
+  if (entry === undefined) throw broker.fs.handleGone(origin, id)
   return entry
 }
 
@@ -176,28 +177,28 @@ export async function dispatchFs (
     }
     case 'fs.read': {
       if (!isFsHandleReadParams(payload)) throw fail('invalid', 'fs.read requires { id: string, position: number, length: number }')
-      const file = requireFile(transport, origin, payload.id)
+      const file = requireFile(broker, transport, origin, payload.id)
       return await file.read({ position: payload.position, length: payload.length })
     }
     case 'fs.write': {
       if (!isFsHandleWriteParams(payload)) throw fail('invalid', 'fs.write requires { id: string, position: number, data: Uint8Array }')
-      const file = requireFile(transport, origin, payload.id)
+      const file = requireFile(broker, transport, origin, payload.id)
       return await file.write({ position: payload.position, data: payload.data })
     }
     case 'fs.fstat': {
       if (!isFsHandleIdParams(payload)) throw fail('invalid', 'fs.fstat requires { id: string }')
-      const file = requireFile(transport, origin, payload.id)
+      const file = requireFile(broker, transport, origin, payload.id)
       return await file.stat()
     }
     case 'fs.truncate': {
       if (!isFsHandleTruncateParams(payload)) throw fail('invalid', 'fs.truncate requires { id: string, length: number }')
-      const file = requireFile(transport, origin, payload.id)
+      const file = requireFile(broker, transport, origin, payload.id)
       await file.truncate(payload.length)
       return undefined
     }
     case 'fs.sync': {
       if (!isFsHandleIdParams(payload)) throw fail('invalid', 'fs.sync requires { id: string }')
-      const file = requireFile(transport, origin, payload.id)
+      const file = requireFile(broker, transport, origin, payload.id)
       await file.sync()
       return undefined
     }
@@ -222,47 +223,47 @@ export async function dispatchFs (
     }
     case 'fs.dirReaddir': {
       if (!isFsDirPathOptionalParams(payload)) throw fail('invalid', 'fs.dirReaddir requires { id: string, path?: string }')
-      const dir = requireDirectory(transport, origin, payload.id)
+      const dir = requireDirectory(broker, transport, origin, payload.id)
       return await dir.readdir(payload.path)
     }
     case 'fs.dirStat': {
       if (!isFsDirPathOptionalParams(payload)) throw fail('invalid', 'fs.dirStat requires { id: string, path?: string }')
-      const dir = requireDirectory(transport, origin, payload.id)
+      const dir = requireDirectory(broker, transport, origin, payload.id)
       return await dir.stat(payload.path)
     }
     case 'fs.dirMkdir': {
       if (!isFsDirPathWithRecursiveParams(payload)) throw fail('invalid', 'fs.dirMkdir requires { id: string, path: string, recursive?: boolean }')
-      const dir = requireDirectory(transport, origin, payload.id)
+      const dir = requireDirectory(broker, transport, origin, payload.id)
       await dir.mkdir(payload.path, payload.recursive === undefined ? undefined : { recursive: payload.recursive })
       return undefined
     }
     case 'fs.dirRm': {
       if (!isFsDirPathWithRecursiveParams(payload)) throw fail('invalid', 'fs.dirRm requires { id: string, path: string, recursive?: boolean }')
-      const dir = requireDirectory(transport, origin, payload.id)
+      const dir = requireDirectory(broker, transport, origin, payload.id)
       await dir.rm(payload.path, payload.recursive === undefined ? undefined : { recursive: payload.recursive })
       return undefined
     }
     case 'fs.dirRename': {
       if (!isFsDirRenameParams(payload)) throw fail('invalid', 'fs.dirRename requires { id: string, from: string, to: string }')
-      const dir = requireDirectory(transport, origin, payload.id)
+      const dir = requireDirectory(broker, transport, origin, payload.id)
       await dir.rename(payload.from, payload.to)
       return undefined
     }
     case 'fs.dirReadFile': {
       if (!isFsDirPathRequiredParams(payload)) throw fail('invalid', 'fs.dirReadFile requires { id: string, path: string }')
-      const dir = requireDirectory(transport, origin, payload.id)
+      const dir = requireDirectory(broker, transport, origin, payload.id)
       return await dir.readFile(payload.path)
     }
     case 'fs.dirWriteFile': {
       if (!isFsDirWriteFileParams(payload)) throw fail('invalid', 'fs.dirWriteFile requires { id: string, path: string, data: Uint8Array }')
-      const dir = requireDirectory(transport, origin, payload.id)
+      const dir = requireDirectory(broker, transport, origin, payload.id)
       await dir.writeFile(payload.path, payload.data)
       return undefined
     }
     case 'fs.dirOpen': {
       if (!isFsDirOpenParams(payload)) throw fail('invalid', 'fs.dirOpen requires { id: string, path: string, flags: string }')
       if (transport === undefined) throw fail('internal', 'no fs transport configured for this broker')
-      const dir = requireDirectory(transport, origin, payload.id)
+      const dir = requireDirectory(broker, transport, origin, payload.id)
       // The whole point of A195's brief: DirectoryHandle.open() resolves a
       // real FileHandle (confined inside the picked folder, sharing its
       // pickId -- ../user-selected-capability.ts's own `open`), registered

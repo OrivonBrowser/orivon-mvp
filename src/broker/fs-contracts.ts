@@ -7,6 +7,7 @@
 // elsewhere needed to change.
 
 import type { DestroyResource, FailableDirectoryHandle, FailableFileHandle } from './handles/handle-contracts.js'
+import type { OrivonError } from '../contracts/index.js'
 
 /** What `fs.stat` reports. Mirrors `contracts/handles.ts`'s `FileStat` exactly -- one shape, not redeclared. */
 export interface RawFileStat {
@@ -146,6 +147,14 @@ export interface BrokerFsMethods {
    * against reads/writes on the socket it returns.
    */
   open(origin: string, path: string, flags: string): Promise<FailableFileHandle>
+  /**
+   * The error an operation on `handleId` fails with once `origin` no longer
+   * holds it live: 'closed' (platformCode EBADF) if it was closed or died,
+   * 'revoked' if its grant, pick or session was withdrawn, and the uniform
+   * 'denied' for an id this origin never held. Never throws; the transport,
+   * whose own lookup of a file or folder handle came up empty, throws it.
+   */
+  handleGone(origin: string, handleId: string): OrivonError
   /**
    * `orivon.fs.userSelected` -- the OS picker, checked against nothing:
    * capability-api.ts is explicit that the user's choice at the dialog IS

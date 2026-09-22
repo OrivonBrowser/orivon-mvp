@@ -20,7 +20,7 @@
 // exactly once, at open time -- see its own doc for why that is sufficient
 // even though the handle it returns outlives this call.
 
-import { fail } from './errors.js'
+import { fail, isOrivonErrorLike } from './errors.js'
 import { mapIoError } from './io-errors.js'
 import { CONFINEMENT_ERROR_CODE, confinePath } from './policy/paths.js'
 import { createFileHandleWrapper, VALID_OPEN_FLAGS } from './fs-handle-wrapper.js'
@@ -28,7 +28,7 @@ import type { HandleTable } from './handles/handles.js'
 import type { FailableFileHandle, OperationScope } from './handles/handle-contracts.js'
 import type { GrantLedger } from './grants/grant-ledger.js'
 import type { Broker, CreateBrokerOptions, OpenedFile, RawFileStat } from './broker-contracts.js'
-import type { Grant } from '../contracts/index.js'
+import type { Grant, OrivonError } from '../contracts/index.js'
 
 export interface FsCapabilityOptions {
   readonly deps: CreateBrokerOptions
@@ -283,5 +283,15 @@ export function createFsCapability ({ deps, handleTable, ledger, canonical }: Fs
     })
   }
 
-  return { readFile, writeFile, confineSync, mkdir, readdir, stat, rm, rename, open }
+  /** `HandleTable.lookup` already tells an ended handle from one never held; a live one here is some other kind of handle, which is not the caller's to use as a file. */
+  function handleGone (origin: string, handleId: string): OrivonError {
+    try {
+      handleTable.lookup(canonical(origin), handleId)
+    } catch (error) {
+      if (isOrivonErrorLike(error)) return error
+    }
+    return fail('denied', 'no such file handle for this origin', handleId)
+  }
+
+  return { readFile, writeFile, confineSync, mkdir, readdir, stat, rm, rename, open, handleGone }
 }

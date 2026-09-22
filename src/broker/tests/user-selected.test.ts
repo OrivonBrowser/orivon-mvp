@@ -92,7 +92,7 @@ describe('orivon.fs.userSelected -- the folder shape', () => {
     const removed = await broker.revokeUserSelectedPath(APP, pick!.id)
 
     expect(removed).toBe(true)
-    await expect(rejection(file.read({ position: 0, length: 1 }))).resolves.toMatchObject({ code: 'closed' })
+    await expect(rejection(file.read({ position: 0, length: 1 }))).resolves.toMatchObject({ code: 'revoked' })
   })
 })
 
@@ -130,7 +130,7 @@ describe('orivon.fs.userSelected -- the file shape', () => {
 
     await broker.revokeUserSelectedPath(APP, pickForA.id)
 
-    await expect(rejection(a.read({ position: 0, length: 1 }))).resolves.toMatchObject({ code: 'closed' })
+    await expect(rejection(a.read({ position: 0, length: 1 }))).resolves.toMatchObject({ code: 'revoked' })
     expect(await b.read({ position: 0, length: 1 })).toEqual(new Uint8Array([2]))
   })
 })
@@ -164,7 +164,7 @@ describe('the revocation exception, both halves (handle-contracts.md "FileHandle
     await broker.revokeUserSelectedPath(APP, pick!.id)
 
     const error = await rejection(handle.readdir())
-    expect(error.code).toBe('closed')
+    expect(error.code).toBe('revoked')
   })
 })
 
