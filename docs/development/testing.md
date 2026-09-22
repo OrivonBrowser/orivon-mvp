@@ -167,7 +167,12 @@ proven to reach the real loader and be refused for being non-public; the granted
 enabled separately, through `src/main/dev-grant.ts`'s developer-only hook, acting on the same
 broker the launched shell's IPC uses. The developer-mode grant-without-install path
 (`src/main/dev-app-origin.ts`, behind `ORIVON_DEV_ORIGINS=1`) has its own test,
-[`test/e2e-dev-origin-grant.test.ts`](../../test/e2e-dev-origin-grant.test.ts). Consent gating itself is proven separately, in
+[`test/e2e-dev-origin-grant.test.ts`](../../test/e2e-dev-origin-grant.test.ts). That same flag,
+paired with `ORIVON_ETH_NAMES_FILE`, also turns on the fake `.eth` names
+(`src/main/eth-resolver.ts`) -- both halves are covered in
+[`test/e2e-eth-secure-context.test.ts`](../../test/e2e-eth-secure-context.test.ts), which asserts
+a `.eth` tab is a secure context and so keeps `crypto.subtle`, `crypto.randomUUID`, service
+workers and `navigator.clipboard`. See [setup.md](setup.md) for what the two variables do. Consent gating itself is proven separately, in
 [`test/e2e-install-consent-journey.test.ts`](../../test/e2e-install-consent-journey.test.ts).
 
 The raw capability API has its own boundary suites, one file per transport, because Rule 2 caps

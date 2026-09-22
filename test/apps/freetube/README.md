@@ -41,8 +41,10 @@ is bounded:
 
 - **Only `npm run dev` enables it** -- `scripts/dev.mjs` sets `ORIVON_DEV_ORIGINS=1`. `npm start`,
   which is what a run-from-source user runs, never does, so the refusal above stands for them.
-- **Loopback literals only** -- `127.0.0.1` and `[::1]`, never a `localhost` *name*, whose answer
-  depends on a resolver.
+- **Loopback literals and `.eth` names only** -- `127.0.0.1`, `[::1]`, or a single-label
+  `<name>.eth`, never a `localhost` *name*, whose answer depends on a resolver. `https:` is
+  refused for an `.eth` name outright: no such name will ever present a certificate, so an
+  attempt could not be told apart from a real one.
 - **Session-only** -- a loopback grant is never persisted (T13c).
 - **A re-hint cannot widen a held grant.** If the manifest now asks for more than was granted on a
   capability already held, the hint is refused rather than re-prompted, because an

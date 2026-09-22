@@ -26,21 +26,52 @@ const MIN_PORT = 1
 const MAX_PORT = 65535
 
 /**
- * `{ "freetube.eth": 8875, ... }` to a `--host-resolver-rules` value, one
- * `MAP` clause per name. An entry whose key is not a plain `.eth` name, or
- * whose value is not a valid port number, is DROPPED rather than passed
- * through -- appending it to a command-line switch verbatim is the one
- * place a malformed or hostile names file stops being just bad data and
- * becomes an argument-injection surface.
+ * The entries of a names file this process is willing to act on. An entry
+ * whose key is not a plain `.eth` name, or whose value is not a valid port
+ * number, is DROPPED rather than passed through -- both callers below
+ * splice their output into a command-line switch, which is the one place a
+ * malformed or hostile names file stops being just bad data and becomes an
+ * argument-injection surface. One pass, so a name can never be accepted by
+ * one switch and rejected by the other.
  */
-export function buildHostResolverRules (names: Readonly<Record<string, unknown>>): string {
-  const clauses: string[] = []
+function validEntries (names: Readonly<Record<string, unknown>>): Array<[string, number]> {
+  const entries: Array<[string, number]> = []
   for (const [name, port] of Object.entries(names)) {
     if (!ETH_NAME.test(name)) continue
     if (typeof port !== 'number' || !Number.isInteger(port) || port < MIN_PORT || port > MAX_PORT) continue
-    clauses.push(`MAP ${name} 127.0.0.1:${String(port)}`)
+    entries.push([name, port])
   }
-  return clauses.join(',')
+  return entries
+}
+
+/**
+ * `{ "freetube.eth": 8875, ... }` to a `--host-resolver-rules` value, one
+ * `MAP` clause per accepted name.
+ */
+export function buildHostResolverRules (names: Readonly<Record<string, unknown>>): string {
+  return validEntries(names).map(([name, port]) => `MAP ${name} 127.0.0.1:${String(port)}`).join(',')
+}
+
+/**
+ * The same accepted names as an `--unsafely-treat-insecure-origin-as-secure`
+ * value, so a dev `.eth` tab is a SECURE CONTEXT.
+ *
+ * Without it the page's origin is plain `http:` on a non-loopback host,
+ * which Chromium does not treat as potentially trustworthy however the name
+ * resolves -- so `navigator.clipboard`, `crypto.subtle`,
+ * `crypto.randomUUID` and service workers are all simply absent, and an app
+ * opened by its `.eth` name is a different app from the same bundle opened
+ * at `127.0.0.1`, which Chromium does exempt. An INSTALLED app never needs
+ * this: its origin is really `https:` (ADR-0007), and only this dev-mode
+ * path can reach the mismatch.
+ *
+ * Verified against a real Electron 44 window, the same standard
+ * `--host-resolver-rules` above was held to: the switch takes effect on its
+ * own, with no `--enable-features=OverrideSecurityRestrictionsOnInsecureOrigin`
+ * alongside it.
+ */
+export function buildSecureOriginList (names: Readonly<Record<string, unknown>>): string {
+  return validEntries(names).map(([name]) => `http://${name}`).join(',')
 }
 
 /** Same flag dev-app-origin.ts reads -- one switch turns on both halves of the fake-name path: resolution here, the grant there. Read per call, not at module scope, so a test can set it per case. */
@@ -63,12 +94,14 @@ export const ethResolverSubsystem: Subsystem = {
     if (path === undefined) return
 
     let rules: string
+    let secureOrigins: string
     try {
       const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'))
       if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
         throw new Error('expected a JSON object of "name.eth": port')
       }
       rules = buildHostResolverRules(parsed as Record<string, unknown>)
+      secureOrigins = buildSecureOriginList(parsed as Record<string, unknown>)
     } catch (error) {
       console.error(`[orivon] ORIVON_ETH_NAMES_FILE (${path}) could not be read as a names map:`, error)
       return
@@ -76,6 +109,9 @@ export const ethResolverSubsystem: Subsystem = {
 
     if (rules === '') return
     app.commandLine.appendSwitch('host-resolver-rules', rules)
+    // Both switches, or neither: a name dropped from the MAP clauses is not
+    // declared trustworthy either, which is why both read the same pass.
+    app.commandLine.appendSwitch('unsafely-treat-insecure-origin-as-secure', secureOrigins)
     console.error(`[orivon] fake .eth names active (ORIVON_DEV_ORIGINS=1): ${rules}`)
   }
 }

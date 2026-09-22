@@ -36,6 +36,8 @@ guessed. Rows with no ID were lifted out of the prose of the documents named bes
 | `d-0033` | 2026-09-17 | AI sessions open one or two PRs per working day, not one per feature | `../development/parallel-work.md`, `CLAUDE.md` |
 | `d-0034` | 2026-09-17 | A PR body scales to several changes; a bare "None" is not an answer; `ux:` gains `dev` | `../development/pr-blueprint.md` |
 | `d-0035` | 2026-09-22 | The routed `fetch` carries the platform's own property descriptor; a page may replace it, and detection reads the function, not the descriptor | `../../src/preload/README.md`, `ADR-0017` |
+| `d-0036` | 2026-09-22 | Clipboard write is allowed to every page, bounded by the web platform's own user-activation rule rather than by a grant; both read forms stay denied | `ADR-0021`, A202 |
+| `d-0037` | 2026-09-22 | Dev-mode `.eth` names are declared secure origins, so a `.eth` tab keeps the APIs the loopback URL has | `../development/setup.md`, `../planning/compatibility-matrix.md` |
 
 ## Directives
 
