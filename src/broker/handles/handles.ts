@@ -18,6 +18,7 @@ import {
 import { REVOKED_GRANT_MEMORY, remember } from './tombstones.js'
 import type { PendingOperation } from './handle-store.js'
 import { aliasesOf, replaceGrantIn } from './grant-replacement.js'
+import { queueFull, releaseSlot, tryTakeSlot, waitForSlot } from './in-flight.js'
 import type {
   AcquireDerivedRequest,
   AcquireRequest,
@@ -115,20 +116,18 @@ export class HandleTable {
   }
 
   /**
-   * Runs one operation under the origin's in-flight budget, cancelling it if
-   * the authorisation behind it is withdrawn while it is running.
+   * Runs one operation under the origin's in-flight budget (./in-flight.ts:
+   * past the cap it waits, briefly and in a bounded queue, for a slot),
+   * cancelling it if the authorisation behind it is withdrawn while it is
+   * waiting or running.
    *
    * `work` receives an AbortSignal that fires on revocation so it can tear the
    * real resource down. The promise this returns does not wait for `work` to
    * notice: it rejects with 'revoked' the moment the cascade reaches it, which
-   * is what makes revocation abrupt rather than graceful.
-   *
-   * NOTE for whoever writes the connect path: cancelling an operation rejects
-   * the caller's promise and fires the signal; it cannot stop `work` running to
-   * completion. Registering the resource it produced is still safe, because
-   * `acquire` refuses a withdrawn grant -- but `work` should check
-   * `signal.aborted` and destroy the resource itself rather than relying on the
-   * refusal to do it.
+   * is what makes revocation abrupt rather than graceful. Cancelling cannot
+   * stop `work` running to completion, so `work` should check
+   * `signal.aborted` and destroy what it produced rather than rely on
+   * `acquire` refusing a withdrawn grant.
    */
   async run<T> (origin: string, scope: OperationScope, work: (signal: AbortSignal) => Promise<T>): Promise<T> {
     const key = this.#key(origin)
@@ -155,10 +154,8 @@ export class HandleTable {
       operations = new Set<PendingOperation>()
     }
 
-    if (table.inFlight >= LIMITS.inFlightOperations) {
-      // REJECT, do not queue (T11b). A queue here is a queue on the broker's
-      // UI thread, and one origin filling it stops every other tab.
-      throw fail('limit', `origin has ${String(LIMITS.inFlightOperations)} operations in flight`)
+    if (queueFull(table)) {
+      throw fail('limit', `origin has ${String(LIMITS.inFlightOperations)} operations in flight and as many waiting`)
     }
 
     // Only now is the grant's bucket materialised. Creating it before the cap
@@ -172,13 +169,17 @@ export class HandleTable {
     const cancelled = new Promise<never>((_resolve, reject) => { cancel = reject })
     const operation: PendingOperation = { controller, reject: cancel }
 
+    // Registered before waiting, so a revoke or close reaches a queued call.
     operations.add(operation)
-    table.inFlight += 1
     try {
-      return await Promise.race([work(controller.signal), cancelled])
+      if (!tryTakeSlot(table)) await waitForSlot(table, cancelled)
+      try {
+        return await Promise.race([work(controller.signal), cancelled])
+      } finally {
+        releaseSlot(table)
+      }
     } finally {
       operations.delete(operation)
-      table.inFlight -= 1
       // Drop the grant's bucket once it empties. Otherwise the table keeps one
       // empty Set per grant id it has ever seen, which is a slow leak rather
       // than a bound -- and grant ids are not something this module verifies.

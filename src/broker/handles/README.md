@@ -28,8 +28,10 @@ this file's own Design notes below for the full reasoning behind each.
 3. **Revocation is immediate and abrupt.** Waiting for in-flight work would make the revoke
    button mean "once the app finishes", and completion time is entirely under the app's control:
    a hostile app keeps a connection alive indefinitely by never finishing.
-4. **Limits are enforced by rejection, never by queueing** (T11, T11b). An unbounded queue on the
-   broker's thread is how one misbehaving origin freezes every tab.
+4. **Limits are never enforced by an unbounded queue** (T11, T11b). An unbounded queue on the
+   broker's thread is how one misbehaving origin freezes every tab. Resource counts (sockets,
+   files) refuse at once; the in-flight cap lets an operation wait briefly, in a bounded queue,
+   for a slot (see the design note on [`in-flight.ts`](in-flight.ts)).
 
 ## Design notes
 
@@ -52,6 +54,7 @@ Rule 2): [`handle-contracts.ts`](handle-contracts.ts) (types), [`../errors.ts`](
 (`OrivonError`), [`handle-store.ts`](handle-store.ts) (`OriginTable`, one origin's state),
 [`tombstones.ts`](tombstones.ts) (what a table remembers about handles and grants that are
 gone), [`grant-replacement.ts`](grant-replacement.ts) (one grant replaced by another),
+[`in-flight.ts`](in-flight.ts) (the in-flight budget and its wait queue),
 [`origin-registry.ts`](origin-registry.ts) (the map of origins), and [`handles.ts`](handles.ts)
 itself (the operations run against that map).
 
@@ -60,6 +63,20 @@ per recently-ended id, whether it was revoked (a grant, pick or session withdraw
 closed (by the app, or by dying: `'closed'` with `platformCode: 'EBADF'`, the errno Node code
 expects for a closed descriptor). Every other origin still gets the uniform `'denied'`, so this
 reveals nothing about ids an origin never held.
+
+**The in-flight cap queues briefly instead of refusing** ([`in-flight.ts`](in-flight.ts)). At most
+`LIMITS.inFlightOperations` of one origin's operations run at once. Past that an operation waits
+for a slot, first come first served, instead of failing with `'limit'`: Node never refuses work
+for being concurrent (it queues behind its own thread pool), so ported code that fires a few
+hundred reads or connects at once treated that `'limit'` as a hard error. What T11b needs is that
+the queue is bounded, not that it is absent, and it is bounded twice: at most
+`IN_FLIGHT_QUEUE_LIMIT` waiting per origin (past it a call is refused at once), and at most
+`IN_FLIGHT_WAIT_MS` each (then `'limit'`). A waiting call runs nothing and holds only its own
+arguments; the number *running* is exactly what it was. The cap and the queue are per origin, so
+one origin's queue never delays another's (conformance item 13). A waiting call is registered with
+the handle or grant it needs, so a close or revoke cancels it like any running one, and a slot
+freed while calls are waiting passes straight to the oldest, so a later call cannot overtake them.
+An operation with a free slot still starts in the same turn it was asked for.
 
 **Replacing a grant is not revoking it** ([`grant-replacement.ts`](grant-replacement.ts),
 `HandleTable.replaceGrant`). A capability has at most one live grant, so a wider

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { LIMITS } from '../../../contracts/index.js'
+import { IN_FLIGHT_QUEUE_LIMIT } from '../in-flight.js'
 import { HandleTable } from '../handles.js'
 import { toWire } from '../handle-contracts.js'
 import {
@@ -129,10 +130,10 @@ describe('per-origin limits (T11, T11b)', () => {
     expect(() => acquireSocket(t)).not.toThrow()
   })
 
-  it('rejects the operation past the in-flight cap immediately, without queueing', async () => {
+  it('rejects the operation past the in-flight cap AND its wait queue immediately', async () => {
     const t = table()
     const handle = acquireSocket(t)
-    for (let i = 0; i < LIMITS.inFlightOperations; i += 1) {
+    for (let i = 0; i < LIMITS.inFlightOperations + IN_FLIGHT_QUEUE_LIMIT; i += 1) {
       void t.run(APP, { on: 'handle', handleId: handle.id }, never).catch(() => {})
     }
 
@@ -140,15 +141,15 @@ describe('per-origin limits (T11, T11b)', () => {
 
     // An unbounded queue on the broker's UI thread is precisely how one
     // misbehaving origin freezes every tab (T11b). "pending" here means the
-    // implementation queued.
+    // implementation queued past its own bound.
     expect(outcome.state).toBe('rejected')
     expect(outcome.state === 'rejected' ? outcome.error.code : null).toBe('limit')
   })
 
-  it('never runs the work of an operation past the in-flight cap', async () => {
+  it('never runs the work of an operation past the in-flight cap and its wait queue', async () => {
     const t = table()
     const handle = acquireSocket(t)
-    for (let i = 0; i < LIMITS.inFlightOperations; i += 1) {
+    for (let i = 0; i < LIMITS.inFlightOperations + IN_FLIGHT_QUEUE_LIMIT; i += 1) {
       void t.run(APP, { on: 'handle', handleId: handle.id }, never).catch(() => {})
     }
     const work = vi.fn(async () => 'done')

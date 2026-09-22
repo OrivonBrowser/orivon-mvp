@@ -17,6 +17,7 @@ import type { GrantId, OrivonError, OrivonErrorCode, Pattern } from '../../contr
 import { fail } from '../errors.js'
 import { CLOSED_ID_MEMORY, endedAs, makeRoom } from './tombstones.js'
 import type { EndedAs } from './tombstones.js'
+import type { SlotWaiter } from './in-flight.js'
 import type {
   Authorisation,
   CloseReason,
@@ -174,6 +175,8 @@ export class OriginTable {
    */
   dropping = false
   inFlight = 0
+  /** Operations waiting for an in-flight slot, oldest first (./in-flight.ts). */
+  readonly slotWaiters: SlotWaiter[] = []
 
   /** The ownership check itself. See HandleTable.lookup. */
   record (handleId: string): HandleRecord {
