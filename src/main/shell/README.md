@@ -8,7 +8,8 @@ resolves electron-vite's dev-server/file-URL split for both this and
 derives the plain Chrome User-Agent [`../index.ts`](../index.ts) sets app-wide.
 
 What a page asks of its window: `fullscreen.ts` decides which tab, if any, fills the window,
-and `fullscreen-notice.ts` shows "Press Esc to exit full screen".
+and `fullscreen-notice.ts` shows "Press Esc to exit full screen"; `leave-page-prompt.ts` asks the
+question a `beforeunload` guard raises.
 
 **What it depends on.** `electron`; [`../../broker/`](../../broker/) (`policy/origin.ts`,
 `grants/origin-hash.ts`, `broker-contracts.ts` types); [`../../loader/electron-serve.ts`](../../loader/electron-serve.ts)
@@ -93,6 +94,12 @@ consumes it in the browser process before the page sees the key, which is what m
 the permission safe (`../sessions/README.md`). When the shell itself ends fullscreen (another
 tab became active), it asks the page through an isolated world, where the page's own script
 cannot have replaced `document.exitFullscreen`.
+
+**[`leave-page-prompt.ts`](leave-page-prompt.ts) blocks the main process while it is open.**
+Electron settles `will-prevent-unload` from the handler's return, with no way to answer later,
+so the question is a synchronous message box; every tab's broker traffic waits until it is
+answered. Chromium only asks after the person has interacted with the page. Closing a tab does
+not ask: `closeTab()` closes the webContents without running `beforeunload`.
 
 **[`user-agent.ts`](user-agent.ts): the string, not the brand list.** `navigator.userAgentData`
 still lists Chromium rather than Google Chrome, and Electron has no API to change it. A site that

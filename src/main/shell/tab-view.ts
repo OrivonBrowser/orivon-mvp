@@ -10,6 +10,7 @@ import { shouldClearFavicon } from '../browsing/favicon.js'
 import type { Bounds, TabRecord } from './tab-types.js'
 import { isOriginServedFromCacheSync } from '../../loader/electron-serve.js'
 import type { Broker } from '../../broker/broker-contracts.js'
+import { confirmLeavePage } from './leave-page-prompt.js'
 
 /** The `additionalArguments` flag marking a registered app's tab. Spelled
  * again in preload/fetch-route.ts rather than imported, for the reason
@@ -247,6 +248,11 @@ export function wireView (host: TabViewHost, id: string, record: TabRecord): voi
 
   wc.on('enter-html-full-screen', () => { host.htmlFullscreenChanged(id, true) })
   wc.on('leave-html-full-screen', () => { host.htmlFullscreenChanged(id, false) })
+  // With no listener, Electron keeps the page and says nothing: a guard
+  // meant as a question silently blocked the navigation instead.
+  wc.on('will-prevent-unload', (event) => {
+    if (host.window !== undefined && confirmLeavePage(host.window)) event.preventDefault()
+  })
 
   // T18: never let a tab open a real popup window -- route it to a new tab
   // in this same shell instead.

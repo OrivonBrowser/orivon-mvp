@@ -90,3 +90,39 @@ describe('wireView -- HTML fullscreen', () => {
     expect(host.htmlFullscreenChanged).toHaveBeenNthCalledWith(2, 'tab-1', false)
   })
 })
+
+describe('wireView -- a beforeunload guard asks instead of silently blocking', () => {
+  it('leaves the page when the person chooses Leave', () => {
+    const wc = fakeContents()
+    wireView(fakeHost(), 'tab-1', record(wc))
+    showMessageBoxSync.mockReturnValue(0)
+    const event = { preventDefault: vi.fn() }
+
+    wc.emit('will-prevent-unload', event)
+
+    expect(showMessageBoxSync).toHaveBeenCalledTimes(1)
+    expect(event.preventDefault).toHaveBeenCalledTimes(1)
+  })
+
+  it('stays on the page when the person chooses Stay', () => {
+    const wc = fakeContents()
+    wireView(fakeHost(), 'tab-1', record(wc))
+    showMessageBoxSync.mockReturnValue(1)
+    const event = { preventDefault: vi.fn() }
+
+    wc.emit('will-prevent-unload', event)
+
+    expect(event.preventDefault).not.toHaveBeenCalled()
+  })
+
+  it('attaches the question to the window, so it cannot appear anywhere else on screen', () => {
+    const wc = fakeContents()
+    const window = { isDestroyed: () => false }
+    wireView(fakeHost({ window: window as never }), 'tab-1', record(wc))
+    showMessageBoxSync.mockReturnValue(1)
+
+    wc.emit('will-prevent-unload', { preventDefault: vi.fn() })
+
+    expect(showMessageBoxSync.mock.calls[0]?.[0]).toBe(window)
+  })
+})
