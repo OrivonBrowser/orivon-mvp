@@ -445,6 +445,31 @@ decision, not a blocker (`docs/open-questions.md` A184). What that means a page 
 narrower than `FileHandle`, with no `readable`/`writable`, and its `closed` is not live-pushed
 (revocation surfaces on the next operation attempted against the handle, not proactively).
 
+### `fs-capability.ts`: the quota counts what the files occupy
+
+`fs.quotaBytes` is checked against the bytes the origin's files take up, which is what
+`capability-api.md` A9 SS3 specifies, not against every byte ever written. A running count of
+writes never went down: a database that rewrites its file on every load (nedb, as FreeTube uses
+it, writes a temporary file and renames it over the original) reached any quota within one
+session, however small the data.
+
+- **Measured, not persisted.** The first operation that can change an origin's usage in a session
+  (`writeFile`, `rm`, `rename`, `open`) first adds `BrokerFs.diskUsage(root)` to the count
+  (`ensureMeasured`), so nothing has to survive a restart and nothing can drift across one.
+- **`writeFile` charges growth.** The file's current size is read first; only the difference is
+  reserved, and a smaller rewrite gives the rest back.
+- **`rm` and `rename` give bytes back.** `rm` frees what `diskUsage` measured under the path just
+  before removing it; a `rename` onto an existing file frees the replaced file.
+- **What still over-counts, on purpose.** Writes through a `FileHandle` (positional `write`, and
+  `writable()` streams) charge every byte they write, so rewriting a region of a file in place is
+  charged again; `truncate` still charges growth and frees what it cuts. Concurrent `writeFile`s
+  to one path each charge their own growth. Each of these errs towards `'limit'`, never past it.
+- **What can under-count, and its bound.** A file removed or replaced while a handle to it is still
+  open keeps its bytes on disk until that handle closes, but its bytes are given back at once.
+  That is bounded by `LIMITS.concurrentFileHandles` open files and ends when they close or the
+  session does. Files picked with `fs.userSelected` live outside the root: their writes charge the
+  same count, but they are not part of the measurement.
+
 ### `web-capability.ts` -- why a timed-out `evaluate` makes `closed` REJECT, not resolve
 
 ADR-0019's own contract only names two `WebContext.closed` outcomes: reject `'revoked'` on

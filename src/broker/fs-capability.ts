@@ -112,6 +112,40 @@ export function createFsCapability ({ deps, handleTable, ledger, canonical }: Fs
   // picked file (Rule 3). `open` below is this file's only caller.
   const { toFailableFileHandle } = createFileHandleWrapper({ handleTable, ledger })
 
+  // The quota counts what the origin's files occupy, measured once per
+  // session before anything charges or frees bytes (README.md's Design
+  // notes). A failed measurement starts from zero and is retried next call.
+  const measured = new Map<string, Promise<void>>()
+  async function ensureMeasured (key: string): Promise<void> {
+    let pending = measured.get(key)
+    if (pending === undefined) {
+      pending = (async () => { ledger.chargeFsBytes(key, await deps.fs.diskUsage?.(deps.fs.rootFor(key)) ?? 0) })()
+        .catch(() => { measured.delete(key) })
+      measured.set(key, pending)
+    }
+    await pending
+  }
+
+  /** What a regular file at `path` holds now; 0 for nothing there, or anything that is not a file. */
+  async function fileSize (path: string): Promise<number> {
+    try {
+      const info = await deps.fs.stat(path)
+      return info.isFile ? info.size : 0
+    } catch {
+      return 0
+    }
+  }
+
+  /** What removing `path` frees: every file under it when the adapter can measure a tree, else just the file itself. */
+  async function bytesAt (path: string): Promise<number> {
+    if (deps.fs.diskUsage === undefined) return await fileSize(path)
+    try {
+      return await deps.fs.diskUsage(path)
+    } catch {
+      return 0
+    }
+  }
+
   /**
    * ADR-0016's synchronous entry point: `orivon.fs.readFileSync` needs the
    * SAME grant check and path confinement `readFile`/`writeFile` use, over
@@ -142,41 +176,33 @@ export function createFsCapability ({ deps, handleTable, ledger, canonical }: Fs
   }
 
   /**
-   * manifest.ts's FsCapability.quotaBytes: "ENFORCED, not advisory ... The
-   * broker maintains a running per-origin byte counter, checks it on write,
-   * and yields 'limit' when exceeded." `ledger.reserveFsBytes` checks AND
-   * reserves in one synchronous step, before this function's first `await`
-   * -- concurrent callers cannot all read the same pre-write counter and
-   * all pass (see that method's own doc). Undeclared quota means unlimited.
-   * `started` below distinguishes "never touched disk" (refund) from
-   * "touched disk, then told 'revoked' anyway" (do not); session-lifetime
-   * only, A29 tracks reconciling against disk on startup.
+   * manifest.ts's FsCapability.quotaBytes: "ENFORCED, not advisory". Charges
+   * only the file's GROWTH (an overwrite that shrinks it gives the
+   * difference back), because the quota counts what the files occupy.
+   * `ledger.reserveFsBytes` checks AND reserves in one synchronous step
+   * after the size is read, so concurrent callers cannot all pass on the
+   * same count; concurrent writes to one path each charge their own growth,
+   * which can only over-count. Undeclared quota means unlimited.
+   * deps.fs.writeFile takes no AbortSignal, so once called it lands whatever
+   * a revoke says, and its charge stays.
    */
   async function writeFile (origin: string, path: string, data: Uint8Array): Promise<void> {
     const key = canonical(origin)
     const { resolved, grant } = confineForOrigin(key, path)
-    if (!ledger.reserveFsBytes(key, data.length)) {
-      throw fail('limit', "this write would exceed the app's declared storage quota")
-    }
-    let started = false
-    try {
-      await runFsIo(key, grant, async () => {
-        started = true
-        try {
-          await deps.fs.writeFile(resolved, data)
-        } catch (error) {
-          ledger.releaseFsBytes(key, data.length) // nothing landed -- unmapped, runFsIo maps it below
-          throw error
-        }
-      })
-    } catch (error) {
-      // False only when deps.fs.writeFile was never called (in-flight cap,
-      // or an already-revoked grant) -- refund there too. deps.fs.writeFile
-      // takes no AbortSignal, so once called it lands regardless of
-      // revocation -- only the catch above may refund after that point.
-      if (!started) ledger.releaseFsBytes(key, data.length)
-      throw error
-    }
+    await runFsIo(key, grant, async () => {
+      await ensureMeasured(key)
+      const growth = data.length - await fileSize(resolved)
+      if (growth > 0 && !ledger.reserveFsBytes(key, growth)) {
+        throw fail('limit', "this write would exceed the app's declared storage quota")
+      }
+      try {
+        await deps.fs.writeFile(resolved, data)
+      } catch (error) {
+        if (growth > 0) ledger.releaseFsBytes(key, growth) // nothing landed -- unmapped, runFsIo maps it
+        throw error
+      }
+      if (growth < 0) ledger.releaseFsBytes(key, -growth)
+    })
   }
 
   /**
@@ -202,15 +228,20 @@ export function createFsCapability ({ deps, handleTable, ledger, canonical }: Fs
   }
 
   /**
-   * Reserves no quota, for the same reason `mkdir` does not -- deleting
-   * frees storage, it never consumes the write budget. `force` is never
-   * exposed above `BrokerFs.rm` (see that interface's own doc): a missing
-   * path surfaces `notFound`, exactly like every other fs call.
+   * Gives what it removed back to the quota, measured just before removing
+   * it. `force` is never exposed above `BrokerFs.rm` (see that interface's
+   * own doc): a missing path surfaces `notFound`, exactly like every other
+   * fs call.
    */
   async function rm (origin: string, path: string, opts?: { recursive?: boolean }): Promise<void> {
     const key = canonical(origin)
     const { resolved, grant } = confineForOrigin(key, path)
-    await runFsIo(key, grant, async () => { await deps.fs.rm(resolved, opts) })
+    await runFsIo(key, grant, async () => {
+      await ensureMeasured(key)
+      const freed = await bytesAt(resolved)
+      await deps.fs.rm(resolved, opts)
+      ledger.releaseFsBytes(key, freed)
+    })
   }
 
   /**
@@ -229,7 +260,14 @@ export function createFsCapability ({ deps, handleTable, ledger, canonical }: Fs
     const key = canonical(origin)
     const source = confineForOrigin(key, from)
     const destination = confineForOrigin(key, to)
-    await runFsIo(key, source.grant, async () => { await deps.fs.rename(source.resolved, destination.resolved) })
+    await runFsIo(key, source.grant, async () => {
+      await ensureMeasured(key)
+      // A file the rename replaces is gone, so its bytes come back: the
+      // write-a-temp-file-then-rename-it save pattern stays at one copy.
+      const replaced = source.resolved === destination.resolved ? 0 : await fileSize(destination.resolved)
+      await deps.fs.rename(source.resolved, destination.resolved)
+      ledger.releaseFsBytes(key, replaced)
+    })
   }
 
   /**
@@ -259,6 +297,7 @@ export function createFsCapability ({ deps, handleTable, ledger, canonical }: Fs
     const { resolved, grant } = confineForOrigin(key, path)
 
     return await handleTable.run(key, { on: 'grant', grantId: grant.id }, async (signal) => {
+      await ensureMeasured(key) // before this handle's writes can charge anything
       if (signal.aborted) throw fail('revoked', 'the grant authorising this fs operation was withdrawn')
       let opened: OpenedFile
       try {

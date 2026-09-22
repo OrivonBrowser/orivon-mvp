@@ -11,6 +11,7 @@
 import { createReadStream, createWriteStream, mkdirSync, realpathSync } from 'node:fs'
 import type { WriteStream } from 'node:fs'
 import {
+  lstat,
   mkdir,
   open as fsOpen,
   readdir as fsReaddir,
@@ -244,6 +245,27 @@ export function nodeFs (userDataPath: string): BrokerFs {
     // wants that convenience can call it explicitly rather than have rename
     // silently create directory structure on its behalf.
     rename: async (from, to) => { await fsRename(from, to) },
-    open: openFile
+    open: openFile,
+    diskUsage
   }
+}
+
+/**
+ * The bytes the regular files at or under `path` hold, 0 if it does not
+ * exist. lstat, never stat: a symlink is counted as itself and never
+ * followed, so nothing outside the tree is measured.
+ */
+async function diskUsage (path: string): Promise<number> {
+  let info
+  try {
+    info = await lstat(path)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 0
+    throw error
+  }
+  if (info.isFile()) return info.size
+  if (!info.isDirectory()) return 0
+  let total = 0
+  for (const name of await fsReaddir(path)) total += await diskUsage(join(path, name))
+  return total
 }

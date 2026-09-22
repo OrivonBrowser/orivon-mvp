@@ -275,7 +275,7 @@ describe('GrantLedger -- forgetOrigin (A60 escape hatch)', () => {
     expect(ledger.versionFloorFor(APP)).toBe('9.0.0')
     expect(ledger.manifestFor(APP)?.version).toBe('9.0.0')
     expect(ledger.grantsFor(APP)).toHaveLength(1)
-    expect(ledger.fsBytesWritten(APP)).toBe(128)
+    expect(ledger.fsBytesUsed(APP)).toBe(128)
   })
 
   it('does not throw when the on-disk delete fails -- it is best-effort cleanup, not a security-critical write', () => {
