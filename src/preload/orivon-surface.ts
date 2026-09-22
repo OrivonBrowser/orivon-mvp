@@ -113,9 +113,15 @@ async function fsOpen (path: string, flags: string): Promise<MainWorldFileBridge
   return buildFileBridge(descriptor.id)
 }
 
+/**
+ * A person choosing in an OS picker, like one deciding at a grant prompt,
+ * has no natural bound; `fs`'s disk-I/O budget cut them off mid-choice.
+ */
+const PICKER_TIMEOUT_MS = TIMEOUT_MS.grant
+
 /** `orivon.fs.userSelected`'s FILE shape (A194, d-0032). `exposeFallback`'s own `userSelected` closure routes here for every call except `{ directory: true }`, which goes to `fsUserSelectedDirectory` below (A195). */
 async function fsUserSelected (opts?: { multiple?: boolean }): Promise<readonly MainWorldFileBridge[]> {
-  const descriptors = await call<readonly FsHandleDescriptor[]>('fs.userSelected', opts ?? {}, TIMEOUT_MS.fs)
+  const descriptors = await call<readonly FsHandleDescriptor[]>('fs.userSelected', opts ?? {}, PICKER_TIMEOUT_MS)
   return descriptors.map((descriptor) => buildFileBridge(descriptor.id))
 }
 
@@ -152,7 +158,7 @@ function buildDirectoryBridge (id: string): MainWorldDirectoryBridge {
 
 /** `orivon.fs.userSelected`'s FOLDER shape (A195). `null` on a cancelled pick, matching capability-api.ts's own folder cancel contract -- never a rejection. */
 async function fsUserSelectedDirectory (): Promise<MainWorldDirectoryBridge | null> {
-  const descriptor = await call<FsHandleDescriptor | null>('fs.userSelected', { directory: true }, TIMEOUT_MS.fs)
+  const descriptor = await call<FsHandleDescriptor | null>('fs.userSelected', { directory: true }, PICKER_TIMEOUT_MS)
   return descriptor === null ? null : buildDirectoryBridge(descriptor.id)
 }
 

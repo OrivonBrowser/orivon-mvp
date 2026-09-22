@@ -77,7 +77,8 @@ async function dispatch (
   event: ControlEvent,
   transport: PortTransport | undefined,
   requestGrantCtx: RequestGrantCtx | undefined,
-  fsTransport: FsTransport | undefined
+  fsTransport: FsTransport | undefined,
+  abandoned: AbortSignal
 ): Promise<unknown> {
   if (!isControlMethod(method)) throw fail('invalid', `unknown control method: ${method}`)
 
@@ -109,7 +110,7 @@ async function dispatch (
     case 'fs.dirReadFile':
     case 'fs.dirWriteFile':
     case 'fs.dirOpen':
-      return await dispatchFs(broker, origin, method, payload, fsTransport)
+      return await dispatchFs(broker, origin, method, payload, fsTransport, abandoned)
     case 'id.publicKey':
     case 'id.sign':
       return await dispatchId(broker, origin, method, payload)
@@ -141,21 +142,24 @@ async function dispatch (
 }
 
 /**
- * Races `promise` against `timeoutMs`. ../../contracts/ipc.ts's rule 2: this
+ * Races `work` against `timeoutMs`. ../../contracts/ipc.ts's rule 2: this
  * transport fails by SILENCE, and `timeoutMs` is a required field precisely
  * so nothing on this path can forget to bound the wait. The underlying
- * broker call is not cancelled when the timer wins -- there is no cancel
- * signal threaded through `dispatch` for this -- it is left to settle on its
- * own and its result is discarded; what matters is that the CALLER is never
- * left waiting past its own stated budget.
+ * broker call is not cancelled when the timer wins; it is left to settle on
+ * its own and its result is discarded. What matters is that the CALLER is
+ * never left waiting past its own stated budget. `abandoned` fires when the
+ * timer wins, so a call that produces a resource the caller will now never
+ * hear about can release it (dispatch-fs.ts's `fs.userSelected`).
  */
-async function withTimeout<T> (promise: Promise<T>, timeoutMs: number): Promise<T> {
+async function withTimeout<T> (work: (abandoned: AbortSignal) => Promise<T>, timeoutMs: number): Promise<T> {
+  const abandoned = new AbortController()
   return await new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => {
+      abandoned.abort()
       reject(fail('timeout', `control call exceeded its ${timeoutMs}ms budget`))
     }, timeoutMs)
     timer.unref()
-    promise.then(
+    work(abandoned.signal).then(
       (value) => { clearTimeout(timer); resolve(value) },
       (error: unknown) => { clearTimeout(timer); reject(error) }
     )
@@ -215,7 +219,7 @@ export async function handleControlRequest (
 
   try {
     const result = await withTimeout(
-      dispatch(broker, origin, envelope.method, envelope.payload, event, transport, requestGrantCtx, fsTransport),
+      async (abandoned) => await dispatch(broker, origin, envelope.method, envelope.payload, event, transport, requestGrantCtx, fsTransport, abandoned),
       envelope.timeoutMs
     )
     return { id: envelope.id, ok: true, result }

@@ -116,7 +116,8 @@ export async function dispatchFs (
   origin: string,
   method: FsControlMethod,
   payload: unknown,
-  transport?: FsTransport
+  transport?: FsTransport,
+  abandoned?: AbortSignal
 ): Promise<unknown> {
   switch (method) {
     case 'fs.readFile': {
@@ -169,10 +170,15 @@ export async function dispatchFs (
         // ONLY new registration mechanism this needed, mirroring
         // registerFileHandle exactly (Rule 3).
         const dir = await broker.fs.userSelected(origin, { directory: true })
+        if (dir !== null && abandoned?.aborted === true) { await dir.close(); return null }
         return dir === null ? null : registerDirectoryHandle(transport, origin, dir)
       }
       const opts = payload.multiple === undefined ? undefined : { multiple: payload.multiple }
       const files = await broker.fs.userSelected(origin, opts)
+      // A person can outlast the page's wait at the picker. Its request has
+      // already timed out, so it will never learn these ids: close them
+      // rather than leave them open and counted until the session ends.
+      if (abandoned?.aborted === true) { await Promise.all(files.map(async (file) => { await file.close() })); return [] }
       return files.map((file) => registerFileHandle(transport, origin, file))
     }
     case 'fs.read': {
