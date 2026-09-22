@@ -37,7 +37,16 @@ export interface HttpResponseParserCallbacks {
   onHead(head: ParsedResponseHead): void
   onBody(chunk: Uint8Array): void
   onComplete(): void
-  onError(error: Error): void
+  onError(error: Error & { code: string }): void
+  /** A 1xx other than an upgrade (100 Continue, 103 Early Hints); parsing carries on to the final response. */
+  onInformation?(head: ParsedResponseHead): void
+  /**
+   * A 101 carrying an Upgrade header, or any response to CONNECT: the
+   * connection now speaks another protocol, so parsing stops and `rest`
+   * holds the bytes that followed the head. Without this callback such a
+   * response is treated as an ordinary bodyless one.
+   */
+  onUpgrade?(head: ParsedResponseHead, rest: Uint8Array): void
 }
 
 type ParserState =
@@ -91,13 +100,14 @@ export class HttpResponseParser {
       this.state = { kind: 'done' }
       this.cb.onComplete()
     } else if (this.state.kind !== 'done') {
-      this.fail('HTTP response socket ended before the response was complete (premature EOF)')
+      this.fail('HTTP response socket ended before the response was complete (premature EOF)', 'HPE_PREMATURE_EOF')
     }
   }
 
-  private fail (message: string): void {
+  /** `code` follows Node's llhttp names (HPE_*), so a caller branching on it sees the same values Node's parser gives. */
+  private fail (message: string, code = 'HPE_INVALID_CONSTANT'): void {
     this.state = { kind: 'done' }
-    this.cb.onError(new Error(`orivon-node-shim: ${message}`))
+    this.cb.onError(Object.assign(new Error(`orivon-node-shim: ${message}`), { code }))
   }
 
   private pump (): void {
@@ -123,12 +133,12 @@ export class HttpResponseParser {
     const idx = indexOfSubarray(this.buf, CRLFCRLF)
     if (idx === -1) {
       if (this.buf.length > MAX_HEAD_BYTES) {
-        this.fail(`response head exceeded ${MAX_HEAD_BYTES} bytes without a terminator`)
+        this.fail(`response head exceeded ${MAX_HEAD_BYTES} bytes without a terminator`, 'HPE_HEADER_OVERFLOW')
       }
       return false
     }
     if (idx > MAX_HEAD_BYTES) {
-      this.fail(`response head exceeded ${MAX_HEAD_BYTES} bytes without a terminator`)
+      this.fail(`response head exceeded ${MAX_HEAD_BYTES} bytes without a terminator`, 'HPE_HEADER_OVERFLOW')
       return false
     }
 
@@ -147,18 +157,29 @@ export class HttpResponseParser {
     const statusCode = Number(match[2])
     const statusMessage = match[3] ?? ''
 
+    const { headers, rawHeaders } = this.combineHeaders(lines.slice(1))
+    const head: ParsedResponseHead = { httpVersion, statusCode, statusMessage, headers, rawHeaders }
+
+    if (this.cb.onUpgrade !== undefined && this.isUpgrade(statusCode, headers)) {
+      this.state = { kind: 'done' }
+      const rest = this.buf
+      this.buf = new Uint8Array(0)
+      this.cb.onUpgrade(head, rest)
+      return false
+    }
+
     // 1xx (100 Continue, 103 Early Hints, ...) is an informational prelude,
     // not the response -- RFC 9110 SS15.2 requires reading past any number of
-    // them for the real final status line. `state` is left at 'head' (never
-    // assigned here) so pump()'s loop immediately retries parsing the rest
-    // of `buf` as the next head. Surfacing a 1xx to onHead would make the
-    // caller treat it as the whole response -- observed as node-http-client.ts
-    // emitting statusCode 103 with an empty body, closing the socket, and
-    // discarding the real 200 that followed on the same connection.
-    if (statusCode >= 100 && statusCode < 200) return true
+    // them for the real final status line. `state` stays at 'head' so
+    // pump()'s loop retries the rest of `buf` as the next head. Handing a
+    // 1xx to onHead would make the caller treat it as the whole response
+    // and discard the real one that follows on the same connection.
+    if (statusCode >= 100 && statusCode < 200 && statusCode !== 101) {
+      this.cb.onInformation?.(head)
+      return true
+    }
 
-    const { headers, rawHeaders } = this.combineHeaders(lines.slice(1))
-    this.cb.onHead({ httpVersion, statusCode, statusMessage, headers, rawHeaders })
+    this.cb.onHead(head)
     this.state = this.decideBodyFraming(statusCode, headers)
     if (this.state.kind === 'done') this.cb.onComplete()
     return true
@@ -186,10 +207,15 @@ export class HttpResponseParser {
     return { headers, rawHeaders }
   }
 
+  /** Node's rule: every response to CONNECT, and a 101 that names the protocol it switches to. */
+  private isUpgrade (statusCode: number, headers: Readonly<Record<string, string | readonly string[]>>): boolean {
+    return this.method === 'CONNECT' || (statusCode === 101 && headers.upgrade !== undefined)
+  }
+
   private decideBodyFraming (statusCode: number, headers: Readonly<Record<string, string | readonly string[]>>): ParserState {
-    // 1xx never reaches here -- tryParseHead() consumes it before calling
-    // this method at all (see the comment there).
-    const noBody = this.method === 'HEAD' || statusCode === 204 || statusCode === 304
+    // Only a 101 without an Upgrade header reaches here among the 1xx
+    // codes; like Node, it is a response with no body.
+    const noBody = this.method === 'HEAD' || statusCode === 204 || statusCode === 304 || statusCode === 101
     if (noBody) return { kind: 'done' }
 
     const transferEncoding = headers['transfer-encoding']
@@ -249,7 +275,7 @@ export class HttpResponseParser {
     const sizeHex = (line.split(';')[0] ?? '').trim()
     const size = sizeHex === '' ? Number.NaN : parseInt(sizeHex, 16)
     if (!Number.isFinite(size) || size < 0) {
-      this.fail(`malformed chunk size: ${JSON.stringify(line)}`)
+      this.fail(`malformed chunk size: ${JSON.stringify(line)}`, 'HPE_INVALID_CHUNK_SIZE')
       return false
     }
     this.state = size === 0 ? { kind: 'body-chunk-trailer' } : { kind: 'body-chunk-data', remaining: size }

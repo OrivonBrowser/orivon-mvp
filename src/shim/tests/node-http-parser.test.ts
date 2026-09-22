@@ -310,3 +310,60 @@ describe('HttpResponseParser -- malformed input and premature EOF', () => {
     expect(h.errors).toHaveLength(1)
   })
 })
+
+describe('HttpResponseParser -- information and upgrade callbacks', () => {
+  function withUpgrade (method = 'GET') {
+    const info: number[] = []
+    const heads: number[] = []
+    const upgrades: Array<{ status: number, rest: string }> = []
+    let complete = 0
+    const parser = new HttpResponseParser({
+      onHead: (h) => heads.push(h.statusCode),
+      onBody: () => {},
+      onComplete: () => { complete++ },
+      onError: () => {},
+      onInformation: (h) => info.push(h.statusCode),
+      onUpgrade: (h, rest) => upgrades.push({ status: h.statusCode, rest: new TextDecoder().decode(rest) })
+    }, { method })
+    return { parser, info, heads, upgrades, get complete () { return complete } }
+  }
+
+  it('reports each 1xx prelude to onInformation before the final head', () => {
+    const h = withUpgrade()
+    h.parser.write(enc.encode('HTTP/1.1 103 Early Hints\r\n\r\nHTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n'))
+    expect(h.info).toEqual([103, 100])
+    expect(h.heads).toEqual([200])
+  })
+
+  it('stops at a 101 carrying Upgrade and hands over the bytes that followed the head', () => {
+    const h = withUpgrade()
+    h.parser.write(enc.encode('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n\x81\x02hi'))
+    expect(h.upgrades).toEqual([{ status: 101, rest: '\x81\x02hi' }])
+    expect(h.heads).toEqual([])
+    h.parser.write(enc.encode('more frames'))
+    expect(h.heads).toEqual([])
+  })
+
+  it('treats any response to CONNECT as an upgrade', () => {
+    const h = withUpgrade('CONNECT')
+    h.parser.write(enc.encode('HTTP/1.1 200 Connection Established\r\n\r\ntunnel'))
+    expect(h.upgrades).toEqual([{ status: 200, rest: 'tunnel' }])
+  })
+
+  it('a 101 with no Upgrade header is an ordinary bodyless response, as in Node', () => {
+    const h = withUpgrade()
+    h.parser.write(enc.encode('HTTP/1.1 101 Switching Protocols\r\n\r\n'))
+    expect(h.heads).toEqual([101])
+    expect(h.complete).toBe(1)
+  })
+
+  it('names parse failures with Node\'s HPE_* codes', () => {
+    const h = makeParser()
+    h.parser.write(enc.encode('NOT HTTP\r\n\r\n'))
+    expect((h.errors[0] as Error & { code?: string }).code).toBe('HPE_INVALID_CONSTANT')
+    const eof = makeParser()
+    eof.parser.write(enc.encode('HTTP/1.1 200 OK\r\nContent-Length: 9\r\n\r\npart'))
+    eof.parser.end()
+    expect((eof.errors[0] as Error & { code?: string }).code).toBe('HPE_PREMATURE_EOF')
+  })
+})
