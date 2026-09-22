@@ -129,6 +129,17 @@ linux:
   # separate, already-scoped piece of work -- this file only has to not make it
   # impossible, which an allowlisted `files` and a correct `linux.desktop` block do not.
 
+  extraResources:
+    - from: build/icon.png
+      to: icon.png
+  # The icon src/main/window.ts hands to BaseWindow, copied into resources/ so a packaged
+  # build can load it (process.resourcesPath); a run from source reads the repo's
+  # build/icon.png. Best-effort for the window itself: GNOME's dock keys off the .desktop
+  # entry instead (StartupWMClass=orivon below, written by electron-builder from this same
+  # build/icon.png), which is what actually decides the icon a taskbar shows. The
+  # resources/ path is read from electron-builder's schema, not yet observed in a real
+  # package -- check it on the next `package:linux`.
+
   category: "Network;WebBrowser;"
   # freedesktop.org Categories=. Two values, not one: WebBrowser is the specific
   # category, and the freedesktop.org menu spec expects its required parent category

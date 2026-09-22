@@ -22,6 +22,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 
 - Port method captured as the `orivon-porting` skill: triage, recon greps, five buckets, the escape test, two silent build traps.
 - Routed `fetch` now carries the platform's descriptor: a locked one killed any app using a `fetch` ponyfill, and guarded nothing.
+- Dock icon found to be a desktop-entry problem, not a window one: Electron's window `icon` never reaches X11 `_NET_WM_ICON` here (verified live, and Codium shows the same), so the fix is a `orivon.desktop` with `StartupWMClass=orivon` matching the WM_CLASS Electron already derives from the app name.
 
 ### In my head
 
