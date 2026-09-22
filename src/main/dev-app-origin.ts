@@ -32,6 +32,29 @@ import type { CapabilityKind, Pattern } from '../contracts/index.js'
 /** Loopback literals only. A hostname that merely RESOLVES to loopback is not eligible: that is resolver-dependent, and the whole point of a literal is that it cannot be moved by DNS. */
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', '[::1]', '::1'])
 
+/**
+ * orivon-ports' own convention for a fake name over one of its plain
+ * loopback servers -- never real ENS, and this file grants no more trust to
+ * it than it already grants a bare port number. Deliberately NOT the same
+ * exception as `LOOPBACK_HOSTS` above, and worth being honest about the
+ * difference: a `.eth` name is a STRING, and this function does not resolve
+ * it, so unlike a literal it is NOT guaranteed to actually reach loopback --
+ * that guarantee is what the PAC or `--host-resolver-rules` orivon-ports
+ * generates is for, not this check. What makes it acceptable anyway, all
+ * three required together: this whole path is already `ORIVON_DEV_ORIGINS=1`
+ * only, set by nothing but `npm run dev`; `grantDevOrigin` still requires a
+ * real, parseable manifest fetched from the exact typed origin; and a person
+ * still answers the same consent prompt A46 already accepts residual risk
+ * on for the loopback-literal case (this file's own header, "NOT enforced
+ * yet"). `.eth` is not a name a real DNS root could ever hand back a
+ * different registrant for -- there is no registrant -- so the one new risk
+ * this adds is a developer's OWN machine having a resolver override that
+ * misdirects an `.eth` name, and https:// is refused for it outright, since
+ * no `.eth` name is ever going to present a certificate that could make that
+ * attempt indistinguishable from a real one.
+ */
+const ETH_NAME = /^[a-z0-9][a-z0-9-]*\.eth$/
+
 export const MAX_DEV_MANIFEST_BYTES = 64 * 1024
 
 /**
@@ -49,7 +72,8 @@ export function isDevGrantableOrigin (origin: string, enabled: boolean): boolean
     return false
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return false
-  return LOOPBACK_HOSTS.has(url.hostname)
+  if (LOOPBACK_HOSTS.has(url.hostname)) return true
+  return url.protocol === 'http:' && ETH_NAME.test(url.hostname)
 }
 
 export interface DevGrantDeps {

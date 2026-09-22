@@ -83,11 +83,19 @@ export function parseOmniboxInput (raw: string): OmniboxResult {
 
   // No recognised scheme: schemeless host-shaped input defaults to https,
   // except that a bare `host:port` form (including bracketed IPv6) defaults
-  // to http, matching the common "point this at a local dev server" case.
+  // to http, matching the common "point this at a local dev server" case --
+  // and except a `.eth` name, which is orivon-ports' own convention for a
+  // fake name over a plain loopback server (never real ENS; there is no
+  // trustless resolution yet, README.md's own "No ENS, no IPFS" line). Such
+  // a name has no TLS certificate to present, so defaulting it to https
+  // would try to negotiate TLS against a plain http server and fail outright
+  // rather than reaching it. Checked on the host portion only, so a path
+  // that happens to end in `.eth` (`example.com/x.eth`) is unaffected.
   if (looksLikeHost(trimmed)) {
     const isBareHostPort =
       /^\[[0-9a-fA-F:]+\]:\d+$/.test(trimmed) || /^[^/?#]+:\d+([/?#].*)?$/.test(trimmed)
-    const scheme = isBareHostPort ? 'http://' : 'https://'
+    const isFakeEthName = /\.eth$/i.test((trimmed.split(/[/?#]/)[0] ?? '').replace(/:\d+$/, ''))
+    const scheme = (isBareHostPort || isFakeEthName) ? 'http://' : 'https://'
     try {
       return { kind: 'url', url: new URL(scheme + trimmed).toString() }
     } catch {
