@@ -40,6 +40,7 @@ import type { ReleaseReachSlot, ReserveReachSlot } from './serve-reach-guard.js'
 import { parseRange } from './serve-range.js'
 import { verifyPinnedTree } from './serve-verify.js'
 import { isNavigationRequest, resolveRequestPath } from './serve-path.js'
+import { leafOf } from './leaf-hash.js'
 import type { LoaderStorage } from './storage.js'
 
 export type AppRequestHandler = (request: Request) => Promise<Response>
@@ -383,7 +384,8 @@ export async function createAppRequestHandler (
   reachDial?: ReachDial,
   recordCoverage?: RecordPinCoverage,
   reserveReachSlot?: ReserveReachSlot,
-  releaseReachSlot?: ReleaseReachSlot
+  releaseReachSlot?: ReleaseReachSlot,
+  retainedAssets?: ReadonlyMap<string, string>
 ): Promise<AppRequestHandler> {
   const resolved = await resolveVerifiedBundle(storage, origin)
   if (!resolved.ok) {
@@ -408,7 +410,7 @@ export async function createAppRequestHandler (
       return await fetchThirdParty(request, authoriseReach, reachDial, recordCoverage, reserveReachSlot, releaseReachSlot)
     }
 
-    const resolved = resolveRequestPath(entryPath, pin, request.url, isNavigationRequest(request))
+    const resolved = resolveRequestPath(entryPath, pin, request.url, isNavigationRequest(request), retainedAssets)
     if (!resolved.ok) {
       recordCoverage?.('denied')
       return denyResponse(resolved.reason)
@@ -416,6 +418,11 @@ export async function createAppRequestHandler (
     if ('redirectTo' in resolved) return new Response(null, { status: 302, headers: { location: resolved.redirectTo } })
 
     const content = await storage.readAsset(origin, resolved.canonicalPath)
+    if (content !== undefined && resolved.retainedLeaf !== undefined &&
+        await leafOf(resolved.canonicalPath, content.length, [content]) !== resolved.retainedLeaf) {
+      recordCoverage?.('denied')
+      return denyResponse('a previous version\'s file no longer matches what was pinned')
+    }
     if (content === undefined) {
       // verifyPinnedTree above already read every pinned asset successfully
       // at handler-creation time -- reaching this branch means the file was

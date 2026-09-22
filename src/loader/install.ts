@@ -33,9 +33,9 @@ async function onDiskLeafIs (storage: LoaderStorage, origin: string, path: strin
  * lets a corrupted cache heal: a file that no longer matches is rewritten
  * even when its pinned leaf is unchanged.
  *
- * `pruneAssets` after writing deletes whatever a PREVIOUS pin left behind
- * that the new bundle no longer declares (A58). Skipped for a fresh
- * install: nothing could have been left behind.
+ * Never prunes: a page still running the previous bundle may lazily load
+ * one of its old files, so those stay on disk (and servable, see
+ * electron-serve.ts's `retainedAssets`) until the next start prunes them.
  */
 async function install (
   storage: LoaderStorage,
@@ -55,7 +55,6 @@ async function install (
   const unchanged = existingPin !== null && existingPin !== undefined && existingPin.bundleHash === tree.root
   const pin = unchanged ? existingPin : fromBundleTree(canonicalOrigin, tree.root, tree.assets, manifest.version, now)
   if (!unchanged) {
-    if (existingPin !== undefined) await storage.pruneAssets(canonicalOrigin, entries.map((entry) => entry.path))
     await storage.writePin(canonicalOrigin, pin)
     changed = true
     await warnUndeclaredReferences(storage, canonicalOrigin, manifest, tree)

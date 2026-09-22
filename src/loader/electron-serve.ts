@@ -34,6 +34,8 @@ import type { AppRequestHandler, AuthoriseReach } from './serve.js'
 import { nodeReachDial } from './serve-reach.js'
 import type { ReleaseReachSlot, ReserveReachSlot } from './serve-reach-guard.js'
 import type { LoaderStorage } from './storage.js'
+import { parsePinRecord } from '../broker/policy/pin.js'
+import type { PinRecord } from '../broker/policy/pin.js'
 
 /**
  * One pin-coverage tracker per origin currently being served, keyed the same
@@ -90,6 +92,28 @@ function reachSlotsFor (broker: Broker, origin: string): { reserve: ReserveReach
       reachSlotsInUse.set(origin, Math.max(0, inUse - 1))
     }
   }
+}
+
+/**
+ * Every file (path -> leaf) each origin's pins have served this process.
+ * After an update, a page still running the previous bundle may lazily
+ * `import()` one of its old hashed chunks; those files stay on disk until
+ * the next start prunes them (`restorePinnedServing`), and stay servable
+ * until then, checked against the leaf they were pinned with.
+ */
+const servedAssets = new Map<string, Map<string, string>>()
+
+function rememberServed (origin: string, pin: PinRecord): void {
+  const served = servedAssets.get(origin) ?? new Map<string, string>()
+  for (const asset of pin.assets) served.set(asset.path, asset.leaf)
+  servedAssets.set(origin, served)
+}
+
+/** The files earlier pins served that `pin` no longer declares. */
+function retainedAssets (origin: string, pin: PinRecord): ReadonlyMap<string, string> {
+  const retained = new Map(servedAssets.get(origin))
+  for (const asset of pin.assets) retained.delete(asset.path)
+  return retained
 }
 
 /**
@@ -289,6 +313,7 @@ export async function registerServingFor (storage: LoaderStorage, origin: string
     return
   }
   if (broker !== undefined && pinnedManifest !== undefined) await broker.app.hydrateFromPinnedManifest(origin, pinnedManifest)
+  const pin = pinnedManifest === undefined ? null : parsePinRecord(await storage.readPin(origin))
 
   const tracker = createPinCoverageTracker()
   coverageTrackers.set(origin, tracker)
@@ -306,10 +331,12 @@ export async function registerServingFor (storage: LoaderStorage, origin: string
     nodeReachDial(),
     tracker.record,
     reachSlots?.reserve,
-    reachSlots?.release
+    reachSlots?.release,
+    pin === null ? undefined : retainedAssets(origin, pin)
   )
   const { session } = await import('electron')
   registerAppOrigin(session.fromPartition(partitionFor(origin)), origin, handler)
+  if (pin !== null) rememberServed(origin, pin)
 }
 
 /**
@@ -342,6 +369,21 @@ export async function isOriginServedFromCache (origin: string): Promise<boolean>
   }
   const { session } = await import('electron')
   return session.fromPartition(partitionFor(origin)).protocol.isProtocolHandled(scheme)
+}
+
+/**
+ * At start, before any page can still need them: deletes the files earlier
+ * pins left behind (install never prunes, see install.ts) and any staging a
+ * crash left. A failure is logged; it costs disk, never correctness.
+ */
+async function pruneToPin (storage: LoaderStorage, origin: string): Promise<void> {
+  try {
+    const pin = parsePinRecord(await storage.readPin(origin))
+    if (pin !== null) await storage.pruneAssets(origin, pin.assets.map((asset) => asset.path))
+    await storage.clearStaging(origin)
+  } catch (error) {
+    console.error('[loader] could not prune superseded files at start', origin, error)
+  }
 }
 
 /** One origin's outcome from `restorePinnedServing`, for the caller's own logging/tests. */
@@ -380,6 +422,7 @@ export async function restorePinnedServing (storage: LoaderStorage, broker?: Bro
   for (const origin of origins) {
     try {
       await registerServingFor(storage, origin, broker)
+      await pruneToPin(storage, origin)
       results.push({ origin, ok: true })
     } catch (error) {
       console.error('[loader] failed to restore cache-serving for', origin, error)

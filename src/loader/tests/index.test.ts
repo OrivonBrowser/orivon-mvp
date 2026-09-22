@@ -125,38 +125,18 @@ describe('createLoader: refetch against an existing pin', () => {
     return await loader.installFetched(ORIGIN, pending.manifest, pending.tree, pending.entries)
   }
 
-  it('replacing a pin prunes to the new bundle\'s own paths, after every commit and before writePin', async () => {
+  it('replacing a pin leaves the previous bundle\'s files on disk -- a page still running it may load them; the next start prunes', async () => {
     const storage = memoryStorage()
     await install(storage)
-    vi.clearAllMocks() // only the update's own calls, not the install fixture's
-
-    await approveChangedBundle(storage, 1_700_000_001_000)
-
-    expect(storage.pruneAssets).toHaveBeenCalledWith(ORIGIN, ['/.well-known/orivon.json', '/index.html'])
-    // Ordering matters, not just occurrence: pruneAssets must see every asset
-    // this install just committed (or it would delete one), and writePin must
-    // not run until pruning is done (A58 gap 2).
-    const order = (fn: unknown): number => (fn as { mock: { invocationCallOrder: number[] } }).mock.invocationCallOrder[0]!
-    const lastCommit = Math.max(...(storage.commitStaged as unknown as { mock: { invocationCallOrder: number[] } }).mock.invocationCallOrder)
-    expect(lastCommit).toBeLessThan(order(storage.pruneAssets))
-    expect(order(storage.pruneAssets)).toBeLessThan(order(storage.writePin))
-  })
-
-  it('a storage failure while pruning old assets surfaces as outcome "rejected", never an uncaught throw', async () => {
-    const base = memoryStorage()
-    await install(base)
+    await storage.writeAsset(ORIGIN, '/old-chunk.js', utf8('from the previous version'))
     vi.clearAllMocks()
-    const storage = { ...base, pruneAssets: vi.fn(async (): Promise<void> => { throw new Error('disk full') }) }
-    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
 
     const result = await approveChangedBundle(storage, 1_700_000_001_000)
-    logged.mockRestore()
 
-    expect(result.outcome).toBe('rejected')
-    // A failed prune must not re-pin: a pin naming the new files while the
-    // prune left the previous version's in place is a record the disk does
-    // not back.
-    expect(base.writePin).not.toHaveBeenCalled()
+    expect(result.outcome).toBe('installed')
+    expect(storage.pruneAssets).not.toHaveBeenCalled()
+    expect(storage.assets.get(ORIGIN)?.has('/old-chunk.js')).toBe(true)
+    expect(storage.writePin).toHaveBeenCalledOnce()
   })
 
   it('an unchanged bundle installs silently again without rewriting a single file or the pin', async () => {
@@ -419,7 +399,7 @@ describe('createLoader: against the real node:fs storage', () => {
     [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
   }
 
-  it('still writes the pin record when a subtree under the code root cannot be listed during the prune', async () => {
+  it('an update commits over the real code/ tree and rewrites the pin with the new clock reading', async () => {
     const userData = await mkdtemp(join(tmpdir(), 'orivon-loader-install-'))
     const storage = nodeLoaderStorage(userData)
     const appDir = join(userData, 'apps', appRootDirectoryName(ORIGIN))
@@ -427,26 +407,14 @@ describe('createLoader: against the real node:fs storage', () => {
     const first = await createLoader({ fetch: stubFetch(ROUTES), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER }).load(ORIGIN, NO_GRANTS)
     expect(first.outcome).toBe('installed')
 
-    // Left behind by an earlier install and since made unreadable: the prune
-    // on the update below walks straight into it.
-    await mkdir(join(appDir, 'code', 'sealed'), { recursive: true })
-    await writeFile(join(appDir, 'code', 'sealed', 'stale.css'), 'stale')
-    await chmod(join(appDir, 'code', 'sealed'), 0o000)
-    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
-
     const updated: Record<string, RouteSpec> = { ...ROUTES, [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html><p>v2</p>') } }
     const loader = createLoader({ fetch: stubFetch(updated), storage, now: fixedNow(1_700_000_009_000), resolve: PUBLIC_RESOLVER })
     const pending = await loader.load(ORIGIN, NO_GRANTS)
     if (pending.outcome !== 'needs-reconsent') throw new Error(`fixture expected needs-reconsent, got ${pending.outcome}`)
     const again = await loader.installFetched(ORIGIN, pending.manifest, pending.tree, pending.entries)
 
-    logged.mockRestore()
-    await chmod(join(appDir, 'code', 'sealed'), 0o755) // so a later run can clean up /tmp
-
     expect(again.outcome).toBe('installed')
-    // The pin record ON DISK carries this second install's clock reading --
-    // proof writePin ran after the prune, rather than the prune aborting
-    // install() and leaving the first record standing.
+    expect(await readFile(join(appDir, 'code', 'index.html'), 'utf8')).toBe('<!doctype html><p>v2</p>')
     const pin = JSON.parse(await readFile(join(appDir, 'pin.json'), 'utf8')) as { pinnedAt: number }
     expect(pin.pinnedAt).toBe(1_700_000_009_000)
   })

@@ -9,7 +9,7 @@ import type { PinRecord } from '../broker/policy/pin.js'
 
 /** Everything a request needs decided before a byte is read off disk. */
 export type ResolvedRequest =
-  | { readonly ok: true, readonly canonicalPath: string }
+  | { readonly ok: true, readonly canonicalPath: string, readonly retainedLeaf?: string }
   | { readonly ok: true, readonly redirectTo: string }
   | { readonly ok: false, readonly reason: string }
 
@@ -49,8 +49,18 @@ function looksLikeRoute (pathname: string): boolean {
  *   the history fallback every SPA host provides: a reload of a client-side
  *   route must not 404. A subresource or `fetch()` for the same path is
  *   still denied.
+ *
+ * `retained` (path -> leaf) are a previous pin's files this process served
+ * before an update: still answered, as `retainedLeaf`, which the caller must
+ * check the bytes against before serving them.
  */
-export function resolveRequestPath (entryPath: string | null, pin: PinRecord, requestUrl: string, navigation = false): ResolvedRequest {
+export function resolveRequestPath (
+  entryPath: string | null,
+  pin: PinRecord,
+  requestUrl: string,
+  navigation = false,
+  retained?: ReadonlyMap<string, string>
+): ResolvedRequest {
   const url = new URL(requestUrl)
   const entryPinned = entryPath !== null && isPinnedPath(pin, entryPath)
 
@@ -61,6 +71,8 @@ export function resolveRequestPath (entryPath: string | null, pin: PinRecord, re
 
   const canonicalPath = canonicalAssetPath(requestUrl)
   if (canonicalPath !== null && isPinnedPath(pin, canonicalPath)) return { ok: true, canonicalPath }
+  const retainedLeaf = canonicalPath === null ? undefined : retained?.get(canonicalPath)
+  if (canonicalPath !== null && retainedLeaf !== undefined) return { ok: true, canonicalPath, retainedLeaf }
   if (navigation && entryPinned && looksLikeRoute(url.pathname)) return { ok: true, canonicalPath: entryPath }
   return { ok: false, reason: canonicalPath === null ? 'not a valid canonical asset path' : 'not in the pinned asset set' }
 }

@@ -179,13 +179,17 @@ subdirectory, not yet written into, looks indistinguishable from a leftover
 from directories this prune deleted a file from. The cost is that a directory left empty by an
 interrupted earlier run survives until a prune deletes from it again.
 
-**Why a fresh install does not prune.** `install()` skips `pruneAssets` on the TOFU path: no
-earlier pin exists for that origin, so there is nothing a previous bundle could have left behind,
-and the walk would only re-read every file the write loop just wrote: one `realpath` per
-declared asset, up to `MAX_BUNDLE_ENTRIES` of them. The one state this gives up on is an origin
-whose `code/` tree survived while its pin record did not (a crash between the two writes): those
-files are not swept by the re-install that follows, but the re-install does write a pin, so the
-next update prunes them.
+**Why an install never prunes: the next start does.** An update can land while the app is open,
+and a single-page app still running the previous bundle lazily `import()`s its old hashed chunks;
+pruning at install turned each of those into a 404 and a `ChunkLoadError`. So
+[`install.ts`](install.ts) leaves every superseded file on disk, and `electron-serve.ts` keeps
+serving them for the rest of the process: `registerServingFor` remembers every path each pin it
+served declared (`servedAssets`) and hands the new handler the ones the new pin dropped
+(`retainedAssets`), which [`serve-path.ts`](serve-path.ts) answers only after checking the file
+still hashes to the leaf it was pinned with. A path both pins declare is overwritten, so only the
+new bytes exist; that is the entry document and any unhashed file, which the reload fetches anyway.
+`restorePinnedServing` prunes to the verified pin, and clears any staging a crash left, at the
+next start, before any page can still need the old files.
 
 **Re-verification cost: whole-tree, once, at handler creation, not one leaf hash per request.**
 [`ADR-0007`](../../docs/decisions/ADR-0007-cached-bundles-served-at-their-own-origin.md) requires
