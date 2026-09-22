@@ -19,13 +19,14 @@
 // `context` is supplied by the caller because the grant ledger lives in
 // src/broker/, which this file does not read; see LoadContext below.
 
-import type { Manifest } from '../contracts/index.js'
+import type { CapabilityKind, Manifest } from '../contracts/index.js'
 import type { BundleEntry, BundleTree } from '../broker/policy/bundle-hash.js'
 import type { Resolver } from '../broker/policy/connect.js'
 import { fromBundleTree, parsePinRecord } from '../broker/policy/pin.js'
 import type { PinRecord } from '../broker/policy/pin.js'
 import { decideUpdate } from '../broker/policy/update.js'
 import type { PatternSet } from '../broker/policy/update.js'
+import { withoutSwitchedOffCapabilities } from '../broker/policy/manifest-patterns.js'
 import { fetchBundle } from './fetch-bundle.js'
 import type { Fetch } from './fetch-bundle.js'
 import type { LoaderStorage } from './storage.js'
@@ -95,6 +96,23 @@ export interface LoadContext {
    * being offered is the only point where both facts are available at once.
    */
   readonly acknowledgedRollbackVersion: string | undefined
+  /**
+   * Capability kinds this origin's person has explicitly switched off from
+   * the site-info popover (`Broker.declinedCapabilitiesFor`, the same
+   * advisory record install-consent declines already use) -- optional so
+   * every pre-existing `LoadContext` literal keeps compiling unchanged.
+   * `decideAndRoute` below drops a switched-off, not-currently-held kind
+   * from what it asks `decideUpdate` to treat as newly requested, so a
+   * still-declared but turned-off capability does not reappear as a prompt
+   * on the next visit. See `withoutSwitchedOffCapabilities`'s own doc
+   * (`../broker/policy/manifest-patterns.js`) for why "not currently held"
+   * is the condition, not "declined" alone. Typed with an explicit
+   * `| undefined` rather than optional-alone: `Broker.declinedCapabilitiesFor`
+   * (this field's real source, `../main/install/app-install.js`) resolves
+   * `undefined` for "never declined", and `exactOptionalPropertyTypes`
+   * requires that value be a legal one to assign, not merely an omittable key.
+   */
+  readonly declinedCapabilities?: readonly CapabilityKind[] | undefined
 }
 
 export interface LoadInstalled {
@@ -362,11 +380,17 @@ async function decideAndRoute (
   const existingPin = parsePinRecord(rawPin)
   const pinnedHash = existingPin?.bundleHash ?? ''
 
+  // The full declared set still names `requestedPatterns` below on a real
+  // capability-prompt outcome (every screen shows the WHOLE outstanding
+  // request, install-consent.ts's own convention) -- only the WIDENING
+  // CHECK itself is narrowed, so a capability the person switched off does
+  // not read as newly requested on every later visit while it stays off.
+  const declaredPatterns = patternSetFromCapabilities(manifest.capabilities)
   const decision = decideUpdate({
     pinnedHash,
     newHash: tree.root,
     grantedPatterns: context.grantedPatterns,
-    newPatterns: patternSetFromCapabilities(manifest.capabilities),
+    newPatterns: withoutSwitchedOffCapabilities(declaredPatterns, context.grantedPatterns, context.declinedCapabilities),
     version: manifest.version,
     versionFloor: context.versionFloor,
     // The comparison LoadContext.acknowledgedRollbackVersion's own doc
@@ -385,7 +409,7 @@ async function decideAndRoute (
         manifest,
         tree,
         entries,
-        requestedPatterns: patternSetFromCapabilities(manifest.capabilities)
+        requestedPatterns: declaredPatterns
       }
     case 'reconsent':
       return { outcome: 'needs-reconsent', canonicalOrigin, manifest, tree, entries }

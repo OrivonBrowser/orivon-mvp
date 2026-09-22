@@ -63,13 +63,19 @@ export async function installFromHint (deps: AppInstallDeps, hintingOrigin: stri
   }
 
   return await withOriginQueue(origin, async () => {
-    const [grants, versionFloor, acknowledgedRollbackVersion] = await Promise.all([
+    const [grants, versionFloor, acknowledgedRollbackVersion, declinedCapabilities] = await Promise.all([
       deps.broker.app.grants(origin),
       deps.broker.versionFloorFor(origin),
-      deps.broker.rollbackAcknowledgedVersionFor(origin)
+      deps.broker.rollbackAcknowledgedVersionFor(origin),
+      // The site-info popover's own "off" switch (../permissions/site-
+      // switches.js): the SAME advisory record install-consent declines
+      // already write to (../consent/request-grant.js's addDeclinedCapability),
+      // so this needs no new bookkeeping -- see LoadContext.declinedCapabilities'
+      // own doc for what Loader.load() does with it.
+      deps.broker.declinedCapabilitiesFor(origin)
     ])
 
-    const context: LoadContext = { grantedPatterns: patternSetFromGrants(grants), versionFloor, acknowledgedRollbackVersion }
+    const context: LoadContext = { grantedPatterns: patternSetFromGrants(grants), versionFloor, acknowledgedRollbackVersion, declinedCapabilities }
     const result = await deps.loader.load(hintedUrl, context)
     // S4-5: registerApp/consent for an accepted install, and driving each
     // of the other four outcomes to a decision, all live in

@@ -230,6 +230,91 @@ describe('createLoader: refetch against an existing pin', () => {
     expect(result.requestedPatterns['tcp.connect']).toEqual(['*:*'])
   })
 
+  // The site-info popover's "off" switch must stick: LoadContext.
+  // declinedCapabilities names a kind the person switched off, and a
+  // re-visit must not treat that still-declared kind as newly requested --
+  // see withoutSwitchedOffCapabilities's own doc for why "not currently
+  // held" is the condition.
+  describe('declinedCapabilities (the site-info popover\'s "off" switch, A2)', () => {
+    it('a person who granted fs then turned it off is not re-prompted on the next, byte-identical visit', async () => {
+      const storage = memoryStorage()
+      // Both kinds are declared from the start -- ADR-0009 makes the
+      // manifest a hashed leaf, so declaring a capability AFTER install
+      // would itself change the bundle hash and force at least
+      // `reconsent`. The realistic "off sticks" scenario is a manifest
+      // that never changes: the person granted fs once, later revoked it
+      // from the site-info popover, and the SAME manifest keeps being
+      // served on every later visit.
+      const routes: Record<string, RouteSpec> = {
+        [MANIFEST_URL]: { body: utf8(manifestJson({ capabilities: { net: { tcp: { connect: ['api.example.com:443'] } }, fs: { quotaBytes: 1024 } } })) },
+        [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
+      }
+      const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER })
+      // Fresh TOFU install -- both kinds granted at this point, in the real ledger.
+      await loader.load(ORIGIN, { grantedPatterns: { 'tcp.connect': ['api.example.com:443'], fs: [] }, versionFloor: '0.0.0', acknowledgedRollbackVersion: undefined })
+
+      // fs has since been revoked (site-switches.js's turnOff) and declined
+      // -- grantedPatterns no longer holds it, but the manifest still
+      // declares it, unchanged.
+      const context: LoadContext = { grantedPatterns: { 'tcp.connect': ['api.example.com:443'] }, versionFloor: '0.0.0', acknowledgedRollbackVersion: undefined, declinedCapabilities: ['fs'] }
+
+      const result = await loader.load(ORIGIN, context)
+
+      expect(result.outcome).toBe('installed')
+    })
+
+    it('a currently-held kind that was once declined is still watched for widening, even if the person later turns it back on', async () => {
+      const storage = memoryStorage()
+      const narrowRoutes: Record<string, RouteSpec> = {
+        [MANIFEST_URL]: { body: utf8(manifestJson({ capabilities: { net: { tcp: { connect: ['api.example.com:443'] } } } })) },
+        [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
+      }
+      const narrowLoader = createLoader({ fetch: stubFetch(narrowRoutes), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER })
+      const granted: LoadContext = { grantedPatterns: { 'tcp.connect': ['api.example.com:443'] }, versionFloor: '0.0.0', acknowledgedRollbackVersion: undefined }
+      await narrowLoader.load(ORIGIN, granted)
+
+      // The manifest now widens tcp.connect itself -- HELD, so it must
+      // still prompt, whatever declinedCapabilities says about that kind.
+      const wideRoutes: Record<string, RouteSpec> = {
+        [MANIFEST_URL]: { body: utf8(manifestJson({ version: '1.0.1', capabilities: { net: { tcp: { connect: ['*:*'] } } } })) },
+        [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
+      }
+      const wideLoader = createLoader({ fetch: stubFetch(wideRoutes), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER })
+      const context: LoadContext = { ...granted, declinedCapabilities: ['tcp.connect'] }
+
+      const result = await wideLoader.load(ORIGIN, context)
+
+      expect(result.outcome).toBe('needs-capability-prompt')
+    })
+
+    it('a bundle change is still caught even when its only widening is a switched-off kind -- never installs new code unprompted', async () => {
+      const storage = memoryStorage()
+      const narrowRoutes: Record<string, RouteSpec> = {
+        [MANIFEST_URL]: { body: utf8(manifestJson({ capabilities: { net: { tcp: { connect: ['api.example.com:443'] } } } })) },
+        [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
+      }
+      const narrowLoader = createLoader({ fetch: stubFetch(narrowRoutes), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER })
+      const granted: LoadContext = { grantedPatterns: { 'tcp.connect': ['api.example.com:443'] }, versionFloor: '0.0.0', acknowledgedRollbackVersion: undefined }
+      await narrowLoader.load(ORIGIN, granted)
+
+      // New code AND a newly declared, declined-and-unheld capability.
+      const wideRoutes: Record<string, RouteSpec> = {
+        [MANIFEST_URL]: { body: utf8(manifestJson({ version: '1.0.1', capabilities: { net: { tcp: { connect: ['api.example.com:443'] } }, fs: { quotaBytes: 1024 } } })) },
+        [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>, changed') }
+      }
+      const wideLoader = createLoader({ fetch: stubFetch(wideRoutes), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER })
+      const context: LoadContext = { ...granted, declinedCapabilities: ['fs'] }
+
+      const result = await wideLoader.load(ORIGIN, context)
+
+      // Filtering out the declined 'fs' key leaves newPatterns identical to
+      // grantedPatterns, so widensAuthority is false -- but the bundle hash
+      // differs, so ordinaryEscalation must still fall through to
+      // 'reconsent', never 'silent'.
+      expect(result.outcome).toBe('needs-reconsent')
+    })
+  })
+
   it('a version below the version floor, never acknowledged -> needs-rollback-choice, and nothing is persisted (T19, 2026-09-04)', async () => {
     const storage = memoryStorage()
     await install(storage)
