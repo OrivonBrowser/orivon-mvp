@@ -47,11 +47,37 @@ engine primitive; only the callbacks do. `ADR-0002`'s amendment is explicit that
 ladder is Node → Mojo, and that Wasmtime would be a different app model rather than a swap
 beneath a stable API, and that ladder lives in the ADR rather than being restated here.
 
-**Split across five files** ([`code-guidelines.md`](../../../docs/development/code-guidelines.md)
+**Split across files** ([`code-guidelines.md`](../../../docs/development/code-guidelines.md)
 Rule 2): [`handle-contracts.ts`](handle-contracts.ts) (types), [`../errors.ts`](../errors.ts)
 (`OrivonError`), [`handle-store.ts`](handle-store.ts) (`OriginTable`, one origin's state),
+[`tombstones.ts`](tombstones.ts) (what a table remembers about handles and grants that are
+gone), [`grant-replacement.ts`](grant-replacement.ts) (one grant replaced by another),
 [`origin-registry.ts`](origin-registry.ts) (the map of origins), and [`handles.ts`](handles.ts)
 itself (the operations run against that map).
+
+**A handle that has ended answers its owner with how it ended.** `OriginTable.record` remembers,
+per recently-ended id, whether it was revoked (a grant, pick or session withdrawn: `'revoked'`) or
+closed (by the app, or by dying: `'closed'` with `platformCode: 'EBADF'`, the errno Node code
+expects for a closed descriptor). Every other origin still gets the uniform `'denied'`, so this
+reveals nothing about ids an origin never held.
+
+**Replacing a grant is not revoking it** ([`grant-replacement.ts`](grant-replacement.ts),
+`HandleTable.replaceGrant`). A capability has at most one live grant, so a wider
+`app.requestGrant`, or install consent after an update, replaces it, and the old grant's handles
+must go somewhere. Revoking all of them reset every connection an app held the moment it asked for
+*more*. Instead each handle is judged against the new patterns by its own `stillCovered`
+predicate, which the acquiring capability supplies (the same policy decision that authorised it,
+re-run on what it actually reached, never resolving again); a covered handle is re-filed under the
+new grant, and only the rest are revoked. A derived handle is judged by its parent. A handle with
+no predicate (a file handle, a web context) survives only when the new patterns cover the old ones
+entirely.
+
+*Acquisitions still in flight* have no resource to judge yet. When the new grant covers the old one
+entirely they were authorised by patterns it still grants, so the old id becomes an alias: a late
+registration files under the new grant, and revoking the new grant also cancels work still scoped
+to the old one. Otherwise the old grant is tombstoned and its in-flight work is cancelled exactly as
+a revoke would, which fails closed. Aliases are bounded by the number of replacements and dropped
+with the table.
 
 **A deviation from the spec is recorded in `handle-contracts.md` and in `open-questions.md`, not
 only in source comments**: a code comment is the one place a reader of the specification will

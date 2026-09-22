@@ -5,7 +5,7 @@
 // Spec: docs/architecture/handle-contracts.md. See ./handles.ts's header for
 // why this directory holds state at all and what it may and may not import.
 
-import type { Datagram, DirectoryHandle, FileHandle, GrantId, Handle, OrivonErrorCode, TcpSocket } from '../../contracts/index.js'
+import type { Datagram, DirectoryHandle, FileHandle, GrantId, Handle, OrivonErrorCode, Pattern, TcpSocket } from '../../contracts/index.js'
 
 /**
  * What kind of resource a handle names.
@@ -111,7 +111,11 @@ export interface HandleEntry {
   /** The canonical origin, which may differ from the string the caller passed. */
   readonly origin: string
   readonly kind: HandleKind
-  /** Captured at acquisition. This is what the "Revocation" section walks. */
+  /**
+   * Captured at acquisition. This is what the "Revocation" section walks,
+   * except that `HandleTable.replaceGrant` may re-file a handle under the
+   * grant that replaced this one; the table tracks that on its own record.
+   */
   readonly authorisedBy: Authorisation
   /** The handle this one was derived from, or null if it was acquired directly. */
   readonly parentId: string | null
@@ -147,6 +151,12 @@ export interface AcquireRequest {
    * budget than the app is entitled to, only the largest one.
    */
   readonly socketLimit?: number
+  /**
+   * Whether a replacement grant's `patterns` still authorise this handle
+   * (`HandleTable.replaceGrant`). Omitted, the handle survives a replacement
+   * only when the new patterns cover the old ones entirely.
+   */
+  readonly stillCovered?: (patterns: readonly Pattern[]) => boolean
 }
 
 /**

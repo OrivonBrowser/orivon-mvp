@@ -10,7 +10,7 @@ import type { GrantLedger } from './grants/grant-ledger.js'
 import { fail } from './errors.js'
 import { mapIoError, mapTlsError } from './io-errors.js'
 import { checkBind } from './policy/bind.js'
-import { checkConnect } from './policy/connect.js'
+import { checkConnect, connectStillAuthorised } from './policy/connect.js'
 import { checkConnectSecure } from './policy/connect-secure.js'
 import { checkLookup } from './policy/lookup.js'
 import { isPublicUnicast } from './policy/address.js'
@@ -129,7 +129,8 @@ export function createNetCapability ({ deps, handleTable, ledger, canonical }: N
         kind: 'tcpSocket',
         authorisedBy: { by: 'grant', grantId: current.id },
         destroy,
-        socketLimit: ledger.socketAllowance(key)
+        socketLimit: ledger.socketAllowance(key),
+        stillCovered: (patterns) => connectStillAuthorised(patterns, opts.host, socketFields.remoteAddress, opts.port)
       })
 
       return toFailableSocket(key, entry, socketFields)
@@ -193,7 +194,8 @@ export function createNetCapability ({ deps, handleTable, ledger, canonical }: N
         kind: 'tcpSocket',
         authorisedBy: { by: 'grant', grantId: current.id },
         destroy,
-        socketLimit: ledger.socketAllowance(key)
+        socketLimit: ledger.socketAllowance(key),
+        stillCovered: (patterns) => checkConnectSecure(patterns, opts.host, opts.port).allowed
       })
 
       return toFailableSocket(key, entry, socketFields)
@@ -288,7 +290,8 @@ export function createNetCapability ({ deps, handleTable, ledger, canonical }: N
         kind: 'udpSocket',
         authorisedBy: { by: 'grant', grantId: current.id },
         destroy: bound.destroy,
-        socketLimit: ledger.socketAllowance(key)
+        socketLimit: ledger.socketAllowance(key),
+        stillCovered: (patterns) => checkBind(patterns, bound.localPort).allowed
       })
 
       // BUILT FIELD BY FIELD, NOT SPREAD, unlike `connect`'s socketFields.
@@ -348,7 +351,8 @@ export function createNetCapability ({ deps, handleTable, ledger, canonical }: N
         kind: 'tcpServer',
         authorisedBy: { by: 'grant', grantId: current.id },
         destroy: listened.destroy,
-        socketLimit: ledger.socketAllowance(key)
+        socketLimit: ledger.socketAllowance(key),
+        stillCovered: (patterns) => checkBind(patterns, listened.localPort).allowed
       })
 
       // `highWaterMark: 0`: handle-contracts.md's "TcpServer" section --

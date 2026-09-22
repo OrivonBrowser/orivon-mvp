@@ -175,6 +175,19 @@ export { MAX_PATTERNS } from './connect-preflight.js'
 export const MAX_ANSWERS = 64
 
 /**
+ * Whether `patterns` still authorise a connection that is already open to
+ * `address`:`port`, asked for as `hostArg`: checkConnect's own decision,
+ * re-run against a replacement grant (HandleTable.replaceGrant) with the
+ * address the socket actually reached, so nothing is resolved again.
+ */
+export function connectStillAuthorised (patterns: readonly Pattern[], hostArg: string, address: string, port: number): boolean {
+  const pre = preflightConnect(patterns, hostArg, port)
+  if (!pre.ok) return false
+  const reached = canonicalAddress(address)
+  return reached !== null && pre.eligible.some((pattern) => patternAuthorises(pattern, pre.requested, reached, port))
+}
+
+/**
  * Decides whether `patterns` -- the GRANTED pattern list, never the
  * manifest's DECLARED one (the two differ whenever the user granted less
  * than an app asked for; A18) -- authorises an outbound TCP connection to

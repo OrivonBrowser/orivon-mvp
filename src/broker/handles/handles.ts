@@ -1,29 +1,23 @@
 // The per-origin handle table and the revocation cascade.
 //
 // Spec: docs/architecture/handle-contracts.md's "Common shape", "Revocation"
-// and "Limits" sections. See README.md, Design notes, for why this file
-// holds state, the five-file split, and where a spec deviation is recorded.
-//
-// THE FOUR PROPERTIES THIS EXISTS TO GUARANTEE -- see README.md for the full
-// reasoning behind each:
-//   1. Every operation re-checks ownership (security-model.md T11c).
-//   2. Every handle records the grant that authorised it.
-//   3. Revocation is immediate and abrupt.
-//   4. Limits are enforced by rejection, never by queueing (T11, T11b).
+// and "Limits" sections. README.md states the four properties this exists to
+// guarantee, and its Design notes say why this file holds state, the split
+// across files, and where a spec deviation is recorded.
 
 import { LIMITS } from '../../contracts/index.js'
-import type { GrantId, OrivonError, OrivonErrorCode } from '../../contracts/index.js'
+import type { GrantId, OrivonError, OrivonErrorCode, Pattern } from '../../contracts/index.js'
 import { fail } from '../errors.js'
 import { OriginRegistry } from './origin-registry.js'
 import {
   OriginTable,
   NOT_YOURS,
-  REVOKED_GRANT_MEMORY,
   SOCKET_KINDS,
-  remember,
   cancelOperation
 } from './handle-store.js'
+import { REVOKED_GRANT_MEMORY, remember } from './tombstones.js'
 import type { PendingOperation } from './handle-store.js'
+import { aliasesOf, replaceGrantIn } from './grant-replacement.js'
 import type {
   AcquireDerivedRequest,
   AcquireRequest,
@@ -61,7 +55,7 @@ export class HandleTable {
       const table = this.#table(origin)
       table.assertAcquirable(request.authorisedBy)
       table.assertCapacity(request.kind, request.socketLimit)
-      return table.insert(origin, request.kind, request.authorisedBy, null, request.destroy)
+      return table.insert(origin, request.kind, request.authorisedBy, null, request.destroy, request.stillCovered)
     } catch (error) {
       this.#releaseUnregistered(request.origin, request.destroy)
       throw error
@@ -94,9 +88,9 @@ export class HandleTable {
       if (!SOCKET_KINDS.has(parent.entry.kind) || request.kind !== 'tcpSocket') {
         throw fail('internal', 'only a tcpSocket may be derived, and only from a socket')
       }
-      table.assertAcquirable(parent.entry.authorisedBy)
+      table.assertAcquirable(parent.authorisation)
       table.assertCapacity(request.kind, request.socketLimit)
-      const entry = table.insert(origin, request.kind, parent.entry.authorisedBy, parent.entry.id, request.destroy)
+      const entry = table.insert(origin, request.kind, parent.authorisation, parent.entry.id, request.destroy)
       parent.children.add(entry.id)
       return entry
     } catch (error) {
@@ -317,6 +311,12 @@ export class HandleTable {
     // table yet, and it must be refused when it does.
     const table = existing ?? this.#table(key)
     remember(table.revokedGrants, grantId, REVOKED_GRANT_MEMORY)
+    // Grants this one replaced while keeping their handles: work still in
+    // flight under them answers to this grant now (./grant-replacement.ts).
+    for (const alias of aliasesOf(table, grantId)) {
+      table.grantAliases.delete(alias)
+      void this.revoke(origin, alias)
+    }
 
     const pending = table.grantOperations.get(grantId)
     if (pending !== undefined) {
@@ -344,6 +344,21 @@ export class HandleTable {
       // wrong set's size.
     }
 
+    this.#reap(key, table)
+    await Promise.resolve()
+  }
+
+  /**
+   * One grant replaced by another for the same capability. Handles the new
+   * `patterns` still cover (each handle's own `stillCovered`, or `coversAll`
+   * when it has none) are re-filed under `replacement` and keep running;
+   * the rest are revoked exactly as `revoke(replaced)` would revoke them.
+   * Does not wait for teardown, for `revoke`'s reason.
+   */
+  async replaceGrant (origin: string, replaced: GrantId, replacement: GrantId, patterns: readonly Pattern[], coversAll: boolean): Promise<void> {
+    const key = this.#key(origin)
+    const table = this.#registry.existing(key) ?? this.#table(key)
+    replaceGrantIn(table, replaced, replacement, patterns, coversAll, this.#onFault)
     this.#reap(key, table)
     await Promise.resolve()
   }
