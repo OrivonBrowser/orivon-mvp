@@ -46,8 +46,11 @@ has no privileged access to anything here.
 
 The split follows a boundary that already existed. Nothing in the shell depends on a port at
 runtime, because a port is just an origin: grants attach to the URL, so an app the browser has
-never heard of behaves identically to one shipped beside it. The only coupling was in the test
-suite, and it was a path.
+never heard of behaves identically to one shipped beside it. The coupling is in the test suite.
+Most of it was a path. It is not only a path: `test/e2e-freetube-real.test.ts` also asserts that
+FreeTube's storage lands as nedb files at the app's own fs root, which is a claim about a bundle
+built in the other repository. `open-questions.md` B5 carries that, and where those assertions
+belong is unsettled.
 
 Separating them also puts the porting work where its contributors are. The most useful
 contribution to Orivon's app story is a port of an app somebody already uses, and that should not
@@ -62,6 +65,9 @@ require touching the browser.
   drives that repository's own executor rather than a server kept here.
 - Two repositories must be released together when a capability changes shape, because a bridge
   compiled against the old surface will keep calling it.
+- **CI here cannot prove a port still works.** It never checks out `orivon-ports`, so
+  `test/e2e-freetube-real.test.ts` skips and a port's regression is green on this side. Proving
+  it needs a sibling checkout in CI, which this decision does not set up.
 - Documentation that cited `apps/freetube-real/` or the port recon now cites the other
   repository by name. Those references cannot be checked by a link checker here.
 - `orivon-ports` is AGPL-3.0-only, matching this repository, so contracts and shared types can

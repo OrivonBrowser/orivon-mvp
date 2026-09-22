@@ -82,6 +82,7 @@ moved here so those documents can state the behaviour without the provenance.
 | 2026-09-10 | The async rule narrows to network operations; `fs` gains `readFileSync` | ADR-0016, `../architecture/capability-api.md` |
 | 2026-09-15 | `main` syncs with `origin` by `--ff-only`, unprompted on a clean tree; on a dirty tree the agent reports and does not act | `CLAUDE.md` |
 | 2026-09-21 | Ported third-party apps and the porting harness move to `orivon-ports`; `apps/` here keeps the flagship and the test fixtures | ADR-0020, `CLAUDE.md`, `ARCHITECTURE.md` |
+| 2026-09-22 | A port couples to the shell through storage assertions, not only a test path; where those assertions belong is unsettled | ADR-0020, open-questions B5 |
 
 ## Adding a row
 
