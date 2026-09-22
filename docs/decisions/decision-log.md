@@ -35,6 +35,7 @@ guessed. Rows with no ID were lifted out of the prose of the documents named bes
 | `d-0032` | 2026-09-16 | The `fs.userSelected` wording gate closed; the FILE shape reuses `fs.open`'s handle-scoped siblings | A187, A194 |
 | `d-0033` | 2026-09-17 | AI sessions open one or two PRs per working day, not one per feature | `../development/parallel-work.md`, `CLAUDE.md` |
 | `d-0034` | 2026-09-17 | A PR body scales to several changes; a bare "None" is not an answer; `ux:` gains `dev` | `../development/pr-blueprint.md` |
+| `d-0035` | 2026-09-22 | The routed `fetch` carries the platform's own property descriptor; a page may replace it, and detection reads the function, not the descriptor | `../../src/preload/README.md`, `ADR-0017` |
 
 ## Directives
 

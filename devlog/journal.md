@@ -21,6 +21,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 ### Done / results
 
 - Port method captured as the `orivon-porting` skill: triage, recon greps, five buckets, the escape test, two silent build traps.
+- Routed `fetch` now carries the platform's descriptor: a locked one killed any app using a `fetch` ponyfill, and guarded nothing.
 
 ### In my head
 

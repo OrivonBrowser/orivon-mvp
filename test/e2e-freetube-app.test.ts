@@ -67,16 +67,18 @@ it(
 
         // ---- What the app itself concluded about its tab -----------------
         const detected = await evaluateRetrying(view, async () => {
-          const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'fetch')
           const grants = await (globalThis as unknown as { orivon: { app: { grants: () => Promise<unknown[]> } } }).orivon.app.grants()
           return {
             hasOrivon: typeof (globalThis as { orivon?: unknown }).orivon === 'object',
-            routedFetch: descriptor !== undefined && descriptor.writable === false && descriptor.configurable === false,
+            // The tell: the routed fetch is an ordinary JS function, while
+            // a native one reports [native code]. That is all it claims --
+            // the routed binding carries the platform's own descriptor.
+            notNativeFetch: !/\[native code\]/.test(String(globalThis.fetch)),
             grantKinds: (grants as Array<{ capability: string }>).map((g) => g.capability),
             csp: document.querySelector('meta[http-equiv]')?.getAttribute('content') ?? '(header only)'
           }
         })
-        check('this is a REGISTERED APP TAB: fetch is routed through the broker', detected.routedFetch, JSON.stringify(detected))
+        check('this is a REGISTERED APP TAB: window.fetch is not the platform\'s own function, so the routed fetch is installed', detected.notNativeFetch, JSON.stringify(detected))
         check('the app holds the two grants it declared', detected.grantKinds.includes('https.connect') && detected.grantKinds.includes('fs'), JSON.stringify(detected.grantKinds))
 
         // ---- The broker's own TLS dial, apart from the app's use of it ---
