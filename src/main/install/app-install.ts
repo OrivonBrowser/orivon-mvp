@@ -63,6 +63,9 @@ export async function installFromHint (deps: AppInstallDeps, hintingOrigin: stri
   }
 
   return await withOriginQueue(origin, async () => {
+    // Read before anything below can register the origin: serving
+    // registration (the loader's onInstalled) and registerApp both do.
+    const wasRegistered = deps.broker.app.isRegisteredSync(origin)
     const [grants, versionFloor, acknowledgedRollbackVersion] = await Promise.all([
       deps.broker.app.grants(origin),
       deps.broker.versionFloorFor(origin),
@@ -74,6 +77,8 @@ export async function installFromHint (deps: AppInstallDeps, hintingOrigin: stri
     // S4-5: registerApp/consent for an accepted install, and driving each
     // of the other four outcomes to a decision, all live in
     // driveLoadResult -- see ./update-outcomes.ts's own header.
-    return await driveLoadResult(deps, result, context)
+    const driven = await driveLoadResult(deps, result, context)
+    if (driven.outcome !== 'installed' || wasRegistered || !deps.broker.app.isRegisteredSync(origin)) return driven
+    return { ...driven, newlyRegistered: true }
   })
 }

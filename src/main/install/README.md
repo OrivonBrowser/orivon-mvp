@@ -41,8 +41,18 @@ the dialog is still on screen, and get `'denied'`, which is precisely the race a
 app's code runs is meant to remove. On every later visit there is no race at all: the grant is
 already held, so the app starts with a decided answer. The gap is first visit only.
 
-Closing it would mean holding the page before its scripts run, a change to how a tab navigates
-rather than anything this file can do. It is accepted as a known limitation (A146).
+That first load also runs from the network, in an ordinary tab: the app-tab flag and the
+partition are fixed when a tab is built, before the origin was registered, so it has no routed
+fetch and no process shim either. **One automatic reload closes both.** `installFromHint` marks
+an `'installed'` result `newlyRegistered` when this install is what registered the origin with
+the broker this session, and [`manifest-hint.ts`](manifest-hint.ts) reloads the tab that reported
+the hint exactly then, after consent has been answered. The reloaded tab is rebuilt in the app's
+partition with its flag, runs from the pinned cache, and starts with a decided grant. A repeat
+visit, or an app restored at startup (already registered from its pinned manifest), is never
+reloaded, so the reload cannot loop.
+
+What stays open is only that first, pre-reload load itself: holding the page before its scripts
+run would be a change to how a tab navigates rather than anything this directory can do (A146).
 
 **[`app-install-subsystem.ts`](app-install-subsystem.ts): publishes `ctx.installApp`, the one
 install entry point.** It closes over the broker, the loader and the real consent dialog

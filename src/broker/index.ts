@@ -28,6 +28,7 @@ import type { PersistedApp } from './grants/ledger-storage.js'
 import { HandleTable } from './handles/handles.js'
 import { errnoOf, fail } from './errors.js'
 import { GrantLedger } from './grants/grant-ledger.js'
+import { socketAllowance } from './grants/resource-limits.js'
 import { originFromUrl } from './policy/origin.js'
 import { createNetCapability } from './net-capability.js'
 import { createIdCapability } from './id-capability.js'
@@ -55,6 +56,15 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
   // left to grow a third concern into, A184's own landing having brought it
   // to exactly 500).
   const pickedPaths = new PickedPathLedger(deps.ledgerStorage)
+  // A restored app's pinned, hash-verified manifest (`hydrateFromPinnedManifest`),
+  // standing in until `registerApp` supplies a fresh one. Not written into
+  // `ledger`: `GrantLedger.registerApp` would raise the version floor and
+  // mark the grants hydrated, and the fresh manifest must still re-validate
+  // the restored grants when it arrives. The ledger's manifest always wins.
+  const pinnedManifests = new Map<string, Manifest>()
+  function registeredManifest (key: string): Manifest | undefined {
+    return ledger.manifestFor(key) ?? pinnedManifests.get(key)
+  }
 
   /**
    * The isolation key, through the one definition of it (policy/origin.ts) --
@@ -105,7 +115,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
   const fs = { ...createFsCapability({ deps, handleTable, ledger, canonical }), ...createUserSelectedCapability({ deps, handleTable, ledger, pickedPaths, canonical }) }
 
   async function manifest (origin: string): Promise<Manifest> {
-    const found = ledger.manifestFor(canonical(origin))
+    const found = registeredManifest(canonical(origin))
     // A broker fault, not a denial: every real caller registers a manifest
     // before wiring an origin's IPC at all (see Broker.registerApp's doc).
     // An app asking its own broker "what is my manifest" and getting nothing
@@ -133,9 +143,9 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
    * (`./fs-capability.ts`) is the precedent for a synchronous sibling of an
    * already-async method answering the same in-memory ledger state.
    *
-   * Reads `ledger.manifestFor` directly, exactly what the async `manifest`
-   * above does before it throws -- "registered" means exactly "has a
-   * manifest", nothing more (a registered app may still hold zero grants).
+   * Reads `registeredManifest`, exactly what the async `manifest` above
+   * does before it throws -- "registered" means exactly "has a manifest",
+   * fresh or pinned, nothing more (a registered app may still hold zero grants).
    * Never throws: an invalid origin string is simply "not registered",
    * because the caller here is UI plumbing deciding whether to route
    * `fetch()`, not a capability check standing between an app and a
@@ -143,7 +153,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
    * never a security boundary.
    */
   function registeredOriginsSync (): readonly string[] {
-    return ledger.registeredOrigins()
+    return [...new Set([...ledger.registeredOrigins(), ...pinnedManifests.keys()])]
   }
 
   /** Display only -- see Broker.app.persistedAppsSync and A137. No canonicalisation
@@ -156,7 +166,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
   function isRegisteredSync (origin: string): boolean {
     const key = originFromUrl(origin)
     if (key === null) return false
-    return ledger.manifestFor(key) !== undefined
+    return registeredManifest(key) !== undefined
   }
 
   function hasGrantsSync (origin: string): boolean {
@@ -171,11 +181,13 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
    * `hasGrantsSync` above. `ledger.socketAllowance` already answers the
    * platform default for a row it holds nothing for, so a malformed
    * `origin` (falling back to the raw, un-canonicalised string) still gets
-   * a safe number rather than a broker fault.
+   * a safe number rather than a broker fault. A restored app not yet
+   * re-registered answers from its pinned manifest's declaration.
    */
   function socketAllowanceSync (origin: string): number {
-    const key = originFromUrl(origin)
-    return ledger.socketAllowance(key ?? origin)
+    const key = originFromUrl(origin) ?? origin
+    const pinned = ledger.manifestFor(key) === undefined ? pinnedManifests.get(key) : undefined
+    return pinned === undefined ? ledger.socketAllowance(key) : socketAllowance({ manifest: pinned, fsBytesWritten: 0 })
   }
 
   /**
@@ -226,10 +238,14 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
    * empty here, since nothing has usually granted this origin anything yet
    * this session, but this seam can run twice for the same origin
    * (idempotent) and a defensive caller order is cheaper than a special case.
+   *
+   * Also registers `manifest` as this origin's manifest (`pinnedManifests`
+   * above) until `registerApp` runs, without touching the version floor.
    */
   async function hydrateFromPinnedManifest (origin: string, manifest: Manifest): Promise<void> {
     const key = canonical(origin)
     const superseded = ledger.hydrateFromPinnedManifest(key, manifest)
+    pinnedManifests.set(key, manifest)
     for (const { grantId } of superseded) await handleTable.revoke(key, grantId)
   }
 

@@ -221,6 +221,15 @@ since nothing else re-registers its handler. `subsystem.ts`'s `afterReady` calls
 origin's corrupted pin or unreadable asset is logged and does not stop the rest, the same
 per-item-failure stance `runAfterReady` (`main/registry.ts`) already takes for subsystems.
 
+**A restored app is a registered app from startup.** Serving alone is not enough: the app-tab
+flag (`src/main/shell/tab-view.ts`'s `appTabArgsFor`) and `orivon.app.manifest()` both ask
+whether the broker has a manifest for the origin, and a tab's flag is fixed when the tab is
+built. So `registerServingFor` hands the verified pinned manifest to
+`Broker.app.hydrateFromPinnedManifest`, which also registers it: a restored app's tab gets its
+routed fetch and process shim from the first load, before any hint arrives. That registration
+never raises the version floor, and the fresh manifest's own `registerApp`, when the page's hint
+arrives, replaces it and re-validates the restored grants as before.
+
 **Why the served bundle's CSP is read fresh per request, not computed once at handler
 creation.** [`serve.ts`](serve.ts)'s whole-tree re-verification is a deliberate ONE-TIME cost
 (the note above) because the pinned bytes cannot change without a new handler being built for

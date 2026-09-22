@@ -98,22 +98,29 @@ export function createManifestHintListener (
         // job (this file's own header), not this one's -- but a real
         // outcome nobody acts on yet must still be visible, never silently
         // dropped.
+        // ADR-0018: isolation follows consent. The app-tab flag and the
+        // partition are both fixed when a view is built, so the tab that
+        // reported this hint was built before its origin was registered and
+        // is still an ordinary one, running without its shims. `tab-view.ts`'s
+        // own did-navigate handler rebuilds it on the next navigation -- so
+        // one reload is what turns it into the app tab the person just
+        // installed or consented to. Only on a NEW registration: a
+        // registered origin's tab already carries its flag, and reloading
+        // it again would loop.
+        const reloadable = event.sender !== undefined && !event.sender.isDestroyed()
         if (result.outcome === 'dev-granted') {
-          // ADR-0018: isolation follows consent. The app-tab flag and the
-          // partition are both fixed when a view is built, so the tab that
-          // asked for these grants is still an ordinary one. `tab-view.ts`'s
-          // own did-navigate handler repartitions on the next navigation --
-          // so one reload is what turns this tab into the app tab the person
-          // just consented to, and without it nothing appears to have
-          // happened.
-          const reloadable = event.sender !== undefined && !event.sender.isDestroyed()
           console.log(`[orivon] developer mode: granted ${origin} without installing (newly registered: ${String(result.newlyRegistered)}, reloading: ${String(result.newlyRegistered && reloadable)})`)
           if (result.newlyRegistered && reloadable) event.sender?.reload()
           return
         }
-        if (result.outcome !== 'installed') {
-          console.log(`[orivon] manifest hint from ${origin} did not install: ${result.outcome}`)
+        if (result.outcome === 'installed') {
+          if (result.newlyRegistered === true && reloadable) {
+            console.log(`[orivon] installed ${origin}; reloading the tab that reported it so it runs as the app`)
+            event.sender?.reload()
+          }
+          return
         }
+        console.log(`[orivon] manifest hint from ${origin} did not install: ${result.outcome}`)
       })
       .catch((error: unknown) => {
         console.error('[orivon] installFromHint threw unexpectedly for a manifest hint', origin, error)

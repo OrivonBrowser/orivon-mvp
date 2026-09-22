@@ -270,7 +270,9 @@ export function reachOnlyHandlerFor (broker: Broker, opener: string): (request: 
  * nothing can answer a real request for `origin` until `registerAppOrigin`
  * (below) actually wires the handler onto the session, so hydrating before
  * that call guarantees every capability check this origin's first document
- * can ever trigger already sees its real, persisted grants.
+ * can ever trigger already sees its real, persisted grants, and that the
+ * broker already counts the origin as registered (README.md, "A restored
+ * app is a registered app from startup") when its first tab is built.
  * `verifiedManifestFor` performs its own independent whole-tree
  * re-verification (see its own doc for why that is an accepted, bounded
  * cost rather than a second source of truth) and answers `undefined` for

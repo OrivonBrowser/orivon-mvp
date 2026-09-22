@@ -125,6 +125,13 @@ export interface LoadInstalled {
    * to consciously decide to drop that visibility, not do it by accident.
    */
   readonly rollbackNotice?: true
+  /**
+   * Set by `src/main/install/app-install.ts`, never by this loader: this
+   * install is what registered the origin with the broker this session. A
+   * tab built before that has no app-tab flag, so it runs without its
+   * shims until it reloads once.
+   */
+  readonly newlyRegistered?: true
 }
 
 export interface LoadNeedsReconsent {

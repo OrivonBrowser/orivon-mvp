@@ -92,6 +92,49 @@ describe('createManifestHintListener', () => {
     expect(installApp).toHaveBeenCalledTimes(2)
   })
 
+  describe('reloading the tab that reported the hint', () => {
+    const PIN = { schema: 1 as const, origin: APP, bundleHash: 'sha256:' + 'a'.repeat(64), assets: [], version: '1.0.0', pinnedAt: 0 }
+    const MANIFEST = { orivonApiVersion: 0 as const, id: 'app.test', name: 'Test', version: '1.0.0', entry: 'index.html', capabilities: {} }
+
+    function reportingTab (): { reload: ReturnType<typeof vi.fn<() => void>>, isDestroyed: () => boolean } {
+      return { reload: vi.fn<() => void>(), isDestroyed: () => false }
+    }
+
+    it('reloads once after an install that newly registered the app, so the tab is rebuilt with its app-tab flag', async () => {
+      const installApp = vi.fn<InstallApp>(async () => ({ outcome: 'installed', canonicalOrigin: APP, manifest: MANIFEST, pin: PIN, newlyRegistered: true }))
+      const sender = reportingTab()
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+      createManifestHintListener(installApp)({ ...frameFor(APP), sender }, `${APP}/`)
+      await flush()
+
+      expect(sender.reload).toHaveBeenCalledOnce()
+      logSpy.mockRestore()
+    })
+
+    it('does not reload after an install for an app that was already registered', async () => {
+      const installApp = vi.fn<InstallApp>(async () => ({ outcome: 'installed', canonicalOrigin: APP, manifest: MANIFEST, pin: PIN }))
+      const sender = reportingTab()
+
+      createManifestHintListener(installApp)({ ...frameFor(APP), sender }, `${APP}/`)
+      await flush()
+
+      expect(sender.reload).not.toHaveBeenCalled()
+    })
+
+    it('does not reload a tab that was closed while the install ran', async () => {
+      const installApp = vi.fn<InstallApp>(async () => ({ outcome: 'installed', canonicalOrigin: APP, manifest: MANIFEST, pin: PIN, newlyRegistered: true }))
+      const sender = { reload: vi.fn<() => void>(), isDestroyed: () => true }
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+      createManifestHintListener(installApp)({ ...frameFor(APP), sender }, `${APP}/`)
+      await flush()
+
+      expect(sender.reload).not.toHaveBeenCalled()
+      logSpy.mockRestore()
+    })
+  })
+
   // installFromHint's own outcomes past 'installed' are S4-3/S4-4/S4-5's
   // job to drive, not this lane's -- but a real outcome nobody acts on yet
   // must still be visible, never silently dropped.
