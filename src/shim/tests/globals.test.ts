@@ -358,3 +358,58 @@ describe('installGlobals', () => {
     })
   })
 })
+
+describe('the descriptors it installs', () => {
+  // ADR-0021: these stand in for Node globals, so each carries the descriptor
+  // the platform gives its own and an app can replace, wrap or shadow it.
+  // They are plain assignments for exactly that reason. What this guards is
+  // someone later "hardening" one into a locked defineProperty, which would
+  // kill any bundle that ponyfills it -- mid-evaluation, naming no cause.
+  // scripts/check-page-globals.mjs catches that in the source text; this
+  // catches it in the behaviour, which is the half a text scan cannot see.
+  it.each(['process', 'setImmediate', 'clearImmediate'] as const)('installs %s as a property an app can replace', (name) => {
+    const { target } = install()
+
+    expect(Object.getOwnPropertyDescriptor(target, name)).toMatchObject({
+      writable: true,
+      configurable: true,
+      enumerable: true
+    })
+  })
+})
+
+describe('installGlobals -- serialisation safety', () => {
+  // installGlobals is handed to contextBridge.executeInMainWorld, which
+  // serialises it with Function.prototype.toString() and re-evaluates that
+  // text alone in the page. A reference to anything outside its own body
+  // compiles, typechecks and passes every other test in this file -- Node
+  // resolves the module scope -- then throws ReferenceError in a real page,
+  // where the injection silently never happens and the app sees no `process`
+  // or `setImmediate` at all. Both siblings already guard this
+  // (main-world-socket.test.ts's P-F6, fetch-route.test.ts's own); this file
+  // did not, and globals.ts holds no module-level value today only because
+  // nothing had yet stopped one appearing.
+  const source = installGlobals.toString()
+
+  it('pulls in nothing at runtime', () => {
+    expect(source).not.toMatch(/\brequire\s*\(/)
+    expect(source).not.toMatch(/\bimport\s*\(/)
+  })
+
+  it('runs against only the main-world globals it is entitled to', () => {
+    // Deliberately weaker than main-world-socket.test.ts's P-F6, which pulls
+    // installOrivon out of the SHIPPED bundle and so also catches a bundler
+    // rename. This reads the per-module copy, which is what catches the
+    // mistake actually available here: naming a module-level const.
+    const factory = new Function(
+      'queueMicrotask', 'setTimeout', 'clearTimeout',
+      `"use strict";\nreturn ${source};`
+    )
+    const reconstructed = factory(queueMicrotask, setTimeout, clearTimeout) as typeof installGlobals
+
+    const target: GlobalsTarget = {}
+    expect(() => { reconstructed({ reportError: vi.fn<GlobalsErrorReporter>() }, target) }).not.toThrow()
+    expect(typeof target.setImmediate).toBe('function')
+    expect(typeof target.process?.nextTick).toBe('function')
+  })
+})

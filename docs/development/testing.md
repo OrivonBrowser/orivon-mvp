@@ -167,7 +167,12 @@ proven to reach the real loader and be refused for being non-public; the granted
 enabled separately, through `src/main/dev/dev-grant.ts`'s developer-only hook, acting on the same
 broker the launched shell's IPC uses. The developer-mode grant-without-install path
 (`src/main/dev/dev-app-origin.ts`, behind `ORIVON_DEV_ORIGINS=1`) has its own test,
-[`test/e2e-dev-origin-grant.test.ts`](../../test/e2e-dev-origin-grant.test.ts). Consent gating itself is proven separately, in
+[`test/e2e-dev-origin-grant.test.ts`](../../test/e2e-dev-origin-grant.test.ts). That same flag,
+paired with `ORIVON_ETH_NAMES_FILE`, also turns on the fake `.eth` names
+(`src/main/dev/eth-resolver.ts`) -- both halves are covered in
+[`test/e2e-eth-secure-context.test.ts`](../../test/e2e-eth-secure-context.test.ts), which asserts
+a `.eth` tab is a secure context and so keeps `crypto.subtle`, `crypto.randomUUID`, service
+workers and `navigator.clipboard`. See [setup.md](setup.md) for what the two variables do. Consent gating itself is proven separately, in
 [`test/e2e-install-consent-journey.test.ts`](../../test/e2e-install-consent-journey.test.ts).
 
 The raw capability API has its own boundary suites, one file per transport, because Rule 2 caps
@@ -200,15 +205,22 @@ service-worker setup, not to `BaseWindow` in general.
 
 ## Guards
 
-Two checks that are not tests but fail the build the same way:
+Eleven checks that are not tests but fail the build the same way. Each is `npm run check:<name>`,
+and CI's `check` job runs all of them; [`../../scripts/README.md`](../../scripts/README.md) says
+what each one enforces.
 
-| Guard | Enforces |
-|---|---|
-| `scripts/check-no-native-modules.mjs` | No dependency requires a compiler (Rule 8). Runs on every `npm install` |
-| `scripts/check-contracts-pure.mjs` | `src/contracts/` is complete and references nothing outside itself |
+`check:natives` · `check:contracts` · `check:secrets` · `check:vectors` · `check:comments` ·
+`check:size` · `check:questions` · `check:manifest-parity` · `check:page-globals` ·
+`check:dev-grant-absent` · `check:advisories`
 
-Both are exported pure functions over a root directory, unit tested against temp fixtures, with
-a CLI block. Follow that shape if you add a third.
+Every one is an exported pure function over a root directory, unit tested in
+`scripts/tests/` against temp fixtures, with a CLI block guarded by `isInvokedDirectly` so the
+test can import it without running it. Follow that shape if you add another, and add the CI step
+in the same change: `scripts/tests/check-scripts-in-ci.test.ts` fails the unit suite if a
+`check:*` script exists with no step to run it.
+
+A guard imports `node:*` builtins and nothing from `src/` -- one that depended on the code it
+guards could be disabled by the change it exists to catch.
 
 ---
 

@@ -209,7 +209,7 @@ describe('describeCapabilityGrant -- A197: a private/loopback/link-local address
 // validation of its own -- it trusts whatever pattern array it is handed --
 // so this calls it directly with blank-line-padded patterns, the MOST
 // permissive path available (every production caller validates first: see
-// this suite's own header note and src/main/README.md's Design notes for
+// this suite's own header note and ../README.md's Design notes for
 // where). A pattern's own `parsePattern` (broker/policy/connect-
 // patterns.ts) trims the whole string before splitting host:port, and then
 // rejects anything containing a control character -- including `\n` and

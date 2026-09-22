@@ -22,6 +22,18 @@ split exists to remove.
 
 ## Design notes
 
+**[`tab-view.ts`](tab-view.ts)'s `reportAppFailures` prints an app tab's own failures to the
+shell's stdout, and only an app tab's.** An app whose bundle throws while its module graph is
+still evaluating renders nothing and the throw never leaves the renderer, so the symptom is a
+blank window and an empty terminal -- which is what made this case expensive to find. The
+report is bound to the `--orivon-app-tab` flag because the open web logs errors constantly, and
+narrating all of them would bury the one case being debugged;
+[`../../../test/e2e-app-failure-report.test.ts`](../../../test/e2e-app-failure-report.test.ts)
+asserts the silence as well as the noise. It hangs off the view rather than
+`app.on('session-created')` the way [`../sessions/permission-gate.ts`](../sessions/permission-gate.ts)
+does, and that is not an inconsistency: a session precedes and outlives the views on it, while
+these three events are webContents-scoped and fire on one view's own contents.
+
 **[`tabs.ts`](tabs.ts) is split three ways: constructing and partitioning a view, managing the
 collection of tabs, and the shapes pushed to the chrome UI.** A tab's partition is computed on
 every path that can change its origin, not only in `createTab()`: typing a URL or the

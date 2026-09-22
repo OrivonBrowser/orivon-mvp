@@ -36,6 +36,7 @@ guessed. Rows with no ID were lifted out of the prose of the documents named bes
 | `d-0033` | 2026-09-17 | AI sessions open one or two PRs per working day, not one per feature | `../development/parallel-work.md`, `CLAUDE.md` |
 | `d-0034` | 2026-09-17 | A PR body scales to several changes; a bare "None" is not an answer; `ux:` gains `dev` | `../development/pr-blueprint.md` |
 | `d-0035` | 2026-09-22 | The routed `fetch` carries the platform's own property descriptor; a page may replace it, and detection reads the function, not the descriptor | `../../src/preload/README.md`, `ADR-0017` |
+| `d-0036` | 2026-09-22 | Dev-mode `.eth` names are declared secure origins, so a `.eth` tab keeps the APIs the loopback URL has | `../development/setup.md`, `../planning/compatibility-matrix.md` |
 
 ## Directives
 
@@ -86,7 +87,7 @@ moved here so those documents can state the behaviour without the provenance.
 | 2026-09-22 | A port couples to the shell through storage assertions, not only a test path; where those assertions belong is unsettled | ADR-0020, open-questions B5 |
 | 2026-09-22 | The apps the test suite serves move to `test/apps/`; there is no top-level `apps/` directory. `test/apps/` is carved out of Rule 2's "test file" definition so the comment and size guards keep covering it | ADR-0020, `CLAUDE.md`, `ARCHITECTURE.md`, `../development/code-guidelines.md` |
 | 2026-09-22 | `apps/torrent/` is removed; the flagship has no directory here until build step 5 opens, and `build-plan.md` holds its design | ADR-0001, `../planning/build-plan.md`, `../mvp-scope.md` |
-| 2026-09-22 | `src/main/` is organised into nine job-named directories, following the naming convention (not the directory count) `src/broker/` set | ADR-0021, ADR-0015 |
+| 2026-09-22 | `src/main/` is organised into nine job-named directories, following the naming convention (not the directory count) `src/broker/` set | ADR-0023, ADR-0015 |
 
 ## Adding a row
 

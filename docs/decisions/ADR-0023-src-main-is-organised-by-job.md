@@ -1,4 +1,4 @@
-# ADR-0021: `src/main/` is organised into nine job-named directories
+# ADR-0023: `src/main/` is organised into nine job-named directories
 
 - **Status:** accepted
 - **Date:** 2026-09-22

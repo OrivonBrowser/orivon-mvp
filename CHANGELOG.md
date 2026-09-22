@@ -12,6 +12,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Added
 
+- **A global Orivon installs on an app's window can be replaced by the app**, as it can in a
+  browser, and `npm run check:page-globals` fails the build on one that cannot (ADR-0021). A
+  locked global kills any bundle that ponyfills it, so this is what stops one app's blank page
+  becoming every app's.
+- **An app tab that dies on load says so.** Its uncaught errors, a preload that threw and a dead
+  renderer now reach the shell's own output instead of staying inside the renderer, where a
+  blank window was the only symptom. Ordinary web pages stay unnarrated.
+
 - **The capability broker** (build step 2). Manifest parsing, a grant ledger that survives a
   restart, per-origin enforcement, and per-app `session` partitions so two origins never share
   storage. Outbound TCP, TLS, UDP, inbound TCP, a rooted filesystem (including an open file

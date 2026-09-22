@@ -8311,9 +8311,36 @@ specific meaning the two are easy to confuse in prose that names neither reposit
 every mention carries its repository. Not taken here, because the name belongs as much to
 `orivon-ports` as to this repository and the decision is not one-sided.
 
-### A202 -- `src/broker/transport/` imports `src/main/`, contradicting the stated rule that `src/broker/` never does
+### A202 -- the permission gate now allows one Chromium permission with no per-app grant; what is the rule for the next one, and does `clipboard-read` ever become a capability? **[AI-REC -- the rule below is a recommendation; the clipboard decision itself is the owner's, `d-0036`]**
 
-**Raised 2026-09-22**, found by ADR-0021's own reference sweep, the same way the broker's own
+Filed 2026-09-22 alongside `ADR-0022`, which allows `clipboard-sanitized-write` on every session.
+
+The gate's original doc comment said to add a name "only alongside that surface, never as a bare
+unlock", where "that surface" meant a real user-facing permission prompt. `ADR-0022` adds a name
+without one, on the argument that the web platform's own transient-activation rule is what makes
+this particular permission safe and that `document.execCommand('copy')` already grants the same
+power unconditionally. That argument is specific to clipboard write. It is not a general
+licence, and nothing currently stops the next reader from treating it as one.
+
+**AI recommendation for the rule**, not yet owner-confirmed: a Chromium permission may be
+allowed here only when (1) the web platform already gates it on an action by the person that the
+shell can neither fake nor suppress, and (2) a legacy path grants the same power anyway, so
+denying it costs real pages without closing anything. `notifications`, `geolocation`, `media`
+and `midi` satisfy neither clause -- each is a genuine per-site decision with no legacy bypass,
+and each belongs to a prompt this browser has not built.
+
+**The narrower question it leaves open:** `clipboard-read` is denied today and has no legacy
+bypass, so it is the first permission where a real prompt would buy something. Whether it
+becomes an `orivon.*` capability with a grant, a Chromium-level prompt, or stays denied for v0
+is undecided. Nothing in the MVP needs it: no ported app has asked, and `mvp-scope.md`'s IN
+table does not name it.
+
+**Needed by:** whenever a second permission is proposed for the allowlist, or an app asks to
+read the clipboard. Not blocking.
+
+### A203 -- `src/broker/transport/` imports `src/main/`, contradicting the stated rule that `src/broker/` never does
+
+**Raised 2026-09-22**, found by ADR-0023's own reference sweep, the same way the broker's own
 directory split (ADR-0015) turned up two stale references it fixed in passing. The rule is
 stated as absolute in two places: `src/broker/policy/update.ts`'s own comment on
 `sameOwnPatterns` ("`src/main/` may import from here, but `src/broker/` must never import from
@@ -8344,7 +8371,7 @@ to fix -- which for `registry.ts`/`channels.ts` likely means nothing changes at 
 would mean threading it into `CreateBrokerOptions` from `src/main/` instead of `transport/ipc.ts`
 importing it directly.
 
-### A203 -- `update-check-runner.ts`'s `updateCheckSubsystem` has no caller anywhere in the repo
+### A204 -- `update-check-runner.ts`'s `updateCheckSubsystem` has no caller anywhere in the repo
 
 **Raised 2026-09-22**, found by the same reference sweep. It exports `updateCheckSubsystem`, a
 real `Subsystem` matching every other subsystem's shape, but it is absent from

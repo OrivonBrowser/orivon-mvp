@@ -1,7 +1,8 @@
 # `src/main/sessions/`: what an Electron `Session` is allowed to do
 
-**What lives here.** `permission-gate.ts`: denies every Chromium permission (camera, clipboard,
-notifications, …) by default, on every session a tab can reach. `web-context-host.ts`: ADR-0019's
+**What lives here.** `permission-gate.ts`: denies every Chromium permission (camera, clipboard
+reads, notifications, …) on every session a tab can reach. `clipboard-sanitized-write` is the
+one allowed name (`ADR-0022`). `web-context-host.ts`: ADR-0019's
 Electron half of the isolated `WebContext` — the real `WebContextHost`
 [`../../broker/web-capability.ts`](../../broker/web-capability.ts) calls through
 `CreateBrokerOptions.webContextHost`: the partition, the sandboxed/isolated `WebContentsView`,
@@ -34,6 +35,21 @@ startup would still miss a partition a tab opens after that point, which is most
 `partitionFor(origin)` sessions come into being as tabs open, not at startup. The subsystem is
 listed first in `subsystems.ts`, ahead of everything else, so its `beforeReady` attaches the
 listener before any other subsystem's own `beforeReady` gets a chance to create a session.
+
+**What the gate allows, and why exactly one name.** `clipboard-sanitized-write` is granted on
+every ordinary session; every other permission Chromium can ask for is refused. The web
+platform gates clipboard writing on transient user activation and a focused document, so the
+page cannot reach the clipboard unless the person just acted in it, and Chromium sanitizes what
+lands there. Refusing it protected nothing, because `document.execCommand('copy')` reaches the
+same clipboard from the same pages and no Electron API can close that path -- and this gate
+covers the default session, so the refusal broke copy buttons on ordinary websites, not only in
+apps. Reading stays denied in both forms. `ADR-0022` carries the argument in full.
+
+Two consequences worth knowing before touching either file. `web-context-host.ts` reinstalls
+deny-everything handlers on `ADR-0019` isolated-context sessions, and that is now the only thing
+holding clipboard write away from a document running another site's script -- it looks like
+duplication and is not. And the grant ledger is untouched by any of this: it governs `orivon.*`
+capabilities, not Chromium's own, so no app gained a power a plain website does not have.
 
 **[`web-context-host.ts`](web-context-host.ts)'s two WebRTC belts, and why a proxy pointed at the
 discard port does not also break the context's own `fetch()`.** ADR-0019 promises an isolated

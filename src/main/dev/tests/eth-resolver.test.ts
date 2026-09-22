@@ -9,7 +9,7 @@ vi.mock('electron', () => ({
   app: { commandLine: { appendSwitch } }
 }))
 
-const { buildHostResolverRules, ethResolverSubsystem } = await import('../eth-resolver.js')
+const { buildHostResolverRules, buildSecureOriginList, ethResolverSubsystem } = await import('../eth-resolver.js')
 
 describe('buildHostResolverRules', () => {
   it('builds one MAP clause per name, to its own port', () => {
@@ -39,6 +39,37 @@ describe('buildHostResolverRules', () => {
 
   it('keeps the valid entries and drops only the bad ones', () => {
     expect(buildHostResolverRules({ 'freetube.eth': 8875, 'Bad.eth': 1, 'asgardex.eth': 8876 }))
+      .toBe('MAP freetube.eth 127.0.0.1:8875,MAP asgardex.eth 127.0.0.1:8876')
+  })
+})
+
+describe('buildSecureOriginList', () => {
+  it('builds one http origin per name', () => {
+    expect(buildSecureOriginList({ 'freetube.eth': 8875, 'asgardex.eth': 8876 }))
+      .toBe('http://freetube.eth,http://asgardex.eth')
+  })
+
+  it('is empty for an empty map', () => {
+    expect(buildSecureOriginList({})).toBe('')
+  })
+
+  // Spliced into a command-line switch exactly as the MAP clauses are, so
+  // the same names file that cannot inject there cannot inject here.
+  it('drops a name that is not a plain "label.eth"', () => {
+    for (const bad of ['freetube', 'FreeTube.eth', 'sub.freetube.eth', 'freetube.com', 'freetube.eth,MAP evil.com 1.2.3.4:80']) {
+      expect(buildSecureOriginList({ [bad]: 8875 })).toBe('')
+    }
+  })
+
+  // The property that matters more than either list on its own: a name
+  // Chromium is told to trust must be a name this process also mapped to
+  // loopback. An entry accepted by one and dropped by the other would
+  // declare a name the machine's real resolver answers to be a secure
+  // context.
+  it('accepts exactly the names host-resolver-rules maps, never a superset', () => {
+    const names = { 'freetube.eth': 8875, 'Bad.eth': 1, 'asgardex.eth': 8876, 'nope.eth': 99999 }
+    expect(buildSecureOriginList(names)).toBe('http://freetube.eth,http://asgardex.eth')
+    expect(buildHostResolverRules(names))
       .toBe('MAP freetube.eth 127.0.0.1:8875,MAP asgardex.eth 127.0.0.1:8876')
   })
 })
@@ -84,6 +115,30 @@ describe('ethResolverSubsystem', () => {
       'host-resolver-rules',
       'MAP freetube.eth 127.0.0.1:8875,MAP asgardex.eth 127.0.0.1:8876'
     )
+  })
+
+  // Without this switch the mapped name is plain http: on a non-loopback
+  // host, so the page loses navigator.clipboard, crypto.subtle,
+  // crypto.randomUUID and service workers -- a different app from the same
+  // bundle opened at 127.0.0.1.
+  it('declares the same names a secure context, alongside the resolver rules', () => {
+    process.env['ORIVON_DEV_ORIGINS'] = '1'
+    process.env['ORIVON_ETH_NAMES_FILE'] = namesFile('{"freetube.eth": 8875, "asgardex.eth": 8876}')
+    ethResolverSubsystem.beforeReady?.()
+    expect(appendSwitch).toHaveBeenCalledWith(
+      'unsafely-treat-insecure-origin-as-secure',
+      'http://freetube.eth,http://asgardex.eth'
+    )
+  })
+
+  // Both switches or neither, at the subsystem level: an entry dropped
+  // from the MAP clauses must not still be called trustworthy.
+  it('never declares an origin it did not also map to loopback', () => {
+    process.env['ORIVON_DEV_ORIGINS'] = '1'
+    process.env['ORIVON_ETH_NAMES_FILE'] = namesFile('{"freetube.eth": 8875, "Bad.eth": 1}')
+    ethResolverSubsystem.beforeReady?.()
+    expect(appendSwitch).toHaveBeenCalledWith('host-resolver-rules', 'MAP freetube.eth 127.0.0.1:8875')
+    expect(appendSwitch).toHaveBeenCalledWith('unsafely-treat-insecure-origin-as-secure', 'http://freetube.eth')
   })
 
   it('does not append anything for an empty names file', () => {
