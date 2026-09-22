@@ -23,9 +23,9 @@
 // cost tradeoff this file spends, and for `verifiedManifestFor` below, the
 // one exception to "no Manifest argument" above (an OUTPUT, not an input).
 
-import { isPinnedPath, parsePinRecord } from '../broker/policy/pin.js'
+import { parsePinRecord } from '../broker/policy/pin.js'
 import type { PinRecord } from '../broker/policy/pin.js'
-import { MANIFEST_PATH, canonicalAssetPath } from '../broker/policy/canonical-path.js'
+import { MANIFEST_PATH } from '../broker/policy/canonical-path.js'
 import { originFromUrl } from '../broker/policy/origin.js'
 import { appCspHeaderValue, appReachCspHeaderValue } from '../broker/policy/connect-src.js'
 import { checkConnectSecure } from '../broker/policy/connect-secure.js'
@@ -39,6 +39,7 @@ import { guardReachResponse } from './serve-reach-guard.js'
 import type { ReleaseReachSlot, ReserveReachSlot } from './serve-reach-guard.js'
 import { parseRange } from './serve-range.js'
 import { verifyPinnedTree } from './serve-verify.js'
+import { isNavigationRequest, resolveRequestPath } from './serve-path.js'
 import type { LoaderStorage } from './storage.js'
 
 export type AppRequestHandler = (request: Request) => Promise<Response>
@@ -104,42 +105,8 @@ export type ReachDial = (request: Request, host: string, port: number) => Promis
  */
 export type RecordPinCoverage = (outcome: PinCoverageOutcome, bytes?: number) => void
 
-/** Everything a request needs decided before a byte is read off disk -- deliberately exported for direct, Electron-free unit testing (this file's own header). */
-export type ResolvedRequest =
-  | { readonly ok: true, readonly canonicalPath: string }
-  | { readonly ok: false, readonly reason: string }
-
-/**
- * Decides which pinned asset, if any, a request answers to.
- *
- * `/` IS THE ONE SPECIAL CASE (the task this function exists for: "a
- * directory-ish or `/` request needs a stated rule"). It maps to
- * `manifest.entry`, and ONLY the bare root -- `isValidCanonicalPath`
- * rejects every OTHER path ending in `/` (a trailing empty segment), so
- * `/foo/` is not a directory index, it is simply not a valid canonical path
- * and falls through to the ordinary pinned-set check below, which denies
- * it. There is no directory listing and no index-file fallback beyond the
- * root: a pinned bundle is a fixed, hashed asset MAP, not a filesystem.
- *
- * Every other path must be an EXACT pinned canonical path -- the fail-closed
- * rule ADR-0007 names directly: "a same-origin request whose path is not in
- * the pinned set is denied, not fetched."
- */
-export function resolveRequestPath (entryPath: string | null, pin: PinRecord, requestUrl: string): ResolvedRequest {
-  const url = new URL(requestUrl)
-
-  if (url.pathname === '/') {
-    if (entryPath === null || !isPinnedPath(pin, entryPath)) {
-      return { ok: false, reason: 'entry point is not part of the pinned bundle' }
-    }
-    return { ok: true, canonicalPath: entryPath }
-  }
-
-  const canonicalPath = canonicalAssetPath(requestUrl)
-  if (canonicalPath === null) return { ok: false, reason: 'not a valid canonical asset path' }
-  if (!isPinnedPath(pin, canonicalPath)) return { ok: false, reason: 'not in the pinned asset set' }
-  return { ok: true, canonicalPath }
-}
+export { isNavigationRequest, resolveRequestPath } from './serve-path.js'
+export type { ResolvedRequest } from './serve-path.js'
 
 function denyResponse (reason: string): Response {
   return new Response(`Orivon: ${reason}`, { status: 404, headers: { 'content-type': 'text/plain; charset=utf-8' } })
@@ -441,11 +408,12 @@ export async function createAppRequestHandler (
       return await fetchThirdParty(request, authoriseReach, reachDial, recordCoverage, reserveReachSlot, releaseReachSlot)
     }
 
-    const resolved = resolveRequestPath(entryPath, pin, request.url)
+    const resolved = resolveRequestPath(entryPath, pin, request.url, isNavigationRequest(request))
     if (!resolved.ok) {
       recordCoverage?.('denied')
       return denyResponse(resolved.reason)
     }
+    if ('redirectTo' in resolved) return new Response(null, { status: 302, headers: { location: resolved.redirectTo } })
 
     const content = await storage.readAsset(origin, resolved.canonicalPath)
     if (content === undefined) {

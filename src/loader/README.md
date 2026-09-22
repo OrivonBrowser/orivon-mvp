@@ -198,12 +198,22 @@ confirmed present with its pinned bytes, regardless of whether the cause was a m
 permissions error, or a directory where a file was expected. One contract, not two, because there
 is only one caller-visible outcome.
 
-**Why `/` maps to `manifest.entry` and nothing else does.** A pinned bundle is a fixed, hashed
-asset map, not a filesystem with directory listings; `isValidCanonicalPath` already refuses
-every path ending in `/` except the bare root (a trailing empty segment fails `isSafeDecodedPath`),
-so there is no directory-index fallback to design for beyond that one case. `serve.ts`'s
-`resolveRequestPath` special-cases exactly `url.pathname === '/'`; every other request, directory-
-ish or not, is answered by an exact pinned-path lookup or denied.
+**What a same-origin path serves: the exact pinned asset, with two entry-only exceptions.**
+A pinned bundle is a fixed, hashed asset map, not a filesystem: `isValidCanonicalPath` refuses
+every path ending in `/` except the bare root, so there is no directory index to design for.
+[`serve-path.ts`](serve-path.ts)'s `resolveRequestPath` answers every request with an exact
+pinned-path lookup or a denial, except two cases that both answer with the pinned entry and
+never with anything unpinned. `/` maps to `manifest.entry`, and when the entry sits in a
+subdirectory (`app/index.html`) `/` answers a 302 to it instead, so the document's relative URLs
+resolve against its own directory (a `protocol.handle` redirect is followed like a network one,
+measured). And a **navigation** to an unpinned route with no file extension (`/inbox/42`) serves
+the entry, the history fallback every SPA host provides, so reloading a client-side route does
+not 404; a subresource or `fetch()` for the same path is still denied, and so is a navigation to
+a missing *file*. Telling a navigation apart takes Chromium's own navigation headers
+(`Upgrade-Insecure-Requests` plus an `Accept` naming `text/html`): `protocol.handle` reports
+every request with `mode: 'cors'`, an empty `destination` and no `Sec-Fetch-*` headers (measured,
+Electron 44). A page can forge those headers on a `fetch()`, which only gets it the entry
+document, a pinned asset it could request directly anyway.
 
 **Why registering a handler is idempotent, not additive.** Electron's `protocol.handle` throws
 `"The scheme has been registered"` on a second call for a scheme already handled on that session --
