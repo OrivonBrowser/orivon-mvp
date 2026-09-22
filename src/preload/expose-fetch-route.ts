@@ -1,13 +1,15 @@
-// The preload-side wiring that installs the routed fetch into a tab's main
-// world. Split from fetch-route.ts under code-guidelines.md Rule 2, along the
-// boundary that file's own header already names: `installFetchRoute` is a
-// payload SERIALISED into the main world and may reference nothing outside
-// its own body, while this is ordinary preload code that imports freely.
-// Keeping them in one file put a function that must not touch an import
-// directly beside one that does, which is precisely the confusion that cost
-// two near-misses while the decompression cap was being fixed.
+// The preload-side wiring that installs the routed network path into a tab's
+// main world. Each installer below is a payload SERIALISED into the main
+// world and may reference nothing outside its own body, while this is
+// ordinary preload code that imports freely -- the reason the two live in
+// different files. They run in order, handing each other their work through
+// a slot on the page's window that the last step removes (README.md's
+// Design notes).
 
 import { contextBridge } from 'electron'
+import { installRoutedWire } from './routed-wire.js'
+import { installRoutedDial } from './routed-dial.js'
+import { installRoutedCore, releaseRoutedSlot } from './routed-core.js'
 import { installFetchRoute } from './fetch-route.js'
 
 /** The literal `webPreferences.additionalArguments` flag `src/main/
@@ -17,26 +19,34 @@ import { installFetchRoute } from './fetch-route.js'
  * choice `newtab.ts`'s own `--orivon-newtab-url=` flag already made. */
 const APP_TAB_FLAG = '--orivon-app-tab'
 
+/** Dependency order: each one reads what the ones before it published. */
+const INSTALLERS: ReadonlyArray<(isAppTab: boolean) => void> = [
+  installRoutedWire, installRoutedDial, installRoutedCore, installFetchRoute
+]
+
 /**
  * Fail-open, same shape as orivon-surface.ts's own `exposeOrivon()`:
  * `contextBridge.executeInMainWorld` is `@experimental` and may be absent
- * or throw, in which case this leaves the page's native `fetch` alone
- * rather than abort the rest of preload. Reads `isAppTab` synchronously off
- * `process.argv` -- available here (the isolated world), unlike inside
- * `installFetchRoute` itself, which runs in the main world and has no
- * `process` -- so it crosses as a plain boolean argument instead.
- *
- * `args` carries ONLY `isAppTab` -- `installFetchRoute`'s `target` parameter
- * is deliberately left OMITTED, not passed as an explicit `undefined`, so
- * its own default (the real main-world `window`) applies -- the exact
- * pattern `orivon-surface.ts`'s own `exposeOrivon()` already uses for
- * `installOrivon`'s trailing `target` parameter.
+ * or throw, in which case the page keeps its native globals rather than
+ * preload aborting. Reads `isAppTab` synchronously off `process.argv` --
+ * available here (the isolated world), unlike inside the installers, which
+ * run in the main world and have no `process` -- so it crosses as a plain
+ * boolean argument instead. Each installer's trailing `target` parameter is
+ * left OMITTED, so its own default (the real main-world `window`) applies.
  */
 export function exposeFetchRoute (): void {
   const isAppTab = process.argv.includes(APP_TAB_FLAG)
+  if (!isAppTab) return
+  for (const func of INSTALLERS) {
+    try {
+      contextBridge.executeInMainWorld({ func, args: [isAppTab] })
+    } catch (error) {
+      console.error('[orivon] a routed network global was not installed', error)
+    }
+  }
   try {
-    contextBridge.executeInMainWorld({ func: installFetchRoute, args: [isAppTab] })
+    contextBridge.executeInMainWorld({ func: releaseRoutedSlot, args: [] })
   } catch (error) {
-    console.error('[orivon] fetch routing not installed', error)
+    console.error('[orivon] the routed network slot was not released', error)
   }
 }
