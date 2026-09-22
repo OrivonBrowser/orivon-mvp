@@ -110,6 +110,23 @@ describe('web.evaluate', () => {
     expect(response).toEqual({ id: 'req-1', ok: false, code: 'invalid', message: expect.any(String) })
     expect(calls).toEqual([])
   })
+
+  it('passes a per-call timeoutMs through to the broker, which enforces it', async () => {
+    const calls: BrokerCall[] = []
+    const broker = stubBroker(calls, { webEvaluate: async () => null })
+
+    await handleControlRequest(broker, frameFor(APP), envelope('web.evaluate', { id: 'ctx-1', script: '1', timeoutMs: 500 }))
+
+    expect(calls).toEqual([{ method: 'web.evaluate', origin: APP, args: { id: 'ctx-1', script: '1', timeoutMs: 500 } }])
+  })
+
+  it('rejects a timeoutMs that is not a number as invalid, without reaching the broker', async () => {
+    const calls: BrokerCall[] = []
+    const response = await handleControlRequest(stubBroker(calls), frameFor(APP), envelope('web.evaluate', { id: 'ctx-1', script: '1', timeoutMs: '500' }))
+
+    expect(response).toMatchObject({ ok: false, code: 'invalid' })
+    expect(calls).toEqual([])
+  })
 })
 
 describe('web.close', () => {

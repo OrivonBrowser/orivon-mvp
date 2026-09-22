@@ -78,7 +78,13 @@ export async function webOpenContextBridge (
     id: descriptor.id,
     origin: descriptor.origin,
     closed,
-    evaluate: async (script) => await call('web.evaluate', { id: descriptor.id, script }, TIMEOUT_MS.webEvaluate),
+    // The page's own budget stays TIMEOUT_MS.webEvaluate: a shorter
+    // `timeoutMs` is enforced by the broker, which also closes the context.
+    evaluate: async (script: string, options?: { readonly timeoutMs?: number }) => await call(
+      'web.evaluate',
+      options?.timeoutMs === undefined ? { id: descriptor.id, script } : { id: descriptor.id, script, timeoutMs: options.timeoutMs },
+      TIMEOUT_MS.webEvaluate
+    ),
     close: async () => { await call('web.close', { id: descriptor.id }, TIMEOUT_MS.webClose) }
   }
 }

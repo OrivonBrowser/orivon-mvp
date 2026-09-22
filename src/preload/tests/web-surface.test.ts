@@ -73,6 +73,20 @@ describe('webOpenContextBridge', () => {
     expect(envelope.payload).toEqual({ id: 'ctx-1', script: 'location.origin' })
   })
 
+  it('evaluate passes a per-call timeoutMs to the broker, which enforces it', async () => {
+    invoke.mockResolvedValueOnce(okEnvelope({ id: 'ctx-1', origin: 'https://example.com' }))
+    invoke.mockReturnValueOnce(new Promise(() => {})) // the watch loop
+    invoke.mockResolvedValueOnce(okEnvelope(null))
+
+    const context = await webOpenContextBridge({ origin: 'https://example.com' })
+    // Cast until MainWorldWebContextBridge (main-world-bridges.ts) declares the option too.
+    const evaluate = context.evaluate as (script: string, options: { timeoutMs: number }) => Promise<unknown>
+    await evaluate('1', { timeoutMs: 2_000 })
+
+    const [, envelope] = invoke.mock.calls[2] as [string, { payload: unknown }]
+    expect(envelope.payload).toEqual({ id: 'ctx-1', script: '1', timeoutMs: 2_000 })
+  })
+
   it('close calls web.close with the context id', async () => {
     invoke.mockResolvedValueOnce(okEnvelope({ id: 'ctx-1', origin: 'https://example.com' }))
     invoke.mockReturnValueOnce(new Promise(() => {})) // the watch loop

@@ -466,6 +466,10 @@ the resolving one was rejected:
   `CloseReason` is `'failed'`, which `handle-store.ts`'s `closeTree` already routes to a REJECTING
   `closed` (only `'closed'` resolves it); nothing new had to be taught to that file.
 
+The deadline is `LIMITS.webContextEvaluateMs` unless the caller passes a shorter `timeoutMs`
+(`evaluateDeadline`, clamped to the platform's, never extending it), and a caller-chosen deadline
+closes the context exactly as the platform's does: it is the same interrupted-script problem.
+
 Guarded against a narrow race: if a concurrent revoke already closed the same handle through its
 own cascade by the time the timeout branch runs, `handleTable.fail` throws (the id is no longer
 registered) rather than silently doing nothing -- caught and discarded here, because the timeout
