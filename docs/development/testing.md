@@ -200,15 +200,22 @@ service-worker setup, not to `BaseWindow` in general.
 
 ## Guards
 
-Two checks that are not tests but fail the build the same way:
+Eleven checks that are not tests but fail the build the same way. Each is `npm run check:<name>`,
+and CI's `check` job runs all of them; [`../../scripts/README.md`](../../scripts/README.md) says
+what each one enforces.
 
-| Guard | Enforces |
-|---|---|
-| `scripts/check-no-native-modules.mjs` | No dependency requires a compiler (Rule 8). Runs on every `npm install` |
-| `scripts/check-contracts-pure.mjs` | `src/contracts/` is complete and references nothing outside itself |
+`check:natives` · `check:contracts` · `check:secrets` · `check:vectors` · `check:comments` ·
+`check:size` · `check:questions` · `check:manifest-parity` · `check:page-globals` ·
+`check:dev-grant-absent` · `check:advisories`
 
-Both are exported pure functions over a root directory, unit tested against temp fixtures, with
-a CLI block. Follow that shape if you add a third.
+Every one is an exported pure function over a root directory, unit tested in
+`scripts/tests/` against temp fixtures, with a CLI block guarded by `isInvokedDirectly` so the
+test can import it without running it. Follow that shape if you add another, and add the CI step
+in the same change: `scripts/tests/check-scripts-in-ci.test.ts` fails the unit suite if a
+`check:*` script exists with no step to run it.
+
+A guard imports `node:*` builtins and nothing from `src/` -- one that depended on the code it
+guards could be disabled by the change it exists to catch.
 
 ---
 

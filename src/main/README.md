@@ -60,6 +60,19 @@ what is allowed, and the obfuscated-loopback spellings that stay refused to a pu
 
 ## Design notes
 
+**[`tab-view.ts`](tab-view.ts)'s `reportAppFailures` prints an app tab's own failures to the
+shell's stdout, and only an app tab's.** An app whose bundle throws while its module graph is
+still evaluating renders nothing and the throw never leaves the renderer, so the symptom is a
+blank window and an empty terminal -- which is what made ADR-0021's own case expensive to find.
+The report is bound to the `--orivon-app-tab` flag because the open web logs errors constantly,
+and narrating all of them would bury the one case being debugged;
+[`../../test/e2e-app-failure-report.test.ts`](../../test/e2e-app-failure-report.test.ts) asserts
+the silence as well as the noise. It hangs off the view rather than
+`app.on('session-created')` the way [`permission-gate.ts`](permission-gate.ts) does, and that is
+not an inconsistency: a session precedes and outlives the views on it, while these three events
+are webContents-scoped and fire on one view's own contents.
+
+
 Why the code here has the shape it has. This is the destination
 [`code-guidelines.md`](../../docs/development/code-guidelines.md) Rule 1 names for rationale: a
 source comment protects a specific line from a specific mistake; the case for a file's overall

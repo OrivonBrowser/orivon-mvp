@@ -131,6 +131,15 @@ jobs:
       - name: Loader accepts every field the manifest contract declares
         run: npm run check:manifest-parity
 
+      # A page global an app cannot replace kills any bundle that ponyfills
+      # it, mid-module-evaluation, with nothing naming the cause -- the
+      # routed fetch did exactly that, having been locked by copy-paste from
+      # window.orivon's own deliberate lock. ADR-0021 states the rule;
+      # scripts/check-page-globals.mjs is the mechanical guard for it, and
+      # reads an omitted `writable` as the lock it actually is.
+      - name: Every page global carries a descriptor an app can replace
+        run: npm run check:page-globals
+
       - name: Build
         run: npm run build
 
