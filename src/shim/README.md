@@ -85,7 +85,9 @@ simply never considered. `src/shim-electron/`'s `unimplemented.ts` solves this f
 compatibility package, and this package reuses the same mechanism rather than re-inventing it,
 on two module-namespace exports at a time: `node-dns.ts`, `node-fs.ts`,
 `node-http.ts`/`node-https.ts` and `node-net.ts` each wrap their default export (the shape a
-bundled CJS `require(...)` resolves to) with `refusingProxy`, so any member they have not built
+bundled CJS `require(...)` resolves to) with `refusingProxy`, and every other module target
+here does the same through [`node-module-proxy.ts`](node-module-proxy.ts)'s `nodeModule`,
+so any member they have not built
 throws a named, closed-reason `OrivonShimError` (`errors.ts`) when a caller CALLS it, instead of
 a bare `TypeError`. It throws on the call, never on the read (A169); the next section says why.
 
@@ -184,6 +186,16 @@ permission `mode` names. `orivon.fs` has no POSIX permission model at all (the s
 that the way a real permission check would. nedb, the only caller today, passes `F_OK` alone.
 **Still open:** what a future dependency asking `W_OK` to mean something narrower should get,
 which `orivon.fs`'s contract currently gives this file nothing to answer with.
+
+**A package-backed module is a local wrapper, except `stream` and `events`.** `buffer`, `path`,
+`os`, `crypto`, `zlib` and `util` alias to a file here that re-exports the package's members by
+name and wraps its default export with `nodeModule`, so a member the package lacks
+(`crypto.generateKeyPairSync`, `zlib.brotliCompressSync`, `path.win32`) refuses by name
+instead of being `undefined`. A wrapper imports its package by a name the alias map does not
+match (`'buffer/'`, `'path-browserify'`), never by the specifier it stands for, which would
+resolve back to itself. `stream` and `events` stay unwrapped: their module value is itself a
+constructor apps subclass and compare by identity, and a Proxy default export would make
+`import EventEmitter from 'events'` a different object from `EventEmitter.EventEmitter`.
 
 **[`node-util.ts`](node-util.ts) stands on the `util` package, and corrects it.** **AI
 recommendation, not owner-reviewed.** Rule 6: `format`, `inspect` and the `types` predicates are

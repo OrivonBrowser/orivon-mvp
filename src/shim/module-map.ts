@@ -1,14 +1,15 @@
-// The single table electron.vite.config.ts's renderer.resolve.alias map is
-// built from. Adding an approved dependency, or a hand-written polyfill,
-// becomes editing one row here and nothing in the build config -- the point
-// of this file, not a nicety: this repo has zero runtime dependencies today,
-// and every "ready, package" row below is currently hypothetical, waiting
-// on an owner decision (docs/planning/shim-dependency-review.md).
+// The single table electron.vite.config.ts's renderer alias map (and
+// vitest.config.ts's resolution for shim modules) is built from. Adding an
+// approved dependency, or a hand-written module target, is editing one row
+// here and nothing in either config. Every row matches its specifier whole,
+// bare or `node:`-prefixed (aliasPattern); a subpath is a row of its own.
+// 'package' rows name an npm package used as is; 'local' rows name a file
+// here, which for a package-backed module wraps the package (refusing a
+// missing member by name) or corrects it.
 //
-// Pure data plus a pure transform: no `node:*` import here, on purpose, so
-// this stays testable and reviewable independent of how paths eventually
-// get resolved to absolute ones (electron.vite.config.ts's job, since it
-// already has `root`).
+// Pure data plus pure transforms: no `node:*` import here, on purpose, so
+// this stays testable and reviewable independent of how paths get resolved
+// to absolute ones (each config's job).
 
 export type ShimModuleStatus = 'ready' | 'pending-dependency'
 
@@ -32,13 +33,24 @@ export const SHIM_MODULE_MAP: readonly ShimModuleEntry[] = [
   { specifier: 'dgram', status: 'ready', kind: 'local', implementation: './node-dgram.js', note: 'Queue item 3.2: dgram.createSocket over orivon.net.udpBind, built against k-rpc-socket\'s (bittorrent-dht\'s transport) real call graph -- message/error/listening/close events, address(), the 6-argument send() form, and bind()\'s flexible argument forwarding. See src/shim/tests/node-dgram-socket.test.ts and the real-bittorrent-dht integration test.' },
   { specifier: 'dns', status: 'ready', kind: 'local', implementation: './node-dns.js', note: 'dns.lookup/dns.promises.lookup now resolve for real, over orivon.net.lookup (d-0030) -- the one confirmed caller, k-rpc-socket\'s `_resolveAndQuery`, only reaches this for a hostname bootstrap peer (net.isIP routes a literal-IP peer around it). A152: a denied resolution surfaces err.code === \'denied\', never a generic \'internal\'. See src/shim/tests/node-dns.test.ts.' },
   { specifier: 'fs', status: 'ready', kind: 'local', implementation: './node-fs.js', note: 'readFile/writeFile/appendFile/access/unlink/mkdir/readdir/stat/rm/rename as callback-style fs (node-fs-core.ts) and as fs.promises (node-fs-promises.ts) over the matching orivon.fs calls, sharing one core so the two surfaces cannot drift -- plus the real readFileSync (ADR-0016\'s one synchronous exception), existsSync over it, and fs.constants (node-fs-constants.ts). fs.open/fs.promises.open (node-fs-handle.ts) are real over orivon.fs.open -- a local cursor reconstructs Node\'s implicit `position: null` on top of the contract\'s deliberately explicit-position-only FileHandle. fs.createReadStream/createWriteStream (node-fs-streams.ts) are real too, over that SAME local FileHandle, not the broker\'s readable()/writable() (still stuck at A184); FileHandle\'s own instance createReadStream/createWriteStream still refuse, citing A184. First confirmed caller: @seald-io/nedb\'s Node storage layer (src/shim/tests/nedb-storage.test.ts). See src/shim/tests/node-fs*.test.ts.' },
-  { specifier: 'buffer', status: 'ready', kind: 'package', implementation: 'buffer', note: `Confirmed essential (bencode/safe-buffer). Approved by the owner 2026-09-10; see ${REVIEW}.` },
+  { specifier: 'buffer', status: 'ready', kind: 'local', implementation: './node-buffer.js', note: `The \`buffer\` package (confirmed essential: bencode/safe-buffer; approved by the owner 2026-09-10, see ${REVIEW}), plus Blob/atob/btoa from the platform. Members it lacks refuse by name.` },
   { specifier: 'events', status: 'ready', kind: 'package', implementation: 'events', note: `Confirmed essential (k-bucket, k-rpc-socket, webtorrent's own import). Approved by the owner 2026-09-10; see ${REVIEW}.` },
-  { specifier: 'path', status: 'ready', kind: 'package', implementation: 'path-browserify', note: `Confirmed essential (webtorrent's own \`import path from 'path'\`). Approved by the owner 2026-09-10; see ${REVIEW}.` },
+  { specifier: 'path', status: 'ready', kind: 'local', implementation: './node-path.js', note: `path-browserify (confirmed essential: webtorrent's own \`import path from 'path'\`; approved by the owner 2026-09-10, see ${REVIEW}), with posix pointing back at itself. Members it lacks (win32) refuse by name.` },
   { specifier: 'stream', status: 'ready', kind: 'package', implementation: 'stream-browserify', note: `Confirmed essential, transitively (crypto-browserify's Hash extends stream.Transform). Approved by the owner 2026-09-10; see ${REVIEW}.` },
-  { specifier: 'crypto', status: 'ready', kind: 'package', implementation: 'crypto-browserify', note: `Confirmed essential (bittorrent-protocol's mse.js: DH key exchange, sha1). Approved by the owner 2026-09-10; see ${REVIEW}.` },
+  { specifier: 'crypto', status: 'ready', kind: 'local', implementation: './node-crypto.js', note: `crypto-browserify (confirmed essential: bittorrent-protocol's mse.js, DH key exchange and sha1; approved by the owner 2026-09-10, see ${REVIEW}), plus webcrypto/subtle/getRandomValues/randomUUID from the platform. Members it lacks refuse by name.` },
   { specifier: 'os', status: 'ready', kind: 'local', implementation: './node-os.js', note: `os-browserify's answers (approved by the owner 2026-09-10; see ${REVIEW}), with homedir()/tmpdir() at the virtual root (virtual-root.ts) and cpus() sized from navigator.hardwareConcurrency. Members os-browserify lacks refuse by name. See src/shim/tests/node-os.test.ts.` },
-  { specifier: 'zlib', status: 'ready', kind: 'package', implementation: 'browserify-zlib', note: `Recon-flagged (FreeTube's main process, brotli); no live caller confirmed in the Node lane. Approved anyway (owner decision, 2026-09-10), same reasoning as 'os'. IMPORTANT: this does NOT close the brotli gap -- browserify-zlib predates Node's own brotli support and supplies gzip/deflate only (via its pinned \`pako\` dependency); a real brotli need is a separate WASM-codec decision, not a consequence of this row. See ${REVIEW}.` }
+  { specifier: 'zlib', status: 'ready', kind: 'local', implementation: './node-zlib.js', note: `browserify-zlib (recon-flagged: FreeTube's main process; approved by the owner 2026-09-10, see ${REVIEW}). IMPORTANT: gzip/deflate only, via its pinned \`pako\`; browserify-zlib predates Node's brotli, so every brotli member refuses by name, and a real brotli need is a separate WASM-codec decision.` },
+  { specifier: 'path/posix', status: 'ready', kind: 'local', implementation: './node-path.js', note: 'The same module as \'path\', which is POSIX already.' },
+  { specifier: 'fs/promises', status: 'ready', kind: 'local', implementation: './node-fs-promises.js', note: 'The same object as fs.promises.' },
+  { specifier: 'stream/promises', status: 'ready', kind: 'local', implementation: './node-stream-promises.js', note: 'The page stream\'s pipeline and finished, returning promises.' },
+  { specifier: 'util/types', status: 'ready', kind: 'local', implementation: './node-util-types.js', note: 'The same object as util.types.' },
+  { specifier: 'dns/promises', status: 'ready', kind: 'local', implementation: './node-dns-promises.js', note: 'The same object as dns.promises.' },
+  { specifier: 'timers', status: 'ready', kind: 'local', implementation: './node-timers.js', note: 'Hand-written: the page\'s own timer functions, read at call time, and timers/promises.' },
+  { specifier: 'timers/promises', status: 'ready', kind: 'local', implementation: './node-timers-promises.js', note: 'Hand-written: setTimeout and setImmediate as promises, with AbortSignal.' },
+  { specifier: 'url', status: 'ready', kind: 'local', implementation: './node-url.js', note: 'Hand-written: the platform URL/URLSearchParams, fileURLToPath/pathToFileURL, and the legacy parse/format/resolve, checked against node:url.' },
+  { specifier: 'querystring', status: 'ready', kind: 'local', implementation: './node-querystring.js', note: 'Hand-written, checked against node:querystring.' },
+  { specifier: 'string_decoder', status: 'ready', kind: 'local', implementation: './node-string-decoder.js', note: 'Hand-written over TextDecoder\'s streaming mode, checked against node:string_decoder.' },
+  { specifier: 'assert', status: 'ready', kind: 'local', implementation: './node-assert.js', note: 'Hand-written: ok/equal/strictEqual/deepEqual/deepStrictEqual/throws/rejects and their negations, AssertionError, assert.strict. Deep equality is node-deep-equal.ts, shared with util.' }
 ]
 
 export interface ShimAliasEntry {

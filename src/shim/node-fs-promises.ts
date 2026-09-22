@@ -85,3 +85,9 @@ export const promises = refusingProxy({
   // object documents for the top-level fs.constants.
   constants: FS_CONSTANTS
 }, otherFsPromisesMember)
+
+// The `fs/promises` module target (module-map.ts) is this file itself: the
+// same object as fs.promises, as default export and as named members.
+export { openHandle as open, access, readFile, writeFile, appendFile, rename, unlink, mkdir, readdir, stat, rm }
+export const constants = FS_CONSTANTS
+export default promises

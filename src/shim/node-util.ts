@@ -71,10 +71,11 @@ export const debuglog = utilPackage.debuglog
 export const deprecate = utilPackage.deprecate
 export const format = utilPackage.format
 export const inspect = utilPackage.inspect
-export const types = utilPackage.types
+export const types = nodeModule('util.types', utilPackage.types)
 
 export default nodeModule('util', {
   ...utilPackage,
+  types,
   inherits,
   promisify,
   isDeepStrictEqual,
