@@ -7,10 +7,10 @@ resolves electron-vite's dev-server/file-URL split for both this and
 [`../permissions/permissions-panel.ts`](../permissions/permissions-panel.ts). `user-agent.ts`
 derives the plain Chrome User-Agent [`../index.ts`](../index.ts) sets app-wide.
 
-What a page asks of its window: `fullscreen.ts` decides which tab, if any, fills the window,
-and `fullscreen-notice.ts` shows "Press Esc to exit full screen"; `leave-page-prompt.ts` asks the
-question a `beforeunload` guard raises; `context-menu.ts` is the right-click menu for tabs and
-the chrome.
+What a page asks of its window: `popups.ts` turns `window.open()` and `target=_blank` into
+tabs; `fullscreen.ts` decides which tab, if any, fills the window, and `fullscreen-notice.ts`
+shows "Press Esc to exit full screen"; `leave-page-prompt.ts` asks the question a
+`beforeunload` guard raises; `context-menu.ts` is the right-click menu for tabs and the chrome.
 
 **What it depends on.** `electron`; [`../../broker/`](../../broker/) (`policy/origin.ts`,
 `grants/origin-hash.ts`, `broker-contracts.ts` types); [`../../loader/electron-serve.ts`](../../loader/electron-serve.ts)
@@ -85,6 +85,22 @@ the same as an ordinary tab's would see partition `undefined` -> a real partitio
 change" and repartition the dashboard into an app partition on its very first load. The handler
 excludes `record.isDashboardTab` explicitly rather than relying on `partitionChanged` alone to
 catch this case.
+
+**[`popups.ts`](popups.ts): a popup keeps its opener's session.** A popup that keeps
+`window.opener` is Chromium's own new webContents, created in its opener's storage partition,
+and no other session can hold it; the tab adopts it there. For the same reason `wireView`'s
+did-navigate never repartitions a tab while its opener exists: swapping the view severs
+`window.opener`, and a sign-in popup's whole job ends with the provider redirecting back to the
+app's own callback page and posting to the opener. The cost is an ADR-0018 residual, bounded two
+ways: until its opener closes, a page an app opens as a popup runs in the app's partition (a
+sign-in provider's cookies land there), and an app page opened as a popup from an ordinary site
+runs on the default session. Only a popup the page asked for pays it: `routePopup` sends a link
+or a plain `window.open(url)` that would cross sessions to an ordinary new tab, which loads in the
+right session from its first request, and `noopener`/`noreferrer` always get one. A popup's
+`--orivon-app-tab` flag follows its own URL, not its opener's, so a third-party page an app opens
+never gets Node globals or routed `fetch()`. **Trap:** the adopting `WebContentsView` must be
+given the popup's `webPreferences` as well as its webContents; with the webContents alone,
+Electron 44 drops the preload and the popup has no `orivon` surface at all.
 
 **[`fullscreen.ts`](fullscreen.ts): Electron fullscreens the window, not the view.** On
 `requestFullscreen()` Electron puts the owning window into fullscreen and takes it out again, but

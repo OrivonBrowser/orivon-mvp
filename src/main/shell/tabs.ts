@@ -6,7 +6,7 @@
 // itself.
 //
 // T18 (security-model.md): every tab WebContents gets setWindowOpenHandler
-// wired to open a new tab rather than a popup. A redirect, clicked link, form
+// wired so a popup becomes a tab, never an OS window. A redirect, clicked link, form
 // submission or script navigation that changes a tab's origin is caught by
 // wireView()'s own did-navigate handler, which repartitions the same way a
 // typed cross-origin navigation already does (see repartitionView()'s own
@@ -107,6 +107,8 @@ export class TabManager {
       captureFavicon: async (id, record, favicons) => { await this.captureFavicon(id, record, favicons) },
       forgetTab: (id) => { this.forgetTab(id, false) },
       openTab: (url) => { this.createTab(url) },
+      adoptPopup: (view, partition) => { this.adoptPopup(view, partition) },
+      atCapacity: () => this.atCapacity(),
       htmlFullscreenChanged: (id, entered) => { shell?.htmlFullscreenChanged(id, entered) },
       getTabBounds
     }
@@ -126,7 +128,7 @@ export class TabManager {
   }
 
   createTab (url?: string): string {
-    if (this.order.length >= MAX_TABS) {
+    if (this.atCapacity()) {
       // Refuse rather than crash -- see MAX_TABS above. Nothing reads
       // this return value today (grep confirms every caller discards
       // it), but the signature stays `string`, so hand back whatever is
@@ -183,6 +185,21 @@ export class TabManager {
 
     this.activateTab(id)
     return id
+  }
+
+  private atCapacity (): boolean {
+    return this.order.length >= MAX_TABS
+  }
+
+  /** A popup Chromium already created, with its opener, in the opener's
+   * session (./popups.ts). It navigates itself; nothing is loaded here. */
+  private adoptPopup (view: WebContentsView, partition: string | undefined): void {
+    const id = makeTabId()
+    const record: TabRecord = { view, favicon: null, faviconOrigin: null, pendingFaviconUrl: null, partition, isDashboardTab: false }
+    wireView(this.viewHost, id, record)
+    this.tabs.set(id, record)
+    this.order.push(id)
+    this.activateTab(id)
   }
 
   /** Asks a tab's page to leave HTML fullscreen. In an isolated world, where

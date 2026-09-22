@@ -49,9 +49,10 @@ function makeFakeWebContents (): FakeWebContents {
 }
 
 vi.mock('electron', () => ({
-  WebContentsView: vi.fn().mockImplementation(function (this: RecordedView, options: RecordedView['options']) {
+  WebContentsView: vi.fn().mockImplementation(function (this: RecordedView, options: RecordedView['options'] & { webContents?: FakeWebContents }) {
     this.options = options
-    this.webContents = makeFakeWebContents()
+    // An adopted popup arrives with Chromium's own webContents.
+    this.webContents = options.webContents ?? makeFakeWebContents()
     this.setBounds = vi.fn()
     createdViews.push(this)
   })
@@ -340,20 +341,39 @@ describe('TabManager -- navigate() swaps a view only when entering or leaving an
     expect(partitionOf(createdViews[0] as RecordedView)).toBeUndefined()
   })
 
-  it('the swapped-in view\'s own popup handler (T18) still redirects window.open() to a new tab', () => {
+  it('the swapped-in view\'s own popup handler (T18) still opens a link into another app as a new tab', () => {
     const manager = newManager(ctxWithRegisteredOrigins('https://app.example', 'https://popup.example'))
     const id = manager.createTab() // dashboard
     manager.navigate(id, 'https://app.example/')
 
     const swappedIn = createdViews[1] as RecordedView
     const handler = swappedIn.webContents.setWindowOpenHandler.mock.calls[0]?.[0] as
-      ((details: { url: string }) => { action: string }) | undefined
+      ((details: { url: string, features: string, disposition: string }) => { action: string }) | undefined
     expect(handler).toBeTypeOf('function')
-    handler?.({ url: 'https://popup.example/' })
+    handler?.({ url: 'https://popup.example/', features: '', disposition: 'foreground-tab' })
 
     expect(createdViews).toHaveLength(3)
     const expected = partitionFor(originFromUrl('https://popup.example/') as string)
     expect(partitionOf(createdViews[2] as RecordedView)).toBe(expected)
+  })
+
+  it('adopts a same-session popup as a new active tab, without loading anything itself', () => {
+    const manager = newManager()
+    const openerId = manager.createTab('https://site.example/')
+    const opener = createdViews[0] as RecordedView
+    const handler = opener.webContents.setWindowOpenHandler.mock.calls[0]?.[0] as
+      (details: { url: string, features: string, disposition: string }) => { action: string, createWindow?: (options: object) => unknown }
+
+    const response = handler({ url: 'https://other.example/', features: '', disposition: 'foreground-tab' })
+    const guest = makeFakeWebContents()
+    const returned = response.createWindow?.({ webContents: guest, webPreferences: {} })
+
+    expect(returned).toBe(guest)
+    const state = manager.getState()
+    expect(state.tabs).toHaveLength(2)
+    expect(state.activeTabId).not.toBe(openerId)
+    expect(fakeContentView.addChildView).toHaveBeenLastCalledWith(createdViews[1])
+    expect(guest.loadURL).not.toHaveBeenCalled()
   })
 
   it('reattaches the swapped view to the window only when the tab being navigated is the ACTIVE one', () => {
