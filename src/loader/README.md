@@ -101,14 +101,26 @@ in [`manifest.test.ts`](./tests/manifest.test.ts), which exercises the same inpu
 *redirect* landing two distinct declared names, or a redirected entry, at a different canonical
 path than declared cannot be produced by this file's suite at all, for the reason below.
 
-**`fetchBundle` cannot depend on `response.url`, because real Electron's
-`net.fetch` reports it as the empty string on every ordinary response, not only a redirected one**
-(measured, `docs/open-questions.md` A59/A141). The same-origin and canonical-path checks in
-`fetch-bundle.ts` trust the url they *requested* (`manifestUrl`, `assetUrl`) instead, which is
-provably safe only because [`electron-fetch.ts`](electron-fetch.ts)'s `redirect: 'error'` makes a
-followed redirect response impossible to receive in the first place. That is a hard requirement
-on any `Fetch` implementation (see that type's own doc comment,
-[`fetch-budget.ts`](fetch-budget.ts)), not only the real one.
+**`fetchBundle` trusts the url it requested, never `response.url`, and follows only a
+same-origin redirect.** Real Electron's `net.fetch` reports `response.url` as the empty string on
+every ordinary response (measured, `docs/open-questions.md` A59/A141), so the same-origin and
+canonical-path checks trust the url they *requested* (`manifestUrl`, `assetUrl`), and every asset
+is pinned under that path. That is safe only because a `Fetch` may never deliver bytes from
+another origin, a hard requirement on any implementation (that type's own doc comment,
+[`fetch-budget.ts`](fetch-budget.ts)). Refusing every redirect met it, but also refused real
+static hosts, which answer `/index.html` with a redirect to `/` (Cloudflare Pages, Vercel) or
+`/app` with `/app/` (GitHub Pages). So [`electron-fetch.ts`](electron-fetch.ts)'s `netFetch` uses
+`net.request` with `redirect: 'manual'` and shows each hop to `redirectRefusal` before taking it:
+same scheme, host and port, at most `MAX_REDIRECTS` (5), or the request is aborted. The bytes of
+a followed hop are pinned under the requested path, still on the origin being installed.
+
+**The root document is declared by its file name.** `entry: "index.html"` is fetched at
+`/index.html` (following such a redirect to `/` where the host sends one) and served at `/`; a bare
+root cannot itself be a pinned leaf, since `/` is not a valid canonical path, so `entry: "/"` is
+refused with that hint. An asset whose name promises script, style, wasm or JSON but whose response
+is an HTML page is refused too ([`fetch-asset.ts`](fetch-asset.ts)'s `servedAsHtml`): an SPA host
+answers a missing file with `200` and its index page, which would otherwise be pinned as the
+script and fail later with an opaque syntax error.
 
 Two more checks are unreachable through the public API for the same reason: `fetch-bundle.ts`'s
 entry-leaf check (`ADR-0009` amendment #2), because `entryPath` and the asset loop's own canonical path are the
@@ -120,10 +132,10 @@ in depth against their own computations ever drifting apart.
 
 **The real adapter (`electronFetch`/`netFetch`) is tested for real, not only through a stub
 `Fetch`.** [`test/e2e-loader-adapter.test.ts`](../../test/e2e-loader-adapter.test.ts) drives the
-real `net.fetch` (and, for the one case its own address guard
+real `netFetch` (and, for the one case its own address guard
 allows, the real `electronFetch`) inside a real Electron process against a real local server,
-including a real redirecting response, so the `redirect: 'error'` guarantee this section depends
-on is proven rather than assumed.
+including a real same-origin and a real cross-origin redirect, so the redirect rule this section
+depends on is proven rather than assumed.
 
 **Why [`install-origin.ts`](install-origin.ts) is its own file.** Split out of `fetch-bundle.ts`
 per Rule 2 (adding the T12/A46 guard pushed that file to 524 lines): it owns exactly one

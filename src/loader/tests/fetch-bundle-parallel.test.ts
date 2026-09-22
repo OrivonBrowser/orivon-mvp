@@ -84,3 +84,33 @@ describe('fetchBundle: an idle deadline, not a total one', () => {
     expect(result.ok).toBe(true)
   })
 })
+
+describe('fetchBundle: an SPA host\'s index page is never pinned as a script', () => {
+  const MANIFEST = { [MANIFEST_URL]: { body: utf8(manifestJson({ assets: ['assets/app.js'] })) } }
+
+  it('refuses a .js asset answered with text/html', async () => {
+    const routes: Record<string, RouteSpec> = { ...MANIFEST,
+      [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') },
+      [`${ORIGIN}/assets/app.js`]: { body: utf8('<!doctype html><title>app</title>'), headers: { 'content-type': 'text/html; charset=utf-8' } }
+    }
+    const result = await fetchBundle(stubFetch(routes), ORIGIN, PUBLIC_RESOLVER, memoryStorage())
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.reason).toMatch(/assets\/app\.js came back as an HTML page/)
+  })
+
+  it('refuses a .js asset whose body is an HTML document even with no Content-Type', async () => {
+    const routes: Record<string, RouteSpec> = { ...MANIFEST,
+      [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') },
+      [`${ORIGIN}/assets/app.js`]: { body: utf8('\n  <!DOCTYPE html><html></html>') }
+    }
+    expect((await fetchBundle(stubFetch(routes), ORIGIN, PUBLIC_RESOLVER, memoryStorage())).ok).toBe(false)
+  })
+
+  it('accepts an HTML entry, and a script that merely contains markup', async () => {
+    const routes: Record<string, RouteSpec> = { ...MANIFEST,
+      [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>'), headers: { 'content-type': 'text/html' } },
+      [`${ORIGIN}/assets/app.js`]: { body: utf8('document.body.innerHTML = "<html>"'), headers: { 'content-type': 'text/javascript' } }
+    }
+    expect((await fetchBundle(stubFetch(routes), ORIGIN, PUBLIC_RESOLVER, memoryStorage())).ok).toBe(true)
+  })
+})

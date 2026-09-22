@@ -413,6 +413,9 @@ function readManifest (value: unknown): Manifest {
   }
 
   const entry = requireString(value, 'entry', 1, MAX_ENTRY_LENGTH)
+  if (entry === '/') {
+    reject('entry must name the root document\'s file, e.g. "index.html" -- it is fetched at that path, and served at "/"')
+  }
   validateRelativePath('entry', entry)
 
   const assets = readAssets(value, entry)

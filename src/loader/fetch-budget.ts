@@ -60,18 +60,17 @@ export interface FetchResponse {
  * honouring it, though: it races its own wait on top, so a `Fetch` that
  * ignores the signal still cannot hang the loader forever.
  *
- * MUST REFUSE TO FOLLOW A REDIRECT (A141). fetch-bundle.ts's same-origin and
- * canonical-path checks trust the url they REQUESTED, never `response.url`
- * (see that field's own doc comment above for why) -- which is safe only
- * because a followed redirect response can never reach fetch-bundle.ts to be
- * inspected in the first place. An implementation that follows a redirect
- * (resolves with a Response whose bytes actually came from somewhere other
- * than `url`) silently defeats fetch-bundle.ts's origin confinement, with
- * nothing left downstream to catch it. electron-fetch.ts's `netFetch` passes
- * `redirect: 'error'` for exactly this reason, on top of the reason it was
- * originally added for -- proven against a real redirecting server in
- * test/e2e-loader-adapter.test.ts, which fails if that guarantee ever
- * breaks.
+ * MUST NEVER DELIVER A RESPONSE FROM ANOTHER ORIGIN (A141). fetch-bundle.ts's
+ * same-origin and canonical-path checks trust the url they REQUESTED, never
+ * `response.url` (see that field's own doc comment above for why), which is
+ * safe only because a response whose bytes came from elsewhere can never
+ * reach them. A same-origin redirect may be followed (static hosts answer
+ * `/index.html` with a redirect to `/`); the bytes are then pinned under the
+ * requested path, still on the origin being installed. An implementation that
+ * follows a cross-origin hop silently defeats fetch-bundle.ts's origin
+ * confinement, with nothing downstream to catch it. electron-fetch.ts's
+ * `netFetch` checks every hop (`redirectRefusal`) before taking it, proven
+ * against a real redirecting server in test/e2e-loader-adapter.test.ts.
  */
 export type Fetch = (url: string, pinnedAddresses: readonly string[], signal: AbortSignal) => Promise<FetchResponse>
 

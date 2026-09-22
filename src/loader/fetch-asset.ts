@@ -61,6 +61,23 @@ export async function stageBytes (storage: LoaderStorage, origin: string, path: 
   return { path, byteLength: bytes.length, leaf: await leafOf(path, bytes.length, [bytes]), staged: writer.id }
 }
 
+/** Extensions no host may legitimately answer with an HTML document. */
+const NEVER_HTML = /\.(?:m?js|cjs|css|wasm|json)$/i
+
+/**
+ * True when a script, style, wasm or JSON asset came back as an HTML page:
+ * an SPA host answers a missing file with `200` and its `index.html`, which
+ * would otherwise be pinned under the script's name and fail at run time
+ * with an opaque syntax error. Judged on `Content-Type`, and on the body's
+ * first bytes for a host that sends none.
+ */
+function servedAsHtml (path: string, contentType: string | null, head: Uint8Array | undefined): boolean {
+  if (!NEVER_HTML.test(path)) return false
+  if (contentType !== null && contentType.split(';')[0]?.trim().toLowerCase() === 'text/html') return true
+  const start = new TextDecoder().decode(head ?? new Uint8Array(0)).replace(/^\uFEFF/, '').trimStart().toLowerCase()
+  return start.startsWith('<!doctype html') || start.startsWith('<html')
+}
+
 /**
  * Fetches one declared asset into staging. The origin check runs BEFORE any
  * request: `new URL(assetPath, base)` honours an absolute or
@@ -89,8 +106,9 @@ export async function fetchAssetToStaging (ctx: AssetFetchContext, assetPath: st
     return rejected(`asset ${assetPath} could not be written to local storage`)
   }
   const label = `asset ${assetPath}`
+  let head: Uint8Array | undefined
   const fetched = await fetchWithBudget(ctx.fetchFn, assetUrl, ctx.pinnedAddresses, ctx.assetCap, ctx.budget, label, ctx.bundleSignal,
-    async (chunk) => { await writer.write(chunk) })
+    async (chunk) => { head ??= chunk.slice(0, 64); await writer.write(chunk) })
   try {
     await writer.close()
   } catch (error) {
@@ -98,6 +116,9 @@ export async function fetchAssetToStaging (ctx: AssetFetchContext, assetPath: st
     if (!('ok' in fetched)) return rejected(`${label} could not be written to local storage`)
   }
   if ('ok' in fetched) return fetched
+  if (servedAsHtml(canonicalPath, fetched.response.headers?.get('content-type') ?? null, head)) {
+    return rejected(`${label} came back as an HTML page, not the file it names -- the host answers a missing file with its index page; declare only files it really serves`)
+  }
 
   const stream = await ctx.storage.readStaged(ctx.canonicalOrigin, writer.id)
   if (stream === undefined) return rejected(`${label} could not be read back from local storage`)
