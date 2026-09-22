@@ -67,10 +67,6 @@ export function parseManifest (input: unknown): ManifestResult {
 // silently assumed (CLAUDE.md Rule 1). Generous for any real manifest;
 // bounded so "absurd size" rejects before any of these fields are used for
 // real work.
-// Exported so fetch-bundle.ts can fail fast on a declared Content-Length
-// before downloading a manifest response, rather than duplicating the
-// number (Rule 3, docs/development/code-guidelines.md).
-export const MAX_MANIFEST_BYTES = 64 * 1024
 const MAX_ID_LENGTH = 255
 const MAX_NAME_LENGTH = 200
 const MAX_VERSION_LENGTH = 256
@@ -100,6 +96,18 @@ const CONSENT_GRANULARITIES: readonly ConsentGranularity[] = ['all-or-nothing', 
  * the manifest validator's own accepted range was the actual cause.
  */
 const MAX_ASSETS = MAX_BUNDLE_ENTRIES - 2
+
+/**
+ * Sized so a manifest declaring all MAX_ASSETS paths still fits: one
+ * ASSET_LINE_BYTES line per path (a 56-character relative path, quoted,
+ * indented and comma-terminated) plus a fixed allowance for every other
+ * field -- 278,400 bytes. Exported so fetch-bundle.ts can fail fast on a
+ * declared Content-Length before downloading a manifest response, rather
+ * than duplicating the number (Rule 3, docs/development/code-guidelines.md).
+ */
+const ASSET_LINE_BYTES = 64
+const NON_ASSET_ALLOWANCE_BYTES = 16 * 1024
+export const MAX_MANIFEST_BYTES = MAX_ASSETS * ASSET_LINE_BYTES + NON_ASSET_ALLOWANCE_BYTES
 
 // C0/C1 controls, bidi overrides and isolates (U+202A-U+202E, U+2066-U+2069),
 // zero-width characters (U+200B-U+200D, U+2060-U+2064, U+FEFF) and the
