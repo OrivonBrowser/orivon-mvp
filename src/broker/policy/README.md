@@ -111,6 +111,17 @@ this string as the same address", docs/open-questions.md A20), because both are 
 same [`address-parse.ts`](address-parse.ts) parsers and so can never disagree about what an
 address *is*, only about how it should be spelled.
 
+**[`connect-preflight.ts`](connect-preflight.ts) canonicalises an IPv6 request but refuses a
+non-canonical IPv4 one.** The asymmetry is the ambiguity, not the family. `inet_aton` reads
+`0177.0.0.1` as 127.0.0.1, a person reads it as 177.0.0.1, and `2130706433` is also a valid DNS
+label, so an IPv4 literal is accepted only in the dotted-quad form everything downstream reads the
+same way. `inet_pton`'s IPv6 grammar has no octal, no short forms and no hex-versus-decimal
+choice, so `0:0:0:0:0:0:0:1`, `0000::0001` and `::1` can only ever mean one address; refusing all
+but one spelling would only break apps that print addresses in full. Both pipelines check and dial
+the canonical spelling (`requested`), never the caller's, so the check and the connect cannot
+disagree about which host they mean. Patterns are not canonicalised: a manifest must still declare
+a literal canonically, where a person reads it (`declarableConnectHostRejection`).
+
 **[`connect-src.ts`](connect-src.ts)'s CSP `connect-src` derivation is pure, and set on the
 served response directly** (`src/loader/serve.ts`'s `buildResponse`), never via
 `session.webRequest.onHeadersReceived`: that listener never fires for a `protocol.handle`-served

@@ -103,7 +103,7 @@ export type ConnectDenialReason =
   | 'bad-port'
   /** `hostArg` was not a string, was empty, was over-long, or was not ASCII. */
   | 'bad-host'
-  /** `hostArg` was an address, but written in a non-canonical encoding. */
+  /** `hostArg` was an IPv4 address in a non-canonical encoding, or an address carrying a zone id. */
   | 'non-canonical-host'
   /** No granted pattern could authorise this host and port however it resolved. */
   | 'no-pattern-possible'
