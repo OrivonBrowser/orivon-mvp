@@ -76,6 +76,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **A page can open and save a file through the File System Access API.** One file the person
+  picks or drops can be read and written; folders stay refused (ADR-0024). Without this,
+  FreeTube's import and export failed with `NotAllowedError`, as did any website saving a file
+  this way.
 - **The routed `fetch()` is replaceable, as the platform's own is.** It was installed
   non-writable, which in strict mode stops a bundle shadowing `fetch` on a surrogate global --
   the pattern common `fetch` ponyfills use -- so such an app died while its module graph was

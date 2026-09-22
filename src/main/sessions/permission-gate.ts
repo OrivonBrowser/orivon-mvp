@@ -1,8 +1,8 @@
 // Deny-by-default gate for every Chromium permission a web page can ask
 // for -- camera/microphone, clipboard reads, notifications, MIDI,
 // idle-detection, pointer lock, and launching an external protocol
-// handler, among others. One name is allowed; ALLOWED_PERMISSIONS below
-// says which, and why that is not a hole.
+// handler, among others. `isAllowed` below says what passes, and why that
+// is not a hole.
 // Electron's own documented default, when no handler is installed on a
 // session, is to APPROVE. See ./README.md's Design notes for why
 // this is wired via `app.on('session-created', ...)` rather than at any
@@ -12,8 +12,9 @@ import { app, session, type Session } from 'electron'
 import type { Subsystem } from '../registry.js'
 
 /**
- * Permissions this browser allows; every other name Chromium can ask a
- * session for is denied. The grant ledger this product is built around
+ * Permissions this browser allows outright; `isAllowed` below adds the one
+ * conditional name, and every other name Chromium can ask a session for is
+ * denied. The grant ledger this product is built around
  * governs `orivon.*` capabilities, not Chromium's own, so a name belongs
  * here only when the web platform's own gating is what makes it safe --
  * never because an app asked for it. ADR-0022 argues the entry below.
@@ -35,14 +36,31 @@ import type { Subsystem } from '../registry.js'
  */
 const ALLOWED_PERMISSIONS: ReadonlySet<string> = new Set(['clipboard-sanitized-write'])
 
+/**
+ * `fileSystem` passes for ONE FILE, to read or to write, and never for a
+ * directory. A page holds a handle to a file on disk only because the
+ * person picked it in the OS dialog, or dropped or pasted it; the page
+ * cannot name a path itself. A directory handle would reach every file
+ * beneath it, and a child's handle needs the directory's grant first, so
+ * refusing directories closes the whole tree. ADR-0024 argues this;
+ * ./README.md's Design notes say why both handlers apply it.
+ *
+ * Details that do not state `isDirectory: false` deny: the gate trusts an
+ * explicit "one file", never the absence of "directory".
+ */
+function isAllowed (permission: string, details: object | undefined): boolean {
+  if (ALLOWED_PERMISSIONS.has(permission)) return true
+  return permission === 'fileSystem' && details !== undefined && 'isDirectory' in details && details.isDirectory === false
+}
+
 /** Idempotent: installing the same three handlers on a session twice (the
  * defensive `afterReady` call below, on top of whatever `session-created`
  * already covered) just overwrites each with an identical function. */
 function denyByDefault (target: Session): void {
-  target.setPermissionRequestHandler((_webContents, permission, callback) => {
-    callback(ALLOWED_PERMISSIONS.has(permission))
+  target.setPermissionRequestHandler((_webContents, permission, callback, details) => {
+    callback(isAllowed(permission, details))
   })
-  target.setPermissionCheckHandler((_webContents, permission) => ALLOWED_PERMISSIONS.has(permission))
+  target.setPermissionCheckHandler((_webContents, permission, _origin, details) => isAllowed(permission, details))
   // WebHID/WebUSB/Web Serial have no capability path at all in v0
   // (security-model.md: "subprocess and hid are absent from the v0 API
   // entirely") -- deny outright rather than falling through to whatever a
