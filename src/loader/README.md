@@ -272,6 +272,14 @@ into the app. The one exception stays fail-closed: an origin already served from
 holding a live grant, this session keeps a handler that denies everything, since its partition
 carries authority and must never fall through to whatever the network serves next.
 
+**A declined capability is asked about once, not on every visit.** `decideUpdate()` compares the
+new manifest with what the origin holds; a capability the person declined at install, or revoked
+since, is never held, so every visit used to read as "the app wants more" and raise the capability
+prompt again. `index.ts` now also passes the pinned manifest's own declared set
+(`previouslyDeclaredPatterns`), read back only when its bytes still hash to the pin's manifest
+leaf: authority the person was already asked about counts as covered. That grants nothing -- the
+declined capability stays ungranted -- and a request outside both sets still prompts.
+
 **An app is checked for an update at most once an hour.** Every page load of an app reports its
 hint, and each used to re-download the whole bundle. `createLoader`'s `updateCheckIntervalMs`
 (`UPDATE_CHECK_INTERVAL_MS`, one hour, AI-recommended) answers `'up-to-date'` without fetching

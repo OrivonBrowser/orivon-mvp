@@ -32,6 +32,9 @@ import { installAndNotify } from './install.js'
 import type { LoaderStorage } from './storage.js'
 import { patternSetFromCapabilities } from './update-patterns.js'
 import { originFromUrl } from '../broker/policy/origin.js'
+import { MANIFEST_PATH } from '../broker/policy/canonical-path.js'
+import { leafOf } from './leaf-hash.js'
+import { parseManifest } from './manifest.js'
 
 export type { Fetch, FetchResponse } from './fetch-bundle.js'
 export type { LoaderStorage } from './storage.js'
@@ -273,6 +276,21 @@ export interface Loader {
 }
 
 /**
+ * What the pinned manifest declared -- decideUpdate's
+ * `previouslyDeclaredPatterns`, so a capability the person already declined
+ * (or revoked) is not asked about again on every visit. Read back only if
+ * its bytes still hash to the pin's own manifest leaf; undefined otherwise.
+ */
+async function pinnedDeclaredPatterns (storage: LoaderStorage, origin: string, pin: PinRecord | null): Promise<PatternSet | undefined> {
+  const leaf = pin?.assets.find((asset) => asset.path === MANIFEST_PATH)?.leaf
+  if (leaf === undefined) return undefined
+  const bytes = await storage.readAsset(origin, MANIFEST_PATH)
+  if (bytes === undefined || await leafOf(MANIFEST_PATH, bytes.length, [bytes]) !== leaf) return undefined
+  const parsed = parseManifest(new TextDecoder().decode(bytes))
+  return parsed.ok ? patternSetFromCapabilities(parsed.manifest.capabilities) : undefined
+}
+
+/**
  * Everything `load()` does once a bundle is IN HAND -- read the existing
  * pin, run `decideUpdate()`, and route to one of the five outcomes.
  * Factored out of `load()` so `Loader.reconsider` (below) can run this
@@ -317,7 +335,8 @@ async function decideAndRoute (
     // The comparison LoadContext.acknowledgedRollbackVersion's own doc
     // promises: only NOW is the actual offered version known, so only
     // now can "was THIS version acknowledged" be answered.
-    rollbackAcknowledged: context.acknowledgedRollbackVersion === manifest.version
+    rollbackAcknowledged: context.acknowledgedRollbackVersion === manifest.version,
+    previouslyDeclaredPatterns: await pinnedDeclaredPatterns(options.storage, canonicalOrigin, existingPin)
   })
 
   switch (decision) {

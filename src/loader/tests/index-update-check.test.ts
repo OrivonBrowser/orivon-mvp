@@ -44,3 +44,28 @@ describe('createLoader: updateCheckIntervalMs', () => {
     expect((await loader.load(ORIGIN, NO_GRANTS)).outcome).toBe('installed')
   })
 })
+
+describe('createLoader: a declined capability is not asked about again', () => {
+  const DECLARING = {
+    [MANIFEST_URL]: { body: utf8(manifestJson({ capabilities: { net: { tcp: { connect: ['api.example.com:443'] } } } })) },
+    [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
+  }
+
+  it('an unchanged bundle whose declared capability was never granted installs silently, instead of a capability prompt on every visit', async () => {
+    const storage = memoryStorage()
+    const loader = createLoader({ fetch: stubFetch(DECLARING), storage, now: () => 0, resolve: PUBLIC_RESOLVER })
+    expect((await loader.load(ORIGIN, NO_GRANTS)).outcome).toBe('installed')
+
+    // The person declined at install, so the ledger holds nothing for it.
+    expect((await loader.load(ORIGIN, NO_GRANTS)).outcome).toBe('installed')
+  })
+
+  it('still prompts when the pinned manifest no longer hashes to its pin -- an unverified declaration suppresses nothing', async () => {
+    const storage = memoryStorage()
+    const loader = createLoader({ fetch: stubFetch(DECLARING), storage, now: () => 0, resolve: PUBLIC_RESOLVER })
+    await loader.load(ORIGIN, NO_GRANTS)
+    await storage.writeAsset(ORIGIN, '/.well-known/orivon.json', utf8(manifestJson({ capabilities: { net: { tcp: { connect: ['*:*'] } } } })))
+
+    expect((await loader.load(ORIGIN, NO_GRANTS)).outcome).toBe('needs-capability-prompt')
+  })
+})
