@@ -8313,10 +8313,10 @@ every mention carries its repository. Not taken here, because the name belongs a
 
 ### A202 -- the permission gate now allows one Chromium permission with no per-app grant; what is the rule for the next one, and does `clipboard-read` ever become a capability? **[AI-REC -- the rule below is a recommendation; the clipboard decision itself is the owner's, `d-0036`]**
 
-Filed 2026-09-22 alongside `ADR-0021`, which allows `clipboard-sanitized-write` on every session.
+Filed 2026-09-22 alongside `ADR-0022`, which allows `clipboard-sanitized-write` on every session.
 
 The gate's original doc comment said to add a name "only alongside that surface, never as a bare
-unlock", where "that surface" meant a real user-facing permission prompt. `ADR-0021` adds a name
+unlock", where "that surface" meant a real user-facing permission prompt. `ADR-0022` adds a name
 without one, on the argument that the web platform's own transient-activation rule is what makes
 this particular permission safe and that `document.execCommand('copy')` already grants the same
 power unconditionally. That argument is specific to clipboard write. It is not a general

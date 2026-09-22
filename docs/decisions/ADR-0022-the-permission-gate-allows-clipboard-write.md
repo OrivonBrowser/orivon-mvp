@@ -1,4 +1,4 @@
-# ADR-0021: The permission gate allows clipboard write, to every page
+# ADR-0022: The permission gate allows clipboard write, to every page
 
 - **Status:** proposed
 - **Date:** 2026-09-22

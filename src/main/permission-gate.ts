@@ -16,7 +16,7 @@ import type { Subsystem } from './registry.js'
  * session for is denied. The grant ledger this product is built around
  * governs `orivon.*` capabilities, not Chromium's own, so a name belongs
  * here only when the web platform's own gating is what makes it safe --
- * never because an app asked for it. ADR-0021 argues the entry below.
+ * never because an app asked for it. ADR-0022 argues the entry below.
  *
  * `clipboard-sanitized-write` lets a page call
  * `navigator.clipboard.writeText()`. Chromium still requires transient

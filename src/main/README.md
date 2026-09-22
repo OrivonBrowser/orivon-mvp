@@ -23,7 +23,7 @@ themselves via `subsystems.ts` rather than editing here.
 | `ipc.ts` | Shell IPC channels between the chrome view and main |
 | `omnibox.ts` | Address-bar input: URL or search. Unit tested |
 | `delivery-provenance.ts` | S4-6, `ADR-0007`: whether the active tab is being served from Orivon's own pinned cache, the address-bar dot's one truthful signal |
-| `permission-gate.ts` | Denies every Chromium permission (camera, clipboard reads, notifications, …) on every session a tab can reach. `clipboard-sanitized-write` is the one allowed name (`ADR-0021`) |
+| `permission-gate.ts` | Denies every Chromium permission (camera, clipboard reads, notifications, …) on every session a tab can reach. `clipboard-sanitized-write` is the one allowed name (`ADR-0022`) |
 
 ## Two things not to rediscover
 
@@ -151,7 +151,7 @@ page cannot reach the clipboard unless the person just acted in it, and Chromium
 lands there. Refusing it protected nothing, because `document.execCommand('copy')` reaches the
 same clipboard from the same pages and no Electron API can close that path -- and this gate
 covers the default session, so the refusal broke copy buttons on ordinary websites, not only in
-apps. Reading stays denied in both forms. `ADR-0021` carries the argument in full.
+apps. Reading stays denied in both forms. `ADR-0022` carries the argument in full.
 
 Two consequences worth knowing before touching either file. `web-context-host.ts` reinstalls
 deny-everything handlers on `ADR-0019` isolated-context sessions, and that is now the only thing
