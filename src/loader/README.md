@@ -186,12 +186,12 @@ elsewhere) reaches this same handler, and an app may reach a host it holds a gra
 allowed, performs the real fetch through [`serve-reach.ts`](serve-reach.ts)'s `nodeReachDial`
 (Node's own `https` module, chosen over Electron's `net.fetch` specifically so this path could be
 proven end to end over a real TLS handshake in a real Electron launch; see that file's own
-header). Everything else, whether an ungranted host, a plain `http:` request (A163, a deliberate,
-narrower scope decision, not a gap), or a redirect from the granted host, still gets the same
-fail-closed `denyResponse` this handler has always answered with. `img-src`/`font-src`/`media-src`
-widen alongside it, from the same `https.connect` grant (`connect-src.ts`'s `appReachCspHeaderValue`)
--- without that, `default-src 'self'`'s fallback would keep refusing the very requests this
-decision exists to allow, before they could ever reach the handler.
+header). An ungranted host and a plain `http:` request (A163, a deliberate, narrower scope
+decision, not a gap) get the same fail-closed `denyResponse` as every other refusal. `connect-src`,
+`img-src`, `font-src` and `media-src` widen alongside it, from the same `https.connect` grant
+(`connect-src.ts`'s `reachSourcesFor`): without that, the header would refuse the very requests
+this decision exists to allow before they could reach the handler. "The third-party reach path",
+below, covers what a granted request meets on its way through.
 
 **Why [`serve-reach.ts`](serve-reach.ts) uses Node's own `https` module, not Electron's `net.fetch`
 or a hand-rolled HTTP/1.1 client.** `test/e2e-fetch-routing.test.ts`'s own header records why an
@@ -207,8 +207,8 @@ one is not actually required, and Node's own client already handles chunked enco
 correctly. Two further properties this choice buys for free: `https.request` has no concept of a
 session or a cookie jar at all, so there is nothing to remember to set (contrast Chromium's
 `fetch()`, which needs an explicit `credentials: 'omit'` for the identical guarantee); and it never
-auto-follows a redirect: a 3xx from the granted host is handed back to the page as an ordinary 3xx
-response, so a granted host can never hand a request off to one nobody approved.
+follows a redirect itself: a 3xx goes back to the page's loader, which follows it through this same
+handler, so a granted host can never hand a request off to one nobody approved.
 
 **Why `restorePinnedServing` runs at startup rather than only after a fresh `load()`.** `load()`
 does now have a production caller (the discovery trigger, via `src/main/install/app-install.ts`), but a
@@ -242,10 +242,12 @@ answer by the time any header is computed. Both header functions share one
 `liveGrantedPatternsFor` helper that simply reads `broker.app.grants`, with no disk fallback and
 no special-casing.
 
-A disk fallback would be unsafe for `connect-src` in particular: `connect-src` is the sole gate
-for `WebSocket` (`docs/open-questions.md` A42), which has no live handler behind it to catch a
-wrong guess, so reading disk there would widen a REAL authorisation from an unverified source
-(`A137`). A manifest that is a leaf of a hash-pinned bundle is not the kind of "saved value"
+A disk fallback would be unsafe for `connect-src` in particular: `connect-src` is the only gate a
+`WebSocket` meets (`docs/open-questions.md` A42), since no `protocol.handle` ever sees one, so
+reading disk there would widen a REAL authorisation from an unverified source (`A137`). Measured
+in Electron 44 (`test/e2e-served-csp.test.ts`): from an https page, none of the source forms this
+header emits (a bare `host:port`, `https://host:port`, `https:`) admits a `wss:` URL, so an
+installed app cannot open a third-party WebSocket today. A manifest that is a leaf of a hash-pinned bundle is not the kind of "saved value"
 `A137` forbids trusting; A158 has the full reasoning.
 
 **Why `verifiedManifestFor` (`serve.ts`) exists alongside `createAppRequestHandler`, sharing one
@@ -316,6 +318,77 @@ NUMBER must be reused, not re-derived, so a future change to the clamp (or to wh
 same kind of loader-specific seam `hydrateFromPinnedManifest` already is (A158). The actual
 IN-FLIGHT COUNT is new state, by necessity: a proxied reach request is never a `HandleTable`
 resource (no app-visible `Handle`, no revocation cascade of its own), so `electron-serve.ts`'s
-`reachSlotsFor` keeps a small per-origin counter, checked-and-reserved as one synchronous step
-against that same number -- the identical discipline `GrantLedger.reserveFsBytes`'s own doc
-names for why a quota check and its reservation must never straddle an `await`.
+`reachSlotsFor` keeps one [`serve-reach-slots.ts`](serve-reach-slots.ts) pool per origin: a free
+slot is checked-and-reserved as one synchronous step against that same number (the identical
+discipline `GrantLedger.reserveFsBytes`'s own doc names for why a quota check and its reservation
+must never straddle an `await`), and a request that finds none waits in the pool's queue.
+
+**Why a reach request over the allowance waits in a queue, when T11b says limits reject rather than
+queue.** T11b's rule (`handle-contracts.md`'s Limits section) is about the broker's own operations: an
+unbounded queue of broker work on the UI thread is how one origin freezes every tab. A queued
+reach request is none of that. It is a pending promise and a timer, per origin, bounded in length
+(`REACH_SLOT_MAX_WAITERS`, 256) and in time (`REACH_SLOT_WAIT_MS`, 30 s); past either it is refused
+exactly as before. Refusing at once, on the other hand, broke real pages: a browser queues an
+over-limit request, and a page has no retry for an image or a script that answered 404. The queue
+is FIFO, a newcomer never takes a slot ahead of it, and a request that waited is re-authorised
+before it dials, so a grant revoked meanwhile is not used. Both numbers are provisional.
+
+**What the served bundle's CSP admits, and why** ([`serve-csp.ts`](serve-csp.ts)). The header is
+set on every served response (A110 rules out `onHeadersReceived`) and rebuilt from the live grants
+per request.
+
+- **`script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'`.** The bundle's own code
+  is pinned and hash-verified, `'unsafe-inline'` already grants the script power `'unsafe-eval'`
+  adds, and the broker, not the CSP, is the security boundary. Libraries that compile code at run
+  time (ajv, protobufjs, template compilers, BotGuard) and WebAssembly (a wasm crypto library)
+  need these. A148 records what `'unsafe-inline'` gives up for content an app renders but did not
+  author.
+- **`data:` and `blob:` in `connect-src`, `img-src`, `font-src` and `media-src`; `worker-src
+  'self' blob:`.** Neither scheme has any network reach: a page can only point one at bytes it
+  already holds. MSE video plays from a `blob:` URL, captions and icons often arrive as `data:`,
+  and bundlers start workers from `blob:` URLs.
+- **`frame-src 'self' data: blob:`, and no third-party frame.** A `data:` or `blob:` frame is
+  opaque-origin, gets no preload, and inherits this same policy (measured), so it can do nothing
+  its parent cannot. Embedding a live third-party document is a bigger step than any subresource,
+  and nothing asks for it.
+- **`connect-src`: `'self'`, the local schemes, `tcp.connect`'s bare `host:port` sources, and
+  `https.connect`'s scheme-qualified `https://host:port` sources.** The handler authorises a
+  worker's fetch or a document's XHR against `https.connect`, so the header names that grant
+  too. No `ws:`/`wss:` source is ever emitted from it.
+- **A `*` host in `https.connect` emits `https:`** in the four reach directives. Every `https:`
+  request that source admits reaches this app's own `protocol.handle` (it intercepts the whole
+  scheme for the partition, workers included) and `fetchThirdParty` re-authorises it against the
+  live grant, which still refuses loopback and private addresses: measured with a loopback server
+  that a `*` grant's page could name in the header and that never saw a connection. What the
+  handler cannot re-check is a WebSocket, and `https:` does not admit `wss:` (measured, above).
+  `tcp.connect`'s `*` still contributes nothing to `connect-src` (A43).
+- **No `form-action`.** It never falls back to `default-src`, so it is unrestricted. Restricting
+  it to `'self'` would also refuse the redirects a form-post sign-in flow follows after the form
+  leaves the app, and would bound nothing: top-level navigation is not governed by CSP at all
+  (A42), so a page can send the same data with `location.href`.
+
+**The third-party reach path, in order** (`serve.ts`'s `fetchThirdParty`). Every step is measured or
+unit-tested; the two platform facts it rests on come from `test/e2e-served-csp.test.ts`.
+
+1. **Redirect cap.** A 3xx this handler returns is followed by the page's own loader, back through
+   this same handler, so each hop is authorised afresh, `redirect: 'manual'` yields an opaque
+   redirect, `connect-src` is re-checked against the target, and `Authorization` is dropped on a
+   cross-origin hop. That loader applies no redirect cap at all to a `protocol.handle` response
+   (60 hops measured), so [`serve-reach-redirects.ts`](serve-reach-redirects.ts) counts hops per
+   chain and answers the 21st with a network error, the Fetch standard's own limit. A chain is
+   keyed by URL; one whose target URL is re-serialised differently restarts its count.
+2. **Authorisation** against the live `https.connect` grant.
+3. **A CORS preflight** to a granted host is answered without the network
+   ([`serve-reach-cors.ts`](serve-reach-cors.ts)). Only a browser preflight carries
+   `Access-Control-Request-Method`, so an app's own `OPTIONS` request still reaches the host.
+4. **A socket-allowance slot**, waited for in the bounded queue above, and re-authorisation after
+   any wait.
+5. **The dial** ([`serve-reach.ts`](serve-reach.ts)), with an idle timeout
+   (`REACH_IDLE_TIMEOUT_MS`, five minutes) that every byte resets, so a long-poll or an event
+   stream lives as long as it keeps talking.
+6. **A redirect goes back bodiless**, which frees its slot and upstream socket at once rather than
+   whenever the loader gets round to the body.
+7. **Anything else streams** through the revoke guard (A199), with CORS response headers for the
+   app origin. Electron 44 does not enforce CORS on a `protocol.handle` response at all (measured:
+   a cross-origin response with no `Access-Control-Allow-Origin` was readable, and a `PUT` sent no
+   preflight), so today the headers only keep worker fetch and XHR working if it ever starts to.

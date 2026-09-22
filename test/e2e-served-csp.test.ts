@@ -213,8 +213,25 @@ it('a pinned bundle compiles wasm, shows data: images, starts blob: workers, loa
           img.src = src
         })))
 
+        // A worker's fetch and a document's XHR to a host the grant refuses:
+        // both must reach the handler (the loopback server stays silent),
+        // and whether the refusal is readable says whether CORS is enforced.
+        const workerFetch = await new Promise<string>((resolve) => {
+          const source = "fetch('https://localhost:8894/w').then((r) => postMessage('status ' + r.status), () => postMessage('rejected'))"
+          const worker = new Worker(URL.createObjectURL(new Blob([source], { type: 'text/javascript' })))
+          const timer = setTimeout(() => { resolve('timeout') }, 5_000)
+          worker.onmessage = (event) => { clearTimeout(timer); resolve(String(event.data)); worker.terminate() }
+        })
+        const documentXhr = await new Promise<string>((resolve) => {
+          const xhr = new XMLHttpRequest()
+          xhr.open('GET', 'https://127.0.0.1:8894/x')
+          xhr.onload = () => { resolve(`status ${String(xhr.status)}`) }
+          xhr.onerror = () => { resolve('error') }
+          xhr.send()
+        })
+
         await settle(300)
-        return { wasmBytes, wasmStreaming, evalTop, dataImage, blobWorker, dataFrame, narrowedFrame, thirdPartyFrame, thirdPartyScript, loopbackImages, violations }
+        return { workerFetch, documentXhr, wasmBytes, wasmStreaming, evalTop, dataImage, blobWorker, dataFrame, narrowedFrame, thirdPartyFrame, thirdPartyScript, loopbackImages, violations }
       }, 60_000)
 
       await new Promise((resolve) => setTimeout(resolve, 300))
@@ -238,6 +255,8 @@ it('a pinned bundle compiles wasm, shows data: images, starts blob: workers, loa
       check('none of the admitted cases raised a violation',
         !outcome.violations.some((entry: string) => !entry.includes('elsewhere.orivon.test') && !entry.includes('cdn.orivon.test')), detail)
       check('the `*` grant\'s https: source admits a loopback https image in the header (no img-src violation for it)', !violated('localhost:8894') && !violated('127.0.0.1:8894'), detail)
+      check('a worker\'s fetch and a document\'s XHR reach the handler too, and its refusal is readable (CORS is not enforced on a protocol.handle response)',
+        outcome.workerFetch === 'status 404' && outcome.documentXhr === 'status 404', detail)
       check('THE LIVE GATE: the handler refused both loopback targets -- the loopback server saw no connection', loopback.count() === 0, `accepted=${String(loopback.count())} ${detail}`)
     })
 
