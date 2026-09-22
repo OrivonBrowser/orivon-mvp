@@ -66,3 +66,15 @@ describe('installOrivon -- a peer reset', () => {
     await expect(socket.readable.getReader().read()).rejects.toMatchObject({ code: 'reset', platformCode: 'ECONNRESET' })
   })
 })
+
+describe('installOrivon -- a revived rejection', () => {
+  it('keeps the handleId the isolated world attached', async () => {
+    const bridge = fakeBridge(fakeSocketBridgeResult())
+    bridge.appManifest = async () => { throw { name: 'OrivonError', message: 'orivon: closed', code: 'closed', handleId: 'h9' } }
+    const target: Record<string, unknown> = {}
+    installOrivon(bridge, LIMITS, target)
+    const orivon = target.orivon as { app: { manifest: () => Promise<unknown> } }
+
+    await expect(orivon.app.manifest()).rejects.toMatchObject({ code: 'closed', handleId: 'h9' })
+  })
+})

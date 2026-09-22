@@ -80,12 +80,13 @@ export function installOrivon (
       return await promise
     } catch (error) {
       if (typeof error !== 'object' || error === null) throw error
-      const candidate = error as { name?: unknown, message?: unknown, code?: unknown, platformCode?: unknown }
+      const candidate = error as { name?: unknown, message?: unknown, code?: unknown, platformCode?: unknown, handleId?: unknown }
       if (typeof candidate.message !== 'string' || typeof candidate.code !== 'string') throw error
-      const revived = new Error(candidate.message) as Error & { code: string, platformCode?: string }
+      const revived = new Error(candidate.message) as Error & { code: string, platformCode?: string, handleId?: string }
       revived.name = typeof candidate.name === 'string' ? candidate.name : 'OrivonError'
       revived.code = candidate.code
       if (typeof candidate.platformCode === 'string') revived.platformCode = candidate.platformCode
+      if (typeof candidate.handleId === 'string') revived.handleId = candidate.handleId
       throw revived
     }
   }
