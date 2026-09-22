@@ -126,3 +126,18 @@ describe('wireView -- a beforeunload guard asks instead of silently blocking', (
     expect(showMessageBoxSync.mock.calls[0]?.[0]).toBe(window)
   })
 })
+
+describe('wireView -- context menu', () => {
+  it('builds a menu for a right-click in the tab', () => {
+    const wc = fakeContents()
+    wireView(fakeHost(), 'tab-1', record(wc))
+
+    wc.emit('context-menu', {}, {
+      x: 1, y: 1, linkURL: 'https://example.com/', srcURL: '', mediaType: 'none', hasImageContents: false,
+      isEditable: false, selectionText: '', frame: null,
+      editFlags: { canCut: false, canCopy: false, canPaste: false, canSelectAll: true }
+    })
+
+    expect(buildFromTemplate).toHaveBeenCalledTimes(1)
+  })
+})

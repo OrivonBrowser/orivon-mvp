@@ -9,7 +9,8 @@ derives the plain Chrome User-Agent [`../index.ts`](../index.ts) sets app-wide.
 
 What a page asks of its window: `fullscreen.ts` decides which tab, if any, fills the window,
 and `fullscreen-notice.ts` shows "Press Esc to exit full screen"; `leave-page-prompt.ts` asks the
-question a `beforeunload` guard raises.
+question a `beforeunload` guard raises; `context-menu.ts` is the right-click menu for tabs and
+the chrome.
 
 **What it depends on.** `electron`; [`../../broker/`](../../broker/) (`policy/origin.ts`,
 `grants/origin-hash.ts`, `broker-contracts.ts` types); [`../../loader/electron-serve.ts`](../../loader/electron-serve.ts)
