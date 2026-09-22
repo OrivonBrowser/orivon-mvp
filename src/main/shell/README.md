@@ -86,21 +86,24 @@ change" and repartition the dashboard into an app partition on its very first lo
 excludes `record.isDashboardTab` explicitly rather than relying on `partitionChanged` alone to
 catch this case.
 
-**[`popups.ts`](popups.ts): a popup keeps its opener's session.** A popup that keeps
-`window.opener` is Chromium's own new webContents, created in its opener's storage partition,
-and no other session can hold it; the tab adopts it there. For the same reason `wireView`'s
-did-navigate never repartitions a tab while its opener exists: swapping the view severs
-`window.opener`, and a sign-in popup's whole job ends with the provider redirecting back to the
-app's own callback page and posting to the opener. The cost is an ADR-0018 residual, bounded two
-ways: until its opener closes, a page an app opens as a popup runs in the app's partition (a
-sign-in provider's cookies land there), and an app page opened as a popup from an ordinary site
-runs on the default session. Only a popup the page asked for pays it: `routePopup` sends a link
-or a plain `window.open(url)` that would cross sessions to an ordinary new tab, which loads in the
-right session from its first request, and `noopener`/`noreferrer` always get one. A popup's
-`--orivon-app-tab` flag follows its own URL, not its opener's, so a third-party page an app opens
-never gets Node globals or routed `fetch()`. **Trap:** the adopting `WebContentsView` must be
-given the popup's `webPreferences` as well as its webContents; with the webContents alone,
-Electron 44 drops the preload and the popup has no `orivon` surface at all.
+**[`popups.ts`](popups.ts): a popup keeps its opener's session, except into an isolated
+app.** A popup that keeps `window.opener` is Chromium's own new webContents, created in its
+opener's storage partition, and no other session can hold it; the tab adopts it there. For the
+same reason `wireView`'s did-navigate does not move a tab that still has its opener onto the
+default session: that swap severs `window.opener`, and a sign-in popup's whole job ends with the
+provider redirecting back to the app's callback page and posting to the opener. The cost is an
+ADR-0018 residual: until its opener closes, an open-web page an app opens as a popup runs in the
+app's partition, so a sign-in provider's cookies land there. The other direction is never
+allowed, opener or not. A tab reaching an isolated app always moves into the app's own session,
+and `routePopup` opens a popup into one from any other session as an ordinary tab, because that
+session is the only place the app's pinned bundle is served (ADR-0007); anywhere else the app's
+origin would run whatever the network sends, with its grants. Links, plain `window.open(url)`
+calls that would cross sessions, and `noopener`/`noreferrer` also get an ordinary new tab, which
+loads in the right session from its first request. A popup's `--orivon-app-tab` flag follows its
+own URL, not its opener's, so a third-party page an app opens never gets Node globals or routed
+`fetch()`. **Trap:** the adopting `WebContentsView` must be given the popup's `webPreferences` as
+well as its webContents; with the webContents alone, Electron 44 drops the preload and the popup
+has no `orivon` surface at all.
 
 **[`fullscreen.ts`](fullscreen.ts): Electron fullscreens the window, not the view.** On
 `requestFullscreen()` Electron puts the owning window into fullscreen and takes it out again, but

@@ -208,29 +208,43 @@ describe('wireView -- window.open', () => {
 })
 
 describe('wireView -- a popup keeps its session while its opener holds it', () => {
-  it('does not repartition a tab whose opener is still there, even onto an origin that has its own session', () => {
-    // The sign-in popup returning to the app's callback URL: swapping the
-    // view would sever window.opener, which is the whole point of the popup.
+  it('keeps a popup that still has its opener in the app\'s session while it is on the open web', () => {
+    // A sign-in provider's pages, between the app opening the popup and the
+    // provider redirecting back: moving the view to the default session
+    // would sever window.opener, which is the whole point of the popup.
     const wc = fakeContents()
     wc.opener = {}
     const host = fakeHost()
-    const r = record(wc)
+    const r = record(wc, APP_PARTITION)
     wireView(host, 'tab-1', r)
 
-    wc.emit('did-navigate', {}, `${APP}/callback`)
+    wc.emit('did-navigate', {}, 'https://accounts.example/consent')
 
-    expect(r.partition).toBeUndefined()
+    expect(r.partition).toBe(APP_PARTITION)
     expect(host.emitState).toHaveBeenCalled()
   })
 
-  it('repartitions like any other tab once the opener is gone', () => {
+  it('still moves a popup into an isolated app\'s own session, opener or not', () => {
+    // Anywhere else the app's origin would run unpinned network code with
+    // its grants; the opener link is the lesser loss.
     const wc = fakeContents()
+    wc.opener = {}
     const r = record(wc)
     wireView(fakeHost(), 'tab-1', r)
 
     wc.emit('did-navigate', {}, `${APP}/callback`)
 
     expect(r.partition).toBe(APP_PARTITION)
+  })
+
+  it('moves back to the default session like any other tab once the opener is gone', () => {
+    const wc = fakeContents()
+    const r = record(wc, APP_PARTITION)
+    wireView(fakeHost(), 'tab-1', r)
+
+    wc.emit('did-navigate', {}, 'https://accounts.example/consent')
+
+    expect(r.partition).toBeUndefined()
   })
 })
 

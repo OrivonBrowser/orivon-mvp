@@ -37,8 +37,12 @@ export function routePopup (
   }
   if (seversOpener(details.features)) return 'new-tab'
   if (targetPartition === opener.partition) return 'adopt'
-  // Crossing sessions: only a page that asked for a popup window, or a blank
-  // one it will fill, is waiting on the opener link. A link or a plain
+  // An isolated app's pinned bundle is served only in its own session.
+  // Adopted anywhere else, its origin would run whatever the network sends,
+  // with its grants.
+  if (targetPartition !== undefined) return 'new-tab'
+  // Out onto the open web: only a page that asked for a popup window, or a
+  // blank one it will fill, is waiting on the opener link. A link or a plain
   // window.open(url) loads in the right session from its first request.
   return details.disposition === 'new-window' || details.url === 'about:blank' ? 'adopt' : 'new-tab'
 }

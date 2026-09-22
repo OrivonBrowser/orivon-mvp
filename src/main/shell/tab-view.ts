@@ -192,10 +192,12 @@ export interface TabViewHost {
   getTabBounds: () => Bounds
 }
 
-/** A popup whose opener still exists: swapping its view would sever
- * `window.opener`, which is what the page opened it for. */
-function holdsOpener (wc: WebContents): boolean {
-  return wc.opener !== null && wc.opener !== undefined
+/** A popup whose opener still exists stays in its opener's session on the
+ * open web: moving it to the default session would sever `window.opener`,
+ * which is what the page opened it for. A move INTO an isolated app still
+ * happens, since that is the only session serving the app's pinned bundle. */
+function keepsOpenerSession (wc: WebContents, swap: PartitionSwap): boolean {
+  return swap.to === undefined && wc.opener !== null && wc.opener !== undefined
 }
 
 /** Every event a tab's WebContentsView needs wired -- shared by createTab(),
@@ -231,9 +233,9 @@ export function wireView (host: TabViewHost, id: string, record: TabRecord): voi
     if (record.isDashboardTab && originFromUrl(navigatedUrl) !== originFromUrl(host.dashboardUrl)) {
       record.isDashboardTab = false
     }
-    if (!record.isDashboardTab && !holdsOpener(wc)) {
+    if (!record.isDashboardTab) {
       const swap = partitionChanged(navigatedUrl, record.partition, host.broker)
-      if (swap !== undefined) {
+      if (swap !== undefined && !keepsOpenerSession(wc, swap)) {
         repartitionView(host, id, record, navigatedUrl, swap.to)
         return
       }

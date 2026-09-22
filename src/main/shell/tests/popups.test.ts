@@ -29,6 +29,14 @@ describe('routePopup -- which window.open()/target=_blank calls keep their opene
     expect(routePopup(popupWindow('https://accounts.example/auth'), inApp, undefined)).toBe('adopt')
   })
 
+  it('never adopts a popup into an isolated app from another session, even one the page asked for', () => {
+    // An isolated app's pinned bundle is served only in its own partition;
+    // anywhere else its origin would run whatever the network sends, with
+    // its grants.
+    expect(routePopup(popupWindow(`${APP}signin`), onWeb, APP_PARTITION)).toBe('new-tab')
+    expect(routePopup(popupWindow(`${APP}signin`), { url: 'https://b.example/', partition: 'persist:b' }, APP_PARTITION)).toBe('new-tab')
+  })
+
   it('adopts a blank popup the page will write into or navigate itself', () => {
     expect(routePopup(scripted('about:blank'), inApp, undefined)).toBe('adopt')
   })
