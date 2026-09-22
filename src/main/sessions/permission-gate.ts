@@ -1,8 +1,8 @@
 // Deny-by-default gate for every Chromium permission a web page can ask
 // for -- camera/microphone, clipboard reads, notifications, MIDI,
 // idle-detection, pointer lock, and launching an external protocol
-// handler, among others. One name is allowed; ALLOWED_PERMISSIONS below
-// says which, and why that is not a hole.
+// handler, among others. A short list of names is allowed;
+// ALLOWED_PERMISSIONS below says which, and why none of them is a hole.
 // Electron's own documented default, when no handler is installed on a
 // session, is to APPROVE. See ./README.md's Design notes for why
 // this is wired via `app.on('session-created', ...)` rather than at any
@@ -16,7 +16,7 @@ import type { Subsystem } from '../registry.js'
  * session for is denied. The grant ledger this product is built around
  * governs `orivon.*` capabilities, not Chromium's own, so a name belongs
  * here only when the web platform's own gating is what makes it safe --
- * never because an app asked for it. ADR-0022 argues the entry below.
+ * never because an app asked for it. ADR-0022 argues the clipboard entry.
  *
  * `clipboard-sanitized-write` lets a page call
  * `navigator.clipboard.writeText()`. Chromium still requires transient
@@ -33,7 +33,13 @@ import type { Subsystem } from '../registry.js'
  * person last copied anywhere else, which is how a seed phrase or a
  * password leaves the machine.
  */
-const ALLOWED_PERMISSIONS: ReadonlySet<string> = new Set(['clipboard-sanitized-write'])
+const ALLOWED_PERMISSIONS: ReadonlySet<string> = new Set([
+  'clipboard-sanitized-write',
+  // Only from a click in the page, and Escape always leaves: the browser
+  // process takes that key before the page sees it. `automatic-fullscreen`,
+  // the name that waives the click, stays denied. ./README.md has the rest.
+  'fullscreen'
+])
 
 /** Idempotent: installing the same three handlers on a session twice (the
  * defensive `afterReady` call below, on top of whatever `session-created`

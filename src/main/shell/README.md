@@ -7,6 +7,9 @@ resolves electron-vite's dev-server/file-URL split for both this and
 [`../permissions/permissions-panel.ts`](../permissions/permissions-panel.ts). `user-agent.ts`
 derives the plain Chrome User-Agent [`../index.ts`](../index.ts) sets app-wide.
 
+What a page asks of its window: `fullscreen.ts` decides which tab, if any, fills the window,
+and `fullscreen-notice.ts` shows "Press Esc to exit full screen".
+
 **What it depends on.** `electron`; [`../../broker/`](../../broker/) (`policy/origin.ts`,
 `grants/origin-hash.ts`, `broker-contracts.ts` types); [`../../loader/electron-serve.ts`](../../loader/electron-serve.ts)
 (type only); and, inside `src/main/`, [`../browsing/`](../browsing/) (bookmarks, favicon,
@@ -80,3 +83,18 @@ the same as an ordinary tab's would see partition `undefined` -> a real partitio
 change" and repartition the dashboard into an app partition on its very first load. The handler
 excludes `record.isDashboardTab` explicitly rather than relying on `partitionChanged` alone to
 catch this case.
+
+**[`fullscreen.ts`](fullscreen.ts): Electron fullscreens the window, not the view.** On
+`requestFullscreen()` Electron puts the owning window into fullscreen and takes it out again, but
+a `WebContentsView` keeps the bounds it was given, so the page stayed under the chrome.
+`window.ts` hides the chrome and gives the tab the whole content area while
+`HtmlFullscreen.tabId` is set. Escape needs no handler here: Electron's exclusive-access manager
+consumes it in the browser process before the page sees the key, which is what makes allowing
+the permission safe (`../sessions/README.md`). When the shell itself ends fullscreen (another
+tab became active), it asks the page through an isolated world, where the page's own script
+cannot have replaced `document.exitFullscreen`.
+
+**[`user-agent.ts`](user-agent.ts): the string, not the brand list.** `navigator.userAgentData`
+still lists Chromium rather than Google Chrome, and Electron has no API to change it. A site that
+checks that list for Google Chrome sees what it sees in any other Chromium-based browser.
+

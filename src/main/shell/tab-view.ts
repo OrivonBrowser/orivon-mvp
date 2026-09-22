@@ -3,7 +3,7 @@
 // `## Design notes`, for why). Pure with respect to TabManager: neither
 // function here reads or writes any tab-collection state.
 import { WebContentsView } from 'electron'
-import type { View } from 'electron'
+import type { BaseWindow, View } from 'electron'
 import { partitionFor } from '../../broker/grants/origin-hash.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { shouldClearFavicon } from '../browsing/favicon.js'
@@ -146,6 +146,14 @@ function reportAppFailures (view: WebContentsView): void {
   })
 }
 
+/** What the window around the tabs gives them: window.ts supplies it. */
+export interface TabShell {
+  /** The window a tab's dialogs and menus attach to. */
+  readonly window: BaseWindow
+  /** A tab's page entered or left HTML fullscreen. */
+  htmlFullscreenChanged: (id: string, entered: boolean) => void
+}
+
 /** What the per-view wiring below needs back from TabManager.
  *
  * An explicit surface rather than the class itself: these two functions are
@@ -159,11 +167,14 @@ export interface TabViewHost {
   readonly broker: Broker | undefined
   /** Read only to tell "still showing the dashboard" from "navigated away", in `wireView`'s did-navigate below. Never used to decide that a tab IS the dashboard -- `TabRecord.isDashboardTab` owns that, and only creation sets it. */
   readonly dashboardUrl: string
+  /** Undefined without a window around the tabs; a tab then shows no dialog or menu. */
+  readonly window: BaseWindow | undefined
   isActive: (id: string) => boolean
   emitState: () => void
   captureFavicon: (id: string, record: TabRecord, favicons: string[]) => Promise<void>
   forgetTab: (id: string) => void
   openTab: (url: string) => void
+  htmlFullscreenChanged: (id: string, entered: boolean) => void
   getTabBounds: () => Bounds
 }
 
@@ -233,6 +244,9 @@ export function wireView (host: TabViewHost, id: string, record: TabRecord): voi
   // exact listener from the OLD view before closing it, specifically so this
   // handler only ever fires for a tab that is GENUINELY gone.
   wc.on('destroyed', () => { host.forgetTab(id) })
+
+  wc.on('enter-html-full-screen', () => { host.htmlFullscreenChanged(id, true) })
+  wc.on('leave-html-full-screen', () => { host.htmlFullscreenChanged(id, false) })
 
   // T18: never let a tab open a real popup window -- route it to a new tab
   // in this same shell instead.

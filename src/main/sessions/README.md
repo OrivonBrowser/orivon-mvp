@@ -1,8 +1,8 @@
 # `src/main/sessions/`: what an Electron `Session` is allowed to do
 
 **What lives here.** `permission-gate.ts`: denies every Chromium permission (camera, clipboard
-reads, notifications, …) on every session a tab can reach. `clipboard-sanitized-write` is the
-one allowed name (`ADR-0022`). `web-context-host.ts`: ADR-0019's
+reads, notifications, …) on every session a tab can reach. `clipboard-sanitized-write`
+(`ADR-0022`) and `fullscreen` are the allowed names. `web-context-host.ts`: ADR-0019's
 Electron half of the isolated `WebContext` — the real `WebContextHost`
 [`../../broker/web-capability.ts`](../../broker/web-capability.ts) calls through
 `CreateBrokerOptions.webContextHost`: the partition, the sandboxed/isolated `WebContentsView`,
@@ -36,8 +36,8 @@ startup would still miss a partition a tab opens after that point, which is most
 listed first in `subsystems.ts`, ahead of everything else, so its `beforeReady` attaches the
 listener before any other subsystem's own `beforeReady` gets a chance to create a session.
 
-**What the gate allows, and why exactly one name.** `clipboard-sanitized-write` is granted on
-every ordinary session; every other permission Chromium can ask for is refused. The web
+**What the gate allows, and why these names.** `clipboard-sanitized-write` and `fullscreen` are
+granted on every ordinary session; every other permission Chromium can ask for is refused. The web
 platform gates clipboard writing on transient user activation and a focused document, so the
 page cannot reach the clipboard unless the person just acted in it, and Chromium sanitizes what
 lands there. Refusing it protected nothing, because `document.execCommand('copy')` reaches the
@@ -45,10 +45,20 @@ same clipboard from the same pages and no Electron API can close that path -- an
 covers the default session, so the refusal broke copy buttons on ordinary websites, not only in
 apps. Reading stays denied in both forms. `ADR-0022` carries the argument in full.
 
+`fullscreen` is the same shape of argument with a different second half. Chromium lets a page
+enter fullscreen only from a click in it, and it asks this gate on the request handler only:
+measured against a real page, `requestFullscreen()` reaches `setPermissionRequestHandler` with
+`fullscreen` and `setPermissionCheckHandler` with `automatic-fullscreen`, the content setting
+that waives the click. The second stays denied, so the click is always required. Leaving is not
+the page's to refuse: Escape is consumed in the browser process before the page sees the key.
+What the gate cannot supply is the warning every browser shows, because a page filling the
+screen can draw a fake address bar; [`../shell/fullscreen-notice.ts`](../shell/fullscreen-notice.ts)
+shows it.
+
 Two consequences worth knowing before touching either file. `web-context-host.ts` reinstalls
 deny-everything handlers on `ADR-0019` isolated-context sessions, and that is now the only thing
-holding clipboard write away from a document running another site's script -- it looks like
-duplication and is not. And the grant ledger is untouched by any of this: it governs `orivon.*`
+holding clipboard write and fullscreen away from a document running another site's script -- it
+looks like duplication and is not. And the grant ledger is untouched by any of this: it governs `orivon.*`
 capabilities, not Chromium's own, so no app gained a power a plain website does not have.
 
 **[`web-context-host.ts`](web-context-host.ts)'s two WebRTC belts, and why a proxy pointed at the
