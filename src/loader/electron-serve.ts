@@ -144,8 +144,9 @@ export function isOriginServedFromCacheSync (origin: string): boolean {
 
 /**
  * `origin`'s live grant for `capability`, straight off the broker -- shared
- * by `grantedConnectPatternsFor` (`tcp.connect`, the `connect-src` header)
- * and `secureHeaderPatternsFor` (`https.connect`, `img-src`/`font-src`/
+ * by `grantedConnectPatternsFor` (`tcp.connect`, bare sources in
+ * `connect-src`) and `secureHeaderPatternsFor` (`https.connect`, the reach
+ * sources serve-csp.ts puts in `connect-src`/`img-src`/`font-src`/
  * `media-src`) below, which differ only in which capability they ask for
  * (code-guidelines.md Rule 3: one implementation, not two that happen to
  * look alike). Falls back to `[]` on ANY failure (an unregistered origin, or
@@ -182,11 +183,10 @@ async function grantedConnectPatternsFor (broker: Broker, origin: string): Promi
   return await liveGrantedPatternsFor(broker, origin, 'tcp.connect')
 }
 
-/** `img-src`/`font-src`/`media-src`'s source -- `https.connect`, a SEPARATE
- * grant from `tcp.connect` above. `fetchThirdParty`/`authoriseReachFor`
- * (serve.ts) independently live-check every actual request regardless of
- * what this header claims, so this is doubly safe even though, since A158's
- * fix, it is also simply correct. */
+/** The reach directives' source -- `https.connect`, a SEPARATE grant from
+ * `tcp.connect` above. `fetchThirdParty`/`authoriseReachFor` (serve.ts)
+ * independently live-check every `https:` request regardless of what this
+ * header claims. */
 async function secureHeaderPatternsFor (broker: Broker, origin: string): Promise<readonly Pattern[]> {
   return await liveGrantedPatternsFor(broker, origin, 'https.connect')
 }
@@ -256,9 +256,9 @@ export function reachOnlyHandlerFor (broker: Broker, opener: string): (request: 
  * per-request CSP source (`grantedConnectPatternsFor`/`secureHeaderPatternsFor`
  * above) and as the live gate for a third-party request (`authoriseReachFor`,
  * A143) -- `undefined` (no broker subsystem this run) still serves the app,
- * with `connect-src`/`img-src`/`font-src`/`media-src` all `'self'` only and
- * third-party reach refused outright, which is the same safe "nothing
- * granted" answer as before this lane, not a degraded mode of it.
+ * with no grant-derived source in any directive and third-party reach
+ * refused outright: the same safe "nothing granted" answer, not a degraded
+ * mode of it.
  *
  * `nodeReachDial()` (A143, `serve-reach.ts`) is wired in unconditionally --
  * it needs no broker and performs no I/O until `fetchThirdParty` actually

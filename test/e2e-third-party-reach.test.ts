@@ -200,7 +200,10 @@ it(
         const cspHeader = await evaluateRetrying(view, async () => (await fetch('/')).headers.get('content-security-policy'))
         check(
           'the served document\'s own response widens img-src/font-src/media-src to the granted host, from https.connect',
-          typeof cspHeader === 'string' && cspHeader.includes('img-src \'self\' localhost:8881; font-src \'self\' localhost:8881; media-src \'self\' localhost:8881'),
+          typeof cspHeader === 'string' && cspHeader.includes(
+            'img-src \'self\' data: blob: https://localhost:8881; font-src \'self\' data: blob: https://localhost:8881; ' +
+            'media-src \'self\' data: blob: https://localhost:8881'
+          ),
           String(cspHeader)
         )
 
@@ -209,18 +212,10 @@ it(
         // No reference to outer consts inside this callback -- see file
         // header, same constraint fetch-route.ts's own installFetchRoute
         // and e2e-csp-connect-src.test.ts's own evaluate callback share.
-        // AN <img> ELEMENT, NOT AN XHR: `img-src`/`font-src`/`media-src` are
-        // what this PR actually widens (this file's own earlier check,
-        // above) -- `connect-src` is sourced from `tcp.connect` alone, a
-        // SEPARATE grant this fixture never holds (A143/ADR-0017's own
-        // split), unaffected by whether A158's restart-hydration gap is
-        // open or closed, so an XHR here would be refused by CSP's
-        // `connect-src` before ever reaching `fetchThirdParty` at
-        // all, proving nothing about img-src. (Found running this file the
-        // first time: both XHRs settled with `status: 0` and NEITHER real
-        // server saw a connection -- a CSP-level refusal, not a policy
-        // decision -- which is why this uses the directive this PR
-        // actually governs instead.)
+        // AN <img> ELEMENT, NOT AN XHR: an app tab's XHR is routed through
+        // the broker (src/preload/), so it would prove the broker's own
+        // https.connect check rather than this handler's. An <img> always
+        // goes through Chromium, so it reaches fetchThirdParty.
         const result = await evaluateRetrying(view, async () => {
           function loadImage (url: string): Promise<{ settled: boolean, loaded: boolean }> {
             return new Promise((resolve) => {

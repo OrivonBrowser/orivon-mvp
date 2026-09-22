@@ -196,8 +196,8 @@ describe('registerServingFor -- the served bundle\'s CSP reads the LIVE broker g
     const response = await handler(new Request('https://app.example/'))
 
     expect(response.headers.get('content-security-policy')).toBe(
-      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; " +
-      "img-src 'self'; font-src 'self'; media-src 'self'"
+      "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' data: blob:; " +
+      "img-src 'self' data: blob:; font-src 'self' data: blob:; media-src 'self' data: blob:; worker-src 'self' blob:; frame-src 'self' data: blob:"
     )
 
     vi.doUnmock('electron')
@@ -218,7 +218,7 @@ describe('registerServingFor -- the served bundle\'s CSP reads the LIVE broker g
     if (handler === undefined) throw new Error('no handler was registered')
     const response = await handler(new Request('https://app.example/'))
 
-    expect(response.headers.get('content-security-policy')).toContain("connect-src 'self' api.example.com:443")
+    expect(response.headers.get('content-security-policy')).toContain("connect-src 'self' data: blob: api.example.com:443")
 
     vi.doUnmock('electron')
   })
@@ -239,9 +239,13 @@ describe('registerServingFor -- the served bundle\'s CSP reads the LIVE broker g
     const response = await handler(new Request('https://app.example/'))
 
     const csp = response.headers.get('content-security-policy')
-    expect(csp).toContain("img-src 'self' cdn.example.com:443; font-src 'self' cdn.example.com:443; media-src 'self' cdn.example.com:443")
-    // A https.connect grant never widens connect-src -- that stays sourced from tcp.connect alone.
-    expect(csp).toContain("connect-src 'self';")
+    expect(csp).toContain(
+      "img-src 'self' data: blob: https://cdn.example.com:443; font-src 'self' data: blob: https://cdn.example.com:443; " +
+      "media-src 'self' data: blob: https://cdn.example.com:443"
+    )
+    // connect-src gains the https.connect host scheme-qualified -- the grant
+    // the reach handler checks -- and never as a bare host:port.
+    expect(csp).toContain("connect-src 'self' data: blob: https://cdn.example.com:443;")
 
     vi.doUnmock('electron')
   })
@@ -297,8 +301,8 @@ describe('registerServingFor -- the served bundle\'s CSP reads the LIVE broker g
     const response = await handler(new Request('https://app.example/'))
 
     expect(response.headers.get('content-security-policy')).toBe(
-      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; " +
-      "img-src 'self'; font-src 'self'; media-src 'self'"
+      "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' data: blob:; " +
+      "img-src 'self' data: blob:; font-src 'self' data: blob:; media-src 'self' data: blob:; worker-src 'self' blob:; frame-src 'self' data: blob:"
     )
 
     vi.doUnmock('electron')
@@ -490,7 +494,7 @@ describe('restorePinnedServing across a restart -- A158, resolved for every dire
     // manifest before this handler was ever registered -- widening this is
     // no longer widening from anything unverified (A137's objection does
     // not apply to a hash-pinned leaf).
-    expect(response.headers.get('content-security-policy')).toContain("connect-src 'self' api.example.com:443")
+    expect(response.headers.get('content-security-policy')).toContain("connect-src 'self' data: blob: api.example.com:443")
 
     vi.doUnmock('electron')
   })
@@ -512,8 +516,10 @@ describe('restorePinnedServing across a restart -- A158, resolved for every dire
     const response = await handler(new Request(`${ORIGIN}/`))
 
     expect(response.headers.get('content-security-policy')).toBe(
-      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; " +
-      "img-src 'self' granted.example:443; font-src 'self' granted.example:443; media-src 'self' granted.example:443"
+      "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; " +
+      "connect-src 'self' data: blob: https://granted.example:443; " +
+      "img-src 'self' data: blob: https://granted.example:443; font-src 'self' data: blob: https://granted.example:443; " +
+      "media-src 'self' data: blob: https://granted.example:443; worker-src 'self' blob:; frame-src 'self' data: blob:"
     )
 
     vi.doUnmock('electron')
@@ -602,7 +608,7 @@ describe('restorePinnedServing across a restart -- A158, resolved for every dire
     if (handler === undefined) throw new Error('no handler was registered')
 
     const beforeRegisterApp = await handler(new Request(`${ORIGIN}/`))
-    expect(beforeRegisterApp.headers.get('content-security-policy')).toContain("connect-src 'self' api.example.com:443 second.example.com:443")
+    expect(beforeRegisterApp.headers.get('content-security-policy')).toContain("connect-src 'self' data: blob: api.example.com:443 second.example.com:443")
 
     // The fresh manifest declares LESS than the persisted grant held --
     // `decideGrantRequest`'s existing widensAuthority check refuses the
@@ -612,7 +618,7 @@ describe('restorePinnedServing across a restart -- A158, resolved for every dire
     broker.registerApp(ORIGIN, manifestWith({ net: { tcp: { connect: GRANTED_PATTERNS } } }))
 
     const afterRegisterApp = await handler(new Request(`${ORIGIN}/`))
-    expect(afterRegisterApp.headers.get('content-security-policy')).toContain("connect-src 'self';")
+    expect(afterRegisterApp.headers.get('content-security-policy')).toContain("connect-src 'self' data: blob:;")
     expect(afterRegisterApp.headers.get('content-security-policy')).not.toContain('example.com')
 
     vi.doUnmock('electron')
@@ -661,8 +667,8 @@ describe('restorePinnedServing across a restart -- A158, resolved for every dire
     if (handler === undefined) throw new Error('no handler was registered')
     const response = await handler(new Request(`${ORIGIN}/`))
     expect(response.headers.get('content-security-policy')).toBe(
-      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; " +
-      "img-src 'self'; font-src 'self'; media-src 'self'"
+      "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' data: blob:; " +
+      "img-src 'self' data: blob:; font-src 'self' data: blob:; media-src 'self' data: blob:; worker-src 'self' blob:; frame-src 'self' data: blob:"
     )
 
     vi.doUnmock('electron')

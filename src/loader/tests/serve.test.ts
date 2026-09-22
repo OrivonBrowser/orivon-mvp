@@ -202,7 +202,9 @@ describe('verifiedManifestFor', () => {
   })
 })
 
-const DEFAULT_CSP = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self'; font-src 'self'; media-src 'self'"
+const DEFAULT_CSP = "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; " +
+  "connect-src 'self' data: blob:; img-src 'self' data: blob:; font-src 'self' data: blob:; media-src 'self' data: blob:; " +
+  "worker-src 'self' blob:; frame-src 'self' data: blob:"
 
 describe('createAppRequestHandler -- CSP (S4-6, ADR-0007/ADR-0006)', () => {
   it('sets a self-only CSP when no live grant source is given', async () => {
@@ -217,8 +219,9 @@ describe('createAppRequestHandler -- CSP (S4-6, ADR-0007/ADR-0006)', () => {
     const response = await handler(new Request(`${ORIGIN}/`))
 
     expect(response.headers.get('content-security-policy')).toBe(
-      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' api.example.com:443; " +
-      "img-src 'self'; font-src 'self'; media-src 'self'"
+      "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; " +
+      "connect-src 'self' data: blob: api.example.com:443; img-src 'self' data: blob:; font-src 'self' data: blob:; " +
+      "media-src 'self' data: blob:; worker-src 'self' blob:; frame-src 'self' data: blob:"
     )
   })
 
@@ -258,15 +261,18 @@ describe('createAppRequestHandler -- CSP (S4-6, ADR-0007/ADR-0006)', () => {
     expect(response.headers.get('content-security-policy')).toBe(DEFAULT_CSP)
   })
 
-  it('widens img-src/font-src/media-src to the live granted https.connect patterns, independently of connect-src\'s own tcp.connect grant', async () => {
+  it('widens connect-src/img-src/font-src/media-src to the live granted https.connect patterns, scheme-qualified, alongside connect-src\'s own tcp.connect sources', async () => {
     const handler = await createAppRequestHandler(
       await installedStorage(), ORIGIN, async () => ['api.example.com:443'], async () => ['cdn.example.com:443']
     )
     const response = await handler(new Request(`${ORIGIN}/`))
 
     const csp = response.headers.get('content-security-policy')
-    expect(csp).toContain("connect-src 'self' api.example.com:443")
-    expect(csp).toContain("img-src 'self' cdn.example.com:443; font-src 'self' cdn.example.com:443; media-src 'self' cdn.example.com:443")
+    expect(csp).toContain("connect-src 'self' data: blob: api.example.com:443 https://cdn.example.com:443;")
+    expect(csp).toContain(
+      "img-src 'self' data: blob: https://cdn.example.com:443; font-src 'self' data: blob: https://cdn.example.com:443; " +
+      "media-src 'self' data: blob: https://cdn.example.com:443"
+    )
   })
 })
 

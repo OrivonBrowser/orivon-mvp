@@ -27,7 +27,6 @@ import { isPinnedPath, parsePinRecord } from '../broker/policy/pin.js'
 import type { PinRecord } from '../broker/policy/pin.js'
 import { MANIFEST_PATH, canonicalAssetPath } from '../broker/policy/canonical-path.js'
 import { originFromUrl } from '../broker/policy/origin.js'
-import { appCspHeaderValue, appReachCspHeaderValue } from '../broker/policy/connect-src.js'
 import { checkConnectSecure } from '../broker/policy/connect-secure.js'
 import type { ConnectSecureDecision } from '../broker/policy/connect-secure.js'
 import type { Manifest, Pattern } from '../contracts/index.js'
@@ -35,6 +34,7 @@ import { entryCanonicalPath } from './fetch-bundle.js'
 import { parseManifest } from './manifest.js'
 import type { PinCoverageOutcome } from './pin-coverage.js'
 import { contentTypeFor } from './serve-content-type.js'
+import { cspHeaderValue } from './serve-csp.js'
 import { guardReachResponse } from './serve-reach-guard.js'
 import type { ReleaseReachSlot, ReserveReachSlot } from './serve-reach-guard.js'
 import { parseRange } from './serve-range.js'
@@ -63,11 +63,10 @@ export type GrantedConnectPatterns = () => Promise<readonly Pattern[]>
  * capability `fetchThirdParty` (below) actually authorises a third-party
  * request against, never `tcp.connect`.
  *
- * HEADER USE ONLY. This is wired into `img-src`/`font-src`/`media-src`
- * (`appReachCspHeaderValue`) so the browser knows a request is even worth
+ * HEADER USE ONLY. This is wired into `connect-src`/`img-src`/`font-src`/
+ * `media-src` (serve-csp.ts) so the browser knows a request is even worth
  * attempting; it is NEVER what decides whether one is actually served --
- * see `AuthoriseReach` for that, and A158 (docs/open-questions.md) for why
- * the two are allowed to disagree, briefly, after a restart.
+ * see `AuthoriseReach` for that.
  */
 export type GrantedSecurePatterns = () => Promise<readonly Pattern[]>
 
@@ -151,55 +150,6 @@ function contentLengthOf (response: Response): number | undefined {
   if (header === null) return undefined
   const length = Number(header)
   return Number.isFinite(length) && length >= 0 ? length : undefined
-}
-
-/**
- * S4-6's CSP, for a pinned, hash-verified bundle: `connect-src` from the
- * live grant (`appCspHeaderValue`, T22), `default-src 'self'` for every
- * other fetch directive A42 found unset (`img-src`, `frame-src`,
- * `form-action`, `worker-src`, ...), and `script-src`/`style-src` widened
- * back to `'self' 'unsafe-inline'` rather than left at the `default-src`
- * fallback.
- *
- * THE INLINE-SCRIPT CALL IS DELIBERATE, NOT AN OVERSIGHT: this origin only
- * ever serves pinned, hash-verified files (ADR-0007's fail-closed rule,
- * enforced above this function, on every request) -- an inline `<script>`
- * sitting inside a pinned `.html` file is exactly as verified as a pinned
- * `.js` file `'self'` already allows, and there is no hash/nonce allowlist
- * built yet to admit one without the other. Blocking it would not raise
- * the bar this origin is held to; it would only break an app that legitimately
- * ships inline script, for a rule this origin's own serving guarantee
- * already makes redundant. `default-src 'self'` still blocks the thing CSP
- * actually exists to stop here: a SUBRESOURCE the pinned bundle never
- * declared, from a host CSP's own grammar cannot enumerate around
- * `connect-src`'s allowlist (img/frame/form-action, A42's gap, now mostly
- * closed) -- it does not stand between a page and its own already-verified
- * markup.
- *
- * NOT CLOSED BY THIS: `<a href>`/`location.href` navigation (CSP's
- * `default-src` never covers it) and CSP naming a hostname where
- * `checkConnect` authorises a resolved address (DNS rebinding) --
- * both already filed as A42, unaffected by this change.
- *
- * `img-src`/`font-src`/`media-src` (A143) name what `fetchThirdParty`
- * will actually serve, sourced from `https.connect`, never `tcp.connect` --
- * a different grant than `connect-src`'s own. `securePatterns` MAY be wider
- * than the origin's live, hydrated grant (electron-serve.ts's own A158
- * fallback, for the narrow window right after a restart) without that being
- * a security bug: this header only decides whether the BROWSER attempts a
- * request at all, never whether one succeeds -- `fetchThirdParty` re-checks
- * the LIVE grant on every single request regardless of what this header
- * claimed, so a too-permissive header here still gets a real, unwidened
- * refusal from the handler underneath it (see `AuthoriseReach`'s own doc).
- */
-function cspHeaderValue (connectPatterns: readonly Pattern[], securePatterns: readonly Pattern[]): string {
-  return [
-    "default-src 'self'",
-    "script-src 'self' 'unsafe-inline'",
-    "style-src 'self' 'unsafe-inline'",
-    appCspHeaderValue(connectPatterns),
-    appReachCspHeaderValue(securePatterns)
-  ].join('; ')
 }
 
 /**

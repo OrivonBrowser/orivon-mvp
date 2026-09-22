@@ -143,9 +143,8 @@ it(
         )
 
         // ---- An installed app's served CSP, measured rather than read -----
-        // Asserted as it stands, so that widening media-src -- one of the
-        // candidate fixes for loading media from a rotating CDN -- fails here
-        // and gets changed on purpose rather than by accident.
+        // MSE playback hands the <video> a blob: URL, so media-src must admit
+        // blob:. A remote CDN host stays refused unless it is granted.
         const mediaProbe = await evaluateRetrying(view, async () => {
           const violations: string[] = []
           document.addEventListener('securitypolicyviolation', (event) => {
@@ -169,8 +168,8 @@ it(
 
         const blobBlockedByCsp = (mediaProbe.violations as string[]).some((entry: string) => entry.includes('media-src') && entry.includes('blob'))
         check(
-          "on an INSTALLED app, the served CSP's media-src refuses a blob: URL",
-          blobBlockedByCsp,
+          "on an INSTALLED app, the served CSP's media-src admits a blob: URL (MSE playback)",
+          !blobBlockedByCsp,
           JSON.stringify(mediaProbe)
         )
 

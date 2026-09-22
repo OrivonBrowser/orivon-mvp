@@ -145,7 +145,7 @@ it(
         check(
           'the served document\'s own response carries a connect-src naming the granted host, and no other',
           typeof cspHeader === 'string' &&
-            cspHeader.includes(`connect-src 'self' ${GRANTED_HOST}:443`) &&
+            cspHeader.includes(`connect-src 'self' data: blob: ${GRANTED_HOST}:443`) &&
             !cspHeader.includes(UNGRANTED_HOST),
           String(cspHeader)
         )
