@@ -28,7 +28,7 @@ seconds, and a test would be paying rent to tell you something you already know.
 | `npm run test:e2e` | Builds, then runs [`test/e2e-capability-boundary.test.ts`](../../test/e2e-capability-boundary.test.ts) (TCP) and [`test/e2e-udp-capability.test.ts`](../../test/e2e-udp-capability.test.ts) (UDP) via [`test/vitest.e2e.config.ts`](../../test/vitest.e2e.config.ts); see §The end-to-end test below. Runs automatically in CI's `e2e` job on every push and pull request. Needs a display; on Linux with `xvfb-run` installed it uses a virtual one automatically (see [setup.md](setup.md) "The no-focus switch"), so a plain `npm run test:e2e` is safe with no wrapper, and on a platform with no virtual display it runs directly instead, without stealing your keyboard focus |
 
 Unit tests are **colocated** with what they test: `src/main/tests/omnibox.test.ts` sits beside
-`src/main/omnibox.ts`.
+`src/main/browsing/omnibox.ts`.
 
 ### What `npm run smoke` is, and what it is not
 
@@ -164,12 +164,12 @@ API. One link is substituted, and the file's header says exactly where: the fixt
 from loopback, and [`install-origin.ts`](../../src/loader/install-origin.ts) refuses a loopback
 origin outright (A46), so no install can succeed. The real `<link rel="orivon-manifest">` hint is
 proven to reach the real loader and be refused for being non-public; the granted round trip is
-enabled separately, through `src/main/dev-grant.ts`'s developer-only hook, acting on the same
+enabled separately, through `src/main/dev/dev-grant.ts`'s developer-only hook, acting on the same
 broker the launched shell's IPC uses. The developer-mode grant-without-install path
-(`src/main/dev-app-origin.ts`, behind `ORIVON_DEV_ORIGINS=1`) has its own test,
+(`src/main/dev/dev-app-origin.ts`, behind `ORIVON_DEV_ORIGINS=1`) has its own test,
 [`test/e2e-dev-origin-grant.test.ts`](../../test/e2e-dev-origin-grant.test.ts). That same flag,
 paired with `ORIVON_ETH_NAMES_FILE`, also turns on the fake `.eth` names
-(`src/main/eth-resolver.ts`) -- both halves are covered in
+(`src/main/dev/eth-resolver.ts`) -- both halves are covered in
 [`test/e2e-eth-secure-context.test.ts`](../../test/e2e-eth-secure-context.test.ts), which asserts
 a `.eth` tab is a secure context and so keeps `crypto.subtle`, `crypto.randomUUID`, service
 workers and `navigator.clipboard`. See [setup.md](setup.md) for what the two variables do. Consent gating itself is proven separately, in

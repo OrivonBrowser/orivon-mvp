@@ -1,10 +1,10 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { COMMAND_CHANNEL, STATE_CHANNEL } from '../main/channels.js'
-import type { ShellCommand } from '../main/ipc.js'
-import type { ShellState } from '../main/tabs.js'
-import type { AppPermissions } from '../main/permissions.js'
-import type { DeliveryProvenance } from '../main/delivery-provenance.js'
-import type { PanelAnchor } from '../main/permissions-panel.js'
+import type { ShellCommand } from '../main/ipc/ipc.js'
+import type { ShellState } from '../main/shell/tabs.js'
+import type { AppPermissions } from '../main/permissions/permissions.js'
+import type { DeliveryProvenance } from '../main/browsing/delivery-provenance.js'
+import type { PanelAnchor } from '../main/permissions/permissions-panel.js'
 
 // Loaded ONLY by the chrome view (src/main/window.ts) -- the tab strip and
 // toolbar UI. Privileged: this is the one preload that may issue tab

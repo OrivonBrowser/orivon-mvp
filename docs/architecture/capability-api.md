@@ -165,7 +165,7 @@ actually distinguish.
 
 `docs/open-questions.md` A138 carries the fuller argument. The loader
 parses the field (`src/loader/manifest.ts`), and the install-time consent dialog reads it:
-`src/main/install-consent.ts`'s `requestInstallConsent` branches its whole staged Allow-all /
+`src/main/consent/install-consent.ts`'s `requestInstallConsent` branches its whole staged Allow-all /
 Choose-individually / Deny-all sequence on `manifest.consentGranularity === 'per-capability'`.
 Three update-time prompts (reconsent, capability-widening, rollback) do not yet honour it; see
 `docs/open-questions.md` A162.

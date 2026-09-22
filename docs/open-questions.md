@@ -104,7 +104,7 @@ None of these block starting the week-0 spike.
 | A14 | **RESOLVED 2026-08-26 (owner):** a trailing DNS dot is stripped, so `https://x.example.` and `https://x.example` are ONE origin. Deliberately deviates from `URL.origin`. Exactly one dot; a host still carrying an empty label is rejected | Implemented in `src/broker/policy/origin.ts` |
 | A13 | **RESOLVED 2026-08-27 (owner): Promises**, per design rule 2. Widening a Promise to a plain value later is a smaller break than the reverse. Original question: `capability-api.md` §v0 surface writes them as `=> Manifest` and `=> Grant[]`, but design rule 2 in the same document says *"All entry points return Promises"* | **Build step 2.** Transcribed as Promises; see below |
 | A15 | **The four bundle-hash caps are guesses, not decisions** — `MAX_PATH_BYTES` 1024, `MAX_ASSET_BYTES` 16 MiB, `MAX_BUNDLE_BYTES` 64 MiB, `MAX_BUNDLE_ENTRIES` 4096 (`src/broker/policy/bundle-hash.ts`, `architecture/bundle-hash.md` §Caps). They are labelled AI-recommendation in the source, but a cap decides which bundles are *refusable*, so two implementations disagreeing on one disagree about whether an app can exist at all. **2026-09-03:** `src/loader/fetch-bundle.ts` (`stream/loader-02-fetch-cache`) is the first real caller of all four, and they are being carried forward uncalibrated | **Before the app loader ships (build step 4).** Needs one real frontend's shape to calibrate against; guessing again now would not be better than the current guess |
-| A16 | **RESOLVED 2026-08-28 (owner):** closing the last tab closes the window (option 2 below) — overrules this entry's own AI-REC, which favoured option 1. No `app.quit()` in `tabs.ts`/`window.ts`; `src/main/index.ts`'s existing `window-all-closed` handler already owns whether the whole process then exits | Implemented in `src/main/tabs.ts` (`TabManager`'s `onEmpty` callback) and `src/main/window.ts`. See below |
+| A16 | **RESOLVED 2026-08-28 (owner):** closing the last tab closes the window (option 2 below) — overrules this entry's own AI-REC, which favoured option 1. No `app.quit()` in `tabs.ts`/`window.ts`; `src/main/index.ts`'s existing `window-all-closed` handler already owns whether the whole process then exits | Implemented in `src/main/shell/tabs.ts` (`TabManager`'s `onEmpty` callback) and `src/main/shell/window.ts`. See below |
 | A17 | **RESOLVED 2026-08-27 (owner):** an `identityId` is **opaque and broker-generated** — never a user-typed name, never derived from one. The display name is stored beside the identity, not used to derive it. Found undefined during review of PR #5: it appeared exactly once in the whole repository, as one table cell | Recorded in `ADR-0010`, stated in `capability-api.md`, documented on `DeriveRequest.scope` |
 | A18 | **RESOLVED 2026-08-27 (owner): pass the GRANTED pattern list, not the manifest.** Original question: Nothing in the signature carries the grant, so a caller passing a raw manifest silently gets the declared authority | **Build step 2, before the broker calls it.** Narrow the list at the call site, or change the parameter to `readonly Pattern[]`. See below |
 | A19 | **IDN hostnames are unhandled in connect patterns.** A Unicode host, its case variants and its punycode A-label are three different strings to the matcher, and an app deriving its host from `new URL(...)` gets the A-label | **Before any non-ASCII app origin exists.** Non-ASCII is now rejected outright rather than silently never matching. See below |
@@ -179,7 +179,7 @@ third-party app exists.
 Found while extending `scripts/smoke.mjs` (2026-08-27). Writing a check for "closing the last
 tab behaves sanely" required knowing what sane *is*, and nothing in this repository says.
 
-**What happens today.** `TabManager.closeTab()` (`src/main/tabs.ts`) removes the view, finds no
+**What happens today.** `TabManager.closeTab()` (`src/main/shell/tabs.ts`) removes the view, finds no
 fallback tab, sets `activeTabId: null` and emits. The `BaseWindow` stays open showing an empty
 tab strip, a disabled toolbar, and no content. Nothing crashes and nothing leaks — it is simply
 a state no other browser leaves you in. It was not chosen; it is what falling through the
@@ -1935,7 +1935,7 @@ bookmark flush.
 
 `BookmarkStore` self-registers into a private static `Set` in its constructor, because
 `src/main/index.ts`'s quit path has to flush every window's store and holds a reference to none of
-them — each is a local inside `src/main/window.ts`'s `createShellWindow()`. Nothing ever removes an
+them — each is a local inside `src/main/shell/window.ts`'s `createShellWindow()`. Nothing ever removes an
 entry, so closing a window does not release its store: the instance, its bookmark list, and its
 subscriber callbacks stay reachable until the process exits.
 
@@ -1946,7 +1946,7 @@ and this is not a leak a user would notice soon, which is why it is filed rather
 defect in that change.
 
 **Why it was not fixed there.** The clean fix is a `dispose()` (or a `WeakRef`-based registry)
-called when a window closes, and the call site is `src/main/window.ts` — the shell stream's file,
+called when a window closes, and the call site is `src/main/shell/window.ts` — the shell stream's file,
 outside that lane's owned paths. Registering a store is also not obviously the right shape long
 term: threading one reference from `createShellWindow()` to `index.ts` would remove the need for a
 registry at all.
@@ -3809,7 +3809,7 @@ per-origin partitions did, but the underlying cause is that nothing in `src/main
 for a redirect changing a page's origin mid-navigation (confirmed: no `will-redirect` or
 `did-redirect-navigation` listener anywhere in `src/main/`, grepped directly).
 
-`TabManager.navigate()` (`src/main/tabs.ts`) computes `nextPartition` from the **target URL the
+`TabManager.navigate()` (`src/main/shell/tabs.ts`) computes `nextPartition` from the **target URL the
 user or the omnibox supplied**, before that URL is actually fetched, and only repartitions when
 that computed value differs from the tab's current partition. If the server behind that URL
 responds with an HTTP redirect to a different origin, Chromium follows it inside the same
@@ -3836,7 +3836,7 @@ step 4) — at that point this is not just a storage mismatch, it is a grant-sco
 **Raised 2026-09-10**, lane P0-4's session-partitions work (PR #110), filed by lane P0-5. The
 second, less security-relevant of the two P0-4 items — see A108 for the other.
 
-`TabManager.repartitionView()` (`src/main/tabs.ts`) is the only way to change a tab's Electron
+`TabManager.repartitionView()` (`src/main/shell/tabs.ts`) is the only way to change a tab's Electron
 session partition after creation — Electron fixes `webPreferences.partition` at construction, so
 a cross-origin navigation swaps in a whole new `WebContentsView` rather than reassigning the
 session live. The method's own doc comment already discloses the consequence plainly: the OLD
@@ -4089,7 +4089,7 @@ Related but distinct from **A127**, which is about the origin not being reliably
 
 **RESOLVED, to the no-dependency floor, 2026-09-13** (lane `stream/shell-04-origin-confusable`,
 ahead of PR #165 giving `app.requestGrant` its first caller). `formatOriginForDisplay`
-(`src/main/grant-prompt-render.ts`) elides an overlong host from the LEFT by plain character
+(`src/main/consent/grant-prompt-render.ts`) elides an overlong host from the LEFT by plain character
 count, so `attacker.example` always survives at the visible end and the reassuring prefix never
 survives alone. **Partial, by design and named as such:** this is a length rule, not a
 registrable-domain (eTLD+1) computation — that needs a public suffix list this repo does not
@@ -4487,7 +4487,7 @@ raised with the owner and then recorded only in a fleet ledger outside this repo
 at the owner's explicit request, because a finding that exists only in a run's working notes is not
 filed at all.
 
-`namedHostsPhrase` (`src/main/grant-prompt-render.ts`) names the first host and counts the rest:
+`namedHostsPhrase` (`src/main/consent/grant-prompt-render.ts`) names the first host and counts the rest:
 *"Connect to youtube.com and 3 other sites."* There is **no upper bound on that count.** At three it
 reads as intended. At forty-nine — *"Connect to youtube.com and 48 other sites"* — the summary has
 become the thing owner decision D-0004 rejected a details-expander for: breadth acknowledged in a
@@ -4508,7 +4508,7 @@ was the *other* axis of the same problem and is why this one is now the remainin
 > threshold this entry deliberately declined to propose was set at **ten other hosts**: past it the
 > summary stops being an ever-growing integer and switches to a breadth warning, while still
 > stating the true count honestly in its explanation. `describeConnectCapability`
-> (`src/main/grant-prompt-render.ts`) carries it, a dedicated `describe` block in
+> (`src/main/consent/grant-prompt-render.ts`) carries it, a dedicated `describe` block in
 > `grant-prompt-render.test.ts` pins both sides of the threshold, and `src/main/README.md` records
 > why the count itself was never the defect -- it was always honest; what it failed to do was make
 > a broad declaration and a narrow one *unmistakably different at a glance*, which is what D-0004
@@ -4812,7 +4812,7 @@ all-or-nothing, and turning it into a per-row choice later is a change to the di
 > against a real dialog, left for whichever build-step-4 lane picks up the install prompt.
 >
 > **Update 2026-09-14, lane `F-granular`.** That lane landed: `src/loader/manifest.ts` now
-> parses `consentGranularity`, and `src/main/install-consent.ts`'s `requestInstallConsent`
+> parses `consentGranularity`, and `src/main/consent/install-consent.ts`'s `requestInstallConsent`
 > branches its staged Allow-all / Choose-individually / Deny-all dialog sequence on
 > `manifest.consentGranularity === 'per-capability'`. `'per-capability'` in a manifest is no
 > longer inert for install-time consent. See A162 for the implementation and for what still
@@ -4946,7 +4946,7 @@ succeed today.
 
 **Raised 2026-09-13**, fixing A115 (subdomain-prefix confusable in the grant prompt).
 
-A115's fix (`formatOriginForDisplay`, `src/main/grant-prompt-render.ts`) elides an overlong host
+A115's fix (`formatOriginForDisplay`, `src/main/consent/grant-prompt-render.ts`) elides an overlong host
 from the left by plain character count, so the label that decides authority always survives at
 the visible end. That is the floor this lane could build with no new dependency. It is not the
 same thing as showing the actual **registrable domain** (eTLD+1) -- the fact a person really
@@ -5157,7 +5157,7 @@ purpose is to be a small, independent harness that does not depend on the app bu
 amendment): one dialog, once per origin, ever, for the whole set a manifest declares.
 
 **"Once per origin, ever" is derived from the grant ledger's own hydration, not tracked as new
-state** (`src/main/install-consent.ts`). `GrantLedger.registerApp`'s existing `grantsHydrated`
+state** (`src/main/consent/install-consent.ts`). `GrantLedger.registerApp`'s existing `grantsHydrated`
 mechanism already restores every still-valid persisted grant into the live ledger, checked
 against the manifest just fetched, before the consent step ever runs -- so an origin ACCEPTED on
 any earlier visit, this session or a past one, already holds a live grant for its declared
@@ -5201,7 +5201,7 @@ what "once, ever" should actually mean once a real person is declining a real di
 > `node-ledger-storage.ts`) -- written by `GrantLedger.recordDeclinedConsent`, read by
 > `declinedCapabilitiesFor`, cleared by `clearDeclinedConsent`, all three thin wrappers over a
 > new `src/broker/grants/declined-consent.ts` mirroring `update-safety.ts`'s own floor/
-> rollback-ack shape. `requestInstallConsent` (`src/main/install-consent.ts`) now checks it
+> rollback-ack shape. `requestInstallConsent` (`src/main/consent/install-consent.ts`) now checks it
 > between the existing "already held" check (`A157`) and showing the dialog.
 >
 > **What is stored, and why not less or more.** Exactly the declared capability set the dialog
@@ -5233,7 +5233,7 @@ what "once, ever" should actually mean once a real person is declining a real di
 > considerate offer. Argument against, recorded rather than dismissed: it means a person can
 > never be offered the smaller, more reasonable request without the manifest changing first.
 > **How to change your mind without a manifest change, today: `app.requestGrant`
-> (`src/main/request-grant.ts`), the app's own live per-capability door, is completely unaffected
+> (`src/main/consent/request-grant.ts`), the app's own live per-capability door, is completely unaffected
 > by this record** -- it is a second, independent path to a grant (the exact path `A157` is
 > about), so an app that offers its own "connect" affordance still works, and whatever it grants
 > shows up in the permissions list and is revocable there (`A101`), same as any other grant. If
@@ -5278,7 +5278,7 @@ visit to a given origin.
 
 **Why it was not fixed in place.** Closing it means the tab must not run the app's scripts until
 install and consent have settled -- holding or deferring the navigation, then loading from the
-served cache. That is a change to how a tab navigates (`src/main/tabs.ts`, and the interaction
+served cache. That is a change to how a tab navigates (`src/main/shell/tabs.ts`, and the interaction
 with `ADR-0007`'s partition-scoped serving), not something either the hint listener or the
 consent prompt can do from where they sit. It is also a **user-visible behaviour decision**: a
 page that visibly pauses before running is a different experience from one that runs and is
@@ -5613,9 +5613,9 @@ style, rather than a real Electron launch); or (3) something else not considered
 
 Found 2026-09-13, `stream/loader-06-approve-and-install` (S4-5), which built the only callers of
 `Loader.load()`'s three pending outcomes and had to write three brand-new pieces of dialog text
-that did not exist before (`src/main/grant-prompt-render.ts`'s `describeReconsent`,
+that did not exist before (`src/main/consent/grant-prompt-render.ts`'s `describeReconsent`,
 `describeCapabilityPrompt`, `describeRollbackChoice`; the buttons are in
-`src/main/update-outcomes-prompt.ts`). Same class of finding as A127/A133/A134 -- wording nobody
+`src/main/consent/update-outcomes-prompt.ts`). Same class of finding as A127/A133/A134 -- wording nobody
 but the author has read yet -- filed for the same reason: the owner reviews words by reading them,
 not by reading the code that produces them.
 
@@ -5645,7 +5645,7 @@ this exact form.
 **A second call worth flagging separately:** `describeCapabilityPrompt` shows the app's FULL
 current declared set on every widening, not a delta highlighting only what is NEW. Deliberate --
 producing an accurate delta needs diffing against what is actually held (`broker.app.grants`),
-which `src/main/grant-prompt-render.ts` cannot read (it is Electron- and broker-free by design),
+which `src/main/consent/grant-prompt-render.ts` cannot read (it is Electron- and broker-free by design),
 and the full-set framing is what `describeInstallConsent` already does for the identical shape of
 content. Not tested against a real person; a future readability pass on this dialog should look
 here first if "which one is new?" turns out to be the actual question a user asks.
@@ -5713,7 +5713,7 @@ on top of it) is expected to load successfully.
 > own AI recommendation named as "the natural fit."
 >
 > **Gated on the identical `--orivon-app-tab` flag `fetch-route.ts` already reads**
-> (`src/main/tab-view.ts`'s `appTabArgsFor`) -- CLAUDE.md's own instruction on this exact defect
+> (`src/main/shell/tab-view.ts`'s `appTabArgsFor`) -- CLAUDE.md's own instruction on this exact defect
 > is that shimmed Node globals must never reach an ordinary browsing tab. `window.orivon` itself
 > is exposed to every tab regardless (an ungranted caller only ever sees denials through it),
 > but `process`/`stream` are ambient globals a plain page's own script could stumble into --
@@ -5722,7 +5722,7 @@ on top of it) is expected to load successfully.
 > **Proven end to end, not just at the unit level** (the whole reason this was invisible to 3993
 > unit tests to begin with): `test/app-loader-journey-shim-entry.ts`'s own `installGlobals()`
 > workaround call is gone, and `test/e2e-app-loader-journey.test.ts` now registers its fixture's
-> origin (via `src/main/dev-grant.ts`'s hook, with an empty pattern list -- "an empty grant
+> origin (via `src/main/dev/dev-grant.ts`'s hook, with an empty pattern list -- "an empty grant
 > answers exactly like no grant at all," `src/broker/net-capability.ts`'s own `connect()`)
 > BEFORE navigating, so the fixture's tab is flagged for its very first load exactly like a real
 > registered app's tab would be, then asserts `window.process` is installed before exercising
@@ -5928,7 +5928,7 @@ underneath it, not a replacement for it.
 ### A153 -- a grant could be committed against a manifest the consent dialog never actually reviewed **[RESOLVED 2026-09-14 -- stream/main-11-grant-revalidation]**
 
 **Raised 2026-09-14**, `ADV-fix` lane, an adversarial review of the step-4 app-loader landing,
-confirmed by the conductor reading `src/main/request-grant.ts` directly.
+confirmed by the conductor reading `src/main/consent/request-grant.ts` directly.
 
 **The gap.** `requestGrant` fetched the manifest, ran `decideGrantRequest`, then awaited
 `consent(...)` -- a real native dialog, up to 120 seconds (`A140`) -- and only then called
@@ -5972,7 +5972,7 @@ list, the update decision in `update.ts`) would disagree with the authority actu
 ### A156 -- accepting a capability-widening update revoked live handles for capabilities the update never touched **[RESOLVED 2026-09-14 -- stream/main-11-grant-revalidation]**
 
 **Raised 2026-09-14**, `ADV-fix` lane, adversarial review, confirmed by the conductor reading
-`src/main/update-outcomes.ts` and `src/broker/index.ts` directly.
+`src/main/consent/update-outcomes.ts` and `src/broker/index.ts` directly.
 
 **The gap.** `driveLoadResult`'s `needs-capability-prompt` branch called `grantDeclared`, which
 looped over EVERY capability in `Object.keys(result.requestedPatterns)` -- the manifest's whole
@@ -5994,7 +5994,7 @@ capability-prompt test used a manifest declaring exactly one capability -- so "a
 unrelated, unchanged" was structurally never exercised.
 
 > **Resolved 2026-09-14, stream/main-11-grant-revalidation.** Extracted `grantChangedCapabilities`
-> (`src/main/grant-changed-capabilities.ts`, shared with A155's fix below) -- it reads the
+> (`src/main/consent/grant-changed-capabilities.ts`, shared with A155's fix below) -- it reads the
 > origin's currently-held grants first, and skips `broker.grant()` for any capability whose
 > decided patterns are IDENTICAL (order-independent) to what is already held. A capability that
 > is new, or whose pattern set genuinely narrowed or widened, is still granted -- and still
@@ -6006,7 +6006,7 @@ unrelated, unchanged" was structurally never exercised.
 ### A157 -- install-time consent could be permanently skipped via a second door to a grant **[PARTIALLY RESOLVED 2026-09-14 -- stream/main-11-grant-revalidation]**
 
 **Raised 2026-09-14**, `ADV-fix` lane, adversarial review, confirmed by the conductor reading
-`src/main/install-consent.ts` and `src/main/app-install.ts` directly.
+`src/main/consent/install-consent.ts` and `src/main/install/app-install.ts` directly.
 
 **The gap.** `requestInstallConsent`'s "already asked" derivation (`A139`) skipped the WHOLE
 all-or-nothing dialog -- for every capability the manifest declares, not just the ones already
@@ -6116,7 +6116,7 @@ instead of just observing it were each considered and rejected or deferred:
 **What this lane did instead.** `restorePinnedServing` now logs a diagnostic
 (`console.warn`, naming the origin) whenever it restores serving for an origin that holds a
 real, persisted capability grant not yet reflected in what it just served -- computed from
-`isRegisteredSync`/`persistedAppsSync`, the exact pair `src/main/permissions.ts`'s settings list
+`isRegisteredSync`/`persistedAppsSync`, the exact pair `src/main/permissions/permissions.ts`'s settings list
 already reads off disk for **display only**, never as live authority (`A137`), so this adds
 nothing to what is actually served or authorised. It converts a silent degradation into a
 detectable one (a support session or a developer reading the log can see it happening); it does
@@ -6317,7 +6317,7 @@ else in `src/shim/` or `src/shim-electron/` wants to depend on the other.
 ### A161 -- a fixed three-label origin display still hides the tenant behind a multi-label PRIVATE suffix (cloud/PaaS hosting) **[PARTIALLY RESOLVED 2026-09-17 -- lane FIX-A2; the evidenced cases only, not the general one]**
 
 **Raised 2026-09-14**, `stream/shell-06-three-label-origin`, verifying the owner's "last three
-labels" rule (`formatOriginForDisplay`, `src/main/grant-prompt-render.ts`) against real
+labels" rule (`formatOriginForDisplay`, `src/main/consent/grant-prompt-render.ts`) against real
 multi-part suffixes before shipping it, per that lane's own brief.
 
 **The rule is correct for what it was built to fix.** A142 (resolved by the same lane) was about
@@ -6369,7 +6369,7 @@ scan follow-up, alongside A197/A198 -- AI recommendation, the original three-lab
 owner decision.** Took a different path than either option this entry's own "AI recommendation"
 above named: not "leave as shipped," and not a public-suffix-list dependency. Added a small,
 evidenced allow-list of multi-label PRIVATE suffixes (`RECOGNISED_PRIVATE_SUFFIXES`,
-`src/main/grant-prompt-render.ts`) -- exactly the three concrete cases this entry itself has
+`src/main/consent/grant-prompt-render.ts`) -- exactly the three concrete cases this entry itself has
 evidence for (`s3.amazonaws.com`, `compute.amazonaws.com`, and `storage.googleapis.com`, the
 matching Google Cloud Storage case) -- matched label-for-label, never a substring. A host ending
 in a recognised suffix now widens the kept window to that suffix plus ONE more label, instead of
@@ -6461,11 +6461,11 @@ CALLER to apply, never a value this parser invents). No app exists yet, so nothi
 wild, but this sat on `main` since #192 merged and needed to stop sitting there.
 
 **Part 2, built for exactly one surface: the install-time consent dialog
-(`src/main/install-consent.ts`, `d-0025`).** A manifest declaring `'per-capability'` now gets a
+(`src/main/consent/install-consent.ts`, `d-0025`).** A manifest declaring `'per-capability'` now gets a
 real choice: a staged native-dialog sequence (`createPerCapabilityConsentPrompt`,
-`src/main/install-consent-prompt.ts`) -- one overview offering "Allow all" / "Choose
+`src/main/consent/install-consent-prompt.ts`) -- one overview offering "Allow all" / "Choose
 individually" / "Deny all", and only for the middle choice, one Allow/Deny dialog per capability
-(`describeCapabilityChoice`, `src/main/grant-prompt-choice.ts`), each screen printing the WHOLE
+(`describeCapabilityChoice`, `src/main/consent/grant-prompt-choice.ts`), each screen printing the WHOLE
 outstanding request as context so choosing individually never loses the whole picture. Every
 grant still goes through `decideGrantRequest` (via the existing `grantChangedCapabilities`,
 untouched); a refusal of one capability never refuses the app; the accepted subset is filtered
@@ -6624,7 +6624,7 @@ hydration calls.
 > **Half 1 -- do not re-mint unchanged authority.** `grant-persistence.ts`'s
 > `replaceHydratedGrants` now compares each newly-restored capability's patterns against
 > whatever `grants` already held for it, using the same order-independent `sameOwnPatterns`
-> check `src/main/grant-changed-capabilities.ts` already used for the identical reason one layer
+> check `src/main/consent/grant-changed-capabilities.ts` already used for the identical reason one layer
 > up (A156) -- moved into `src/broker/policy/update.ts`, not duplicated a third time, since
 > `src/broker/` may never import `src/main/` and the shared copy had to live on the broker side.
 > A set-equal match reuses the EXISTING `Grant` object, id included, instead of the fresh one
@@ -6828,7 +6828,7 @@ surface should still plan the seam before starting.
 
 ### A180 -- the app decides how much choice the person gets, and its incentive is always to offer none **[NEEDS OWNER DECISION]**
 
-`requestInstallConsent` (`src/main/install-consent.ts`) takes the per-capability path only when the
+`requestInstallConsent` (`src/main/consent/install-consent.ts`) takes the per-capability path only when the
 MANIFEST declares `consentGranularity: 'per-capability'`; absent, `src/contracts/manifest.ts`
 defaults it to `'all-or-nothing'`.
 
@@ -7091,7 +7091,7 @@ the truth it tells is the one the owner wants.
 
 ### A172 -- the declined-consent record was kept three inconsistent ways, and one of them made a capability permanently un-askable **[RESOLVED 2026-09-15 -- lane FIX-3]**
 
-All three in `src/main/install-consent.ts`, found independently by two reviewers and `/code-review`:
+All three in `src/main/consent/install-consent.ts`, found independently by two reviewers and `/code-review`:
 
 1. **It recorded too much.** The decline branch wrote the *entire declared set*, including a
    capability that was currently **held**. Concrete harm: an origin declares `{tcp.connect, fs}`;
@@ -7482,7 +7482,7 @@ this lane built the broker capability (`src/broker/user-selected-capability.ts`)
 state (`src/broker/grants/picked-path-ledger.ts`), the persistence slice sharing `GrantLedger`'s
 own on-disk file (`src/broker/grants/ledger-storage.ts`/`node-ledger-storage.ts`), the handle-
 table's own revocation index for a pick (`byPickedPath`, `HandleTable.revokeUserSelected`,
-`src/broker/handles/`), and the settings-list extension (`src/main/permissions.ts`,
+`src/broker/handles/`), and the settings-list extension (`src/main/permissions/permissions.ts`,
 `settings-ipc.ts`, `src/preload/settings.ts`, `src/renderer/settings/`).
 
 **What is genuinely done, tested against both revocation-cascade halves and against a simulated
@@ -7583,7 +7583,7 @@ markup verbatim (no new CSS). The PROPOSED wording for both -- the native dialog
 the settings-list row's message -- is written out in full in this lane's own log
 (`~/.claude/orivon-fleet/lanes/L5-userselected/log.md`), per the owner's standing
 instruction that they review wording during development rather than at the end. Nothing here is
-finalised; `describePickedPath` (`src/main/permissions.ts`) carries the same "PROPOSED, NOT
+finalised; `describePickedPath` (`src/main/permissions/permissions.ts`) carries the same "PROPOSED, NOT
 OWNER-REVIEWED" marker in its own doc comment.
 
 **Verified, this lane:** `npm run typecheck` clean; `npm test` 4489 passed, 3 skipped across 194
@@ -7779,7 +7779,7 @@ file that folder will ever hold, not only what is visible the day it is picked.
   and delete everything in this folder, including files you add to it later.` The phrase
   "including files you add to it later" is load-bearing (the owner's own reasoning) and is not
   trimmed anywhere it appears.
-- Settings permissions row, folder (`describePickedPath`, `src/main/permissions.ts`):
+- Settings permissions row, folder (`describePickedPath`, `src/main/permissions/permissions.ts`):
   `Can read, change and delete everything in "${path}", including new files.`, `warning: true`
   (unchanged from A187 -- the same treatment an unlimited network pattern already gets).
 
@@ -7799,7 +7799,7 @@ including emptying it) rather than claiming a "delete" it structurally cannot do
   `warning: false` (unchanged from A187).
 
 Both dialog and settings-row wording moved out of `src/broker/transport/ipc.ts`'s
-`pickPath`/`src/main/permissions.ts`'s `describePickedPath` into a pure, independently-testable
+`pickPath`/`src/main/permissions/permissions.ts`'s `describePickedPath` into a pure, independently-testable
 form (`ipc.ts`'s new exported `describePickerDialog`) -- `dialog` is a real Electron value
 import and cannot be exercised from this suite (`ipc.ts`'s own "TESTABLE WITHOUT ELECTRON"
 header), so the wording itself needed a seam that could be. Both `describePickedPath`'s and
@@ -8140,7 +8140,7 @@ A manifest can name an address like `127.0.0.1`, `192.168.1.1` or `169.254.169.2
 metadata endpoint), and that manifest entry is the ONLY thing that makes it reachable at all --
 `hostMatches` (`src/broker/policy/connect-patterns.ts`) never lets an ordinary hostname resolve
 onto private address space, even its own. `namedHostsSummary`
-(`src/main/grant-prompt-connect.ts`) nonetheless treated such a pattern exactly like an ordinary
+(`src/main/consent/grant-prompt-connect.ts`) nonetheless treated such a pattern exactly like an ordinary
 public hostname: folded into a count the moment it was not the first host declared, and even a
 SOLE private address rendered with `warning: false` and no indication of what it was --
 `describeCapabilityGrant('https.connect', ['api.example.com:443', 'cdn.example.com:443',
@@ -8337,3 +8337,58 @@ table does not name it.
 
 **Needed by:** whenever a second permission is proposed for the allowlist, or an app asks to
 read the clipboard. Not blocking.
+
+### A203 -- `src/broker/transport/` imports `src/main/`, contradicting the stated rule that `src/broker/` never does
+
+**Raised 2026-09-22**, found by ADR-0023's own reference sweep, the same way the broker's own
+directory split (ADR-0015) turned up two stale references it fixed in passing. The rule is
+stated as absolute in two places: `src/broker/policy/update.ts`'s own comment on
+`sameOwnPatterns` ("`src/main/` may import from here, but `src/broker/` must never import from
+`src/main/`, so the shared copy has to live on this side") and
+`src/main/consent/grant-changed-capabilities.ts`'s mirroring comment ("`src/broker/`, which may
+never import `src/main/`").
+
+Neither is true of `src/broker/transport/`. `ipc.ts` imports `publishBroker` and
+`SubsystemContext`/`Subsystem` (types) from `../../main/registry.js`, and `createWebContextHost`
+from `../../main/sessions/web-context-host.js`, both as real values; `deliver-port.ts` imports
+`PORT_CHANNEL` from `../../main/channels.js`. All three predate this ADR and were not introduced
+by the directory move -- the sweep only found them because it went looking.
+
+The rule as stated is true of `src/broker/policy/` (verified: nothing there imports `src/main/`,
+matching that directory's own README) but false of `src/broker/transport/`, whose whole job --
+"speak": reaching the page, moving the bytes -- is to be Electron's own IPC surface, and
+`registry.ts`/`channels.ts` are exactly the seam `src/main/README.md` says other packages import
+as values. `web-context-host.ts`'s presence is less obviously load-bearing the same way: ADR-0019
+put it in `src/main/` because it needs a real `WebContentsView`, but `transport/ipc.ts` only
+needs it as a factory function, which does not obviously require crossing into `src/main/` to
+obtain versus `web-context-host.ts` being handed in some other way.
+
+**What would settle it:** either narrow the stated rule to `src/broker/policy/` specifically (the
+two comments above would need rewording, and every other `src/broker/` README would need
+checking for the same overclaim), or treat `transport/`'s three imports as a boundary violation
+to fix -- which for `registry.ts`/`channels.ts` likely means nothing changes at all
+(`src/main/README.md` already calls them the intentional seam), but for `web-context-host.ts`
+would mean threading it into `CreateBrokerOptions` from `src/main/` instead of `transport/ipc.ts`
+importing it directly.
+
+### A204 -- `update-check-runner.ts`'s `updateCheckSubsystem` has no caller anywhere in the repo
+
+**Raised 2026-09-22**, found by the same reference sweep. It exports `updateCheckSubsystem`, a
+real `Subsystem` matching every other subsystem's shape, but it is absent from
+`src/main/subsystems.ts` (the append point) and no other file in the repository imports it --
+confirmed by search, not by absence in one place only. The self-update feature it drives (check
+against the latest GitHub release, notify, never install) is built and unit-tested
+(`src/main/self-update/tests/update-check.test.ts`,
+`src/main/self-update/tests/github-release-version.test.ts`) but never runs in a shipped build.
+
+The file's own header frames this as a deliberate integration point ("Untested by design ... --
+everything with a decision to get right lives in the two pure/injected functions in
+`./update-check.ts`, which ARE tested"), consistent with wiring being left for whoever picks up
+the self-update queue item. Nothing found in `build-plan.md` or the decision log confirms that is
+still the intent, versus the wiring having simply been missed.
+
+**What would settle it:** one line from the owner -- either add `updateCheckSubsystem` to
+`subsystems.ts` (after `brokerIpcSubsystem`, per that file's own ordering rule, since it reads
+neither `ctx.broker` nor `ctx.loader` and has no ordering constraint of its own), or confirm the
+feature is intentionally unwired for now and say why (e.g. waiting on a real release to check
+against).

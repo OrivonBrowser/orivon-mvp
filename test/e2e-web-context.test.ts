@@ -25,7 +25,7 @@ import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs
 import { evaluateRetrying, HERMETIC_RESOLVER } from './smoke-helpers.mjs'
 import { closeElectronApp, forwardOutput, killChild, navigateToFixture, runPhase, waitForTcpReady } from './e2e-helpers.js'
 import { HOST, STATIC_PORT } from './apps/fixture/config.mjs'
-import type { DevGrantRequest } from '../src/main/dev-grant.js'
+import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
 import type { Grant, Manifest } from '../src/contracts/index.js'
 
 const FIXTURE_DIR = fileURLToPath(new URL('./apps/fixture/', import.meta.url)).replace(/[/\\]$/, '')

@@ -1,8 +1,8 @@
 import { app, BaseWindow, dialog } from 'electron'
-import { createShellWindow } from './window.js'
+import { createShellWindow } from './shell/window.js'
 import { createSubsystemContext, criticalFailureMessage, runAfterReady, runBeforeReady, type SubsystemFailure } from './registry.js'
 import { subsystems } from './subsystems.js'
-import { BookmarkStore } from './bookmarks.js'
+import { BookmarkStore } from './browsing/bookmarks.js'
 
 // Do not add `ozone-platform: x11` here without solving its GPU crash on
 // this machine first -- the window-visibility bug it was chasing is really

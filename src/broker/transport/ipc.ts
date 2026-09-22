@@ -26,7 +26,7 @@ import { dialTcp, listenTcp, nodeFs, resolveHost, resolveLookup } from '../adapt
 import { dialTls } from '../adapters/tls-adapter.js'
 import { bindUdp } from '../adapters/udp-adapter.js'
 import { nodeLedgerStorage } from '../grants/node-ledger-storage.js'
-import { createWebContextHost } from '../../main/web-context-host.js'
+import { createWebContextHost } from '../../main/sessions/web-context-host.js'
 import { createPortRegistry } from './port-registry.js'
 import { createTokenBucketLimiter } from './token-bucket.js'
 import type { RateLimiter } from './token-bucket.js'

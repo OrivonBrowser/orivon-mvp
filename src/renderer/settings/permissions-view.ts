@@ -1,4 +1,4 @@
-import type { AppPermissions, PermissionRow, PickedPathRow } from '../../main/permissions.js'
+import type { AppPermissions, PermissionRow, PickedPathRow } from '../../main/permissions/permissions.js'
 import type { GrantId } from '../../contracts/index.js'
 
 // Renders the settings window's whole list of app cards -- one card per

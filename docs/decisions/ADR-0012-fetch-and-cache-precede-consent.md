@@ -207,9 +207,9 @@ already fixed gap 1's own follow-up. See that entry for the two real defects rev
 first `pruneAssets` implementation before calling it done.
 
 **Both gaps closed, and this ADR's own condition satisfied: the discovery trigger was wired
-2026-09-13 (S4-2, `src/main/manifest-hint.ts`, `src/preload/manifest-hint.ts`).** A `<link
+2026-09-13 (S4-2, `src/main/install/manifest-hint.ts`, `src/preload/manifest-hint.ts`).** A `<link
 rel="orivon-manifest">` hint seen in a real page now reaches `installFromHint`
-(`src/main/app-install.ts`) for real, rate-limited per origin so a page reloading itself cannot
+(`src/main/install/app-install.ts`) for real, rate-limited per origin so a page reloading itself cannot
 turn one visit into an unbounded stream of fetches.
 
 ## Reversibility

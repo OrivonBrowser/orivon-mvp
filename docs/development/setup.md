@@ -86,7 +86,7 @@ OS keyboard focus, so a build or test run does not interrupt whatever you are ty
 window. If a window flashes on screen but your cursor and keystrokes stay wherever they already
 were, that is this working as intended, not a bug.
 
-Mechanism: `src/main/window.ts`'s `showOnce()` calls `win.showInactive()` instead of `win.show()`
+Mechanism: `src/main/shell/window.ts`'s `showOnce()` calls `win.showInactive()` instead of `win.show()`
 when `ORIVON_WINDOW_NO_FOCUS=1` is set. It is **never** set for a real user's own launch
 (`npm start`, or a packaged build). Only:
 

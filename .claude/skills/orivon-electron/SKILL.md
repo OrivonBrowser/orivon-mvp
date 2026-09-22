@@ -228,7 +228,7 @@ Symptom: TypeScript's own types — and context7's docs — show `ready-to-show`
 either source suggests it exists on `BaseWindow` at all.
 
 Cause: this is a **typing/documentation gap, not a runtime one**. `ready-to-show` fires
-identically on `BaseWindow` — confirmed empirically (`src/main/window.ts`, 2026-08-26; see the
+identically on `BaseWindow` — confirmed empirically (`src/main/shell/window.ts`, 2026-08-26; see the
 next section for the one real caveat, which is about *when* it fires, not *whether* it exists).
 
 **Corrected 2026-09-01:** an earlier version of this section made the same claim for
@@ -255,7 +255,7 @@ mismatch would still be caught by the type-checker:
 ## `ready-to-show` does not fire reliably when loading from a dev server
 
 Build step 1 (2026-08-26): a `show: false` + `win.once('ready-to-show', () => win.show())`
-window (`src/main/window.ts`) **never appeared** under `npm run dev` — no error, no crash, a
+window (`src/main/shell/window.ts`) **never appeared** under `npm run dev` — no error, no crash, a
 completely healthy process tree (main, GPU process, both renderers, confirmed repeatedly via
 `ps`). It worked fine every time under Playwright-launched diagnostics and under the production
 `loadFile()` path (`npm run smoke`). The difference: `npm run dev`'s chrome view loads via
@@ -269,7 +269,7 @@ all. The trace showed `chrome did-finish-load` firing normally, then **`ready-to
 never firing** within several seconds — `show()` was never called, on an otherwise perfectly
 healthy window.
 
-**Fix: race `ready-to-show` against a short fallback timer** (`src/main/window.ts`'s `showOnce`),
+**Fix: race `ready-to-show` against a short fallback timer** (`src/main/shell/window.ts`'s `showOnce`),
 guarded so `show()` never runs twice if the event fires late, after the fallback already ran.
 Do not rely on `ready-to-show` alone for a window whose content may come from a dev server —
 only for the production `loadFile()` path is it proven prompt and reliable here.
@@ -308,7 +308,7 @@ turns out to be WM-specific. `mvp-scope.md` puts Linux (AppImage + deb) first in
 IN table, so the `setImmediate` deferral below is the fix on the primary target, not a
 workaround for one desktop.
 
-Fix (`src/main/window.ts`, commit `18b2e12`):
+Fix (`src/main/shell/window.ts`, commit `18b2e12`):
 
 ```ts
 win.on('resize', () => {
@@ -387,7 +387,7 @@ is only the pointer:
 - `spike/launch.mjs`, `spike/gate1b/vite.config.js`, `spike/gate1b/shim/*.js` — the reference
   implementations. The `spike/` directory itself is throwaway and will be deleted once the
   owner has reviewed the verdict; this skill and the docs above are what should outlive it.
-- `src/main/window.ts`'s `showOnce` — the `ready-to-show`-under-dev-server fix. Commit `04d44bc`
+- `src/main/shell/window.ts`'s `showOnce` — the `ready-to-show`-under-dev-server fix. Commit `04d44bc`
   (build step 1) has the full incident, including the two dead ends ruled out first.
 - Commit `18b2e12` has the full `getContentBounds()`/`setImmediate` incident. It exists only on
   `stream/backlog-09-chrome-restyle`, a local branch not yet merged and not pushed to any remote

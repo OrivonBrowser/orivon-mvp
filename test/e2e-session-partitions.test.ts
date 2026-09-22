@@ -43,7 +43,7 @@ import {
 import { DEFAULT_ACTION_TIMEOUT_MS } from './launch-electron.mjs'
 import { originFromUrl } from '../src/broker/policy/origin.js'
 import { partitionFor } from '../src/broker/grants/origin-hash.js'
-import type { DevGrantRequest } from '../src/main/dev-grant.js'
+import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
 import type { Grant, Manifest } from '../src/contracts/index.js'
 
 /** The smallest manifest the dev-grant hook will register. `id` is the

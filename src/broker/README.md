@@ -353,7 +353,7 @@ installs SILENTLY, because `decideUpdate`'s subset check never sees the new key 
 That would make `request-grant.ts`'s "never exceeds the manifest" guarantee false for that
 capability. `policy/tests/manifest-patterns.test.ts` pins the `https.connect` (ADR-0017) mapping.
 
-### `policy/request-grant.ts` and `../main/request-grant.ts`: what a persisted grant may trust
+### `policy/request-grant.ts` and `../main/consent/request-grant.ts`: what a persisted grant may trust
 
 Grants are read back from storage at startup (`grants/grant-persistence.ts`,
 `grants/grant-ledger.ts`), so a tampered store must not be able to mint authority the user never

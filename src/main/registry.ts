@@ -23,7 +23,7 @@
 import type { App } from 'electron'
 import type { Broker } from '../broker/broker-contracts.js'
 import type { Loader, LoadResult } from '../loader/index.js'
-import type { DevGranted } from './dev-app-origin.js'
+import type { DevGranted } from './dev/dev-app-origin.js'
 import type { CapabilityRequest } from '../contracts/index.js'
 
 export interface SubsystemContext {

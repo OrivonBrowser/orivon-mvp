@@ -61,7 +61,7 @@ import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs
 import { HERMETIC_RESOLVER, waitFor } from './smoke-helpers.mjs'
 import { closeElectronApp, navigateToFixture, runPhase } from './e2e-helpers.js'
 import { buildAliasEntries } from '../src/shim/module-map.js'
-import type { DevGrantRequest } from '../src/main/dev-grant.js'
+import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
 import type { Grant, Manifest } from '../src/contracts/index.js'
 import type { ShimRoundTripFailure, ShimRoundTripResult } from './app-loader-journey-shim-entry.js'
 

@@ -112,7 +112,7 @@ ever runs for an origin whose bundle did not change. A live handle's `authorised
 `revoke`/`revokePersisted` unable to find a handle acquired between the two passes, ever: the
 revoke button would lie. So each capability's restored patterns are compared against whatever
 the ledger's `grants` map already holds for it, order-independently (`sameOwnPatterns`,
-`../policy/update.ts`, shared with `src/main/grant-changed-capabilities.ts` one layer up), and the
+`../policy/update.ts`, shared with `src/main/consent/grant-changed-capabilities.ts` one layer up), and the
 OLD `Grant` object, id included, is reused on a match. Every capability that is NOT a
 match, whether dropped outright or replaced by genuinely different patterns, is returned as a
 `SupersededGrant`, because an id is the only thing safe to carry forward silently; real authority
@@ -125,7 +125,7 @@ file: ledger mutation first, cascade after, regardless of whether a disk write f
 ### `declined-consent.ts`: remembering a "no" without it ever becoming a "yes" (A145)
 
 A fifth per-origin file, `declined-capabilities.json`, alongside the floor, rollback
-acknowledgement and grants, written when `src/main/install-consent.ts`'s all-or-nothing dialog
+acknowledgement and grants, written when `src/main/consent/install-consent.ts`'s all-or-nothing dialog
 is DECLINED, so a restart does not ask the same question again as if nothing had happened.
 
 **What is stored is the declared capability set the dialog was declined for, never a boolean,
@@ -147,7 +147,7 @@ convention.** `recordDeclinedConsent`/`clearDeclinedConsent` write only to their
 `OriginRecord.declinedCapabilities`; neither touches `grants`, and nothing in `grant()` or
 `decideGrantRequest` (`../policy/request-grant.ts`) ever reads this field. A remembered no can
 suppress `install-consent.ts`'s own dialog and nothing else: `app.requestGrant`
-(`src/main/request-grant.ts`), the app's own live per-capability door, is a completely separate
+(`src/main/consent/request-grant.ts`), the app's own live per-capability door, is a completely separate
 path to a grant, untouched by this record either way.
 
 **A failed write is logged, never thrown, unlike the version floor's.** The floor's write

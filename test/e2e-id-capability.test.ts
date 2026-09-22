@@ -52,7 +52,7 @@ import { dialTcp, listenTcp, resolveHost, resolveLookup } from '../src/broker/ad
 import { dialTls } from '../src/broker/adapters/tls-adapter.js'
 import { bindUdp } from '../src/broker/adapters/udp-adapter.js'
 import { isOrivonErrorLike } from '../src/broker/errors.js'
-import { installDevGrantHook } from '../src/main/dev-grant.js'
+import { installDevGrantHook } from '../src/main/dev/dev-grant.js'
 import type { Manifest } from '../src/contracts/index.js'
 
 // Trailing separator stripped -- fileURLToPath on a directory URL keeps it

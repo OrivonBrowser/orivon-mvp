@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { SETTINGS_COMMAND_CHANNEL } from '../main/channels.js'
-import type { SettingsCommand } from '../main/settings-ipc.js'
-import type { AppPermissions } from '../main/permissions.js'
+import type { SettingsCommand } from '../main/ipc/settings-ipc.js'
+import type { AppPermissions } from '../main/permissions/permissions.js'
 import type { CapabilityKind, GrantId } from '../contracts/index.js'
 
 // Loaded ONLY by the permissions panel's own WebContentsView

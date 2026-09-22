@@ -24,7 +24,7 @@ import {
 } from './e2e-helpers.js'
 import { originFromUrl } from '../src/broker/policy/origin.js'
 import { partitionFor } from '../src/broker/grants/origin-hash.js'
-import type { DevGrantRequest } from '../src/main/dev-grant.js'
+import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
 import type { Grant, Manifest } from '../src/contracts/index.js'
 
 /** Smallest manifest the dev-grant hook will register -- this file is
