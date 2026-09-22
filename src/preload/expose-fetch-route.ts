@@ -10,7 +10,10 @@ import { contextBridge } from 'electron'
 import { installRoutedWire } from './routed-wire.js'
 import { installRoutedDial } from './routed-dial.js'
 import { installRoutedCore, releaseRoutedSlot } from './routed-core.js'
+import { installRoutedEvents } from './routed-events.js'
 import { installFetchRoute } from './fetch-route.js'
+import { installXhrResponse } from './xhr-route-response.js'
+import { installXhrRoute } from './xhr-route.js'
 
 /** The literal `webPreferences.additionalArguments` flag `src/main/
  * tab-view.ts`'s `appTabArgsFor` sets -- duplicated here rather than
@@ -21,7 +24,8 @@ const APP_TAB_FLAG = '--orivon-app-tab'
 
 /** Dependency order: each one reads what the ones before it published. */
 const INSTALLERS: ReadonlyArray<(isAppTab: boolean) => void> = [
-  installRoutedWire, installRoutedDial, installRoutedCore, installFetchRoute
+  installRoutedWire, installRoutedDial, installRoutedCore, installRoutedEvents,
+  installFetchRoute, installXhrResponse, installXhrRoute
 ]
 
 /**
