@@ -231,3 +231,25 @@ describe("orivon.net.lookup is bounded by the app's own held network grant (d-00
     expect(outcome.state === 'rejected' ? outcome.error.code : null).toBe('limit')
   })
 })
+
+describe('lookup("localhost")', () => {
+  it('answers loopback without resolving, under a grant that names localhost', async () => {
+    const resolved: string[] = []
+    const broker = createBroker(baseDeps({ resolveLookup: async (name) => { resolved.push(name); return [] } }))
+    broker.registerApp(APP, manifestWith({ net: { tcp: { connect: ['localhost:8080'] } } }))
+    await broker.grant(APP, 'tcp.connect', ['localhost:8080'])
+
+    const addresses = await broker.net.lookup(APP, { hostname: 'localhost' })
+
+    expect(addresses).toEqual([{ address: '127.0.0.1', family: 'IPv4' }, { address: '::1', family: 'IPv6' }])
+    expect(resolved).toEqual([])
+  })
+
+  it('stays unreachable under a wildcard grant, which cannot connect there either', async () => {
+    const broker = createBroker(baseDeps({ resolveLookup: async () => [{ address: '127.0.0.1', family: 'IPv4' } as const] }))
+    broker.registerApp(APP, manifestWith({ net: { tcp: { connect: ['*:*'] } } }))
+    await broker.grant(APP, 'tcp.connect', ['*:*'])
+
+    expect((await rejection(broker.net.lookup(APP, { hostname: 'localhost' }))).code).toBe('unreachable')
+  })
+})

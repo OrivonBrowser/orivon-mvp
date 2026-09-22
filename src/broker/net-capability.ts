@@ -1,16 +1,8 @@
-// `orivon.net`'s three entry points -- connect, udpBind, listen -- lifted out
-// of ./index.ts once `listen` pushed that file past Rule 2's 500 lines
-// (docs/development/code-guidelines.md). README.md's own design notes named
-// this exact seam ahead of time: "lift connect/udpBind/authorisedSend into a
-// net-capability file rather than shaving another helper off the top".
-//
-// SAME DEPENDENCY SHAPE AS ./index.ts ITSELF -- the HandleTable and
-// GrantLedger it already built are passed in, `canonical` (the origin
-// normalisation every Broker method shares) is passed in too rather than
-// redefined here, and nothing below holds state of its own. This is a pure
-// move: every test that exercised connect/udpBind/listen through
-// `createBroker` keeps exercising the exact same functions, just imported
-// from here instead of defined inline.
+// `orivon.net`'s entry points -- connect, connectSecure, udpBind, listen,
+// lookup. Split from ./index.ts along Rule 2's seam (README.md's Design
+// notes). SAME DEPENDENCY SHAPE AS ./index.ts ITSELF: the HandleTable,
+// GrantLedger and `canonical` it already built are passed in, and nothing
+// below holds state of its own.
 
 import type { HandleTable } from './handles/handles.js'
 import type { FailableTcpServer, FailableTcpSocket, FailableUdpSocket, HandleEntry } from './handles/handle-contracts.js'
@@ -447,15 +439,19 @@ export function createNetCapability ({ deps, handleTable, ledger, canonical }: N
 
     let grantId: string | undefined
     let hostname: string | undefined
+    let answers: readonly LookupAddress[] | undefined
     for (const capability of OUTBOUND_CAPABILITIES) {
       const grant = ledger.currentGrant(key, capability)
       if (grant === undefined) continue
       const decision = checkLookup(grant.patterns, opts.hostname)
-      if (decision.allowed) { grantId = grant.id; hostname = decision.hostname; break }
+      if (decision.allowed) { grantId = grant.id; hostname = decision.hostname; answers = decision.answers; break }
     }
     if (grantId === undefined || hostname === undefined) {
       throw fail('denied', 'the hostname was not authorised by any held network grant')
     }
+    // `localhost` under a pattern naming it: the answer is a constant, so
+    // there is nothing to resolve (policy/lookup.ts).
+    if (answers !== undefined) return answers
     const authorisedHostname = hostname
 
     return await handleTable.run(key, { on: 'grant', grantId }, async (signal) => {

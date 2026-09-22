@@ -13,9 +13,9 @@
 // ./canonical-host.ts (code-guidelines.md Rule 3). Why a host-only check
 // still opens nothing new: ../README.md, Design notes, "lookup.ts".
 
-import type { OrivonErrorCode, Pattern } from '../../contracts/index.js'
+import type { LookupAddress, OrivonErrorCode, Pattern } from '../../contracts/index.js'
 import { MAX_HOST_LENGTH, isAsciiHost, normalizeHost } from './canonical-host.js'
-import { hostSpecKind, parsePattern } from './connect-patterns.js'
+import { LOCALHOST, hostSpecKind, parsePattern } from './connect-patterns.js'
 import type { ParsedPattern } from './connect-patterns.js'
 import { MAX_PATTERNS } from './connect-preflight.js'
 
@@ -23,7 +23,14 @@ export interface LookupAllowed {
   readonly allowed: true
   /** The host as normalised -- lowercased, trailing dot removed. Resolve THIS, never the caller's raw string. */
   readonly hostname: string
+  /** Present for `localhost` under a pattern naming it: the answer itself, returned instead of resolving (./connect-patterns.ts's LOOPBACK_LITERALS). */
+  readonly answers?: readonly LookupAddress[]
 }
+
+const LOCALHOST_ANSWERS: readonly LookupAddress[] = Object.freeze([
+  Object.freeze({ address: '127.0.0.1', family: 'IPv4' as const }),
+  Object.freeze({ address: '::1', family: 'IPv6' as const })
+])
 
 /** LOCAL LOG ONLY, same rule as ./connect.ts's ConnectDenialReason -- never reaches an app, which sees a uniform 'denied'. */
 export type LookupDenialReason =
@@ -82,8 +89,14 @@ export function checkLookup (patterns: readonly Pattern[], hostnameArg: string):
     return deny('bad-host')
   }
 
-  const authorised = patterns.map(parsePattern).some((pattern) => hostAuthorisesLookup(pattern, requested))
-  if (!authorised) return deny('no-pattern-match')
+  const parsed = patterns.map(parsePattern)
+  if (!parsed.some((pattern) => hostAuthorisesLookup(pattern, requested))) return deny('no-pattern-match')
 
+  // Only a pattern that names `localhost` itself earns the loopback answer; a
+  // `*` pattern authorises the lookup but can never connect there, so it gets
+  // the ordinary resolve-and-filter path, which answers nothing reachable.
+  if (requested === LOCALHOST && parsed.some((pattern) => pattern !== null && normalizeHost(pattern.host) === LOCALHOST)) {
+    return Object.freeze({ allowed: true, hostname: requested, answers: LOCALHOST_ANSWERS })
+  }
   return Object.freeze({ allowed: true, hostname: requested })
 }

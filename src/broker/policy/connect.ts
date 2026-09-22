@@ -27,7 +27,7 @@
 import type { OrivonErrorCode, Pattern } from '../../contracts/index.js'
 import { canonicalAddress, classifyAddress } from './address.js'
 import { MAX_HOST_LENGTH, isAsciiHost, isValidPort, normalizeHost } from './canonical-host.js'
-import { couldAnyPatternMatch, patternAuthorises } from './connect-patterns.js'
+import { LOCALHOST, LOOPBACK_LITERALS, couldAnyPatternMatch, patternAuthorises } from './connect-patterns.js'
 import type { ParsedPattern } from './connect-patterns.js'
 import { preflightConnect } from './connect-preflight.js'
 
@@ -223,6 +223,16 @@ export async function checkConnect (
   const { requested, eligible, isLiteral } = pre
 
   if (!couldAnyPatternMatch(eligible, requested, port)) return deny('no-pattern-possible')
+
+  // `localhost` is answered, never resolved, and its answer is a constant no
+  // attacker chose -- so, unlike a DNS answer, dialling only the part of it
+  // the grant covers reopens no rebinding window.
+  if (requested === LOCALHOST) {
+    const covered = LOOPBACK_LITERALS.filter((address) => eligible.some((pattern) => patternAuthorises(pattern, requested, address, port)))
+    return covered.length === 0
+      ? deny('no-pattern-match', LOOPBACK_LITERALS)
+      : Object.freeze({ allowed: true, addresses: Object.freeze(covered) })
+  }
 
   const answers = isLiteral ? [requested] : await resolveFn(requested)
 

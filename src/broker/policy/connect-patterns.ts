@@ -18,6 +18,20 @@ import { MAX_HOST_LENGTH, MAX_PORT, isAsciiHost, normalizeHost } from './canonic
 /** A host at the limit, a colon, and the widest port range. */
 const MAX_PATTERN_LENGTH = 300
 
+/**
+ * What the name `localhost` means, as a constant: it is never resolved
+ * (RFC 6761 SS6.3), so no nameserver can answer anything else for it. IPv4
+ * first, because a dialler tries these in order. See ./README.md's Design
+ * notes for why a `localhost` pattern authorises exactly these.
+ */
+export const LOCALHOST = 'localhost'
+export const LOOPBACK_LITERALS: readonly string[] = Object.freeze(['127.0.0.1', '::1'])
+
+/** True when a pattern whose host is `localhost` authorises connecting to `address` for a request named `requested`: the name itself, or the literal. */
+function localhostAuthorises (requested: string, address: string): boolean {
+  return LOOPBACK_LITERALS.includes(address) && (requested === LOCALHOST || requested === address)
+}
+
 export interface ParsedPattern {
   readonly host: string
   readonly port: string
@@ -194,10 +208,13 @@ export function hostMatches (spec: string, requested: string, address: string): 
       return host === address && addressClass !== 'multicast' && addressClass !== 'broadcast'
     }
     case 'hostname':
-      // A hostname NEVER authorises a private address, even its own. That is
-      // not an oversight: "the name resolved there" is the whole of the
-      // rebinding attack, so a name cannot be the evidence that the range was
-      // intended. Reaching a LAN host requires declaring its address
+      // `localhost` is the one name that is not resolved, so it names the
+      // loopback literals as plainly as declaring them would.
+      if (host === LOCALHOST) return localhostAuthorises(requested, address)
+      // Every other hostname NEVER authorises a private address, even its
+      // own. That is not an oversight: "the name resolved there" is the whole
+      // of the rebinding attack, so a name cannot be the evidence that the
+      // range was intended. Reaching a LAN host requires declaring its address
       // literally, above.
       return host === requested && isPublicUnicast(address)
   }
@@ -259,6 +276,7 @@ export function couldAnyPatternMatch (
     // so it cannot be ruled out from the name alone.
     if (classifyAddress(host) !== 'unparseable') return true
     if (host === requested) return true
+    if (host === LOCALHOST && LOOPBACK_LITERALS.includes(requested)) return true
   }
   return false
 }
