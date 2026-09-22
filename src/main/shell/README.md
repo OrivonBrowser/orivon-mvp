@@ -4,7 +4,8 @@
 whichever tab's `WebContentsView` below. `tabs.ts` owns the tab collection and what gets pushed
 to the chrome UI; `tab-view.ts` and `tab-types.ts` are its pure halves. `renderer-entry.ts`
 resolves electron-vite's dev-server/file-URL split for both this and
-[`../permissions/permissions-panel.ts`](../permissions/permissions-panel.ts).
+[`../permissions/permissions-panel.ts`](../permissions/permissions-panel.ts). `user-agent.ts`
+derives the plain Chrome User-Agent [`../index.ts`](../index.ts) sets app-wide.
 
 **What it depends on.** `electron`; [`../../broker/`](../../broker/) (`policy/origin.ts`,
 `grants/origin-hash.ts`, `broker-contracts.ts` types); [`../../loader/electron-serve.ts`](../../loader/electron-serve.ts)
