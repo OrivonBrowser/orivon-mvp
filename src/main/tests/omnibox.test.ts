@@ -55,6 +55,44 @@ describe('parseOmniboxInput', () => {
       })
     })
 
+    // orivon-ports' fake `.eth` names are served over plain http (no TLS
+    // certificate exists for one) -- defaulting to https here would fail
+    // outright rather than reaching the app. Real ENS resolution, when it
+    // exists, is a different code path entirely (README.md's own "No ENS
+    // yet"); this is only about what scheme bare address-bar text gets.
+    it('a bare .eth name defaults to http, not https', () => {
+      expect(parseOmniboxInput('freetube.eth')).toEqual({
+        kind: 'url',
+        url: 'http://freetube.eth/'
+      })
+    })
+
+    // The URL constructor itself lowercases the host, so the assertion here
+    // is really on the SCHEME: an uppercase .eth must still be recognised as
+    // one and default to http, not fall through to the https default.
+    it('a .eth name is matched case-insensitively', () => {
+      expect(parseOmniboxInput('FreeTube.ETH')).toEqual({
+        kind: 'url',
+        url: 'http://freetube.eth/'
+      })
+    })
+
+    it('an explicit https scheme on a .eth name is left alone, not downgraded', () => {
+      expect(parseOmniboxInput('https://freetube.eth')).toEqual({
+        kind: 'url',
+        url: 'https://freetube.eth/'
+      })
+    })
+
+    // The check is on the HOST portion only -- a path segment that happens
+    // to end in .eth must not flip an ordinary domain's default scheme.
+    it('a path ending in .eth does not affect an ordinary domain\'s https default', () => {
+      expect(parseOmniboxInput('example.com/x.eth')).toEqual({
+        kind: 'url',
+        url: 'https://example.com/x.eth'
+      })
+    })
+
     it('leading/trailing whitespace is trimmed', () => {
       expect(parseOmniboxInput('  example.com  ')).toEqual({
         kind: 'url',

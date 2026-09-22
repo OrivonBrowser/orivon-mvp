@@ -54,6 +54,28 @@ describe('isDevGrantableOrigin', () => {
     expect(isDevGrantableOrigin('file:///tmp', true)).toBe(false)
     expect(isDevGrantableOrigin('not a url', true)).toBe(false)
   })
+
+  // orivon-ports' fake `.eth` convention -- see this function's own header
+  // for why it is accepted despite not being a loopback literal, and why
+  // https is refused for it even though loopback allows either scheme.
+  it('accepts a plain-http .eth origin only when developer mode is on', () => {
+    expect(isDevGrantableOrigin('http://freetube.eth', true)).toBe(true)
+    expect(isDevGrantableOrigin('http://freetube.eth', false)).toBe(false)
+  })
+
+  it('refuses https for a .eth origin -- no such name ever presents a real certificate', () => {
+    expect(isDevGrantableOrigin('https://freetube.eth', true)).toBe(false)
+  })
+
+  it('is case-insensitive on a .eth origin, the way URL already lowercases a real host', () => {
+    expect(isDevGrantableOrigin('http://FreeTube.ETH', true)).toBe(true)
+  })
+
+  it('refuses a name that merely ends with the letters "eth" without the dot, and a multi-label one', () => {
+    for (const origin of ['http://acecameth', 'http://sub.freetube.eth']) {
+      expect(isDevGrantableOrigin(origin, true)).toBe(false)
+    }
+  })
 })
 
 describe('grantDevOrigin', () => {
