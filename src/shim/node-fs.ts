@@ -13,8 +13,8 @@
 // (node-fs-streams.ts, over that same local FileHandle) are real; see each
 // file's own header. FileHandle#createReadStream/createWriteStream -- a
 // different surface -- still refuses. Every synchronous
-// export except readFileSync (ADR-0016) is a named refusal
-// (node-fs-unsupported.ts).
+// export except readFileSync and existsSync (both over ADR-0016's one sync
+// call) is a named refusal (node-fs-unsupported.ts).
 //
 // EVERY OTHER fs MEMBER (A135) names its gap: `chmod`/`chown` are
 // 'not-applicable' (no POSIX uid/gid/mode model), everything else is
@@ -36,6 +36,7 @@ import { toConfinedPath, type PathLike } from './node-fs-path.js'
 import { isRootPath, rootIsDirectoryError } from './node-fs-root.js'
 import { refusingProxy } from './unimplemented.js'
 import { refuseShim } from './errors.js'
+import { toNodeError } from './node-http-errors.js'
 
 export { open, close, read, write, fstat, ftruncate, fsync } from './node-fs-handle.js'
 export { createReadStream, createWriteStream } from './node-fs-streams.js'
@@ -82,7 +83,35 @@ export function readFileSync (path: PathLike, options?: ReadFileOptions | string
   // orivon.fs call underneath it is not.
   const confined = toConfinedPath(path, 'open')
   if (isRootPath(confined)) rootIsDirectoryError('read')
-  return decode(getOrivon().fs.readFileSync(confined), encodingOf(options))
+  let bytes: Uint8Array
+  try {
+    bytes = getOrivon().fs.readFileSync(confined)
+  } catch (error) {
+    throw toNodeError(error)
+  }
+  return decode(bytes, encodingOf(options))
+}
+
+/**
+ * Over readFileSync, the one synchronous orivon.fs call (ADR-0016): a file it
+ * can read exists, and so does a directory, which fails EISDIR. It cannot
+ * tell a missing path from one it may not read, so both are false, as Node's
+ * own existsSync reports any failure. The cost is a whole-file read per call.
+ */
+export function existsSync (path: PathLike): boolean {
+  let confined: string
+  try {
+    confined = toConfinedPath(path, 'access')
+  } catch {
+    return false
+  }
+  if (isRootPath(confined)) return true
+  try {
+    getOrivon().fs.readFileSync(confined)
+    return true
+  } catch (error) {
+    return toNodeError(error).code === 'EISDIR'
+  }
 }
 
 export const writeFileSync = syncUnsupported('fs.writeFileSync')
@@ -91,7 +120,6 @@ export const mkdirSync = syncUnsupported('fs.mkdirSync')
 export const readdirSync = syncUnsupported('fs.readdirSync')
 export const rmSync = syncUnsupported('fs.rmSync')
 export const renameSync = syncUnsupported('fs.renameSync')
-export const existsSync = syncUnsupported('fs.existsSync')
 export const accessSync = syncUnsupported('fs.accessSync')
 export const appendFileSync = syncUnsupported('fs.appendFileSync')
 export const unlinkSync = syncUnsupported('fs.unlinkSync')

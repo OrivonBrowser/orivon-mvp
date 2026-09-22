@@ -269,7 +269,6 @@ describe('every other synchronous export', () => {
     expect(() => fs.statSync('tmp')).toThrow(/ADR-0016/)
     expect(() => fs.mkdirSync('x')).toThrow(/ADR-0016/)
     expect(() => fs.writeFileSync('x', 'y')).toThrow(/ADR-0016/)
-    expect(() => fs.existsSync('x')).toThrow(/ADR-0016/)
     expect(() => fs.accessSync('x')).toThrow(/ADR-0016/)
     expect(() => fs.appendFileSync('x', 'y')).toThrow(/ADR-0016/)
     expect(() => fs.unlinkSync('x')).toThrow(/ADR-0016/)
