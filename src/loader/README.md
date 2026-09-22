@@ -130,6 +130,14 @@ computation itself, which no test can manufacture without reintroducing the bug;
 [`bundle-hash.test.ts`](../broker/policy/tests/bundle-hash.test.ts) instead. Both stay as defence
 in depth against their own computations ever drifting apart.
 
+**Undeclared files are named at install, never added.** An entry document that loads a
+same-origin script, stylesheet or image its manifest's `assets` leaves out installs cleanly and
+then renders blank: the file is not pinned, so the cache refuses it. When a bundle is newly pinned,
+[`undeclared-assets.ts`](undeclared-assets.ts) scans the entry document's `src`/`href` on
+subresource elements and logs every same-origin path the pinned set lacks. It only warns: ADR-0011
+has the loader read the list, never infer it, and a runtime `import()` a scan cannot see is the
+publisher's to declare either way.
+
 **The real adapter (`electronFetch`/`netFetch`) is tested for real, not only through a stub
 `Fetch`.** [`test/e2e-loader-adapter.test.ts`](../../test/e2e-loader-adapter.test.ts) drives the
 real `netFetch` (and, for the one case its own address guard

@@ -12,6 +12,7 @@ import type { StagedAsset } from './fetch-asset.js'
 import type { CreateLoaderOptions, LoadInstalled, LoadRejected } from './index.js'
 import { leafOf } from './leaf-hash.js'
 import type { LoaderStorage } from './storage.js'
+import { warnUndeclaredReferences } from './undeclared-assets.js'
 
 /** Does the file already in the code cache at `path` hash to `leaf`? False for anything unreadable -- the caller then rewrites it. */
 async function onDiskLeafIs (storage: LoaderStorage, origin: string, path: string, leaf: string): Promise<boolean> {
@@ -57,6 +58,7 @@ async function install (
     if (existingPin !== undefined) await storage.pruneAssets(canonicalOrigin, entries.map((entry) => entry.path))
     await storage.writePin(canonicalOrigin, pin)
     changed = true
+    await warnUndeclaredReferences(storage, canonicalOrigin, manifest, tree)
   }
   await storage.clearStaging(canonicalOrigin)
   return { pin, changed }
