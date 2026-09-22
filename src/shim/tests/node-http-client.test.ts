@@ -166,7 +166,7 @@ describe('createHttpModule -- denial and transport failure', () => {
     const errored = new Promise<Error & { code: string }>((resolve) => req.once('error', resolve))
     fake.fail('reset', 'peer reset the connection')
     const error = await errored
-    expect(error.code).toBe('reset')
+    expect(error.code).toBe('ECONNRESET')
   })
 
   it('emits "error" on the response, not the request, once headers have already arrived', async () => {
@@ -183,7 +183,7 @@ describe('createHttpModule -- denial and transport failure', () => {
     fake.fail('reset', 'peer reset mid-body')
 
     const error = await resError
-    expect(error.code).toBe('reset')
+    expect(error.code).toBe('ECONNRESET')
     expect(reqErrored).toBe(false)
   })
 })

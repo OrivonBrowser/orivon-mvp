@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { toNodeError } from '../node-http-errors.js'
+import { abortError, codedError, systemError, toNodeError } from '../node-http-errors.js'
 import type { OrivonError, OrivonErrorCode } from '../../contracts/errors.js'
 
 function orivonError (code: OrivonErrorCode, message: string, platformCode?: string): OrivonError {
@@ -23,9 +23,9 @@ describe('toNodeError', () => {
     expect(result.orivonCode).toBe('unreachable')
   })
 
-  it('falls back to the OrivonErrorCode itself when platformCode is absent', () => {
+  it('synthesises the Node errno for a timeout when platformCode is absent', () => {
     const result = toNodeError(orivonError('timeout', 'no response in time'))
-    expect(result.code).toBe('timeout')
+    expect(result.code).toBe('ETIMEDOUT')
     expect(result.orivonCode).toBe('timeout')
   })
 
@@ -78,5 +78,80 @@ describe('toNodeError', () => {
     const malformed = { name: 'OrivonError', code: 'denied' }
     const result = toNodeError(malformed)
     expect(result.code).toBe('internal')
+  })
+})
+
+describe('toNodeError -- Node errno fidelity', () => {
+  it('never overwrites a string code a non-Orivon error already carries', () => {
+    const argError = Object.assign(new TypeError('bad arg'), { code: 'ERR_INVALID_ARG_TYPE' })
+    const result = toNodeError(argError)
+    expect(result.code).toBe('ERR_INVALID_ARG_TYPE')
+    expect(result.orivonCode).toBe('internal')
+    expect(result).toBe(argError)
+  })
+
+  it('returns an already-mapped error unchanged instead of mapping it twice', () => {
+    const once = toNodeError(orivonError('denied', 'host not granted'))
+    const twice = toNodeError(once)
+    expect(twice).toBe(once)
+    expect(twice.message).toBe(once.message)
+  })
+
+  it.each([
+    ['timeout', 'connect', 'ETIMEDOUT', -110],
+    ['reset', 'read', 'ECONNRESET', -104],
+    ['unreachable', 'connect', 'ECONNREFUSED', -111],
+    ['unreachable', 'getaddrinfo', 'ENOTFOUND', -3008],
+    ['closed', 'write', 'EPIPE', -32]
+  ] as const)('synthesises a Node errno for %s during %s when no platformCode arrived', (orivonCode, syscall, code, errno) => {
+    const result = toNodeError(orivonError(orivonCode, 'x'), { syscall })
+    expect(result.code).toBe(code)
+    expect(result.errno).toBe(errno)
+    expect(result.syscall).toBe(syscall)
+    expect(result.orivonCode).toBe(orivonCode)
+  })
+
+  it('keeps the Orivon code when nothing Node-shaped fits (a close outside a write, a limit)', () => {
+    expect(toNodeError(orivonError('closed', 'x'), { syscall: 'read' }).code).toBe('closed')
+    expect(toNodeError(orivonError('limit', 'x'), { syscall: 'connect' }).code).toBe('limit')
+  })
+
+  it('a real platformCode wins over synthesis, and still gets its errno', () => {
+    const result = toNodeError(orivonError('unreachable', 'no route', 'EHOSTUNREACH'), { syscall: 'connect' })
+    expect(result.code).toBe('EHOSTUNREACH')
+    expect(result.errno).toBe(-113)
+  })
+
+  it('records syscall, address, port and hostname from the context', () => {
+    const result = toNodeError(orivonError('unreachable', 'refused', 'ECONNREFUSED'), { syscall: 'connect', address: '10.0.0.1', port: 50002 })
+    expect(result).toMatchObject({ syscall: 'connect', address: '10.0.0.1', port: 50002 })
+    const lookup = toNodeError(orivonError('unreachable', 'no records'), { syscall: 'getaddrinfo', hostname: 'nowhere.example' })
+    expect(lookup).toMatchObject({ code: 'ENOTFOUND', hostname: 'nowhere.example' })
+  })
+
+  it('leaves errno absent for a code that is not a system errno', () => {
+    expect(toNodeError(orivonError('denied', 'x'), { syscall: 'connect' }).errno).toBeUndefined()
+  })
+})
+
+describe('Node-shaped error builders', () => {
+  it('codedError carries the code and the constructor Node uses', () => {
+    const error = codedError(RangeError, 'ERR_SOCKET_BAD_PORT', 'Port should be >= 0 and < 65536.')
+    expect(error).toBeInstanceOf(RangeError)
+    expect(error.code).toBe('ERR_SOCKET_BAD_PORT')
+  })
+
+  it('systemError reads like Node\'s own: "<syscall> <code> <address>:<port>" with errno', () => {
+    const error = systemError('EMSGSIZE', 'send', { address: '1.2.3.4', port: 6881 })
+    expect(error.message).toBe('send EMSGSIZE 1.2.3.4:6881')
+    expect(error).toMatchObject({ code: 'EMSGSIZE', errno: -90, syscall: 'send', address: '1.2.3.4', port: 6881 })
+  })
+
+  it('abortError matches Node\'s AbortError shape and keeps the reason as cause', () => {
+    const reason = new Error('user cancelled')
+    const error = abortError(reason)
+    expect(error.name).toBe('AbortError')
+    expect(error.code).toBe('ABORT_ERR')
+    expect(error.cause).toBe(reason)
   })
 })
