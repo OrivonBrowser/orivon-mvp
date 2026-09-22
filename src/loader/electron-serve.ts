@@ -31,6 +31,7 @@ import { createPinCoverageTracker } from './pin-coverage.js'
 import type { PinCoverageSnapshot } from './pin-coverage.js'
 import { createAppRequestHandler, fetchThirdParty, verifiedManifestFor } from './serve.js'
 import type { AppRequestHandler, AuthoriseReach } from './serve.js'
+import { cspHeaderValue } from './serve-csp.js'
 import { nodeReachDial } from './serve-reach.js'
 import type { ReleaseReachSlot, ReserveReachSlot } from './serve-reach-guard.js'
 import type { LoaderStorage } from './storage.js'
@@ -189,6 +190,11 @@ async function grantedConnectPatternsFor (broker: Broker, origin: string): Promi
  * header claims. */
 async function secureHeaderPatternsFor (broker: Broker, origin: string): Promise<readonly Pattern[]> {
   return await liveGrantedPatternsFor(broker, origin, 'https.connect')
+}
+
+/** The CSP a served response carries, from `origin`'s live grants -- shared with developer mode (src/main/dev/dev-csp.ts), so a dev origin runs under the same policy an installed one does. */
+export async function liveCspHeaderFor (broker: Broker, origin: string): Promise<string> {
+  return cspHeaderValue(await grantedConnectPatternsFor(broker, origin), await secureHeaderPatternsFor(broker, origin))
 }
 
 /**
