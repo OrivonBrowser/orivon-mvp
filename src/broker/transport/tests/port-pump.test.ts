@@ -329,3 +329,31 @@ describe('onStreamFailed marks a stream that died, and only that', () => {
     expect(onStreamFailed).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('onStreamEnded marks a clean peer EOF, and only that', () => {
+  it('fires once when the readable ends cleanly', async () => {
+    const onStreamEnded = vi.fn()
+    createPortPump({ handleId: HANDLE, readable: chunkStream([chunk(4)]), send: vi.fn(), initialCredit: 1_000, onStreamEnded })
+    await tick(10)
+
+    expect(onStreamEnded).toHaveBeenCalledTimes(1)
+  })
+
+  it('does NOT fire when the stream errors', async () => {
+    const onStreamEnded = vi.fn()
+    const readable = new ReadableStream<Uint8Array>({ pull (c) { c.error(new Error('reset')) } })
+    createPortPump({ handleId: HANDLE, readable, send: vi.fn(), initialCredit: 1_000, onStreamEnded })
+    await tick(10)
+
+    expect(onStreamEnded).not.toHaveBeenCalled()
+  })
+
+  it('does NOT fire on stop()', async () => {
+    const onStreamEnded = vi.fn()
+    const pump = createPortPump({ handleId: HANDLE, readable: new ReadableStream(), send: vi.fn(), initialCredit: 1_000, onStreamEnded })
+    pump.stop()
+    await tick(10)
+
+    expect(onStreamEnded).not.toHaveBeenCalled()
+  })
+})

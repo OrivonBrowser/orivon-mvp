@@ -294,6 +294,13 @@ releasing a socket are one lifecycle, not two: whichever path ends the socket (a
 revoke, a write-window violation the sink itself detects, the renderer's own port closing) must
 free the SAME registry slot, and keeping both ends in one file is what makes that easy to see.
 
+**A clean end in both directions is one of those paths.** Once the app's own write-end has been
+issued (the sink's `onEnded`) and the peer's FIN has ended the readable (the pump's
+`onStreamEnded`), the relay calls `socket.close()`, which releases the handle and its socket slot
+the same way a failure does. Either half alone is a half-close and stays open: a peer that has
+stopped sending may still be reading. Without this, a connection both sides had finished stayed
+counted against the origin's socket allowance until the app remembered to call `close()`.
+
 ### `transport/port-messages.ts`: validating messages on a socket's port
 
 Split out of `ipc.ts`'s inline credit-message check once a second and third message kind joined

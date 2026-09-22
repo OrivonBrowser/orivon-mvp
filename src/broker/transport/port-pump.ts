@@ -38,6 +38,12 @@ export interface PortPumpOptions {
    * (contracts/handles.ts's close table).
    */
   readonly onStreamFailed?: (code: OrivonErrorCode, error: unknown) => void
+  /**
+   * Called once when the stream ends CLEANLY (a peer FIN). Only half of a
+   * clean close: the caller releases the handle once its own write side has
+   * ended too (./socket-relay.ts), never on this alone.
+   */
+  readonly onStreamEnded?: () => void
 }
 
 export interface PortPump {
@@ -52,7 +58,7 @@ export interface PortPump {
 }
 
 export function createPortPump (options: PortPumpOptions): PortPump {
-  const { handleId, readable, send, initialCredit, mapError = () => 'internal', onStreamFailed } = options
+  const { handleId, readable, send, initialCredit, mapError = () => 'internal', onStreamFailed, onStreamEnded } = options
   const reader = readable.getReader()
   let credit = initialCredit
   let running = false
@@ -82,6 +88,7 @@ export function createPortPump (options: PortPumpOptions): PortPump {
         if (stopped) break
         if (done) {
           sendEnd()
+          onStreamEnded?.()
           break
         }
         send({ kind: 'data', handleId, chunk: value })

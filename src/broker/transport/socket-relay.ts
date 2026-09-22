@@ -117,6 +117,17 @@ export function createSocketRelay (options: SocketRelayOptions): SocketRelay {
     }
   }
 
+  // Both directions ended cleanly (our FIN issued, the peer's received): the
+  // socket has nothing left to carry, so release the handle and its socket
+  // slot the way a failure already does. Either alone is a half-close, which
+  // must stay open.
+  let readEnded = false
+  let writeEnded = false
+  function releaseOnceBothEnded (): void {
+    if (!readEnded || !writeEnded) return
+    socket.close().catch((error: unknown) => { console.error('[broker] releasing a fully-ended socket failed', error) })
+  }
+
   const pump = createPortPump({
     handleId: socket.id,
     readable: socket.readable,
@@ -128,7 +139,8 @@ export function createSocketRelay (options: SocketRelayOptions): SocketRelay {
     // runs and the handle stays counted against LIMITS.concurrentSockets
     // forever. See ./ipc.ts's own prior comment on this exact point --
     // moved here with the pump it describes.
-    onStreamFailed: failSocket
+    onStreamFailed: failSocket,
+    onStreamEnded: () => { readEnded = true; releaseOnceBothEnded() }
   })
 
   const sink = createPortSink({
@@ -145,7 +157,8 @@ export function createSocketRelay (options: SocketRelayOptions): SocketRelay {
     // Distinct from onSinkFailed above: the app CHOSE to discard a still-live
     // connection, so this must reach the ACTIVE-reset path (HandleTable.abort),
     // not the "already dead, touch nothing" one onSinkFailed's 'failed' means.
-    onAbort: abortSocket
+    onAbort: abortSocket,
+    onEnded: () => { writeEnded = true; releaseOnceBothEnded() }
   })
 
   port.onMessage((raw) => {

@@ -361,3 +361,49 @@ describe('createSocketRelay -- unlink (open-questions.md A84/A70)', () => {
     expect(port.sent.filter((m) => (m as { kind: string }).kind === 'end')).toHaveLength(1)
   })
 })
+
+describe('createSocketRelay -- a clean end in BOTH directions releases the handle', () => {
+  function relayWithPeerEof (): { closeSpy: ReturnType<typeof vi.fn>, port: ReturnType<typeof fakePort>, endPeer: () => void } {
+    let peer!: ReadableStreamDefaultController<Uint8Array>
+    const readable = new ReadableStream<Uint8Array>({ start (c) { peer = c } })
+    const { socket, closeSpy } = fakeTcpSocket(readable, new WritableStream())
+    const port = fakePort()
+    createSocketRelay({ origin: ORIGIN, socket, port, registry: createPortRegistry<RegisteredSocket>(), readWindowBytes: 1_000, writeWindowBytes: 1_000 })
+    return { closeSpy, port, endPeer: () => { peer.close() } }
+  }
+
+  it('releases once the peer\'s FIN arrives after the app\'s own write-end', async () => {
+    const { closeSpy, port, endPeer } = relayWithPeerEof()
+
+    port.emit({ kind: 'write-end', handleId: 'handle-1' })
+    await tick()
+    expect(closeSpy).not.toHaveBeenCalled()
+
+    endPeer()
+    await tick(10)
+
+    expect(closeSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('releases once the app\'s write-end follows the peer\'s FIN', async () => {
+    const { closeSpy, port, endPeer } = relayWithPeerEof()
+
+    endPeer()
+    await tick(10)
+    expect(closeSpy).not.toHaveBeenCalled()
+
+    port.emit({ kind: 'write-end', handleId: 'handle-1' })
+    await tick(10)
+
+    expect(closeSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('a peer FIN alone keeps the socket open -- half-close is load-bearing', async () => {
+    const { closeSpy, endPeer } = relayWithPeerEof()
+
+    endPeer()
+    await tick(10)
+
+    expect(closeSpy).not.toHaveBeenCalled()
+  })
+})
