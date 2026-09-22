@@ -711,15 +711,20 @@ describe('registerServingFor -- A200 real wiring (reach socket allowance)', () =
     const first = await handler(new Request('https://granted.example/a'))
     expect(first.status).toBe(200)
 
-    // The allowance is 1: a second CONCURRENT reach must be refused, not
-    // silently dialled alongside the first.
-    const second = await handler(new Request('https://granted.example/b'))
-    expect(second.status).toBe(404)
+    // The allowance is 1: a second CONCURRENT reach waits in the queue
+    // rather than being dialled alongside the first, or refused.
+    const second = handler(new Request('https://granted.example/b'))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(controllers).toHaveLength(1)
 
-    controllers.forEach((c) => { c.close() })
+    controllers[0]?.close()
     await first.text()
+    const secondResponse = await second
+    expect(secondResponse.status).toBe(200)
+    controllers[1]?.close()
+    await secondResponse.text()
 
-    // Restored once the held request actually finished.
+    // Restored once the held requests actually finished.
     const third = await handler(new Request('https://granted.example/c'))
     expect(third.status).toBe(200)
 

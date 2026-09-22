@@ -33,7 +33,9 @@ import { createAppRequestHandler, fetchThirdParty, verifiedManifestFor } from '.
 import type { AppRequestHandler, AuthoriseReach } from './serve.js'
 import { cspHeaderValue } from './serve-csp.js'
 import { nodeReachDial } from './serve-reach.js'
-import type { ReleaseReachSlot, ReserveReachSlot } from './serve-reach-guard.js'
+import { createRedirectChains } from './serve-reach-redirects.js'
+import { createReachSlotPool } from './serve-reach-slots.js'
+import type { ReachSlotPool } from './serve-reach-slots.js'
 import type { LoaderStorage } from './storage.js'
 
 /**
@@ -53,44 +55,29 @@ export function pinCoverageFor (origin: string): PinCoverageSnapshot | undefined
 }
 
 /**
- * A200 (docs/open-questions.md): per-origin count of third-party reach
- * requests currently in flight -- module state mirroring `coverageTrackers`
- * above, for the identical reason: `registerServingFor` resets this
- * origin's entry on every call, so a reinstall within one run starts a
- * fresh count rather than inheriting a stale one from the session it
- * replaced.
+ * A200 (docs/open-questions.md): one reach-slot pool per origin, for the
+ * process's lifetime. Not reset when an origin is re-registered: requests
+ * the previous handler started are still real open connections, and each
+ * releases into the pool it reserved from.
  */
-const reachSlotsInUse = new Map<string, number>()
+const reachSlotPools = new Map<string, ReachSlotPool>()
 
 /**
- * Builds the (reserve, release) pair `serve.ts`'s `fetchThirdParty` uses to
- * cap this origin's concurrent third-party reach requests at its
+ * The (reserve, release) pair `serve.ts`'s `fetchThirdParty` uses to cap
+ * this origin's concurrent third-party reach requests at its
  * manifest-declared socket allowance -- `Broker.app.socketAllowanceSync`,
  * the SAME clamp `net.connect`/`net.connectSecure`/`net.listen` already
  * enforce for a live handle (`GrantLedger.socketAllowance`, never
- * reimplemented here -- code-guidelines.md Rule 3).
- *
- * CHECK-AND-RESERVE IN ONE SYNCHRONOUS STEP, the discipline
- * `GrantLedger.reserveFsBytes`'s own doc names: two reach requests racing
- * this function must not both read the same pre-reservation count and both
- * pass.
+ * reimplemented here -- code-guidelines.md Rule 3). Shared by the app's own
+ * document and every web context it opens, so all of them draw on one count.
  */
-function reachSlotsFor (broker: Broker, origin: string): { reserve: ReserveReachSlot, release: ReleaseReachSlot } {
-  return {
-    reserve: () => {
-      const inUse = reachSlotsInUse.get(origin) ?? 0
-      if (inUse >= broker.app.socketAllowanceSync(origin)) return false
-      reachSlotsInUse.set(origin, inUse + 1)
-      return true
-    },
-    release: () => {
-      const inUse = reachSlotsInUse.get(origin) ?? 0
-      // Clamped at zero, mirroring GrantLedger.releaseFsBytes's own
-      // reasoning: a mismatched caller degrades to an over-strict budget,
-      // never a negative count a future reserve could exploit.
-      reachSlotsInUse.set(origin, Math.max(0, inUse - 1))
-    }
+function reachSlotsFor (broker: Broker, origin: string): ReachSlotPool {
+  let pool = reachSlotPools.get(origin)
+  if (pool === undefined) {
+    pool = createReachSlotPool(() => broker.app.socketAllowanceSync(origin))
+    reachSlotPools.set(origin, pool)
   }
+  return pool
 }
 
 /**
@@ -246,8 +233,9 @@ export function reachOnlyHandlerFor (broker: Broker, opener: string): (request: 
   const authoriseReach = authoriseReachFor(broker, opener)
   const reachDial = nodeReachDial()
   const { reserve, release } = reachSlotsFor(broker, opener)
+  const options = { redirects: createRedirectChains() }
   return async (request: Request): Promise<Response> =>
-    await fetchThirdParty(request, authoriseReach, reachDial, undefined, reserve, release)
+    await fetchThirdParty(request, authoriseReach, reachDial, undefined, reserve, release, options)
 }
 
 /**
@@ -292,9 +280,6 @@ export async function registerServingFor (storage: LoaderStorage, origin: string
 
   const tracker = createPinCoverageTracker()
   coverageTrackers.set(origin, tracker)
-  // A200: a reinstall within this run starts a fresh count too -- see
-  // `reachSlotsInUse`'s own doc, mirroring `coverageTrackers` just above.
-  reachSlotsInUse.set(origin, 0)
   const reachSlots = broker === undefined ? undefined : reachSlotsFor(broker, origin)
 
   const handler = await createAppRequestHandler(
