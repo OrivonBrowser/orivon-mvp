@@ -90,9 +90,17 @@ export function installOrivon (
     }
   }
 
+  /** A page-facing `closed`: revived, and marked handled so an abrupt close the page never listens for raises no `unhandledrejection` -- a page that does listen still sees the rejection. */
+  function pageClosed (closed: Promise<void>): Promise<void> {
+    const revived = callRevived(closed)
+    revived.catch(() => {})
+    return revived
+  }
+
   function buildSocket (s: Awaited<ReturnType<typeof bridge.netConnect>>): unknown {
     let totalEnqueued = 0
     let consumedTotal = 0
+    let readCancelled = false
     let readController: ReadableStreamDefaultController<Uint8Array>
     let writeController: WritableStreamDefaultController
 
@@ -100,21 +108,26 @@ export function installOrivon (
       start (controller) {
         readController = controller
         s.onData((chunk) => {
+          // A cancelled readable has no queue left: the bytes are dropped and
+          // credited at once, so the peer is not stalled by bytes nobody reads.
+          if (readCancelled) { s.reportConsumed(chunk.byteLength); return }
           totalEnqueued += chunk.byteLength
           controller.enqueue(chunk)
         })
-        s.onReadEnd((code) => {
+        s.onReadEnd((code, platformCode?: string) => {
+          if (readCancelled) return
           if (code === undefined) {
             controller.close()
           } else {
             // An abrupt read-end means no more writes will ever be accepted
             // either -- error BOTH sides, not just the one this callback owns.
-            const error = toOrivonError(code)
+            const error = toOrivonError(code, platformCode === undefined ? {} : { platformCode })
             controller.error(error)
             try { writeController.error(error) } catch { /* already settled */ }
           }
         })
       },
+      cancel () { readCancelled = true },
       pull (controller) {
         // ByteLengthQueuingStrategy's own desiredSize = highWaterMark - the
         // queue's current total byte size, so the queue's current size is
@@ -156,12 +169,7 @@ export function installOrivon (
       localPort: s.localPort,
       readable,
       writable,
-      // A fresh promise, not s.closed itself -- see installOrivon's own
-      // isolated-world counterpart (socket-port.ts's createSocketPort),
-      // which deliberately hands out a wrapper for the same reason.
-      // callRevived already returns a fresh promise, so this gets both
-      // properties from one call: a wrapper AND a revived rejection.
-      closed: callRevived(s.closed),
+      closed: pageClosed(s.closed),
       close: async () => {
         await callRevived(s.close())
         // Reflect the closure on both WHATWG streams the page holds --
@@ -216,7 +224,7 @@ export function installOrivon (
       localAddress: s.localAddress,
       localPort: s.localPort,
       connections,
-      closed: callRevived(s.closed),
+      closed: pageClosed(s.closed),
       close: async () => {
         await callRevived(s.close())
         try { readController.close() } catch { /* already closed or errored */ }
@@ -329,9 +337,7 @@ export function installOrivon (
       // prevents redefinition, not invocation, so both survive it.
       get droppedInbound () { return droppedInbound },
       get droppedOutbound () { return droppedOutbound },
-      // Same reasoning as buildSocket's own `closed` -- callRevived already
-      // hands back a fresh promise, so this both wraps and revives.
-      closed: callRevived(u.closed),
+      closed: pageClosed(u.closed),
       close: async () => {
         await callRevived(u.close())
         try { readController.close() } catch { /* already closed or errored */ }
@@ -360,10 +366,10 @@ export function installOrivon (
     })
   }
 
-  /** `buildFile`'s own web.openContext counterpart (ADR-0019) -- `closed` is already live by the time it crosses here (web-surface.ts's watchClose), so `callRevived` is all it needs, same as `s.closed` in `buildSocket`. */
+  /** `buildFile`'s own web.openContext counterpart (ADR-0019) -- `closed` is already live by the time it crosses here (web-surface.ts's watchClose), so `pageClosed` is all it needs, same as `s.closed` in `buildSocket`. */
   function buildWebContext (w: Awaited<ReturnType<typeof bridge.webOpenContext>>): MainWorldWebContextBridge {
     return Object.freeze({
-      id: w.id, origin: w.origin, closed: callRevived(w.closed),
+      id: w.id, origin: w.origin, closed: pageClosed(w.closed),
       evaluate: async (script: string) => await callRevived(w.evaluate(script)),
       close: async () => { await callRevived(w.close()) }
     })
