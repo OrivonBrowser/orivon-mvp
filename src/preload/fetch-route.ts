@@ -19,7 +19,7 @@
 // a response body capped -- are catalogued in README.md's Design notes
 // (ADR-0017: "a silent divergence in a web platform API is a trap").
 import { contextBridge } from 'electron'
-import type { FetchRouteSocket, FetchRouteTarget } from './fetch-route-types.js'
+import type { FetchRouteSocket, FetchRouteTarget, RoutedFetchInit, RoutedFetchRequestLike } from './fetch-route-types.js'
 
 // Re-exported so no import site changes -- ./fetch-route-types.ts's own
 // header has why splitting these out is safe despite the serialisation
@@ -365,8 +365,8 @@ export function installFetchRoute (
     return { status, statusText, headerPairs, body: await readAllCapped(reader, 'response body', rest) }
   }
 
-  async function routedFetch (input: unknown, init?: { method?: string, headers?: unknown, body?: unknown, signal?: AbortSignal }): Promise<Response> {
-    const requestLike = input as { url?: string, method?: string, headers?: unknown }
+  async function routedFetch (input: unknown, init?: RoutedFetchInit): Promise<Response> {
+    const requestLike = input as RoutedFetchRequestLike | null | undefined
     // WHATWG fetch takes `Request | USVString`, and ANYTHING that is not a
     // Request is converted with ToString -- which is why `fetch(new URL(...))`
     // works in every browser. Reading `.url` alone (a Request's own property,
@@ -388,7 +388,8 @@ export function installFetchRoute (
       throw new TypeError(`orivon: fetch routing cannot reach ${url.origin} (no native fetch fallback available)`)
     }
 
-    const signal = init?.signal
+    // As in real fetch(): init overrides the Request's own, and null is no signal.
+    const signal = (init?.signal !== undefined ? init.signal : requestLike?.signal) ?? undefined
     // A plain `signal?.aborted === true` re-check further down narrows to a
     // stale `false` across the awaits below (TS treats AbortSignal.aborted,
     // a readonly getter, as immutable) -- routed through a function call so
@@ -398,7 +399,8 @@ export function installFetchRoute (
 
     const method = (init?.method ?? (typeof requestLike?.method === 'string' ? requestLike.method : 'GET')).toUpperCase()
     const headerPairs = headerPairsFrom(init?.headers ?? requestLike?.headers)
-    const { bytes: requestBodyBytes, contentType } = await extractBody(init?.body)
+    const readRequestBody = init?.body === undefined && requestLike?.body !== null && requestLike?.body !== undefined ? requestLike.arrayBuffer : undefined
+    const { bytes: requestBodyBytes, contentType } = await extractBody(readRequestBody === undefined ? init?.body : new Uint8Array(await readRequestBody.call(requestLike)))
 
     const defaultPort = url.protocol === 'https:' ? 443 : 80
     const port = url.port !== '' ? Number(url.port) : defaultPort

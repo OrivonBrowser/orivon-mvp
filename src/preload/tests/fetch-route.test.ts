@@ -273,6 +273,17 @@ describe('installFetchRoute -- request input shapes', () => {
     expect(new Set(heads).size).toBe(1)
   })
 
+  it('sends a Request object\'s own method and body when no init overrides them', async () => {
+    let socket: ReturnType<typeof fakeSocket> | undefined
+    const target = fakeTarget({ connectSecure: async () => { socket = fakeSocket(CANNED_RESPONSE_CHUNKS()); return socket } })
+    installFetchRoute(true, target)
+    await target.fetch!(new Request('https://api.example/x', { method: 'POST', body: 'abcde' }))
+    const head = writtenHead(socket!)
+    expect(head).toContain('POST /x HTTP/1.1')
+    expect(head).toContain('Content-Length: 5')
+    expect(new TextDecoder().decode(socket!.written[1])).toBe('abcde')
+  })
+
   it('rejects an input that names no URL at all, rather than inventing one', async () => {
     const target = fakeTarget({ connectSecure: async () => fakeSocket(CANNED_RESPONSE_CHUNKS()) })
     installFetchRoute(true, target)
@@ -414,6 +425,23 @@ describe('installFetchRoute -- init.signal / AbortController (R3-01)', () => {
     const controller = new AbortController()
     controller.abort()
     await expect(target.fetch!('https://api.example/x', { signal: controller.signal })).rejects.toMatchObject({ name: 'AbortError' })
+    expect(dialAttempts).toBe(0)
+  })
+
+  it('treats `signal: null` as no signal, as real fetch() does', async () => {
+    const target = fakeTarget({ connectSecure: async () => fakeSocket(CANNED_RESPONSE_CHUNKS()) })
+    installFetchRoute(true, target)
+    const response = await target.fetch!('https://api.example/x', { signal: null })
+    expect(await response.text()).toBe('hello')
+  })
+
+  it('honours a Request object\'s own signal when init carries none', async () => {
+    let dialAttempts = 0
+    const target = fakeTarget({ connectSecure: async () => { dialAttempts++; return fakeSocket(CANNED_RESPONSE_CHUNKS()) } })
+    installFetchRoute(true, target)
+    const controller = new AbortController()
+    controller.abort()
+    await expect(target.fetch!(new Request('https://api.example/x', { signal: controller.signal }))).rejects.toMatchObject({ name: 'AbortError' })
     expect(dialAttempts).toBe(0)
   })
 
