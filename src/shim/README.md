@@ -56,12 +56,42 @@ Also read [`.claude/skills/orivon-electron/SKILL.md`](../../.claude/skills/orivo
 
 ## Design notes
 
-**[`globals.ts`](globals.ts) writes `process`, `setImmediate` and `clearImmediate` with a plain
-assignment, not `Object.defineProperty`, on purpose.** That is the descriptor Node gives its own:
-ordinary, writable, replaceable. ADR-0021 makes it a rule rather than an accident -- an app may
-shadow or replace any of the three, and a locked one would kill a bundle that ponyfills it while
-its module graph is still evaluating, naming no cause. `npm run check:page-globals` guards the
-source and [`tests/globals.test.ts`](tests/globals.test.ts) guards the behaviour.
+**[`globals.ts`](globals.ts) writes `process`, `global`, `setImmediate` and `clearImmediate`
+with a plain assignment, not `Object.defineProperty`, on purpose.** That is the descriptor Node
+gives its own: ordinary, writable, replaceable. ADR-0021 makes it a rule rather than an accident
+-- an app may shadow or replace any of them, and a locked one would kill a bundle that ponyfills
+it while its module graph is still evaluating, naming no cause. `npm run check:page-globals`
+guards the source and [`tests/globals.test.ts`](tests/globals.test.ts) guards the behaviour.
+
+**`process` answers what libraries read without claiming to be Node.** **AI recommendation, not
+owner-reviewed.** `version` is `''` and `versions` is an empty object, not a plausible Node
+version: a check for `process.versions.node` or `.electron` then takes its browser branch,
+where a fabricated value would send it down a Node-only path this shim cannot back, and an absent
+`versions` would throw on `undefined.node`. `platform`, `title`, `arch` and `release.name` say
+`'browser'`/`'javascript'` for the same reason, values no check for a real platform can match.
+`argv`/`execArgv` are empty, `pid` is 1, `umask()` is the POSIX default and changes nothing.
+`exit()` emits `'exit'` and throws a named error: an app tab cannot end its own process, and
+silently returning would let the code after it run as if it had. `process` is a small event
+emitter; `'uncaughtException'` and `'warning'` listeners receive what Node would send them.
+
+**An uncaught `nextTick`/`setImmediate` error reaches the page's own error reporting.** The
+preload passes no reporter: a function crossing `contextBridge` runs in the isolated world, so
+it would log where the page's own `window` `'error'` handlers never see it. Without one,
+`installGlobals` calls the page's `reportError` (the HTML one), which behaves as an uncaught
+exception would. A warning with no `'warning'` listener goes to the page console.
+
+**`setImmediate` is a `MessageChannel` task, not `setTimeout(0)`.** A timer is clamped to 4 ms
+once nested and to 1 s in a hidden tab, and a scheduler that adopts `setImmediate` when present
+(React's does) would inherit both. A message task has neither clamp, and keeps Node's ordering:
+one callback per task, in the order queued.
+
+**No `Buffer` page global yet.** `global` is `globalThis` and costs nothing, but `Buffer` is the
+`buffer` package, and `installGlobals` may not name anything outside its own body, so it cannot
+import one. Putting it on the page needs the package's source in the main world: a build step
+that bundles it into a function the preload can serialise, or an owner decision to inject it
+with `webFrame.executeJavaScript`, whose timing before the page's own scripts is unverified here.
+Until then a bundle referring to a bare `Buffer` needs its bundler to provide it (webpack's
+`ProvidePlugin`, for one).
 
 
 **Polyfill-grade vs Orivon-grade primitives, and why the gap is documented rather than closed

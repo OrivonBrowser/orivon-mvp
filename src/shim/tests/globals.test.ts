@@ -376,7 +376,7 @@ describe('the descriptors it installs', () => {
   // kill any bundle that ponyfills it -- mid-evaluation, naming no cause.
   // scripts/check-page-globals.mjs catches that in the source text; this
   // catches it in the behaviour, which is the half a text scan cannot see.
-  it.each(['process', 'setImmediate', 'clearImmediate'] as const)('installs %s as a property an app can replace', (name) => {
+  it.each(['process', 'global', 'setImmediate', 'clearImmediate'] as const)('installs %s as a property an app can replace', (name) => {
     const { target } = install()
 
     expect(Object.getOwnPropertyDescriptor(target, name)).toMatchObject({
