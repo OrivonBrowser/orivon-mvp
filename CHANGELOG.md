@@ -80,6 +80,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
   picks or drops can be read and written; folders stay refused (ADR-0024). Without this,
   FreeTube's import and export failed with `NotAllowedError`, as did any website saving a file
   this way.
+- **A routed `fetch()` to a dead host names the real failure.** A DNS or connection failure
+  before the TLS handshake was reported as "the secure connection failed", and the error now
+  carries the platform's own code, such as `EHOSTUNREACH` or `ECONNREFUSED`.
 - **The routed `fetch()` is replaceable, as the platform's own is.** It was installed
   non-writable, which in strict mode stops a bundle shadowing `fetch` on a surrogate global --
   the pattern common `fetch` ponyfills use -- so such an app died while its module graph was

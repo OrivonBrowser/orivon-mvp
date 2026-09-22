@@ -120,4 +120,31 @@ describe('mapTlsError', () => {
     expect(mapTlsError({ code: 'CERT_HAS_EXPIRED', message: 'raw openssl text' }).message)
       .not.toContain('raw openssl text')
   })
+
+  // A dial that never reached the handshake -- no DNS answer, no route, a
+  // closed port -- is not a TLS failure, and a message saying it is sends
+  // whoever reads it to look at certificates. Measured against two dead
+  // hosts: ENOTFOUND-then-loopback gave ECONNREFUSED, a downed one
+  // EHOSTUNREACH.
+  it.each(['ENOTFOUND', 'ECONNREFUSED', 'EHOSTUNREACH', 'ETIMEDOUT'])(
+    'says %s failed on the network, not in the handshake, and keeps the code unreachable',
+    (code) => {
+      const mapped = mapTlsError({ code })
+
+      expect(mapped.code).toBe('unreachable')
+      expect(mapped.platformCode).toBe(code)
+      expect(mapped.message).toBe('the network operation failed')
+    }
+  )
+
+  it.each(['CERT_HAS_EXPIRED', 'ERR_TLS_CERT_ALTNAME_INVALID', 'ERR_SSL_WRONG_VERSION_NUMBER'])(
+    'keeps "the secure connection failed" for %s, a failure in the handshake itself',
+    (code) => {
+      expect(mapTlsError({ code }).message).toBe('the secure connection failed')
+    }
+  )
+
+  it('does not read an inherited property name as a network errno', () => {
+    expect(mapTlsError({ code: 'constructor' }).message).toBe('the secure connection failed')
+  })
 })

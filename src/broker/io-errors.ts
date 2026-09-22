@@ -91,6 +91,11 @@ export function mapIoError (error: unknown, kind: 'net' | 'fs'): OrivonError {
  * message rather than forwarding OpenSSL's own text (which is not shaped to
  * be handed to an app).
  *
+ * A POSIX errno means the dial failed BEFORE any handshake -- no DNS answer,
+ * no route, a closed port -- so it gets mapIoError's network message, not
+ * "the secure connection failed", which would send whoever reads it looking
+ * at certificates. The code stays 'unreachable' either way.
+ *
  * THE ONE PLACE THIS TRANSLATION HAPPENS, on purpose: the conductor has
  * raised a live concern with the owner about whether 'unreachable' is the
  * right code for what may be an active interception rather than an ordinary
@@ -100,6 +105,8 @@ export function mapIoError (error: unknown, kind: 'net' | 'fs'): OrivonError {
  */
 export function mapTlsError (error: unknown): OrivonError {
   if (isOrivonError(error)) return error
-  return fail('unreachable', 'the secure connection failed', undefined, errnoOf(error))
+  const errno = errnoOf(error)
+  const beforeHandshake = errno !== undefined && Object.hasOwn(ERRNO_TO_CODE, errno)
+  return fail('unreachable', beforeHandshake ? 'the network operation failed' : 'the secure connection failed', undefined, errno)
 }
 

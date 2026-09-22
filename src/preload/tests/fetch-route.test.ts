@@ -231,6 +231,26 @@ describe('installFetchRoute -- header freedom and no ambient credentials', () =>
     await expect(target.fetch!('https://not-granted.example/')).rejects.toBeInstanceOf(TypeError)
     expect(dialAttempts).toBe(1)
   })
+
+  // The message is all a page's console shows, so it has to carry the true
+  // reason: a dead host named by its errno, not a generic refusal.
+  it('names the platformCode of a failed dial in the TypeError, and adds nothing when there is none', async () => {
+    const unreachable = fakeTarget({
+      connectSecure: async () => { throw Object.assign(new Error('the network operation failed'), { code: 'unreachable', platformCode: 'EHOSTUNREACH' }) }
+    })
+    installFetchRoute(true, unreachable)
+    await expect(unreachable.fetch!('https://dead.example/api')).rejects.toThrow(
+      'orivon: fetch to dead.example failed (EHOSTUNREACH: the network operation failed)'
+    )
+
+    const denied = fakeTarget({
+      connectSecure: async () => { throw Object.assign(new Error('https.connect is not granted to this origin'), { code: 'denied' }) }
+    })
+    installFetchRoute(true, denied)
+    await expect(denied.fetch!('https://not-granted.example/')).rejects.toThrow(
+      'orivon: fetch to not-granted.example failed (https.connect is not granted to this origin)'
+    )
+  })
 })
 
 describe('installFetchRoute -- header input shapes', () => {

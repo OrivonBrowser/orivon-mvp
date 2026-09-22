@@ -422,7 +422,9 @@ export function installFetchRoute (
       } catch (error) {
         if (isAborted()) throw abortReason(signal)
         const message = error instanceof Error ? error.message : String(error)
-        throw new TypeError(`orivon: fetch to ${url.host} refused (${message})`)
+        const platformCode = (error as { platformCode?: unknown } | null)?.platformCode
+        const reason = typeof platformCode === 'string' ? `${platformCode}: ${message}` : message
+        throw new TypeError(`orivon: fetch to ${url.host} failed (${reason})`)
       }
       const socket = currentSocket
 
