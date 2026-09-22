@@ -8,12 +8,21 @@
    ([`ADR-0005`](../../docs/decisions/ADR-0005-apps-are-url-addressed-not-bundled.md)).
 2. **Core polyfills** (queue item 3.1): the environment-shape modules a dependency graph
    needs just to *evaluate*, independent of any capability: `Buffer`, `stream`, `events`,
-   `path`, `os`, `crypto`, `zlib`, `util`. `compatibility-matrix.md` Table 3 calls these `dup`
+   `path`, `os`, `crypto`, `zlib`, `util`, plus the hand-written `url`, `querystring`,
+   `string_decoder`, `timers` and `assert`. `compatibility-matrix.md` Table 3 calls these `dup`
    rows: closing them is ordinary shim work, no contracts change needed.
 
-`globals.ts` (ambient `process`/`nextTick`/`setImmediate`) and `module-map.ts` (the single table
-`electron.vite.config.ts`'s alias map is generated from; see its own header) belong to neither
-group cleanly; both exist to make the two above reachable at all.
+`globals.ts` (ambient `process`/`global`/`setImmediate`), `virtual-root.ts` (the one directory
+every Node-shaped path agrees on; see §Design notes) and `module-map.ts` (the single table
+`electron.vite.config.ts`'s alias map and `vitest.config.ts`'s shim resolution are generated
+from; see its own header) belong to neither group cleanly; they exist to make the two above
+reachable at all.
+
+**Tests run against the page's polyfills.** `vitest.config.ts` resolves a shim module's own
+`stream`, `buffer`, `events`, ... imports to the same modules the renderer build does, so a
+shim test exercises readable-stream 3 and the `buffer` package, not Node's builtins. A test
+file and its `tests/support/` helpers keep `node:*`; `tests/support/page-buffer.ts` and
+`page-stream.ts` give a test the page's own classes when it must compare against them.
 
 **Dependency status.** All eight core polyfills are wired up, and their packages are runtime
 dependencies in `package.json`.
@@ -187,7 +196,7 @@ object. That structural reason, not the now-fixed throw-on-read behaviour, is wh
 stay on their own mechanism. `node-net-socket.ts` and `node-dgram-socket.ts` add the handful of
 real Node members a porting app is likely to hit as actual present methods: the same "present,
 throws when called" shape `node-fs-unsupported.ts`'s `syncUnsupported`,
-`node-http-unsupported.ts`/`node-net-unsupported.ts`'s `createServer`, and `refusingProxy` itself
+`node-http-unsupported.ts`'s `createServer`, and `refusingProxy` itself
 (post-A169) all use for their own decided gaps. Two of those (`ref`/`unref`) are safe NO-OPS
 rather than throws: real Node's contract for them is "no meaning, returns `this`", so a no-op is
 the objectively correct behaviour here too (there is no event-loop handle to ref/unref in this
@@ -207,6 +216,9 @@ instead of one continuous WHATWG transfer, and a fixed chunk size instead of the
 credit window. For nedb's small line-oriented files that should not matter. Once A184 makes
 `readable()`/`writable()` reachable from the page, this file can be rewritten over them with no
 app-facing change. **Still open:** whether this is the permanent shape or a placeholder.
+Both streams destroy themselves at end/finish and after a failed write, which releases the handle
+and emits `'close'`, as Node's `autoDestroy` does: readable-stream 3 defaults `autoDestroy` off,
+and turning it on for a Writable there swallows the failed write's `'error'` event.
 
 **`fs.access`'s `mode` is not distinguished: every mode checks existence only.** **AI
 recommendation, not owner-reviewed.** Node fails `access(path, mode)` when the process lacks the
