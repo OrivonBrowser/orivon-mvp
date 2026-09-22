@@ -14,6 +14,7 @@ import { installRoutedEvents } from './routed-events.js'
 import { installFetchRoute } from './fetch-route.js'
 import { installXhrResponse } from './xhr-route-response.js'
 import { installXhrRoute } from './xhr-route.js'
+import { installEventSourceRoute } from './eventsource-route.js'
 
 /** The literal `webPreferences.additionalArguments` flag `src/main/
  * tab-view.ts`'s `appTabArgsFor` sets -- duplicated here rather than
@@ -25,7 +26,7 @@ const APP_TAB_FLAG = '--orivon-app-tab'
 /** Dependency order: each one reads what the ones before it published. */
 const INSTALLERS: ReadonlyArray<(isAppTab: boolean) => void> = [
   installRoutedWire, installRoutedDial, installRoutedCore, installRoutedEvents,
-  installFetchRoute, installXhrResponse, installXhrRoute
+  installFetchRoute, installXhrResponse, installXhrRoute, installEventSourceRoute
 ]
 
 /**
