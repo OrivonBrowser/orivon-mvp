@@ -65,7 +65,7 @@ import type { BundleEntry } from '../src/broker/policy/bundle-hash.js'
 import { fromBundleTree } from '../src/broker/policy/pin.js'
 import { nodeLoaderStorage } from '../src/loader/node-storage.js'
 import { generateTlsFixture } from '../src/broker/adapters/tests/tls-adapter.test-helpers.js'
-import type { DevGrantRequest } from '../src/main/dev-grant.js'
+import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
 import type { Grant, Manifest } from '../src/contracts/index.js'
 
 const ORIGIN = 'https://third-party-reach-e2e.orivon.test'

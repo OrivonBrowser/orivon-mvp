@@ -50,8 +50,8 @@ import type { BrokerFs, CreateBrokerOptions, Keychain } from '../src/broker/brok
 import { dialTcp, listenTcp, resolveHost, resolveLookup } from '../src/broker/adapters/node-adapters.js'
 import { dialTls } from '../src/broker/adapters/tls-adapter.js'
 import { bindUdp } from '../src/broker/adapters/udp-adapter.js'
-import { installDevGrantHook } from '../src/main/dev-grant.js'
-import type { DevGrantRequest } from '../src/main/dev-grant.js'
+import { installDevGrantHook } from '../src/main/dev/dev-grant.js'
+import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
 import type { Datagram, Manifest } from '../src/contracts/index.js'
 
 const TEST_DIR = fileURLToPath(new URL('./', import.meta.url)).replace(/[/\\]$/, '')

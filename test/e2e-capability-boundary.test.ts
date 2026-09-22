@@ -93,7 +93,7 @@ import {
 } from './e2e-helpers.js'
 import { HOST, ECHO_PORT, STATIC_PORT } from './apps/fixture/config.mjs'
 import { parseManifest } from '../src/loader/manifest.js'
-import type { DevGrantRequest } from '../src/main/dev-grant.js'
+import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
 import type { Grant } from '../src/contracts/index.js'
 
 // fileURLToPath on a directory URL keeps the trailing separator (the same

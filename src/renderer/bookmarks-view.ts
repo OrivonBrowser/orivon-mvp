@@ -1,4 +1,4 @@
-import type { Bookmark } from '../main/bookmarks.js'
+import type { Bookmark } from '../main/browsing/bookmarks.js'
 import { closeIcon, faviconElement } from './icons.js'
 
 // Renders the bookmarks bar, which is now nothing but this list -- the

@@ -1,7 +1,7 @@
-import type { Bookmark } from '../main/bookmarks.js'
-import type { AppPermissions } from '../main/permissions.js'
-import type { DeliveryProvenance } from '../main/delivery-provenance.js'
-import type { ShellState, TabState } from '../main/tabs.js'
+import type { Bookmark } from '../main/browsing/bookmarks.js'
+import type { AppPermissions } from '../main/permissions/permissions.js'
+import type { DeliveryProvenance } from '../main/browsing/delivery-provenance.js'
+import type { ShellState, TabState } from '../main/shell/tabs.js'
 import { createBookmarksView } from './bookmarks-view.js'
 import { closeIcon, faviconElement } from './icons.js'
 

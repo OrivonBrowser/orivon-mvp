@@ -1,4 +1,4 @@
-import type { Bookmark } from '../../main/bookmarks.js'
+import type { Bookmark } from '../../main/browsing/bookmarks.js'
 import { faviconElement } from '../icons.js'
 
 // The dashboard's whole job: a search box and real bookmark tiles -- see

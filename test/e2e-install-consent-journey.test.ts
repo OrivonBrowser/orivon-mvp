@@ -32,8 +32,8 @@
 import { describe, expect, it } from 'vitest'
 import { createBroker } from '../src/broker/index.js'
 import { baseDeps, manifestWith } from '../src/broker/tests/index.test-helpers.js'
-import { requestInstallConsent } from '../src/main/install-consent.js'
-import type { InstallConsentPrompt } from '../src/main/install-consent.js'
+import { requestInstallConsent } from '../src/main/consent/install-consent.js'
+import type { InstallConsentPrompt } from '../src/main/consent/install-consent.js'
 
 const ORIGIN = 'https://install-consent-journey-e2e.orivon.test'
 /** An address literal, matching test/apps/fixture's own manifest convention (its README:

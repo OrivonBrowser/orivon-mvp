@@ -1,4 +1,4 @@
-import type { AppPermissions, PermissionRow, PickedPathRow } from '../../main/permissions.js'
+import type { AppPermissions, PermissionRow, PickedPathRow } from '../../main/permissions/permissions.js'
 import type { CapabilityKind, GrantId } from '../../contracts/index.js'
 import { createPermissionsListView } from './permissions-view.js'
 

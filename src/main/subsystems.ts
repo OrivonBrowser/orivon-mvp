@@ -22,14 +22,14 @@
 //
 // Which stream owns which entry: docs/development/parallel-work.md.
 import type { Subsystem } from './registry.js'
-import { permissionGateSubsystem } from './permission-gate.js'
-import { ethResolverSubsystem } from './eth-resolver.js'
+import { permissionGateSubsystem } from './sessions/permission-gate.js'
+import { ethResolverSubsystem } from './dev/eth-resolver.js'
 import { brokerIpcSubsystem } from '../broker/transport/ipc.js'
-import { devGrantSubsystem } from './dev-grant.js'
-import { requestGrantSubsystem } from './request-grant-subsystem.js'
+import { devGrantSubsystem } from './dev/dev-grant.js'
+import { requestGrantSubsystem } from './consent/request-grant-subsystem.js'
 import { loaderSubsystem } from '../loader/subsystem.js'
-import { appInstallSubsystem } from './app-install-subsystem.js'
-import { manifestHintSubsystem } from './manifest-hint.js'
+import { appInstallSubsystem } from './install/app-install-subsystem.js'
+import { manifestHintSubsystem } from './install/manifest-hint.js'
 import { telemetrySubsystem } from '../telemetry/runner.js'
 
 export const subsystems: Subsystem[] = [
