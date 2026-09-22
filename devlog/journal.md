@@ -24,6 +24,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Ports split into `orivon-ports`: recipe-driven harness clones, builds and serves an app; FreeTube moved, 34 bridge tests green.
 - Ports split merge dropped FreeTube's new datastore work: it never reached `orivon-ports`, and CI cannot see the gap.
 - Routed `fetch` now carries the platform's descriptor: a locked one killed any app using a `fetch` ponyfill, and guarded nothing.
+- Dock icon found to be a desktop-entry problem, not a window one: Electron's window `icon` never reaches X11 `_NET_WM_ICON` here (verified live, and Codium shows the same), so the fix is a `orivon.desktop` with `StartupWMClass=orivon` matching the WM_CLASS Electron already derives from the app name.
 - `merge=union` is local only: GitHub ignores it, so append-only files show conflicts on a PR that `git merge` resolves silently here.
 
 ### In my head

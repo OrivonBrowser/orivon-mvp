@@ -58,24 +58,46 @@ const OVERLAY_LIGHT = { color: '#e4e4eb', symbolColor: '#202124' }
 // launch it makes -- docs/development/setup.md.
 const NO_FOCUS = process.env['ORIVON_WINDOW_NO_FOCUS'] === '1'
 
+// Hands the app icon to the window. GNOME's dock does not read it -- the icon
+// shown for a running window comes from matching the window's WM_CLASS
+// ("orivon") against a .desktop entry's Icon=/StartupWMClass, and this
+// option's X11 _NET_WM_ICON property stays empty on this Electron build even
+// when set. Window managers that do read the property use it, so the line
+// stays; packaged builds get their .desktop from electron-builder.yml.
+// A packaged build loads resources/icon.png (extraResources there); a run
+// from source loads the repo's build/icon.png (out/main -> ../../build).
+const WINDOW_ICON_PATH = app.isPackaged
+  ? join(process.resourcesPath, 'icon.png')
+  : join(import.meta.dirname, '../../build/icon.png')
+
 export function createShellWindow (ctx: SubsystemContext): BaseWindow {
-  // Centers on the OS's primary display -- no explicit x/y. A cursor-based
-  // "open on whichever display has the pointer" variant was tried here and
-  // reverted: it did not fix the "no window appears" report it was
-  // chasing (Wayland does not let an app control its own window position
-  // anyway), because the real bug was ready-to-show, below.
-  const { workArea } = screen.getPrimaryDisplay()
-  const winWidth = Math.min(1280, workArea.width)
-  const winHeight = Math.min(800, workArea.height)
+  // Centers on the OS's primary display. Not on whichever display holds the
+  // pointer: Wayland does not let an app control its own window position at
+  // all, so that buys nothing.
+  // Sized against bounds, not workArea. A display's workArea is the panel
+  // minus the desktop environment's reserved struts, and on a multi-monitor
+  // layout where the monitors have different heights and vertical offsets,
+  // GNOME reports a work area far shorter than the monitor itself -- a
+  // 1920x1080 primary can come back 328px tall. Clamping the window to that
+  // produces a letterbox slot with no way to grow it from here; bounds is
+  // the physical panel and is always right.
+  const { bounds } = screen.getPrimaryDisplay()
+  const winWidth = Math.min(1280, bounds.width)
+  const winHeight = Math.min(800, bounds.height)
 
   const initialOverlay = nativeTheme.shouldUseDarkColors ? OVERLAY_DARK : OVERLAY_LIGHT
 
-  const win = new BaseWindow({
-    x: workArea.x + Math.round((workArea.width - winWidth) / 2),
-    y: workArea.y + Math.round((workArea.height - winHeight) / 2),
+  const initialBounds = {
+    x: bounds.x + Math.round((bounds.width - winWidth) / 2),
+    y: bounds.y + Math.round((bounds.height - winHeight) / 2),
     width: winWidth,
-    height: winHeight,
+    height: winHeight
+  }
+
+  const win = new BaseWindow({
+    ...initialBounds,
     show: false,
+    icon: WINDOW_ICON_PATH,
     titleBarStyle: 'hidden',
     titleBarOverlay: {
       ...initialOverlay,
@@ -336,6 +358,14 @@ export function createShellWindow (ctx: SubsystemContext): BaseWindow {
     } else {
       win.show()
     }
+    // Re-asserted after show, not just passed to the constructor. A window
+    // manager may shrink a window to the display's work area as it maps it,
+    // and a work area can be reported far smaller than the monitor (GNOME
+    // does this on a multi-monitor layout with mixed heights and vertical
+    // offsets). The constructor size loses that argument; a setBounds once
+    // the window is mapped is honoured. Harmless where the first size
+    // already stuck -- it sets what is already set.
+    win.setBounds(initialBounds)
   }
   ;(win as unknown as { once: (event: 'ready-to-show', cb: () => void) => void })
     .once('ready-to-show', showOnce)
