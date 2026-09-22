@@ -19,8 +19,13 @@ expects.
 | [`prepare.mjs`](prepare.mjs) | Turns a build into an Orivon app (manifest + discovery hint), and (`--build`) runs the Electron-renderer build itself first |
 | [`serve.mjs`](serve.mjs) | A plain static file server. Also decodes a pre-compressed `.br` asset via `Content-Encoding`, which upstream's own Electron build relies on -- see below |
 | [`webpack.orivon.config.cjs`](webpack.orivon.config.cjs) | Our own build wrapper, moved out of the clone's untracked `_scripts/webpack.web-localapi.config.js` |
-| [`bridge/ft-electron-bridge.js`](bridge/ft-electron-bridge.js) | `window.ftElectron`, the 34 members upstream's renderer calls, rebuilt over `orivon.*` |
-| [`bridge/ft-electron-bridge.test.ts`](bridge/ft-electron-bridge.test.ts) | Unit coverage for all 34 -- see [Testing the bridge](#testing-the-bridge) for how to run it |
+| [`webpack.orivon-datastore.config.cjs`](webpack.orivon-datastore.config.cjs) | Compiles upstream's own main-process datastore code (nedb) to run in the page -- see [Storage](#storage-nedb-files-under-orivons-fs-not-indexeddb) |
+| [`build-shim.mjs`](build-shim.mjs) | Pre-compiles the one `src/shim/` module the datastore bundle needs (`node-fs.ts`) into plain JS with esbuild, since the datastore bundle's own webpack has no TypeScript loader |
+| [`bridge/ft-datastore-entry.js`](bridge/ft-datastore-entry.js) | The datastore bundle's own entry point -- exposes upstream's datastore handlers on `globalThis.__orivonFtDatastore` |
+| [`bridge/ft-electron-bridge.js`](bridge/ft-electron-bridge.js) | `window.ftElectron`, 34 members upstream's renderer calls, rebuilt over `orivon.*`, plus a splice point for the six `db*` members below |
+| [`bridge/ft-electron-bridge-db.js`](bridge/ft-electron-bridge-db.js) | The six `db*` members (`dbSettings`, `dbHistory`, `dbProfiles`, `dbPlaylists`, `dbSearchHistory`, `dbSubscriptionCache`), spliced into the served script above by `bridge/splice-bridge-source.mjs` |
+| [`bridge/ft-electron-bridge.test.ts`](bridge/ft-electron-bridge.test.ts) | Unit coverage for the original 34 -- see [Testing the bridge](#testing-the-bridge) for how to run it |
+| [`bridge/ft-electron-bridge-db.test.ts`](bridge/ft-electron-bridge-db.test.ts) | Unit coverage for the six `db*` members and every one of their actions |
 
 ## Setting it up
 
@@ -132,6 +137,155 @@ window rather than reading source:
    Left unfixed, this build would have `/static/invidious-instances.json`,
    `/static/geolocations/*.json`, and `/static/external-player-map.json` all 404 -- three of the
    Vuex actions `App.vue`'s `onMounted` fires (unawaited) throw as unhandled rejections for each.
+
+## Storage: nedb files under Orivon's `fs`, not IndexedDB
+
+`dist/orivon-electron`'s alias switch (above) already gets `IS_ELECTRON`/`SUPPORTS_LOCAL_API`
+right for playback. Storage needed a second, independent decision: upstream's web webpack config
+aliases `DB_HANDLERS_ELECTRON_RENDERER_OR_WEB$` to `src/datastores/handlers/web.js`, which loads
+nedb's **browser** build (`localForage`, IndexedDB) regardless of `IS_ELECTRON`. `orivon.json`
+declares an `fs` grant and the consent prompt shows it, but nothing used it. `webpack.orivon.config.cjs`
+now points that same alias at `src/datastores/handlers/electron.js` instead -- upstream's own
+Electron-renderer handler, which dispatches through `window.ftElectron.db*` exactly as it does in
+real FreeTube desktop.
+
+### The renderer-vs-web config diff, and what each difference is
+
+`_scripts/webpack.renderer.config.js` (upstream's own Electron config) and `_scripts/webpack.web.config.js`
+(the one this build wraps) were diffed in full. Four differences were already handled by the
+existing wrapper before this change (`SUPPORTS_LOCAL_API`/`IS_ELECTRON`, the `externals` deletion,
+the locale-compression patch, the `CopyWebpackPlugin` rewrite -- all above). Everything else found:
+
+| Difference | Decision |
+|---|---|
+| `DB_HANDLERS_ELECTRON_RENDERER_OR_WEB$` alias (`handlers/web.js` vs `handlers/electron.js`) | **Applied.** The subject of this section. |
+| `dompurify$` alias (renderer only, stubs the module to `export default undefined`) | **Applied.** Its one consumer, `vSaferHtml.js`, gates every `DOMPurify.sanitize(...)` call behind `USE_NATIVE_SANITIZER = process.env.IS_ELECTRON \|\| (...)`, which is already `true` here (`IS_ELECTRON` is compiled in) -- confirmed by reading that file, not assumed. The alias only stops webpack bundling an already-dead dependency; it changes no runtime behaviour. |
+| `process.platform` define (`'${process.platform}'` vs the literal `undefined`) | **Not applied.** This would bake the machine that RUNS THE BUILD's own OS into one bundle served to every visitor, regardless of theirs -- `TopNav.vue`, `SideNav.vue`, `ft-shaka-video-player.js` and `helpers/utils.js` all branch on it for Cmd-vs-Ctrl shortcut labels. Real Electron gets this right because electron-builder compiles a separate binary per target OS; a single served bundle cannot. Left as upstream's web config already has it (`undefined`), so every one of those checks reads consistently false rather than reading one build machine's OS for every visitor. |
+| `webpack.ProvidePlugin({ process: 'process/browser.js' })` (web only) | **Kept (already present, unchanged).** Real Electron's renderer has a native `process` global; this build runs as an ordinary page with none, so the polyfill web.config already carries stays load-bearing here for the same reason it is in the other two builds. |
+| `'youtubei.js$': 'youtubei.js/web'` alias (renderer only) | **Not needed.** Checked the installed package's own `exports` map: the `"."` export's `browser` AND `default` conditions both already point at `dist/src/platform/web.js` -- the same file this alias would force. With `target: 'web'` (unchanged from web.config) webpack already resolves there without it. |
+| `HtmlWebpackPlugin`'s `excludeChunks: ['processTaskWorker']` (web only) | **Left as web.config has it.** No entry or dynamically-imported chunk named `processTaskWorker` exists anywhere in the current source tree (checked), so this is inert either way; not worth a risk for zero effect. |
+| `JsonMinimizerPlugin` in `optimization.minimizer` (web only) | **Left as web.config has it.** Minification-only, no behavioural difference. |
+| `name: 'web'` vs `'renderer'`, `entry` key name, `output.path`, `infrastructureLogging` | **Cosmetic / already handled generically.** Webpack's own internal bundle name and the entry's output filename; `output.path` is already rewritten to this build's own directory regardless. |
+| `target: 'web'` | **No difference at all** -- both configs already set the same value. |
+| Everything else (`module.rules`, `VueLoaderPlugin`, `MiniCssExtractPlugin`, the swiper `CopyWebpackPlugin` pattern, `resolve.extensions`, the Vue/Vite defines) | **Identical between the two configs.** |
+
+### The second bundle: FreeTube's own main-process datastore code, running in the page
+
+`src/datastores/handlers/electron.js` only dispatches to `window.ftElectron.db*` -- something has to
+answer those calls. Rather than reimplement FreeTube's storage logic, `webpack.orivon-datastore.config.cjs`
+compiles upstream's **own, unmodified** `src/datastores/handlers/base.js` (the same module real
+FreeTube's main process uses) into a second, independent bundle:
+
+- **`process.env.IS_ELECTRON_MAIN` is defined `false`.** `src/datastores/index.js` branches on it:
+  false takes the `dbPath = (dbName) => \`${dbName}.db\`` / `autoload: true` path (a bare relative
+  filename, nedb loading itself on construction) instead of the real main process's
+  `app.getPath('userData')` + `require('electron')` branch -- which that same `false` also folds
+  away as dead code during webpack's own parse, so `electron` is never even resolved.
+- **`resolve.aliasFields: []`** disables webpack's default browser-field remapping for every
+  package in the graph, not only a top-level one -- `@seald-io/nedb`'s own `package.json` remaps
+  `lib/storage.js`/`customUtils.js`/`byline.js` to its `browser-version/` (localForage) files, and
+  webpack applies that remap during nedb's own internal `require()`s too, not only at import time.
+  This is the actual mechanism behind "the Node build, not the browser field".
+- **Every Node builtin nedb's real storage layer imports** -- read directly from
+  `lib/storage.js`/`persistence.js`/`byline.js`/`datastore.js`/`cursor.js`/`customUtils.js`, not
+  guessed: `fs`, `path`, `stream`, `events`, `buffer`, `crypto`, `util`, `timers` -- is aliased.
+  `fs` is the one `src/shim/` module this needs (`node-fs.ts`, over `orivon.fs`); `path`, `stream`,
+  `events`, `buffer` and `crypto` are `module-map.ts`'s own already-approved packages
+  (`path-browserify`, `stream-browserify`, `events`, `buffer`, `crypto-browserify`); `util` is the
+  real npm `util` package (also already approved, previously unused) rather than
+  `src/shim/node-util.ts`, which is deliberately narrowed to one export (`inherits`) for a
+  different dependency graph and has neither `deprecate` nor `callbackify`, both of which nedb
+  needs. `timers` (`timers.setImmediate`, one call site in `byline.js`) has no `src/shim/` entry at
+  all and needs none: a five-line local polyfill (`bridge/ft-datastore-timers-shim.js`,
+  `setTimeout(fn, 0, ...args)`) covers the one call, and stays out of `src/shim/` on purpose.
+- **`build-shim.mjs` runs first**, always, compiling THIS repository's `src/shim/node-fs.ts` (and
+  everything it imports inside `src/shim/`/`src/shim-electron/`) into one plain ES module with this
+  repo's own `esbuild` -- webpack has no TypeScript loader, so it can only consume that output, never
+  `src/shim/` directly. Whatever is in `src/shim/` in the tree being built is what gets compiled in;
+  nothing here copies or forks it (`prepare.mjs`'s `--build` step runs this before the datastore
+  webpack build, every time). Its own `external` list names every module-map.ts `kind: 'package'`
+  specifier the datastore webpack config already aliases (buffer, stream, path, events, crypto,
+  util), not only the ones `node-fs.ts` happens to import today -- this broke twice in a row
+  ("Could not resolve 'stream'", then 'path') as `src/shim/`'s own dependency graph for `fs.ts`
+  changed shape on a timeline this repository does not control, each time only caught by rebuilding
+  against a real merge and reading the esbuild error. Listing every already-aliased specifier up
+  front, whether or not anything reaches it yet, is cheaper than a third silent break -- esbuild
+  never resolves an external specifier nothing imports, so this costs nothing today.
+- The result is `dist/orivon-electron-datastore/datastore.js`, copied to `orivon/ft-datastore.js`
+  and exposed on `globalThis.__orivonFtDatastore` (see `bridge/ft-datastore-entry.js`).
+
+### The bridge: six `db*` members, one script
+
+`bridge/ft-electron-bridge-db.js` (spliced into the single served `ft-electron-bridge.js` by
+`bridge/splice-bridge-source.mjs` -- see its own header for why this is two source files but one
+runtime script) adds `dbSettings`, `dbHistory`, `dbProfiles`, `dbPlaylists`, `dbSearchHistory` and
+`dbSubscriptionCache`, each `(action, data)`. Every action name, value and `switch` is copied from
+FreeTube's own `ipcMain.handle(IpcChannels.DB_*, ...)` handlers (`src/main/index.js`, around line
+1699) and `DBActions`/`IpcChannels` (`src/constants.js`) -- read directly, not guessed. Two things
+upstream's handlers do that these deliberately do not:
+
+- **`syncOtherWindows(...)` calls are dropped.** They exist to keep a second open Electron window's
+  renderer in sync after a write; this bridge has exactly one window, the one FreeTube's own chrome
+  already assumes throughout.
+- **The `DB_SETTINGS` menu/tray/theme side effects are dropped**, not reproduced as a no-op
+  (`setMenu()`, tray visibility, native theme on `baseTheme`) -- Electron-shell state this bridge
+  has no shell to update, the same category `refusedApi()` already excludes elsewhere in this file.
+
+The `screenshotFolderPath` upsert guard IS reproduced verbatim (upstream reserves that write for
+its `CHOOSE_DEFAULT_FOLDER` flow alone), and so is the error handling: `ipcMain.handle`'s own
+`catch (err) { throw typeof err === 'string' ? err : err.toString() }`, an IPC-serialisation habit
+kept here for parity even though nothing here crosses that boundary.
+
+**Read lazily, not at install time.** `prepare.mjs` injects three `<script>` tags in order: the
+bridge, then `ft-datastore.js`, then FreeTube's own bundle. The bridge's own top-level
+`installFtElectronBridge(...)` call runs before the second script has, so each `db*` member reads
+`globalThis.__orivonFtDatastore` fresh, at call time -- not once, captured early as `undefined`.
+When it is missing (an older prepared build, or `prepare.mjs` run without `--build`), every `db*`
+member refuses by name (`FtBridgeError`, reason `not-built`) instead of throwing a bare
+`TypeError`, synchronously, the same convention `refusedApi()` already uses.
+
+### Where the data lands
+
+`app.getPath('userData')` (`src/shim-electron/app.ts`) deliberately returns `'.'`, not an absolute
+path -- `orivon.fs` rejects an absolute path outright. With `IS_ELECTRON_MAIN` false, nedb never
+actually calls that: `src/datastores/index.js`'s own `else` branch already produces the bare
+relative filenames `settings.db`, `profiles.db`, `playlists.db`, `history.db`, `search-history.db`
+and `subscription-cache.db`, which land at exactly the same place `getPath('userData')` names --
+the app's own confined `fs` root, under the `fs.quotaBytes` grant `orivon.json` already declares.
+These are the same NDJSON-per-line files FreeTube desktop keeps in its own `userData` folder,
+written by upstream's own nedb code, unmodified.
+
+### The dependency this needed, and the exact failure without it
+
+`src/shim/node-fs.ts` refuses every `fs.promises.*` member except `open` (`refuseShim(..., 'unimplemented')`),
+and nedb's real Node storage layer (`lib/storage.js`) uses `fsPromises.access`, `.rename`,
+`.writeFile`, `.unlink`, `.appendFile`, `.readFile`, `.mkdir` and `.open` exclusively -- never the
+callback-style `fs.*` this shim already implements. **Measured against the real compiled datastore
+bundle** (a fake `orivon.fs` that resolves `mkdir` and refuses everything else, loaded and run
+under plain Node): the first call nedb's own autoload sequence makes is
+`ensureParentDirectoryExistsAsync`'s `fs.promises.mkdir`, refused with reason `unimplemented`, not
+`fs.promises.access` as a plain top-to-bottom read of `storage.js` would suggest -- nedb creates
+the parent directory before it ever checks whether the datafile itself exists. Every `settings.find()`
+call currently rejects for exactly this reason, unhandled, until that gap closes.
+
+**A second, separate gap, found the same way, not yet reached by the first:** `node-fs.ts`'s
+default export sets `constants: undefined` explicitly (not routed through its usual named-refusal
+proxy, since `fs.constants` is data, not a function). `storage.js`'s `existsAsync` reads
+`fs.constants.F_OK` -- once `fs.promises.mkdir`/`.access` are real, this throws next
+(`TypeError: Cannot read properties of undefined (reading 'F_OK')`) unless `fs.constants` is added
+too. Not fixed here (`src/shim/` is out of this stream's paths); flagging it so it is not
+rediscovered from scratch once the first gap closes.
+
+### Testing the datastore bundle and bridge
+
+`bridge/ft-electron-bridge-db.test.ts` covers all six `db*` members and every one of their actions
+against a fake `globalThis.__orivonFtDatastore`, split from `ft-electron-bridge.test.ts` the same
+way the source is (`code-guidelines.md` Rule 2); both share `ft-electron-bridge.test-helpers.ts`'s
+vm-sandbox harness. Same run command as below, since both are `apps/freetube-real/**/*.test.ts`.
+
+`webpack.orivon-datastore.config.cjs` and `build-shim.mjs` are exercised by `prepare.mjs --build`
+itself (below) -- there is no separate unit test for the webpack config, the same way
+`webpack.orivon.config.cjs` has none: both are config, verified by actually building with them.
 
 ## Opening a video works (`dist/orivon-web-localapi`)
 
@@ -270,9 +424,12 @@ boundary working correctly, not a bug:
 
 ### Testing the bridge
 
-`bridge/ft-electron-bridge.test.ts` covers all 34 `window.ftElectron` members against a fake
-`window`/`document`/`navigator`/`fetch`/`orivon`, loading the bridge's own source into a fresh
-`node:vm` context per test (it is a classic script, not a module, so it has nothing to `import`).
+`bridge/ft-electron-bridge.test.ts` covers all 34 original `window.ftElectron` members and
+`bridge/ft-electron-bridge-db.test.ts` covers the six `db*` members against a fake
+`globalThis.__orivonFtDatastore`, against a fake `window`/`document`/`navigator`/`fetch`/`orivon`,
+loading the bridge's own (spliced) source into a fresh `node:vm` context per test (it is a classic
+script, not a module, so it has nothing to `import` at runtime -- `bridge/ft-electron-bridge.test-helpers.ts`
+is the one exception, a real ES module only the tests themselves import).
 **Not picked up by `npm test` yet** -- `vitest.config.ts`'s include pattern is `src/**/*.test.ts`
 and `scripts/**/*.test.ts`, and `apps/` is neither (the same gap `apps/fixture/manifest.test.ts`
 already notes, with whether `apps/**` should join that include left open). Naming the file on
@@ -297,7 +454,14 @@ npm run dev
 Then open `http://127.0.0.1:8875` (or whatever port `serve.mjs` printed) and accept the consent
 prompt -- it now lists both `https.connect` and *"Run code as www.youtube.com, in a private, empty
 session"* (`web.context`). Navigate to a video (e.g. the Trending tab, or `#/watch/dQw4w9WgXcQ`
-typed into the page itself) and it plays.
+typed into the page itself) and it plays. `index.html` now loads three scripts in order: the
+bridge, `orivon/ft-datastore.js`, then FreeTube's own bundle (see
+[Storage](#storage-nedb-files-under-orivons-fs-not-indexeddb) for why that order matters).
+
+**Storage will not work yet on an unpatched `src/shim/`.** Every `db*` call currently rejects at
+`fs.promises.mkdir` (see [The dependency this needed](#the-dependency-this-needed-and-the-exact-failure-without-it))
+until `src/shim/`'s `fs.promises` gap closes -- playback, metadata and the rest of the chrome are
+unaffected, since none of those read or write through nedb.
 
 To drive the same thing headlessly, as CI does:
 
