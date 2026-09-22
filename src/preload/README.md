@@ -159,6 +159,29 @@ check inside the main world (ADR-0017, queue item 3.4):**
   shimmed Node globals until the next navigation to it, once `appTabArgsFor` can answer `true` at
   `WebContentsView` construction.
 
+**`fetch-route.ts` installs the routed `fetch` under the platform's own property descriptor
+(`writable`, `configurable` and `enumerable` all true), on purpose.** A page can replace or wrap
+that binding exactly as it can in a browser. Locking it is not a small divergence: an ES module is
+always strict, and strict mode forbids creating an own property that shadows a NON-WRITABLE
+inherited one, so the surrogate-global pattern common to `fetch` ponyfills -- a constructor whose
+`prototype` is the window, assigning `this.fetch` on the instance -- throws `Cannot assign to read
+only property 'fetch'` while the app's module graph is still evaluating. The bundle dies before it
+renders and nothing names a cause. The lock also bounded nothing: grant enforcement is the
+broker's, in the main process, keyed on `event.senderFrame` and the ledger
+([`../broker/transport/ipc.ts`](../broker/transport/ipc.ts)), and `window.orivon` -- hence the
+uncapped `orivon.net.connect` this routed `fetch` is itself built on -- is exposed to every
+ordinary tab regardless; a page wanting an unrouted `fetch` has one in any same-origin subframe,
+which gets no preload of its own. What it did buy is page-internal integrity, and that is what is
+given up: a hostile script sharing the app's realm can substitute `fetch` and observe what every
+other script sends. Such a script can already call `orivon.net` directly, so it gains no reach it
+did not have.
+
+**Why [`main-world-socket.ts`](main-world-socket.ts) still locks `window.orivon` when the above
+does not.** `orivon` is Orivon's own surface: nothing tries to shadow it, the platform sets no
+contract for its shape, and freezing it costs an app nothing, so the reason in that file's own
+comment stands unchanged. `fetch` is a web platform API whose descriptor is part of what an app
+can observe and build on, and the two are not the same kind of object.
+
 **`fetch-route.ts`'s known divergences from a real browser's `fetch()`**. ADR-0017's own
 Consequences section requires these be written down plainly, since "a silent divergence in a web
 platform API is a trap":

@@ -238,7 +238,7 @@ change touching every stream at once):
 - **It imports nothing from `src/`.** Pure, dependency-free helpers only. If it needs `electron`,
   a broker type, or anything stream-owned, it does not belong there.
 - **A change to it goes in its own PR and merges first**, never mixed with an implementation
-  ([`CLAUDE.md`](../../CLAUDE.md) §Parallel work).
+  ([`parallel-work.md`](parallel-work.md) §3).
 
 **It is not a dumping ground.** A helper earns its place by being needed on both sides of a
 boundary. One caller means it stays where it is. See

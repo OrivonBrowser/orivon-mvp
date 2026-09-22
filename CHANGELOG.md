@@ -68,6 +68,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **The routed `fetch()` is replaceable, as the platform's own is.** It was installed
+  non-writable, which in strict mode stops a bundle shadowing `fetch` on a surrogate global --
+  the pattern common `fetch` ponyfills use -- so such an app died while its module graph was
+  still evaluating, with nothing naming a cause.
+
 - **The window never appeared under `npm run dev`.** `ready-to-show` is unreliable when loading
   from the dev server; the shell now shows the window once, deterministically.
 

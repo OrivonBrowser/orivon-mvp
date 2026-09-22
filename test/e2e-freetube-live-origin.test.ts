@@ -67,16 +67,18 @@ it(
         if (view === undefined) throw new Error('no view found showing the live origin')
 
         const detected = await evaluateRetrying(view, async () => {
-          const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'fetch')
           const grants = await (globalThis as unknown as { orivon: { app: { grants: () => Promise<unknown[]> } } }).orivon.app.grants()
           return {
-            routedFetch: descriptor !== undefined && descriptor.writable === false && descriptor.configurable === false,
+            // The tell: the routed fetch is an ordinary JS function, while
+            // a native one reports [native code]. That is all it claims --
+            // the routed binding carries the platform's own descriptor.
+            notNativeFetch: !/\[native code\]/.test(String(globalThis.fetch)),
             grantKinds: (grants as Array<{ capability: string }>).map((g) => g.capability)
           }
         })
         check(
-          'GRANTING THE URL ALONE MAKES IT AN APP TAB: routed fetch is installed, with nothing installed to disk',
-          detected.routedFetch,
+          'GRANTING THE URL ALONE MAKES IT AN APP TAB: window.fetch is not the platform\'s own, so the routed fetch is installed, with nothing installed to disk',
+          detected.notNativeFetch,
           JSON.stringify(detected)
         )
         check('the origin holds the grants its manifest declared', detected.grantKinds.includes('https.connect'), JSON.stringify(detected.grantKinds))

@@ -93,10 +93,10 @@ it.skipIf(!ORDINARY_BUILD)(
           const view = findViewShowing(app as NonNullable<typeof app>, chrome, `${ORIGIN}/`)
           if (view === undefined) return false
           try {
-            return await view.evaluate(() => {
-              const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'fetch')
-              return descriptor !== undefined && descriptor.writable === false && descriptor.configurable === false
-            })
+            // The tell: the routed fetch is an ordinary JS function, while
+            // a native one reports [native code]. That is all it claims --
+            // the routed binding carries the platform's own descriptor.
+            return await view.evaluate(() => !/\[native code\]/.test(String(globalThis.fetch)))
           } catch {
             // The view is swapped out mid-repartition; poll again.
             return false
@@ -110,19 +110,16 @@ it.skipIf(!ORDINARY_BUILD)(
         const viewNow = findViewShowing(app, chrome, `${ORIGIN}/`)
         const pageState = viewNow === undefined
           ? { missing: true }
-          : await viewNow.evaluate(() => {
-            const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'fetch')
-            return {
-              hasOrivon: typeof (globalThis as { orivon?: unknown }).orivon === 'object',
-              fetchWritable: descriptor?.writable,
-              banner: document.querySelector('.notice strong')?.textContent ?? '(no banner)'
-            }
-          })
+          : await viewNow.evaluate(() => ({
+            hasOrivon: typeof (globalThis as { orivon?: unknown }).orivon === 'object',
+            fetchSource: String(globalThis.fetch).slice(0, 60),
+            banner: document.querySelector('.notice strong')?.textContent ?? '(no banner)'
+          }))
 
         prompted.count = await app.evaluate(() => (globalThis as unknown as { __promptCount?: number }).__promptCount ?? 0)
         check(`the real consent dialog was raised (${String(prompted.count)} prompt(s))`, prompted.count > 0)
         check(
-          'ACCEPTING THE PROMPT MAKES THE TAB AN APP TAB: routed fetch is installed, from a plain http loopback URL, with nothing installed to disk',
+          'ACCEPTING THE PROMPT MAKES THE TAB AN APP TAB: window.fetch is not the platform\'s own, so the routed fetch is installed, from a plain http loopback URL, with nothing installed to disk',
           becameAppTab,
           becameAppTab ? undefined : JSON.stringify(pageState)
         )

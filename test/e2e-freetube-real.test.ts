@@ -136,10 +136,12 @@ it.skipIf(!ORDINARY_BUILD || !BUILT)(
           if (view === undefined) return false
           try {
             return await view.evaluate(() => {
-              const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'fetch')
-              const routed = descriptor !== undefined && descriptor.writable === false && descriptor.configurable === false
+              // The tell: the routed fetch is an ordinary JS function, while
+              // a native one reports [native code]. That is all it claims --
+              // the routed binding carries the platform's own descriptor.
+              const notNative = !/\[native code\]/.test(String(globalThis.fetch))
               const mount = document.querySelector('#app')
-              return routed && mount !== null && mount.children.length > 0
+              return notNative && mount !== null && mount.children.length > 0
             })
           } catch { return false }
         }, 40_000)

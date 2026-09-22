@@ -5,8 +5,8 @@
 tiers exist*; this file owns *what works today*. If they disagree, that one is the design and
 this one is stale.
 
-**Every live capability is complete Spec'd → Broker → Page, except `id.requestIdentity`**, the
-one unbuilt entry. `hid` and `subprocess` are excluded from v0.
+**Every live capability is complete Spec'd → Broker → Page, except `id.requestIdentity` and
+`protocols`**, the two unbuilt entries. `hid` and `subprocess` are excluded from v0.
 
 Two axes, and they fail in completely different ways:
 
@@ -46,7 +46,9 @@ every `dup` row automatically**; six rows survive it, and four of those were nev
 | `id.requestIdentity` | ✅ | ❌ | ❌ | ➖ | Unbuilt, and nothing blocks it. `src/nostr/nip07.ts`'s real wiring calls this and cannot reach a page until it exists (A111) |
 | `app.manifest` / `grants` | ✅ | ✅ | ✅ | ➖ | Backs Electron's `app.*`; see Table 2 |
 | `app.requestGrant` | ✅ | ✅ | ✅ | ➖ | A control-channel case in [`ipc.ts`](../../src/broker/transport/ipc.ts) turns a page's call into `ctx.requestGrant(origin, request)`; accepting the dialog persists a real grant a later capability call uses, e2e-verified with refusal included. An origin must be registered as an app first, which is where install-time consent asks once for the whole declared set before the app's own code runs. A first-ever visit can still see an early call denied before that dialog resolves (A146, accepted as a known limitation) |
+| `web.context` (`orivon.web.openContext`) | ✅ | ✅ | ✅ | ➖ | An isolated, never-displayed document at an origin the manifest names exactly, and `evaluate` to run one script in it. No `orivon.*`, no preload, no cookies, and **no network of its own**: every request it makes is authorised against the *opening app's* own `https.connect` grant. Bounded by `LIMITS.webContexts`. The one capability a page cannot substitute for, because a web page cannot host a document at another site's origin -- an iframe there is that site's document, not the app's. Broker in [`web-capability.ts`](../../src/broker/web-capability.ts), page surface in [`web-surface.ts`](../../src/preload/web-surface.ts), e2e in [`e2e-web-context.test.ts`](../../test/e2e-web-context.test.ts) and [`e2e-web-context-network.test.ts`](../../test/e2e-web-context-network.test.ts). **Provisional:** [ADR-0019](../decisions/ADR-0019-an-app-may-run-code-at-an-origin-the-user-named.md) is still `proposed`; owner acceptance settles it |
 | `dns.lookup` (`orivon.net.lookup`) | ✅ | ✅ | ✅ | ✅ | The capability is `OrivonNet.lookup`; there is no separate `orivon.dns` namespace, and `dns.lookup` is the Node API it backs. Bounded by the host portions of the origin's held `tcp.connect` and `udp.send` patterns; `https.connect` does not authorise a lookup. Node shape in [`node-dns.ts`](../../src/shim/node-dns.ts) resolves `dns.lookup`/`dns.promises.lookup`; every other `dns.*` member is a named refusal |
+| `protocols` (scheme routing) | ✅ | ❌ | ❌ | ➖ | Declared in the manifest and validated by the loader ([`manifest-capabilities.ts`](../../src/loader/manifest-capabilities.ts)), but **not a `CapabilityKind`** ([`manifest-patterns.ts`](../../src/broker/policy/manifest-patterns.ts)) and unimplemented on both sides: nothing registers a scheme with the shell, and how a routed URI would reach the app is unspecified |
 | `hid` / USB | 🚫 | 🚫 | 🚫 | 🚫 | Cut from v0 for every tier |
 | `subprocess` | 🚫 | 🚫 | 🚫 | 🚫 | Cut from v0 as largest attack surface |
 
@@ -71,16 +73,17 @@ uses for the raw capability API. Each link is proven for real (a real broker's c
 a real dialog's wiring, a real IPC round trip); the chain through a real public origin is not
 something CI can reach, and that is a limit of CI rather than a gap in the mechanism.
 
-## Table 2: the three adapter families (shim families structure)
+## Table 2: the four adapter families (shim families structure)
 
 An app never calls `orivon.*` directly unless it was written for Orivon. Something has to
-present a familiar interface on top. There are three such layers:
+present a familiar interface on top. There are four such layers:
 
 | Family | What it presents | Backed by | Status |
 |---|---|---|:--:|
 | **Node stdlib** | `net`, `dgram`, `fs`, `http`, `https`, `Buffer`, `stream`... | `net.*`, `fs.*` | ✅ built: `net` (client and server), `dgram` and `fs` (including `FileHandle`) over the capabilities, Node's `http`/`https` clients over `net.connectSecure`, `dns.lookup` over `orivon.net.lookup`, and all eight core polyfill packages. **Named refusals, by design:** `net.Server#listen` with a non-default host, `FileHandle.createReadStream`/`createWriteStream` (A184), and every other `dns.*`/`net.*` member this shim has not decided on |
 | **`electron` module** | `app`, `ipcRenderer`/`ipcMain`, `dialog` | `app.*`, `fs.userSelected` | ⚠️ partial, in [`src/shim-electron/`](../../src/shim-electron/) |
 | **Web ecosystem** | `window.nostr` (NIP-07); later `window.ethereum` | `id.*` | ✅ built ([`nip07.ts`](../../src/nostr/nip07.ts)), not wired into a page: it needs `id.requestIdentity` (A111) |
+| **The app's own preload surface** | whatever that app's preload exposed -- `window.ftElectron` for FreeTube | any capability its calls happen to map to | ➖ **Not Orivon's to ship.** One file per ported app, living with the app |
 
 **The `electron` family** lives in its own package rather than folded into `src/shim/`:
 `app`, `dialog`, `ipcRenderer`/`ipcMain` and `BrowserWindow`/`Menu`/`Tray`, reconstructed or
@@ -122,30 +125,13 @@ as owned by the `shim` stream, matching Table 2's `net, dgram, fs, Buffer, strea
 | `electron` module | `dup` | every tier-2 app | ⚠️ partial | [`src/shim-electron/`](../../src/shim-electron/): `app.*`/`ipcRenderer`/`ipcMain` work, `BrowserWindow`/`Menu`/`Tray` refuse by design, and `dialog.showOpenDialog` refuses on the host-path/opaque-handle mismatch (A187) |
 | HTTP client | `dup` | trackers, web seeds, any REST | ✅ built | The page's own `fetch()` is routed through the secure-connect capability for granted hosts ([`fetch-route.ts`](../../src/preload/fetch-route.ts)), and Node's `http`/`https` clients sit on the same capability. Neither webtorrent nor bittorrent-tracker uses Node's HTTP client (the tracker client calls `fetch`), and FreeTube is 32 `fetch` calls with zero Node builtins, so **routed `fetch` is the path both flagship candidates actually take** |
 | TLS / `https` | **`needs T1`** | nearly every app | ✅ built | [ADR-0017](../decisions/ADR-0017-orivon-owns-the-app-http-path.md); `net.connectSecure` in the broker, wired through IPC to a real page. Orivon terminates the handshake on the trusted side, so a grant and a prompt can name the true hostname |
+| Unmapped Node builtins: `child_process`, `tls`, `url`, `querystring`, `assert`, `string_decoder`, `vm` | `dup` | ported apps, and their dependency trees | ❌ missing | Absent from [`module-map.ts`](../../src/shim/module-map.ts), so the renderer build fails to resolve the specifier. That is a build error, not the named refusal `refusingProxy` gives an unmapped member *inside* a mapped module. `child_process` is the one that is a refusal rather than a gap (Table 1, `subprocess`) |
+| The app's own preload surface (`window.<name>`) | `dup` | every app ported from Electron | ➖ per-app | Table 2's fourth family. Not in `src/` at all: one file per app under `apps/<app>/` |
 | `worker_threads` | `dup` | validation-heavy work | ❌ missing | Web Workers are already in the renderer, so the substrate exists and no Table 1 entry is needed; the shape does not match and a shim cannot fully fake it. A fidelity problem, not a substrate one |
 | Background lifetime | **`outside`** | seeding, syncing, pinning | ⚠️ **unspecified** | Nothing in Node, `electron` or the web platform means "keep running once the tab is gone". Shell holds the process, contracts describe it, UI shows it. `mvp-scope.md` counts `backgroundSec` in the metric but nothing grants it |
 | Ambient FS (`~/.bitcoin`) | **`outside`** | migrating an installed app | 🚫 excluded by design | A refusal, not a gap. `fs` is rooted; `userSelected` is a picker, not a mount. `src/shim-electron/app.ts`'s `getPath` enforces the identical boundary for any name but `'userData'` |
 | Desktop shell (tray, autostart, protocol handlers, hotkeys) | **`outside`** | Electron apps' outer half | ⚠️ partial | `BrowserWindow`/`Menu`/`Tray` are explicit, tested named refusals (`src/shim-electron/desktop-shell.ts`); autostart, protocol handlers and hotkeys are simply absent |
 | Native addon in the dep tree | **`outside`** | see Table 5 | ❌ missing | Per-library substitution, not a platform feature. Pure-JS/WASM substitute, or a helper process |
-
-**Seven `dup` rows: five built, `electron` partial on `dialog.showOpenDialog`, and
-`worker_threads` missing by design rather than effort.** Both `needs T1` rows are built, so the
-ability axis is not the bottleneck: what remains on it is `worker_threads` (a fidelity problem)
-and the four `outside` rows, which no amount of shim work reaches.
-
-**Synchronous `fs` is `needs T1` because it is a missing mechanism, not a missing function.** A
-ported app fails at *startup*, not under load: `readFileSync` is how Node programs read their own
-config, usually inside a dependency the porting developer does not control. The residual gap is
-fairness, not confinement: the sync path shares the grant check and the path confinement with
-the async path, but not the per-origin in-flight budget, so one origin can monopolise sync reads
-(A112).
-
-**Of the four `outside` rows, background lifetime is the one open gap.** Ambient FS is a
-deliberate boundary and native addons are per-library (Table 5). The desktop shell is a
-deliberate boundary for `BrowserWindow`/`Menu`/`Tray` specifically, and absent for autostart,
-protocol handlers and hotkeys. Background lifetime is unfiled, touches the success metric
-directly, and is the one row here that finishing every other table would leave exactly where it
-stands: Table 4 row 5.
 
 ## Table 4: open blockers, and the cheapest lever for each
 
@@ -156,17 +142,19 @@ open blockers are listed; a resolved one is deleted, not struck through.
 |---|---|---|---|
 | 1 | No named identities: `id.requestIdentity` is unbuilt, so `window.nostr` cannot reach a page | Build it; no decision blocks it | A111 |
 | 2 | `DirectoryHandle`'s method set is unconfirmed | Confirm the shape the folder picker is already built against; no new build work | A167 item 2, A195 |
-| 3 | `dialog.showOpenDialog` cannot map onto `fs.userSelected`: one returns host paths, the other an opaque handle | A shim-side shape decision | A187 |
-| 4 | `FileHandle.readable()`/`writable()` are not page-reachable, so Node's `createReadStream`/`createWriteStream` refuse | Deliver a byte stream over a dedicated port, the mechanism `net.connect` already uses | A184 |
-| 5 | No background lifetime | Unfiled; needs a decision first | Contracts + shell; touches the metric directly |
-| 6 | `hid`/USB, the wallet cluster | `orivon.hid.*` + device chooser | Contracts + prompt UX + security argument |
-| 7 | Native addons in dep trees | Substitute per library, Table 5 | Per-app, not per-platform |
-| 8 | Tier 3, no HTML frontend | Container + xpra ([doc](container-apps-opportunity.md)) | Parked; reopens `subprocess` in a narrow shape |
-| 9 | App logic is not JavaScript | Nothing works today, WASM included | Blocked upstream: Go has no wasip2, wasi-sdk has no target with threads AND sockets |
+| 3 | Unmapped Node builtins (`url`, `querystring`, `assert`, `string_decoder`, `tls`, `vm`) fail the renderer build on the specifier, not with a named refusal | Add a `module-map.ts` row each; the pure-JS polyfills need the owner's dependency approval (Rules 6 and 8) | Shim work, one file |
+| 4 | `dialog.showOpenDialog` cannot map onto `fs.userSelected`: one returns host paths, the other an opaque handle | A shim-side shape decision | A187 |
+| 5 | `FileHandle.readable()`/`writable()` are not page-reachable, so Node's `createReadStream`/`createWriteStream` refuse | Deliver a byte stream over a dedicated port, the mechanism `net.connect` already uses | A184 |
+| 6 | No background lifetime | Unfiled; needs a decision first | Contracts + shell; touches the metric directly |
+| 7 | `protocols` is declared and validated but unbuilt on both sides | Unfiled; needs a decision first on how a routed URI reaches the app | Contracts + shell + prompt UX |
+| 8 | `hid`/USB, the wallet cluster | `orivon.hid.*` + device chooser | Contracts + prompt UX + security argument |
+| 9 | Native addons in dep trees | Substitute per library, Table 5 | Per-app, not per-platform |
+| 10 | Tier 3, no HTML frontend | Container + xpra ([doc](container-apps-opportunity.md)) | Parked; reopens `subprocess` in a narrow shape |
+| 11 | App logic is not JavaScript | Nothing works today, WASM included | Blocked upstream: Go has no wasip2, wasi-sdk has no target with threads AND sockets |
 
-Rows 1 and 2 are the top of the list: neither needs anything but the work itself or one
-confirmation. Row 5 sits behind them despite touching the metric, because it needs a decision
-before it is even build-shaped. **Unfiled:** rows 5 and 7, plus declarability (what a grant
+Rows 1 to 3 are the top of the list: none needs anything but the work itself, one confirmation,
+or one dependency approval. Row 6 sits behind them despite touching the metric, because it needs
+a decision before it is even build-shaped. **Unfiled:** rows 6, 7 and 9, plus declarability (what a grant
 prompt can honestly say for runtime-chosen hosts) and per-syscall IPC cost on a chatty workload.
 
 ## Table 5: the native-module question, per library
@@ -202,7 +190,7 @@ Check the code, do not trust the tables above.
 | Table 1, Broker | `grep -n "async function" src/broker/index.ts`, **then** check the object returned by `createBroker`: a function that exists but isn't returned is not reachable. The broker is split: `net`'s five entry points (`connect`/`connectSecure`/`udpBind`/`listen`/`lookup`) live in `net-capability.ts`, `fs`'s nine (including `open`) in `fs-capability.ts`, and `id`'s two in `id-capability.ts`, each returned from its own factory and re-exported through `createBroker`'s own returned object, so check those files too, not just `index.ts` |
 | Table 1, Page | `grep -n "call('" src/preload/orivon-surface.ts`, plus `src/preload/main-world-socket.ts` for what the main-world wrapper builds. A real-Electron e2e test is the strongest proof a real page can call it; where none exists, a test exercising the real `installOrivon` wiring rather than a hand-built stub is the fallback: weaker, but still a real dispatch/preload path, not just a file that exists |
 | Table 1, Node shim | `ls src/shim/` |
-| Table 2 | Node family: `src/shim/`. Electron family: `src/shim-electron/`. Web family: `src/nostr/` |
+| Table 2 | Node family: `src/shim/`. Electron family: `src/shim-electron/`. Web family: `src/nostr/`. Fourth family: not in `src/` at all -- it is each app's own bridge, under `apps/<app>/`, and a missing one is that app's gap, never Orivon's |
 | Table 3, Status | Mostly absence; verify by looking for the module, not for a mention of it |
 | Table 3, Class | Not observable in the tree; derived. `dup` if Table 2's families name the surface at all, `needs T1` if they do but Table 1 has no entry the adapter could be built on, `outside` if no Node/`electron`/web API expresses the problem. Re-derive the row when Table 1 or the shim README's declared scope changes, not when a status flips |
 | Table 4 | When a blocker is resolved, **delete the row**. This table lists only what is still open |
