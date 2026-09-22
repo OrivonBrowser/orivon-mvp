@@ -11,6 +11,36 @@ describe('contentTypeFor', () => {
     expect(contentTypeFor('/module.wasm')).toBe('application/wasm')
   })
 
+  it('maps the web-app, audio, subtitle, streaming-manifest and archive types a real bundle ships', () => {
+    const expected: Record<string, string> = {
+      '/manifest.webmanifest': 'application/manifest+json',
+      '/hero.avif': 'image/avif',
+      '/legacy.cjs': 'text/javascript; charset=utf-8',
+      '/a.mp3': 'audio/mpeg',
+      '/a.ogg': 'audio/ogg',
+      '/a.oga': 'audio/ogg',
+      '/a.opus': 'audio/ogg',
+      '/a.wav': 'audio/wav',
+      '/a.flac': 'audio/flac',
+      '/a.m4a': 'audio/mp4',
+      '/a.aac': 'audio/aac',
+      '/captions.vtt': 'text/vtt; charset=utf-8',
+      '/icons.eot': 'application/vnd.ms-fontobject',
+      '/splash.bmp': 'image/bmp',
+      '/stream.m3u8': 'application/vnd.apple.mpegurl',
+      '/stream.mpd': 'application/dash+xml',
+      '/notes.txt': 'text/plain; charset=utf-8',
+      '/feed.xml': 'application/xml',
+      '/doc.pdf': 'application/pdf',
+      '/export.zip': 'application/zip'
+    }
+    for (const [path, type] of Object.entries(expected)) expect([path, contentTypeFor(path)]).toEqual([path, type])
+  })
+
+  it('leaves .ts unmapped: it is TypeScript source in one bundle and an MPEG transport-stream segment in another', () => {
+    expect(contentTypeFor('/segment0.ts')).toBe(DEFAULT_CONTENT_TYPE)
+  })
+
   it('is case-insensitive on the extension', () => {
     expect(contentTypeFor('/INDEX.HTML')).toBe('text/html; charset=utf-8')
     expect(contentTypeFor('/Photo.JPG')).toBe('image/jpeg')
