@@ -38,9 +38,9 @@ neutral place a channel name shared across this trust boundary can live; `shell.
 |---|---|---|
 | `app.ts` | **every ordinary tab** | `orivon-surface.ts`'s `exposeOrivon()`: `orivon.version`, `orivon.app.manifest`/`grants`, `orivon.fs.readFile`/`writeFile`/`readFileSync` (the last one ADR-0016's synchronous exception; see `orivon-surface.ts`'s own `fsReadFileSync`), `orivon.id.publicKey`/`sign`, `orivon.net.connect` (a real `TcpSocket`) and `orivon.net.udpBind` (a real `UdpSocket`), both built in the main world by `main-world-socket.ts` |
 | `shell.ts` | **only** the chrome view | Tab commands |
-| `settings.ts` | **only** the permissions panel's own view (`src/main/permissions-panel.ts`) | `orivonSettings`: list each app's grants and revoke one, after checking `location.href` against its expected URL; `src/main/settings-ipc.ts` re-verifies the sender on every call |
-| `newtab.ts` | **only** a genuinely fresh tab (`src/main/tabs.ts`'s `createTab()`, no `url` argument) | Read-only bookmark access, navigate-this-tab-only, but only after checking `location.href` against its own expected URL first, since (unlike the chrome view) a dashboard tab is ordinary and navigable; falls back to the SAME `exposeOrivon()` `app.ts` uses otherwise, not a second copy |
-| `fetch-route.ts` | `app.ts` and `newtab.ts`'s fallback branch, via `exposeFetchRoute()` | ADR-0017: routes `window.fetch` through `orivon.net` for a registered app's granted hosts, when the tab's `--orivon-app-tab` flag says so (`src/main/tab-view.ts`'s `appTabArgsFor`); a plain website keeps native `fetch`, untouched |
+| `settings.ts` | **only** the permissions panel's own view (`src/main/permissions/permissions-panel.ts`) | `orivonSettings`: list each app's grants and revoke one, after checking `location.href` against its expected URL; `src/main/ipc/settings-ipc.ts` re-verifies the sender on every call |
+| `newtab.ts` | **only** a genuinely fresh tab (`src/main/shell/tabs.ts`'s `createTab()`, no `url` argument) | Read-only bookmark access, navigate-this-tab-only, but only after checking `location.href` against its own expected URL first, since (unlike the chrome view) a dashboard tab is ordinary and navigable; falls back to the SAME `exposeOrivon()` `app.ts` uses otherwise, not a second copy |
+| `fetch-route.ts` | `app.ts` and `newtab.ts`'s fallback branch, via `exposeFetchRoute()` | ADR-0017: routes `window.fetch` through `orivon.net` for a registered app's granted hosts, when the tab's `--orivon-app-tab` flag says so (`src/main/shell/tab-view.ts`'s `appTabArgsFor`); a plain website keeps native `fetch`, untouched |
 | `expose-shim-globals.ts` | `app.ts` and `newtab.ts`'s fallback branch, via `exposeShimGlobals()` | A151: installs `src/shim/globals.ts`'s `process`/`setImmediate`/`clearImmediate` into the main world, gated on the SAME `--orivon-app-tab` flag `fetch-route.ts` reads; an ordinary tab never receives shimmed Node globals just because it loaded before this preload ran |
 
 **Preload builds are isolated per entry (`electron.vite.config.ts`'s `isolatedEntries: true`).**
@@ -144,7 +144,7 @@ check inside the main world (ADR-0017, queue item 3.4):**
   tabs.ts`, in the SAME process as the broker.** `Broker.app.isRegisteredSync` (`../broker/
   index.ts`) reads the identical in-memory ledger state `orivon.app.manifest()` answers, with no
   IPC round trip; `Broker.fs.confineSync` (ADR-0016) is the precedent for a synchronous sibling
-  of an already-async method for exactly this reason. `src/main/tab-view.ts`'s `appTabArgsFor`
+  of an already-async method for exactly this reason. `src/main/shell/tab-view.ts`'s `appTabArgsFor`
   calls it once, at `WebContentsView` construction (`tabs.ts`'s `createTab()`/`repartitionView()`),
   and hands the answer over as a `webPreferences.additionalArguments` flag
   (`'--orivon-app-tab'`), the exact mechanism `newtab.ts` already uses for its own

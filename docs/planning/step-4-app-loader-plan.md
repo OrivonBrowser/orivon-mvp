@@ -28,11 +28,11 @@ then on serves that origin from disk with exactly the authority they granted.
 |---|---|---|
 | Manifest discovery, validation, asset fetch, bundle hash, pinning, cache write | [`src/loader/`](../../src/loader/) | Built, unit-tested |
 | The update decision (silent / re-consent / capability-prompt / rollback / reject) | [`src/broker/policy/update.ts`](../../src/broker/policy/update.ts) | Built, table-tested |
-| Loader-to-broker glue, serialised per origin | [`src/main/app-install.ts`](../../src/main/app-install.ts) | Built, no caller |
-| The consent mechanism: narrow to manifest, prompt, grant | [`src/main/request-grant.ts`](../../src/main/request-grant.ts) | Built, no caller |
-| The dialog's words, breadth visible | [`src/main/grant-prompt-render.ts`](../../src/main/grant-prompt-render.ts) | Built, tested |
-| The permissions list, with revocation | [`src/main/permissions.ts`](../../src/main/permissions.ts) | Built, shipped |
-| Per-app session partitions, `fetch()` routing flag | [`src/main/tab-view.ts`](../../src/main/tab-view.ts) | Built, shipped |
+| Loader-to-broker glue, serialised per origin | [`src/main/install/app-install.ts`](../../src/main/install/app-install.ts) | Built, no caller |
+| The consent mechanism: narrow to manifest, prompt, grant | [`src/main/consent/request-grant.ts`](../../src/main/consent/request-grant.ts) | Built, no caller |
+| The dialog's words, breadth visible | [`src/main/consent/grant-prompt-render.ts`](../../src/main/consent/grant-prompt-render.ts) | Built, tested |
+| The permissions list, with revocation | [`src/main/permissions/permissions.ts`](../../src/main/permissions/permissions.ts) | Built, shipped |
+| Per-app session partitions, `fetch()` routing flag | [`src/main/shell/tab-view.ts`](../../src/main/shell/tab-view.ts) | Built, shipped |
 | Grant persistence across restart, version floor, rollback acknowledgement | [`src/broker/grants/`](../../src/broker/grants/) | Built, shipped |
 
 `ADR-0007`'s mechanism was probed live on 2026-09-10 and passes on all three counts it rests on:
@@ -177,5 +177,5 @@ leaves no surviving process and no temp profile behind.
 
 `src/loader/storage.ts` and `src/loader/index.ts` are touched by both S4-3 and S4-5: those two
 are serialised, never in flight together. `src/broker/transport/ipc.ts` is S4-1's alone.
-`src/main/tabs.ts` is S4-2's alone. This is the run's main merge-conflict risk and it is the
+`src/main/shell/tabs.ts` is S4-2's alone. This is the run's main merge-conflict risk and it is the
 reason for the shape above.

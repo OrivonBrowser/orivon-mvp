@@ -27,7 +27,7 @@ guessed. Rows with no ID were lifted out of the prose of the documents named bes
 | `d-0023` | 2026-09-09 | `net.listen` is built in build step 2 rather than deferred, so the flagship can seed | `../planning/build-plan.md`, A97 |
 | `d-0024` | 2026-09-09 | The permission prompt is in scope for this round, reviewed as it is built | `../planning/build-plan.md`, A103 |
 | `d-0025` | 2026-09-13 | Consent is asked once, before the app's own code runs, for its whole declared set | [`ADR-0012`](ADR-0012-fetch-and-cache-precede-consent.md), A146 |
-| `d-0027` | | The connect prompt names the first host and counts the rest, never listing every one | `src/main/grant-prompt-connect.ts` |
+| `d-0027` | | The connect prompt names the first host and counts the rest, never listing every one | `src/main/consent/grant-prompt-connect.ts` |
 | `d-0028` | 2026-09-15 | Each accepted socket's port is delivered over the server's own port (`AcceptedMessage`) | A114, `../architecture/handle-contracts.md` |
 | `d-0029` | 2026-09-15 | The folder picker returns a `DirectoryHandle` from `userSelected({ directory: true })` | A167, `../architecture/capability-api.md` |
 | `d-0030` | 2026-09-15 | DNS resolution is a broker capability, `OrivonNet.lookup`; there is no `orivon.dns` namespace | A107, A171 |
@@ -86,6 +86,7 @@ moved here so those documents can state the behaviour without the provenance.
 | 2026-09-22 | A port couples to the shell through storage assertions, not only a test path; where those assertions belong is unsettled | ADR-0020, open-questions B5 |
 | 2026-09-22 | The apps the test suite serves move to `test/apps/`; there is no top-level `apps/` directory. `test/apps/` is carved out of Rule 2's "test file" definition so the comment and size guards keep covering it | ADR-0020, `CLAUDE.md`, `ARCHITECTURE.md`, `../development/code-guidelines.md` |
 | 2026-09-22 | `apps/torrent/` is removed; the flagship has no directory here until build step 5 opens, and `build-plan.md` holds its design | ADR-0001, `../planning/build-plan.md`, `../mvp-scope.md` |
+| 2026-09-22 | `src/main/` is organised into nine job-named directories, following the naming convention (not the directory count) `src/broker/` set | ADR-0021, ADR-0015 |
 
 ## Adding a row
 

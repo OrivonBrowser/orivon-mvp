@@ -34,7 +34,7 @@ change belongs in their stream.
 
 | Stream | Owns | Build step | State |
 |---|---|---|---|
-| `shell` | `src/main/{index,window,tabs,omnibox,ipc}.ts`, `src/renderer/`, `src/preload/shell.ts`, **`scripts/smoke.mjs`**, **`test/` except `test/apps/`** | 1 | **done**, maintenance only |
+| `shell` | `src/main/index.ts`, `src/main/shell/window.ts`, `src/main/shell/tabs.ts`, `src/main/browsing/omnibox.ts`, `src/main/ipc/ipc.ts`, `src/renderer/`, `src/preload/shell.ts`, **`scripts/smoke.mjs`**, **`test/` except `test/apps/`** | 1 | **done**, maintenance only |
 | `contracts` | `src/contracts/` | n/a | **change-controlled**, see below |
 | `shared` | `src/shared/` | n/a | **change-controlled**, same rules as `contracts`. Empty by design; see its `README.md` |
 | `broker` | `src/broker/` and its five directories (`policy/`, `grants/`, `handles/`, `transport/`, `adapters/`), `src/preload/app.ts`, `src/preload/orivon-surface.ts`, `src/preload/socket-bridge.ts`, `src/preload/socket-port.ts`, `src/preload/main-world-socket.ts` | 2 | critical path |

@@ -16,7 +16,7 @@ Installation is **not** a condition. In the owner's words:
 > You still keep storage of an application if you granted permission to do so, it doesn't matter
 > if you install it to run merely on local or not, that's a completely separate thing.
 
-So [`src/main/tab-view.ts`](../../src/main/tab-view.ts)'s `partitionForTarget` reads
+So [`src/main/shell/tab-view.ts`](../../src/main/shell/tab-view.ts)'s `partitionForTarget` reads
 `Broker.app.hasGrantsSync` and the loader's serve registry. It deliberately does **not** read
 `isRegisteredSync`, which answers a different question: "is a manifest loaded this session".
 
@@ -44,7 +44,7 @@ The fix gated isolation on `isRegisteredSync`. That gate was wrong in two direct
 1. **Too narrow.** A cached app registers its protocol handler through
    `registerAppOrigin`, which does not touch the broker's app registry. Both
    [`electron-serve.ts`](../../src/loader/electron-serve.ts) and
-   [`delivery-provenance.ts`](../../src/main/delivery-provenance.ts) already say in comments that
+   [`delivery-provenance.ts`](../../src/main/browsing/delivery-provenance.ts) already say in comments that
    these are two separate registries. A pin served from cache but absent from the broker's
    registry got no partition, so its tab landed on the default session where its handler does not
    exist, and the page could not load. `test/e2e-serve-from-cache.test.ts` failed exactly there:

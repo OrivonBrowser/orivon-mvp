@@ -211,7 +211,7 @@ auto-follows a redirect: a 3xx from the granted host is handed back to the page 
 response, so a granted host can never hand a request off to one nobody approved.
 
 **Why `restorePinnedServing` runs at startup rather than only after a fresh `load()`.** `load()`
-does now have a production caller (the discovery trigger, via `src/main/app-install.ts`), but a
+does now have a production caller (the discovery trigger, via `src/main/install/app-install.ts`), but a
 fresh install is not the only way an app needs serving. Without a startup pass, "offline first-run keeps working
 for pre-cached apps" (this document's own line, from `ADR-0007`) would be false in practice: an
 app installed in one run would stop being servable from cache the moment the browser restarts,

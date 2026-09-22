@@ -37,7 +37,7 @@ the time since the last processed event. The `'checkpoint'` event kind exists pu
 caller a place to inject that persistence during an otherwise-silent stretch, such as a torrent
 seeding for hours with no focus change.
 
-**`store.ts` diverges from [`src/main/bookmarks.ts`](../main/bookmarks.ts) on debouncing, on
+**`store.ts` diverges from [`src/main/browsing/bookmarks.ts`](../main/browsing/bookmarks.ts) on debouncing, on
 purpose.** `BookmarkStore` debounces every write because a user can star/unstar rapidly and each
 click is independently worth persisting soon. Accounting state changes continuously as time
 passes, not in discrete user actions, so debouncing it would just mean "write shortly after every

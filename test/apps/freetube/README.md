@@ -29,12 +29,12 @@ the first. `tab-view.ts`'s `appTabArgsFor` gates the app-tab flag, and therefore
 `broker.app.isRegisteredSync(origin)` alone -- no pin, no cached bundle.
 
 **The install path refuses a loopback origin, by design, and still does by default.**
-`<link rel="orivon-manifest">` -> [`manifest-hint.ts`](../../../src/main/manifest-hint.ts) ->
-`installApp` -> [`app-install.ts`](../../../src/main/app-install.ts)'s `installFromHint` ->
+`<link rel="orivon-manifest">` -> [`manifest-hint.ts`](../../../src/main/install/manifest-hint.ts) ->
+`installApp` -> [`app-install.ts`](../../../src/main/install/app-install.ts)'s `installFromHint` ->
 `Loader.load()`, which applies `ensurePublicUnicastOrigin` before any manifest is read (A46, T12).
 
 **Under `npm run dev` a loopback origin takes a second path instead:**
-[`dev-app-origin.ts`](../../../src/main/dev-app-origin.ts) fetches only the manifest, registers the
+[`dev-app-origin.ts`](../../../src/main/dev/dev-app-origin.ts) fetches only the manifest, registers the
 origin, and raises the same consent prompt an install raises. Nothing is fetched as a bundle,
 hashed, pinned or served from cache; this directory's own `serve.mjs` keeps serving the page. It
 is bounded:

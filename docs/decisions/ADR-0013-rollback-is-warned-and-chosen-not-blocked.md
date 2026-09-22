@@ -110,7 +110,7 @@ for any of them.
 - **Not built by this ADR:** where `rollbackAcknowledged` itself is read from and written to. It
   is a new, small piece of per-origin state, analogous to `versionFloor` (A57). The natural home
   is the same `LedgerStorage`-backed mechanism, extended with a second field, built as part of the
-  work that actually wires a real caller to `Loader.load()` (`src/main/app-install.ts`, per the
+  work that actually wires a real caller to `Loader.load()` (`src/main/install/app-install.ts`, per the
   session plan this ADR was written alongside). Until that lands, `rollbackAcknowledged` is a
   caller-supplied boolean with no real production source, the same "not yet a live risk" position
   `grantedPatterns` and `versionFloor` were both in before their own wiring existed

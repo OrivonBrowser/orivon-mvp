@@ -7,7 +7,7 @@ bookmark toggle, the omnibox, a right-hand icon cluster), and the bookmarks bar.
 `orivon-browser-v2`'s chrome; see **Visual reference** below. The second, [`newtab/`](newtab/),
 is the new-tab dashboard: ordinary tab content
 loaded into a fresh tab's own `WebContentsView`, not part of the chrome view at all; see
-`src/main/tabs.ts`'s `createTab()`.
+`src/main/shell/tabs.ts`'s `createTab()`.
 
 **Files.**
 
@@ -29,7 +29,7 @@ loaded outside a genuinely fresh tab; see that file's own header comment.
 **What it must never import.** `electron`, `node:*`, or anything under
 [`src/main/`](../main/). This is a sandboxed renderer with `nodeIntegration: false`; there is
 no Node here, and reaching for it is a sign the logic belongs in main. (Type-only imports from
-`src/main/tabs.ts` and `src/main/bookmarks.ts` are fine: they describe the shape of a state
+`src/main/shell/tabs.ts` and `src/main/browsing/bookmarks.ts` are fine: they describe the shape of a state
 push and are erased at build time by `verbatimModuleSyntax`.)
 
 **Owner stream.** `shell`, build step 1, **done, maintenance only**.
@@ -38,7 +38,7 @@ push and are erased at build time by `verbatimModuleSyntax`.)
 [`src/main/README.md`](../main/README.md).
 
 **Layout constant, kept in three places on purpose.** `CHROME_HEIGHT` in
-[`../main/window.ts`](../main/window.ts) is the sum of the rows below (native code and
+[`../main/shell/window.ts`](../main/shell/window.ts) is the sum of the rows below (native code and
 CSS must agree on where tab content starts), and `scripts/smoke.mjs` carries its own copy to
 assert against. **If you change one, change all three**, and re-run `npm run smoke`.
 
@@ -73,13 +73,13 @@ exposed read-only from `preload/shell.ts` (available even under `sandbox: true`)
 `document.documentElement.dataset.platform` at the top of `main.ts`, before first paint.
 
 **Bookmarks are a real feature, not decoration**
-(`docs/mvp-scope.md`, `ADR-0003`), and not in the original scope pass. `src/main/bookmarks.ts`
+(`docs/mvp-scope.md`, `ADR-0003`), and not in the original scope pass. `src/main/browsing/bookmarks.ts`
 holds the list and persists it; this directory only ever renders what it's sent and asks main
 to add/remove/open, the same pattern the tab strip already uses for tabs.
 
 **Tabs show real favicons.** This directory only ever receives a `data:` URL
 (or `null`) on `TabState.favicon` and renders it as an `<img>`, falling back to a generic globe
-on `null` or a load failure; it never fetches a favicon itself. `src/main/favicon.ts` does the
+on `null` or a load failure; it never fetches a favicon itself. `src/main/browsing/favicon.ts` does the
 actual fetching, capped and re-encoded to `data:`, specifically so this privileged view's CSP
 can stay `img-src 'self' data:` rather than opening it to arbitrary third-party hosts.
 
@@ -93,7 +93,7 @@ trip from the toolbar permission key's `appPermissionsFor`, because the two answ
 different questions (what this app may do, versus where its bytes came from), and upgrades to
 `.cached` if the answer says so. The tooltip text is `"Running from local cache, pinned"`, quoted
 directly from `ADR-0007`'s own wording rather than paraphrased, so the two can never read
-differently. `src/main/delivery-provenance.ts` is deliberately built on the loader's own
+differently. `src/main/browsing/delivery-provenance.ts` is deliberately built on the loader's own
 protocol-handler registry, never the broker's `isRegisteredSync`, since the latter means only "a
 manifest is registered," not "this origin's scheme is actually being answered from disk," and
 the difference is exactly the false-claim risk this feature exists to avoid.

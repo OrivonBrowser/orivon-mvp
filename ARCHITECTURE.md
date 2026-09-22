@@ -67,7 +67,7 @@ throw anything away.
 | [`src/contracts/`](src/contracts/) | The `orivon.*` interface, types only | **No. This is the asset.** It imports nothing, by enforced rule |
 | [`src/broker/policy/`](src/broker/policy/) | Pure decision functions: capability matching, path confinement, origin derivation | **No.** No Electron, no I/O, portable anywhere |
 | [`src/broker/`](src/broker/) | Grants, prompts, session partitions, handle tables | Partly: the decisions are portable, the OS plumbing relies on Electron |
-| [`src/main/`](src/main/) | Window, tabs, omnibox, subsystem registry | **Entirely. Knowingly disposable** |
+| [`src/main/`](src/main/) | Window, tabs, consent dialogs, permissions, app install, subsystem registry | **Entirely. Knowingly disposable** |
 | [`src/preload/`](src/preload/) | The privilege boundary | **Entirely.** "preload" is an Electron concept |
 | [`src/loader/`](src/loader/) | Manifest discovery, fetch, cache, hash-pinning, the update decision | Partly: the update decision is pure policy; fetching and serving the cache are Electron-specific machinery |
 | [`src/shim/`](src/shim/) | Node's `net`/`dgram`/`fs` over `orivon.*` | **Entirely.** A compatibility layer, by design temporary |

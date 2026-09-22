@@ -29,6 +29,14 @@ no single one of them. Tests live in a `tests/` folder **inside** the directory 
 > the copy that wins. Nothing in this ADR changed; the rule simply stopped being the broker's.
 > The five-directory decomposition below remains broker-specific and is **not** claimed as a
 > template for other directories; most are far too small to want it.
+>
+> **Amendment, 2026-09-22.** `src/main/` was large enough to want the naming convention, not the
+> directory count: [`ADR-0021`](ADR-0021-src-main-is-organised-by-job.md) groups it into nine
+> job-named directories, more than this ADR's five, because `src/main/`'s 42 files do not
+> decompose evenly into five. The prior amendment's claim stands: this ADR's own five-directory
+> shape is still not a template, but the *convention* — name a directory for the job, declare
+> what it must never import, carry a README on the shared template — now has a second
+> application.
 
 ## Context
 

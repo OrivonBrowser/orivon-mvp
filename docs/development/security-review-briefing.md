@@ -77,7 +77,7 @@ personally, because that is where mistakes have actually happened. Suggested wei
    real: a socket that survived revocation, a `close()` that never resolved.
 3. `src/broker/grants/`: what is remembered across restarts, and for which origin.
 4. `src/preload/`: the trust boundary itself, and `contextBridge`/`executeInMainWorld` use.
-5. `src/main/tabs.ts` and `window.ts`: partitions and tab identity.
+5. `src/main/shell/tabs.ts` and `window.ts`: partitions and tab identity.
 6. `src/loader/`: fetching and caching app code, and the bundle hash that pins it.
 
 ## 4. Verifying a claim
