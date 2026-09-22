@@ -258,6 +258,15 @@ export interface Loader {
    * since the floor check now passes.
    */
   reconsider(canonicalOrigin: string, manifest: Manifest, tree: BundleTree, entries: readonly BundleEntry[], context: LoadContext): Promise<LoadResult>
+
+  /**
+   * The pin currently on disk for `origin`, or `null` if never pinned or
+   * unreadable -- `../main/browsing/site-trust.js`'s own read of what is
+   * actually there, with no network call and no side effect, unlike
+   * `load()`. Same parse `decideAndRoute` uses internally, exposed
+   * read-only.
+   */
+  pinFor(origin: string): Promise<PinRecord | null>
 }
 
 /**
@@ -462,5 +471,9 @@ export function createLoader (options: CreateLoaderOptions): Loader {
     return await installAndNotify(options, canonicalOrigin, manifest, tree, entries, true)
   }
 
-  return { load, reconsider, installFetched }
+  async function pinFor (origin: string): Promise<PinRecord | null> {
+    return parsePinRecord(await options.storage.readPin(origin))
+  }
+
+  return { load, reconsider, installFetched, pinFor }
 }

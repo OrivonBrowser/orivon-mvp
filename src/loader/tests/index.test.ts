@@ -477,6 +477,41 @@ describe('createLoader: refetch against an existing pin', () => {
   })
 })
 
+// The site-info popover's Web3 Score page (../../main/browsing/site-
+// trust.js) reads the pin without re-fetching or re-deciding anything --
+// exactly the parse `decideAndRoute` uses internally, exposed read-only.
+describe('createLoader: pinFor', () => {
+  it('null for an origin that has never been pinned', async () => {
+    const storage = memoryStorage()
+    const loader = createLoader({ fetch: stubFetch({}), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER })
+
+    expect(await loader.pinFor(ORIGIN)).toBeNull()
+  })
+
+  it('the current pin, after a fresh install', async () => {
+    const storage = memoryStorage()
+    const routes: Record<string, RouteSpec> = {
+      [MANIFEST_URL]: { body: utf8(manifestJson({})) },
+      [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
+    }
+    const loader = createLoader({ fetch: stubFetch(routes), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER })
+    await loader.load(ORIGIN, NO_GRANTS)
+
+    const pin = await loader.pinFor(ORIGIN)
+
+    expect(pin?.origin).toBe(ORIGIN)
+    expect(pin?.version).toBe('1.0.0')
+  })
+
+  it('null, not a throw, when the stored pin fails to parse', async () => {
+    const storage = memoryStorage()
+    storage.pins.set(ORIGIN, { not: 'a real pin record' })
+    const loader = createLoader({ fetch: stubFetch({}), storage, now: fixedNow(), resolve: PUBLIC_RESOLVER })
+
+    expect(await loader.pinFor(ORIGIN)).toBeNull()
+  })
+})
+
 // One suite against the real node:fs storage rather than memoryStorage: the
 // failure this guards against is a DISK state (a fully written bundle with
 // no pin record), which an in-memory stub cannot produce.

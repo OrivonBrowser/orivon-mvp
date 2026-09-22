@@ -136,7 +136,8 @@ describe('installFromHint', () => {
         return { outcome: 'rejected', reason: 'unused' }
       }),
       installFetched: vi.fn(async () => { throw new Error('installFetched was not stubbed for this test') }),
-      reconsider: vi.fn(async () => { throw new Error('reconsider was not stubbed for this test') })
+      reconsider: vi.fn(async () => { throw new Error('reconsider was not stubbed for this test') }),
+      pinFor: vi.fn(async () => null)
     }
     const deps: AppInstallDeps = { broker, loader }
 
