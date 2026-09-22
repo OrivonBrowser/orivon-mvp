@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createTokenBucketLimiter } from '../token-bucket.js'
+import { createPacingLimiter, createTokenBucketLimiter } from '../token-bucket.js'
 
 const APP = 'https://app.example'
 const OTHER = 'https://other.example'
@@ -153,5 +153,77 @@ describe('createTokenBucketLimiter -- reaping an idle origin (R1-02)', () => {
     limiter.tryConsume(OTHER) // ticks the sweep
 
     expect(limiter.size()).toBe(2) // APP's still-partial bucket survives alongside OTHER's
+  })
+})
+
+describe('createPacingLimiter', () => {
+  /** A sleep that records every requested delay and resolves at once, so no test waits on a real timer. */
+  function recordingSleep (): { sleep: (ms: number) => Promise<void>, delays: number[] } {
+    const delays: number[] = []
+    return { delays, sleep: async (ms) => { delays.push(ms) } }
+  }
+
+  it('admits without waiting while the bucket still holds a token', async () => {
+    const clock = fakeClock()
+    const { sleep, delays } = recordingSleep()
+    const limiter = createPacingLimiter({ capacity: 2, refillPerSecond: 10, maxWaitMs: 1_000, now: clock.now, sleep })
+
+    expect(await limiter.admit(APP)).toBe(true)
+    expect(await limiter.admit(APP)).toBe(true)
+    expect(delays).toEqual([])
+  })
+
+  it('past the bucket, a caller WAITS for its own token instead of being refused', async () => {
+    const clock = fakeClock()
+    const { sleep, delays } = recordingSleep()
+    const limiter = createPacingLimiter({ capacity: 1, refillPerSecond: 10, maxWaitMs: 1_000, now: clock.now, sleep })
+
+    await limiter.admit(APP)
+    expect(await limiter.admit(APP)).toBe(true)
+    expect(await limiter.admit(APP)).toBe(true)
+
+    // Each borrowed token is one refill interval (100 ms) further out than the last.
+    expect(delays).toEqual([100, 200])
+  })
+
+  it('refuses, spending nothing, once the wait would exceed maxWaitMs', async () => {
+    const clock = fakeClock()
+    const { sleep, delays } = recordingSleep()
+    const limiter = createPacingLimiter({ capacity: 1, refillPerSecond: 10, maxWaitMs: 200, now: clock.now, sleep })
+
+    await limiter.admit(APP)
+    await limiter.admit(APP) // waits 100
+    await limiter.admit(APP) // waits 200
+    expect(await limiter.admit(APP)).toBe(false) // would wait 300
+    expect(await limiter.admit(APP)).toBe(false) // the refusal borrowed nothing
+
+    clock.advance(100) // one token's worth repays one step of the debt
+    expect(await limiter.admit(APP)).toBe(true)
+    expect(delays).toEqual([100, 200, 200])
+  })
+
+  it('one origin waiting never delays a different origin', async () => {
+    const clock = fakeClock()
+    const { sleep, delays } = recordingSleep()
+    const limiter = createPacingLimiter({ capacity: 1, refillPerSecond: 10, maxWaitMs: 1_000, now: clock.now, sleep })
+
+    await limiter.admit(APP)
+    await limiter.admit(APP) // APP now in debt
+
+    expect(await limiter.admit(OTHER)).toBe(true)
+    expect(delays).toEqual([100])
+  })
+
+  it('reaps an origin once its bucket has fully recovered, debt included', async () => {
+    const clock = fakeClock()
+    const { sleep } = recordingSleep()
+    const limiter = createPacingLimiter({ capacity: 1, refillPerSecond: 10, maxWaitMs: 1_000, now: clock.now, sleep })
+
+    await limiter.admit(APP)
+    await limiter.admit(APP) // one token of debt
+    clock.advance(200) // repays the debt and refills the bucket
+    await limiter.admit(OTHER) // ticks the sweep
+
+    expect(limiter.size()).toBe(1)
   })
 })
