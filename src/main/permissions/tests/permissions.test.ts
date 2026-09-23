@@ -5,7 +5,7 @@ import { rejection } from '../../../broker/handles/tests/handles.test-helpers.js
 import type { Broker, PickPathResult } from '../../../broker/broker-contracts.js'
 import type { FailableDirectoryHandle } from '../../../broker/handles/handle-contracts.js'
 import type { Grant } from '../../../contracts/index.js'
-import { buildAppPermissions, createPermissionsController, describePickedPath, PermissionsRegistry, buildPersistedAppPermissions } from '../permissions.js'
+import { buildAppPermissions, createPermissionsController, createSiteNotificationsController, describePickedPath, describeSiteNotifications, PermissionsRegistry, buildPersistedAppPermissions } from '../permissions.js'
 import type { SubsystemContext } from '../../registry.js'
 
 // Item 4.4's exit criterion, checked directly: "revoking from the list
@@ -340,5 +340,36 @@ describe('end to end: a real picked directory, listed and revoked through Permis
   it('revokePickedPath is a no-op when no broker is published yet', async () => {
     const controller = createPermissionsController(ctxWith(undefined))
     await expect(controller.revokePickedPath(APP, 'pick-1')).resolves.toBeUndefined()
+  })
+})
+
+// A site's notification answer is a Chromium permission, not an orivon.*
+// grant, so it is listed on its own, one row per site, and "reset" forgets
+// it: the site asks again next time rather than being blocked.
+describe('site notification rows', () => {
+  function memoryDecisions (entries: Array<{ origin: string, decision: 'allow' | 'block' }>) {
+    const map = new Map(entries.map(({ origin, decision }) => [origin, decision]))
+    return {
+      entries: () => [...map].map(([origin, decision]) => ({ origin, decision })),
+      forget: (origin: string) => { map.delete(origin) }
+    }
+  }
+
+  it('describes each decided site in words, allowed or blocked, sorted by origin', () => {
+    expect(describeSiteNotifications([
+      { origin: 'https://news.example', decision: 'block' },
+      { origin: 'https://chat.example', decision: 'allow' }
+    ])).toEqual([
+      { origin: 'https://chat.example', allowed: true, message: 'Can show notifications.' },
+      { origin: 'https://news.example', allowed: false, message: 'Blocked from showing notifications.' }
+    ])
+  })
+
+  it('lists them through the controller, and resetting one forgets it', () => {
+    const decisions = memoryDecisions([{ origin: 'https://chat.example', decision: 'allow' }, { origin: 'https://news.example', decision: 'block' }])
+    const controller = createSiteNotificationsController(decisions)
+
+    controller.reset('https://news.example')
+    expect(controller.list()).toEqual([{ origin: 'https://chat.example', allowed: true, message: 'Can show notifications.' }])
   })
 })
