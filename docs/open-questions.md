@@ -1125,7 +1125,10 @@ nothing that navigation does not already leave open. The header today is built i
 `src/loader/serve-csp.ts`, not `serve.ts`, and admits more than it did: `'unsafe-eval'`,
 `'wasm-unsafe-eval'`, `data:`/`blob:` in the subresource directives, `worker-src 'self' blob:`,
 `frame-src 'self' data: blob:`, and `https.connect`'s sources in `connect-src` (`d-0045` to
-`d-0047`).
+`d-0047`). And `connect-src` is no longer the only gate an app tab's WebSocket meets: the page's
+own top-level socket to a granted host is routed over `orivon.net` and grant-checked by the broker
+on the dial (`d-0089`). A native socket (an ungranted host, a worker, a subframe) still meets only
+CSP (A210).
 
 ### A43 — a grant CSP cannot represent is omitted, which means BLOCKED, not merely uncovered **[OWNER DECISION]**
 
@@ -6895,8 +6898,10 @@ emits (a bare `host:port`, `https://host:port`, or `https:`) admits a `wss:` URL
 `fetch` included, reaches the app's own `protocol.handle` and is re-authorised there against the
 live grant, which still refuses loopback and private addresses (measured with a loopback server
 the page could name in the header and that never saw a connection). This is the one source the
-header emits that is wider than the grant, and `connect-src.ts`'s header says so. The cost of the
-measurement's other half is A210: an installed app cannot open a third-party WebSocket at all.
+header emits that is wider than the grant, and `connect-src.ts`'s header says so. The
+measurement's other half is A210: no emitted source admits `wss:`, so a native WebSocket to a
+third-party host is refused; the page's own top-level socket to a granted host is routed instead
+(`d-0089`).
 
 ### A178 -- `grant-ledger.ts` reached exactly Rule 2's 500-line limit, and a second file is six lines from it **[RESOLVED 2026-09-15 for the first; NOTED for the second]**
 
@@ -8599,19 +8604,22 @@ Nothing in the main world can recover what the guard dropped.
 network path's remaining divergences"). **What would settle it otherwise:** a real app that
 builds its `Request` objects up front and needs a forbidden header on them.
 
-### A210 -- an installed app cannot open a third-party WebSocket **[STILL OPEN]**
+### A210 -- should a worker's or a subframe's WebSocket ever reach a granted host? **[AI-REC]**
 
-Filed 2026-09-22, found by the measurement behind A192's resolution (`test/e2e-served-csp.test.ts`,
-Electron 44). From an https page, none of the source forms the served header emits for a grant
-(a bare `host:port`, `https://host:port`, or `https:`) admits a `wss:` URL, and the routed path
-carries `fetch`, `XMLHttpRequest` and `EventSource` but no WebSocket. So a WebSocket to a granted
-third-party host fails on an installed app, and on a dev-granted origin, which is served the same
-header (`d-0049`). A plain website is unaffected: it has no Orivon CSP.
+Filed 2026-09-22, from the measurement behind A192's resolution (`test/e2e-served-csp.test.ts`,
+Electron 44): from an https page, none of the source forms the served header emits for a grant
+(a bare `host:port`, `https://host:port`, or `https:`) admits a `wss:` URL. An app tab's own
+top-level `WebSocket` to a granted cross-origin host does not meet that header: it is routed
+over `orivon.net`, as `fetch` is (`d-0089`), and the broker checks the grant on the dial. Every
+other socket stays the platform's own and meets only CSP, so a native socket to any third-party
+host is refused: one to a host the app was not granted, one opened from a worker or a subframe
+(the preload runs only in a tab's top-level frame), and the same on a dev-granted origin, which
+is served the same header (`d-0049`). A same-origin socket is admitted by `connect-src 'self'`.
 
-**What would settle it:** routing `WebSocket` through the capability as `fetch` is, so the grant
-check happens on the dial and CSP never has to name a `wss:` source. Emitting `wss:` sources
-instead would make CSP the only gate a WebSocket meets, with no live re-check behind it.
-**Needed by:** any ported app that talks to its backend over a WebSocket.
+**The open part:** a worker or a subframe that opens a WebSocket to a host the app *was* granted
+is refused too. **AI recommendation:** leave it refused for this build. Admitting it means
+emitting `wss:` sources, which would make CSP the only gate those sockets meet, with no live
+re-check behind it. **What would settle it:** a ported app that runs its socket in a worker.
 
 ### A211 -- the reach path's CORS headers and `web-context-host.ts`'s CORS wrapper are inert in Electron 44 **[RESEARCH]**
 
@@ -8943,3 +8951,33 @@ hourly interval.
 **What would settle it:** measuring whether `net.request` in Electron 44 serves a fresh cached
 manifest without revalidating, and if it does, sending the check with a cache mode that always
 revalidates.
+
+### A239 -- a routed WebSocket holds a socket-allowance slot for its whole life **[AI-REC -- provisional]**
+
+Filed 2026-09-22 with `d-0089`. A routed WebSocket dials through the same queue as routed
+`fetch` and XHR and holds one of the origin's socket-allowance slots until it closes; the
+allowance is shared (ASGARDEX declares 32). A dapp holding many subscription sockets narrows what
+its `fetch` calls can dial, and past the allowance requests queue for up to 120 s (A206).
+
+**What would settle it:** measuring how many sockets ASGARDEX or a WalletConnect session holds
+open, then deciding whether a WebSocket gets an allowance of its own.
+
+### A240 -- the dev CSP refuses a hot-reload WebSocket on another port **[AI-REC -- provisional]**
+
+Filed 2026-09-22 with `d-0090`. A dev server's hot-reload socket on the page's own host and port
+is admitted by `connect-src 'self'` (measured in Electron 44, `test/e2e-websocket-routing.test.ts`),
+so the dev CSP adds no `ws:` source for it. A dev server configured to put that socket on another
+port (Vite's `server.hmr.port`, Parcel's `--hmr-port`) is refused.
+
+**What would settle it:** whether the dev path should admit `ws://<page host>:*`. Provisional
+reason not to yet: Vite, webpack-dev-server, Next.js and Parcel all default to the same port.
+
+### A241 -- a native WebSocket refused by CSP fires `error` and goes `CLOSED` without a `close` event **[RESEARCH -- a porting trap]**
+
+Filed 2026-09-22. Measured in Electron 44: when the page's CSP refuses a native WebSocket, it
+fires `error`, and its `readyState` becomes `CLOSED`, but no `close` event follows. An app that
+waits only for `onclose` to reconnect or give up hangs. This is platform behaviour, and the
+routed path passes it on unchanged for a socket it hands to the native constructor.
+
+**Recorded as a trap for porters:** listen for `error` as well as `close`. **What would settle
+it:** Chromium firing `close` after the refusal, which would make this entry obsolete.
