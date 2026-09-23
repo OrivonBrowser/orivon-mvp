@@ -33,17 +33,15 @@ import type { Manifest, Pattern } from '../contracts/index.js'
 import { entryCanonicalPath } from './fetch-bundle.js'
 import { parseManifest } from './manifest.js'
 import type { PinCoverageOutcome } from './pin-coverage.js'
-import { contentTypeFor } from './serve-content-type.js'
-import { cspHeaderValue } from './serve-csp.js'
+import { buildResponse, openServable } from './serve-asset.js'
+import type { RetainedVerdicts } from './serve-asset.js'
 import { isCorsPreflight, preflightResponse, withReachCors } from './serve-reach-cors.js'
 import { guardReachResponse } from './serve-reach-guard.js'
 import type { ReleaseReachSlot, ReserveReachSlot } from './serve-reach-guard.js'
 import { createRedirectChains, MAX_REACH_REDIRECTS, redirectTarget } from './serve-reach-redirects.js'
 import type { RedirectChains } from './serve-reach-redirects.js'
-import { parseRange } from './serve-range.js'
 import { verifyPinnedTree } from './serve-verify.js'
 import { isNavigationRequest, resolveRequestPath } from './serve-path.js'
-import { leafOf } from './leaf-hash.js'
 import type { LoaderStorage } from './storage.js'
 
 export type AppRequestHandler = (request: Request) => Promise<Response>
@@ -102,8 +100,8 @@ export type ReachDial = (request: Request, host: string, port: number) => Promis
  * Reports one request's pin-coverage outcome (pin-coverage.ts), called once
  * per request alongside the response it produced -- same "supply a callback,
  * every existing caller passes `undefined`" shape as the patterns above.
- * `bytes` is read from what the response already carries (`Uint8Array.length`
- * for a pinned asset, the peer's own `content-length` header for a
+ * `bytes` is read from the `content-length` the response already carries
+ * (the served slice for a pinned asset, the peer's own header for a
  * third-party one), never measured by buffering -- see pin-coverage.ts.
  */
 export type RecordPinCoverage = (outcome: PinCoverageOutcome, bytes?: number) => void
@@ -121,57 +119,6 @@ function contentLengthOf (response: Response): number | undefined {
   if (header === null) return undefined
   const length = Number(header)
   return Number.isFinite(length) && length >= 0 ? length : undefined
-}
-
-/**
- * Turns `content` into the actual `Response`, honouring a `Range` request.
- *
- * CSP LIVES HERE, NOT IN `onHeadersReceived` -- A110 (docs/open-questions.md)
- * confirmed that listener never fires for a `protocol.handle`-served
- * response in this Electron version. This function fully controls the
- * `Response` it builds, so the header goes straight on it; the caller
- * supplies fresh `connectPatterns` on every call (see
- * `GrantedConnectPatterns`'s own doc) rather than this function or its
- * caller caching them across requests. Set on every served asset, not only
- * the entry document: a worker script served through this same handler
- * inherits its OWN response's CSP, never the document's (README.md's Design
- * notes).
- */
-function buildResponse (
-  content: Uint8Array,
-  canonicalPath: string,
-  rangeHeader: string | null,
-  connectPatterns: readonly Pattern[],
-  securePatterns: readonly Pattern[]
-): Response {
-  const contentType = contentTypeFor(canonicalPath)
-  const csp = cspHeaderValue(connectPatterns, securePatterns)
-  const total = content.length
-  const range = parseRange(rangeHeader, total)
-
-  if (range.kind === 'unsatisfiable') {
-    return new Response(null, { status: 416, headers: { 'content-range': `bytes */${total}`, 'accept-ranges': 'bytes', 'content-security-policy': csp } })
-  }
-
-  if (range.kind === 'none') {
-    return new Response(content as BodyInit, {
-      status: 200,
-      headers: { 'content-type': contentType, 'content-length': String(total), 'accept-ranges': 'bytes', 'content-security-policy': csp }
-    })
-  }
-
-  const { start, end } = range.range
-  const chunk = content.subarray(start, end + 1)
-  return new Response(chunk as BodyInit, {
-    status: 206,
-    headers: {
-      'content-type': contentType,
-      'content-length': String(chunk.length),
-      'content-range': `bytes ${start}-${end}/${total}`,
-      'accept-ranges': 'bytes',
-      'content-security-policy': csp
-    }
-  })
 }
 
 /** Per-handler state and identity for `fetchThirdParty`; see its doc. */
@@ -383,6 +330,7 @@ export async function createAppRequestHandler (
 
   const entryPath = entryCanonicalPath(origin, manifest.entry)
   const reachOptions: ReachOptions = { appOrigin: origin, redirects: createRedirectChains() }
+  const retainedVerdicts: RetainedVerdicts = new Map()
 
   return async (request: Request): Promise<Response> => {
     // Every https/http request inside this app's OWN partition passes
@@ -406,32 +354,25 @@ export async function createAppRequestHandler (
     }
     if ('redirectTo' in resolved) return new Response(null, { status: 302, headers: { location: resolved.redirectTo } })
 
-    const content = await storage.readAsset(origin, resolved.canonicalPath)
-    if (content !== undefined && resolved.retainedLeaf !== undefined &&
-        await leafOf(resolved.canonicalPath, content.length, [content]) !== resolved.retainedLeaf) {
+    const servable = await openServable(storage, origin, resolved.canonicalPath, resolved.retainedLeaf, retainedVerdicts)
+    if (!servable.ok) {
       recordCoverage?.('denied')
-      return denyResponse('a previous version\'s file no longer matches what was pinned')
-    }
-    if (content === undefined) {
-      // verifyPinnedTree above already read every pinned asset successfully
-      // at handler-creation time -- reaching this branch means the file was
-      // removed from disk AFTER that, during this same process run. Same
-      // fail-closed answer as never having been readable.
-      recordCoverage?.('denied')
-      return denyResponse('cached asset became unavailable after this app was loaded')
+      return denyResponse(servable.reason)
     }
 
-    const connectPatterns = grantedConnectPatterns === undefined ? [] : await grantedConnectPatterns()
-    const securePatterns = grantedSecurePatterns === undefined ? [] : await grantedSecurePatterns()
-    const response = buildResponse(content, resolved.canonicalPath, request.headers.get('range'), connectPatterns, securePatterns)
-    // A175: record what buildResponse actually SENT, not `content.length`
-    // (the whole pinned asset) -- a Range request serves only a slice, and
-    // an unsatisfiable one (416) serves no body at all, so counting the
-    // full asset size there inflates pinned coverage by bytes that were
-    // never on the wire. `content-length` is always set by buildResponse on
-    // a 200/206; a 416 carries none, but that is a KNOWN zero (no body was
-    // built), not a size that could not be measured, so it must read as 0,
-    // never trip `bytesIncomplete` (pin-coverage.ts's own contract).
+    let connectPatterns: readonly Pattern[]
+    let securePatterns: readonly Pattern[]
+    try {
+      connectPatterns = grantedConnectPatterns === undefined ? [] : await grantedConnectPatterns()
+      securePatterns = grantedSecurePatterns === undefined ? [] : await grantedSecurePatterns()
+    } catch (error) {
+      await servable.asset.close()
+      throw error
+    }
+    const response = await buildResponse(servable.asset, resolved.canonicalPath, request.headers.get('range'), connectPatterns, securePatterns)
+    // A175: record what was actually SENT -- a Range request serves only a
+    // slice, and a 416 serves no body at all, a KNOWN zero rather than a size
+    // that could not be measured (pin-coverage.ts's `bytesIncomplete`).
     recordCoverage?.('pinned', response.status === 416 ? 0 : contentLengthOf(response))
     return response
   }

@@ -198,11 +198,22 @@ pruning at install turned each of those into a 404 and a `ChunkLoadError`. So
 [`install.ts`](install.ts) leaves every superseded file on disk, and `electron-serve.ts` keeps
 serving them for the rest of the process: `registerServingFor` remembers every path each pin it
 served declared (`servedAssets`) and hands the new handler the ones the new pin dropped
-(`retainedAssets`), which [`serve-path.ts`](serve-path.ts) answers only after checking the file
-still hashes to the leaf it was pinned with. A path both pins declare is overwritten, so only the
+(`retainedAssets`), which [`serve-path.ts`](serve-path.ts) resolves and
+[`serve-asset.ts`](serve-asset.ts) serves only after checking the file still hashes to the leaf
+it was pinned with. That check reads the whole file, so its verdict is kept per file identity
+(size, modification time and inode, read from the same open handle the bytes are served from)
+and pinned leaf: a retained chunk is hashed once, not on every request, and a file rewritten on
+disk gets a new identity and is checked again. A path both pins declare is overwritten, so only the
 new bytes exist; that is the entry document and any unhashed file, which the reload fetches anyway.
 `restorePinnedServing` prunes to the verified pin, and clears any staging a crash left, at the
 next start, before any page can still need the old files.
+
+**A served asset streams from disk; a request costs the bytes it sends.** The handler opens the
+asset ([`storage.ts`](storage.ts)'s `openAsset`) and [`serve-asset.ts`](serve-asset.ts) streams
+the requested range off that handle in 64 KiB chunks, closing it when the body ends or is
+cancelled, so neither a 64 MiB asset nor a Range request into one is ever held whole. Reading
+through one handle also means a file replaced mid-response keeps serving the bytes it started
+with; a file cut short under it fails the body rather than ending it early.
 
 **Re-verification cost: whole-tree, once, at handler creation, not one leaf hash per request.**
 [`ADR-0007`](../../docs/decisions/ADR-0007-cached-bundles-served-at-their-own-origin.md) requires

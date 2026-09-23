@@ -22,6 +22,20 @@ export interface AssetStream {
   readonly chunks: AsyncIterable<Uint8Array>
 }
 
+/**
+ * One asset opened for serving. Every read comes from the file as it was
+ * when opened, even if it is replaced on disk meanwhile. `close` releases it
+ * and may be called more than once.
+ */
+export interface OpenedAsset {
+  readonly byteLength: number
+  /** Changes whenever the file's bytes may have: its size, modification time or inode. */
+  readonly identity: string
+  /** Bytes `start` through `end` inclusive, in bounded chunks. Throws if the file ends early. */
+  read(start: number, end: number): AsyncIterable<Uint8Array>
+  close(): Promise<void>
+}
+
 /** One file being written into an origin's staging area; `id` names it to `readStaged`/`commitStaged`. */
 export interface StagingWriter {
   readonly id: string
@@ -112,6 +126,8 @@ export interface LoaderStorage {
   commitStaged(origin: string, id: string, path: string): Promise<void>
   /** `readAsset`'s streaming form, same never-throws, undefined-on-anything contract. */
   readAssetStream(origin: string, path: string): Promise<AssetStream | undefined>
+  /** Opens an asset for serving a byte range of it; same never-throws, undefined-on-anything contract. */
+  openAsset(origin: string, path: string): Promise<OpenedAsset | undefined>
 }
 
 /**
