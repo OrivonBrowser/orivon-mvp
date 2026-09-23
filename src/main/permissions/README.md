@@ -4,12 +4,15 @@
 9 — a grant lasts until revoked, and is visible in a list the user can revoke from). Revoke
 only; there is no "forget this app entirely" here, that is `GrantLedger.forgetOrigin`.
 `permissions-panel.ts`: queue item 4.4's in-window panel hanging off the toolbar's permission
-key.
+key. `permissions.ts` also turns each site's remembered notification answer into a row a person
+can reset (`createSiteNotificationsController`): a Chromium permission, not an `orivon.*` grant,
+so it is its own list, and resetting it means the site asks again.
 
 **What it depends on.** `electron`, [`../../contracts/`](../../contracts/),
 [`../../broker/`](../../broker/) (`broker-contracts.ts`, `policy/origin.ts`,
 `policy/request-grant.ts`, `grants/ledger-storage.ts` types), [`../../loader/manifest.ts`](../../loader/manifest.ts),
-[`../consent/grant-prompt-render.ts`](../consent/grant-prompt-render.ts), and, inside `src/main/`,
+[`../consent/grant-prompt-render.ts`](../consent/grant-prompt-render.ts),
+[`../sessions/notification-decisions.ts`](../sessions/notification-decisions.ts) (type only), and, inside `src/main/`,
 `../shell/renderer-entry.ts`, `../ipc/settings-ipc.ts`, the top-level `channels.ts`/`registry.ts`.
 
 **What it must never import.** Nothing bypasses `PermissionsController`. Both renderer surfaces

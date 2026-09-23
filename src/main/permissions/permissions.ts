@@ -31,6 +31,7 @@ import { isCapabilityKind } from '../../broker/policy/request-grant.js'
 import { UNSAFE_TEXT_CHARS } from '../../loader/manifest.js'
 import type { PersistedApp, PersistedPick } from '../../broker/grants/ledger-storage.js'
 import type { SubsystemContext } from '../registry.js'
+import type { NotificationDecision } from '../sessions/notification-decisions.js'
 
 /** One granted capability, rendered in the install prompt's own words
  * (`describeCapabilityGrant`) -- "same fact, same words" between the two
@@ -163,6 +164,47 @@ function displayableName (name: string | undefined): string | undefined {
   if (name.length === 0 || name.length > MAX_DISPLAYED_NAME_LENGTH) return undefined
   if (UNSAFE_TEXT_CHARS.test(name)) return undefined
   return name
+}
+
+/**
+ * One site's remembered answer to "may this site show notifications?". A
+ * Chromium permission, not an `orivon.*` grant, so it is its own list, one
+ * row per site, app or not. Resetting forgets the answer: the site asks
+ * again next time, rather than being blocked.
+ */
+export interface SiteNotificationRow {
+  readonly origin: string
+  readonly allowed: boolean
+  readonly message: string
+}
+
+/** The store `../sessions/notification-decisions.ts` keeps, as this list reads it. */
+export interface SiteNotificationSource {
+  entries: () => ReadonlyArray<{ origin: string, decision: NotificationDecision }>
+  forget: (origin: string) => void
+}
+
+export function describeSiteNotifications (entries: ReadonlyArray<{ origin: string, decision: NotificationDecision }>): SiteNotificationRow[] {
+  return [...entries]
+    .sort((a, b) => a.origin.localeCompare(b.origin))
+    .map(({ origin, decision }) => decision === 'allow'
+      ? { origin, allowed: true, message: 'Can show notifications.' }
+      : { origin, allowed: false, message: 'Blocked from showing notifications.' })
+}
+
+/** What the permissions panel calls for the site list, over IPC. Kept apart
+ * from `PermissionsController`: these rows never touch the broker. */
+export interface SiteNotificationsController {
+  list: () => readonly SiteNotificationRow[]
+  /** Forgets one site's answer; it is asked again on its next request. */
+  reset: (origin: string) => void
+}
+
+export function createSiteNotificationsController (sites: SiteNotificationSource): SiteNotificationsController {
+  return {
+    list: () => describeSiteNotifications(sites.entries()),
+    reset: (origin) => { sites.forget(origin) }
+  }
 }
 
 /** Matches `manifest.ts`'s own MAX_NAME_LENGTH. Not imported because that constant is private to it; kept equal deliberately, and the test asserts the boundary. */
