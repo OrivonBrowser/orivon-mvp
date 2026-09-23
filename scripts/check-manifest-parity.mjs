@@ -1,6 +1,14 @@
 /**
  * Fails the build if src/contracts/manifest.ts declares an interface field
- * the loader's own manifest parser does not list in its allowlist.
+ * the loader's own manifest parser does not list in its allowlist, or the
+ * allowlist names a field the contract does not declare.
+ *
+ * The loader ignores (with a warning) an unknown TOP-LEVEL manifest field and
+ * rejects an unknown field anywhere inside `capabilities`. So a top-level gap
+ * is silent at run time: the field the author wrote is dropped, not refused,
+ * and this check is what still makes it loud. A stale top-level entry would
+ * suppress the warning that names an unknown field, and a stale capability
+ * entry would accept a field the contract never specified.
  *
  * Both sides are read from their REAL source text, never copied into this
  * script -- a list compared against a second hand-typed list is just a
@@ -177,14 +185,17 @@ function readSafe (path) {
  *   PARITY_MAP and DELIBERATELY_DEFERRED above.
  * @returns {{ ok: boolean,
  *   gaps: Array<{interfaceName: string, field: string, loaderFile: string, arrayName: string}>,
+ *   stale: Array<{interfaceName: string, field: string, loaderFile: string, arrayName: string}>,
  *   unreadable: string[],
  *   missingReadonly: Array<{interfaceName: string, field: string}> }}
- *   `unreadable` names an interface or array this check could not find at
- *   all. `missingReadonly` names a field this check found without the
- *   `readonly` keyword (A176 point 2) -- reported on its own, independent of
- *   `gaps`, because the missing keyword is a defect even when the field's
- *   name already happens to be in the loader's allowlist. All three make
- *   `ok` false whenever any is non-empty.
+ *   `gaps` are contract fields the loader array lacks; `stale` are loader
+ *   array entries the contract does not declare. `unreadable` names an
+ *   interface or array this check could not find at all. `missingReadonly`
+ *   names a field this check found without the `readonly` keyword (A176
+ *   point 2) -- reported on its own, independent of `gaps`, because the
+ *   missing keyword is a defect even when the field's name already happens
+ *   to be in the loader's allowlist. Any of the four non-empty makes `ok`
+ *   false.
  */
 export function checkManifestParity (root, options = {}) {
   const parityMap = options.parityMap ?? PARITY_MAP
@@ -192,6 +203,7 @@ export function checkManifestParity (root, options = {}) {
   const contractSource = readSafe(join(root, CONTRACT_FILE))
 
   const gaps = []
+  const stale = []
   const unreadable = []
   const missingReadonly = []
 
@@ -227,14 +239,17 @@ export function checkManifestParity (root, options = {}) {
       if (deferred.some((d) => d.interfaceName === interfaceName && d.field === field)) continue
       gaps.push({ interfaceName, field, loaderFile, arrayName })
     }
+    for (const field of loaderKeys) {
+      if (!contractFields.includes(field)) stale.push({ interfaceName, field, loaderFile, arrayName })
+    }
   }
 
-  const ok = gaps.length === 0 && unreadable.length === 0 && missingReadonly.length === 0
-  return { ok, gaps, unreadable, missingReadonly }
+  const ok = gaps.length === 0 && stale.length === 0 && unreadable.length === 0 && missingReadonly.length === 0
+  return { ok, gaps, stale, unreadable, missingReadonly }
 }
 
 if (isInvokedDirectly(import.meta.url)) {
-  const { ok, gaps, unreadable, missingReadonly } = checkManifestParity(process.cwd())
+  const { ok, gaps, stale, unreadable, missingReadonly } = checkManifestParity(process.cwd())
 
   if (!ok) {
     if (unreadable.length > 0) {
@@ -260,11 +275,21 @@ if (isInvokedDirectly(import.meta.url)) {
         console.error(`  ${interfaceName}.${field} -- missing from ${arrayName} in ${loaderFile}`)
       }
       console.error(
-        '\nAn app author reading the contract will use this field as documented and be' +
-        '\nrefused at install, blamed for a gap that is not theirs (docs/open-questions.md' +
-        '\nA164). Either implement it and add it to the array named above, or -- if it is' +
-        "\ndeliberately not built yet -- add it to this script's own DELIBERATELY_DEFERRED" +
-        '\nlist with a reason.\n'
+        '\nAn app author reading the contract will use this field as documented and have it' +
+        '\nrefused (inside capabilities) or silently dropped with a warning (at the top level),' +
+        '\na gap that is not theirs (docs/open-questions.md A164). Either implement it and add' +
+        "\nit to the array named above, or -- if it is deliberately not built yet -- add it to" +
+        "\nthis script's own DELIBERATELY_DEFERRED list with a reason.\n"
+      )
+    }
+    if (stale.length > 0) {
+      console.error(`\nThe loader accepts a field ${CONTRACT_FILE} does not declare:\n`)
+      for (const { interfaceName, field, loaderFile, arrayName } of stale) {
+        console.error(`  ${interfaceName}.${field} -- listed in ${arrayName} in ${loaderFile}`)
+      }
+      console.error(
+        '\nA renamed or removed contract field left behind in the loader. Remove it from the' +
+        '\narray, or declare it in the contract.\n'
       )
     }
     process.exit(1)

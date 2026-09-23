@@ -70,10 +70,10 @@ const KITCHEN_SINK: FullManifest = {
 }
 
 describe('a manifest declaring every field the contract currently allows (A164, contract/loader parity)', () => {
-  it('is accepted by the real parser, not rejected as unrecognised', () => {
+  it('is accepted by the real parser, with no field rejected or ignored as unrecognised', () => {
     const result = parseManifest(JSON.stringify(KITCHEN_SINK))
     if (!result.ok) throw new Error(`expected every declared field to be accepted, got: ${result.reason}`)
-    expect(result.ok).toBe(true)
+    expect(result.ignoredFields).toEqual([])
   })
 
   it('round-trips every declared field back unchanged', () => {

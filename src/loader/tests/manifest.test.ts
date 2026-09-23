@@ -689,11 +689,8 @@ describe('protocols and id.curves', () => {
   })
 })
 
+// An unknown TOP-LEVEL field is ignored, not rejected: manifest-unknown-fields.test.ts.
 describe('unknown fields, wrong types and prototype pollution', () => {
-  it('rejects an unrecognised top-level field', () => {
-    expect(reason(parseManifest(minimal({ signature: 'abc' })))).toMatch(/unrecognised field: "signature"/)
-  })
-
   it('rejects an unrecognised field inside capabilities', () => {
     expect(reason(parseManifest(withCapabilities({ shell: true })))).toMatch(/unrecognised field: "shell"/)
   })
@@ -703,21 +700,19 @@ describe('unknown fields, wrong types and prototype pollution', () => {
     expect(reason(parseManifest(raw))).toMatch(/unrecognised field: "backdoor"/)
   })
 
-  it('rejects a "__proto__" own key as an unrecognised field, rather than polluting anything', () => {
+  it('rejects a "__proto__" own key inside capabilities as an unrecognised field, rather than polluting anything', () => {
     // JSON.parse gives "__proto__" as an ordinary own property, never the
     // real prototype slot -- this asserts it is refused as an unknown field
     // like any other, and that the parse does not throw or corrupt anything.
-    const raw = JSON.parse('{"__proto__": {"polluted": true}, "orivonApiVersion": 0}') as Record<string, unknown>
-    const result = parseManifest({ ...minimal(), ...raw })
+    const capabilities = JSON.parse('{"__proto__": {"polluted": true}}') as Record<string, unknown>
+    const result = parseManifest(withCapabilities(capabilities))
     expect(result.ok).toBe(false)
     expect(reason(result)).toMatch(/unrecognised field: "__proto__"/)
-    // eslint-disable-next-line no-prototype-builtins
     expect(({} as Record<string, unknown>).polluted).toBeUndefined()
   })
 
-  it('rejects a "constructor" own key the same way', () => {
-    const raw = minimal({ constructor: { evil: true } })
-    expect(reason(parseManifest(raw))).toMatch(/unrecognised field: "constructor"/)
+  it('rejects a "constructor" own key inside capabilities the same way', () => {
+    expect(reason(parseManifest(withCapabilities({ constructor: { evil: true } })))).toMatch(/unrecognised field: "constructor"/)
   })
 
   it('rejects the manifest itself being an array', () => {
@@ -757,12 +752,18 @@ describe('absurd sizes and deeply nested junk', () => {
     expect(reason(result)).toMatch(/name must be a string/)
   })
 
-  it('rejects deeply nested junk as the whole input, on its first unrecognised key', () => {
+  it('rejects deeply nested junk as the whole input without recursing into it', () => {
     let nested: Record<string, unknown> = { bottom: true }
     for (let i = 0; i < 10_000; i += 1) nested = { wrapper: nested }
     const result = parseManifest(nested)
     expect(result.ok).toBe(false)
-    expect(reason(result)).toMatch(/unrecognised field: "wrapper"/)
+    expect(reason(result)).toMatch(/orivonApiVersion must be exactly 0/)
+  })
+
+  it('rejects deeply nested junk inside capabilities on its first unrecognised key', () => {
+    let nested: Record<string, unknown> = { bottom: true }
+    for (let i = 0; i < 10_000; i += 1) nested = { wrapper: nested }
+    expect(reason(parseManifest(withCapabilities(nested)))).toMatch(/unrecognised field: "wrapper"/)
   })
 
   it('rejects more than 32 protocol schemes', () => {

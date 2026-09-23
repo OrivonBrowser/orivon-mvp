@@ -19,7 +19,7 @@ import { originFromUrl } from '../broker/policy/origin.js'
 import { ensurePublicUnicastOrigin } from './install-origin.js'
 import type { InstallOriginResult } from './install-origin.js'
 import { isOrivonErrorLike } from '../broker/errors.js'
-import { MAX_MANIFEST_BYTES, parseManifest } from './manifest.js'
+import { MAX_MANIFEST_BYTES, describeValue, parseManifest } from './manifest.js'
 import { BUNDLE_TIMEOUT_MS, ByteBudget, fetchWithBudget, raceAbort, rejected } from './fetch-budget.js'
 import type { Fetch, FetchBundleRejected } from './fetch-budget.js'
 import { FETCH_CONCURRENCY, fetchAssetToStaging, forEachBounded, resolveUrl, stageBytes } from './fetch-asset.js'
@@ -91,12 +91,22 @@ async function fetchManifest (
 
   const parsed = parseManifest(new TextDecoder('utf-8', { fatal: false }).decode(bytes))
   if (!parsed.ok) return rejected(parsed.reason)
+  warnIgnoredFields(canonicalOrigin, parsed.ignoredFields)
   try {
     return { manifest: parsed.manifest, staged: await stageBytes(storage, canonicalOrigin, MANIFEST_PATH, bytes) }
   } catch (error) {
     console.error('[loader] could not stage the manifest', canonicalOrigin, error)
     return rejected(`the manifest for ${canonicalOrigin} could not be written to local storage`)
   }
+}
+
+const MAX_NAMED_IGNORED_FIELDS = 20
+
+function warnIgnoredFields (canonicalOrigin: string, ignored: readonly string[]): void {
+  if (ignored.length === 0) return
+  const named = ignored.slice(0, MAX_NAMED_IGNORED_FIELDS).map(describeValue).join(', ')
+  const more = ignored.length > MAX_NAMED_IGNORED_FIELDS ? `, and ${String(ignored.length - MAX_NAMED_IGNORED_FIELDS)} more` : ''
+  console.warn(`[loader] ${canonicalOrigin}'s manifest has top-level field(s) this version of Orivon does not recognise; ignored: ${named}${more}`)
 }
 
 /**

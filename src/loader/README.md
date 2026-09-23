@@ -114,6 +114,19 @@ static hosts, which answer `/index.html` with a redirect to `/` (Cloudflare Page
 same scheme, host and port, at most `MAX_REDIRECTS` (5), or the request is aborted. The bytes of
 a followed hop are pinned under the requested path, still on the origin being installed.
 
+**An unknown top-level manifest field is ignored; an unknown field inside `capabilities` is
+refused.** [`manifest.ts`](manifest.ts) leaves a top-level field it does not know out of the
+parsed manifest and returns its name in `ignoredFields`, which `fetch-bundle.ts` logs as a
+warning. Refusing it would fail the install for a field that grants nothing (`$schema`,
+`description`, `icons`, or a field a later Orivon adds), and since the pinned manifest is parsed
+again at every start, a field some other Orivon version accepted at install would lock the
+installed app out. Inside
+`capabilities` every field asks for authority, so an unknown one there still rejects the
+manifest: silently dropping a permission the app asked for would install an app that then
+fails in ways nobody can trace. `orivonApiVersion` must still be exactly `0`.
+`scripts/check-manifest-parity.mjs` is what keeps a contract field from being ignored by
+mistake: it fails when the contract and the loader's key lists disagree in either direction.
+
 **The root document is declared by its file name.** `entry: "index.html"` is fetched at
 `/index.html` (following such a redirect to `/` where the host sends one) and served at `/`; a bare
 root cannot itself be a pinned leaf, since `/` is not a valid canonical path, so `entry: "/"` is
