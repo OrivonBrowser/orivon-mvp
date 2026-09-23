@@ -32,6 +32,7 @@ import type { ElectronApplication, Page } from 'playwright'
 import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from './launch-electron.mjs'
 import { ABSENCE_SETTLE_MS, HERMETIC_RESOLVER, delay, evaluateRetrying, waitFor } from './smoke-helpers.mjs'
 import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, closeElectronApp, navigateToFixture, runPhase } from './e2e-helpers.js'
+import { focusWebContents, underVirtualDisplay, webContentsFocused } from './focus-helpers.js'
 
 const HOST = '127.0.0.1'
 // 8872-8885, 8893-8895 and 8897 belong to other suites' fixtures.
@@ -123,25 +124,6 @@ async function sendEscape (app: ElectronApplication, type: 'keyDown' | 'keyUp', 
   }, [PAGE_URL, type, autoRepeat])
 }
 
-/** Pointer lock needs the page focused, and the shell's test launches show
- * the window without activating it. Under the virtual display nothing else
- * can hold focus, so the tab takes it there; anywhere else a test must not
- * take focus, and the pointer-lock checks are left out. */
-function underVirtualDisplay (): boolean {
-  return process.platform === 'linux' && process.env['WAYLAND_DISPLAY'] === undefined && (process.env['XAUTHORITY'] ?? '').includes('xvfb-run')
-}
-
-async function focusTab (app: ElectronApplication): Promise<void> {
-  await app.evaluate(({ webContents }, target) => {
-    webContents.getAllWebContents().find((c) => c.getURL() === target)?.focus()
-  }, PAGE_URL)
-}
-
-async function tabFocused (app: ElectronApplication): Promise<boolean> {
-  return await app.evaluate(({ webContents }, target) =>
-    webContents.getAllWebContents().find((c) => c.getURL() === target)?.isFocused() === true, PAGE_URL)
-}
-
 interface PageState { keys: string[], unprompted?: string, locked?: boolean, pl?: string, fskl?: string, secondTel?: boolean, notify?: string }
 const pageState = async (view: Page): Promise<PageState> =>
   await evaluateRetrying(view, () => (window as unknown as { __r: PageState }).__r)
@@ -199,7 +181,7 @@ it('lets a page lock the pointer and keyboard with a notice, and open an externa
       // --- Pointer lock -----------------------------------------------------
       if (underVirtualDisplay()) {
         // The page asks as soon as it has focus, before any click.
-        await focusTab(app)
+        await focusWebContents(app, PAGE_URL)
         await waitFor(async () => (await pageState(view)).unprompted !== undefined)
         const unprompted = (await pageState(view)).unprompted
         check(`requestPointerLock() before any click is refused (got ${String(unprompted)})`, unprompted !== undefined && unprompted !== 'resolved')
@@ -209,7 +191,7 @@ it('lets a page lock the pointer and keyboard with a notice, and open an externa
         const pointerNotice = await waitFor(async () => (await noticesShown(app as ElectronApplication)).includes('Press Esc to show your cursor'))
         check('the "Press Esc to show your cursor" notice is on screen', pointerNotice, JSON.stringify(await noticesShown(app)))
         await delay(ABSENCE_SETTLE_MS)
-        check('the notice leaves the page its focus and its lock', (await pageState(view)).locked === true && await tabFocused(app))
+        check('the notice leaves the page its focus and its lock', (await pageState(view)).locked === true && await webContentsFocused(app, PAGE_URL))
         await sendEscape(app, 'keyDown')
         await sendEscape(app, 'keyUp')
         const released = await waitFor(async () => (await pageState(view)).locked === false)

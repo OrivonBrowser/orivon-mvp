@@ -27,7 +27,7 @@ import { TabManager, type Bounds } from './tabs.js'
 import { registerShellIpc } from '../ipc/ipc.js'
 import { createPermissionsPanel } from '../permissions/permissions-panel.js'
 import { HtmlFullscreen } from './fullscreen.js'
-import { createFullscreenNotice } from './fullscreen-notice.js'
+import { NOTICES, noticeForWindow } from './window-notice.js'
 import { showContextMenu } from './context-menu.js'
 import { devModeEnabled } from '../dev/dev-mode.js'
 
@@ -177,12 +177,14 @@ export function createShellWindow (ctx: SubsystemContext): BaseWindow {
 
   // A page in HTML fullscreen gets the whole window and the chrome is hidden;
   // Electron only puts the window itself into fullscreen (./fullscreen.ts).
-  const notice = createFullscreenNotice(win.contentView, () => win.getContentBounds().width)
+  // The notice is the window's one, shared with the pointer- and keyboard-lock
+  // messages, and disposed with the window.
+  const notice = noticeForWindow(win)
   const fullscreen = new HtmlFullscreen({
     relayout: () => { layoutAll() },
     exitTab: (id) => { tabs.exitHtmlFullscreen(id) },
     leaveWindowFullscreen: () => { if (!win.isDestroyed()) win.setFullScreen(false) },
-    showNotice: () => { notice.show() },
+    showNotice: () => { notice.show(NOTICES.fullscreen) },
     hideNotice: () => { notice.hide() }
   })
 
@@ -336,7 +338,6 @@ export function createShellWindow (ctx: SubsystemContext): BaseWindow {
     // Also removes SETTINGS_COMMAND_CHANNEL, which the panel registers per
     // open -- same reregistration trap this handler already exists for.
     permissionsPanel.close()
-    notice.dispose()
   })
 
   // win.getContentBounds() read SYNCHRONOUSLY inside 'resize' returns the

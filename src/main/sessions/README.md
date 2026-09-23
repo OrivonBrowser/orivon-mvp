@@ -100,7 +100,7 @@ measured against a real page, `requestFullscreen()` reaches `setPermissionReques
 that waives the click. The second stays denied, so the click is always required. Leaving is not
 the page's to refuse: Escape is consumed in the browser process before the page sees the key.
 The one abuse, a page filling the screen and drawing a fake address bar, is answered by the exit
-notice every browser shows; [`../shell/fullscreen-notice.ts`](../shell/fullscreen-notice.ts)
+notice every browser shows; [`../shell/window-notice.ts`](../shell/window-notice.ts)
 draws it. `ADR-0025` carries the argument.
 
 **`pointerLock` and `keyboardLock` reach the REQUEST handler only, and Electron draws nothing
