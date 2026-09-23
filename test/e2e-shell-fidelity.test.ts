@@ -30,7 +30,7 @@ import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetryi
 
 const HOST = '127.0.0.1'
 // 8872-8884 belong to other suites' fixtures; this file needs one of its own.
-const PORT = 8893
+const PORT = 8897
 const ORIGIN = `http://${HOST}:${PORT}/`
 const TITLE = 'shell fidelity fixture'
 
