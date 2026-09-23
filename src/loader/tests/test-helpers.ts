@@ -145,22 +145,71 @@ export interface MemoryStorage extends LoaderStorage {
   /** Direct access for assertions -- never used by createLoader itself, only by tests inspecting what it wrote. */
   readonly pins: Map<string, unknown>
   readonly assets: Map<string, Map<string, Uint8Array>>
+  /** Staged files, keyed `${origin} ${id}` -- a test can check nothing is left behind. */
+  readonly staged: Map<string, Uint8Array>
+}
+
+function concatBytes (chunks: readonly Uint8Array[]): Uint8Array {
+  const out = new Uint8Array(chunks.reduce((total, chunk) => total + chunk.length, 0))
+  let offset = 0
+  for (const chunk of chunks) { out.set(chunk, offset); offset += chunk.length }
+  return out
+}
+
+/** `bytes` as an AssetStream, in 64 KiB chunks. */
+export function streamOf (bytes: Uint8Array): { byteLength: number, chunks: AsyncIterable<Uint8Array> } {
+  return {
+    byteLength: bytes.length,
+    chunks: (async function * () {
+      for (let offset = 0; offset < bytes.length; offset += 64 * 1024) yield bytes.subarray(offset, offset + 64 * 1024)
+    })()
+  }
 }
 
 /** A LoaderStorage backed by plain Maps -- no disk, no confinement, just enough to prove createLoader calls it correctly. */
 export function memoryStorage (): MemoryStorage {
   const pins = new Map<string, unknown>()
   const assets = new Map<string, Map<string, Uint8Array>>()
+  const staged = new Map<string, Uint8Array>()
+  let nextId = 0
+  const writeAsset = (origin: string, path: string, content: Uint8Array): void => {
+    const forOrigin = assets.get(origin) ?? new Map<string, Uint8Array>()
+    forOrigin.set(path, content)
+    assets.set(origin, forOrigin)
+  }
   return {
     pins,
     assets,
+    staged,
+    clearStaging: vi.fn(async (origin: string) => {
+      for (const key of [...staged.keys()]) if (key.startsWith(`${origin} `)) staged.delete(key)
+    }),
+    openStaged: vi.fn(async (origin: string) => {
+      const id = `staged-${String(nextId++)}`
+      const chunks: Uint8Array[] = []
+      return {
+        id,
+        write: async (chunk: Uint8Array) => { chunks.push(chunk.slice()) },
+        close: async () => { staged.set(`${origin} ${id}`, concatBytes(chunks)) }
+      }
+    }),
+    readStaged: vi.fn(async (origin: string, id: string) => {
+      const bytes = staged.get(`${origin} ${id}`)
+      return bytes === undefined ? undefined : streamOf(bytes)
+    }),
+    commitStaged: vi.fn(async (origin: string, id: string, path: string) => {
+      const bytes = staged.get(`${origin} ${id}`)
+      if (bytes === undefined) throw new Error(`nothing staged as ${id}`)
+      staged.delete(`${origin} ${id}`)
+      writeAsset(origin, path, bytes)
+    }),
+    readAssetStream: vi.fn(async (origin: string, path: string) => {
+      const bytes = assets.get(origin)?.get(path)
+      return bytes === undefined ? undefined : streamOf(bytes)
+    }),
     readPin: vi.fn(async (origin: string) => pins.get(origin)),
     writePin: vi.fn(async (origin: string, record: PinRecord) => { pins.set(origin, record) }),
-    writeAsset: vi.fn(async (origin: string, path: string, content: Uint8Array) => {
-      const forOrigin = assets.get(origin) ?? new Map<string, Uint8Array>()
-      forOrigin.set(path, content)
-      assets.set(origin, forOrigin)
-    }),
+    writeAsset: vi.fn(async (origin: string, path: string, content: Uint8Array) => { writeAsset(origin, path, content) }),
     pruneAssets: vi.fn(async (origin: string, keep: readonly string[]) => {
       const forOrigin = assets.get(origin)
       if (forOrigin === undefined) return

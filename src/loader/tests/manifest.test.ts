@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseManifest, type ManifestResult } from '../manifest.js'
+import { MAX_MANIFEST_BYTES, parseManifest, type ManifestResult } from '../manifest.js'
 
 // The input is adversarial by construction (manifest.ts's own header): any
 // origin can serve this JSON, and every field is self-asserted. So this
@@ -743,10 +743,10 @@ describe('unknown fields, wrong types and prototype pollution', () => {
 
 describe('absurd sizes and deeply nested junk', () => {
   it('rejects raw manifest text over the byte bound, before JSON.parse ever runs', () => {
-    const huge = JSON.stringify(minimal({ name: 'a'.repeat(200_000) }))
+    const huge = JSON.stringify(minimal({ name: 'a'.repeat(MAX_MANIFEST_BYTES) }))
     const result = parseManifest(huge)
     expect(result.ok).toBe(false)
-    expect(reason(result)).toMatch(/exceeds 65536 bytes/)
+    expect(reason(result)).toContain(`exceeds ${String(MAX_MANIFEST_BYTES)} bytes`)
   })
 
   it('rejects deeply nested junk assigned to a string field without recursing into it', () => {

@@ -6,14 +6,15 @@
 // `code/`, never inside it -- ADR-0009's own consequence: the pin record
 // must not itself become a hashed leaf.
 
-import { lstatSync, mkdirSync, realpathSync } from 'node:fs'
-import { mkdir, readdir, readFile, rm, rmdir, writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
+import { createReadStream, lstatSync, mkdirSync, realpathSync } from 'node:fs'
+import { mkdir, open, readdir, readFile, rename, rm, rmdir, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, sep } from 'node:path'
 import { decodePercentEscapes, foldForIdentity } from '../broker/policy/canonical-path.js'
 import { confinePath } from '../broker/policy/paths.js'
 import { parsePinRecord } from '../broker/policy/pin.js'
 import type { PinRecord } from '../broker/policy/pin.js'
-import type { LoaderStorage } from './storage.js'
+import type { AssetStream, LoaderStorage, StagingWriter } from './storage.js'
 import { appRootDirectoryName } from './storage.js'
 
 function appRoot (userDataPath: string, origin: string): string {
@@ -60,6 +61,62 @@ function codeRoot (userDataPath: string, origin: string): string {
   requireRealDirectory(root)
   mkdirSync(root, { recursive: true })
   return root
+}
+
+/**
+ * The origin's staging area, a sibling of `code/` -- never inside it, so a
+ * staged or temporary file can never be mistaken for, or collide with, a
+ * pinned asset. Same real-directory checks as `codeRoot`, same reason.
+ */
+function stagingRoot (userDataPath: string, origin: string): string {
+  const appDirectory = appRoot(userDataPath, origin)
+  const root = join(appDirectory, 'staging')
+  requireRealDirectory(appDirectory)
+  requireRealDirectory(root)
+  mkdirSync(root, { recursive: true })
+  return root
+}
+
+/** Staged file names are ours alone (`randomUUID`); anything else is refused rather than joined into a path. */
+const STAGED_ID = /^[0-9a-f-]{36}$/
+
+function stagedPath (userDataPath: string, origin: string, id: string): string {
+  if (!STAGED_ID.test(id)) throw new Error('not a staged file id this storage issued')
+  return join(stagingRoot(userDataPath, origin), id)
+}
+
+/**
+ * Writes `content` to `target` as one atomic step: into a fresh staged file,
+ * then renamed over `target`. A crash leaves the old file or the new one,
+ * never a truncated mix -- the half of open-questions.md A62 that
+ * serialising loads (src/main/install/origin-queue.ts) could not close.
+ */
+async function writeAtomically (userDataPath: string, origin: string, target: string, content: Uint8Array): Promise<void> {
+  const temporary = join(stagingRoot(userDataPath, origin), randomUUID())
+  await writeFile(temporary, content)
+  await mkdir(dirname(target), { recursive: true })
+  await rename(temporary, target)
+}
+
+/** A regular file's size and a chunked read of it, or undefined for anything else. */
+async function fileStream (path: string): Promise<AssetStream | undefined> {
+  try {
+    const info = await stat(path)
+    if (!info.isFile()) return undefined
+    return { byteLength: info.size, chunks: createReadStream(path) }
+  } catch {
+    return undefined
+  }
+}
+
+async function openStagedWriter (userDataPath: string, origin: string): Promise<StagingWriter> {
+  const id = randomUUID()
+  const handle = await open(stagedPath(userDataPath, origin, id), 'wx')
+  return {
+    id,
+    write: async (chunk) => { await handle.write(chunk) },
+    close: async () => { await handle.close() }
+  }
 }
 
 /**
@@ -180,14 +237,37 @@ export function nodeLoaderStorage (userDataPath: string): LoaderStorage {
       }
     },
     writePin: async (origin: string, record: PinRecord) => {
-      const path = pinPath(userDataPath, origin)
-      await mkdir(dirname(path), { recursive: true })
-      await writeFile(path, JSON.stringify(record))
+      await writeAtomically(userDataPath, origin, pinPath(userDataPath, origin), new TextEncoder().encode(JSON.stringify(record)))
     },
     writeAsset: async (origin, path, content) => {
       const resolved = resolveAssetPath(codeRoot(userDataPath, origin), path)
+      await writeAtomically(userDataPath, origin, resolved, content)
+    },
+    clearStaging: async (origin) => {
+      const appDirectory = appRoot(userDataPath, origin)
+      requireRealDirectory(appDirectory)
+      requireRealDirectory(join(appDirectory, 'staging'))
+      await rm(join(appDirectory, 'staging'), { recursive: true, force: true })
+    },
+    openStaged: async (origin) => await openStagedWriter(userDataPath, origin),
+    readStaged: async (origin, id) => {
+      try {
+        return await fileStream(stagedPath(userDataPath, origin, id))
+      } catch {
+        return undefined
+      }
+    },
+    commitStaged: async (origin, id, path) => {
+      const resolved = resolveAssetPath(codeRoot(userDataPath, origin), path)
       await mkdir(dirname(resolved), { recursive: true })
-      await writeFile(resolved, content)
+      await rename(stagedPath(userDataPath, origin, id), resolved)
+    },
+    readAssetStream: async (origin, path) => {
+      try {
+        return await fileStream(resolveAssetPath(codeRoot(userDataPath, origin), path))
+      } catch {
+        return undefined
+      }
     },
     pruneAssets: async (origin, keep) => {
       const root = codeRoot(userDataPath, origin)

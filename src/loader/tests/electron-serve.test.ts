@@ -556,6 +556,26 @@ describe('restorePinnedServing across a restart -- A158, resolved for every dire
     vi.doUnmock('electron')
   })
 
+  it('A RESTORED APP IS REGISTERED FROM STARTUP: isRegisteredSync and app.manifest() answer from the pinned manifest, and the version floor does not move', async () => {
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-restart-register-'))
+    const storage = nodeLoaderStorage(userData)
+    await pinRealOrigin(storage, ORIGIN, { version: '1.2.0' })
+    const ledgerStorage = memoryLedgerStorage()
+    const broker = createBroker(baseDeps({ ledgerStorage }))
+
+    const session = fakeSession()
+    vi.doMock('electron', () => ({ session: { fromPartition: () => session } }))
+    const { restorePinnedServing } = await import('../electron-serve.js')
+    await restorePinnedServing(storage, broker)
+
+    expect(broker.app.isRegisteredSync(ORIGIN)).toBe(true)
+    expect((await broker.app.manifest(ORIGIN)).version).toBe('1.2.0')
+    expect(await broker.versionFloorFor(ORIGIN)).toBe('0.0.0')
+    expect(ledgerStorage.floors.has(ORIGIN)).toBe(false)
+
+    vi.doUnmock('electron')
+  })
+
   it('THE OWNER\'S POINT, END TO END: a later real registerApp call with a manifest that no longer declares the capability drops it, even though it was already live from the pinned one', async () => {
     const userData = await mkdtemp(join(tmpdir(), 'orivon-restart-csp-'))
     const storage = nodeLoaderStorage(userData)
@@ -615,6 +635,29 @@ describe('restorePinnedServing across a restart -- A158, resolved for every dire
     expect(afterRegisterApp.headers.get('content-security-policy')).toContain("connect-src 'self';")
     expect(afterRegisterApp.headers.get('content-security-policy')).not.toContain('example.com')
 
+    vi.doUnmock('electron')
+  })
+
+  it('A BUNDLE THAT FAILS VERIFICATION AT STARTUP IS NOT SERVED AT ALL -- no deny-all handler, nothing hydrated or registered, so the next visit can reinstall it', async () => {
+    const origin = 'https://never-served-before.example'
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-restart-tampered-'))
+    const storage = nodeLoaderStorage(userData)
+    await pinRealOrigin(storage, origin)
+    await storage.writeAsset(origin, '/index.html', utf8('tampered'))
+    const broker = createBroker(baseDeps({ ledgerStorage: memoryLedgerStorage() }))
+    const warned = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const session = fakeSession()
+    vi.doMock('electron', () => ({ session: { fromPartition: () => session } }))
+    const { restorePinnedServing, isOriginServedFromCacheSync } = await import('../electron-serve.js')
+    await restorePinnedServing(storage, broker)
+
+    expect(session.calls.handle).toEqual([])
+    expect(isOriginServedFromCacheSync(origin)).toBe(false)
+    expect(broker.app.isRegisteredSync(origin)).toBe(false)
+    expect(warned).toHaveBeenCalled()
+
+    warned.mockRestore()
     vi.doUnmock('electron')
   })
 

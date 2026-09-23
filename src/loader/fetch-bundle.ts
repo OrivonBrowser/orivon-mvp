@@ -4,13 +4,15 @@
 // manifest itself (manifest.entry unioned with manifest.assets, ADR-0011)
 // once this file has fetched and parsed it, since the passive discovery
 // trigger this exists for (README.md) never has anything but hintedUrl to
-// start from. TOFU vs. decideUpdate() branching and persistence are
-// index.ts's job, not this file's -- why this file exists on its own:
-// README.md, Design notes.
+// start from. Every byte goes to the origin's staging area as it arrives
+// and is hashed from there (fetch-asset.ts): nothing is held whole in
+// memory. TOFU vs. decideUpdate() branching and persistence are index.ts's
+// job, not this file's -- why this file exists on its own: README.md,
+// Design notes.
 
 import type { Manifest } from '../contracts/index.js'
-import { MAX_ASSET_BYTES, MAX_BUNDLE_BYTES, bundleTree } from '../broker/policy/bundle-hash.js'
-import type { BundleEntry, BundleTree } from '../broker/policy/bundle-hash.js'
+import { MAX_ASSET_BYTES, MAX_BUNDLE_BYTES, bundleTreeFromLeaves } from '../broker/policy/bundle-hash.js'
+import type { BundleTree } from '../broker/policy/bundle-hash.js'
 import { MANIFEST_PATH, MAX_BUNDLE_ENTRIES, canonicalAssetPath } from '../broker/policy/canonical-path.js'
 import type { Resolver } from '../broker/policy/connect.js'
 import { originFromUrl } from '../broker/policy/origin.js'
@@ -18,236 +20,188 @@ import { ensurePublicUnicastOrigin } from './install-origin.js'
 import type { InstallOriginResult } from './install-origin.js'
 import { isOrivonErrorLike } from '../broker/errors.js'
 import { MAX_MANIFEST_BYTES, parseManifest } from './manifest.js'
-import { BUNDLE_TIMEOUT_MS, fetchWithBudget, raceAbort, rejected } from './fetch-budget.js'
-import type { Fetch, FetchBundleRejected, FetchResponse } from './fetch-budget.js'
+import { BUNDLE_TIMEOUT_MS, ByteBudget, fetchWithBudget, raceAbort, rejected } from './fetch-budget.js'
+import type { Fetch, FetchBundleRejected } from './fetch-budget.js'
+import { FETCH_CONCURRENCY, fetchAssetToStaging, forEachBounded, resolveUrl, stageBytes } from './fetch-asset.js'
+import type { StagedAsset } from './fetch-asset.js'
+import type { LoaderStorage } from './storage.js'
 
 export type { Fetch, FetchResponse } from './fetch-budget.js'
-export { BUNDLE_TIMEOUT_MS, FETCH_TIMEOUT_MS } from './fetch-budget.js'
+export type { StagedAsset } from './fetch-asset.js'
+export { BUNDLE_TIMEOUT_MS, FETCH_IDLE_TIMEOUT_MS } from './fetch-budget.js'
 
 export interface FetchBundleOk {
   readonly ok: true
   readonly canonicalOrigin: string
   readonly manifest: Manifest
   readonly tree: BundleTree
-  /** Every leaf's raw bytes, manifest included (bundle-hash.ts: "the manifest is a leaf like any other asset"). */
-  readonly entries: readonly BundleEntry[]
+  /** Every leaf, manifest included, waiting in the origin's staging area -- see StagedAsset. */
+  readonly entries: readonly StagedAsset[]
 }
 
 export type { FetchBundleRejected } from './fetch-budget.js'
 export type FetchBundleResult = FetchBundleOk | FetchBundleRejected
 
-/**
- * `new URL(path, base)`, guarded. `URL`'s constructor throws `TypeError` on
- * a malformed `path` (confirmed live: `new URL('http://[not-valid-ipv6/x.js',
- * 'https://good.example/')`) -- nothing here may let that escape as an
- * uncaught exception; every rejection must come back as a
- * `FetchBundleResult`. Both callers below resolve caller-supplied path
- * strings this way; neither may trust the input is well-formed.
- */
-function resolveUrl (path: string, base: string): string | null {
-  try {
-    return new URL(path, base).href
-  } catch {
-    return null
-  }
+/** The byte caps one fetch enforces. Injectable only so a test can exercise them without hundreds of MiB of fixture. */
+export interface FetchLimits {
+  readonly assetBytes: number
+  readonly bundleBytes: number
 }
+
+const DEFAULT_LIMITS: FetchLimits = { assetBytes: MAX_ASSET_BYTES, bundleBytes: MAX_BUNDLE_BYTES }
 
 /**
  * Resolves the app's entry point to the canonical path bundleTree()'s
- * output must be checked against. `entry` is already known safe as a STRING
- * (manifest.ts's validateEntry ran inside parseManifest) -- this resolves it
- * against the real origin the same way an asset URL would be, so the
- * comparison below is exact-string against `tree.assets`, never a second,
- * looser notion of "matches". Guarded via resolveUrl anyway: validateEntry's
- * own encoding walks `entry` one path segment at a time, a different
- * algorithm from resolving the whole string as a relative reference here --
- * a string that survives one is not proven to survive the other.
+ * output must be checked against -- exact-string against `tree.assets`,
+ * never a second, looser notion of "matches". Guarded via resolveUrl:
+ * validateEntry's own encoding walks `entry` one segment at a time, a
+ * different algorithm from resolving the whole string here, so a string
+ * that survives one is not proven to survive the other.
  *
  * Exported for serve.ts's use (Rule 3): it needs this identical
  * `manifest.entry` -> canonical-path resolution to decide what a request
- * for `/` serves, and a second implementation of it is exactly the kind of
- * near-miss Rule 3 exists to prevent.
+ * for `/` serves.
  */
 export function entryCanonicalPath (canonicalOrigin: string, entry: string): string | null {
   const resolved = resolveUrl(entry, `${canonicalOrigin}/`)
   return resolved === null ? null : canonicalAssetPath(resolved)
 }
 
+/** Fetches the manifest into memory (it is bounded by MAX_MANIFEST_BYTES) and stages it like any other leaf. */
+async function fetchManifest (
+  fetchFn: Fetch,
+  canonicalOrigin: string,
+  pinnedAddresses: readonly string[],
+  storage: LoaderStorage,
+  budget: ByteBudget,
+  bundleSignal: AbortSignal
+): Promise<{ readonly manifest: Manifest, readonly staged: StagedAsset } | FetchBundleRejected> {
+  // Always exactly `<origin>${MANIFEST_PATH}` (capability-api.md "How a URL
+  // becomes an app"), never a path component of `hintedUrl`: bundleTree()
+  // rejects any bundle with no leaf at that literal path anyway.
+  const manifestUrl = `${canonicalOrigin}${MANIFEST_PATH}`
+  const chunks: Uint8Array[] = []
+  const fetched = await fetchWithBudget(fetchFn, manifestUrl, pinnedAddresses, MAX_MANIFEST_BYTES, budget, 'manifest', bundleSignal,
+    async (chunk) => { chunks.push(chunk) })
+  if ('ok' in fetched) return fetched
+
+  const bytes = new Uint8Array(fetched.byteLength)
+  let offset = 0
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length }
+
+  const parsed = parseManifest(new TextDecoder('utf-8', { fatal: false }).decode(bytes))
+  if (!parsed.ok) return rejected(parsed.reason)
+  try {
+    return { manifest: parsed.manifest, staged: await stageBytes(storage, canonicalOrigin, MANIFEST_PATH, bytes) }
+  } catch (error) {
+    console.error('[loader] could not stage the manifest', canonicalOrigin, error)
+    return rejected(`the manifest for ${canonicalOrigin} could not be written to local storage`)
+  }
+}
+
 /**
  * `hintedUrl` is all a passive discovery trigger ever has -- the asset list
  * is read off the manifest itself, once it is fetched below, never supplied
  * by a caller. See README.md, Design notes.
+ *
+ * Empties `origin`'s staging area first; on success the staged entries are
+ * the caller's (index.ts installs or discards them), on any rejection they
+ * are cleared again here.
  */
 export async function fetchBundle (
   fetchFn: Fetch,
   hintedUrl: string,
-  resolveFn: Resolver
+  resolveFn: Resolver,
+  storage: LoaderStorage,
+  limits: FetchLimits = DEFAULT_LIMITS
 ): Promise<FetchBundleResult> {
   const canonicalOrigin = originFromUrl(hintedUrl)
   if (canonicalOrigin === null) return rejected(`hintedUrl is not a valid app origin: ${hintedUrl}`)
 
-  // BUNDLE_TIMEOUT_MS's one clock for the WHOLE operation, including the
-  // install-origin guard's own resolution below -- started here, BEFORE that
-  // `await`, not after it. `resolveFn` carries no timeout of its own
-  // (Resolver's own doc comment), so a guard call started outside this
-  // deadline window would hang with no clock at all against a deliberately
-  // stalling nameserver -- exactly the unbounded-duration T11b DoS
-  // BUNDLE_TIMEOUT_MS exists to close, reopened one `await` above where it
-  // used to start. `bundleController.signal` is threaded into every
-  // fetchWithBudget call below; see BUNDLE_TIMEOUT_MS's and
-  // fetchWithBudget's own comments for why.
+  // BUNDLE_TIMEOUT_MS's one clock for the WHOLE operation, started BEFORE
+  // the install-origin guard's own `await`: `resolveFn` carries no timeout
+  // of its own, so a guard call outside this window could hang forever
+  // against a stalling nameserver. Also aborted by the first failing asset,
+  // so its siblings stop instead of downloading for nothing.
   const bundleController = new AbortController()
   const bundleTimer = setTimeout(() => { bundleController.abort() }, BUNDLE_TIMEOUT_MS)
+  let result: FetchBundleResult | undefined
   try {
-    // T12/A46, install-origin.ts -- checked before any network request
-    // below, and already inside the bundle's own deadline (above).
-    // raceAbort gives up waiting once the deadline fires; it cannot force an
-    // uncooperative `resolveFn` to actually stop (raceAbort's own comment on
-    // what it does not close), the same residual raceAbort already carries
-    // for a stalling `fetchFn`.
-    let originResult: InstallOriginResult
-    try {
-      originResult = await raceAbort(
-        ensurePublicUnicastOrigin(canonicalOrigin, resolveFn),
-        bundleController.signal,
-        () => new Error(`resolving the install origin's host exceeded the bundle's overall deadline of ${String(BUNDLE_TIMEOUT_MS)}ms`)
-      )
-    } catch (error) {
-      return rejected(error instanceof Error ? error.message : String(error))
-    }
-    if (!originResult.ok) return rejected(originResult.reason)
-    // The ONLY resolution this whole install ever performs. Every
-    // fetch below -- the manifest and every declared asset -- is handed
-    // these SAME validated literals, never a fresh, unguarded re-resolution
-    // of the hostname; see InstallOriginOk's and Fetch's own comments for
-    // why that discipline is the fix.
-    const pinnedAddresses = originResult.addresses
-
-    let bytesUsed = 0
-    // Always exactly `<origin>${MANIFEST_PATH}` (capability-api.md "How a
-    // URL becomes an app"), never a path component of `hintedUrl`. Not a
-    // stylistic choice: bundleTree() rejects any bundle with no leaf at that
-    // literal canonical path (canonical-path.ts's MANIFEST_PATH), so a
-    // manifest fetched from anywhere else could never produce an accepted
-    // bundle regardless -- `hintedUrl` is used only to name which origin is
-    // being installed.
-    const manifestUrl = `${canonicalOrigin}${MANIFEST_PATH}`
-    const manifestFetch = await fetchWithBudget(fetchFn, manifestUrl, pinnedAddresses, MAX_MANIFEST_BYTES, MAX_BUNDLE_BYTES, 'manifest', bundleController.signal)
-    if ('ok' in manifestFetch) return manifestFetch
-    bytesUsed += manifestFetch.content.length
-
-    // Derived from the REQUESTED url (manifestUrl), never `response.url` --
-    // A141: real Electron's net.fetch reports response.url as the empty
-    // string on every ordinary response, so it cannot name anything, let
-    // alone a redirect. Trusting manifestUrl instead is safe only because
-    // electron-fetch.ts's `redirect: 'error'` makes a followed redirect
-    // response impossible to receive here at all (net-client-request.ts
-    // hard-rejects the promise the instant a redirect is seen) -- a
-    // `Response` this file can inspect always came from exactly the url it
-    // asked for. See `Fetch`'s own doc comment (fetch-budget.ts) for why
-    // that is now a REQUIREMENT on every implementation, not just
-    // electron-fetch.ts's.
-    //
-    // Both checks below are provably tautological given how manifestUrl is
-    // built two lines above (`${canonicalOrigin}${MANIFEST_PATH}`) -- they
-    // are kept anyway rather than deleted, as documentation of the invariant
-    // and as a guard against manifestUrl's construction ever changing to
-    // something less trivially safe. The asset loop below applies the same
-    // "trust the request, not the response" stance to `assetUrl`.
-    const manifestOrigin = originFromUrl(manifestUrl)
-    if (manifestOrigin !== canonicalOrigin) {
-      return rejected(`manifest was served from a different origin (${manifestOrigin ?? 'invalid'}) than requested (${canonicalOrigin})`)
-    }
-    const manifestCanonicalPath = canonicalAssetPath(manifestUrl)
-    if (manifestCanonicalPath !== MANIFEST_PATH) {
-      return rejected(`manifest was served from ${manifestCanonicalPath ?? manifestUrl}, not the well-known path ${MANIFEST_PATH}`)
-    }
-
-    const manifestText = new TextDecoder('utf-8', { fatal: false }).decode(manifestFetch.content)
-    const parsed = parseManifest(manifestText)
-    if (!parsed.ok) return rejected(parsed.reason)
-    const manifest = parsed.manifest
-
-    // ADR-0011: the manifest declares its own files. `entry` is unioned in
-    // rather than fetched separately -- it is a leaf of the bundle like any
-    // other declared asset, and the entry-leaf check below needs it present
-    // in `entries` to find it there.
-    const assetPaths = [manifest.entry, ...(manifest.assets ?? [])]
-
-    // Expected unreachable, kept anyway: manifest.ts's own MAX_ASSETS cap
-    // already guarantees manifest.assets.length <= MAX_BUNDLE_ENTRIES - 2 for
-    // any manifest that reached this line, so assetPaths.length + 1 here can
-    // never exceed MAX_BUNDLE_ENTRIES. This function must not trust that
-    // invariant blindly, though -- a bug in manifest.ts's own accounting must
-    // not silently turn into an oversized fetch loop here instead. It cannot
-    // run any earlier: assetPaths is derived from the manifest, so there is
-    // nothing to count until that one fetch has already happened. That one
-    // fetch is itself bounded on its own terms (MAX_MANIFEST_BYTES, checked
-    // above by fetchWithBudget), and this line still runs before the
-    // per-asset loop below starts -- so an over-cap list still costs at most
-    // that one fetch, never one per declared asset.
-    if (assetPaths.length + 1 > MAX_BUNDLE_ENTRIES) {
-      return rejected(`bundle would have ${String(assetPaths.length + 1)} entries, more than MAX_BUNDLE_ENTRIES (${String(MAX_BUNDLE_ENTRIES)})`)
-    }
-
-    const entries: BundleEntry[] = [{ path: MANIFEST_PATH, content: manifestFetch.content }]
-
-    for (const assetPath of assetPaths) {
-      const assetUrl = resolveUrl(assetPath, `${canonicalOrigin}/`)
-      if (assetUrl === null) return rejected(`asset path is not a valid URL: ${assetPath}`)
-
-      // Checked BEFORE fetchFn is ever called: `new URL(assetPath, base)`
-      // honours an absolute or protocol-relative assetPath (e.g.
-      // "https://attacker.example/x"), so without this an entry crafted that
-      // way would trigger a real outbound request before the origin is ever
-      // looked at. The post-fetch check below on the RESOLVED url still runs
-      // too -- this one catches a bad request before it happens, that one
-      // catches a redirect after it happens; neither replaces the other.
-      const requestedOrigin = originFromUrl(assetUrl)
-      if (requestedOrigin !== canonicalOrigin) {
-        return rejected(`asset ${assetPath} resolves to a different origin (${requestedOrigin ?? 'invalid'}) than the app's (${canonicalOrigin})`)
-      }
-
-      // The SAME `pinnedAddresses` the manifest fetch above used -- never a
-      // fresh resolution per asset. Without this, the up-to-BUNDLE_TIMEOUT_MS
-      // (10 minute) asset loop would reopen the exact re-resolution window
-      // closed for the manifest fetch alone, just moved one loop iteration
-      // later.
-      const assetFetch = await fetchWithBudget(fetchFn, assetUrl, pinnedAddresses, MAX_ASSET_BYTES, MAX_BUNDLE_BYTES - bytesUsed, `asset ${assetPath}`, bundleController.signal)
-      if ('ok' in assetFetch) return assetFetch
-
-      // Requested url (assetUrl), not `response.url` -- see the manifest
-      // check above for why trusting the request is safe (A141), and note
-      // this pair is now ALSO tautological with the requestedOrigin check
-      // above, since both read the same unchanged assetUrl. `canonicalPath`
-      // is still needed as a VALUE (not only a check): it is what `entries`
-      // below actually gets pinned under.
-      const assetOrigin = originFromUrl(assetUrl)
-      if (assetOrigin !== canonicalOrigin) {
-        return rejected(`asset ${assetPath} was served from a different origin (${assetOrigin ?? 'invalid'}) than requested (${canonicalOrigin})`)
-      }
-      const canonicalPath = canonicalAssetPath(assetUrl)
-      if (canonicalPath === null) return rejected(`asset ${assetPath} resolved to a URL with no canonical path: ${assetUrl}`)
-
-      bytesUsed += assetFetch.content.length
-      entries.push({ path: canonicalPath, content: assetFetch.content })
-    }
-
-    let tree: BundleTree
-    try {
-      tree = await bundleTree(entries)
-    } catch (error) {
-      if (isOrivonErrorLike(error)) return rejected(error.message)
-      throw error // a bug in this file or bundle-hash.ts, not an untrusted-input outcome -- never swallowed
-    }
-
-    const entryPath = entryCanonicalPath(canonicalOrigin, manifest.entry)
-    if (entryPath === null || !tree.assets.some((asset) => asset.path === entryPath)) {
-      return rejected(`bundle has no leaf at the manifest's declared entry point: ${manifest.entry}`)
-    }
-
-    return { ok: true, canonicalOrigin, manifest, tree, entries }
+    result = await fetchStaged(fetchFn, canonicalOrigin, resolveFn, storage, limits, bundleController)
+    return result
   } finally {
     clearTimeout(bundleTimer)
+    if (result === undefined || !result.ok) {
+      await storage.clearStaging(canonicalOrigin).catch((error: unknown) => {
+        console.error('[loader] could not clear a failed fetch\'s staging area', canonicalOrigin, error)
+      })
+    }
   }
+}
+
+async function fetchStaged (
+  fetchFn: Fetch,
+  canonicalOrigin: string,
+  resolveFn: Resolver,
+  storage: LoaderStorage,
+  limits: FetchLimits,
+  bundleController: AbortController
+): Promise<FetchBundleResult> {
+  // T12/A46, install-origin.ts -- checked before any network request below.
+  // raceAbort gives up waiting once the deadline fires; it cannot force an
+  // uncooperative `resolveFn` to stop (its own doc, A52).
+  let originResult: InstallOriginResult
+  try {
+    originResult = await raceAbort(
+      ensurePublicUnicastOrigin(canonicalOrigin, resolveFn),
+      bundleController.signal,
+      () => new Error(`resolving the install origin's host exceeded the bundle's overall deadline of ${String(BUNDLE_TIMEOUT_MS)}ms`)
+    )
+  } catch (error) {
+    return rejected(error instanceof Error ? error.message : String(error))
+  }
+  if (!originResult.ok) return rejected(originResult.reason)
+
+  try {
+    await storage.clearStaging(canonicalOrigin)
+  } catch (error) {
+    console.error('[loader] could not clear the staging area', canonicalOrigin, error)
+    return rejected(`the bundle for ${canonicalOrigin} could not be written to local storage`)
+  }
+
+  // The ONLY resolution this install performs: every fetch below gets these
+  // SAME validated literals, never a fresh, unguarded re-resolution.
+  const pinnedAddresses = originResult.addresses
+  const budget = new ByteBudget(limits.bundleBytes)
+  const fetchedManifest = await fetchManifest(fetchFn, canonicalOrigin, pinnedAddresses, storage, budget, bundleController.signal)
+  if ('ok' in fetchedManifest) return fetchedManifest
+  const { manifest } = fetchedManifest
+
+  // ADR-0011: the manifest declares its own files; `entry` is unioned in as
+  // a leaf like any other. manifest.ts's MAX_ASSETS already guarantees this
+  // fits; kept so a bug there cannot become an oversized fetch loop here.
+  const assetPaths = [manifest.entry, ...(manifest.assets ?? [])]
+  if (assetPaths.length + 1 > MAX_BUNDLE_ENTRIES) {
+    return rejected(`bundle would have ${String(assetPaths.length + 1)} entries, more than MAX_BUNDLE_ENTRIES (${String(MAX_BUNDLE_ENTRIES)})`)
+  }
+
+  const context = { fetchFn, canonicalOrigin, pinnedAddresses, storage, budget, assetCap: limits.assetBytes, bundleSignal: bundleController.signal }
+  const assets = await forEachBounded(assetPaths, FETCH_CONCURRENCY, async (path) => await fetchAssetToStaging(context, path), () => { bundleController.abort() })
+  if (!Array.isArray(assets)) return assets
+  const entries = [fetchedManifest.staged, ...assets]
+
+  let tree: BundleTree
+  try {
+    tree = await bundleTreeFromLeaves(entries)
+  } catch (error) {
+    if (isOrivonErrorLike(error)) return rejected(error.message)
+    throw error // a bug in this file or bundle-hash.ts, not an untrusted-input outcome -- never swallowed
+  }
+
+  const entryPath = entryCanonicalPath(canonicalOrigin, manifest.entry)
+  if (entryPath === null || !tree.assets.some((asset) => asset.path === entryPath)) {
+    return rejected(`bundle has no leaf at the manifest's declared entry point: ${manifest.entry}`)
+  }
+
+  return { ok: true, canonicalOrigin, manifest, tree, entries }
 }

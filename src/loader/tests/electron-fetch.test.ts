@@ -1,117 +1,123 @@
+import { EventEmitter } from 'node:events'
+import { PassThrough } from 'node:stream'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 // electronFetch and netFetch both dynamically import 'electron' (see
 // electron-fetch.ts's own header for why) -- mocked here so this file can
-// assert what they hand `net.fetch`/`net.resolveHost` without a real
-// network call or a real Electron process. Same pattern as
-// ../../main/tests/favicon.test.ts, which mocks the same module for the
-// same reason.
-//
-// A155 (docs/open-questions.md): before this file existed, nothing verified
-// that electronFetch's address guard, once it PASSES, still delegates to a
-// call carrying `redirect: 'error'` -- the e2e suite
-// (test/e2e-loader-adapter.test.ts) only ever exercises electronFetch's
-// guard REFUSING a real loopback server, which returns before net.fetch is
-// ever reached, and separately exercises netFetch directly, bypassing
-// electronFetch's guard entirely. A future edit that wrapped, inlined, or
-// re-implemented electronFetch's delegation could pass every test that
-// existed before this one, including the e2e test whose stated purpose is
-// to prove `redirect: 'error'` holds.
+// assert what they hand `net.request`/`net.resolveHost`, and how they treat
+// each redirect, without a real network call or a real Electron process.
+// test/e2e-loader-adapter.test.ts proves the same against a real server.
 vi.mock('electron', () => ({
-  net: { fetch: vi.fn(), resolveHost: vi.fn() }
+  net: { request: vi.fn(), resolveHost: vi.fn() }
 }))
 
 const { net } = await import('electron')
-const { electronFetch, netFetch } = await import('../electron-fetch.js')
+const { MAX_REDIRECTS, electronFetch, netFetch, redirectRefusal } = await import('../electron-fetch.js')
 
-const fetchMock = vi.mocked(net.fetch)
+const requestMock = vi.mocked(net.request)
 const resolveHostMock = vi.mocked(net.resolveHost)
 
+/** A ClientRequest double: `hops` redirect targets, announced in turn once `end()` is called, then a 200 whose body is `body`. */
+function fakeRequest (hops: readonly string[], body = 'ok'): EventEmitter & { followRedirect: ReturnType<typeof vi.fn>, abort: ReturnType<typeof vi.fn>, end: () => void } {
+  const request = Object.assign(new EventEmitter(), { followRedirect: vi.fn(), abort: vi.fn(), end: () => {} })
+  request.end = () => {
+    queueMicrotask(() => {
+      for (const target of hops) {
+        const before = request.followRedirect.mock.calls.length
+        request.emit('redirect', 302, 'GET', target, {})
+        if (request.followRedirect.mock.calls.length === before) return
+      }
+      const response = Object.assign(new PassThrough(), { statusCode: 200, headers: { 'content-length': String(body.length) } })
+      request.emit('response', response)
+      response.end(body)
+    })
+  }
+  return request
+}
+
 afterEach(() => {
-  fetchMock.mockReset()
+  requestMock.mockReset()
   resolveHostMock.mockReset()
 })
 
+describe('redirectRefusal', () => {
+  it('allows a hop that stays on the requested origin, and refuses one to another scheme, host or port', () => {
+    expect(redirectRefusal('https://app.example/index.html', 'https://app.example/', 0)).toBeNull()
+    expect(redirectRefusal('https://app.example/a', 'http://app.example/a', 0)).toMatch(/another origin/)
+    expect(redirectRefusal('https://app.example/a', 'https://cdn.example/a', 0)).toMatch(/another origin/)
+    expect(redirectRefusal('https://app.example/a', 'https://app.example:8443/a', 0)).toMatch(/another origin/)
+  })
+
+  it(`refuses the hop after ${String(MAX_REDIRECTS)}`, () => {
+    expect(redirectRefusal('https://app.example/a', 'https://app.example/b', MAX_REDIRECTS)).toMatch(/redirects/)
+  })
+})
+
 describe('netFetch', () => {
-  it('calls net.fetch with credentials omitted and redirect set to error', async () => {
-    const fakeResponse = { ok: true, status: 200 } as unknown as Response
-    fetchMock.mockResolvedValue(fakeResponse)
-    const controller = new AbortController()
+  it('asks net.request for a manual-redirect, cookie-less GET', async () => {
+    requestMock.mockReturnValue(fakeRequest([]) as never)
+    await netFetch('https://x.example/a.js', new AbortController().signal)
 
-    const result = await netFetch('https://x.example/a.js', controller.signal)
+    expect(requestMock).toHaveBeenCalledExactlyOnceWith({ url: 'https://x.example/a.js', method: 'GET', credentials: 'omit', useSessionCookies: false, redirect: 'manual' })
+  })
 
-    expect(result).toBe(fakeResponse)
-    expect(fetchMock).toHaveBeenCalledExactlyOnceWith('https://x.example/a.js', {
-      credentials: 'omit',
-      signal: controller.signal,
-      redirect: 'error'
-    })
+  it('follows a same-origin redirect (a static host\'s /index.html -> /) and returns the final body under the requested url', async () => {
+    const request = fakeRequest(['https://x.example/'], '<h1>hi</h1>')
+    requestMock.mockReturnValue(request as never)
+
+    const response = await netFetch('https://x.example/index.html', new AbortController().signal)
+
+    expect(request.followRedirect).toHaveBeenCalledOnce()
+    expect(response.ok).toBe(true)
+    expect(response.url).toBe('https://x.example/index.html')
+    expect(response.headers?.get('Content-Length')).toBe('11')
+    expect(await new Response(response.body).text()).toBe('<h1>hi</h1>')
+  })
+
+  it('refuses a cross-origin redirect: rejects, and aborts the request', async () => {
+    const request = fakeRequest(['https://elsewhere.example/a.js'])
+    requestMock.mockReturnValue(request as never)
+
+    await expect(netFetch('https://x.example/a.js', new AbortController().signal)).rejects.toThrow(/another origin/)
+    expect(request.followRedirect).not.toHaveBeenCalled()
+    expect(request.abort).toHaveBeenCalled()
   })
 })
 
 describe('electronFetch', () => {
-  it('delegates to net.fetch with redirect: error once a public address literal clears the guard', async () => {
-    const fakeResponse = { ok: true, status: 200 } as unknown as Response
-    fetchMock.mockResolvedValue(fakeResponse)
-    const controller = new AbortController()
+  it('delegates to net.request once a public address literal clears the guard', async () => {
+    requestMock.mockReturnValue(fakeRequest([]) as never)
 
-    const result = await electronFetch('https://8.8.8.8/a.js', ['8.8.8.8'], controller.signal)
+    await electronFetch('https://8.8.8.8/a.js', ['8.8.8.8'], new AbortController().signal)
 
-    expect(result).toBe(fakeResponse)
     expect(resolveHostMock).not.toHaveBeenCalled()
-    expect(fetchMock).toHaveBeenCalledExactlyOnceWith('https://8.8.8.8/a.js', {
-      credentials: 'omit',
-      signal: controller.signal,
-      redirect: 'error'
-    })
+    expect(requestMock).toHaveBeenCalledOnce()
   })
 
-  it('delegates to net.fetch with redirect: error once a hostname resolves to only public addresses', async () => {
-    const fakeResponse = { ok: true, status: 200 } as unknown as Response
-    resolveHostMock.mockResolvedValue({ endpoints: [{ address: '93.184.216.34', family: 'ipv4' }] })
-    fetchMock.mockResolvedValue(fakeResponse)
-    const controller = new AbortController()
+  it('delegates to net.request once a hostname resolves to only public addresses', async () => {
+    resolveHostMock.mockResolvedValue({ endpoints: [{ address: '93.184.216.34', family: 'ipv4' }] } as never)
+    requestMock.mockReturnValue(fakeRequest([]) as never)
 
-    const result = await electronFetch('https://cdn.example/a.js', ['93.184.216.34'], controller.signal)
+    await electronFetch('https://cdn.example/a.js', ['93.184.216.34'], new AbortController().signal)
 
-    expect(result).toBe(fakeResponse)
     expect(resolveHostMock).toHaveBeenCalledExactlyOnceWith('cdn.example')
-    expect(fetchMock).toHaveBeenCalledExactlyOnceWith('https://cdn.example/a.js', {
-      credentials: 'omit',
-      signal: controller.signal,
-      redirect: 'error'
-    })
+    expect(requestMock).toHaveBeenCalledOnce()
   })
 
-  it('never calls net.fetch when a literal address fails the guard', async () => {
-    const controller = new AbortController()
-
-    await expect(electronFetch('https://127.0.0.1/a.js', [], controller.signal)).rejects.toThrow(
-      /not a public address literal/
-    )
-
-    expect(fetchMock).not.toHaveBeenCalled()
+  it('never calls net.request when a literal address fails the guard', async () => {
+    await expect(electronFetch('https://127.0.0.1/a.js', [], new AbortController().signal)).rejects.toThrow(/not a public address literal/)
+    expect(requestMock).not.toHaveBeenCalled()
   })
 
-  it('never calls net.fetch when a hostname resolves to a private address', async () => {
-    resolveHostMock.mockResolvedValue({ endpoints: [{ address: '10.0.0.5', family: 'ipv4' }] })
-    const controller = new AbortController()
-
-    await expect(electronFetch('https://rebind.example/a.js', ['93.184.216.34'], controller.signal)).rejects.toThrow(
-      /no longer resolves to a public address/
-    )
-
-    expect(fetchMock).not.toHaveBeenCalled()
+  it('never calls net.request when a hostname resolves to a private address', async () => {
+    resolveHostMock.mockResolvedValue({ endpoints: [{ address: '10.0.0.5', family: 'ipv4' }] } as never)
+    await expect(electronFetch('https://rebind.example/a.js', ['93.184.216.34'], new AbortController().signal)).rejects.toThrow(/no longer resolves to a public address/)
+    expect(requestMock).not.toHaveBeenCalled()
   })
 
-  it('never calls net.fetch when a hostname resolves to no addresses at all', async () => {
-    resolveHostMock.mockResolvedValue({ endpoints: [] })
-    const controller = new AbortController()
-
-    await expect(electronFetch('https://nowhere.example/a.js', [], controller.signal)).rejects.toThrow(
-      /resolved to no addresses/
-    )
-
-    expect(fetchMock).not.toHaveBeenCalled()
+  it('never calls net.request when a hostname resolves to no addresses at all', async () => {
+    resolveHostMock.mockResolvedValue({ endpoints: [] } as never)
+    await expect(electronFetch('https://nowhere.example/a.js', [], new AbortController().signal)).rejects.toThrow(/resolved to no addresses/)
+    expect(requestMock).not.toHaveBeenCalled()
   })
 })

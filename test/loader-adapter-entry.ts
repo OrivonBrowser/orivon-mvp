@@ -15,7 +15,7 @@
 import { app } from 'electron'
 import { electronFetch, netFetch } from '../src/loader/electron-fetch.js'
 import { electronResolveHost } from '../src/loader/electron-resolve.js'
-import { fetchWithBudget } from '../src/loader/fetch-budget.js'
+import { ByteBudget, fetchWithBudget } from '../src/loader/fetch-budget.js'
 import type { Fetch, FetchResponse } from '../src/loader/fetch-budget.js'
 
 /** What a real Response carries beyond FetchResponse's minimal structural
@@ -102,9 +102,11 @@ async function callNetFetch (url: string): Promise<NetFetchProbeResult> {
 async function callNetFetchThroughBudget (url: string, assetCap: number): Promise<BudgetProbeResult> {
   const controller = new AbortController()
   const fetchFn: Fetch = async (target, _pinnedAddresses, signal) => await netFetch(target, signal)
-  const result = await fetchWithBudget(fetchFn, url, [], assetCap, assetCap, 'probe', controller.signal)
+  const chunks: Uint8Array[] = []
+  const result = await fetchWithBudget(fetchFn, url, [], assetCap, new ByteBudget(assetCap), 'probe', controller.signal, async (chunk) => { chunks.push(chunk) })
   if ('ok' in result) return { ok: false, reason: result.reason }
-  return { ok: true, contentUtf8: new TextDecoder('utf-8', { fatal: false }).decode(result.content) }
+  const decoder = new TextDecoder('utf-8', { fatal: false })
+  return { ok: true, contentUtf8: chunks.map((chunk) => decoder.decode(chunk, { stream: true })).join('') + decoder.decode() }
 }
 
 /** `electronResolveHost` directly -- A141's own gap, left open for this

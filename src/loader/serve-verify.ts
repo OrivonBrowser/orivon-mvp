@@ -11,48 +11,49 @@
 // catches; a file changed on disk mid-session, after this check already ran,
 // is not.
 //
-// REUSES bundle-hash.ts's OWN bundleTree() rather than re-deriving a leaf
-// digest here (Rule 3) -- that construction is a one-way door
-// (bundle-hash.ts's own header) and this file has no business holding a
-// second copy of it, correct or not.
+// STREAMED, leaf by leaf (leaf-hash.ts): no asset is ever read whole, so
+// verifying a 512 MiB bundle costs a read of it, not 512 MiB of memory. The
+// leaf construction and the root stay bundle-hash.ts's own
+// (`leafPrefix`, `bundleTreeFromLeaves`) -- never a second copy here.
 
-import { bundleTree } from '../broker/policy/bundle-hash.js'
-import type { BundleEntry } from '../broker/policy/bundle-hash.js'
+import { bundleTreeFromLeaves } from '../broker/policy/bundle-hash.js'
+import type { LeafEntry } from '../broker/policy/bundle-hash.js'
 import type { PinRecord } from '../broker/policy/pin.js'
+import { leafOf } from './leaf-hash.js'
 import type { LoaderStorage } from './storage.js'
 
 /**
- * True only if every asset `pin` claims is still readable AND the tree they
- * form together still hashes to `pin.bundleHash`. False for anything else --
- * a missing/unreadable asset, a changed byte anywhere, or a tree that no
- * longer satisfies `bundleTree()`'s own structural rules (which cannot
- * happen for a tree that was ever valid, but a corrupted read is not ruled
- * out by this file alone).
+ * True only if every asset `pin` claims is still readable and hashes to its
+ * pinned leaf, AND those leaves together still produce `pin.bundleHash`.
+ * False for anything else -- a missing/unreadable asset, a changed byte
+ * anywhere, a pin record whose leaves no longer add up to its own root, or
+ * a set bundleTreeFromLeaves() refuses.
  *
  * DELIBERATELY ALL-OR-NOTHING. `pin.bundleHash` is this bundle's ONE
  * identity (ADR-0009); a single changed byte anywhere in the tree is not
- * "this one file is stale", it is "this is not the bundle that was pinned",
- * and the caller's answer to that is the same either way: nothing from this
- * origin's cache is servable until it is reinstalled.
+ * "this one file is stale", it is "this is not the bundle that was pinned".
  */
 export async function verifyPinnedTree (storage: LoaderStorage, origin: string, pin: PinRecord): Promise<boolean> {
-  const entries: BundleEntry[] = []
+  const leaves: LeafEntry[] = []
   for (const asset of pin.assets) {
-    const content = await storage.readAsset(origin, asset.path)
-    if (content === undefined) return false
-    entries.push({ path: asset.path, content })
+    const stream = await storage.readAssetStream(origin, asset.path)
+    if (stream === undefined) return false
+    let leaf: string
+    try {
+      leaf = await leafOf(asset.path, stream.byteLength, stream.chunks)
+    } catch {
+      return false
+    }
+    if (leaf !== asset.leaf) return false
+    leaves.push({ path: asset.path, byteLength: stream.byteLength, leaf })
   }
 
   try {
-    const tree = await bundleTree(entries)
-    return tree.root === pin.bundleHash
+    return (await bundleTreeFromLeaves(leaves)).root === pin.bundleHash
   } catch {
-    // bundleTree() rejects a structurally invalid entry set (duplicate/
-    // colliding paths, a missing manifest leaf, an over-limit bundle) --
-    // pin.assets came from parsePinRecord, which already enforces the same
-    // rules, so reaching this branch means the disk read above produced
-    // something parsePinRecord would not have accepted. Fail closed, the
-    // same as any other verification failure.
+    // pin.assets came from parsePinRecord, which enforces the same structural
+    // rules -- reaching this means the disk produced something that record
+    // would not have accepted. Fail closed like any other mismatch.
     return false
   }
 }
