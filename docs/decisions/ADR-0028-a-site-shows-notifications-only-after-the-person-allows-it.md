@@ -61,7 +61,7 @@ Block mean something; not remembering Not now keeps a dismissal from becoming a 
   on a real page (2026-09-23, `test/e2e-site-permissions.test.ts` under a private session bus):
   an undecided site reads `'denied'` from both `Notification.permission` and the Permissions API,
   `requestPermission()` still reaches the prompt, and a remembered Allow reads `'granted'` after a
-  restart. Whether to report `'default'` instead is `docs/open-questions.md` A242.
+  restart. Whether to report `'default'` instead is `docs/open-questions.md` A243.
 - A decided site can be reset to undecided from the permissions panel.
 - `web-context-host.ts`'s deny-everything handlers keep notifications away from `ADR-0019`
   isolated contexts.

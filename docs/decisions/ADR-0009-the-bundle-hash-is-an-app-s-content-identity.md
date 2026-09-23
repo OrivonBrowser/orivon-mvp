@@ -273,7 +273,7 @@ action, and nothing calls it yet.
 **The loader hashes each asset as a stream; `bundle-hash.ts` stays WebCrypto.** A real built
 frontend (ASGARDEX: a 31 MB wasm-heavy chunk in a 37 MB bundle) did not fit the 16 MiB asset cap
 this ADR's whole-buffer digest needed. The owner set the caps at 64 MiB per asset and 512 MiB per
-bundle (`open-questions.md` A15, `d-0050`), and at that size an asset must never be held whole.
+bundle (`open-questions.md` A15, `d-0051`), and at that size an asset must never be held whole.
 
 §Alternatives rejected a streaming `node:crypto` digest so that the durable construction would
 not tie itself to a disposable runtime (`ADR-0002`). That reason still governs

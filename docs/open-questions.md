@@ -1124,11 +1124,11 @@ admits): restricting it would refuse the redirects a form-post sign-in follows, 
 nothing that navigation does not already leave open. The header today is built in
 `src/loader/serve-csp.ts`, not `serve.ts`, and admits more than it did: `'unsafe-eval'`,
 `'wasm-unsafe-eval'`, `data:`/`blob:` in the subresource directives, `worker-src 'self' blob:`,
-`frame-src 'self' data: blob:`, and `https.connect`'s sources in `connect-src` (`d-0045` to
-`d-0047`). And `connect-src` is no longer the only gate an app tab's WebSocket meets: the page's
+`frame-src 'self' data: blob:`, and `https.connect`'s sources in `connect-src` (`d-0046` to
+`d-0048`). And `connect-src` is no longer the only gate an app tab's WebSocket meets: the page's
 own top-level socket to a granted host is routed over `orivon.net` and grant-checked by the broker
-on the dial (`d-0089`). A native socket (an ungranted host, a worker, a subframe) still meets only
-CSP (A210).
+on the dial (`d-0090`). A native socket (an ungranted host, a worker, a subframe) still meets only
+CSP (A211).
 
 ### A43 — a grant CSP cannot represent is omitted, which means BLOCKED, not merely uncovered **[OWNER DECISION]**
 
@@ -2203,7 +2203,7 @@ empty by pruning is now removed too. Gap 2 is resolved.
 bundle's chunks into 404s. An install now prunes nothing; the superseded files stay servable,
 re-verified against the pin that declared them, for the rest of the process, and
 `restorePinnedServing` prunes to the verified pin at the next start (`src/loader/README.md`,
-"Why an install never prunes"; `d-0056`). Gap 2 stays closed: nothing outlives one restart. The
+"Why an install never prunes"; `d-0057`). Gap 2 stays closed: nothing outlives one restart. The
 per-origin bound gap 1 relies on is now `MAX_BUNDLE_BYTES` 512 MiB (A15).
 
 ---
@@ -2475,7 +2475,7 @@ names, and the fix for both is the per-origin serialization below.
 the one production caller of `Loader.load()`, runs every call for an origin through
 `withOriginQueue` (`src/main/install/origin-queue.ts`), so two installs for one origin never
 interleave; that also closes the prune-versus-write races the amendment above describes, and an
-install no longer prunes at all (A58's 2026-09-22 note). Atomicity, 2026-09-22 (`d-0053`): every
+install no longer prunes at all (A58's 2026-09-22 note). Atomicity, 2026-09-22 (`d-0054`): every
 asset and pin write is a temp file in the origin's staging area renamed over its target
 (`node-storage.ts`'s `writeAtomically`, `commitStaged`), so a reader sees the old file or the new
 one, never a partial one. No `fsync`: a crash that loses a rename leaves files that no longer hash
@@ -4162,14 +4162,14 @@ decision, which is why this is filed rather than fixed.
 
 **Needed by:** whenever a real app is ported. Most real HTTP APIs redirect somewhere.
 
-**Resolved 2026-09-22 (`d-0038`, AI).** The routed path (`fetch`, `XMLHttpRequest` and
+**Resolved 2026-09-22 (`d-0039`, AI).** The routed path (`fetch`, `XMLHttpRequest` and
 `EventSource` alike, `src/preload/routed-core.ts`) follows redirects as the Fetch spec does, up
 to 20 hops, with `redirect: 'manual'` and `'error'` honoured and `response.redirected` set. Each
 of the three policy questions above has an answer in the code:
 
 - **A hop outside the grant fails.** Every hop is dialled afresh through the capability, so the
   grant is checked again, and a `'denied'` mid-chain fails the request rather than handing it to
-  the page's native API (only a first-hop denial falls back, `d-0037`).
+  the page's native API (only a first-hop denial falls back, `d-0038`).
 - **No silent downgrade.** An `http:` hop is dialled over `tcp.connect`, so it succeeds only
   against a plain-http host the app was separately granted; a non-http(s) target fails.
 - **An app's own credentials do not follow it off-origin.** `Authorization`, `Cookie`,
@@ -4995,7 +4995,7 @@ succeed today.
 > symlink into a tree shared with a live parallel-fleet run, and `npm install` against it mid-run
 > is unsafe. A follow-up should decide whether to formally declare it as a devDependency.
 
-**2026-09-22: same-origin redirects are now followed, each hop checked (`d-0058`).** Refusing
+**2026-09-22: same-origin redirects are now followed, each hop checked (`d-0059`).** Refusing
 every redirect also refused real static hosts, which answer `/index.html` with a redirect to `/`
 (Cloudflare Pages, Vercel) or `/app` with `/app/` (GitHub Pages). `netFetch`
 (`src/loader/electron-fetch.ts`) now fetches with `redirect: 'manual'` and shows every hop to
@@ -5172,7 +5172,7 @@ the header itself is assembled in `src/loader/serve-csp.ts`) -- without this, `d
 'self'`'s fallback would keep refusing the very image/font/media loads this decision exists to
 allow, before a request could ever reach the handler above. `connect-src` itself was left
 untouched here, still sourced from `tcp.connect` alone; since 2026-09-22 it also carries the
-`https.connect` sources, scheme-qualified (`d-0046`), so a worker's `fetch` and a document's XHR
+`https.connect` sources, scheme-qualified (`d-0047`), so a worker's `fetch` and a document's XHR
 reach the same handler.
 
 **A158 partially dissolved as a side effect -- see that entry's own resolution.** Before this
@@ -5404,18 +5404,18 @@ visit -- i.e. before Phase 5's FreeTube lane means anything. Not blocking anythi
 > -- so nothing here reopens it or depends on it.
 
 **2026-09-22: the first visit now ends in one automatic reload, which is option 3 above --
-see A233 before relying on either reading.** The first load also ran without the app tab's
+see A234 before relying on either reading.** The first load also ran without the app tab's
 shims (no routed `fetch`, no `process`), because a tab's app-tab flag and partition are fixed
 when it is built, before the origin was registered. `src/main/install/manifest-hint.ts` now
 reloads the tab that reported the hint once, after consent is answered, when that install is
-what registered the origin (`d-0052`); the reloaded tab runs from the pinned cache, in the app's
+what registered the origin (`d-0053`); the reloaded tab runs from the pinned cache, in the app's
 partition, with a decided grant. What remains of this entry is the pre-reload first load itself:
 its scripts still run before consent and can still be told `'denied'` for an instant, as the
 owner accepted. The reload is the option the owner's decision above declined, taken as an AI
 call to close the missing-shims half.
 
 > **Owner decision, 2026-09-23: the reload is kept, reversing the 2026-09-15 decline of option
-> 3 (A233).** The decline weighed the reload against a first load that is only refused for an
+> 3 (A234).** The decline weighed the reload against a first load that is only refused for an
 > instant. The first load is worse than that: it runs without the app tab's routed `fetch` and
 > `process` and `Buffer` shims, so a ported app's first visit was broken. The shipped design is
 > now option 2 followed by option 3: the page runs, consent is asked, and a first install that
@@ -6896,7 +6896,7 @@ same reasoning, because it also governs `wss:`, which is never intercepted and w
 therefore the SOLE gate. That distinction is already load-bearing elsewhere in this design
 (`A158`/#194's own revert), so this would apply an existing rule rather than invent one.
 
-**Owner decision, 2026-09-22 (`d-0046`): yes, and `connect-src` too.** A `*` host in an
+**Owner decision, 2026-09-22 (`d-0047`): yes, and `connect-src` too.** A `*` host in an
 `https.connect` grant emits the `https:` scheme source in all four reach directives:
 `connect-src`, `img-src`, `font-src` and `media-src`. Never `wss:`. The recommendation's reason
 for keeping `connect-src` out, that `wss:` is never re-checked, was measured rather than assumed
@@ -6907,9 +6907,9 @@ emits (a bare `host:port`, `https://host:port`, or `https:`) admits a `wss:` URL
 live grant, which still refuses loopback and private addresses (measured with a loopback server
 the page could name in the header and that never saw a connection). This is the one source the
 header emits that is wider than the grant, and `connect-src.ts`'s header says so. The
-measurement's other half is A210: no emitted source admits `wss:`, so a native WebSocket to a
+measurement's other half is A211: no emitted source admits `wss:`, so a native WebSocket to a
 third-party host is refused; the page's own top-level socket to a granted host is routed instead
-(`d-0089`).
+(`d-0090`).
 
 ### A178 -- `grant-ledger.ts` reached exactly Rule 2's 500-line limit, and a second file is six lines from it **[RESOLVED 2026-09-15 for the first; NOTED for the second]**
 
@@ -7252,7 +7252,7 @@ pre-fix code first; a body exactly at the cap still succeeds. `src/loader/tests/
 
 **2026-09-22: the number it matched is gone.** The routed path no longer caps a response body:
 it streams, reading at most 512 KiB ahead of the app (`src/preload/README.md`, "The routed
-network path's numbers"; `d-0041`), so `ROUTED_FETCH_MAX_BODY_BYTES` and `readAllCapped` no
+network path's numbers"; `d-0042`), so `ROUTED_FETCH_MAX_BODY_BYTES` and `readAllCapped` no
 longer exist. `REACH_MAX_REQUEST_BODY_BYTES` (16 MiB) stands on its own reason, an app's request
 body buffered in the privileged main process before dialling; `serve-reach.ts`'s comment on it
 still names the removed constant as its source and needs rewording to that reason.
@@ -8581,9 +8581,9 @@ of a page misusing a stored handle.
 
 **Needed by:** any of those three. Not blocking.
 
-### A206 -- the routed network path's numbers are provisional **[AI-REC]**
+### A207 -- the routed network path's numbers are provisional **[AI-REC]**
 
-Filed 2026-09-22 with the routed path's rebuild as a streaming HTTP client (`d-0039`, `d-0041`).
+Filed 2026-09-22 with the routed path's rebuild as a streaming HTTP client (`d-0040`, `d-0042`).
 Four numbers were chosen, not measured: `ROUTED_IDLE_TIMEOUT_MS` (300 s without a byte, when the
 caller gave no signal or timeout), `ROUTED_QUEUE_MAX_WAIT_MS` (120 s waiting for a socket under
 the origin's allowance), `ROUTED_LIMIT_RETRY_MS` (500 ms back-off between retries of a `'limit'`
@@ -8595,7 +8595,7 @@ connection limit without a bound and leaves a quiet response open.
 healthy long-poll sits silent and how deep the dial queue gets. **Needed by:** the first report of
 a request failing on one of these numbers. Not blocking.
 
-### A207 -- every routed request pays its own TCP and TLS handshake **[AI-REC]**
+### A208 -- every routed request pays its own TCP and TLS handshake **[AI-REC]**
 
 Filed 2026-09-22. The routed path sends `Connection: close` and keeps no pool, so a page firing
 forty requests to one API host opens forty connections, each with a full handshake, and each
@@ -8606,7 +8606,7 @@ by the socket allowance. It is real work inside a serialised installer that cann
 anything, so it waits for a measured cost. **Needed by:** a trace where handshake time or
 allowance pressure dominates a real app's startup.
 
-### A208 -- brotli: routed requests do not advertise it, because the platform cannot decode it yet **[RESEARCH]**
+### A209 -- brotli: routed requests do not advertise it, because the platform cannot decode it yet **[RESEARCH]**
 
 Filed 2026-09-22. `DecompressionStream` in Electron 44 has no `'brotli'` format. The routed path
 checks at install and, finding none, advertises `Accept-Encoding: gzip, deflate` only; a server
@@ -8618,7 +8618,7 @@ same gap (`browserify-zlib` predates brotli).
 decision to approve a WASM decoder (`docs/planning/shim-dependency-review.md` named
 `brotli-wasm`). **Needed by:** a granted host that ignores `Accept-Encoding`. Not blocking.
 
-### A209 -- a `Request` object's own forbidden headers never reach the routed path **[AI-REC -- accept as a documented divergence]**
+### A210 -- a `Request` object's own forbidden headers never reach the routed path **[AI-REC -- accept as a documented divergence]**
 
 Filed 2026-09-22. `new Request(url, { headers })` runs the headers through the platform's request
 guard, which silently drops the ones a page may not set (`Origin`, `Cookie`, `Host`, ...), before
@@ -8630,24 +8630,24 @@ Nothing in the main world can recover what the guard dropped.
 network path's remaining divergences"). **What would settle it otherwise:** a real app that
 builds its `Request` objects up front and needs a forbidden header on them.
 
-### A210 -- should a worker's or a subframe's WebSocket ever reach a granted host? **[AI-REC]**
+### A211 -- should a worker's or a subframe's WebSocket ever reach a granted host? **[AI-REC]**
 
 Filed 2026-09-22, from the measurement behind A192's resolution (`test/e2e-served-csp.test.ts`,
 Electron 44): from an https page, none of the source forms the served header emits for a grant
 (a bare `host:port`, `https://host:port`, or `https:`) admits a `wss:` URL. An app tab's own
 top-level `WebSocket` to a granted cross-origin host does not meet that header: it is routed
-over `orivon.net`, as `fetch` is (`d-0089`), and the broker checks the grant on the dial. Every
+over `orivon.net`, as `fetch` is (`d-0090`), and the broker checks the grant on the dial. Every
 other socket stays the platform's own and meets only CSP, so a native socket to any third-party
 host is refused: one to a host the app was not granted, one opened from a worker or a subframe
 (the preload runs only in a tab's top-level frame), and the same on a dev-granted origin, which
-is served the same header (`d-0049`). A same-origin socket is admitted by `connect-src 'self'`.
+is served the same header (`d-0050`). A same-origin socket is admitted by `connect-src 'self'`.
 
 **The open part:** a worker or a subframe that opens a WebSocket to a host the app *was* granted
 is refused too. **AI recommendation:** leave it refused for this build. Admitting it means
 emitting `wss:` sources, which would make CSP the only gate those sockets meet, with no live
 re-check behind it. **What would settle it:** a ported app that runs its socket in a worker.
 
-### A211 -- the reach path's CORS headers and `web-context-host.ts`'s CORS wrapper are inert in Electron 44 **[RESEARCH]**
+### A212 -- the reach path's CORS headers and `web-context-host.ts`'s CORS wrapper are inert in Electron 44 **[RESEARCH]**
 
 Filed 2026-09-22. Measured (`test/e2e-served-csp.test.ts`): Electron 44 does not enforce CORS on
 a response a `protocol.handle` handler returns. A cross-origin response with no
@@ -8662,21 +8662,21 @@ installed app keep working instead of failing all at once. **What would settle i
 the measurement on each Electron upgrade; if enforcement arrives, the headers become
 load-bearing and need tests that fail without them.
 
-### A212 -- the reach path's queue, idle timeout and redirect cap are provisional **[AI-REC]**
+### A213 -- the reach path's queue, idle timeout and redirect cap are provisional **[AI-REC]**
 
-Filed 2026-09-22 (`d-0048`). A subresource request over the app's socket allowance now waits in
+Filed 2026-09-22 (`d-0049`). A subresource request over the app's socket allowance now waits in
 a per-origin FIFO bounded at 256 waiters and 30 s (`serve-reach-slots.ts`); the dial's idle
 timeout is five minutes without a byte (`REACH_IDLE_TIMEOUT_MS`), so long-polls and event streams
 live. Both numbers were chosen, not measured. The redirect cap (20 hops, `serve-reach-redirects.ts`)
 is keyed by URL: a chain whose target URL the page's loader re-serialises differently restarts its
 count. Low risk, since each hop is still authorised and still costs the page a round trip.
 
-**What would settle it:** the same traces A206 asks for, on the subresource side. **Needed by:**
+**What would settle it:** the same traces A207 asks for, on the subresource side. **Needed by:**
 a page whose subresources fail on one of these bounds.
 
-### A213 -- the in-flight cap now queues briefly; T11b's text said it rejects at once **[NEEDS OWNER CONFIRMATION]**
+### A214 -- the in-flight cap now queues briefly; T11b's text said it rejects at once **[NEEDS OWNER CONFIRMATION]**
 
-Filed 2026-09-22 (`d-0062`). `handle-contracts.md` §Limits and `LIMITS`'s own doc said "calls
+Filed 2026-09-22 (`d-0063`). `handle-contracts.md` §Limits and `LIMITS`'s own doc said "calls
 beyond the in-flight cap reject immediately; they do not queue". Ported Node code fires a few
 hundred reads or connects at once, as Node allows, and treated the `'limit'` as a hard error.
 Past `LIMITS.inFlightOperations` (256) an operation now waits in a per-origin FIFO bounded twice:
@@ -8689,9 +8689,9 @@ The pages now describe the bounded wait.
 this one is bounded in length and time. **Needs:** the owner's confirmation, since it changes a
 stated security rule's wording. `src/contracts/limits.ts` carries the new text.
 
-### A214 -- a `localhost` connect pattern is a stated exception to T12 **[RESOLVED 2026-09-23 -- owner confirmed]**
+### A215 -- a `localhost` connect pattern is a stated exception to T12 **[RESOLVED 2026-09-23 -- owner confirmed]**
 
-Filed 2026-09-22 (`d-0063`). T12's rule is that a name is not evidence of where it leads, so a
+Filed 2026-09-22 (`d-0064`). T12's rule is that a name is not evidence of where it leads, so a
 hostname pattern never authorises a private address. A pattern whose host is exactly `localhost`
 now authorises `127.0.0.1` and `::1` at its port, and `localhost` itself is never resolved: the
 broker substitutes the two literals, so no nameserver or hosts file has a say. The argument, in
@@ -8703,11 +8703,11 @@ still means public unicast only.
 **Needs:** the owner's confirmation that the exception is acceptable. Reversing it is one branch
 in `connect-patterns.ts`.
 
-**Owner-confirmed, 2026-09-23 (`d-0063`).** The exception stands as described.
+**Owner-confirmed, 2026-09-23 (`d-0064`).** The exception stands as described.
 
-### A215 -- the fs quota over-counts in-place rewrites through a `FileHandle`, and under-counts a file removed while open **[AI-REC]**
+### A216 -- the fs quota over-counts in-place rewrites through a `FileHandle`, and under-counts a file removed while open **[AI-REC]**
 
-Filed 2026-09-22 with the quota's move to disk usage (`d-0066`). `writeFile` charges only growth,
+Filed 2026-09-22 with the quota's move to disk usage (`d-0067`). `writeFile` charges only growth,
 and `rm`, overwrite and rename release what they free. A `FileHandle`'s positional `write` and
 its `writable()` stream still charge every byte written, so rewriting a region in place counts
 twice, until the next session's reconciliation from disk corrects it. The opposite error: a file
@@ -8717,7 +8717,7 @@ the handle closes. That one is bounded by `LIMITS.concurrentFileHandles`.
 **What would settle it:** charging a handle write as the growth of the file's end rather than
 the bytes written. **Needed by:** an app that rewrites a large file in place near its quota.
 
-### A216 -- `writeFile` creates missing parent directories, where Node fails `ENOENT` **[NEEDS OWNER DECISION]**
+### A217 -- `writeFile` creates missing parent directories, where Node fails `ENOENT` **[NEEDS OWNER DECISION]**
 
 Filed 2026-09-22. The broker's `writeFile` (`src/broker/adapters/node-fs-adapter.ts`) runs a
 recursive `mkdir` of the parent first, so `orivon.fs.writeFile('a/b/c.txt', ...)` succeeds with
@@ -8728,7 +8728,7 @@ was found relying on either reading.
 **What would settle it:** the owner choosing which contract `orivon.fs.writeFile` states. The
 shim can give Node's behaviour either way; the question is what the capability promises.
 
-### A217 -- UDP is IPv4-only, and a TCP server listens on IPv4 only **[AI-REC]**
+### A218 -- UDP is IPv4-only, and a TCP server listens on IPv4 only **[AI-REC]**
 
 Filed 2026-09-22. `orivon.net.udpBind` creates a `udp4` socket bound to `0.0.0.0`
 (`src/broker/adapters/udp-adapter.ts`), and `orivon.net.listen` binds `0.0.0.0`. An app cannot
@@ -8738,9 +8738,9 @@ reach an IPv6-only DHT peer over UDP, and nothing can connect to its server over
 and so need address normalisation everywhere a peer address is compared. **Needed by:** a
 flagship measurement showing IPv6-only peers matter.
 
-### A218 -- a `web.context` grant replaced by one that is not a superset closes every context **[AI-REC]**
+### A219 -- a `web.context` grant replaced by one that is not a superset closes every context **[AI-REC]**
 
-Filed 2026-09-22 with `d-0065`. A grant replacement now keeps each live handle the new patterns
+Filed 2026-09-22 with `d-0066`. A grant replacement now keeps each live handle the new patterns
 still cover, judged per handle. A web context has no coverage predicate of its own, so it
 survives only when the new patterns cover the old ones as a set; otherwise every open context
 closes, including one whose own origin the new grant still names.
@@ -8748,9 +8748,9 @@ closes, including one whose own origin the new grant still names.
 **What would settle it:** a per-context predicate (does the new grant still name this context's
 origin). **Needed by:** an app that narrows its `web.contexts` grant while contexts are open.
 
-### A219 -- after a session ends, an operation on one of its handles answers `'denied'`, not `'revoked'` **[AI-REC]**
+### A220 -- after a session ends, an operation on one of its handles answers `'denied'`, not `'revoked'` **[AI-REC]**
 
-Filed 2026-09-22 with `d-0067`. An operation on an ended handle now reports how it ended:
+Filed 2026-09-22 with `d-0068`. An operation on an ended handle now reports how it ended:
 `'closed'` with `EBADF`, or `'revoked'` when its grant, pick or session was withdrawn. The last
 case has a hole: `dropOrigin` deletes the origin's whole table, so a later call on one of its
 handle ids finds nothing and answers the uniform `'denied'`. Operations in flight when the session
@@ -8759,9 +8759,9 @@ ended do get `'revoked'`.
 **What would settle it:** keeping a short-lived tombstone for a dropped origin's handle ids.
 **Needed by:** a report of an app confused by `'denied'` after a session ended.
 
-### A220 -- Node defines `Buffer` and `process` as accessor pairs; the page defines them as data properties. Which is "the platform's descriptor"? **[AI-REC]**
+### A221 -- Node defines `Buffer` and `process` as accessor pairs; the page defines them as data properties. Which is "the platform's descriptor"? **[AI-REC]**
 
-Filed 2026-09-22 with the page `Buffer` global (`d-0084`). ADR-0021 requires every global Orivon
+Filed 2026-09-22 with the page `Buffer` global (`d-0085`). ADR-0021 requires every global Orivon
 installs in an app's main world to carry "the platform's own property descriptor". Node 24
 defines `globalThis.Buffer` and `globalThis.process` as non-enumerable, configurable get/set
 accessor pairs (checked: `Object.getOwnPropertyDescriptor(globalThis, 'Buffer')` has `get` and
@@ -8776,7 +8776,7 @@ deletable) and keep the data properties, which `check:page-globals` can verify s
 would settle it:** the owner saying which reading the ADR means, or a real dependency that reads
 the descriptor's shape and breaks.
 
-### A221 -- the shim cannot list the app's root directory **[AI-REC]**
+### A222 -- the shim cannot list the app's root directory **[AI-REC]**
 
 Filed 2026-09-22. The broker's confinement refuses any path that resolves to the app's root
 itself (`deny('is-root')`). The shim answers `stat`, `access`, `mkdir -p` and `fsync` of the root
@@ -8786,9 +8786,9 @@ fails `EACCES` with a message naming the gap. A subdirectory lists normally.
 **What would settle it:** a broker policy change allowing a read-only listing of the root.
 **Needed by:** a library that lists its working directory.
 
-### A222 -- `process`'s values are provisional **[AI-REC]**
+### A223 -- `process`'s values are provisional **[AI-REC]**
 
-Filed 2026-09-22 (`d-0078`). `process.versions` is an empty object, not a faked Node version;
+Filed 2026-09-22 (`d-0079`). `process.versions` is an empty object, not a faked Node version;
 `version` is `''`; `arch` is `'javascript'`, `platform` and `release.name` `'browser'`; `argv` and
 `execArgv` are empty; `pid` is 1. Each is chosen so a check for Node or Electron takes its browser
 branch rather than a Node-only path the shim cannot back (`src/shim/README.md`).
@@ -8796,7 +8796,7 @@ branch rather than a Node-only path the shim cannot back (`src/shim/README.md`).
 **What would settle it:** a real dependency that branches on one of these and breaks. Changing
 a value is one line in `src/shim/globals.ts`.
 
-### A223 -- no per-connection trust anchor, so a self-signed node cannot be reached over TLS **[RESOLVED 2026-09-23 -- owner decision, built]**
+### A224 -- no per-connection trust anchor, so a self-signed node cannot be reached over TLS **[RESOLVED 2026-09-23 -- owner decision, built]**
 
 Filed 2026-09-22. The broker verifies every certificate against the system store and the dialled
 host, and `orivon.net.connectSecure` takes no option that changes who is trusted. Electrum
@@ -8808,17 +8808,17 @@ and a pinning `checkServerIdentity` by name.
 trust anchor (a pinned certificate or CA), which is a `src/contracts/` change and a new thing the
 grant prompt would have to show. **Needed by:** a wallet or node client among the ports.
 
-**Resolved, 2026-09-23 (owner, `d-0096`).** `connectSecure` takes Node's own TLS options:
+**Resolved, 2026-09-23 (owner, `d-0097`).** `connectSecure` takes Node's own TLS options:
 `ca` replaces the built-in roots for that connection, `cert`/`key`/`pfx`/`passphrase` present a
 client certificate, and `rejectUnauthorized: false` skips verification, each as Node honours it
 (`ADR-0017`'s 2026-09-23 amendment). The grant prompt does not show these: they are the app's
 choices, made in its own code. An option that stops the certificate binding the granted name adds
-the resolve-once address check (`d-0097`), so a self-signed LAN node is reached through a grant
+the resolve-once address check (`d-0098`), so a self-signed LAN node is reached through a grant
 naming its address or `localhost:<port>`.
 
-### A224 -- `orivon.net.listen` has no host parameter **[AI-REC]**
+### A225 -- `orivon.net.listen` has no host parameter **[AI-REC]**
 
-Filed 2026-09-22 (`d-0076`). The capability always binds every interface. The shim therefore
+Filed 2026-09-22 (`d-0077`). The capability always binds every interface. The shim therefore
 refuses a `net.Server` listen on `127.0.0.1`, `::1` or `localhost` by name rather than widening
 it, since a loopback-only listener is usually an unauthenticated local control surface. An app
 that needs a local-only port has no way to ask for one.
@@ -8827,7 +8827,7 @@ that needs a local-only port has no way to ask for one.
 every interface: a `src/contracts/` change. **Needed by:** an app with a local RPC port or an
 OAuth redirect catcher.
 
-### A225 -- STARTTLS cannot work over broker-terminated TLS **[RESEARCH]**
+### A226 -- STARTTLS cannot work over broker-terminated TLS **[RESEARCH]**
 
 Filed 2026-09-22. `pg`, SMTP and IMAP clients open a plain connection, talk, and then upgrade it
 with `tls.connect({ socket })`. TLS here is terminated in the broker (`ADR-0017`) on a connection
@@ -8838,7 +8838,7 @@ socket in place. The shim refuses the upgrade by name.
 authorised against `https.connect` for the same host. A contracts change. **Needed by:** a
 ported app that speaks one of those protocols.
 
-**What it would take, 2026-09-23 (it stays refused, `d-0099`):**
+**What it would take, 2026-09-23 (it stays refused, `d-0100`):**
 
 1. A contracts operation, for example `orivon.net.upgradeSecure(socket, tlsOptions & { host })`,
    authorised against `https.connect` for `host` and always address-checked against the address
@@ -8854,9 +8854,9 @@ ported app that speaks one of those protocols.
 5. Revocation by either grant: the upgraded socket answers to both `tcp.connect` and
    `https.connect`.
 
-### A226 -- `rejectUnauthorized: false` is accepted and ignored **[RESOLVED 2026-09-23 -- owner: the option is honoured]**
+### A227 -- `rejectUnauthorized: false` is accepted and ignored **[RESOLVED 2026-09-23 -- owner: the option is honoured]**
 
-Filed 2026-09-22 (`d-0075`). The shim's `tls` and `https` accept `rejectUnauthorized: false` and
+Filed 2026-09-22 (`d-0076`). The shim's `tls` and `https` accept `rejectUnauthorized: false` and
 leave verification on; when the handshake then fails, the error says the override was not
 applied. Asking for less checking and getting more is the safe direction, and Electrum-style
 clients pass the flag unconditionally, even against properly certified servers, so refusing it
@@ -8868,15 +8868,15 @@ as opposed to refusing the option by name like the others.
 **Owner decision, 2026-09-23: honour it.** Asked for the option that gives the most
 compatibility with Electron apps, the owner chose to make `connectSecure` do what Node does:
 `rejectUnauthorized: false` makes that one connection really unauthenticated. The same decision
-covers the trust options A223, A225 and A228 name. It is being built; this entry records the
+covers the trust options A224, A226 and A229 name. It is being built; this entry records the
 decision, and the pages will describe the behaviour once it lands.
 
-**Built, same day (`d-0096`).** The shim passes `rejectUnauthorized: false` to `connectSecure`,
+**Built, same day (`d-0097`).** The shim passes `rejectUnauthorized: false` to `connectSecure`,
 which completes the handshake whatever the certificate says; the socket's `authorized` and
 `authorizationError` report what verification found. The option is applied, not ignored, and an
-unauthenticated connection is address-checked (`d-0097`).
+unauthenticated connection is address-checked (`d-0098`).
 
-### A227 -- is `http.createServer` in scope? **[NEEDS OWNER DECISION]**
+### A228 -- is `http.createServer` in scope? **[NEEDS OWNER DECISION]**
 
 Filed 2026-09-22. `net.createServer` is built over `orivon.net.listen`, but there is no HTTP
 request parser or `ServerResponse` on top of it, so `http.createServer` refuses by name. Rule 4
@@ -8886,7 +8886,7 @@ an app serving HTTP.
 **What would settle it:** the owner saying whether a ported app that serves HTTP is in this
 build's scope. **Needed by:** such an app appearing among the ports.
 
-### A228 -- `connectSecure` negotiates no ALPN **[RESOLVED 2026-09-23]**
+### A229 -- `connectSecure` negotiates no ALPN **[RESOLVED 2026-09-23]**
 
 Filed 2026-09-22. The shim accepts `ALPNProtocols` and reports `alpnProtocol` as `false`, Node's
 value for none, because `connectSecure` offers no protocol list. A client that wants HTTP/2 falls
@@ -8895,13 +8895,13 @@ back to HTTP/1.1, which every client in the tree does cleanly. A gRPC client cou
 **What would settle it:** an ALPN option on `connectSecure`, a contracts change. **Needed by:** a
 ported app that requires HTTP/2 or another ALPN-selected protocol.
 
-**Resolved, 2026-09-23 (`d-0096`).** `connectSecure` takes `alpnProtocols` (Node's
+**Resolved, 2026-09-23 (`d-0097`).** `connectSecure` takes `alpnProtocols` (Node's
 `ALPNProtocols`, which the shim translates, the wire-format Buffer included), and the socket
 reports the protocol agreed as `alpnProtocol`.
 
-### A229 -- an open-web page an app opens as a popup runs in the app's partition until its opener closes **[RESOLVED 2026-09-23 -- owner accepted the residual]**
+### A230 -- an open-web page an app opens as a popup runs in the app's partition until its opener closes **[RESOLVED 2026-09-23 -- owner accepted the residual]**
 
-Filed 2026-09-22 (`d-0080`), an `ADR-0018` residual. A popup the page can talk to is Chromium's
+Filed 2026-09-22 (`d-0081`), an `ADR-0018` residual. A popup the page can talk to is Chromium's
 own new webContents, and Chromium creates it in its opener's session; moving it to the default
 session would sever `window.opener`, which is the whole point of a sign-in popup. So a sign-in
 provider an app opens this way runs in the app's partition, and its cookies land there, until the
@@ -8912,13 +8912,13 @@ own session, so the reverse leak does not happen.
 which would let a navigation choose its session before Chromium commits it. **Needed by:** a
 review of what a provider's cookies in an app partition can reach.
 
-**Owner decision, 2026-09-23: accepted (`d-0095`).** A sign-in popup that can talk back to its
+**Owner decision, 2026-09-23: accepted (`d-0096`).** A sign-in popup that can talk back to its
 opener is worth more than keeping the provider's cookies out of the app's partition. The residual
 stays as described, and A109's interception would still remove it if it is ever built.
 
-### A230 -- the Leave/Stay prompt blocks the main process, and closing a tab never asks **[AI-REC]**
+### A231 -- the Leave/Stay prompt blocks the main process, and closing a tab never asks **[AI-REC]**
 
-Filed 2026-09-22 (`d-0081`). Electron settles `will-prevent-unload` from the handler's return
+Filed 2026-09-22 (`d-0082`). Electron settles `will-prevent-unload` from the handler's return
 value, with no asynchronous path, so the question is a synchronous message box and every tab's
 broker traffic waits while it is open. Separately, closing a tab closes its webContents without
 running `beforeunload`, where Chrome would ask.
@@ -8927,7 +8927,7 @@ running `beforeunload`, where Chrome would ask.
 `beforeunload` from `closeTab()` before destroying the view. **Needed by:** a report of either
 hurting a real page.
 
-### A231 -- `prompt()` returns `null` **[STILL OPEN]**
+### A232 -- `prompt()` returns `null` **[STILL OPEN]**
 
 Filed 2026-09-22. Electron implements no `window.prompt()` dialog and offers no hook to supply
 one, so every call returns `null` at once, which a page reads as the person pressing Cancel.
@@ -8937,7 +8937,7 @@ one, so every call returns `null` at once, which a page reads as the person pres
 `window.prompt`, which would need to block the page synchronously as the real one does.
 **Needed by:** a ported app that asks for input this way.
 
-### A232 -- a form `POST` that changes a tab's partition loses its body **[STILL OPEN]**
+### A233 -- a form `POST` that changes a tab's partition loses its body **[STILL OPEN]**
 
 Filed 2026-09-22. When a navigation moves a tab into or out of an app's partition, the shell
 learns of it only after Chromium commits it (`did-navigate`), then swaps in a fresh view and
@@ -8948,7 +8948,7 @@ replay would submit twice.
 **What would settle it:** A109's pre-commit interception, choosing the partition before the
 request is sent. **Needed by:** a sign-in or payment flow that posts across an app boundary.
 
-### A233 -- the reload after a first install is the option A146's owner decision declined **[RESOLVED 2026-09-23 -- owner kept the reload]**
+### A234 -- the reload after a first install is the option A146's owner decision declined **[RESOLVED 2026-09-23 -- owner kept the reload]**
 
 Filed 2026-09-22. A146's owner decision (2026-09-15) kept "let the page run" and declined option
 3, reloading the tab once a grant exists, because the reload is one the person did not ask for
@@ -8956,20 +8956,20 @@ and is wrong for an app that already did something stateful on its first start. 
 platform-fidelity work of 2026-09-22 found a second cost of the first load that A146 did not
 weigh: it runs without the app tab's routed `fetch` and `process` shim, because a tab's flag and
 partition are fixed when it is built. `src/main/install/manifest-hint.ts` now reloads the reporting tab once, after consent,
-when that install is what registered the origin (`d-0052`); a repeat visit and an app restored at
+when that install is what registered the origin (`d-0053`); a repeat visit and an app restored at
 startup are never reloaded, so it cannot loop.
 
 That is option 3, taken as an AI call. **Needs:** the owner to confirm the reload, or reverse it,
 which leaves a first-visit app without its shims until the person reloads it themselves.
 
-**Owner decision, 2026-09-23: the reload stays (`d-0052`).** It reverses the 2026-09-15 decline
+**Owner decision, 2026-09-23: the reload stays (`d-0053`).** It reverses the 2026-09-15 decline
 of option 3, for the reason above: without the app-tab setup the first load has no routed
 `fetch` and no `process` or `Buffer` shims, so a ported app's first visit was broken, not just
 refused for an instant. A146 records the change.
 
-### A234 -- the inlined `buffer` package runs in sloppy mode in the page **[AI-REC]**
+### A235 -- the inlined `buffer` package runs in sloppy mode in the page **[AI-REC]**
 
-Filed 2026-09-22 with the page `Buffer` global (`d-0084`). The preload build inlines the `buffer`
+Filed 2026-09-22 with the page `Buffer` global (`d-0085`). The preload build inlines the `buffer`
 package into `page-buffer.ts`'s installer, and the bundler drops a nested `'use strict'`
 directive, so the package runs sloppy in the page, as `installGlobals` already does.
 `src/preload/tests/page-buffer.test.ts` and `test/e2e-page-buffer.test.ts` both run it that way,
@@ -8979,9 +8979,9 @@ so the package is proven to work sloppy. Nothing else is inlined this way today.
 and depends on strict-mode semantics (a `this` of `undefined` in a plain call, a throw on
 assignment to a read-only property). Whoever inlines one should check this first. Not blocking.
 
-### A235 -- the conditional update check notices a release only when the manifest's bytes change **[NEEDS OWNER CONFIRMATION]**
+### A236 -- the conditional update check notices a release only when the manifest's bytes change **[NEEDS OWNER CONFIRMATION]**
 
-Filed 2026-09-22 with the persisted, conditional update check (`d-0087`). Once the hourly interval
+Filed 2026-09-22 with the persisted, conditional update check (`d-0088`). Once the hourly interval
 has passed, the loader asks for the manifest with `If-None-Match`/`If-Modified-Since` from the
 manifest last pinned, and a 304 ends the check before any asset is requested. So a release is
 noticed only when its manifest changes: a publisher who ships new files under a byte-identical
@@ -8991,9 +8991,9 @@ manifest (its `version` at least), so a publisher following them is unaffected.
 **What would settle it:** the owner confirming that "bump `version` on every release" is a
 requirement publishers carry, or a periodic unconditional check (say, daily) as a backstop.
 
-### A236 -- accepting an all-or-nothing install prompt after a widening re-grants everything, including capabilities the person revoked **[NEEDS OWNER DECISION]**
+### A237 -- accepting an all-or-nothing install prompt after a widening re-grants everything, including capabilities the person revoked **[NEEDS OWNER DECISION]**
 
-Filed 2026-09-22 with `d-0086`. A revoke in the permissions panel is now recorded as a declined
+Filed 2026-09-22 with `d-0087`. A revoke in the permissions panel is now recorded as a declined
 capability, so the install-consent dialog does not ask for it again. When an update widens the
 manifest and the app declares `consentGranularity: 'all-or-nothing'`, the dialog shows the full
 declared set as one choice, so accepting it clears every decline, the revoked ones included, and
@@ -9004,9 +9004,9 @@ capability they deliberately took away comes back as part of a yes to something 
 capability should stay out of an all-or-nothing re-prompt (which would give the app less than it
 declared, the state `'all-or-nothing'` exists to prevent).
 
-### A237 -- inside the persisted interval, a first visit after a restart skips the install finish entirely **[AI-REC]**
+### A238 -- inside the persisted interval, a first visit after a restart skips the install finish entirely **[AI-REC]**
 
-Filed 2026-09-22 with `d-0087`. With the check time persisted, the first visit after a restart
+Filed 2026-09-22 with `d-0088`. With the check time persisted, the first visit after a restart
 can answer `'up-to-date'` without any request, and that answer skips everything a completed check
 would do after it: `registerApp` is not re-run from a fresh manifest, and an install consent that
 was never answered (the prompt threw, say) is not asked again, until the next real check. The app
@@ -9016,9 +9016,9 @@ manifest.
 **What would settle it:** re-asking an unanswered consent from the startup path rather than from
 the update check. **Needed by:** a report of an app stuck without a consent it never answered.
 
-### A238 -- Chromium's HTTP cache may answer the conditional manifest request itself **[RESEARCH]**
+### A239 -- Chromium's HTTP cache may answer the conditional manifest request itself **[RESEARCH]**
 
-Filed 2026-09-22 with `d-0087`. The manifest request goes through Electron's network stack, whose
+Filed 2026-09-22 with `d-0088`. The manifest request goes through Electron's network stack, whose
 HTTP cache may answer it from its own copy while that copy is fresh under the host's
 `Cache-Control: max-age`, without asking the host. A host that serves its manifest with a long
 `max-age` can therefore delay when an update is noticed by as much as that age, on top of the
@@ -9028,19 +9028,19 @@ hourly interval.
 manifest without revalidating, and if it does, sending the check with a cache mode that always
 revalidates.
 
-### A239 -- a routed WebSocket holds a socket-allowance slot for its whole life **[AI-REC -- provisional]**
+### A240 -- a routed WebSocket holds a socket-allowance slot for its whole life **[AI-REC -- provisional]**
 
-Filed 2026-09-22 with `d-0089`. A routed WebSocket dials through the same queue as routed
+Filed 2026-09-22 with `d-0090`. A routed WebSocket dials through the same queue as routed
 `fetch` and XHR and holds one of the origin's socket-allowance slots until it closes; the
 allowance is shared (ASGARDEX declares 32). A dapp holding many subscription sockets narrows what
-its `fetch` calls can dial, and past the allowance requests queue for up to 120 s (A206).
+its `fetch` calls can dial, and past the allowance requests queue for up to 120 s (A207).
 
 **What would settle it:** measuring how many sockets ASGARDEX or a WalletConnect session holds
 open, then deciding whether a WebSocket gets an allowance of its own.
 
-### A240 -- the dev CSP refuses a hot-reload WebSocket on another port **[AI-REC -- provisional]**
+### A241 -- the dev CSP refuses a hot-reload WebSocket on another port **[AI-REC -- provisional]**
 
-Filed 2026-09-22 with `d-0090`. A dev server's hot-reload socket on the page's own host and port
+Filed 2026-09-22 with `d-0091`. A dev server's hot-reload socket on the page's own host and port
 is admitted by `connect-src 'self'` (measured in Electron 44, `test/e2e-websocket-routing.test.ts`),
 so the dev CSP adds no `ws:` source for it. A dev server configured to put that socket on another
 port (Vite's `server.hmr.port`, Parcel's `--hmr-port`) is refused.
@@ -9048,7 +9048,7 @@ port (Vite's `server.hmr.port`, Parcel's `--hmr-port`) is refused.
 **What would settle it:** whether the dev path should admit `ws://<page host>:*`. Provisional
 reason not to yet: Vite, webpack-dev-server, Next.js and Parcel all default to the same port.
 
-### A241 -- a native WebSocket refused by CSP fires `error` and goes `CLOSED` without a `close` event **[RESEARCH -- a porting trap]**
+### A242 -- a native WebSocket refused by CSP fires `error` and goes `CLOSED` without a `close` event **[RESEARCH -- a porting trap]**
 
 Filed 2026-09-22. Measured in Electron 44: when the page's CSP refuses a native WebSocket, it
 fires `error`, and its `readyState` becomes `CLOSED`, but no `close` event follows. An app that
@@ -9058,7 +9058,7 @@ routed path passes it on unchanged for a socket it hands to the native construct
 **Recorded as a trap for porters:** listen for `error` as well as `close`. **What would settle
 it:** Chromium firing `close` after the refusal, which would make this entry obsolete.
 
-### A242 -- `Notification.permission` reads `'denied'` for a site nobody has decided **[needs owner call -- measured]**
+### A243 -- `Notification.permission` reads `'denied'` for a site nobody has decided **[needs owner call -- measured]**
 
 Filed 2026-09-22 with `ADR-0028`. Electron's permission check handler returns a boolean, so the
 gate can answer `Notification.permission` and the Permissions API only with "allowed" or not: a
@@ -9067,7 +9067,7 @@ APIs check and then request when the check is denied, so a page calling `request
 still gets asked. A page that reads `Notification.permission` first and gives up on `'denied'`
 never asks, and never shows a notification.
 
-**Measured 2026-09-23** on a real page under a private session bus (A243,
+**Measured 2026-09-23** on a real page under a private session bus (A244,
 `test/e2e-site-permissions.test.ts`): an undecided site reads `'denied'` from both
 `Notification.permission` and the Permissions API; `requestPermission()` still reaches the
 prompt; Allow reads `'granted'`, also after a restart. **What would settle it:** a choice between
@@ -9075,7 +9075,7 @@ a main-world override that reports `'default'` for an undecided site (under ADR-
 rules) and accepting it as a documented divergence. Needed by the first ported app that gates on
 `'default'`.
 
-### A243 -- every e2e test runs on the user's real session bus **[STILL OPEN]**
+### A244 -- every e2e test runs on the user's real session bus **[STILL OPEN]**
 
 Filed 2026-09-22. By default `scripts/run-headless.mjs` gives the launched shell a virtual
 display but not a private D-Bus session bus, so an Electron under test talks to the desktop
@@ -9091,9 +9091,9 @@ nothing stops one from starting to.
 suites that read `safeStorage`, or a guard that fails any e2e file that constructs a notification
 outside the private-bus runner.
 
-### A244 -- under `*:443`, a verified certificate for a name that resolves to the LAN still reaches the LAN **[AI-REC]**
+### A245 -- under `*:443`, a verified certificate for a name that resolves to the LAN still reaches the LAN **[AI-REC]**
 
-Filed 2026-09-23 with `d-0097`. A196 closed a wildcard `https.connect` grant's reach to address
+Filed 2026-09-23 with `d-0098`. A196 closed a wildcard `https.connect` grant's reach to address
 literals outside public unicast, and left one residual: a hostname that resolves to a private
 address. With default verification, `connectSecure` still matches the name alone and dials it,
 so a service holding a publicly trusted certificate for a name that resolves to a LAN address
@@ -9105,7 +9105,7 @@ not only an unbound one. It costs one resolution per connection and refuses such
 granted by address. **Needed by:** the owner's view of whether a `*:443` grant should ever reach
 the LAN through a public name.
 
-### A245 -- a client certificate or a large CA bundle is parsed on the main thread on every connection **[AI-REC]**
+### A246 -- a client certificate or a large CA bundle is parsed on the main thread on every connection **[AI-REC]**
 
 Filed 2026-09-23. `tls.connect` builds its secure context synchronously, on the broker's own
 thread, from the app's `ca`, `cert`, `key` or `pfx`, and nothing is cached between connections.
@@ -9118,7 +9118,7 @@ origin's parsing delays every tab's broker work.
 secure context per origin and option set. **Needed by:** a trace where connection setup stalls
 other tabs.
 
-### A246 -- three gaps left in the shim's `tls` **[AI-REC]**
+### A247 -- three gaps left in the shim's `tls` **[AI-REC]**
 
 Filed 2026-09-23. `tls.rootCertificates` is absent, so the common `ca: [...tls.rootCertificates,
 mine]` fails by name rather than trusting both. `minVersion`, `maxVersion`, `ciphers` and similar
@@ -9129,9 +9129,9 @@ tuning options are ignored without a word, since the broker has no field for the
 runtime's root store exported through the broker; the chain needs `PeerCertificate` to carry it,
 a contracts change.
 
-### A247 -- the address check on an unbound TLS handshake awaits the owner's confirmation **[NEEDS OWNER CONFIRMATION]**
+### A248 -- the address check on an unbound TLS handshake awaits the owner's confirmation **[NEEDS OWNER CONFIRMATION]**
 
-Filed 2026-09-23 with `d-0097`. When a TLS option stops the certificate binding the granted name
+Filed 2026-09-23 with `d-0098`. When a TLS option stops the certificate binding the granted name
 (`rejectUnauthorized: false`, the app's own `ca`, a `servername` other than the host), the broker
 resolves the host once, requires every answer to pass `tcp.connect`'s address rule, and dials
 only the checked address. Without it, `rejectUnauthorized: false` under `*:443` would let a name

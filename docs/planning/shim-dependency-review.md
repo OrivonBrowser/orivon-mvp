@@ -158,7 +158,7 @@ future reader will actually hit them, not just here:
   `inherits`, `isDeepStrictEqual`, and the platform's `TextEncoder`/`TextDecoder`. The cost is
   about thirty small pure-JS transitive packages in any bundle that imports `util`
   (`src/shim/README.md`, "`node-util.ts` stands on the `util` package, and corrects it";
-  `decision-log.md` `d-0073`).
+  `decision-log.md` `d-0074`).
 
 `dns` is unchanged by this approval: still a broker-capability question
 (`k-rpc-socket` needs real `dns.lookup`), not a package this review could answer, and not

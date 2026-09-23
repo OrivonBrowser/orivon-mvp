@@ -217,9 +217,9 @@ turn one visit into an unbounded stream of fetches.
 
 > **Amendment, 2026-09-22.** Two facts above changed, and neither reopens a gap. **The per-app
 > bound is `MAX_BUNDLE_BYTES` 512 MiB**, with 64 MiB per asset (owner, `open-questions.md` A15,
-> `d-0050`): a real built frontend did not fit the old caps, and the loader now streams, so the
+> `d-0051`): a real built frontend did not fit the old caps, and the loader now streams, so the
 > caps bound download and disk rather than memory. Gap 1's decision, no aggregate cap, stands at
-> the larger number. **Superseded files are pruned at the next start, not at install** (`d-0056`):
+> the larger number. **Superseded files are pruned at the next start, not at install** (`d-0057`):
 > an update can land while its app is open, and a single-page app still running the previous
 > bundle lazily loads its old chunks, which pruning at install turned into 404s. Gap 2 stays
 > closed: nothing a superseded pin declared outlives one restart.

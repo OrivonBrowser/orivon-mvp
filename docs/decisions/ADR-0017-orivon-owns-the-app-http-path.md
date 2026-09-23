@@ -106,7 +106,7 @@ replaces.
   per-call-shape divergences this same requirement produced (the response body cap, unfollowed
   redirects, and the limited request-body types) alongside this one.
 
-  > **Amendment, 2026-09-22 (`d-0038`, `d-0040`, `d-0041`, `d-0089`). The routed path covers
+  > **Amendment, 2026-09-22 (`d-0039`, `d-0041`, `d-0042`, `d-0090`). The routed path covers
   > `XMLHttpRequest`, `EventSource` and `WebSocket` as well as `fetch`, and the three
   > per-call-shape divergences named above are gone:** a routed request follows redirects, streams
   > its response with no body cap, and accepts a `Blob`, `FormData` or stream body. **WebSocket is
@@ -117,7 +117,7 @@ replaces.
   > same-origin socket stays native under the page's CSP. `src/preload/README.md` lists the
   > divergences that remain, the WebSocket's included.
 
-  > **Amendment, 2026-09-23 (`d-0096`, `d-0097`). `connectSecure` takes Node's own TLS options,
+  > **Amendment, 2026-09-23 (`d-0097`, `d-0098`). `connectSecure` takes Node's own TLS options,
   > and an app may turn verification off.** The owner chose the behaviour most compatible with
   > Electron apps. `rejectUnauthorized: false` skips certificate verification for that
   > connection; `ca` replaces the built-in roots; `cert`/`key`/`pfx`/`passphrase` present a
@@ -134,7 +134,7 @@ replaces.
   > `tcp.connect` applies (`security-model.md` T12), and dials only the checked address.
   > `servername` never takes part in the grant check. The cost: a LAN node with a self-signed
   > certificate must be granted by address or as `localhost:<port>`. STARTTLS stays unsupported
-  > (`docs/open-questions.md` A225).
+  > (`docs/open-questions.md` A226).
 - **Unlimited HTTPS is the widest permission in the system.** If the prompt renders it the same way
   as a narrow declaration, every manifest will declare unlimited and the prompt stops meaning
   anything. Making breadth visible is therefore load-bearing, not polish.

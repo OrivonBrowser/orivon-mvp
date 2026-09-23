@@ -251,7 +251,7 @@ does, and sends the Host header's name as SNI when the caller set no `servername
 **STARTTLS (`tls.connect({ socket })`, `new tls.TLSSocket(socket)`) refuses by name.** `pg`,
 SMTP and IMAP clients upgrade a plain connection in place, and the broker has no operation for
 that: a `connectSecure` connection is TLS from its first byte. What it would take is recorded in
-[`open-questions.md`](../../docs/open-questions.md) A225.
+[`open-questions.md`](../../docs/open-questions.md) A226.
 
 **[`node-net-server.ts`](node-net-server.ts) refuses a loopback-only `listen()` host rather than
 widening it.** **AI recommendation, not owner-reviewed.** `orivon.net.listen` binds every
