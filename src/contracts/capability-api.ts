@@ -70,8 +70,8 @@ export interface CapabilityRequest {
  * name, except `alpnProtocols` (Node's `ALPNProtocols`). PEM values are
  * strings and binary ones `Uint8Array`, and each is bounded in size: an
  * oversized or malformed option rejects the call with `'invalid'` naming it.
- * Key material is used for this one handshake, never stored and never
- * logged.
+ * Key material serves this one connection only: it is never written to disk
+ * and never logged.
  */
 export interface SecureConnectOptions {
   readonly host: string
