@@ -33,6 +33,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Headless ASGARDEX sweep, every screen: routed `fetch` crashed on `signal: null`, breaking SUI; fixed.
 - ASGARDEX's SOL→RUNE "enable Thorchain" error is a live THORChain SOL halt, not Orivon: upstream's message misleads.
 - Five ASGARDEX chains need API keys upstream bakes in from CI secrets; a port must bring its own.
+- Routed `fetch` now waits for a socket past the app's allowance instead of failing: FreeTube's 100-subscription refresh went from 286 errors to none.
 
 ### In my head
 
