@@ -12,6 +12,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Added
 
+- **A Chrome-style per-site permissions popover.** The address pill now leads with the Web3
+  Score shield (carrying the old trust dot's secure/insecure/cached states) and a key that
+  appears once a site has asked for a permission; both open a popover with the connection row,
+  one switch per capability or picked path the site has asked for (staged until Confirm), the
+  Web3 Score's own delivery evidence, and a Cookies and site data page covering both the site's
+  ordinary browser storage and what it stores through `orivon.fs`. A switched-off capability no
+  longer reappears as a re-consent prompt on the next visit. The all-sites list moves to a tune
+  icon in the toolbar cluster.
 - **A global Orivon installs on an app's window can be replaced by the app**, as it can in a
   browser, and `npm run check:page-globals` fails the build on one that cannot (ADR-0021). A
   locked global kills any bundle that ponyfills it, so this is what stops one app's blank page

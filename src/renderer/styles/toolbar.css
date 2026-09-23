@@ -72,24 +72,32 @@
   border-color: color-mix(in srgb, var(--waccent) 50%, transparent);
 }
 
-.address-dot {
-  width: 10px;
-  height: 10px;
+.addressbar-leading {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 6px;
   flex: none;
-  border-radius: 50%;
-  margin-right: 8px;
-  background: var(--wink-off);
-  transition: background-color 500ms ease;
 }
-.address-dot.secure { background: var(--wok); }
-.address-dot.insecure { background: var(--winsecure); }
+
+/* The Web3 Score shield: the trust dot's successor, so it keeps that
+   dot's own colour transition and state names -- .secure/.insecure/
+   .cached mean exactly what .address-dot's did. */
+#web3-score-btn svg { transition: color 500ms ease; }
+#web3-score-btn.secure { color: var(--wok); }
+#web3-score-btn.insecure { color: var(--winsecure); }
 /* S4-6, ADR-0007: distinct from both -- pinned-cache delivery is neither a
    live TLS pass (--wok) nor a plaintext warning (--winsecure), so it gets
    its own colour rather than borrowing one that would overclaim or
    under-claim. --waccent is already the app's own theme-invariant accent
    (style.css), which is exactly the "this is Orivon's own doing" register
    this state wants. */
-.address-dot.cached { background: var(--waccent); }
+#web3-score-btn.cached { color: var(--waccent); }
+
+/* The site-info popup's other entry point -- an unlimited grant among its
+   rows tints the key the same warning colour the all-sites list's own
+   rows use for the identical fact (permissions-view.ts). */
+#site-permissions-btn.has-warning { color: var(--winsecure); }
 
 .addressbar {
   flex: 1;
@@ -164,20 +172,6 @@
 .iconbtn:not(:disabled):hover {
   color: var(--wink);
   background: var(--whover-strong);
-}
-/* Queue item 4.4: the active tab's app currently holds at least one
-   capability -- the same visual family the omnibox's own secure/insecure
-   dot uses, applied to the permission key rather than a second, separate
-   indicator. Lives on .iconbtn because the control sits outside the pill
-   (owner, 2026-09-15); the pill's trailing slot is the Web3 Score's. */
-.iconbtn.has-app {
-  color: var(--wok);
-}
-/* One of those capabilities is an UNLIMITED grant (grant-prompt-render.ts's
-   `warning`) -- takes precedence over .has-app's colour, matching the
-   install prompt's own "never look the same as narrow" rule. */
-.iconbtn.has-warning {
-  color: var(--winsecure);
 }
 /* A disabled .iconbtn/.pillbtn here is a permanent placeholder -- shipped
    inert because the feature is not built, never toggled back on at

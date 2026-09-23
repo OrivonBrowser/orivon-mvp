@@ -1,5 +1,6 @@
 import type { Bookmark } from '../main/browsing/bookmarks.js'
-import type { AppPermissions } from '../main/permissions/permissions.js'
+import type { SiteSummary } from '../main/permissions/site-info-controller.js'
+import type { SiteInfoPage } from '../main/permissions/site-info-panel.js'
 import type { DeliveryProvenance } from '../main/browsing/delivery-provenance.js'
 import type { ShellState, TabState } from '../main/shell/tabs.js'
 import { createBookmarksView } from './bookmarks-view.js'
@@ -9,6 +10,8 @@ import { closeIcon, faviconElement } from './icons.js'
 // orivonShell.* commands. Main holds truth (src/main/tabs.ts,
 // src/main/bookmarks.ts) -- this file never guesses at state between
 // pushes.
+
+type PopoverAnchor = { x: number, y: number, width: number, height: number }
 
 interface OrivonShell {
   newTab: (url?: string) => void
@@ -23,19 +26,23 @@ interface OrivonShell {
   addBookmark: (url: string, title: string, tabId: string) => void
   removeBookmark: (url: string) => void
   openBookmark: (url: string) => void
-  /** Queue item 4.4: the active tab's own grants, for the toolbar's
-   * permission key -- `null` for an ordinary website (never registered
-   * as an app). */
-  appPermissionsFor: (url: string) => Promise<AppPermissions | null>
+  /** The toolbar key's own at-a-glance state -- whether the site has asked
+   * for anything at all, and whether any asked-for row carries a warning.
+   * `false`/`false` for an ordinary website. */
+  siteSummaryFor: (url: string) => Promise<SiteSummary>
   /** S4-6, ADR-0007: is the active tab's document actually being answered
    * from Orivon's own pinned local cache -- the one truthful signal the
-   * address-bar dot owes a page whose padlock would otherwise claim a live
-   * TLS connection that never happened. */
+   * Web3 Score shield owes a page whose padlock would otherwise claim a
+   * live TLS connection that never happened. */
   deliveryProvenanceFor: (url: string) => Promise<DeliveryProvenance>
-  /** Opens (or closes) the permissions panel under the permission key.
-   * `anchor` is that key's own rect -- main cannot know where the toolbar
+  /** Opens (or closes) the all-sites popup under the cluster's tune icon.
+   * `anchor` is that icon's own rect -- main cannot know where the toolbar
    * put it. `url`, when given, is the tab whose card to scroll to. */
-  openSettings: (anchor: { x: number, y: number, width: number, height: number }, url?: string) => void
+  openSettings: (anchor: PopoverAnchor, url?: string) => void
+  /** Opens (or closes) the site-info popup under the shield or the key --
+   * same anchor contract as openSettings. `page` says which icon was
+   * clicked. */
+  openSiteInfo: (anchor: PopoverAnchor, page: SiteInfoPage, url?: string) => void
   onState: (listener: (state: ShellState) => void) => () => void
   /** Read-only -- see preload/shell.ts for why this exists instead of
    * env(titlebar-area-*) or navigator.windowControlsOverlay. */
@@ -74,7 +81,8 @@ const newTabBtn = must(document.querySelector<HTMLButtonElement>('#new-tab'), '#
 const bookmarkToggle = must(document.querySelector<HTMLButtonElement>('#bookmark-toggle'), '#bookmark-toggle missing')
 const addressForm = must(document.querySelector<HTMLFormElement>('#address-form'), '#address-form missing')
 const addressInput = must(document.querySelector<HTMLInputElement>('#address'), '#address missing')
-const addressDot = must(document.querySelector<HTMLSpanElement>('#address-dot'), '#address-dot missing')
+const web3ScoreBtn = must(document.querySelector<HTMLButtonElement>('#web3-score-btn'), '#web3-score-btn missing')
+const sitePermissionsBtn = must(document.querySelector<HTMLButtonElement>('#site-permissions-btn'), '#site-permissions-btn missing')
 const permissionsBtn = must(document.querySelector<HTMLButtonElement>('#permissions-btn'), '#permissions-btn missing')
 const bookmarksList = must(document.querySelector<HTMLDivElement>('#bookmarks-list'), '#bookmarks-list missing')
 
@@ -163,51 +171,52 @@ function renderTabs (state: ShellState): void {
   }
 }
 
-/** The plain https/http read `updateAddressDot` paints immediately, and
- * upgrades to `.cached` once (or if) the provenance query below resolves
- * otherwise -- never downgrades a page that really is plain https/http. */
-function applyConnectionDot (url: string): void {
-  if (url.startsWith('https://')) addressDot.classList.add('secure')
-  else if (url.startsWith('http://')) addressDot.classList.add('insecure')
+/** The plain https/http read `updateWeb3ScoreShield` paints immediately,
+ * and upgrades to `.cached` once (or if) the provenance query below
+ * resolves otherwise -- never downgrades a page that really is plain
+ * https/http. */
+function applyConnectionState (url: string): void {
+  if (url.startsWith('https://')) web3ScoreBtn.classList.add('secure')
+  else if (url.startsWith('http://')) web3ScoreBtn.classList.add('insecure')
 }
 
 /** S4-6, ADR-0007's "the padlock is now misleading unless the UI corrects
- * it": the address-bar dot's own provenance state, resolved the same
- * lagging, per-active-tab way `updateAddressPermissionsBadge` below already
- * is (`dotRequestUrl` guards against a stale response the same way
+ * it": the Web3 Score shield's own provenance state, resolved the same
+ * lagging, per-active-tab way `updateSitePermissionsBadge` below already
+ * is (`shieldRequestUrl` guards against a stale response the same way
  * `permissionsRequestUrl` does). Paints the ordinary secure/insecure read
  * first, synchronously, then replaces it with the pinned-cache state if
  * `deliveryProvenanceFor` says so -- a page really is plain https/http
  * until proven otherwise, never the reverse. */
-let dotRequestUrl: string | null = null
+let shieldRequestUrl: string | null = null
 
-function updateAddressDot (active: TabState | undefined): void {
-  addressDot.classList.remove('secure', 'insecure', 'cached')
-  addressDot.removeAttribute('title')
-  addressDot.removeAttribute('aria-label')
+function updateWeb3ScoreShield (active: TabState | undefined): void {
+  web3ScoreBtn.classList.remove('secure', 'insecure', 'cached')
+  web3ScoreBtn.title = 'Web3 Score'
+  web3ScoreBtn.setAttribute('aria-label', 'Web3 Score')
 
   // Skip isNewTab: in dev mode the dashboard's own URL is a plain
   // http://localhost:... address (electron-vite's dev server), which
   // would otherwise flag Orivon's own page "insecure" -- wrong for an
   // internal page, not a real signal about anything the user visited.
   if (active === undefined || active.isNewTab) {
-    dotRequestUrl = null
+    shieldRequestUrl = null
     return
   }
 
   const url = active.url
-  dotRequestUrl = url
-  applyConnectionDot(url)
+  shieldRequestUrl = url
+  applyConnectionState(url)
 
   void shell.deliveryProvenanceFor(url).then((provenance) => {
-    if (dotRequestUrl !== url) return // the active tab moved on; this answer is stale
+    if (shieldRequestUrl !== url) return // the active tab moved on; this answer is stale
     if (!provenance.servedFromPinnedCache) return
-    addressDot.classList.remove('secure', 'insecure')
-    addressDot.classList.add('cached')
+    web3ScoreBtn.classList.remove('secure', 'insecure')
+    web3ScoreBtn.classList.add('cached')
     // The literal wording ADR-0007 asks for -- quoted, not paraphrased, so
-    // the address bar and the ADR never drift apart on what it says.
-    addressDot.title = 'Running from local cache, pinned'
-    addressDot.setAttribute('aria-label', 'Running from local cache, pinned')
+    // the shield and the ADR never drift apart on what it says.
+    web3ScoreBtn.title = 'Running from local cache, pinned'
+    web3ScoreBtn.setAttribute('aria-label', 'Running from local cache, pinned')
   })
 }
 
@@ -220,47 +229,42 @@ function renderToolbar (state: ShellState): void {
     addressInput.value = active === undefined || active.isNewTab ? '' : active.url
   }
 
-  updateAddressDot(active)
+  updateWeb3ScoreShield(active)
 
   const bookmarked = active !== undefined && isBookmarked(state.bookmarks, active.url)
   bookmarkToggle.classList.toggle('active', bookmarked)
   bookmarkToggle.setAttribute('aria-pressed', String(bookmarked))
 
-  updatePermissionsBadge(active)
+  updateSitePermissionsBadge(active)
 }
 
-/** Queue item 4.4's permission key: what the active tab's app can do, at
- * a glance. It sits outside the omnibox (owner, 2026-09-15 -- the pill's
- * trailing slot is the Web3 Score's), so one control carries both halves:
- * the current tab's state, and the way into the full list.
- * `permissionsRequestUrl` guards against a slow response for a tab that is
- * no longer active landing after a newer request already started -- the
- * same stale-response shape tabs.ts's own captureFavicon guards against,
- * one layer up. */
+/** The site-info popup's own key: hidden until the active tab's site has
+ * asked for something at all -- an ordinary website carries no key,
+ * matching Chrome's own permission icon staying absent until a site has
+ * asked (owner reference). `permissionsRequestUrl` guards against a slow
+ * response for a tab that is no longer active landing after a newer
+ * request already started -- the same stale-response shape tabs.ts's own
+ * captureFavicon guards against, one layer up. */
 let permissionsRequestUrl: string | null = null
 
-function updatePermissionsBadge (active: TabState | undefined): void {
+function updateSitePermissionsBadge (active: TabState | undefined): void {
   const url = active === undefined || active.isNewTab ? null : active.url
   permissionsRequestUrl = url
   if (url === null) {
-    applyPermissionsBadge(null)
+    applySitePermissionsBadge({ asked: false, warning: false })
     return
   }
-  void shell.appPermissionsFor(url).then((app) => {
-    if (permissionsRequestUrl === url) applyPermissionsBadge(app)
+  void shell.siteSummaryFor(url).then((summary) => {
+    if (permissionsRequestUrl === url) applySitePermissionsBadge(summary)
   })
 }
 
-function applyPermissionsBadge (app: AppPermissions | null): void {
-  const hasRows = app !== null && app.rows.length > 0
-  const hasWarning = hasRows && app.rows.some((row) => row.warning)
-  permissionsBtn.classList.toggle('has-app', hasRows)
-  permissionsBtn.classList.toggle('has-warning', hasWarning)
-  const label = hasRows
-    ? `${app.appName} — click to view or revoke its permissions`
-    : 'Permissions — this site has none'
-  permissionsBtn.title = label
-  permissionsBtn.setAttribute('aria-label', label)
+function applySitePermissionsBadge (summary: SiteSummary): void {
+  sitePermissionsBtn.hidden = !summary.asked
+  sitePermissionsBtn.classList.toggle('has-warning', summary.warning)
+  const label = summary.warning ? 'Permissions — this site has an unlimited grant' : 'Permissions'
+  sitePermissionsBtn.title = label
+  sitePermissionsBtn.setAttribute('aria-label', label)
 }
 
 function render (state: ShellState): void {
@@ -302,21 +306,39 @@ bookmarkToggle.addEventListener('click', () => {
   }
 })
 
-// Queue item 4.4: always the full list, scrolled to whichever app the
+/** A plain object, not the DOMRect itself: contextBridge deep-clones what
+ * crosses it, and a DOMRect's values live on its prototype rather than as
+ * own properties -- it arrives in main as {}. Measured at click time, not
+ * cached: the window may have been resized, and the bookmarks bar
+ * appearing or disappearing moves nothing in this row but the toolbar's
+ * own width does shift these buttons. */
+function anchorFor (el: HTMLElement): PopoverAnchor {
+  const r = el.getBoundingClientRect()
+  return { x: r.x, y: r.y, width: r.width, height: r.height }
+}
+
+// The all-sites popup: always the full list, scrolled to whichever app the
 // CURRENT tab is when there is one. A URL that belongs to no app is
 // harmless -- settings/main.ts finds no card to scroll to and renders the
 // list unscrolled, which is the ordinary open.
 permissionsBtn.addEventListener('click', () => {
   const active = activeTab(currentState)
-  // Measured at click time, not cached: the window may have been resized,
-  // and the bookmarks bar appearing or disappearing moves nothing in this
-  // row but the toolbar's own width does shift this button.
-  // A plain object, not the DOMRect itself: contextBridge deep-clones what
-  // crosses it, and a DOMRect's values live on its prototype rather than as
-  // own properties -- it arrives in main as {}.
-  const r = permissionsBtn.getBoundingClientRect()
-  const anchor = { x: r.x, y: r.y, width: r.width, height: r.height }
-  shell.openSettings(anchor, active === undefined || active.isNewTab ? undefined : active.url)
+  shell.openSettings(anchorFor(permissionsBtn), active === undefined || active.isNewTab ? undefined : active.url)
+})
+
+// The site-info popup's two entry points: the shield opens straight to the
+// Web3 Score page, the key to the main page. Both act on the active tab's
+// own url; a click while there is none, or on the dashboard, is a no-op --
+// there is no origin for either page to describe.
+web3ScoreBtn.addEventListener('click', () => {
+  const active = activeTab(currentState)
+  if (active === undefined || active.isNewTab) return
+  shell.openSiteInfo(anchorFor(web3ScoreBtn), 'web3', active.url)
+})
+sitePermissionsBtn.addEventListener('click', () => {
+  const active = activeTab(currentState)
+  if (active === undefined || active.isNewTab) return
+  shell.openSiteInfo(anchorFor(sitePermissionsBtn), 'main', active.url)
 })
 
 addressInput.addEventListener('focus', () => { addressFocused = true })

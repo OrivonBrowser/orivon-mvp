@@ -44,11 +44,11 @@ export const PORT_CHANNEL = 'orivon:port'
  * ../broker/transport/sync-fs.ts. */
 export const SYNC_CONTROL_CHANNEL = 'orivon:control-sync'
 
-/** The settings window's own single WebContentsView -> main: list/revoke
- * (queue item 4.4). A separate channel from COMMAND_CHANNEL: this is a
- * different top-level BaseWindow, not the chrome view, so its sender check
- * is against ITS OWN webContents identity, never chrome's. See
- * ./settings-ipc.ts. */
+/** The all-sites permissions popup's own WebContentsView -> main:
+ * list/revoke (queue item 4.4). A separate channel from COMMAND_CHANNEL:
+ * this is its own popup view, not the chrome view, so its sender check is
+ * against ITS OWN webContents identity, never chrome's. See
+ * ./ipc/settings-ipc.ts. */
 export const SETTINGS_COMMAND_CHANNEL = 'orivon-settings:command'
 
 /** Ordinary tab -> main: reports a `<link rel="orivon-manifest">` hint's
@@ -58,3 +58,11 @@ export const SETTINGS_COMMAND_CHANNEL = 'orivon-settings:command'
  * this payload, and decides independently whether to install anything
  * (src/main/manifest-hint.ts, src/main/app-install.ts). */
 export const MANIFEST_HINT_CHANNEL = 'orivon-loader:manifest-hint'
+
+/** The site-info popup's own WebContentsView -> main: the current site's
+ * capability switches, its Web3 Score evidence, and its Cookies and site
+ * data page (`./ipc/site-info-ipc.ts`). A separate channel from
+ * SETTINGS_COMMAND_CHANNEL -- two independent popup views, each its own
+ * webContents identity, opened at different toolbar icons and never both
+ * at once (`./permissions/popover-view.ts`). */
+export const SITE_INFO_COMMAND_CHANNEL = 'orivon-site-info:command'

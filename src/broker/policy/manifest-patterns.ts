@@ -60,3 +60,29 @@ export function patternSetFromCapabilities (capabilities: Capabilities): Pattern
 
   return set
 }
+
+/**
+ * The site-info popover's "off" switch (../../main/permissions/site-
+ * switches.js) must stick across the origin's next visit: `decideUpdate`'s
+ * widening check (./update.ts) sees only what a manifest DECLARES, with no
+ * notion of a capability the person has since turned back off, so a
+ * still-declared kind reads as newly requested again on every load. Called
+ * from loader/index.ts's decideAndRoute BEFORE decideUpdate, this drops
+ * exactly the kinds that are both declined and not currently held from the
+ * set decideUpdate compares against.
+ *
+ * NOT currently held is the load-bearing condition: a kind the origin
+ * already holds a grant for is real authority already in force, and
+ * dropping it here would make decideUpdate blind to that grant being
+ * silently widened or narrowed by a manifest change it should still catch.
+ * Declining once must suppress a re-ASK, never suppress the check on
+ * authority already granted.
+ */
+export function withoutSwitchedOffCapabilities (declared: PatternSet, granted: PatternSet, declined: readonly CapabilityKind[] | undefined): PatternSet {
+  if (declined === undefined || declined.length === 0) return declared
+  const result: Partial<Record<CapabilityKind, readonly Pattern[]>> = { ...declared }
+  for (const capability of declined) {
+    if (!Object.hasOwn(granted, capability)) delete result[capability]
+  }
+  return result
+}

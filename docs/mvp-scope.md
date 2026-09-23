@@ -85,6 +85,7 @@ regardless of the others.
 | Nostr via injected NIP-07 over `orivon.id` | ~1 day, proves the identity model, zero frontend written |
 | Per-app storage isolation + disk usage UI | Follows directly from the flagship. `ADR-0003` |
 | **Trust indicator: full spectrum from observed behaviour** | Delivery ladder (incl. hash-pinning/TOFU), connection ladder, and operations. Automatic; no judge, no DNS. Ships the attestation *hook*, not a judge. `ADR-0006` |
+| Per-site permissions popover | A Chrome-style popover off the address pill: the connection row (opening the trust indicator's own delivery evidence), one switch per capability or picked path a site has asked for, and its Cookies and site data. `d-0037` |
 | Developer mode: unpacked loader + docs | Permissionless is a core value, and it recruits the A+ developers. `ADR-0002` |
 | Telemetry + first-run disclosure + "what was sent" page | Without it the metric is unfalsifiable. The disclosure UI is not optional. `ADR-0004` |
 | Packaging: **Linux first** (AppImage + deb) | No code-signing cost, and the target audience skews Linux |

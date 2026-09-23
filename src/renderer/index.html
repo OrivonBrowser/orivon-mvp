@@ -59,7 +59,28 @@
 
       <form id="address-form" class="addressbar-form">
         <div id="address-pill" class="addressbar-pill">
-          <span id="address-dot" class="address-dot" aria-hidden="true"></span>
+          <div class="addressbar-leading">
+            <!-- The trust dot's successor: the Web3 Score shield carries
+                 the same secure/insecure/cached states .address-dot used
+                 to (main.ts's updateAddressDot), now clickable -- it opens
+                 the site-info popup straight to the Web3 Score page. -->
+            <button id="web3-score-btn" class="pillbtn" type="button" title="Web3 Score" aria-label="Web3 Score">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" />
+              </svg>
+            </button>
+            <!-- The site-info popup's other entry point: this site's own
+                 permission switches. Hidden until main.ts's siteSummaryFor
+                 says the site has asked for something -- an ordinary
+                 website carries no key at all, the same way Chrome's own
+                 permission icon stays absent until a site has asked. -->
+            <button id="site-permissions-btn" class="pillbtn" type="button" hidden title="Permissions" aria-label="Permissions">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z" />
+                <circle cx="16.5" cy="7.5" r=".5" fill="currentColor" />
+              </svg>
+            </button>
+          </div>
           <input
             id="address"
             class="addressbar"
@@ -70,15 +91,6 @@
             placeholder="Search or enter address"
           />
           <div class="addressbar-trailing">
-            <!-- The pill's trailing slot belongs to the Web3 Score and
-                 nothing else (owner, 2026-09-15) -- permissions moved out
-                 to the cluster below. Disabled: src/trust/ is build step 6,
-                 so nothing scores an app yet (open-questions.md A32). -->
-            <button id="web3-score-btn" class="pillbtn" type="button" disabled title="Web3 Score — not in v0" aria-label="Web3 Score — not in v0">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" />
-              </svg>
-            </button>
             <span class="mark-badge" role="img" aria-label="Orivon"></span>
           </div>
         </div>
@@ -86,17 +98,15 @@
 
       <div class="toolbar-cluster">
         <span class="sep" aria-hidden="true"></span>
-        <!-- Queue item 4.4 (d-0027): the one permission control, outside
-             the omnibox and first in the cluster so it sits nearest the
-             address it describes. A key, never a shield -- a shield in
-             this chrome means Web3 Score. Starts inert; main.ts flips
-             `.has-app`/`.has-warning` and the label once a state push
-             resolves, because an ordinary website is not an app and this
-             must not claim otherwise before that answer is known. -->
-        <button id="permissions-btn" class="iconbtn" type="button" title="Permissions" aria-label="Permissions">
+        <!-- The all-sites popup: every app, all its grants, revoke-only --
+             see src/main/permissions/permissions-panel.ts. A tune icon,
+             never a key: the key now lives in the pill and means THIS
+             site only. -->
+        <button id="permissions-btn" class="iconbtn" type="button" title="All sites' permissions" aria-label="All sites' permissions">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z" />
-            <circle cx="16.5" cy="7.5" r=".5" fill="currentColor" />
+            <line x1="4" y1="6" x2="20" y2="6" /><circle cx="14" cy="6" r="2" fill="currentColor" />
+            <line x1="4" y1="12" x2="20" y2="12" /><circle cx="8" cy="12" r="2" fill="currentColor" />
+            <line x1="4" y1="18" x2="20" y2="18" /><circle cx="16" cy="18" r="2" fill="currentColor" />
           </svg>
         </button>
         <button class="iconbtn" type="button" disabled title="Extensions — not in v0">
