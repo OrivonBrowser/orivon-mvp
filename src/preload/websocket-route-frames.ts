@@ -17,7 +17,7 @@ export function installWebSocketFrames (
   const slot = (target as Record<symbol, WebSocketSlot | undefined>)[Symbol.for('orivon.routed-network')]
   if (slot === undefined) return
 
-  const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC11B18'
+  const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
   const OPCODES = { continuation: 0, text: 1, binary: 2, close: 8, ping: 9, pong: 10 }
   const KNOWN_OPCODES = [0, 1, 2, 8, 9, 10]
   const MAX_CONTROL_PAYLOAD = 125

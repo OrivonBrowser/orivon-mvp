@@ -3,9 +3,13 @@
 // (websocket-route.test-helpers.ts): the constructor, the opening handshake,
 // and the native path for everything the routed one does not take.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { bytes, refusal } from './routed.test-helpers.js'
+import { bytes, refusal, reserialised } from './routed.test-helpers.js'
 import { acceptFor, FakeNativeWebSocket, fakeWsPeer, openSocket, recordEvents, serverFrame, OP, settle, settleHandshake, WS_INSTALLERS, wsTarget } from './websocket-route.test-helpers.js'
 import { WEBSOCKET_OPENING_TIMEOUT_MS } from '../websocket-route.js'
+import { installRoutedWire } from '../routed-wire.js'
+import { installWebSocketFrames } from '../websocket-route-frames.js'
+import type { ResponseHead } from '../fetch-route-types.js'
+import type { WebSocketSlot } from '../websocket-route-types.js'
 
 beforeEach(() => { vi.spyOn(console, 'error').mockImplementation(() => {}) })
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
@@ -65,6 +69,20 @@ describe('routed WebSocket -- the constructor', () => {
 })
 
 describe('routed WebSocket -- the opening handshake', () => {
+  it('checks the accept key against RFC 6455\'s own worked example, not only against this suite\'s server', async () => {
+    const target = {}
+    for (const install of [installRoutedWire, installWebSocketFrames].map((fn) => reserialised(fn))) install(true, target)
+    const frames = (target as Record<symbol, WebSocketSlot>)[Symbol.for('orivon.routed-network')]!.webSocketFrames!
+    const head = (accept: string): ResponseHead => ({
+      status: 101, statusText: 'Switching Protocols', rest: new Uint8Array(0),
+      headers: [['Upgrade', 'websocket'], ['Connection', 'Upgrade'], ['Sec-WebSocket-Accept', accept]]
+    })
+    // RFC 6455 section 1.3.
+    expect(acceptFor('dGhlIHNhbXBsZSBub25jZQ==')).toBe('s3pPLMBiTxaQ9kYGzzhZRbK+xOo=')
+    await expect(frames.checkHandshake(head('s3pPLMBiTxaQ9kYGzzhZRbK+xOo='), 'dGhlIHNhbXBsZSBub25jZQ==', [])).resolves.toBe('')
+    await expect(frames.checkHandshake(head('s3pPLMBiTxaQ9kYGzzhZRbK+xOp='), 'dGhlIHNhbXBsZSBub25jZQ==', [])).rejects.toThrow('Incorrect')
+  })
+
   it('sends an RFC 6455 upgrade carrying the page origin, the subprotocols and no extensions', async () => {
     const peer = fakeWsPeer()
     const target = wsTarget({ peers: [peer] })

@@ -70,7 +70,7 @@ export function parseClientFrames (data: Uint8Array): ClientFrame[] {
 }
 
 export function acceptFor (key: string): string {
-  return createHash('sha1').update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC11B18`).digest('base64')
+  return createHash('sha1').update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`).digest('base64')
 }
 
 export interface FakeWsPeer {
