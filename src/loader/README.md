@@ -30,6 +30,12 @@ must never be reachable from.
 "no prompt appeared", which no manual checklist catches, and the capability at stake is
 `tcp.connect *:*`. Re-consent triggers on a **subset check over the granted pattern set**, not
 on capability kinds; see [`capability-api.md`](../../docs/architecture/capability-api.md) A9 §2.
+A kind the person switched off from the site-info popover (`../main/permissions/site-switches.ts`)
+is the one exception: `LoadContext.declinedCapabilities` drops it from that check when it is not
+currently held (`../broker/policy/manifest-patterns.ts`'s `withoutSwitchedOffCapabilities`), so a
+still-declared but turned-off capability does not resurface as a prompt on every later visit —
+but ONLY when it is unheld; a manifest widening a capability that IS still granted is never
+exempted, and any other change to the code still forces the ordinary re-consent path.
 
 ## Design notes
 

@@ -17,7 +17,8 @@ const fakeApp = {} as unknown as App
 const fakeLoader: Loader = {
   load: async () => ({ outcome: 'rejected', reason: 'unused' }),
   installFetched: async () => { throw new Error('installFetched was not stubbed for this test') },
-  reconsider: async () => { throw new Error('reconsider was not stubbed for this test') }
+  reconsider: async () => { throw new Error('reconsider was not stubbed for this test') },
+  pinFor: async () => null
 }
 
 describe('appInstallSubsystem', () => {

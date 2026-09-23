@@ -129,7 +129,8 @@ export default defineConfig({
           app: resolve(root, 'src/preload/app.ts'),
           shell: resolve(root, 'src/preload/shell.ts'),
           newtab: resolve(root, 'src/preload/newtab.ts'),
-          settings: resolve(root, 'src/preload/settings.ts')
+          settings: resolve(root, 'src/preload/settings.ts'),
+          'site-info': resolve(root, 'src/preload/site-info.ts')
         }
       },
       // BUG (found 2026-08-28, real regression): `shell.ts` and
@@ -163,17 +164,19 @@ export default defineConfig({
   renderer: {
     root: resolve(root, 'src/renderer'),
     build: {
-      // Two entries: `index` is the privileged chrome view; `newtab` is
-      // the dashboard, ordinary tab content loaded into a tab's own
-      // WebContentsView with the unprivileged (well, narrowly scoped)
-      // newtab preload -- see src/main/tabs.ts's createTab(). Both must
-      // live inside `root` above (src/renderer), not beside it, or the
-      // dev server won't serve the second one at an ordinary path.
+      // `index` is the privileged chrome view; `newtab` is the dashboard,
+      // ordinary tab content loaded into a tab's own WebContentsView with
+      // the unprivileged (well, narrowly scoped) newtab preload -- see
+      // src/main/tabs.ts's createTab(). `settings` and `site-info` are the
+      // two toolbar popups (src/main/permissions/popover-view.ts). Every
+      // entry must live inside `root` above (src/renderer), not beside
+      // it, or the dev server won't serve it at an ordinary path.
       rollupOptions: {
         input: {
           index: resolve(root, 'src/renderer/index.html'),
           newtab: resolve(root, 'src/renderer/newtab/index.html'),
-          settings: resolve(root, 'src/renderer/settings/index.html')
+          settings: resolve(root, 'src/renderer/settings/index.html'),
+          'site-info': resolve(root, 'src/renderer/site-info/index.html')
         }
       }
     },

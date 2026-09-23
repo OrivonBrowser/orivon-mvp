@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Capabilities } from '../../../contracts/index.js'
-import { patternSetFromCapabilities } from '../manifest-patterns.js'
+import { patternSetFromCapabilities, withoutSwitchedOffCapabilities } from '../manifest-patterns.js'
 
 // update.ts's PatternSet convention (its own header): a capability KIND
 // present with an EMPTY array means "requested, carries no patterns" (fs,
@@ -90,5 +90,45 @@ describe('patternSetFromCapabilities', () => {
   it('ignores protocols -- not a CapabilityKind, carries no grant', () => {
     const result = patternSetFromCapabilities({ protocols: ['magnet'] })
     expect(result).toEqual({})
+  })
+})
+
+// The site-info popover's "off" switch (../../main/permissions/site-
+// switches.js) must stick: a re-visit must not treat a capability the
+// person just turned off as newly widened just because the manifest still
+// declares it. Dropping it from decideUpdate's `newPatterns` input, but
+// ONLY when it is not currently held, is how loader/index.ts's
+// decideAndRoute achieves that without loosening any other check.
+describe('withoutSwitchedOffCapabilities', () => {
+  it('drops a declined kind that is not currently held', () => {
+    const declared = { 'tcp.connect': ['api.example.com:443'], fs: [] }
+    const result = withoutSwitchedOffCapabilities(declared, {}, ['fs'])
+    expect(result).toEqual({ 'tcp.connect': ['api.example.com:443'] })
+  })
+
+  // The load-bearing case: turning a capability off must never suppress a
+  // re-consent prompt for a capability the person never touched.
+  it('keeps a declined kind that is currently held -- declining once must not un-grant it silently', () => {
+    const declared = { 'tcp.connect': ['api.example.com:443'] }
+    const granted = { 'tcp.connect': ['api.example.com:443'] }
+    const result = withoutSwitchedOffCapabilities(declared, granted, ['tcp.connect'])
+    expect(result).toEqual({ 'tcp.connect': ['api.example.com:443'] })
+  })
+
+  it('keeps every kind that was never declined', () => {
+    const declared = { 'tcp.connect': ['api.example.com:443'], fs: [] }
+    const result = withoutSwitchedOffCapabilities(declared, {}, undefined)
+    expect(result).toEqual(declared)
+  })
+
+  it('a manifest that no longer declares the switched-off kind at all is unaffected', () => {
+    const declared = { fs: [] }
+    const result = withoutSwitchedOffCapabilities(declared, {}, ['tcp.connect'])
+    expect(result).toEqual({ fs: [] })
+  })
+
+  it('drops nothing when nothing is declined', () => {
+    const declared = { 'tcp.connect': ['api.example.com:443'] }
+    expect(withoutSwitchedOffCapabilities(declared, {}, [])).toEqual(declared)
   })
 })

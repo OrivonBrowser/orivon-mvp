@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- Same shape as ../settings/index.html's CSP: no network requests of
+         its own -- every fact on this page comes over IPC
+         (orivonSiteInfo.*), never a fetch. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'none'"
+    />
+    <title>Site info</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <!-- The site-info popup's own WebContentsView
+         (src/main/permissions/site-info-panel.ts) -- opened from the
+         address pill's shield or key. Three pages, one at a time: #main
+         (the connection row and this site's capability switches), #web3
+         (delivery evidence) and #data (Cookies and site data). -->
+    <main class="page">
+      <section id="main-page" class="screen"></section>
+      <section id="web3-page" class="screen" hidden></section>
+      <section id="data-page" class="screen" hidden></section>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

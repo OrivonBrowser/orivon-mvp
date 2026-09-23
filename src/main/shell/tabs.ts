@@ -379,6 +379,15 @@ export class TabManager {
     return record.view.webContents
   }
 
+  /** The active tab's own webContents -- the site-info popup's Cookies and
+   * site data page (`../permissions/site-data-runner.js`) reads live page
+   * storage through it. `undefined` on a fresh window with no tab yet, or
+   * once the active tab's webContents has been destroyed -- both cases
+   * this popup's caller already treats as "nothing to show". */
+  activeWebContents (): Electron.WebContents | undefined {
+    return this.activeId === null ? undefined : this.liveWebContents(this.activeId)
+  }
+
   private tabState (id: string): TabState {
     const record = this.tabs.get(id)
     const wc = this.liveWebContents(id)

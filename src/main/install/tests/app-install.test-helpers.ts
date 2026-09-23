@@ -87,7 +87,11 @@ export function fakeLoader (
   return {
     load: vi.fn(async () => result),
     installFetched: vi.fn(overrides.installFetched ?? notStubbed('installFetched')),
-    reconsider: vi.fn(overrides.reconsider ?? notStubbed('reconsider'))
+    reconsider: vi.fn(overrides.reconsider ?? notStubbed('reconsider')),
+    // Not one of S4-5's outcome-driving methods above, and no test in this
+    // suite exercises it -- resolves null (never pinned) rather than
+    // throwing, so a test that does not care about it need not stub it.
+    pinFor: async () => null
   }
 }
 

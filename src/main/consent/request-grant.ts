@@ -120,11 +120,30 @@ export async function requestGrant (
  * -- no new bookkeeping primitive needed for this. Reads the record, drops
  * `capability` if present, and writes back whatever remains (or fully
  * clears it once nothing does).
+ *
+ * Exported for the site-info popover's own "turn on" path
+ * (`../permissions/site-switches.js`): an old "no" for the one capability
+ * being turned on must not outlive the "yes" that follows it, the same
+ * A172(3) reasoning `requestGrant` above already applies to itself.
  */
-async function clearDeclinedCapability (broker: Broker, origin: string, capability: CapabilityKind): Promise<void> {
+export async function clearDeclinedCapability (broker: Broker, origin: string, capability: CapabilityKind): Promise<void> {
   const declined = await broker.declinedCapabilitiesFor(origin)
   if (declined === undefined || !declined.includes(capability)) return
   const remaining = declined.filter((existing) => existing !== capability)
   if (remaining.length === 0) await broker.clearDeclinedConsent(origin)
   else await broker.recordDeclinedConsent(origin, remaining)
+}
+
+/**
+ * The mirror of `clearDeclinedCapability`, for the site-info popover's "turn
+ * off" path: `broker.recordDeclinedConsent` REPLACES the whole decline set
+ * (`../../broker/grants/declined-consent.js`'s own doc), so recording one
+ * capability naively would forget every other capability this origin was
+ * already declined for. Reads the record, adds `capability` if absent, and
+ * writes back the union -- never overwrites unrelated declines.
+ */
+export async function addDeclinedCapability (broker: Broker, origin: string, capability: CapabilityKind): Promise<void> {
+  const declined = await broker.declinedCapabilitiesFor(origin)
+  if (declined?.includes(capability) === true) return
+  await broker.recordDeclinedConsent(origin, [...(declined ?? []), capability])
 }

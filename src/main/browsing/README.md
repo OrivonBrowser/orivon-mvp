@@ -3,12 +3,18 @@
 **What lives here.** `omnibox.ts` classifies address-bar input (URL or search). `bookmarks.ts`
 is the bookmarks bar's data model and disk persistence. `favicon.ts` fetches a tab's icon to a
 `data:` URL. `delivery-provenance.ts` answers ADR-0007's one truthful address-bar signal: is the
-active tab served from Orivon's own pinned cache.
+active tab served from Orivon's own pinned cache. `site-trust.ts` is the site-info popup's Web3
+Score page: `buildSiteTrust`, the first production caller of `../../trust/delivery-ladder.ts`'s
+`deliveryLadder` (A181, docs/open-questions.md). Pure — the caller (`../permissions/
+site-info-controller.ts`) supplies the pin, the cached-or-not flag and pin coverage rather than
+this file reaching for `electron-serve.ts` itself, matching `../../trust/`'s own "never import
+another stream's internals" one layer further out.
 
 **What it depends on.** [`../../broker/policy/`](../../broker/policy/) (`address.ts`,
-`connect.ts` types, `origin.ts`), [`../../loader/`](../../loader/) (`electron-resolve.ts`,
-`electron-serve.ts`), `node:fs/promises`, `node:path`. `favicon.ts` is the only file here that
-imports `electron`, and only dynamically, for the same reason
+`connect.ts` types, `origin.ts`, `pin.ts`'s `PinRecord` type),
+[`../../trust/`](../../trust/) (`delivery-ladder.ts`, type and value), [`../../loader/`](../../loader/)
+(`electron-resolve.ts`, `electron-serve.ts`), `node:fs/promises`, `node:path`. `favicon.ts` is
+the only file here that imports `electron`, and only dynamically, for the same reason
 [`../self-update/update-check-runner.ts`](../self-update/update-check-runner.ts) does (outside a
 real Electron process, `electron`'s entry point is a path string, not the API surface).
 
@@ -16,8 +22,8 @@ real Electron process, `electron`'s entry point is a path string, not the API su
 deliberately kept with no dependency on tab-collection state, which is what keeps it importable
 under plain vitest with no Electron process.
 
-**Owner stream.** `shell`, build step 1, **done**, except `favicon.ts` (queue item 4.5) and
-`delivery-provenance.ts` (S4-6). Maintenance only.
+**Owner stream.** `shell`, build step 1, **done**, except `favicon.ts` (queue item 4.5),
+`delivery-provenance.ts` (S4-6) and `site-trust.ts` (queue item 4.4). Maintenance only.
 
 ## Design notes
 

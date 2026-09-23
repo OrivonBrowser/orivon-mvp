@@ -27,6 +27,7 @@ import type { CapabilityKind, Grant, GrantId, Manifest } from '../../contracts/i
 import type { Broker, PickedPath } from '../../broker/broker-contracts.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { describeCapabilityGrant } from '../consent/grant-prompt-render.js'
+import { addDeclinedCapability } from '../consent/request-grant.js'
 import { isCapabilityKind } from '../../broker/policy/request-grant.js'
 import { UNSAFE_TEXT_CHARS } from '../../loader/manifest.js'
 import type { PersistedApp, PersistedPick } from '../../broker/grants/ledger-storage.js'
@@ -332,18 +333,6 @@ export interface PermissionsController {
   revokePickedPath: (origin: string, pickId: string) => Promise<void>
 }
 
-/**
- * A revoke here is the person's "no" to `capability`, recorded the way a
- * declined install-consent row is, so that dialog does not ask for it again
- * on the next launch. `app.requestGrant` never consults the record, so the
- * app can still ask, and an accepted request retires it.
- */
-async function rememberRevoked (broker: Broker, origin: string, capability: CapabilityKind): Promise<void> {
-  const declined = await broker.declinedCapabilitiesFor(origin) ?? []
-  if (declined.includes(capability)) return
-  await broker.recordDeclinedConsent(origin, [...declined, capability])
-}
-
 /** The one way to build a `PermissionsController`, closing over `ctx`
  * (never a captured `Broker`) so it always reads whichever broker is
  * currently published -- `ctx.broker` is a live getter (registry.ts), and
@@ -367,7 +356,11 @@ export function createPermissionsController (ctx: SubsystemContext): Permissions
       if (broker === undefined) return
       const revoked = (await broker.app.grants(origin)).find((grant) => grant.id === grantId)
       await broker.revoke(origin, grantId)
-      if (revoked !== undefined) await rememberRevoked(broker, origin, revoked.capability)
+      // A revoke is the person's "no" to that capability, recorded the way a
+      // declined install-consent row is, so that dialog does not ask for it
+      // again on the next launch. `app.requestGrant` never consults the
+      // record, so the app can still ask, and an accepted request retires it.
+      if (revoked !== undefined) await addDeclinedCapability(broker, origin, revoked.capability)
     },
 
     /** The persisted-app path: `(origin, capability)` rather than an id. Goes
@@ -377,7 +370,7 @@ export function createPermissionsController (ctx: SubsystemContext): Permissions
       const broker = ctx.broker
       if (broker === undefined) return
       await broker.revokePersisted(origin, capability)
-      await rememberRevoked(broker, origin, capability)
+      await addDeclinedCapability(broker, origin, capability)
     },
 
     async revokePickedPath (origin, pickId) {

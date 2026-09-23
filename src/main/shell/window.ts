@@ -16,17 +16,21 @@
 import { app, BaseWindow, ipcMain, nativeTheme, WebContentsView, screen } from 'electron'
 import { join } from 'node:path'
 import { originFromUrl } from '../../broker/policy/origin.js'
+import { isOriginServedFromCacheSync, pinCoverageFor } from '../../loader/electron-serve.js'
 import { BookmarkStore } from '../browsing/bookmarks.js'
 import { COMMAND_CHANNEL, NEWTAB_COMMAND_CHANNEL, STATE_CHANNEL } from '../channels.js'
 import { registerNewTabIpc } from '../ipc/newtab-ipc.js'
 import { createPermissionsController, createSiteNotificationsController } from '../permissions/permissions.js'
 import { notificationDecisions } from '../sessions/permission-gate.js'
+import { createSiteInfoController } from '../permissions/site-info-controller.js'
 import { deliveryProvenanceFor } from '../browsing/delivery-provenance.js'
 import { rendererEntryUrl } from './renderer-entry.js'
 import type { SubsystemContext } from '../registry.js'
 import { TabManager, type Bounds } from './tabs.js'
 import { registerShellIpc } from '../ipc/ipc.js'
 import { createPermissionsPanel } from '../permissions/permissions-panel.js'
+import { createSiteInfoPanel } from '../permissions/site-info-panel.js'
+import type { PopoverAnchor } from '../permissions/popover-view.js'
 import { HtmlFullscreen } from './fullscreen.js'
 import { NOTICES, noticeForWindow } from './window-notice.js'
 import { showContextMenu } from './context-menu.js'
@@ -209,6 +213,7 @@ export function createShellWindow (ctx: SubsystemContext): BaseWindow {
     // drag-resize around is stranger than one that simply dismisses, and
     // this is what every browser does with its own.
     permissionsPanel.close()
+    siteInfoPanel.close()
   }
 
   // A16, resolved (owner decision, 2026-08-28): closing the last tab
@@ -230,16 +235,29 @@ export function createShellWindow (ctx: SubsystemContext): BaseWindow {
     htmlFullscreenChanged: (id, entered) => { fullscreen.changed(id, entered, tabs.getState().activeTabId) }
   })
 
-  // Queue item 4.4: the permissions settings page and the address-bar icon
-  // both read/revoke through this one controller, closing over `ctx` so it
-  // always sees whichever broker is currently published (permissions.ts's
-  // own doc).
+  // Queue item 4.4: the all-sites popup reads/revokes through this one
+  // controller, closing over `ctx` so it always sees whichever broker is
+  // currently published (permissions.ts's own doc).
   const permissions = createPermissionsController(ctx)
+
+  // The site-info popup's own door, sibling to `permissions` above
+  // (site-info-controller.ts's own header on why it is not folded into
+  // that one). `isOriginServedFromCacheSync`/`pinCoverageFor` are the real
+  // implementations `SiteTrustSources` asks for -- injected here rather
+  // than imported by the controller itself, so it stays testable against
+  // a fake session (that file's own doc).
+  const siteInfo = createSiteInfoController(ctx, { isOriginServedFromCacheSync, pinCoverageFor })
 
   /** Previous push's active tab, so pushState() can tell a genuine tab
    * SWITCH from the many other reasons state is pushed (a title, a favicon,
    * a loading flag). */
   let lastActiveTabId: string | null = null
+  /** Previous push's active tab's own origin -- catches the site-info
+   * popup's own extra close condition: the SAME tab navigating to a
+   * DIFFERENT origin (never a reason to close the all-sites popup, which
+   * shows every app, not just the active tab's). `null` for no active tab
+   * or one with no canonical origin (the dashboard, about:blank). */
+  let lastActiveOrigin: string | null = null
 
   function pushState (): void {
     // A16 makes this reachable routinely now, not just via an OS-level
@@ -270,6 +288,17 @@ export function createShellWindow (ctx: SubsystemContext): BaseWindow {
     if (state.activeTabId !== lastActiveTabId) {
       lastActiveTabId = state.activeTabId
       permissionsPanel.close()
+      siteInfoPanel.close()
+    }
+    // The site-info popup describes ONE origin -- a same-tab navigation
+    // to a different one (the active tab id unchanged) leaves it showing
+    // stale data otherwise. The all-sites popup lists every app and is
+    // unaffected by this on its own.
+    const activeTab = state.tabs.find((tab) => tab.id === state.activeTabId)
+    const activeOrigin = activeTab === undefined ? null : originFromUrl(activeTab.url)
+    if (activeOrigin !== lastActiveOrigin) {
+      lastActiveOrigin = activeOrigin
+      siteInfoPanel.close()
     }
     fullscreen.tabsChanged(state.activeTabId, (id) => state.tabs.some((tab) => tab.id === id))
     chrome.webContents.send(STATE_CHANNEL, { ...state, bookmarks: bookmarks.getAll() })
@@ -316,29 +345,65 @@ export function createShellWindow (ctx: SubsystemContext): BaseWindow {
   // rather than a second one (owner, 2026-09-16) -- ./permissions-panel.ts.
   const permissionsPanel = createPermissionsPanel(win, win.contentView, permissions, import.meta.dirname, createSiteNotificationsController(notificationDecisions()))
 
-  registerShellIpc(chrome.webContents, tabs, bookmarks, permissions, (anchor, url) => {
-    // The chrome view sends the active TAB's url, not an origin -- same
-    // `originFromUrl` tab-view.ts's own appTabArgsFor already uses for the
-    // identical derivation. undefined (no tab, or the dashboard) and an
-    // unparseable url both mean "no particular app to scroll to", not an
-    // error.
-    const focusOrigin = url === undefined ? undefined : originFromUrl(url) ?? undefined
-    permissionsPanel.toggle(anchor, focusOrigin)
-  }, deliveryProvenanceFor)
+  // Remembers the anchor and origin the site-info popup was last opened
+  // with, so its own "Site settings" row (./site-info-panel.js's
+  // `openAllSites` parameter) has somewhere sensible to open the all-sites
+  // popup -- that row has no anchor of its own to measure.
+  let lastSiteInfoAnchor: PopoverAnchor | null = null
+  let lastSiteInfoOrigin: string | undefined
+
+  const siteInfoPanel = createSiteInfoPanel(
+    win, win.contentView, siteInfo, app.getPath('userData'),
+    () => tabs.activeWebContents(),
+    () => {
+      const { activeTabId } = tabs.getState()
+      if (activeTabId !== null) tabs.reload(activeTabId)
+    },
+    () => {
+      siteInfoPanel.close()
+      permissionsPanel.toggle(lastSiteInfoAnchor ?? { x: 0, y: chromeHeight(), width: 0, height: 0 }, lastSiteInfoOrigin)
+    },
+    import.meta.dirname
+  )
+
+  registerShellIpc(
+    chrome.webContents, tabs, bookmarks, siteInfo,
+    (anchor, url) => {
+      // The chrome view sends the active TAB's url, not an origin -- same
+      // `originFromUrl` tab-view.ts's own appTabArgsFor already uses for
+      // the identical derivation. undefined (no tab, or the dashboard) and
+      // an unparseable url both mean "no particular app to scroll to", not
+      // an error.
+      const focusOrigin = url === undefined ? undefined : originFromUrl(url) ?? undefined
+      siteInfoPanel.close() // only one popup open at a time
+      permissionsPanel.toggle(anchor, focusOrigin)
+    },
+    (anchor, page, url) => {
+      const origin = url === undefined ? undefined : originFromUrl(url) ?? undefined
+      if (origin === undefined) return // no canonical origin -- nothing this popup can show
+      lastSiteInfoAnchor = anchor
+      lastSiteInfoOrigin = origin
+      permissionsPanel.close() // only one popup open at a time
+      siteInfoPanel.toggle(anchor, origin, page)
+    },
+    deliveryProvenanceFor
+  )
   registerNewTabIpc(dashboardUrl, tabs, bookmarks)
   // A16 makes createShellWindow() re-run routinely now (close the last
   // tab, then reopen from the macOS dock via app.on('activate')), and
   // ipcMain.handle throws if the same channel is registered twice with
   // no matching removeHandler in between -- confirmed there is none
   // anywhere in this codebase. Latent before A16 (only reachable by
-  // closing the OS window directly); routine after it. Both channels
+  // closing the OS window directly); routine after it. All three channels
   // registered above need the same cleanup.
   win.on('closed', () => {
     ipcMain.removeHandler(COMMAND_CHANNEL)
     ipcMain.removeHandler(NEWTAB_COMMAND_CHANNEL)
-    // Also removes SETTINGS_COMMAND_CHANNEL, which the panel registers per
-    // open -- same reregistration trap this handler already exists for.
+    // Also removes SETTINGS_COMMAND_CHANNEL/SITE_INFO_COMMAND_CHANNEL,
+    // which the popups register per open -- same reregistration trap this
+    // handler already exists for.
     permissionsPanel.close()
+    siteInfoPanel.close()
   })
 
   // win.getContentBounds() read SYNCHRONOUSLY inside 'resize' returns the
