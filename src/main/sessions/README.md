@@ -2,11 +2,11 @@
 
 **What lives here.** `permission-gate.ts`: denies every Chromium permission (camera, clipboard
 reads, geolocation, …) on every session a tab can reach. Five pass without asking:
-`clipboard-sanitized-write` (`ADR-0022`), `fullscreen` (`ADR-0025`), `pointerLock`,
-`keyboardLock`, and `fileSystem` for a single file the person chose, never a directory
-(`ADR-0024`). Two pass only when the person says yes: `openExternal`, decided in
-`external-links.ts`, and `notifications`, decided in `site-notifications.ts` and remembered per
-site by `notification-decisions.ts`. `tab-prompts.ts` is what each tab remembers between those
+`clipboard-sanitized-write` (`ADR-0022`), `fullscreen` (`ADR-0025`), `pointerLock` and
+`keyboardLock` (`ADR-0026`), and `fileSystem` for a single file the person chose, never a
+directory (`ADR-0024`). Two pass only when the person says yes: `openExternal` (`ADR-0027`),
+decided in `external-links.ts`, and `notifications` (`ADR-0028`), decided in
+`site-notifications.ts` and remembered per site by `notification-decisions.ts`. `tab-prompts.ts` is what each tab remembers between those
 questions. `web-context-host.ts`: ADR-0019's
 Electron half of the isolated `WebContext` — the real `WebContextHost`
 [`../../broker/web-capability.ts`](../../broker/web-capability.ts) calls through
@@ -14,8 +14,8 @@ Electron half of the isolated `WebContext` — the real `WebContextHost`
 the reach-only network path, and the CORS wrapper.
 
 **What it depends on.** `electron`, [`../../contracts/`](../../contracts/) (`LIMITS`),
-[`../../broker/`](../../broker/) (`grants/origin-hash.ts`, `policy/origin.ts`,
-`broker-contracts.ts` types), [`../../loader/electron-serve.ts`](../../loader/electron-serve.ts),
+[`../../broker/`](../../broker/) (`grants/origin-hash.ts`, `grants/node-ledger-storage.ts`'s
+`writeFileAtomic`, `policy/origin.ts`, `broker-contracts.ts` types), [`../../loader/electron-serve.ts`](../../loader/electron-serve.ts),
 [`../shell/`](../shell/) (the two questions, `external-link-prompt.ts` and
 `notification-prompt.ts`; `showing-window.ts`; `exclusive-access-notice.ts`), the top-level
 `registry.ts`. Only `permission-gate.ts` and `web-context-host.ts` import `electron`: the
@@ -58,15 +58,15 @@ of two grounds:
    the site that asks; nothing passes before the answer, and the check handler, which cannot
    ask, never allows on the person's behalf.
 
-| Name | Ground | What meets it |
-|---|---|---|
-| `clipboard-sanitized-write` | 1(a) | Transient activation in a focused document; `document.execCommand('copy')` |
-| `fileSystem`, one file | 1(a) | The OS picker, a drop or a paste; `<input type="file">` and downloads |
-| `fullscreen` | 1(b) | A click; Escape in the browser process; "Press Esc to exit full screen" |
-| `pointerLock` | 1(b) | A click; Escape in the browser process; "Press Esc to show your cursor" |
-| `keyboardLock` | 1(b) | Acts only in fullscreen, which a click enters; holding Escape leaves; "Press and hold Esc to exit full screen" |
-| `openExternal` | 2 | "Open *scheme* link with your system's default app?", every time |
-| `notifications` | 2 | "*site* wants to show notifications", once per site, remembered |
+| Name | Ground | What meets it | ADR |
+|---|---|---|---|
+| `clipboard-sanitized-write` | 1(a) | Transient activation in a focused document; `document.execCommand('copy')` | `ADR-0022` |
+| `fileSystem`, one file | 1(a) | The OS picker, a drop or a paste; `<input type="file">` and downloads | `ADR-0024` |
+| `fullscreen` | 1(b) | A click; Escape in the browser process; "Press Esc to exit full screen" | `ADR-0025` |
+| `pointerLock` | 1(b) | A click; Escape in the browser process; "Press Esc to show your cursor" | `ADR-0026` |
+| `keyboardLock` | 1(b) | Acts only in fullscreen, which a click enters; holding Escape leaves; "Press and hold Esc to exit full screen" | `ADR-0026` |
+| `openExternal` | 2 | "Open *scheme* link with your system's default app?", every time | `ADR-0027` |
+| `notifications` | 2 | "*site* wants to show notifications", once per site, remembered | `ADR-0028` |
 
 `clipboard-sanitized-write` is granted outright. The web
 platform gates clipboard writing on transient user activation and a focused document, so the
@@ -100,7 +100,7 @@ measured against a real page, `requestFullscreen()` reaches `setPermissionReques
 that waives the click. The second stays denied, so the click is always required. Leaving is not
 the page's to refuse: Escape is consumed in the browser process before the page sees the key.
 The one abuse, a page filling the screen and drawing a fake address bar, is answered by the exit
-notice every browser shows; [`../shell/fullscreen-notice.ts`](../shell/fullscreen-notice.ts)
+notice every browser shows; [`../shell/window-notice.ts`](../shell/window-notice.ts)
 draws it. `ADR-0025` carries the argument.
 
 **`pointerLock` and `keyboardLock` reach the REQUEST handler only, and Electron draws nothing
@@ -126,15 +126,15 @@ refuses without asking for the browser's own schemes, for `file:`, `data:`, `blo
 never be launched from a page. A tab that is not on screen is never asked for: the question
 would appear over a page it did not come from.
 
-**`notifications`: Electron's check handler can only say yes or no.** `Notification.permission`
-and the Permissions API read `granted` for a site the person allowed and `denied` for every
-other, including a site nobody has asked about yet: Electron has no way to report "not decided".
-A page that calls `Notification.requestPermission()` still reaches the request handler, which
-asks; Electron documents that "most web APIs do a permission check and then make a permission
-request if the check is denied". A page that reads `Notification.permission` first and gives up
-on `denied` never asks. *Provisional:* neither half has been measured against a real page here,
-because no test may run notification code until the headless runner isolates the session bus
-(`test/e2e-site-permissions.test.ts` has the checks, and refuses to run them before that).
+**`notifications`: Electron's check handler can only say yes or no.** Measured against a real
+page: for a site nobody has answered, `Notification.permission` and the Permissions API both read
+`denied`, since Electron has no way to report "not decided"; once the person allows, both read
+`granted`, and they still do after a restart. `Notification.requestPermission()` reaches the
+request handler all the same, so a page that asks is asked about, and "Not now" resolves it as
+`denied`. A page that reads `Notification.permission` first and gives up on `denied` never asks.
+The measurement is the last phase of `test/e2e-site-permissions.test.ts`, which reads permission
+state only and runs only on a private session bus:
+`ORIVON_PRIVATE_BUS=1 node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/e2e-site-permissions.test.ts`.
 Dismissing the question ("Not now", Escape, closing it) decides nothing and remembers nothing;
 that page load is not asked again. A frame is never asked for, and only a frame of the page's own
 site gets the page's remembered answer. [`notification-decisions.ts`](notification-decisions.ts)

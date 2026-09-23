@@ -2,8 +2,9 @@
 // shell and an ordinary loopback website: pointer lock, and keyboard lock in
 // fullscreen, pass with a notice saying how to leave; an external link opens
 // only once the person allows it, and exactly the URL they were shown; a
-// site's notification answer is asked once, remembered across a restart,
-// and read back by Notification.permission.
+// site's notification answer is listed in the permissions panel, where Reset
+// forgets it; and it is asked once, remembered across a restart, and read
+// back by Notification.permission.
 //
 // NOTHING IS SHOWN AND NOTHING LAUNCHES. Both questions are native message
 // boxes no driver can press, so `dialog.showMessageBox` is replaced in the
@@ -14,11 +15,12 @@
 // that records its argument and launches nothing.
 //
 // NOTIFICATIONS RUN ONLY ON A PRIVATE SESSION BUS. A notification this page
-// never shows would still reach the desktop over D-Bus if one were shown,
-// and scripts/run-headless.mjs does not isolate the bus. That phase is
-// skipped unless the runner says the bus is private (ORIVON_E2E_PRIVATE_BUS=1
-// with a session bus that is not this user's own), and it never constructs a
-// Notification: it reads permission state only.
+// never shows would still reach the desktop over D-Bus if one were shown, so
+// that phase is skipped unless the runner says the bus is private
+// (ORIVON_E2E_PRIVATE_BUS=1 with a session bus that is not this user's own):
+//   ORIVON_PRIVATE_BUS=1 node scripts/run-headless.mjs npx vitest run \
+//     --config test/vitest.e2e.config.ts test/e2e-site-permissions.test.ts
+// It never constructs a Notification: it reads permission state only.
 //
 // THE CLICKS ARE THE POINT: pointer lock and the second external link each
 // need the person to have acted in the page, and Playwright's `evaluate`
@@ -30,8 +32,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from './launch-electron.mjs'
-import { ABSENCE_SETTLE_MS, HERMETIC_RESOLVER, delay, evaluateRetrying, waitFor } from './smoke-helpers.mjs'
-import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, closeElectronApp, navigateToFixture, runPhase } from './e2e-helpers.js'
+import { ABSENCE_SETTLE_MS, HERMETIC_RESOLVER, delay, evaluateRetrying, findChrome, waitFor } from './smoke-helpers.mjs'
+import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, closeElectronApp, navigateToFixture, runPhase, waitForAddressBarStable } from './e2e-helpers.js'
+import { focusWebContents, underVirtualDisplay, webContentsFocused } from './focus-helpers.js'
 
 const HOST = '127.0.0.1'
 // 8872-8885, 8893-8895 and 8897 belong to other suites' fixtures.
@@ -98,6 +101,11 @@ async function asked (app: ElectronApplication): Promise<Asked[]> {
   return await app.evaluate(() => (globalThis as unknown as { __asked: Asked[] }).__asked)
 }
 
+/** The notification questions only: the page's load-time external links ask too. */
+async function askedAboutNotifications (app: ElectronApplication): Promise<Asked[]> {
+  return (await asked(app)).filter((question) => question.message.endsWith('wants to show notifications'))
+}
+
 async function answer (app: ElectronApplication, question: 'external' | 'notifications', button: number): Promise<void> {
   await app.evaluate((_electron, [q, b]) => {
     (globalThis as unknown as { __answers: Record<string, number> }).__answers[q as string] = b as number
@@ -121,25 +129,6 @@ async function sendEscape (app: ElectronApplication, type: 'keyDown' | 'keyUp', 
     const wc = webContents.getAllWebContents().find((c) => c.getURL() === target)
     wc?.sendInputEvent({ type: t as 'keyDown' | 'keyUp', keyCode: 'Escape', ...(repeat === true ? { modifiers: ['isautorepeat' as const] } : {}) })
   }, [PAGE_URL, type, autoRepeat])
-}
-
-/** Pointer lock needs the page focused, and the shell's test launches show
- * the window without activating it. Under the virtual display nothing else
- * can hold focus, so the tab takes it there; anywhere else a test must not
- * take focus, and the pointer-lock checks are left out. */
-function underVirtualDisplay (): boolean {
-  return process.platform === 'linux' && process.env['WAYLAND_DISPLAY'] === undefined && (process.env['XAUTHORITY'] ?? '').includes('xvfb-run')
-}
-
-async function focusTab (app: ElectronApplication): Promise<void> {
-  await app.evaluate(({ webContents }, target) => {
-    webContents.getAllWebContents().find((c) => c.getURL() === target)?.focus()
-  }, PAGE_URL)
-}
-
-async function tabFocused (app: ElectronApplication): Promise<boolean> {
-  return await app.evaluate(({ webContents }, target) =>
-    webContents.getAllWebContents().find((c) => c.getURL() === target)?.isFocused() === true, PAGE_URL)
 }
 
 interface PageState { keys: string[], unprompted?: string, locked?: boolean, pl?: string, fskl?: string, secondTel?: boolean, notify?: string }
@@ -199,7 +188,7 @@ it('lets a page lock the pointer and keyboard with a notice, and open an externa
       // --- Pointer lock -----------------------------------------------------
       if (underVirtualDisplay()) {
         // The page asks as soon as it has focus, before any click.
-        await focusTab(app)
+        await focusWebContents(app, PAGE_URL)
         await waitFor(async () => (await pageState(view)).unprompted !== undefined)
         const unprompted = (await pageState(view)).unprompted
         check(`requestPointerLock() before any click is refused (got ${String(unprompted)})`, unprompted !== undefined && unprompted !== 'resolved')
@@ -209,7 +198,7 @@ it('lets a page lock the pointer and keyboard with a notice, and open an externa
         const pointerNotice = await waitFor(async () => (await noticesShown(app as ElectronApplication)).includes('Press Esc to show your cursor'))
         check('the "Press Esc to show your cursor" notice is on screen', pointerNotice, JSON.stringify(await noticesShown(app)))
         await delay(ABSENCE_SETTLE_MS)
-        check('the notice leaves the page its focus and its lock', (await pageState(view)).locked === true && await tabFocused(app))
+        check('the notice leaves the page its focus and its lock', (await pageState(view)).locked === true && await webContentsFocused(app, PAGE_URL))
         await sendEscape(app, 'keyDown')
         await sendEscape(app, 'keyUp')
         const released = await waitFor(async () => (await pageState(view)).locked === false)
@@ -258,6 +247,48 @@ it('lets a page lock the pointer and keyboard with a notice, and open an externa
   })
 }, TEST_TIMEOUT_MS)
 
+// Reads and resets stored answers only: no page here touches the
+// Notification API, so this runs on any runner.
+it('lists each site\'s notification answer in the permissions panel, and Reset forgets it on disk', async () => {
+  await runPhase('site-notification-panel', async (check) => {
+    const decisions = { version: 1, origins: { [ORIGIN]: 'allow', 'https://ads.example': 'block' } }
+    const app = await launchElectron({
+      appPath: '.',
+      args: [HERMETIC_RESOLVER],
+      seedProfile: async (dir: string) => { writeFileSync(join(dir, 'notification-decisions.json'), JSON.stringify(decisions)) }
+    })
+    try {
+      await waitFor(() => app.windows().length === 2)
+      const chrome = findChrome(app)
+      await waitForAddressBarStable(chrome)
+      await chrome.click('#permissions-btn')
+      let panel: Page | undefined
+      await waitFor(() => { panel = app.windows().find((w) => w.url().endsWith('/renderer/settings/index.html')); return panel !== undefined })
+      if (panel === undefined) throw new Error('the permissions panel did not open')
+      const settings = panel
+      const cards = async (): Promise<Array<{ origin: string, message: string }>> => await evaluateRetrying(settings, () =>
+        Array.from(document.querySelectorAll<HTMLElement>('.app-card')).map((card) => ({
+          origin: card.dataset['origin'] ?? '',
+          message: card.querySelector('.permission-message')?.textContent ?? ''
+        })))
+      const listed = await waitFor(async () => (await cards()).length === 2)
+      check('each decided site has a card saying what it may do', listed && JSON.stringify(await cards()) === JSON.stringify([
+        { origin: ORIGIN, message: 'Can show notifications.' },
+        { origin: 'https://ads.example', message: 'Blocked from showing notifications.' }
+      ]), JSON.stringify(await cards()))
+
+      await settings.click('[data-origin="https://ads.example"] .revoke-btn')
+      const reset = await waitFor(async () => (await cards()).length === 1)
+      check('Reset removes that site\'s card, and only that one', reset && (await cards())[0]?.origin === ORIGIN, JSON.stringify(await cards()))
+      const userData = await app.evaluate(({ app: electronApp }) => electronApp.getPath('userData'))
+      const saved = JSON.parse(readFileSync(join(userData, 'notification-decisions.json'), 'utf8')) as { origins: Record<string, string> }
+      check('and forgets its answer on disk', JSON.stringify(saved.origins) === JSON.stringify({ [ORIGIN]: 'allow' }), JSON.stringify(saved))
+    } finally {
+      await closeElectronApp(app)
+    }
+  })
+}, TEST_TIMEOUT_MS)
+
 /** The runner declared a private session bus, and it is not this user's. */
 function sessionBusIsPrivate (): boolean {
   const bus = process.env['DBUS_SESSION_BUS_ADDRESS']
@@ -279,25 +310,25 @@ it.skipIf(!sessionBusIsPrivate())('asks a site once about notifications, remembe
       try {
         await stubDialogs(first)
         const view = await navigateToFixture(first, PAGE_URL, TITLE)
-        const before = await evaluateRetrying(view, () => Notification.permission)
-        check(`a site nobody has answered for does not read as granted (got ${before})`, before !== 'granted')
+        const before = await evaluateRetrying(view, async () => [Notification.permission, (await navigator.permissions.query({ name: 'notifications' })).state])
+        check(`a site nobody has answered for does not read as granted (Notification.permission, Permissions API: ${before.join(', ')})`, !before.includes('granted'))
 
         await view.click('#notify')
         await waitFor(async () => (await pageState(view)).notify !== undefined)
-        const notNow = await asked(first)
+        const notNow = await askedAboutNotifications(first)
         check('the site is asked, and named first', notNow.length === 1 && notNow[0]?.message === `${ORIGIN} wants to show notifications` &&
           JSON.stringify(notNow[0]?.buttons) === '["Allow","Block","Not now"]', JSON.stringify(notNow))
         check(`"Not now" grants nothing (got ${String((await pageState(view)).notify)})`, (await pageState(view)).notify !== 'granted')
         await evaluateRetrying(view, () => { delete (window as unknown as { __r: PageState }).__r.notify })
         await view.click('#notify')
         await waitFor(async () => (await pageState(view)).notify !== undefined)
-        check('the same page load is not asked twice', (await asked(first)).length === 1)
+        check('the same page load is not asked twice', (await askedAboutNotifications(first)).length === 1)
 
         await view.reload()
         await answer(first, 'notifications', 0)
         await view.click('#notify')
         const granted = await waitFor(async () => (await pageState(view)).notify === 'granted')
-        check('after a reload the site is asked again, and Allow grants', granted && (await asked(first)).length === 2)
+        check('after a reload the site is asked again, and Allow grants', granted && (await askedAboutNotifications(first)).length === 2)
         const state = await evaluateRetrying(view, async () => [Notification.permission, (await navigator.permissions.query({ name: 'notifications' })).state])
         check(`Notification.permission and the Permissions API agree (got ${state.join(', ')})`, state[0] === 'granted' && state[1] === 'granted')
 
@@ -320,7 +351,7 @@ it.skipIf(!sessionBusIsPrivate())('asks a site once about notifications, remembe
         check('after a restart the site reads as granted', await evaluateRetrying(view, () => Notification.permission) === 'granted')
         await view.click('#notify')
         await waitFor(async () => (await pageState(view)).notify !== undefined)
-        check('and is not asked again', (await pageState(view)).notify === 'granted' && (await asked(second)).length === 0)
+        check('and is not asked again', (await pageState(view)).notify === 'granted' && (await askedAboutNotifications(second)).length === 0)
       } finally {
         await closeElectronApp(second)
       }

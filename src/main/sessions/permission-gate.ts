@@ -23,18 +23,18 @@ import { createSiteNotifications } from './site-notifications.js'
  * conditional name. The grant ledger governs `orivon.*` capabilities, not
  * Chromium's own, so a name belongs here only when the web platform's own
  * gating is what makes it safe -- never because an app asked for it.
- * ./README.md says which clause of that rule each name meets, and which ADR
- * argues it.
+ * ./README.md says which clause of that rule each name meets. ADR-0022
+ * argues clipboard write, ADR-0024 one file, ADR-0025 fullscreen, ADR-0026
+ * pointer and keyboard lock; ADR-0027 and ADR-0028 the two names the person
+ * is asked about, external links and notifications.
  *
  * `clipboard-sanitized-write` lets a page call
  * `navigator.clipboard.writeText()`. Chromium still requires transient
  * user activation and a focused document, so the person has to have just
  * acted in the page, and it sanitizes the payload. Denying it protected
  * nothing: `document.execCommand('copy')` reaches the same clipboard from
- * the same pages, and no Electron API can close that path. What the deny
- * did do was break every page that writes a copy button the modern way --
- * ordinary websites included, since this gate covers the default session
- * as well as app partitions.
+ * the same pages, and no Electron API can close that path; the deny only
+ * broke every modern copy button, on ordinary websites too.
  *
  * READING stays denied, and is the direction that matters: `clipboard-read`
  * and `deprecated-sync-clipboard-read` would hand a page whatever the

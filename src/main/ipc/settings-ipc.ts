@@ -8,7 +8,7 @@
 
 import { ipcMain, type IpcMainInvokeEvent, type WebContents } from 'electron'
 import { SETTINGS_COMMAND_CHANNEL } from '../channels.js'
-import type { AppPermissions, PermissionsController } from '../permissions/permissions.js'
+import type { AppPermissions, PermissionsController, SiteNotificationRow, SiteNotificationsController } from '../permissions/permissions.js'
 import type { CapabilityKind, GrantId } from '../../contracts/index.js'
 
 export type SettingsCommand =
@@ -26,6 +26,10 @@ export type SettingsCommand =
    * render, because the list arrives over IPC and the first paint is always
    * an empty one. Advisory: permissions-panel.ts clamps it. */
   | { type: 'contentHeight', height: number }
+  /** Each site's remembered notification answer: a Chromium permission, not
+   * a grant, so its own list. Reset forgets one, and the site asks again. */
+  | { type: 'listSiteNotifications' }
+  | { type: 'resetSiteNotifications', origin: string }
 
 function isFromSettingsWindow (event: IpcMainInvokeEvent, settingsWebContents: WebContents): boolean {
   return event.senderFrame !== null && event.senderFrame === settingsWebContents.mainFrame
@@ -34,9 +38,10 @@ function isFromSettingsWindow (event: IpcMainInvokeEvent, settingsWebContents: W
 export function registerSettingsIpc (
   settingsWebContents: WebContents,
   permissions: PermissionsController,
-  onContentHeight: (height: number) => void = () => {}
+  onContentHeight: (height: number) => void = () => {},
+  sites?: SiteNotificationsController
 ): void {
-  ipcMain.handle(SETTINGS_COMMAND_CHANNEL, (event: IpcMainInvokeEvent, command: SettingsCommand): void | Promise<void | readonly AppPermissions[]> => {
+  ipcMain.handle(SETTINGS_COMMAND_CHANNEL, (event: IpcMainInvokeEvent, command: SettingsCommand): void | readonly SiteNotificationRow[] | Promise<void | readonly AppPermissions[]> => {
     if (!isFromSettingsWindow(event, settingsWebContents)) return
 
     switch (command.type) {
@@ -52,6 +57,12 @@ export function registerSettingsIpc (
         // Number.isFinite, not a bare typeof check: NaN and Infinity are both
         // numbers, and either would reach setBounds as a corrupt height.
         if (Number.isFinite(command.height)) onContentHeight(command.height)
+        return
+      case 'listSiteNotifications':
+        return sites?.list() ?? []
+      case 'resetSiteNotifications':
+        // Typed on the wire, not trusted: the renderer picks the payload.
+        if (typeof command.origin === 'string') sites?.reset(command.origin)
         return
     }
   })

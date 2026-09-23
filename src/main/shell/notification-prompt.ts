@@ -22,7 +22,7 @@ export async function askNotificationPermission (window: BaseWindow, origin: str
     noLink: true,
     title: site,
     message: `${site} wants to show notifications`,
-    detail: 'Notifications appear on your desktop, even while this tab is in the background.'
+    detail: 'Notifications appear on your desktop, even while this tab is in the background. You can change this in Permissions.'
   })
   return ANSWERS[response] ?? 'dismiss'
 }

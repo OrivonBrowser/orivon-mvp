@@ -27,6 +27,7 @@ import type { ElectronApplication, Page } from 'playwright'
 import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from './launch-electron.mjs'
 import { ABSENCE_SETTLE_MS, HERMETIC_RESOLVER, delay, evaluateRetrying, findChrome, findViewShowing, tabIds, waitFor, waitForTab } from './smoke-helpers.mjs'
 import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, navigateToFixture, runPhase } from './e2e-helpers.js'
+import { focusWebContents, underVirtualDisplay, webContentsFocused } from './focus-helpers.js'
 
 const HOST = '127.0.0.1'
 // 8872-8884 belong to other suites' fixtures; this file needs one of its own.
@@ -144,6 +145,8 @@ it('gives an ordinary page fullscreen, real popups, a leave prompt and a Chrome 
       const stillWindowed = !(await windowInfo(app)).fullScreen
       check(`requestFullscreen() before any click is refused (got ${unprompted})`, unprompted !== 'pending' && unprompted !== 'resolved' && stillWindowed)
 
+      // Focused first, so the check below can see whether the notice takes it.
+      if (underVirtualDisplay()) await focusWebContents(app, ORIGIN)
       await view.click('#fs')
       const entered = await waitFor(async () => (await fixtureState(view)).__fs === 'resolved')
       check('requestFullscreen() from a click resolves', entered)
@@ -158,6 +161,12 @@ it('gives an ordinary page fullscreen, real popups, a leave prompt and a Chrome 
       // Its URL reads '' until its first load commits, so this waits too.
       const noticed = await waitFor(async () => (await windowInfo(app as ElectronApplication)).views.some((v) => v.url.startsWith('data:text/html')))
       check('the "Press Esc" notice is on screen', noticed)
+      if (underVirtualDisplay()) {
+        // A notice that navigated while attached took the page's focus, and a
+        // fullscreen player's keys went to it.
+        await delay(ABSENCE_SETTLE_MS)
+        check('the page keeps its keyboard focus in fullscreen, under the notice', await webContentsFocused(app, ORIGIN))
+      }
 
       await pressEscapeIn(app, ORIGIN)
       let restored: WindowInfo | undefined

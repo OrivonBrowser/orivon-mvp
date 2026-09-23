@@ -8,14 +8,21 @@ resolves electron-vite's dev-server/file-URL split for both this and
 derives the plain Chrome User-Agent [`../index.ts`](../index.ts) sets app-wide.
 
 What a page asks of its window: `popups.ts` turns `window.open()` and `target=_blank` into
-tabs; `fullscreen.ts` decides which tab, if any, fills the window, and `fullscreen-notice.ts`
-shows "Press Esc to exit full screen"; `leave-page-prompt.ts` asks the question a
-`beforeunload` guard raises; `context-menu.ts` is the right-click menu for tabs and the chrome.
+tabs; `fullscreen.ts` decides which tab, if any, fills the window; `window-notice.ts` is the
+window's one few-second notice ("Press Esc to exit full screen", "Press Esc to show your
+cursor", "Press and hold Esc to exit full screen"), and `exclusive-access-notice.ts` picks the
+pointer- and keyboard-lock messages; `leave-page-prompt.ts` asks the question a `beforeunload`
+guard raises; `external-link-prompt.ts` and `notification-prompt.ts` ask the two questions the
+permission gate puts to the person; `showing-window.ts` finds the window a tab is on screen in;
+`context-menu.ts` is the right-click menu for tabs and the chrome.
 
 **What it depends on.** `electron`; [`../../broker/`](../../broker/) (`policy/origin.ts`,
 `grants/origin-hash.ts`, `broker-contracts.ts` types); [`../../loader/electron-serve.ts`](../../loader/electron-serve.ts)
 (type only); and, inside `src/main/`, [`../browsing/`](../browsing/) (bookmarks, favicon,
 omnibox, delivery-provenance), [`../ipc/`](../ipc/), [`../permissions/`](../permissions/),
+[`../consent/grant-prompt-origin.ts`](../consent/grant-prompt-origin.ts) (the origin line every
+permission dialog shows), [`../sessions/`](../sessions/) (the two questions' types, and
+`permission-gate.ts`'s notification store, handed to the permissions panel),
 [`../dev/dev-mode.ts`](../dev/dev-mode.ts) (the developer-mode flag, for Inspect Element), plus
 the top-level `channels.ts` and `registry.ts`.
 
@@ -115,6 +122,15 @@ consumes it in the browser process before the page sees the key, which is what m
 the permission safe (`../sessions/README.md`). When the shell itself ends fullscreen (another
 tab became active), it asks the page through an isolated world, where the page's own script
 cannot have replaced `document.exitFullscreen`.
+
+**[`window-notice.ts`](window-notice.ts): a notice is loaded before it is attached, one view per
+message.** Measured in the real shell: a `WebContentsView` that navigates while attached to the
+window takes focus from the page under it. A notice loaded that way ended a pointer lock one
+millisecond after it began, and on entering fullscreen it took the page's keyboard focus, so a
+video player's Space and arrow keys went to the notice. Each message's view is loaded while
+detached and added on `did-finish-load`; changing the message swaps views instead of navigating
+the one on screen. [`../../test/e2e-shell-fidelity.test.ts`](../../test/e2e-shell-fidelity.test.ts)
+asserts the page keeps its focus in fullscreen.
 
 **[`leave-page-prompt.ts`](leave-page-prompt.ts) blocks the main process while it is open.**
 Electron settles `will-prevent-unload` from the handler's return, with no way to answer later,

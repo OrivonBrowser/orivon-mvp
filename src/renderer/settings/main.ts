@@ -1,4 +1,4 @@
-import type { AppPermissions, PermissionRow, PickedPathRow } from '../../main/permissions/permissions.js'
+import type { AppPermissions, PermissionRow, PickedPathRow, SiteNotificationRow } from '../../main/permissions/permissions.js'
 import type { CapabilityKind, GrantId } from '../../contracts/index.js'
 import { createPermissionsListView } from './permissions-view.js'
 
@@ -17,6 +17,9 @@ interface OrivonSettings {
   revokeCapability: (origin: string, capability: CapabilityKind) => Promise<void>
   /** D-0007's own revoke, addressed by pickId. */
   revokePickedPath: (origin: string, pickId: string) => Promise<void>
+  listSiteNotifications: () => Promise<readonly SiteNotificationRow[]>
+  /** Forgets a site's notification answer; it is asked again next time. */
+  resetSiteNotifications: (origin: string) => Promise<void>
   reportHeight: (height: number) => void
   focusOrigin: string | null
 }
@@ -45,7 +48,8 @@ const view = createPermissionsListView(
   list,
   emptyState,
   (origin, row) => { void revokeAndRefresh(origin, row) },
-  (origin, row) => { void revokePickedPathAndRefresh(origin, row) }
+  (origin, row) => { void revokePickedPathAndRefresh(origin, row) },
+  (row) => { void resetSiteAndRefresh(row) }
 )
 
 /** Scrolls to `settings.focusOrigin`'s card once, the first time it
@@ -82,8 +86,8 @@ function reportContentHeight (): void {
 }
 
 async function refresh (): Promise<void> {
-  const apps = await settings.list()
-  view.render(apps)
+  const [apps, sites] = await Promise.all([settings.list(), settings.listSiteNotifications()])
+  view.render(apps, sites)
   scrollToFocusOriginOnce()
   reportContentHeight()
 }
@@ -108,6 +112,11 @@ async function revokeAndRefresh (origin: string, row: PermissionRow): Promise<vo
  * branch to make here. */
 async function revokePickedPathAndRefresh (origin: string, row: PickedPathRow): Promise<void> {
   await settings.revokePickedPath(origin, row.pickId)
+  await refresh()
+}
+
+async function resetSiteAndRefresh (row: SiteNotificationRow): Promise<void> {
+  await settings.resetSiteNotifications(row.origin)
   await refresh()
 }
 

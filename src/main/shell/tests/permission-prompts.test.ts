@@ -82,6 +82,7 @@ describe('askNotificationPermission', () => {
     expect(showMessageBox.mock.calls[0]?.[0]).toBe(WINDOW)
     const options = lastOptions()
     expect(options.message).toBe('https://chat.example wants to show notifications')
+    expect(options.detail).toMatch(/You can change this in Permissions\.$/)
     expect(options.buttons).toEqual(['Allow', 'Block', 'Not now'])
   })
 
