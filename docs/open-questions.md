@@ -103,7 +103,7 @@ None of these block starting the week-0 spike.
 | A12 | **RESOLVED 2026-09-09 (owner): `orivon.fs` stays byte-oriented, no encoding option at the capability layer.** Confirms the provisional reading already in `src/contracts/capability-api.ts`; text decoding belongs to `orivon-node-shim`. See `.claude/unattended-build-queue.md` decision 1 | Phase 1 contracts PR removes the PROVISIONAL markers; see below |
 | A14 | **RESOLVED 2026-08-26 (owner):** a trailing DNS dot is stripped, so `https://x.example.` and `https://x.example` are ONE origin. Deliberately deviates from `URL.origin`. Exactly one dot; a host still carrying an empty label is rejected | Implemented in `src/broker/policy/origin.ts` |
 | A13 | **RESOLVED 2026-08-27 (owner): Promises**, per design rule 2. Widening a Promise to a plain value later is a smaller break than the reverse. Original question: `capability-api.md` §v0 surface writes them as `=> Manifest` and `=> Grant[]`, but design rule 2 in the same document says *"All entry points return Promises"* | **Build step 2.** Transcribed as Promises; see below |
-| A15 | **The four bundle-hash caps are guesses, not decisions** — `MAX_PATH_BYTES` 1024, `MAX_ASSET_BYTES` 16 MiB, `MAX_BUNDLE_BYTES` 64 MiB, `MAX_BUNDLE_ENTRIES` 4096 (`src/broker/policy/bundle-hash.ts`, `architecture/bundle-hash.md` §Caps). They are labelled AI-recommendation in the source, but a cap decides which bundles are *refusable*, so two implementations disagreeing on one disagree about whether an app can exist at all. **2026-09-03:** `src/loader/fetch-bundle.ts` (`stream/loader-02-fetch-cache`) is the first real caller of all four, and they are being carried forward uncalibrated | **Before the app loader ships (build step 4).** Needs one real frontend's shape to calibrate against; guessing again now would not be better than the current guess |
+| A15 | **The four bundle-hash caps are guesses, not decisions** — `MAX_PATH_BYTES` 1024, `MAX_ASSET_BYTES` 16 MiB, `MAX_BUNDLE_BYTES` 64 MiB, `MAX_BUNDLE_ENTRIES` 4096 (`src/broker/policy/bundle-hash.ts`, `architecture/bundle-hash.md` §Caps). They are labelled AI-recommendation in the source, but a cap decides which bundles are *refusable*, so two implementations disagreeing on one disagree about whether an app can exist at all. **2026-09-03:** `src/loader/fetch-bundle.ts` (`stream/loader-02-fetch-cache`) is the first real caller of all four, and they are being carried forward uncalibrated. **RESOLVED 2026-09-22 for the two byte caps (owner):** calibrated against ASGARDEX's real build (a 31 MB wasm-heavy chunk, a 37 MB bundle), `MAX_ASSET_BYTES` is 64 MiB and `MAX_BUNDLE_BYTES` 512 MiB. They bound download and disk, not memory: the loader now streams each asset to staging and hashes it incrementally (`src/loader/leaf-hash.ts`), so no asset is held whole. **Still AI-recommended:** `MAX_PATH_BYTES`, `MAX_BUNDLE_ENTRIES` (no real bundle has come near either), and the fetch time bounds that cite this entry (`FETCH_IDLE_TIMEOUT_MS` 20 s idle, `BUNDLE_TIMEOUT_MS` 30 min, `src/loader/fetch-budget.ts`) | The two byte caps: settled. The rest: when a real bundle or a slow real host hits one |
 | A16 | **RESOLVED 2026-08-28 (owner):** closing the last tab closes the window (option 2 below) — overrules this entry's own AI-REC, which favoured option 1. No `app.quit()` in `tabs.ts`/`window.ts`; `src/main/index.ts`'s existing `window-all-closed` handler already owns whether the whole process then exits | Implemented in `src/main/shell/tabs.ts` (`TabManager`'s `onEmpty` callback) and `src/main/shell/window.ts`. See below |
 | A17 | **RESOLVED 2026-08-27 (owner):** an `identityId` is **opaque and broker-generated** — never a user-typed name, never derived from one. The display name is stored beside the identity, not used to derive it. Found undefined during review of PR #5: it appeared exactly once in the whole repository, as one table cell | Recorded in `ADR-0010`, stated in `capability-api.md`, documented on `DeriveRequest.scope` |
 | A18 | **RESOLVED 2026-08-27 (owner): pass the GRANTED pattern list, not the manifest.** Original question: Nothing in the signature carries the grant, so a caller passing a raw manifest silently gets the declared authority | **Build step 2, before the broker calls it.** Narrow the list at the call site, or change the parameter to `readonly Pattern[]`. See below |
@@ -1106,15 +1106,26 @@ problem, not this function's.
 as closed. Not blocking this PR — recorded so the honest scope of T22 survives past the file
 header that currently carries it alone.
 
-**Partially resolved 2026-09-13, lane S4-6-csp:** the header S4-6 actually wires
-(`src/loader/serve.ts`'s `cspHeaderValue`) adds `default-src 'self'` and an explicit `script-src
-'self' 'unsafe-inline'` alongside the `connect-src` this entry originally described alone. That
-closes `img-src`, `form-action` and `frame-src` (all three fall back to `default-src`, unset) and
-`script-src` (now explicit) — the exfiltration-via-`<img>`/`<iframe>`/`<script>` paths this entry
-names above. **Still open, unchanged by this fix:** top-level navigation (`<a href>`,
-`location.href` — CSP's `default-src` never governs it) and the DNS-rebinding paragraph below
-(CSP names, `checkConnect` addresses) — neither is a gap this fix could have closed; see
-`src/broker/policy/README.md`'s `connect-src.ts` note for the fuller accounting.
+**Partially resolved 2026-09-13, lane S4-6-csp:** the header S4-6 actually wires adds
+`default-src 'self'` and an explicit `script-src` alongside the `connect-src` this entry
+originally described alone. That closes `img-src` and `frame-src` (each falls back to
+`default-src` when unset, and each is now set explicitly anyway) and `script-src` (explicit) —
+the exfiltration-via-`<img>`/`<iframe>`/`<script>` paths this entry names above. **It does not
+close `form-action`**: that directive has no fallback to `default-src`, so it has been
+unrestricted all along. **Still open:** top-level navigation (`<a href>`, `location.href` — CSP
+never governs it) and the DNS-rebinding paragraph below (CSP names, `checkConnect` addresses) —
+neither is a gap a header can close; see `src/broker/policy/README.md`'s `connect-src.ts` note
+for the fuller accounting.
+
+**Corrected 2026-09-22.** The paragraph above previously listed `form-action` among the
+directives `default-src` closed; the CSP spec lists no fallback for it, and it is now left unset
+on purpose (`src/loader/serve-csp.ts`, `src/loader/README.md` §What the served bundle's CSP
+admits): restricting it would refuse the redirects a form-post sign-in follows, and would bound
+nothing that navigation does not already leave open. The header today is built in
+`src/loader/serve-csp.ts`, not `serve.ts`, and admits more than it did: `'unsafe-eval'`,
+`'wasm-unsafe-eval'`, `data:`/`blob:` in the subresource directives, `worker-src 'self' blob:`,
+`frame-src 'self' data: blob:`, and `https.connect`'s sources in `connect-src` (`d-0045` to
+`d-0047`).
 
 ### A43 — a grant CSP cannot represent is omitted, which means BLOCKED, not merely uncovered **[OWNER DECISION]**
 
@@ -1148,6 +1159,12 @@ for a future change to take by accident.
 **Needed by:** build step 4 (the header actually gets applied) and build step 6 (the trust
 screen needs `ConnectSrcPolicy.omitted` to explain the breakage). Not blocking this PR — the
 derivation is correct as specified; this records the decision and its cost for whoever wires it.
+
+**Unchanged for `tcp.connect`, 2026-09-22.** A `*` `tcp.connect` pattern still contributes
+nothing to `connect-src`, for exactly the reason above. `https.connect` is now treated
+differently (A192's resolution, owner): its `*` host emits the `https:` scheme source, because
+every request that source admits reaches the app's own `protocol.handle` and is re-authorised
+there, while a `tcp.connect` grant has no such handler behind its CSP sources.
 
 ### A44 — secp256k1 point derivation and BIP-340 Schnorr signing exist nowhere, and two sources disagree on which layer should build them **[RESEARCH]**
 
@@ -2178,6 +2195,14 @@ fixed: paths are NFC-folded on both sides before comparison, and the delete loop
 true }` plus a per-file try/catch that logs and continues rather than throwing. A directory left
 empty by pruning is now removed too. Gap 2 is resolved.
 
+**2026-09-22: pruning moved from install time to the next start, and the per-origin bound is
+512 MiB.** Pruning at install turned an open single-page app's lazy `import()` of its previous
+bundle's chunks into 404s. An install now prunes nothing; the superseded files stay servable,
+re-verified against the pin that declared them, for the rest of the process, and
+`restorePinnedServing` prunes to the verified pin at the next start (`src/loader/README.md`,
+"Why an install never prunes"; `d-0056`). Gap 2 stays closed: nothing outlives one restart. The
+per-origin bound gap 1 relies on is now `MAX_BUNDLE_BYTES` 512 MiB (A15).
+
 ---
 
 ### A59 — whether `net.fetch`'s `Response.url` can be wrong on an ordinary, non-redirected fetch is unresearched **[RESOLVED 2026-09-13 — measured, then fixed via A141]**
@@ -2375,7 +2400,7 @@ whatever the real `Broker`-facing accessor turns out to be named), not invent a 
 
 ---
 
-### A62 — `nodeLoaderStorage`'s writes are not atomic, and nothing serializes concurrent `load()` calls for the same origin **[STILL OPEN]**
+### A62 — `nodeLoaderStorage`'s writes are not atomic, and nothing serializes concurrent `load()` calls for the same origin **[RESOLVED 2026-09-22 -- both halves]**
 
 Found 2026-09-03, a review-pass follow-up.
 
@@ -2442,6 +2467,18 @@ and removes can still be one a concurrent install is about to write into, betwee
 
 Neither level is closed by any of this. Both remain exactly the open question this entry already
 names, and the fix for both is the per-origin serialization below.
+
+**Resolved, both halves.** Serialisation: `installFromHint` (`src/main/install/app-install.ts`),
+the one production caller of `Loader.load()`, runs every call for an origin through
+`withOriginQueue` (`src/main/install/origin-queue.ts`), so two installs for one origin never
+interleave; that also closes the prune-versus-write races the amendment above describes, and an
+install no longer prunes at all (A58's 2026-09-22 note). Atomicity, 2026-09-22 (`d-0053`): every
+asset and pin write is a temp file in the origin's staging area renamed over its target
+(`node-storage.ts`'s `writeAtomically`, `commitStaged`), so a reader sees the old file or the new
+one, never a partial one. No `fsync`: a crash that loses a rename leaves files that no longer hash
+to the pin, which the next start's verification catches, and the origin then loads as an
+ordinary site until its hint reinstalls exactly the files that differ (`src/loader/README.md`,
+"When the cached bundle fails verification").
 
 ---
 
@@ -4104,7 +4141,7 @@ channel case in `src/broker/transport/ipc.ts`, the preload surface in
 production caller registers an app yet (a separate, still-unwired gap). The confusable this entry
 names is unfixed; it is simply no longer theoretical.
 
-### A116 — routed `fetch()` never follows redirects **[STILL OPEN]**
+### A116 — routed `fetch()` never follows redirects **[RESOLVED 2026-09-22]**
 
 **Raised 2026-09-10**, post-merge audit (lane R3, PR #133).
 
@@ -4121,6 +4158,20 @@ decision 7 lets it set freely — must not be replayed to a new host. Each of th
 decision, which is why this is filed rather than fixed.
 
 **Needed by:** whenever a real app is ported. Most real HTTP APIs redirect somewhere.
+
+**Resolved 2026-09-22 (`d-0038`, AI).** The routed path (`fetch`, `XMLHttpRequest` and
+`EventSource` alike, `src/preload/routed-core.ts`) follows redirects as the Fetch spec does, up
+to 20 hops, with `redirect: 'manual'` and `'error'` honoured and `response.redirected` set. Each
+of the three policy questions above has an answer in the code:
+
+- **A hop outside the grant fails.** Every hop is dialled afresh through the capability, so the
+  grant is checked again, and a `'denied'` mid-chain fails the request rather than handing it to
+  the page's native API (only a first-hop denial falls back, `d-0037`).
+- **No silent downgrade.** An `http:` hop is dialled over `tcp.connect`, so it succeeds only
+  against a plain-http host the app was separately granted; a non-http(s) target fails.
+- **An app's own credentials do not follow it off-origin.** `Authorization`, `Cookie`,
+  `Proxy-Authorization` and `Host` are dropped on a hop that changes origin; a 303 (and a 301/302
+  after `POST`) becomes a bodiless `GET`, as the spec says.
 
 ### A117 — routed `fetch()` bypasses mixed-content enforcement as well as CORS and CSP **[RESOLVED 2026-09-14]**
 
@@ -4193,7 +4244,8 @@ this; left that way deliberately, as a pure policy function outside this change'
 **Raised 2026-09-10**, post-merge audit (lane R2, PR #129).
 
 `node-ledger-storage.ts` reads each file whole and parses it, with no size check, on the main
-process's thread. `MAX_MANIFEST_BYTES` (64 KiB) is the precedent for the bound that is missing.
+process's thread. `MAX_MANIFEST_BYTES` (278,400 bytes, sized so a manifest listing the most
+assets a bundle may hold still fits) is the precedent for the bound that is missing.
 The threat is narrow — these files are ours, under `userData` — but "narrow" is the argument that
 was also available for the sync `fs` path, and that turned out to freeze the whole browser (see
 A121's neighbour, and the sync-read cap that came out of this audit).
@@ -4940,6 +4992,17 @@ succeed today.
 > symlink into a tree shared with a live parallel-fleet run, and `npm install` against it mid-run
 > is unsafe. A follow-up should decide whether to formally declare it as a devDependency.
 
+**2026-09-22: same-origin redirects are now followed, each hop checked (`d-0058`).** Refusing
+every redirect also refused real static hosts, which answer `/index.html` with a redirect to `/`
+(Cloudflare Pages, Vercel) or `/app` with `/app/` (GitHub Pages). `netFetch`
+(`src/loader/electron-fetch.ts`) now fetches with `redirect: 'manual'` and shows every hop to
+`redirectRefusal` before taking it: same scheme, host and port, at most `MAX_REDIRECTS` (5), or
+the request is aborted. The reasoning above still holds, with "never follows a redirect" narrowed
+to "never follows one off the origin being installed": the bytes of a followed hop come from that
+origin and are pinned under the path that was requested. `fetch-budget.ts`'s `Fetch` type states
+the narrowed requirement, and `test/e2e-loader-adapter.test.ts` exercises it against a real
+redirecting server.
+
 ---
 
 ### A142 -- the grant prompt shows a host, not a registrable domain, for lack of a public suffix list **[RESOLVED 2026-09-14 -- stream/shell-06-three-label-origin]**
@@ -5101,10 +5164,13 @@ silently narrowed.
 
 **CSP widened alongside the handler, from the SAME grant, not a second one.**
 `img-src`/`font-src`/`media-src` now widen to the origin's `https.connect` grant
-(`connect-src.ts`'s new `appReachCspHeaderValue`, reusing `connectSrcFor`'s own translation --
-Rule 3) -- without this, `default-src 'self'`'s fallback would keep refusing the very
-image/font/media loads this decision exists to allow, before a request could ever reach the
-handler above. `connect-src` itself is untouched, still sourced from `tcp.connect` alone.
+(`connect-src.ts`'s `reachSourcesFor`, reusing `connectSrcFor`'s own translation -- Rule 3;
+the header itself is assembled in `src/loader/serve-csp.ts`) -- without this, `default-src
+'self'`'s fallback would keep refusing the very image/font/media loads this decision exists to
+allow, before a request could ever reach the handler above. `connect-src` itself was left
+untouched here, still sourced from `tcp.connect` alone; since 2026-09-22 it also carries the
+`https.connect` sources, scheme-qualified (`d-0046`), so a worker's `fetch` and a document's XHR
+reach the same handler.
 
 **A158 partially dissolved as a side effect -- see that entry's own resolution.** Before this
 change, a too-narrow CSP header changed nothing observable, because the underlying request was
@@ -5333,6 +5399,17 @@ visit -- i.e. before Phase 5's FreeTube lane means anything. Not blocking anythi
 > to see it. It has since been closed a different way -- by re-hydrating grants from the
 > already-verified pinned manifest, not by holding a navigation (`A158`'s 2026-09-14 resolution)
 > -- so nothing here reopens it or depends on it.
+
+**2026-09-22: the first visit now ends in one automatic reload, which is option 3 above --
+see A233 before relying on either reading.** The first load also ran without the app tab's
+shims (no routed `fetch`, no `process`), because a tab's app-tab flag and partition are fixed
+when it is built, before the origin was registered. `src/main/install/manifest-hint.ts` now
+reloads the tab that reported the hint once, after consent is answered, when that install is
+what registered the origin (`d-0052`); the reloaded tab runs from the pinned cache, in the app's
+partition, with a decided grant. What remains of this entry is the pre-reload first load itself:
+its scripts still run before consent and can still be told `'denied'` for an instant, as the
+owner accepted. The reload is the option the owner's decision above declined, taken as an AI
+call to close the missing-shims half; A233 asks the owner to confirm or reverse it.
 
 ### A147 -- the address-bar provenance wording, and the two-state-vs-three-state choice it rests on **[NEEDS OWNER DECISION]**
 
@@ -6778,9 +6855,10 @@ broker capability (item 3, `A107`).
 
 ---
 
-### A192 -- an app granted unlimited HTTPS gets exactly the same CSP as an app granted nothing, so the reach it was granted is blocked before any code runs **[NEEDS OWNER DECISION]**
+### A192 -- an app granted unlimited HTTPS gets exactly the same CSP as an app granted nothing, so the reach it was granted is blocked before any code runs **[RESOLVED 2026-09-22 -- owner decision]**
 
-`appReachCspHeaderValue` (`src/broker/policy/connect-src.ts`) builds `img-src`/`font-src`/`media-src`
+`reachSourcesFor` (`src/broker/policy/connect-src.ts`; the header is assembled in
+`src/loader/serve-csp.ts`) builds `img-src`/`font-src`/`media-src`
 from the granted `https.connect` patterns by reusing `connectSrcFor`. That function deliberately
 OMITS a `*` host, classifying it `host-any-public-unicast`, and the reason is good: CSP's bare `*`
 would also permit loopback and the LAN, which a `*` grant explicitly does not (`A82`).
@@ -6806,6 +6884,19 @@ header is defence in depth and a momentarily-wider one grants nothing. `connect-
 same reasoning, because it also governs `wss:`, which is never intercepted and where CSP is
 therefore the SOLE gate. That distinction is already load-bearing elsewhere in this design
 (`A158`/#194's own revert), so this would apply an existing rule rather than invent one.
+
+**Owner decision, 2026-09-22 (`d-0046`): yes, and `connect-src` too.** A `*` host in an
+`https.connect` grant emits the `https:` scheme source in all four reach directives:
+`connect-src`, `img-src`, `font-src` and `media-src`. Never `wss:`. The recommendation's reason
+for keeping `connect-src` out, that `wss:` is never re-checked, was measured rather than assumed
+(`test/e2e-served-csp.test.ts`, Electron 44): from an https page, no source form the header
+emits (a bare `host:port`, `https://host:port`, or `https:`) admits a `wss:` URL, so `https:` in
+`connect-src` widens nothing a WebSocket can use. Every `https:` request it admits, a worker's
+`fetch` included, reaches the app's own `protocol.handle` and is re-authorised there against the
+live grant, which still refuses loopback and private addresses (measured with a loopback server
+the page could name in the header and that never saw a connection). This is the one source the
+header emits that is wider than the grant, and `connect-src.ts`'s header says so. The cost of the
+measurement's other half is A210: an installed app cannot open a third-party WebSocket at all.
 
 ### A178 -- `grant-ledger.ts` reached exactly Rule 2's 500-line limit, and a second file is six lines from it **[RESOLVED 2026-09-15 for the first; NOTED for the second]**
 
@@ -7146,6 +7237,13 @@ more permanently.
 `REACH_MAX_REQUEST_BODY_BYTES`-naming `TypeError`, confirmed to resolve (not reject) against the
 pre-fix code first; a body exactly at the cap still succeeds. `src/loader/tests/serve-reach.test.ts`.
 
+**2026-09-22: the number it matched is gone.** The routed path no longer caps a response body:
+it streams, reading at most 512 KiB ahead of the app (`src/preload/README.md`, "The routed
+network path's numbers"; `d-0041`), so `ROUTED_FETCH_MAX_BODY_BYTES` and `readAllCapped` no
+longer exist. `REACH_MAX_REQUEST_BODY_BYTES` (16 MiB) stands on its own reason, an app's request
+body buffered in the privileged main process before dialling; `serve-reach.ts`'s comment on it
+still names the removed constant as its source and needs rewording to that reason.
+
 ### A174 -- `serve-reach.ts` forwarded hop-by-hop response headers verbatim, including a `transfer-encoding` that was already false **[RESOLVED 2026-09-15]**
 
 **Raised and fixed 2026-09-15**, lane FIX-4, same review pass as A173. `forwardedRequestHeaders`
@@ -7331,6 +7429,13 @@ unrelated fix ("refuse an unimplemented shim member on call, not on read"). Neit
 `open-questions.md` currently shows a duplicate -- `npm run check:questions` passes clean on
 this branch -- because the collision only exists ACROSS the two unmerged branches, not within
 either one alone. Whichever of the two merges second will need to renumber.
+
+**What a ported app sees, 2026-09-22.** The gap above is still open and still narrow: the
+module-level `fs.createReadStream`/`fs.createWriteStream` a Node library calls work, built over
+the shim's own positional reads and writes (`src/shim/node-fs-streams.ts`, `src/shim/README.md`),
+and each destroys itself at end, finish or a failed write, releasing its handle. Only
+`FileHandle#createReadStream`/`createWriteStream`, the instance methods on a handle from
+`fs.promises.open()`, still refuse by name, pending `readable()`/`writable()` reaching a page.
 ### A171 -- `orivon.net.lookup`'s broker implementation built A167's union-of-three-capabilities reading, plus two judgment calls of its own **[AI-REC -- confirm alongside A167]**
 
 **Raised 2026-09-15**, lane L4-dns (`stream/broker-16-net-lookup`), which built `broker.net.lookup`,
@@ -8311,7 +8416,7 @@ specific meaning the two are easy to confuse in prose that names neither reposit
 every mention carries its repository. Not taken here, because the name belongs as much to
 `orivon-ports` as to this repository and the decision is not one-sided.
 
-### A202 -- the permission gate now allows one Chromium permission with no per-app grant; what is the rule for the next one, and does `clipboard-read` ever become a capability? **[AI-REC -- the rule below is a recommendation; the clipboard decision itself is the owner's, `d-0036`]**
+### A202 -- the permission gate now allows one Chromium permission with no per-app grant; what is the rule for the next one, and does `clipboard-read` ever become a capability? **[RULE SETTLED 2026-09-22 -- owner, amended form in `ADR-0025`; the `clipboard-read` half stays open. The clipboard-write decision itself is the owner's, `ADR-0022`]**
 
 Filed 2026-09-22 alongside `ADR-0022`, which allows `clipboard-sanitized-write` on every session.
 
@@ -8343,6 +8448,24 @@ chose and never a directory, argued against both clauses above: the pickers requ
 activation and a native dialog the page cannot fill in, and `<input type="file">` plus a
 download already reach a file the person picks. The rule itself is still owner-unconfirmed; what
 ADR-0024 could not fit inside it is A205.
+
+**The rule, amended and owner-settled, 2026-09-22 (`ADR-0025`).** `fullscreen` joined the gate.
+It meets clause (1): Chromium grants it only from a click, and the shell leaves the
+click-waiving `automatic-fullscreen` denied. It fails clause (2) as written: no legacy path
+reaches fullscreen. Its one abuse, a page drawing a fake address bar, is instead answered by the
+exit notice every browser shows, which the shell now draws. The owner settled the rule in this
+amended form: **a name passes when (1) the platform gates it on an action by the person that the
+shell can neither fake nor suppress, and either (2a) a legacy path already grants the same power,
+or (2b) the power's one abuse is answered by an affordance the shell draws, as every browser
+does.** Clipboard write and one chosen file pass by (2a), fullscreen by (2b).
+
+**Correction, same day.** This entry's heading cited `d-0036` for the clipboard decision; no
+decision-log row records it (`d-0036` is the dev `.eth` secure-origin decision). The clipboard
+decision is recorded in `ADR-0022`, which an ADR does not duplicate in the log, and the heading
+now says so.
+
+**Still open:** the second question, whether `clipboard-read` ever becomes an `orivon.*`
+capability, a Chromium-level prompt, or stays denied. Unchanged by any of the above.
 
 ### A203 -- `src/broker/transport/` imports `src/main/`, contradicting the stated rule that `src/broker/` never does
 
@@ -8426,3 +8549,348 @@ handler, which would make a real prompt possible; a ported app that needs a fold
 of a page misusing a stored handle.
 
 **Needed by:** any of those three. Not blocking.
+
+### A206 -- the routed network path's numbers are provisional **[AI-REC]**
+
+Filed 2026-09-22 with the routed path's rebuild as a streaming HTTP client (`d-0039`, `d-0041`).
+Four numbers were chosen, not measured: `ROUTED_IDLE_TIMEOUT_MS` (300 s without a byte, when the
+caller gave no signal or timeout), `ROUTED_QUEUE_MAX_WAIT_MS` (120 s waiting for a socket under
+the origin's allowance), `ROUTED_LIMIT_RETRY_MS` (500 ms back-off between retries of a `'limit'`
+dial), and the 512 KiB a response body is read ahead of the app (`src/preload/README.md`, "The
+routed network path's numbers"). Each errs long, toward a browser, which queues past its
+connection limit without a bound and leaves a quiet response open.
+
+**What would settle it:** real traces from ASGARDEX and FreeTube under load, showing how long a
+healthy long-poll sits silent and how deep the dial queue gets. **Needed by:** the first report of
+a request failing on one of these numbers. Not blocking.
+
+### A207 -- every routed request pays its own TCP and TLS handshake **[AI-REC]**
+
+Filed 2026-09-22. The routed path sends `Connection: close` and keeps no pool, so a page firing
+forty requests to one API host opens forty connections, each with a full handshake, and each
+holds one slot of the origin's socket allowance while it runs. A browser would reuse a handful.
+
+**What would settle it:** a keep-alive pool per (origin, host, port) in the main world, bounded
+by the socket allowance. It is real work inside a serialised installer that cannot import
+anything, so it waits for a measured cost. **Needed by:** a trace where handshake time or
+allowance pressure dominates a real app's startup.
+
+### A208 -- brotli: routed requests do not advertise it, because the platform cannot decode it yet **[RESEARCH]**
+
+Filed 2026-09-22. `DecompressionStream` in Electron 44 has no `'brotli'` format. The routed path
+checks at install and, finding none, advertises `Accept-Encoding: gzip, deflate` only; a server
+that sends `br` anyway fails the request like a network error. The check is live, so brotli
+switches on with no code change when Chromium ships the format. The Node shim's `zlib` has the
+same gap (`browserify-zlib` predates brotli).
+
+**What would settle it:** Chromium shipping `'brotli'` in `DecompressionStream`, or an owner
+decision to approve a WASM decoder (`docs/planning/shim-dependency-review.md` named
+`brotli-wasm`). **Needed by:** a granted host that ignores `Accept-Encoding`. Not blocking.
+
+### A209 -- a `Request` object's own forbidden headers never reach the routed path **[AI-REC -- accept as a documented divergence]**
+
+Filed 2026-09-22. `new Request(url, { headers })` runs the headers through the platform's request
+guard, which silently drops the ones a page may not set (`Origin`, `Cookie`, `Host`, ...), before
+the routed `fetch` ever sees the object. `fetch(url, { headers })` passes its plain header list
+straight through, so the same app gets different headers depending on which form it used.
+Nothing in the main world can recover what the guard dropped.
+
+**AI recommendation:** accept and keep it documented (`src/preload/README.md`, "The routed
+network path's remaining divergences"). **What would settle it otherwise:** a real app that
+builds its `Request` objects up front and needs a forbidden header on them.
+
+### A210 -- an installed app cannot open a third-party WebSocket **[STILL OPEN]**
+
+Filed 2026-09-22, found by the measurement behind A192's resolution (`test/e2e-served-csp.test.ts`,
+Electron 44). From an https page, none of the source forms the served header emits for a grant
+(a bare `host:port`, `https://host:port`, or `https:`) admits a `wss:` URL, and the routed path
+carries `fetch`, `XMLHttpRequest` and `EventSource` but no WebSocket. So a WebSocket to a granted
+third-party host fails on an installed app, and on a dev-granted origin, which is served the same
+header (`d-0049`). A plain website is unaffected: it has no Orivon CSP.
+
+**What would settle it:** routing `WebSocket` through the capability as `fetch` is, so the grant
+check happens on the dial and CSP never has to name a `wss:` source. Emitting `wss:` sources
+instead would make CSP the only gate a WebSocket meets, with no live re-check behind it.
+**Needed by:** any ported app that talks to its backend over a WebSocket.
+
+### A211 -- the reach path's CORS headers and `web-context-host.ts`'s CORS wrapper are inert in Electron 44 **[RESEARCH]**
+
+Filed 2026-09-22. Measured (`test/e2e-served-csp.test.ts`): Electron 44 does not enforce CORS on
+a response a `protocol.handle` handler returns. A cross-origin response with no
+`Access-Control-Allow-Origin` was readable, a `PUT` sent no preflight, and the handler's
+`Request` carries no `Origin` header at all. The reach path now adds CORS response headers for
+the app's origin and answers a browser preflight with a synthetic 204
+(`src/loader/serve-reach-cors.ts`), and `web-context-host.ts` wraps an isolated context's
+responses the same way. Today none of it changes an outcome.
+
+**Why keep it:** if a later Electron starts enforcing CORS here, worker `fetch` and XHR on an
+installed app keep working instead of failing all at once. **What would settle it:** re-running
+the measurement on each Electron upgrade; if enforcement arrives, the headers become
+load-bearing and need tests that fail without them.
+
+### A212 -- the reach path's queue, idle timeout and redirect cap are provisional **[AI-REC]**
+
+Filed 2026-09-22 (`d-0048`). A subresource request over the app's socket allowance now waits in
+a per-origin FIFO bounded at 256 waiters and 30 s (`serve-reach-slots.ts`); the dial's idle
+timeout is five minutes without a byte (`REACH_IDLE_TIMEOUT_MS`), so long-polls and event streams
+live. Both numbers were chosen, not measured. The redirect cap (20 hops, `serve-reach-redirects.ts`)
+is keyed by URL: a chain whose target URL the page's loader re-serialises differently restarts its
+count. Low risk, since each hop is still authorised and still costs the page a round trip.
+
+**What would settle it:** the same traces A206 asks for, on the subresource side. **Needed by:**
+a page whose subresources fail on one of these bounds.
+
+### A213 -- the in-flight cap now queues briefly; T11b's text said it rejects at once **[NEEDS OWNER CONFIRMATION]**
+
+Filed 2026-09-22 (`d-0062`). `handle-contracts.md` §Limits and `LIMITS`'s own doc said "calls
+beyond the in-flight cap reject immediately; they do not queue". Ported Node code fires a few
+hundred reads or connects at once, as Node allows, and treated the `'limit'` as a hard error.
+Past `LIMITS.inFlightOperations` (256) an operation now waits in a per-origin FIFO bounded twice:
+another 256 waiters (past that it is refused at once) and 10 s each (then `'limit'`). A waiting
+call runs nothing and holds only its arguments, and the queue is per origin, so one origin's
+queue never delays another's (`src/broker/handles/README.md`, "The in-flight cap queues briefly").
+The pages now describe the bounded wait.
+
+**AI recommendation:** keep it. What T11b forbids is an unbounded queue on the broker's thread;
+this one is bounded in length and time. **Needs:** the owner's confirmation, since it changes a
+stated security rule's wording. `src/contracts/limits.ts` carries the new text.
+
+### A214 -- a `localhost` connect pattern is a stated exception to T12 **[NEEDS OWNER CONFIRMATION]**
+
+Filed 2026-09-22 (`d-0063`). T12's rule is that a name is not evidence of where it leads, so a
+hostname pattern never authorises a private address. A pattern whose host is exactly `localhost`
+now authorises `127.0.0.1` and `::1` at its port, and `localhost` itself is never resolved: the
+broker substitutes the two literals, so no nameserver or hosts file has a say. The argument, in
+`src/broker/policy/README.md`, is that a constant answer cannot be rebound and the person saw
+"localhost" in the prompt as plainly as they would have seen `127.0.0.1`. Any other name
+resolving to loopback, the rest of `127.0.0.0/8` and every `*.localhost` stay refused, and `*`
+still means public unicast only.
+
+**Needs:** the owner's confirmation that the exception is acceptable. Reversing it is one branch
+in `connect-patterns.ts`.
+
+### A215 -- the fs quota over-counts in-place rewrites through a `FileHandle`, and under-counts a file removed while open **[AI-REC]**
+
+Filed 2026-09-22 with the quota's move to disk usage (`d-0066`). `writeFile` charges only growth,
+and `rm`, overwrite and rename release what they free. A `FileHandle`'s positional `write` and
+its `writable()` stream still charge every byte written, so rewriting a region in place counts
+twice, until the next session's reconciliation from disk corrects it. The opposite error: a file
+removed while a handle is still open is released at once, though its blocks stay allocated until
+the handle closes. That one is bounded by `LIMITS.concurrentFileHandles`.
+
+**What would settle it:** charging a handle write as the growth of the file's end rather than
+the bytes written. **Needed by:** an app that rewrites a large file in place near its quota.
+
+### A216 -- `writeFile` creates missing parent directories, where Node fails `ENOENT` **[NEEDS OWNER DECISION]**
+
+Filed 2026-09-22. The broker's `writeFile` (`src/broker/adapters/node-fs-adapter.ts`) runs a
+recursive `mkdir` of the parent first, so `orivon.fs.writeFile('a/b/c.txt', ...)` succeeds with
+`a/b` absent. Node's `fs.writeFile` fails `ENOENT` there, and code sometimes relies on that
+failure to detect a missing directory. Tests pin the current behaviour, and no production caller
+was found relying on either reading.
+
+**What would settle it:** the owner choosing which contract `orivon.fs.writeFile` states. The
+shim can give Node's behaviour either way; the question is what the capability promises.
+
+### A217 -- UDP is IPv4-only, and a TCP server listens on IPv4 only **[AI-REC]**
+
+Filed 2026-09-22. `orivon.net.udpBind` creates a `udp4` socket bound to `0.0.0.0`
+(`src/broker/adapters/udp-adapter.ts`), and `orivon.net.listen` binds `0.0.0.0`. An app cannot
+reach an IPv6-only DHT peer over UDP, and nothing can connect to its server over IPv6.
+
+**What would settle it:** dual-stack sockets, which report IPv4 peers as mapped IPv6 addresses
+and so need address normalisation everywhere a peer address is compared. **Needed by:** a
+flagship measurement showing IPv6-only peers matter.
+
+### A218 -- a `web.context` grant replaced by one that is not a superset closes every context **[AI-REC]**
+
+Filed 2026-09-22 with `d-0065`. A grant replacement now keeps each live handle the new patterns
+still cover, judged per handle. A web context has no coverage predicate of its own, so it
+survives only when the new patterns cover the old ones as a set; otherwise every open context
+closes, including one whose own origin the new grant still names.
+
+**What would settle it:** a per-context predicate (does the new grant still name this context's
+origin). **Needed by:** an app that narrows its `web.contexts` grant while contexts are open.
+
+### A219 -- after a session ends, an operation on one of its handles answers `'denied'`, not `'revoked'` **[AI-REC]**
+
+Filed 2026-09-22 with `d-0067`. An operation on an ended handle now reports how it ended:
+`'closed'` with `EBADF`, or `'revoked'` when its grant, pick or session was withdrawn. The last
+case has a hole: `dropOrigin` deletes the origin's whole table, so a later call on one of its
+handle ids finds nothing and answers the uniform `'denied'`. Operations in flight when the session
+ended do get `'revoked'`.
+
+**What would settle it:** keeping a short-lived tombstone for a dropped origin's handle ids.
+**Needed by:** a report of an app confused by `'denied'` after a session ended.
+
+### A220 -- Node defines `Buffer` and `process` as accessor pairs; the page defines them as data properties. Which is "the platform's descriptor"? **[AI-REC]**
+
+Filed 2026-09-22 with the page `Buffer` global (`d-0084`). ADR-0021 requires every global Orivon
+installs in an app's main world to carry "the platform's own property descriptor". Node 24
+defines `globalThis.Buffer` and `globalThis.process` as non-enumerable, configurable get/set
+accessor pairs (checked: `Object.getOwnPropertyDescriptor(globalThis, 'Buffer')` has `get` and
+`set`, no `value`). An app tab gets data properties instead: `Buffer` is `writable`,
+`configurable` and non-enumerable (`src/preload/page-buffer.ts`), and `process` is a plain
+assignment, so also enumerable (`src/shim/globals.ts`). Replacing, shadowing and deleting behave
+the same under both shapes, which is what ADR-0021 exists to protect; only code that inspects the
+descriptor itself can tell them apart.
+
+**AI recommendation:** read ADR-0021's "descriptor" as its behaviour (replaceable, shadowable,
+deletable) and keep the data properties, which `check:page-globals` can verify statically. **What
+would settle it:** the owner saying which reading the ADR means, or a real dependency that reads
+the descriptor's shape and breaks.
+
+### A221 -- the shim cannot list the app's root directory **[AI-REC]**
+
+Filed 2026-09-22. The broker's confinement refuses any path that resolves to the app's root
+itself (`deny('is-root')`). The shim answers `stat`, `access`, `mkdir -p` and `fsync` of the root
+locally (`src/shim/node-fs-root.ts`), but `readdir` needs a listing only the broker has, so it
+fails `EACCES` with a message naming the gap. A subdirectory lists normally.
+
+**What would settle it:** a broker policy change allowing a read-only listing of the root.
+**Needed by:** a library that lists its working directory.
+
+### A222 -- `process`'s values are provisional **[AI-REC]**
+
+Filed 2026-09-22 (`d-0078`). `process.versions` is an empty object, not a faked Node version;
+`version` is `''`; `arch` is `'javascript'`, `platform` and `release.name` `'browser'`; `argv` and
+`execArgv` are empty; `pid` is 1. Each is chosen so a check for Node or Electron takes its browser
+branch rather than a Node-only path the shim cannot back (`src/shim/README.md`).
+
+**What would settle it:** a real dependency that branches on one of these and breaks. Changing
+a value is one line in `src/shim/globals.ts`.
+
+### A223 -- no per-connection trust anchor, so a self-signed node cannot be reached over TLS **[NEEDS OWNER DECISION]**
+
+Filed 2026-09-22. The broker verifies every certificate against the system store and the dialled
+host, and `orivon.net.connectSecure` takes no option that changes who is trusted. Electrum
+servers, LND nodes and other self-hosted services commonly use a self-signed certificate or a
+private CA, which an app would pin. The shim refuses `ca`, `cert`/`key`/`pfx`, `secureContext`
+and a pinning `checkServerIdentity` by name.
+
+**What would settle it:** an owner decision on whether `connectSecure` gains a per-connection
+trust anchor (a pinned certificate or CA), which is a `src/contracts/` change and a new thing the
+grant prompt would have to show. **Needed by:** a wallet or node client among the ports.
+
+### A224 -- `orivon.net.listen` has no host parameter **[AI-REC]**
+
+Filed 2026-09-22 (`d-0076`). The capability always binds every interface. The shim therefore
+refuses a `net.Server` listen on `127.0.0.1`, `::1` or `localhost` by name rather than widening
+it, since a loopback-only listener is usually an unauthenticated local control surface. An app
+that needs a local-only port has no way to ask for one.
+
+**What would settle it:** a `host` parameter on `orivon.net.listen`, limited to loopback or
+every interface: a `src/contracts/` change. **Needed by:** an app with a local RPC port or an
+OAuth redirect catcher.
+
+### A225 -- STARTTLS cannot work over broker-terminated TLS **[RESEARCH]**
+
+Filed 2026-09-22. `pg`, SMTP and IMAP clients open a plain connection, talk, and then upgrade it
+with `tls.connect({ socket })`. TLS here is terminated in the broker (`ADR-0017`) on a connection
+it opened as TLS from the start; there is no operation that upgrades a plain `net.connect`
+socket in place. The shim refuses the upgrade by name.
+
+**What would settle it:** a broker operation that upgrades an existing socket handle to TLS,
+authorised against `https.connect` for the same host. A contracts change. **Needed by:** a
+ported app that speaks one of those protocols.
+
+### A226 -- `rejectUnauthorized: false` is accepted and ignored **[NEEDS OWNER CONFIRMATION]**
+
+Filed 2026-09-22 (`d-0075`). The shim's `tls` and `https` accept `rejectUnauthorized: false` and
+leave verification on; when the handshake then fails, the error says the override was not
+applied. Asking for less checking and getting more is the safe direction, and Electrum-style
+clients pass the flag unconditionally, even against properly certified servers, so refusing it
+would break them for nothing. Every option that would change who is trusted still refuses.
+
+**Needs:** the owner's confirmation that silently keeping verification on is the right answer,
+as opposed to refusing the option by name like the others.
+
+### A227 -- is `http.createServer` in scope? **[NEEDS OWNER DECISION]**
+
+Filed 2026-09-22. `net.createServer` is built over `orivon.net.listen`, but there is no HTTP
+request parser or `ServerResponse` on top of it, so `http.createServer` refuses by name. Rule 4
+puts anything absent from `mvp-scope.md`'s IN table out by default, and the table does not name
+an app serving HTTP.
+
+**What would settle it:** the owner saying whether a ported app that serves HTTP is in this
+build's scope. **Needed by:** such an app appearing among the ports.
+
+### A228 -- `connectSecure` negotiates no ALPN **[AI-REC]**
+
+Filed 2026-09-22. The shim accepts `ALPNProtocols` and reports `alpnProtocol` as `false`, Node's
+value for none, because `connectSecure` offers no protocol list. A client that wants HTTP/2 falls
+back to HTTP/1.1, which every client in the tree does cleanly. A gRPC client could not.
+
+**What would settle it:** an ALPN option on `connectSecure`, a contracts change. **Needed by:** a
+ported app that requires HTTP/2 or another ALPN-selected protocol.
+
+### A229 -- an open-web page an app opens as a popup runs in the app's partition until its opener closes **[NEEDS OWNER DECISION]**
+
+Filed 2026-09-22 (`d-0080`), an `ADR-0018` residual. A popup the page can talk to is Chromium's
+own new webContents, and Chromium creates it in its opener's session; moving it to the default
+session would sever `window.opener`, which is the whole point of a sign-in popup. So a sign-in
+provider an app opens this way runs in the app's partition, and its cookies land there, until the
+opener closes. A popup *into* an isolated app from any other session always opens in that app's
+own session, so the reverse leak does not happen.
+
+**What would settle it:** the owner accepting the residual, or A109's pre-commit interception,
+which would let a navigation choose its session before Chromium commits it. **Needed by:** a
+review of what a provider's cookies in an app partition can reach.
+
+### A230 -- the Leave/Stay prompt blocks the main process, and closing a tab never asks **[AI-REC]**
+
+Filed 2026-09-22 (`d-0081`). Electron settles `will-prevent-unload` from the handler's return
+value, with no asynchronous path, so the question is a synchronous message box and every tab's
+broker traffic waits while it is open. Separately, closing a tab closes its webContents without
+running `beforeunload`, where Chrome would ask.
+
+**What would settle it:** an asynchronous `will-prevent-unload` in a later Electron, and running
+`beforeunload` from `closeTab()` before destroying the view. **Needed by:** a report of either
+hurting a real page.
+
+### A231 -- `prompt()` returns `null` **[STILL OPEN]**
+
+Filed 2026-09-22. Electron implements no `window.prompt()` dialog and offers no hook to supply
+one, so every call returns `null` at once, which a page reads as the person pressing Cancel.
+`alert()` and `confirm()` work.
+
+**What would settle it:** a shell-drawn prompt reached through a preload override of
+`window.prompt`, which would need to block the page synchronously as the real one does.
+**Needed by:** a ported app that asks for input this way.
+
+### A232 -- a form `POST` that changes a tab's partition loses its body **[STILL OPEN]**
+
+Filed 2026-09-22. When a navigation moves a tab into or out of an app's partition, the shell
+learns of it only after Chromium commits it (`did-navigate`), then swaps in a fresh view and
+loads the committed URL there, as a `GET`. A `POST` that crossed that line arrives without its
+body. Replaying the body is not the fix: the first request already reached the server, so a
+replay would submit twice.
+
+**What would settle it:** A109's pre-commit interception, choosing the partition before the
+request is sent. **Needed by:** a sign-in or payment flow that posts across an app boundary.
+
+### A233 -- the reload after a first install is the option A146's owner decision declined **[NEEDS OWNER CONFIRMATION]**
+
+Filed 2026-09-22. A146's owner decision (2026-09-15) kept "let the page run" and declined option
+3, reloading the tab once a grant exists, because the reload is one the person did not ask for
+and is wrong for an app that already did something stateful on its first start. The
+platform-fidelity work of 2026-09-22 found a second cost of the first load that A146 did not
+weigh: it runs without the app tab's routed `fetch` and `process` shim, because a tab's flag and
+partition are fixed when it is built. `src/main/install/manifest-hint.ts` now reloads the reporting tab once, after consent,
+when that install is what registered the origin (`d-0052`); a repeat visit and an app restored at
+startup are never reloaded, so it cannot loop.
+
+That is option 3, taken as an AI call. **Needs:** the owner to confirm the reload, or reverse it,
+which leaves a first-visit app without its shims until the person reloads it themselves.
+
+### A234 -- the inlined `buffer` package runs in sloppy mode in the page **[AI-REC]**
+
+Filed 2026-09-22 with the page `Buffer` global (`d-0084`). The preload build inlines the `buffer`
+package into `page-buffer.ts`'s installer, and the bundler drops a nested `'use strict'`
+directive, so the package runs sloppy in the page, as `installGlobals` already does.
+`src/preload/tests/page-buffer.test.ts` and `test/e2e-page-buffer.test.ts` both run it that way,
+so the package is proven to work sloppy. Nothing else is inlined this way today.
+
+**What would settle it:** nothing, unless a later package is inlined through the same mechanism
+and depends on strict-mode semantics (a `this` of `undefined` in a plain call, a throw on
+assignment to a read-only property). Whoever inlines one should check this first. Not blocking.
