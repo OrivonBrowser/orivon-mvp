@@ -89,6 +89,8 @@ guessed. Rows with no ID were lifted out of the prose of the documents named bes
 | `d-0086` | 2026-09-22 | A revoke in the permissions panel is recorded as a declined capability, so the install-consent dialog does not ask for it again; `app.requestGrant` is unaffected, and an accepted request clears the record. AI; provisional | A236, `../../src/main/permissions/README.md` |
 | `d-0087` | 2026-09-22 | The update-check time is persisted per origin (`apps/<hash>/update-check.json`), and once the interval passes the manifest request is conditional (`If-None-Match`/`If-Modified-Since`, validators tied to the pinned manifest's leaf and sanitised); a 304 means up to date. AI; provisional | A235, A237, A238, `../../src/loader/README.md` |
 | `d-0088` | 2026-09-22 | Serving streams each asset from disk in 64 KiB positional reads, Range kept; a retained previous-pin file's leaf verdict is memoised per file identity (size, mtime, inode); a HEAD gets headers only. AI; provisional | `../../src/loader/README.md` |
+| `d-0089` | 2026-09-22 | An app tab's `WebSocket` to a granted cross-origin host is routed over `orivon.net`: `wss:` under `https.connect` via `connectSecure`, `ws:` under `tcp.connect` via `connect`, an RFC 6455 client in the page with no extension offered. An ungranted or same-origin socket stays native under the page's CSP. AI | A210, A239, ADR-0017, `../../src/preload/README.md` |
+| `d-0090` | 2026-09-22 | The dev CSP adds no `ws:` source for hot reload: `connect-src 'self'` is measured to admit a `ws:` socket to the page's own host and port in Electron 44. AI | A240, `../../src/main/dev/README.md` |
 
 ## Directives
 

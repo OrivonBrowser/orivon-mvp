@@ -1,6 +1,6 @@
 # ADR-0017: Orivon owns the app's HTTP path, terminating TLS, routing `fetch`, and letting apps set their own headers
 
-- **Status:** accepted
+- **Status:** accepted, amended 2026-09-22 (see the amendment under §Consequences)
 - **Date:** 2026-09-09
 - **Type:** architecture
 - **Decided by:** owner
@@ -105,6 +105,17 @@ replaces.
   `src/preload/README.md`'s Design notes (owned by the `broker` stream) catalogue the further,
   per-call-shape divergences this same requirement produced (the response body cap, unfollowed
   redirects, and the limited request-body types) alongside this one.
+
+  > **Amendment, 2026-09-22 (`d-0038`, `d-0040`, `d-0041`, `d-0089`). The routed path covers
+  > `XMLHttpRequest`, `EventSource` and `WebSocket` as well as `fetch`, and the three
+  > per-call-shape divergences named above are gone:** a routed request follows redirects, streams
+  > its response with no body cap, and accepts a `Blob`, `FormData` or stream body. **WebSocket is
+  > routed the same way:** an HTTP/1.1 Upgrade over a granted connection is the same traffic the
+  > grant already authorises (`wss:` under `https.connect` via `connectSecure`, `ws:` under
+  > `tcp.connect` via `connect`), so neither CORS, CSP nor mixed-content blocking applies to a
+  > routed socket. The RFC 6455 client runs in the page; no extension is offered. An ungranted or
+  > same-origin socket stays native under the page's CSP. `src/preload/README.md` lists the
+  > divergences that remain, the WebSocket's included.
 - **Unlimited HTTPS is the widest permission in the system.** If the prompt renders it the same way
   as a narrow declaration, every manifest will declare unlimited and the prompt stops meaning
   anything. Making breadth visible is therefore load-bearing, not polish.

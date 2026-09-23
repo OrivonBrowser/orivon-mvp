@@ -1,6 +1,6 @@
 # ADR-0009: The bundle hash is an app's content identity
 
-- **Status:** accepted, **amended 2026-08-27 and 2026-09-04** (see §Amendment)
+- **Status:** accepted, **amended 2026-08-27, 2026-09-04 and 2026-09-22** (see §Amendment)
 - **Date:** 2026-08-26
 - **Type:** architecture / security
 - **Decided by:** owner (manifest-as-leaf, scope, and the case-collision rule), AI recommendation
@@ -78,7 +78,8 @@ WebCrypto (`globalThis.crypto.subtle`) is a global across browsers, Node and WAS
 layer does not tie itself to the disposable one (`ADR-0002`). `crypto.subtle.digest` cannot
 stream, so each asset is briefly whole in memory. Accepted, with explicit byte caps, given
 `ADR-0005`'s stated 2-4 MB frontend size and that torrent payloads live in `files/`, never in the
-pinned set.
+pinned set. *(Amended 2026-09-22: the rejection stands for `bundle-hash.ts`, but the loader now
+streams; see the last §Amendment.)*
 
 ## Reasoning
 
@@ -154,7 +155,8 @@ enables is the strict-mode rule that gap needs, should DDOC ever return.
   for), DDOC's DNS anchor and two-level tree, CID/IPFS delivery, and any second hash algorithm.
   v0 accepts `"sha256:"` only: a namespace, not a negotiation.
 - **AI recommendation, owner to confirm separately:** the specific per-asset and per-bundle byte
-  caps needed because `crypto.subtle.digest` holds each asset whole in memory.
+  caps needed because `crypto.subtle.digest` holds each asset whole in memory. *(Amended
+  2026-09-22: the owner set them, and they no longer bound memory; see the last §Amendment.)*
 
 ## Reversibility
 - **Cost to reverse:** one-way door once the first pin is persisted, the same class as the origin
@@ -265,3 +267,27 @@ subsystem's own directory and the floor goes with it, by construction, with no s
 tombstone-clearing step to remember. `GrantLedger.forgetOrigin` (A60's escape hatch, same PR) is
 built on the same deletion primitive for the same reason, though it is not itself the removal
 action, and nothing calls it yet.
+
+## Amendment, 2026-09-22
+
+**The loader hashes each asset as a stream; `bundle-hash.ts` stays WebCrypto.** A real built
+frontend (ASGARDEX: a 31 MB wasm-heavy chunk in a 37 MB bundle) did not fit the 16 MiB asset cap
+this ADR's whole-buffer digest needed. The owner set the caps at 64 MiB per asset and 512 MiB per
+bundle (`open-questions.md` A15, `d-0050`), and at that size an asset must never be held whole.
+
+§Alternatives rejected a streaming `node:crypto` digest so that the durable construction would
+not tie itself to a disposable runtime (`ADR-0002`). That reason still governs
+`src/broker/policy/bundle-hash.ts`, which keeps WebCrypto and still digests whole buffers for a
+caller already holding them. The loader is not the durable layer: fetching and caching are
+Electron-specific machinery (`ARCHITECTURE.md` §Where things live). It streams each response to
+the origin's staging area and hashes the file back through `src/loader/leaf-hash.ts`, which feeds
+`node:crypto`'s incremental SHA-256 with `bundle-hash.ts`'s own `leafPrefix`. The byte layout is
+defined once, in the durable file; only the engine differs. `bundle-hash-leaves.test.ts` holds a
+`node:crypto` digest over `leafPrefix` to the tree `bundleTree` computes, and the frozen vectors
+pin `bundleTree` itself. The construction is unchanged, so no pin moves.
+
+**Consequences, corrected.** The byte caps bound download and disk, not memory: "each asset is
+briefly whole in memory" is no longer true of the loader, and the memory the loader holds per
+asset is one chunk. Serving streams from disk too (`src/loader/README.md`), so neither side of a
+cached bundle holds an asset whole.
+
