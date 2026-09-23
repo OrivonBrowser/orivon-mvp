@@ -380,6 +380,29 @@ describe('createWebContextHost -- open', () => {
     expect(callback).toHaveBeenCalledWith(false)
   })
 
+  // Every name the rest of the browser allows or asks the person about.
+  // An isolated context runs another site's script inside an app, so none
+  // of them reaches it, and nothing is ever asked on its behalf.
+  it('denies every permission the rest of the browser allows or asks about, on both handlers, without asking', async () => {
+    setNextWebContents(ORIGIN)
+    const host = createWebContextHost(stubBroker)
+
+    await host.open(OPENER, ORIGIN, { width: 100, height: 100 })
+
+    const contextSession = sessionsByPartition.get(fromPartitionCalls[0] as string) as FakeSession
+    const checkHandler = contextSession.setPermissionCheckHandler.mock.calls[0]?.[0] as
+      (wc: unknown, permission: string, origin: string, details: object) => boolean
+    const requestHandler = contextSession.setPermissionRequestHandler.mock.calls[0]?.[0] as
+      (wc: unknown, permission: string, callback: (granted: boolean) => void, details: object) => void
+    const details = { requestingUrl: ORIGIN, isMainFrame: true, externalURL: 'mailto:someone@example.com', filePath: '/tmp/x', isDirectory: false }
+    for (const permission of ['clipboard-sanitized-write', 'fullscreen', 'pointerLock', 'keyboardLock', 'fileSystem', 'openExternal', 'notifications']) {
+      expect(checkHandler(undefined, permission, ORIGIN, details), permission).toBe(false)
+      const callback = vi.fn()
+      requestHandler(undefined, permission, callback, details)
+      expect(callback, permission).toHaveBeenCalledWith(false)
+    }
+  })
+
   it('cancels a ws:/wss: request via webRequest.onBeforeRequest, and lets an ordinary one through', async () => {
     setNextWebContents(ORIGIN)
     const host = createWebContextHost(stubBroker)
