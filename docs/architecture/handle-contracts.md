@@ -109,7 +109,8 @@ uninformative.
 > read-side credit pump and `port-sink.ts`'s write side. Reachable from a real page as
 > `window.orivon.net.connect`, whose `readable`/`writable` are built in the main world by
 > `src/preload/main-world-socket.ts`; e2e-verified. TCP only; `net.connectSecure` returns the same
-> shape over broker-terminated TLS (`ADR-0017`).
+> shape over broker-terminated TLS (`ADR-0017`), plus what its handshake established
+> (`SecureTcpSocket`, below).
 
 ```ts
 interface TcpSocket extends Handle {
@@ -136,6 +137,75 @@ interface TcpSocket extends Handle {
   against resolved addresses, and an app inspecting what it actually connected to must see
   the same address the policy check saw, or DNS-rebinding-style confusion becomes possible
   again one layer up.
+
+### A secure socket: what its handshake established
+
+`orivon.net.connectSecure` returns a `SecureTcpSocket`: everything above, plus the handshake's
+facts as plain data, captured once when the handshake completed (the general rule above).
+`capability-api.md`'s `SecureConnectOptions` is what the app may ask the handshake for.
+
+```ts
+/**
+ * The server's certificate as a secure connection's handshake received it:
+ * plain data, captured once when the handshake completed. The field names
+ * and formats are Node's own `tlsSocket.getPeerCertificate()` ones, so a
+ * ported app's pinning or identity-checking code reads them unchanged.
+ * Public data the server sent; no key material is ever here.
+ */
+interface PeerCertificate {
+  /** Distinguished-name fields (`CN`, `O`, `OU`, ...). A field the certificate repeats is an array. */
+  readonly subject: Readonly<Record<string, string | readonly string[]>>
+  readonly issuer: Readonly<Record<string, string | readonly string[]>>
+  /** Node's own rendering, e.g. `'DNS:example.com, IP Address:192.0.2.1'`. Absent when the certificate carries no subjectAltName. */
+  readonly subjectaltname?: string
+  /** The validity bounds as Node prints them, e.g. `'Sep 23 00:00:00 2026 GMT'`. */
+  readonly valid_from: string
+  readonly valid_to: string
+  /** Uppercase hex, as Node reports it. */
+  readonly serialNumber: string
+  /** SHA-1 of the DER encoding, colon-separated uppercase hex. */
+  readonly fingerprint: string
+  /** SHA-256 of the DER encoding, colon-separated uppercase hex. */
+  readonly fingerprint256: string
+  /** The certificate itself, DER-encoded. */
+  readonly raw: Uint8Array
+  /** The public key as DER-encoded SubjectPublicKeyInfo: what public-key pinning hashes. Absent for a key type the runtime cannot export. */
+  readonly pubkey?: Uint8Array
+}
+
+/**
+ * What a secure connection's handshake established, captured when it
+ * completed and never updated afterwards.
+ */
+interface SecureHandshake {
+  /**
+   * True when the certificate chained to a trusted root and named the host
+   * it was verified against. A connection made with the default
+   * `rejectUnauthorized` is never false here: failing verification refuses
+   * it instead. False only when the app itself asked to proceed regardless
+   * (`SecureConnectOptions.rejectUnauthorized`).
+   */
+  readonly authorized: boolean
+  /**
+   * Why verification failed, as the runtime's own code for it
+   * (`'DEPTH_ZERO_SELF_SIGNED_CERT'`, `'CERT_HAS_EXPIRED'`,
+   * `'ERR_TLS_CERT_ALTNAME_INVALID'`, ...) -- the string Node puts in
+   * `tlsSocket.authorizationError`. Absent whenever `authorized` is true.
+   */
+  readonly authorizationError?: string
+  /** The protocol ALPN settled on, or false when none was offered or none agreed. */
+  readonly alpnProtocol: string | false
+  /** The server's certificate, or null when it presented none. */
+  readonly peerCertificate: PeerCertificate | null
+}
+
+/**
+ * What `orivon.net.connectSecure` returns: a `TcpSocket` carrying the
+ * connection's plaintext, exactly as `connect()`'s does, plus what its
+ * handshake established.
+ */
+interface SecureTcpSocket extends TcpSocket, SecureHandshake {}
+```
 
 ### Close and half-close
 

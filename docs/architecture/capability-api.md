@@ -224,9 +224,10 @@ orivon.app.requestGrant(cap)         // => Promise<boolean>  (may prompt the use
 
 // --- net ---
 orivon.net.connect({ host, port })       // => Promise<TcpSocket>
-orivon.net.connectSecure({ host, port }) // => Promise<TcpSocket>  TLS terminated in the broker
-                                          //   (ADR-0017); same handle shape as connect(), a
-                                          //   SEPARATE grant (https.connect, not tcp.connect)
+orivon.net.connectSecure({ host, port, ...tls }) // => Promise<SecureTcpSocket>  TLS terminated
+                                          //   in the broker (ADR-0017) under the app's own
+                                          //   Node TLS options; connect()'s handle plus the
+                                          //   handshake; a SEPARATE grant (https.connect)
 orivon.net.listen({ port })          // => Promise<TcpServer>   // .connections: ReadableStream<TcpSocket>
 orivon.net.udpBind({ port })         // => Promise<UdpSocket>
 
@@ -257,6 +258,67 @@ orivon.id.requestIdentity({ kind })  // => Promise<IdentityHandle | null> — co
 > Decrypt (`nip04`/`nip44`), if offered at all, is a **separate grant** from signing.
 > Derive a distinct secret per `(label, curve)` with length-prefixed HKDF: one scalar reused
 > across two schemes voids the security argument for both.
+
+### `connectSecure`'s TLS options
+
+`connectSecure` takes Node's own `tls.connect` options, and `handle-contracts.md` §TcpSocket
+defines the `SecureTcpSocket` it returns. By default the broker validates the certificate chain
+against the runtime's built-in roots and the certificate against `host`, and checks `host`
+against the `https.connect` grant by name: that verification is what binds the name to whoever
+answered. An option that removes the binding (`rejectUnauthorized: false`, the app's own `ca`, a
+`servername` other than `host`) makes the broker also resolve `host` once, require every answer
+to pass `connect()`'s address rule (`security-model.md` T12), and dial only the address it
+checked, so no option widens what a grant reaches.
+
+```ts
+/**
+ * `orivon.net.connectSecure`'s argument. Every field past `port` is
+ * optional and carries Node's own `tls.connect` meaning under Node's own
+ * name, except `alpnProtocols` (Node's `ALPNProtocols`). PEM values are
+ * strings and binary ones `Uint8Array`, and each is bounded in size: an
+ * oversized or malformed option rejects the call with `'invalid'` naming it.
+ * Key material serves this one connection only: it is never written to disk
+ * and never logged.
+ */
+interface SecureConnectOptions {
+  readonly host: string
+  readonly port: number
+  /**
+   * Default true. `false` completes the handshake whatever the certificate
+   * says, and the connection is then ENCRYPTED BUT UNAUTHENTICATED: anyone
+   * on the network path can impersonate the server, read everything and
+   * change it. That is the app's own choice, made in its own code (Electrum
+   * servers, LND nodes and LAN services commonly present self-signed
+   * certificates), and nothing the person granting the app was shown.
+   * `SecureTcpSocket.authorized`/`authorizationError` still report what
+   * verification found.
+   */
+  readonly rejectUnauthorized?: boolean
+  /**
+   * Trust anchors in PEM, one per string or several concatenated. They
+   * REPLACE the runtime's built-in roots for this one connection, exactly as
+   * Node's `ca` does; an app that wants both passes both.
+   */
+  readonly ca?: string | readonly string[]
+  /** A client certificate chain in PEM, presented when the server asks for one. Paired with `key`; `pfx` is the alternative. */
+  readonly cert?: string
+  /** The private key for `cert`, in PEM. */
+  readonly key?: string
+  /** A PKCS#12 bundle holding a client certificate and its key. */
+  readonly pfx?: Uint8Array
+  /** Decrypts `key` or `pfx`. */
+  readonly passphrase?: string
+  /**
+   * The name sent as SNI and verified against the certificate, when it
+   * differs from `host`. Absent, it is `host` when that is a name; `''`
+   * sends no SNI and verifies against `host`. Never an address literal.
+   * What the connection reaches is decided by `host` alone.
+   */
+  readonly servername?: string
+  /** Protocols offered through ALPN, most preferred first (`['h2', 'http/1.1']`). The one agreed is `SecureTcpSocket.alpnProtocol`. */
+  readonly alpnProtocols?: readonly string[]
+}
+```
 
 ### Secure connect, and why routed `fetch` needs no capability of its own
 
