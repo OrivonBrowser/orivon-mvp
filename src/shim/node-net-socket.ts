@@ -334,9 +334,14 @@ export class Socket extends Duplex {
 
   get readyState (): 'opening' | 'open' | 'readOnly' | 'writeOnly' | 'closed' {
     if (this.connecting) return 'opening'
-    if (this.readable && this.writable) return 'open'
-    if (this.readable) return 'readOnly'
-    if (this.writable) return 'writeOnly'
+    // Read from the stream state, not `readable`/`writable`: readable-stream 3
+    // (the page's `stream`) leaves both true after destroy() and after end().
+    const state = this as unknown as { _readableState?: { endEmitted?: boolean }, _writableState?: { ended?: boolean } }
+    const readable = !this.destroyed && this.readable && state._readableState?.endEmitted !== true
+    const writable = !this.destroyed && this.writable && state._writableState?.ended !== true
+    if (readable && writable) return 'open'
+    if (readable) return 'readOnly'
+    if (writable) return 'writeOnly'
     return 'closed'
   }
 }

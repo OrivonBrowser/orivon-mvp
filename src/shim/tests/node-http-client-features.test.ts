@@ -9,6 +9,7 @@ import { Socket } from '../node-net-socket.js'
 import { Agent } from '../node-http-agent.js'
 import { createFakeTcpSocket, type FakeTcpSocket } from './support/fake-tcp-socket.js'
 import { httpLifecycleSuite } from './support/http-lifecycle-suite.js'
+import { PageBuffer } from './support/page-buffer.js'
 
 const enc = new TextEncoder()
 const dec = new TextDecoder()
@@ -174,7 +175,7 @@ describe('1xx, upgrade and CONNECT', () => {
     fake.push(enc.encode('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\nfirst'))
     const [res, socket, head] = await upgraded
     expect(res.statusCode).toBe(101)
-    expect(Buffer.isBuffer(head)).toBe(true)
+    expect(PageBuffer.isBuffer(head)).toBe(true)
     expect(head.toString()).toBe('first')
     expect(socket.destroyed).toBe(false)
 

@@ -188,7 +188,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
   function socketAllowanceSync (origin: string): number {
     const key = originFromUrl(origin) ?? origin
     const pinned = ledger.manifestFor(key) === undefined ? pinnedManifests.get(key) : undefined
-    return pinned === undefined ? ledger.socketAllowance(key) : socketAllowance({ manifest: pinned, fsBytesWritten: 0 })
+    return pinned === undefined ? ledger.socketAllowance(key) : socketAllowance({ manifest: pinned, fsBytesUsed: 0 })
   }
 
   /**

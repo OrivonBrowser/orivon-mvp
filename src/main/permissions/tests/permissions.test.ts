@@ -334,7 +334,7 @@ describe('end to end: a real picked directory, listed and revoked through Permis
     await controller.revokePickedPath(APP, pick!.id)
 
     const error = await rejection(handle.readdir())
-    expect(error.code).toBe('closed')
+    expect(error.code).toBe('revoked')
   })
 
   it('revokePickedPath is a no-op when no broker is published yet', async () => {

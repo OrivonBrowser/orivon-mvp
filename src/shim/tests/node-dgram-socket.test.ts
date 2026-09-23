@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Socket } from '../node-dgram-socket.js'
 import { createFakeUdpSocket } from './support/fake-udp-socket.js'
+import { PageBuffer } from './support/page-buffer.js'
 import type { Datagram, UdpSocket } from '../../contracts/handles.js'
 import { OrivonShimError } from '../errors.js'
 
@@ -31,7 +32,7 @@ describe('dgram.Socket over a fake UdpSocket', () => {
     fake.deliver({ data: new Uint8Array([1, 2, 3]), address: '1.2.3.4', port: 6881, family: 'IPv4' })
     const [buf, rinfo] = await received
 
-    expect(Buffer.isBuffer(buf)).toBe(true)
+    expect(PageBuffer.isBuffer(buf)).toBe(true)
     expect([...buf]).toEqual([1, 2, 3])
     expect(rinfo).toEqual({ address: '1.2.3.4', port: 6881, family: 'IPv4', size: 3 })
   })
