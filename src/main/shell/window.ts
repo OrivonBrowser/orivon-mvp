@@ -26,6 +26,9 @@ import type { SubsystemContext } from '../registry.js'
 import { TabManager, type Bounds } from './tabs.js'
 import { registerShellIpc } from '../ipc/ipc.js'
 import { createPermissionsPanel } from '../permissions/permissions-panel.js'
+import { HtmlFullscreen } from './fullscreen.js'
+import { createFullscreenNotice } from './fullscreen-notice.js'
+import { developerMode, showContextMenu } from './context-menu.js'
 
 // Chrome restyle, 2026-08-28 (owner: match a reference screenshot that
 // turned out to be the prior prototype's chrome pixel-for-pixel --
@@ -171,15 +174,37 @@ export function createShellWindow (ctx: SubsystemContext): BaseWindow {
     return bookmarks.getAll().length > 0 ? CHROME_HEIGHT : CHROME_TOP_ROWS
   }
 
+  // A page in HTML fullscreen gets the whole window and the chrome is hidden;
+  // Electron only puts the window itself into fullscreen (./fullscreen.ts).
+  const notice = createFullscreenNotice(win.contentView, () => win.getContentBounds().width)
+  const fullscreen = new HtmlFullscreen({
+    relayout: () => { layoutAll() },
+    exitTab: (id) => { tabs.exitHtmlFullscreen(id) },
+    leaveWindowFullscreen: () => { if (!win.isDestroyed()) win.setFullScreen(false) },
+    showNotice: () => { notice.show() },
+    hideNotice: () => { notice.hide() }
+  })
+
   function layoutChrome (): void {
     const bounds = win.getContentBounds()
+    chrome.setVisible(fullscreen.tabId === null)
     chrome.setBounds({ x: 0, y: 0, width: bounds.width, height: chromeHeight() })
   }
 
   function tabBounds (): Bounds {
     const bounds = win.getContentBounds()
-    const top = chromeHeight()
+    const top = fullscreen.tabId === null ? chromeHeight() : 0
     return { x: 0, y: top, width: bounds.width, height: bounds.height - top }
+  }
+
+  function layoutAll (): void {
+    layoutChrome()
+    tabs.layout()
+    notice.layout()
+    // Closed rather than repositioned: a toolbar popup that follows a
+    // drag-resize around is stranger than one that simply dismisses, and
+    // this is what every browser does with its own.
+    permissionsPanel.close()
   }
 
   // A16, resolved (owner decision, 2026-08-28): closing the last tab
@@ -196,7 +221,10 @@ export function createShellWindow (ctx: SubsystemContext): BaseWindow {
   // process tree orphans. Same class as pushState()'s guard below.
   const closeWindow = (): void => { if (!win.isDestroyed()) win.close() }
 
-  const tabs = new TabManager(win.contentView, tabBounds, closeWindow, dashboardUrl, ctx)
+  const tabs = new TabManager(win.contentView, tabBounds, closeWindow, dashboardUrl, ctx, {
+    window: win,
+    htmlFullscreenChanged: (id, entered) => { fullscreen.changed(id, entered, tabs.getState().activeTabId) }
+  })
 
   // Queue item 4.4: the permissions settings page and the address-bar icon
   // both read/revoke through this one controller, closing over `ctx` so it
@@ -239,6 +267,7 @@ export function createShellWindow (ctx: SubsystemContext): BaseWindow {
       lastActiveTabId = state.activeTabId
       permissionsPanel.close()
     }
+    fullscreen.tabsChanged(state.activeTabId, (id) => state.tabs.some((tab) => tab.id === id))
     chrome.webContents.send(STATE_CHANNEL, { ...state, bookmarks: bookmarks.getAll() })
   }
 
@@ -274,6 +303,10 @@ export function createShellWindow (ctx: SubsystemContext): BaseWindow {
   // registers onState before that), so this re-sync is guaranteed to
   // land, not timing-dependent.
   chrome.webContents.on('did-finish-load', pushState)
+  // The address bar's Cut/Copy/Paste: the same menu a tab gets.
+  chrome.webContents.on('context-menu', (_event, params) => {
+    showContextMenu(chrome.webContents, params, { window: win, openInNewTab: (url) => { tabs.createTab(url) }, developerMode: developerMode() })
+  })
 
   // Queue item 4.4's permissions surface, now a panel inside this window
   // rather than a second one (owner, 2026-09-16) -- ./permissions-panel.ts.
@@ -302,6 +335,7 @@ export function createShellWindow (ctx: SubsystemContext): BaseWindow {
     // Also removes SETTINGS_COMMAND_CHANNEL, which the panel registers per
     // open -- same reregistration trap this handler already exists for.
     permissionsPanel.close()
+    notice.dispose()
   })
 
   // win.getContentBounds() read SYNCHRONOUSLY inside 'resize' returns the
@@ -317,14 +351,7 @@ export function createShellWindow (ctx: SubsystemContext): BaseWindow {
   // repeatedly as the drag continues, so one tick of latency per frame
   // is not observable.
   win.on('resize', () => {
-    setImmediate(() => {
-      layoutChrome()
-      tabs.layout()
-      // Closed rather than repositioned: a toolbar popup that follows a
-      // drag-resize around is stranger than one that simply dismisses, and
-      // this is what every browser does with its own.
-      permissionsPanel.close()
-    })
+    setImmediate(() => { if (!win.isDestroyed()) layoutAll() })
   })
 
   layoutChrome()

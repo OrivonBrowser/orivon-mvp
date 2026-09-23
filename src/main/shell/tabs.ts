@@ -6,7 +6,7 @@
 // itself.
 //
 // T18 (security-model.md): every tab WebContents gets setWindowOpenHandler
-// wired to open a new tab rather than a popup. A redirect, clicked link, form
+// wired so a popup becomes a tab, never an OS window. A redirect, clicked link, form
 // submission or script navigation that changes a tab's origin is caught by
 // wireView()'s own did-navigate handler, which repartitions the same way a
 // typed cross-origin navigation already does (see repartitionView()'s own
@@ -17,7 +17,7 @@ import { captureFaviconInto } from '../browsing/favicon.js'
 import { parseOmniboxInput, sanitizeDirectUrl } from '../browsing/omnibox.js'
 import type { SubsystemContext } from '../registry.js'
 import { appTabArgsFor, makeTabView, partitionChanged, partitionForTarget, repartitionView, wireView } from './tab-view.js'
-import type { TabViewHost } from './tab-view.js'
+import type { TabShell, TabViewHost } from './tab-view.js'
 
 export type { TabState, TabsSnapshot, ShellState, Bounds } from './tab-types.js'
 import type { TabState, TabsSnapshot, Bounds, TabRecord } from './tab-types.js'
@@ -40,6 +40,9 @@ const BLANK_URL = 'about:blank'
  * this ceiling is far cheaper than crashing the whole browser; no
  * legitimate manual use opens anywhere near 100 tabs. */
 const MAX_TABS = 100
+
+/** Any id but 0 (the page's own world) and 999 (the preload's). */
+const EXIT_FULLSCREEN_WORLD_ID = 1001
 
 let nextId = 1
 function makeTabId (): string {
@@ -85,7 +88,10 @@ export class TabManager {
     /** `ctx.broker` may be `undefined` (a run without the broker
      * subsystem), and `ctx.loader` is deliberately unused so far -- do not
      * remove either. README.md's design notes say what each is for. */
-    private readonly ctx: SubsystemContext
+    private readonly ctx: SubsystemContext,
+    /** Absent only in tests: tabs then show no dialog or menu, and nothing
+     * hears about fullscreen. */
+    shell?: TabShell
   ) {
     this.viewHost = {
       preloadPath: join(import.meta.dirname, '../preload/app.js'),
@@ -95,11 +101,15 @@ export class TabManager {
       // it once here would pin 'no broker' for the process lifetime.
       get broker () { return ctx.broker },
       dashboardUrl,
+      window: shell?.window,
       isActive: (id) => this.activeId === id,
       emitState: () => { this.emitState() },
       captureFavicon: async (id, record, favicons) => { await this.captureFavicon(id, record, favicons) },
       forgetTab: (id) => { this.forgetTab(id, false) },
       openTab: (url) => { this.createTab(url) },
+      adoptPopup: (view, partition) => { this.adoptPopup(view, partition) },
+      atCapacity: () => this.atCapacity(),
+      htmlFullscreenChanged: (id, entered) => { shell?.htmlFullscreenChanged(id, entered) },
       getTabBounds
     }
     this.preloadPath = join(import.meta.dirname, '../preload/app.js')
@@ -118,7 +128,7 @@ export class TabManager {
   }
 
   createTab (url?: string): string {
-    if (this.order.length >= MAX_TABS) {
+    if (this.atCapacity()) {
       // Refuse rather than crash -- see MAX_TABS above. Nothing reads
       // this return value today (grep confirms every caller discards
       // it), but the signature stays `string`, so hand back whatever is
@@ -177,6 +187,30 @@ export class TabManager {
     return id
   }
 
+  private atCapacity (): boolean {
+    return this.order.length >= MAX_TABS
+  }
+
+  /** A popup Chromium already created, with its opener, in the opener's
+   * session (./popups.ts). It navigates itself; nothing is loaded here. */
+  private adoptPopup (view: WebContentsView, partition: string | undefined): void {
+    const id = makeTabId()
+    const record: TabRecord = { view, favicon: null, faviconOrigin: null, pendingFaviconUrl: null, partition, isDashboardTab: false }
+    wireView(this.viewHost, id, record)
+    this.tabs.set(id, record)
+    this.order.push(id)
+    this.activateTab(id)
+  }
+
+  /** Asks a tab's page to leave HTML fullscreen. In an isolated world, where
+   * the page's own script cannot replace `document.exitFullscreen` and so
+   * keep the screen. */
+  exitHtmlFullscreen (id: string): void {
+    void this.liveWebContents(id)
+      ?.executeJavaScriptInIsolatedWorld(EXIT_FULLSCREEN_WORLD_ID, [{ code: 'document.exitFullscreen()' }])
+      // Rejects when the page already left, which is the outcome wanted.
+      .catch(() => {})
+  }
 
   closeTab (id: string): void {
     this.forgetTab(id, true)

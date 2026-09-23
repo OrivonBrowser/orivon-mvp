@@ -1,9 +1,9 @@
 # `src/main/sessions/`: what an Electron `Session` is allowed to do
 
 **What lives here.** `permission-gate.ts`: denies every Chromium permission (camera, clipboard
-reads, notifications, …) on every session a tab can reach. Two pass: `clipboard-sanitized-write`
-(`ADR-0022`), and `fileSystem` for a single file the person chose, never a directory
-(`ADR-0024`). `web-context-host.ts`: ADR-0019's
+reads, notifications, …) on every session a tab can reach. Three pass: `clipboard-sanitized-write`
+(`ADR-0022`), `fullscreen` (`ADR-0025`), and `fileSystem` for a single file the person chose,
+never a directory (`ADR-0024`). `web-context-host.ts`: ADR-0019's
 Electron half of the isolated `WebContext` — the real `WebContextHost`
 [`../../broker/web-capability.ts`](../../broker/web-capability.ts) calls through
 `CreateBrokerOptions.webContextHost`: the partition, the sandboxed/isolated `WebContentsView`,
@@ -37,11 +37,12 @@ startup would still miss a partition a tab opens after that point, which is most
 listed first in `subsystems.ts`, ahead of everything else, so its `beforeReady` attaches the
 listener before any other subsystem's own `beforeReady` gets a chance to create a session.
 
-**What the gate allows, and the rule a name must meet.** Two permissions pass on every ordinary
+**What the gate allows, and the rule a name must meet.** Three permissions pass on every ordinary
 session and every other one Chromium can ask for is refused. A name passes only when the web
 platform already gates it on an action by the person that the shell can neither fake nor
-suppress, and a legacy path already grants the same power, so refusing it would cost real pages
-without closing anything.
+suppress, and either a legacy path already grants the same power, so refusing it would cost real
+pages without closing anything, or the power's one abuse is answered by an affordance the shell
+itself draws, as every browser does.
 
 `clipboard-sanitized-write` is granted outright. The web
 platform gates clipboard writing on transient user activation and a focused document, so the
@@ -68,11 +69,21 @@ the check handler refuses. Because that handler is synchronous, the gate can say
 cannot ask the person, which is why the rule rests on the person's choice of file, not on a
 prompt.
 
+`fullscreen` meets the rule's first clause and the affordance half of its second. Chromium lets a
+page enter fullscreen only from a click in it, and it asks this gate on the request handler only:
+measured against a real page, `requestFullscreen()` reaches `setPermissionRequestHandler` with
+`fullscreen` and `setPermissionCheckHandler` with `automatic-fullscreen`, the content setting
+that waives the click. The second stays denied, so the click is always required. Leaving is not
+the page's to refuse: Escape is consumed in the browser process before the page sees the key.
+The one abuse, a page filling the screen and drawing a fake address bar, is answered by the exit
+notice every browser shows; [`../shell/fullscreen-notice.ts`](../shell/fullscreen-notice.ts)
+draws it. `ADR-0025` carries the argument.
+
 Two consequences worth knowing before touching either file. `web-context-host.ts` reinstalls
 deny-everything handlers on `ADR-0019` isolated-context sessions, and that is now the only thing
-holding clipboard write and file access away from a document running another site's script --
-it looks like duplication and is not. And the grant ledger is untouched by any of this: it
-governs `orivon.*` capabilities, not Chromium's own, so no app gained a power a plain website
+holding clipboard write, fullscreen and file access away from a document running another site's
+script -- it looks like duplication and is not. And the grant ledger is untouched by any of this:
+it governs `orivon.*` capabilities, not Chromium's own, so no app gained a power a plain website
 does not have.
 
 **[`web-context-host.ts`](web-context-host.ts)'s two WebRTC belts, and why a proxy pointed at the

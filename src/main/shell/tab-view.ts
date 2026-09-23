@@ -3,13 +3,16 @@
 // `## Design notes`, for why). Pure with respect to TabManager: neither
 // function here reads or writes any tab-collection state.
 import { WebContentsView } from 'electron'
-import type { View } from 'electron'
+import type { BaseWindow, View, WebContents, WebPreferences } from 'electron'
 import { partitionFor } from '../../broker/grants/origin-hash.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { shouldClearFavicon } from '../browsing/favicon.js'
 import type { Bounds, TabRecord } from './tab-types.js'
 import { isOriginServedFromCacheSync } from '../../loader/electron-serve.js'
 import type { Broker } from '../../broker/broker-contracts.js'
+import { developerMode, showContextMenu } from './context-menu.js'
+import { confirmLeavePage } from './leave-page-prompt.js'
+import { windowOpenHandler } from './popups.js'
 
 /** The `additionalArguments` flag marking a registered app's tab. Spelled
  * again in preload/fetch-route.ts rather than imported, for the reason
@@ -91,24 +94,32 @@ export function appTabArgsFor (target: string, broker: Broker | undefined): stri
   return broker.app.isRegisteredSync(origin) ? [APP_TAB_FLAG] : undefined
 }
 
-/** Builds one tab's WebContentsView with the standard, non-negotiable
- * webPreferences (contextIsolation/sandbox/no Node integration/
- * webSecurity), shared by tabs.ts's createTab() and repartitionView() so
- * the two can never drift apart on these (Rule 3). */
+/** Every tab's webPreferences, with the standard, non-negotiable ones
+ * (contextIsolation/sandbox/no Node integration/webSecurity) -- shared by
+ * makeTabView() and a popup's own, so no tab can drift from them (Rule 3). */
+export function tabWebPreferences (preload: string, partition: string | undefined, additionalArguments?: string[]): WebPreferences {
+  return {
+    preload,
+    ...(additionalArguments !== undefined ? { additionalArguments } : {}),
+    ...(partition !== undefined ? { partition } : {}),
+    contextIsolation: true,
+    sandbox: true,
+    nodeIntegration: false,
+    webSecurity: true
+  }
+}
+
+/** Builds one tab's WebContentsView, shared by tabs.ts's createTab() and
+ * repartitionView(). */
 export function makeTabView (preload: string, partition: string | undefined, additionalArguments?: string[]): WebContentsView {
-  const view = new WebContentsView({
-    webPreferences: {
-      preload,
-      ...(additionalArguments !== undefined ? { additionalArguments } : {}),
-      ...(partition !== undefined ? { partition } : {}),
-      contextIsolation: true,
-      sandbox: true,
-      nodeIntegration: false,
-      webSecurity: true
-    }
-  })
-  if (additionalArguments?.includes(APP_TAB_FLAG) === true) reportAppFailures(view)
+  const view = new WebContentsView({ webPreferences: tabWebPreferences(preload, partition, additionalArguments) })
+  watchAppTab(view, additionalArguments)
   return view
+}
+
+/** A registered app's tab gets its failures reported; see reportAppFailures. */
+function watchAppTab (view: WebContentsView, additionalArguments: string[] | undefined): void {
+  if (additionalArguments?.includes(APP_TAB_FLAG) === true) reportAppFailures(view)
 }
 
 /** Prints what an app's own page cannot tell anyone: an uncaught error, a
@@ -146,32 +157,54 @@ function reportAppFailures (view: WebContentsView): void {
   })
 }
 
+/** What the window around the tabs gives them: window.ts supplies it. */
+export interface TabShell {
+  /** The window a tab's dialogs and menus attach to. */
+  readonly window: BaseWindow
+  /** A tab's page entered or left HTML fullscreen. */
+  htmlFullscreenChanged: (id: string, entered: boolean) => void
+}
+
 /** What the per-view wiring below needs back from TabManager.
  *
  * An explicit surface rather than the class itself: these two functions are
  * about ONE view's lifetime, and keeping them honest about what they touch
  * is what lets them live outside the tab collection at all. `forgetTab` is
- * the crash path, `openTab` the popup redirect -- both deliberately narrower
- * than the methods behind them. */
+ * the crash path, `openTab` and `adoptPopup` the two ways a page opens a
+ * tab -- all deliberately narrower than the methods behind them. */
 export interface TabViewHost {
   readonly preloadPath: string
   readonly contentView: View
   readonly broker: Broker | undefined
   /** Read only to tell "still showing the dashboard" from "navigated away", in `wireView`'s did-navigate below. Never used to decide that a tab IS the dashboard -- `TabRecord.isDashboardTab` owns that, and only creation sets it. */
   readonly dashboardUrl: string
+  /** Undefined without a window around the tabs; a tab then shows no dialog or menu. */
+  readonly window: BaseWindow | undefined
   isActive: (id: string) => boolean
   emitState: () => void
   captureFavicon: (id: string, record: TabRecord, favicons: string[]) => Promise<void>
   forgetTab: (id: string) => void
   openTab: (url: string) => void
+  /** Makes Chromium's own popup webContents, already in `partition`, a tab. */
+  adoptPopup: (view: WebContentsView, partition: string | undefined) => void
+  atCapacity: () => boolean
+  htmlFullscreenChanged: (id: string, entered: boolean) => void
   getTabBounds: () => Bounds
 }
 
-/** Every event a tab's WebContentsView needs wired -- shared by createTab()
- * and repartitionView() (Rule 3): a swapped-in replacement view gets EXACTLY
- * the same favicon/title/loading/crash handling and the same popup-to-new-tab
- * redirect (T18) as a freshly created one, because as far as anything
- * downstream (the chrome UI, a popup) can tell, it IS one. */
+/** A popup whose opener still exists stays in its opener's session on the
+ * open web: moving it to the default session would sever `window.opener`,
+ * which is what the page opened it for. A move INTO an isolated app still
+ * happens, since that is the only session serving the app's pinned bundle. */
+function keepsOpenerSession (wc: WebContents, swap: PartitionSwap): boolean {
+  return swap.to === undefined && wc.opener !== null && wc.opener !== undefined
+}
+
+/** Every event a tab's WebContentsView needs wired -- shared by createTab(),
+ * repartitionView() and an adopted popup (Rule 3): each gets EXACTLY the
+ * same favicon/title/loading/crash handling and the same popup handling
+ * (T18), because as far as anything downstream (the chrome UI, a popup) can
+ * tell, they are the same thing. */
 export function wireView (host: TabViewHost, id: string, record: TabRecord): void {
   const wc = record.view.webContents
   wc.on('page-title-updated', () => { host.emitState() })
@@ -202,7 +235,7 @@ export function wireView (host: TabViewHost, id: string, record: TabRecord): voi
     }
     if (!record.isDashboardTab) {
       const swap = partitionChanged(navigatedUrl, record.partition, host.broker)
-      if (swap !== undefined) {
+      if (swap !== undefined && !keepsOpenerSession(wc, swap)) {
         repartitionView(host, id, record, navigatedUrl, swap.to)
         return
       }
@@ -234,12 +267,30 @@ export function wireView (host: TabViewHost, id: string, record: TabRecord): voi
   // handler only ever fires for a tab that is GENUINELY gone.
   wc.on('destroyed', () => { host.forgetTab(id) })
 
-  // T18: never let a tab open a real popup window -- route it to a new tab
-  // in this same shell instead.
-  wc.setWindowOpenHandler((details) => {
-    host.openTab(details.url)
-    return { action: 'deny' }
+  wc.on('enter-html-full-screen', () => { host.htmlFullscreenChanged(id, true) })
+  wc.on('leave-html-full-screen', () => { host.htmlFullscreenChanged(id, false) })
+  // With no listener, Electron keeps the page and says nothing: a guard
+  // meant as a question silently blocked the navigation instead.
+  wc.on('will-prevent-unload', (event) => {
+    if (host.window !== undefined && confirmLeavePage(host.window)) event.preventDefault()
   })
+  wc.on('context-menu', (_event, params) => {
+    if (host.window === undefined) return
+    showContextMenu(wc, params, { window: host.window, openInNewTab: host.openTab, developerMode: developerMode() })
+  })
+
+  // T18: never a real OS popup window. A popup the page can talk to becomes
+  // a tab (./popups.ts); everything else opens as a new tab.
+  wc.setWindowOpenHandler(windowOpenHandler({
+    atCapacity: host.atCapacity,
+    openTab: host.openTab,
+    adoptPopup: (view, partition, url) => {
+      watchAppTab(view, appTabArgsFor(url, host.broker))
+      host.adoptPopup(view, partition)
+    },
+    partitionFor: (url) => partitionForTarget(url, host.broker),
+    webPreferencesFor: (url) => tabWebPreferences(host.preloadPath, undefined, appTabArgsFor(url, host.broker))
+  }, () => ({ url: wc.getURL(), partition: record.partition })))
 }
 
 /** Swaps in a fresh WebContentsView for `record` -- the ONLY way to change a

@@ -42,7 +42,10 @@ const ALL_PERMISSIONS = [
   'geolocation', 'idle-detection', 'media', 'mediaKeySystem', 'midi', 'midiSysex',
   'notifications', 'pointerLock', 'keyboardLock', 'openExternal', 'speaker-selection',
   'storage-access', 'top-level-storage-access', 'window-management', 'unknown',
-  'fileSystem', 'hid', 'serial', 'usb', 'deprecated-sync-clipboard-read'
+  'fileSystem', 'hid', 'serial', 'usb', 'deprecated-sync-clipboard-read',
+  // Check-only names measured against a real page: Chromium asks for these
+  // on every popup and every requestFullscreen(), whatever the page does.
+  'automatic-fullscreen', 'web-app-installation'
 ]
 
 /** The gate's allowlist, restated here rather than imported: a test that
@@ -50,7 +53,7 @@ const ALL_PERMISSIONS = [
  * however it changed, which is the one thing this file exists to stop.
  * `fileSystem` is absent on purpose: it is allowed only with details naming
  * one file, which the matrix below never sends, and has its own cases. */
-const ALLOWED = ['clipboard-sanitized-write']
+const ALLOWED = ['clipboard-sanitized-write', 'fullscreen']
 
 // The details Electron passes for a File System Access operation, measured
 // against a real page: every read and write reaches the check handler with
@@ -133,13 +136,25 @@ describe('permissionGateSubsystem', () => {
   // Guards the blast radius of the allowlist itself: a later edit that
   // adds a name gets a failing test naming it, rather than silently
   // widening what every page in the browser may do.
-  it('allows exactly one permission when no file is named, and it is clipboard write', () => {
+  it('allows exactly clipboard write and fullscreen when no file is named', () => {
     permissionGateSubsystem.beforeReady?.()
     void permissionGateSubsystem.afterReady?.({} as never)
 
     const handlers = installedHandlers(fakeDefaultSession)
     const granted = ALL_PERMISSIONS.filter((permission) => handlers.request(permission) || handlers.check(permission))
-    expect(granted).toEqual(['clipboard-sanitized-write'])
+    expect(granted).toEqual(['clipboard-sanitized-write', 'fullscreen'])
+  })
+
+  // `fullscreen` is safe to allow because Chromium only grants it to a page
+  // the person just clicked in. `automatic-fullscreen` is the name that
+  // waives that click, so allowing it would remove the whole basis.
+  it('keeps automatic-fullscreen denied, on both handlers', () => {
+    permissionGateSubsystem.beforeReady?.()
+    void permissionGateSubsystem.afterReady?.({} as never)
+
+    const handlers = installedHandlers(fakeDefaultSession)
+    expect(handlers.request('automatic-fullscreen')).toBe(false)
+    expect(handlers.check('automatic-fullscreen')).toBe(false)
   })
 
   // An import reads the file the person picked; an export writes the file
@@ -181,7 +196,7 @@ describe('permissionGateSubsystem', () => {
     const handlers = installedHandlers(fakeDefaultSession)
     const details = { ...FILE, fileAccessType: 'writable' }
     const granted = ALL_PERMISSIONS.filter((permission) => handlers.request(permission, details) || handlers.check(permission, details))
-    expect(granted).toEqual(['clipboard-sanitized-write', 'fileSystem'])
+    expect(granted).toEqual(['clipboard-sanitized-write', 'fullscreen', 'fileSystem'])
   })
 
   it('reaches a newly created per-origin partition session too, not just the default one', () => {
