@@ -41,6 +41,7 @@ neutral place a channel name shared across this trust boundary can live; `shell.
 | `settings.ts` | **only** the permissions panel's own view (`src/main/permissions/permissions-panel.ts`) | `orivonSettings`: list each app's grants and revoke one, after checking `location.href` against its expected URL; `src/main/ipc/settings-ipc.ts` re-verifies the sender on every call |
 | `newtab.ts` | **only** a genuinely fresh tab (`src/main/shell/tabs.ts`'s `createTab()`, no `url` argument) | Read-only bookmark access, navigate-this-tab-only, but only after checking `location.href` against its own expected URL first, since (unlike the chrome view) a dashboard tab is ordinary and navigable; falls back to the SAME `exposeOrivon()` `app.ts` uses otherwise, not a second copy |
 | `fetch-route.ts` | `app.ts` and `newtab.ts`'s fallback branch, via `exposeFetchRoute()` | ADR-0017: routes `window.fetch` through `orivon.net` for a registered app's granted hosts, when the tab's `--orivon-app-tab` flag says so (`src/main/shell/tab-view.ts`'s `appTabArgsFor`); a plain website keeps native `fetch`, untouched |
+| `fetch-gate.ts` | `exposeFetchRoute()`, one gate per tab, handed to `installFetchRoute` as an argument | Nothing to the page. Decides when each routed request may dial, so a request past the app's socket allowance waits for a socket instead of failing (Design notes) |
 | `expose-shim-globals.ts` | `app.ts` and `newtab.ts`'s fallback branch, via `exposeShimGlobals()` | A151: installs `src/shim/globals.ts`'s `process`/`setImmediate`/`clearImmediate` into the main world, gated on the SAME `--orivon-app-tab` flag `fetch-route.ts` reads; an ordinary tab never receives shimmed Node globals just because it loaded before this preload ran |
 
 **Preload builds are isolated per entry (`electron.vite.config.ts`'s `isolatedEntries: true`).**
@@ -206,6 +207,32 @@ platform API is a trap":
   others, rather than left to be discovered.
 - **Only string/`Uint8Array`/`ArrayBuffer`/`URLSearchParams` request bodies are supported** --
   `FormData`, `Blob` and a streamed-upload body are not built here. A v0 scope cut.
+
+**[`fetch-gate.ts`](fetch-gate.ts) makes a routed `fetch()` wait for a socket, where
+`orivon.net` refuses.** Each routed request holds one socket for its whole exchange, and an app may
+hold only its socket allowance at once (the manifest's `net.concurrentSockets`, 64 when it declares
+none). Past it the broker refuses with `'limit'` and never queues (`LIMITS`' own doc, T11b). That is
+the right contract for `orivon.net`, whose callers are written against it, and the wrong one for
+`fetch()`: no browser's `fetch()` fails because too many are in flight, it waits for a connection.
+Without the gate, an app that fires a burst (FreeTube refreshing a hundred subscriptions in one
+`Promise.all`) sees every request past the allowance fail. So the waiting happens here, in the
+tab's own renderer, never on the broker's thread:
+
+- Every request dials until the broker first refuses one. From then on the gate holds the tab to
+  the number of requests still live at that refusal, hands each freed socket to the
+  longest-waiting refused request first, then admits queued ones in order.
+- It learns the number rather than reading it, because the allowance is shared with the app's own
+  `orivon.net` sockets and its other tabs, so no figure the preload could read up front says how
+  much of it is free. It forgets what it learned once the tab goes idle.
+- There is no per-host cap. A browser opens six HTTP/1.1 connections to a host but reaches most
+  busy hosts over HTTP/2, many requests on one connection; the routed fetch speaks HTTP/1.1, one
+  request per socket, so a six-per-host cap would triple FreeTube's hundred-subscription refresh
+  (measured: 19.5 s against 5.7 s). The allowance the person granted is the bound.
+- The first burst still pays for its refused dials, because the broker checks the allowance after
+  the TLS handshake. Learning the number is what stops that recurring on every request after.
+- **One case still fails, as a divergence:** when no routed request in the tab is live to free a
+  socket (the allowance is held entirely by the app's own sockets or its other tabs), the refusal
+  surfaces as the fetch's `TypeError`, since waiting would never end.
 
 **A second, independent mechanism diverges the same way, for a different class of request.**
 `fetch-route.ts` above only intercepts the page's own JS-level `fetch()` calls. A passive

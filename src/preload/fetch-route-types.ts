@@ -41,3 +41,20 @@ export interface RoutedFetchRequestLike {
   body?: unknown
   arrayBuffer?: () => Promise<ArrayBuffer>
 }
+
+/**
+ * Decides when a routed request may dial. Built in the isolated world by
+ * ./fetch-gate.ts and handed to `installFetchRoute` as an argument, so every
+ * member crosses `contextBridge` as a proxied function taking and returning
+ * plain values.
+ */
+export interface FetchRouteGate {
+  /** Queues a request and returns its ticket. */
+  enqueue: () => number
+  /** Settles once the request may dial. Never settles for a ticket released first. */
+  admitted: (ticket: number) => Promise<void>
+  /** After the broker refused a dial with 'limit': true once another routed request has finished, so a retry can succeed; false when none is live to free a socket. */
+  afterLimit: (ticket: number) => Promise<boolean>
+  /** Gives the request's place back, whether it was queued, admitted or waiting. Safe to repeat. */
+  release: (ticket: number) => void
+}
