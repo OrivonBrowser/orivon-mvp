@@ -33,6 +33,7 @@ import type {
   FileStat,
   IdentityHandle,
   LookupAddress,
+  SecureTcpSocket,
   TcpServer,
   TcpSocket,
   UdpSocket,
@@ -63,6 +64,54 @@ export interface CapabilityRequest {
   readonly patterns?: readonly Pattern[]
 }
 
+/**
+ * `orivon.net.connectSecure`'s argument. Every field past `port` is
+ * optional and carries Node's own `tls.connect` meaning under Node's own
+ * name, except `alpnProtocols` (Node's `ALPNProtocols`). PEM values are
+ * strings and binary ones `Uint8Array`, and each is bounded in size: an
+ * oversized or malformed option rejects the call with `'invalid'` naming it.
+ * Key material is used for this one handshake, never stored and never
+ * logged.
+ */
+export interface SecureConnectOptions {
+  readonly host: string
+  readonly port: number
+  /**
+   * Default true. `false` completes the handshake whatever the certificate
+   * says, and the connection is then ENCRYPTED BUT UNAUTHENTICATED: anyone
+   * on the network path can impersonate the server, read everything and
+   * change it. That is the app's own choice, made in its own code (Electrum
+   * servers, LND nodes and LAN services commonly present self-signed
+   * certificates), and nothing the person granting the app was shown.
+   * `SecureTcpSocket.authorized`/`authorizationError` still report what
+   * verification found.
+   */
+  readonly rejectUnauthorized?: boolean
+  /**
+   * Trust anchors in PEM, one per string or several concatenated. They
+   * REPLACE the runtime's built-in roots for this one connection, exactly as
+   * Node's `ca` does; an app that wants both passes both.
+   */
+  readonly ca?: string | readonly string[]
+  /** A client certificate chain in PEM, presented when the server asks for one. Paired with `key`; `pfx` is the alternative. */
+  readonly cert?: string
+  /** The private key for `cert`, in PEM. */
+  readonly key?: string
+  /** A PKCS#12 bundle holding a client certificate and its key. */
+  readonly pfx?: Uint8Array
+  /** Decrypts `key` or `pfx`. */
+  readonly passphrase?: string
+  /**
+   * The name sent as SNI and verified against the certificate, when it
+   * differs from `host`. Absent, it is `host` when that is a name; `''`
+   * sends no SNI and verifies against `host`. Never an address literal.
+   * What the connection reaches is decided by `host` alone.
+   */
+  readonly servername?: string
+  /** Protocols offered through ALPN, most preferred first (`['h2', 'http/1.1']`). The one agreed is `SecureTcpSocket.alpnProtocol`. */
+  readonly alpnProtocols?: readonly string[]
+}
+
 export interface OrivonNet {
   /**
    * Opens an outbound TCP connection. `host` may be a hostname or an address
@@ -72,34 +121,48 @@ export interface OrivonNet {
    */
   connect(opts: { host: string, port: number }): Promise<TcpSocket>
   /**
-   * Opens an outbound TCP connection and performs the TLS handshake,
-   * certificate chain validation and hostname verification IN THE BROKER,
-   * on the trusted side, using the encryption stack already in the shipped
-   * runtime (ADR-0017) -- no new dependency, so Rule 8 is unaffected. The
-   * app never sees ciphertext or certificate material: the returned handle
-   * is the same `TcpSocket` shape `connect()` returns, carrying plaintext
-   * bytes on `readable`/`writable` (handle-contracts.md's own TcpSocket section
-   * defines that shape; nothing new is defined for this method).
+   * Opens an outbound TCP connection and performs the TLS handshake IN THE
+   * BROKER, on the trusted side, using the encryption stack already in the
+   * shipped runtime (ADR-0017) -- no new dependency, so Rule 8 is
+   * unaffected. The app never handles ciphertext: the returned handle
+   * carries plaintext bytes on `readable`/`writable`, exactly as
+   * `connect()`'s does, plus what the handshake established
+   * (`SecureTcpSocket`, ./handles.js).
+   *
+   * BY DEFAULT the broker validates the certificate chain against the
+   * runtime's built-in roots and the certificate against `host`, and a
+   * failure rejects the call. `SecureConnectOptions` below carries Node's
+   * own `tls.connect` options for changing that -- trust anchors, skipping
+   * verification, a client certificate, SNI, ALPN -- and each is honoured
+   * as Node honours it: that choice is the app's own, made in its own code.
    *
    * `host` is checked against the app's granted `https.connect` patterns
    * BY THE HOSTNAME ITSELF, not the resolved address -- the one deliberate
    * departure from `connect()`'s matching rule, and safe rather than a
-   * regression of T12: the broker's own certificate/hostname verification
-   * already binds that hostname to whoever answered, cryptographically,
-   * which is exactly the binding a resolved-address match exists to
-   * approximate for plain TCP. This is a capability distinct from
-   * `tcp.connect` (`manifest.js`'s `HttpsCapability`) -- granting one never
-   * grants the other, and the raw `connect()` path above is unchanged by
-   * this method's existence.
+   * regression of T12 ONLY WHILE the handshake verifies the peer's
+   * certificate for `host` against the built-in roots: that verification is
+   * what binds the name to whoever answered, cryptographically, which is
+   * exactly the binding a resolved-address match exists to approximate for
+   * plain TCP. An option that removes that binding (`rejectUnauthorized:
+   * false`, the app's own `ca`, or a `servername` other than `host`) makes
+   * the broker ALSO resolve `host` once, require every address to pass the
+   * rule `connect()` applies (security-model.md T12), and dial the address
+   * it checked. So an option can only ever narrow what a grant reaches,
+   * never widen it, and `servername` never takes part in the grant check.
    *
-   * Rejects with `'denied'` if no granted pattern authorises `host`. A
-   * failed handshake or a certificate/hostname mismatch rejects with
-   * `'unreachable'` and a real `platformCode` -- the attempt was one the
-   * app was permitted to make, so it gets the true, specific reason
-   * (handle-contracts.md's Errors-section owner decision, 2026-08-26), not a
-   * generic denial.
+   * This is a capability distinct from `tcp.connect` (`manifest.js`'s
+   * `HttpsCapability`) -- granting one never grants the other, and the raw
+   * `connect()` path above is unchanged by this method's existence.
+   *
+   * Rejects with `'denied'` if no granted pattern authorises `host`, and
+   * with `'invalid'` for an option of the wrong type, an oversized one, or
+   * credentials the runtime cannot load. A failed handshake or a
+   * certificate/hostname mismatch rejects with `'unreachable'` and a real
+   * `platformCode` -- the attempt was one the app was permitted to make, so
+   * it gets the true, specific reason (handle-contracts.md's Errors-section
+   * owner decision, 2026-08-26), not a generic denial.
    */
-  connectSecure(opts: { host: string, port: number }): Promise<TcpSocket>
+  connectSecure(opts: SecureConnectOptions): Promise<SecureTcpSocket>
   /**
    * Opens a TCP listening socket on `port`, checked against the app's
    * granted `tcp.listen` patterns. `port: 0` asks the OS to pick; the real
