@@ -12,7 +12,7 @@ session the gate covers: the default session and every app partition. `automatic
 the content setting that lets a page go fullscreen without a click, stays denied. When a page
 enters fullscreen the shell makes that tab fill the window, hides the chrome, and shows
 "Press Esc to exit full screen" for four seconds (`src/main/shell/fullscreen.ts`,
-`src/main/shell/fullscreen-notice.ts`). Like clipboard write (`ADR-0022`) and a chosen file
+`src/main/shell/window-notice.ts`). Like clipboard write (`ADR-0022`) and a chosen file
 (`ADR-0024`), this is not an `orivon.*` capability: nothing is declared in a manifest, no grant
 is issued, and nothing appears in the permissions panel.
 

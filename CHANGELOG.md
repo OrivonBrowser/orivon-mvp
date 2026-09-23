@@ -115,6 +115,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **Entering fullscreen no longer takes the page's keyboard focus**, so a video player's keys keep
+  working under the exit notice.
 - **An installed app keeps its app-tab setup after a restart**, and the tab that installs an app
   reloads once so it runs as the app.
 - **Bundles up to 512 MiB install, and assets up to 64 MiB are served, without being held in

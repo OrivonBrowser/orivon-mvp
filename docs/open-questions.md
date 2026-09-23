@@ -9025,7 +9025,7 @@ routed path passes it on unchanged for a socket it hands to the native construct
 **Recorded as a trap for porters:** listen for `error` as well as `close`. **What would settle
 it:** Chromium firing `close` after the refusal, which would make this entry obsolete.
 
-### A242 -- `Notification.permission` may read `'denied'` for a site nobody has decided **[AI-REC -- provisional]**
+### A242 -- `Notification.permission` reads `'denied'` for a site nobody has decided **[needs owner call -- measured]**
 
 Filed 2026-09-22 with `ADR-0028`. Electron's permission check handler returns a boolean, so the
 gate can answer `Notification.permission` and the Permissions API only with "allowed" or not: a
@@ -9034,20 +9034,26 @@ APIs check and then request when the check is denied, so a page calling `request
 still gets asked. A page that reads `Notification.permission` first and gives up on `'denied'`
 never asks, and never shows a notification.
 
-*Provisional:* not yet measured against a real page, because the notification checks run only
-on a private session bus (A243). **What would settle it:** that measurement; if it holds, a
-preload override that reports `'default'` for an undecided site, or accepting it as a documented
-divergence.
+**Measured 2026-09-23** on a real page under a private session bus (A243,
+`test/e2e-site-permissions.test.ts`): an undecided site reads `'denied'` from both
+`Notification.permission` and the Permissions API; `requestPermission()` still reaches the
+prompt; Allow reads `'granted'`, also after a restart. **What would settle it:** a choice between
+a main-world override that reports `'default'` for an undecided site (under ADR-0021's descriptor
+rules) and accepting it as a documented divergence. Needed by the first ported app that gates on
+`'default'`.
 
 ### A243 -- every e2e test runs on the user's real session bus **[STILL OPEN]**
 
-Filed 2026-09-22. `scripts/run-headless.mjs` gives the launched shell a virtual display but not
-a private D-Bus session bus, so an Electron under test talks to the desktop session of whoever
-runs it. A notification it showed would reach that person's desktop, which is why
-`test/e2e-site-permissions.test.ts` runs its notification phase only when
-`ORIVON_E2E_PRIVATE_BUS=1` says the bus is private, and even then gives the shell a bus address
-nothing listens on. Other suites do not construct notifications, but nothing stops one from
-starting to.
+Filed 2026-09-22. By default `scripts/run-headless.mjs` gives the launched shell a virtual
+display but not a private D-Bus session bus, so an Electron under test talks to the desktop
+session of whoever runs it. A notification it showed would reach that person's desktop.
+`ORIVON_PRIVATE_BUS=1` makes the runner start a private bus (`dbus-run-session` inside
+`xvfb-run`) and set `ORIVON_E2E_PRIVATE_BUS=1` for the command; the notification phase of
+`test/e2e-site-permissions.test.ts` runs only then, and even then gives the shell a bus address
+nothing listens on. It is opt-in because a private bus has no keyring, which `safeStorage` users
+(telemetry, bookmarks, key derivation) read. Other suites do not construct notifications, but
+nothing stops one from starting to.
 
-**What would settle it:** the runner starting a private session bus for every launch, which is
-being added to `scripts/run-headless.mjs`, and the notification phase then running by default.
+**What would settle it:** either a private bus for every launch with a stand-in keyring for the
+suites that read `safeStorage`, or a guard that fails any e2e file that constructs a notification
+outside the private-bus runner.
