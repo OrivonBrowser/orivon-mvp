@@ -1,5 +1,6 @@
-// `dns/promises` module target (module-map.ts): node-dns.ts's own `promises`
-// object, as default export and as its one built member.
+// `dns/promises` module target: the same object node-dns.ts exports as
+// `dns.promises`, so `import { lookup } from 'dns/promises'` and
+// `require('dns').promises.lookup` are one implementation.
 
 import { promises } from './node-dns.js'
 

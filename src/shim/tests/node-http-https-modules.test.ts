@@ -76,17 +76,38 @@ describe('node-http.ts', () => {
   // `require('http')`'s own shape) used to be silently absent. A169:
   // reading one is now safe, the same as real absence; only calling it
   // still names the gap.
-  it('reading an unbuilt member (Agent) on the default export is safe; calling it names the gap instead of leaving it absent', async () => {
+  it('reading an unbuilt member (validateHeaderName) on the default export is safe; calling it names the gap instead of leaving it absent', async () => {
     installFakeOrivon()
     const http = (await import('../node-http.js')).default as unknown as Record<string, () => unknown>
     const { OrivonShimError } = await import('../errors.js')
-    expect(() => http.Agent).not.toThrow()
-    expect(() => http.Agent!()).toThrow(OrivonShimError)
+    expect(() => http.validateHeaderName).not.toThrow()
+    expect(() => http.validateHeaderName!()).toThrow(OrivonShimError)
     try {
-      http.Agent!()
+      http.validateHeaderName!()
     } catch (error) {
-      expect((error as InstanceType<typeof OrivonShimError>).api).toBe('http.Agent')
+      expect((error as InstanceType<typeof OrivonShimError>).api).toBe('http.validateHeaderName')
     }
+  })
+
+  it('exports an Agent that can be constructed and subclassed, and a globalAgent that is one', async () => {
+    installFakeOrivon()
+    const http = await import('../node-http.js')
+    class PoolingAgent extends http.Agent {
+      constructor () { super({ keepAlive: true, maxSockets: 4 }) }
+    }
+    const agent = new PoolingAgent()
+    expect(agent.keepAlive).toBe(true)
+    expect(agent.maxSockets).toBe(4)
+    expect(http.globalAgent).toBeInstanceOf(http.Agent)
+    expect(http.default.Agent).toBe(http.Agent)
+  })
+
+  it('http.request(\'https://...\') throws ERR_INVALID_PROTOCOL instead of sending plaintext', async () => {
+    const { connectCalls } = installFakeOrivon()
+    const http = await import('../node-http.js')
+    expect(() => http.request('https://example.com/')).toThrow(expect.objectContaining({ code: 'ERR_INVALID_PROTOCOL' }))
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(connectCalls).toHaveLength(0)
   })
 })
 
@@ -116,11 +137,42 @@ describe('node-https.ts', () => {
     expect(() => https.createServer()).toThrow(/net\.listen/)
   })
 
-  it('reading an unbuilt member (Agent) on the default export is safe; calling it names the gap instead of leaving it absent', async () => {
+  it('https.Agent extends http.Agent with https defaults', async () => {
     installFakeOrivon()
-    const https = (await import('../node-https.js')).default as unknown as Record<string, () => unknown>
-    const { OrivonShimError } = await import('../errors.js')
-    expect(() => https.Agent).not.toThrow()
-    expect(() => https.Agent!()).toThrow(OrivonShimError)
+    const http = await import('../node-http.js')
+    const https = await import('../node-https.js')
+    const agent = new https.Agent()
+    expect(agent).toBeInstanceOf(http.Agent)
+    expect(agent.defaultPort).toBe(443)
+    expect(https.globalAgent.protocol).toBe('https:')
+  })
+
+  it('the request\'s socket is a TLSSocket', async () => {
+    installFakeOrivon()
+    const https = await import('../node-https.js')
+    const req = https.get({ host: 'example.com', path: '/' })
+    const socket = await new Promise<{ encrypted?: boolean }>((resolve) => req.once('socket', resolve))
+    expect(socket.encrypted).toBe(true)
+    req.destroy()
+    req.on('error', () => {})
+  })
+
+  it('a custom CA refuses by name as the request\'s error, never dialling', async () => {
+    const { connectSecureCalls } = installFakeOrivon()
+    const https = await import('../node-https.js')
+    const req = https.get({ host: 'self-signed.example', path: '/', ca: 'PEM' })
+    const error = await new Promise<Error>((resolve) => req.once('error', resolve))
+    expect(error).toMatchObject({ name: 'OrivonShimError' })
+    expect(error.message).toMatch(/'ca' option/)
+    expect(connectSecureCalls).toHaveLength(0)
+  })
+
+  it('merges the agent\'s TLS options, as Node does, so an agent-level CA is refused too', async () => {
+    const { connectSecureCalls } = installFakeOrivon()
+    const https = await import('../node-https.js')
+    const req = https.get({ host: 'example.com', path: '/', agent: new https.Agent({ ca: 'PEM' }) })
+    const error = await new Promise<Error>((resolve) => req.once('error', resolve))
+    expect(error.message).toMatch(/'ca' option/)
+    expect(connectSecureCalls).toHaveLength(0)
   })
 })

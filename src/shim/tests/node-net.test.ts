@@ -45,6 +45,14 @@ describe('node-net.ts', () => {
     expect(connectCalls[0]).toEqual({ host: 'router.bittorrent.com', port: 6881 })
   })
 
+  it('new net.Socket().connect(port, host) dials through orivon.net.connect, found when connect() runs rather than at construction', async () => {
+    const net = await import('../node-net.js')
+    const socket = new net.Socket()
+    const { connectCalls } = installFakeOrivon()
+    socket.connect(6881, 'peer.example')
+    await vi.waitFor(() => expect(connectCalls).toEqual([{ host: 'peer.example', port: 6881 }]))
+  })
+
   it('createConnection is the same factory as connect', async () => {
     installFakeOrivon()
     const net = await import('../node-net.js')

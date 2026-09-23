@@ -22,14 +22,19 @@
 // shape is its first entry.
 
 import { getOrivon } from './orivon-global.js'
-import { toNodeError } from './node-http-errors.js'
+import { systemError, toNodeError } from './node-http-errors.js'
+import { isIP } from './node-net-isip.js'
 import { refusingProxy } from './unimplemented.js'
 import { refuseShim } from './errors.js'
 import type { LookupAddress } from '../contracts/handles.js'
 
+/** `hints`, `verbatim` and `order` are accepted and ignored: the broker's resolver order is what comes back. */
 export interface LookupOptions {
-  family?: number
+  family?: number | 'IPv4' | 'IPv6'
   all?: boolean
+  hints?: number
+  verbatim?: boolean
+  order?: string
 }
 
 export interface LookupResult { address: string, family: number }
@@ -40,7 +45,21 @@ type LookupAllCallback = (error: Error | null, addresses: LookupResult[]) => voi
 function toNodeFamily (family: LookupAddress['family']): number { return family === 'IPv6' ? 6 : 4 }
 
 function notFoundError (hostname: string): Error & { code: string } {
-  return Object.assign(new Error(`orivon-node-shim: getaddrinfo ENOTFOUND ${hostname}`), { code: 'ENOTFOUND' })
+  return systemError('ENOTFOUND', 'getaddrinfo', { hostname })
+}
+
+/** Node's family option: 4, 6, 0, or the 'IPv4'/'IPv6' strings it accepts for backward compatibility. */
+function familyNumber (family: LookupOptions['family']): 0 | 4 | 6 {
+  if (family === 4 || family === 'IPv4') return 4
+  if (family === 6 || family === 'IPv6') return 6
+  return 0
+}
+
+/** `lookup(host, 6, cb)` and `lookup(host, { family: 6 }, cb)` are the same call in Node. */
+function normaliseOptions (options: unknown): LookupOptions {
+  if (typeof options === 'number') return { family: options }
+  if (typeof options === 'object' && options !== null) return options as LookupOptions
+  return {}
 }
 
 /** True for a value shaped enough like a 'denied' rejection to be worth enriching below -- the real, closed-enum validation still happens downstream in toNodeError's own isOrivonError, which this does not attempt to duplicate. */
@@ -101,50 +120,59 @@ async function resolveAddresses (hostname: string, options: LookupOptions): Prom
     }
     throw error
   }
-  if (options.family === undefined || options.family === 0) return addresses
-  const wanted: LookupAddress['family'] = options.family === 6 ? 'IPv6' : 'IPv4'
+  const family = familyNumber(options.family)
+  if (family === 0) return addresses
+  const wanted: LookupAddress['family'] = family === 6 ? 'IPv6' : 'IPv4'
   return addresses.filter((address) => address.family === wanted)
 }
 
-/** dns.lookup(hostname[, options], callback) -- every documented positional form, since real callers pass either. */
+/**
+ * Every address a lookup yields, in resolver order. An IP literal is its
+ * own answer and 'localhost' is loopback, both without a capability call,
+ * as Node's lookup never asks a resolver about a literal either.
+ */
+async function lookupAll (hostname: string, options: LookupOptions): Promise<LookupResult[]> {
+  const literal = isIP(hostname)
+  if (literal !== 0) return [{ address: hostname, family: literal }]
+  if (hostname.toLowerCase() === 'localhost') {
+    return familyNumber(options.family) === 6 ? [{ address: '::1', family: 6 }] : [{ address: '127.0.0.1', family: 4 }]
+  }
+  let addresses: readonly LookupAddress[]
+  try {
+    addresses = await resolveAddresses(hostname, options)
+  } catch (error) {
+    throw toNodeError(error, { syscall: 'getaddrinfo', hostname })
+  }
+  if (addresses.length === 0) throw notFoundError(hostname)
+  return addresses.map((address) => ({ address: address.address, family: toNodeFamily(address.family) }))
+}
+
+/** dns.lookup(hostname[, options], callback) -- `options` an object or a bare family number, as in Node. */
 export function lookup (hostname: string, callback: LookupCallback): void
-export function lookup (hostname: string, options: LookupOptions & { all?: false }, callback: LookupCallback): void
+export function lookup (hostname: string, options: number | (LookupOptions & { all?: false }), callback: LookupCallback): void
 export function lookup (hostname: string, options: LookupOptions & { all: true }, callback: LookupAllCallback): void
 export function lookup (
   hostname: string,
-  optionsOrCallback: LookupOptions | LookupCallback | LookupAllCallback,
+  optionsOrCallback: number | LookupOptions | LookupCallback | LookupAllCallback,
   callback?: LookupCallback | LookupAllCallback
 ): void {
-  const options: LookupOptions = typeof optionsOrCallback === 'object' && optionsOrCallback !== null ? optionsOrCallback : {}
+  const options = normaliseOptions(optionsOrCallback)
   const cb = typeof optionsOrCallback === 'function' ? optionsOrCallback : callback
   if (cb === undefined) return
-  resolveAddresses(hostname, options).then((addresses) => {
-    if (addresses.length === 0) { (cb as LookupCallback)(notFoundError(hostname), '', 0); return }
-    if (options.all === true) {
-      (cb as LookupAllCallback)(null, addresses.map((address) => ({ address: address.address, family: toNodeFamily(address.family) })))
-      return
-    }
-    const picked = addresses[0] as LookupAddress
-    ;(cb as LookupCallback)(null, picked.address, toNodeFamily(picked.family))
-  }).catch((error) => {
-    const nodeError = toNodeError(error)
-    if (options.all === true) (cb as LookupAllCallback)(nodeError, []); else (cb as LookupCallback)(nodeError, '', 0)
+  lookupAll(hostname, options).then((results) => {
+    if (options.all === true) { (cb as LookupAllCallback)(null, results); return }
+    const picked = results[0] as LookupResult
+    ;(cb as LookupCallback)(null, picked.address, picked.family)
+  }, (error: unknown) => {
+    if (options.all === true) (cb as LookupAllCallback)(error as Error, []); else (cb as LookupCallback)(error as Error, '', 0)
   })
 }
 
 /** dns.promises.lookup(hostname[, options]) -- `options` may also be a bare family number, matching real Node's own overload. */
-async function lookupPromise (hostname: string, options: LookupOptions | number = {}): Promise<LookupResult | LookupResult[]> {
-  const opts: LookupOptions = typeof options === 'number' ? { family: options } : options
-  let addresses: readonly LookupAddress[]
-  try {
-    addresses = await resolveAddresses(hostname, opts)
-  } catch (error) {
-    throw toNodeError(error)
-  }
-  if (addresses.length === 0) throw notFoundError(hostname)
-  if (opts.all === true) return addresses.map((address) => ({ address: address.address, family: toNodeFamily(address.family) }))
-  const picked = addresses[0] as LookupAddress
-  return { address: picked.address, family: toNodeFamily(picked.family) }
+export async function lookupPromise (hostname: string, options: LookupOptions | number = {}): Promise<LookupResult | LookupResult[]> {
+  const opts = normaliseOptions(options)
+  const results = await lookupAll(hostname, opts)
+  return opts.all === true ? results : results[0] as LookupResult
 }
 
 function otherDnsPromisesMember (prop: string) {

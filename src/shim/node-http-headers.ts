@@ -46,6 +46,16 @@ export class HeaderBag {
   entries (): ReadonlyArray<{ name: string, value: HeaderValue }> {
     return [...this.byLowerName.values()]
   }
+
+  /** request.getHeaders(): lowercased names, as Node returns them. */
+  toObject (): Record<string, HeaderValue> {
+    const out: Record<string, HeaderValue> = Object.create(null) as Record<string, HeaderValue>
+    for (const [lower, { value }] of this.byLowerName) out[lower] = value
+    return out
+  }
+
+  names (): string[] { return [...this.byLowerName.keys()] }
+  rawNames (): string[] { return [...this.byLowerName.values()].map(({ name }) => name) }
 }
 
 const CRLF = '\r\n'
@@ -63,7 +73,8 @@ export function serializeRequestHead (method: string, path: string, headers: Hea
   return new TextEncoder().encode(lines.join(CRLF))
 }
 
-/** Host header value Node computes automatically: omits the port when it is the scheme's default. */
+/** Host header value Node computes automatically: an IPv6 literal bracketed, the port omitted when it is the scheme's default. */
 export function defaultHostHeader (host: string, port: number, defaultPort: number): string {
-  return port === defaultPort ? host : `${host}:${port}`
+  const name = host.includes(':') && !host.startsWith('[') ? `[${host}]` : host
+  return port === defaultPort ? name : `${name}:${port}`
 }
