@@ -8796,7 +8796,7 @@ branch rather than a Node-only path the shim cannot back (`src/shim/README.md`).
 **What would settle it:** a real dependency that branches on one of these and breaks. Changing
 a value is one line in `src/shim/globals.ts`.
 
-### A223 -- no per-connection trust anchor, so a self-signed node cannot be reached over TLS **[NEEDS OWNER DECISION]**
+### A223 -- no per-connection trust anchor, so a self-signed node cannot be reached over TLS **[RESOLVED 2026-09-23 -- owner decision, built]**
 
 Filed 2026-09-22. The broker verifies every certificate against the system store and the dialled
 host, and `orivon.net.connectSecure` takes no option that changes who is trusted. Electrum
@@ -8807,6 +8807,14 @@ and a pinning `checkServerIdentity` by name.
 **What would settle it:** an owner decision on whether `connectSecure` gains a per-connection
 trust anchor (a pinned certificate or CA), which is a `src/contracts/` change and a new thing the
 grant prompt would have to show. **Needed by:** a wallet or node client among the ports.
+
+**Resolved, 2026-09-23 (owner, `d-0096`).** `connectSecure` takes Node's own TLS options:
+`ca` replaces the built-in roots for that connection, `cert`/`key`/`pfx`/`passphrase` present a
+client certificate, and `rejectUnauthorized: false` skips verification, each as Node honours it
+(`ADR-0017`'s 2026-09-23 amendment). The grant prompt does not show these: they are the app's
+choices, made in its own code. An option that stops the certificate binding the granted name adds
+the resolve-once address check (`d-0097`), so a self-signed LAN node is reached through a grant
+naming its address or `localhost:<port>`.
 
 ### A224 -- `orivon.net.listen` has no host parameter **[AI-REC]**
 
@@ -8830,7 +8838,23 @@ socket in place. The shim refuses the upgrade by name.
 authorised against `https.connect` for the same host. A contracts change. **Needed by:** a
 ported app that speaks one of those protocols.
 
-### A226 -- `rejectUnauthorized: false` is accepted and ignored **[DECIDED 2026-09-23 -- owner: honour it]**
+**What it would take, 2026-09-23 (it stays refused, `d-0099`):**
+
+1. A contracts operation, for example `orivon.net.upgradeSecure(socket, tlsOptions & { host })`,
+   authorised against `https.connect` for `host` and always address-checked against the address
+   the socket already reached.
+2. `node-adapters.ts`'s `dialOne` stops handing the socket to `Duplex.toWeb`, whose `cancel()`
+   destroys the socket and which reads eagerly; it needs a detachable source that keeps the raw
+   `net.Socket` available to wrap in TLS.
+3. A transport quiesce protocol: drain the write window, stop the pump at a read boundary, swap
+   the pump's reader and the sink's writer to the TLS streams (the credit window carries over,
+   since it counts plaintext bytes), and re-point the handle registry's entry and its destroy.
+4. The shim's `net.Socket` releases its reader and writer locks, and a new page method carries
+   the upgrade.
+5. Revocation by either grant: the upgraded socket answers to both `tcp.connect` and
+   `https.connect`.
+
+### A226 -- `rejectUnauthorized: false` is accepted and ignored **[RESOLVED 2026-09-23 -- owner: the option is honoured]**
 
 Filed 2026-09-22 (`d-0075`). The shim's `tls` and `https` accept `rejectUnauthorized: false` and
 leave verification on; when the handshake then fails, the error says the override was not
@@ -8847,6 +8871,11 @@ compatibility with Electron apps, the owner chose to make `connectSecure` do wha
 covers the trust options A223, A225 and A228 name. It is being built; this entry records the
 decision, and the pages will describe the behaviour once it lands.
 
+**Built, same day (`d-0096`).** The shim passes `rejectUnauthorized: false` to `connectSecure`,
+which completes the handshake whatever the certificate says; the socket's `authorized` and
+`authorizationError` report what verification found. The option is applied, not ignored, and an
+unauthenticated connection is address-checked (`d-0097`).
+
 ### A227 -- is `http.createServer` in scope? **[NEEDS OWNER DECISION]**
 
 Filed 2026-09-22. `net.createServer` is built over `orivon.net.listen`, but there is no HTTP
@@ -8857,7 +8886,7 @@ an app serving HTTP.
 **What would settle it:** the owner saying whether a ported app that serves HTTP is in this
 build's scope. **Needed by:** such an app appearing among the ports.
 
-### A228 -- `connectSecure` negotiates no ALPN **[AI-REC]**
+### A228 -- `connectSecure` negotiates no ALPN **[RESOLVED 2026-09-23]**
 
 Filed 2026-09-22. The shim accepts `ALPNProtocols` and reports `alpnProtocol` as `false`, Node's
 value for none, because `connectSecure` offers no protocol list. A client that wants HTTP/2 falls
@@ -8865,6 +8894,10 @@ back to HTTP/1.1, which every client in the tree does cleanly. A gRPC client cou
 
 **What would settle it:** an ALPN option on `connectSecure`, a contracts change. **Needed by:** a
 ported app that requires HTTP/2 or another ALPN-selected protocol.
+
+**Resolved, 2026-09-23 (`d-0096`).** `connectSecure` takes `alpnProtocols` (Node's
+`ALPNProtocols`, which the shim translates, the wire-format Buffer included), and the socket
+reports the protocol agreed as `alpnProtocol`.
 
 ### A229 -- an open-web page an app opens as a popup runs in the app's partition until its opener closes **[RESOLVED 2026-09-23 -- owner accepted the residual]**
 
@@ -9057,3 +9090,54 @@ nothing stops one from starting to.
 **What would settle it:** either a private bus for every launch with a stand-in keyring for the
 suites that read `safeStorage`, or a guard that fails any e2e file that constructs a notification
 outside the private-bus runner.
+
+### A244 -- under `*:443`, a verified certificate for a name that resolves to the LAN still reaches the LAN **[AI-REC]**
+
+Filed 2026-09-23 with `d-0097`. A196 closed a wildcard `https.connect` grant's reach to address
+literals outside public unicast, and left one residual: a hostname that resolves to a private
+address. With default verification, `connectSecure` still matches the name alone and dials it,
+so a service holding a publicly trusted certificate for a name that resolves to a LAN address
+(`*.plex.direct` names are built exactly this way) is reachable under `*:443`. The certificate is
+genuine; the address is the person's own network.
+
+**What would settle it:** applying the resolve-once address check to every `connectSecure` call,
+not only an unbound one. It costs one resolution per connection and refuses such services unless
+granted by address. **Needed by:** the owner's view of whether a `*:443` grant should ever reach
+the LAN through a public name.
+
+### A245 -- a client certificate or a large CA bundle is parsed on the main thread on every connection **[AI-REC]**
+
+Filed 2026-09-23. `tls.connect` builds its secure context synchronously, on the broker's own
+thread, from the app's `ca`, `cert`, `key` or `pfx`, and nothing is cached between connections.
+`SECURE_CONNECT_LIMITS` (`src/broker/transport/secure-connect-params.ts`) caps each option (64
+KiB of PEM, 512 KiB of CA text in total, a 64 KiB PKCS#12) and the control bucket paces the
+calls, so the cost is bounded, but it is the T11b exposure the broker otherwise avoids: one
+origin's parsing delays every tab's broker work.
+
+**What would settle it:** measuring the worst case under the caps, and if it matters, caching a
+secure context per origin and option set. **Needed by:** a trace where connection setup stalls
+other tabs.
+
+### A246 -- three gaps left in the shim's `tls` **[AI-REC]**
+
+Filed 2026-09-23. `tls.rootCertificates` is absent, so the common `ca: [...tls.rootCertificates,
+mine]` fails by name rather than trusting both. `minVersion`, `maxVersion`, `ciphers` and similar
+tuning options are ignored without a word, since the broker has no field for them.
+`getPeerCertificate(true)` returns the leaf only, with no `issuerCertificate` chain.
+
+**What would settle it:** a real port that needs one of them. `rootCertificates` needs the
+runtime's root store exported through the broker; the chain needs `PeerCertificate` to carry it,
+a contracts change.
+
+### A247 -- the address check on an unbound TLS handshake awaits the owner's confirmation **[NEEDS OWNER CONFIRMATION]**
+
+Filed 2026-09-23 with `d-0097`. When a TLS option stops the certificate binding the granted name
+(`rejectUnauthorized: false`, the app's own `ca`, a `servername` other than the host), the broker
+resolves the host once, requires every answer to pass `tcp.connect`'s address rule, and dials
+only the checked address. Without it, `rejectUnauthorized: false` under `*:443` would let a name
+the app controls, rebound to `127.0.0.1`, open an unauthenticated session with a loopback
+service. The cost is that a LAN node with a self-signed certificate must be granted by address
+or as `localhost:<port>`, not by a hostname that resolves privately.
+
+**Needs:** the owner's confirmation of that cost (`src/broker/README.md` has the argument).
+
