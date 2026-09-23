@@ -11,10 +11,10 @@
 // `Date.now()`, mirroring `CreateBrokerOptions.now` (../index.ts), so tests
 // drive refill deterministically instead of waiting on real timers.
 //
-// NEVER QUEUES -- mirrors HandleTable.run's own "reject immediately" rule
-// (handle-contracts.md). An unbounded queue on the broker's UI thread is
-// exactly how one misbehaving origin freezes every tab; a rejection the app
-// must retry keeps the broker responsive to every other origin.
+// `createTokenBucketLimiter` NEVER QUEUES: an unbounded queue on the
+// broker's UI thread is how one misbehaving origin freezes every tab.
+// `createPacingLimiter` delays instead of refusing, but only by a bounded
+// amount per call -- see ../README.md's Design notes for which calls get it.
 //
 // REFILL IS CONTINUOUS, NOT A DISCRETE WINDOW: tokens accrue proportional
 // to elapsed time, not in fixed steps. A discrete window (e.g. "reset to
@@ -60,6 +60,14 @@ function reapIdle (buckets: Map<string, Bucket>, capacity: number, refillPerSeco
   }
 }
 
+/** `origin`'s tokens as of `nowMs` -- a fresh origin starts full, and refill never exceeds `capacity`. */
+function refilled (buckets: Map<string, Bucket>, origin: string, capacity: number, refillPerSecond: number, nowMs: number): number {
+  const existing = buckets.get(origin)
+  if (existing === undefined) return capacity
+  const elapsedMs = Math.max(0, nowMs - existing.lastRefillMs)
+  return Math.min(capacity, existing.tokens + (elapsedMs * refillPerSecond) / 1000)
+}
+
 export function createTokenBucketLimiter (options: TokenBucketOptions): RateLimiter & {
   /** Origins with a live bucket. Exists so R1-02's reap is testable -- mirrors ../handles/origin-registry.ts's own `size()`. */
   size: () => number
@@ -72,20 +80,64 @@ export function createTokenBucketLimiter (options: TokenBucketOptions): RateLimi
       const nowMs = now()
       reapIdle(buckets, capacity, refillPerSecond, nowMs)
 
-      const existing = buckets.get(origin)
-      let tokens = existing?.tokens ?? capacity
-
-      if (existing !== undefined) {
-        const elapsedMs = Math.max(0, nowMs - existing.lastRefillMs)
-        tokens = Math.min(capacity, tokens + (elapsedMs * refillPerSecond) / 1000)
-      }
-
+      const tokens = refilled(buckets, origin, capacity, refillPerSecond, nowMs)
       if (tokens < 1) {
         buckets.set(origin, { tokens, lastRefillMs: nowMs })
         return false
       }
 
       buckets.set(origin, { tokens: tokens - 1, lastRefillMs: nowMs })
+      return true
+    },
+    size: () => buckets.size
+  }
+}
+
+export interface PacingOptions extends TokenBucketOptions {
+  /** The longest one call may be made to wait for its token. A call that would wait longer is refused, borrowing nothing. */
+  readonly maxWaitMs: number
+  /** Injected so a test can observe the delay instead of waiting it out. */
+  readonly sleep?: (ms: number) => Promise<void>
+}
+
+export interface PacingLimiter {
+  /** Resolves true once `origin` may proceed, after waiting for its token if the bucket is empty; false, spending nothing, if that wait would exceed `maxWaitMs`. */
+  admit: (origin: string) => Promise<boolean>
+  /** Origins with a live bucket, as `createTokenBucketLimiter`'s own `size()`. */
+  size: () => number
+}
+
+async function realSleep (ms: number): Promise<void> {
+  await new Promise<void>((resolve) => { setTimeout(resolve, ms) })
+}
+
+/**
+ * The same bucket, but a caller past it BORROWS its token and sleeps until
+ * that token would have accrued, instead of being refused. Tokens may go
+ * negative (debt); each borrower waits one refill interval longer than the
+ * one before it, so borrowers are paced at exactly `refillPerSecond`. The
+ * debt is bounded by `maxWaitMs`, which also bounds how many calls can be
+ * waiting at once: `maxWaitMs * refillPerSecond / 1000`.
+ */
+export function createPacingLimiter (options: PacingOptions): PacingLimiter {
+  const { capacity, refillPerSecond, maxWaitMs, now, sleep = realSleep } = options
+  const buckets = new Map<string, Bucket>()
+
+  return {
+    async admit (origin) {
+      const nowMs = now()
+      reapIdle(buckets, capacity, refillPerSecond, nowMs)
+
+      const tokens = refilled(buckets, origin, capacity, refillPerSecond, nowMs)
+      const after = tokens - 1
+      const waitMs = after >= 0 ? 0 : (-after * 1000) / refillPerSecond
+      if (waitMs > maxWaitMs) {
+        buckets.set(origin, { tokens, lastRefillMs: nowMs })
+        return false
+      }
+
+      buckets.set(origin, { tokens: after, lastRefillMs: nowMs })
+      if (waitMs > 0) await sleep(waitMs)
       return true
     },
     size: () => buckets.size

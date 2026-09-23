@@ -12,6 +12,7 @@ import type { Resolver } from './policy/connect.js'
 import type { BrokerFs, BrokerFsMethods } from './fs-contracts.js'
 import type { BrokerWebMethods, WebContextHost } from './web-context-contracts.js'
 import type { PickedPath } from './grants/picked-path-ledger.js'
+import type { DialSecure, FailableSecureTcpSocket } from './secure-dial-contracts.js'
 import type {
   CapabilityKind,
   Datagram,
@@ -22,6 +23,7 @@ import type {
   Manifest,
   OrivonErrorCode,
   Pattern,
+  SecureConnectOptions,
   TcpSocket
 } from '../contracts/index.js'
 
@@ -100,26 +102,9 @@ export interface DialedSocket extends Omit<TcpSocket, keyof Handle> {
  */
 export type Dial = (addresses: readonly string[], port: number, signal: AbortSignal) => Promise<DialedSocket>
 
-/**
- * Opens a TLS-secured connection to `host`:`port` -- the handshake,
- * certificate chain validation and hostname verification all happen inside
- * this call, on the trusted side (ADR-0017, ../adapters/tls-adapter.ts).
- *
- * TAKES THE HOSTNAME DIRECTLY, unlike `Dial`'s pre-resolved `addresses`
- * array, and that difference is the point: `checkConnectSecure`
- * (policy/connect-secure.ts) authorises by hostname, never by resolved
- * address, because THIS call's own certificate/hostname check is what binds
- * the hostname to whoever answered -- there is no separate resolve-then-
- * check step upstream to hand this a validated address list. `host` is
- * exactly `ConnectSecureAllowed.host` -- already normalised, already
- * checked against the grant -- and is used for both the DNS lookup and the
- * certificate/SNI hostname check, so nothing here can dial one name while
- * verifying another.
- *
- * `signal` fires the instant the grant authorising this connection is
- * revoked while the handshake is still in flight, exactly as `Dial`'s does.
- */
-export type DialSecure = (host: string, port: number, signal: AbortSignal) => Promise<DialedSocket>
+// `DialSecure` and the rest of connectSecure's vocabulary live in
+// ./secure-dial-contracts.js, re-exported here like ./fs-contracts.js's.
+export type { DialedSecureSocket, DialSecure, FailableSecureTcpSocket, SecureDialOptions, SecureDialTarget } from './secure-dial-contracts.js'
 
 /**
  * One outbound datagram's fate.
@@ -299,20 +284,19 @@ export interface Broker {
     persistedAppsSync(): readonly PersistedApp[]
     /**
      * A158's early-hydration seam: makes `origin`'s persisted grants live
-     * BEFORE `registerApp` ever runs for it this session, so a restored
-     * app's first served document (and its first real capability call) sees
-     * its real, already-consented grants rather than an empty ledger.
+     * BEFORE `registerApp` runs for it this session, so a restored app's
+     * first document and first capability call see its real grants. Also
+     * registers `manifest` as this origin's manifest until `registerApp`
+     * supplies a fresh one, without raising the version floor;
+     * `isRegisteredSync`, `registeredOriginsSync` and `manifest()` answer
+     * from it meanwhile.
      *
      * `manifest` MUST already be proven a leaf of a hash-pinned bundle
-     * (`src/loader/serve.ts`'s `verifiedManifestFor`) -- NEVER a manifest
-     * merely read off disk. This is what tells this call apart from the
-     * withdrawn attempt A137 rejected: that one hydrated from an unverified
-     * disk copy, which could gain authority a fresh request would not have;
-     * this one hydrates from bytes already proven, by the same hash tree
-     * that gates whether this origin's code runs AT ALL, to be exactly what
-     * the person consented to. See `GrantLedger.hydrateFromPinnedManifest`'s
-     * own doc for the full reasoning and what happens once the real,
-     * freshly fetched manifest later arrives via `registerApp`.
+     * (`src/loader/serve.ts`'s `verifiedManifestFor`), NEVER a manifest
+     * merely read off disk: that is what separates this from the unverified
+     * disk hydration A137 rejected. `GrantLedger.hydrateFromPinnedManifest`'s
+     * own doc has the full reasoning, and what happens once `registerApp`
+     * arrives with the fresh manifest.
      */
     hydrateFromPinnedManifest(origin: string, manifest: Manifest): Promise<void>
     /**
@@ -332,12 +316,11 @@ export interface Broker {
     /**
      * TLS terminated on the trusted side (ADR-0017) -- checked against
      * `https.connect`, a SEPARATE grant from `tcp.connect` above, matched by
-     * the hostname itself rather than a resolved address (policy/connect-
-     * secure.ts's own header explains why that is safe here). Returns the
-     * same `FailableTcpSocket` shape `connect` does; nothing about the
-     * connection being TLS is visible on the handle itself.
+     * the hostname itself, plus the resolved addresses whenever the app's
+     * options stop the certificate binding that name (../net-connect-
+     * secure.ts). Returns `connect`'s socket shape plus the handshake facts.
      */
-    connectSecure(origin: string, opts: { host: string, port: number }): Promise<FailableTcpSocket>
+    connectSecure(origin: string, opts: SecureConnectOptions): Promise<FailableSecureTcpSocket>
     /**
      * `port: 0` means "any free port", and it still binds only inside the
      * granted ranges (policy/bind.ts, docs/open-questions.md A88).

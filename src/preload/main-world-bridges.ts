@@ -18,8 +18,8 @@
 // ever reaches the main world; only installOrivon's own compiled body does.
 
 import type { OrivonErrorCode } from '../contracts/errors.js'
-import type { FileStat, LookupAddress, SendRefusal } from '../contracts/handles.js'
-import type { CapabilityRequest } from '../contracts/capability-api.js'
+import type { FileStat, LookupAddress, SecureHandshake, SendRefusal } from '../contracts/handles.js'
+import type { CapabilityRequest, SecureConnectOptions } from '../contracts/capability-api.js'
 import type { ResponseEnvelope } from '../contracts/ipc.js'
 
 /**
@@ -59,7 +59,7 @@ export interface MainWorldWebContextBridge {
   readonly id: string
   readonly origin: string
   readonly closed: Promise<void>
-  evaluate: (script: string) => Promise<unknown>
+  evaluate: (script: string, options?: { readonly timeoutMs?: number }) => Promise<unknown>
   close: () => Promise<void>
 }
 
@@ -116,7 +116,7 @@ export interface MainWorldUdpBridge {
   readonly localAddress: string
   readonly localPort: number
   readonly onDatagram: (cb: (datagram: MainWorldDatagram) => void) => void
-  readonly onReadEnd: (cb: (code: OrivonErrorCode | undefined) => void) => void
+  readonly onReadEnd: (cb: (code: OrivonErrorCode | undefined, platformCode?: string) => void) => void
   readonly onDropped: (cb: (inbound: number, outbound: number) => void) => void
   /** Fires once per refused outbound datagram (A87), feeding buildUdpSocket's `refusals` stream. */
   readonly onRefusal: (cb: (refusal: SendRefusal) => void) => void
@@ -143,7 +143,7 @@ export interface MainWorldServerBridge {
   readonly localAddress: string
   readonly localPort: number
   readonly onConnection: (cb: (socket: MainWorldSocketBridge) => void) => void
-  readonly onReadEnd: (cb: (code: OrivonErrorCode | undefined) => void) => void
+  readonly onReadEnd: (cb: (code: OrivonErrorCode | undefined, platformCode?: string) => void) => void
   /** One unit of accept demand -- called ONLY from ./main-world-socket.ts's own buildServer `pull()`; see that file's header and open-questions.md A185. */
   readonly reportAccepted: () => void
   readonly closed: Promise<void>
@@ -158,7 +158,7 @@ export interface MainWorldSocketBridge {
   readonly localAddress: string
   readonly localPort: number
   readonly onData: (cb: (chunk: Uint8Array) => void) => void
-  readonly onReadEnd: (cb: (code: OrivonErrorCode | undefined) => void) => void
+  readonly onReadEnd: (cb: (code: OrivonErrorCode | undefined, platformCode?: string) => void) => void
   readonly reportConsumed: (bytesConsumed: number) => void
   readonly write: (chunk: Uint8Array) => Promise<void>
   readonly endWrite: () => Promise<void>
@@ -169,6 +169,8 @@ export interface MainWorldSocketBridge {
   readonly close: () => Promise<void>
   readonly setNoDelay: (on: boolean) => Promise<void>
   readonly setKeepAlive: (on: boolean, initialDelayMs?: number) => Promise<void>
+  /** A `net.connectSecure` socket's handshake facts, plain data from the broker's reply; absent on every other socket. */
+  readonly tls?: SecureHandshake
 }
 
 /**
@@ -223,8 +225,8 @@ export interface MainWorldBridge {
   /** ADR-0019 -- resolves a `MainWorldWebContextBridge`, `fsOpen`'s own shape of counterpart (a plain object of MORE proxied closures, no native stream). `./main-world-socket.ts`'s own `buildWebContext` wraps it the same way `buildFile` wraps `fsOpen`'s. Takes `origin` folded into `opts`, unlike the public `openContext(origin, options?)` two-argument shape `installOrivon` builds, which merges them back in before calling this. */
   webOpenContext: (opts: { origin: string, width?: number, height?: number }) => Promise<MainWorldWebContextBridge>
   netConnect: (opts: { host: string, port: number }) => Promise<MainWorldSocketBridge>
-  /** net.connectSecure's own closure -- resolves to the identical bridge shape netConnect does; `./main-world-socket.ts`'s own `buildSocket` is shared by both (Rule 3). */
-  netConnectSecure: (opts: { host: string, port: number }) => Promise<MainWorldSocketBridge>
+  /** net.connectSecure's own closure -- resolves to netConnect's bridge shape plus `tls`; `./main-world-socket.ts`'s own `buildSocket` is shared by both (Rule 3). The options pass through untouched: the broker validates them. */
+  netConnectSecure: (opts: SecureConnectOptions) => Promise<MainWorldSocketBridge>
   netUdpBind: (opts: { port: number }) => Promise<MainWorldUdpBridge>
   netListen: (opts: { port: number }) => Promise<MainWorldServerBridge>
   /** `net.lookup` (d-0030) -- plain data, not a bridge: no per-socket state to wrap, unlike every other `net*` entry above. */

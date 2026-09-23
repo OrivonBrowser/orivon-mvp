@@ -4,7 +4,7 @@
 `ipc.ts` (tab commands — new tab, close, navigate — plus the toolbar's own `siteSummaryFor`/
 `openSettings`/`openSiteInfo`), `newtab-ipc.ts` (the dashboard's read-only bookmark access and
 navigate-the-calling-tab command), `settings-ipc.ts` (the all-sites popup's list/revoke
-commands), `site-info-ipc.ts` (the site-info popup's get/trust/data/apply/revokePickedPath/
+commands, and the site list's list/reset), `site-info-ipc.ts` (the site-info popup's get/trust/data/apply/revokePickedPath/
 clearBrowserData/reload/openAllSites commands, all fixed to the ONE origin the popup was opened
 for — never a command field). Each registers its own `ipcMain.handle`, and each verifies
 `event.senderFrame` against a known frame before doing anything — object identity against a

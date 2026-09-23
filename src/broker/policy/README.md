@@ -111,8 +111,45 @@ this string as the same address", docs/open-questions.md A20), because both are 
 same [`address-parse.ts`](address-parse.ts) parsers and so can never disagree about what an
 address *is*, only about how it should be spelled.
 
-**[`connect-src.ts`](connect-src.ts)'s CSP `connect-src` derivation is pure, and set on the
-served response directly** (`src/loader/serve.ts`'s `buildResponse`), never via
+**A connect pattern whose host is exactly `localhost` authorises `127.0.0.1` and `::1` at its
+port, and nothing else** ([`connect-patterns.ts`](connect-patterns.ts)'s `LOCALHOST`/
+`LOOPBACK_LITERALS`, used by `hostMatches`, `couldAnyPatternMatch`, `connect.ts` and
+`lookup.ts`). Why this is safe under T12, whose whole point is that a name is not evidence of
+where it leads:
+
+- **`localhost` is never resolved.** `checkConnect` substitutes the two loopback literals for it
+  before the resolver could run, and `checkLookup` returns them as its answer, so no nameserver,
+  hosts file or TTL-0 server has any say in what it means (RFC 6761 SS6.3 lets a resolution API
+  answer it this way, and Chromium does). The rebinding attack needs an answer somebody else
+  chose; this one is a constant. That is also why `connect('localhost', p)` dials only the literals
+  the grant covers, where a DNS answer must pass in full: filtering a constant hides nothing.
+- **It grants exactly what the two literal patterns would, and the person saw it.**
+  `localhost:8080` in a grant prompt names this computer as plainly as `127.0.0.1:8080` does;
+  requiring both `127.0.0.1:p` and `[::1]:p` bought no safety and broke `connect('localhost', p)`
+  for any app that declared one.
+- **It is narrow on purpose.** The request must be `localhost` or one of the two literals: a
+  different name resolving to `127.0.0.1` is still refused (it is the rebinding attack, spelled
+  with a second pattern), as is the rest of `127.0.0.0/8` and every `*.localhost` name, which
+  stays an ordinary hostname pattern and so can never reach a private address.
+- **Nothing else moves.** `*` still means public unicast only, so `connect('localhost', p)` under
+  `*:*` is refused without resolving anything, and every other hostname pattern still requires a
+  public answer. `https.connect` is unaffected: its patterns match names, and the certificate
+  binds them.
+
+**[`connect-preflight.ts`](connect-preflight.ts) canonicalises an IPv6 request but refuses a
+non-canonical IPv4 one.** The asymmetry is the ambiguity, not the family. `inet_aton` reads
+`0177.0.0.1` as 127.0.0.1, a person reads it as 177.0.0.1, and `2130706433` is also a valid DNS
+label, so an IPv4 literal is accepted only in the dotted-quad form everything downstream reads the
+same way. `inet_pton`'s IPv6 grammar has no octal, no short forms and no hex-versus-decimal
+choice, so `0:0:0:0:0:0:0:1`, `0000::0001` and `::1` can only ever mean one address; refusing all
+but one spelling would only break apps that print addresses in full. Both pipelines check and dial
+the canonical spelling (`requested`), never the caller's, so the check and the connect cannot
+disagree about which host they mean. Patterns are not canonicalised: a manifest must still declare
+a literal canonically, where a person reads it (`declarableConnectHostRejection`).
+
+**[`connect-src.ts`](connect-src.ts)'s CSP source derivation is pure, and the header is set on
+the served response directly** (`src/loader/serve-csp.ts` assembles it, `src/loader/serve.ts`'s
+`buildResponse` sets it), never via
 `session.webRequest.onHeadersReceived`: that listener never fires for a `protocol.handle`-served
 response in this Electron version (A110), so the header is set on the handler's own `Response`,
 the alternative ADR-0007 names. Three properties follow:
@@ -129,10 +166,11 @@ the alternative ADR-0007 names. Three properties follow:
 - **Two scope gaps remain, both filed.** CSP bounds *names*, `connect.ts`'s `checkConnect`
 bounds *resolved addresses*:
 for a hostname pattern the two diverge exactly on DNS rebinding, and no CSP construction closes
-that. `serve.ts`'s `cspHeaderValue` sets `default-src 'self'` (which `img-src`, `form-action`
-and `frame-src` fall back to when unset) and an explicit `script-src 'self' 'unsafe-inline'`, so
-A42 covers only what CSP structurally cannot cover at all: top-level navigation (`<a href>`,
-`location.href`, which `default-src` never governs) and the DNS-rebinding gap above. And the emitted list is the
+that. `src/loader/serve-csp.ts` sets `default-src 'self'` and explicit `script-src`, `frame-src`
+and `worker-src`. `form-action` has no fallback to `default-src` and is deliberately left unset
+(`src/loader/README.md`, "What the served bundle's CSP admits"), so A42 covers what CSP cannot
+cover at all: top-level navigation (`<a href>`, `location.href`, which CSP never governs) and the
+DNS-rebinding gap above. And the emitted list is the
 app's *entire* `connect-src` allowlist, so an omitted pattern is not "uncovered", it is blocked:
 the flagship's `tcp.connect: ["*:*"]` has no CSP equivalent at all and is reported via `omitted`
 rather than widened to CSP's bare `*` (A43: widening is the bigger bug). An IPv6
@@ -140,18 +178,17 @@ literal is the same story: CSP's host grammar has no `[`, `]` or `:`, confirmed 
 44.0.0/Chrome 152 that Chromium drops such a source outright, and `host-ipv6-literal` exists so
 `omitted` stays honest about that gap instead of silently claiming coverage a grant doesn't have.
 
-**`img-src`, `font-src` and `media-src` are set explicitly, not left to `default-src`** (A143).
-`connect-src.ts`'s
-`appReachCspHeaderValue` reuses `connectSrcFor`'s own translate/emit logic unchanged (Rule 3),
-fed from the `https.connect` grant rather than `connect-src`'s own `tcp.connect`, a deliberately
-different capability, because `src/loader/serve.ts`'s `fetchThirdParty` (the live handler these
-three directives now have to agree with) authorises a third-party fetch against `https.connect`,
-never `tcp.connect`. `form-action`/`frame-src`/`script-src`/`worker-src` are UNCHANGED by this,
-still `default-src 'self'`'s fallback (`frame-src`/`worker-src`/`form-action`) or the explicit
-`'self' 'unsafe-inline'` (`script-src`) `serve.ts`'s `cspHeaderValue` already set. A deliberate
-scope line: embedding a live third-party document or running third-party code at the app's own
-origin is a materially bigger step than fetching a static image/font/media resource, and neither
-was asked for.
+**`https.connect` feeds the reach directives: `connect-src`, `img-src`, `font-src` and
+`media-src`** (A143, A192). `reachSourcesFor` reuses `connectSrcFor`'s own translate/emit logic
+unchanged (Rule 3), fed from `https.connect`, the grant `src/loader/serve.ts`'s `fetchThirdParty`
+authorises a third-party request against. Its sources are scheme-qualified, `https://host:port`,
+never `ws:`/`wss:`: a WebSocket never reaches that handler, so no reach source may admit one. A
+`*` host emits `https:`, the one source wider than the grant, because every request it admits
+reaches the app's own `protocol.handle` and is re-authorised live there. `tcp.connect`
+contributes its bare `host:port` sources to `connect-src` alone. A deliberate scope line: no
+third-party frame and no third-party script, since embedding a live third-party document or
+running third-party code at the app's own origin is a materially bigger step than fetching a
+resource, and nothing asks for it.
 
 **[`lookup.ts`](lookup.ts): why a host-only check (no port, no resolved address) still opens
 nothing new (A171, `docs/open-questions.md` A167), and why `https.connect` does not belong in

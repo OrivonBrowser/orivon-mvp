@@ -29,7 +29,7 @@ import { electronResolveHost } from './electron-resolve.js'
 import { registerServingFor, restorePinnedServing } from './electron-serve.js'
 import { maybeInstallDevServeHook } from './dev-serve.js'
 import { nodeLoaderStorage } from './node-storage.js'
-import { createLoader } from './index.js'
+import { UPDATE_CHECK_INTERVAL_MS, createLoader } from './index.js'
 import { publishLoader, type Subsystem } from '../main/registry.js'
 
 export const loaderSubsystem: Subsystem = {
@@ -57,7 +57,8 @@ export const loaderSubsystem: Subsystem = {
       // request rather than none at all -- see registerServingFor's own
       // doc for why `undefined` (no broker subsystem this run) still
       // serves the app correctly, just with a narrower header.
-      onInstalled: async (origin) => { await registerServingFor(storage, origin, ctx.broker) }
+      onInstalled: async (origin) => { await registerServingFor(storage, origin, ctx.broker) },
+      updateCheckIntervalMs: UPDATE_CHECK_INTERVAL_MS
     })
     publishLoader(ctx, loader)
     maybeInstallDevServeHook(async (origin) => { await registerServingFor(storage, origin, ctx.broker) })

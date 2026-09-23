@@ -6,9 +6,10 @@
 //
 // NODE'S OWN `node:https`, deliberately not Electron's `net.fetch` or a
 // hand-rolled HTTP/1.1 client, no session/cookie jar anywhere on this path,
-// and redirects are never followed -- see README.md's Design notes ("Why
-// serve-reach.ts uses Node's own https module") for the full reasoning
-// behind each of those, not repeated here.
+// and a redirect is handed back, never followed here: the page's loader
+// follows it back through serve.ts's handler, which authorises every hop.
+// See README.md's Design notes ("Why serve-reach.ts uses Node's own https
+// module") for the reasoning behind each of those, not repeated here.
 
 import { request as httpsRequest } from 'node:https'
 import type { IncomingMessage } from 'node:http'
@@ -24,10 +25,17 @@ import type { ReachDial } from './serve.js'
  */
 export interface ReachDialOptions {
   readonly ca?: string | Buffer | Array<string | Buffer>
+  /** Testing only, like `ca`: production uses `REACH_IDLE_TIMEOUT_MS`. */
+  readonly idleTimeoutMs?: number
 }
 
-/** Generous, not tuned -- a stalled or malicious peer must not hold a request open forever. LIMITS-style tuning is future work, not blocking this lane. */
-const REACH_TIMEOUT_MS = 30_000
+/**
+ * How long the connection may carry no bytes in either direction before it
+ * is cut: an IDLE timeout, reset by every byte, never a total, so a
+ * long-poll or an event stream lives as long as it keeps talking, while a
+ * peer that stalls cannot hold a reach slot forever. Provisional.
+ */
+export const REACH_IDLE_TIMEOUT_MS = 5 * 60_000
 
 /**
  * Two kinds of header, stripped from the OUTBOUND request for two reasons.
@@ -68,21 +76,10 @@ const HOP_BY_HOP_RESPONSE_HEADERS = new Set([
 ])
 
 /**
- * Matches `src/preload/fetch-route.ts`'s own `ROUTED_FETCH_MAX_BODY_BYTES`
- * (16 MiB) -- the repo already decided this number once, for the identical
- * "an unbounded page-supplied body must not be buffered whole" problem on
- * the OTHER side of this same fetch (a routed `fetch()` call reaches this
- * file, via `net.connectSecure`, only for the response half; a request BODY
- * takes the ordinary `orivon.net.connect`/`connectSecure` socket path on
- * its way out of the renderer -- so this file, not that one, is where a
- * page's own bytes actually land as a `Request` this main process must
- * buffer before dialling). Not imported: `src/loader/` and `src/preload/`
- * sit on opposite sides of a trust boundary neither may import across
- * (README.md's "what it must never import"), so this is a second literal
- * copy by the same rule this file already uses above for `isNullBodyStatus`
- * (Rule 3) -- the honest cost of one idea living on both sides, not a
- * missed extraction. Exported so a test builds the boundary case against
- * this exact value instead of a third, silently drifting copy.
+ * A page-supplied request body (a worker's or XHR's POST to a granted host
+ * through this handler) is buffered whole in the main process before the
+ * dial, so it must be bounded. Exported so a test builds the boundary case
+ * against this exact value.
  */
 export const REACH_MAX_REQUEST_BODY_BYTES = 16 * 1024 * 1024
 
@@ -157,6 +154,7 @@ async function readCappedBody (request: Request): Promise<Buffer | null> {
  * privileged process.
  */
 export function nodeReachDial (options: ReachDialOptions = {}): ReachDial {
+  const idleTimeoutMs = options.idleTimeoutMs ?? REACH_IDLE_TIMEOUT_MS
   return async (request, host, port) => {
     const url = new URL(request.url)
     const body = await readCappedBody(request)
@@ -170,11 +168,13 @@ export function nodeReachDial (options: ReachDialOptions = {}): ReachDial {
         path: `${url.pathname}${url.search}`,
         headers: forwardedRequestHeaders(request, bodyLength),
         ca: options.ca,
-        timeout: REACH_TIMEOUT_MS
+        // Node's socket timeout: it fires after this long with no socket
+        // activity, before and after the response headers alike.
+        timeout: idleTimeoutMs
       }, resolve)
       req.once('error', reject)
       req.once('timeout', () => {
-        req.destroy(new Error(`reach to ${host}:${String(port)} timed out after ${String(REACH_TIMEOUT_MS)}ms`))
+        req.destroy(new Error(`reach to ${host}:${String(port)} carried no bytes for ${String(idleTimeoutMs)}ms`))
       })
       if (bodyLength > 0 && body !== null) req.end(body)
       else req.end()

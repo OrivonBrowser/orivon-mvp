@@ -60,3 +60,34 @@ describe('a read of an unimplemented member is safe; only a call still refuses b
     }
   })
 })
+
+// A library subclasses or type-checks a member it expects to be a class
+// (`class Pool extends http.Agent`, `x instanceof net.BlockList`). An arrow
+// function has no prototype, so each of those failed with a bare TypeError
+// that named nothing.
+describe('an unbuilt member behaves like a constructor that refuses by name', () => {
+  function wrapped (): Record<string, new (...args: unknown[]) => object> {
+    return refusingProxy({}, (prop) => refuseShim(`x.${prop}`, 'unimplemented', `no x.${prop}`)) as Record<string, new (...args: unknown[]) => object>
+  }
+
+  it('`new` throws the named refusal, not "is not a constructor"', () => {
+    const W = wrapped().Missing!
+    expect(() => new W()).toThrow(OrivonShimError)
+  })
+
+  it('`extends` succeeds at class definition and refuses by name at construction', () => {
+    const Base = wrapped().Missing!
+    class Derived extends Base {}
+    expect(() => new Derived()).toThrow(OrivonShimError)
+  })
+
+  it('`instanceof` answers false instead of throwing', () => {
+    const W = wrapped().Missing!
+    expect({} instanceof W).toBe(false)
+  })
+
+  it('reads of the same member return the same function, so identity checks hold', () => {
+    const w = wrapped()
+    expect(w.Missing).toBe(w.Missing)
+  })
+})

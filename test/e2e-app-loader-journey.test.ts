@@ -60,7 +60,7 @@ import esbuild from 'esbuild'
 import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
 import { HERMETIC_RESOLVER, waitFor } from './smoke-helpers.mjs'
 import { closeElectronApp, navigateToFixture, runPhase } from './e2e-helpers.js'
-import { buildAliasEntries } from '../src/shim/module-map.js'
+import { aliasPattern, buildAliasEntries } from '../src/shim/module-map.js'
 import type { DevGrantRequest } from '../src/main/dev/dev-grant.js'
 import type { Grant, Manifest } from '../src/contracts/index.js'
 import type { ShimRoundTripFailure, ShimRoundTripResult } from './app-loader-journey-shim-entry.js'
@@ -69,20 +69,32 @@ const REPO_ROOT = fileURLToPath(new URL('../', import.meta.url))
 const FIXTURE_APP_ID = 'app.orivon.loader-journey-e2e'
 
 /** electron.vite.config.ts's own renderer alias, generated from the SAME
- * table (src/shim/module-map.ts) -- reused rather than a second hand-picked
- * list, so a shim dependency added there is picked up here automatically
- * (code-guidelines.md Rule 3). A 'local' entry's on-disk file is '.ts'; its
- * import specifier is written '.js' (NodeNext-style, matching every import
- * inside src/shim/ itself) -- electron.vite.config.ts's own comment on the
- * same table documents the identical swap. */
-function shimEsbuildAlias (): Record<string, string> {
-  const alias: Record<string, string> = {}
-  for (const entry of buildAliasEntries()) {
-    alias[entry.specifier] = entry.kind === 'package'
-      ? entry.implementation
-      : join(REPO_ROOT, 'src/shim', entry.implementation.replace(/\.js$/, '.ts'))
+ * table (src/shim/module-map.ts) and matched the SAME way (aliasPattern:
+ * the whole specifier, bare or `node:`-prefixed) -- so a shim dependency
+ * added there is picked up here automatically (code-guidelines.md Rule 3).
+ * A plugin, not esbuild's `alias` option: that option also captures every
+ * subpath, so the shim's own `import 'util/util.js'` would be rewritten into
+ * the shim itself. A 'local' entry's on-disk file is '.ts'; its import
+ * specifier is written '.js' (NodeNext-style), the same swap
+ * electron.vite.config.ts documents. */
+const SHIM_ALIAS_INNER = Symbol('orivon-shim-alias-inner')
+
+function shimEsbuildPlugin (): esbuild.Plugin {
+  return {
+    name: 'orivon-shim-alias',
+    setup (build) {
+      for (const entry of buildAliasEntries()) {
+        build.onResolve({ filter: aliasPattern(entry.specifier) }, async (args) => {
+          // A package row's target (`events` -> `events`) resolves through
+          // this same filter; the marker lets that inner resolve fall through.
+          if (args.pluginData === SHIM_ALIAS_INNER) return undefined
+          if (entry.kind === 'local') return { path: join(REPO_ROOT, 'src/shim', entry.implementation.replace(/\.js$/, '.ts')) }
+          const resolved = await build.resolve(entry.implementation, { kind: args.kind, resolveDir: REPO_ROOT, pluginData: SHIM_ALIAS_INNER })
+          return resolved.errors.length > 0 ? { errors: resolved.errors } : { path: resolved.path }
+        })
+      }
+    }
   }
-  return alias
 }
 
 function manifestFor (echoPort: number): Manifest {
@@ -140,7 +152,7 @@ beforeAll(async () => {
     target: 'es2022',
     write: false,
     absWorkingDir: REPO_ROOT,
-    alias: shimEsbuildAlias(),
+    plugins: [shimEsbuildPlugin()],
     logLevel: 'silent'
   })
   const [outputFile] = built.outputFiles
@@ -174,11 +186,11 @@ beforeAll(async () => {
 }, 30_000)
 
 afterAll(async () => {
-  await Promise.all([
-    new Promise<void>((resolve) => { echoServer.close(() => resolve()) }),
-    new Promise<void>((resolve) => { outOfManifestServer.close(() => resolve()) }),
-    new Promise<void>((resolve) => { staticServer.close(() => resolve()) })
-  ])
+  // A server beforeAll never reached is undefined; closing only what exists
+  // keeps a setup failure the reported error instead of a TypeError here.
+  await Promise.all(([echoServer, outOfManifestServer, staticServer] as Array<NetServer | HttpServer | undefined>).map(async (server) => {
+    if (server !== undefined) await new Promise<void>((resolve) => { server.close(() => resolve()) })
+  }))
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
 

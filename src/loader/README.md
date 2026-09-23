@@ -47,7 +47,44 @@ shape belongs here instead.
 **Why [`fetch-bundle.ts`](fetch-bundle.ts) is its own file, not part of `index.ts`.** Split out
 per [`code-guidelines.md`](../../docs/development/code-guidelines.md) Rule 2: it owns exactly
 one concern: turning `(fetch, hintedUrl)` into a validated bundle. TOFU versus `decideUpdate()`
-branching, and persistence, are `index.ts`'s job, not this file's.
+branching is `index.ts`'s job, and persistence is [`install.ts`](install.ts)'s.
+[`fetch-asset.ts`](fetch-asset.ts) holds the one-asset half and the bounded pool.
+
+**A bundle never sits whole in memory: bytes stream to staging and are hashed from there.**
+The byte caps (`bundle-hash.ts`'s `MAX_ASSET_BYTES`, 64 MiB, and `MAX_BUNDLE_BYTES`, 512 MiB;
+an owner decision, sized for a real built frontend with a 31 MB wasm-heavy chunk and room to
+grow) bound download and disk, so memory must stay flat however close a bundle comes to them.
+Each response body is written chunk by chunk into the origin's **staging area**
+(`apps/<origin-hash>/staging/`, a sibling of `code/`, never inside it), then hashed by reading
+that file back through [`leaf-hash.ts`](leaf-hash.ts): node:crypto's incremental SHA-256 fed
+`bundle-hash.ts`'s own `leafPrefix`, so the byte layout stays defined once and only the engine
+differs from the WebCrypto one `bundleTree` uses. Hashing reads the file back rather than hashing
+as bytes arrive because the leaf preimage puts the content's length BEFORE the content, and a
+declared `Content-Length` is advisory. The root comes from `bundleTreeFromLeaves`, which applies
+exactly the validation `bundleTree` does. Only the manifest is held in memory, and it is bounded
+by `MAX_MANIFEST_BYTES`. A fetched bundle waiting on a prompt waits in staging too
+(`StagedAsset` names its bytes, never carries them); the next fetch for that origin, or a
+refused one, clears it.
+
+**Assets are fetched four at a time, and a download ends for going quiet, never for being
+long.** `FETCH_CONCURRENCY` (4) assets share one `ByteBudget`, taken chunk by chunk in one
+synchronous step, so parallel fetches can never together pass `MAX_BUNDLE_BYTES`; the first
+failure aborts the rest. Each fetch has an idle deadline (`FETCH_IDLE_TIMEOUT_MS`, 20 s without
+a response or a new chunk), so a 64 MiB asset on a slow but steady link finishes, and the whole
+operation has `BUNDLE_TIMEOUT_MS` (30 minutes, about 300 KB/s for a full 512 MiB bundle), so a
+peer trickling one byte just inside the idle deadline is still cut off. Both numbers are
+AI-recommended and uncalibrated (A15).
+
+**An install writes only what changed, one atomic rename per file, and a crash heals itself.**
+[`install.ts`](install.ts) compares each staged leaf with a streaming hash of the file already in
+`code/` at that path and commits (renames) only those that differ; an unchanged bundle writes
+nothing at all and keeps its pin record, so a repeat visit leaves the cache untouched. Every
+write is a rename from staging (`node-storage.ts`'s `writeAtomically`, `commitStaged`), so a
+reader sees the old file or the new one, never a partial one (A62's second half). Comparing
+against the bytes on disk, not the old pin's leaf, is what lets a damaged cache heal: a file that
+no longer matches is rewritten even when its pinned leaf did not change. A crash part-way through
+leaves some files new and the old pin in place; the next start's verification then fails and the
+app recovers as described under "When the cached bundle fails verification" below.
 
 **There is no `assetPaths` parameter anywhere in this directory.**
 `fetchBundle` reads the app's file list off the manifest itself (`manifest.entry` unioned with
@@ -70,14 +107,39 @@ in [`manifest.test.ts`](./tests/manifest.test.ts), which exercises the same inpu
 *redirect* landing two distinct declared names, or a redirected entry, at a different canonical
 path than declared cannot be produced by this file's suite at all, for the reason below.
 
-**`fetchBundle` cannot depend on `response.url`, because real Electron's
-`net.fetch` reports it as the empty string on every ordinary response, not only a redirected one**
-(measured, `docs/open-questions.md` A59/A141). The same-origin and canonical-path checks in
-`fetch-bundle.ts` trust the url they *requested* (`manifestUrl`, `assetUrl`) instead, which is
-provably safe only because [`electron-fetch.ts`](electron-fetch.ts)'s `redirect: 'error'` makes a
-followed redirect response impossible to receive in the first place. That is a hard requirement
-on any `Fetch` implementation (see that type's own doc comment,
-[`fetch-budget.ts`](fetch-budget.ts)), not only the real one.
+**`fetchBundle` trusts the url it requested, never `response.url`, and follows only a
+same-origin redirect.** Real Electron's `net.fetch` reports `response.url` as the empty string on
+every ordinary response (measured, `docs/open-questions.md` A59/A141), so the same-origin and
+canonical-path checks trust the url they *requested* (`manifestUrl`, `assetUrl`), and every asset
+is pinned under that path. That is safe only because a `Fetch` may never deliver bytes from
+another origin, a hard requirement on any implementation (that type's own doc comment,
+[`fetch-budget.ts`](fetch-budget.ts)). Refusing every redirect met it, but also refused real
+static hosts, which answer `/index.html` with a redirect to `/` (Cloudflare Pages, Vercel) or
+`/app` with `/app/` (GitHub Pages). So [`electron-fetch.ts`](electron-fetch.ts)'s `netFetch` uses
+`net.request` with `redirect: 'manual'` and shows each hop to `redirectRefusal` before taking it:
+same scheme, host and port, at most `MAX_REDIRECTS` (5), or the request is aborted. The bytes of
+a followed hop are pinned under the requested path, still on the origin being installed.
+
+**An unknown top-level manifest field is ignored; an unknown field inside `capabilities` is
+refused.** [`manifest.ts`](manifest.ts) leaves a top-level field it does not know out of the
+parsed manifest and returns its name in `ignoredFields`, which `fetch-bundle.ts` logs as a
+warning. Refusing it would fail the install for a field that grants nothing (`$schema`,
+`description`, `icons`, or a field a later Orivon adds), and since the pinned manifest is parsed
+again at every start, a field some other Orivon version accepted at install would lock the
+installed app out. Inside
+`capabilities` every field asks for authority, so an unknown one there still rejects the
+manifest: silently dropping a permission the app asked for would install an app that then
+fails in ways nobody can trace. `orivonApiVersion` must still be exactly `0`.
+`scripts/check-manifest-parity.mjs` is what keeps a contract field from being ignored by
+mistake: it fails when the contract and the loader's key lists disagree in either direction.
+
+**The root document is declared by its file name.** `entry: "index.html"` is fetched at
+`/index.html` (following such a redirect to `/` where the host sends one) and served at `/`; a bare
+root cannot itself be a pinned leaf, since `/` is not a valid canonical path, so `entry: "/"` is
+refused with that hint. An asset whose name promises script, style, wasm or JSON but whose response
+is an HTML page is refused too ([`fetch-asset.ts`](fetch-asset.ts)'s `servedAsHtml`): an SPA host
+answers a missing file with `200` and its index page, which would otherwise be pinned as the
+script and fail later with an opaque syntax error.
 
 Two more checks are unreachable through the public API for the same reason: `fetch-bundle.ts`'s
 entry-leaf check (`ADR-0009` amendment #2), because `entryPath` and the asset loop's own canonical path are the
@@ -87,12 +149,20 @@ computation itself, which no test can manufacture without reintroducing the bug;
 [`bundle-hash.test.ts`](../broker/policy/tests/bundle-hash.test.ts) instead. Both stay as defence
 in depth against their own computations ever drifting apart.
 
+**Undeclared files are named at install, never added.** An entry document that loads a
+same-origin script, stylesheet or image its manifest's `assets` leaves out installs cleanly and
+then renders blank: the file is not pinned, so the cache refuses it. When a bundle is newly pinned,
+[`undeclared-assets.ts`](undeclared-assets.ts) scans the entry document's `src`/`href` on
+subresource elements and logs every same-origin path the pinned set lacks. It only warns: ADR-0011
+has the loader read the list, never infer it, and a runtime `import()` a scan cannot see is the
+publisher's to declare either way.
+
 **The real adapter (`electronFetch`/`netFetch`) is tested for real, not only through a stub
 `Fetch`.** [`test/e2e-loader-adapter.test.ts`](../../test/e2e-loader-adapter.test.ts) drives the
-real `net.fetch` (and, for the one case its own address guard
+real `netFetch` (and, for the one case its own address guard
 allows, the real `electronFetch`) inside a real Electron process against a real local server,
-including a real redirecting response, so the `redirect: 'error'` guarantee this section depends
-on is proven rather than assumed.
+including a real same-origin and a real cross-origin redirect, so the redirect rule this section
+depends on is proven rather than assumed.
 
 **Why [`install-origin.ts`](install-origin.ts) is its own file.** Split out of `fetch-bundle.ts`
 per Rule 2 (adding the T12/A46 guard pushed that file to 524 lines): it owns exactly one
@@ -128,19 +198,38 @@ subdirectory, not yet written into, looks indistinguishable from a leftover
 from directories this prune deleted a file from. The cost is that a directory left empty by an
 interrupted earlier run survives until a prune deletes from it again.
 
-**Why a fresh install does not prune.** `install()` skips `pruneAssets` on the TOFU path: no
-earlier pin exists for that origin, so there is nothing a previous bundle could have left behind,
-and the walk would only re-read every file the write loop just wrote: one `realpath` per
-declared asset, up to `MAX_BUNDLE_ENTRIES` of them. The one state this gives up on is an origin
-whose `code/` tree survived while its pin record did not (a crash between the two writes): those
-files are not swept by the re-install that follows, but the re-install does write a pin, so the
-next update prunes them.
+**Why an install never prunes: the next start does.** An update can land while the app is open,
+and a single-page app still running the previous bundle lazily `import()`s its old hashed chunks;
+pruning at install turned each of those into a 404 and a `ChunkLoadError`. So
+[`install.ts`](install.ts) leaves every superseded file on disk, and `electron-serve.ts` keeps
+serving them for the rest of the process: `registerServingFor` remembers every path each pin it
+served declared (`servedAssets`) and hands the new handler the ones the new pin dropped
+(`retainedAssets`), which [`serve-path.ts`](serve-path.ts) resolves and
+[`serve-asset.ts`](serve-asset.ts) serves only after checking the file still hashes to the leaf
+it was pinned with. That check reads the whole file, so its verdict is kept per file identity
+(size, modification time and inode, read from the same open handle the bytes are served from)
+and pinned leaf: a retained chunk is hashed once, not on every request, and a file rewritten on
+disk gets a new identity and is checked again. A path both pins declare is overwritten, so only the
+new bytes exist; that is the entry document and any unhashed file, which the reload fetches anyway.
+`restorePinnedServing` prunes to the verified pin, and clears any staging a crash left, at the
+next start, before any page can still need the old files.
+
+**A served asset streams from disk; a request costs the bytes it sends.** The handler checks the
+asset ([`storage.ts`](storage.ts)'s `openAsset`) for its size and identity, and
+[`serve-asset.ts`](serve-asset.ts) streams the requested range in 64 KiB chunks, so neither a
+64 MiB asset nor a Range request into one is ever held whole. The body opens the file only when
+first read and closes it when it ends, fails or is cancelled, so a response nobody reads (or a
+HEAD) holds no file open. If the file's identity changed after the headers were built, or it is
+cut short while being read, the body fails rather than sending bytes the headers do not
+describe; one open handle serves the whole body, so a file replaced mid-response keeps serving
+the bytes it started with.
 
 **Re-verification cost: whole-tree, once, at handler creation, not one leaf hash per request.**
 [`ADR-0007`](../../docs/decisions/ADR-0007-cached-bundles-served-at-their-own-origin.md) requires
 the cached tree be "re-verified at every load, not only at fetch," and a large bundle makes that
 sentence a real cost decision, not a formality. [`serve-verify.ts`](serve-verify.ts) re-hashes
-every pinned asset and compares the result against `pin.bundleHash` exactly once, when
+every pinned asset, streaming it through [`leaf-hash.ts`](leaf-hash.ts) so memory stays flat,
+checks each leaf and the root against the pin exactly once, when
 [`serve.ts`](serve.ts)'s `createAppRequestHandler` builds the handler that
 [`electron-serve.ts`](electron-serve.ts) then registers with
 `session.fromPartition(...).protocol.handle(...)`, not on every individual request that handler
@@ -166,12 +255,22 @@ confirmed present with its pinned bytes, regardless of whether the cause was a m
 permissions error, or a directory where a file was expected. One contract, not two, because there
 is only one caller-visible outcome.
 
-**Why `/` maps to `manifest.entry` and nothing else does.** A pinned bundle is a fixed, hashed
-asset map, not a filesystem with directory listings; `isValidCanonicalPath` already refuses
-every path ending in `/` except the bare root (a trailing empty segment fails `isSafeDecodedPath`),
-so there is no directory-index fallback to design for beyond that one case. `serve.ts`'s
-`resolveRequestPath` special-cases exactly `url.pathname === '/'`; every other request, directory-
-ish or not, is answered by an exact pinned-path lookup or denied.
+**What a same-origin path serves: the exact pinned asset, with two entry-only exceptions.**
+A pinned bundle is a fixed, hashed asset map, not a filesystem: `isValidCanonicalPath` refuses
+every path ending in `/` except the bare root, so there is no directory index to design for.
+[`serve-path.ts`](serve-path.ts)'s `resolveRequestPath` answers every request with an exact
+pinned-path lookup or a denial, except two cases that both answer with the pinned entry and
+never with anything unpinned. `/` maps to `manifest.entry`, and when the entry sits in a
+subdirectory (`app/index.html`) `/` answers a 302 to it instead, so the document's relative URLs
+resolve against its own directory (a `protocol.handle` redirect is followed like a network one,
+measured). And a **navigation** to an unpinned route with no file extension (`/inbox/42`) serves
+the entry, the history fallback every SPA host provides, so reloading a client-side route does
+not 404; a subresource or `fetch()` for the same path is still denied, and so is a navigation to
+a missing *file*. Telling a navigation apart takes Chromium's own navigation headers
+(`Upgrade-Insecure-Requests` plus an `Accept` naming `text/html`): `protocol.handle` reports
+every request with `mode: 'cors'`, an empty `destination` and no `Sec-Fetch-*` headers (measured,
+Electron 44). A page can forge those headers on a `fetch()`, which only gets it the entry
+document, a pinned asset it could request directly anyway.
 
 **Why registering a handler is idempotent, not additive.** Electron's `protocol.handle` throws
 `"The scheme has been registered"` on a second call for a scheme already handled on that session --
@@ -192,12 +291,12 @@ elsewhere) reaches this same handler, and an app may reach a host it holds a gra
 allowed, performs the real fetch through [`serve-reach.ts`](serve-reach.ts)'s `nodeReachDial`
 (Node's own `https` module, chosen over Electron's `net.fetch` specifically so this path could be
 proven end to end over a real TLS handshake in a real Electron launch; see that file's own
-header). Everything else, whether an ungranted host, a plain `http:` request (A163, a deliberate,
-narrower scope decision, not a gap), or a redirect from the granted host, still gets the same
-fail-closed `denyResponse` this handler has always answered with. `img-src`/`font-src`/`media-src`
-widen alongside it, from the same `https.connect` grant (`connect-src.ts`'s `appReachCspHeaderValue`)
--- without that, `default-src 'self'`'s fallback would keep refusing the very requests this
-decision exists to allow, before they could ever reach the handler.
+header). An ungranted host and a plain `http:` request (A163, a deliberate, narrower scope
+decision, not a gap) get the same fail-closed `denyResponse` as every other refusal. `connect-src`,
+`img-src`, `font-src` and `media-src` widen alongside it, from the same `https.connect` grant
+(`connect-src.ts`'s `reachSourcesFor`): without that, the header would refuse the very requests
+this decision exists to allow before they could reach the handler. "The third-party reach path",
+below, covers what a granted request meets on its way through.
 
 **Why [`serve-reach.ts`](serve-reach.ts) uses Node's own `https` module, not Electron's `net.fetch`
 or a hand-rolled HTTP/1.1 client.** `test/e2e-fetch-routing.test.ts`'s own header records why an
@@ -213,8 +312,8 @@ one is not actually required, and Node's own client already handles chunked enco
 correctly. Two further properties this choice buys for free: `https.request` has no concept of a
 session or a cookie jar at all, so there is nothing to remember to set (contrast Chromium's
 `fetch()`, which needs an explicit `credentials: 'omit'` for the identical guarantee); and it never
-auto-follows a redirect: a 3xx from the granted host is handed back to the page as an ordinary 3xx
-response, so a granted host can never hand a request off to one nobody approved.
+follows a redirect itself: a 3xx goes back to the page's loader, which follows it through this same
+handler, so a granted host can never hand a request off to one nobody approved.
 
 **Why `restorePinnedServing` runs at startup rather than only after a fresh `load()`.** `load()`
 does now have a production caller (the discovery trigger, via `src/main/install/app-install.ts`), but a
@@ -226,6 +325,54 @@ since nothing else re-registers its handler. `subsystem.ts`'s `afterReady` calls
 `listPinnedOrigins` finds a self-consistent pin for, and registers each independently, so one
 origin's corrupted pin or unreadable asset is logged and does not stop the rest, the same
 per-item-failure stance `runAfterReady` (`main/registry.ts`) already takes for subsystems.
+
+**When the cached bundle fails verification, nothing is served, and the next visit reinstalls
+it.** A pin whose files no longer hash to it (a crash part-way through an install, a damaged
+disk, a hand edit) must not get a handler that denies every request: the app's page could never
+load, so its hint would never fire and nothing could repair the cache. So
+`electron-serve.ts`'s `registerServingFor` registers nothing for such an origin at startup and
+hydrates nothing, so it loads as an ordinary website, with no grants live and no app-tab flag.
+Its hint then runs `load()` as usual: the pin still names the bundle, the fetched bundle is
+compared against it, and [`install.ts`](install.ts) rewrites exactly the files that no longer
+match; serving, grants and registration come back through `onInstalled`, and the tab reloads
+into the app. The one exception stays fail-closed: an origin already served from cache, or
+holding a live grant, this session keeps a handler that denies everything, since its partition
+carries authority and must never fall through to whatever the network serves next.
+
+**A declined capability is asked about once, not on every visit.** `decideUpdate()` compares the
+new manifest with what the origin holds; a capability the person declined at install, or revoked
+since, is never held, so comparing against held grants alone would read every visit as "the app
+wants more" and raise the capability prompt again. `index.ts` therefore also passes the pinned manifest's own declared set
+(`previouslyDeclaredPatterns`), read back only when its bytes still hash to the pin's manifest
+leaf: authority the person was already asked about counts as covered. That grants nothing -- the
+declined capability stays ungranted -- and a request outside both sets still prompts.
+
+**An installed app is checked for an update at most once an interval, and an unchanged app costs
+one small request.** Every page load of an app reports its hint. `createLoader`'s
+`updateCheckIntervalMs` (`UPDATE_CHECK_INTERVAL_MS`, one hour, AI-recommended) answers
+`'up-to-date'` without any request while the last check for that origin is younger than that.
+The time is kept in the origin's storage ([`update-check.ts`](update-check.ts),
+`apps/<origin-hash>/update-check.json`, beside `pin.json` and never inside `code/`), so a restart
+does not reset it; a rejected check is not recorded, so a failure is retried on the next visit,
+and a time in the future (the clock went back) counts as stale. Once the interval has passed, the
+manifest is requested with `If-None-Match`/`If-Modified-Since` from the manifest response that
+was last pinned, and a 304 answers `'up-to-date'` before any asset is requested. Those validators
+are stored with the pinned manifest's leaf and sent only while the pin still holds that leaf, so
+a 304 always means "the manifest you have pinned"; an accepted prompt that pins a new manifest
+makes the next check a full one, which re-learns them. **What this assumes of a publisher:** an
+update is noticed when the manifest changes, so every release must change the manifest (its
+`version` at least). A bundle whose files change under a byte-identical manifest is not picked
+up until the manifest changes. A cache that fails verification at start forgets its record
+(`registerServingFor`), so the next visit checks, and heals, in full.
+
+**A restored app is a registered app from startup.** Serving alone is not enough: the app-tab
+flag (`src/main/shell/tab-view.ts`'s `appTabArgsFor`) and `orivon.app.manifest()` both ask
+whether the broker has a manifest for the origin, and a tab's flag is fixed when the tab is
+built. So `registerServingFor` hands the verified pinned manifest to
+`Broker.app.hydrateFromPinnedManifest`, which also registers it: a restored app's tab gets its
+routed fetch and process shim from the first load, before any hint arrives. That registration
+never raises the version floor, and the fresh manifest's own `registerApp`, when the page's hint
+arrives, replaces it and re-validates the restored grants as before.
 
 **Why the served bundle's CSP is read fresh per request, not computed once at handler
 creation.** [`serve.ts`](serve.ts)'s whole-tree re-verification is a deliberate ONE-TIME cost
@@ -248,10 +395,14 @@ answer by the time any header is computed. Both header functions share one
 `liveGrantedPatternsFor` helper that simply reads `broker.app.grants`, with no disk fallback and
 no special-casing.
 
-A disk fallback would be unsafe for `connect-src` in particular: `connect-src` is the sole gate
-for `WebSocket` (`docs/open-questions.md` A42), which has no live handler behind it to catch a
-wrong guess, so reading disk there would widen a REAL authorisation from an unverified source
-(`A137`). A manifest that is a leaf of a hash-pinned bundle is not the kind of "saved value"
+A disk fallback would be unsafe for `connect-src` in particular: `connect-src` is the only gate a
+`WebSocket` meets (`docs/open-questions.md` A42), since no `protocol.handle` ever sees one, so
+reading disk there would widen a REAL authorisation from an unverified source (`A137`). Measured
+in Electron 44 (`test/e2e-served-csp.test.ts`): from an https page, none of the source forms this
+header emits (a bare `host:port`, `https://host:port`, `https:`) admits a `wss:` URL, so a
+native WebSocket cannot reach a third-party host from an installed app; the page's own top-level
+WebSocket to a granted host is routed over `orivon.net` instead
+([`../preload/README.md`](../preload/README.md)), where the broker, not CSP, bounds it. A manifest that is a leaf of a hash-pinned bundle is not the kind of "saved value"
 `A137` forbids trusting; A158 has the full reasoning.
 
 **Why `verifiedManifestFor` (`serve.ts`) exists alongside `createAppRequestHandler`, sharing one
@@ -322,6 +473,77 @@ NUMBER must be reused, not re-derived, so a future change to the clamp (or to wh
 same kind of loader-specific seam `hydrateFromPinnedManifest` already is (A158). The actual
 IN-FLIGHT COUNT is new state, by necessity: a proxied reach request is never a `HandleTable`
 resource (no app-visible `Handle`, no revocation cascade of its own), so `electron-serve.ts`'s
-`reachSlotsFor` keeps a small per-origin counter, checked-and-reserved as one synchronous step
-against that same number -- the identical discipline `GrantLedger.reserveFsBytes`'s own doc
-names for why a quota check and its reservation must never straddle an `await`.
+`reachSlotsFor` keeps one [`serve-reach-slots.ts`](serve-reach-slots.ts) pool per origin: a free
+slot is checked-and-reserved as one synchronous step against that same number (the identical
+discipline `GrantLedger.reserveFsBytes`'s own doc names for why a quota check and its reservation
+must never straddle an `await`), and a request that finds none waits in the pool's queue.
+
+**Why a reach request over the allowance waits in a queue, when T11b says limits reject rather than
+queue.** T11b's rule (`handle-contracts.md`'s Limits section) is about the broker's own operations: an
+unbounded queue of broker work on the UI thread is how one origin freezes every tab. A queued
+reach request is none of that. It is a pending promise and a timer, per origin, bounded in length
+(`REACH_SLOT_MAX_WAITERS`, 256) and in time (`REACH_SLOT_WAIT_MS`, 30 s); past either it is refused
+exactly as before. Refusing at once, on the other hand, broke real pages: a browser queues an
+over-limit request, and a page has no retry for an image or a script that answered 404. The queue
+is FIFO, a newcomer never takes a slot ahead of it, and a request that waited is re-authorised
+before it dials, so a grant revoked meanwhile is not used. Both numbers are provisional.
+
+**What the served bundle's CSP admits, and why** ([`serve-csp.ts`](serve-csp.ts)). The header is
+set on every served response (A110 rules out `onHeadersReceived`) and rebuilt from the live grants
+per request.
+
+- **`script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'`.** The bundle's own code
+  is pinned and hash-verified, `'unsafe-inline'` already grants the script power `'unsafe-eval'`
+  adds, and the broker, not the CSP, is the security boundary. Libraries that compile code at run
+  time (ajv, protobufjs, template compilers, BotGuard) and WebAssembly (a wasm crypto library)
+  need these. A148 records what `'unsafe-inline'` gives up for content an app renders but did not
+  author.
+- **`data:` and `blob:` in `connect-src`, `img-src`, `font-src` and `media-src`; `worker-src
+  'self' blob:`.** Neither scheme has any network reach: a page can only point one at bytes it
+  already holds. MSE video plays from a `blob:` URL, captions and icons often arrive as `data:`,
+  and bundlers start workers from `blob:` URLs.
+- **`frame-src 'self' data: blob:`, and no third-party frame.** A `data:` or `blob:` frame is
+  opaque-origin, gets no preload, and inherits this same policy (measured), so it can do nothing
+  its parent cannot. Embedding a live third-party document is a bigger step than any subresource,
+  and nothing asks for it.
+- **`connect-src`: `'self'`, the local schemes, `tcp.connect`'s bare `host:port` sources, and
+  `https.connect`'s scheme-qualified `https://host:port` sources.** The handler authorises a
+  worker's fetch or a document's XHR against `https.connect`, so the header names that grant
+  too. No `ws:`/`wss:` source is ever emitted from it.
+- **A `*` host in `https.connect` emits `https:`** in the four reach directives. Every `https:`
+  request that source admits reaches this app's own `protocol.handle` (it intercepts the whole
+  scheme for the partition, workers included) and `fetchThirdParty` re-authorises it against the
+  live grant, which still refuses loopback and private addresses: measured with a loopback server
+  that a `*` grant's page could name in the header and that never saw a connection. What the
+  handler cannot re-check is a native WebSocket, and `https:` does not admit `wss:` (measured, above).
+  `tcp.connect`'s `*` still contributes nothing to `connect-src` (A43).
+- **No `form-action`.** It never falls back to `default-src`, so it is unrestricted. Restricting
+  it to `'self'` would also refuse the redirects a form-post sign-in flow follows after the form
+  leaves the app, and would bound nothing: top-level navigation is not governed by CSP at all
+  (A42), so a page can send the same data with `location.href`.
+
+**The third-party reach path, in order** (`serve.ts`'s `fetchThirdParty`). Every step is measured or
+unit-tested; the two platform facts it rests on come from `test/e2e-served-csp.test.ts`.
+
+1. **Redirect cap.** A 3xx this handler returns is followed by the page's own loader, back through
+   this same handler, so each hop is authorised afresh, `redirect: 'manual'` yields an opaque
+   redirect, `connect-src` is re-checked against the target, and `Authorization` is dropped on a
+   cross-origin hop. That loader applies no redirect cap at all to a `protocol.handle` response
+   (60 hops measured), so [`serve-reach-redirects.ts`](serve-reach-redirects.ts) counts hops per
+   chain and answers the 21st with a network error, the Fetch standard's own limit. A chain is
+   keyed by URL; one whose target URL is re-serialised differently restarts its count.
+2. **Authorisation** against the live `https.connect` grant.
+3. **A CORS preflight** to a granted host is answered without the network
+   ([`serve-reach-cors.ts`](serve-reach-cors.ts)). Only a browser preflight carries
+   `Access-Control-Request-Method`, so an app's own `OPTIONS` request still reaches the host.
+4. **A socket-allowance slot**, waited for in the bounded queue above, and re-authorisation after
+   any wait.
+5. **The dial** ([`serve-reach.ts`](serve-reach.ts)), with an idle timeout
+   (`REACH_IDLE_TIMEOUT_MS`, five minutes) that every byte resets, so a long-poll or an event
+   stream lives as long as it keeps talking.
+6. **A redirect goes back bodiless**, which frees its slot and upstream socket at once rather than
+   whenever the loader gets round to the body.
+7. **Anything else streams** through the revoke guard (A199), with CORS response headers for the
+   app origin. Electron 44 does not enforce CORS on a `protocol.handle` response at all (measured:
+   a cross-origin response with no `Access-Control-Allow-Origin` was readable, and a `PUT` sent no
+   preflight), so today the headers only keep worker fetch and XHR working if it ever starts to.

@@ -9,6 +9,7 @@
 // the plain path and the TLS path kept the hole while the fix looked complete.
 import { describe, expect, it } from 'vitest'
 import { checkConnect } from '../connect.js'
+import type { Resolver } from '../connect.js'
 import { checkConnectSecure } from '../connect-secure.js'
 import { MAX_PATTERNS, preflightConnect } from '../connect-preflight.js'
 import type { Pattern } from '../../../contracts/index.js'
@@ -96,4 +97,42 @@ describe('the ordering contract the unification had to settle', () => {
     expect(plain.allowed === false && plain.reason).toBe('non-canonical-host')
     expect(tls.allowed === false && tls.reason).toBe('non-canonical-host')
   })
+})
+
+// IPv6 has one reading however it is spelled (inet_pton's grammar has no
+// octal or short forms), so any spelling of it is canonicalised and the
+// canonical form is what is checked and dialled. IPv4 keeps its strictness:
+// `0177.0.0.1` means 127.0.0.1 to inet_aton and 177.0.0.1 to a human.
+describe('address literals are canonicalised before the check, IPv6 only', () => {
+  const unused: Resolver = async () => { throw new Error('a literal must never be resolved') }
+
+  it.each([
+    ['0:0:0:0:0:0:0:1', '::1'],
+    ['0000:0000:0000:0000:0000:0000:0000:0001', '::1'],
+    ['[0:0:0:0:0:0:0:1]', '::1'],
+    ['2001:0DB8:0:0::0001', '2001:db8::1']
+  ])('%s is checked and dialled as %s', async (spelling, canonical) => {
+    const plain = await checkConnect([`[${canonical}]:8080`], spelling, 8080, unused)
+    const tls = checkConnectSecure([`[${canonical}]:8080`], spelling, 8080)
+
+    expect(plain).toEqual({ allowed: true, addresses: [canonical] })
+    expect(tls).toEqual({ allowed: true, host: canonical })
+  })
+
+  it('an expanded loopback is still loopback -- a wildcard grant does not reach it', async () => {
+    const decision = await checkConnect(['*:*'], '0:0:0:0:0:0:0:1', 8080, unused)
+    expect(decision.allowed === false && decision.reason).toBe('no-pattern-match')
+  })
+
+  it('an IPv4-mapped loopback spelled in hex is recognised as loopback', async () => {
+    const decision = await checkConnect(['*:*'], '::ffff:7f00:1', 8080, unused)
+    expect(decision.allowed === false && decision.reason).toBe('no-pattern-match')
+  })
+
+  it.each(['127.000.000.001', '0177.0.0.1', '127.1', '::ffff:0177.0.0.1', 'fe80::1%eth0'])(
+    '%s is still refused as non-canonical', async (spelling) => {
+      const decision = await checkConnect(['*:*', '[::ffff:127.0.0.1]:8080', '127.0.0.1:8080'], spelling, 8080, unused)
+      expect(decision.allowed === false && decision.reason).toMatch(/non-canonical-host|bad-host/)
+    }
+  )
 })

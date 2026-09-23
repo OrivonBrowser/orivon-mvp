@@ -1,5 +1,9 @@
 import { EventEmitter } from 'node:events'
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
+import { fakeTab } from './fake-tab.js'
 
 // permission-gate.ts imports { app, session } directly from 'electron' at
 // module scope -- outside a real Electron process this cannot even be
@@ -21,13 +25,35 @@ function makeFakeSession (): FakeSession {
   }
 }
 
-const fakeApp = new EventEmitter()
+// The profile directory the notification decisions live in, seeded before
+// the gate first reads it: one site the person allowed on an earlier run.
+const userData = mkdtempSync(join(tmpdir(), 'orivon-permission-gate-'))
+const REMEMBERED_SITE = 'https://remembered.example'
+writeFileSync(join(userData, 'notification-decisions.json'), JSON.stringify({ version: 1, origins: { [REMEMBERED_SITE]: 'allow' } }))
+
+const fakeApp = Object.assign(new EventEmitter(), { getPath: (name: string) => name === 'userData' ? userData : '' })
+// Every case installs the gate afresh, as a restart would: one listener each.
+fakeApp.setMaxListeners(0)
 const fakeDefaultSession = makeFakeSession()
 
 vi.mock('electron', () => ({
   app: fakeApp,
   session: { defaultSession: fakeDefaultSession }
 }))
+
+// Nothing here may put a dialog or a notice on screen, and nothing may
+// launch: every piece that would is replaced, and records what it was asked.
+const WINDOW = vi.hoisted(() => ({ id: 'window' }))
+const shell = vi.hoisted(() => ({
+  confirmExternalLink: vi.fn(async (): Promise<boolean> => false),
+  askNotificationPermission: vi.fn(async (): Promise<'allow' | 'block' | 'dismiss'> => 'dismiss'),
+  windowShowing: vi.fn((): object | undefined => WINDOW),
+  noteExclusiveAccess: vi.fn()
+}))
+vi.mock('../../shell/external-link-prompt.js', () => ({ confirmExternalLink: shell.confirmExternalLink }))
+vi.mock('../../shell/notification-prompt.js', () => ({ askNotificationPermission: shell.askNotificationPermission }))
+vi.mock('../../shell/showing-window.js', () => ({ windowShowing: shell.windowShowing }))
+vi.mock('../../shell/exclusive-access-notice.js', () => ({ noteExclusiveAccess: shell.noteExclusiveAccess }))
 
 const { permissionGateSubsystem } = await import('../permission-gate.js')
 
@@ -42,7 +68,10 @@ const ALL_PERMISSIONS = [
   'geolocation', 'idle-detection', 'media', 'mediaKeySystem', 'midi', 'midiSysex',
   'notifications', 'pointerLock', 'keyboardLock', 'openExternal', 'speaker-selection',
   'storage-access', 'top-level-storage-access', 'window-management', 'unknown',
-  'fileSystem', 'hid', 'serial', 'usb', 'deprecated-sync-clipboard-read'
+  'fileSystem', 'hid', 'serial', 'usb', 'deprecated-sync-clipboard-read',
+  // Check-only names measured against a real page: Chromium asks for these
+  // on every popup and every requestFullscreen(), whatever the page does.
+  'automatic-fullscreen', 'web-app-installation'
 ]
 
 /** The gate's allowlist, restated here rather than imported: a test that
@@ -50,7 +79,12 @@ const ALL_PERMISSIONS = [
  * however it changed, which is the one thing this file exists to stop.
  * `fileSystem` is absent on purpose: it is allowed only with details naming
  * one file, which the matrix below never sends, and has its own cases. */
-const ALLOWED = ['clipboard-sanitized-write']
+const ALLOWED = ['clipboard-sanitized-write', 'fullscreen', 'pointerLock', 'keyboardLock']
+
+/** The names the person is asked about, never answered from the allowlist:
+ * their request handler waits on a dialog, so the synchronous matrix below
+ * leaves them to their own cases. */
+const ASKED = ['openExternal', 'notifications']
 
 // The details Electron passes for a File System Access operation, measured
 // against a real page: every read and write reaches the check handler with
@@ -61,7 +95,7 @@ const ACCESS_TYPES = ['readable', 'writable'] as const
 
 /** Every name that must still deny -- derived, so a permission added to
  * ALL_PERMISSIONS is covered without anyone remembering to list it. */
-const DENIED_PERMISSIONS = ALL_PERMISSIONS.filter((p) => !ALLOWED.includes(p))
+const DENIED_PERMISSIONS = ALL_PERMISSIONS.filter((p) => !ALLOWED.includes(p) && !ASKED.includes(p))
 
 /** Asserts the whole matrix for one session: the allowlist is granted on
  * both handlers, everything else is refused on both, and no device
@@ -86,6 +120,9 @@ function installedHandlers (target: FakeSession): {
   request: (permission: string, details?: object) => boolean
   check: (permission: string, details?: object) => boolean
   device: () => boolean
+  /** A request whose answer may wait on the person: resolves with it. */
+  ask: (contents: object, permission: string, details: object) => Promise<boolean>
+  checkFrom: (permission: string, origin: string, details?: object) => boolean
 } {
   const requestHandler = target.setPermissionRequestHandler.mock.calls.at(-1)?.[0]
   const checkHandler = target.setPermissionCheckHandler.mock.calls.at(-1)?.[0]
@@ -97,8 +134,19 @@ function installedHandlers (target: FakeSession): {
       return granted === true
     },
     check: (permission, details = {}) => checkHandler({}, permission, 'https://example.com', details) === true,
-    device: () => deviceHandler({}) === true
+    device: () => deviceHandler({}) === true,
+    ask: async (contents, permission, details) => await new Promise<boolean>((resolve) => {
+      requestHandler(contents, permission, resolve, details)
+    }),
+    checkFrom: (permission, origin, details = {}) => checkHandler(null, permission, origin, details) === true
   }
+}
+
+/** The gate as installed on the default session, freshly. */
+function defaultSessionHandlers (): ReturnType<typeof installedHandlers> {
+  permissionGateSubsystem.beforeReady?.()
+  void permissionGateSubsystem.afterReady?.({} as never)
+  return installedHandlers(fakeDefaultSession)
 }
 
 describe('permissionGateSubsystem', () => {
@@ -133,13 +181,25 @@ describe('permissionGateSubsystem', () => {
   // Guards the blast radius of the allowlist itself: a later edit that
   // adds a name gets a failing test naming it, rather than silently
   // widening what every page in the browser may do.
-  it('allows exactly one permission when no file is named, and it is clipboard write', () => {
+  it('allows exactly clipboard write, fullscreen, pointer lock and keyboard lock without asking, when no file is named', () => {
     permissionGateSubsystem.beforeReady?.()
     void permissionGateSubsystem.afterReady?.({} as never)
 
     const handlers = installedHandlers(fakeDefaultSession)
     const granted = ALL_PERMISSIONS.filter((permission) => handlers.request(permission) || handlers.check(permission))
-    expect(granted).toEqual(['clipboard-sanitized-write'])
+    expect(granted).toEqual(['clipboard-sanitized-write', 'fullscreen', 'pointerLock', 'keyboardLock'])
+  })
+
+  // `fullscreen` is safe to allow because Chromium only grants it to a page
+  // the person just clicked in. `automatic-fullscreen` is the name that
+  // waives that click, so allowing it would remove the whole basis.
+  it('keeps automatic-fullscreen denied, on both handlers', () => {
+    permissionGateSubsystem.beforeReady?.()
+    void permissionGateSubsystem.afterReady?.({} as never)
+
+    const handlers = installedHandlers(fakeDefaultSession)
+    expect(handlers.request('automatic-fullscreen')).toBe(false)
+    expect(handlers.check('automatic-fullscreen')).toBe(false)
   })
 
   // An import reads the file the person picked; an export writes the file
@@ -181,7 +241,7 @@ describe('permissionGateSubsystem', () => {
     const handlers = installedHandlers(fakeDefaultSession)
     const details = { ...FILE, fileAccessType: 'writable' }
     const granted = ALL_PERMISSIONS.filter((permission) => handlers.request(permission, details) || handlers.check(permission, details))
-    expect(granted).toEqual(['clipboard-sanitized-write', 'fileSystem'])
+    expect(granted).toEqual(['clipboard-sanitized-write', 'fullscreen', 'pointerLock', 'keyboardLock', 'fileSystem'])
   })
 
   it('reaches a newly created per-origin partition session too, not just the default one', () => {
@@ -197,5 +257,96 @@ describe('permissionGateSubsystem', () => {
     fakeApp.emit('session-created', partitionSession)
 
     expectGateMatrix(installedHandlers(partitionSession))
+  })
+
+  // Both are granted with nothing of the browser's own on screen, so the
+  // shell draws the notice; fullscreen is noted too, before it is answered,
+  // so the shell sees the page enter.
+  it('notes each exclusive-access grant for its notice, before answering it', () => {
+    const handlers = defaultSessionHandlers()
+    const order: string[] = []
+    shell.noteExclusiveAccess.mockReset()
+    shell.noteExclusiveAccess.mockImplementation((_contents: unknown, access: string) => { order.push(`note ${access}`) })
+    const requestHandler = fakeDefaultSession.setPermissionRequestHandler.mock.calls.at(-1)?.[0]
+    const contents = {}
+    for (const permission of ['fullscreen', 'pointerLock', 'keyboardLock']) {
+      requestHandler(contents, permission, (granted: boolean) => { order.push(`answer ${permission} ${String(granted)}`) }, {})
+    }
+    expect(order).toEqual([
+      'note fullscreen', 'answer fullscreen true',
+      'note pointerLock', 'answer pointerLock true',
+      'note keyboardLock', 'answer keyboardLock true'
+    ])
+    expect(shell.noteExclusiveAccess.mock.calls.every(([noted]) => noted === contents)).toBe(true)
+    expect(handlers.request('clipboard-sanitized-write')).toBe(true)
+    expect(shell.noteExclusiveAccess).toHaveBeenCalledTimes(3)
+    shell.noteExclusiveAccess.mockReset()
+  })
+
+  it('still answers a grant whose notice fails', () => {
+    const handlers = defaultSessionHandlers()
+    shell.noteExclusiveAccess.mockImplementationOnce(() => { throw new Error('no window') })
+    expect(handlers.request('pointerLock')).toBe(true)
+  })
+
+  it('opens an external link only when the person allows it, asked in the window showing the tab', async () => {
+    const handlers = defaultSessionHandlers()
+    const details = { externalURL: 'mailto:someone@example.com', requestingUrl: 'https://shop.example/', isMainFrame: true }
+
+    shell.confirmExternalLink.mockResolvedValueOnce(true)
+    expect(await handlers.ask(fakeTab(), 'openExternal', details)).toBe(true)
+    expect(shell.confirmExternalLink).toHaveBeenLastCalledWith(WINDOW, { scheme: 'mailto', url: 'mailto:someone@example.com', origin: 'https://shop.example' })
+
+    shell.confirmExternalLink.mockResolvedValueOnce(false)
+    expect(await handlers.ask(fakeTab(), 'openExternal', details)).toBe(false)
+  })
+
+  // The check handler is synchronous and cannot ask, so it never allows.
+  it('never allows an external link from the check handler', () => {
+    expect(defaultSessionHandlers().checkFrom('openExternal', 'https://shop.example/')).toBe(false)
+  })
+
+  it('never asks about a scheme that is not the OS\'s to open', async () => {
+    const handlers = defaultSessionHandlers()
+    shell.confirmExternalLink.mockClear()
+    expect(await handlers.ask(fakeTab(), 'openExternal', { externalURL: 'file:///etc/passwd', requestingUrl: 'https://shop.example/', isMainFrame: true })).toBe(false)
+    expect(shell.confirmExternalLink).not.toHaveBeenCalled()
+  })
+
+  it('asks a site about notifications once, and the check agrees with the answer from then on', async () => {
+    const handlers = defaultSessionHandlers()
+    const site = 'https://chat.example'
+    const details = { requestingUrl: `${site}/room`, isMainFrame: true }
+    expect(handlers.checkFrom('notifications', `${site}/`)).toBe(false)
+
+    shell.askNotificationPermission.mockClear()
+    shell.askNotificationPermission.mockResolvedValueOnce('allow')
+    expect(await handlers.ask(fakeTab(`${site}/room`), 'notifications', details)).toBe(true)
+    expect(shell.askNotificationPermission).toHaveBeenCalledWith(WINDOW, site)
+    expect(handlers.checkFrom('notifications', `${site}/`, { embeddingOrigin: `${site}/` })).toBe(true)
+
+    expect(await handlers.ask(fakeTab(`${site}/room`), 'notifications', details)).toBe(true)
+    expect(shell.askNotificationPermission).toHaveBeenCalledTimes(1)
+  })
+
+  it('remembers a block, on every session, and the check agrees', async () => {
+    const handlers = defaultSessionHandlers()
+    const site = 'https://ads.example'
+    shell.askNotificationPermission.mockResolvedValueOnce('block')
+    expect(await handlers.ask(fakeTab(`${site}/`), 'notifications', { requestingUrl: `${site}/`, isMainFrame: true })).toBe(false)
+
+    const partitionSession = makeFakeSession()
+    fakeApp.emit('session-created', partitionSession)
+    const partition = installedHandlers(partitionSession)
+    expect(partition.checkFrom('notifications', `${site}/`)).toBe(false)
+    expect(await partition.ask(fakeTab(`${site}/`), 'notifications', { requestingUrl: `${site}/`, isMainFrame: true })).toBe(false)
+  })
+
+  it('answers from a decision made on an earlier run, read from the profile', async () => {
+    const handlers = defaultSessionHandlers()
+    shell.askNotificationPermission.mockClear()
+    expect(handlers.checkFrom('notifications', `${REMEMBERED_SITE}/`)).toBe(true)
+    expect(await handlers.ask(fakeTab(`${REMEMBERED_SITE}/`), 'notifications', { requestingUrl: `${REMEMBERED_SITE}/`, isMainFrame: true })).toBe(true)
+    expect(shell.askNotificationPermission).not.toHaveBeenCalled()
   })
 })

@@ -277,6 +277,22 @@ describe('checkManifestParity', () => {
     expect(result.missingReadonly).toEqual([{ interfaceName: 'Widget', field: 'b' }])
   })
 
+  // The reverse direction: a loader key the contract no longer declares.
+  // At the top level it would silence the warning an unknown field gets;
+  // inside capabilities it would accept authority the contract never names.
+  it('reports a loader key the contract does not declare as stale', () => {
+    const root = fixture({
+      'src/contracts/manifest.ts': 'export interface Widget { readonly a: string }',
+      'src/loader/widget.ts': "const WIDGET_KEYS = ['a', 'renamed']"
+    })
+    const result = checkManifestParity(root, { parityMap })
+    expect(result.ok).toBe(false)
+    expect(result.gaps).toEqual([])
+    expect(result.stale).toEqual([
+      { interfaceName: 'Widget', field: 'renamed', loaderFile: 'src/loader/widget.ts', arrayName: 'WIDGET_KEYS' }
+    ])
+  })
+
   it('reports a gap for every unmatched field, not just the first', () => {
     const root = fixture({
       'src/contracts/manifest.ts': 'export interface Widget { readonly a?: string\n readonly b?: number\n readonly c?: boolean }',
@@ -308,6 +324,7 @@ describe('checkManifestParity', () => {
     const result = checkManifestParity(process.cwd())
     expect(result.unreadable).toEqual([])
     expect(result.gaps).toEqual([])
+    expect(result.stale).toEqual([])
     expect(result.ok).toBe(true)
   })
 

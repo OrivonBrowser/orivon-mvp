@@ -63,11 +63,14 @@ unresolved for the same reason). `whenReady()` is the one honest way to bridge t
 asks nothing new of a ported app, because real Electron code already gates its own startup on the
 identical call.
 
-**Why `getPath('userData')` returns `'.'`, not a fabricated absolute path.**
-`src/broker/policy/paths.ts` rejects an absolute path outright (`'absolute'`, never re-rooted).
-A value a porting app's own `path.join(app.getPath('userData'), 'x')` could turn into a rejected
-`orivon.fs` call would be a trap, not a convenience. `'.'` joins to a plain relative path under
-every `path.join`, including a future Node `path` shim (`src/shim/`'s family, not this one).
+**Why `getPath('userData')` returns `/orivon/app`.** It is the virtual root every Node-shaped
+path in an app tab agrees on: `process.cwd()`, `os.homedir()`, `$HOME` and `$APPDATA` all name it,
+and `src/shim/`'s `fs` strips it before calling `orivon.fs`, so a porting app's own
+`path.join(app.getPath('userData'), 'settings.json')` lands in the app's confined files. Handed
+straight to `orivon.fs` instead, it is refused: the broker rejects every absolute path
+(`src/broker/policy/paths.ts`), so an app reaching `orivon.fs` directly passes relative paths.
+`app.ts` holds its own copy of the value because this package may not import `src/shim/`;
+`src/shim/tests/virtual-root.test.ts` holds the two equal.
 
 **Why `dialog.showOpenDialog` always refuses, rather than calling through when
 `orivon.fs.userSelected` happens to exist.** It never does today: `compatibility-matrix.md`

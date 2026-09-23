@@ -28,8 +28,9 @@ import { bindUdp } from '../adapters/udp-adapter.js'
 import { nodeLedgerStorage } from '../grants/node-ledger-storage.js'
 import { createWebContextHost } from '../../main/sessions/web-context-host.js'
 import { createPortRegistry } from './port-registry.js'
-import { createTokenBucketLimiter } from './token-bucket.js'
 import type { RateLimiter } from './token-bucket.js'
+import { admitControlCall, createControlLimiter } from './control-limiter.js'
+import type { ControlLimiter } from './control-limiter.js'
 import { createSyncFsPolicy } from './sync-fs-policy.js'
 import { handleSyncFsReadRequest } from './sync-fs.js'
 import type { SyncControlEvent, SyncFsPolicy } from './sync-fs.js'
@@ -76,7 +77,8 @@ async function dispatch (
   event: ControlEvent,
   transport: PortTransport | undefined,
   requestGrantCtx: RequestGrantCtx | undefined,
-  fsTransport: FsTransport | undefined
+  fsTransport: FsTransport | undefined,
+  abandoned: AbortSignal
 ): Promise<unknown> {
   if (!isControlMethod(method)) throw fail('invalid', `unknown control method: ${method}`)
 
@@ -108,7 +110,7 @@ async function dispatch (
     case 'fs.dirReadFile':
     case 'fs.dirWriteFile':
     case 'fs.dirOpen':
-      return await dispatchFs(broker, origin, method, payload, fsTransport)
+      return await dispatchFs(broker, origin, method, payload, fsTransport, abandoned)
     case 'id.publicKey':
     case 'id.sign':
       return await dispatchId(broker, origin, method, payload)
@@ -140,29 +142,29 @@ async function dispatch (
 }
 
 /**
- * Races `promise` against `timeoutMs`. ../../contracts/ipc.ts's rule 2: this
+ * Races `work` against `timeoutMs`. ../../contracts/ipc.ts's rule 2: this
  * transport fails by SILENCE, and `timeoutMs` is a required field precisely
  * so nothing on this path can forget to bound the wait. The underlying
- * broker call is not cancelled when the timer wins -- there is no cancel
- * signal threaded through `dispatch` for this -- it is left to settle on its
- * own and its result is discarded; what matters is that the CALLER is never
- * left waiting past its own stated budget.
+ * broker call is not cancelled when the timer wins; it is left to settle on
+ * its own and its result is discarded. What matters is that the CALLER is
+ * never left waiting past its own stated budget. `abandoned` fires when the
+ * timer wins, so a call that produces a resource the caller will now never
+ * hear about can release it (dispatch-fs.ts's `fs.userSelected`).
  */
-async function withTimeout<T> (promise: Promise<T>, timeoutMs: number): Promise<T> {
+async function withTimeout<T> (work: (abandoned: AbortSignal) => Promise<T>, timeoutMs: number): Promise<T> {
+  const abandoned = new AbortController()
   return await new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => {
+      abandoned.abort()
       reject(fail('timeout', `control call exceeded its ${timeoutMs}ms budget`))
     }, timeoutMs)
     timer.unref()
-    promise.then(
+    work(abandoned.signal).then(
       (value) => { clearTimeout(timer); resolve(value) },
       (error: unknown) => { clearTimeout(timer); reject(error) }
     )
   })
 }
-
-/** Default for a caller (chiefly tests) that passes no real limiter. Never rejects; holds no state. */
-const ALLOW_ALL_LIMITER: RateLimiter = { tryConsume: () => true }
 
 /**
  * The pure core: one request in, one response out. No Electron, no I/O --
@@ -188,7 +190,7 @@ export async function handleControlRequest (
   event: ControlEvent,
   envelope: RequestEnvelope<unknown>,
   transport?: PortTransport,
-  limiter?: RateLimiter,
+  limiter?: ControlLimiter,
   requestGrantCtx?: RequestGrantCtx,
   fsTransport?: FsTransport
 ): Promise<ResponseEnvelope<unknown>> {
@@ -208,16 +210,16 @@ export async function handleControlRequest (
     return { id: envelope.id, ok: false, code: 'denied', message: 'no authenticated origin for this frame' }
   }
 
-  // A38's fix: checked here, before dispatch() ever runs, so a throttled
-  // call never reaches the broker at all -- the same "reject immediately,
-  // never queue" rule the in-flight cap already applies (handles.ts).
-  if (!(limiter ?? ALLOW_ALL_LIMITER).tryConsume(origin)) {
+  // Checked before dispatch() ever runs, so a throttled call never reaches
+  // the broker at all (A38). Which budget a method draws on, and why one of
+  // them paces instead of refusing: ./control-limiter.ts.
+  if (!(await admitControlCall(limiter, origin, envelope.method))) {
     return { id: envelope.id, ok: false, code: 'limit', message: 'this origin is calling too frequently; wait and retry' }
   }
 
   try {
     const result = await withTimeout(
-      dispatch(broker, origin, envelope.method, envelope.payload, event, transport, requestGrantCtx, fsTransport),
+      async (abandoned) => await dispatch(broker, origin, envelope.method, envelope.payload, event, transport, requestGrantCtx, fsTransport, abandoned),
       envelope.timeoutMs
     )
     return { id: envelope.id, ok: true, result }
@@ -234,12 +236,12 @@ export interface IpcMainLike {
   ): void
 }
 
-/** Thin wiring: one `ipcMain.handle` registration over `handleControlRequest`, sharing one `PortTransport`, `FsTransport` and `RateLimiter` across every call. */
+/** Thin wiring: one `ipcMain.handle` registration over `handleControlRequest`, sharing one `PortTransport`, `FsTransport` and `ControlLimiter` across every call. */
 export function registerBrokerIpc (
   ipc: IpcMainLike,
   broker: Broker,
   transport: PortTransport,
-  limiter?: RateLimiter,
+  limiter?: ControlLimiter,
   requestGrantCtx?: RequestGrantCtx,
   fsTransport?: FsTransport
 ): void {
@@ -298,12 +300,6 @@ function realPortPair (): PortPair {
   port1.start()
   return { port1: wrapped, port2 }
 }
-
-// AI recommendation (open-questions.md A38), not an owner decision, and
-// shared across all eight methods on purpose. See README.md's Design notes
-// for the incident this replaced and the fairness risk it leaves open.
-const CONTROL_RATE_LIMIT_CAPACITY = 200
-const CONTROL_RATE_LIMIT_REFILL_PER_SECOND = 100
 
 /**
  * The text `pickPath`'s real `dialog.showOpenDialog` call shows. Kept as a
@@ -414,11 +410,7 @@ export const brokerIpcSubsystem: Subsystem = {
     // subsystem's whole lifetime, exactly like `transport`. `dirRegistry`
     // (A195) is its DirectoryHandle counterpart, over FailableDirectoryHandle.
     const fsTransport: FsTransport = { registry: createPortRegistry(), dirRegistry: createPortRegistry() }
-    const limiter = createTokenBucketLimiter({
-      capacity: CONTROL_RATE_LIMIT_CAPACITY,
-      refillPerSecond: CONTROL_RATE_LIMIT_REFILL_PER_SECOND,
-      now: realNow
-    })
+    const limiter = createControlLimiter(realNow)
     const broker = createBroker(deps)
     // publishBroker (src/main/registry.ts) is the one sanctioned way to set
     // ctx.broker -- it throws instead of silently overwriting if this ever

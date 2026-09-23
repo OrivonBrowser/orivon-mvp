@@ -29,3 +29,31 @@ export function toNodeStats (stat: FileStat): NodeStats {
     isSymbolicLink: () => false
   }
 }
+
+/**
+ * `readdir(path, { withFileTypes: true })`'s entries. orivon.fs.readdir
+ * returns names only, so the kind comes from a stat per entry; an entry that
+ * vanished between the two calls reads as neither file nor directory.
+ */
+export class NodeDirent {
+  readonly name: string
+  readonly parentPath: string
+  /** Node's older name for parentPath, still read by ported code. */
+  readonly path: string
+  private readonly stat: FileStat | undefined
+
+  constructor (name: string, parentPath: string, stat: FileStat | undefined) {
+    this.name = name
+    this.parentPath = parentPath
+    this.path = parentPath
+    this.stat = stat
+  }
+
+  isFile (): boolean { return this.stat?.isFile === true }
+  isDirectory (): boolean { return this.stat?.isDirectory === true }
+  isSymbolicLink (): boolean { return false }
+  isBlockDevice (): boolean { return false }
+  isCharacterDevice (): boolean { return false }
+  isFIFO (): boolean { return false }
+  isSocket (): boolean { return false }
+}

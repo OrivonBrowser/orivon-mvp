@@ -7,9 +7,10 @@
 // this one. Re-exported from there so no existing import site needed to
 // change.
 
-import type { Broker, RawFileStat } from '../../broker-contracts.js'
+import type { Broker, FailableSecureTcpSocket, RawFileStat } from '../../broker-contracts.js'
 import { LIMITS } from '../../../contracts/index.js'
-import type { Grant, LookupAddress, Manifest } from '../../../contracts/index.js'
+import { fail } from '../../errors.js'
+import type { Grant, LookupAddress, Manifest, SecureConnectOptions } from '../../../contracts/index.js'
 import type { FailableDirectoryHandle, FailableFileHandle, FailableTcpServer, FailableTcpSocket, FailableUdpSocket } from '../../handles/handle-contracts.js'
 
 export interface BrokerCall { readonly method: string, readonly origin: string, readonly args: unknown }
@@ -45,7 +46,8 @@ export function stubBroker (
     /** SYNCHRONOUS, same reasoning as `isRegisteredSync`/`hasGrantsSync` above -- A200's `Broker.app.socketAllowanceSync` has no CONTROL_CHANNEL method (its one caller is electron-serve.ts's loader-side reach path, never ipc.ts), but the stub still needs to satisfy Broker's shape. */
     socketAllowanceSync: (origin: string) => number
     connect: (origin: string, opts: { host: string, port: number }) => Promise<FailableTcpSocket>
-    connectSecure: (origin: string, opts: { host: string, port: number }) => Promise<FailableTcpSocket>
+    /** A plain `FailableTcpSocket` is given a verified handshake's facts, so a test about the byte relay need not spell them out. */
+    connectSecure: (origin: string, opts: SecureConnectOptions) => Promise<FailableTcpSocket | FailableSecureTcpSocket>
     udpBind: (origin: string, opts: { port: number }) => Promise<FailableUdpSocket>
     listen: (origin: string, opts: { port: number }) => Promise<FailableTcpServer>
     lookup: (origin: string, opts: { hostname: string }) => Promise<readonly LookupAddress[]>
@@ -126,7 +128,8 @@ export function stubBroker (
       },
       connectSecure: async (origin, opts) => {
         calls.push({ method: 'net.connectSecure', origin, args: opts })
-        return await (overrides.connectSecure?.(origin, opts) ?? notStubbed())
+        const socket = await (overrides.connectSecure?.(origin, opts) ?? notStubbed())
+        return 'authorized' in socket ? socket : Object.assign(socket, { authorized: true, alpnProtocol: false as const, peerCertificate: null })
       },
       // Present so this stub still satisfies `Broker`; no test here drives it.
       // The udp control method is a separate change (see the PR stack).
@@ -186,6 +189,10 @@ export function stubBroker (
       open: async (origin, path, flags) => {
         calls.push({ method: 'fs.open', origin, args: { path, flags } })
         return await (overrides.open?.(origin, path, flags) ?? notStubbed())
+      },
+      handleGone: (origin, handleId) => {
+        calls.push({ method: 'fs.handleGone', origin, args: handleId })
+        return fail('denied', 'no such file handle for this origin', handleId)
       },
       // Cast the same way the other narrower-than-`Broker` overrides here
       // already do (see `overrides.userSelected`'s own doc above for why).

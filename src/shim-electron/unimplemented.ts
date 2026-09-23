@@ -27,12 +27,18 @@ import type { ElectronShimError } from './errors.js'
  * parameter rather than a fixed message baked in here.
  */
 export function refusingProxy<T extends object> (known: T, classify: (prop: string) => Error): T {
+  const standIns = new Map<string, RefusingFunction>()
   return new Proxy(known, {
     get (target, prop, receiver) {
       if (typeof prop === 'symbol' || Reflect.has(target, prop)) {
         return Reflect.get(target, prop, receiver)
       }
-      return refusingFunction(prop, classify)
+      let standIn = standIns.get(prop)
+      if (standIn === undefined) {
+        standIn = refusingFunction(prop, classify)
+        standIns.set(prop, standIn)
+      }
+      return standIn
     }
   })
 }
@@ -45,8 +51,13 @@ export function refusingProxy<T extends object> (known: T, classify: (prop: stri
  * feature-detection check is never fooled into crashing on the mere read.
  * Only calling it does what #186/A135 built this whole mechanism for.
  */
-function refusingFunction (prop: string, classify: (prop: string) => Error): (...args: readonly unknown[]) => never {
-  const fn = (..._args: readonly unknown[]): never => { throw classify(prop) }
+type RefusingFunction = (...args: readonly unknown[]) => never
+
+function refusingFunction (prop: string, classify: (prop: string) => Error): RefusingFunction {
+  // A `function`, never an arrow: an arrow has no prototype, so `new`,
+  // `class X extends member` and `x instanceof member` would each fail with a
+  // bare TypeError instead of this refusal (or, for instanceof, `false`).
+  const fn = function (): never { throw classify(prop) }
   Object.defineProperty(fn, 'name', { value: prop, configurable: true })
   return fn
 }

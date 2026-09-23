@@ -12,9 +12,10 @@ import { installManifestHintWatcher } from './manifest-hint.js'
 // navigated away from is an ordinary tab too, and must expose the SAME
 // thing this file does, not a second copy (code-guidelines.md Rule 3).
 exposeOrivon()
-// ADR-0017: routes this tab's own fetch() through orivon.net for a
-// registered app's granted hosts. Must run AFTER exposeOrivon() -- it
-// depends on window.orivon already existing in the main world.
+// ADR-0017: routes this tab's own fetch(), XMLHttpRequest and EventSource
+// through orivon.net for a registered app's granted hosts. Must run AFTER
+// exposeOrivon() -- it depends on window.orivon already existing in the
+// main world.
 exposeFetchRoute()
 // A151: installs orivon-node-shim's process/setImmediate/clearImmediate
 // for a real app tab, gated on the identical --orivon-app-tab flag

@@ -12,8 +12,11 @@ split out), and four more files it depends on: `socket-bridge.ts` (the only file
 does not care what kind of socket it belongs to), `socket-port.ts` and `datagram-port.ts` (the
 isolated-world per-socket state machines for TCP and UDP, both Electron-free), and
 `main-world-socket.ts` (the one function serialised into the main world via
-`contextBridge.executeInMainWorld`; see its own header before touching it). This is the
-narrowest and most security-critical surface in the repository.
+`contextBridge.executeInMainWorld`; see its own header before touching it). The routed network
+path (ADR-0017) is its own set of main-world installers, `routed-*.ts`, `fetch-route.ts`,
+`xhr-route*.ts`, `eventsource-route.ts` and `websocket-route*.ts`, wired by
+`expose-fetch-route.ts` and described under Design notes. This is the narrowest and most
+security-critical surface in the repository.
 
 **What it depends on.** `electron` (via `require`, since these are CommonJS),
 [`src/contracts/`](../contracts/) for types, and (from `expose-shim-globals.ts` only, A151)
@@ -30,8 +33,8 @@ neutral place a channel name shared across this trust boundary can live; `shell.
 `src/main/` is fair game.
 
 **Owner stream.** `app.ts`, `orivon-surface.ts`, `control-call.ts`, `net-surface.ts`,
-`socket-bridge.ts`, `socket-port.ts`, `datagram-port.ts` and `main-world-socket.ts` belong to
-`broker` (build step 2); `shell.ts` and
+`socket-bridge.ts`, `socket-port.ts`, `datagram-port.ts`, `main-world-socket.ts` and the routed
+network path's files belong to `broker` (build step 2); `shell.ts` and
 `newtab.ts` belong to
 `shell` (build step 1, done).
 
@@ -39,12 +42,11 @@ neutral place a channel name shared across this trust boundary can live; `shell.
 |---|---|---|
 | `app.ts` | **every ordinary tab** | `orivon-surface.ts`'s `exposeOrivon()`: `orivon.version`, `orivon.app.manifest`/`grants`, `orivon.fs.readFile`/`writeFile`/`readFileSync` (the last one ADR-0016's synchronous exception; see `orivon-surface.ts`'s own `fsReadFileSync`), `orivon.id.publicKey`/`sign`, `orivon.net.connect` (a real `TcpSocket`) and `orivon.net.udpBind` (a real `UdpSocket`), both built in the main world by `main-world-socket.ts` |
 | `shell.ts` | **only** the chrome view | Tab commands |
-| `settings.ts` | **only** the all-sites popup's own view (`src/main/permissions/permissions-panel.ts`) | `orivonSettings`: list each app's grants and revoke one, after checking `location.href` against its expected URL; `src/main/ipc/settings-ipc.ts` re-verifies the sender on every call |
+| `settings.ts` | **only** the all-sites popup's own view (`src/main/permissions/permissions-panel.ts`) | `orivonSettings`: list each app's grants and revoke one, and list each site's notification answer and reset one, after checking `location.href` against its expected URL; `src/main/ipc/settings-ipc.ts` re-verifies the sender on every call |
 | `site-info.ts` | **only** the site-info popup's own view (`src/main/permissions/site-info-panel.ts`) | `orivonSiteInfo`: this site's info/trust/data, apply a staged set of switches, revoke a picked path, clear browser data, reload, open the all-sites popup — same `location.href` check as `settings.ts`; `src/main/ipc/site-info-ipc.ts` re-verifies the sender and fixes the origin, never trusting one from the page |
 | `newtab.ts` | **only** a genuinely fresh tab (`src/main/shell/tabs.ts`'s `createTab()`, no `url` argument) | Read-only bookmark access, navigate-this-tab-only, but only after checking `location.href` against its own expected URL first, since (unlike the chrome view) a dashboard tab is ordinary and navigable; falls back to the SAME `exposeOrivon()` `app.ts` uses otherwise, not a second copy |
-| `fetch-route.ts` | `app.ts` and `newtab.ts`'s fallback branch, via `exposeFetchRoute()` | ADR-0017: routes `window.fetch` through `orivon.net` for a registered app's granted hosts, when the tab's `--orivon-app-tab` flag says so (`src/main/shell/tab-view.ts`'s `appTabArgsFor`); a plain website keeps native `fetch`, untouched |
-| `fetch-gate.ts` | `exposeFetchRoute()`, one gate per tab, handed to `installFetchRoute` as an argument | Nothing to the page. Decides when each routed request may dial, so a request past the app's socket allowance waits for a socket instead of failing (Design notes) |
-| `expose-shim-globals.ts` | `app.ts` and `newtab.ts`'s fallback branch, via `exposeShimGlobals()` | A151: installs `src/shim/globals.ts`'s `process`/`setImmediate`/`clearImmediate` into the main world, gated on the SAME `--orivon-app-tab` flag `fetch-route.ts` reads; an ordinary tab never receives shimmed Node globals just because it loaded before this preload ran |
+| `fetch-route.ts`, `xhr-route.ts`, `eventsource-route.ts`, `websocket-route.ts` (the routed network path) | `app.ts` and `newtab.ts`'s fallback branch, via `expose-fetch-route.ts`'s `exposeFetchRoute()` | ADR-0017: `window.fetch`, `XMLHttpRequest`, `EventSource` and `WebSocket` reach a registered app's GRANTED cross-origin hosts through `orivon.net`, when the tab's `--orivon-app-tab` flag says so (`src/main/shell/tab-view.ts`'s `appTabArgsFor`). Every other request -- same-origin, another scheme, or to a host the app was not granted -- takes the page's native API, CORS and CSP and all. A plain website keeps all four native, untouched |
+| `expose-shim-globals.ts` | `app.ts` and `newtab.ts`'s fallback branch, via `exposeShimGlobals()` | A151: installs `src/shim/globals.ts`'s `process`/`global`/`setImmediate`/`clearImmediate`, passing no reporter so an uncaught callback error reaches the page's own `reportError`, and `page-buffer.ts`'s `Buffer`, into the main world, gated on the SAME `--orivon-app-tab` flag `expose-fetch-route.ts` reads; an ordinary tab never receives shimmed Node globals just because it loaded before this preload ran |
 
 **Preload builds are isolated per entry (`electron.vite.config.ts`'s `isolatedEntries: true`).**
 When two preloads share a local import (`shell.ts` and `newtab.ts` both import `./channels.js`),
@@ -128,8 +130,8 @@ it explains the file's overall shape):
   safe in either process, and the one neutral place a channel name shared across this trust
   boundary can live.
 
-**Why `fetch-route.ts`'s `isAppTab` gate is a synchronous main-process decision, not an async
-check inside the main world (ADR-0017, queue item 3.4):**
+**Why the routed network path's `isAppTab` gate is a synchronous main-process decision, not an
+async check inside the main world (ADR-0017, queue item 3.4):**
 
 - **`window.orivon` (hence `orivon.net`) is exposed to EVERY ordinary tab**, registered app or
   not, because an app is discovered via a `<link>` hint rather than installed up front. Routing `fetch()`
@@ -151,8 +153,8 @@ check inside the main world (ADR-0017, queue item 3.4):**
   calls it once, at `WebContentsView` construction (`tabs.ts`'s `createTab()`/`repartitionView()`),
   and hands the answer over as a `webPreferences.additionalArguments` flag
   (`'--orivon-app-tab'`), the exact mechanism `newtab.ts` already uses for its own
-  dashboard-URL check, read synchronously off `process.argv` in `fetch-route.ts`'s
-  `exposeFetchRoute()` before `installFetchRoute` ever runs. No promise, no race.
+  dashboard-URL check, read synchronously off `process.argv` in `expose-fetch-route.ts`'s
+  `exposeFetchRoute()` before any installer runs. No promise, no race.
 - **A known, remaining limitation:** the decision is fixed for the life of one `WebContentsView`.
   An origin registered AFTER a tab already showing it was created keeps that tab's ORIGINAL
   answer until the next navigation swaps in a fresh view, the same lifetime `additionalArguments`
@@ -165,11 +167,38 @@ check inside the main world (ADR-0017, queue item 3.4):**
 **Every global this directory installs on an app's window carries the platform's own property
 descriptor -- `orivon` excepted.** ADR-0021 states the rule and the evidence for it; the short
 version is that a locked global cannot be shadowed in strict mode, so a bundle that ponyfills one
-dies while its module graph is still evaluating, naming no cause. So
-[`fetch-route.ts`](fetch-route.ts)'s routed `fetch` is installed `writable`, `configurable` and
-`enumerable`, and [`../shim/globals.ts`](../shim/globals.ts)'s `process`, `setImmediate` and
-`clearImmediate` are plain assignments. `npm run check:page-globals` fails the build on a locked
-one, and reads an omitted `writable` as the lock it actually is.
+dies while its module graph is still evaluating, naming no cause. So the routed `fetch` is
+installed `writable`, `configurable` and `enumerable` (an operation's descriptor), the routed
+`XMLHttpRequest`, `EventSource` and `WebSocket` `writable` and `configurable` but not `enumerable`
+(an interface object's), [`../shim/globals.ts`](../shim/globals.ts)'s `process`, `global`,
+`setImmediate` and `clearImmediate` are plain assignments, and [`page-buffer.ts`](page-buffer.ts)'s `Buffer` is
+`writable` and `configurable` but not `enumerable`, as Node defines its own.
+`npm run check:page-globals` fails the build on a locked one, and reads an omitted `writable` as
+the lock it actually is.
+
+**Why `Buffer` reaches the page inlined into [`page-buffer.ts`](page-buffer.ts)'s installer.**
+`contextBridge.executeInMainWorld` serialises a function alone, so the installer cannot import
+the `buffer` package. `electron.vite.config.ts`'s `pageBufferPackage` plugin bundles the package
+(resolved from [`../shim/node-buffer.ts`](../shim/node-buffer.ts), so the one the shim wraps) and
+writes it into the installer's body at build time, and fails the build if the placeholder it
+replaces is not there exactly once. Measured in a headless Electron 44 tab against five page CSPs (none; the served
+bundle's own; `script-src 'self' 'unsafe-inline'`; nonce-only; nonce plus Trusted Types), this
+defines `Buffer` before the page's first inline `<head>` script under all five, and the page can
+still assign over, shadow and delete it. Two other routes were measured beside it:
+
+- **Evaluating the package source with the `Function` constructor in the main world** fails,
+  silently, under every policy without `'unsafe-eval'`. An app tab can carry one: developer mode
+  appends Orivon's policy to the dev server's own rather than replacing it, so the stricter of
+  the two applies.
+- **`webFrame.executeJavaScript`** passed all five too, but that it runs before the page's own
+  scripts is observed behaviour of a call that returns a promise, not a documented property.
+  `executeInMainWorld` runs synchronously by contract, and a failure throws where it can be
+  logged.
+
+The bundler drops a nested `'use strict'`, so the package runs sloppy in the page, as
+`installGlobals` does; `tests/page-buffer.test.ts` and `test/e2e-page-buffer.test.ts` both run
+it that way. [`../shim/node-buffer.ts`](../shim/node-buffer.ts) adopts this global when it finds
+it, which is what keeps `require('buffer').Buffer` and `Buffer` one class.
 
 **Why [`main-world-socket.ts`](main-world-socket.ts) still locks `window.orivon` when the rest is
 not locked.** `orivon` is Orivon's own surface rather than a borrowed one: nothing tries to shadow
@@ -177,86 +206,140 @@ it, the platform sets no contract for its shape, and freezing it costs an app no
 reason in that file's own comment stands. The guard's allowlist carries the same four names for
 the same reason.
 
-**`fetch-route.ts`'s known divergences from a real browser's `fetch()`**. ADR-0017's own
-Consequences section requires these be written down plainly, since "a silent divergence in a web
-platform API is a trap":
+**The routed network path is ten installers, and they share one slot.** Each of
+[`routed-wire.ts`](routed-wire.ts) (the HTTP/1.1 codec), [`routed-dial.ts`](routed-dial.ts)
+(dialling through the socket allowance), [`routed-core.ts`](routed-core.ts) (one whole exchange),
+[`routed-events.ts`](routed-events.ts) (handler attributes and native-event forwarding),
+[`fetch-route.ts`](fetch-route.ts), [`xhr-route-response.ts`](xhr-route-response.ts),
+[`xhr-route.ts`](xhr-route.ts), [`eventsource-route.ts`](eventsource-route.ts),
+[`websocket-route-frames.ts`](websocket-route-frames.ts) (the RFC 6455 codec and handshake checks)
+and [`websocket-route.ts`](websocket-route.ts) is serialised into the main world on its own, so
+none of them can import another; the one thing they share at run time is an object at `Symbol.for('orivon.routed-network')` on the page's window. Each reads
+what the ones before it published and adds its own, in the order `expose-fetch-route.ts` lists
+them, and `releaseRoutedSlot` deletes the slot once the last has run, before any page script. A
+page that recreates the key gets nothing: every installer captured its references at install.
+This is how the path stays under code-guidelines.md Rule 2 without a second copy of the codec:
+one function body cannot hold it all, and a shared helper module is exactly what a serialised
+function cannot call. `fetch-route-types.ts` and `websocket-route-types.ts` hold the shapes,
+type-only, for the same reason `main-world-bridges.ts` does. Every routed test re-evaluates each
+installer from its own source text (`tests/routed.test-helpers.ts`'s `reserialised`), so a
+reference to anything outside a function's body fails there as it would in a page.
 
-- **A routed response is capped at `MAX_BODY_BYTES` (currently 16 MiB, checked against
-  `Content-Length` before reading, and incrementally as bytes actually arrive for a chunked or
-  connection-close-terminated body).** Real `fetch()` has no such cap. This is a conservative
-  PLACEHOLDER, not settled; the open question (should this instead be a
-  manifest-declared, user-visible limit, the same pattern A80 gave the per-app socket allowance)
-  is tracked in the F2 lane's log, not settled here. The response headers themselves are capped
-  too, at `MAX_HEAD_BYTES` (32 KiB, mirroring `src/shim/node-http-parser.ts`), which real `fetch()`
-  also has no equivalent to, though a real header block this large is not a realistic case.
-- **`Content-Encoding: gzip`/`deflate` is decompressed transparently**, via the platform's own
-  `DecompressionStream`, matching real `fetch()`. `Content-Encoding: br` (brotli) is NOT
-  decompressed: `DecompressionStream` has no brotli format string in Chromium, so a `br` response
-  fails loudly (naming brotli in the error) rather than handing the app compressed bytes as though
-  they were content. As in a real browser, the `Content-Encoding` header itself stays on the
-  `Response` unstripped even after the body is decompressed. Not a new divergence: a real
-  browser does the same.
-- **Redirects are not followed.** A 3xx response comes back to the app as an ordinary `Response`
-  with that status code; the app must notice and follow it itself. A v0 scope cut.
+**Routed or native is decided per request, and a denial is not an error.** A request goes routed
+only when it is cross-origin http(s). The broker's grant check is the dial itself: `'denied'` on
+the first hop hands the request, untouched, to the page's native `fetch`/`XMLHttpRequest`/
+`EventSource`, which is what an ordinary website would get. A Request's body is read from a clone
+and the body is extracted only after the dial succeeds, so the native path still receives it
+intact. Mid-redirect there is no native fallback: a hop to an ungranted host fails the request.
+
+**A WebSocket is decided the same way, once, before its handshake.** It is routed when its URL
+(`http(s):` already turned into `ws(s):`, as the constructor does) is cross-origin once read as its
+`http(s):` equivalent, so a dev server's own hot-reload socket on the page's host and port stays
+native, where the dev CSP's `connect-src 'self'` admits it (measured in Electron 44,
+`test/e2e-websocket-routing.test.ts`; one on another port is refused). A `wss:` socket dials
+`orivon.net.connectSecure`, checked against `https.connect`: an HTTP/1.1 Upgrade over the
+broker-terminated TLS is the same traffic an https grant already authorises. A `ws:` socket dials
+`orivon.net.connect`, as a routed `http:` request does. Both dial through the same queue. `'denied'`
+constructs the page's native `WebSocket` and re-dispatches its events, so the page's CSP then
+applies as on any page; a CSP refusal is measured to fire `error` and go `CLOSED` with no `close`
+event, which is passed on unchanged. A handshake redirect fails the connection, as Chromium does.
+
+**The routed network path's numbers.** Each is a literal inside its installer, mirrored by an
+exported constant the tests hold it to.
+
+- `ROUTED_QUEUE_MAX_WAIT_MS` (120 s) and `ROUTED_LIMIT_RETRY_MS` (500 ms), `routed-dial.ts`. A
+  dial refused `'limit'` (the origin's socket allowance, or the control channel's rate limiter,
+  which answers the same code) waits in a FIFO queue. Only the queue's head is woken, when a
+  routed socket from this page has been released by the broker or after the back-off, since the
+  allowance is per origin and other tabs or the app's own `orivon.net` sockets hold it too. A
+  browser queues past its connection limit and never fails a request for it; the bounded wait is
+  the one divergence, and a request that exhausts it fails like a network error. The broker looks
+  at the origin's socket count before it dials (`src/broker/socket-room.ts`), so a refused dial
+  costs the remote host no connection or TLS handshake. There is no per-host cap: a browser opens
+  six HTTP/1.1 connections to a host but reaches most busy hosts over HTTP/2, while a routed
+  request is one HTTP/1.1 exchange per socket, so six per host would slow a burst badly
+  (FreeTube refreshing a hundred subscriptions measured 19.5 s against 5.7 s). The allowance the
+  person granted is the bound.
+- `ROUTED_IDLE_TIMEOUT_MS` (300 s), `routed-core.ts`. With no caller signal (fetch) or `timeout`
+  (XHR), a request that receives nothing for this long, while it is waiting on the peer, fails like
+  a network error and frees its socket. It is a hang detector: long-polls and quiet event streams
+  sit silent for a minute or two, so it is deliberately far longer than any of them. An
+  EventSource treats it as a dropped stream and reconnects.
+- `ROUTED_MAX_REDIRECTS` (20), the Fetch spec's own limit.
+- `ROUTED_MAX_HEAD_BYTES` (256 KiB), `routed-wire.ts`: Chromium's own response-head cap.
+- A response body is read ahead up to 512 KiB of the app, as a browser buffers ahead of its reader,
+  so a small response completes and frees its socket even when the app never reads it (an app
+  checking only `response.ok` is common). A larger body the app drops unread is closed when it is
+  garbage-collected. There is no body cap.
+- `WEBSOCKET_OPENING_TIMEOUT_MS` (240 s), `WEBSOCKET_CLOSING_TIMEOUT_MS` (60 s) and
+  `WEBSOCKET_CLOSE_LINGER_MS` (2 s), `websocket-route.ts`: Chromium's own bounds on the whole
+  opening handshake (queue wait included), on the peer's answer to a close frame, and on the peer
+  dropping TCP once both close frames have crossed. An open routed WebSocket has no idle timeout.
+- An outbound WebSocket frame is written in pieces of at most 64 KiB, each its own buffer; there is
+  no message size cap in either direction.
+
+**The routed network path's remaining divergences from a browser.** ADR-0017's own Consequences
+section requires these be written down plainly, since "a silent divergence in a web platform API
+is a trap":
+
 - **Mixed-content blocking does not apply on this path (`A117`).** A page served over `https` can
-  reach an `http://` granted host through a routed `fetch()`, which its own renderer would have
+  reach an `http://` granted host through a routed request, which its own renderer would have
   refused. Stated narrowly, because the wider claim would be wrong: Orivon does not permit mixed
   content generally; this one routed path does not apply an enforcement the renderer otherwise
   performs, and only for a host named in the manifest and granted by a person at install. That
   grant is what makes it defensible rather than merely undetected: the request goes to somewhere
-  the user reviewed, not anywhere the page chose. It is still a divergence, and ADR-0017's own
-  Consequences section is explicit that a silent one is a trap, so it is written here, with the
-  others, rather than left to be discovered.
-- **Only string/`Uint8Array`/`ArrayBuffer`/`URLSearchParams` request bodies are supported** --
-  `FormData`, `Blob` and a streamed-upload body are not built here. A v0 scope cut.
-
-**[`fetch-gate.ts`](fetch-gate.ts) makes a routed `fetch()` wait for a socket, where
-`orivon.net` refuses.** Each routed request holds one socket for its whole exchange, and an app may
-hold only its socket allowance at once (the manifest's `net.concurrentSockets`, 64 when it declares
-none). Past it the broker refuses with `'limit'` and never queues (`LIMITS`' own doc, T11b). That is
-the right contract for `orivon.net`, whose callers are written against it, and the wrong one for
-`fetch()`: no browser's `fetch()` fails because too many are in flight, it waits for a connection.
-Without the gate, an app that fires a burst (FreeTube refreshing a hundred subscriptions in one
-`Promise.all`) sees every request past the allowance fail. So the waiting happens here, in the
-tab's own renderer, never on the broker's thread:
-
-- Every request dials until the broker first refuses one. From then on the gate holds the tab to
-  the number of requests still live at that refusal, hands each freed socket to the
-  longest-waiting refused request first, then admits queued ones in order.
-- It learns the number rather than reading it, because the allowance is shared with the app's own
-  `orivon.net` sockets and its other tabs, so no figure the preload could read up front says how
-  much of it is free. For the same reason it cannot see a socket freed there, so while anything
-  waits it probes once a second: one more request than is live, the oldest refused one first. A
-  refusal settles the number back; a success keeps it. It forgets the number once the tab goes
-  idle. The broker's call-rate limit and in-flight cap refuse with `'limit'` too, and the gate
-  treats them alike, since each also means "dial less".
-- There is no per-host cap. A browser opens six HTTP/1.1 connections to a host but reaches most
-  busy hosts over HTTP/2, many requests on one connection; the routed fetch speaks HTTP/1.1, one
-  request per socket, so a six-per-host cap would triple FreeTube's hundred-subscription refresh
-  (measured: 19.5 s against 5.7 s). The allowance the person granted is the bound.
-- The first burst still pays for its refused dials, because the broker checks the allowance after
-  the TLS handshake. Learning the number is what stops that recurring on every request after.
-- **One case still fails, as a divergence:** when no routed request in the tab is live to free a
-  socket (the allowance is held entirely by the app's own sockets or its other tabs), the refusal
-  surfaces as the fetch's `TypeError`, since waiting would never end.
+  the user reviewed, not anywhere the page chose.
+- **No cookie jar, no cache, no credentials mode.** `credentials`, `withCredentials`, `cache`,
+  `referrer`, `integrity` and `keepalive` are accepted and ignored; a `Set-Cookie` the peer sends
+  is visible to the app and never stored or replayed. `mode: 'no-cors'` still yields a readable
+  response. The app is the whole client, as ADR-0017 intends.
+- **One connection per request.** Every routed request sends `Connection: close`; there is no
+  keep-alive pool, so each one pays its own TCP (and TLS) handshake.
+- **What a browser adds, and what it does not.** `User-Agent` (`navigator.userAgent`),
+  `Accept: */*` and `Accept-Encoding` are sent unless the app set its own. `br` is advertised and
+  decoded only when the platform's `DecompressionStream` accepts `'brotli'`, detected at install;
+  otherwise a `br` response fails like a network error. `Origin` and `Referer` are not added: a
+  native client does not send them, and some servers refuse a foreign `Origin` (the reason
+  FreeTube's own main process strips it).
+- **A `Request`'s own headers pass through its guard.** `new Request(url, { headers })` drops the
+  headers a page may not set before this code ever sees them; `fetch(url, { headers })` keeps them.
+- **Response shape.** `response.type` reads `'default'`, not `'cors'`/`'basic'`; `redirect:
+  'manual'` answers with an `'opaqueredirect'`-typed, status-0 response as the platform does.
+  Network failures are `TypeError('Failed to fetch')`, the message retry libraries match exactly,
+  with the detail on `cause`.
+- **XMLHttpRequest.** A synchronous `open(..., false)` always takes the native path.
+  `xhr.upload instanceof XMLHttpRequestUpload` is false, since that global stays native. A
+  `'document'` response is parsed with `DOMParser`.
+- **WebSocket.** No extension is offered, so there is no `permessage-deflate` and `extensions` is
+  always `''`. The upgrade carries the page's origin as `Origin`, as a browser's does and unlike a
+  routed `fetch`, and no cookie. The page's CSP does not apply to a routed socket, and a routed
+  `ws:` from an `https` page is not blocked as mixed content (`A117`, above). For a cross-origin URL
+  the native constructor runs only once the grant has answered, so one that would throw (a
+  mixed-content `SecurityError`) surfaces as a failed connection, `error` then `close` 1006, instead
+  of a throw from `new WebSocket()`. A routed socket holds one of the origin's `orivon.net` sockets
+  for its whole life, so long-lived sockets narrow what routed requests can dial at once; past the
+  allowance they queue. A failure is logged to the console in Chromium's own wording.
+- **Workers and iframes get neither routing nor the shim's globals.** A preload runs only in a
+  tab's top-level frame, so a dedicated or shared worker, a service worker, and any subframe keep
+  their native `fetch`/`XMLHttpRequest`/`EventSource`/`WebSocket`, CORS- and CSP-bound, and have no
+  `orivon`, `process`, `setImmediate` or `Buffer`. An app that moves its network calls into a worker
+  loses routing there.
 
 **A second, independent mechanism diverges the same way, for a different class of request.**
-`fetch-route.ts` above only intercepts the page's own JS-level `fetch()` calls. A passive
-subresource load pointed at a granted third-party host, whether an `<img>`, `<link>`, or `<video>`
-`src`/`href`, never reaches `fetch-route.ts` at all: it is intercepted at the
-`protocol.handle` layer instead, inside the app's own partition
+The routed network path above only intercepts the page's own JS-level `fetch()`, XHR,
+EventSource and WebSocket calls. A passive subresource load pointed at a granted third-party
+host, whether an `<img>`, `<link>`, or `<video>` `src`/`href`, never reaches it at all: it is
+intercepted at the `protocol.handle` layer instead, inside the app's own partition
 ([`src/loader/serve.ts`](../loader/serve.ts)'s `fetchThirdParty`, dialled by
 [`src/loader/serve-reach.ts`](../loader/serve-reach.ts)'s `nodeReachDial`, Node's own `https`
-module). Like the mechanism above, it never follows a redirect: a 3xx response from the granted
-host comes back exactly as received, so a redirecting URL used as an `<img src>` or `<video src>`
-on a granted host renders as a broken load rather than following through, which is surprising since the
-page wrote no network code of its own to suspect. See `src/loader/README.md`'s Design notes for
-the full mechanism; this file's own list above covers only the `fetch()` path.
+module). A 3xx from the granted host goes back to the page's own loader, which follows it through
+the same handler, so every hop is authorised afresh; a chain is capped at 20 hops
+([`src/loader/serve-reach-redirects.ts`](../loader/serve-reach-redirects.ts)). See `src/loader/README.md`'s Design notes for
+the full mechanism; this file's own list above covers only the routed path.
 
 **`init.signal` (`AbortController`) IS supported**, matching real `fetch()`: an already-aborted
-signal rejects before any dial happens; aborting mid-flight rejects the pending promise (via a
-`raceAbort` race against every awaited step) AND closes the underlying socket directly, so the
-broker actually tears the connection down rather than leaking it; `raceAbort` alone cannot force
-a foreign promise to release what it holds, hence the direct `close()`. The rejection value is
-`signal.reason` when the app supplied one, else the same `DOMException('...', 'AbortError')` shape
-a real `fetch()` constructs.
+signal rejects before any dial happens, including one still waiting in the dial queue; aborting
+mid-flight rejects the pending promise AND closes the underlying socket directly, so the broker
+tears the connection down rather than leaking it; aborting after the response has resolved errors
+its body stream. The rejection value is `signal.reason` when the app supplied one, else the same
+`DOMException('...', 'AbortError')` shape a real `fetch()` constructs.

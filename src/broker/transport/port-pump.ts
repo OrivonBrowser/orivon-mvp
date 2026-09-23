@@ -1,5 +1,6 @@
 import type { OrivonErrorCode } from '../../contracts/errors.js'
 import type { CreditMessage, DataMessage, StreamEndMessage } from '../../contracts/ipc.js'
+import { errnoOf } from '../errors.js'
 
 // The READ half of the credit-window relay contracts/ipc.ts and
 // handle-contracts.md's "Backpressure" specify. Pure and Electron-free, like
@@ -38,6 +39,12 @@ export interface PortPumpOptions {
    * (contracts/handles.ts's close table).
    */
   readonly onStreamFailed?: (code: OrivonErrorCode, error: unknown) => void
+  /**
+   * Called once when the stream ends CLEANLY (a peer FIN). Only half of a
+   * clean close: the caller releases the handle once its own write side has
+   * ended too (./socket-relay.ts), never on this alone.
+   */
+  readonly onStreamEnded?: () => void
 }
 
 export interface PortPump {
@@ -52,17 +59,20 @@ export interface PortPump {
 }
 
 export function createPortPump (options: PortPumpOptions): PortPump {
-  const { handleId, readable, send, initialCredit, mapError = () => 'internal', onStreamFailed } = options
+  const { handleId, readable, send, initialCredit, mapError = () => 'internal', onStreamFailed, onStreamEnded } = options
   const reader = readable.getReader()
   let credit = initialCredit
   let running = false
   let stopped = false
   let endSent = false
 
-  function sendEnd (code?: OrivonErrorCode): void {
+  /** `cause` is the raw read error on an abrupt end; its errno travels as `platformCode`, never for 'denied' (contracts/errors.ts). */
+  function sendEnd (code?: OrivonErrorCode, cause?: unknown): void {
     if (endSent) return
     endSent = true
-    send(code === undefined ? { kind: 'end', handleId } : { kind: 'end', handleId, code })
+    if (code === undefined) { send({ kind: 'end', handleId }); return }
+    const platformCode = code === 'denied' ? undefined : errnoOf(cause)
+    send(platformCode === undefined ? { kind: 'end', handleId, code } : { kind: 'end', handleId, code, platformCode })
   }
 
   // Re-entrant on purpose: both the initial call below and every resuming
@@ -82,6 +92,7 @@ export function createPortPump (options: PortPumpOptions): PortPump {
         if (stopped) break
         if (done) {
           sendEnd()
+          onStreamEnded?.()
           break
         }
         send({ kind: 'data', handleId, chunk: value })
@@ -99,7 +110,7 @@ export function createPortPump (options: PortPumpOptions): PortPump {
         // ./ipc.ts's cleanup() is separately written to tolerate.
         stopped = true
         const code = mapError(error)
-        sendEnd(code)
+        sendEnd(code, error)
         onStreamFailed?.(code, error)
       }
     } finally {

@@ -166,24 +166,29 @@ describe('createHttpModule -- denial and transport failure', () => {
     const errored = new Promise<Error & { code: string }>((resolve) => req.once('error', resolve))
     fake.fail('reset', 'peer reset the connection')
     const error = await errored
-    expect(error.code).toBe('reset')
+    expect(error.code).toBe('ECONNRESET')
   })
 
-  it('emits "error" on the response, not the request, once headers have already arrived', async () => {
+  // Node's own order, measured against node:http: the request reports the
+  // reset, and the response is aborted with ECONNRESET 'aborted'.
+  it('a reset mid-body errors the request and aborts the response, as Node does', async () => {
     const fake = createFakeTcpSocket()
     const http = moduleOver(async () => fake.socket)
     const req = http.get({ host: 'example.com', path: '/' })
-    let reqErrored = false
-    req.once('error', () => { reqErrored = true })
+    const reqError = new Promise<Error & { code: string }>((resolve) => req.once('error', resolve))
 
     await vi.waitFor(() => expect(fake.written.length).toBeGreaterThan(0))
     fake.push(enc.encode('HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\npartial'))
     const gotRes = await new Promise<IncomingMessage>((resolve) => req.once('response', resolve))
+    const onAborted = vi.fn()
+    gotRes.on('aborted', onAborted)
     const resError = new Promise<Error & { code: string }>((resolve) => gotRes.once('error', resolve))
     fake.fail('reset', 'peer reset mid-body')
 
-    const error = await resError
-    expect(error.code).toBe('reset')
-    expect(reqErrored).toBe(false)
+    expect((await reqError).code).toBe('ECONNRESET')
+    const aborted = await resError
+    expect(aborted).toMatchObject({ code: 'ECONNRESET', message: 'aborted' })
+    expect(onAborted).toHaveBeenCalledOnce()
+    expect(gotRes.aborted).toBe(true)
   })
 })

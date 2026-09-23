@@ -1,6 +1,6 @@
 # ADR-0017: Orivon owns the app's HTTP path, terminating TLS, routing `fetch`, and letting apps set their own headers
 
-- **Status:** accepted
+- **Status:** accepted, amended 2026-09-22 and 2026-09-23 (see the amendments under §Consequences)
 - **Date:** 2026-09-09
 - **Type:** architecture
 - **Decided by:** owner
@@ -105,6 +105,36 @@ replaces.
   `src/preload/README.md`'s Design notes (owned by the `broker` stream) catalogue the further,
   per-call-shape divergences this same requirement produced (the response body cap, unfollowed
   redirects, and the limited request-body types) alongside this one.
+
+  > **Amendment, 2026-09-22 (`d-0039`, `d-0041`, `d-0042`, `d-0090`). The routed path covers
+  > `XMLHttpRequest`, `EventSource` and `WebSocket` as well as `fetch`, and the three
+  > per-call-shape divergences named above are gone:** a routed request follows redirects, streams
+  > its response with no body cap, and accepts a `Blob`, `FormData` or stream body. **WebSocket is
+  > routed the same way:** an HTTP/1.1 Upgrade over a granted connection is the same traffic the
+  > grant already authorises (`wss:` under `https.connect` via `connectSecure`, `ws:` under
+  > `tcp.connect` via `connect`), so neither CORS, CSP nor mixed-content blocking applies to a
+  > routed socket. The RFC 6455 client runs in the page; no extension is offered. An ungranted or
+  > same-origin socket stays native under the page's CSP. `src/preload/README.md` lists the
+  > divergences that remain, the WebSocket's included.
+
+  > **Amendment, 2026-09-23 (`d-0097`, `d-0098`). `connectSecure` takes Node's own TLS options,
+  > and an app may turn verification off.** The owner chose the behaviour most compatible with
+  > Electron apps. `rejectUnauthorized: false` skips certificate verification for that
+  > connection; `ca` replaces the built-in roots; `cert`/`key`/`pfx`/`passphrase` present a
+  > client certificate; `servername` sets SNI and the name verified; `alpnProtocols` negotiates
+  > ALPN; and the socket reports `authorized`, `authorizationError`, the ALPN protocol and the
+  > peer certificate. A connection made with verification off is encrypted but
+  > unauthenticated. That is the app's own choice, made in its own code, and the grant prompt
+  > does not show it. Decision part 1 still holds by default.
+  >
+  > **The grant never widens.** Matching `https.connect` by hostname alone was justified above
+  > because default verification binds the name to the peer. Whenever an option removes that
+  > binding (`rejectUnauthorized: false`, the app's own `ca`, a `servername` other than the
+  > host), the broker also resolves the host once, requires every answer to pass the rule
+  > `tcp.connect` applies (`security-model.md` T12), and dials only the checked address.
+  > `servername` never takes part in the grant check. The cost: a LAN node with a self-signed
+  > certificate must be granted by address or as `localhost:<port>`. STARTTLS stays unsupported
+  > (`docs/open-questions.md` A226).
 - **Unlimited HTTPS is the widest permission in the system.** If the prompt renders it the same way
   as a narrow declaration, every manifest will declare unlimited and the prompt stops meaning
   anything. Making breadth visible is therefore load-bearing, not polish.

@@ -4,7 +4,7 @@
 socket, binding a UDP one, resolving a host, reading and writing files, and tearing a socket
 down.
 
-**What it depends on.** `node:net`, `node:dgram`, `node:dns/promises`, `node:fs`, `node:stream`,
+**What it depends on.** `node:net`, `node:tls`, `node:dgram`, `node:dns/promises`, `node:fs`, `node:stream`,
 [`../broker-contracts.ts`](../broker-contracts.ts) and [`../policy/connect.ts`](../policy/connect.ts).
 
 **What it must never import.** `electron`; this layer is the *Node* seam, not the Electron one
@@ -43,6 +43,17 @@ now, but that is an unspecified Node implementation detail, not a guarantee, and
 clone (the path this value takes to the renderer) serialises an `ArrayBufferView`'s whole backing
 `ArrayBuffer`. A pooled view would hand the page bytes it never read. One `memcpy` removes the
 dependence on that detail entirely rather than relying on it holding.
+
+**[`tls-adapter.ts`](tls-adapter.ts) passes the app's TLS options to `tls.connect` and binds
+`checkServerIdentity` to the name.** Node's default check verifies against `servername || host`,
+and here `host` may be a checked address literal (when `../net-connect-secure.ts` added the
+address check) and `servername` may be `''`, Node's way of sending no SNI. Binding Node's own
+`checkServerIdentity` to the intended name keeps verification identical to Node's in every case.
+Credentials that fail to load throw synchronously from `tls.connect`; they become `'invalid'`
+with a fixed message, so no key material reaches a log or the page. The handshake facts are
+reduced to plain data by [`tls-peer-certificate.ts`](tls-peer-certificate.ts), because Node's
+certificate object has a null prototype and pooled Buffers that would not cross IPC and
+contextBridge as the page expects.
 
 ### [`udp-adapter.ts`](udp-adapter.ts): why one queuing strategy enforces two bounds
 

@@ -26,6 +26,7 @@ vi.mock('electron', () => ({
 }))
 
 const { exposeOrivon } = await import('../orivon-surface.js')
+const { TIMEOUT_MS } = await import('../control-call.js')
 
 // socket-bridge.ts registers its PORT_CHANNEL listener exactly ONCE, at
 // module load (orivon-surface.ts's module-level `createSocketBridge(...)`
@@ -660,6 +661,18 @@ describe('exposeOrivon -- fs.userSelected (A194, d-0032) -- the file shape only'
     await expect(orivon.fs.userSelected()).resolves.toEqual([])
   })
 
+  it('waits as long for a person at the picker as for one at a grant prompt, in both shapes', async () => {
+    const target = installViaFakeMainWorld()
+    const budgets: number[] = []
+    invoke.mockImplementation(async (_channel: string, envelope: { timeoutMs: number }) => { budgets.push(envelope.timeoutMs); return okEnvelope(null) })
+    exposeOrivon()
+    const orivon = target.orivon as { fs: { userSelected: (opts?: { directory?: boolean }) => Promise<unknown> } }
+
+    await orivon.fs.userSelected({ directory: true }).catch(() => {})
+    await orivon.fs.userSelected().catch(() => {})
+
+    expect(budgets).toEqual([TIMEOUT_MS.grant, TIMEOUT_MS.grant])
+  })
 })
 
 describe('exposeOrivon -- fs.userSelected (A195, closing A194) -- the folder shape', () => {

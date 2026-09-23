@@ -10,7 +10,7 @@
 
 import { ipcMain, type BaseWindow, type View } from 'electron'
 import { SETTINGS_COMMAND_CHANNEL } from '../channels.js'
-import type { PermissionsController } from './permissions.js'
+import type { PermissionsController, SiteNotificationsController } from './permissions.js'
 import { registerSettingsIpc } from '../ipc/settings-ipc.js'
 import { createPopoverView } from './popover-view.js'
 import type { PopoverAnchor } from './popover-view.js'
@@ -29,7 +29,8 @@ export function createPermissionsPanel (
   win: BaseWindow,
   contentView: View,
   permissions: PermissionsController,
-  dirname: string
+  dirname: string,
+  sites: SiteNotificationsController
 ): PermissionsPanel {
   const popover = createPopoverView(win, contentView, {
     dirname,
@@ -39,7 +40,7 @@ export function createPermissionsPanel (
     urlArgName: 'orivon-settings-url',
     align: 'right',
     registerIpc: (webContents, onContentHeight) => {
-      registerSettingsIpc(webContents, permissions, onContentHeight)
+      registerSettingsIpc(webContents, permissions, onContentHeight, sites)
       return () => { ipcMain.removeHandler(SETTINGS_COMMAND_CHANNEL) }
     }
   })

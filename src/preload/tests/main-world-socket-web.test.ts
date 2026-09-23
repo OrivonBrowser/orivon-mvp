@@ -15,7 +15,7 @@ interface OrivonWebSurface {
       id: string
       origin: string
       closed: Promise<void>
-      evaluate: (script: string) => Promise<unknown>
+      evaluate: (script: string, options?: { timeoutMs?: number }) => Promise<unknown>
       close: () => Promise<void>
     }>
   }
@@ -62,6 +62,20 @@ describe('installOrivon -- web.openContext', () => {
 
     expect(calls).toEqual(['location.origin'])
     expect(result).toBe('https://example.com')
+  })
+
+  it('evaluate hands a per-call timeoutMs through to the bridge, which the broker enforces', async () => {
+    const bridge = fakeBridge(fakeSocketBridgeResult())
+    const calls: unknown[] = []
+    bridge.webOpenContext = async () => fakeWebContextBridgeResult({
+      evaluate: async (script, options) => { calls.push([script, options]); return 1 }
+    })
+    const orivon = install(bridge)
+
+    const context = await orivon.web.openContext('https://example.com')
+    await context.evaluate('1', { timeoutMs: 2_000 })
+
+    expect(calls).toEqual([['1', { timeoutMs: 2_000 }]])
   })
 
   it('close delegates to the nested bridge closure', async () => {

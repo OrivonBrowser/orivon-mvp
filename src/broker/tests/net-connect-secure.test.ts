@@ -14,7 +14,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { rejection } from '../handles/tests/handles.test-helpers.js'
-import { APP, baseDeps, brokerWithConnectSecureGrant, manifestWith, okSocket } from './index.test-helpers.js'
+import { APP, baseDeps, brokerWithConnectSecureGrant, manifestWith, okSecureSocket } from './index.test-helpers.js'
 import { createBroker } from '../index.js'
 import type { DialSecure } from '../broker-contracts.js'
 
@@ -57,7 +57,7 @@ describe('https.connect is a grant separate from tcp.connect', () => {
 
 describe('the hostname the app asked for authorises the call, never a resolved address', () => {
   it('denies a host the granted https.connect pattern does not name, without ever calling dialSecure', async () => {
-    const dialSecure = vi.fn(async () => okSocket())
+    const dialSecure = vi.fn(async () => okSecureSocket())
     const broker = createBroker(baseDeps({ dialSecure }))
     broker.registerApp(APP, manifestWith({ net: { https: { connect: ['api.example.com:443'] } } }))
     await broker.grant(APP, 'https.connect', ['api.example.com:443'])
@@ -70,9 +70,9 @@ describe('the hostname the app asked for authorises the call, never a resolved a
 
   it('passes dialSecure the checked, normalised host -- never the raw string the app supplied', async () => {
     const calls: Array<{ host: string, port: number }> = []
-    const dialSecure: DialSecure = async (host, port) => {
+    const dialSecure: DialSecure = async ({ host, port }) => {
       calls.push({ host, port })
-      return okSocket()
+      return okSecureSocket()
     }
     const broker = createBroker(baseDeps({ dialSecure }))
     broker.registerApp(APP, manifestWith({ net: { https: { connect: ['API.example.com:443'] } } }))
@@ -130,7 +130,7 @@ describe('revocation tears down a secure socket exactly as it does a plain one',
     expect(error.code).toBe('revoked')
 
     // The handshake "completes" only now -- late, after the grant is gone.
-    resolveDial(okSocket({ destroy: destroySpy }))
+    resolveDial(okSecureSocket({ destroy: destroySpy }))
     await nextTick()
 
     expect(destroySpy).toHaveBeenCalledWith('revoked')

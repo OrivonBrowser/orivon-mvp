@@ -1,8 +1,6 @@
 // Manifest parsing and validation -- pure, no I/O, no fetching, no caching.
 // Transcribed from docs/architecture/capability-api.md's "Manifest" section,
-// which is the specification. This is deliberately narrower than "the app loader":
-// fetch, hash-pinning and the update decision (src/broker/policy/update.ts)
-// depend on broker storage that does not exist yet (src/loader/README.md).
+// which is the specification.
 //
 // THE INPUT IS ADVERSARIAL. Any origin can serve a manifest at
 // /.well-known/orivon.json, and `id`/`name` are self-asserted
@@ -10,7 +8,9 @@
 // something plausible is how a manifest ends up meaning something the
 // publisher did not write -- every check below REJECTS, never repairs, the
 // same stance src/broker/policy/pin.ts and canonical-path.ts already take on
-// untrusted JSON.
+// untrusted JSON. The one thing skipped rather than refused is an unknown
+// TOP-LEVEL field (README.md's Design notes say why); inside `capabilities`
+// an unknown field is still a rejection.
 //
 // Rejections are DEVELOPER-FACING, unlike a capability denial
 // (contracts/errors.ts's uniform 'denied' -- varying that would turn a
@@ -32,6 +32,8 @@ import { readCapabilities } from './manifest-capabilities.js'
 export interface ManifestOk {
   readonly ok: true
   readonly manifest: Manifest
+  /** Unknown top-level field names, in manifest order: left out of `manifest`, for the caller to warn about. */
+  readonly ignoredFields: readonly string[]
 }
 
 export interface ManifestRejected {
@@ -54,7 +56,7 @@ export type ManifestResult = ManifestOk | ManifestRejected
 export function parseManifest (input: unknown): ManifestResult {
   try {
     const value = typeof input === 'string' ? parseJsonText(input) : input
-    return { ok: true, manifest: readManifest(value) }
+    return { ok: true, ...readManifest(value) }
   } catch (error) {
     if (error instanceof ManifestInvalid) return { ok: false, reason: error.message }
     throw error // a bug in this file, not an untrusted-input outcome -- never swallowed
@@ -67,10 +69,6 @@ export function parseManifest (input: unknown): ManifestResult {
 // silently assumed (CLAUDE.md Rule 1). Generous for any real manifest;
 // bounded so "absurd size" rejects before any of these fields are used for
 // real work.
-// Exported so fetch-bundle.ts can fail fast on a declared Content-Length
-// before downloading a manifest response, rather than duplicating the
-// number (Rule 3, docs/development/code-guidelines.md).
-export const MAX_MANIFEST_BYTES = 64 * 1024
 const MAX_ID_LENGTH = 255
 const MAX_NAME_LENGTH = 200
 const MAX_VERSION_LENGTH = 256
@@ -100,6 +98,18 @@ const CONSENT_GRANULARITIES: readonly ConsentGranularity[] = ['all-or-nothing', 
  * the manifest validator's own accepted range was the actual cause.
  */
 const MAX_ASSETS = MAX_BUNDLE_ENTRIES - 2
+
+/**
+ * Sized so a manifest declaring all MAX_ASSETS paths still fits: one
+ * ASSET_LINE_BYTES line per path (a 56-character relative path, quoted,
+ * indented and comma-terminated) plus a fixed allowance for every other
+ * field -- 278,400 bytes. Exported so fetch-bundle.ts can fail fast on a
+ * declared Content-Length before downloading a manifest response, rather
+ * than duplicating the number (Rule 3, docs/development/code-guidelines.md).
+ */
+const ASSET_LINE_BYTES = 64
+const NON_ASSET_ALLOWANCE_BYTES = 16 * 1024
+export const MAX_MANIFEST_BYTES = MAX_ASSETS * ASSET_LINE_BYTES + NON_ASSET_ALLOWANCE_BYTES
 
 // C0/C1 controls, bidi overrides and isolates (U+202A-U+202E, U+2066-U+2069),
 // zero-width characters (U+200B-U+200D, U+2060-U+2064, U+FEFF) and the
@@ -153,13 +163,15 @@ export function isAny (_value: unknown): _value is unknown {
  * is also what makes a `"__proto__"` or `"constructor"` key harmless here:
  * JSON.parse sets either as an ordinary own property, never the real
  * prototype slot, so Object.keys reports it like any other name and it is
- * rejected below for the mundane reason that it is not a recognised field.
+ * rejected (or, at the top level, ignored) for the mundane reason that it is
+ * not a recognised field.
  */
 export function extraKey (value: Record<string, unknown>, allowed: readonly string[]): string | null {
-  for (const key of Object.keys(value)) {
-    if (!allowed.includes(key)) return key
-  }
-  return null
+  return unknownKeys(value, allowed)[0] ?? null
+}
+
+function unknownKeys (value: Record<string, unknown>, allowed: readonly string[]): string[] {
+  return Object.keys(value).filter((key) => !allowed.includes(key))
 }
 
 /** Renders an untrusted value for an error message without recursing into it. */
@@ -364,10 +376,8 @@ function readConsentGranularity (value: Record<string, unknown>): ConsentGranula
 
 // --- top level ---------------------------------------------------------------
 
-function readManifest (value: unknown): Manifest {
+function readManifest (value: unknown): Omit<ManifestOk, 'ok'> {
   if (!isRecord(value)) reject(`manifest must be a JSON object, got ${describeValue(value)}`)
-  const extra = extraKey(value, MANIFEST_KEYS)
-  if (extra !== null) reject(`manifest has an unrecognised field: ${describeValue(extra)}`)
 
   const orivonApiVersion = ownProperty(value, 'orivonApiVersion', isAny)
   if (orivonApiVersion !== 0) {
@@ -405,6 +415,9 @@ function readManifest (value: unknown): Manifest {
   }
 
   const entry = requireString(value, 'entry', 1, MAX_ENTRY_LENGTH)
+  if (entry === '/') {
+    reject('entry must name the root document\'s file, e.g. "index.html" -- it is fetched at that path, and served at "/"')
+  }
   validateRelativePath('entry', entry)
 
   const assets = readAssets(value, entry)
@@ -415,7 +428,7 @@ function readManifest (value: unknown): Manifest {
 
   const consentGranularity = readConsentGranularity(value)
 
-  return {
+  const manifest: Manifest = {
     orivonApiVersion: 0,
     id,
     name,
@@ -425,6 +438,7 @@ function readManifest (value: unknown): Manifest {
     capabilities,
     ...(consentGranularity !== undefined && { consentGranularity })
   }
+  return { manifest, ignoredFields: unknownKeys(value, MANIFEST_KEYS) }
 }
 
 function parseJsonText (text: string): unknown {

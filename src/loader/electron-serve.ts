@@ -30,10 +30,16 @@ import type { CapabilityKind, Pattern } from '../contracts/index.js'
 import { createPinCoverageTracker } from './pin-coverage.js'
 import type { PinCoverageSnapshot } from './pin-coverage.js'
 import { createAppRequestHandler, fetchThirdParty, verifiedManifestFor } from './serve.js'
+import { saveCheckRecord } from './update-check.js'
 import type { AppRequestHandler, AuthoriseReach } from './serve.js'
+import { cspHeaderValue } from './serve-csp.js'
 import { nodeReachDial } from './serve-reach.js'
-import type { ReleaseReachSlot, ReserveReachSlot } from './serve-reach-guard.js'
+import { createRedirectChains } from './serve-reach-redirects.js'
+import { createReachSlotPool } from './serve-reach-slots.js'
+import type { ReachSlotPool } from './serve-reach-slots.js'
 import type { LoaderStorage } from './storage.js'
+import { parsePinRecord } from '../broker/policy/pin.js'
+import type { PinRecord } from '../broker/policy/pin.js'
 
 /**
  * One pin-coverage tracker per origin currently being served, keyed the same
@@ -52,44 +58,51 @@ export function pinCoverageFor (origin: string): PinCoverageSnapshot | undefined
 }
 
 /**
- * A200 (docs/open-questions.md): per-origin count of third-party reach
- * requests currently in flight -- module state mirroring `coverageTrackers`
- * above, for the identical reason: `registerServingFor` resets this
- * origin's entry on every call, so a reinstall within one run starts a
- * fresh count rather than inheriting a stale one from the session it
- * replaced.
+ * A200 (docs/open-questions.md): one reach-slot pool per origin, for the
+ * process's lifetime. Not reset when an origin is re-registered: requests
+ * the previous handler started are still real open connections, and each
+ * releases into the pool it reserved from.
  */
-const reachSlotsInUse = new Map<string, number>()
+const reachSlotPools = new Map<string, ReachSlotPool>()
 
 /**
- * Builds the (reserve, release) pair `serve.ts`'s `fetchThirdParty` uses to
- * cap this origin's concurrent third-party reach requests at its
+ * The (reserve, release) pair `serve.ts`'s `fetchThirdParty` uses to cap
+ * this origin's concurrent third-party reach requests at its
  * manifest-declared socket allowance -- `Broker.app.socketAllowanceSync`,
  * the SAME clamp `net.connect`/`net.connectSecure`/`net.listen` already
  * enforce for a live handle (`GrantLedger.socketAllowance`, never
- * reimplemented here -- code-guidelines.md Rule 3).
- *
- * CHECK-AND-RESERVE IN ONE SYNCHRONOUS STEP, the discipline
- * `GrantLedger.reserveFsBytes`'s own doc names: two reach requests racing
- * this function must not both read the same pre-reservation count and both
- * pass.
+ * reimplemented here -- code-guidelines.md Rule 3). Shared by the app's own
+ * document and every web context it opens, so all of them draw on one count.
  */
-function reachSlotsFor (broker: Broker, origin: string): { reserve: ReserveReachSlot, release: ReleaseReachSlot } {
-  return {
-    reserve: () => {
-      const inUse = reachSlotsInUse.get(origin) ?? 0
-      if (inUse >= broker.app.socketAllowanceSync(origin)) return false
-      reachSlotsInUse.set(origin, inUse + 1)
-      return true
-    },
-    release: () => {
-      const inUse = reachSlotsInUse.get(origin) ?? 0
-      // Clamped at zero, mirroring GrantLedger.releaseFsBytes's own
-      // reasoning: a mismatched caller degrades to an over-strict budget,
-      // never a negative count a future reserve could exploit.
-      reachSlotsInUse.set(origin, Math.max(0, inUse - 1))
-    }
+function reachSlotsFor (broker: Broker, origin: string): ReachSlotPool {
+  let pool = reachSlotPools.get(origin)
+  if (pool === undefined) {
+    pool = createReachSlotPool(() => broker.app.socketAllowanceSync(origin))
+    reachSlotPools.set(origin, pool)
   }
+  return pool
+}
+
+/**
+ * Every file (path -> leaf) each origin's pins have served this process.
+ * After an update, a page still running the previous bundle may lazily
+ * `import()` one of its old hashed chunks; those files stay on disk until
+ * the next start prunes them (`restorePinnedServing`), and stay servable
+ * until then, checked against the leaf they were pinned with.
+ */
+const servedAssets = new Map<string, Map<string, string>>()
+
+function rememberServed (origin: string, pin: PinRecord): void {
+  const served = servedAssets.get(origin) ?? new Map<string, string>()
+  for (const asset of pin.assets) served.set(asset.path, asset.leaf)
+  servedAssets.set(origin, served)
+}
+
+/** The files earlier pins served that `pin` no longer declares. */
+function retainedAssets (origin: string, pin: PinRecord): ReadonlyMap<string, string> {
+  const retained = new Map(servedAssets.get(origin))
+  for (const asset of pin.assets) retained.delete(asset.path)
+  return retained
 }
 
 /**
@@ -144,8 +157,9 @@ export function isOriginServedFromCacheSync (origin: string): boolean {
 
 /**
  * `origin`'s live grant for `capability`, straight off the broker -- shared
- * by `grantedConnectPatternsFor` (`tcp.connect`, the `connect-src` header)
- * and `secureHeaderPatternsFor` (`https.connect`, `img-src`/`font-src`/
+ * by `grantedConnectPatternsFor` (`tcp.connect`, bare sources in
+ * `connect-src`) and `secureHeaderPatternsFor` (`https.connect`, the reach
+ * sources serve-csp.ts puts in `connect-src`/`img-src`/`font-src`/
  * `media-src`) below, which differ only in which capability they ask for
  * (code-guidelines.md Rule 3: one implementation, not two that happen to
  * look alike). Falls back to `[]` on ANY failure (an unregistered origin, or
@@ -182,13 +196,17 @@ async function grantedConnectPatternsFor (broker: Broker, origin: string): Promi
   return await liveGrantedPatternsFor(broker, origin, 'tcp.connect')
 }
 
-/** `img-src`/`font-src`/`media-src`'s source -- `https.connect`, a SEPARATE
- * grant from `tcp.connect` above. `fetchThirdParty`/`authoriseReachFor`
- * (serve.ts) independently live-check every actual request regardless of
- * what this header claims, so this is doubly safe even though, since A158's
- * fix, it is also simply correct. */
+/** The reach directives' source -- `https.connect`, a SEPARATE grant from
+ * `tcp.connect` above. `fetchThirdParty`/`authoriseReachFor` (serve.ts)
+ * independently live-check every `https:` request regardless of what this
+ * header claims. */
 async function secureHeaderPatternsFor (broker: Broker, origin: string): Promise<readonly Pattern[]> {
   return await liveGrantedPatternsFor(broker, origin, 'https.connect')
+}
+
+/** The CSP a served response carries, from `origin`'s live grants -- shared with developer mode (src/main/dev/dev-csp.ts), so a dev origin runs under the same policy an installed one does. */
+export async function liveCspHeaderFor (broker: Broker, origin: string): Promise<string> {
+  return cspHeaderValue(await grantedConnectPatternsFor(broker, origin), await secureHeaderPatternsFor(broker, origin))
 }
 
 /**
@@ -240,8 +258,9 @@ export function reachOnlyHandlerFor (broker: Broker, opener: string): (request: 
   const authoriseReach = authoriseReachFor(broker, opener)
   const reachDial = nodeReachDial()
   const { reserve, release } = reachSlotsFor(broker, opener)
+  const options = { redirects: createRedirectChains() }
   return async (request: Request): Promise<Response> =>
-    await fetchThirdParty(request, authoriseReach, reachDial, undefined, reserve, release)
+    await fetchThirdParty(request, authoriseReach, reachDial, undefined, reserve, release, options)
 }
 
 /**
@@ -256,9 +275,9 @@ export function reachOnlyHandlerFor (broker: Broker, opener: string): (request: 
  * per-request CSP source (`grantedConnectPatternsFor`/`secureHeaderPatternsFor`
  * above) and as the live gate for a third-party request (`authoriseReachFor`,
  * A143) -- `undefined` (no broker subsystem this run) still serves the app,
- * with `connect-src`/`img-src`/`font-src`/`media-src` all `'self'` only and
- * third-party reach refused outright, which is the same safe "nothing
- * granted" answer as before this lane, not a degraded mode of it.
+ * with no grant-derived source in any directive and third-party reach
+ * refused outright: the same safe "nothing granted" answer, not a degraded
+ * mode of it.
  *
  * `nodeReachDial()` (A143, `serve-reach.ts`) is wired in unconditionally --
  * it needs no broker and performs no I/O until `fetchThirdParty` actually
@@ -270,7 +289,9 @@ export function reachOnlyHandlerFor (broker: Broker, opener: string): (request: 
  * nothing can answer a real request for `origin` until `registerAppOrigin`
  * (below) actually wires the handler onto the session, so hydrating before
  * that call guarantees every capability check this origin's first document
- * can ever trigger already sees its real, persisted grants.
+ * can ever trigger already sees its real, persisted grants, and that the
+ * broker already counts the origin as registered (README.md, "A restored
+ * app is a registered app from startup") when its first tab is built.
  * `verifiedManifestFor` performs its own independent whole-tree
  * re-verification (see its own doc for why that is an accepted, bounded
  * cost rather than a second source of truth) and answers `undefined` for
@@ -279,16 +300,21 @@ export function reachOnlyHandlerFor (broker: Broker, opener: string): (request: 
  * deny every request for this origin, so there is nothing to hydrate FROM.
  */
 export async function registerServingFor (storage: LoaderStorage, origin: string, broker?: Broker): Promise<void> {
-  if (broker !== undefined) {
-    const pinnedManifest = await verifiedManifestFor(storage, origin)
-    if (pinnedManifest !== undefined) await broker.app.hydrateFromPinnedManifest(origin, pinnedManifest)
+  const pinnedManifest = await verifiedManifestFor(storage, origin)
+  // A damaged cache must not wait out the update-check interval, or answer a
+  // 304 for a manifest it no longer holds intact: the next visit checks in full.
+  if (pinnedManifest === undefined) await saveCheckRecord(storage, origin, undefined)
+  if (pinnedManifest === undefined && !carriesLiveAuthority(origin, broker)) {
+    // README.md, "When the cached bundle fails verification": serve nothing,
+    // so the origin loads as an ordinary website and its hint reinstalls it.
+    console.warn(`[loader] ${origin}'s cached bundle is missing or failed verification; not serving it, so its next visit can reinstall it`)
+    return
   }
+  if (broker !== undefined && pinnedManifest !== undefined) await broker.app.hydrateFromPinnedManifest(origin, pinnedManifest)
+  const pin = pinnedManifest === undefined ? null : parsePinRecord(await storage.readPin(origin))
 
   const tracker = createPinCoverageTracker()
   coverageTrackers.set(origin, tracker)
-  // A200: a reinstall within this run starts a fresh count too -- see
-  // `reachSlotsInUse`'s own doc, mirroring `coverageTrackers` just above.
-  reachSlotsInUse.set(origin, 0)
   const reachSlots = broker === undefined ? undefined : reachSlotsFor(broker, origin)
 
   const handler = await createAppRequestHandler(
@@ -300,10 +326,22 @@ export async function registerServingFor (storage: LoaderStorage, origin: string
     nodeReachDial(),
     tracker.record,
     reachSlots?.reserve,
-    reachSlots?.release
+    reachSlots?.release,
+    pin === null ? undefined : retainedAssets(origin, pin)
   )
   const { session } = await import('electron')
   registerAppOrigin(session.fromPartition(partitionFor(origin)), origin, handler)
+  if (pin !== null) rememberServed(origin, pin)
+}
+
+/**
+ * Whether `origin`'s partition already carries authority this session -- it
+ * is being served from cache, or holds a live grant. Such an origin whose
+ * bundle then fails verification keeps a handler that denies everything:
+ * its partition must never fall through to whatever the network serves.
+ */
+function carriesLiveAuthority (origin: string, broker: Broker | undefined): boolean {
+  return isOriginServedFromCacheSync(origin) || broker?.app.hasGrantsSync(origin) === true
 }
 
 /**
@@ -326,6 +364,21 @@ export async function isOriginServedFromCache (origin: string): Promise<boolean>
   }
   const { session } = await import('electron')
   return session.fromPartition(partitionFor(origin)).protocol.isProtocolHandled(scheme)
+}
+
+/**
+ * At start, before any page can still need them: deletes the files earlier
+ * pins left behind (install never prunes, see install.ts) and any staging a
+ * crash left. A failure is logged; it costs disk, never correctness.
+ */
+async function pruneToPin (storage: LoaderStorage, origin: string): Promise<void> {
+  try {
+    const pin = parsePinRecord(await storage.readPin(origin))
+    if (pin !== null) await storage.pruneAssets(origin, pin.assets.map((asset) => asset.path))
+    await storage.clearStaging(origin)
+  } catch (error) {
+    console.error('[loader] could not prune superseded files at start', origin, error)
+  }
 }
 
 /** One origin's outcome from `restorePinnedServing`, for the caller's own logging/tests. */
@@ -364,6 +417,7 @@ export async function restorePinnedServing (storage: LoaderStorage, broker?: Bro
   for (const origin of origins) {
     try {
       await registerServingFor(storage, origin, broker)
+      await pruneToPin(storage, origin)
       results.push({ origin, ok: true })
     } catch (error) {
       console.error('[loader] failed to restore cache-serving for', origin, error)

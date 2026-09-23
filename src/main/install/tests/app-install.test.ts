@@ -94,6 +94,27 @@ describe('installFromHint', () => {
     consoleError.mockRestore()
   })
 
+  // A tab built before its origin was registered has no app-tab flag, so it
+  // needs one reload; manifest-hint.ts reloads on exactly this marker.
+  it('marks an install that newly registered the origin this session', async () => {
+    let registered = false
+    const broker = fakeBroker({ registerApp: async () => { registered = true }, isRegisteredSync: () => registered })
+    const loader = fakeLoader(installedResult(manifestWith('1.0.0')))
+
+    const result = await installFromHint({ broker, loader }, APP, APP)
+
+    expect(result.outcome === 'installed' && result.newlyRegistered).toBe(true)
+  })
+
+  it('does not mark an install for an origin that was already registered (a restored app, or a repeat visit)', async () => {
+    const broker = fakeBroker({ isRegisteredSync: () => true })
+    const loader = fakeLoader(installedResult(manifestWith('1.0.0')))
+
+    const result = await installFromHint({ broker, loader }, APP, APP)
+
+    expect(result.outcome === 'installed' && result.newlyRegistered).toBeFalsy()
+  })
+
   // A60: registerApp must only fire on an ACCEPTED install, never a bare
   // fetch/parse -- otherwise a hostile origin can poison the version floor
   // with a fake high version and lock itself out of every real future

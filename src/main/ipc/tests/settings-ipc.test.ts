@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { PermissionsController } from '../../permissions/permissions.js'
+import type { PermissionsController, SiteNotificationsController } from '../../permissions/permissions.js'
 
 // The settings window's own channel (queue item 4.4) -- list()/revoke()
 // dispatch, and the sender-identity check every command here gets (mirrors
@@ -80,5 +80,33 @@ describe('registerSettingsIpc', () => {
     await dispatch({ type: 'list' }, null)
 
     expect(permissions.list).not.toHaveBeenCalled()
+  })
+
+  // The site list: each site's notification answer, and Reset, which
+  // forgets it so the site asks again.
+  it('lists the sites\' notification answers, and resets one by origin', async () => {
+    const rows = [{ origin: 'https://chat.example', allowed: true, message: 'Can show notifications.' }]
+    const sites: SiteNotificationsController = { list: vi.fn(() => rows), reset: vi.fn() }
+    registerSettingsIpc(settingsWebContents, fakePermissions(), () => {}, sites)
+
+    expect(await dispatch({ type: 'listSiteNotifications' })).toEqual(rows)
+    await dispatch({ type: 'resetSiteNotifications', origin: 'https://chat.example' })
+    expect(sites.reset).toHaveBeenCalledWith('https://chat.example')
+  })
+
+  it('ignores a reset whose origin is not a string, and one from another frame', async () => {
+    const sites: SiteNotificationsController = { list: vi.fn(() => []), reset: vi.fn() }
+    registerSettingsIpc(settingsWebContents, fakePermissions(), () => {}, sites)
+
+    await dispatch({ type: 'resetSiteNotifications', origin: 42 })
+    await dispatch({ type: 'resetSiteNotifications', origin: 'https://chat.example' }, OTHER_FRAME)
+    await dispatch({ type: 'listSiteNotifications' }, OTHER_FRAME)
+    expect(sites.reset).not.toHaveBeenCalled()
+    expect(sites.list).not.toHaveBeenCalled()
+  })
+
+  it('lists no sites when the panel was given no site list', async () => {
+    registerSettingsIpc(settingsWebContents, fakePermissions())
+    expect(await dispatch({ type: 'listSiteNotifications' })).toEqual([])
   })
 })

@@ -8,8 +8,10 @@
 // see that file's own doc for why.
 
 import { fail } from '../errors.js'
-import type { Broker } from '../broker-contracts.js'
+import type { Broker, FailableSecureTcpSocket } from '../broker-contracts.js'
 import type { FailableTcpSocket } from '../handles/handle-contracts.js'
+import type { SecureHandshake } from '../../contracts/index.js'
+import { parseSecureConnectParams } from './secure-connect-params.js'
 import { createSocketRelay } from './socket-relay.js'
 import { createDatagramRelay } from './datagram-relay.js'
 import { deliverPort } from './deliver-port.js'
@@ -97,6 +99,14 @@ async function deliverTcpSocket (
   }
 }
 
+/** Just the handshake facts, picked rather than spread: the socket also carries streams and functions, which cannot clone. */
+function handshakeOf (socket: FailableSecureTcpSocket): SecureHandshake {
+  const { authorized, authorizationError, alpnProtocol, peerCertificate } = socket
+  return authorizationError === undefined
+    ? { authorized, alpnProtocol, peerCertificate }
+    : { authorized, authorizationError, alpnProtocol, peerCertificate }
+}
+
 /** `net.*`'s dispatch cases, unchanged from ./ipc.ts's own switch. */
 export async function dispatchNet (
   broker: Broker,
@@ -113,18 +123,19 @@ export async function dispatchNet (
       const socket = await broker.net.connect(origin, { host: payload.host, port: payload.port })
       return await deliverTcpSocket(origin, socket, event, transport)
     }
-    // A SIBLING of net.connect above, not a variant: the broker method
-    // (checked against the separate https.connect grant and dialled via
-    // node:tls -- ../net-capability.ts's own connectSecure) is the only
-    // thing that differs. `broker.net.connectSecure` resolves to the exact
-    // same FailableTcpSocket shape net.connect does, so everything past
-    // that call -- the port pair, the byte-pump relay, the port delivery,
-    // the descriptor -- is deliverTcpSocket, unchanged.
+    // A SIBLING of net.connect above, not a variant: the payload's TLS
+    // options (./secure-connect-params.ts) and the broker method (checked
+    // against the separate https.connect grant and dialled via node:tls --
+    // ../net-connect-secure.ts) differ. Everything past that call -- the
+    // port pair, the byte-pump relay, the port delivery -- is
+    // deliverTcpSocket, unchanged; the reply adds the handshake facts.
     case 'net.connectSecure': {
-      if (!isNetConnectParams(payload)) throw fail('invalid', 'net.connectSecure requires { host: string, port: number }')
+      const parsed = parseSecureConnectParams(payload)
+      if (!parsed.ok) throw fail('invalid', `net.connectSecure: ${parsed.problem}`)
       if (transport === undefined) throw fail('internal', 'no port transport configured for this broker')
-      const socket = await broker.net.connectSecure(origin, { host: payload.host, port: payload.port })
-      return await deliverTcpSocket(origin, socket, event, transport)
+      const socket = await broker.net.connectSecure(origin, parsed.params)
+      const descriptor = await deliverTcpSocket(origin, socket, event, transport)
+      return { ...descriptor, tls: handshakeOf(socket) }
     }
     case 'net.udpBind': {
       if (!isNetUdpBindParams(payload)) throw fail('invalid', 'net.udpBind requires { port: number }')

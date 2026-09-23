@@ -13,6 +13,7 @@ import { APP, baseDeps, manifestWith } from './index.test-helpers.js'
 import { createBroker } from '../index.js'
 import type { LookupAddress } from '../../contracts/index.js'
 import { LIMITS } from '../../contracts/index.js'
+import { IN_FLIGHT_QUEUE_LIMIT } from '../handles/in-flight.js'
 
 describe("orivon.net.lookup is bounded by the app's own held network grant (d-0030)", () => {
   it('denies when the app holds no network grant at all', async () => {
@@ -222,12 +223,34 @@ describe("orivon.net.lookup is bounded by the app's own held network grant (d-00
     broker.registerApp(APP, manifestWith({ net: { tcp: { connect: ['api.example.com:443'] } } }))
     await broker.grant(APP, 'tcp.connect', ['api.example.com:443'])
 
-    for (let i = 0; i < LIMITS.inFlightOperations; i += 1) {
+    for (let i = 0; i < LIMITS.inFlightOperations + IN_FLIGHT_QUEUE_LIMIT; i += 1) {
       void broker.net.lookup(APP, { hostname: 'api.example.com' }).catch(() => {})
     }
 
     const outcome = await outcomeNow(broker.net.lookup(APP, { hostname: 'api.example.com' }))
     expect(outcome.state).toBe('rejected')
     expect(outcome.state === 'rejected' ? outcome.error.code : null).toBe('limit')
+  })
+})
+
+describe('lookup("localhost")', () => {
+  it('answers loopback without resolving, under a grant that names localhost', async () => {
+    const resolved: string[] = []
+    const broker = createBroker(baseDeps({ resolveLookup: async (name) => { resolved.push(name); return [] } }))
+    broker.registerApp(APP, manifestWith({ net: { tcp: { connect: ['localhost:8080'] } } }))
+    await broker.grant(APP, 'tcp.connect', ['localhost:8080'])
+
+    const addresses = await broker.net.lookup(APP, { hostname: 'localhost' })
+
+    expect(addresses).toEqual([{ address: '127.0.0.1', family: 'IPv4' }, { address: '::1', family: 'IPv6' }])
+    expect(resolved).toEqual([])
+  })
+
+  it('stays unreachable under a wildcard grant, which cannot connect there either', async () => {
+    const broker = createBroker(baseDeps({ resolveLookup: async () => [{ address: '127.0.0.1', family: 'IPv4' } as const] }))
+    broker.registerApp(APP, manifestWith({ net: { tcp: { connect: ['*:*'] } } }))
+    await broker.grant(APP, 'tcp.connect', ['*:*'])
+
+    expect((await rejection(broker.net.lookup(APP, { hostname: 'localhost' }))).code).toBe('unreachable')
   })
 })

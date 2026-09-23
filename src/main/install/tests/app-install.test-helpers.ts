@@ -44,6 +44,7 @@ export function fakeBroker (
     acknowledgeRollback: Broker['acknowledgeRollback']
     recordDeclinedConsent: Broker['recordDeclinedConsent']
     clearDeclinedConsent: Broker['clearDeclinedConsent']
+    isRegisteredSync: (origin: string) => boolean
   }> = {},
   calls: BrokerCall[] = []
 ): Broker {
@@ -56,7 +57,8 @@ export function fakeBroker (
     grant: overrides.grant ?? (async (origin, capability, patterns) => ({ id: 'g1', origin, capability, patterns, grantedAt: 0 })),
     acknowledgeRollback: overrides.acknowledgeRollback ?? (async () => {}),
     recordDeclinedConsent: overrides.recordDeclinedConsent ?? (async () => {}),
-    clearDeclinedConsent: overrides.clearDeclinedConsent ?? (async () => {})
+    clearDeclinedConsent: overrides.clearDeclinedConsent ?? (async () => {}),
+    ...(overrides.isRegisteredSync !== undefined && { isRegisteredSync: overrides.isRegisteredSync })
   })
 }
 

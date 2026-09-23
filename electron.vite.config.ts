@@ -1,9 +1,56 @@
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
+import { createRequire } from 'node:module'
 import { defineConfig } from 'electron-vite'
-import { buildAliasEntries } from './src/shim/module-map.js'
+import { build, normalizePath, type Plugin } from 'vite'
+import { aliasPattern, buildAliasEntries } from './src/shim/module-map.js'
 
 const root = dirname(fileURLToPath(import.meta.url))
+
+/** The name src/preload/page-buffer.ts's installer reads the `buffer` package through. */
+export const BUFFER_PACKAGE_PLACEHOLDER = '__ORIVON_BUFFER_PACKAGE__'
+const PAGE_BUFFER_SOURCE = normalizePath(resolve(root, 'src/preload/page-buffer.ts'))
+
+/** One expression evaluating to the `buffer` package's exports: the copy the shim's own `buffer` module imports, bundled whole. */
+async function bufferPackageExpression (): Promise<string> {
+  const entry = createRequire(resolve(root, 'src/shim/node-buffer.ts')).resolve('buffer/')
+  const result = await build({
+    configFile: false,
+    logLevel: 'warn',
+    build: {
+      write: false,
+      minify: false,
+      lib: { entry, formats: ['iife'], name: 'bufferPackage' },
+      rollupOptions: { output: { exports: 'named' } }
+    }
+  })
+  const chunk = [result].flat().flatMap((out) => 'output' in out ? out.output : [])[0]
+  if (chunk?.type !== 'chunk') throw new Error('bundling the buffer package produced no chunk')
+  return `(function () {\n${chunk.code}\nreturn bufferPackage.default\n})()`
+}
+
+/**
+ * Inlines the `buffer` package into src/preload/page-buffer.ts's installer,
+ * which contextBridge.executeInMainWorld serialises alone. Fails the build
+ * rather than ship the placeholder, which the page would meet as a
+ * ReferenceError.
+ */
+export function pageBufferPackage (): Plugin {
+  let expression: Promise<string> | undefined
+  return {
+    name: 'orivon:page-buffer-package',
+    enforce: 'post',
+    async transform (code, id) {
+      if (normalizePath(id.split('?')[0] ?? id) !== PAGE_BUFFER_SOURCE) return null
+      const uses = code.split(BUFFER_PACKAGE_PLACEHOLDER).length - 1
+      if (uses !== 1) throw new Error(`${PAGE_BUFFER_SOURCE} must name ${BUFFER_PACKAGE_PLACEHOLDER} exactly once, not ${String(uses)} times`)
+      expression ??= bufferPackageExpression()
+      const inlined = await expression
+      // A function, not the string: a replacement string expands `$&` and `$'` found in the package's source.
+      return { code: code.replace(BUFFER_PACKAGE_PLACEHOLDER, () => inlined), map: null }
+    }
+  }
+}
 
 // WORKAROUND, found 2026-08-28: electron-vite 5.0.0's own `isolatedEntries`
 // preload feature (used below -- see the `preload` config's own comment for
@@ -57,6 +104,7 @@ export default defineConfig({
     // this just keeps the remaining, now-harmless calls from being noisy
     // in piped/CI output.
     logLevel: 'warn',
+    plugins: [pageBufferPackage()],
     build: {
       // CommonJS by default, which is what a sandboxed preload requires --
       // it has no ESM context and loads electron via require. See the note
@@ -152,10 +200,12 @@ export default defineConfig({
       // change an entry there, not here. A 'local' entry resolves against
       // src/shim/ (below); a 'package' entry is an npm specifier, used as
       // written. See module-map.ts for why the split exists.
-      alias: Object.fromEntries(
-        buildAliasEntries().map(({ specifier, kind, implementation }) =>
-          [specifier, kind === 'package' ? implementation : resolve(root, 'src/shim', implementation)])
-      )
+      // Each row matches whole, bare or `node:`-prefixed (module-map.ts's
+      // aliasPattern); vitest.config.ts resolves shim tests the same way.
+      alias: buildAliasEntries().map(({ specifier, kind, implementation }) => ({
+        find: aliasPattern(specifier),
+        replacement: kind === 'package' ? implementation : resolve(root, 'src/shim', implementation)
+      }))
     }
   }
 })

@@ -17,8 +17,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { rejection } from '../handles/tests/handles.test-helpers.js'
 import { APP, baseDeps, manifestWith } from './index.test-helpers.js'
 import { createBroker } from '../index.js'
-import { createDialTls } from '../adapters/tls-adapter.js'
-import { generateTlsFixture } from '../adapters/tests/tls-adapter.test-helpers.js'
+import { createDialTls, dialTls } from '../adapters/tls-adapter.js'
+import { generateSelfSignedFixture, generateTlsFixture } from '../adapters/tests/tls-adapter.test-helpers.js'
 
 describe('net.connectSecure end to end: a real handshake, and a real refusal', () => {
   let server: Server
@@ -83,5 +83,71 @@ describe('net.connectSecure end to end: a real handshake, and a real refusal', (
 
     expect(error.code).toBe('denied')
     expect(error.platformCode).toBeUndefined()
+  })
+})
+
+describe('net.connectSecure end to end against a self-signed server, through the production dialTls', () => {
+  let server: Server
+  let port: number
+  let selfSignedCert: string
+
+  beforeAll(async () => {
+    const fixture = generateSelfSignedFixture()
+    selfSignedCert = fixture.cert
+    server = createServer({ key: fixture.key, cert: fixture.cert }, (socket) => {
+      socket.end('hello from the self-signed server')
+    })
+    await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
+    const address = server.address()
+    if (address === null || typeof address === 'string') throw new Error('server did not report a port')
+    port = address.port
+  })
+
+  afterAll(async () => {
+    await new Promise<void>((resolve) => { server.close(() => resolve()) })
+  })
+
+  async function granted (): Promise<ReturnType<typeof createBroker>> {
+    const broker = createBroker(baseDeps({ dialSecure: dialTls }))
+    broker.registerApp(APP, manifestWith({ net: { https: { connect: [`localhost:${String(port)}`] } } }))
+    await broker.grant(APP, 'https.connect', [`localhost:${String(port)}`])
+    return broker
+  }
+
+  async function readText (readable: ReadableStream<Uint8Array>): Promise<string> {
+    const reader = readable.getReader()
+    const chunks: Uint8Array[] = []
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      chunks.push(value)
+    }
+    return Buffer.concat(chunks).toString('utf8')
+  }
+
+  it('the default refuses it as unreachable, naming the verification failure', async () => {
+    const error = await rejection((await granted()).net.connectSecure(APP, { host: 'localhost', port }))
+
+    expect(error.code).toBe('unreachable')
+    expect(error.platformCode).toBe('DEPTH_ZERO_SELF_SIGNED_CERT')
+  })
+
+  it('rejectUnauthorized: false really connects, and says the peer was not authorised', async () => {
+    const socket = await (await granted()).net.connectSecure(APP, { host: 'localhost', port, rejectUnauthorized: false })
+
+    expect(await readText(socket.readable)).toBe('hello from the self-signed server')
+    expect(socket.authorized).toBe(false)
+    expect(socket.authorizationError).toBe('DEPTH_ZERO_SELF_SIGNED_CERT')
+    expect(socket.peerCertificate?.subject).toEqual({ CN: 'localhost' })
+    expect(socket.remoteAddress).toBe('127.0.0.1')
+    await socket.close()
+  })
+
+  it('ca naming the certificate makes the default accept it', async () => {
+    const socket = await (await granted()).net.connectSecure(APP, { host: 'localhost', port, ca: selfSignedCert })
+
+    expect(socket.authorized).toBe(true)
+    expect(await readText(socket.readable)).toBe('hello from the self-signed server')
+    await socket.close()
   })
 })

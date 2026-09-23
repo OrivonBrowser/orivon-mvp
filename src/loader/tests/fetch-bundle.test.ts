@@ -2,9 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MAX_ASSET_BYTES, MAX_BUNDLE_BYTES } from '../../broker/policy/bundle-hash.js'
 import { MAX_ANSWERS } from '../../broker/policy/connect.js'
 import type { Resolver } from '../../broker/policy/connect.js'
-import { BUNDLE_TIMEOUT_MS, FETCH_TIMEOUT_MS, fetchBundle } from '../fetch-bundle.js'
+import { BUNDLE_TIMEOUT_MS, FETCH_IDLE_TIMEOUT_MS, fetchBundle } from '../fetch-bundle.js'
 import type { Fetch } from '../fetch-bundle.js'
-import { MANIFEST_URL, ORIGIN, PUBLIC_RESOLVER, manifestJson, stubFetch, utf8 } from './test-helpers.js'
+import { MANIFEST_URL, ORIGIN, PUBLIC_RESOLVER, manifestJson, memoryStorage, stubFetch, utf8 } from './test-helpers.js'
 import type { RouteSpec } from './test-helpers.js'
 
 describe('fetchBundle: happy path', () => {
@@ -14,7 +14,7 @@ describe('fetchBundle: happy path', () => {
       [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html><title>a</title>') },
       [`${ORIGIN}/app.js`]: { body: utf8('console.log(1)') }
     }
-    const result = await fetchBundle(stubFetch(routes), ORIGIN, PUBLIC_RESOLVER)
+    const result = await fetchBundle(stubFetch(routes), ORIGIN, PUBLIC_RESOLVER, memoryStorage())
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.canonicalOrigin).toBe(ORIGIN)
@@ -31,14 +31,14 @@ describe('fetchBundle: happy path', () => {
       [MANIFEST_URL]: { body: utf8(manifestJson()) },
       [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>') }
     }
-    const result = await fetchBundle(stubFetch(routes), ORIGIN, PUBLIC_RESOLVER)
+    const result = await fetchBundle(stubFetch(routes), ORIGIN, PUBLIC_RESOLVER, memoryStorage())
     expect(result.ok).toBe(true)
   })
 })
 
 describe('fetchBundle: origin and discovery', () => {
   it('rejects a hintedUrl that is not a valid origin', async () => {
-    const result = await fetchBundle(stubFetch({}), 'not a url', PUBLIC_RESOLVER)
+    const result = await fetchBundle(stubFetch({}), 'not a url', PUBLIC_RESOLVER, memoryStorage())
     expect(result.ok).toBe(false)
   })
 
@@ -47,7 +47,7 @@ describe('fetchBundle: origin and discovery', () => {
       [MANIFEST_URL]: { body: utf8(manifestJson({ entry: 'a.html' })) },
       [`${ORIGIN}/a.html`]: { body: utf8('x') }
     }
-    const result = await fetchBundle(stubFetch(routes), `${ORIGIN}/some/page.html`, PUBLIC_RESOLVER)
+    const result = await fetchBundle(stubFetch(routes), `${ORIGIN}/some/page.html`, PUBLIC_RESOLVER, memoryStorage())
     expect(result.ok).toBe(true)
   })
 })
@@ -76,7 +76,7 @@ describe('fetchBundle: the install origin must resolve to a public-unicast addre
     const fetchFn = vi.fn(stubFetch(VALID_ROUTES))
     const resolveFn: Resolver = async () => ['127.0.0.1']
 
-    const result = await fetchBundle(fetchFn, ORIGIN, resolveFn)
+    const result = await fetchBundle(fetchFn, ORIGIN, resolveFn, memoryStorage())
 
     expect(result.ok).toBe(false)
     expect(fetchFn).not.toHaveBeenCalled()
@@ -86,7 +86,7 @@ describe('fetchBundle: the install origin must resolve to a public-unicast addre
     const fetchFn = vi.fn(stubFetch(VALID_ROUTES))
     const resolveFn: Resolver = async () => ['169.254.169.254']
 
-    const result = await fetchBundle(fetchFn, ORIGIN, resolveFn)
+    const result = await fetchBundle(fetchFn, ORIGIN, resolveFn, memoryStorage())
 
     expect(result.ok).toBe(false)
     expect(fetchFn).not.toHaveBeenCalled()
@@ -100,7 +100,7 @@ describe('fetchBundle: the install origin must resolve to a public-unicast addre
     const fetchFn = vi.fn(stubFetch(literalRoutes))
     const resolveFn = vi.fn(async (): Promise<readonly string[]> => { throw new Error('should never resolve a literal') })
 
-    const result = await fetchBundle(fetchFn, 'https://10.0.0.5/', resolveFn)
+    const result = await fetchBundle(fetchFn, 'https://10.0.0.5/', resolveFn, memoryStorage())
 
     expect(result.ok).toBe(false)
     expect(resolveFn).not.toHaveBeenCalled()
@@ -114,7 +114,7 @@ describe('fetchBundle: the install origin must resolve to a public-unicast addre
     }
     const resolveFn = vi.fn(async (): Promise<readonly string[]> => { throw new Error('should never resolve a literal') })
 
-    const result = await fetchBundle(stubFetch(routes), 'https://93.184.216.34/', resolveFn)
+    const result = await fetchBundle(stubFetch(routes), 'https://93.184.216.34/', resolveFn, memoryStorage())
 
     expect(result.ok).toBe(true)
     expect(resolveFn).not.toHaveBeenCalled()
@@ -124,7 +124,7 @@ describe('fetchBundle: the install origin must resolve to a public-unicast addre
     const fetchFn = vi.fn(stubFetch(VALID_ROUTES))
     const resolveFn: Resolver = async () => ['93.184.216.34', '127.0.0.1']
 
-    const result = await fetchBundle(fetchFn, ORIGIN, resolveFn)
+    const result = await fetchBundle(fetchFn, ORIGIN, resolveFn, memoryStorage())
 
     expect(result.ok).toBe(false)
     expect(fetchFn).not.toHaveBeenCalled()
@@ -134,7 +134,7 @@ describe('fetchBundle: the install origin must resolve to a public-unicast addre
     const fetchFn = vi.fn(stubFetch(VALID_ROUTES))
     const resolveFn: Resolver = async () => { throw new Error('DNS failure') }
 
-    const result = await fetchBundle(fetchFn, ORIGIN, resolveFn)
+    const result = await fetchBundle(fetchFn, ORIGIN, resolveFn, memoryStorage())
 
     expect(result.ok).toBe(false)
     expect(fetchFn).not.toHaveBeenCalled()
@@ -144,14 +144,14 @@ describe('fetchBundle: the install origin must resolve to a public-unicast addre
     const fetchFn = vi.fn(stubFetch(VALID_ROUTES))
     const resolveFn: Resolver = async () => []
 
-    const result = await fetchBundle(fetchFn, ORIGIN, resolveFn)
+    const result = await fetchBundle(fetchFn, ORIGIN, resolveFn, memoryStorage())
 
     expect(result.ok).toBe(false)
     expect(fetchFn).not.toHaveBeenCalled()
   })
 
   it('accepts an ordinary hostname resolving to a single public address', async () => {
-    const result = await fetchBundle(stubFetch(VALID_ROUTES), ORIGIN, PUBLIC_RESOLVER)
+    const result = await fetchBundle(stubFetch(VALID_ROUTES), ORIGIN, PUBLIC_RESOLVER, memoryStorage())
     expect(result.ok).toBe(true)
   })
 
@@ -182,7 +182,7 @@ describe('fetchBundle: A141 -- must not depend on response.url', () => {
       [`${ORIGIN}/index.html`]: { body: utf8('<!doctype html>'), url: '' },
       [`${ORIGIN}/app.js`]: { body: utf8('console.log(1)'), url: '' }
     }
-    const result = await fetchBundle(stubFetch(routes), ORIGIN, PUBLIC_RESOLVER)
+    const result = await fetchBundle(stubFetch(routes), ORIGIN, PUBLIC_RESOLVER, memoryStorage())
     expect(result.ok).toBe(true)
   })
 })
@@ -222,7 +222,7 @@ describe('fetchBundle: F2 -- resolves the install origin once and reuses the val
       return await stubFetch(routes)(url, pinnedAddresses, signal)
     }
 
-    const result = await fetchBundle(fetchFn, ORIGIN, resolveFn)
+    const result = await fetchBundle(fetchFn, ORIGIN, resolveFn, memoryStorage())
 
     expect(result.ok).toBe(true)
     expect(resolveCalls).toBe(1)
@@ -250,7 +250,7 @@ describe('fetchBundle: F2 -- resolves the install origin once and reuses the val
       return await stubFetch(routes)(url, pinnedAddresses, signal)
     }
 
-    const result = await fetchBundle(fetchFn, ORIGIN, resolveFn)
+    const result = await fetchBundle(fetchFn, ORIGIN, resolveFn, memoryStorage())
 
     expect(result.ok).toBe(true)
     expect(resolveCalls).toBe(1)
@@ -271,7 +271,7 @@ describe('fetchBundle: F6 -- the install-origin guard\'s own resolution is bound
 
   it('rejects once BUNDLE_TIMEOUT_MS elapses while resolveFn never resolves, rather than hanging forever', async () => {
     const stallingResolver: Resolver = async () => await new Promise<never>(() => {})
-    const pending = fetchBundle(stubFetch({}), ORIGIN, stallingResolver)
+    const pending = fetchBundle(stubFetch({}), ORIGIN, stallingResolver, memoryStorage())
 
     await vi.advanceTimersByTimeAsync(BUNDLE_TIMEOUT_MS + 1)
     const result = await pending
@@ -292,7 +292,7 @@ describe('fetchBundle: F7 -- refuses a plain-http install origin outright', () =
     const resolveFn = vi.fn(async (): Promise<readonly string[]> => { throw new Error('should never resolve') })
     const fetchFn = vi.fn(stubFetch({}))
 
-    const result = await fetchBundle(fetchFn, 'http://app.example.com/', resolveFn)
+    const result = await fetchBundle(fetchFn, 'http://app.example.com/', resolveFn, memoryStorage())
 
     expect(result.ok).toBe(false)
     expect(resolveFn).not.toHaveBeenCalled()
@@ -310,7 +310,7 @@ describe('fetchBundle: F8 -- refuses the whole .localhost namespace by name, not
     'rejects %s before ever calling resolveFn', async (hintedUrl) => {
       const resolveFn = vi.fn(async (): Promise<readonly string[]> => { throw new Error('should never resolve') })
 
-      const result = await fetchBundle(stubFetch({}), hintedUrl, resolveFn)
+      const result = await fetchBundle(stubFetch({}), hintedUrl, resolveFn, memoryStorage())
 
       expect(result.ok).toBe(false)
       expect(resolveFn).not.toHaveBeenCalled()
@@ -327,7 +327,7 @@ describe('fetchBundle: F9 -- bounds the number of resolved addresses it will ite
     const resolveFn: Resolver = async () => tooMany
     const fetchFn = vi.fn(stubFetch({}))
 
-    const result = await fetchBundle(fetchFn, ORIGIN, resolveFn)
+    const result = await fetchBundle(fetchFn, ORIGIN, resolveFn, memoryStorage())
 
     expect(result.ok).toBe(false)
     expect(fetchFn).not.toHaveBeenCalled()
@@ -341,7 +341,7 @@ describe('fetchBundle: F9 -- bounds the number of resolved addresses it will ite
     const exactlyMax = Array.from({ length: MAX_ANSWERS }, (_, i) => `1.1.1.${String(i + 1)}`)
     const resolveFn: Resolver = async () => exactlyMax
 
-    const result = await fetchBundle(stubFetch(routes), ORIGIN, resolveFn)
+    const result = await fetchBundle(stubFetch(routes), ORIGIN, resolveFn, memoryStorage())
 
     expect(result.ok).toBe(true)
   })
@@ -365,7 +365,7 @@ describe('fetchBundle: IPv6 and other edge-case address literals are refused, ma
     const resolveFn = vi.fn(async (): Promise<readonly string[]> => { throw new Error('a literal must never be resolved') })
     const fetchFn = vi.fn(stubFetch({}))
 
-    const result = await fetchBundle(fetchFn, hintedUrl, resolveFn)
+    const result = await fetchBundle(fetchFn, hintedUrl, resolveFn, memoryStorage())
 
     expect(result.ok).toBe(false)
     expect(resolveFn).not.toHaveBeenCalled()
@@ -380,7 +380,7 @@ describe('fetchBundle: IPv6 and other edge-case address literals are refused, ma
     }
     const resolveFn = vi.fn(async (): Promise<readonly string[]> => { throw new Error('a literal must never be resolved') })
 
-    const result = await fetchBundle(stubFetch(routes), publicV6, resolveFn)
+    const result = await fetchBundle(stubFetch(routes), publicV6, resolveFn, memoryStorage())
 
     expect(result.ok).toBe(true)
     expect(resolveFn).not.toHaveBeenCalled()
@@ -390,7 +390,7 @@ describe('fetchBundle: IPv6 and other edge-case address literals are refused, ma
 describe('fetchBundle: manifest fetch and validation failures', () => {
   it('rejects a network failure fetching the manifest', async () => {
     const failing: Fetch = async () => { throw new Error('DNS failure') }
-    const result = await fetchBundle(failing, ORIGIN, PUBLIC_RESOLVER)
+    const result = await fetchBundle(failing, ORIGIN, PUBLIC_RESOLVER, memoryStorage())
     expect(result.ok).toBe(false)
     if (result.ok) return
     expect(result.reason).toMatch(/DNS failure/)
@@ -398,7 +398,7 @@ describe('fetchBundle: manifest fetch and validation failures', () => {
 
   it('rejects a non-ok HTTP status fetching the manifest', async () => {
     const routes: Record<string, RouteSpec> = { [MANIFEST_URL]: { status: 404, body: utf8('') } }
-    const result = await fetchBundle(stubFetch(routes), ORIGIN, PUBLIC_RESOLVER)
+    const result = await fetchBundle(stubFetch(routes), ORIGIN, PUBLIC_RESOLVER, memoryStorage())
     expect(result.ok).toBe(false)
     if (result.ok) return
     expect(result.reason).toMatch(/404/)
@@ -406,7 +406,7 @@ describe('fetchBundle: manifest fetch and validation failures', () => {
 
   it('surfaces parseManifest\'s own rejection reason for malformed JSON', async () => {
     const routes: Record<string, RouteSpec> = { [MANIFEST_URL]: { body: utf8('{not json') } }
-    const result = await fetchBundle(stubFetch(routes), ORIGIN, PUBLIC_RESOLVER)
+    const result = await fetchBundle(stubFetch(routes), ORIGIN, PUBLIC_RESOLVER, memoryStorage())
     expect(result.ok).toBe(false)
     if (result.ok) return
     expect(result.reason).toMatch(/not valid JSON/)
@@ -430,7 +430,7 @@ describe('fetchBundle: byte caps enforced before holding the whole bundle', () =
       [MANIFEST_URL]: { body: utf8(manifestJson()) },
       [`${ORIGIN}/index.html`]: { body: oversized }
     }
-    const result = await fetchBundle(stubFetch(routes), ORIGIN, PUBLIC_RESOLVER)
+    const result = await fetchBundle(stubFetch(routes), ORIGIN, PUBLIC_RESOLVER, memoryStorage())
     expect(result.ok).toBe(false)
     if (result.ok) return
     expect(result.reason).toMatch(/MAX_ASSET_BYTES/)
@@ -443,38 +443,33 @@ describe('fetchBundle: byte caps enforced before holding the whole bundle', () =
       [MANIFEST_URL]: { body: utf8(manifestJson({ entry: 'huge.bin' })) },
       [assetUrl]: { body: utf8('tiny'), headers: { 'content-length': String(MAX_ASSET_BYTES + 1) } }
     }
-    const result = await fetchBundle(stubFetch(routes, bodyReads), ORIGIN, PUBLIC_RESOLVER)
+    const result = await fetchBundle(stubFetch(routes, bodyReads), ORIGIN, PUBLIC_RESOLVER, memoryStorage())
     expect(result.ok).toBe(false)
     expect(bodyReads.has(assetUrl)).toBe(false)
   })
 
-  it('stops fetching further assets once the running total exceeds MAX_BUNDLE_BYTES', async () => {
+  it('stops starting further assets once the shared running total exceeds the bundle budget', async () => {
     // The running total is tracked from ACTUAL downloaded bytes, never a
-    // declared Content-Length (a declared value is only ever used to fail
-    // fast on ONE oversized response, never accumulated -- see
-    // fetchWithBudget's own comment). So this test needs real bytes: five
-    // 14 MiB assets, each comfortably under MAX_ASSET_BYTES (16 MiB) on its
-    // own, whose sum (70 MiB) crosses MAX_BUNDLE_BYTES (64 MiB) partway
-    // through. A 6th must never be requested at all once that happens.
-    const perAsset = 14 * 1024 * 1024
-    const paths = ['a0.bin', 'a1.bin', 'a2.bin', 'a3.bin', 'a4.bin', 'a5.bin']
+    // declared Content-Length, and is shared by every asset in flight at
+    // once. Small limits stand in for MAX_ASSET_BYTES/MAX_BUNDLE_BYTES so the
+    // fixture stays small: twelve 14 KiB assets against a 64 KiB budget run
+    // out after the fifth, so the last ones are never requested at all.
+    const limits = { assetBytes: 16 * 1024, bundleBytes: 64 * 1024 }
+    const paths = Array.from({ length: 12 }, (_, i) => `a${String(i)}.bin`)
     const routes: Record<string, RouteSpec> = {
       [MANIFEST_URL]: { body: utf8(manifestJson({ entry: paths[0], assets: paths.slice(1) })) }
     }
-    for (const path of paths) {
-      routes[`${ORIGIN}/${path}`] = { body: new Uint8Array(perAsset) }
-    }
+    for (const path of paths) routes[`${ORIGIN}/${path}`] = { body: new Uint8Array(14 * 1024) }
     const requested: string[] = []
     const fetchFn: Fetch = async (url, pinnedAddresses, signal) => {
       requested.push(url)
       return await stubFetch(routes)(url, pinnedAddresses, signal)
     }
-    const result = await fetchBundle(fetchFn, ORIGIN, PUBLIC_RESOLVER)
+    const result = await fetchBundle(fetchFn, ORIGIN, PUBLIC_RESOLVER, memoryStorage(), limits)
     expect(result.ok).toBe(false)
-    // 4 assets * 14 MiB = 56 MiB, still under the cap; the 5th (index a4)
-    // only has 8 MiB of budget left and tips it over, so a5 must never be
-    // requested.
-    expect(requested).not.toContain(`${ORIGIN}/a5.bin`)
+    if (result.ok) return
+    expect(result.reason).toMatch(/MAX_BUNDLE_BYTES/)
+    expect(requested).not.toContain(`${ORIGIN}/a11.bin`)
   })
 })
 
@@ -490,7 +485,7 @@ describe('fetchBundle: the actual byte cap is enforced while streaming, not afte
       [MANIFEST_URL]: { body: utf8(manifestJson({ entry: 'huge.bin' })) },
       [assetUrl]: { body: new Uint8Array(0), infinite: true }
     }
-    const result = await fetchBundle(stubFetch(routes, undefined, streamed), ORIGIN, PUBLIC_RESOLVER)
+    const result = await fetchBundle(stubFetch(routes, undefined, streamed), ORIGIN, PUBLIC_RESOLVER, memoryStorage())
     expect(result.ok).toBe(false)
     if (result.ok) return
     expect(result.reason).toMatch(/MAX_ASSET_BYTES/)
@@ -509,7 +504,7 @@ describe('fetchBundle: the actual byte cap is enforced while streaming, not afte
       [MANIFEST_URL]: { body: utf8(manifestJson({ entry: 'lying.bin' })) },
       [assetUrl]: { body: oversized, headers: { 'content-length': '10' } }
     }
-    const result = await fetchBundle(stubFetch(routes), ORIGIN, PUBLIC_RESOLVER)
+    const result = await fetchBundle(stubFetch(routes), ORIGIN, PUBLIC_RESOLVER, memoryStorage())
     expect(result.ok).toBe(false)
     if (result.ok) return
     expect(result.reason).toMatch(/MAX_ASSET_BYTES/)
@@ -520,26 +515,21 @@ describe('fetchBundle: the actual byte cap is enforced while streaming, not afte
       [MANIFEST_URL]: { body: utf8(manifestJson()) },
       [`${ORIGIN}/index.html`]: { body: new Uint8Array(MAX_ASSET_BYTES) }
     }
-    const result = await fetchBundle(stubFetch(routes), ORIGIN, PUBLIC_RESOLVER)
+    const result = await fetchBundle(stubFetch(routes), ORIGIN, PUBLIC_RESOLVER, memoryStorage())
     expect(result.ok).toBe(true)
   })
 
-  it('still enforces the cumulative MAX_BUNDLE_BYTES budget across several under-cap assets', async () => {
-    // Same scenario the pre-existing suite above already covers end-to-end
-    // (a 6th asset must never be requested once the running total tips the
-    // budget); restated here beside the streaming tests as the third caller
-    // this fix's brief names explicitly.
-    const perAsset = 14 * 1024 * 1024
-    const paths = ['a0.bin', 'a1.bin', 'a2.bin', 'a3.bin', 'a4.bin', 'a5.bin']
+  it('clears everything it staged when the bundle is refused part-way through', async () => {
+    const limits = { assetBytes: 16 * 1024, bundleBytes: 64 * 1024 }
+    const paths = Array.from({ length: 6 }, (_, i) => `a${String(i)}.bin`)
     const routes: Record<string, RouteSpec> = {
       [MANIFEST_URL]: { body: utf8(manifestJson({ entry: paths[0], assets: paths.slice(1) })) }
     }
-    for (const path of paths) routes[`${ORIGIN}/${path}`] = { body: new Uint8Array(perAsset) }
-    const result = await fetchBundle(stubFetch(routes), ORIGIN, PUBLIC_RESOLVER)
+    for (const path of paths) routes[`${ORIGIN}/${path}`] = { body: new Uint8Array(14 * 1024) }
+    const storage = memoryStorage()
+    const result = await fetchBundle(stubFetch(routes), ORIGIN, PUBLIC_RESOLVER, storage, limits)
     expect(result.ok).toBe(false)
-    if (result.ok) return
-    expect(result.reason).toMatch(/MAX_BUNDLE_BYTES/)
-    expect(perAsset * 5).toBeGreaterThan(MAX_BUNDLE_BYTES)
+    expect(storage.staged.size).toBe(0)
   })
 
   it('still rejects a single stream chunk that on its own is far larger than MAX_ASSET_BYTES', async () => {
@@ -558,7 +548,7 @@ describe('fetchBundle: the actual byte cap is enforced while streaming, not afte
       [MANIFEST_URL]: { body: utf8(manifestJson()) },
       [`${ORIGIN}/index.html`]: { body: new Uint8Array(size), chunkSize: size }
     }
-    const result = await fetchBundle(stubFetch(routes), ORIGIN, PUBLIC_RESOLVER)
+    const result = await fetchBundle(stubFetch(routes), ORIGIN, PUBLIC_RESOLVER, memoryStorage())
     expect(result.ok).toBe(false)
     if (result.ok) return
     expect(result.reason).toMatch(/MAX_ASSET_BYTES/)
@@ -571,8 +561,8 @@ describe('fetchBundle: a stalled fetch or body cannot stall the install forever'
 
   it('aborts a fetchFn call that never resolves', async () => {
     const stalls: Fetch = async () => await new Promise<never>(() => {})
-    const pending = fetchBundle(stalls, ORIGIN, PUBLIC_RESOLVER)
-    await vi.advanceTimersByTimeAsync(FETCH_TIMEOUT_MS + 1)
+    const pending = fetchBundle(stalls, ORIGIN, PUBLIC_RESOLVER, memoryStorage())
+    await vi.advanceTimersByTimeAsync(FETCH_IDLE_TIMEOUT_MS + 1)
     const result = await pending
     expect(result.ok).toBe(false)
     if (result.ok) return
@@ -583,8 +573,8 @@ describe('fetchBundle: a stalled fetch or body cannot stall the install forever'
     const routes: Record<string, RouteSpec> = {
       [MANIFEST_URL]: { body: new Uint8Array(0), stall: true }
     }
-    const pending = fetchBundle(stubFetch(routes), ORIGIN, PUBLIC_RESOLVER)
-    await vi.advanceTimersByTimeAsync(FETCH_TIMEOUT_MS + 1)
+    const pending = fetchBundle(stubFetch(routes), ORIGIN, PUBLIC_RESOLVER, memoryStorage())
+    await vi.advanceTimersByTimeAsync(FETCH_IDLE_TIMEOUT_MS + 1)
     const result = await pending
     expect(result.ok).toBe(false)
     if (result.ok) return
@@ -596,45 +586,28 @@ describe('fetchBundle: a bundle-wide deadline bounds the whole install, not just
   beforeEach(() => { vi.useFakeTimers() })
   afterEach(() => { vi.useRealTimers() })
 
-  it('rejects once cumulative time across many just-under-FETCH_TIMEOUT_MS assets exceeds BUNDLE_TIMEOUT_MS, cutting off the asset in flight and never starting the next one', async () => {
-    // Models a hostile origin that evades FETCH_TIMEOUT_MS on every single
-    // request (each asset resolves in FETCH_TIMEOUT_MS - 1ms, so no
-    // per-asset timer ever fires) while still exhausting the install's
-    // total wall-clock budget -- the T11b duration-axis DoS BUNDLE_TIMEOUT_MS
-    // exists to close. BUNDLE_TIMEOUT_MS is 30 * FETCH_TIMEOUT_MS, so the
-    // 31st such asset (index 30) is where the cumulative total
-    // (30 * 19999ms = 599970ms) tips past the 600000ms deadline -- 30ms
-    // into that asset's own fetch, proving the deadline can cut off a
-    // request already in flight, not only refuse to start the next one.
-    const perAssetDelay = FETCH_TIMEOUT_MS - 1
-    const assetCount = 32
-    const paths = Array.from({ length: assetCount }, (_, i) => `a${String(i)}.js`)
-    const routes: Record<string, RouteSpec> = {
-      [MANIFEST_URL]: { body: utf8(manifestJson({ entry: paths[0], assets: paths.slice(1) })) }
-    }
-    for (const path of paths) routes[`${ORIGIN}/${path}`] = { body: utf8('x') }
-
-    const requested: string[] = []
+  it('cuts off a peer that trickles one byte just inside the idle deadline, forever, once BUNDLE_TIMEOUT_MS elapses', async () => {
+    // FETCH_IDLE_TIMEOUT_MS never fires against this body -- a byte always
+    // arrives in time -- so only the bundle-wide deadline can end it.
     const fetchFn: Fetch = async (url, pinnedAddresses, signal) => {
-      requested.push(url)
-      if (url !== MANIFEST_URL) await new Promise<void>((resolve) => setTimeout(resolve, perAssetDelay))
-      return await stubFetch(routes)(url, pinnedAddresses, signal)
+      if (url === MANIFEST_URL) return await stubFetch({ [MANIFEST_URL]: { body: utf8(manifestJson()) } })(url, pinnedAddresses, signal)
+      const body = new ReadableStream<Uint8Array>({
+        async pull (controller) {
+          await new Promise<void>((resolve) => setTimeout(resolve, FETCH_IDLE_TIMEOUT_MS - 1))
+          controller.enqueue(new Uint8Array(1))
+        }
+      }, { highWaterMark: 0 })
+      return { ok: true, status: 200, url, body, arrayBuffer: async () => new ArrayBuffer(0) }
     }
 
-    const pending = fetchBundle(fetchFn, ORIGIN, PUBLIC_RESOLVER)
-    await vi.advanceTimersByTimeAsync(assetCount * FETCH_TIMEOUT_MS)
+    const pending = fetchBundle(fetchFn, ORIGIN, PUBLIC_RESOLVER, memoryStorage())
+    await vi.advanceTimersByTimeAsync(BUNDLE_TIMEOUT_MS + FETCH_IDLE_TIMEOUT_MS)
     const result = await pending
 
     expect(result.ok).toBe(false)
     if (result.ok) return
     expect(result.reason).toMatch(/overall deadline/i)
     expect(result.reason).toMatch(String(BUNDLE_TIMEOUT_MS))
-    // The 30th asset (index 29) is the last one to finish cleanly; the
-    // 31st (index 30) is cut off mid-flight (still requested, never
-    // completes); the 32nd (index 31) must never be requested at all.
-    expect(requested).toContain(`${ORIGIN}/a29.js`)
-    expect(requested).toContain(`${ORIGIN}/a30.js`)
-    expect(requested).not.toContain(`${ORIGIN}/a31.js`)
   })
 })
 

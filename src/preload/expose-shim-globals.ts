@@ -1,24 +1,27 @@
-// Installs orivon-node-shim's Node globals (process, setImmediate,
-// clearImmediate -- src/shim/globals.ts) into a real Orivon app tab's own
-// main-world scope, once, before that tab's own page script runs. A151
-// (docs/open-questions.md): nothing called installGlobals() in production
-// before this file, so any real app whose dependency graph touches
-// `stream` (this shim's own net/http/https do, transitively) failed at
-// load with `process is not defined`.
+// Installs orivon-node-shim's Node globals (process, global, setImmediate,
+// clearImmediate -- src/shim/globals.ts -- and Buffer, ./page-buffer.ts) into
+// a real Orivon app tab's own main-world scope, once, before that tab's own
+// page script runs. Without them any app whose dependency graph touches
+// `stream` fails at load with `process is not defined`, and Node code using a
+// bare `Buffer` with `Buffer is not defined`.
 //
 // GATED ON THE SAME `--orivon-app-tab` FLAG ./expose-fetch-route.ts already
-// reads (src/main/tab-view.ts's `appTabArgsFor`) -- CLAUDE.md's own
-// instruction on this exact defect: shimmed Node globals must never reach
-// an ordinary browsing tab just because it loaded before this preload ran.
-// `window.orivon` itself is exposed to every tab (./orivon-surface.ts's own
-// design notes explain why), but that is a capability surface an ungranted
-// caller can only ever see denials through; `process`/`stream` are ambient
-// globals a plain page's own script could stumble into, which is a
-// different and wider kind of leak this file must not create.
+// reads (src/main/tab-view.ts's `appTabArgsFor`): shimmed Node globals must
+// never reach an ordinary browsing tab. `window.orivon` itself is exposed to
+// every tab (./orivon-surface.ts's own design notes explain why), but that is
+// a capability surface an ungranted caller only ever sees denials through;
+// `process` is an ambient global a plain page's own script could stumble
+// into, a different and wider kind of leak.
+//
+// NO REPORTER IS PASSED, on purpose: a function crossing contextBridge runs
+// in this isolated world, so an uncaught nextTick/setImmediate error would
+// land in a console the page cannot see. Omitted, installGlobals reports to
+// the page's own reportError, which fires the app's window 'error' handlers.
 
 import { contextBridge } from 'electron'
-import { installGlobals } from '../shim/globals.js'
-import type { GlobalsErrorReporter } from '../shim/globals.js'
+import { installGlobals, VIRTUAL_ROOT, VIRTUAL_TMPDIR } from '../shim/globals.js'
+import type { InstallGlobalsOptions } from '../shim/globals.js'
+import { installPageBuffer } from './page-buffer.js'
 
 /** Duplicated from expose-fetch-route.ts rather than imported -- src/preload/README.md forbids importing anything under src/main/ except ./channels.ts, and this is not a channel. */
 const APP_TAB_FLAG = '--orivon-app-tab'
@@ -32,10 +35,15 @@ const APP_TAB_FLAG = '--orivon-app-tab'
  */
 export function exposeShimGlobals (): void {
   if (!process.argv.includes(APP_TAB_FLAG)) return
-  const reportError: GlobalsErrorReporter = (error, origin) => { console.error(`[orivon-shim:${origin}]`, error) }
+  const options: InstallGlobalsOptions = { root: VIRTUAL_ROOT, tmpdir: VIRTUAL_TMPDIR }
   try {
-    contextBridge.executeInMainWorld({ func: installGlobals, args: [{ reportError }] })
+    contextBridge.executeInMainWorld({ func: installGlobals, args: [options] })
   } catch (error) {
     console.error('[orivon] shim globals not installed', error)
+  }
+  try {
+    contextBridge.executeInMainWorld({ func: installPageBuffer })
+  } catch (error) {
+    console.error('[orivon] Buffer global not installed', error)
   }
 }

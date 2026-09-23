@@ -118,11 +118,65 @@ describe('net.Server -- listening/error/address/close', () => {
     expect(fake.pullCount()).toBe(before)
   })
 
-  it('close() with no successful listen still calls back, without throwing', async () => {
-    const server = new Server(async () => { throw new Error('never resolves before close') })
-    await new Promise<void>((resolve, reject) => {
-      server.close((error) => (error !== undefined ? reject(error) : resolve()))
-    })
+  it('close() on a server that never listened calls back with ERR_SERVER_NOT_RUNNING and still emits "close", as Node does', async () => {
+    const server = new Server(async () => { throw new Error('never called') })
+    const onClose = vi.fn()
+    server.on('close', onClose)
+    const error = await new Promise<Error | undefined>((resolve) => server.close(resolve))
+    expect(error).toMatchObject({ code: 'ERR_SERVER_NOT_RUNNING' })
+    expect(onClose).toHaveBeenCalledOnce()
+  })
+
+  it('emits "close" exactly once when close() also ends the connections stream', async () => {
+    const fake = createFakeTcpServer()
+    const server = new Server(async () => fake.server)
+    await new Promise<void>((resolve) => { server.listen(6881, resolve) })
+    const onClose = vi.fn()
+    server.on('close', onClose)
+    server.close()
+    fake.end()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(onClose).toHaveBeenCalledOnce()
+    expect(server.listening).toBe(false)
+  })
+
+  it('close() while the listen is still pending closes the handle once it arrives, and emits "close" once', async () => {
+    const fake = createFakeTcpServer()
+    let release!: () => void
+    const server = new Server(async () => { await new Promise<void>((resolve) => { release = resolve }); return fake.server })
+    server.listen(6881)
+    const onClose = vi.fn()
+    server.on('close', onClose)
+    const closed = new Promise<Error | undefined>((resolve) => server.close(resolve))
+    release()
+    expect(await closed).toBeUndefined()
+    expect(fake.closed()).toBe(true)
+    expect(onClose).toHaveBeenCalledOnce()
+  })
+
+  it('ref()/unref() return the server; getConnections() counts accepted sockets still open', async () => {
+    const fake = createFakeTcpServer()
+    const server = new Server(async () => fake.server)
+    expect(server.unref()).toBe(server)
+    expect(server.ref()).toBe(server)
+    const accepted = new Promise<Socket>((resolve) => server.once('connection', resolve))
+    server.listen(6881)
+    await vi.waitFor(() => expect(fake.pullCount()).toBe(1))
+    fake.deliver(createFakeTcpSocket().socket)
+    const socket = await accepted
+    const count = (): Promise<number> => new Promise((resolve) => server.getConnections((_error, n) => resolve(n)))
+    expect(await count()).toBe(1)
+    socket.destroy()
+    await new Promise<void>((resolve) => socket.once('close', () => resolve()))
+    expect(await count()).toBe(0)
+  })
+
+  it('throws Node\'s errors for a bad port and for listening twice', async () => {
+    const fake = createFakeTcpServer()
+    const server = new Server(async () => fake.server)
+    expect(() => server.listen(70000)).toThrow(expect.objectContaining({ code: 'ERR_SOCKET_BAD_PORT' }))
+    server.listen(6881)
+    expect(() => server.listen(6882)).toThrow(expect.objectContaining({ code: 'ERR_SERVER_ALREADY_LISTEN' }))
   })
 })
 
@@ -132,6 +186,16 @@ describe('net.Server#listen -- host handling', () => {
     const server = new Server(async () => fake.server)
     await new Promise<void>((resolve) => { server.listen(6881, '0.0.0.0', resolve) })
     expect(fake.pullCount()).toBe(1)
+  })
+
+  it.each(['localhost', '::1'])('refuses %s by name too', (host) => {
+    const server = new Server(async () => createFakeTcpServer().server)
+    expect(() => server.listen(6881, host)).toThrow(OrivonShimError)
+  })
+
+  it('refuses a local IPC path by name', () => {
+    const server = new Server(async () => createFakeTcpServer().server)
+    expect(() => server.listen('/tmp/app.sock')).toThrow(OrivonShimError)
   })
 
   it('refuses a host it cannot honour (e.g. loopback-only) rather than silently binding wider than asked', async () => {

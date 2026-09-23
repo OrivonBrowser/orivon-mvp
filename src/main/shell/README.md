@@ -4,12 +4,26 @@
 whichever tab's `WebContentsView` below. `tabs.ts` owns the tab collection and what gets pushed
 to the chrome UI; `tab-view.ts` and `tab-types.ts` are its pure halves. `renderer-entry.ts`
 resolves electron-vite's dev-server/file-URL split for both this and
-[`../permissions/permissions-panel.ts`](../permissions/permissions-panel.ts).
+[`../permissions/permissions-panel.ts`](../permissions/permissions-panel.ts). `user-agent.ts`
+derives the plain Chrome User-Agent [`../index.ts`](../index.ts) sets app-wide.
+
+What a page asks of its window: `popups.ts` turns `window.open()` and `target=_blank` into
+tabs; `fullscreen.ts` decides which tab, if any, fills the window; `window-notice.ts` is the
+window's one few-second notice ("Press Esc to exit full screen", "Press Esc to show your
+cursor", "Press and hold Esc to exit full screen"), and `exclusive-access-notice.ts` picks the
+pointer- and keyboard-lock messages; `leave-page-prompt.ts` asks the question a `beforeunload`
+guard raises; `external-link-prompt.ts` and `notification-prompt.ts` ask the two questions the
+permission gate puts to the person; `showing-window.ts` finds the window a tab is on screen in;
+`context-menu.ts` is the right-click menu for tabs and the chrome.
 
 **What it depends on.** `electron`; [`../../broker/`](../../broker/) (`policy/origin.ts`,
 `grants/origin-hash.ts`, `broker-contracts.ts` types); [`../../loader/electron-serve.ts`](../../loader/electron-serve.ts)
 (type only); and, inside `src/main/`, [`../browsing/`](../browsing/) (bookmarks, favicon,
-omnibox, delivery-provenance), [`../ipc/`](../ipc/), [`../permissions/`](../permissions/), plus
+omnibox, delivery-provenance), [`../ipc/`](../ipc/), [`../permissions/`](../permissions/),
+[`../consent/grant-prompt-origin.ts`](../consent/grant-prompt-origin.ts) (the origin line every
+permission dialog shows), [`../sessions/`](../sessions/) (the two questions' types, and
+`permission-gate.ts`'s notification store, handed to the permissions panel),
+[`../dev/dev-mode.ts`](../dev/dev-mode.ts) (the developer-mode flag, for Inspect Element), plus
 the top-level `channels.ts` and `registry.ts`.
 
 **What it must never import.** [`../../renderer/`](../../renderer/) code (the repo-wide rule).
@@ -79,3 +93,52 @@ the same as an ordinary tab's would see partition `undefined` -> a real partitio
 change" and repartition the dashboard into an app partition on its very first load. The handler
 excludes `record.isDashboardTab` explicitly rather than relying on `partitionChanged` alone to
 catch this case.
+
+**[`popups.ts`](popups.ts): a popup keeps its opener's session, except into an isolated
+app.** A popup that keeps `window.opener` is Chromium's own new webContents, created in its
+opener's storage partition, and no other session can hold it; the tab adopts it there. For the
+same reason `wireView`'s did-navigate does not move a tab that still has its opener onto the
+default session: that swap severs `window.opener`, and a sign-in popup's whole job ends with the
+provider redirecting back to the app's callback page and posting to the opener. The cost is an
+ADR-0018 residual: until its opener closes, an open-web page an app opens as a popup runs in the
+app's partition, so a sign-in provider's cookies land there. The other direction is never
+allowed, opener or not. A tab reaching an isolated app always moves into the app's own session,
+and `routePopup` opens a popup into one from any other session as an ordinary tab, because that
+session is the only place the app's pinned bundle is served (ADR-0007); anywhere else the app's
+origin would run whatever the network sends, with its grants. Links, plain `window.open(url)`
+calls that would cross sessions, and `noopener`/`noreferrer` also get an ordinary new tab, which
+loads in the right session from its first request. A popup's `--orivon-app-tab` flag follows its
+own URL, not its opener's, so a third-party page an app opens never gets Node globals or routed
+`fetch()`. **Trap:** the adopting `WebContentsView` must be given the popup's `webPreferences` as
+well as its webContents; with the webContents alone, Electron 44 drops the preload and the popup
+has no `orivon` surface at all.
+
+**[`fullscreen.ts`](fullscreen.ts): Electron fullscreens the window, not the view.** On
+`requestFullscreen()` Electron puts the owning window into fullscreen and takes it out again, but
+a `WebContentsView` keeps the bounds it was given, so the page stayed under the chrome.
+`window.ts` hides the chrome and gives the tab the whole content area while
+`HtmlFullscreen.tabId` is set. Escape needs no handler here: Electron's exclusive-access manager
+consumes it in the browser process before the page sees the key, which is what makes allowing
+the permission safe (`../sessions/README.md`). When the shell itself ends fullscreen (another
+tab became active), it asks the page through an isolated world, where the page's own script
+cannot have replaced `document.exitFullscreen`.
+
+**[`window-notice.ts`](window-notice.ts): a notice is loaded before it is attached, one view per
+message.** Measured in the real shell: a `WebContentsView` that navigates while attached to the
+window takes focus from the page under it. A notice loaded that way ended a pointer lock one
+millisecond after it began, and on entering fullscreen it took the page's keyboard focus, so a
+video player's Space and arrow keys went to the notice. Each message's view is loaded while
+detached and added on `did-finish-load`; changing the message swaps views instead of navigating
+the one on screen. [`../../test/e2e-shell-fidelity.test.ts`](../../test/e2e-shell-fidelity.test.ts)
+asserts the page keeps its focus in fullscreen.
+
+**[`leave-page-prompt.ts`](leave-page-prompt.ts) blocks the main process while it is open.**
+Electron settles `will-prevent-unload` from the handler's return, with no way to answer later,
+so the question is a synchronous message box; every tab's broker traffic waits until it is
+answered. Chromium only asks after the person has interacted with the page. Closing a tab does
+not ask: `closeTab()` closes the webContents without running `beforeunload`.
+
+**[`user-agent.ts`](user-agent.ts): the string, not the brand list.** `navigator.userAgentData`
+still lists Chromium rather than Google Chrome, and Electron has no API to change it. A site that
+checks that list for Google Chrome sees what it sees in any other Chromium-based browser.
+

@@ -5,8 +5,14 @@ god-object.
 
 The all-sites surface: `permissions.ts`, the grant list with revocation (d-0027, owner decision
 9 — a grant lasts until revoked, and is visible in a list the user can revoke from). Revoke
-only; there is no "forget this app entirely" here, that is `GrantLedger.forgetOrigin`.
-`permissions-panel.ts` is its own in-window popup hanging off the toolbar cluster's tune icon.
+only; there is no "forget this app entirely" here, that is `GrantLedger.forgetOrigin`. A revoke
+also records the capability as declined (`../consent/request-grant.ts`'s `addDeclinedCapability`),
+so the install-consent dialog does not ask for it again at the next launch; `app.requestGrant`
+still can, and an accepted request clears that record. `permissions.ts` also turns each site's
+remembered notification answer into a row a person can reset (`createSiteNotificationsController`):
+a Chromium permission, not an `orivon.*` grant, so the popup shows it as its own card per site,
+after the apps, and Reset means the site asks again. `permissions-panel.ts` is its own in-window
+popup hanging off the toolbar cluster's tune icon.
 
 The site-info surface, for the address pill's shield and key: `site-info.ts` (pure —
 row-per-declared-capability, not row-per-grant, so a switch can show something the site asked
@@ -31,7 +37,8 @@ implementations injected by `../shell/window.ts`, never imported by `site-info.t
 themselves), [`../../trust/`](../../trust/) (`delivery-ladder.ts` types, via `../browsing/site-trust.ts`),
 [`../consent/grant-prompt-render.ts`](../consent/grant-prompt-render.ts) and
 [`../consent/request-grant.ts`](../consent/request-grant.ts) (`clearDeclinedCapability`/
-`addDeclinedCapability`), [`../browsing/site-trust.ts`](../browsing/site-trust.ts), and, inside
+`addDeclinedCapability`), [`../browsing/site-trust.ts`](../browsing/site-trust.ts),
+[`../sessions/notification-decisions.ts`](../sessions/notification-decisions.ts) (type only), and, inside
 `src/main/`, `../shell/renderer-entry.ts`, `../shell/tabs.ts` (type only), `../ipc/settings-ipc.ts`,
 `../ipc/site-info-ipc.ts`, the top-level `channels.ts`/`registry.ts`.
 

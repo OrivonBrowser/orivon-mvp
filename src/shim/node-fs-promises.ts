@@ -7,55 +7,57 @@
 import { openHandle } from './node-fs-handle.js'
 import {
   doAccess, doAppendFile, doMkdir, doReaddir, doReadFile, doRename, doRm, doStat, doUnlink, doWriteFile,
-  type MkdirOptions, type ReadFileOptions, type RmOptions, type WriteFileOptions
+  type MkdirOptions, type ReaddirOptions, type ReadFileOptions, type RmOptions, type WriteFileOptions
 } from './node-fs-core.js'
-import type { NodeStats } from './node-fs-stats.js'
+import type { NodeDirent, NodeStats } from './node-fs-stats.js'
 import { FS_CONSTANTS } from './node-fs-constants.js'
+import { encodingOf } from './node-fs-encoding.js'
+import type { PathLike } from './node-fs-path.js'
 import { refusingProxy } from './unimplemented.js'
 import { refuseShim } from './errors.js'
 
-function encodingOf (options: ReadFileOptions | WriteFileOptions | string | undefined): string | undefined {
-  return typeof options === 'string' ? options : options?.encoding
-}
 
-async function readFile (path: string, options?: ReadFileOptions | string): Promise<Uint8Array | string> {
+async function readFile (path: PathLike, options?: ReadFileOptions | string): Promise<Uint8Array | string> {
   return await doReadFile(path, encodingOf(options))
 }
 
-async function writeFile (path: string, data: unknown, options?: WriteFileOptions | string): Promise<void> {
-  await doWriteFile(path, data, encodingOf(options))
+async function writeFile (path: PathLike, data: unknown, options?: WriteFileOptions | string): Promise<void> {
+  await doWriteFile(path, data, options)
 }
 
-async function appendFile (path: string, data: unknown, options?: WriteFileOptions | string): Promise<void> {
-  await doAppendFile(path, data, encodingOf(options))
+async function appendFile (path: PathLike, data: unknown, options?: WriteFileOptions | string): Promise<void> {
+  await doAppendFile(path, data, options)
 }
 
-async function mkdir (path: string, opts?: MkdirOptions): Promise<void> {
+async function mkdir (path: PathLike, opts?: MkdirOptions): Promise<void> {
   await doMkdir(path, opts)
 }
 
-async function readdir (path: string): Promise<readonly string[]> {
-  return await doReaddir(path)
+async function readdir (path: PathLike, options: ReaddirOptions & { withFileTypes: true }): Promise<readonly NodeDirent[]>
+async function readdir (path: PathLike, options: ReaddirOptions & { encoding: 'buffer' }): Promise<readonly Uint8Array[]>
+async function readdir (path: PathLike, options?: ReaddirOptions | string | null): Promise<readonly string[]>
+async function readdir (path: PathLike, options?: ReaddirOptions | string | null): Promise<ReadonlyArray<string | Uint8Array | NodeDirent>> {
+  return await doReaddir(path, options)
 }
 
-async function stat (path: string): Promise<NodeStats> {
+async function stat (path: PathLike): Promise<NodeStats> {
   return await doStat(path)
 }
 
-async function rm (path: string, opts?: RmOptions): Promise<void> {
+async function rm (path: PathLike, opts?: RmOptions): Promise<void> {
   await doRm(path, opts)
 }
 
-async function rename (from: string, to: string): Promise<void> {
+async function rename (from: PathLike, to: PathLike): Promise<void> {
   await doRename(from, to)
 }
 
-async function unlink (path: string): Promise<void> {
+async function unlink (path: PathLike): Promise<void> {
   await doUnlink(path)
 }
 
 /** `mode` is accepted for Node signature parity; doAccess's own header says why it cannot be distinguished. */
-async function access (path: string, _mode?: number): Promise<void> {
+async function access (path: PathLike, _mode?: number): Promise<void> {
   await doAccess(path)
 }
 
@@ -83,3 +85,9 @@ export const promises = refusingProxy({
   // object documents for the top-level fs.constants.
   constants: FS_CONSTANTS
 }, otherFsPromisesMember)
+
+// The `fs/promises` module target (module-map.ts) is this file itself: the
+// same object as fs.promises, as default export and as named members.
+export { openHandle as open, access, readFile, writeFile, appendFile, rename, unlink, mkdir, readdir, stat, rm }
+export const constants = FS_CONSTANTS
+export default promises

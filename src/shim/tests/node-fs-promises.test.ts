@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Orivon } from '../../contracts/capability-api.js'
 import type { FileStat } from '../../contracts/handles.js'
 import { createFakeFileHandle } from './support/fake-file-handle.js'
+import { PageBuffer } from './support/page-buffer.js'
 
 type GlobalWithOrivon = typeof globalThis & { orivon?: Orivon }
 
@@ -33,7 +34,7 @@ function installFakeOrivon (): {
       },
       writeFile: async (path: string, data: Uint8Array) => { files.set(path, data) },
       mkdir: async () => {},
-      readdir: async (path: string) => (path === '/torrents' ? ['a.bin', 'b.bin'] : []),
+      readdir: async (path: string) => (path === 'torrents' ? ['a.bin', 'b.bin'] : []),
       stat: async (path: string) => {
         const stat = stats.get(path)
         if (stat === undefined) throw orivonError('notFound', 'no such file')
@@ -63,60 +64,60 @@ describe('fs.promises', () => {
   it('writeFile then readFile round-trips bytes as a real Buffer', async () => {
     const { files } = installFakeOrivon()
     const { promises } = await import('../node-fs-promises.js')
-    await promises.writeFile('/x', new Uint8Array([1, 2, 3]))
-    expect(files.get('/x')).toEqual(new Uint8Array([1, 2, 3]))
-    const data = await promises.readFile('/x')
-    expect(Buffer.isBuffer(data)).toBe(true)
+    await promises.writeFile('x', new Uint8Array([1, 2, 3]))
+    expect(files.get('x')).toEqual(new Uint8Array([1, 2, 3]))
+    const data = await promises.readFile('x')
+    expect(PageBuffer.isBuffer(data)).toBe(true)
   })
 
   it('readFile respects an encoding option', async () => {
     installFakeOrivon()
     const { promises } = await import('../node-fs-promises.js')
-    await promises.writeFile('/x', '{"ok":true}')
-    expect(await promises.readFile('/x', 'utf8')).toBe('{"ok":true}')
+    await promises.writeFile('x', '{"ok":true}')
+    expect(await promises.readFile('x', 'utf8')).toBe('{"ok":true}')
   })
 
   it('appendFile opens with flags \'a\' -- a real append, sharing node-fs-core.ts\'s doAppendFile with the callback surface', async () => {
     const { files, openCalls } = installFakeOrivon()
-    files.set('/log', new TextEncoder().encode('first\n'))
+    files.set('log', new TextEncoder().encode('first\n'))
     const { promises } = await import('../node-fs-promises.js')
-    await promises.appendFile('/log', 'second\n')
-    expect(openCalls).toEqual([{ path: '/log', flags: 'a' }])
-    expect(new TextDecoder().decode(files.get('/log'))).toBe('first\nsecond\n')
+    await promises.appendFile('log', 'second\n')
+    expect(openCalls).toEqual([{ path: 'log', flags: 'a' }])
+    expect(new TextDecoder().decode(files.get('log'))).toBe('first\nsecond\n')
   })
 
   it('access resolves for an existing path and rejects Node-shaped for a missing one', async () => {
     const { stats } = installFakeOrivon()
-    stats.set('/x', { size: 1, isFile: true, isDirectory: false, mtimeMs: 0 })
+    stats.set('x', { size: 1, isFile: true, isDirectory: false, mtimeMs: 0 })
     const { promises } = await import('../node-fs-promises.js')
-    await expect(promises.access('/x')).resolves.toBeUndefined()
-    await expect(promises.access('/missing')).rejects.toMatchObject({ code: 'notFound' })
+    await expect(promises.access('x')).resolves.toBeUndefined()
+    await expect(promises.access('missing')).rejects.toMatchObject({ code: 'notFound' })
   })
 
   it('unlink rides rm with no options', async () => {
     installFakeOrivon()
     const { promises } = await import('../node-fs-promises.js')
-    await expect(promises.unlink('/x')).resolves.toBeUndefined()
+    await expect(promises.unlink('x')).resolves.toBeUndefined()
   })
 
   it('mkdir / readdir / stat / rm / rename all resolve through the same core as the callback family', async () => {
     const { stats } = installFakeOrivon()
-    stats.set('/piece-0', { size: 10, isFile: true, isDirectory: false, mtimeMs: 1000 })
+    stats.set('piece-0', { size: 10, isFile: true, isDirectory: false, mtimeMs: 1000 })
     const { promises } = await import('../node-fs-promises.js')
-    await expect(promises.mkdir('/torrents/abc', { recursive: true })).resolves.toBeUndefined()
-    await expect(promises.readdir('/torrents')).resolves.toEqual(['a.bin', 'b.bin'])
-    const stat = await promises.stat('/piece-0')
+    await expect(promises.mkdir('torrents/abc', { recursive: true })).resolves.toBeUndefined()
+    await expect(promises.readdir('torrents')).resolves.toEqual(['a.bin', 'b.bin'])
+    const stat = await promises.stat('piece-0')
     expect(stat.isFile()).toBe(true)
-    await expect(promises.rm('/x', { recursive: true })).resolves.toBeUndefined()
-    await expect(promises.rename('/a', '/b')).resolves.toBeUndefined()
+    await expect(promises.rm('x', { recursive: true })).resolves.toBeUndefined()
+    await expect(promises.rename('a', 'b')).resolves.toBeUndefined()
   })
 
   it('open routes to the same fs.open/local-cursor mechanism as the callback family', async () => {
     const { openCalls } = installFakeOrivon()
     const { promises } = await import('../node-fs-promises.js')
-    const handle = await promises.open('/piece-0', 'r+')
+    const handle = await promises.open('piece-0', 'r+')
     expect(typeof handle.fd).toBe('number')
-    expect(openCalls).toEqual([{ path: '/piece-0', flags: 'r+' }])
+    expect(openCalls).toEqual([{ path: 'piece-0', flags: 'r+' }])
   })
 
   it('constants carries the same object fs.constants does', async () => {

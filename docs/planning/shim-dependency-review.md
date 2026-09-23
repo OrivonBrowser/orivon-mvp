@@ -146,13 +146,19 @@ future reader will actually hit them, not just here:
   brotli need is still a separate WASM-codec decision (`brotli-wasm` is the concrete answer this
   review recorded above); see `module-map.ts`'s `zlib` row for the same note in the place a
   contributor is more likely to read it.
-- **The `util` package is approved but deliberately not wired in.** `src/shim/node-util.ts`'s
-  hand-written `inherits`-only implementation stays: it is already tested against real Node's
-  `util.inherits`, this review's own Rule 6 reasoning for writing it by hand did not change just
-  because the package cleared the dependency gate, and running both would be a second
-  implementation of the same idea (`code-guidelines.md` Rule 3). The `util` package sits in
-  `package.json` unused for now; extend `node-util.ts`, not the package, if a real caller needs
-  more of `util` later.
+- **The `util` package was approved and, at first, deliberately not wired in**, on the Rule 6
+  reasoning above: one confirmed caller, of one function.
+- **Revisited 2026-09-22: the `util` package is wired in, with local corrections.** Ported code
+  calls far more of `util` than `inherits` (`promisify`, `inspect`, `format`, `types`,
+  `deprecate`, `debuglog`), and readable-stream itself reads `util.debuglog` and `util.inspect`,
+  so the one-function premise no longer held; hand-writing `format`, `inspect` and the `types`
+  predicates would have been a second implementation of the package (`code-guidelines.md`
+  Rule 3). `src/shim/node-util.ts` now stands on the package and replaces only what it gets wrong
+  or predates: `promisify` keyed on Node's registry symbol, Node's `setPrototypeOf` form of
+  `inherits`, `isDeepStrictEqual`, and the platform's `TextEncoder`/`TextDecoder`. The cost is
+  about thirty small pure-JS transitive packages in any bundle that imports `util`
+  (`src/shim/README.md`, "`node-util.ts` stands on the `util` package, and corrects it";
+  `decision-log.md` `d-0074`).
 
 `dns` is unchanged by this approval: still a broker-capability question
 (`k-rpc-socket` needs real `dns.lookup`), not a package this review could answer, and not

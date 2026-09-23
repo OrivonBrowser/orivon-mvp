@@ -14,15 +14,14 @@
 // it -- there is no way to reach a real `net.fetch` success THROUGH
 // `electronFetch` without a genuinely public, routable HTTPS endpoint. What
 // this file proves instead: (1) `electronFetch`'s guard really refuses a
-// real local server, for real; (2) a real net.fetch Response's contract
-// (ok/status/url/body/arrayBuffer) is exactly what fetch-budget.ts's real,
-// unmodified `fetchWithBudget` needs, proven by draining real content
-// through it; (3) `net.fetch`'s `response.url` really is '' on an ordinary
-// response, matching the A59 spike's own measurement, as a standing
-// regression check rather than a one-off probe; (4) `redirect: 'error'`
-// really produces a rejection against a real redirecting server -- the
-// guarantee electron-fetch.ts's own comment and fetch-budget.ts's `Fetch`
-// doc comment both say this file proves.
+// real local server, for real; (2) `netFetch`'s response (over a real
+// `net.request`) has exactly the contract fetch-budget.ts's real, unmodified
+// `fetchWithBudget` needs, proven by draining real content through it;
+// (3) its `url` is the requested url, never the '' net.fetch reports
+// (A59/A141); (4) against a real redirecting server, a same-origin hop is
+// followed and a cross-origin one refused -- the guarantee electron-fetch.ts's
+// own comment and fetch-budget.ts's `Fetch` doc comment both say this file
+// proves.
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { createServer } from 'node:http'
 import type { Server } from 'node:http'
@@ -48,6 +47,11 @@ beforeAll(async () => {
   server = createServer((req, res) => {
     if (req.url === '/redirect') {
       res.writeHead(302, { Location: '/plain' })
+      res.end()
+      return
+    }
+    if (req.url === '/cross') {
+      res.writeHead(302, { Location: `http://localhost:${String(port)}/plain` })
       res.end()
       return
     }
@@ -131,8 +135,7 @@ it('the real electron-fetch.ts adapter, against a real local server, inside a re
     expect(plainResult.threw).toBe(false)
     expect(plainResult.ok).toBe(true)
     expect(plainResult.status).toBe(200)
-    expect(plainResult.url).toBe('')
-    expect(plainResult.type).toBe('default')
+    expect(plainResult.url).toBe(plainUrl)
 
     // (2continued): the same real Response, fed through the REAL
     // fetchWithBudget (fetch-budget.ts, unmodified) -- proves the actual
@@ -146,18 +149,26 @@ it('the real electron-fetch.ts adapter, against a real local server, inside a re
     expect(budgetResult.ok).toBe(true)
     expect(budgetResult.contentUtf8).toBe(PLAIN_BODY)
 
-    // (4) THE LOAD-BEARING PROOF: redirect: 'error' really produces a
-    // rejection against a real redirecting server. If this option is ever
-    // removed or changed, this assertion fails -- see electron-fetch.ts's
-    // own comment on `netFetch` and fetch-budget.ts's `Fetch` doc comment,
-    // both of which point back here.
+    // (4) THE LOAD-BEARING PROOF, both halves, against a real redirecting
+    // server: a same-origin hop is followed and its bytes arrive, and a hop
+    // to another origin is refused before anything from there is read.
+    // If netFetch's per-hop check (redirectRefusal) is ever removed, the
+    // second assertion fails -- see fetch-budget.ts's `Fetch` doc comment.
     const redirectResult = await app.evaluate(
       async (_electron, args: { url: string, cap: number }) =>
         await globalThis.__orivonLoaderAdapterProbe!.callNetFetchThroughBudget(args.url, args.cap),
       { url: redirectUrl, cap: 4096 }
     )
-    expect(redirectResult.ok).toBe(false)
-    expect(redirectResult.reason).toMatch(/could not fetch/)
+    expect(redirectResult.ok).toBe(true)
+    expect(redirectResult.contentUtf8).toBe(PLAIN_BODY)
+
+    const crossResult = await app.evaluate(
+      async (_electron, args: { url: string, cap: number }) =>
+        await globalThis.__orivonLoaderAdapterProbe!.callNetFetchThroughBudget(args.url, args.cap),
+      { url: `http://${HOST}:${String(port)}/cross`, cap: 4096 }
+    )
+    expect(crossResult.ok).toBe(false)
+    expect(crossResult.reason).toMatch(/another origin/)
   } finally {
     await closeElectron(app)
   }

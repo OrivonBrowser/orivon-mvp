@@ -20,19 +20,11 @@ import { installFromHint } from './app-install.js'
 import { createInstallConsentPrompt, createPerCapabilityConsentPrompt } from '../consent/install-consent-prompt.js'
 import { createCapabilityPrompt, createReconsentPrompt, createRollbackChoicePrompt } from '../consent/update-outcomes-prompt.js'
 import { grantDevOrigin, isDevGrantableOrigin } from '../dev/dev-app-origin.js'
+import { installDevCsp } from '../dev/dev-csp.js'
+import { devModeEnabled } from '../dev/dev-mode.js'
 
 const DEV_MANIFEST_TIMEOUT_MS = 5_000
 
-/**
- * Developer mode is an explicit opt-in that only `scripts/dev.mjs` (`npm run
- * dev`) sets. NOT `!app.isPackaged`: Windows and macOS ship run-from-source,
- * so an end user on `npm start` is unpackaged too, and would otherwise let a
- * loopback origin raise a consent prompt (see `window.ts`'s same warning).
- * Read per call, not at module scope, so a test can set it per case.
- */
-function devModeEnabled (): boolean {
-  return process.env['ORIVON_DEV_ORIGINS'] === '1'
-}
 
 async function fetchDevManifest (url: string): Promise<{ ok: boolean, status: number, text: string }> {
   const response = await net.fetch(url, { redirect: 'error', signal: AbortSignal.timeout(DEV_MANIFEST_TIMEOUT_MS) })
@@ -67,6 +59,10 @@ export const appInstallSubsystem: Subsystem = {
         )
         if (outcome.outcome === 'rejected') {
           console.warn(`[app-install] developer-mode grant refused for ${hintingOrigin}: ${outcome.reason}`)
+        } else {
+          // Before returning: the caller reloads the tab, and that reload's
+          // document must already carry the installed-path CSP.
+          installDevCsp(broker, outcome.canonicalOrigin)
         }
         return outcome
       }

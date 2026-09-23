@@ -7,6 +7,7 @@
 // elsewhere needed to change.
 
 import type { DestroyResource, FailableDirectoryHandle, FailableFileHandle } from './handles/handle-contracts.js'
+import type { OrivonError } from '../contracts/index.js'
 
 /** What `fs.stat` reports. Mirrors `contracts/handles.ts`'s `FileStat` exactly -- one shape, not redeclared. */
 export interface RawFileStat {
@@ -82,6 +83,14 @@ export interface BrokerFs {
    * `writeFile` above, which take no signal either.
    */
   open(path: string, flags: string): Promise<OpenedFile>
+  /**
+   * The bytes the regular files at or under `path` occupy (0 if it does not
+   * exist), symlinks never followed. Measures an origin's quota usage at
+   * first use and what a recursive `rm` frees. Optional: without it the
+   * count starts from zero each session and a directory's removal frees
+   * nothing, which only ever over-counts.
+   */
+  diskUsage?(path: string): Promise<number>
 }
 
 /**
@@ -118,11 +127,10 @@ export interface BrokerFsMethods {
   /** Confined and budgeted like `readFile`. Mirrors `contracts/handles.ts`'s `FileStat` shape exactly. */
   stat(origin: string, path: string): Promise<RawFileStat>
   /**
-   * Confined and budgeted like `writeFile`, but reserves no quota: quota
-   * tracks bytes WRITTEN (`fs.writeFile`'s own doc), and deleting is never
-   * a write. `recursive: true` matches `node:fs/promises.rm`; `force` is
-   * never exposed -- a missing path yields `notFound`, same as every other
-   * fs call.
+   * Confined and budgeted like `writeFile`, and gives the bytes it removed
+   * back to the quota. `recursive: true` matches `node:fs/promises.rm`;
+   * `force` is never exposed -- a missing path yields `notFound`, same as
+   * every other fs call.
    */
   rm(origin: string, path: string, opts?: { recursive?: boolean }): Promise<void>
   /**
@@ -146,6 +154,14 @@ export interface BrokerFsMethods {
    * against reads/writes on the socket it returns.
    */
   open(origin: string, path: string, flags: string): Promise<FailableFileHandle>
+  /**
+   * The error an operation on `handleId` fails with once `origin` no longer
+   * holds it live: 'closed' (platformCode EBADF) if it was closed or died,
+   * 'revoked' if its grant, pick or session was withdrawn, and the uniform
+   * 'denied' for an id this origin never held. Never throws; the transport,
+   * whose own lookup of a file or folder handle came up empty, throws it.
+   */
+  handleGone(origin: string, handleId: string): OrivonError
   /**
    * `orivon.fs.userSelected` -- the OS picker, checked against nothing:
    * capability-api.ts is explicit that the user's choice at the dialog IS

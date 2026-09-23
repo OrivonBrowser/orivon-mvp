@@ -1,13 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { parseManifest, type ManifestResult } from '../manifest.js'
 
-// PR #192 added `Manifest.consentGranularity` (src/contracts/manifest.ts) but
-// this parser's own MANIFEST_KEYS allowlist never learned the name -- so
-// readManifest's own extraKey check (this file's header: "rejects any field
-// it does not recognise") refused every manifest that used the field the
-// contract itself documents, blaming the app author for following the
-// contract. Closing that trap is this suite's whole job; docs/open-
-// questions.md A138 is the field's own design rationale, not repeated here.
+// `Manifest.consentGranularity` (src/contracts/manifest.ts) as the loader's
+// parser reads it: both documented values accepted, anything else refused
+// by name, and the field recognised as the contract's own rather than
+// treated as an unknown top-level key. A parser whose key list forgot the
+// name would turn correct use of the contract into the app author's
+// mistake. docs/open-questions.md A138 is the field's design rationale.
 
 /** Required fields only, `capabilities: {}` -- mirrors manifest.test.ts's own helper of the same name (that file's local fixture is not exported, so this is a second, deliberately small copy, not a shared one -- code-guidelines.md Rule 3 is about helper LOGIC, not a five-field object literal). */
 function minimal (overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -74,12 +73,12 @@ describe('consentGranularity', () => {
     expect(reason(parseManifest(minimal({ consentGranularity: 'All-Or-Nothing' })))).toMatch(/consentGranularity/)
   })
 
-  // The trap this whole suite exists to close: before MANIFEST_KEYS knew the
-  // name, this was rejected as an "unrecognised field" -- correct usage of
-  // the documented contract, refused as if the app author had made it up.
-  it('is a recognised top-level field, not rejected as unrecognised', () => {
+  // The trap this whole suite exists to close: a field MANIFEST_KEYS does not
+  // know is dropped as unrecognised -- correct usage of the documented
+  // contract, discarded as if the app author had made it up.
+  it('is a recognised top-level field, not ignored as unrecognised', () => {
     const result = parseManifest(minimal({ consentGranularity: 'per-capability' }))
-    if (result.ok) return
-    expect(result.reason).not.toMatch(/unrecognised field/)
+    if (!result.ok) throw new Error(result.reason)
+    expect(result.ignoredFields).toEqual([])
   })
 })

@@ -17,7 +17,7 @@ import type { Manifest } from '../../contracts/index.js'
 /** The two fields of an origin's record this module reads and writes. `GrantLedger`'s own `OriginRecord` satisfies it structurally. */
 export interface ResourceLimitsRecord {
   manifest: Manifest | undefined
-  fsBytesWritten: number
+  fsBytesUsed: number
 }
 
 /**
@@ -60,9 +60,14 @@ export function socketAllowance (record: ResourceLimitsRecord | undefined): numb
  */
 export function reserveFsBytes (record: ResourceLimitsRecord, bytes: number): boolean {
   const quotaBytes = record.manifest?.capabilities.fs?.quotaBytes
-  if (quotaBytes !== undefined && record.fsBytesWritten + bytes > quotaBytes) return false
-  record.fsBytesWritten += bytes
+  if (quotaBytes !== undefined && record.fsBytesUsed + bytes > quotaBytes) return false
+  record.fsBytesUsed += bytes
   return true
+}
+
+/** Adds bytes already on disk -- measured, not requested -- so no quota check applies. */
+export function chargeFsBytes (record: ResourceLimitsRecord, bytes: number): void {
+  record.fsBytesUsed += bytes
 }
 
 /**
@@ -73,5 +78,5 @@ export function reserveFsBytes (record: ResourceLimitsRecord, bytes: number): bo
  * that would then let a future write past the real limit.
  */
 export function releaseFsBytes (record: ResourceLimitsRecord, bytes: number): void {
-  record.fsBytesWritten = Math.max(0, record.fsBytesWritten - bytes)
+  record.fsBytesUsed = Math.max(0, record.fsBytesUsed - bytes)
 }

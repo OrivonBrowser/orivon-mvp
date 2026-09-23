@@ -1,44 +1,54 @@
-// IncomingMessage: a real Node `stream.Readable` subclass, not a hand-rolled
-// EventEmitter -- so `.pipe()`, `.setEncoding()` and every other Readable
-// method a real caller might use work for free, exactly as they do on
-// Node's own IncomingMessage (which is the same subclass relationship).
+// IncomingMessage: a real Node `stream.Readable` subclass, so `.pipe()`,
+// `.setEncoding()` and every other Readable method work as they do on
+// Node's own IncomingMessage.
 //
-// BACKPRESSURE, NARROWED ON PURPOSE: `_read` is a no-op, and the parser
-// feeds `_pushBody` eagerly as bytes arrive from the underlying TcpSocket,
-// rather than propagating this Readable's own high-water mark back to the
-// socket reader. Correct and simple for the REST/tracker-sized responses
-// this queue item targets; a bulk-transfer consumer (torrent piece data)
-// reads a TcpSocket directly today and is unaffected. Flagged in the PR
-// rather than built now -- no confirmed caller needs a bounded buffer here.
+// BACKPRESSURE: node-http-client.ts pushes body bytes through `_pushBody`
+// and pauses the socket when it returns false; `_read` resumes it once a
+// consumer drains. A slow consumer therefore slows the socket, and through
+// it the broker's credit window, instead of buffering the whole body here.
+//
+// autoDestroy/emitClose are explicit for the same reason as
+// node-net-socket.ts's: readable-stream 3 defaults autoDestroy to false.
 
-import { Readable } from 'stream'
+import { Readable, type Duplex } from 'stream'
 import type { ParsedResponseHead } from './node-http-parser.js'
-import type { TcpSocket } from '../contracts/handles.js'
+
+type ResponseSocket = Duplex & {
+  remoteAddress?: string
+  remotePort?: number
+  setTimeout?: (msecs: number, callback?: () => void) => unknown
+}
 
 export class IncomingMessage extends Readable {
   statusCode: number | null = null
   statusMessage: string | null = null
   httpVersion = ''
+  httpVersionMajor = 0
+  httpVersionMinor = 0
   headers: Readonly<Record<string, string | readonly string[]>> = {}
   rawHeaders: readonly string[] = []
+  trailers: Readonly<Record<string, string>> = {}
+  rawTrailers: readonly string[] = []
   complete = false
-  /**
-   * The real TcpSocket this response arrived over -- not a fake, and not a
-   * Node net.Socket lookalike. node-https.ts's header already documents the
-   * gap this implies: `res.socket.getPeerCertificate()` and friends are not
-   * here, because the broker terminates TLS and there is no certificate to
-   * hand back. What IS real: `remoteAddress`/`remotePort`/etc, the same
-   * fields every caller reading `res.socket` for connection info wants.
-   */
-  socket: TcpSocket | null = null
+  aborted = false
+  upgrade = false
+  url = ''
+  method: string | null = null
+  /** The net.Socket (a TLSSocket for https) this response arrived over. */
+  socket: ResponseSocket | null
+  req: unknown = null
 
-  override _read (): void {
-    // Intentionally empty -- see this file's header.
+  constructor (socket: ResponseSocket | null = null) {
+    super({ autoDestroy: true, emitClose: true })
+    this.socket = socket
   }
 
-  /** node-http-client.ts calls this once, when the socket that will carry the response is known -- before any bytes have necessarily arrived. */
-  _setSocket (socket: TcpSocket): void {
-    this.socket = socket
+  get connection (): ResponseSocket | null { return this.socket }
+
+  override _read (): void {
+    // An upgrade response owns no bytes: its socket now belongs to whoever
+    // took the 'upgrade' event, and resuming it here would drop their data.
+    if (!this.upgrade) this.socket?.resume()
   }
 
   /** node-http-client.ts calls this once, when the parser finishes the status line and headers. */
@@ -46,16 +56,46 @@ export class IncomingMessage extends Readable {
     this.statusCode = head.statusCode
     this.statusMessage = head.statusMessage
     this.httpVersion = head.httpVersion
+    const [major, minor] = head.httpVersion.split('.')
+    this.httpVersionMajor = Number(major)
+    this.httpVersionMinor = Number(minor)
     this.headers = head.headers
     this.rawHeaders = head.rawHeaders
   }
 
-  _pushBody (chunk: Uint8Array): void {
-    this.push(chunk)
+  /** False once the consumer is behind: the caller pauses the socket until `_read` resumes it. */
+  _pushBody (chunk: Uint8Array): boolean {
+    return this.push(chunk)
   }
 
   _pushEnd (): void {
     this.complete = true
     this.push(null)
+  }
+
+  setTimeout (msecs: number, callback?: () => void): this {
+    this.socket?.setTimeout?.(msecs, callback)
+    return this
+  }
+
+  /** Idempotent, as Node's is: readable-stream 3 re-emits 'error' on a second errored destroy. */
+  override destroy (error?: Error): this {
+    if (this.destroyed) return this
+    return super.destroy(error)
+  }
+
+  /**
+   * An unfinished response is 'aborted', and takes its socket down with it,
+   * as Node's does. The error reaches 'error' only when someone listens:
+   * Node's own backward-compatible rule, and what keeps a response the app
+   * never attached a handler to from throwing an uncaught 'aborted'.
+   */
+  override _destroy (error: Error | null, callback: (error?: Error | null) => void): void {
+    if (!this.complete) {
+      this.aborted = true
+      this.emit('aborted')
+      if (this.socket !== null && !this.socket.destroyed) this.socket.destroy()
+    }
+    callback(this.listenerCount('error') > 0 ? error : null)
   }
 }

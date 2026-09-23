@@ -1,10 +1,14 @@
 // The real Fetch (fetch-bundle.ts's own type) over Electron's net.fetch --
 // session-aware, unlike Node's global fetch.
 
+import { Readable } from 'node:stream'
+import type { IncomingMessage } from 'electron'
 import type { Fetch, FetchResponse } from './fetch-bundle.js'
+import type { RequestHeaders } from './fetch-budget.js'
+import { originFromUrl } from '../broker/policy/origin.js'
 import { classifyAddress, isPublicUnicast } from '../broker/policy/address.js'
 
-export const electronFetch: Fetch = async (url, pinnedAddresses, signal) => {
+export const electronFetch: Fetch = async (url, pinnedAddresses, signal, headers) => {
   // Dynamically imported: outside a real Electron process (i.e. under
   // vitest), `electron`'s entry point is a path STRING, and a top-level
   // import would silently bind `undefined` rather than throw -- same
@@ -37,7 +41,7 @@ export const electronFetch: Fetch = async (url, pinnedAddresses, signal) => {
   // What IS still done here, on top of the shared resolver above:
   // re-resolve via `net.resolveHost` immediately before THIS request, and
   // refuse if the host no longer resolves as public. The asset loop can run
-  // for up to BUNDLE_TIMEOUT_MS (10 minutes) after the guard's own
+  // for up to BUNDLE_TIMEOUT_MS (30 minutes) after the guard's own
   // resolution; this re-check is what keeps each of possibly many later
   // fetches honest against a resolution that changed (a TTL genuinely
   // expiring, or a rebinding attacker exploiting exactly that) since the
@@ -69,40 +73,93 @@ export const electronFetch: Fetch = async (url, pinnedAddresses, signal) => {
     throw new Error(`install origin's host is not a public address literal: ${hostname}`)
   }
 
-  return await netFetch(url, signal)
+  return await netFetch(url, signal, headers)
+}
+
+/** Redirect hops one asset fetch may follow. A static host needs one or two (`/index.html` -> `/`, `/app` -> `/app/`). */
+export const MAX_REDIRECTS = 5
+
+/**
+ * Why a redirect from `requestedUrl` to `redirectUrl` must not be followed,
+ * or null if it may: it stays on the requested origin (scheme, host and
+ * port), and fewer than MAX_REDIRECTS hops have been taken. A cross-origin
+ * hop is refused because fetch-bundle.ts pins every asset under the url it
+ * REQUESTED (A141): only a same-origin hop keeps that true of the bytes.
+ */
+export function redirectRefusal (requestedUrl: string, redirectUrl: string, hopsTaken: number): string | null {
+  if (hopsTaken >= MAX_REDIRECTS) return `more than ${String(MAX_REDIRECTS)} redirects from ${requestedUrl}`
+  const from = originFromUrl(requestedUrl)
+  const to = originFromUrl(redirectUrl)
+  if (from === null || to !== from) return `redirected to another origin (${to ?? redirectUrl}) from ${requestedUrl}`
+  return null
+}
+
+/** Electron's IncomingMessage as the minimal `FetchResponse` fetch-budget.ts reads. */
+function toFetchResponse (url: string, response: IncomingMessage): FetchResponse {
+  const body = Readable.toWeb(response as unknown as Readable) as ReadableStream<Uint8Array>
+  return {
+    ok: response.statusCode >= 200 && response.statusCode < 300,
+    status: response.statusCode,
+    url,
+    headers: {
+      get: (name) => {
+        const value = response.headers[name.toLowerCase()]
+        return value === undefined ? null : Array.isArray(value) ? value.join(', ') : value
+      }
+    },
+    body,
+    arrayBuffer: async () => await new Response(body).arrayBuffer()
+  }
 }
 
 /**
  * The exact fetch electronFetch makes once the address guard above has
- * passed -- exported separately so a test can exercise `redirect: 'error'`'s
- * real behaviour against a real server without also having to satisfy that
- * guard, which no local test server can ever pass (T12/A46's no carve-out
- * refuses every loopback literal outright). See
- * test/e2e-loader-adapter.test.ts.
+ * passed -- exported separately so a test can exercise its redirect handling
+ * against a real server without also having to satisfy that guard, which no
+ * local test server can ever pass (T12/A46 refuses every loopback literal).
+ * See test/e2e-loader-adapter.test.ts.
  *
- * credentials: 'omit' -- this fetches content from an origin the app has
- * no established session relationship with yet; no cookie should ever be
- * read from or written to a store on its behalf here.
+ * `net.request`, not `net.fetch`: `net.fetch` offers only `redirect:
+ * 'error'` (every redirect fails, including the `/index.html` -> `/` hop
+ * Cloudflare Pages and Vercel answer with) or `'follow'` (a hop to anywhere
+ * is followed unseen, and its `Response.url` is '' either way, A59/A141).
+ * With `redirect: 'manual'` each hop is shown to `redirectRefusal` before
+ * it is taken, and anything it refuses aborts the request -- so a response
+ * reaching fetch-bundle.ts always came from the requested origin. CHANGING
+ * THIS SILENTLY REOPENS THAT (`Fetch`'s own doc, fetch-budget.ts).
  *
- * SESSION UNSPECIFIED, AI-REC not an owner decision: no `session` option
- * means Electron's default session. Once per-app partitions land, this
- * may need the confirmed app's own partitioned session instead.
- *
- * redirect: 'error' -- closes the REDIRECT-specific vector, and (A141) now
- * underwrites a SECOND guarantee too. Electron's own net-client-request.ts
- * source causes a hard promise REJECTION the instant a redirect response is
- * seen, so a followed Response -- one whose bytes could have come from
- * somewhere other than `url` -- can never reach fetch-bundle.ts to be
- * inspected at all; the fetch call fails before a Response exists. That is
- * what makes it safe for fetch-bundle.ts's same-origin/canonical-path checks
- * to trust the REQUESTED url rather than `response.url`, which real
- * Electron reports as the empty string on every ordinary response (measured,
- * docs/open-questions.md A59/A141) and so cannot be trusted at all.
- * CHANGING OR REMOVING THIS OPTION SILENTLY REOPENS BOTH -- see `Fetch`'s
- * own doc comment (fetch-budget.ts) and test/e2e-loader-adapter.test.ts,
- * which fails if a real redirecting server stops producing a rejection here.
+ * credentials: 'omit' -- no cookie is read or written on the app's behalf
+ * before it has any session relationship. No `session` option: Electron's
+ * default session (AI recommendation, not an owner decision).
  */
-export async function netFetch (url: string, signal: AbortSignal): Promise<FetchResponse> {
+export async function netFetch (url: string, signal: AbortSignal, headers?: RequestHeaders): Promise<FetchResponse> {
   const { net } = await import('electron')
-  return await net.fetch(url, { credentials: 'omit', signal, redirect: 'error' })
+  return await new Promise<FetchResponse>((resolve, reject) => {
+    const request = net.request({ url, method: 'GET', credentials: 'omit', useSessionCookies: false, redirect: 'manual' })
+    for (const [name, value] of Object.entries(headers ?? {})) request.setHeader(name, value)
+    let hops = 0
+    let settled = false
+    const fail = (error: Error): void => {
+      if (settled) return
+      settled = true
+      request.abort()
+      reject(error)
+    }
+    request.on('redirect', (_status, _method, redirectUrl) => {
+      const refusal = redirectRefusal(url, redirectUrl, hops)
+      if (refusal !== null) { fail(new Error(refusal)); return }
+      hops += 1
+      request.followRedirect()
+    })
+    request.on('response', (response) => {
+      if (settled) return
+      settled = true
+      resolve(toFetchResponse(url, response))
+    })
+    request.on('error', (error) => { fail(error) })
+    if (signal.aborted) { fail(new Error('aborted')); return }
+    // Also after settling: aborting then tears down a body still streaming.
+    signal.addEventListener('abort', () => { request.abort(); fail(new Error('aborted')) }, { once: true })
+    request.end()
+  })
 }

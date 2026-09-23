@@ -5,6 +5,7 @@ import type { ConnectSecureDecision } from '../../broker/policy/connect-secure.j
 import { createAppRequestHandler, resolveRequestPath, verifiedManifestFor } from '../serve.js'
 import type { AuthoriseReach, ReachDial } from '../serve.js'
 import type { ReleaseReachSlot, ReserveReachSlot } from '../serve-reach-guard.js'
+import { createReachSlotPool } from '../serve-reach-slots.js'
 import { manifestJson, memoryStorage, ORIGIN, utf8 } from './test-helpers.js'
 
 const INDEX_HTML = '<h1>hello orivon</h1>'
@@ -202,7 +203,9 @@ describe('verifiedManifestFor', () => {
   })
 })
 
-const DEFAULT_CSP = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self'; font-src 'self'; media-src 'self'"
+const DEFAULT_CSP = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; " +
+  "connect-src 'self' data: blob:; img-src 'self' data: blob:; font-src 'self' data: blob:; media-src 'self' data: blob:; " +
+  "worker-src 'self' blob:; frame-src 'self' data: blob:"
 
 describe('createAppRequestHandler -- CSP (S4-6, ADR-0007/ADR-0006)', () => {
   it('sets a self-only CSP when no live grant source is given', async () => {
@@ -217,8 +220,9 @@ describe('createAppRequestHandler -- CSP (S4-6, ADR-0007/ADR-0006)', () => {
     const response = await handler(new Request(`${ORIGIN}/`))
 
     expect(response.headers.get('content-security-policy')).toBe(
-      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' api.example.com:443; " +
-      "img-src 'self'; font-src 'self'; media-src 'self'"
+      "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; " +
+      "connect-src 'self' data: blob: api.example.com:443; img-src 'self' data: blob:; font-src 'self' data: blob:; " +
+      "media-src 'self' data: blob:; worker-src 'self' blob:; frame-src 'self' data: blob:"
     )
   })
 
@@ -258,15 +262,18 @@ describe('createAppRequestHandler -- CSP (S4-6, ADR-0007/ADR-0006)', () => {
     expect(response.headers.get('content-security-policy')).toBe(DEFAULT_CSP)
   })
 
-  it('widens img-src/font-src/media-src to the live granted https.connect patterns, independently of connect-src\'s own tcp.connect grant', async () => {
+  it('widens connect-src/img-src/font-src/media-src to the live granted https.connect patterns, scheme-qualified, alongside connect-src\'s own tcp.connect sources', async () => {
     const handler = await createAppRequestHandler(
       await installedStorage(), ORIGIN, async () => ['api.example.com:443'], async () => ['cdn.example.com:443']
     )
     const response = await handler(new Request(`${ORIGIN}/`))
 
     const csp = response.headers.get('content-security-policy')
-    expect(csp).toContain("connect-src 'self' api.example.com:443")
-    expect(csp).toContain("img-src 'self' cdn.example.com:443; font-src 'self' cdn.example.com:443; media-src 'self' cdn.example.com:443")
+    expect(csp).toContain("connect-src 'self' data: blob: api.example.com:443 https://cdn.example.com:443;")
+    expect(csp).toContain(
+      "img-src 'self' data: blob: https://cdn.example.com:443; font-src 'self' data: blob: https://cdn.example.com:443; " +
+      "media-src 'self' data: blob: https://cdn.example.com:443"
+    )
   })
 })
 
@@ -451,7 +458,7 @@ describe('createAppRequestHandler -- fetchThirdParty A200 (reach socket allowanc
     }
   }
 
-  it('THE DEFECT, PROVEN: refuses the (N+1)th concurrent reach request once N are already held open, and restores the slot once they finish', async () => {
+  it('refuses the (N+1)th concurrent reach request when the allowance says no, and restores the slot once they finish', async () => {
     const slots = fakeSlots(2)
     const controllers: Array<ReadableStreamDefaultController<Uint8Array>> = []
     const reachDial: ReachDial = vi.fn(async () => new Response(new ReadableStream<Uint8Array>({ start (c) { controllers.push(c) } })))
@@ -466,8 +473,6 @@ describe('createAppRequestHandler -- fetchThirdParty A200 (reach socket allowanc
     expect(second.status).toBe(200)
     expect(reachDial).toHaveBeenCalledTimes(2)
 
-    // Unfixed code never consults an allowance at all, so this third
-    // request would dial too -- the exact unlimited-concurrency defect.
     const third = await handler(new Request('https://granted.example/c'))
     expect(third.status).toBe(404)
     expect(reachDial).toHaveBeenCalledTimes(2)
@@ -480,6 +485,26 @@ describe('createAppRequestHandler -- fetchThirdParty A200 (reach socket allowanc
 
     const fourth = await handler(new Request('https://granted.example/d'))
     expect(fourth.status).toBe(200)
+  })
+
+  it('waits for a queued slot instead of refusing: a request over the allowance is dialled once one finishes', async () => {
+    const pool = createReachSlotPool(() => 1)
+    const controllers: Array<ReadableStreamDefaultController<Uint8Array>> = []
+    const reachDial: ReachDial = vi.fn(async () => new Response(new ReadableStream<Uint8Array>({ start (c) { controllers.push(c) } })))
+    const authoriseReach: AuthoriseReach = async (host) => allow(host)
+    const handler = await createAppRequestHandler(
+      await installedStorage(), ORIGIN, undefined, undefined, authoriseReach, reachDial, undefined, pool.reserve, pool.release
+    )
+
+    const first = await handler(new Request('https://granted.example/a'))
+    const second = handler(new Request('https://granted.example/b'))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(reachDial).toHaveBeenCalledTimes(1)
+
+    controllers[0]?.close()
+    await first.text()
+    expect((await second).status).toBe(200)
+    expect(reachDial).toHaveBeenCalledTimes(2)
   })
 
   it('a reach that FAILS TO DIAL still releases its reserved slot -- the failure path is where a leak usually hides', async () => {

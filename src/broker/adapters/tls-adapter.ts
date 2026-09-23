@@ -11,28 +11,30 @@
 // itself -- a mocked TLS layer would prove nothing about certificate
 // verification, which is the whole security property ADR-0017 rests on.
 
-import { connect as tlsConnect } from 'node:tls'
+import { checkServerIdentity, connect as tlsConnect } from 'node:tls'
+import type { ConnectionOptions, PeerCertificate as NodePeerCertificate, TLSSocket } from 'node:tls'
 import { isIP } from 'node:net'
 import { Duplex } from 'node:stream'
-import type { DialedSocket, DialSecure } from '../broker-contracts.js'
+import type { SecureHandshake } from '../../contracts/index.js'
+import type { DialedSecureSocket, DialSecure, SecureDialOptions, SecureDialTarget } from '../broker-contracts.js'
 import { DIAL_TIMEOUT_MS, destroySocket } from './node-adapters.js'
-import { fail } from '../errors.js'
+import { errnoOf, fail } from '../errors.js'
+import { toPeerCertificate } from './tls-peer-certificate.js'
 
 /**
- * Trust anchors for the handshake. **Supplying this REPLACES the runtime's
- * built-in root store; it does not add to it.** Measured, not assumed: a real
- * public host that handshakes fine with no `ca` fails with
- * `UNABLE_TO_GET_ISSUER_CERT_LOCALLY` the moment an unrelated CA is passed.
- * So anything that reached this option in production would not be widening
- * trust, it would be switching every public certificate off.
+ * The roots a dial trusts when the call supplies no `ca` of its own.
+ * **Supplying either REPLACES the runtime's built-in root store; it does not
+ * add to it** -- measured, not assumed: a real public host that handshakes
+ * fine with no `ca` fails with `UNABLE_TO_GET_ISSUER_CERT_LOCALLY` the moment
+ * an unrelated CA is passed.
  *
- * A TESTING SEAM ONLY. `DialSecure` (../broker-contracts.ts) takes no such
- * option, so nothing between an app and this file can ever reach it: not
- * `net-capability.ts`'s `connectSecure`, not a grant, not a manifest. Only a
- * test that constructs its own `DialSecure` via `createDialTls` directly --
- * bypassing the broker entirely -- can supply one, to trust a throwaway CA
- * generated for that test run (there is no other way to hand a local test
- * server a certificate a real trusted root actually signed).
+ * A TESTING SEAM ONLY. The production `dialTls` below passes none, so it
+ * trusts the runtime's own store unless an app's call names its own `ca`
+ * (`SecureDialOptions`, which ../net-connect-secure.ts treats as removing
+ * the certificate's binding of the granted name). Only a test constructing
+ * its own dialer can set this, to exercise the default path against a
+ * throwaway CA: there is no other way to hand a local test server a
+ * certificate a trusted root actually signed.
  */
 export interface DialTlsOptions {
   // Matches node:tls's own `SecureContextOptions.ca` shape exactly (a plain,
@@ -42,45 +44,84 @@ export interface DialTlsOptions {
 }
 
 /**
- * One dial-and-handshake attempt. `tls.connect({ host, port })` resolves DNS,
- * opens the TCP connection AND performs the handshake -- certificate chain
- * validation and hostname verification against `host` itself, using the
- * runtime's own OpenSSL binding (`rejectUnauthorized` defaults to true, and
- * nothing here overrides `checkServerIdentity`: weakening either is not this
- * file's decision to make).
+ * The `tls.connect` options for dialling `address` on `target`'s behalf.
  *
  * `servername` MUST be passed explicitly for a hostname, and omitting it does
  * not merely lose a nicety -- it breaks the handshake against most of the
  * public web. `tls.connect` does NOT default it from `host` in this object
- * form (`socket.servername` reads `false`), so no SNI extension is sent, and
- * a name-based virtual host answers with whatever default certificate it
- * keeps for clients that send none. Measured against real Google: the reply
- * is a self-signed `CN = invalid2.invalid` whose subject reads
- * "No SNI provided - please fix your client.", which verification then
- * correctly refuses. It fails closed, so this was never a security hole --
- * it made `connectSecure` unable to reach ordinary HTTPS hosts at all.
+ * form, so no SNI extension is sent, and a name-based virtual host answers
+ * with whatever default certificate it keeps for clients that send none
+ * (real Google answers a self-signed `CN = invalid2.invalid`). A local
+ * single-certificate server cannot catch its absence; only a multi-tenant
+ * host distinguishes the two. An IP literal gets none: SNI's grammar has no
+ * place for one.
  *
- * An IP literal is excluded because SNI's grammar has no place for one and
- * passing it trips a Node deprecation warning; `isIP` is the same check
- * `src/shim/node-net-isip.ts` already relies on.
- *
- * A LOCAL TEST SERVER CANNOT CATCH THIS, which is why the suite did not:
- * a single-certificate server presents the same certificate whether or not
- * SNI arrives. Only a name-based virtual host distinguishes the two, so the
- * regression test for this belongs against a real multi-tenant host.
+ * `checkServerIdentity` is Node's own function, bound to the name the
+ * certificate must carry, because Node's default would verify against
+ * `servername || host` -- and `host` here may be a checked address literal
+ * rather than the name, or `servername` an empty string meaning "no SNI".
+ */
+function connectOptionsFor (address: string, target: SecureDialTarget, options: SecureDialOptions, base: DialTlsOptions): ConnectionOptions {
+  const identity = options.servername === undefined || options.servername === '' ? target.host : options.servername
+  const sni = options.servername ?? (isIP(target.host) === 0 ? target.host : '')
+  const ca = options.ca === undefined ? base.ca : typeof options.ca === 'string' ? options.ca : [...options.ca]
+  return {
+    host: address,
+    port: target.port,
+    ...(sni === '' ? {} : { servername: sni }),
+    ...(ca === undefined ? {} : { ca }),
+    ...(options.cert === undefined ? {} : { cert: options.cert }),
+    ...(options.key === undefined ? {} : { key: options.key }),
+    ...(options.pfx === undefined ? {} : { pfx: Buffer.from(options.pfx.buffer, options.pfx.byteOffset, options.pfx.byteLength) }),
+    ...(options.passphrase === undefined ? {} : { passphrase: options.passphrase }),
+    ...(options.alpnProtocols === undefined ? {} : { ALPNProtocols: [...options.alpnProtocols] }),
+    rejectUnauthorized: options.rejectUnauthorized !== false,
+    checkServerIdentity: (_hostname: string, cert: NodePeerCertificate) => checkServerIdentity(identity, cert)
+  }
+}
+
+/** Node types `authorizationError` as an Error; at runtime it is the verification error's code string (`_tls_wrap.js`'s onConnectSecure). */
+function authorizationErrorOf (socket: TLSSocket): string | undefined {
+  if (socket.authorized) return undefined
+  const raw: unknown = socket.authorizationError
+  if (typeof raw === 'string') return raw
+  return errnoOf(raw) ?? (raw instanceof Error ? raw.message : undefined)
+}
+
+function handshakeOf (socket: TLSSocket): SecureHandshake {
+  const authorizationError = authorizationErrorOf(socket)
+  const facts = {
+    authorized: socket.authorized,
+    alpnProtocol: socket.alpnProtocol ?? false,
+    peerCertificate: toPeerCertificate(socket.getPeerCertificate())
+  }
+  return authorizationError === undefined ? facts : { ...facts, authorizationError }
+}
+
+/**
+ * One dial-and-handshake attempt. With the default `rejectUnauthorized`,
+ * Node fails the handshake with 'error' (the verification code as `.code`,
+ * e.g. 'ERR_TLS_CERT_ALTNAME_INVALID') rather than ever reaching
+ * 'secureConnect'; with `false` it connects and reports the code on
+ * `authorizationError` instead.
  *
  * Mirrors ./node-adapters.ts's `dialOne` structure deliberately -- same
  * timeout race, same abort wiring -- because this is that function's sibling
  * for a secured connection, not a new pattern.
  */
-function dialOneSecure (
-  host: string,
-  port: number,
-  signal: AbortSignal,
-  options: DialTlsOptions
-): Promise<DialedSocket> {
+function dialOneSecure (connectOptions: ConnectionOptions, signal: AbortSignal): Promise<DialedSecureSocket> {
+  const where = `${String(connectOptions.host)}:${String(connectOptions.port)}`
   return new Promise((resolve, reject) => {
-    const socket = tlsConnect({ host, port, ca: options.ca, ...(isIP(host) === 0 ? { servername: host } : {}) })
+    let socket: TLSSocket
+    try {
+      socket = tlsConnect(connectOptions)
+    } catch (error) {
+      // Thrown synchronously while building the secure context: a key,
+      // certificate, pfx or passphrase the runtime cannot load. The app's
+      // own input, so 'invalid'; the fixed message never echoes it.
+      reject(fail('invalid', 'the TLS credentials or trust anchors could not be loaded', undefined, errnoOf(error)))
+      return
+    }
     const onAbort = (): void => { socket.destroy() }
     signal.addEventListener('abort', onAbort, { once: true })
     let timer: NodeJS.Timeout
@@ -91,19 +132,13 @@ function dialOneSecure (
     timer = setTimeout(() => {
       settle()
       socket.destroy()
-      reject(fail('timeout', `connecting to ${host}:${String(port)} exceeded ${String(DIAL_TIMEOUT_MS)}ms`))
+      reject(fail('timeout', `connecting to ${where} exceeded ${String(DIAL_TIMEOUT_MS)}ms`))
     }, DIAL_TIMEOUT_MS)
     timer.unref()
 
     // Raw, not wrapped in an OrivonError -- matching dialOne's own division
-    // of labour: ../io-errors.ts's mapTlsError is the caller's job (net-
-    // capability.ts), the one place this failure becomes 'unreachable' plus
-    // a platformCode. A rejected certificate surfaces here too: with the
-    // default `rejectUnauthorized: true`, Node fails the handshake with
-    // 'error' (verification error as `.code`, e.g.
-    // 'ERR_TLS_CERT_ALTNAME_INVALID') rather than ever reaching
-    // 'secureConnect' -- confirmed against a real mismatched-hostname
-    // handshake in ./tests/tls-adapter.test.ts, not assumed.
+    // of labour: ../io-errors.ts's mapTlsError is the caller's job, the one
+    // place this failure becomes 'unreachable' plus a platformCode.
     socket.once('error', (error: NodeJS.ErrnoException) => {
       settle()
       reject(error)
@@ -114,10 +149,11 @@ function dialOneSecure (
       resolve({
         readable: readable as ReadableStream<Uint8Array>,
         writable: writable as WritableStream<Uint8Array>,
-        remoteAddress: socket.remoteAddress ?? host,
-        remotePort: socket.remotePort ?? port,
+        remoteAddress: socket.remoteAddress ?? String(connectOptions.host),
+        remotePort: socket.remotePort ?? connectOptions.port ?? 0,
         localAddress: socket.localAddress ?? '',
         localPort: socket.localPort ?? 0,
+        ...handshakeOf(socket),
         setNoDelay: async (on) => { socket.setNoDelay(on) },
         setKeepAlive: async (on, initialDelayMs) => { socket.setKeepAlive(on, initialDelayMs) },
         destroy: async (reason) => { await destroySocket(socket, reason) }
@@ -126,22 +162,41 @@ function dialOneSecure (
   })
 }
 
+/** A failure before any handshake byte, which the next checked address may not share. */
+function isConnectFailure (error: unknown): boolean {
+  return (error as { syscall?: unknown } | null)?.syscall === 'connect'
+}
+
 /**
- * Builds a `DialSecure`. `options` exists only for ./tests/tls-adapter.
- * test.ts -- see `DialTlsOptions`'s own doc for why nothing else may ever
- * supply one.
+ * Builds a `DialSecure`. `base` exists only for tests -- see `DialTlsOptions`'s
+ * own doc for why production never supplies one.
+ *
+ * `target.addresses`, when present, are tried in order, like dialTcp's, but
+ * only past a connect-level failure: a handshake or verification failure
+ * means the server answered, and the next address would answer the same.
  */
-export function createDialTls (options: DialTlsOptions = {}): DialSecure {
-  return async (host, port, signal) => {
+export function createDialTls (base: DialTlsOptions = {}): DialSecure {
+  return async (target, options, signal) => {
     if (signal.aborted) throw fail('revoked', 'the grant authorising this connection was withdrawn')
-    return await dialOneSecure(host, port, signal, options)
+    let lastError: unknown = fail('unreachable', 'no address to connect to')
+    for (const address of target.addresses ?? [target.host]) {
+      try {
+        return await dialOneSecure(connectOptionsFor(address, target, options, base), signal)
+      } catch (error) {
+        lastError = error
+        if (signal.aborted) throw fail('revoked', 'the grant authorising this connection was withdrawn')
+        if (!isConnectFailure(error)) break
+      }
+    }
+    throw lastError
   }
 }
 
 /**
  * The production `DialSecure` -- exactly `createDialTls()` with no argument,
- * trusting only the runtime's own default certificate store (ADR-0017: no
- * new dependency, no override). Wired into `CreateBrokerOptions.dialSecure`
- * by ../transport/ipc.ts's `brokerIpcSubsystem`.
+ * trusting the runtime's own default certificate store unless a call names
+ * its own `ca` (ADR-0017: no new dependency). Wired into
+ * `CreateBrokerOptions.dialSecure` by ../transport/ipc.ts's
+ * `brokerIpcSubsystem`.
  */
 export const dialTls: DialSecure = createDialTls()

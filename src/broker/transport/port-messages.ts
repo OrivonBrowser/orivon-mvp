@@ -88,6 +88,23 @@ export function isSendMessage (value: unknown): value is SendMessage {
 }
 
 /**
+ * The destination to echo in a refusal when `value` is a `send` for
+ * `handleId` that fails `isSendMessage`, or `undefined` for anything else.
+ * A field that is not the right type echoes as `''` or `0`: the refusal only
+ * has to tell the renderer which of its own sends failed, never to be a
+ * usable address.
+ */
+export function malformedSendDestination (value: unknown, handleId: string): { address: string, port: number } | undefined {
+  if (typeof value !== 'object' || value === null || isSendMessage(value)) return undefined
+  const candidate = value as { kind?: unknown, handleId?: unknown, address?: unknown, port?: unknown }
+  if (candidate.kind !== 'send' || candidate.handleId !== handleId) return undefined
+  return {
+    address: typeof candidate.address === 'string' ? candidate.address : '',
+    port: typeof candidate.port === 'number' ? candidate.port : 0
+  }
+}
+
+/**
  * Validates and narrows one raw port message to its exact shape, or
  * `undefined` if it matches no recognised kind or fails that kind's own
  * shape check. The one function ./socket-relay.ts needs to route an

@@ -15,6 +15,34 @@
 // rather than exposing it to callers.
 
 import type { PinRecord } from '../broker/policy/pin.js'
+import type { UpdateCheckRecord } from './update-check.js'
+
+/** A readable file: its byte length, and its bytes as a stream of chunks -- never the whole file in one buffer. */
+export interface AssetStream {
+  readonly byteLength: number
+  readonly chunks: AsyncIterable<Uint8Array>
+}
+
+/**
+ * One asset opened for serving. Every read comes from the file as it was
+ * when opened, even if it is replaced on disk meanwhile. `close` releases it
+ * and may be called more than once.
+ */
+export interface OpenedAsset {
+  readonly byteLength: number
+  /** Changes whenever the file's bytes may have: its size, modification time or inode. */
+  readonly identity: string
+  /** Bytes `start` through `end` inclusive, in bounded chunks. Throws if the file ends early. */
+  read(start: number, end: number): AsyncIterable<Uint8Array>
+  close(): Promise<void>
+}
+
+/** One file being written into an origin's staging area; `id` names it to `readStaged`/`commitStaged`. */
+export interface StagingWriter {
+  readonly id: string
+  write(chunk: Uint8Array): Promise<void>
+  close(): Promise<void>
+}
 
 export interface LoaderStorage {
   /**
@@ -47,12 +75,9 @@ export interface LoaderStorage {
    * is not in `keep` -- the cleanup half of an update (docs/open-questions.md
    * A58, gap 2): without this, a superseded bundle version's files
    * accumulate on disk forever, since nothing else in this interface can
-   * remove what a previous `writeAsset` call wrote. `index.ts`'s `install()`
-   * calls this AFTER writing every entry of the new bundle, never before --
-   * so a crash mid-cleanup leaves both old and new files present (safe,
-   * cleaned up again on the next successful install) rather than risking a
-   * gap where a still-needed new file has not landed yet but an old one
-   * already has been removed.
+   * remove what a previous write left. Called at start, by
+   * `electron-serve.ts`'s `restorePinnedServing`, never by an install: a
+   * page still running the previous bundle may need its files until then.
    *
    * A no-op for an origin with nothing on disk yet (a fresh install).
    */
@@ -83,6 +108,36 @@ export interface LoaderStorage {
    * trusts only after checking it names its own storage location.
    */
   listPinnedOrigins(): Promise<readonly string[]>
+  /**
+   * STAGING: where a bundle's bytes wait between being fetched and being
+   * installed, so no asset is ever held whole in memory and nothing
+   * `readAsset` serves changes before `commitStaged`. One staging area per
+   * origin; `clearStaging` empties it (a no-op when there is none).
+   */
+  clearStaging(origin: string): Promise<void>
+  /** Opens a new, empty staged file for `origin`. */
+  openStaged(origin: string): Promise<StagingWriter>
+  /** A closed staged file's bytes, or undefined if `id` names none. Never throws. */
+  readStaged(origin: string, id: string): Promise<AssetStream | undefined>
+  /**
+   * Moves a staged file into place as the asset at canonical `path`, in one
+   * atomic rename: a reader sees the old bytes or the new ones, never a
+   * partial file, and a crash leaves one or the other.
+   */
+  commitStaged(origin: string, id: string, path: string): Promise<void>
+  /** `readAsset`'s streaming form, same never-throws, undefined-on-anything contract. */
+  readAssetStream(origin: string, path: string): Promise<AssetStream | undefined>
+  /** Opens an asset for serving a byte range of it; same never-throws, undefined-on-anything contract. */
+  openAsset(origin: string, path: string): Promise<OpenedAsset | undefined>
+  /**
+   * The raw value last passed to `writeUpdateCheck` for `origin`, or
+   * undefined when there is none or it cannot be read. Never throws; the
+   * caller parses it (`update-check.ts`), since the file is as untrusted as
+   * any other on disk.
+   */
+  readUpdateCheck(origin: string): Promise<unknown>
+  /** Persists `origin`'s last update check, outside `code/`; `undefined` deletes it. */
+  writeUpdateCheck(origin: string, record: UpdateCheckRecord | undefined): Promise<void>
 }
 
 /**

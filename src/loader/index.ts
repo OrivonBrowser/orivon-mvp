@@ -5,11 +5,11 @@
 // the Manifest.capabilities -> PatternSet mapping is update-patterns.ts, and
 // the storage seam is storage.ts. See src/loader/README.md.
 //
-// THE FIVE OUTCOMES (grown by one 2026-09-04 -- see LoadNeedsRollbackChoice
-// below): `installed` (TOFU, a `silent` decideUpdate() verdict, or an
-// ALREADY-ACKNOWLEDGED rollback -- all three mean "ready to run, nothing
-// new to ask the user"), `needs-reconsent`, `needs-capability-prompt`,
-// `needs-rollback-choice`, `rejected`. Showing UI for the middle three, or
+// THE SIX OUTCOMES: `installed` (TOFU, a `silent` decideUpdate() verdict,
+// or an ALREADY-ACKNOWLEDGED rollback -- all three mean "ready to run,
+// nothing new to ask the user"), `needs-reconsent`, `needs-capability-
+// prompt`, `needs-rollback-choice`, `rejected`, and `up-to-date` (checked
+// too recently to check again). Showing UI for the three prompts, or
 // wiring the broker's grant prompt, is explicitly out of scope here
 // (src/loader/README.md) -- this function returns the verdict and stops.
 //
@@ -20,17 +20,23 @@
 // src/broker/, which this file does not read; see LoadContext below.
 
 import type { CapabilityKind, Manifest } from '../contracts/index.js'
-import type { BundleEntry, BundleTree } from '../broker/policy/bundle-hash.js'
+import type { BundleTree } from '../broker/policy/bundle-hash.js'
 import type { Resolver } from '../broker/policy/connect.js'
-import { fromBundleTree, parsePinRecord } from '../broker/policy/pin.js'
+import { parsePinRecord } from '../broker/policy/pin.js'
 import type { PinRecord } from '../broker/policy/pin.js'
 import { decideUpdate } from '../broker/policy/update.js'
 import type { PatternSet } from '../broker/policy/update.js'
 import { withoutSwitchedOffCapabilities } from '../broker/policy/manifest-patterns.js'
 import { fetchBundle } from './fetch-bundle.js'
-import type { Fetch } from './fetch-bundle.js'
+import type { Fetch, StagedAsset } from './fetch-bundle.js'
+import { installAndNotify } from './install.js'
 import type { LoaderStorage } from './storage.js'
 import { patternSetFromCapabilities } from './update-patterns.js'
+import { originFromUrl } from '../broker/policy/origin.js'
+import { MANIFEST_PATH } from '../broker/policy/canonical-path.js'
+import { leafOf } from './leaf-hash.js'
+import { parseManifest } from './manifest.js'
+import { checkRecord, checkedRecently, loadCheckRecord, pinnedManifestLeaf, saveCheckRecord, validatorsForPin } from './update-check.js'
 
 export type { Fetch, FetchResponse } from './fetch-bundle.js'
 export type { LoaderStorage } from './storage.js'
@@ -66,7 +72,23 @@ export interface CreateLoaderOptions {
    * `installOrReject` itself already takes for storage failures.
    */
   readonly onInstalled?: (origin: string) => Promise<void>
+  /**
+   * When set, `load()` answers `'up-to-date'` without fetching anything for
+   * an origin whose last completed check (any outcome but `'rejected'`) was
+   * less than this many milliseconds ago, a record kept in `storage` so it
+   * survives a restart; and a later check asks for the manifest
+   * conditionally, answering `'up-to-date'` on a 304 without downloading
+   * the bundle. Unset means every call checks in full.
+   */
+  readonly updateCheckIntervalMs?: number
 }
+
+/**
+ * The interval `subsystem.ts` passes as `updateCheckIntervalMs`: an app is
+ * checked for an update at most once an hour, restarts included.
+ * AI-recommended; the owner confirms the number.
+ */
+export const UPDATE_CHECK_INTERVAL_MS = 60 * 60_000
 
 /**
  * What decideUpdate() needs that this file cannot derive on its own,
@@ -143,6 +165,13 @@ export interface LoadInstalled {
    * to consciously decide to drop that visibility, not do it by accident.
    */
   readonly rollbackNotice?: true
+  /**
+   * Set by `src/main/install/app-install.ts`, never by this loader: this
+   * install is what registered the origin with the broker this session. A
+   * tab built before that has no app-tab flag, so it runs without its
+   * shims until it reloads once.
+   */
+  readonly newlyRegistered?: true
 }
 
 export interface LoadNeedsReconsent {
@@ -150,8 +179,8 @@ export interface LoadNeedsReconsent {
   readonly canonicalOrigin: string
   readonly manifest: Manifest
   readonly tree: BundleTree
-  /** Every leaf's raw bytes -- so a future caller can persist after approval without re-fetching. */
-  readonly entries: readonly BundleEntry[]
+  /** Every leaf, waiting in staging -- so a caller can persist after approval without re-fetching. */
+  readonly entries: readonly StagedAsset[]
 }
 
 export interface LoadNeedsCapabilityPrompt {
@@ -159,7 +188,7 @@ export interface LoadNeedsCapabilityPrompt {
   readonly canonicalOrigin: string
   readonly manifest: Manifest
   readonly tree: BundleTree
-  readonly entries: readonly BundleEntry[]
+  readonly entries: readonly StagedAsset[]
   /** What the new manifest asks for -- the prompt's own job to render, not this file's. */
   readonly requestedPatterns: PatternSet
 }
@@ -185,7 +214,7 @@ export interface LoadNeedsRollbackChoice {
   readonly canonicalOrigin: string
   readonly manifest: Manifest
   readonly tree: BundleTree
-  readonly entries: readonly BundleEntry[]
+  readonly entries: readonly StagedAsset[]
   /** The origin's own floor, so a prompt can say what's already been seen, not just what's being offered now. */
   readonly versionFloor: string
 }
@@ -203,7 +232,13 @@ export interface LoadRejected {
   readonly reason: string
 }
 
-export type LoadResult = LoadInstalled | LoadNeedsReconsent | LoadNeedsCapabilityPrompt | LoadNeedsRollbackChoice | LoadRejected
+/** This origin was checked less than `updateCheckIntervalMs` ago, or its host answered the conditional manifest request with 304; no bundle was fetched and nothing changed. */
+export interface LoadUpToDate {
+  readonly outcome: 'up-to-date'
+  readonly canonicalOrigin: string
+}
+
+export type LoadResult = LoadInstalled | LoadNeedsReconsent | LoadNeedsCapabilityPrompt | LoadNeedsRollbackChoice | LoadRejected | LoadUpToDate
 
 export interface Loader {
   /**
@@ -236,7 +271,7 @@ export interface Loader {
    * DIFFERENT bytes than what was approved, which is a correctness defect,
    * not a missed optimisation.
    */
-  installFetched(canonicalOrigin: string, manifest: Manifest, tree: BundleTree, entries: readonly BundleEntry[]): Promise<LoadInstalled | LoadRejected>
+  installFetched(canonicalOrigin: string, manifest: Manifest, tree: BundleTree, entries: readonly StagedAsset[]): Promise<LoadInstalled | LoadRejected>
 
   /**
    * S4-5: re-runs the update decision against an ALREADY-FETCHED
@@ -257,7 +292,7 @@ export interface Loader {
    * `'needs-capability-prompt'` -- never `'needs-rollback-choice'` again,
    * since the floor check now passes.
    */
-  reconsider(canonicalOrigin: string, manifest: Manifest, tree: BundleTree, entries: readonly BundleEntry[], context: LoadContext): Promise<LoadResult>
+  reconsider(canonicalOrigin: string, manifest: Manifest, tree: BundleTree, entries: readonly StagedAsset[], context: LoadContext): Promise<LoadResult>
 
   /**
    * The pin currently on disk for `origin`, or `null` if never pinned or
@@ -270,88 +305,18 @@ export interface Loader {
 }
 
 /**
- * Persists a freshly accepted bundle (TOFU or a `silent` verdict) and returns
- * the pin caller-facing code sees.
- *
- * `pruneAssets` after writing (docs/open-questions.md A58, gap 2) deletes
- * whatever a PREVIOUS pin left behind that the new bundle no longer declares.
- * `replacesAPin` is false on the TOFU path: no earlier pin exists for this
- * origin, so there is nothing a previous bundle could have left behind, and
- * the walk would only re-read every file the loop above just wrote.
+ * What the pinned manifest declared -- decideUpdate's
+ * `previouslyDeclaredPatterns`, so a capability the person already declined
+ * (or revoked) is not asked about again on every visit. Read back only if
+ * its bytes still hash to the pin's own manifest leaf; undefined otherwise.
  */
-async function install (
-  storage: LoaderStorage,
-  canonicalOrigin: string,
-  manifest: Manifest,
-  tree: BundleTree,
-  entries: readonly BundleEntry[],
-  now: number,
-  replacesAPin: boolean
-): Promise<PinRecord> {
-  const pin = fromBundleTree(canonicalOrigin, tree.root, tree.assets, manifest.version, now)
-  for (const entry of entries) {
-    await storage.writeAsset(canonicalOrigin, entry.path, entry.content)
-  }
-  if (replacesAPin) await storage.pruneAssets(canonicalOrigin, entries.map((entry) => entry.path))
-  await storage.writePin(canonicalOrigin, pin)
-  return pin
-}
-
-/**
- * Wraps install() so a storage failure (writeAsset/pruneAssets/writePin can
- * all throw a plain Error on a rejected path or a filesystem error) resolves
- * to one of load()'s own five documented outcomes (this file's header)
- * instead of an uncaught exception -- a bundle that fetched and validated
- * cleanly can still fail here, and LoadResult has no sixth "threw" case for
- * that to become.
- */
-async function installOrReject (
-  storage: LoaderStorage,
-  canonicalOrigin: string,
-  manifest: Manifest,
-  tree: BundleTree,
-  entries: readonly BundleEntry[],
-  now: number,
-  replacesAPin: boolean
-): Promise<LoadInstalled | LoadRejected> {
-  try {
-    const pin = await install(storage, canonicalOrigin, manifest, tree, entries, now, replacesAPin)
-    return { outcome: 'installed', canonicalOrigin, manifest, pin }
-  } catch (error) {
-    // The raw message is a node:fs one and carries the absolute host path it
-    // failed on. policy/paths.ts's CONFINEMENT_ERROR_CODE states the rule:
-    // the detail is for the local log, and a path oracle is a hazard on its
-    // own, so what is RETURNED names the origin and the stage and nothing
-    // about this machine.
-    console.error('[loader] install failed', canonicalOrigin, error)
-    return { outcome: 'rejected', reason: `the bundle for ${canonicalOrigin} could not be written to local storage` }
-  }
-}
-
-/**
- * Wraps `installOrReject` with `options.onInstalled`'s notification --
- * every call site in `load()` below that actually persists a bundle goes
- * through this, so the hook fires exactly once per real install and never
- * on a path that only returns a prompt outcome. See `CreateLoaderOptions
- * .onInstalled`'s own doc for why a failure here is logged, not thrown.
- */
-async function installAndNotify (
-  options: CreateLoaderOptions,
-  canonicalOrigin: string,
-  manifest: Manifest,
-  tree: BundleTree,
-  entries: readonly BundleEntry[],
-  replacesAPin: boolean
-): Promise<LoadInstalled | LoadRejected> {
-  const result = await installOrReject(options.storage, canonicalOrigin, manifest, tree, entries, options.now(), replacesAPin)
-  if (result.outcome === 'installed' && options.onInstalled !== undefined) {
-    try {
-      await options.onInstalled(canonicalOrigin)
-    } catch (error) {
-      console.error('[loader] onInstalled hook failed', canonicalOrigin, error)
-    }
-  }
-  return result
+async function pinnedDeclaredPatterns (storage: LoaderStorage, origin: string, pin: PinRecord | null): Promise<PatternSet | undefined> {
+  const leaf = pin?.assets.find((asset) => asset.path === MANIFEST_PATH)?.leaf
+  if (leaf === undefined) return undefined
+  const bytes = await storage.readAsset(origin, MANIFEST_PATH)
+  if (bytes === undefined || await leafOf(MANIFEST_PATH, bytes.length, [bytes]) !== leaf) return undefined
+  const parsed = parseManifest(new TextDecoder().decode(bytes))
+  return parsed.ok ? patternSetFromCapabilities(parsed.manifest.capabilities) : undefined
 }
 
 /**
@@ -368,14 +333,14 @@ async function decideAndRoute (
   canonicalOrigin: string,
   manifest: Manifest,
   tree: BundleTree,
-  entries: readonly BundleEntry[],
+  entries: readonly StagedAsset[],
   context: LoadContext
 ): Promise<LoadResult> {
   const rawPin = await options.storage.readPin(canonicalOrigin)
   if (rawPin === undefined) {
     // TOFU (ADR-0005): nothing was ever pinned for this origin, so there
     // is no continuity to protect and nothing to prompt for.
-    return await installAndNotify(options, canonicalOrigin, manifest, tree, entries, false)
+    return await installAndNotify(options, canonicalOrigin, manifest, tree, entries, undefined)
   }
 
   // A pin record exists but fails to parse (corrupt bytes, a schema this
@@ -405,7 +370,8 @@ async function decideAndRoute (
     // The comparison LoadContext.acknowledgedRollbackVersion's own doc
     // promises: only NOW is the actual offered version known, so only
     // now can "was THIS version acknowledged" be answered.
-    rollbackAcknowledged: context.acknowledgedRollbackVersion === manifest.version
+    rollbackAcknowledged: context.acknowledgedRollbackVersion === manifest.version,
+    previouslyDeclaredPatterns: await pinnedDeclaredPatterns(options.storage, canonicalOrigin, existingPin)
   })
 
   switch (decision) {
@@ -423,9 +389,9 @@ async function decideAndRoute (
     case 'reconsent':
       return { outcome: 'needs-reconsent', canonicalOrigin, manifest, tree, entries }
     case 'silent':
-      return await installAndNotify(options, canonicalOrigin, manifest, tree, entries, true)
+      return await installAndNotify(options, canonicalOrigin, manifest, tree, entries, existingPin)
     case 'rollback-notice': {
-      const result = await installAndNotify(options, canonicalOrigin, manifest, tree, entries, true)
+      const result = await installAndNotify(options, canonicalOrigin, manifest, tree, entries, existingPin)
       return result.outcome === 'installed' ? { ...result, rollbackNotice: true } : result
     }
     default: {
@@ -441,7 +407,33 @@ async function decideAndRoute (
 
 export function createLoader (options: CreateLoaderOptions): Loader {
   async function load (hintedUrl: string, context: LoadContext): Promise<LoadResult> {
-    const fetched = await fetchBundle(options.fetch, hintedUrl, options.resolve)
+    const interval = options.updateCheckIntervalMs
+    const origin = originFromUrl(hintedUrl)
+    if (interval === undefined || origin === null) return await checkInFull(hintedUrl, context)
+
+    const previous = await loadCheckRecord(options.storage, origin)
+    if (previous !== undefined && checkedRecently(previous.checkedAt, options.now(), interval)) {
+      return { outcome: 'up-to-date', canonicalOrigin: origin }
+    }
+    const validators = await validatorsForPin(options.storage, origin, previous)
+    const fetched = await fetchBundle(options.fetch, hintedUrl, options.resolve, options.storage, undefined, validators)
+    if ('notModified' in fetched) {
+      await saveCheckRecord(options.storage, origin, checkRecord(options.now(), validators, previous?.manifestLeaf))
+      return { outcome: 'up-to-date', canonicalOrigin: origin }
+    }
+    if (!fetched.ok) return { outcome: 'rejected', reason: fetched.reason }
+    const result = await decideAndRoute(options, fetched.canonicalOrigin, fetched.manifest, fetched.tree, fetched.entries, context)
+    if (result.outcome === 'installed') {
+      await saveCheckRecord(options.storage, origin, checkRecord(options.now(), fetched.validators, await pinnedManifestLeaf(options.storage, origin)))
+    } else if (result.outcome !== 'rejected') {
+      // Nothing was installed, so the pin, and the validators that describe it, are unchanged.
+      await saveCheckRecord(options.storage, origin, checkRecord(options.now(), validators, previous?.manifestLeaf))
+    }
+    return result
+  }
+
+  async function checkInFull (hintedUrl: string, context: LoadContext): Promise<LoadResult> {
+    const fetched = await fetchBundle(options.fetch, hintedUrl, options.resolve, options.storage)
     if (!fetched.ok) return { outcome: 'rejected', reason: fetched.reason }
     return await decideAndRoute(options, fetched.canonicalOrigin, fetched.manifest, fetched.tree, fetched.entries, context)
   }
@@ -450,7 +442,7 @@ export function createLoader (options: CreateLoaderOptions): Loader {
     canonicalOrigin: string,
     manifest: Manifest,
     tree: BundleTree,
-    entries: readonly BundleEntry[],
+    entries: readonly StagedAsset[],
     context: LoadContext
   ): Promise<LoadResult> {
     return await decideAndRoute(options, canonicalOrigin, manifest, tree, entries, context)
@@ -460,15 +452,14 @@ export function createLoader (options: CreateLoaderOptions): Loader {
     canonicalOrigin: string,
     manifest: Manifest,
     tree: BundleTree,
-    entries: readonly BundleEntry[]
+    entries: readonly StagedAsset[]
   ): Promise<LoadInstalled | LoadRejected> {
-    // Always `replacesAPin: true` -- every caller of this method is acting
-    // on an approved needs-reconsent/needs-capability-prompt outcome, and
-    // both can only ever be produced once decideAndRoute has already found
-    // an existing pin for this origin (its own TOFU branch above returns
-    // 'installed' before decideUpdate ever runs) -- so there is always a
-    // previous bundle's assets to prune.
-    return await installAndNotify(options, canonicalOrigin, manifest, tree, entries, true)
+    // Every caller is acting on an approved needs-reconsent/needs-capability-
+    // prompt outcome, and both exist only once decideAndRoute found a pin for
+    // this origin -- so there is always one to read back here (possibly
+    // unparseable: `null`, never the TOFU `undefined`).
+    const existingPin = parsePinRecord(await options.storage.readPin(canonicalOrigin))
+    return await installAndNotify(options, canonicalOrigin, manifest, tree, entries, existingPin)
   }
 
   async function pinFor (origin: string): Promise<PinRecord | null> {

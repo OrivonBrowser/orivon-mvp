@@ -122,10 +122,38 @@ describe('createDatagramRelay -- routing messages off the port', () => {
     const send = vi.fn(async () => ({ sent: true as const }))
     const { port } = relayHarness(send)
 
-    port.emit({ kind: 'send', handleId: 'handle-udp-1', data: 'not bytes', address: 'x', port: 1 })
+    port.emit({ kind: 'credit', handleId: 'handle-udp-1', bytesConsumed: 'lots' })
     await tick()
 
     expect(send).not.toHaveBeenCalled()
+    expect(port.sent).toEqual([])
+  })
+
+  // Silence here left the renderer's outbound slot taken until its silence
+  // timer declared the whole socket dead, 15 seconds later.
+  it.each<[string, Record<string, unknown>, string, number]>([
+    ['data that is not bytes', { data: 'not bytes', address: '93.184.216.34', port: 6881 }, '93.184.216.34', 6881],
+    ['an oversized datagram', { data: new Uint8Array(65_508), address: '93.184.216.34', port: 6881 }, '93.184.216.34', 6881],
+    ['port 0', { data: new Uint8Array(1), address: '93.184.216.34', port: 0 }, '93.184.216.34', 0],
+    ['no address at all', { data: new Uint8Array(1), port: 6881 }, '', 6881]
+  ])('answers a malformed send (%s) with send-failed invalid, without sending', async (_label, fields, address, destinationPort) => {
+    const send = vi.fn(async () => ({ sent: true as const }))
+    const { port } = relayHarness(send)
+
+    port.emit({ kind: 'send', handleId: 'handle-udp-1', ...fields })
+    await tick()
+
+    expect(send).not.toHaveBeenCalled()
+    expect(port.sent).toEqual([{ kind: 'send-failed', handleId: 'handle-udp-1', code: 'invalid', dropped: 1, address, port: destinationPort }])
+  })
+
+  it('ignores a malformed send addressed to a different handle', async () => {
+    const { port } = relayHarness()
+
+    port.emit({ kind: 'send', handleId: 'someone-else', data: 'not bytes', address: 'x', port: 1 })
+    await tick()
+
+    expect(port.sent).toEqual([])
   })
 
   it('forwards an inbound datagram to the port', async () => {

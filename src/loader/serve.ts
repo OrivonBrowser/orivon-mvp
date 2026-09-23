@@ -23,22 +23,25 @@
 // cost tradeoff this file spends, and for `verifiedManifestFor` below, the
 // one exception to "no Manifest argument" above (an OUTPUT, not an input).
 
-import { isPinnedPath, parsePinRecord } from '../broker/policy/pin.js'
+import { parsePinRecord } from '../broker/policy/pin.js'
 import type { PinRecord } from '../broker/policy/pin.js'
-import { MANIFEST_PATH, canonicalAssetPath } from '../broker/policy/canonical-path.js'
+import { MANIFEST_PATH } from '../broker/policy/canonical-path.js'
 import { originFromUrl } from '../broker/policy/origin.js'
-import { appCspHeaderValue, appReachCspHeaderValue } from '../broker/policy/connect-src.js'
 import { checkConnectSecure } from '../broker/policy/connect-secure.js'
 import type { ConnectSecureDecision } from '../broker/policy/connect-secure.js'
 import type { Manifest, Pattern } from '../contracts/index.js'
 import { entryCanonicalPath } from './fetch-bundle.js'
 import { parseManifest } from './manifest.js'
 import type { PinCoverageOutcome } from './pin-coverage.js'
-import { contentTypeFor } from './serve-content-type.js'
+import { buildResponse, openServable } from './serve-asset.js'
+import type { RetainedVerdicts } from './serve-asset.js'
+import { isCorsPreflight, preflightResponse, withReachCors } from './serve-reach-cors.js'
 import { guardReachResponse } from './serve-reach-guard.js'
 import type { ReleaseReachSlot, ReserveReachSlot } from './serve-reach-guard.js'
-import { parseRange } from './serve-range.js'
+import { createRedirectChains, MAX_REACH_REDIRECTS, redirectTarget } from './serve-reach-redirects.js'
+import type { RedirectChains } from './serve-reach-redirects.js'
 import { verifyPinnedTree } from './serve-verify.js'
+import { isNavigationRequest, resolveRequestPath } from './serve-path.js'
 import type { LoaderStorage } from './storage.js'
 
 export type AppRequestHandler = (request: Request) => Promise<Response>
@@ -63,11 +66,10 @@ export type GrantedConnectPatterns = () => Promise<readonly Pattern[]>
  * capability `fetchThirdParty` (below) actually authorises a third-party
  * request against, never `tcp.connect`.
  *
- * HEADER USE ONLY. This is wired into `img-src`/`font-src`/`media-src`
- * (`appReachCspHeaderValue`) so the browser knows a request is even worth
+ * HEADER USE ONLY. This is wired into `connect-src`/`img-src`/`font-src`/
+ * `media-src` (serve-csp.ts) so the browser knows a request is even worth
  * attempting; it is NEVER what decides whether one is actually served --
- * see `AuthoriseReach` for that, and A158 (docs/open-questions.md) for why
- * the two are allowed to disagree, briefly, after a restart.
+ * see `AuthoriseReach` for that.
  */
 export type GrantedSecurePatterns = () => Promise<readonly Pattern[]>
 
@@ -98,48 +100,14 @@ export type ReachDial = (request: Request, host: string, port: number) => Promis
  * Reports one request's pin-coverage outcome (pin-coverage.ts), called once
  * per request alongside the response it produced -- same "supply a callback,
  * every existing caller passes `undefined`" shape as the patterns above.
- * `bytes` is read from what the response already carries (`Uint8Array.length`
- * for a pinned asset, the peer's own `content-length` header for a
+ * `bytes` is read from the `content-length` the response already carries
+ * (the served slice for a pinned asset, the peer's own header for a
  * third-party one), never measured by buffering -- see pin-coverage.ts.
  */
 export type RecordPinCoverage = (outcome: PinCoverageOutcome, bytes?: number) => void
 
-/** Everything a request needs decided before a byte is read off disk -- deliberately exported for direct, Electron-free unit testing (this file's own header). */
-export type ResolvedRequest =
-  | { readonly ok: true, readonly canonicalPath: string }
-  | { readonly ok: false, readonly reason: string }
-
-/**
- * Decides which pinned asset, if any, a request answers to.
- *
- * `/` IS THE ONE SPECIAL CASE (the task this function exists for: "a
- * directory-ish or `/` request needs a stated rule"). It maps to
- * `manifest.entry`, and ONLY the bare root -- `isValidCanonicalPath`
- * rejects every OTHER path ending in `/` (a trailing empty segment), so
- * `/foo/` is not a directory index, it is simply not a valid canonical path
- * and falls through to the ordinary pinned-set check below, which denies
- * it. There is no directory listing and no index-file fallback beyond the
- * root: a pinned bundle is a fixed, hashed asset MAP, not a filesystem.
- *
- * Every other path must be an EXACT pinned canonical path -- the fail-closed
- * rule ADR-0007 names directly: "a same-origin request whose path is not in
- * the pinned set is denied, not fetched."
- */
-export function resolveRequestPath (entryPath: string | null, pin: PinRecord, requestUrl: string): ResolvedRequest {
-  const url = new URL(requestUrl)
-
-  if (url.pathname === '/') {
-    if (entryPath === null || !isPinnedPath(pin, entryPath)) {
-      return { ok: false, reason: 'entry point is not part of the pinned bundle' }
-    }
-    return { ok: true, canonicalPath: entryPath }
-  }
-
-  const canonicalPath = canonicalAssetPath(requestUrl)
-  if (canonicalPath === null) return { ok: false, reason: 'not a valid canonical asset path' }
-  if (!isPinnedPath(pin, canonicalPath)) return { ok: false, reason: 'not in the pinned asset set' }
-  return { ok: true, canonicalPath }
-}
+export { isNavigationRequest, resolveRequestPath } from './serve-path.js'
+export type { ResolvedRequest } from './serve-path.js'
 
 function denyResponse (reason: string): Response {
   return new Response(`Orivon: ${reason}`, { status: 404, headers: { 'content-type': 'text/plain; charset=utf-8' } })
@@ -153,104 +121,10 @@ function contentLengthOf (response: Response): number | undefined {
   return Number.isFinite(length) && length >= 0 ? length : undefined
 }
 
-/**
- * S4-6's CSP, for a pinned, hash-verified bundle: `connect-src` from the
- * live grant (`appCspHeaderValue`, T22), `default-src 'self'` for every
- * other fetch directive A42 found unset (`img-src`, `frame-src`,
- * `form-action`, `worker-src`, ...), and `script-src`/`style-src` widened
- * back to `'self' 'unsafe-inline'` rather than left at the `default-src`
- * fallback.
- *
- * THE INLINE-SCRIPT CALL IS DELIBERATE, NOT AN OVERSIGHT: this origin only
- * ever serves pinned, hash-verified files (ADR-0007's fail-closed rule,
- * enforced above this function, on every request) -- an inline `<script>`
- * sitting inside a pinned `.html` file is exactly as verified as a pinned
- * `.js` file `'self'` already allows, and there is no hash/nonce allowlist
- * built yet to admit one without the other. Blocking it would not raise
- * the bar this origin is held to; it would only break an app that legitimately
- * ships inline script, for a rule this origin's own serving guarantee
- * already makes redundant. `default-src 'self'` still blocks the thing CSP
- * actually exists to stop here: a SUBRESOURCE the pinned bundle never
- * declared, from a host CSP's own grammar cannot enumerate around
- * `connect-src`'s allowlist (img/frame/form-action, A42's gap, now mostly
- * closed) -- it does not stand between a page and its own already-verified
- * markup.
- *
- * NOT CLOSED BY THIS: `<a href>`/`location.href` navigation (CSP's
- * `default-src` never covers it) and CSP naming a hostname where
- * `checkConnect` authorises a resolved address (DNS rebinding) --
- * both already filed as A42, unaffected by this change.
- *
- * `img-src`/`font-src`/`media-src` (A143) name what `fetchThirdParty`
- * will actually serve, sourced from `https.connect`, never `tcp.connect` --
- * a different grant than `connect-src`'s own. `securePatterns` MAY be wider
- * than the origin's live, hydrated grant (electron-serve.ts's own A158
- * fallback, for the narrow window right after a restart) without that being
- * a security bug: this header only decides whether the BROWSER attempts a
- * request at all, never whether one succeeds -- `fetchThirdParty` re-checks
- * the LIVE grant on every single request regardless of what this header
- * claimed, so a too-permissive header here still gets a real, unwidened
- * refusal from the handler underneath it (see `AuthoriseReach`'s own doc).
- */
-function cspHeaderValue (connectPatterns: readonly Pattern[], securePatterns: readonly Pattern[]): string {
-  return [
-    "default-src 'self'",
-    "script-src 'self' 'unsafe-inline'",
-    "style-src 'self' 'unsafe-inline'",
-    appCspHeaderValue(connectPatterns),
-    appReachCspHeaderValue(securePatterns)
-  ].join('; ')
-}
-
-/**
- * Turns `content` into the actual `Response`, honouring a `Range` request.
- *
- * CSP LIVES HERE, NOT IN `onHeadersReceived` -- A110 (docs/open-questions.md)
- * confirmed that listener never fires for a `protocol.handle`-served
- * response in this Electron version. This function fully controls the
- * `Response` it builds, so the header goes straight on it; the caller
- * supplies fresh `connectPatterns` on every call (see
- * `GrantedConnectPatterns`'s own doc) rather than this function or its
- * caller caching them across requests. Set on every served asset, not only
- * the entry document: a worker script served through this same handler
- * inherits its OWN response's CSP, never the document's (README.md's Design
- * notes).
- */
-function buildResponse (
-  content: Uint8Array,
-  canonicalPath: string,
-  rangeHeader: string | null,
-  connectPatterns: readonly Pattern[],
-  securePatterns: readonly Pattern[]
-): Response {
-  const contentType = contentTypeFor(canonicalPath)
-  const csp = cspHeaderValue(connectPatterns, securePatterns)
-  const total = content.length
-  const range = parseRange(rangeHeader, total)
-
-  if (range.kind === 'unsatisfiable') {
-    return new Response(null, { status: 416, headers: { 'content-range': `bytes */${total}`, 'accept-ranges': 'bytes', 'content-security-policy': csp } })
-  }
-
-  if (range.kind === 'none') {
-    return new Response(content as BodyInit, {
-      status: 200,
-      headers: { 'content-type': contentType, 'content-length': String(total), 'accept-ranges': 'bytes', 'content-security-policy': csp }
-    })
-  }
-
-  const { start, end } = range.range
-  const chunk = content.subarray(start, end + 1)
-  return new Response(chunk as BodyInit, {
-    status: 206,
-    headers: {
-      'content-type': contentType,
-      'content-length': String(chunk.length),
-      'content-range': `bytes ${start}-${end}/${total}`,
-      'accept-ranges': 'bytes',
-      'content-security-policy': csp
-    }
-  })
+/** Per-handler state and identity for `fetchThirdParty`; see its doc. */
+export interface ReachOptions {
+  readonly appOrigin?: string
+  readonly redirects?: RedirectChains
 }
 
 /**
@@ -277,20 +151,17 @@ function buildResponse (
  *
  * ANY OTHER FAILURE -- no live grant for this host, no `reachDial`/
  * `authoriseReach` wired in at all (dev-serve.ts's own no-broker case), or
- * `reachDial` itself throwing (a real connection failure, a refused
- * redirect) -- answers the same `denyResponse` shape as every other refusal
- * in this file. Nothing here distinguishes "not granted" from "granted but
- * unreachable" to the page; see `README.md`'s own note on why a denial
- * reason is a local log concern, not a renderer-visible one.
+ * `reachDial` itself throwing (a real connection failure) -- answers the same
+ * `denyResponse` shape as every other refusal in this file. Nothing here
+ * distinguishes "not granted" from "granted but unreachable" to the page.
  *
- * A199/A200 (docs/open-questions.md): a live authorisation check and a free
- * allowance slot are only true THIS INSTANT -- neither stayed true for the
- * request's whole lifetime before this fix. `reserveReachSlot`/
- * `releaseReachSlot` cap how many of these an app may hold open at once
- * (A200), and `guardReachResponse` (./serve-reach-guard.js) keeps checking
- * `authoriseReach` while the body streams so a mid-download revoke actually
- * stops it (A199) -- see that file's own doc for what a reading page
- * observes when it does.
+ * What a granted request gets, in order (README.md's Design notes, "The
+ * third-party reach path"): a redirect-hop cap (`options.redirects`); a
+ * synthetic answer to a CORS preflight; a socket-allowance slot, waited for
+ * in a bounded queue and re-authorised after the wait (A200); a 3xx handed
+ * back bodiless for the page's loader to follow through this handler; and a
+ * body guarded against a mid-stream revoke (A199, ./serve-reach-guard.js).
+ * `options.appOrigin` adds CORS response headers for that origin.
  */
 export async function fetchThirdParty (
   request: Request,
@@ -298,7 +169,8 @@ export async function fetchThirdParty (
   reachDial: ReachDial | undefined,
   recordCoverage: RecordPinCoverage | undefined,
   reserveReachSlot: ReserveReachSlot | undefined,
-  releaseReachSlot: ReleaseReachSlot | undefined
+  releaseReachSlot: ReleaseReachSlot | undefined,
+  options: ReachOptions = {}
 ): Promise<Response> {
   if (authoriseReach === undefined || reachDial === undefined) {
     recordCoverage?.('denied')
@@ -311,18 +183,30 @@ export async function fetchThirdParty (
     return denyResponse('only a granted https host may be reached from inside this app\'s own partition')
   }
   const port = url.port === '' ? 443 : Number(url.port)
+  const { appOrigin, redirects } = options
+  const cors = (response: Response): Response => appOrigin === undefined ? response : withReachCors(response, appOrigin)
+
+  const depth = redirects?.depthOf(request.url) ?? 0
+  if (depth > MAX_REACH_REDIRECTS) {
+    redirects?.forget(request.url)
+    recordCoverage?.('denied')
+    // A network error, what a browser's own redirect cap produces.
+    return Response.error()
+  }
 
   const decision = await authoriseReach(url.hostname, port)
   if (!decision.allowed) {
     recordCoverage?.('denied')
     return denyResponse('this host is not granted to this app')
   }
+  if (appOrigin !== undefined && isCorsPreflight(request)) return preflightResponse(request, appOrigin)
 
   // A200: checked AFTER authorisation, never before -- a request this
-  // origin was never granted must not consume a slot at all.
-  if (reserveReachSlot !== undefined && !reserveReachSlot()) {
+  // origin was never granted must not consume a slot, or a queue position.
+  const reserved = reserveReachSlot?.(request.signal) ?? true
+  if (!(await reserved)) {
     recordCoverage?.('denied')
-    return denyResponse('this app has reached its concurrent-connection limit')
+    return denyResponse('no concurrent-connection slot came free for this app in time')
   }
   let released = false
   const release = (): void => {
@@ -330,16 +214,35 @@ export async function fetchThirdParty (
     released = true
     releaseReachSlot?.()
   }
+  // A grant revoked while this request waited in the queue must not dial.
+  if (reserved instanceof Promise && !(await authoriseReach(url.hostname, port)).allowed) {
+    release()
+    recordCoverage?.('denied')
+    return denyResponse('this host is not granted to this app')
+  }
 
+  let response: Response
   try {
-    const response = await reachDial(request, decision.host, port)
-    recordCoverage?.('third-party', contentLengthOf(response))
-    return guardReachResponse(response, url.hostname, port, authoriseReach, release)
+    response = await reachDial(request, decision.host, port)
   } catch (error) {
     release()
     recordCoverage?.('denied')
     return denyResponse(`reaching the granted host failed: ${error instanceof Error ? error.message : String(error)}`)
   }
+
+  const target = redirectTarget(response, request.url)
+  if (target !== undefined) {
+    // Bodiless, so the slot and the upstream connection are freed now rather
+    // than whenever the loader gets round to the redirect's body.
+    void response.body?.cancel().catch(() => {})
+    release()
+    redirects?.record(target, depth + 1)
+    recordCoverage?.('third-party', 0)
+    return cors(new Response(null, { status: response.status, statusText: response.statusText, headers: response.headers }))
+  }
+  redirects?.forget(request.url)
+  recordCoverage?.('third-party', contentLengthOf(response))
+  return cors(guardReachResponse(response, url.hostname, port, authoriseReach, release))
 }
 
 /**
@@ -416,7 +319,8 @@ export async function createAppRequestHandler (
   reachDial?: ReachDial,
   recordCoverage?: RecordPinCoverage,
   reserveReachSlot?: ReserveReachSlot,
-  releaseReachSlot?: ReleaseReachSlot
+  releaseReachSlot?: ReleaseReachSlot,
+  retainedAssets?: ReadonlyMap<string, string>
 ): Promise<AppRequestHandler> {
   const resolved = await resolveVerifiedBundle(storage, origin)
   if (!resolved.ok) {
@@ -425,6 +329,8 @@ export async function createAppRequestHandler (
   const { pin, manifest } = resolved
 
   const entryPath = entryCanonicalPath(origin, manifest.entry)
+  const reachOptions: ReachOptions = { appOrigin: origin, redirects: createRedirectChains() }
+  const retainedVerdicts: RetainedVerdicts = new Map()
 
   return async (request: Request): Promise<Response> => {
     // Every https/http request inside this app's OWN partition passes
@@ -438,36 +344,28 @@ export async function createAppRequestHandler (
     // strength of anything this handler already trusted for its OWN origin
     // (docs/open-questions.md A143).
     if (originFromUrl(request.url) !== origin) {
-      return await fetchThirdParty(request, authoriseReach, reachDial, recordCoverage, reserveReachSlot, releaseReachSlot)
+      return await fetchThirdParty(request, authoriseReach, reachDial, recordCoverage, reserveReachSlot, releaseReachSlot, reachOptions)
     }
 
-    const resolved = resolveRequestPath(entryPath, pin, request.url)
+    const resolved = resolveRequestPath(entryPath, pin, request.url, isNavigationRequest(request), retainedAssets)
     if (!resolved.ok) {
       recordCoverage?.('denied')
       return denyResponse(resolved.reason)
     }
+    if ('redirectTo' in resolved) return new Response(null, { status: 302, headers: { location: resolved.redirectTo } })
 
-    const content = await storage.readAsset(origin, resolved.canonicalPath)
-    if (content === undefined) {
-      // verifyPinnedTree above already read every pinned asset successfully
-      // at handler-creation time -- reaching this branch means the file was
-      // removed from disk AFTER that, during this same process run. Same
-      // fail-closed answer as never having been readable.
+    const servable = await openServable(storage, origin, resolved.canonicalPath, resolved.retainedLeaf, retainedVerdicts)
+    if (!servable.ok) {
       recordCoverage?.('denied')
-      return denyResponse('cached asset became unavailable after this app was loaded')
+      return denyResponse(servable.reason)
     }
 
     const connectPatterns = grantedConnectPatterns === undefined ? [] : await grantedConnectPatterns()
     const securePatterns = grantedSecurePatterns === undefined ? [] : await grantedSecurePatterns()
-    const response = buildResponse(content, resolved.canonicalPath, request.headers.get('range'), connectPatterns, securePatterns)
-    // A175: record what buildResponse actually SENT, not `content.length`
-    // (the whole pinned asset) -- a Range request serves only a slice, and
-    // an unsatisfiable one (416) serves no body at all, so counting the
-    // full asset size there inflates pinned coverage by bytes that were
-    // never on the wire. `content-length` is always set by buildResponse on
-    // a 200/206; a 416 carries none, but that is a KNOWN zero (no body was
-    // built), not a size that could not be measured, so it must read as 0,
-    // never trip `bytesIncomplete` (pin-coverage.ts's own contract).
+    const response = buildResponse(servable.file, request, connectPatterns, securePatterns)
+    // A175: record what was actually SENT -- a Range request serves only a
+    // slice, and a 416 serves no body at all, a KNOWN zero rather than a size
+    // that could not be measured (pin-coverage.ts's `bytesIncomplete`).
     recordCoverage?.('pinned', response.status === 416 ? 0 : contentLengthOf(response))
     return response
   }

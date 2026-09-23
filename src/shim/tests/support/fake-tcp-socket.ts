@@ -21,6 +21,10 @@ export interface FakeTcpSocket {
   fail (code: OrivonErrorCode, message: string, platformCode?: string): void
   /** Whether the client called socket.close(). */
   closed (): boolean
+  /** Whether the client closed its writable side (a FIN, handle-contracts.md's `writable.close()` row). */
+  finSent (): boolean
+  /** Whether the client aborted its writable side (an RST, `writable.abort(e)`). */
+  rstSent (): boolean
 }
 
 function makeOrivonError (code: OrivonErrorCode, message: string, platformCode?: string): Error {
@@ -44,8 +48,12 @@ export function createFakeTcpSocket (opts: FakeTcpSocketOptions = {}): FakeTcpSo
   })
 
   const written: Uint8Array[] = []
+  let didFin = false
+  let didRst = false
   const writable = new WritableStream<Uint8Array>({
-    write (chunk) { written.push(chunk) }
+    write (chunk) { written.push(chunk) },
+    close () { didFin = true },
+    abort () { didRst = true }
   })
 
   let didClose = false
@@ -69,6 +77,8 @@ export function createFakeTcpSocket (opts: FakeTcpSocketOptions = {}): FakeTcpSo
     push: (chunk) => readableController.enqueue(chunk),
     end: () => readableController.close(),
     fail: (code, message, platformCode) => readableController.error(makeOrivonError(code, message, platformCode)),
-    closed: () => didClose
+    closed: () => didClose,
+    finSent: () => didFin,
+    rstSent: () => didRst
   }
 }

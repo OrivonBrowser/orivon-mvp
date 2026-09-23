@@ -39,6 +39,8 @@ export interface PortSinkOptions {
    * means, which is that the wire is already dead and must not be touched.
    */
   readonly onAbort?: () => void
+  /** Called once, when write-end has drained and the writer's close (our FIN) has been issued. */
+  readonly onEnded?: () => void
 }
 
 export interface PortSink {
@@ -95,7 +97,7 @@ function isWritableAlreadyEnded (error: unknown): boolean {
 }
 
 export function createPortSink (options: PortSinkOptions): PortSink {
-  const { handleId, writable, send, windowBytes, mapError = () => 'internal', heartbeatMs = WRITE_HEARTBEAT_MS, onSinkFailed, onAbort } = options
+  const { handleId, writable, send, windowBytes, mapError = () => 'internal', heartbeatMs = WRITE_HEARTBEAT_MS, onSinkFailed, onAbort, onEnded } = options
   const writer = writable.getWriter()
 
   let unacked = 0
@@ -175,6 +177,7 @@ export function createPortSink (options: PortSinkOptions): PortSink {
     // rejection here still needs reporting -- the FIN may never have gone
     // out, and the app should not believe its half-close succeeded.
     writer.close().catch((error: unknown) => { send(toWriteFailed(handleId, mapError(error), error)) })
+    onEnded?.()
   }
 
   return {

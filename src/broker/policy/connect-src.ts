@@ -1,18 +1,17 @@
-// T22's CSP `connect-src` derivation (security-model.md, ADR-0006), pure and
-// side-effect-free -- computes the header VALUE only. Wired onto the served
-// response directly, in src/loader/serve.ts's buildResponse -- NOT via
-// `session.webRequest.onHeadersReceived`, which A110 (docs/open-questions.md)
-// confirmed never fires for a `protocol.handle`-served response in this
-// Electron version. See README.md's Design notes for this file's two scope
+// T22's CSP source derivation (security-model.md, ADR-0006), pure and
+// side-effect-free -- computes the grant-derived SOURCE LISTS only;
+// src/loader/serve-csp.ts assembles them into the header the served
+// response carries. See README.md's Design notes for this file's two scope
 // gaps (A42, A43).
 //
 // THE SECURITY INVARIANT: every emitted source names a (host, port) pair a
 // SINGLE granted pattern names LITERALLY -- no port wildcard standing in
 // for a range, no `*` standing in for public-unicast, no subdomain
-// wildcard, no invented scheme. Being WIDER than the grant costs the user
-// the grant they refused; that is the only one of the two directions that
-// is a security bug. Being narrower is not free either -- see `omitted` on
-// `ConnectSrcPolicy`, below, and README.md's Design notes.
+// wildcard, no scheme the capability does not itself mean. Being WIDER
+// than the grant costs the user the grant they refused; that is the only
+// one of the two directions that is a security bug. Being narrower is not
+// free either -- see `omitted` on `ConnectSrcPolicy`, below. The one
+// deliberate exception is `reachSourcesFor`'s `https:` for a `*` host.
 //
 // DERIVES FROM THE GRANTED PATTERNS, NEVER THE MANIFEST'S DECLARED ONES
 // (../index.ts's own connect() precedent, A18): using the manifest here
@@ -52,7 +51,7 @@ export interface OmittedPattern {
 }
 
 export interface ConnectSrcPolicy {
-  /** Always begins with `'self'`; never empty. */
+  /** `connectSrcFor`: always begins with `'self'`. `reachSourcesFor`: never contains it. */
   readonly sources: readonly string[]
   /**
    * Every granted pattern with no safe CSP representation, and why --
@@ -246,32 +245,38 @@ export function connectSrcFor (granted: readonly Pattern[]): ConnectSrcPolicy {
   return emit(granted.map(translate))
 }
 
-/** `"connect-src 'self' api.example.com:443"` -- the header VALUE, nothing else. */
-export function appCspHeaderValue (granted: readonly Pattern[]): string {
-  return `connect-src ${connectSrcFor(granted).sources.join(' ')}`
+/** Omission reasons the `https:` scheme source covers: each names reach the grant really holds. */
+const COVERED_BY_HTTPS_SCHEME: ReadonlySet<ConnectSrcOmissionReason> = new Set<ConnectSrcOmissionReason>([
+  'host-any-public-unicast', 'host-ipv6-literal', 'port-range-too-wide', 'over-budget'
+])
+
+/** A `*` host whose port spec parses -- one that genuinely authorises something. */
+function isAnyHostThatAuthorises (entry: OmittedPattern): boolean {
+  if (entry.reason !== 'host-any-public-unicast' || entry.pattern === undefined) return false
+  const parsed = parsePattern(entry.pattern)
+  return parsed !== null && parsePortSpec(parsed.port) !== null
 }
 
 /**
- * `img-src`/`font-src`/`media-src`, for a THIRD-PARTY resource fetch
- * (A143, `src/loader/serve.ts`'s `fetchThirdParty`) rather than `fetch`/XHR.
+ * The sources one origin's granted `https.connect` patterns contribute to
+ * the reach directives (`connect-src`, `img-src`, `font-src`, `media-src`):
+ * the requests `src/loader/serve.ts`'s `fetchThirdParty` authorises against
+ * that same grant. No `'self'` -- the caller assembles each directive.
  *
- * SOURCED FROM `https.connect`, NEVER `tcp.connect` -- deliberately a
- * DIFFERENT input than `appCspHeaderValue` above. `fetchThirdParty` only
- * ever proxies a granted `https:` request, authorised by `checkConnectSecure`
- * against the `https.connect` grant; a CSP source list built from
- * `tcp.connect` instead would advertise reach this directive can never
- * actually grant. Reuses `connectSrcFor`'s own translation/omission logic
- * unchanged (Rule 3) -- the host:port allowlist shape is identical, only the
- * grant it is built from and the directives it is attached to differ.
+ * SCHEME-QUALIFIED, `https://host:port`, never a bare `host:port`, and
+ * never `ws:`/`wss:`: a WebSocket never reaches the handler that re-checks
+ * the grant.
  *
- * `img-src`/`font-src`/`media-src` were picked as the concrete, load-bearing
- * cases named when this reach was decided (fonts, images); `frame-src` and
- * `worker-src` are deliberately NOT widened here and stay on `default-src
- * 'self'`'s fallback -- both are a bigger step (an embedded, live third-party
- * document; code that runs at the app's own origin) than a static
- * subresource, and neither was asked for.
+ * A `*` host emits the `https:` scheme source instead, the one source here
+ * wider than the grant: every `https:` request it admits reaches the app's
+ * own `protocol.handle` and is re-authorised live there, which still
+ * refuses loopback and private addresses. See src/loader/README.md's
+ * Design notes for what it admits beyond that handler.
  */
-export function appReachCspHeaderValue (granted: readonly Pattern[]): string {
-  const list = connectSrcFor(granted).sources.join(' ')
-  return ['img-src', 'font-src', 'media-src'].map((directive) => `${directive} ${list}`).join('; ')
+export function reachSourcesFor (granted: readonly Pattern[]): ConnectSrcPolicy {
+  const { sources, omitted } = connectSrcFor(granted)
+  if (omitted.some(isAnyHostThatAuthorises)) {
+    return { sources: ['https:'], omitted: omitted.filter((entry) => !COVERED_BY_HTTPS_SCHEME.has(entry.reason)) }
+  }
+  return { sources: sources.slice(1).map((token) => `https://${token}`), omitted }
 }

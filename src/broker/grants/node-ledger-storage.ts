@@ -55,7 +55,7 @@ function declinedCapabilitiesPath (userDataPath: string, origin: string): string
  * one back out of that state. A write that can only ever land whole, or not
  * at all, is what keeps an ordinary crash from being mistaken for tampering.
  */
-function writeFileAtomic (path: string, text: string): void {
+export function writeFileAtomic (path: string, text: string): void {
   const tmp = `${path}.tmp`
   const fd = openSync(tmp, 'w')
   try {

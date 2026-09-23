@@ -17,7 +17,7 @@
 
 import type { OrivonErrorCode } from '../contracts/errors.js'
 import type { SendRefusal, UdpSocket } from '../contracts/handles.js'
-import type { CapabilityRequest } from '../contracts/capability-api.js'
+import type { CapabilityRequest, SecureConnectOptions } from '../contracts/capability-api.js'
 import type {
   MainWorldBridge, MainWorldDatagram, MainWorldDirectoryBridge, MainWorldFileBridge, MainWorldServerBridge,
   MainWorldSocketBridge, MainWorldUdpBridge, MainWorldWebContextBridge, OrivonLimits
@@ -80,19 +80,39 @@ export function installOrivon (
       return await promise
     } catch (error) {
       if (typeof error !== 'object' || error === null) throw error
-      const candidate = error as { name?: unknown, message?: unknown, code?: unknown, platformCode?: unknown }
+      const candidate = error as { name?: unknown, message?: unknown, code?: unknown, platformCode?: unknown, handleId?: unknown }
       if (typeof candidate.message !== 'string' || typeof candidate.code !== 'string') throw error
-      const revived = new Error(candidate.message) as Error & { code: string, platformCode?: string }
+      const revived = new Error(candidate.message) as Error & { code: string, platformCode?: string, handleId?: string }
       revived.name = typeof candidate.name === 'string' ? candidate.name : 'OrivonError'
       revived.code = candidate.code
       if (typeof candidate.platformCode === 'string') revived.platformCode = candidate.platformCode
+      if (typeof candidate.handleId === 'string') revived.handleId = candidate.handleId
       throw revived
+    }
+  }
+
+  /** A page-facing `closed`: revived, and marked handled so an abrupt close the page never listens for raises no `unhandledrejection` -- a page that does listen still sees the rejection. */
+  function pageClosed (closed: Promise<void>): Promise<void> {
+    const revived = callRevived(closed)
+    revived.catch(() => {})
+    return revived
+  }
+
+  /** A secure socket's handshake facts as plain page properties. The certificate is frozen but its `raw`/`pubkey` bytes cannot be: a non-empty typed array refuses `Object.freeze`. */
+  function handshakeFields (tls: NonNullable<MainWorldSocketBridge['tls']>): Record<string, unknown> {
+    const cert = tls.peerCertificate
+    return {
+      authorized: tls.authorized,
+      ...(tls.authorizationError === undefined ? {} : { authorizationError: tls.authorizationError }),
+      alpnProtocol: tls.alpnProtocol,
+      peerCertificate: cert === null ? null : Object.freeze({ ...cert, subject: Object.freeze({ ...cert.subject }), issuer: Object.freeze({ ...cert.issuer }) })
     }
   }
 
   function buildSocket (s: Awaited<ReturnType<typeof bridge.netConnect>>): unknown {
     let totalEnqueued = 0
     let consumedTotal = 0
+    let readCancelled = false
     let readController: ReadableStreamDefaultController<Uint8Array>
     let writeController: WritableStreamDefaultController
 
@@ -100,21 +120,26 @@ export function installOrivon (
       start (controller) {
         readController = controller
         s.onData((chunk) => {
+          // A cancelled readable has no queue left: the bytes are dropped and
+          // credited at once, so the peer is not stalled by bytes nobody reads.
+          if (readCancelled) { s.reportConsumed(chunk.byteLength); return }
           totalEnqueued += chunk.byteLength
           controller.enqueue(chunk)
         })
-        s.onReadEnd((code) => {
+        s.onReadEnd((code, platformCode?: string) => {
+          if (readCancelled) return
           if (code === undefined) {
             controller.close()
           } else {
             // An abrupt read-end means no more writes will ever be accepted
             // either -- error BOTH sides, not just the one this callback owns.
-            const error = toOrivonError(code)
+            const error = toOrivonError(code, platformCode === undefined ? {} : { platformCode })
             controller.error(error)
             try { writeController.error(error) } catch { /* already settled */ }
           }
         })
       },
+      cancel () { readCancelled = true },
       pull (controller) {
         // ByteLengthQueuingStrategy's own desiredSize = highWaterMark - the
         // queue's current total byte size, so the queue's current size is
@@ -154,14 +179,10 @@ export function installOrivon (
       remotePort: s.remotePort,
       localAddress: s.localAddress,
       localPort: s.localPort,
+      ...(s.tls === undefined ? {} : handshakeFields(s.tls)),
       readable,
       writable,
-      // A fresh promise, not s.closed itself -- see installOrivon's own
-      // isolated-world counterpart (socket-port.ts's createSocketPort),
-      // which deliberately hands out a wrapper for the same reason.
-      // callRevived already returns a fresh promise, so this gets both
-      // properties from one call: a wrapper AND a revived rejection.
-      closed: callRevived(s.closed),
+      closed: pageClosed(s.closed),
       close: async () => {
         await callRevived(s.close())
         // Reflect the closure on both WHATWG streams the page holds --
@@ -216,7 +237,7 @@ export function installOrivon (
       localAddress: s.localAddress,
       localPort: s.localPort,
       connections,
-      closed: callRevived(s.closed),
+      closed: pageClosed(s.closed),
       close: async () => {
         await callRevived(s.close())
         try { readController.close() } catch { /* already closed or errored */ }
@@ -329,9 +350,7 @@ export function installOrivon (
       // prevents redefinition, not invocation, so both survive it.
       get droppedInbound () { return droppedInbound },
       get droppedOutbound () { return droppedOutbound },
-      // Same reasoning as buildSocket's own `closed` -- callRevived already
-      // hands back a fresh promise, so this both wraps and revives.
-      closed: callRevived(u.closed),
+      closed: pageClosed(u.closed),
       close: async () => {
         await callRevived(u.close())
         try { readController.close() } catch { /* already closed or errored */ }
@@ -360,11 +379,11 @@ export function installOrivon (
     })
   }
 
-  /** `buildFile`'s own web.openContext counterpart (ADR-0019) -- `closed` is already live by the time it crosses here (web-surface.ts's watchClose), so `callRevived` is all it needs, same as `s.closed` in `buildSocket`. */
+  /** `buildFile`'s own web.openContext counterpart (ADR-0019) -- `closed` is already live by the time it crosses here (web-surface.ts's watchClose), so `pageClosed` is all it needs, same as `s.closed` in `buildSocket`. */
   function buildWebContext (w: Awaited<ReturnType<typeof bridge.webOpenContext>>): MainWorldWebContextBridge {
     return Object.freeze({
-      id: w.id, origin: w.origin, closed: callRevived(w.closed),
-      evaluate: async (script: string) => await callRevived(w.evaluate(script)),
+      id: w.id, origin: w.origin, closed: pageClosed(w.closed),
+      evaluate: async (script: string, options?: { timeoutMs?: number }) => await callRevived(w.evaluate(script, options)),
       close: async () => { await callRevived(w.close()) }
     })
   }
@@ -437,7 +456,7 @@ export function installOrivon (
     }),
     net: Object.freeze({
       connect: async (opts: { host: string, port: number }) => buildSocket(await callRevived(bridge.netConnect(opts))),
-      connectSecure: async (opts: { host: string, port: number }) => buildSocket(await callRevived(bridge.netConnectSecure(opts))),
+      connectSecure: async (opts: SecureConnectOptions) => buildSocket(await callRevived(bridge.netConnectSecure(opts))),
       udpBind: async (opts: { port: number }) => buildUdpSocket(await callRevived(bridge.netUdpBind(opts))),
       listen: async (opts: { port: number }) => buildServer(await callRevived(bridge.netListen(opts))),
       lookup: async (opts: { hostname: string }) => await callRevived(bridge.netLookup(opts))

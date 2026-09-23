@@ -13,8 +13,11 @@
 // state it owns, not a second entry point to it.
 
 import { LIMITS } from '../../contracts/index.js'
-import type { GrantId, OrivonError, OrivonErrorCode } from '../../contracts/index.js'
+import type { GrantId, OrivonError, OrivonErrorCode, Pattern } from '../../contracts/index.js'
 import { fail } from '../errors.js'
+import { CLOSED_ID_MEMORY, endedAs, makeRoom } from './tombstones.js'
+import type { EndedAs } from './tombstones.js'
+import type { SlotWaiter } from './in-flight.js'
 import type {
   Authorisation,
   CloseReason,
@@ -36,20 +39,6 @@ import type {
 export const NOT_YOURS = 'no such handle for this origin'
 
 /**
- * How many recently-closed ids an origin remembers, so that using a handle it
- * has just closed answers 'closed' rather than 'denied', and so that closing
- * twice is a no-op rather than an error.
- *
- * BOUNDED on purpose: an unbounded set of dead ids is a memory leak an app
- * drives by opening and closing in a loop. The bound is the sum of the two
- * per-kind budgets -- large enough that an origin operating inside its limits
- * always recognises an id it just closed, and derived from the specification's
- * own numbers rather than invented. Past the bound the answer degrades to
- * 'denied', which is the safe direction.
- */
-const CLOSED_ID_MEMORY = LIMITS.concurrentSockets + LIMITS.concurrentFileHandles
-
-/**
  * A budget for IdentityHandles, which handle-contracts.md's "Limits" section
  * caps nowhere.
  *
@@ -66,22 +55,6 @@ const CLOSED_ID_MEMORY = LIMITS.concurrentSockets + LIMITS.concurrentFileHandles
  * kinds' budgets is not a backstop.
  */
 const MAX_IDENTITY_HANDLES = LIMITS.concurrentFileHandles
-
-/**
- * How many revoked grant ids an origin remembers, so that an acquisition which
- * lands after the cascade has swept is refused rather than registered.
- *
- * BOUNDED for the same reason CLOSED_ID_MEMORY is, and to the same derived
- * value. Past the bound the oldest tombstone is forgotten, which fails OPEN --
- * so the bound has to exceed any plausible number of grants one origin holds.
- * It does, by two orders of magnitude: a Grant is keyed on (origin, capability,
- * pattern set) over six capability kinds (manifest.ts's `CapabilityKind`).
- *
- * Exported: revoke() lives on HandleTable (./handles.ts), because it also
- * touches #tables directly, but the bound it tombstones against belongs here
- * with the table it bounds.
- */
-export const REVOKED_GRANT_MEMORY = LIMITS.concurrentSockets + LIMITS.concurrentFileHandles
 
 /**
  * Kinds that consume the socket budget.
@@ -106,6 +79,9 @@ export interface PendingOperation {
 
 export interface HandleRecord {
   readonly entry: HandleEntry
+  /** What authorises it now: `entry.authorisedBy`, until a grant replacement re-files it (./grant-replacement.ts). */
+  authorisation: Authorisation
+  readonly stillCovered: ((patterns: readonly Pattern[]) => boolean) | undefined
   /** Derived handles, by id. Closing this record closes all of them. */
   readonly children: Set<string>
   readonly operations: Set<PendingOperation>
@@ -114,21 +90,6 @@ export interface HandleRecord {
   readonly rejectClosed: (error: OrivonError) => void
   /** Set through HandleTable.onUnlink, fired once by closeTree below. */
   unlink: ((reason: CloseReason, code?: OrivonErrorCode) => void) | undefined
-}
-
-/**
- * FIFO eviction. Sets iterate in insertion order, so the first is oldest.
- * Stateless -- exported so ./handles.ts's revoke() can tombstone a grant id
- * against REVOKED_GRANT_MEMORY with the same eviction rule closeTree() uses
- * below for recently-closed ids.
- */
-export function remember<T> (memory: Set<T>, value: T, bound: number): void {
-  if (memory.has(value)) return
-  if (memory.size >= bound) {
-    const oldest = memory.values().next()
-    if (oldest.done !== true) memory.delete(oldest.value)
-  }
-  memory.add(value)
 }
 
 /**
@@ -192,7 +153,7 @@ export class OriginTable {
   readonly byPickedPath = new Map<string, Set<string>>()
   /** Operations attributed to a grant rather than a handle: acquisitions in flight. */
   readonly grantOperations = new Map<GrantId, Set<PendingOperation>>()
-  readonly recentlyClosed = new Set<string>()
+  readonly recentlyClosed = new Map<string, EndedAs>()
   /**
    * Grants this origin held and no longer does.
    *
@@ -203,6 +164,8 @@ export class OriginTable {
    * permissions UI fires exactly one revoke, so nothing ever sweeps again.
    */
   readonly revokedGrants = new Set<GrantId>()
+  /** A replaced grant -> the grant that replaced it and kept everything it authorised (./grant-replacement.ts). */
+  readonly grantAliases = new Map<GrantId, GrantId>()
   /**
    * Set for the whole of dropOrigin, including while teardowns are still in
    * flight. Deleting the table synchronously and then awaiting was not enough:
@@ -212,15 +175,18 @@ export class OriginTable {
    */
   dropping = false
   inFlight = 0
+  /** Operations waiting for an in-flight slot, oldest first (./in-flight.ts). */
+  readonly slotWaiters: SlotWaiter[] = []
 
   /** The ownership check itself. See HandleTable.lookup. */
   record (handleId: string): HandleRecord {
     const record = this.handles.get(handleId)
     if (record !== undefined) return record
 
-    if (this.recentlyClosed.has(handleId)) {
-      throw fail('closed', 'the handle is already closed', handleId)
-    }
+    // EBADF so the shim hands Node code the errno it gets for an fd it closed.
+    const ended = this.recentlyClosed.get(handleId)
+    if (ended === 'revoked') throw fail('revoked', 'the grant authorising this handle was withdrawn', handleId)
+    if (ended === 'closed') throw fail('closed', 'the handle is already closed', handleId, 'EBADF')
     throw fail('denied', NOT_YOURS, handleId)
   }
 
@@ -229,7 +195,7 @@ export class OriginTable {
     if (this.dropping) {
       throw fail('revoked', 'the session holding this capability ended')
     }
-    if (authorisedBy.by === 'grant' && this.revokedGrants.has(authorisedBy.grantId)) {
+    if (authorisedBy.by === 'grant' && this.revokedGrants.has(this.currentGrantFor(authorisedBy.grantId))) {
       throw fail('revoked', 'the grant authorising this handle was withdrawn')
     }
   }
@@ -260,12 +226,18 @@ export class OriginTable {
     }
   }
 
+  /** `grantId`, or the grant that replaced it and kept its handles. */
+  currentGrantFor (grantId: GrantId): GrantId {
+    return this.grantAliases.get(grantId) ?? grantId
+  }
+
   insert (
     origin: string,
     kind: HandleKind,
     authorisedBy: Authorisation,
     parentId: string | null,
-    destroy: DestroyResource
+    destroy: DestroyResource,
+    stillCovered?: (patterns: readonly Pattern[]) => boolean
   ): HandleEntry {
     let id = newHandleId()
     // Astronomically unlikely at 128 bits, and free to rule out. An overwrite
@@ -294,8 +266,15 @@ export class OriginTable {
     )
 
     const entry: HandleEntry = Object.freeze({ id, origin, kind, authorisedBy: authorisation, parentId, closed })
+    // An acquisition that was in flight when its grant was replaced files
+    // under the replacement, where a revoke can still reach it.
+    const current: Authorisation = authorisation.by === 'grant'
+      ? Object.freeze({ by: 'grant' as const, grantId: this.currentGrantFor(authorisation.grantId) })
+      : authorisation
     const record: HandleRecord = {
       entry,
+      authorisation: current,
+      stillCovered,
       children: new Set(),
       operations: new Set(),
       unlink: undefined,
@@ -305,11 +284,11 @@ export class OriginTable {
     }
 
     this.handles.set(id, record)
-    if (authorisation.by === 'grant') {
-      const set = this.byGrant.get(authorisation.grantId) ?? new Set<string>()
+    if (current.by === 'grant') {
+      const set = this.byGrant.get(current.grantId) ?? new Set<string>()
       set.add(id)
-      this.byGrant.set(authorisation.grantId, set)
-    } else {
+      this.byGrant.set(current.grantId, set)
+    } else if (authorisation.by === 'userSelected') {
       const set = this.byPickedPath.get(authorisation.pickId) ?? new Set<string>()
       set.add(id)
       this.byPickedPath.set(authorisation.pickId, set)
@@ -353,7 +332,8 @@ export class OriginTable {
     }
 
     for (const record of doomed) {
-      const { id, authorisedBy, parentId } = record.entry
+      const { id, parentId } = record.entry
+      const authorisedBy = record.authorisation
       if (authorisedBy.by === 'grant') {
         const set = this.byGrant.get(authorisedBy.grantId)
         set?.delete(id)
@@ -367,7 +347,8 @@ export class OriginTable {
         if (set !== undefined && set.size === 0) this.byPickedPath.delete(authorisedBy.pickId)
       }
       if (parentId !== null) this.handles.get(parentId)?.children.delete(id)
-      remember(this.recentlyClosed, id, CLOSED_ID_MEMORY)
+      if (!this.recentlyClosed.has(id)) makeRoom(this.recentlyClosed, CLOSED_ID_MEMORY)
+      this.recentlyClosed.set(id, endedAs(reason))
 
       const error = failure ?? (reason === 'closed'
         ? fail('closed', 'the handle was closed', id)

@@ -25,10 +25,18 @@
 
 import { Readable, Writable } from 'stream'
 import { Buffer } from 'buffer'
-import { NodeFileHandle } from './node-fs-handle.js'
+import { isAppendFlag, NodeFileHandle } from './node-fs-handle.js'
 import { toBytes } from './node-stream-bytes.js'
+import type { PathLike } from './node-fs-path.js'
 
 const DEFAULT_CHUNK_SIZE = 64 * 1024
+
+// Node's fs streams destroy themselves at end/finish and on error, which
+// releases the handle and emits 'close'. readable-stream 3, the page's
+// `stream`, defaults autoDestroy to false, and turning it on for a Writable
+// swallows a failed write's 'error' event (it marks the error emitted before
+// destroying), so both classes here destroy by hand instead. Never from an
+// 'error' listener: one would stop an unhandled stream error being thrown.
 
 export interface ReadStreamOptions {
   start?: number
@@ -48,8 +56,9 @@ export class ReadStream extends Readable {
   private remaining: number
   private pulling = false
 
-  constructor (path: string, opts: ReadStreamOptions = {}) {
+  constructor (path: PathLike, opts: ReadStreamOptions = {}) {
     super()
+    this.once('end', () => this.destroy())
     if (opts.encoding !== undefined) this.setEncoding(opts.encoding as BufferEncoding)
     const start = opts.start ?? 0
     this.position = start
@@ -97,13 +106,18 @@ export class ReadStream extends Readable {
 
 export class WriteStream extends Writable {
   private readonly opening: Promise<NodeFileHandle>
-  private position: number
+  /** null writes at the handle's own cursor, which an append flag starts at EOF. */
+  private position: number | null
   private didClose = false
 
-  constructor (path: string, opts: WriteStreamOptions = {}) {
+  constructor (path: PathLike, opts: WriteStreamOptions = {}) {
     super()
-    this.position = opts.start ?? 0
-    this.opening = NodeFileHandle.open(path, opts.flags ?? 'w')
+    this.once('finish', () => this.destroy())
+    this.once('close', () => { this.didClose = true })
+    const flags = opts.flags ?? 'w'
+    // An append flag writes at EOF, whatever `start` says, as in Node.
+    this.position = isAppendFlag(flags) ? null : opts.start ?? 0
+    this.opening = NodeFileHandle.open(path, flags)
     this.opening.then(
       (handle) => { this.emit('open', handle.fd); this.emit('ready') },
       (error) => this.destroy(error as Error)
@@ -115,16 +129,22 @@ export class WriteStream extends Writable {
     try {
       bytes = toBytes(chunk)
     } catch (error) {
-      callback(error as Error)
+      this.fail(error, callback)
       return
     }
-    this.writeChunk(bytes).then(() => callback(), (error) => callback(error as Error))
+    this.writeChunk(bytes).then(() => callback(), (error) => this.fail(error, callback))
+  }
+
+  /** The callback emits 'error'; destroying after it releases the handle, as Node's autoDestroy would. */
+  private fail (error: unknown, callback: (error?: Error | null) => void): void {
+    callback(error as Error)
+    this.destroy()
   }
 
   private async writeChunk (bytes: Uint8Array): Promise<void> {
     const handle = await this.opening
     const { bytesWritten } = await handle.write(bytes, 0, bytes.length, this.position)
-    this.position += bytesWritten
+    if (this.position !== null) this.position += bytesWritten
   }
 
   override _destroy (error: Error | null, callback: (error?: Error | null) => void): void {
@@ -132,51 +152,22 @@ export class WriteStream extends Writable {
   }
 
   /**
-   * Real Node's fs.WriteStream#close -- not part of the base Writable,
-   * since a generic stream has no fd to release.
-   *
-   * DRIVEN BY end()+destroy()'S OWN CALLBACKS, NEVER THE 'close' EVENT.
-   * Node's real Writable emits 'close' automatically once 'finish' fires
-   * (emitClose/autoDestroy, both default true there), which the previous
-   * version of this method relied on -- correct against real Node, but not
-   * guaranteed by the Writable contract itself, and the specific polyfill
-   * this repository's own build actually bundles (`stream-browserify`,
-   * aliased in webpack.orivon-datastore.config.cjs) does not emit it:
-   * confirmed by running exactly this method against it, not assumed
-   * (src/shim/tests/node-fs-streams.test.ts's own stream-browserify case).
-   * `end()`'s callback (fires on 'finish') and `destroy()`'s own second
-   * argument (fires once `_destroy` -- which actually closes the fd --
-   * completes) are both part of Writable's documented public API on every
-   * implementation, not an emergent behaviour one polyfill happens to
-   * match, so chaining them here works the same under either.
+   * Real Node's fs.WriteStream#close: end the stream and call back on
+   * 'close', emitted once `_destroy` has released the handle.
    */
   close (callback?: (error?: Error | null) => void): void {
-    if (this.didClose) {
-      if (callback !== undefined) queueMicrotask(() => callback())
-      return
+    if (callback !== undefined) {
+      if (this.didClose) queueMicrotask(() => callback())
+      else this.once('close', () => callback())
     }
-    this.end(() => {
-      // @types/node's own `destroy(error?: Error): this` omits the second,
-      // callback argument its REAL runtime signature accepts (and this
-      // method depends on) -- a documented Node stream API
-      // (`writable.destroy([error], [callback])`), just missing from this
-      // declaration file. Cast `this`, not the extracted method: destroy()
-      // reads `this._writableState` internally, so the call must still go
-      // through real method-call syntax (`x.destroy(...)`), never a
-      // standalone function reference, which loses that binding.
-      interface DestroyWithCallback { destroy: (error: undefined, callback: (error?: Error | null) => void) => void }
-      ;(this as unknown as DestroyWithCallback).destroy(undefined, (error) => {
-        this.didClose = true
-        callback?.(error ?? null)
-      })
-    })
+    this.end()
   }
 }
 
-export function createReadStream (path: string, opts?: ReadStreamOptions): ReadStream {
+export function createReadStream (path: PathLike, opts?: ReadStreamOptions): ReadStream {
   return new ReadStream(path, opts)
 }
 
-export function createWriteStream (path: string, opts?: WriteStreamOptions): WriteStream {
+export function createWriteStream (path: PathLike, opts?: WriteStreamOptions): WriteStream {
   return new WriteStream(path, opts)
 }

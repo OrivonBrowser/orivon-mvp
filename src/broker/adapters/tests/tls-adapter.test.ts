@@ -5,12 +5,11 @@
 // ADR-0017 rests on. Nothing in this file stubs tls, net, or the handshake
 // itself.
 //
-// `createDialTls`'s optional `ca` is a TESTING SEAM ONLY: `DialSecure`
-// (../../broker-contracts.ts) takes no such option, so nothing upstream of
-// this file -- not net-capability.ts, not an app, not a grant -- can ever
-// widen who the shipped adapter trusts. The production export, `dialTls`, is
-// exactly `createDialTls()` with no argument, trusting only the runtime's
-// own default certificate store.
+// `createDialTls`'s optional `ca` is a TESTING SEAM ONLY: the roots a dial
+// trusts when the call names none of its own. The production export,
+// `dialTls`, is exactly `createDialTls()` with no argument, trusting only the
+// runtime's own default certificate store. A call's own TLS options are
+// ./tls-adapter-options.test.ts's subject.
 
 import { createServer } from 'node:tls'
 import type { Server } from 'node:tls'
@@ -57,7 +56,7 @@ describe('dialTls performs a real handshake with real certificate verification',
   it('succeeds and carries real plaintext bytes when the requested host matches the certificate', async () => {
     const dial = createDialTls({ ca: fixtureCa })
 
-    const socket = await dial('localhost', port, neverAborts())
+    const socket = await dial({ host: 'localhost', port }, {}, neverAborts())
     const text = await readAll(socket.readable)
 
     expect(text).toBe('hello from the real server')
@@ -72,13 +71,13 @@ describe('dialTls performs a real handshake with real certificate verification',
     // its literal address instead of the name the certificate covers -- is
     // rejected by hostname verification, not by anything at the network
     // layer.
-    await expect(dial('127.0.0.1', port, neverAborts())).rejects.toMatchObject({
+    await expect(dial({ host: '127.0.0.1', port }, {}, neverAborts())).rejects.toMatchObject({
       code: 'ERR_TLS_CERT_ALTNAME_INVALID'
     })
   })
 
   it('the production dialTls trusts no extra CA -- an untrusted self-signed certificate is rejected even for the right hostname', async () => {
-    await expect(dialTls('localhost', port, neverAborts())).rejects.toMatchObject({
+    await expect(dialTls({ host: 'localhost', port }, {}, neverAborts())).rejects.toMatchObject({
       // Node's own OpenSSL binding: an unknown issuer, not an altname problem --
       // proof this path is not silently trusting the fixture CA it never received.
       code: 'UNABLE_TO_VERIFY_LEAF_SIGNATURE'

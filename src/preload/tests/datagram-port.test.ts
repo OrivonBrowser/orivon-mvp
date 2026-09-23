@@ -338,3 +338,38 @@ describe('createDatagramPort -- terminal states', () => {
     expect(received).toHaveLength(0)
   })
 })
+
+describe('createDatagramPort -- a send that never reaches the port', () => {
+  it('rejects invalid when the datagram cannot be posted, and holds no window slot or silence timer for it', async () => {
+    const port = fakePort()
+    let refuse = true
+    const realPost = port.postMessage
+    port.postMessage = (message) => {
+      if (refuse) throw new DOMException('could not be cloned', 'DataCloneError')
+      realPost(message)
+    }
+    const onFatal = vi.fn()
+    const dp = createDatagramPort({ handleId: 'h1', port, windowDatagrams: 1, silenceTimeoutMs: 10 })
+    dp.onFatal(onFatal)
+
+    await expect(dp.send(datagram())).rejects.toMatchObject({ code: 'invalid' })
+    refuse = false
+    await dp.send(datagram()) // would block forever if the failed send still held the only slot
+    port.emit({ kind: 'send-ack', handleId: 'h1', datagramsAccepted: 1 })
+    await new Promise((resolve) => setTimeout(resolve, 40))
+
+    expect(port.sent).toHaveLength(1)
+    expect(onFatal).not.toHaveBeenCalled()
+  })
+
+  it('an invalid refusal from the broker releases the slot like any other refusal', async () => {
+    const port = fakePort()
+    const dp = createDatagramPort({ handleId: 'h1', port, windowDatagrams: 1 })
+
+    await dp.send(datagram())
+    port.emit({ kind: 'send-failed', handleId: 'h1', code: 'invalid', dropped: 1, address: '93.184.216.34', port: 0 })
+    await dp.send(datagram())
+
+    expect(port.sent).toHaveLength(2)
+  })
+})

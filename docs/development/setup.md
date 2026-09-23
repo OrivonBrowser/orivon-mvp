@@ -104,6 +104,11 @@ real screen at all, not even briefly. **On macOS, on Windows, or a Linux box tha
 virtual display. Either way, typing a plain `npm run smoke` or `npm run test:e2e` with no wrapper
 is safe to do while you are working.
 
+With `ORIVON_PRIVATE_BUS=1`, `run-headless.mjs` also gives the command a D-Bus session bus of its
+own (`dbus-run-session`, started inside `xvfb-run`) and refuses to run if it cannot; the
+notification phase of `test/e2e-site-permissions.test.ts` runs only under it. It is not the
+default, because a whole suite on a private bus would lose the keyring that `safeStorage` reads.
+
 ### `npm run dev` deliberately does not pass `--watch`
 
 `electron-vite dev` only rebuilds the main process and the preloads when `-w`/`--watch` is

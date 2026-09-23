@@ -27,7 +27,7 @@
 import type { OrivonErrorCode, Pattern } from '../../contracts/index.js'
 import { canonicalAddress, classifyAddress } from './address.js'
 import { MAX_HOST_LENGTH, isAsciiHost, isValidPort, normalizeHost } from './canonical-host.js'
-import { couldAnyPatternMatch, patternAuthorises } from './connect-patterns.js'
+import { LOCALHOST, LOOPBACK_LITERALS, couldAnyPatternMatch, patternAuthorises } from './connect-patterns.js'
 import type { ParsedPattern } from './connect-patterns.js'
 import { preflightConnect } from './connect-preflight.js'
 
@@ -103,7 +103,7 @@ export type ConnectDenialReason =
   | 'bad-port'
   /** `hostArg` was not a string, was empty, was over-long, or was not ASCII. */
   | 'bad-host'
-  /** `hostArg` was an address, but written in a non-canonical encoding. */
+  /** `hostArg` was an IPv4 address in a non-canonical encoding, or an address carrying a zone id. */
   | 'non-canonical-host'
   /** No granted pattern could authorise this host and port however it resolved. */
   | 'no-pattern-possible'
@@ -175,6 +175,19 @@ export { MAX_PATTERNS } from './connect-preflight.js'
 export const MAX_ANSWERS = 64
 
 /**
+ * Whether `patterns` still authorise a connection that is already open to
+ * `address`:`port`, asked for as `hostArg`: checkConnect's own decision,
+ * re-run against a replacement grant (HandleTable.replaceGrant) with the
+ * address the socket actually reached, so nothing is resolved again.
+ */
+export function connectStillAuthorised (patterns: readonly Pattern[], hostArg: string, address: string, port: number): boolean {
+  const pre = preflightConnect(patterns, hostArg, port)
+  if (!pre.ok) return false
+  const reached = canonicalAddress(address)
+  return reached !== null && pre.eligible.some((pattern) => patternAuthorises(pattern, pre.requested, reached, port))
+}
+
+/**
  * Decides whether `patterns` -- the GRANTED pattern list, never the
  * manifest's DECLARED one (the two differ whenever the user granted less
  * than an app asked for; A18) -- authorises an outbound TCP connection to
@@ -223,6 +236,16 @@ export async function checkConnect (
   const { requested, eligible, isLiteral } = pre
 
   if (!couldAnyPatternMatch(eligible, requested, port)) return deny('no-pattern-possible')
+
+  // `localhost` is answered, never resolved, and its answer is a constant no
+  // attacker chose -- so, unlike a DNS answer, dialling only the part of it
+  // the grant covers reopens no rebinding window.
+  if (requested === LOCALHOST) {
+    const covered = LOOPBACK_LITERALS.filter((address) => eligible.some((pattern) => patternAuthorises(pattern, requested, address, port)))
+    return covered.length === 0
+      ? deny('no-pattern-match', LOOPBACK_LITERALS)
+      : Object.freeze({ allowed: true, addresses: Object.freeze(covered) })
+  }
 
   const answers = isLiteral ? [requested] : await resolveFn(requested)
 

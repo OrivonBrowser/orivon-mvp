@@ -175,11 +175,12 @@ export function createWebContextHost (getBroker: () => Broker): WebContextHost {
    * would otherwise accumulate one per reuse of this slot's session.
    */
   async function configureSession (contextSession: Session, opener: string, origin: string): Promise<void> {
-    // NOT redundant with permission-gate.ts, which allows
-    // 'clipboard-sanitized-write' browser-wide: these two lines are the only
-    // thing keeping that away from a document running another site's script,
-    // where a copy the person never asked for has nothing to do with them
-    // acting in a page they can see. Deleting them as duplication reopens it.
+    // NOT redundant with permission-gate.ts, which allows several
+    // permissions browser-wide and asks the person for two more (its
+    // README has the list): these two lines are the only thing keeping all
+    // of them away from a document running another site's script, in a page
+    // the person cannot see or act in. Deleting them as duplication reopens
+    // every one.
     contextSession.setPermissionCheckHandler(() => false)
     contextSession.setPermissionRequestHandler((_webContents, _permission, callback) => { callback(false) })
 

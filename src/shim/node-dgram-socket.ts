@@ -21,18 +21,23 @@
 
 import { EventEmitter } from 'events'
 import type { UdpSocket } from '../contracts/handles.js'
-import { toNodeError } from './node-http-errors.js'
+import { LIMITS } from '../contracts/limits.js'
+import { codedError, systemError, toNodeError } from './node-http-errors.js'
 import { toBytes, toBytesJoined } from './node-stream-bytes.js'
 import { isIP } from './node-net-isip.js'
+import { validatePort } from './node-net-args.js'
+import { lookup } from './node-dns.js'
 import { refuseShim } from './errors.js'
 // One of the eight approved core-polyfill packages (module-map.ts) --
-// imported directly rather than relying on a global `Buffer`, because
-// nothing in this tree installs one yet. bencode (underneath bittorrent-dht)
-// calls Buffer.isBuffer() on what a 'message' handler receives, so handing
-// back a plain Uint8Array here would fail that check silently.
+// imported directly rather than relying on a global `Buffer`. bencode
+// (underneath bittorrent-dht) calls Buffer.isBuffer() on what a 'message'
+// handler receives, so handing back a plain Uint8Array would fail that
+// check silently.
 import { Buffer } from 'buffer'
 
 export type UdpBindFn = (opts: { port: number }) => Promise<UdpSocket>
+/** Resolves a send's hostname to an IPv4 literal; dns.lookup unless a test supplies one. */
+export type UdpLookupFn = (hostname: string) => Promise<string>
 
 export interface RemoteInfo {
   address: string
@@ -43,51 +48,78 @@ export interface RemoteInfo {
 
 type SendCallback = (error: Error | null) => void
 
-function parseSendArgs (args: readonly unknown[]): { bytes: Uint8Array, port: number, address: string, callback?: SendCallback } {
-  const rest = [...args]
-  const callback = typeof rest[rest.length - 1] === 'function' ? rest.pop() as SendCallback : undefined
-  const msg = rest.shift()
-  const bytes = Array.isArray(msg) ? toBytesJoined(msg) : toBytes(msg)
+function defaultLookup (hostname: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    lookup(hostname, { family: 4 }, (error, address) => { if (error !== null) reject(error); else resolve(address) })
+  })
+}
 
-  let offset: number | undefined
-  let length: number | undefined
-  if (typeof rest[0] === 'number' && typeof rest[1] === 'number') {
-    // Node refuses offset/length paired with the ARRAY message form --
-    // ERR_INVALID_ARG_TYPE, because the array is a list of whole buffers and
-    // a byte range across their concatenation is not a thing it offers.
-    // Refusing here too, rather than silently slicing the join, which is what
-    // this did before and would hand the broker a truncated datagram the
-    // caller never asked for.
-    if (Array.isArray(msg)) {
-      throw Object.assign(
-        new TypeError('orivon-node-shim: dgram.send() does not accept offset/length with an array message'),
-        { code: 'ERR_INVALID_ARG_TYPE' }
-      )
-    }
-    offset = rest.shift() as number
-    length = rest.shift() as number
+/** Any ArrayBufferView or string, as Node's send() accepts; toBytes itself takes Uint8Array and string only. */
+function messageBytes (value: unknown): Uint8Array {
+  if (ArrayBuffer.isView(value) && !(value instanceof Uint8Array)) return new Uint8Array(value.buffer, value.byteOffset, value.byteLength)
+  if (value instanceof Uint8Array || typeof value === 'string') return toBytes(value)
+  throw codedError(TypeError, 'ERR_INVALID_ARG_TYPE', 'The "buffer" argument must be of type string or an instance of Buffer, TypedArray, or DataView.')
+}
+
+/** Node's sliceBuffer: offset and length are validated against the message, and the array form refuses them outright. */
+function sliceMessage (msg: unknown, offset: unknown, length: unknown): Uint8Array {
+  if (Array.isArray(msg)) {
+    throw codedError(TypeError, 'ERR_INVALID_ARG_TYPE', 'orivon-node-shim: dgram.send() does not accept offset/length with an array message')
   }
-  const port = rest.shift() as number
-  const address = (rest.shift() as string | undefined) ?? '127.0.0.1'
-  const result: { bytes: Uint8Array, port: number, address: string, callback?: SendCallback } = {
-    bytes: offset !== undefined && length !== undefined ? bytes.subarray(offset, offset + length) : bytes,
-    port,
-    address
+  const bytes = messageBytes(msg)
+  const start = Number(offset) >>> 0
+  const size = Number(length) >>> 0
+  if (start > bytes.length) throw codedError(RangeError, 'ERR_BUFFER_OUT_OF_BOUNDS', '"offset" is outside of buffer bounds')
+  if (start + size > bytes.length) throw codedError(RangeError, 'ERR_BUFFER_OUT_OF_BOUNDS', '"length" is outside of buffer bounds')
+  return bytes.subarray(start, start + size)
+}
+
+/**
+ * Node's send() argument rule, positional rather than by type: offset and
+ * length are present exactly when an address, or a non-function port,
+ * follows them. Port and address are validated here and throw
+ * synchronously, as Node's do, so a malformed send never reaches the broker.
+ */
+function parseSendArgs (args: readonly unknown[]): { bytes: Uint8Array, port: number, address: string, callback: SendCallback | undefined } {
+  let [msg, offset, length, port, address, callback] = args
+  let bytes: Uint8Array
+  if ((address !== undefined && address !== null && address !== '') || (port !== undefined && port !== null && port !== 0 && typeof port !== 'function')) {
+    bytes = sliceMessage(msg, offset, length)
+  } else {
+    callback = port
+    port = offset
+    address = length
+    bytes = Array.isArray(msg) ? toBytesJoined(msg.map(messageBytes)) : messageBytes(msg)
   }
-  if (callback !== undefined) result.callback = callback
-  return result
+  if (typeof address === 'function') { callback = address; address = undefined }
+  const validatedPort = validatePort(port, 'Port', false)
+  if (address !== undefined && address !== null && typeof address !== 'string') {
+    throw codedError(TypeError, 'ERR_INVALID_ARG_TYPE', `The "address" argument must be of type string. Received type ${typeof address}`)
+  }
+  return {
+    bytes,
+    port: validatedPort,
+    address: typeof address === 'string' && address !== '' ? address : '127.0.0.1',
+    callback: typeof callback === 'function' ? callback as SendCallback : undefined
+  }
+}
+
+function notRunning (): Error & { code: string } {
+  return codedError(Error, 'ERR_SOCKET_DGRAM_NOT_RUNNING', 'Not running')
 }
 
 export class Socket extends EventEmitter {
   private readonly bindFn: UdpBindFn
+  private readonly lookupFn: UdpLookupFn
   private handle: UdpSocket | null = null
   private bindPromise: Promise<UdpSocket> | null = null
   private writer: WritableStreamDefaultWriter<{ data: Uint8Array, address: string, port: number, family: 'IPv4' | 'IPv6' }> | null = null
   private closing = false
 
-  constructor (bindFn: UdpBindFn) {
+  constructor (bindFn: UdpBindFn, lookupFn: UdpLookupFn = defaultLookup) {
     super()
     this.bindFn = bindFn
+    this.lookupFn = lookupFn
   }
 
   address (): { address: string, port: number, family: string } {
@@ -164,29 +196,35 @@ export class Socket extends EventEmitter {
   }
 
   send (...args: readonly unknown[]): void {
+    if (this.closing) throw notRunning()
     const { bytes, port, address, callback } = parseSendArgs(args)
-    const family = isIP(address) === 6 ? 'IPv6' as const : 'IPv4' as const
-    const deliver = (writer: WritableStreamDefaultWriter<{ data: Uint8Array, address: string, port: number, family: 'IPv4' | 'IPv6' }>): void => {
-      writer.write({ data: bytes, address, port, family })
-        .then(() => callback?.(null))
-        .catch((error) => callback?.(toNodeError(error)))
+    // Node reports a failed send to its callback, or as 'error' when it has none.
+    const report = (error: Error | null): void => {
+      if (callback !== undefined) callback(error)
+      else if (error !== null && !this.closing) this.emit('error', error)
     }
-    if (this.writer !== null) { deliver(this.writer); return }
-    const promise = this.bindPromise ?? this.bind().bindPromise
-    promise?.then((handle) => deliver(this.writer ?? handle.writable.getWriter()))
-      .catch((error) => callback?.(toNodeError(error)))
+    const resolved = isIP(address) !== 0 ? Promise.resolve(address) : this.lookupFn(address)
+    resolved.then((ip) => {
+      if (bytes.length > LIMITS.maxDatagramBytes) { report(systemError('EMSGSIZE', 'send', { address: ip, port })); return }
+      const family = isIP(ip) === 6 ? 'IPv6' as const : 'IPv4' as const
+      const promise = this.writer !== null ? Promise.resolve(this.writer) : this.writerOnceBound()
+      return promise.then((writer) => writer.write({ data: bytes, address: ip, port, family }))
+        .then(() => report(null), (error: unknown) => report(toNodeError(error, { syscall: 'send', address: ip, port })))
+    }, (error: unknown) => report(toNodeError(error, { syscall: 'getaddrinfo', hostname: address })))
+  }
+
+  /** send() before bind() binds implicitly, as Node's does. */
+  private async writerOnceBound (): Promise<WritableStreamDefaultWriter<{ data: Uint8Array, address: string, port: number, family: 'IPv4' | 'IPv6' }>> {
+    const handle = await (this.bindPromise ?? this.bind().bindPromise)
+    if (handle === null) throw notRunning()
+    return this.writer ?? handle.writable.getWriter()
   }
 
   close (callback?: () => void): this {
     // Node emits 'close' exactly once and throws ERR_SOCKET_DGRAM_NOT_RUNNING
     // on a second call. Emitting it twice made a caller that releases
     // resources in its own 'close' handler release them twice -- measured.
-    if (this.closing) {
-      throw Object.assign(
-        new Error('orivon-node-shim: dgram socket is not running'),
-        { code: 'ERR_SOCKET_DGRAM_NOT_RUNNING' }
-      )
-    }
+    if (this.closing) throw notRunning()
     if (callback !== undefined) this.once('close', callback)
     this.closing = true
     const pending = this.handle !== null

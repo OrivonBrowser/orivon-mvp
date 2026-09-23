@@ -29,10 +29,9 @@ import { createRealDiskFs, isInside } from './support/real-disk-fs.js'
 const NEDB_ROOT = '/home/jhon/git/freetube-src/node_modules/@seald-io/nedb'
 const NEDB_DATASTORE = `${NEDB_ROOT}/lib/datastore.js`
 
-// require.resolve, not node:fs's existsSync -- this repo's own fs.existsSync
-// is a real, permanent ADR-0016 refusal, and depending on the shim to
-// answer "does the sibling checkout exist" would be circular. This goes
-// through Node's own module resolution, unaffected by anything below.
+// require.resolve, not an existsSync -- depending on the shim to answer
+// "does the sibling checkout exist" would be circular. This goes through
+// Node's own module resolution, unaffected by anything below.
 const nedbRequire = createRequire(import.meta.url)
 function nedbAvailable (): boolean {
   try {
