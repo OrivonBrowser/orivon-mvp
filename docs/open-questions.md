@@ -8408,7 +8408,7 @@ neither `ctx.broker` nor `ctx.loader` and has no ordering constraint of its own)
 feature is intentionally unwired for now and say why (e.g. waiting on a real release to check
 against).
 
-### A205 -- the site-info popover's Cookies and site data page cannot delete an app's own private files yet **[NEEDS OWNER DECISION]**
+### A206 -- the site-info popover's Cookies and site data page cannot delete an app's own private files yet **[NEEDS OWNER DECISION]**
 
 **Raised 2026-09-23**, queue item 4.4's site-info popover (`d-0037`). `ADR-0003:66-69` calls for
 "a visible per-app disk usage view and a way to delete data," and the popup's Cookies and site
