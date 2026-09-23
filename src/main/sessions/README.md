@@ -2,11 +2,11 @@
 
 **What lives here.** `permission-gate.ts`: denies every Chromium permission (camera, clipboard
 reads, geolocation, …) on every session a tab can reach. Five pass without asking:
-`clipboard-sanitized-write` (`ADR-0022`), `fullscreen` (`ADR-0025`), `pointerLock`,
-`keyboardLock`, and `fileSystem` for a single file the person chose, never a directory
-(`ADR-0024`). Two pass only when the person says yes: `openExternal`, decided in
-`external-links.ts`, and `notifications`, decided in `site-notifications.ts` and remembered per
-site by `notification-decisions.ts`. `tab-prompts.ts` is what each tab remembers between those
+`clipboard-sanitized-write` (`ADR-0022`), `fullscreen` (`ADR-0025`), `pointerLock` and
+`keyboardLock` (`ADR-0026`), and `fileSystem` for a single file the person chose, never a
+directory (`ADR-0024`). Two pass only when the person says yes: `openExternal` (`ADR-0027`),
+decided in `external-links.ts`, and `notifications` (`ADR-0028`), decided in
+`site-notifications.ts` and remembered per site by `notification-decisions.ts`. `tab-prompts.ts` is what each tab remembers between those
 questions. `web-context-host.ts`: ADR-0019's
 Electron half of the isolated `WebContext` — the real `WebContextHost`
 [`../../broker/web-capability.ts`](../../broker/web-capability.ts) calls through
@@ -58,15 +58,15 @@ of two grounds:
    the site that asks; nothing passes before the answer, and the check handler, which cannot
    ask, never allows on the person's behalf.
 
-| Name | Ground | What meets it |
-|---|---|---|
-| `clipboard-sanitized-write` | 1(a) | Transient activation in a focused document; `document.execCommand('copy')` |
-| `fileSystem`, one file | 1(a) | The OS picker, a drop or a paste; `<input type="file">` and downloads |
-| `fullscreen` | 1(b) | A click; Escape in the browser process; "Press Esc to exit full screen" |
-| `pointerLock` | 1(b) | A click; Escape in the browser process; "Press Esc to show your cursor" |
-| `keyboardLock` | 1(b) | Acts only in fullscreen, which a click enters; holding Escape leaves; "Press and hold Esc to exit full screen" |
-| `openExternal` | 2 | "Open *scheme* link with your system's default app?", every time |
-| `notifications` | 2 | "*site* wants to show notifications", once per site, remembered |
+| Name | Ground | What meets it | ADR |
+|---|---|---|---|
+| `clipboard-sanitized-write` | 1(a) | Transient activation in a focused document; `document.execCommand('copy')` | `ADR-0022` |
+| `fileSystem`, one file | 1(a) | The OS picker, a drop or a paste; `<input type="file">` and downloads | `ADR-0024` |
+| `fullscreen` | 1(b) | A click; Escape in the browser process; "Press Esc to exit full screen" | `ADR-0025` |
+| `pointerLock` | 1(b) | A click; Escape in the browser process; "Press Esc to show your cursor" | `ADR-0026` |
+| `keyboardLock` | 1(b) | Acts only in fullscreen, which a click enters; holding Escape leaves; "Press and hold Esc to exit full screen" | `ADR-0026` |
+| `openExternal` | 2 | "Open *scheme* link with your system's default app?", every time | `ADR-0027` |
+| `notifications` | 2 | "*site* wants to show notifications", once per site, remembered | `ADR-0028` |
 
 `clipboard-sanitized-write` is granted outright. The web
 platform gates clipboard writing on transient user activation and a focused document, so the
