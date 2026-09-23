@@ -13,7 +13,7 @@
 import { ipcMain, WebContentsView, type BaseWindow, type View } from 'electron'
 import { join } from 'node:path'
 import { SETTINGS_COMMAND_CHANNEL } from '../channels.js'
-import type { PermissionsController } from './permissions.js'
+import type { PermissionsController, SiteNotificationsController } from './permissions.js'
 import { rendererEntryUrl } from '../shell/renderer-entry.js'
 import { registerSettingsIpc } from '../ipc/settings-ipc.js'
 
@@ -71,7 +71,8 @@ export function createPermissionsPanel (
   win: BaseWindow,
   contentView: View,
   permissions: PermissionsController,
-  dirname: string
+  dirname: string,
+  sites: SiteNotificationsController
 ): PermissionsPanel {
   let view: WebContentsView | null = null
 
@@ -121,7 +122,7 @@ export function createPermissionsPanel (
       // already been dismissed must not resize the one that replaced it.
       if (view !== panel || panel.webContents.isDestroyed()) return
       panel.setBounds(panelBounds(win, anchor, contentHeight))
-    })
+    }, sites)
     void panel.webContents.loadURL(url)
 
     // Click-away dismissal, the one behaviour that makes this feel like a

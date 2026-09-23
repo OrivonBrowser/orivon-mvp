@@ -19,7 +19,8 @@ import { originFromUrl } from '../../broker/policy/origin.js'
 import { BookmarkStore } from '../browsing/bookmarks.js'
 import { COMMAND_CHANNEL, NEWTAB_COMMAND_CHANNEL, STATE_CHANNEL } from '../channels.js'
 import { registerNewTabIpc } from '../ipc/newtab-ipc.js'
-import { createPermissionsController } from '../permissions/permissions.js'
+import { createPermissionsController, createSiteNotificationsController } from '../permissions/permissions.js'
+import { notificationDecisions } from '../sessions/permission-gate.js'
 import { deliveryProvenanceFor } from '../browsing/delivery-provenance.js'
 import { rendererEntryUrl } from './renderer-entry.js'
 import type { SubsystemContext } from '../registry.js'
@@ -313,7 +314,7 @@ export function createShellWindow (ctx: SubsystemContext): BaseWindow {
 
   // Queue item 4.4's permissions surface, now a panel inside this window
   // rather than a second one (owner, 2026-09-16) -- ./permissions-panel.ts.
-  const permissionsPanel = createPermissionsPanel(win, win.contentView, permissions, import.meta.dirname)
+  const permissionsPanel = createPermissionsPanel(win, win.contentView, permissions, import.meta.dirname, createSiteNotificationsController(notificationDecisions()))
 
   registerShellIpc(chrome.webContents, tabs, bookmarks, permissions, (anchor, url) => {
     // The chrome view sends the active TAB's url, not an origin -- same

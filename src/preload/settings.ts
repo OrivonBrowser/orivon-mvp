@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { SETTINGS_COMMAND_CHANNEL } from '../main/channels.js'
 import type { SettingsCommand } from '../main/ipc/settings-ipc.js'
-import type { AppPermissions } from '../main/permissions/permissions.js'
+import type { AppPermissions, SiteNotificationRow } from '../main/permissions/permissions.js'
 import type { CapabilityKind, GrantId } from '../contracts/index.js'
 
 // Loaded ONLY by the permissions panel's own WebContentsView
@@ -33,6 +33,13 @@ if (expectedUrl !== undefined && location.href === expectedUrl) {
     },
     revokePickedPath: async (origin: string, pickId: string): Promise<void> => {
       await ipcRenderer.invoke(SETTINGS_COMMAND_CHANNEL, { type: 'revokePickedPath', origin, pickId } satisfies SettingsCommand)
+    },
+    listSiteNotifications: async (): Promise<readonly SiteNotificationRow[]> => {
+      const result: unknown = await ipcRenderer.invoke(SETTINGS_COMMAND_CHANNEL, { type: 'listSiteNotifications' } satisfies SettingsCommand)
+      return Array.isArray(result) ? result as SiteNotificationRow[] : []
+    },
+    resetSiteNotifications: async (origin: string): Promise<void> => {
+      await ipcRenderer.invoke(SETTINGS_COMMAND_CHANNEL, { type: 'resetSiteNotifications', origin } satisfies SettingsCommand)
     },
     /** Tells main how tall the rendered content is, so the panel sizes to it
      * (src/main/permissions-panel.ts). Fire-and-forget: a panel that failed

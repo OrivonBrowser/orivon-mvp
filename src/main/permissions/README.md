@@ -9,7 +9,8 @@ accepted request clears that record.
 `permissions-panel.ts`: queue item 4.4's in-window panel hanging off the toolbar's permission
 key. `permissions.ts` also turns each site's remembered notification answer into a row a person
 can reset (`createSiteNotificationsController`): a Chromium permission, not an `orivon.*` grant,
-so it is its own list, and resetting it means the site asks again.
+so the panel shows it as its own card per site, after the apps, and Reset means the site asks
+again.
 
 **What it depends on.** `electron`, [`../../contracts/`](../../contracts/),
 [`../../broker/`](../../broker/) (`broker-contracts.ts`, `policy/origin.ts`,

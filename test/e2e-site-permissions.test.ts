@@ -2,8 +2,9 @@
 // shell and an ordinary loopback website: pointer lock, and keyboard lock in
 // fullscreen, pass with a notice saying how to leave; an external link opens
 // only once the person allows it, and exactly the URL they were shown; a
-// site's notification answer is asked once, remembered across a restart,
-// and read back by Notification.permission.
+// site's notification answer is listed in the permissions panel, where Reset
+// forgets it; and it is asked once, remembered across a restart, and read
+// back by Notification.permission.
 //
 // NOTHING IS SHOWN AND NOTHING LAUNCHES. Both questions are native message
 // boxes no driver can press, so `dialog.showMessageBox` is replaced in the
@@ -30,8 +31,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from './launch-electron.mjs'
-import { ABSENCE_SETTLE_MS, HERMETIC_RESOLVER, delay, evaluateRetrying, waitFor } from './smoke-helpers.mjs'
-import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, closeElectronApp, navigateToFixture, runPhase } from './e2e-helpers.js'
+import { ABSENCE_SETTLE_MS, HERMETIC_RESOLVER, delay, evaluateRetrying, findChrome, waitFor } from './smoke-helpers.mjs'
+import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, closeElectronApp, navigateToFixture, runPhase, waitForAddressBarStable } from './e2e-helpers.js'
 import { focusWebContents, underVirtualDisplay, webContentsFocused } from './focus-helpers.js'
 
 const HOST = '127.0.0.1'
@@ -236,6 +237,48 @@ it('lets a page lock the pointer and keyboard with a notice, and open an externa
       if (app !== undefined) await closeElectronApp(app)
       if (server !== undefined) await new Promise<void>((resolve) => { server?.close(() => { resolve() }) })
       rmSync(openers.dir, { recursive: true, force: true })
+    }
+  })
+}, TEST_TIMEOUT_MS)
+
+// Reads and resets stored answers only: no page here touches the
+// Notification API, so this runs on any runner.
+it('lists each site\'s notification answer in the permissions panel, and Reset forgets it on disk', async () => {
+  await runPhase('site-notification-panel', async (check) => {
+    const decisions = { version: 1, origins: { [ORIGIN]: 'allow', 'https://ads.example': 'block' } }
+    const app = await launchElectron({
+      appPath: '.',
+      args: [HERMETIC_RESOLVER],
+      seedProfile: async (dir: string) => { writeFileSync(join(dir, 'notification-decisions.json'), JSON.stringify(decisions)) }
+    })
+    try {
+      await waitFor(() => app.windows().length === 2)
+      const chrome = findChrome(app)
+      await waitForAddressBarStable(chrome)
+      await chrome.click('#permissions-btn')
+      let panel: Page | undefined
+      await waitFor(() => { panel = app.windows().find((w) => w.url().endsWith('/renderer/settings/index.html')); return panel !== undefined })
+      if (panel === undefined) throw new Error('the permissions panel did not open')
+      const settings = panel
+      const cards = async (): Promise<Array<{ origin: string, message: string }>> => await evaluateRetrying(settings, () =>
+        Array.from(document.querySelectorAll<HTMLElement>('.app-card')).map((card) => ({
+          origin: card.dataset['origin'] ?? '',
+          message: card.querySelector('.permission-message')?.textContent ?? ''
+        })))
+      const listed = await waitFor(async () => (await cards()).length === 2)
+      check('each decided site has a card saying what it may do', listed && JSON.stringify(await cards()) === JSON.stringify([
+        { origin: ORIGIN, message: 'Can show notifications.' },
+        { origin: 'https://ads.example', message: 'Blocked from showing notifications.' }
+      ]), JSON.stringify(await cards()))
+
+      await settings.click('[data-origin="https://ads.example"] .revoke-btn')
+      const reset = await waitFor(async () => (await cards()).length === 1)
+      check('Reset removes that site\'s card, and only that one', reset && (await cards())[0]?.origin === ORIGIN, JSON.stringify(await cards()))
+      const userData = await app.evaluate(({ app: electronApp }) => electronApp.getPath('userData'))
+      const saved = JSON.parse(readFileSync(join(userData, 'notification-decisions.json'), 'utf8')) as { origins: Record<string, string> }
+      check('and forgets its answer on disk', JSON.stringify(saved.origins) === JSON.stringify({ [ORIGIN]: 'allow' }), JSON.stringify(saved))
+    } finally {
+      await closeElectronApp(app)
     }
   })
 }, TEST_TIMEOUT_MS)

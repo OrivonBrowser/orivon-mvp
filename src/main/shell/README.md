@@ -21,7 +21,8 @@ permission gate puts to the person; `showing-window.ts` finds the window a tab i
 (type only); and, inside `src/main/`, [`../browsing/`](../browsing/) (bookmarks, favicon,
 omnibox, delivery-provenance), [`../ipc/`](../ipc/), [`../permissions/`](../permissions/),
 [`../consent/grant-prompt-origin.ts`](../consent/grant-prompt-origin.ts) (the origin line every
-permission dialog shows), [`../sessions/`](../sessions/) (the two questions' types),
+permission dialog shows), [`../sessions/`](../sessions/) (the two questions' types, and
+`permission-gate.ts`'s notification store, handed to the permissions panel),
 [`../dev/dev-mode.ts`](../dev/dev-mode.ts) (the developer-mode flag, for Inspect Element), plus
 the top-level `channels.ts` and `registry.ts`.
 
