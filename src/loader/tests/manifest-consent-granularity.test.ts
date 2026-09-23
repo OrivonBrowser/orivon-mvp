@@ -74,12 +74,12 @@ describe('consentGranularity', () => {
     expect(reason(parseManifest(minimal({ consentGranularity: 'All-Or-Nothing' })))).toMatch(/consentGranularity/)
   })
 
-  // The trap this whole suite exists to close: before MANIFEST_KEYS knew the
-  // name, this was rejected as an "unrecognised field" -- correct usage of
-  // the documented contract, refused as if the app author had made it up.
-  it('is a recognised top-level field, not rejected as unrecognised', () => {
+  // The trap this whole suite exists to close: a field MANIFEST_KEYS does not
+  // know is dropped as unrecognised -- correct usage of the documented
+  // contract, discarded as if the app author had made it up.
+  it('is a recognised top-level field, not ignored as unrecognised', () => {
     const result = parseManifest(minimal({ consentGranularity: 'per-capability' }))
-    if (result.ok) return
-    expect(result.reason).not.toMatch(/unrecognised field/)
+    if (!result.ok) throw new Error(result.reason)
+    expect(result.ignoredFields).toEqual([])
   })
 })

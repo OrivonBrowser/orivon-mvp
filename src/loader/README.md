@@ -114,6 +114,19 @@ static hosts, which answer `/index.html` with a redirect to `/` (Cloudflare Page
 same scheme, host and port, at most `MAX_REDIRECTS` (5), or the request is aborted. The bytes of
 a followed hop are pinned under the requested path, still on the origin being installed.
 
+**An unknown top-level manifest field is ignored; an unknown field inside `capabilities` is
+refused.** [`manifest.ts`](manifest.ts) leaves a top-level field it does not know out of the
+parsed manifest and returns its name in `ignoredFields`, which `fetch-bundle.ts` logs as a
+warning. Refusing it would fail the install for a field that grants nothing (`$schema`,
+`description`, `icons`, or a field a later Orivon adds), and since the pinned manifest is parsed
+again at every start, a field some other Orivon version accepted at install would lock the
+installed app out. Inside
+`capabilities` every field asks for authority, so an unknown one there still rejects the
+manifest: silently dropping a permission the app asked for would install an app that then
+fails in ways nobody can trace. `orivonApiVersion` must still be exactly `0`.
+`scripts/check-manifest-parity.mjs` is what keeps a contract field from being ignored by
+mistake: it fails when the contract and the loader's key lists disagree in either direction.
+
 **The root document is declared by its file name.** `entry: "index.html"` is fetched at
 `/index.html` (following such a redirect to `/` where the host sends one) and served at `/`; a bare
 root cannot itself be a pinned leaf, since `/` is not a valid canonical path, so `entry: "/"` is
@@ -185,11 +198,25 @@ pruning at install turned each of those into a 404 and a `ChunkLoadError`. So
 [`install.ts`](install.ts) leaves every superseded file on disk, and `electron-serve.ts` keeps
 serving them for the rest of the process: `registerServingFor` remembers every path each pin it
 served declared (`servedAssets`) and hands the new handler the ones the new pin dropped
-(`retainedAssets`), which [`serve-path.ts`](serve-path.ts) answers only after checking the file
-still hashes to the leaf it was pinned with. A path both pins declare is overwritten, so only the
+(`retainedAssets`), which [`serve-path.ts`](serve-path.ts) resolves and
+[`serve-asset.ts`](serve-asset.ts) serves only after checking the file still hashes to the leaf
+it was pinned with. That check reads the whole file, so its verdict is kept per file identity
+(size, modification time and inode, read from the same open handle the bytes are served from)
+and pinned leaf: a retained chunk is hashed once, not on every request, and a file rewritten on
+disk gets a new identity and is checked again. A path both pins declare is overwritten, so only the
 new bytes exist; that is the entry document and any unhashed file, which the reload fetches anyway.
 `restorePinnedServing` prunes to the verified pin, and clears any staging a crash left, at the
 next start, before any page can still need the old files.
+
+**A served asset streams from disk; a request costs the bytes it sends.** The handler checks the
+asset ([`storage.ts`](storage.ts)'s `openAsset`) for its size and identity, and
+[`serve-asset.ts`](serve-asset.ts) streams the requested range in 64 KiB chunks, so neither a
+64 MiB asset nor a Range request into one is ever held whole. The body opens the file only when
+first read and closes it when it ends, fails or is cancelled, so a response nobody reads (or a
+HEAD) holds no file open. If the file's identity changed after the headers were built, or it is
+cut short while being read, the body fails rather than sending bytes the headers do not
+describe; one open handle serves the whole body, so a file replaced mid-response keeps serving
+the bytes it started with.
 
 **Re-verification cost: whole-tree, once, at handler creation, not one leaf hash per request.**
 [`ADR-0007`](../../docs/decisions/ADR-0007-cached-bundles-served-at-their-own-origin.md) requires
@@ -314,12 +341,23 @@ prompt again. `index.ts` now also passes the pinned manifest's own declared set
 leaf: authority the person was already asked about counts as covered. That grants nothing -- the
 declined capability stays ungranted -- and a request outside both sets still prompts.
 
-**An app is checked for an update at most once an hour.** Every page load of an app reports its
-hint, and each used to re-download the whole bundle. `createLoader`'s `updateCheckIntervalMs`
-(`UPDATE_CHECK_INTERVAL_MS`, one hour, AI-recommended) answers `'up-to-date'` without fetching
-while the last completed check for that origin is younger than that. The record is in memory, so
-the first visit after every start still checks; a rejected check is not recorded, so a failure
-is retried on the next visit.
+**An installed app is checked for an update at most once an interval, and an unchanged app costs
+one small request.** Every page load of an app reports its hint. `createLoader`'s
+`updateCheckIntervalMs` (`UPDATE_CHECK_INTERVAL_MS`, one hour, AI-recommended) answers
+`'up-to-date'` without any request while the last check for that origin is younger than that.
+The time is kept in the origin's storage ([`update-check.ts`](update-check.ts),
+`apps/<origin-hash>/update-check.json`, beside `pin.json` and never inside `code/`), so a restart
+does not reset it; a rejected check is not recorded, so a failure is retried on the next visit,
+and a time in the future (the clock went back) counts as stale. Once the interval has passed, the
+manifest is requested with `If-None-Match`/`If-Modified-Since` from the manifest response that
+was last pinned, and a 304 answers `'up-to-date'` before any asset is requested. Those validators
+are stored with the pinned manifest's leaf and sent only while the pin still holds that leaf, so
+a 304 always means "the manifest you have pinned"; an accepted prompt that pins a new manifest
+makes the next check a full one, which re-learns them. **What this assumes of a publisher:** an
+update is noticed when the manifest changes, so every release must change the manifest (its
+`version` at least). A bundle whose files change under a byte-identical manifest is not picked
+up until the manifest changes. A cache that fails verification at start forgets its record
+(`registerServingFor`), so the next visit checks, and heals, in full.
 
 **A restored app is a registered app from startup.** Serving alone is not enough: the app-tab
 flag (`src/main/shell/tab-view.ts`'s `appTabArgsFor`) and `orivon.app.manifest()` both ask

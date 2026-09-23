@@ -71,8 +71,13 @@ export interface FetchResponse {
  * confinement, with nothing downstream to catch it. electron-fetch.ts's
  * `netFetch` checks every hop (`redirectRefusal`) before taking it, proven
  * against a real redirecting server in test/e2e-loader-adapter.test.ts.
+ *
+ * `headers` are extra request headers, lower-case names; today only the
+ * manifest's conditional-request validators (update-check.ts).
  */
-export type Fetch = (url: string, pinnedAddresses: readonly string[], signal: AbortSignal) => Promise<FetchResponse>
+export type Fetch = (url: string, pinnedAddresses: readonly string[], signal: AbortSignal, headers?: RequestHeaders) => Promise<FetchResponse>
+
+export type RequestHeaders = Readonly<Record<string, string>>
 
 /**
  * How long one fetch may go without progress: no response yet, or no new
@@ -180,6 +185,8 @@ function idleWatch (controller: AbortController): { touch: () => void, pause: ()
   return { touch, pause }
 }
 
+export const NOT_MODIFIED = 304
+
 /** What one successful fetchWithBudget delivered: the response head, and how many body bytes went to `onChunk`. */
 export interface FetchedBody {
   readonly response: FetchResponse
@@ -210,6 +217,10 @@ export interface FetchedBody {
  *
  * `onChunk` throwing (a failed local write) rejects this fetch with a
  * reason naming no host path; the error itself is logged.
+ *
+ * `conditional` makes the request conditional: a 304 then resolves with no
+ * body read, for the caller to check `response.status`. Without it a 304
+ * is a failure like any other non-2xx.
  */
 export async function fetchWithBudget (
   fetchFn: Fetch,
@@ -219,7 +230,8 @@ export async function fetchWithBudget (
   budget: ByteBudget,
   label: string,
   bundleSignal: AbortSignal,
-  onChunk: (chunk: Uint8Array) => Promise<void>
+  onChunk: (chunk: Uint8Array) => Promise<void>,
+  conditional?: RequestHeaders
 ): Promise<FetchedBody | FetchBundleRejected> {
   const deadlineError = (): Error => new Error(`bundle install exceeded its overall deadline of ${String(BUNDLE_TIMEOUT_MS)}ms`)
   if (bundleSignal.aborted) return rejected(`could not fetch ${label} (${url}): ${deadlineError().message}`)
@@ -234,9 +246,13 @@ export async function fetchWithBudget (
   try {
     let response: FetchResponse
     try {
-      response = await raceAbort(fetchFn(url, pinnedAddresses, controller.signal), controller.signal, abortError)
+      response = await raceAbort(fetchFn(url, pinnedAddresses, controller.signal, conditional), controller.signal, abortError)
     } catch (error) {
       return rejected(`could not fetch ${label} (${url}): ${error instanceof Error ? error.message : String(error)}`)
+    }
+    if (conditional !== undefined && response.status === NOT_MODIFIED) {
+      response.body?.cancel().catch(() => {})
+      return { response, byteLength: 0 }
     }
     if (!response.ok) return rejected(`${label} fetch failed: HTTP ${String(response.status)} (${url})`)
 

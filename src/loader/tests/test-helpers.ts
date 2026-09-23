@@ -13,7 +13,7 @@ import { parsePinRecord } from '../../broker/policy/pin.js'
 import type { PinRecord } from '../../broker/policy/pin.js'
 import { appRootDirectoryName } from '../storage.js'
 import type { Fetch, FetchResponse } from '../fetch-budget.js'
-import type { LoaderStorage } from '../storage.js'
+import type { LoaderStorage, OpenedAsset } from '../storage.js'
 
 export const ORIGIN = 'https://app.example.com'
 export const MANIFEST_URL = `${ORIGIN}/.well-known/orivon.json`
@@ -166,9 +166,24 @@ export function streamOf (bytes: Uint8Array): { byteLength: number, chunks: Asyn
   }
 }
 
+/** `bytes` opened as an OpenedAsset; its identity is the array object itself, so any rewrite of the Map entry is a new file. */
+function openedAssetOf (bytes: Uint8Array, identity: string): OpenedAsset {
+  return {
+    byteLength: bytes.length,
+    identity,
+    read: async function * (start: number, end: number) {
+      for (let offset = start; offset <= end; offset += 64 * 1024) yield bytes.subarray(offset, Math.min(offset + 64 * 1024, end + 1))
+    },
+    close: async () => {}
+  }
+}
+
 /** A LoaderStorage backed by plain Maps -- no disk, no confinement, just enough to prove createLoader calls it correctly. */
 export function memoryStorage (): MemoryStorage {
+  const identities = new WeakMap<Uint8Array, string>()
+  let nextIdentity = 0
   const pins = new Map<string, unknown>()
+  const updateChecks = new Map<string, unknown>()
   const assets = new Map<string, Map<string, Uint8Array>>()
   const staged = new Map<string, Uint8Array>()
   let nextId = 0
@@ -207,7 +222,19 @@ export function memoryStorage (): MemoryStorage {
       const bytes = assets.get(origin)?.get(path)
       return bytes === undefined ? undefined : streamOf(bytes)
     }),
+    openAsset: vi.fn(async (origin: string, path: string) => {
+      const bytes = assets.get(origin)?.get(path)
+      if (bytes === undefined) return undefined
+      const identity = identities.get(bytes) ?? `memory-${String(nextIdentity++)}`
+      identities.set(bytes, identity)
+      return openedAssetOf(bytes, identity)
+    }),
     readPin: vi.fn(async (origin: string) => pins.get(origin)),
+    readUpdateCheck: vi.fn(async (origin: string) => updateChecks.get(origin)),
+    writeUpdateCheck: vi.fn(async (origin: string, record: unknown) => {
+      if (record === undefined) updateChecks.delete(origin)
+      else updateChecks.set(origin, record)
+    }),
     writePin: vi.fn(async (origin: string, record: PinRecord) => { pins.set(origin, record) }),
     writeAsset: vi.fn(async (origin: string, path: string, content: Uint8Array) => { writeAsset(origin, path, content) }),
     pruneAssets: vi.fn(async (origin: string, keep: readonly string[]) => {

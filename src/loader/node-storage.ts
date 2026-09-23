@@ -8,13 +8,15 @@
 
 import { randomUUID } from 'node:crypto'
 import { createReadStream, lstatSync, mkdirSync, realpathSync } from 'node:fs'
+import type { BigIntStats } from 'node:fs'
 import { mkdir, open, readdir, readFile, rename, rm, rmdir, stat, writeFile } from 'node:fs/promises'
+import type { FileHandle } from 'node:fs/promises'
 import { dirname, join, sep } from 'node:path'
 import { decodePercentEscapes, foldForIdentity } from '../broker/policy/canonical-path.js'
 import { confinePath } from '../broker/policy/paths.js'
 import { parsePinRecord } from '../broker/policy/pin.js'
 import type { PinRecord } from '../broker/policy/pin.js'
-import type { AssetStream, LoaderStorage, StagingWriter } from './storage.js'
+import type { AssetStream, LoaderStorage, OpenedAsset, StagingWriter } from './storage.js'
 import { appRootDirectoryName } from './storage.js'
 
 function appRoot (userDataPath: string, origin: string): string {
@@ -23,6 +25,10 @@ function appRoot (userDataPath: string, origin: string): string {
 
 function pinPath (userDataPath: string, origin: string): string {
   return join(appRoot(userDataPath, origin), 'pin.json')
+}
+
+function updateCheckPath (userDataPath: string, origin: string): string {
+  return join(appRoot(userDataPath, origin), 'update-check.json')
 }
 
 /**
@@ -106,6 +112,55 @@ async function fileStream (path: string): Promise<AssetStream | undefined> {
     return { byteLength: info.size, chunks: createReadStream(path) }
   } catch {
     return undefined
+  }
+}
+
+const READ_CHUNK_BYTES = 64 * 1024
+
+async function * readRange (handle: FileHandle, start: number, end: number): AsyncGenerator<Uint8Array> {
+  let position = start
+  while (position <= end) {
+    const buffer = new Uint8Array(Math.min(READ_CHUNK_BYTES, end - position + 1))
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, position)
+    if (bytesRead === 0) throw new Error('the file ended before the range being read')
+    position += bytesRead
+    yield buffer.subarray(0, bytesRead)
+  }
+}
+
+/**
+ * Reads go through one open handle, so they see the file that was opened even
+ * if an install renames a new one over it; `identity` comes from that same
+ * handle, so it always describes the bytes read.
+ */
+async function openFile (path: string): Promise<OpenedAsset | undefined> {
+  let handle: FileHandle
+  try {
+    handle = await open(path, 'r')
+  } catch {
+    return undefined
+  }
+  let info: BigIntStats
+  try {
+    info = await handle.stat({ bigint: true })
+  } catch {
+    await handle.close().catch(() => {})
+    return undefined
+  }
+  if (!info.isFile()) {
+    await handle.close().catch(() => {})
+    return undefined
+  }
+  let closed = false
+  return {
+    byteLength: Number(info.size),
+    identity: `${String(info.size)}:${String(info.mtimeNs)}:${String(info.ino)}`,
+    read: (start, end) => readRange(handle, start, end),
+    close: async () => {
+      if (closed) return
+      closed = true
+      await handle.close().catch(() => {})
+    }
   }
 }
 
@@ -239,6 +294,22 @@ export function nodeLoaderStorage (userDataPath: string): LoaderStorage {
     writePin: async (origin: string, record: PinRecord) => {
       await writeAtomically(userDataPath, origin, pinPath(userDataPath, origin), new TextEncoder().encode(JSON.stringify(record)))
     },
+    readUpdateCheck: async (origin) => {
+      try {
+        return JSON.parse(await readFile(updateCheckPath(userDataPath, origin), 'utf8')) as unknown
+      } catch {
+        return undefined
+      }
+    },
+    writeUpdateCheck: async (origin, record) => {
+      const path = updateCheckPath(userDataPath, origin)
+      if (record !== undefined) {
+        await writeAtomically(userDataPath, origin, path, new TextEncoder().encode(JSON.stringify(record)))
+        return
+      }
+      requireRealDirectory(appRoot(userDataPath, origin))
+      await rm(path, { force: true })
+    },
     writeAsset: async (origin, path, content) => {
       const resolved = resolveAssetPath(codeRoot(userDataPath, origin), path)
       await writeAtomically(userDataPath, origin, resolved, content)
@@ -265,6 +336,13 @@ export function nodeLoaderStorage (userDataPath: string): LoaderStorage {
     readAssetStream: async (origin, path) => {
       try {
         return await fileStream(resolveAssetPath(codeRoot(userDataPath, origin), path))
+      } catch {
+        return undefined
+      }
+    },
+    openAsset: async (origin, path) => {
+      try {
+        return await openFile(resolveAssetPath(codeRoot(userDataPath, origin), path))
       } catch {
         return undefined
       }
