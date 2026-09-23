@@ -85,4 +85,11 @@ export interface TabRecord {
    * dashboardUrl` is a plain http:// address in dev mode, which a page
    * could otherwise steer an unrelated tab's `wc.getURL()` to match). */
   isDashboardTab: boolean
+  /** The view of each app partition this tab has left, emptied to
+   * about:blank and kept, keyed by partition. Coming back reuses it: a
+   * page's sessionStorage lives in its view, and a fresh one would lose
+   * what the app left there, an OIDC login's state among it. Filled and
+   * emptied by tab-view.ts's repartitionView(); closing the tab closes
+   * whatever is still here. */
+  parkedViews: Map<string, WebContentsView>
 }

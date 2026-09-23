@@ -3900,6 +3900,12 @@ for a more complex code path whose flicker/double-load behavior has not been mea
 **Needed by:** whenever back/forward-through-a-cross-origin-swap is prioritized; not blocking —
 the current behavior is disclosed and safe, only less capable than an ordinary browser.
 
+**Narrowed 2026-09-23.** A tab that comes back to an app it left now gets the app's own view
+back: `repartitionView()` parks it on `about:blank` rather than closing it (`src/main/shell/README.md`).
+The app's history survives the round trip, without the pages outside the app, and so does its
+`sessionStorage`, which an OIDC login keeps its state in. A tab entering an app, or leaving one for
+the open web, still starts from an empty history on that side.
+
 ### A110 — `onHeadersReceived` never fires for a `protocol.handle`-served response, in this Electron version **[ACTED ON 2026-09-13]**
 
 **Raised 2026-09-10**, lane P0-5, probing `ADR-0007`'s own four "assumed, not yet confirmed"

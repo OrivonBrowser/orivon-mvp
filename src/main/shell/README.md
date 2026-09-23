@@ -51,17 +51,32 @@ these three events are webContents-scoped and fire on one view's own contents.
 **[`tabs.ts`](tabs.ts) is split three ways: constructing and partitioning a view, managing the
 collection of tabs, and the shapes pushed to the chrome UI.** A tab's partition is computed on
 every path that can change its origin, not only in `createTab()`: typing a URL or the
-dashboard's navigate command goes through `TabManager.navigate()`, which swaps in a fresh
+dashboard's navigate command goes through `TabManager.navigate()`, which swaps the tab's
 `WebContentsView` (`repartitionView()`) whenever the target's origin differs from the tab's
 current partition. Electron fixes a partition at construction, so a live tab can only change
 session by replacing its view outright, preserving the tab's id, position and active state. The
 pure parts live apart so `tabs.ts` stays under Rule 2's 500 lines: `tab-view.ts` (view
 construction and origin→partition derivation, no `TabManager` state) and `tab-types.ts` (the
-wire-format interfaces, no logic at all), both re-exported from `tabs.ts`. **Trap:** a
-deliberately swapped-out old view's own `'destroyed'` listener must be stripped *before*
-`close()` is called, or the teardown calls `forgetTab()` on a tab that is not closing;
+wire-format interfaces, no logic at all), both re-exported from `tabs.ts`. **Trap:** every
+handler `wireView()` attaches acts only while its view is the one the tab shows
+(`record.view`), and `repartitionView()` retires the old view only after `record.view` has moved
+on. Retire it first and its `'destroyed'` calls `forgetTab()` on a tab that is not closing;
 `tests/tabs.test.ts` exercises this directly with a fake `webContents` that emits `'destroyed'`
 synchronously from `close()`, the same way real Electron destruction can.
+
+**[`tab-view.ts`](tab-view.ts): a tab that leaves an app keeps the app's view, and gets it back
+on return.** A page's `sessionStorage` lives in its view, not its session partition, so a fresh
+view on the same partition starts empty (measured in Electron 44). An OIDC login keeps its state
+there while the provider has the tab, and could never complete. So a view leaving an app's
+partition is parked on `about:blank` in `TabRecord.parkedViews`, and a navigation back into that
+partition shows it again. The return also restores the app's own back history, after the entries
+outside the app's origin are dropped: the provider's page committed in the app's view before the
+swap, and going back to it would load it in the app's session. A parked view is reused only
+while its app-tab flag still matches its origin's registration, since the flag is fixed at
+construction and `manifest-hint.ts`'s first-visit path depends on a new view picking up a new
+one. Only app partitions are parked. The default session's view is still closed when a tab
+enters an app, so the open-web side of the swap still loses its history and `sessionStorage`.
+Parked views are closed with their tab.
 
 **[`tabs.ts`](tabs.ts): what `TabManager`'s `ctx: SubsystemContext` is for, and why one half
 of it is unused.** `ctx.broker` is read by every `makeTabView` call site (`appTabArgsFor`,

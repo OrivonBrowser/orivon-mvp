@@ -128,6 +128,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- **A sign-in that sends an app's tab to a provider and back can complete.** The app finds its
+  `sessionStorage` where it left it, and its own back history, so an OIDC login no longer loses
+  its state on the way back.
 - **Entering fullscreen no longer takes the page's keyboard focus**, so a video player's keys keep
   working under the exit notice.
 - **An installed app keeps its app-tab setup after a restart**, and the tab that installs an app

@@ -16,7 +16,7 @@ import { join } from 'node:path'
 import { captureFaviconInto } from '../browsing/favicon.js'
 import { parseOmniboxInput, sanitizeDirectUrl } from '../browsing/omnibox.js'
 import type { SubsystemContext } from '../registry.js'
-import { appTabArgsFor, makeTabView, partitionChanged, partitionForTarget, repartitionView, wireView } from './tab-view.js'
+import { appTabArgsFor, closeParkedViews, makeTabView, partitionChanged, partitionForTarget, repartitionView, wireView } from './tab-view.js'
 import type { TabShell, TabViewHost } from './tab-view.js'
 
 export type { TabState, TabsSnapshot, ShellState, Bounds } from './tab-types.js'
@@ -174,7 +174,8 @@ export class TabManager {
       faviconOrigin: null,
       pendingFaviconUrl: null,
       partition,
-      isDashboardTab: isDashboard
+      isDashboardTab: isDashboard,
+      parkedViews: new Map()
     }
     wireView(this.viewHost, id, record)
 
@@ -195,7 +196,7 @@ export class TabManager {
    * session (./popups.ts). It navigates itself; nothing is loaded here. */
   private adoptPopup (view: WebContentsView, partition: string | undefined): void {
     const id = makeTabId()
-    const record: TabRecord = { view, favicon: null, faviconOrigin: null, pendingFaviconUrl: null, partition, isDashboardTab: false }
+    const record: TabRecord = { view, favicon: null, faviconOrigin: null, pendingFaviconUrl: null, partition, isDashboardTab: false, parkedViews: new Map() }
     wireView(this.viewHost, id, record)
     this.tabs.set(id, record)
     this.order.push(id)
@@ -230,6 +231,9 @@ export class TabManager {
     if (closeView && !record.view.webContents.isDestroyed()) {
       record.view.webContents.close()
     }
+    // On the crash path too: a parked view is alive whatever became of the
+    // one the tab showed.
+    closeParkedViews(record)
     this.tabs.delete(id)
 
     const idx = this.order.indexOf(id)

@@ -8,19 +8,51 @@ import type { SubsystemContext } from '../../registry.js'
 // outside a real Electron process this cannot even be imported without
 // mocking it first (same reasoning as src/preload/tests/orivon-surface.test.ts).
 // The fake webContents is a REAL EventEmitter, not a bag of vi.fn() no-ops:
-// the swap-on-navigate behaviour below depends on exact listener wiring/
-// unwiring (repartitionView() must strip the OLD view's 'destroyed' listener
-// before closing it, or a deliberate view swap would mis-fire forgetTab()),
-// and that is only observable by actually emitting events through it.
+// the swap-on-navigate behaviour below depends on which view's listeners act
+// for the tab (a swapped-out view's 'destroyed' must not reach forgetTab(),
+// and a kept one's events must not reach the tab at all), and that is only
+// observable by actually emitting events through it.
+/** A tab's history as a list of URLs, which a test sets directly. Removing
+ * the active entry is refused, as Electron refuses it. */
+interface FakeHistory {
+  entries: string[]
+  active: number
+  canGoBack: () => boolean
+  canGoForward: () => boolean
+  getActiveIndex: () => number
+  length: () => number
+  getEntryAtIndex: (index: number) => { url: string }
+  removeEntryAtIndex: (index: number) => boolean
+}
+
 interface FakeWebContents extends EventEmitter {
   loadURL: ReturnType<typeof vi.fn>
   isDestroyed: ReturnType<typeof vi.fn>
   isLoading: ReturnType<typeof vi.fn>
   getURL: ReturnType<typeof vi.fn>
   getTitle: ReturnType<typeof vi.fn>
-  navigationHistory: { canGoBack: () => boolean, canGoForward: () => boolean }
+  navigationHistory: FakeHistory
   setWindowOpenHandler: ReturnType<typeof vi.fn>
   close: ReturnType<typeof vi.fn>
+}
+
+function makeFakeHistory (): FakeHistory {
+  const history: FakeHistory = {
+    entries: [],
+    active: -1,
+    canGoBack: () => false,
+    canGoForward: () => false,
+    getActiveIndex: () => history.active,
+    length: () => history.entries.length,
+    getEntryAtIndex: (index) => ({ url: history.entries[index] ?? '' }),
+    removeEntryAtIndex: (index) => {
+      if (index === history.active || index < 0 || index >= history.entries.length) return false
+      history.entries.splice(index, 1)
+      if (index < history.active) history.active--
+      return true
+    }
+  }
+  return history
 }
 
 interface RecordedView {
@@ -38,7 +70,7 @@ function makeFakeWebContents (): FakeWebContents {
   emitter.isLoading = vi.fn(() => false)
   emitter.getURL = vi.fn(() => '')
   emitter.getTitle = vi.fn(() => '')
-  emitter.navigationHistory = { canGoBack: () => false, canGoForward: () => false }
+  emitter.navigationHistory = makeFakeHistory()
   emitter.setWindowOpenHandler = vi.fn()
   // Real Electron destruction can fire 'destroyed' synchronously from
   // close() -- mirrored here so a repartitionView() that forgot to strip
@@ -284,22 +316,22 @@ describe('TabManager -- navigate() swaps a view only when entering or leaving an
     expect(partitionOf(createdViews[1] as RecordedView)).toBe(expected)
   })
 
-  it('closes the OLD view\'s webContents on a swap -- no leaked WebContentsView per navigation', () => {
-    const manager = newManager(ctxWithRegisteredOrigins('https://a.example', 'https://b.example'))
+  it('closes the OLD view\'s webContents when a swap leaves the default session -- no leaked WebContentsView per navigation', () => {
+    const manager = newManager(ctxWithRegisteredOrigins('https://b.example'))
     const id = manager.createTab('https://a.example/')
     manager.navigate(id, 'https://b.example/')
 
     expect((createdViews[0] as RecordedView).webContents.close).toHaveBeenCalledTimes(1)
   })
 
-  it('does NOT forget the tab when the OLD (swapped-out) view is later destroyed -- the tab is not closing', () => {
-    const manager = newManager(ctxWithRegisteredOrigins('https://a.example', 'https://b.example'))
+  it('does NOT forget the tab when the OLD (swapped-out) view is destroyed -- the tab is not closing', () => {
+    const manager = newManager(ctxWithRegisteredOrigins('https://b.example'))
     const id = manager.createTab('https://a.example/')
     manager.navigate(id, 'https://b.example/')
 
     // close() above already emitted 'destroyed' once (see makeFakeWebContents);
-    // if repartitionView() failed to strip that listener FIRST, forgetTab()
-    // already ran by this point and the tab would already be gone.
+    // had the old view's handler still acted for the tab, forgetTab() already
+    // ran by this point and the tab would already be gone.
     const state = manager.getState()
     expect(state.tabs.map((t) => t.id)).toContain(id)
     expect(state.tabs).toHaveLength(1)
@@ -537,6 +569,145 @@ describe('TabManager -- did-navigate repartitions a tab for a redirect, link, fo
     const state = manager.getState()
     expect(state.tabs.map((t) => t.id)).toContain(id)
     expect(state.tabs).toHaveLength(1)
+  })
+})
+
+// A page's sessionStorage lives in its view, so a tab that left an app and
+// came back in a fresh view found it empty: an OIDC login keeps its state
+// there across the trip to the provider, and could never complete. The
+// did-navigate events below are that trip's shape: the app sends the tab to
+// the provider, and the provider sends it back.
+describe('TabManager -- a tab coming back to an app it left gets the app\'s own view back', () => {
+  const APP = 'https://app.example'
+  const APP_PARTITION = partitionFor(APP)
+
+  /** An app tab that has left for the provider: [0] is the app's kept view, [1] the provider's. */
+  function leftForProvider (ctx = ctxWithRegisteredOrigins(APP)): { manager: InstanceType<typeof TabManager>, id: string, app: RecordedView, provider: RecordedView } {
+    const manager = newManager(ctx)
+    const id = manager.createTab(`${APP}/start`)
+    const app = createdViews[0] as RecordedView
+    app.webContents.emit('did-navigate', {}, 'https://idp.example/authorize')
+    return { manager, id, app, provider: createdViews[1] as RecordedView }
+  }
+
+  it('keeps the app\'s view when the tab leaves it, emptied and off the window', () => {
+    const { manager, app, provider } = leftForProvider()
+
+    expect(app.webContents.close).not.toHaveBeenCalled()
+    expect(app.webContents.loadURL).toHaveBeenLastCalledWith('about:blank')
+    expect(fakeContentView.removeChildView).toHaveBeenCalledWith(app)
+    expect(manager.activeWebContents()).toBe(provider.webContents)
+    expect(partitionOf(provider)).toBeUndefined()
+  })
+
+  it('keeps it for a typed navigation away too', () => {
+    const manager = newManager(ctxWithRegisteredOrigins(APP))
+    const id = manager.createTab(`${APP}/`)
+    manager.navigate(id, 'https://news.example/')
+
+    const app = createdViews[0] as RecordedView
+    expect(app.webContents.close).not.toHaveBeenCalled()
+    expect(app.webContents.loadURL).toHaveBeenLastCalledWith('about:blank')
+  })
+
+  it('shows the kept view again when the provider sends the tab back, and closes the provider\'s', () => {
+    const { manager, app, provider } = leftForProvider()
+
+    provider.webContents.emit('did-navigate', {}, `${APP}/callback?code=1`)
+
+    expect(createdViews).toHaveLength(2)
+    expect(manager.activeWebContents()).toBe(app.webContents)
+    expect(app.webContents.loadURL).toHaveBeenLastCalledWith(`${APP}/callback?code=1`)
+    expect(fakeContentView.addChildView).toHaveBeenLastCalledWith(app)
+    expect(provider.webContents.close).toHaveBeenCalledTimes(1)
+    expect(manager.getState().tabs).toHaveLength(1)
+  })
+
+  it('keeps each app\'s view apart when a tab moves between two apps', () => {
+    const manager = newManager(ctxWithRegisteredOrigins('https://a.example', 'https://b.example'))
+    const id = manager.createTab('https://a.example/')
+    manager.navigate(id, 'https://b.example/')
+    manager.navigate(id, 'https://a.example/back')
+
+    const [a, b] = createdViews as [RecordedView, RecordedView]
+    expect(createdViews).toHaveLength(2)
+    expect(manager.activeWebContents()).toBe(a.webContents)
+    expect(b.webContents.loadURL).toHaveBeenLastCalledWith('about:blank')
+    expect(b.webContents.close).not.toHaveBeenCalled()
+  })
+
+  it('drops the provider\'s page and the blank page from the app\'s history once the tab is back', () => {
+    const { app, provider } = leftForProvider()
+    provider.webContents.emit('did-navigate', {}, `${APP}/callback`)
+
+    const history = app.webContents.navigationHistory
+    history.entries = [`${APP}/start`, 'https://idp.example/authorize', 'about:blank', `${APP}/callback`]
+    history.active = 3
+    app.webContents.emit('did-navigate', {}, `${APP}/callback`)
+
+    expect(history.entries).toEqual([`${APP}/start`, `${APP}/callback`])
+    expect(history.active).toBe(1)
+  })
+
+  it('acts for the tab again once it is back: leaving a second time swaps as the first did', () => {
+    const { manager, app, provider } = leftForProvider()
+    provider.webContents.emit('did-navigate', {}, `${APP}/callback`)
+
+    app.webContents.emit('did-navigate', {}, 'https://idp.example/logout')
+
+    expect(createdViews).toHaveLength(3)
+    expect(manager.activeWebContents()).toBe((createdViews[2] as RecordedView).webContents)
+  })
+
+  it('ignores the kept view\'s own events while the tab is away', () => {
+    const { manager, id, app, provider } = leftForProvider()
+    const unload = { preventDefault: vi.fn() }
+
+    app.webContents.emit('did-navigate', {}, `${APP}/elsewhere`)
+    app.webContents.emit('will-prevent-unload', unload)
+    app.webContents.emit('destroyed')
+
+    expect(createdViews).toHaveLength(2)
+    expect(manager.activeWebContents()).toBe(provider.webContents)
+    expect(manager.getState().tabs.map((t) => t.id)).toEqual([id])
+    // Emptying a kept page is not the person leaving it: nobody is asked.
+    expect(unload.preventDefault).toHaveBeenCalledTimes(1)
+  })
+
+  it('builds a fresh view instead when the kept one no longer matches its origin\'s app-tab flag', () => {
+    const registered = new Set<string>()
+    const ctx = {
+      broker: { app: { hasGrantsSync: (o: string) => o === APP, isRegisteredSync: (o: string) => registered.has(o) } }
+    } as unknown as SubsystemContext
+    const { manager, app, provider } = leftForProvider(ctx)
+    registered.add(APP)
+
+    provider.webContents.emit('did-navigate', {}, `${APP}/callback`)
+
+    const fresh = createdViews[2] as RecordedView
+    expect(createdViews).toHaveLength(3)
+    expect(app.webContents.close).toHaveBeenCalledTimes(1)
+    expect(partitionOf(fresh)).toBe(APP_PARTITION)
+    expect(additionalArgumentsOf(fresh)).toEqual(['--orivon-app-tab'])
+    expect(manager.activeWebContents()).toBe(fresh.webContents)
+  })
+
+  it('closes the kept views when the tab closes', () => {
+    const { manager, id, app, provider } = leftForProvider()
+
+    manager.closeTab(id)
+
+    expect(app.webContents.close).toHaveBeenCalledTimes(1)
+    expect(provider.webContents.close).toHaveBeenCalledTimes(1)
+  })
+
+  it('closes the kept views when the tab\'s own view dies', () => {
+    const { manager, app, provider } = leftForProvider()
+
+    provider.webContents.emit('destroyed')
+
+    expect(manager.getState().tabs).toHaveLength(0)
+    expect(app.webContents.close).toHaveBeenCalledTimes(1)
   })
 })
 
