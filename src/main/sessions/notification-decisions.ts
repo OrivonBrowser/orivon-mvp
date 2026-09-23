@@ -2,8 +2,8 @@
 // restarts. Read once, synchronously, into memory: the permission gate's
 // CHECK handler is synchronous, so it answers from memory and never waits on
 // disk. Disposable: plain JSON under userData, tied to nothing but Node.
-import { closeSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { dirname } from 'node:path'
+import { readFileSync } from 'node:fs'
+import { writeFileAtomic } from '../../broker/grants/node-ledger-storage.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
 
 export type NotificationDecision = 'allow' | 'block'
@@ -32,21 +32,6 @@ export function parseNotificationDecisions (raw: string): Map<string, Notificati
     if (originFromUrl(origin) === origin && isDecision(decision)) decisions.set(origin, decision)
   }
   return decisions
-}
-
-/** A temp file beside the target, flushed, then renamed over it: a crash
- * leaves the old file or the new one, never half of one. */
-function writeFileAtomic (path: string, text: string): void {
-  mkdirSync(dirname(path), { recursive: true })
-  const temporary = `${path}.tmp`
-  const fd = openSync(temporary, 'w')
-  try {
-    writeFileSync(fd, text)
-    fsyncSync(fd)
-  } finally {
-    closeSync(fd)
-  }
-  renameSync(temporary, path)
 }
 
 export class NotificationDecisions {
