@@ -1,8 +1,9 @@
 // Installs orivon-node-shim's Node globals (process, global, setImmediate,
-// clearImmediate -- src/shim/globals.ts) into a real Orivon app tab's own
-// main-world scope, once, before that tab's own page script runs. Without
-// them any app whose dependency graph touches `stream` fails at load with
-// `process is not defined`.
+// clearImmediate -- src/shim/globals.ts -- and Buffer, ./page-buffer.ts) into
+// a real Orivon app tab's own main-world scope, once, before that tab's own
+// page script runs. Without them any app whose dependency graph touches
+// `stream` fails at load with `process is not defined`, and Node code using a
+// bare `Buffer` with `Buffer is not defined`.
 //
 // GATED ON THE SAME `--orivon-app-tab` FLAG ./expose-fetch-route.ts already
 // reads (src/main/tab-view.ts's `appTabArgsFor`): shimmed Node globals must
@@ -20,6 +21,7 @@
 import { contextBridge } from 'electron'
 import { installGlobals, VIRTUAL_ROOT, VIRTUAL_TMPDIR } from '../shim/globals.js'
 import type { InstallGlobalsOptions } from '../shim/globals.js'
+import { installPageBuffer } from './page-buffer.js'
 
 /** Duplicated from expose-fetch-route.ts rather than imported -- src/preload/README.md forbids importing anything under src/main/ except ./channels.ts, and this is not a channel. */
 const APP_TAB_FLAG = '--orivon-app-tab'
@@ -38,5 +40,10 @@ export function exposeShimGlobals (): void {
     contextBridge.executeInMainWorld({ func: installGlobals, args: [options] })
   } catch (error) {
     console.error('[orivon] shim globals not installed', error)
+  }
+  try {
+    contextBridge.executeInMainWorld({ func: installPageBuffer })
+  } catch (error) {
+    console.error('[orivon] Buffer global not installed', error)
   }
 }
