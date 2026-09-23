@@ -4,7 +4,7 @@
 
 import { vi } from 'vitest'
 import { createBroker } from '../index.js'
-import type { BoundUdpSocket, Broker, CreateBrokerOptions, DialedSocket, ListenedServer } from '../broker-contracts.js'
+import type { BoundUdpSocket, Broker, CreateBrokerOptions, DialedSecureSocket, DialedSocket, ListenedServer } from '../broker-contracts.js'
 import type { LedgerStorage, PersistedGrant, PersistedPick } from '../grants/ledger-storage.js'
 import type { Capabilities, Manifest } from '../../contracts/index.js'
 
@@ -54,6 +54,11 @@ export function okSocket (overrides: Partial<DialedSocket> = {}): DialedSocket {
     destroy: vi.fn(),
     ...overrides
   }
+}
+
+/** `okSocket` plus the handshake facts a verified secure dial reports. */
+export function okSecureSocket (overrides: Partial<DialedSecureSocket> = {}): DialedSecureSocket {
+  return { ...okSocket(), authorized: true, alpnProtocol: false, peerCertificate: null, ...overrides }
 }
 
 /** A BoundUdpSocket that touches no real socket -- `readable` is never read from in these tests. */
@@ -261,7 +266,7 @@ export function stubFs (options: { root?: string, files?: Map<string, Uint8Array
 export function baseDeps (overrides: Partial<CreateBrokerOptions> = {}): CreateBrokerOptions {
   return {
     dial: async () => okSocket(),
-    dialSecure: async () => okSocket(),
+    dialSecure: async () => okSecureSocket(),
     bind: async () => okUdpSocket(),
     listen: async () => okListenedServer(),
     resolve: async () => [],

@@ -12,6 +12,7 @@ import type { Resolver } from './policy/connect.js'
 import type { BrokerFs, BrokerFsMethods } from './fs-contracts.js'
 import type { BrokerWebMethods, WebContextHost } from './web-context-contracts.js'
 import type { PickedPath } from './grants/picked-path-ledger.js'
+import type { DialSecure, FailableSecureTcpSocket } from './secure-dial-contracts.js'
 import type {
   CapabilityKind,
   Datagram,
@@ -22,6 +23,7 @@ import type {
   Manifest,
   OrivonErrorCode,
   Pattern,
+  SecureConnectOptions,
   TcpSocket
 } from '../contracts/index.js'
 
@@ -100,26 +102,9 @@ export interface DialedSocket extends Omit<TcpSocket, keyof Handle> {
  */
 export type Dial = (addresses: readonly string[], port: number, signal: AbortSignal) => Promise<DialedSocket>
 
-/**
- * Opens a TLS-secured connection to `host`:`port` -- the handshake,
- * certificate chain validation and hostname verification all happen inside
- * this call, on the trusted side (ADR-0017, ../adapters/tls-adapter.ts).
- *
- * TAKES THE HOSTNAME DIRECTLY, unlike `Dial`'s pre-resolved `addresses`
- * array, and that difference is the point: `checkConnectSecure`
- * (policy/connect-secure.ts) authorises by hostname, never by resolved
- * address, because THIS call's own certificate/hostname check is what binds
- * the hostname to whoever answered -- there is no separate resolve-then-
- * check step upstream to hand this a validated address list. `host` is
- * exactly `ConnectSecureAllowed.host` -- already normalised, already
- * checked against the grant -- and is used for both the DNS lookup and the
- * certificate/SNI hostname check, so nothing here can dial one name while
- * verifying another.
- *
- * `signal` fires the instant the grant authorising this connection is
- * revoked while the handshake is still in flight, exactly as `Dial`'s does.
- */
-export type DialSecure = (host: string, port: number, signal: AbortSignal) => Promise<DialedSocket>
+// `DialSecure` and the rest of connectSecure's vocabulary live in
+// ./secure-dial-contracts.js, re-exported here like ./fs-contracts.js's.
+export type { DialedSecureSocket, DialSecure, FailableSecureTcpSocket, SecureDialOptions, SecureDialTarget } from './secure-dial-contracts.js'
 
 /**
  * One outbound datagram's fate.
@@ -331,12 +316,11 @@ export interface Broker {
     /**
      * TLS terminated on the trusted side (ADR-0017) -- checked against
      * `https.connect`, a SEPARATE grant from `tcp.connect` above, matched by
-     * the hostname itself rather than a resolved address (policy/connect-
-     * secure.ts's own header explains why that is safe here). Returns the
-     * same `FailableTcpSocket` shape `connect` does; nothing about the
-     * connection being TLS is visible on the handle itself.
+     * the hostname itself, plus the resolved addresses whenever the app's
+     * options stop the certificate binding that name (../net-connect-
+     * secure.ts). Returns `connect`'s socket shape plus the handshake facts.
      */
-    connectSecure(origin: string, opts: { host: string, port: number }): Promise<FailableTcpSocket>
+    connectSecure(origin: string, opts: SecureConnectOptions): Promise<FailableSecureTcpSocket>
     /**
      * `port: 0` means "any free port", and it still binds only inside the
      * granted ranges (policy/bind.ts, docs/open-questions.md A88).
