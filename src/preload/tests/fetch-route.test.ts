@@ -142,12 +142,12 @@ describe('installFetchRoute -- routing decisions', () => {
     })
     installRouted(dead)
     const error = await dead.fetch!('https://dead.example/api').catch((e: unknown) => e) as TypeError
-    expect((error.cause as Error).message).toBe('orivon: fetch to dead.example failed (EHOSTUNREACH: the network operation failed)')
+    expect((error.cause as Error).message).toBe('orivon: connection to dead.example failed (EHOSTUNREACH: the network operation failed)')
 
     const timedOut = fakeTarget({ connectSecure: async () => { throw Object.assign(new Error('dial timed out'), { code: 'timeout' }) } })
     installRouted(timedOut)
     const second = await timedOut.fetch!('https://slow.example/').catch((e: unknown) => e) as TypeError
-    expect((second.cause as Error).message).toBe('orivon: fetch to slow.example failed (timeout: dial timed out)')
+    expect((second.cause as Error).message).toBe('orivon: connection to slow.example failed (timeout: dial timed out)')
   })
 })
 

@@ -393,8 +393,10 @@ A disk fallback would be unsafe for `connect-src` in particular: `connect-src` i
 `WebSocket` meets (`docs/open-questions.md` A42), since no `protocol.handle` ever sees one, so
 reading disk there would widen a REAL authorisation from an unverified source (`A137`). Measured
 in Electron 44 (`test/e2e-served-csp.test.ts`): from an https page, none of the source forms this
-header emits (a bare `host:port`, `https://host:port`, `https:`) admits a `wss:` URL, so an
-installed app cannot open a third-party WebSocket today. A manifest that is a leaf of a hash-pinned bundle is not the kind of "saved value"
+header emits (a bare `host:port`, `https://host:port`, `https:`) admits a `wss:` URL, so a
+native WebSocket cannot reach a third-party host from an installed app; the page's own top-level
+WebSocket to a granted host is routed over `orivon.net` instead
+([`../preload/README.md`](../preload/README.md)), where the broker, not CSP, bounds it. A manifest that is a leaf of a hash-pinned bundle is not the kind of "saved value"
 `A137` forbids trusting; A158 has the full reasoning.
 
 **Why `verifiedManifestFor` (`serve.ts`) exists alongside `createAppRequestHandler`, sharing one
@@ -507,7 +509,7 @@ per request.
   scheme for the partition, workers included) and `fetchThirdParty` re-authorises it against the
   live grant, which still refuses loopback and private addresses: measured with a loopback server
   that a `*` grant's page could name in the header and that never saw a connection. What the
-  handler cannot re-check is a WebSocket, and `https:` does not admit `wss:` (measured, above).
+  handler cannot re-check is a native WebSocket, and `https:` does not admit `wss:` (measured, above).
   `tcp.connect`'s `*` still contributes nothing to `connect-src` (A43).
 - **No `form-action`.** It never falls back to `default-src`, so it is unrestricted. Restricting
   it to `'self'` would also refuse the redirects a form-post sign-in flow follows after the form

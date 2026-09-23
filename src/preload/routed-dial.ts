@@ -121,7 +121,7 @@ export function installRoutedDial (
         const message = error instanceof Error ? error.message : String(error)
         const platformCode = typeof error === 'object' && error !== null ? (error as { platformCode?: unknown }).platformCode : undefined
         const reason = typeof platformCode === 'string' ? `${platformCode}: ${message}` : `${code ?? 'error'}: ${message}`
-        throw wire.networkError(`fetch to ${url.host} failed (${reason})`)
+        throw wire.networkError(`connection to ${url.host} failed (${reason})`)
       }
     }
   }
