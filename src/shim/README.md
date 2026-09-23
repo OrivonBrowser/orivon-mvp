@@ -230,20 +230,28 @@ ends or fails. Every `destroy()` override is idempotent, because readable-stream
 uncaught exception for an app that already handled the first. `tests/support/`'s lifecycle
 suites run each check under both stream implementations for this reason.
 
-**[`node-tls.ts`](node-tls.ts) accepts `rejectUnauthorized: false` and refuses the other trust
-overrides.** **AI recommendation, not owner-reviewed.** The broker verifies every certificate
-against the system store and the dialled host, and `connectSecure` takes no option that changes
-that. An option that would change *who* is trusted (`ca`, `cert`/`key`/`pfx`, `secureContext`,
-`checkServerIdentity`, a `servername` other than the host, or upgrading an existing socket, which
-is how `pg` and SMTP clients start TLS) refuses by name through `'error'` before any dial, because
-dropping it silently would either break the connection with no stated cause or, for a pinning
-`checkServerIdentity`, quietly trust more than the app meant to. `rejectUnauthorized: false` is
-different: it asks for *less* checking, verification staying on is strictly safer, and Electrum
-and similar clients pass it unconditionally, including against properly certified servers. It is
-accepted, and when the handshake then fails the error says the override was not applied, so a
-self-signed server still fails with a message naming the cause. ALPN is not negotiated:
-`ALPNProtocols` is accepted, and `alpnProtocol` stays `false`, Node's own value for "none". A
-per-connection trust anchor would be a `src/contracts/` change to `connectSecure`.
+**[`node-tls.ts`](node-tls.ts) honours Node's TLS options by passing them to
+`orivon.net.connectSecure`.** The broker does the handshake under the app's own `ca`,
+`rejectUnauthorized`, `cert`/`key`/`pfx`/`passphrase`, `servername` and `ALPNProtocols`, and
+reports `authorized`, `authorizationError`, the negotiated ALPN protocol and the peer
+certificate, which the `TLSSocket` exposes as Node does (`getPeerCertificate()` returns the
+certificate with `raw` and `pubkey` as Buffers; no issuer chain, which the broker does not
+report). [`node-tls-options.ts`](node-tls-options.ts) translates Node's option shapes (Buffers,
+one-element arrays, `{ pem, passphrase }` objects, wire-format ALPN) and refuses by name what
+nothing could apply: a prebuilt `secureContext`, a credential array with more than one entry,
+and STARTTLS. A custom `checkServerIdentity` runs here, against the reported certificate, in
+Node's order: the broker is asked not to refuse on its own default check, a chain error still
+decides alone, and the app's function replaces the default hostname check. A failing verdict
+closes the handle before the dial promise settles, so a write queued before `'secureConnect'`
+never reaches an unverified peer. [`node-tls-identity.ts`](node-tls-identity.ts) is Node's own
+`tls.checkServerIdentity`, ported line for line and tested against Node's as the oracle, because
+most custom checks call it first. `https` merges an agent's options over the request's, as Node
+does, and sends the Host header's name as SNI when the caller set no `servername`.
+
+**STARTTLS (`tls.connect({ socket })`, `new tls.TLSSocket(socket)`) refuses by name.** `pg`,
+SMTP and IMAP clients upgrade a plain connection in place, and the broker has no operation for
+that: a `connectSecure` connection is TLS from its first byte. What it would take is recorded in
+[`open-questions.md`](../../docs/open-questions.md) A225.
 
 **[`node-net-server.ts`](node-net-server.ts) refuses a loopback-only `listen()` host rather than
 widening it.** **AI recommendation, not owner-reviewed.** `orivon.net.listen` binds every
@@ -262,9 +270,9 @@ kind of object Node would, and a `createConnection` option is honoured. Every re
 own connection and closes it once the response ends, whatever `agent` it was given:
 `http.Agent`/`https.Agent` exist so code can construct, pass and subclass them, and their
 options are stored, never enforced. The one agent behaviour honoured is Node's merge of an
-https agent's options into the TLS options, so `new https.Agent({ ca })` is refused the same way
-as the request option. The request never half-closes its side after the body, because some servers
-treat that FIN as an abort. `http.createServer` is not built: `net.createServer` is, but there is
+https agent's options into the TLS options, so `new https.Agent({ ca })` reaches the handshake
+the same way as the request option. The request never half-closes its side after the body,
+because some servers treat that FIN as an abort. `http.createServer` is not built: `net.createServer` is, but there is
 no HTTP request parser or `ServerResponse` on top of it, and the refusal says so.
 
 **[`node-http-errors.ts`](node-http-errors.ts) gives a mapped error Node's `errno`, in Linux

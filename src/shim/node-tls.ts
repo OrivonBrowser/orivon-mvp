@@ -1,13 +1,11 @@
 // `tls` module target: tls.connect()/TLSSocket over orivon.net.connectSecure.
-// The broker performs the handshake, verifies the chain against the system
-// trust store and the certificate against the host it dialled, and hands
-// back a plaintext TcpSocket (ADR-0017). A TLSSocket is therefore a
-// net.Socket with a different dial, plus the TLS-shaped members libraries
-// read. What the broker cannot do per connection -- a custom CA, a client
-// certificate, a custom identity check, upgrading an existing socket, a
-// servername other than the host -- refuses by name through 'error' rather
-// than being dropped; README.md's Design notes say why rejectUnauthorized
-// is the one override accepted.
+// The broker performs the handshake under the app's own TLS options (trust
+// anchors, rejectUnauthorized, client certificate, SNI, ALPN) and hands back
+// a plaintext TcpSocket plus what the handshake established (ADR-0017). A
+// TLSSocket is therefore a net.Socket with a different dial, plus the
+// TLS-shaped members libraries read. ./node-tls-options.ts translates the
+// options and finishes verification when the app brings its own
+// checkServerIdentity; what cannot cross to the broker refuses by name.
 
 import { Socket, kDial, socketOptionsFrom, type NetDialFn } from './node-net-socket.js'
 import { normalizeConnectArgs, type ConnectTarget } from './node-net-args.js'
@@ -15,57 +13,76 @@ import { getOrivon } from './orivon-global.js'
 import { isIP } from './node-net-isip.js'
 import { refuseShim, type OrivonShimError } from './errors.js'
 import { refusingProxy } from './unimplemented.js'
+import { checkServerIdentity } from './node-tls-identity.js'
+import { nodePeerCertificate, planTls, verdictFor, type TlsPlan, type TlsVerdict } from './node-tls-options.js'
+import type { SecureConnectOptions } from '../contracts/capability-api.js'
+import type { SecureHandshake, TcpSocket } from '../contracts/handles.js'
 
 export type TlsConnectOptions = ConnectTarget & { [kDial]?: NetDialFn }
 
-const BROKER_VERIFIES =
-  'orivon.net.connectSecure performs the TLS handshake in the broker, verifying the certificate chain against ' +
-  'the system trust store and the certificate against the host it dialled, and accepts no per-connection override'
+type SecureHandle = TcpSocket & Partial<SecureHandshake>
+type SecureDialFn = (opts: SecureConnectOptions) => Promise<SecureHandle>
 
-/** Options a caller sets to change who is trusted or how; the broker would silently ignore every one. */
-const UNHONOURABLE_OPTIONS = ['ca', 'cert', 'key', 'pfx', 'secureContext', 'checkServerIdentity'] as const
-
-function unhonourable (api: string, what: string, consequence: string): OrivonShimError {
-  return refuseShim(api, 'unimplemented', `${api}: ${what} cannot be honoured -- ${BROKER_VERIFIES}. ${consequence}`)
+/** What one TLSSocket's dial learned, filled in before its connect promise settles. */
+interface HandshakeState {
+  handle?: SecureHandle
+  verdict?: TlsVerdict
+  /** The error verification destroyed the socket with, passed to the app unchanged. */
+  failure?: Error
 }
 
-/** The named refusal for a TLS option set the broker cannot honour, or undefined when it can. Shared with https.request. */
-export function tlsOptionRefusal (options: ConnectTarget, api: string): OrivonShimError | undefined {
-  if (options.socket !== undefined && options.socket !== null) {
-    return unhonourable(api, 'upgrading an existing socket (the `socket` option, STARTTLS)',
-      'Only a connection opened by connectSecure itself can be TLS.')
-  }
-  for (const key of UNHONOURABLE_OPTIONS) {
-    if (options[key] !== undefined && options[key] !== null) {
-      return unhonourable(api, `the '${key}' option`,
-        'A server whose certificate does not chain to the system store (self-signed, private CA) cannot be reached this way.')
+/**
+ * The dial a TLSSocket connects through: connectSecure with the planned
+ * options, then the verdict. A failing verdict closes the handle and rejects
+ * the dial, so net.Socket's queued writes never reach an unverified peer --
+ * they wait on this same promise.
+ */
+function secureDial (dial: SecureDialFn, plan: TlsPlan | OrivonShimError, state: HandshakeState, servername: unknown): NetDialFn {
+  return async ({ host, port }) => {
+    if (plan instanceof Error) throw plan
+    const handle = await dial({ ...plan.broker, host, port })
+    // Node checks identity against `servername || host`.
+    const identity = typeof servername === 'string' && servername !== '' ? servername : host
+    const verdict = verdictFor(handle, plan, identity)
+    state.handle = handle
+    state.verdict = verdict
+    if (verdict.error !== undefined) {
+      state.failure = verdict.error
+      handle.close().catch(() => {})
+      throw verdict.error
     }
+    return handle
   }
-  const { servername, host } = options
-  if (typeof servername === 'string' && servername !== '' &&
-      servername.toLowerCase() !== String(host ?? 'localhost').toLowerCase()) {
-    return unhonourable(api, `a servername ('${servername}') different from the host`,
-      'Pass the name the certificate is issued for as the host.')
-  }
-  return undefined
 }
 
 export class TLSSocket extends Socket {
   readonly encrypted = true
   authorized = false
-  authorizationError: Error | null = null
-  /** No ALPN is negotiated: connectSecure has no parameter for it, so an ALPNProtocols option is accepted and this stays false. */
+  /** Node's value: the verification error's code string, null until verification fails. */
+  authorizationError: string | null = null
   alpnProtocol: string | false = false
   servername: string | false = false
-  private readonly relaxedVerification: boolean
+  private readonly plan: TlsPlan | OrivonShimError
+  private readonly state: HandshakeState
 
   /** `new TLSSocket(socket)` wraps an existing socket in Node; here the first argument must be absent. */
   constructor (socket?: unknown, options: TlsConnectOptions = {}) {
-    super(socketOptionsFrom(options, options[kDial] ?? ((opts) => getOrivon().net.connectSecure(opts))))
+    const plan = planTls(options, 'tls.connect')
+    const state: HandshakeState = {}
+    const dial = (options[kDial] as SecureDialFn | undefined) ?? ((opts) => getOrivon().net.connectSecure(opts))
+    super(socketOptionsFrom(options, secureDial(dial, plan, state, options.servername)))
     if (socket !== undefined && socket !== null) {
-      throw unhonourable('new tls.TLSSocket(socket)', 'wrapping an existing socket', 'Use tls.connect() to open a new TLS connection.')
+      throw refuseShim('new tls.TLSSocket(socket)', 'unimplemented',
+        'new tls.TLSSocket(socket): wrapping an existing socket is not available -- orivon.net.connectSecure opens a ' +
+        'connection that is TLS from its first byte. Use tls.connect() to open a new TLS connection.')
     }
-    this.relaxedVerification = options.rejectUnauthorized === false
+    this.plan = plan
+    this.state = state
+  }
+
+  /** The named refusal for options nothing could apply, or undefined. */
+  planRefusal (): OrivonShimError | undefined {
+    return this.plan instanceof Error ? this.plan : undefined
   }
 
   override connect (...args: readonly unknown[]): this {
@@ -77,21 +94,29 @@ export class TLSSocket extends Socket {
   }
 
   protected override onConnected (): void {
-    this.authorized = true
+    this.authorized = this.state.verdict?.authorized ?? true
+    this.authorizationError = this.state.verdict?.authorizationError ?? null
+    this.alpnProtocol = this.state.handle?.alpnProtocol ?? false
     super.onConnected()
     this.emit('secureConnect')
   }
 
   protected override connectFailure (error: unknown, host: string, port: number): Error {
-    const mapped = super.connectFailure(error, host, port) as Error & { orivonCode?: string }
-    if (this.relaxedVerification && mapped.orivonCode === 'unreachable') {
-      mapped.message += ` (rejectUnauthorized: false was not applied: ${BROKER_VERIFIES})`
-    }
-    return mapped
+    if (error !== undefined && error === this.state.failure) return this.state.failure
+    return super.connectFailure(error, host, port)
   }
 
-  /** Node returns `{}` when no peer certificate is available; the broker keeps it. */
-  getPeerCertificate (_detailed?: boolean): Record<string, never> { return {} }
+  /**
+   * The server's certificate as the broker reported it, in Node's shape
+   * (`raw`/`pubkey` as Buffers); `{}` before the handshake or when none was
+   * presented, null once destroyed. No chain: `detailed` adds no
+   * `issuerCertificate`, which the broker does not report.
+   */
+  getPeerCertificate (_detailed?: boolean): Record<string, unknown> | null {
+    if (this.destroyed) return null
+    return nodePeerCertificate(this.state.handle?.peerCertificate)
+  }
+
   getCertificate (): Record<string, never> { return {} }
   /** null is Node's answer for a socket whose protocol is unknown to it. */
   getProtocol (): string | null { return null }
@@ -110,7 +135,7 @@ function normalizeTlsArgs (args: readonly unknown[]): { options: TlsConnectOptio
 export function connectTls (options: TlsConnectOptions, callback?: () => void): TLSSocket {
   const socket = new TLSSocket(undefined, options)
   if (callback !== undefined) socket.once('secureConnect', callback)
-  const refusal = tlsOptionRefusal(options, 'tls.connect')
+  const refusal = socket.planRefusal()
   if (refusal !== undefined) {
     queueMicrotask(() => socket.destroy(refusal))
     return socket
@@ -124,10 +149,12 @@ export function connect (...args: readonly unknown[]): TLSSocket {
   return connectTls(options, callback)
 }
 
+export { checkServerIdentity }
+
 function otherTlsMember (prop: string): OrivonShimError {
   return refuseShim(`tls.${prop}`, 'unimplemented',
-    `tls.${prop} is real Node tls surface this shim has not implemented; tls.connect and TLSSocket are ` +
-    'built, over orivon.net.connectSecure. See docs/planning/compatibility-matrix.md Table 3.')
+    `tls.${prop} is real Node tls surface this shim has not implemented; tls.connect, TLSSocket and ` +
+    'checkServerIdentity are built, over orivon.net.connectSecure. See docs/planning/compatibility-matrix.md Table 3.')
 }
 
-export default refusingProxy({ connect, TLSSocket }, otherTlsMember)
+export default refusingProxy({ connect, TLSSocket, checkServerIdentity }, otherTlsMember)
