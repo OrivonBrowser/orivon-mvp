@@ -60,8 +60,8 @@ export interface WebContextHost {
 export interface BrokerWebMethods {
   /** Rejects 'invalid' unless `opts.origin` is an exact https origin; 'denied' unless a live `web.context` grant names it exactly (never saying which of the two failed); 'limit' past `LIMITS.webContexts` open at once; 'internal' if no `WebContextHost` is wired in. */
   openContext(origin: string, opts: { origin: string, width?: number, height?: number }): Promise<{ id: string, origin: string }>
-  /** Rejects 'denied' if `opts.id` is not a live context this origin holds; 'timeout' after `LIMITS.webContextEvaluateMs`; 'limit' if the script or result exceeds its byte cap, or another evaluate on this context is already running; 'revoked' if the grant is withdrawn meanwhile. */
-  evaluate(origin: string, opts: { id: string, script: string }): Promise<unknown>
+  /** Rejects 'denied' if `opts.id` is not a live context this origin holds; 'invalid' for a `timeoutMs` that is not a positive integer; 'timeout' after `timeoutMs` or `LIMITS.webContextEvaluateMs`, whichever is shorter; 'limit' if the script or result exceeds its byte cap, or another evaluate on this context is already running; 'revoked' if the grant is withdrawn meanwhile. */
+  evaluate(origin: string, opts: { id: string, script: string, timeoutMs?: number }): Promise<unknown>
   /** Idempotent, matching `Handle.close()` -- closing an id this origin does not hold is a silent no-op. */
   close(origin: string, opts: { id: string }): Promise<void>
   /**

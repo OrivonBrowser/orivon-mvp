@@ -29,6 +29,7 @@ import { HandleTable } from './handles/handles.js'
 import { errnoOf, fail } from './errors.js'
 import { GrantLedger } from './grants/grant-ledger.js'
 import { originFromUrl } from './policy/origin.js'
+import { widensAuthority } from './policy/update.js'
 import { createNetCapability } from './net-capability.js'
 import { createIdCapability } from './id-capability.js'
 import { createWebCapability } from './web-capability.js'
@@ -393,9 +394,14 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
     // and open-questions.md A21 says the ledger must call it regardless of
     // how GrantId reuse across a revoke-then-re-grant is eventually decided.
     handleTable.grantIssued(key, record.id)
-    // Revoking the superseded grant's handles, before returning, is what
-    // stops it staying live forever -- see the interface doc on `grant`.
-    if (replaced !== undefined) await handleTable.revoke(key, replaced.id)
+    // The superseded grant's handles, before returning, or they stay live
+    // forever (see the interface doc on `grant`). Only those the new
+    // patterns no longer cover are revoked: widening a grant must not reset
+    // connections it still authorises.
+    if (replaced !== undefined) {
+      const coversAll = !widensAuthority({ [capability]: record.patterns }, { [capability]: replaced.patterns })
+      await handleTable.replaceGrant(key, replaced.id, record.id, record.patterns, coversAll)
+    }
     if (persistError !== undefined) throw fail('internal', 'the grant could not be persisted', undefined, errnoOf(persistError))
     return record
   }

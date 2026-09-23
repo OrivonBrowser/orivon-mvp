@@ -1,5 +1,5 @@
 import { statSync } from 'node:fs'
-import { mkdtemp, readFile as fsReadFile } from 'node:fs/promises'
+import { mkdtemp, readFile as fsReadFile, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -281,5 +281,23 @@ describe('the fs capability works end to end for an origin that has never writte
     await broker.fs.writeFile('https://app.example', 'hello.txt', new Uint8Array([1, 2, 3]))
 
     expect(Array.from(await broker.fs.readFile('https://app.example', 'hello.txt'))).toEqual([1, 2, 3])
+  })
+})
+
+describe('nodeFs.diskUsage', () => {
+  it('sums every regular file under a directory, and counts a symlink as itself, never its target', async () => {
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-nodefs-du-'))
+    const fs = nodeFs(userData)
+    const root = fs.rootFor('https://app.example')
+    await fs.writeFile(join(root, 'a.bin'), new Uint8Array(10))
+    await fs.mkdir(join(root, 'dir', 'deep'), { recursive: true })
+    await fs.writeFile(join(root, 'dir', 'deep', 'b.bin'), new Uint8Array(5))
+    const outside = join(userData, 'outside.bin')
+    await writeFile(outside, new Uint8Array(1_000))
+    await symlink(outside, join(root, 'dir', 'link'))
+
+    expect(await fs.diskUsage?.(root)).toBe(15)
+    expect(await fs.diskUsage?.(join(root, 'dir'))).toBe(5)
+    expect(await fs.diskUsage?.(join(root, 'missing'))).toBe(0)
   })
 })

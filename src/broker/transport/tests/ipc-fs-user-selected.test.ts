@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { handleControlRequest } from '../ipc.js'
 import type { FsTransport } from '../dispatch-fs.js'
 import { createPortRegistry } from '../port-registry.js'
-import type { FailableFileHandle } from '../../handles/handle-contracts.js'
+import type { FailableDirectoryHandle, FailableFileHandle } from '../../handles/handle-contracts.js'
 import { APP, OTHER, type BrokerCall, envelope, frameFor, stubBroker } from './ipc.test-helpers.js'
 
 // `orivon.fs.userSelected` (A194) -- the FILE shape only, wired to a page
@@ -177,5 +177,41 @@ describe('fs.userSelected -- the denied path', () => {
     const response = await handleControlRequest(stubBroker(calls), frameFor(APP), envelope(method, payload))
     expect(response).toMatchObject({ ok: false, code: 'invalid' })
     expect(calls).toEqual([])
+  })
+})
+
+// A person can take longer at the picker than the page was willing to wait.
+// The page never learns these ids, so nothing else would ever close them.
+describe('fs.userSelected -- a pick that lands after its request timed out', () => {
+  function afterTimeout<T> (value: T): () => Promise<T> {
+    return async () => await new Promise<T>((resolve) => { setTimeout(() => { resolve(value) }, 30) })
+  }
+
+  it('closes the picked files instead of registering them', async () => {
+    const calls: BrokerCall[] = []
+    const file = fakeFile({ id: 'late-1' })
+    const broker = stubBroker(calls, { userSelected: afterTimeout([file]) })
+    const fsTransport: FsTransport = { registry: createPortRegistry() }
+
+    const response = await handleControlRequest(broker, frameFor(APP), envelope('fs.userSelected', {}, 5), undefined, undefined, undefined, fsTransport)
+    await new Promise((resolve) => setTimeout(resolve, 60))
+
+    expect(response).toMatchObject({ ok: false, code: 'timeout' })
+    expect(file.close).toHaveBeenCalledTimes(1)
+    expect(fsTransport.registry.get(APP, 'late-1')).toBeUndefined()
+  })
+
+  it('closes a picked folder the same way', async () => {
+    const calls: BrokerCall[] = []
+    const close = vi.fn(async () => {})
+    const dir = { id: 'late-dir', close } as unknown as FailableDirectoryHandle
+    const broker = stubBroker(calls, { userSelected: afterTimeout(dir) })
+    const fsTransport: FsTransport = { registry: createPortRegistry(), dirRegistry: createPortRegistry() }
+
+    await handleControlRequest(broker, frameFor(APP), envelope('fs.userSelected', { directory: true }, 5), undefined, undefined, undefined, fsTransport)
+    await new Promise((resolve) => setTimeout(resolve, 60))
+
+    expect(close).toHaveBeenCalledTimes(1)
+    expect(fsTransport.dirRegistry?.get(APP, 'late-dir')).toBeUndefined()
   })
 })

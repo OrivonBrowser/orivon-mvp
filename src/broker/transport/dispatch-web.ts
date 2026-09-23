@@ -49,8 +49,10 @@ export async function dispatchWeb (
       return await broker.web.openContext(origin, opts)
     }
     case 'web.evaluate': {
-      if (!isWebEvaluateParams(payload)) throw fail('invalid', 'web.evaluate requires { id: string, script: string }')
-      return await broker.web.evaluate(origin, { id: payload.id, script: payload.script })
+      if (!isWebEvaluateParams(payload)) throw fail('invalid', 'web.evaluate requires { id: string, script: string, timeoutMs?: number }')
+      return await broker.web.evaluate(origin, payload.timeoutMs === undefined
+        ? { id: payload.id, script: payload.script }
+        : { id: payload.id, script: payload.script, timeoutMs: payload.timeoutMs })
     }
     case 'web.close': {
       if (!isWebCloseParams(payload)) throw fail('invalid', 'web.close requires { id: string }')

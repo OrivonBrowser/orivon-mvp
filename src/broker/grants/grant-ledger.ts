@@ -13,7 +13,7 @@ import { createParsedPatternsCache } from './parsed-patterns-cache.js'
 import { persistGrants, replaceHydratedGrants } from './grant-persistence.js'
 import type { SupersededGrant } from './grant-persistence.js'
 import { clearDeclinedConsent, hydrateDeclinedCapabilities, recordDeclinedConsent } from './declined-consent.js'
-import { releaseFsBytes, reserveFsBytes, socketAllowance } from './resource-limits.js'
+import { chargeFsBytes, releaseFsBytes, reserveFsBytes, socketAllowance } from './resource-limits.js'
 
 /**
  * 128 bits from the platform CSPRNG, as hex -- same construction as
@@ -42,19 +42,12 @@ interface OriginRecord {
   /** Set once this origin's persisted grants have been checked against its manifest and merged into `grants` -- the first `registerApp` call only, never again (a manifest is required to re-validate against, unlike `versionFloor`'s hydration). */
   grantsHydrated: boolean
   /**
-   * Bytes written so far against `manifest.capabilities.fs.quotaBytes`.
-   *
-   * IN-MEMORY ONLY, and that is a known, filed gap, not an oversight:
-   * manifest.ts's contract also promises "reconciling against the directory
-   * on startup", which needs a persisted counter and a way to size the
-   * confinement directory -- neither exists yet, and `createBroker`'s
-   * dependency shape is fixed by build-plan.md, so closing it needs a new
-   * `BrokerFs` member. Filed as A29 (cross-cutting.md) rather than built
-   * here. This counter still closes the unbounded-write hole for the
-   * lifetime of one running session, which is the part that does not need
-   * a new dependency to fix.
+   * Bytes this origin's files occupy, charged against
+   * `manifest.capabilities.fs.quotaBytes`. In memory, and reconciled against
+   * the directory the first time the origin touches its files each session
+   * (../fs-capability.ts's `ensureMeasured`), so it never needs persisting.
    */
-  fsBytesWritten: number
+  fsBytesUsed: number
   /**
    * T19's version floor: the highest version ever installed. `registerApp`
    * is the only writer of a RAISED value; hydration (below) is the only
@@ -63,8 +56,8 @@ interface OriginRecord {
    * Persisted via an injected `LedgerStorage` (A57) so it survives a browser
    * restart -- but deliberately NOT a full "remove this app" action, which
    * forgets the origin completely (`ADR-0009`'s 2026-09-04 amendment).
-   * `grants` (above) is now ALSO persisted (A23); `fsBytesWritten` still is
-   * not (A29).
+   * `grants` (above) is now ALSO persisted (A23); `fsBytesUsed` is not,
+   * because it is re-measured from disk instead.
    */
   versionFloor: string
   /**
@@ -124,7 +117,7 @@ export class GrantLedger {
   #record (origin: string): OriginRecord {
     const existing = this.#origins.get(origin)
     if (existing !== undefined) return existing
-    const created: OriginRecord = { manifest: undefined, grants: new Map(), grantsHydrated: false, fsBytesWritten: 0, versionFloor: '0.0.0', rollbackAcknowledgedVersion: undefined, declinedCapabilities: undefined }
+    const created: OriginRecord = { manifest: undefined, grants: new Map(), grantsHydrated: false, fsBytesUsed: 0, versionFloor: '0.0.0', rollbackAcknowledgedVersion: undefined, declinedCapabilities: undefined }
     this.#origins.set(origin, created)
     hydrateFloor(this.#storage, origin, created)
     hydrateRollbackAcknowledgedVersion(this.#storage, origin, created)
@@ -266,15 +259,14 @@ export class GrantLedger {
    * NOT AN "UNINSTALL THIS APP" PRIMITIVE. It is correct and complete for the
    * version floor and the persisted grants (A23) -- `deleteGrants` below
    * closes that half, matching `ADR-0009`'s 2026-09-04 amendment that a full
-   * removal forgets everything. In-memory `manifest` and `fsBytesWritten` are
+   * removal forgets everything. In-memory `manifest` and `fsBytesUsed` are
    * also dropped, and two gaps remain open, neither reachable today since
    * NOTHING CALLS THIS YET (docs/open-questions.md A60):
    *   - dropping a grant here does not revoke the handles it authorised --
    *     that cascade belongs one layer up, in `createBroker`, next to the one
    *     `revoke` already performs (this class has no `HandleTable` reference).
-   *   - resetting `fsBytesWritten` to zero frees no bytes on disk, so
-   *     forget-then-re-register is a way around the fs quota until the
-   *     confinement directory is actually sized (A29).
+   *   - resetting `fsBytesUsed` to zero frees no bytes on disk; the next
+   *     session re-measures them, but this one does not.
    */
   forgetOrigin (origin: string): void {
     if (this.#storage !== undefined) {
@@ -471,19 +463,24 @@ export class GrantLedger {
     }
   }
 
-  /** How many sockets this origin may hold at once -- see ./resource-limits.ts's `socketAllowance`. Reads through `#origins.get`, not `#record`, so merely asking about an origin does not create a row for it -- same as `fsBytesWritten` below. */
+  /** How many sockets this origin may hold at once -- see ./resource-limits.ts's `socketAllowance`. Reads through `#origins.get`, not `#record`, so merely asking about an origin does not create a row for it -- same as `fsBytesUsed` below. */
   socketAllowance (origin: string): number {
     return socketAllowance(this.#origins.get(origin))
   }
 
-  /** Bytes already reserved (written, or still in flight) against `origin`'s quota this session. Zero for an origin the ledger has no record of yet. */
-  fsBytesWritten (origin: string): number {
-    return this.#origins.get(origin)?.fsBytesWritten ?? 0
+  /** Bytes charged against `origin`'s quota: what its files occupy, plus writes still in flight. Zero for an origin the ledger has no record of yet. */
+  fsBytesUsed (origin: string): number {
+    return this.#origins.get(origin)?.fsBytesUsed ?? 0
   }
 
   /** The quota check AND the reservation, as one synchronous step -- see ./resource-limits.ts's own doc for why the two cannot be split across an `await`. The caller must call `releaseFsBytes` for whatever it reserved here if the write does not end up landing. */
   reserveFsBytes (origin: string, bytes: number): boolean {
     return reserveFsBytes(this.#record(origin), bytes)
+  }
+
+  /** Adds bytes measured on disk, with no quota check -- see ./resource-limits.ts's `chargeFsBytes`. */
+  chargeFsBytes (origin: string, bytes: number): void {
+    chargeFsBytes(this.#record(origin), bytes)
   }
 
   /** Refunds a reservation `reserveFsBytes` made for a write that did not land -- see ./resource-limits.ts's own doc for the clamped-at-zero reasoning. */

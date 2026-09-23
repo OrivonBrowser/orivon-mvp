@@ -554,3 +554,33 @@ describe('createPortSink -- stop()', () => {
     expect(failures(send)).toEqual([])
   })
 })
+
+describe('createPortSink -- onEnded marks the local FIN going out', () => {
+  it('fires once write-end has drained every queued write and the writer is closed, not before', async () => {
+    const w = controllableWritable()
+    const onEnded = vi.fn()
+    const sink = createPortSink({ handleId: HANDLE, writable: w.writable, send: vi.fn(), windowBytes: 100, onEnded })
+
+    sink.handleWrite({ kind: 'write', handleId: HANDLE, chunk: chunk(3) })
+    sink.handleEnd({ kind: 'write-end', handleId: HANDLE })
+    await tick()
+    expect(onEnded).not.toHaveBeenCalled()
+
+    w.resolveNext()
+    await tick()
+
+    expect(w.closeCalls).toBe(1)
+    expect(onEnded).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not fire for an abort', async () => {
+    const w = controllableWritable()
+    const onEnded = vi.fn()
+    const sink = createPortSink({ handleId: HANDLE, writable: w.writable, send: vi.fn(), windowBytes: 100, onEnded })
+
+    sink.handleAbort({ kind: 'write-abort', handleId: HANDLE })
+    await tick()
+
+    expect(onEnded).not.toHaveBeenCalled()
+  })
+})

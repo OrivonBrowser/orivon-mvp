@@ -405,15 +405,24 @@ export interface WebContext extends Handle {
    * value of `undefined` resolves `null`. A throw inside the script rejects
    * 'invalid' carrying the thrown message.
    *
-   * Rejects 'timeout' after `LIMITS.webContextEvaluateMs` AND CLOSES THE
-   * CONTEXT: a running script cannot be interrupted any other way, and a
-   * context left running it would answer nothing else. 'limit' if the
-   * script exceeds `LIMITS.webContextScriptBytes`, the serialised result
-   * exceeds `LIMITS.webContextResultBytes`, or another `evaluate` on this
-   * context is still running; 'closed' after close, or if the context's own
-   * renderer already died on its own (`closed`'s own 'reset' doc above -- a
-   * *later* `evaluate` sees the ordinary post-close 'closed', matching every
-   * other handle); 'revoked' if the grant is withdrawn meanwhile.
+   * Rejects 'timeout' after `options.timeoutMs`, or after
+   * `LIMITS.webContextEvaluateMs` when that is omitted or larger (the
+   * platform's deadline is a ceiling a caller can shorten, never extend),
+   * AND CLOSES THE CONTEXT: a running script cannot be interrupted any other
+   * way, and a context left running it would answer nothing else. A
+   * `timeoutMs` that is not a positive integer rejects 'invalid' without
+   * running anything. 'limit' if the script exceeds
+   * `LIMITS.webContextScriptBytes`, the serialised result exceeds
+   * `LIMITS.webContextResultBytes`, or another `evaluate` on this context is
+   * still running; 'closed' after close, or if the context's own renderer
+   * already died on its own (`closed`'s own 'reset' doc above -- a *later*
+   * `evaluate` sees the ordinary post-close 'closed', matching every other
+   * handle); 'revoked' if the grant is withdrawn meanwhile.
+   *
+   * A pending `evaluate` ALWAYS SETTLES WHEN ITS CONTEXT CLOSES, however it
+   * closes: 'closed' for `close()`, 'revoked' for a withdrawn grant or an
+   * ended session, the renderer's own failure code if it died. A caller
+   * never needs a timer of its own to learn that the context went away.
    */
-  evaluate(script: string): Promise<unknown>
+  evaluate(script: string, options?: { readonly timeoutMs?: number }): Promise<unknown>
 }

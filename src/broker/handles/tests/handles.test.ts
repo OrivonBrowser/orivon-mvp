@@ -115,7 +115,7 @@ describe('ownership is re-checked on every operation (T11c)', () => {
     // Capability is checked once at acquisition (capability-api.md design rule
     // 3), but OWNERSHIP is checked every time. A table that cached the first
     // answer would keep serving a revoked handle.
-    expect((await rejection(t.run(APP, { on: 'handle', handleId: handle.id }, async () => 'second'))).code).toBe('closed')
+    expect((await rejection(t.run(APP, { on: 'handle', handleId: handle.id }, async () => 'second'))).code).toBe('revoked')
   })
 
   it('reports an already-closed handle as closed rather than denied to its owner', async () => {
@@ -187,7 +187,7 @@ describe('the revocation cascade', () => {
 
     expect(serverDestroy).toHaveBeenCalledWith('revoked')
     expect(acceptedDestroy).toHaveBeenCalledWith('revoked')
-    expect(thrown(() => t.lookup(APP, accepted.id)).code).toBe('closed')
+    expect(thrown(() => t.lookup(APP, accepted.id)).code).toBe('revoked')
   })
 
   it('closes every socket a server produced when the server itself is closed', async () => {
@@ -437,11 +437,10 @@ describe('a grant stays revoked (the cascade is not a one-shot sweep)', () => {
     void t.revoke(APP, 'grant-tcp-listen')
 
     // A connection accepted mid-flight, registering after the cascade swept.
-    // The answer is 'closed' rather than 'revoked' because the cascade reached
-    // the parent first and that is the honest reason -- the tombstone check in
-    // acquireDerived is the belt to this braces, for the case where a parent
-    // somehow outlives its grant.
-    expect(thrown(() => t.acquireDerived({ origin: APP, kind: 'tcpSocket', parentId: server.id, destroy: noop })).code).toBe('closed')
+    // Refused through the parent's own record, which remembers it was
+    // revoked -- the tombstone check in acquireDerived is the belt to this
+    // braces, for the case where a parent somehow outlives its grant.
+    expect(thrown(() => t.acquireDerived({ origin: APP, kind: 'tcpSocket', parentId: server.id, destroy: noop })).code).toBe('revoked')
   })
 
   it('refuses an operation scoped to a revoked grant', async () => {

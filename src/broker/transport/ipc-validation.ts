@@ -99,7 +99,7 @@ export interface IdPublicKeyParams { readonly curve: string }
 export interface IdSignParams { readonly curve: string, readonly payload: Uint8Array }
 /** `web.openContext` (ADR-0019) -- `origin` is the CONTEXT's own origin, never this call's caller (that one is derived from the sender frame, T3, same as every other control method); `width`/`height` optional, `WebContextOptions`'s own default. */
 export interface WebOpenContextParams { readonly origin: string, readonly width?: number, readonly height?: number }
-export interface WebEvaluateParams { readonly id: string, readonly script: string }
+export interface WebEvaluateParams { readonly id: string, readonly script: string, readonly timeoutMs?: number }
 /** Shared by web.close and web.awaitClose -- both take exactly `{ id }` (code-guidelines.md Rule 3: same shape, same reason, `NetConnectParams`'s own precedent). Structurally identical to `NetCloseParams`/`FsHandleIdParams` too, but kept as its own name -- one name per surface even where payload shapes happen to coincide. */
 export interface WebCloseParams { readonly id: string }
 /** Shared by net.connect and net.connectSecure -- both take exactly { host, port }, and isNetConnectParams below validates either call's payload (code-guidelines.md Rule 3: same shape, same reason). */
@@ -295,10 +295,13 @@ export function isWebOpenContextParams (payload: unknown): payload is WebOpenCon
     (height === undefined || (typeof height === 'number' && Number.isFinite(height)))
 }
 
+/** `timeoutMs` is only shape-checked here; whether its value is acceptable is the broker's decision (web-capability.ts). */
 export function isWebEvaluateParams (payload: unknown): payload is WebEvaluateParams {
-  return typeof payload === 'object' && payload !== null &&
-    typeof (payload as { id?: unknown }).id === 'string' &&
-    typeof (payload as { script?: unknown }).script === 'string'
+  if (typeof payload !== 'object' || payload === null) return false
+  const timeoutMs = (payload as { timeoutMs?: unknown }).timeoutMs
+  return typeof (payload as { id?: unknown }).id === 'string' &&
+    typeof (payload as { script?: unknown }).script === 'string' &&
+    (timeoutMs === undefined || typeof timeoutMs === 'number')
 }
 
 export function isWebCloseParams (payload: unknown): payload is WebCloseParams {

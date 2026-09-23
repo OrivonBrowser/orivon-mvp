@@ -41,7 +41,7 @@ export type PreflightDenialReason =
 
 export interface PreflightPassed {
   readonly ok: true
-  /** The host as normalised -- lowercased, trailing dot removed. Both tails must use THIS, never the caller's original string. */
+  /** The host as normalised -- lowercased, trailing dot removed, an IPv6 literal in its canonical spelling. Both tails must use THIS, never the caller's original string. */
   readonly requested: string
   /**
    * The parsed patterns, with any that cannot authorise this port replaced by
@@ -94,7 +94,7 @@ export function preflightConnect (
   if (typeof hostArg !== 'string') return { ok: false, reason: 'bad-host' }
   if (!isValidPort(port)) return { ok: false, reason: 'bad-port' }
 
-  const requested = normalizeHost(hostArg)
+  let requested = normalizeHost(hostArg)
   if (requested.length === 0 || requested.length > MAX_HOST_LENGTH) return { ok: false, reason: 'bad-host' }
   if (!isAsciiHost(requested)) return { ok: false, reason: 'bad-host' }
 
@@ -106,13 +106,23 @@ export function preflightConnect (
   // demoting a recognised, malformed address to a hostname lookup: exactly the
   // fallthrough the next line exists to rule out.
   const isLiteral = classifyAddress(requested) !== 'unparseable'
-  // An address a caller will not hand onward is one it will not accept as an
-  // argument either. Denying rather than falling through to the resolver
-  // matters: `2130706433` is a perfectly good DNS label, so treating it as a
-  // name would send it to the nameserver. canonicalAddress NORMALISES
-  // (docs/open-questions.md A20), so the check is equality with the input, not
-  // merely "did it parse".
-  if (isLiteral && canonicalAddress(requested) !== requested) return { ok: false, reason: 'non-canonical-host' }
+  // No DNS name contains a colon, so this is a malformed IPv6 literal, never
+  // something to hand the resolver.
+  if (!isLiteral && requested.includes(':')) return { ok: false, reason: 'bad-host' }
+  if (isLiteral) {
+    // An IPv4 literal must already be canonical: `0177.0.0.1` means 127.0.0.1
+    // to inet_aton and 177.0.0.1 to a person, and `2130706433` is also a
+    // perfectly good DNS label, so it is refused rather than guessed at or
+    // sent to the nameserver. An IPv6 literal has one reading however it is
+    // spelled (inet_pton has no octal or short forms), so it is canonicalised
+    // (docs/open-questions.md A20) and BOTH tails check and dial the canonical
+    // spelling. Null (a zone id) is refused either way.
+    const canonical = canonicalAddress(requested)
+    if (canonical === null || (canonical !== requested && !requested.includes(':'))) {
+      return { ok: false, reason: 'non-canonical-host' }
+    }
+    requested = canonical
+  }
 
   // Parsed ONCE, not per address. The plain pipeline's loop is
   // O(answers x patterns) and both counts are chosen by somebody else;

@@ -294,6 +294,13 @@ releasing a socket are one lifecycle, not two: whichever path ends the socket (a
 revoke, a write-window violation the sink itself detects, the renderer's own port closing) must
 free the SAME registry slot, and keeping both ends in one file is what makes that easy to see.
 
+**A clean end in both directions is one of those paths.** Once the app's own write-end has been
+issued (the sink's `onEnded`) and the peer's FIN has ended the readable (the pump's
+`onStreamEnded`), the relay calls `socket.close()`, which releases the handle and its socket slot
+the same way a failure does. Either half alone is a half-close and stays open: a peer that has
+stopped sending may still be reading. Without this, a connection both sides had finished stayed
+counted against the origin's socket allowance until the app remembered to call `close()`.
+
 ### `transport/port-messages.ts`: validating messages on a socket's port
 
 Split out of `ipc.ts`'s inline credit-message check once a second and third message kind joined
@@ -438,6 +445,31 @@ decision, not a blocker (`docs/open-questions.md` A184). What that means a page 
 narrower than `FileHandle`, with no `readable`/`writable`, and its `closed` is not live-pushed
 (revocation surfaces on the next operation attempted against the handle, not proactively).
 
+### `fs-capability.ts`: the quota counts what the files occupy
+
+`fs.quotaBytes` is checked against the bytes the origin's files take up, which is what
+`capability-api.md` A9 SS3 specifies, not against every byte ever written. A running count of
+writes never went down: a database that rewrites its file on every load (nedb, as FreeTube uses
+it, writes a temporary file and renames it over the original) reached any quota within one
+session, however small the data.
+
+- **Measured, not persisted.** The first operation that can change an origin's usage in a session
+  (`writeFile`, `rm`, `rename`, `open`) first adds `BrokerFs.diskUsage(root)` to the count
+  (`ensureMeasured`), so nothing has to survive a restart and nothing can drift across one.
+- **`writeFile` charges growth.** The file's current size is read first; only the difference is
+  reserved, and a smaller rewrite gives the rest back.
+- **`rm` and `rename` give bytes back.** `rm` frees what `diskUsage` measured under the path just
+  before removing it; a `rename` onto an existing file frees the replaced file.
+- **What still over-counts, on purpose.** Writes through a `FileHandle` (positional `write`, and
+  `writable()` streams) charge every byte they write, so rewriting a region of a file in place is
+  charged again; `truncate` still charges growth and frees what it cuts. Concurrent `writeFile`s
+  to one path each charge their own growth. Each of these errs towards `'limit'`, never past it.
+- **What can under-count, and its bound.** A file removed or replaced while a handle to it is still
+  open keeps its bytes on disk until that handle closes, but its bytes are given back at once.
+  That is bounded by `LIMITS.concurrentFileHandles` open files and ends when they close or the
+  session does. Files picked with `fs.userSelected` live outside the root: their writes charge the
+  same count, but they are not part of the measurement.
+
 ### `web-capability.ts` -- why a timed-out `evaluate` makes `closed` REJECT, not resolve
 
 ADR-0019's own contract only names two `WebContext.closed` outcomes: reject `'revoked'` on
@@ -458,6 +490,10 @@ the resolving one was rejected:
   makes on a real I/O fault (a peer RST) -- rather than inventing a second one. `fail`'s own
   `CloseReason` is `'failed'`, which `handle-store.ts`'s `closeTree` already routes to a REJECTING
   `closed` (only `'closed'` resolves it); nothing new had to be taught to that file.
+
+The deadline is `LIMITS.webContextEvaluateMs` unless the caller passes a shorter `timeoutMs`
+(`evaluateDeadline`, clamped to the platform's, never extending it), and a caller-chosen deadline
+closes the context exactly as the platform's does: it is the same interrupted-script problem.
 
 Guarded against a narrow race: if a concurrent revoke already closed the same handle through its
 own cascade by the time the timeout branch runs, `handleTable.fail` throws (the id is no longer

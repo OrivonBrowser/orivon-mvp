@@ -4,6 +4,7 @@ import { APP, baseDeps, manifestWith, stubFs } from './index.test-helpers.js'
 import { createBroker } from '../index.js'
 import type { Broker, CreateBrokerOptions } from '../broker-contracts.js'
 import { LIMITS } from '../../contracts/index.js'
+import { IN_FLIGHT_QUEUE_LIMIT } from '../handles/in-flight.js'
 
 // `orivon.fs.open` (A184) -- the FileHandle half of `orivon.fs`, built
 // against the POLICY layer (confinement, the grant, the running quota, the
@@ -396,14 +397,14 @@ describe('fs.open -- the per-origin in-flight budget and revocation mid-operatio
     expect(outcome.state).toBe('rejected')
   })
 
-  it('a call beyond LIMITS.inFlightOperations rejects immediately with limit -- it does not queue', async () => {
+  it('a call beyond the in-flight cap and its wait queue rejects immediately with limit', async () => {
     const broker = createBroker(baseDeps({ fs: stallingOpenFs() }))
     broker.registerApp(APP, manifestWith({ fs: {} }))
     await broker.grant(APP, 'fs', [])
     const file = await broker.fs.open(APP, 'piece.bin', 'w+')
 
     const stalled = []
-    for (let i = 0; i < LIMITS.inFlightOperations; i++) {
+    for (let i = 0; i < LIMITS.inFlightOperations + IN_FLIGHT_QUEUE_LIMIT; i++) {
       stalled.push(file.read({ position: 0, length: 1 }).catch(() => {}))
     }
     await nextTick()

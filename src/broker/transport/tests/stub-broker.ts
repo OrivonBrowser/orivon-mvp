@@ -9,6 +9,7 @@
 
 import type { Broker, RawFileStat } from '../../broker-contracts.js'
 import { LIMITS } from '../../../contracts/index.js'
+import { fail } from '../../errors.js'
 import type { Grant, LookupAddress, Manifest } from '../../../contracts/index.js'
 import type { FailableDirectoryHandle, FailableFileHandle, FailableTcpServer, FailableTcpSocket, FailableUdpSocket } from '../../handles/handle-contracts.js'
 
@@ -186,6 +187,10 @@ export function stubBroker (
       open: async (origin, path, flags) => {
         calls.push({ method: 'fs.open', origin, args: { path, flags } })
         return await (overrides.open?.(origin, path, flags) ?? notStubbed())
+      },
+      handleGone: (origin, handleId) => {
+        calls.push({ method: 'fs.handleGone', origin, args: handleId })
+        return fail('denied', 'no such file handle for this origin', handleId)
       },
       // Cast the same way the other narrower-than-`Broker` overrides here
       // already do (see `overrides.userSelected`'s own doc above for why).

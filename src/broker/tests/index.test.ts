@@ -5,6 +5,7 @@ import { createBroker } from '../index.js'
 import type { CreateBrokerOptions, Dial, DialedSocket } from '../broker-contracts.js'
 import type { Manifest } from '../../contracts/index.js'
 import { LIMITS } from '../../contracts/index.js'
+import { IN_FLIGHT_QUEUE_LIMIT } from '../handles/in-flight.js'
 
 // This is the assembly step build-plan.md's "Structural decision, day 1"
 // exists for: everything under ./policy/ is a decision function, and this
@@ -464,12 +465,12 @@ describe('fs reads and writes share the per-origin in-flight cap (CRITICAL, T11b
     }
   }
 
-  it('rejects a read past LIMITS.inFlightOperations immediately, without queueing', async () => {
+  it('rejects a read past the in-flight cap and its wait queue immediately', async () => {
     const broker = createBroker(baseDeps({ fs: stallingFs() }))
     broker.registerApp(APP, manifestWith({ fs: {} }))
     await broker.grant(APP, 'fs', [])
 
-    for (let i = 0; i < LIMITS.inFlightOperations; i += 1) {
+    for (let i = 0; i < LIMITS.inFlightOperations + IN_FLIGHT_QUEUE_LIMIT; i += 1) {
       void broker.fs.readFile(APP, `f${String(i)}.txt`).catch(() => {})
     }
 

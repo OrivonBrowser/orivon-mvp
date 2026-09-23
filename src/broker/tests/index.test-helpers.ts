@@ -168,6 +168,11 @@ export function stubFs (options: { root?: string, files?: Map<string, Uint8Array
       for (const candidate of [...files.keys()]) if (candidate === path || candidate.startsWith(prefix)) files.delete(candidate)
       for (const candidate of [...dirs]) if (candidate === path || candidate.startsWith(prefix)) dirs.delete(candidate)
     },
+    diskUsage: async (path) => {
+      let total = 0
+      for (const [candidate, data] of files) if (candidate === path || candidate.startsWith(`${path}/`)) total += data.length
+      return total
+    },
     rename: async (from, to) => {
       const parentOfTo = to.slice(0, to.lastIndexOf('/'))
       if (!dirs.has(parentOfTo)) enoent()

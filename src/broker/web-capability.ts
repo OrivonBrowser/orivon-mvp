@@ -80,6 +80,13 @@ async function withWebContextTimeout<T> (promise: Promise<T>, ms: number): Promi
   })
 }
 
+/** One evaluate's deadline: the caller's own when given, never above the platform's. */
+function evaluateDeadline (timeoutMs: number | undefined): number {
+  if (timeoutMs === undefined) return LIMITS.webContextEvaluateMs
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) throw fail('invalid', 'timeoutMs must be a positive integer')
+  return Math.min(timeoutMs, LIMITS.webContextEvaluateMs)
+}
+
 /** Builds `Broker['web']` -- see this file's header for why it takes the broker's own state rather than owning any of it. */
 export function createWebCapability ({ deps, handleTable, ledger, canonical }: WebCapabilityOptions): Broker['web'] {
   const host = deps.webContextHost
@@ -230,7 +237,7 @@ export function createWebCapability ({ deps, handleTable, ledger, canonical }: W
     })
   }
 
-  async function evaluate (origin: string, opts: { id: string, script: string }): Promise<unknown> {
+  async function evaluate (origin: string, opts: { id: string, script: string, timeoutMs?: number }): Promise<unknown> {
     const key = canonical(origin)
 
     // T11c's ownership re-check -- throws 'denied'/'closed' for an id this
@@ -239,6 +246,7 @@ export function createWebCapability ({ deps, handleTable, ledger, canonical }: W
     handleTable.lookup(key, opts.id)
 
     if (host === undefined) throw fail('internal', 'no web-context host is wired in for this build')
+    const deadlineMs = evaluateDeadline(opts.timeoutMs)
 
     if (utf8Bytes(opts.script) > LIMITS.webContextScriptBytes) {
       throw fail('limit', `script exceeds ${String(LIMITS.webContextScriptBytes)} bytes`)
@@ -254,7 +262,7 @@ export function createWebCapability ({ deps, handleTable, ledger, canonical }: W
       let result: unknown
       try {
         result = await handleTable.run(key, { on: 'handle', handleId: opts.id }, async () =>
-          await withWebContextTimeout(host.evaluate(hostId, opts.script), LIMITS.webContextEvaluateMs))
+          await withWebContextTimeout(host.evaluate(hostId, opts.script), deadlineMs))
       } catch (error) {
         // Already ours (the timeout above, or 'revoked' from handleTable.run's
         // own cascade) -- pass through unchanged. Anything else reaching here

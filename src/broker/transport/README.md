@@ -74,19 +74,31 @@ importing `electron` at module scope is still safe outside a real Electron proce
 to a harmless string, so destructuring a value from it yields `undefined`, which only breaks if
 actually called).
 
-**The per-origin call-rate limit (`CONTROL_RATE_LIMIT_CAPACITY`/`_REFILL_PER_SECOND` in
-[`ipc.ts`](ipc.ts)) is provisional (open-questions.md A38).**
-Before it existed, HandleTable's in-flight cap did nothing to stop `app.grants()`, which has no
-handle, grant, or I/O to scope, and 5,000 concurrent calls to it were all answered in full. The
-chosen numbers cut that to roughly 200 admitted calls, sized against that attack and against an
-app polling `app.grants()` to react to a live revocation. The limit is shared across all eight
-control methods deliberately: `fs`/`net` dispatch is real I/O with no measured call-rate data
-either, so a tighter, method-specific limit risks `'limit'` becoming a routine error for a busy
-app before any evidence justifies it. This leaves a fairness risk A38 names but does not solve: a
-burst of small file reads could still starve an unrelated `app.grants()` poll once `fs`/`net` see
-real traffic. `registerSyncFsIpc` shares this SAME limiter instance rather than a second one, so
-`fs.readFileSync` cannot be used to dodge it by moving traffic to a channel with no budget of its
-own.
+**The per-origin call-rate limits ([`control-limiter.ts`](control-limiter.ts)) are provisional
+(open-questions.md A38).** There are two budgets, and every control method draws on exactly one.
+
+*The control bucket* (200 burst, 100 per second) covers every call that names a path, a host, a
+grant or a new resource. Before it existed, HandleTable's in-flight cap did nothing to stop
+`app.grants()`, which has no handle, grant, or I/O to scope, and 5,000 concurrent calls to it were
+all answered in full. `registerSyncFsIpc` shares this same bucket, so `fs.readFileSync` cannot be
+used to dodge it by moving traffic to a channel with no budget of its own. A fairness risk remains
+open under A38: a burst of path-based calls can still starve an unrelated `app.grants()` poll.
+
+*The handle-I/O budget* (4096 burst, 4096 per second) covers calls against a handle the origin
+already holds: `fs.read`/`write`/`fstat`/`truncate`/`sync`/`close` and `net.close`/`setNoDelay`/
+`setKeepAlive`. These used to share the control bucket, and a database that streams one
+`fs.write` per record (nedb, as FreeTube uses it) spent all 200 tokens in one load, after which its
+own writes and any `net.connect` answered `'limit'`. They cannot simply be exempt: the in-flight
+cap bounds how many run at once, not how often, and a few hundred fast operations in flight can
+still occupy the broker's UI thread continuously (T11b), while `close` and the `net.*` calls do not
+run under the in-flight cap at all.
+
+**The handle-I/O budget paces instead of refusing.** Past its burst, a call borrows its token and
+waits until that token would have accrued (`token-bucket.ts`'s `createPacingLimiter`), so an app
+writing faster than the budget is slowed to it rather than handed an error that fails its write
+stream. The wait is bounded (one second), and so is the number of calls waiting, since the debt
+is: past it the call is refused with `'limit'` exactly as the control bucket refuses. A waiting
+call holds only its own payload and a timer; nothing runs on its behalf until it is admitted.
 
 **`sync-fs.ts`/`sync-fs-policy.ts` reuse `../index.ts`'s own `Broker.fs.confineSync`**, ADR-0016's
 synchronous grant-check/confinement entry point, built entirely from

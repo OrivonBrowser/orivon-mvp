@@ -111,6 +111,42 @@ this string as the same address", docs/open-questions.md A20), because both are 
 same [`address-parse.ts`](address-parse.ts) parsers and so can never disagree about what an
 address *is*, only about how it should be spelled.
 
+**A connect pattern whose host is exactly `localhost` authorises `127.0.0.1` and `::1` at its
+port, and nothing else** ([`connect-patterns.ts`](connect-patterns.ts)'s `LOCALHOST`/
+`LOOPBACK_LITERALS`, used by `hostMatches`, `couldAnyPatternMatch`, `connect.ts` and
+`lookup.ts`). Why this is safe under T12, whose whole point is that a name is not evidence of
+where it leads:
+
+- **`localhost` is never resolved.** `checkConnect` substitutes the two loopback literals for it
+  before the resolver could run, and `checkLookup` returns them as its answer, so no nameserver,
+  hosts file or TTL-0 server has any say in what it means (RFC 6761 SS6.3 lets a resolution API
+  answer it this way, and Chromium does). The rebinding attack needs an answer somebody else
+  chose; this one is a constant. That is also why `connect('localhost', p)` dials only the literals
+  the grant covers, where a DNS answer must pass in full: filtering a constant hides nothing.
+- **It grants exactly what the two literal patterns would, and the person saw it.**
+  `localhost:8080` in a grant prompt names this computer as plainly as `127.0.0.1:8080` does;
+  requiring both `127.0.0.1:p` and `[::1]:p` bought no safety and broke `connect('localhost', p)`
+  for any app that declared one.
+- **It is narrow on purpose.** The request must be `localhost` or one of the two literals: a
+  different name resolving to `127.0.0.1` is still refused (it is the rebinding attack, spelled
+  with a second pattern), as is the rest of `127.0.0.0/8` and every `*.localhost` name, which
+  stays an ordinary hostname pattern and so can never reach a private address.
+- **Nothing else moves.** `*` still means public unicast only, so `connect('localhost', p)` under
+  `*:*` is refused without resolving anything, and every other hostname pattern still requires a
+  public answer. `https.connect` is unaffected: its patterns match names, and the certificate
+  binds them.
+
+**[`connect-preflight.ts`](connect-preflight.ts) canonicalises an IPv6 request but refuses a
+non-canonical IPv4 one.** The asymmetry is the ambiguity, not the family. `inet_aton` reads
+`0177.0.0.1` as 127.0.0.1, a person reads it as 177.0.0.1, and `2130706433` is also a valid DNS
+label, so an IPv4 literal is accepted only in the dotted-quad form everything downstream reads the
+same way. `inet_pton`'s IPv6 grammar has no octal, no short forms and no hex-versus-decimal
+choice, so `0:0:0:0:0:0:0:1`, `0000::0001` and `::1` can only ever mean one address; refusing all
+but one spelling would only break apps that print addresses in full. Both pipelines check and dial
+the canonical spelling (`requested`), never the caller's, so the check and the connect cannot
+disagree about which host they mean. Patterns are not canonicalised: a manifest must still declare
+a literal canonically, where a person reads it (`declarableConnectHostRejection`).
+
 **[`connect-src.ts`](connect-src.ts)'s CSP `connect-src` derivation is pure, and set on the
 served response directly** (`src/loader/serve.ts`'s `buildResponse`), never via
 `session.webRequest.onHeadersReceived`: that listener never fires for a `protocol.handle`-served
