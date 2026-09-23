@@ -1,6 +1,7 @@
 # ADR-0012: Fetch-and-cache is automatic and silent; consent is asked once, before the app runs
 
-- **Status:** accepted; second half amended 2026-09-13 (see the amendment below)
+- **Status:** accepted; second half amended 2026-09-13 (see the amendment below); the per-app
+  cap and the pruning point amended 2026-09-22 (§Consequences)
 - **Date:** 2026-09-03
 - **Type:** architecture / security
 - **Decided by:** owner
@@ -167,8 +168,9 @@ original wording is kept, visible, not deleted; see `ADR-0005` itself for the ex
 in the design as specified, and neither is fixed by this ADR:
 
 1. **No cross-app disk quota.** Each app's bundle is capped individually at 64 MiB
-   (`MAX_BUNDLE_BYTES`, `src/broker/policy/bundle-hash.ts`), but nothing limits how many distinct
-   origins can each silently claim their own 64 MiB. A user who never grants a single capability
+   (`MAX_BUNDLE_BYTES`, `src/broker/policy/bundle-hash.ts`; 512 MiB since the 2026-09-22
+   amendment below), but nothing limits how many distinct origins can each silently claim their
+   own 64 MiB. A user who never grants a single capability
    can still accumulate an unbounded number of cached, unused app bundles purely by loading pages
    that carry a manifest hint.
 2. **No cleanup of superseded versions.** When an app's manifest changes (a new hash, per
@@ -193,8 +195,9 @@ is open would ship an unbounded, unauthenticated disk-fill vector to real users 
 
 **Gap 1 closed 2026-09-04, owner decision: not by building a quota, but by deciding not to have
 one.** Asked directly, with concrete numbers on the table (512 MiB / 1 GiB / 256 MiB), the owner
-chose no aggregate cross-origin disk cap at all: per-origin `MAX_BUNDLE_BYTES` (64 MiB) remains
-the only bound, permanently, matching how mainstream browsers already behave (a per-origin
+chose no aggregate cross-origin disk cap at all: per-origin `MAX_BUNDLE_BYTES` (64 MiB then,
+512 MiB since the 2026-09-22 amendment below) remains the only bound, permanently, matching how
+mainstream browsers already behave (a per-origin
 storage quota, no user-facing total-cache ceiling, with OS/browser storage-pressure eviction as
 the real backstop, which Orivon's MVP does not attempt to build its own version of). This is not
 "gap 1 deferred again": it is closed, on the merits, as a considered choice rather than an
@@ -211,6 +214,15 @@ first `pruneAssets` implementation before calling it done.
 rel="orivon-manifest">` hint seen in a real page now reaches `installFromHint`
 (`src/main/install/app-install.ts`) for real, rate-limited per origin so a page reloading itself cannot
 turn one visit into an unbounded stream of fetches.
+
+> **Amendment, 2026-09-22.** Two facts above changed, and neither reopens a gap. **The per-app
+> bound is `MAX_BUNDLE_BYTES` 512 MiB**, with 64 MiB per asset (owner, `open-questions.md` A15,
+> `d-0050`): a real built frontend did not fit the old caps, and the loader now streams, so the
+> caps bound download and disk rather than memory. Gap 1's decision, no aggregate cap, stands at
+> the larger number. **Superseded files are pruned at the next start, not at install** (`d-0056`):
+> an update can land while its app is open, and a single-page app still running the previous
+> bundle lazily loads its old chunks, which pruning at install turned into 404s. Gap 2 stays
+> closed: nothing a superseded pin declared outlives one restart.
 
 ## Reversibility
 - **Cost to reverse:** moderate. Reverting to "prompt before fetch" is a design and UX change, not

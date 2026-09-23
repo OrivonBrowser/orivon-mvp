@@ -33,6 +33,8 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Headless ASGARDEX sweep, every screen: routed `fetch` crashed on `signal: null`, breaking SUI; fixed.
 - ASGARDEX's SOL→RUNE "enable Thorchain" error is a live THORChain SOL halt, not Orivon: upstream's message misleads.
 - Five ASGARDEX chains need API keys upstream bakes in from CI secrets; a port must bring its own.
+- Platform-fidelity sweep fixed most of 86 audited gaps; XHR, EventSource and WebSocket now routed, installed apps survive restarts and updates.
+- Owner allowed unsafe-eval and fullscreen, let '*' https grants reach any CDN, raised bundle caps to 64/512 MiB, and gave dev origins installed CSP.
 
 ### In my head
 

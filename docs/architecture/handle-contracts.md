@@ -104,12 +104,12 @@ uninformative.
 
 ## §TcpSocket
 
-> **Implemented in the broker and Electron's main-process IPC layer**: `src/broker/index.ts`'s
-> `net.connect`, `src/broker/transport/ipc.ts`'s control-channel dispatch and real `MessageChannelMain`
-> port, `src/broker/transport/port-pump.ts`'s read-side credit pump. TCP only. **Not yet reachable from a
-> page**: `net.connect` is absent from `window.orivon`, and `src/preload/orivon-surface.ts`'s own
-> header explains why (no way to hand back a socket that could not be closed), until the
-> write-side of the byte pump lands.
+> **Implemented end to end**: `src/broker/net-capability.ts`'s `connect`, `src/broker/transport/ipc.ts`'s
+> control-channel dispatch and real `MessageChannelMain` port, `src/broker/transport/port-pump.ts`'s
+> read-side credit pump and `port-sink.ts`'s write side. Reachable from a real page as
+> `window.orivon.net.connect`, whose `readable`/`writable` are built in the main world by
+> `src/preload/main-world-socket.ts`; e2e-verified. TCP only; `net.connectSecure` returns the same
+> shape over broker-terminated TLS (`ADR-0017`).
 
 ```ts
 interface TcpSocket extends Handle {
@@ -296,9 +296,8 @@ interface TcpServer extends Handle {
 > udp-adapter.ts`. The relay pumping datagrams between the OS socket and the renderer's dedicated
 > port: `src/broker/transport/datagram-relay.ts`. Reachable from a real page as
 > `window.orivon.net.udpBind`, built in the main world by `src/preload/main-world-socket.ts`'s
-> `buildUdpSocket` and wired through `src/broker/index.ts`'s `udpBind`. As with `TcpSocket`,
-> reachable does not mean granted in production: no origin holds a `udp.bind` grant yet, so a
-> real page's call correctly answers `'denied'` until build step 4's permission prompt exists.
+> `buildUdpSocket` and wired through `src/broker/index.ts`'s `udpBind`. Reachable does not mean
+> granted: a page's call answers `'denied'` unless its origin holds a `udp.bind` grant.
 
 ```ts
 interface Datagram {
@@ -416,13 +415,13 @@ interface FileHandle extends Handle {
 
 ## §IdentityHandle
 
-> **No `IdentityHandle` is ever constructed, and no `orivon.id.*` method is callable.**
-> `src/broker/transport/ipc.ts`'s control dispatch has no `'id.'` case, so `publicKey()`/`signEvent()` exist
-> only as the contract type. The P-256 half of the key math those methods would need is real and
-> tested (`src/broker/policy/derive.ts`'s `derivePrivateScalar`, `derive-p256.ts`'s
-> `derivePublicKey`, exercised by `derive.test.ts`'s frozen golden vectors), but nothing calls it
-> from a control method, and secp256k1, Nostr's curve, has no point derivation or signing code
-> at all: `derivePublicKey` throws `'internal'` for any curve but `'P-256'`. `src/nostr/kind-
+> **No `IdentityHandle` is ever constructed**: `orivon.id.requestIdentity`, the only thing that
+> returns one, is unbuilt (A111), so `publicKey()`/`signEvent()` on this handle exist only as the
+> contract type. The per-origin identity is a different surface and is wired: `orivon.id.publicKey`
+> and `orivon.id.sign` reach the broker through `src/broker/transport/dispatch-id.ts`, over the
+> P-256 key math in `src/broker/policy/derive.ts` and `derive-p256.ts` (exercised by
+> `derive.test.ts`'s frozen golden vectors). secp256k1, Nostr's curve, has no point derivation or
+> signing code at all: `derivePublicKey` throws `'internal'` for any curve but `'P-256'`. `src/nostr/kind-
 > screening.ts`'s silent/prompt table is a real, tested policy module built one layer up, in
 > anticipation of this handle, but its own header calls it explicitly "NOT THE ENFORCEMENT
 > BOUNDARY" (a UI hint only) and `src/nostr/nip07.ts`'s own header records it was built and
@@ -533,7 +532,7 @@ sockets exercised cleanly) with headroom:
 
 | limit | default |
 |---|---|
-| concurrent open sockets (`TcpSocket` + `TcpServer` + `UdpSocket` + accepted connections) | 512 |
+| concurrent open sockets (`TcpSocket` + `TcpServer` + `UdpSocket` + accepted connections) | 64 (`LIMITS.defaultConcurrentSockets`); a manifest may declare up to 512 (`LIMITS.concurrentSockets`, the ceiling) |
 | concurrent open `FileHandle`s | 64 |
 | concurrent open `IdentityHandle`s | 64 |
 | in-flight broker operations, **per origin** | 256 |
@@ -544,7 +543,7 @@ Exceeding any of these yields `limit`.
 
 **The write window is a quarter of the read window, not a symmetric 1 MiB, and that is deliberate.**
 The read window already commits `concurrentSockets * readWindowBytes` = 512 MiB of worst-case
-per-origin exposure; doubling that for a write window nobody asked for would be an unforced
+per-origin exposure at the ceiling; doubling that for a write window nobody asked for would be an unforced
 increase to an aggregate this document already flags as unbounded rather than fixed
 (`src/contracts/limits.ts`'s own comment carries the same reasoning).
 
@@ -553,7 +552,8 @@ increase to an aggregate this document already flags as unbounded rather than fi
 1. **A `TcpServer`'s listening socket counts against the socket budget.** A listener
    is an open fd like any other, manifest `listen` patterns are port *ranges* rather than single
    ports, and leaving servers uncounted lets one origin hold unbounded listeners inside its
-   declared range. Counting it is strictly more conservative and costs a real app one slot in 512.
+   declared range. Counting it is strictly more conservative and costs a real app one slot of its
+   allowance.
 2. **`IdentityHandle` gets its own budget**, equal to the file budget. Uncapped, an unbounded row
    count is T11 whatever the row holds. It is a *per-kind*
    budget rather than a cap on total rows, because a total-row backstop has the failure mode
@@ -563,10 +563,12 @@ increase to an aggregate this document already flags as unbounded rather than fi
 **The in-flight cap is per origin, and this is load-bearing rather than incidental.** A single
 global counter would mean one origin holding 256 slow operations makes every *other* tab's
 `orivon.*` call fail with `limit`, the T11b freeze arriving by a different route, and attributed
-to the victim. **Calls beyond the in-flight cap reject immediately; they do not
-queue.** An unbounded queue on the broker's UI thread is precisely how one
-misbehaving origin freezes every tab (T11b); a rejection the app must retry keeps the broker
-responsive to every other origin.
+to the victim. **Past the in-flight cap an operation waits for a slot, in a per-origin FIFO
+bounded in length (another `inFlightOperations`) and in time (10 s), then rejects `limit`.** What
+T11b forbids is an unbounded queue on the broker's UI thread, which is precisely how one
+misbehaving origin freezes every tab. A waiting operation runs nothing and holds only its own
+arguments, so the number running never passes the cap, and one origin's queue never delays
+another's (`src/broker/handles/README.md`, "The in-flight cap queues briefly").
 
 ## §What the shim must do
 

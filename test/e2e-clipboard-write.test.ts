@@ -9,12 +9,12 @@
 // the regression this file guards broke every site in the browser, not
 // only ported apps.
 //
-// THE CLICK IS THE POINT. `page.evaluate` carries no transient user
-// activation, so a write driven from it would fail for a reason that has
-// nothing to do with the gate. The fixture below wires a real button to a
-// real click handler, exactly as a copy button is written, and Playwright
-// clicks it -- which is the only path that exercises what the allow
-// actually permits.
+// THE CLICK IS THE POINT. `page.evaluate` runs as a user gesture
+// (measured: `requestFullscreen()` called from it resolves), so a write
+// driven from there proves nothing about what a page's own code may do.
+// The fixture below wires a real button to a real click handler, exactly
+// as a copy button is written, and Playwright clicks it -- the path a real
+// page's copy takes, and the one the allow actually permits.
 //
 // Hermetic: one throwaway server on loopback, nothing else.
 import { afterAll, expect, it } from 'vitest'

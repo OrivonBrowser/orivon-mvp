@@ -10,12 +10,11 @@
  * against spike gate 4's measured numbers -- 100 concurrent sockets exercised
  * cleanly -- with headroom.
  *
- * Exceeding any of these yields an OrivonError with code 'limit'.
- *
- * CALLS BEYOND THE IN-FLIGHT CAP REJECT IMMEDIATELY; THEY DO NOT QUEUE. An
- * unbounded queue on the broker's UI thread is precisely how one misbehaving
- * origin freezes every tab (T11b). A rejection the app must retry keeps the
- * broker responsive to every other origin.
+ * Exceeding any of these yields an OrivonError with code 'limit'. Past
+ * `inFlightOperations` an operation first waits a bounded time for a slot;
+ * nothing here ever queues without a bound, because an unbounded queue on
+ * the broker's UI thread is precisely how one misbehaving origin freezes
+ * every tab (T11b).
  */
 export const LIMITS = {
   /**
@@ -39,7 +38,12 @@ export const LIMITS = {
   defaultConcurrentSockets: 64,
   /** Open FileHandles per origin. */
   concurrentFileHandles: 64,
-  /** Operations awaiting a broker response, per origin. See this object's own doc on what happens beyond it. */
+  /**
+   * At most this many of one origin's operations run at once. Past it an
+   * operation waits for a slot in a per-origin FIFO bounded in length
+   * (another `inFlightOperations`) and in time (10 s), then rejects 'limit'.
+   * Never an unbounded queue (T11b).
+   */
   inFlightOperations: 256,
   /**
    * Per-socket read credit window, in bytes. The broker sends at most this
@@ -123,7 +127,7 @@ export const LIMITS = {
   maxDatagramBytes: 65507,
   /** Isolated contexts (ADR-0019) one origin may hold open at once. */
   webContexts: 2,
-  /** How long one `WebContext.evaluate` may run before it rejects 'timeout'. */
+  /** The longest one `WebContext.evaluate` may run before it rejects 'timeout'; a caller may ask for less (`evaluate`'s `timeoutMs`), never more. */
   webContextEvaluateMs: 60_000,
   /** How long a context may sit with no `evaluate` before the platform closes it. */
   webContextIdleMs: 300_000,

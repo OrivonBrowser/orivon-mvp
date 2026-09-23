@@ -91,7 +91,9 @@ ledger entry, and its derived identity key (ADR-0003, ADR-0005).
 
 ## Manifest
 
-Served alongside the app's frontend assets and fetched before first run.
+Served alongside the app's frontend assets and fetched before first run. An unknown top-level
+field is ignored, and the loader logs a warning naming it. An unknown field anywhere inside
+`capabilities` rejects the manifest, and `orivonApiVersion` must match exactly.
 
 ```jsonc
 {

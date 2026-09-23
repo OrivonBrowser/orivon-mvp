@@ -351,16 +351,16 @@ Listed in sorted order, which is the order the root was computed in.
 
 ## Caps
 
-Stated so two implementations agree on which bundles are refusable, not because any of these
-numbers is a considered limit. **All four are provisional** (`open-questions.md` A15) and are
-expected to be revisited before the app loader ships:
+Stated so two implementations agree on which bundles are refusable. The two byte caps are
+settled, sized for a real built frontend (a 31 MB wasm-heavy chunk in a 37 MB bundle) with room
+to grow; the path and entry caps are **provisional** (`open-questions.md` A15):
 
 | Cap | Value | Why it exists |
 |---|---|---|
-| `MAX_PATH_BYTES` | 1024 | Bounds the rejection path and keeps a hostile path out of memory |
-| `MAX_ASSET_BYTES` | 16 MiB | `crypto.subtle.digest` cannot stream, so each asset is briefly whole in memory |
-| `MAX_BUNDLE_BYTES` | 64 MiB | Aggregate of the above |
-| `MAX_BUNDLE_ENTRIES` | 4096 | The byte caps do not bound leaf *count*: 200k zero-byte entries pass both, and T21 re-hashes the whole cached tree at **every** load |
+| `MAX_PATH_BYTES` | 1024 | Bounds the rejection path and keeps a hostile path out of memory. Provisional |
+| `MAX_ASSET_BYTES` | 64 MiB | Bounds download and disk per asset. Not memory: the loader hashes each leaf as a stream over the same preimage (`leafPrefix`), so no asset is held whole |
+| `MAX_BUNDLE_BYTES` | 512 MiB | The aggregate cap on one bundle's bytes |
+| `MAX_BUNDLE_ENTRIES` | 4096 | The byte caps do not bound leaf *count*: 200k zero-byte entries pass both, and T21 re-hashes the whole cached tree at **every** load. Provisional |
 
 ## Reading a pin record back
 

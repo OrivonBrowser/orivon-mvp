@@ -147,8 +147,9 @@ the canonical spelling (`requested`), never the caller's, so the check and the c
 disagree about which host they mean. Patterns are not canonicalised: a manifest must still declare
 a literal canonically, where a person reads it (`declarableConnectHostRejection`).
 
-**[`connect-src.ts`](connect-src.ts)'s CSP `connect-src` derivation is pure, and set on the
-served response directly** (`src/loader/serve.ts`'s `buildResponse`), never via
+**[`connect-src.ts`](connect-src.ts)'s CSP source derivation is pure, and the header is set on
+the served response directly** (`src/loader/serve-csp.ts` assembles it, `src/loader/serve.ts`'s
+`buildResponse` sets it), never via
 `session.webRequest.onHeadersReceived`: that listener never fires for a `protocol.handle`-served
 response in this Electron version (A110), so the header is set on the handler's own `Response`,
 the alternative ADR-0007 names. Three properties follow:
@@ -165,10 +166,11 @@ the alternative ADR-0007 names. Three properties follow:
 - **Two scope gaps remain, both filed.** CSP bounds *names*, `connect.ts`'s `checkConnect`
 bounds *resolved addresses*:
 for a hostname pattern the two diverge exactly on DNS rebinding, and no CSP construction closes
-that. `serve.ts`'s `cspHeaderValue` sets `default-src 'self'` (which `img-src`, `form-action`
-and `frame-src` fall back to when unset) and an explicit `script-src 'self' 'unsafe-inline'`, so
-A42 covers only what CSP structurally cannot cover at all: top-level navigation (`<a href>`,
-`location.href`, which `default-src` never governs) and the DNS-rebinding gap above. And the emitted list is the
+that. `src/loader/serve-csp.ts` sets `default-src 'self'` and explicit `script-src`, `frame-src`
+and `worker-src`. `form-action` has no fallback to `default-src` and is deliberately left unset
+(`src/loader/README.md`, "What the served bundle's CSP admits"), so A42 covers what CSP cannot
+cover at all: top-level navigation (`<a href>`, `location.href`, which CSP never governs) and the
+DNS-rebinding gap above. And the emitted list is the
 app's *entire* `connect-src` allowlist, so an omitted pattern is not "uncovered", it is blocked:
 the flagship's `tcp.connect: ["*:*"]` has no CSP equivalent at all and is reported via `omitted`
 rather than widened to CSP's bare `*` (A43: widening is the bigger bug). An IPv6
@@ -176,18 +178,17 @@ literal is the same story: CSP's host grammar has no `[`, `]` or `:`, confirmed 
 44.0.0/Chrome 152 that Chromium drops such a source outright, and `host-ipv6-literal` exists so
 `omitted` stays honest about that gap instead of silently claiming coverage a grant doesn't have.
 
-**`img-src`, `font-src` and `media-src` are set explicitly, not left to `default-src`** (A143).
-`connect-src.ts`'s
-`appReachCspHeaderValue` reuses `connectSrcFor`'s own translate/emit logic unchanged (Rule 3),
-fed from the `https.connect` grant rather than `connect-src`'s own `tcp.connect`, a deliberately
-different capability, because `src/loader/serve.ts`'s `fetchThirdParty` (the live handler these
-three directives now have to agree with) authorises a third-party fetch against `https.connect`,
-never `tcp.connect`. `form-action`/`frame-src`/`script-src`/`worker-src` are UNCHANGED by this,
-still `default-src 'self'`'s fallback (`frame-src`/`worker-src`/`form-action`) or the explicit
-`'self' 'unsafe-inline'` (`script-src`) `serve.ts`'s `cspHeaderValue` already set. A deliberate
-scope line: embedding a live third-party document or running third-party code at the app's own
-origin is a materially bigger step than fetching a static image/font/media resource, and neither
-was asked for.
+**`https.connect` feeds the reach directives: `connect-src`, `img-src`, `font-src` and
+`media-src`** (A143, A192). `reachSourcesFor` reuses `connectSrcFor`'s own translate/emit logic
+unchanged (Rule 3), fed from `https.connect`, the grant `src/loader/serve.ts`'s `fetchThirdParty`
+authorises a third-party request against. Its sources are scheme-qualified, `https://host:port`,
+never `ws:`/`wss:`: a WebSocket never reaches that handler, so no reach source may admit one. A
+`*` host emits `https:`, the one source wider than the grant, because every request it admits
+reaches the app's own `protocol.handle` and is re-authorised live there. `tcp.connect`
+contributes its bare `host:port` sources to `connect-src` alone. A deliberate scope line: no
+third-party frame and no third-party script, since embedding a live third-party document or
+running third-party code at the app's own origin is a materially bigger step than fetching a
+resource, and nothing asks for it.
 
 **[`lookup.ts`](lookup.ts): why a host-only check (no port, no resolved address) still opens
 nothing new (A171, `docs/open-questions.md` A167), and why `https.connect` does not belong in
