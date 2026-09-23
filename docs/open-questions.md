@@ -5412,7 +5412,15 @@ what registered the origin (`d-0052`); the reloaded tab runs from the pinned cac
 partition, with a decided grant. What remains of this entry is the pre-reload first load itself:
 its scripts still run before consent and can still be told `'denied'` for an instant, as the
 owner accepted. The reload is the option the owner's decision above declined, taken as an AI
-call to close the missing-shims half; A233 asks the owner to confirm or reverse it.
+call to close the missing-shims half.
+
+> **Owner decision, 2026-09-23: the reload is kept, reversing the 2026-09-15 decline of option
+> 3 (A233).** The decline weighed the reload against a first load that is only refused for an
+> instant. The first load is worse than that: it runs without the app tab's routed `fetch` and
+> `process` and `Buffer` shims, so a ported app's first visit was broken. The shipped design is
+> now option 2 followed by option 3: the page runs, consent is asked, and a first install that
+> registered the origin reloads the tab once. The owner's acceptance of the pre-reload instant
+> stands.
 
 ### A147 -- the address-bar provenance wording, and the two-state-vs-three-state choice it rests on **[NEEDS OWNER DECISION]**
 
@@ -8472,6 +8480,24 @@ now says so.
 **Still open:** the second question, whether `clipboard-read` ever becomes an `orivon.*`
 capability, a Chromium-level prompt, or stays denied. Unchanged by any of the above.
 
+**A second ground, 2026-09-22 (owner; `ADR-0026` to `ADR-0028`).** Four more names joined, two of
+which the rule above cannot admit, because the platform does not gate them on the person at all.
+The rule now has two grounds, and a name passes on either:
+
+1. **The platform gates it and the shell answers its abuse:** the platform gates it on an action
+   by the person that the shell can neither fake nor suppress, and either (a) a legacy path
+   already grants the same power, or (b) its one abuse is answered by an affordance the shell
+   draws.
+2. **The person answers a real prompt:** the shell asks, in the window showing the page, naming
+   the site; nothing passes before the answer, and the check handler, which cannot ask, never
+   allows on the person's behalf.
+
+Clipboard write passes on 1(a); fullscreen, pointer lock and keyboard lock on 1(b); one chosen
+file on its own one-file argument (`ADR-0024`, which rests on the person's choice of file plus
+1(a)'s legacy paths); `openExternal` and `notifications` on ground 2. `src/main/sessions/README.md`
+keeps the current table. A prompt of ground 2 is also the shape `clipboard-read` would need, if
+it is ever allowed.
+
 ### A203 -- `src/broker/transport/` imports `src/main/`, contradicting the stated rule that `src/broker/` never does
 
 **Raised 2026-09-22**, found by ADR-0023's own reference sweep, the same way the broker's own
@@ -8663,7 +8689,7 @@ The pages now describe the bounded wait.
 this one is bounded in length and time. **Needs:** the owner's confirmation, since it changes a
 stated security rule's wording. `src/contracts/limits.ts` carries the new text.
 
-### A214 -- a `localhost` connect pattern is a stated exception to T12 **[NEEDS OWNER CONFIRMATION]**
+### A214 -- a `localhost` connect pattern is a stated exception to T12 **[RESOLVED 2026-09-23 -- owner confirmed]**
 
 Filed 2026-09-22 (`d-0063`). T12's rule is that a name is not evidence of where it leads, so a
 hostname pattern never authorises a private address. A pattern whose host is exactly `localhost`
@@ -8676,6 +8702,8 @@ still means public unicast only.
 
 **Needs:** the owner's confirmation that the exception is acceptable. Reversing it is one branch
 in `connect-patterns.ts`.
+
+**Owner-confirmed, 2026-09-23 (`d-0063`).** The exception stands as described.
 
 ### A215 -- the fs quota over-counts in-place rewrites through a `FileHandle`, and under-counts a file removed while open **[AI-REC]**
 
@@ -8802,7 +8830,7 @@ socket in place. The shim refuses the upgrade by name.
 authorised against `https.connect` for the same host. A contracts change. **Needed by:** a
 ported app that speaks one of those protocols.
 
-### A226 -- `rejectUnauthorized: false` is accepted and ignored **[NEEDS OWNER CONFIRMATION]**
+### A226 -- `rejectUnauthorized: false` is accepted and ignored **[DECIDED 2026-09-23 -- owner: honour it]**
 
 Filed 2026-09-22 (`d-0075`). The shim's `tls` and `https` accept `rejectUnauthorized: false` and
 leave verification on; when the handshake then fails, the error says the override was not
@@ -8812,6 +8840,12 @@ would break them for nothing. Every option that would change who is trusted stil
 
 **Needs:** the owner's confirmation that silently keeping verification on is the right answer,
 as opposed to refusing the option by name like the others.
+
+**Owner decision, 2026-09-23: honour it.** Asked for the option that gives the most
+compatibility with Electron apps, the owner chose to make `connectSecure` do what Node does:
+`rejectUnauthorized: false` makes that one connection really unauthenticated. The same decision
+covers the trust options A223, A225 and A228 name. It is being built; this entry records the
+decision, and the pages will describe the behaviour once it lands.
 
 ### A227 -- is `http.createServer` in scope? **[NEEDS OWNER DECISION]**
 
@@ -8832,7 +8866,7 @@ back to HTTP/1.1, which every client in the tree does cleanly. A gRPC client cou
 **What would settle it:** an ALPN option on `connectSecure`, a contracts change. **Needed by:** a
 ported app that requires HTTP/2 or another ALPN-selected protocol.
 
-### A229 -- an open-web page an app opens as a popup runs in the app's partition until its opener closes **[NEEDS OWNER DECISION]**
+### A229 -- an open-web page an app opens as a popup runs in the app's partition until its opener closes **[RESOLVED 2026-09-23 -- owner accepted the residual]**
 
 Filed 2026-09-22 (`d-0080`), an `ADR-0018` residual. A popup the page can talk to is Chromium's
 own new webContents, and Chromium creates it in its opener's session; moving it to the default
@@ -8844,6 +8878,10 @@ own session, so the reverse leak does not happen.
 **What would settle it:** the owner accepting the residual, or A109's pre-commit interception,
 which would let a navigation choose its session before Chromium commits it. **Needed by:** a
 review of what a provider's cookies in an app partition can reach.
+
+**Owner decision, 2026-09-23: accepted (`d-0095`).** A sign-in popup that can talk back to its
+opener is worth more than keeping the provider's cookies out of the app's partition. The residual
+stays as described, and A109's interception would still remove it if it is ever built.
 
 ### A230 -- the Leave/Stay prompt blocks the main process, and closing a tab never asks **[AI-REC]**
 
@@ -8877,7 +8915,7 @@ replay would submit twice.
 **What would settle it:** A109's pre-commit interception, choosing the partition before the
 request is sent. **Needed by:** a sign-in or payment flow that posts across an app boundary.
 
-### A233 -- the reload after a first install is the option A146's owner decision declined **[NEEDS OWNER CONFIRMATION]**
+### A233 -- the reload after a first install is the option A146's owner decision declined **[RESOLVED 2026-09-23 -- owner kept the reload]**
 
 Filed 2026-09-22. A146's owner decision (2026-09-15) kept "let the page run" and declined option
 3, reloading the tab once a grant exists, because the reload is one the person did not ask for
@@ -8890,6 +8928,11 @@ startup are never reloaded, so it cannot loop.
 
 That is option 3, taken as an AI call. **Needs:** the owner to confirm the reload, or reverse it,
 which leaves a first-visit app without its shims until the person reloads it themselves.
+
+**Owner decision, 2026-09-23: the reload stays (`d-0052`).** It reverses the 2026-09-15 decline
+of option 3, for the reason above: without the app-tab setup the first load has no routed
+`fetch` and no `process` or `Buffer` shims, so a ported app's first visit was broken, not just
+refused for an instant. A146 records the change.
 
 ### A234 -- the inlined `buffer` package runs in sloppy mode in the page **[AI-REC]**
 
@@ -8981,3 +9024,30 @@ routed path passes it on unchanged for a socket it hands to the native construct
 
 **Recorded as a trap for porters:** listen for `error` as well as `close`. **What would settle
 it:** Chromium firing `close` after the refusal, which would make this entry obsolete.
+
+### A242 -- `Notification.permission` may read `'denied'` for a site nobody has decided **[AI-REC -- provisional]**
+
+Filed 2026-09-22 with `ADR-0028`. Electron's permission check handler returns a boolean, so the
+gate can answer `Notification.permission` and the Permissions API only with "allowed" or not: a
+site nobody has asked about reads `'denied'`, not `'default'`. Electron documents that most web
+APIs check and then request when the check is denied, so a page calling `requestPermission()`
+still gets asked. A page that reads `Notification.permission` first and gives up on `'denied'`
+never asks, and never shows a notification.
+
+*Provisional:* not yet measured against a real page, because the notification checks run only
+on a private session bus (A243). **What would settle it:** that measurement; if it holds, a
+preload override that reports `'default'` for an undecided site, or accepting it as a documented
+divergence.
+
+### A243 -- every e2e test runs on the user's real session bus **[STILL OPEN]**
+
+Filed 2026-09-22. `scripts/run-headless.mjs` gives the launched shell a virtual display but not
+a private D-Bus session bus, so an Electron under test talks to the desktop session of whoever
+runs it. A notification it showed would reach that person's desktop, which is why
+`test/e2e-site-permissions.test.ts` runs its notification phase only when
+`ORIVON_E2E_PRIVATE_BUS=1` says the bus is private, and even then gives the shell a bus address
+nothing listens on. Other suites do not construct notifications, but nothing stops one from
+starting to.
+
+**What would settle it:** the runner starting a private session bus for every launch, which is
+being added to `scripts/run-headless.mjs`, and the notification phase then running by default.
