@@ -42,3 +42,6 @@ served by its own server rather than through `protocol.handle` (A110 concerns on
 - **One listener per session.** Electron keeps one `onHeadersReceived` listener per session;
   nothing else in `src/` listens on an app partition, and installing again for the same origin
   replaces the listener rather than stacking a second one.
+- **No `ws:` source for hot reload.** A dev server's hot-reload WebSocket on the page's own host
+  and port is admitted by `connect-src 'self'` (measured in Electron 44,
+  `test/e2e-websocket-routing.test.ts`); one on another port is refused (open-questions A240).

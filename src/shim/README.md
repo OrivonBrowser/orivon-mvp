@@ -18,6 +18,15 @@ every Node-shaped path agrees on; see §Design notes) and `module-map.ts` (the s
 from; see its own header) belong to neither group cleanly; they exist to make the two above
 reachable at all.
 
+**A bundler consuming this directory must alias each specifier exactly.** Every row matches its
+specifier whole, bare or `node:`-prefixed (`aliasPattern`), because an alias that also captures
+subpaths rewrites the shim's own imports into the shim itself: `node-util.ts` imports the
+package's `util/util.js`, which a prefix alias for `util` would send back to `node-util.ts`.
+`electron.vite.config.ts` and `test/e2e-app-loader-journey.test.ts`'s esbuild plugin both match
+exactly for that reason; esbuild's own `alias` option cannot. A port that builds against
+`src/shim/` with its own bundler needs the same, one exact entry per specifier (in webpack,
+`resolve.alias` keys with the `$` suffix, `util$`), and the `node:`-prefixed forms mapped too.
+
 **Tests run against the page's polyfills.** `vitest.config.ts` resolves a shim module's own
 `stream`, `buffer`, `events`, ... imports to the same modules the renderer build does, so a
 shim test exercises readable-stream 3 and the `buffer` package, not Node's builtins. A test

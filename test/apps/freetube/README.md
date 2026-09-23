@@ -88,11 +88,11 @@ Verified by `node verify.mjs`, 11/11 passing on 2026-09-17 against live YouTube:
 | Running with a refused `fs` grant | Works: every collection falls back to memory and says so |
 | Running with a refused `https` grant | Works: the app loads and names what is missing |
 | Stream URL resolution | Works for videos YouTube will answer for -- see wall 2 |
-| **Video playback** | **Works on a live origin** (measured: `readyState 4`, 213s duration), for videos YouTube will serve at all -- see §Wall 2. Blocked for an INSTALLED app -- see §Wall 1 |
+| **Video playback** | **Works on a live origin** (measured: `readyState 4`, 213s duration), for videos YouTube will serve at all -- see §Wall 2. Blocked for an INSTALLED copy of this app, whose manifest names no CDN host -- see §Wall 1 |
 
 ## The two walls
 
-### Wall 1: the served CSP cannot name a video CDN host -- **INSTALLED APPS ONLY**
+### Wall 1: an installed copy of this app cannot name the video CDN -- **INSTALLED APPS ONLY**
 
 **This is a property of one serving path, not of the platform.** Granting capabilities to a URL
 and installing an app are separate features; this app only ever needed the first, and on a live
@@ -103,55 +103,40 @@ PLAYBACK on a live origin: "Playing over direct." (readyState 4, duration 213s)
 media-src on a LIVE origin -- violations: []
 ```
 
-A page served by its own host gets no CSP from `serve.ts`, because `serve.ts` is not serving it,
-so nothing constrains `<video>` and the rotating CDN host is reachable. Everything below applies
-when an app has been INSTALLED -- pinned and served from cache under ADR-0007 -- and is a real
-constraint on that path, not on running an app.
+A page served by its own host gets no CSP from Orivon's cache, because the cache is not serving
+it, so nothing constrains `<video>` and the rotating CDN host is reachable. Everything below
+applies when the app has been INSTALLED -- pinned and served from cache under ADR-0007 -- and
+comes from this app's own manifest, not from a limit of that path.
 
 YouTube serves media from `rr1---sn-uxaxpu5ap5-2hve.googlevideo.com` and a different
-subdomain on the next request. A manifest cannot name that host:
+subdomain on the next request. A literal pattern cannot name that host:
 
 - [`connect-patterns.ts`](../../../src/broker/policy/connect-patterns.ts)'s `hostSpecKind` returns
   `authorises-nothing` for any host containing `*`, and `patternRejection` names `sub-glob`
   explicitly. `*.googlevideo.com:443` is a rejected pattern, deliberately -- "a wildcard that
   silently spans a registry boundary" is the reason given, and it is a good one.
-- The remaining option is `*:*`, and
-  [`connect-src.ts`](../../../src/broker/policy/connect-src.ts) omits exactly that from the emitted
-  CSP (`host-any-public-unicast`), because a bare CSP `*` would also permit loopback and the LAN.
+- The one pattern that covers it is `*:443` under `https.connect`: unlimited HTTPS. For that
+  grant the served CSP ([`src/loader/serve-csp.ts`](../../../src/loader/serve-csp.ts)) emits the
+  `https:` scheme source in `media-src`, `img-src`, `font-src` and `connect-src`, and every
+  request it admits is re-authorised by the app's own request handler, which still refuses
+  loopback and private addresses.
 
-So `img-src`/`font-src`/`media-src`, which
-[`serve.ts`](../../../src/loader/serve.ts)'s `cspHeaderValue` builds from the `https.connect` grant,
-can be `'self'` plus literal hosts, or `'self'` alone -- never a pattern that covers a rotating
-CDN. **A `<video src>` pointing at a googlevideo URL is refused by the page's own CSP before any
-request leaves, no matter what was granted.**
+This app's [manifest](.well-known/orivon.json) names its API and image hosts literally and asks
+for no `*`, so on an installed copy **a `<video src>` pointing at a googlevideo URL is refused by
+the page's own CSP before any request leaves.** Routing the bytes through a `fetch` does not get
+round it for the same reason: a routed `fetch` reaches only a granted host, and the CDN is not
+one.
 
-The obvious way around it does not work either, for a separate reason. A routed `fetch` is
-explicitly *not* subject to CSP (`ADR-0017`'s own Consequences), so the bytes can be fetched --
-but they then have to reach the element as a `blob:` URL, and `media-src 'self'` does not cover
-`blob:`.
+The header does not stand in MSE playback's way: `media-src` admits `blob:`, the URL MSE hands the
+`<video>`. `test/e2e-freetube-app.test.ts` asserts it against a live `<video>` element under the
+installed app's own served CSP. `lib/playback.js` also refuses a route-3 stream over 16 MiB, a
+limit of its own (`ROUTED_FETCH_BODY_CAP`): the routed `fetch` itself has no body cap.
 
-**Settled by measurement, in a real app tab** (`test/e2e-freetube-app.test.ts`). Both routes were
-driven against a live `<video>` element under the app's own served CSP, and both raised a real
-`securitypolicyviolation`:
-
-```
-media-src <- blob
-media-src <- https://rr1---sn-4g5ednsk.googlevideo.com/videoplayback?probe=1
-```
-
-So the wall is confirmed from both sides: the CDN host cannot be named, and the blob fallback the
-routed fetch would produce is refused by the same directive. `lib/playback.js` reports whichever
-of the two refused it rather than going blank.
-
-**Two possible platform-side fixes, neither of them settled:**
-
-1. Add `blob:` to `appReachCspHeaderValue`'s directive list. Narrow, and it only admits bytes the
-   app already fetched through a grant-checked routed fetch -- no new reach.
-2. Support a bounded sub-glob (`*.googlevideo.com`) as a pattern kind. Much larger, and it argues
-   against a rule `connect-patterns.ts` adopted on purpose.
-
-Neither belongs in this directory, so neither is done here. This app instead detects the
-refusal via `securitypolicyviolation` and says so in the player, rather than going blank.
+**What would open playback on an installed copy:** declaring `https.connect: ["*:443"]`, at the
+price of a prompt that asks for unlimited HTTPS, or a bounded sub-glob pattern kind
+(`*.googlevideo.com`), which argues against a rule `connect-patterns.ts` adopted on purpose. The
+app detects a refusal via `securitypolicyviolation` and says so in the player, rather than going
+blank.
 
 ### Wall 2: YouTube's bot-guard (external, not a platform problem)
 
@@ -176,7 +161,7 @@ worth knowing before build step 5's clip.
 **To use it yourself:**
 
 ```bash
-node apps/freetube/serve.mjs           # terminal 1: a plain static server on http://127.0.0.1:8874
+node test/apps/freetube/serve.mjs      # terminal 1: a plain static server on http://127.0.0.1:8874
 npm run dev                            # terminal 2: then open http://127.0.0.1:8874 and accept
 ```
 
@@ -198,14 +183,13 @@ and also what makes it unfit to gate CI.
 The two offline helpers:
 
 ```bash
-node apps/freetube/verify.mjs          # API + storage layers only, against live YouTube
-node apps/freetube/serve.mjs           # static server on http://127.0.0.1:8874
+node test/apps/freetube/verify.mjs     # API + storage layers only, against live YouTube
+node test/apps/freetube/serve.mjs      # static server on http://127.0.0.1:8874
 ```
 
 `verify.mjs` runs in Node on purpose. Node's `fetch` shares the two properties `ADR-0017` gives a
 routed fetch -- no CORS, no forbidden-header list -- so it is an honest test of this app's network
-layer. It models nothing else about an app tab: not the served CSP, not the 16 MiB routed-fetch
-body cap, not `<video>`. It reports "a stream URL was resolved", never "a video played".
+layer. It models nothing else about an app tab: not the served CSP, not `<video>`. It reports "a stream URL was resolved", never "a video played".
 
 ### Opened any other way, it stays inert -- on purpose
 

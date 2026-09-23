@@ -299,20 +299,19 @@ export interface Broker {
     persistedAppsSync(): readonly PersistedApp[]
     /**
      * A158's early-hydration seam: makes `origin`'s persisted grants live
-     * BEFORE `registerApp` ever runs for it this session, so a restored
-     * app's first served document (and its first real capability call) sees
-     * its real, already-consented grants rather than an empty ledger.
+     * BEFORE `registerApp` runs for it this session, so a restored app's
+     * first document and first capability call see its real grants. Also
+     * registers `manifest` as this origin's manifest until `registerApp`
+     * supplies a fresh one, without raising the version floor;
+     * `isRegisteredSync`, `registeredOriginsSync` and `manifest()` answer
+     * from it meanwhile.
      *
      * `manifest` MUST already be proven a leaf of a hash-pinned bundle
-     * (`src/loader/serve.ts`'s `verifiedManifestFor`) -- NEVER a manifest
-     * merely read off disk. This is what tells this call apart from the
-     * withdrawn attempt A137 rejected: that one hydrated from an unverified
-     * disk copy, which could gain authority a fresh request would not have;
-     * this one hydrates from bytes already proven, by the same hash tree
-     * that gates whether this origin's code runs AT ALL, to be exactly what
-     * the person consented to. See `GrantLedger.hydrateFromPinnedManifest`'s
-     * own doc for the full reasoning and what happens once the real,
-     * freshly fetched manifest later arrives via `registerApp`.
+     * (`src/loader/serve.ts`'s `verifiedManifestFor`), NEVER a manifest
+     * merely read off disk: that is what separates this from the unverified
+     * disk hydration A137 rejected. `GrantLedger.hydrateFromPinnedManifest`'s
+     * own doc has the full reasoning, and what happens once `registerApp`
+     * arrives with the fresh manifest.
      */
     hydrateFromPinnedManifest(origin: string, manifest: Manifest): Promise<void>
     /**
