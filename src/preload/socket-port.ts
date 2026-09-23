@@ -59,8 +59,8 @@ export interface SocketPortOptions {
 export interface SocketPort {
   /** The one data callback -- fired for every DataMessage, in order. */
   onData: (cb: (chunk: Uint8Array) => void) => void
-  /** Fires once, when the read side reaches a terminal state. */
-  onReadEnd: (cb: (code: OrivonErrorCode | undefined) => void) => void
+  /** Fires once, when the read side reaches a terminal state; `platformCode` only accompanies an errored end. */
+  onReadEnd: (cb: (code: OrivonErrorCode | undefined, platformCode?: string) => void) => void
   /** The consumer reports bytes it has drained; coalesced into CreditMessages. */
   reportConsumed: (bytesConsumed: number) => void
 
@@ -93,7 +93,7 @@ export function createSocketPort (options: SocketPortOptions): SocketPort {
   const { handleId, port, silenceTimeoutMs = WRITE_SILENCE_TIMEOUT_MS } = options
 
   let dataCb: ((chunk: Uint8Array) => void) | undefined
-  let readEndCb: ((code: OrivonErrorCode | undefined) => void) | undefined
+  let readEndCb: ((code: OrivonErrorCode | undefined, platformCode?: string) => void) | undefined
   let fatalCb: ((code: OrivonErrorCode) => void) | undefined
 
   let sinceLastCredit = 0
@@ -163,10 +163,12 @@ export function createSocketPort (options: SocketPortOptions): SocketPort {
         dataCb?.(message.chunk)
         break
       case 'end':
-        readEndCb?.(message.code)
+        // State first, callback second: a callback that disposes the port
+        // must find `closed` already rejected, not resolve it as clean.
         if (message.code === undefined) { readTerminal = true; tryResolveClosed() } else {
-          forceRejectClosed(toOrivonError(message.code))
+          forceRejectClosed(toOrivonError(message.code, message.platformCode === undefined ? {} : { platformCode: message.platformCode }))
         }
+        readEndCb?.(message.code, message.platformCode)
         break
       case 'write-ack':
         if (pendingWrite !== undefined) {
@@ -220,10 +222,14 @@ export function createSocketPort (options: SocketPortOptions): SocketPort {
   function sendOneWrite (chunk: Uint8Array): Promise<void> {
     if (disposed) return Promise.reject(toOrivonError('closed'))
     if (pendingWrite !== undefined) return Promise.reject(toOrivonError('invalid', { message: 'a write is already pending on this socket' }))
+    // Structured clone copies a view's WHOLE underlying buffer, so a small
+    // view over a large buffer (every piece of a split write) is copied out
+    // first, or each piece would carry the entire parent across.
+    const own = chunk.byteLength < chunk.buffer.byteLength ? chunk.slice() : chunk
     return new Promise<void>((resolve, reject) => {
-      pendingWrite = { length: chunk.byteLength, acceptedSoFar: 0, resolve, reject }
+      pendingWrite = { length: own.byteLength, acceptedSoFar: 0, resolve, reject }
       resetSilenceTimer()
-      port.postMessage({ kind: 'write', handleId, chunk })
+      port.postMessage({ kind: 'write', handleId, chunk: own })
     })
   }
 

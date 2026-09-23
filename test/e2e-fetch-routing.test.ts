@@ -175,6 +175,39 @@ it('a real page\'s fetch() reaches a granted host with an app-set Origin and no 
         denied.rejected && denied.name === 'TypeError',
         JSON.stringify(denied)
       )
+
+      // (d) XMLHttpRequest takes the same routed path: an app-set Origin
+      // arrives verbatim, the browser's default headers are present, and
+      // responseType 'json' parses the routed body.
+      const viaXhr = await evaluateRetrying(view, async () => await new Promise<Record<string, unknown>>((resolve) => {
+        const xhr = new XMLHttpRequest()
+        xhr.open('GET', 'http://127.0.0.1:8879/probe')
+        xhr.responseType = 'json'
+        xhr.setRequestHeader('Origin', 'https://xhr.example')
+        xhr.onload = () => { resolve({ ok: true, status: xhr.status, readyState: xhr.readyState, body: xhr.response as unknown }) }
+        xhr.onerror = () => { resolve({ ok: false }) }
+        xhr.send()
+      }))
+      const xhrHeaders = (viaXhr.body as { headers?: Record<string, string> } | undefined)?.headers
+      check('a granted host answers a routed XMLHttpRequest', viaXhr.ok === true && viaXhr.status === 200 && viaXhr.readyState === 4, JSON.stringify(viaXhr))
+      check('the XHR\'s app-set Origin arrived verbatim', xhrHeaders?.origin === 'https://xhr.example', JSON.stringify(viaXhr))
+      check('a routed request carries the browser\'s User-Agent and Accept', typeof xhrHeaders?.['user-agent'] === 'string' && xhrHeaders?.accept === '*/*', JSON.stringify(xhrHeaders))
+
+      // (e) An ungranted host gets the page's native XMLHttpRequest: nothing
+      // listens on DENIED_PORT, so it ends in an error event, never a throw.
+      const deniedXhr = await evaluateRetrying(view, async () => await new Promise<string>((resolve) => {
+        const xhr = new XMLHttpRequest()
+        xhr.open('GET', 'http://127.0.0.1:8880/x')
+        xhr.onload = () => { resolve('load') }
+        xhr.onerror = () => { resolve(`error:${xhr.status}`) }
+        xhr.send()
+      }))
+      check('an ungranted host takes the native XMLHttpRequest and fails as a page\'s would', deniedXhr === 'error:0', deniedXhr)
+
+      const brotli = await evaluateRetrying(view, async () => {
+        try { void new DecompressionStream('brotli' as CompressionFormat); return true } catch { return false }
+      })
+      console.log(`[e2e-fetch-routing] DecompressionStream('brotli') in this Chromium: ${String(brotli)}`)
     } finally {
       await closeElectronApp(app)
     }

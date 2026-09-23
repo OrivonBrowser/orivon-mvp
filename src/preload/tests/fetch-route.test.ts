@@ -1,147 +1,70 @@
-// Exercises installFetchRoute() directly, the same way tests/main-world-
-// socket.test.ts exercises installOrivon() directly: a plain fake `target`
-// object rather than a real contextBridge, and the real platform
-// ReadableStream/WritableStream/Response/Headers globals Node already
-// provides -- installFetchRoute references only these plus its own
-// parameters, so it runs identically here and once re-evaluated in a real
-// page's main world.
+// Exercises the routed fetch the way a page meets it: every installer is
+// re-evaluated from its own source (routed.test-helpers.ts's `reserialised`)
+// and run against a plain fake `target` with a stub `orivon.net`, over the
+// real platform ReadableStream/Response/Headers globals Node provides.
 //
 // `isAppTab` is passed explicitly and synchronously everywhere below --
-// there is no `await tick()` anywhere in this file. That absence IS the
-// regression test the conductor asked for: an earlier version of this file
-// gated on an async `orivon.app.manifest()` promise, and every one of these
-// tests would have needed to await one or more microtask flushes before
-// `target.fetch` existed. If a future change reintroduces that async gate,
-// the very first assertion after `installFetchRoute` below observes
-// `target.fetch` before any such promise could have settled, and fails.
+// there is no `await` between installing and observing `target.fetch`, which
+// is the regression test for an async gate that a page's first script could
+// outrun.
 import { deflateSync, gzipSync } from 'node:zlib'
 import { describe, expect, it } from 'vitest'
-import { installFetchRoute, ROUTED_FETCH_MAX_BODY_BYTES, ROUTED_FETCH_MAX_HEAD_BYTES } from '../fetch-route.js'
-import type { FetchRouteSocket, FetchRouteTarget } from '../fetch-route.js'
+import { installFetchRoute } from '../fetch-route.js'
+import type { FetchRouteTarget } from '../fetch-route.js'
+import { ROUTED_MAX_HEAD_BYTES } from '../routed-wire.js'
+import { OK_RESPONSE, bytes, concat, fakeSocket, fakeTarget, installRouted, refusal } from './routed.test-helpers.js'
+import type { FakeSocket } from './routed.test-helpers.js'
 
-/** A fake TcpSocket: `responseChunks` is what the "peer" sends back; `written` accumulates every chunk routedFetch wrote to the request side. */
-function fakeSocket (responseChunks: Uint8Array[]): FetchRouteSocket & { written: Uint8Array[], closed: boolean } {
-  const state = { written: [] as Uint8Array[], closed: false }
-  const readable = new ReadableStream<Uint8Array>({
-    start (controller) {
-      for (const chunk of responseChunks) controller.enqueue(chunk)
-      controller.close()
-    }
-  })
-  const writable = new WritableStream<Uint8Array>({
-    write (chunk) { state.written.push(chunk) }
-  })
-  return {
-    readable,
-    writable,
-    close: async () => { state.closed = true },
-    get written () { return state.written },
-    get closed () { return state.closed }
-  }
-}
-
-function bytes (text: string): Uint8Array {
-  return new TextEncoder().encode(text)
-}
-
-function writtenHead (socket: { written: Uint8Array[] }): string {
-  return new TextDecoder().decode(socket.written[0])
-}
-
-function concatUint8 (...parts: Uint8Array[]): Uint8Array {
-  const total = parts.reduce((n, p) => n + p.length, 0)
-  const out = new Uint8Array(total)
-  let offset = 0
-  for (const p of parts) { out.set(p, offset); offset += p.length }
-  return out
-}
-
-/** A socket whose `readable` never emits and never closes -- reads on it hang forever unless something else (an abort) intervenes. Used to prove an in-flight read can actually be cancelled. */
-function stallingSocket (): FetchRouteSocket & { written: Uint8Array[], closed: boolean } {
-  const state = { written: [] as Uint8Array[], closed: false }
-  const readable = new ReadableStream<Uint8Array>({ start () { /* never enqueue, never close */ } })
-  const writable = new WritableStream<Uint8Array>({ write (chunk) { state.written.push(chunk) } })
-  return {
-    readable,
-    writable,
-    close: async () => { state.closed = true },
-    get written () { return state.written },
-    get closed () { return state.closed }
-  }
-}
-
-const CANNED_RESPONSE = bytes(
-  'HTTP/1.1 200 OK\r\nContent-Length: 5\r\nContent-Type: text/plain\r\n\r\nhello'
-)
-function CANNED_RESPONSE_CHUNKS (): Uint8Array[] {
-  return [CANNED_RESPONSE]
-}
-
-/** A plain `orivon.net`-bearing target -- no `app` field at all, since `installFetchRoute` no longer reads one (the app-tab decision is `isAppTab`, decided in main before this ever runs). */
-function fakeTarget (opts: {
-  connect?: () => Promise<FetchRouteSocket>
-  connectSecure?: () => Promise<FetchRouteSocket>
-  location?: { origin: string, href: string }
-  nativeFetch?: (input: unknown, init?: unknown) => Promise<Response>
-}): FetchRouteTarget {
-  const target: FetchRouteTarget = {
-    orivon: {
-      net: {
-        connect: opts.connect ?? (async () => { throw new Error('unexpected net.connect call') }),
-        connectSecure: opts.connectSecure ?? (async () => { throw new Error('unexpected net.connectSecure call') })
-      }
-    }
-  }
-  if (opts.location !== undefined) target.location = opts.location
-  if (opts.nativeFetch !== undefined) target.fetch = opts.nativeFetch
-  return target
+/** A target whose https dials all answer `chunks`; `socket()` is the last one dialled. */
+function secureTarget (chunks: () => Uint8Array[] = () => [OK_RESPONSE]): { target: FetchRouteTarget, socket: () => FakeSocket } {
+  let last: FakeSocket | undefined
+  const target = fakeTarget({ connectSecure: async () => { last = fakeSocket(chunks()); return last } })
+  installRouted(target)
+  return { target, socket: () => last! }
 }
 
 describe('installFetchRoute -- gating on isAppTab, synchronously', () => {
   it('installs the routed fetch IMMEDIATELY when isAppTab is true -- observable with no await at all', () => {
     const target = fakeTarget({})
-    installFetchRoute(true, target)
+    installRouted(target)
     expect(typeof target.fetch).toBe('function')
   })
 
-  it('does nothing when isAppTab is false, even with a full orivon.net surface present -- native fetch is left exactly as it was', () => {
+  it('does nothing when isAppTab is false, even with a full orivon.net surface present', () => {
     const nativeFetch = async (): Promise<Response> => new Response('native')
-    const target: FetchRouteTarget = {
-      orivon: { net: { connect: async () => fakeSocket([]), connectSecure: async () => fakeSocket([]) } },
-      fetch: nativeFetch
-    }
+    const target = fakeTarget({ nativeFetch })
     installFetchRoute(false, target)
     expect(target.fetch).toBe(nativeFetch)
   })
 
   it('installs the routed fetch under the descriptor the platform itself uses, so a page can replace it', () => {
-    const target = fakeTarget({ connect: async () => fakeSocket(CANNED_RESPONSE_CHUNKS()) })
-    installFetchRoute(true, target)
+    const target = fakeTarget({})
+    installRouted(target)
     const descriptor = Object.getOwnPropertyDescriptor(target, 'fetch')
-    expect(descriptor?.writable).toBe(true)
-    expect(descriptor?.configurable).toBe(true)
-    expect(descriptor?.enumerable).toBe(true)
+    expect(descriptor).toMatchObject({ writable: true, configurable: true, enumerable: true })
   })
 
-  // The bug this guards against, and the reason the descriptor above is the
-  // platform's: cross-fetch's browser ponyfill (reached through much of the
-  // JS crypto ecosystem) builds a surrogate whose prototype IS the window and
-  // shadows `fetch` on it rather than touching the global. Shadowing a
-  // NON-WRITABLE inherited data property is a TypeError in strict mode, and
-  // an ES module -- including this one -- is always strict, so a locked
-  // `fetch` kills such a bundle while its module graph is still evaluating.
+  // cross-fetch's browser ponyfill builds a surrogate whose prototype IS the
+  // window and shadows `fetch` on it. Shadowing a NON-WRITABLE inherited
+  // data property is a TypeError in strict mode (ADR-0021).
   it('lets a page shadow the routed fetch on a surrogate global, as cross-fetch does', () => {
-    const target = fakeTarget({ connect: async () => fakeSocket(CANNED_RESPONSE_CHUNKS()) })
-    installFetchRoute(true, target)
+    const target = fakeTarget({})
+    installRouted(target)
     function Surrogate (this: { fetch: unknown }): void { this.fetch = false }
     Surrogate.prototype = target
     expect(() => new (Surrogate as unknown as new () => unknown)()).not.toThrow()
   })
 
-  it('does nothing when isAppTab is true but orivon.net is absent (no capability surface to route through)', () => {
+  it('does nothing when orivon.net is absent (no capability surface to route through)', () => {
     const target: FetchRouteTarget = {}
-    expect(() => { installFetchRoute(true, target) }).not.toThrow()
+    expect(() => { installRouted(target) }).not.toThrow()
     expect(target.fetch).toBeUndefined()
+  })
+
+  it('leaves no shared slot behind on the page\'s window', () => {
+    const target = fakeTarget({})
+    installRouted(target)
+    expect(Object.getOwnPropertySymbols(target)).toEqual([])
   })
 })
 
@@ -153,402 +76,314 @@ describe('installFetchRoute -- routing decisions', () => {
       location: { origin: 'https://app.example', href: 'https://app.example/index.html' },
       nativeFetch: async () => new Response('same-origin bundle asset')
     })
-    installFetchRoute(true, target)
+    installRouted(target)
     const response = await target.fetch!('https://app.example/manifest.json')
     expect(await response.text()).toBe('same-origin bundle asset')
     expect(netCalled).toBe(false)
   })
 
+  it('leaves data: and blob: URLs to native fetch', async () => {
+    const seen: unknown[] = []
+    const target = fakeTarget({ nativeFetch: async (input) => { seen.push(input); return new Response('native') } })
+    installRouted(target)
+    await target.fetch!('data:text/plain,hi')
+    await target.fetch!('blob:https://app.example/1234')
+    expect(seen).toEqual(['data:text/plain,hi', 'blob:https://app.example/1234'])
+  })
+
   it('routes an http: request through net.connect and https: through net.connectSecure', async () => {
-    let usedConnect = false
-    let usedConnectSecure = false
+    const used: string[] = []
     const target = fakeTarget({
-      connect: async () => { usedConnect = true; return fakeSocket(CANNED_RESPONSE_CHUNKS()) },
-      connectSecure: async () => { usedConnectSecure = true; return fakeSocket(CANNED_RESPONSE_CHUNKS()) },
+      connect: async () => { used.push('connect'); return fakeSocket([OK_RESPONSE]) },
+      connectSecure: async () => { used.push('connectSecure'); return fakeSocket([OK_RESPONSE]) },
       location: { origin: 'https://app.example', href: 'https://app.example/' }
     })
-    installFetchRoute(true, target)
+    installRouted(target)
     await target.fetch!('http://api.example/x')
-    expect(usedConnect).toBe(true)
-    expect(usedConnectSecure).toBe(false)
     await target.fetch!('https://api.example/x')
-    expect(usedConnectSecure).toBe(true)
+    expect(used).toEqual(['connect', 'connectSecure'])
+  })
+
+  it('hands a host the app was not granted to the page\'s native fetch, as an ordinary website would get', async () => {
+    const nativeCalls: unknown[] = []
+    const target = fakeTarget({
+      connectSecure: async () => { throw refusal('denied') },
+      nativeFetch: async (input, init) => { nativeCalls.push([input, init]); return new Response('from the native path') }
+    })
+    installRouted(target)
+    const init = { method: 'POST', body: 'payload' }
+    const response = await target.fetch!('https://not-granted.example/', init)
+    expect(await response.text()).toBe('from the native path')
+    expect(nativeCalls).toEqual([['https://not-granted.example/', init]])
+  })
+
+  it('keeps a Request\'s body unread for the native path when its host is not granted', async () => {
+    let nativeBody: string | undefined
+    const target = fakeTarget({
+      connectSecure: async () => { throw refusal('denied') },
+      nativeFetch: async (input) => { nativeBody = await (input as Request).text(); return new Response('') }
+    })
+    installRouted(target)
+    await target.fetch!(new Request('https://not-granted.example/', { method: 'POST', body: 'intact' }))
+    expect(nativeBody).toBe('intact')
+  })
+
+  it('fails like a real network error when the dial is refused for any other reason', async () => {
+    const target = fakeTarget({ connectSecure: async () => { throw refusal('unreachable') } })
+    installRouted(target)
+    const error = await target.fetch!('https://down.example/').catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(TypeError)
+    expect(error).toMatchObject({ message: 'Failed to fetch' })
+  })
+
+  it('names the platformCode of a failed dial in the error cause, and the Orivon code when there is none', async () => {
+    const dead = fakeTarget({
+      connectSecure: async () => { throw Object.assign(new Error('the network operation failed'), { code: 'unreachable', platformCode: 'EHOSTUNREACH' }) }
+    })
+    installRouted(dead)
+    const error = await dead.fetch!('https://dead.example/api').catch((e: unknown) => e) as TypeError
+    expect((error.cause as Error).message).toBe('orivon: fetch to dead.example failed (EHOSTUNREACH: the network operation failed)')
+
+    const timedOut = fakeTarget({ connectSecure: async () => { throw Object.assign(new Error('dial timed out'), { code: 'timeout' }) } })
+    installRouted(timedOut)
+    const second = await timedOut.fetch!('https://slow.example/').catch((e: unknown) => e) as TypeError
+    expect((second.cause as Error).message).toBe('orivon: fetch to slow.example failed (timeout: dial timed out)')
   })
 })
 
 describe('installFetchRoute -- header freedom and no ambient credentials', () => {
   it('sends an app-chosen Origin header the browser would normally forbid, verbatim on the wire', async () => {
-    let socket: ReturnType<typeof fakeSocket> | undefined
-    const target = fakeTarget({
-      connectSecure: async () => { socket = fakeSocket(CANNED_RESPONSE_CHUNKS()); return socket }
-    })
-    installFetchRoute(true, target)
+    const { target, socket } = secureTarget()
     await target.fetch!('https://api.example/x', { headers: { Origin: 'https://impersonated.example' } })
-    expect(writtenHead(socket!)).toContain('Origin: https://impersonated.example')
+    expect(socket().sent).toContain('Origin: https://impersonated.example')
   })
 
   it('never attaches a Cookie header on its own, but sends one verbatim when the app sets it', async () => {
-    let socketA: ReturnType<typeof fakeSocket> | undefined
-    const targetA = fakeTarget({ connectSecure: async () => { socketA = fakeSocket(CANNED_RESPONSE_CHUNKS()); return socketA } })
-    installFetchRoute(true, targetA)
-    await targetA.fetch!('https://api.example/x')
-    expect(writtenHead(socketA!).toLowerCase()).not.toContain('cookie:')
-
-    let socketB: ReturnType<typeof fakeSocket> | undefined
-    const targetB = fakeTarget({ connectSecure: async () => { socketB = fakeSocket(CANNED_RESPONSE_CHUNKS()); return socketB } })
-    installFetchRoute(true, targetB)
-    await targetB.fetch!('https://api.example/x', { headers: { Cookie: 'session=app-managed-value' } })
-    expect(writtenHead(socketB!)).toContain('Cookie: session=app-managed-value')
+    const { target, socket } = secureTarget()
+    await target.fetch!('https://api.example/x')
+    expect(socket().sent.toLowerCase()).not.toContain('cookie:')
+    await target.fetch!('https://api.example/x', { headers: { Cookie: 'session=app-managed-value' } })
+    expect(socket().sent).toContain('Cookie: session=app-managed-value')
   })
 
-  it('hands a Set-Cookie response header to the app (it must manage its own session -- there is no jar to hide it in), but never automatically attaches it to a LATER request', async () => {
+  it('hands a Set-Cookie response header to the app, but never attaches it to a later request', async () => {
     const withSetCookie = bytes('HTTP/1.1 200 OK\r\nSet-Cookie: sid=abc123\r\nContent-Length: 2\r\n\r\nok')
-    let firstSocket: ReturnType<typeof fakeSocket> | undefined
-    const target = fakeTarget({
-      connectSecure: async () => {
-        if (firstSocket === undefined) { firstSocket = fakeSocket([withSetCookie]); return firstSocket }
-        return fakeSocket(CANNED_RESPONSE_CHUNKS())
-      }
-    })
-    installFetchRoute(true, target)
-
+    const { target, socket } = secureTarget(() => [withSetCookie])
     const first = await target.fetch!('https://api.example/login')
     expect(first.headers.get('set-cookie')).toBe('sid=abc123')
-    expect(firstSocket!.closed).toBe(true)
-
-    let secondSocket: ReturnType<typeof fakeSocket> | undefined
-    target.orivon!.net!.connectSecure = async () => { secondSocket = fakeSocket(CANNED_RESPONSE_CHUNKS()); return secondSocket }
     await target.fetch!('https://api.example/x')
-    expect(writtenHead(secondSocket!).toLowerCase()).not.toContain('cookie:')
+    expect(socket().sent.toLowerCase()).not.toContain('cookie:')
   })
 
-  it('rejects an ungranted host without prompting -- connectSecure rejects, fetch rejects with a TypeError, and nothing is ever written or read', async () => {
-    let dialAttempts = 0
-    const target = fakeTarget({
-      connectSecure: async () => { dialAttempts++; throw Object.assign(new Error('denied'), { code: 'denied' }) }
-    })
-    installFetchRoute(true, target)
-    await expect(target.fetch!('https://not-granted.example/')).rejects.toBeInstanceOf(TypeError)
-    expect(dialAttempts).toBe(1)
-  })
-
-  // The message is all a page's console shows, so it has to carry the true
-  // reason: a dead host named by its errno, not a generic refusal.
-  it('names the platformCode of a failed dial in the TypeError, and adds nothing when there is none', async () => {
-    const unreachable = fakeTarget({
-      connectSecure: async () => { throw Object.assign(new Error('the network operation failed'), { code: 'unreachable', platformCode: 'EHOSTUNREACH' }) }
-    })
-    installFetchRoute(true, unreachable)
-    await expect(unreachable.fetch!('https://dead.example/api')).rejects.toThrow(
-      'orivon: fetch to dead.example failed (EHOSTUNREACH: the network operation failed)'
-    )
-
-    const denied = fakeTarget({
-      connectSecure: async () => { throw Object.assign(new Error('https.connect is not granted to this origin'), { code: 'denied' }) }
-    })
-    installFetchRoute(true, denied)
-    await expect(denied.fetch!('https://not-granted.example/')).rejects.toThrow(
-      'orivon: fetch to not-granted.example failed (https.connect is not granted to this origin)'
-    )
-  })
-})
-
-describe('installFetchRoute -- header input shapes', () => {
   it('accepts a Headers instance, a plain object, and an array of pairs identically', async () => {
-    const seen: string[] = []
-    async function fetchWith (headers: unknown): Promise<void> {
-      let socket: ReturnType<typeof fakeSocket> | undefined
-      const target = fakeTarget({ connectSecure: async () => { socket = fakeSocket(CANNED_RESPONSE_CHUNKS()); return socket } })
-      installFetchRoute(true, target)
+    const heads: string[] = []
+    for (const headers of [new Headers({ 'X-Test': 'v1' }), { 'X-Test': 'v1' }, [['X-Test', 'v1']]]) {
+      const { target, socket } = secureTarget()
       await target.fetch!('https://api.example/x', { headers })
-      seen.push(writtenHead(socket!))
+      heads.push(socket().sent.toLowerCase())
     }
-    await fetchWith(new Headers({ 'X-Test': 'v1' }))
-    await fetchWith({ 'X-Test': 'v1' })
-    await fetchWith([['X-Test', 'v1']])
-    // The native Headers class itself lowercases names on iteration (a
-    // faithful, expected difference in casing, not a bug) -- checked
-    // case-insensitively so all three input shapes are held to the same
-    // standard: the value made it onto the wire, verbatim.
-    for (const head of seen) expect(head.toLowerCase()).toContain('x-test: v1')
+    for (const head of heads) expect(head).toContain('x-test: v1')
+  })
+
+  it('sends the platform defaults a browser sends when the app set none, and the app\'s own when it did', async () => {
+    let last: FakeSocket | undefined
+    const target = fakeTarget({ connectSecure: async () => { last = fakeSocket([OK_RESPONSE]); return last }, userAgent: 'Mozilla/5.0 Test' })
+    installRouted(target)
+    await target.fetch!('https://api.example/x')
+    expect(last!.sent).toContain('User-Agent: Mozilla/5.0 Test')
+    expect(last!.sent).toContain('Accept: */*')
+    expect(last!.sent).toMatch(/Accept-Encoding: gzip, deflate/)
+
+    await target.fetch!('https://api.example/x', { headers: { 'user-agent': 'app/1', accept: 'application/json' } })
+    expect(last!.sent).not.toContain('Mozilla/5.0 Test')
+    expect(last!.sent).not.toContain('Accept: */*')
   })
 })
 
 describe('installFetchRoute -- request input shapes', () => {
-  /** WHATWG fetch takes `Request | USVString`; everything that is not a Request is converted with ToString. All three of these are ordinary fetch inputs in any browser, so all three must reach the same wire request. */
   it('accepts a string, a URL object and a Request-like alike', async () => {
     const heads: string[] = []
-    async function fetchWith (input: unknown): Promise<void> {
-      let socket: ReturnType<typeof fakeSocket> | undefined
-      const target = fakeTarget({ connectSecure: async () => { socket = fakeSocket(CANNED_RESPONSE_CHUNKS()); return socket } })
-      installFetchRoute(true, target)
+    for (const input of ['https://api.example/x', new URL('https://api.example/x'), { url: 'https://api.example/x' }]) {
+      const { target, socket } = secureTarget()
       await target.fetch!(input)
-      heads.push(writtenHead(socket!))
+      heads.push(socket().sent)
     }
-    await fetchWith('https://api.example/x')
-    await fetchWith(new URL('https://api.example/x'))
-    await fetchWith({ url: 'https://api.example/x' })
-
     for (const head of heads) expect(head).toContain('GET /x HTTP/1.1')
     expect(new Set(heads).size).toBe(1)
   })
 
+  it('sends a Request object\'s own method and body when no init overrides them', async () => {
+    const { target, socket } = secureTarget()
+    await target.fetch!(new Request('https://api.example/x', { method: 'POST', body: 'abcde' }))
+    expect(socket().sent).toContain('POST /x HTTP/1.1')
+    expect(socket().sent).toContain('Content-Length: 5')
+    expect(socket().sent.endsWith('\r\n\r\nabcde')).toBe(true)
+  })
+
+  it('normalises only the six standard methods, as the Fetch spec does', async () => {
+    const { target, socket } = secureTarget()
+    await target.fetch!('https://api.example/x', { method: 'post', body: '' })
+    expect(socket().sent).toMatch(/^POST /)
+    await target.fetch!('https://api.example/x', { method: 'patch', body: '' })
+    expect(socket().sent).toMatch(/^patch /)
+    await expect(target.fetch!('https://api.example/x', { method: 'TRACE' })).rejects.toBeInstanceOf(TypeError)
+  })
+
+  it('refuses a body on GET, as a real fetch() does', async () => {
+    const { target } = secureTarget()
+    await expect(target.fetch!('https://api.example/x', { body: 'x' })).rejects.toThrow(/GET\/HEAD/)
+  })
+
   it('rejects an input that names no URL at all, rather than inventing one', async () => {
-    const target = fakeTarget({ connectSecure: async () => fakeSocket(CANNED_RESPONSE_CHUNKS()) })
-    installFetchRoute(true, target)
-    for (const input of [null, undefined]) {
-      await expect(target.fetch!(input)).rejects.toThrow(/requires a URL/)
-    }
+    const { target } = secureTarget()
+    for (const input of [null, undefined]) await expect(target.fetch!(input)).rejects.toThrow(/requires a URL/)
   })
 })
 
-describe('installFetchRoute -- response body framing', () => {
-  it('decodes a chunked-transfer response body correctly', async () => {
-    const chunked = bytes('HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n6\r\n world\r\n0\r\n\r\n')
-    const target = fakeTarget({ connectSecure: async () => fakeSocket([chunked]) })
-    installFetchRoute(true, target)
-    const response = await target.fetch!('https://api.example/x')
-    expect(await response.text()).toBe('hello world')
+describe('installFetchRoute -- response framing', () => {
+  it('decodes a chunked-transfer response body, including a chunk split across reads', async () => {
+    const { target } = secureTarget(() => [
+      bytes('HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhel'),
+      bytes('lo\r\n6\r\n world\r\n0\r\n\r\n')
+    ])
+    expect(await (await target.fetch!('https://api.example/x')).text()).toBe('hello world')
   })
 
-  it('decodes a Content-Length response body correctly, including when the peer splits it across reads', async () => {
-    const head = bytes('HTTP/1.1 201 Created\r\nContent-Length: 11\r\n\r\n')
-    const part1 = bytes('hello')
-    const part2 = bytes(' world')
-    const target = fakeTarget({ connectSecure: async () => fakeSocket([head, part1, part2]) })
-    installFetchRoute(true, target)
+  it('decodes a Content-Length body split across reads', async () => {
+    const { target } = secureTarget(() => [bytes('HTTP/1.1 201 Created\r\nContent-Length: 11\r\n\r\n'), bytes('hello'), bytes(' world')])
     const response = await target.fetch!('https://api.example/x')
     expect(response.status).toBe(201)
     expect(await response.text()).toBe('hello world')
   })
 
-  it('reports a POST body with an automatic Content-Length', async () => {
-    let socket: ReturnType<typeof fakeSocket> | undefined
-    const target = fakeTarget({ connectSecure: async () => { socket = fakeSocket(CANNED_RESPONSE_CHUNKS()); return socket } })
-    installFetchRoute(true, target)
-    await target.fetch!('https://api.example/x', { method: 'POST', body: 'abcde' })
-    const head = writtenHead(socket!)
-    expect(head).toContain('POST /x HTTP/1.1')
-    expect(head).toContain('Content-Length: 5')
-  })
-})
-
-describe('installFetchRoute -- response header cap (R3-01)', () => {
-  it('refuses response headers that never terminate, once they exceed MAX_HEAD_BYTES', async () => {
-    const junk = new Uint8Array(ROUTED_FETCH_MAX_HEAD_BYTES + 8 * 1024).fill(65) // no CRLFCRLF anywhere
-    const target = fakeTarget({ connectSecure: async () => fakeSocket([junk]) })
-    installFetchRoute(true, target)
-    await expect(target.fetch!('https://api.example/x')).rejects.toThrow(/MAX_HEAD_BYTES/)
-  })
-
-  it('does NOT trip the header cap when a small head arrives in the SAME read() chunk as a large body -- measured against the head only, not the whole buffer', async () => {
-    const bodyLength = ROUTED_FETCH_MAX_HEAD_BYTES + 16 * 1024 // over the head cap, well under the body cap
-    const head = bytes(`HTTP/1.1 200 OK\r\nContent-Length: ${String(bodyLength)}\r\n\r\n`)
-    const body = new Uint8Array(bodyLength).fill(97)
-    const target = fakeTarget({ connectSecure: async () => fakeSocket([concatUint8(head, body)]) })
-    installFetchRoute(true, target)
+  it('skips interim 1xx heads and answers with the final one', async () => {
+    const { target } = secureTarget(() => [bytes('HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 103 Early Hints\r\nLink: </a>\r\n\r\n'), OK_RESPONSE])
     const response = await target.fetch!('https://api.example/x')
     expect(response.status).toBe(200)
+    expect(await response.text()).toBe('hello')
+  })
+
+  it('reads a body that ends with the connection', async () => {
+    const { target } = secureTarget(() => [bytes('HTTP/1.1 200 OK\r\n\r\nuntil'), bytes(' close')])
+    expect(await (await target.fetch!('https://api.example/x')).text()).toBe('until close')
+  })
+
+  it('refuses response headers that never terminate, once they exceed the head cap', async () => {
+    const junk = new Uint8Array(ROUTED_MAX_HEAD_BYTES + 8 * 1024).fill(65)
+    const { target } = secureTarget(() => [junk])
+    const error = await target.fetch!('https://api.example/x').catch((e: unknown) => e) as TypeError
+    expect(error.message).toBe('Failed to fetch')
+    expect(String((error.cause as Error).message)).toMatch(/head exceeded/)
+  })
+
+  it('does not trip the head cap when a small head arrives in the same chunk as a large body', async () => {
+    const bodyLength = ROUTED_MAX_HEAD_BYTES + 16 * 1024
+    const { target } = secureTarget(() => [concat(bytes(`HTTP/1.1 200 OK\r\nContent-Length: ${bodyLength}\r\n\r\n`), new Uint8Array(bodyLength).fill(97))])
+    const response = await target.fetch!('https://api.example/x')
     expect((await response.arrayBuffer()).byteLength).toBe(bodyLength)
   })
 })
 
-describe('installFetchRoute -- response body cap (R3-01)', () => {
-  it('fails closed on a Content-Length larger than the cap, before ever reading a body byte', async () => {
-    const head = bytes(`HTTP/1.1 200 OK\r\nContent-Length: ${String(ROUTED_FETCH_MAX_BODY_BYTES + 1)}\r\n\r\n`)
-    const target = fakeTarget({ connectSecure: async () => fakeSocket([head]) })
-    installFetchRoute(true, target)
-    await expect(target.fetch!('https://api.example/x')).rejects.toThrow(/MAX_BODY_BYTES/)
-  })
-
-  it('fails closed on a chunked body whose running total exceeds the cap, without waiting for that much data to actually arrive', async () => {
-    const massiveChunkSizeHex = (ROUTED_FETCH_MAX_BODY_BYTES + 1).toString(16)
-    // No chunk payload is ever sent -- the cap must fire on the DECLARED
-    // size, before fill() would wait for bytes that never come.
-    const head = bytes(`HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n${massiveChunkSizeHex}\r\n`)
-    const target = fakeTarget({ connectSecure: async () => fakeSocket([head]) })
-    installFetchRoute(true, target)
-    await expect(target.fetch!('https://api.example/x')).rejects.toThrow(/MAX_BODY_BYTES/)
-  })
-
-  it('fails closed on a response with no Content-Length or Transfer-Encoding once real bytes exceed the cap (readUntilClose has no other end)', async () => {
-    const head = bytes('HTTP/1.1 200 OK\r\n\r\n')
-    const big = new Uint8Array(ROUTED_FETCH_MAX_BODY_BYTES + 1)
-    const target = fakeTarget({ connectSecure: async () => fakeSocket([head, big]) })
-    installFetchRoute(true, target)
-    await expect(target.fetch!('https://api.example/x')).rejects.toThrow(/MAX_BODY_BYTES/)
-  }, 15000)
-})
-
-/** A socket whose `readable` stays empty until `unlock()` is called, and whose `writable` records whether its sink's `close()` has ever fired -- used to prove the request side stays open across the whole time the response is still pending. */
-function orderTrackingSocket (responseChunks: Uint8Array[]): FetchRouteSocket & { written: Uint8Array[], writableClosed: boolean, unlock: () => void } {
-  const state = { written: [] as Uint8Array[], writableClosed: false }
-  let release: () => void = () => {}
-  const gate = new Promise<void>((resolve) => { release = resolve })
-  const readable = new ReadableStream<Uint8Array>({
-    async start (controller) {
-      await gate
-      for (const chunk of responseChunks) controller.enqueue(chunk)
-      controller.close()
-    }
-  })
-  const writable = new WritableStream<Uint8Array>({
-    write (chunk) { state.written.push(chunk) },
-    close () { state.writableClosed = true }
-  })
-  return {
-    readable,
-    writable,
-    close: async () => {},
-    get written () { return state.written },
-    get writableClosed () { return state.writableClosed },
-    unlock: () => { release() }
-  }
-}
-
-describe('installFetchRoute -- half-close (the request writable must outlive the write phase)', () => {
-  it('does not close the request writable before the response has been read -- a server that treats an early FIN as an abort would otherwise cut the response short', async () => {
-    let socket: ReturnType<typeof orderTrackingSocket> | undefined
+describe('installFetchRoute -- the request writable outlives the write phase', () => {
+  it('never half-closes the socket before the response is read -- a server may read an early FIN as an abort', async () => {
+    let writableClosed = false
+    let socket: FakeSocket | undefined
     const target = fakeTarget({
-      connectSecure: async () => { socket = orderTrackingSocket(CANNED_RESPONSE_CHUNKS()); return socket }
+      connectSecure: async () => {
+        socket = fakeSocket([], true)
+        const writer = socket.writable
+        return { ...socket, writable: new WritableStream<Uint8Array>({ write: async (c) => { const w = writer.getWriter(); await w.write(c); w.releaseLock() }, close () { writableClosed = true } }) }
+      }
     })
-    installFetchRoute(true, target)
-    const promise = target.fetch!('https://api.example/x')
-    // Give the write phase every chance to run (and, on the pre-fix code, an
-    // eager writer.close() to fire) before the response is ever unlocked --
-    // two macrotask ticks flushes any number of chained microtask awaits.
+    installRouted(target)
+    const pending = target.fetch!('https://api.example/x')
     await new Promise((resolve) => setTimeout(resolve, 0))
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(socket!.writableClosed).toBe(false)
-    socket!.unlock()
-    const response = await promise
-    expect(await response.text()).toBe('hello')
+    expect(writableClosed).toBe(false)
+    socket!.push(OK_RESPONSE)
+    socket!.end()
+    expect(await (await pending).text()).toBe('hello')
   })
 })
 
-describe('installFetchRoute -- init.signal / AbortController (R3-01)', () => {
-  it('rejects immediately when the signal is already aborted before the call, and never dials', async () => {
-    let dialAttempts = 0
-    const target = fakeTarget({ connectSecure: async () => { dialAttempts++; return fakeSocket(CANNED_RESPONSE_CHUNKS()) } })
-    installFetchRoute(true, target)
+describe('installFetchRoute -- init.signal / AbortController', () => {
+  it('rejects immediately when the signal is already aborted, and never dials', async () => {
+    let dials = 0
+    const target = fakeTarget({ connectSecure: async () => { dials++; return fakeSocket([OK_RESPONSE]) } })
+    installRouted(target)
     const controller = new AbortController()
     controller.abort()
     await expect(target.fetch!('https://api.example/x', { signal: controller.signal })).rejects.toMatchObject({ name: 'AbortError' })
-    expect(dialAttempts).toBe(0)
+    expect(dials).toBe(0)
   })
 
-  it('aborting mid-response rejects the fetch promise AND closes the socket', async () => {
-    let socket: ReturnType<typeof stallingSocket> | undefined
-    const target = fakeTarget({ connectSecure: async () => { socket = stallingSocket(); return socket } })
-    installFetchRoute(true, target)
+  it('treats `signal: null` as no signal, as real fetch() does', async () => {
+    const { target } = secureTarget()
+    expect(await (await target.fetch!('https://api.example/x', { signal: null })).text()).toBe('hello')
+  })
+
+  it('honours a Request object\'s own signal when init carries none', async () => {
+    const { target } = secureTarget()
     const controller = new AbortController()
-    const promise = target.fetch!('https://api.example/x', { signal: controller.signal })
-    // Let the dial/write side actually run so the abort lands mid-read, not mid-dial.
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(socket).toBeDefined()
-    expect(socket!.closed).toBe(false)
     controller.abort()
-    await expect(promise).rejects.toMatchObject({ name: 'AbortError' })
+    await expect(target.fetch!(new Request('https://api.example/x', { signal: controller.signal }))).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
+  it('aborting while the head is awaited rejects AND closes the socket', async () => {
+    let socket: FakeSocket | undefined
+    const target = fakeTarget({ connectSecure: async () => { socket = fakeSocket([], true); return socket } })
+    installRouted(target)
+    const controller = new AbortController()
+    const pending = target.fetch!('https://api.example/x', { signal: controller.signal })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    controller.abort()
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
     expect(socket!.closed).toBe(true)
   })
 
-  it('rejects with the app\'s own custom abort reason when one was supplied to controller.abort()', async () => {
-    const target = fakeTarget({ connectSecure: async () => stallingSocket() })
-    installFetchRoute(true, target)
+  it('aborting while the body streams errors the body with the abort reason AND closes the socket', async () => {
+    let socket: FakeSocket | undefined
+    const target = fakeTarget({ connectSecure: async () => { socket = fakeSocket([bytes('HTTP/1.1 200 OK\r\nContent-Length: 10\r\n\r\nhel')], true); return socket } })
+    installRouted(target)
     const controller = new AbortController()
-    const promise = target.fetch!('https://api.example/x', { signal: controller.signal })
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    const customReason = new Error('custom-abort-reason')
-    controller.abort(customReason)
-    await expect(promise).rejects.toBe(customReason)
+    const response = await target.fetch!('https://api.example/x', { signal: controller.signal })
+    const reason = new Error('custom-abort-reason')
+    controller.abort(reason)
+    await expect(response.text()).rejects.toBe(reason)
+    expect(socket!.closed).toBe(true)
   })
 })
 
-describe('installFetchRoute -- serialisation safety', () => {
-  // THE GUARD THIS FILE DID NOT HAVE, and the reason it now does. main-world-
-  // socket.test.ts has one for installOrivon, but nothing checked
-  // installFetchRoute -- and its hazard is sharper, because the module
-  // exports ROUTED_FETCH_MAX_* constants that MIRROR literals kept inside the
-  // function body. Referencing the exported mirror from inside the function
-  // compiles, typechecks, and passes every test in this file (Node resolves
-  // the module const), then throws ReferenceError in a real page, where
-  // executeInMainWorld has re-evaluated the function's source text alone.
-  // That exact mistake was made while fixing the decompression cap below.
-  const source = installFetchRoute.toString()
-
-  it('references no module-level identifier -- only what it defines itself', () => {
-    for (const name of ['ROUTED_FETCH_MAX_HEAD_BYTES', 'ROUTED_FETCH_MAX_BODY_BYTES']) {
-      expect(source).not.toContain(name)
-    }
-  })
-
-  it('pulls in nothing at runtime', () => {
-    expect(source).not.toMatch(/\brequire\s*\(/)
-    expect(source).not.toMatch(/\bimport\s*\(/)
-  })
-})
-
-describe('installFetchRoute -- Content-Encoding decompression (R3-02)', () => {
-  it('decodes a gzip response body transparently -- response.json() parses the real content', async () => {
-    const payload = JSON.stringify({ hello: 'world' })
-    const compressed = new Uint8Array(gzipSync(Buffer.from(payload)))
-    const head = bytes(`HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Length: ${String(compressed.length)}\r\n\r\n`)
-    const target = fakeTarget({ connectSecure: async () => fakeSocket([concatUint8(head, compressed)]) })
-    installFetchRoute(true, target)
+describe('installFetchRoute -- Content-Encoding', () => {
+  it('decodes gzip transparently and keeps the Content-Encoding header, as a browser does', async () => {
+    const compressed = new Uint8Array(gzipSync(Buffer.from(JSON.stringify({ hello: 'world' }))))
+    const { target } = secureTarget(() => [concat(bytes(`HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Length: ${compressed.length}\r\n\r\n`), compressed)])
     const response = await target.fetch!('https://api.example/x')
     expect(response.headers.get('content-encoding')).toBe('gzip')
     await expect(response.json()).resolves.toEqual({ hello: 'world' })
   })
 
-  it('refuses a gzip bomb: a body inside the WIRE cap that decompresses past it is rejected, not buffered', async () => {
-    // The defect this catches: ROUTED_FETCH_MAX_BODY_BYTES bounded the bytes
-    // read off the socket, and decompression was then collected with an
-    // unbounded `new Response(...).arrayBuffer()`. Measured expansion for a
-    // run of repeated bytes is about 1000:1, so a response comfortably inside
-    // the wire cap could still exhaust the renderer.
-    const raw = new Uint8Array(ROUTED_FETCH_MAX_BODY_BYTES + 1024)
+  it('decodes deflate transparently', async () => {
+    const compressed = new Uint8Array(deflateSync(Buffer.from(JSON.stringify({ ok: true }))))
+    const { target } = secureTarget(() => [concat(bytes(`HTTP/1.1 200 OK\r\nContent-Encoding: deflate\r\nContent-Length: ${compressed.length}\r\n\r\n`), compressed)])
+    await expect((await target.fetch!('https://api.example/x')).json()).resolves.toEqual({ ok: true })
+  })
+
+  it('undoes stacked codings in reverse order of application', async () => {
+    const compressed = new Uint8Array(gzipSync(deflateSync(Buffer.from('twice'))))
+    const { target } = secureTarget(() => [concat(bytes(`HTTP/1.1 200 OK\r\nContent-Encoding: deflate, gzip\r\nContent-Length: ${compressed.length}\r\n\r\n`), compressed)])
+    expect(await (await target.fetch!('https://api.example/x')).text()).toBe('twice')
+  })
+
+  it('streams a large decompressed body instead of refusing it', async () => {
+    const raw = new Uint8Array(20 * 1024 * 1024)
     const compressed = new Uint8Array(gzipSync(Buffer.from(raw)))
-    // The premise of the test, asserted rather than assumed: if this ever
-    // stopped being true the test would pass for the wrong reason.
-    expect(compressed.length).toBeLessThan(ROUTED_FETCH_MAX_BODY_BYTES)
-
-    const head = bytes(`HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Length: ${String(compressed.length)}\r\n\r\n`)
-    const target = fakeTarget({ connectSecure: async () => fakeSocket([concatUint8(head, compressed)]) })
-    installFetchRoute(true, target)
-    await expect(target.fetch!('https://api.example/x')).rejects.toThrow(/decompressed past the/)
-  })
-
-  it('still decodes a body that decompresses to just UNDER the cap -- the bound is not off by one in the refusing direction', async () => {
-    const raw = new Uint8Array(1024).fill(65)
-    const compressed = new Uint8Array(gzipSync(Buffer.from(raw)))
-    const head = bytes(`HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Length: ${String(compressed.length)}\r\n\r\n`)
-    const target = fakeTarget({ connectSecure: async () => fakeSocket([concatUint8(head, compressed)]) })
-    installFetchRoute(true, target)
+    const { target } = secureTarget(() => [concat(bytes(`HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Length: ${compressed.length}\r\n\r\n`), compressed)])
     const response = await target.fetch!('https://api.example/x')
-    expect((await response.arrayBuffer()).byteLength).toBe(1024)
-  })
+    expect((await response.arrayBuffer()).byteLength).toBe(raw.byteLength)
+  }, 15_000)
 
-  it('decodes a deflate response body transparently', async () => {
-    const payload = JSON.stringify({ ok: true })
-    const compressed = new Uint8Array(deflateSync(Buffer.from(payload)))
-    const head = bytes(`HTTP/1.1 200 OK\r\nContent-Encoding: deflate\r\nContent-Length: ${String(compressed.length)}\r\n\r\n`)
-    const target = fakeTarget({ connectSecure: async () => fakeSocket([concatUint8(head, compressed)]) })
-    installFetchRoute(true, target)
-    const response = await target.fetch!('https://api.example/x')
-    await expect(response.json()).resolves.toEqual({ ok: true })
-  })
-
-  it('fails loudly, naming brotli, rather than handing back compressed bytes as though they were content', async () => {
-    const fakeBrotliBytes = new Uint8Array([1, 2, 3, 4])
-    const head = bytes(`HTTP/1.1 200 OK\r\nContent-Encoding: br\r\nContent-Length: ${String(fakeBrotliBytes.length)}\r\n\r\n`)
-    const target = fakeTarget({ connectSecure: async () => fakeSocket([concatUint8(head, fakeBrotliBytes)]) })
-    installFetchRoute(true, target)
-    await expect(target.fetch!('https://api.example/x')).rejects.toThrow(/brotli/i)
-  })
-
-  it('leaves an ordinary uncompressed response completely unaffected', async () => {
-    const target = fakeTarget({ connectSecure: async () => fakeSocket(CANNED_RESPONSE_CHUNKS()) })
-    installFetchRoute(true, target)
+  it('leaves an uncompressed response untouched', async () => {
+    const { target } = secureTarget()
     const response = await target.fetch!('https://api.example/x')
     expect(response.headers.get('content-encoding')).toBeNull()
     expect(await response.text()).toBe('hello')

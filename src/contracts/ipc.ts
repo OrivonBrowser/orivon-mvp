@@ -90,6 +90,14 @@ export interface StreamEndMessage {
   readonly handleId: string
   /** Absent on a clean end (EOF); present when the stream errored. */
   readonly code?: OrivonErrorCode
+  /**
+   * The engine's own detail for an errored end -- `ECONNRESET` for a peer
+   * reset -- so the page's `OrivonError.platformCode` carries it exactly as a
+   * `write-failed` one already does (./errors.js). Absent on a clean end,
+   * absent when the engine gave no detail, and NEVER present with `'denied'`,
+   * for the same probe-resistance reason that field states.
+   */
+  readonly platformCode?: string
 }
 
 // THE WRITE DIRECTION (open-questions.md A37). The read direction above

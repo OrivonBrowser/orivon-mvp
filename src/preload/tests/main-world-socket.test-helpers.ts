@@ -21,7 +21,7 @@ export const LIMITS = {
 export function fakeSocketBridgeResult (): {
   id: string, remoteAddress: string, remotePort: number, localAddress: string, localPort: number
   onData: (cb: (chunk: Uint8Array) => void) => void
-  onReadEnd: (cb: (code: OrivonErrorCode | undefined) => void) => void
+  onReadEnd: (cb: (code: OrivonErrorCode | undefined, platformCode?: string) => void) => void
   reportConsumed: (n: number) => void
   write: (chunk: Uint8Array) => Promise<void>
   endWrite: () => Promise<void>
@@ -32,7 +32,7 @@ export function fakeSocketBridgeResult (): {
   setNoDelay: (on: boolean) => Promise<void>
   setKeepAlive: (on: boolean, ms?: number) => Promise<void>
   emitData: (chunk: Uint8Array) => void
-  emitReadEnd: (code?: OrivonErrorCode) => void
+  emitReadEnd: (code?: OrivonErrorCode, platformCode?: string) => void
   emitFatal: (code: OrivonErrorCode) => void
   written: Uint8Array[]
   writeCalls: Array<{ resolve: () => void, reject: (e: unknown) => void }>
@@ -42,7 +42,7 @@ export function fakeSocketBridgeResult (): {
   closeCalls: number
 } {
   let dataCb: ((chunk: Uint8Array) => void) | undefined
-  let readEndCb: ((code: OrivonErrorCode | undefined) => void) | undefined
+  let readEndCb: ((code: OrivonErrorCode | undefined, platformCode?: string) => void) | undefined
   let fatalCb: ((code: OrivonErrorCode) => void) | undefined
   const written: Uint8Array[] = []
   const writeCalls: Array<{ resolve: () => void, reject: (e: unknown) => void }> = []
@@ -68,7 +68,7 @@ export function fakeSocketBridgeResult (): {
     setNoDelay: async () => {},
     setKeepAlive: async () => {},
     emitData: (chunk) => { dataCb?.(chunk) },
-    emitReadEnd: (code) => { readEndCb?.(code) },
+    emitReadEnd: (code, platformCode) => { readEndCb?.(code, platformCode) },
     emitFatal: (code) => { fatalCb?.(code) },
     written,
     writeCalls,

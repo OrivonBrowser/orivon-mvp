@@ -54,19 +54,23 @@ export const TIMEOUT_MS = {
   webAwaitClose: LIMITS.webContextIdleMs + 5_000
 } as const
 
+/** Electron's structured-clone refusal: the ARGUMENT was bad, which is the app's to fix, not a broker fault. */
+function isCloneFailure (error: unknown): error is Error {
+  return error instanceof Error && (error.name === 'DataCloneError' || /could not be cloned/i.test(error.message))
+}
+
 /**
  * Settles with a synthetic failure ResponseEnvelope -- 'timeout' if `promise`
- * has not settled within `timeoutMs`, 'internal' if it rejects outright --
- * rather than ever rejecting itself. That gives `call()` below exactly one
- * place that turns a failure envelope into a thrown OrivonError, regardless
- * of which of the three ways (broker failure response, our own timeout, a
- * raw rejection) the underlying call failed. A raw rejection is possible
- * here (Electron's own internal string, a serialisation refusal) and must
- * never reach the page unwrapped -- contracts/errors.ts requires every
+ * has not settled within `timeoutMs`, 'invalid' if the argument could not be
+ * serialised, 'internal' for any other rejection -- rather than ever
+ * rejecting itself. That gives `call()` below exactly one place that turns a
+ * failure envelope into a thrown OrivonError, regardless of which way the
+ * underlying call failed. A raw rejection (Electron's own internal string)
+ * must never reach the page unwrapped -- contracts/errors.ts requires every
  * rejection an app sees to be OrivonError-shaped so an exhaustive
  * `switch (e.code)` works.
  */
-async function raceTimeout<T> (promise: Promise<ResponseEnvelope<T>>, timeoutMs: number): Promise<ResponseEnvelope<T>> {
+async function raceTimeout<T> (promise: Promise<ResponseEnvelope<T>>, timeoutMs: number, method: string): Promise<ResponseEnvelope<T>> {
   return await new Promise((resolve) => {
     const timer = setTimeout(() => {
       resolve({ id: '', ok: false, code: 'timeout', message: `control call exceeded its ${timeoutMs}ms budget` })
@@ -75,9 +79,12 @@ async function raceTimeout<T> (promise: Promise<ResponseEnvelope<T>>, timeoutMs:
       (value) => { clearTimeout(timer); resolve(value) },
       (error: unknown) => {
         clearTimeout(timer)
+        if (isCloneFailure(error)) {
+          resolve({ id: '', ok: false, code: 'invalid', message: `orivon: ${method}'s argument could not be sent (${error.message})` })
+          return
+        }
         // The isolated world's OWN console -- contextIsolation means the
-        // page cannot see or intercept this call. See ./README.md's design
-        // notes for why the underlying error can never just be re-thrown.
+        // page cannot see or intercept this call.
         console.error('[orivon] control call failed', error)
         resolve({ id: '', ok: false, code: 'internal', message: 'control call failed' })
       }
@@ -98,10 +105,10 @@ let nextRequestId = 0
 /** One CONTROL_CHANNEL round trip: builds the envelope, races it against `timeoutMs`, and throws the real `OrivonError` on any failure shape. Every `orivon.*` method, here and in ./net-surface.ts alike, calls through here. */
 export async function call<TResult> (method: string, payload: unknown, timeoutMs: number): Promise<TResult> {
   const envelope: RequestEnvelope<unknown> = { id: `r${++nextRequestId}`, method, payload, timeoutMs }
-  const response = await raceTimeout(
-    ipcRenderer.invoke(CONTROL_CHANNEL, envelope) as Promise<ResponseEnvelope<TResult>>,
-    timeoutMs
-  )
+  let pending: Promise<ResponseEnvelope<TResult>>
+  // A serialisation refusal may be thrown rather than rejected; both take the same path.
+  try { pending = ipcRenderer.invoke(CONTROL_CHANNEL, envelope) as Promise<ResponseEnvelope<TResult>> } catch (error) { pending = Promise.reject(error) }
+  const response = await raceTimeout(pending, timeoutMs, method)
   if (response.ok) return response.result
   throw toOrivonError(response.code, response.platformCode === undefined
     ? { message: response.message }
