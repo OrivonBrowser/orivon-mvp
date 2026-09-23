@@ -223,7 +223,11 @@ tab's own renderer, never on the broker's thread:
   longest-waiting refused request first, then admits queued ones in order.
 - It learns the number rather than reading it, because the allowance is shared with the app's own
   `orivon.net` sockets and its other tabs, so no figure the preload could read up front says how
-  much of it is free. It forgets what it learned once the tab goes idle.
+  much of it is free. For the same reason it cannot see a socket freed there, so while anything
+  waits it probes once a second: one more request than is live, the oldest refused one first. A
+  refusal settles the number back; a success keeps it. It forgets the number once the tab goes
+  idle. The broker's call-rate limit and in-flight cap refuse with `'limit'` too, and the gate
+  treats them alike, since each also means "dial less".
 - There is no per-host cap. A browser opens six HTTP/1.1 connections to a host but reaches most
   busy hosts over HTTP/2, many requests on one connection; the routed fetch speaks HTTP/1.1, one
   request per socket, so a six-per-host cap would triple FreeTube's hundred-subscription refresh

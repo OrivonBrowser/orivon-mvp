@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { createFetchGate } from '../fetch-gate.js'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createFetchGate, FETCH_GATE_PROBE_MS } from '../fetch-gate.js'
 
 /** Lets every already-queued promise callback run. */
 async function flush (): Promise<void> {
@@ -123,5 +123,99 @@ describe('createFetchGate -- release', () => {
     gate.release(burst[0]!.id)
     await flush()
     expect(queued.map((q) => q.admitted.settled)).toEqual([true, false])
+  })
+})
+
+describe('createFetchGate -- probing, for a socket freed where the gate cannot see it', () => {
+  afterEach(() => { vi.useRealTimers() })
+
+  it('retries the oldest refused request after a probe interval, though no routed request has finished', async () => {
+    vi.useFakeTimers()
+    const gate = createFetchGate()
+    const [hung, refused] = enqueueMany(gate, 2)
+    const retry = track(gate.afterLimit(refused!.id))
+    await vi.advanceTimersByTimeAsync(FETCH_GATE_PROBE_MS - 1)
+    expect(retry.settled).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(retry.value).toBe(true)
+    gate.release(hung!.id)
+  })
+
+  it('admits a queued request on a probe once nobody is waiting, so a low ceiling does not outlive the refusal that set it', async () => {
+    vi.useFakeTimers()
+    const gate = createFetchGate()
+    const [hung, refused] = enqueueMany(gate, 2)
+    void gate.afterLimit(refused!.id)
+    gate.release(refused!.id)
+    const queued = enqueueMany(gate, 2)
+    await vi.advanceTimersByTimeAsync(FETCH_GATE_PROBE_MS)
+    expect(queued.map((q) => q.admitted.settled)).toEqual([true, false])
+    await vi.advanceTimersByTimeAsync(FETCH_GATE_PROBE_MS)
+    expect(queued.map((q) => q.admitted.settled)).toEqual([true, true])
+    gate.release(hung!.id)
+  })
+
+  it('settles back to what is live when a probe is refused again', async () => {
+    vi.useFakeTimers()
+    const gate = createFetchGate()
+    const [hung, refused] = enqueueMany(gate, 2)
+    void gate.afterLimit(refused!.id)
+    await vi.advanceTimersByTimeAsync(FETCH_GATE_PROBE_MS)
+    void gate.afterLimit(refused!.id)
+    const queued = enqueueMany(gate, 1)[0]!
+    await flush()
+    expect(queued.admitted.settled).toBe(false)
+    gate.release(hung!.id)
+  })
+
+  it('keeps a probe refused again at the head of the line, not behind requests refused after it', async () => {
+    vi.useFakeTimers()
+    const gate = createFetchGate()
+    const burst = enqueueMany(gate, 4)
+    void gate.afterLimit(burst[2]!.id)
+    const later = track(gate.afterLimit(burst[3]!.id))
+    await vi.advanceTimersByTimeAsync(FETCH_GATE_PROBE_MS)
+    const probed = track(gate.afterLimit(burst[2]!.id))
+    gate.release(burst[0]!.id)
+    await flush()
+    expect(probed.value).toBe(true)
+    expect(later.settled).toBe(false)
+    gate.release(burst[1]!.id)
+  })
+
+  it('stops probing once nothing waits', async () => {
+    vi.useFakeTimers()
+    const gate = createFetchGate()
+    const [a, b] = enqueueMany(gate, 2)
+    void gate.afterLimit(b!.id)
+    gate.release(b!.id)
+    gate.release(a!.id)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+})
+
+describe('createFetchGate -- what a withdrawn request leaves behind', () => {
+  it('hands a freed socket past a refused request that has since gone, to the next one waiting', async () => {
+    const gate = createFetchGate()
+    const burst = enqueueMany(gate, 3)
+    void gate.afterLimit(burst[1]!.id)
+    const second = track(gate.afterLimit(burst[2]!.id))
+    gate.release(burst[1]!.id)
+    gate.release(burst[0]!.id)
+    await flush()
+    expect(second.value).toBe(true)
+  })
+
+  it('settles the promises it handed out, since each one is held across contextBridge', async () => {
+    const gate = createFetchGate()
+    const burst = enqueueMany(gate, 2)
+    const retry = track(gate.afterLimit(burst[1]!.id))
+    const queued = enqueueMany(gate, 1)[0]!
+    gate.release(queued.id)
+    gate.release(burst[1]!.id)
+    await flush()
+    expect(queued.admitted.settled).toBe(true)
+    expect(retry.value).toBe(false)
+    gate.release(burst[0]!.id)
   })
 })

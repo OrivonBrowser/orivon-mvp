@@ -585,7 +585,7 @@ describe('installFetchRoute -- Content-Encoding decompression (R3-02)', () => {
 })
 
 /** An `orivon.net` whose origin may hold `allowance` sockets at once, refusing past it with 'limit' as the broker does. */
-function limitedTarget (allowance: number, socketFor: () => FetchRouteSocket = () => fakeSocket(CANNED_RESPONSE_CHUNKS())): {
+function limitedTarget (allowance: number, socketFor: (host: string) => FetchRouteSocket = () => fakeSocket(CANNED_RESPONSE_CHUNKS()), heldElsewhere = { count: 0 }): {
   target: FetchRouteTarget
   stats: { dials: number, refused: number, open: number, maxOpen: number, maxOpenToOneHost: number }
 } {
@@ -594,7 +594,7 @@ function limitedTarget (allowance: number, socketFor: () => FetchRouteSocket = (
   async function dial ({ host }: { host: string, port: number }): Promise<FetchRouteSocket> {
     stats.dials++
     await Promise.resolve()
-    if (stats.open >= allowance) {
+    if (stats.open + heldElsewhere.count >= allowance) {
       stats.refused++
       throw Object.assign(new Error(`origin holds ${String(allowance)} sockets`), { code: 'limit' })
     }
@@ -602,7 +602,7 @@ function limitedTarget (allowance: number, socketFor: () => FetchRouteSocket = (
     stats.maxOpen = Math.max(stats.maxOpen, stats.open)
     openByHost.set(host, (openByHost.get(host) ?? 0) + 1)
     stats.maxOpenToOneHost = Math.max(stats.maxOpenToOneHost, openByHost.get(host)!)
-    const socket = socketFor()
+    const socket = socketFor(host)
     let closed = false
     return {
       readable: socket.readable,
@@ -678,6 +678,52 @@ describe('installFetchRoute -- past the socket allowance a request waits, as a b
     first.abort()
     await held
     expect(stats.dials).toBe(2)
+    expect(stats.open).toBe(0)
+  })
+
+  it('retries once a socket frees where no routed request of this tab could free it, while its own request hangs', async () => {
+    const elsewhere = { count: 1 }
+    const { target, stats } = limitedTarget(2, (host) => host === 'hung.example' ? stallingSocket() : fakeSocket(CANNED_RESPONSE_CHUNKS()), elsewhere)
+    installFetchRoute(true, createFetchGate(20), target)
+    const hung = new AbortController()
+    const held = target.fetch!('https://hung.example/', { signal: hung.signal }).catch(() => 'aborted')
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    const refused = target.fetch!('https://www.youtube.com/')
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(stats.refused).toBe(1)
+
+    elsewhere.count = 0
+    expect(await (await refused).text()).toBe('hello')
+    hung.abort()
+    await held
+  })
+
+  it('holds its place until a dial aborted in flight has had its socket closed', async () => {
+    const events: string[] = []
+    let finishDial!: (socket: FetchRouteSocket) => void
+    const slowDial = async (): Promise<FetchRouteSocket> => await new Promise<FetchRouteSocket>((resolve) => { finishDial = resolve })
+    const target: FetchRouteTarget = { orivon: { net: { connect: slowDial, connectSecure: slowDial } } }
+    const inner = createFetchGate()
+    installFetchRoute(true, { ...inner, release: (ticket) => { events.push('release'); inner.release(ticket) } }, target)
+    const controller = new AbortController()
+    const pending = target.fetch!('https://www.youtube.com/', { signal: controller.signal })
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    controller.abort()
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    expect(events).toEqual([])
+
+    const socket = fakeSocket([])
+    finishDial({ readable: socket.readable, writable: socket.writable, close: async () => { events.push('close') } })
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    expect(events).toEqual(['close', 'release'])
+  })
+
+  it('dials nothing for a request whose head carries a raw CR or LF, so no socket is left open', async () => {
+    const { target, stats } = limitedTarget(32)
+    installFetchRoute(true, createFetchGate(), target)
+    await expect(target.fetch!('https://www.youtube.com/', { headers: { 'X-A': 'a\nb' } })).rejects.toBeInstanceOf(TypeError)
+    expect(stats.dials).toBe(0)
     expect(stats.open).toBe(0)
   })
 })

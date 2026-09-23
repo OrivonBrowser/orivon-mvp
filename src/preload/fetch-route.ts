@@ -398,15 +398,19 @@ export function installFetchRoute (
     const defaultPort = url.protocol === 'https:' ? 443 : 80
     const port = url.port !== '' ? Number(url.port) : defaultPort
     const dial = url.protocol === 'https:' ? net.connectSecure : net.connect
+    // Built before dialling: it throws on a raw CR or LF, and a throw after the dial leaks the socket.
+    const head = buildRequestHead(method, `${url.pathname}${url.search}`, url.hostname, port, defaultPort, headerPairs, requestBodyBytes.length, contentType)
 
     // Closes whichever socket is actually live the moment `signal` fires --
     // the dialled socket once it exists, or (dial still in flight) the one
     // it eventually produces -- so an abort can never leak a connection.
+    // The gate's slot is released only once that socket is closed.
     let currentSocket: FetchRouteSocket | undefined
     let dialPromise: Promise<FetchRouteSocket> | undefined
+    let abortedDial: Promise<void> = Promise.resolve()
     const onAbort = (): void => {
       if (currentSocket !== undefined) { currentSocket.close().catch(() => {}); return }
-      dialPromise?.then((socket) => { socket.close().catch(() => {}) }, () => {})
+      if (dialPromise !== undefined) abortedDial = dialPromise.then(async (socket) => { await socket.close().catch(() => {}) }, () => {})
     }
     if (signal !== undefined) signal.addEventListener('abort', onAbort, { once: true })
 
@@ -430,7 +434,6 @@ export function installFetchRoute (
       }
       const socket = currentSocket
 
-      const head = buildRequestHead(method, `${url.pathname}${url.search}`, url.hostname, port, defaultPort, headerPairs, requestBodyBytes.length, contentType)
       const writer = socket.writable.getWriter()
       try {
         await raceAbort(writer.write(head), signal)
@@ -483,7 +486,7 @@ export function installFetchRoute (
       } catch { /* not fatal -- response.url just reads "", as an ordinary constructed Response's already does */ }
       return response
     } finally {
-      gate.release(ticket)
+      void abortedDial.then(() => { gate.release(ticket) })
       if (signal !== undefined) signal.removeEventListener('abort', onAbort)
     }
   }
