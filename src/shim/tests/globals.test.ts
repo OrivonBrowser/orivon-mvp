@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
-import { installGlobals, type GlobalsErrorReporter, type GlobalsTarget } from '../globals.js'
+import { installGlobals, VIRTUAL_ROOT, VIRTUAL_TMPDIR, type GlobalsErrorReporter, type GlobalsTarget } from '../globals.js'
+
+const PATHS = { root: VIRTUAL_ROOT, tmpdir: VIRTUAL_TMPDIR }
 
 // Every test installs onto a throwaway object, never onto the real
 // globalThis -- that is the property under test as much as any single
@@ -11,7 +13,7 @@ import { installGlobals, type GlobalsErrorReporter, type GlobalsTarget } from '.
 // this file at typecheck, not by tests quietly asserting on the wrong shape.
 function install (reportError = vi.fn<GlobalsErrorReporter>()) {
   const target: GlobalsTarget = {}
-  installGlobals({ reportError }, target)
+  installGlobals({ reportError, ...PATHS }, target)
   return { target, reportError }
 }
 
@@ -23,7 +25,7 @@ describe('installGlobals', () => {
   // environment there is no `window`, so the default is `{}`; this only
   // proves the call is legal with `target` omitted, not what it defaults to.
   it('accepts options with target omitted, matching the shape a production caller uses', () => {
-    expect(() => installGlobals({ reportError: vi.fn<GlobalsErrorReporter>() })).not.toThrow()
+    expect(() => installGlobals({ reportError: vi.fn<GlobalsErrorReporter>(), ...PATHS })).not.toThrow()
   })
 
   it('writes process, setImmediate and clearImmediate onto the target object, not globalThis', () => {
@@ -82,9 +84,16 @@ describe('installGlobals', () => {
       expect(target.process?.browser).toBe(true)
     })
 
-    it('starts env empty rather than inheriting any ambient environment', () => {
+    it('seeds env with the directory variables only, never the ambient environment', () => {
       const { target } = install()
-      expect(target.process?.env).toEqual({})
+      expect(target.process?.env).toEqual({
+        HOME: VIRTUAL_ROOT,
+        USERPROFILE: VIRTUAL_ROOT,
+        APPDATA: VIRTUAL_ROOT,
+        TMPDIR: VIRTUAL_TMPDIR,
+        TMP: VIRTUAL_TMPDIR,
+        TEMP: VIRTUAL_TMPDIR
+      })
     })
 
     it('gives env a fresh object per install, so one install cannot see another\'s mutations', () => {
@@ -111,9 +120,9 @@ describe('installGlobals', () => {
       expect(typeof target.process?.cwd()).toBe('string')
     })
 
-    it('cwd() returns "/" -- orivon.fs confines every path to one root, never a tree of directories', () => {
+    it('cwd() is the virtual root the fs shim maps onto the app\'s files', () => {
       const { target } = install()
-      expect(target.process?.cwd()).toBe('/')
+      expect(target.process?.cwd()).toBe(VIRTUAL_ROOT)
     })
   })
 
@@ -367,7 +376,7 @@ describe('the descriptors it installs', () => {
   // kill any bundle that ponyfills it -- mid-evaluation, naming no cause.
   // scripts/check-page-globals.mjs catches that in the source text; this
   // catches it in the behaviour, which is the half a text scan cannot see.
-  it.each(['process', 'setImmediate', 'clearImmediate'] as const)('installs %s as a property an app can replace', (name) => {
+  it.each(['process', 'global', 'setImmediate', 'clearImmediate'] as const)('installs %s as a property an app can replace', (name) => {
     const { target } = install()
 
     expect(Object.getOwnPropertyDescriptor(target, name)).toMatchObject({
@@ -408,7 +417,7 @@ describe('installGlobals -- serialisation safety', () => {
     const reconstructed = factory(queueMicrotask, setTimeout, clearTimeout) as typeof installGlobals
 
     const target: GlobalsTarget = {}
-    expect(() => { reconstructed({ reportError: vi.fn<GlobalsErrorReporter>() }, target) }).not.toThrow()
+    expect(() => { reconstructed({ reportError: vi.fn<GlobalsErrorReporter>(), ...PATHS }, target) }).not.toThrow()
     expect(typeof target.setImmediate).toBe('function')
     expect(typeof target.process?.nextTick).toBe('function')
   })

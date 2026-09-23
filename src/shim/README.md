@@ -8,21 +8,28 @@
    ([`ADR-0005`](../../docs/decisions/ADR-0005-apps-are-url-addressed-not-bundled.md)).
 2. **Core polyfills** (queue item 3.1): the environment-shape modules a dependency graph
    needs just to *evaluate*, independent of any capability: `Buffer`, `stream`, `events`,
-   `path`, `os`, `crypto`, `zlib`, `util`. `compatibility-matrix.md` Table 3 calls these `dup`
+   `path`, `os`, `crypto`, `zlib`, `util`, plus the hand-written `url`, `querystring`,
+   `string_decoder`, `timers` and `assert`. `compatibility-matrix.md` Table 3 calls these `dup`
    rows: closing them is ordinary shim work, no contracts change needed.
 
-`globals.ts` (ambient `process`/`nextTick`/`setImmediate`) and `module-map.ts` (the single table
-`electron.vite.config.ts`'s alias map is generated from; see its own header) belong to neither
-group cleanly; both exist to make the two above reachable at all.
+`globals.ts` (ambient `process`/`global`/`setImmediate`), `virtual-root.ts` (the one directory
+every Node-shaped path agrees on; see §Design notes) and `module-map.ts` (the single table
+`electron.vite.config.ts`'s alias map and `vitest.config.ts`'s shim resolution are generated
+from; see its own header) belong to neither group cleanly; they exist to make the two above
+reachable at all.
+
+**Tests run against the page's polyfills.** `vitest.config.ts` resolves a shim module's own
+`stream`, `buffer`, `events`, ... imports to the same modules the renderer build does, so a
+shim test exercises readable-stream 3 and the `buffer` package, not Node's builtins. A test
+file and its `tests/support/` helpers keep `node:*`; `tests/support/page-buffer.ts` and
+`page-stream.ts` give a test the page's own classes when it must compare against them.
 
 **Dependency status.** All eight core polyfills are wired up, and their packages are runtime
 dependencies in `package.json`.
 [`docs/planning/shim-dependency-review.md`](../../docs/planning/shim-dependency-review.md)'s
 `## Status` says why the full set was chosen over that review's own five-package
-recommendation. `util` is the one exception worth knowing about: the `util` package is installed
-and approved, but `module-map.ts` points `util` at a hand-written, `inherits`-only file
-(`node-util.ts`) rather than the package. Rule 6 reasoning is in that file and the review, and
-clearing the dependency gate does not change it. The `zlib` row is
+recommendation. `os` and `util` point at local wrappers over their packages (`node-os.ts`,
+`node-util.ts`) that correct or complete them; see §Design notes. The `zlib` row is
 gzip/deflate only (`browserify-zlib` predates Node's brotli support); see the review before
 assuming brotli works.
 
@@ -58,12 +65,42 @@ Also read [`.claude/skills/orivon-electron/SKILL.md`](../../.claude/skills/orivo
 
 ## Design notes
 
-**[`globals.ts`](globals.ts) writes `process`, `setImmediate` and `clearImmediate` with a plain
-assignment, not `Object.defineProperty`, on purpose.** That is the descriptor Node gives its own:
-ordinary, writable, replaceable. ADR-0021 makes it a rule rather than an accident -- an app may
-shadow or replace any of the three, and a locked one would kill a bundle that ponyfills it while
-its module graph is still evaluating, naming no cause. `npm run check:page-globals` guards the
-source and [`tests/globals.test.ts`](tests/globals.test.ts) guards the behaviour.
+**[`globals.ts`](globals.ts) writes `process`, `global`, `setImmediate` and `clearImmediate`
+with a plain assignment, not `Object.defineProperty`, on purpose.** That is the descriptor Node
+gives its own: ordinary, writable, replaceable. ADR-0021 makes it a rule rather than an accident
+-- an app may shadow or replace any of them, and a locked one would kill a bundle that ponyfills
+it while its module graph is still evaluating, naming no cause. `npm run check:page-globals`
+guards the source and [`tests/globals.test.ts`](tests/globals.test.ts) guards the behaviour.
+
+**`process` answers what libraries read without claiming to be Node.** **AI recommendation, not
+owner-reviewed.** `version` is `''` and `versions` is an empty object, not a plausible Node
+version: a check for `process.versions.node` or `.electron` then takes its browser branch,
+where a fabricated value would send it down a Node-only path this shim cannot back, and an absent
+`versions` would throw on `undefined.node`. `platform`, `title`, `arch` and `release.name` say
+`'browser'`/`'javascript'` for the same reason, values no check for a real platform can match.
+`argv`/`execArgv` are empty, `pid` is 1, `umask()` is the POSIX default and changes nothing.
+`exit()` emits `'exit'` and throws a named error: an app tab cannot end its own process, and
+silently returning would let the code after it run as if it had. `process` is a small event
+emitter; `'uncaughtException'` and `'warning'` listeners receive what Node would send them.
+
+**An uncaught `nextTick`/`setImmediate` error reaches the page's own error reporting.** The
+preload passes no reporter: a function crossing `contextBridge` runs in the isolated world, so
+it would log where the page's own `window` `'error'` handlers never see it. Without one,
+`installGlobals` calls the page's `reportError` (the HTML one), which behaves as an uncaught
+exception would. A warning with no `'warning'` listener goes to the page console.
+
+**`setImmediate` is a `MessageChannel` task, not `setTimeout(0)`.** A timer is clamped to 4 ms
+once nested and to 1 s in a hidden tab, and a scheduler that adopts `setImmediate` when present
+(React's does) would inherit both. A message task has neither clamp, and keeps Node's ordering:
+one callback per task, in the order queued.
+
+**No `Buffer` page global yet.** `global` is `globalThis` and costs nothing, but `Buffer` is the
+`buffer` package, and `installGlobals` may not name anything outside its own body, so it cannot
+import one. Putting it on the page needs the package's source in the main world: a build step
+that bundles it into a function the preload can serialise, or an owner decision to inject it
+with `webFrame.executeJavaScript`, whose timing before the page's own scripts is unverified here.
+Until then a bundle referring to a bare `Buffer` needs its bundler to provide it (webpack's
+`ProvidePlugin`, for one).
 
 
 **Polyfill-grade vs Orivon-grade primitives, and why the gap is documented rather than closed
@@ -87,7 +124,9 @@ simply never considered. `src/shim-electron/`'s `unimplemented.ts` solves this f
 compatibility package, and this package reuses the same mechanism rather than re-inventing it,
 on two module-namespace exports at a time: `node-dns.ts`, `node-fs.ts`,
 `node-http.ts`/`node-https.ts` and `node-net.ts` each wrap their default export (the shape a
-bundled CJS `require(...)` resolves to) with `refusingProxy`, so any member they have not built
+bundled CJS `require(...)` resolves to) with `refusingProxy`, and every other module target
+here does the same through [`node-module-proxy.ts`](node-module-proxy.ts)'s `nodeModule`,
+so any member they have not built
 throws a named, closed-reason `OrivonShimError` (`errors.ts`) when a caller CALLS it, instead of
 a bare `TypeError`. It throws on the call, never on the read (A169); the next section says why.
 
@@ -157,7 +196,7 @@ object. That structural reason, not the now-fixed throw-on-read behaviour, is wh
 stay on their own mechanism. `node-net-socket.ts` and `node-dgram-socket.ts` add the handful of
 real Node members a porting app is likely to hit as actual present methods: the same "present,
 throws when called" shape `node-fs-unsupported.ts`'s `syncUnsupported`,
-`node-http-unsupported.ts`/`node-net-unsupported.ts`'s `createServer`, and `refusingProxy` itself
+`node-http-unsupported.ts`'s `createServer`, and `refusingProxy` itself
 (post-A169) all use for their own decided gaps. Two of those (`ref`/`unref`) are safe NO-OPS
 rather than throws: real Node's contract for them is "no meaning, returns `this`", so a no-op is
 the objectively correct behaviour here too (there is no event-loop handle to ref/unref in this
@@ -177,6 +216,9 @@ instead of one continuous WHATWG transfer, and a fixed chunk size instead of the
 credit window. For nedb's small line-oriented files that should not matter. Once A184 makes
 `readable()`/`writable()` reachable from the page, this file can be rewritten over them with no
 app-facing change. **Still open:** whether this is the permanent shape or a placeholder.
+Both streams destroy themselves at end/finish and after a failed write, which releases the handle
+and emits `'close'`, as Node's `autoDestroy` does: readable-stream 3 defaults `autoDestroy` off,
+and turning it on for a Writable there swallows the failed write's `'error'` event.
 
 **`fs.access`'s `mode` is not distinguished: every mode checks existence only.** **AI
 recommendation, not owner-reviewed.** Node fails `access(path, mode)` when the process lacks the
@@ -187,6 +229,46 @@ that the way a real permission check would. nedb, the only caller today, passes 
 **Still open:** what a future dependency asking `W_OK` to mean something narrower should get,
 which `orivon.fs`'s contract currently gives this file nothing to answer with.
 
+**A package-backed module is a local wrapper, except `stream` and `events`.** `buffer`, `path`,
+`os`, `crypto`, `zlib` and `util` alias to a file here that re-exports the package's members by
+name and wraps its default export with `nodeModule`, so a member the package lacks
+(`crypto.generateKeyPairSync`, `zlib.brotliCompressSync`, `path.win32`) refuses by name
+instead of being `undefined`. A wrapper imports its package by a name the alias map does not
+match (`'buffer/'`, `'path-browserify'`), never by the specifier it stands for, which would
+resolve back to itself. `stream` and `events` stay unwrapped: their module value is itself a
+constructor apps subclass and compare by identity, and a Proxy default export would make
+`import EventEmitter from 'events'` a different object from `EventEmitter.EventEmitter`.
+
+**[`node-util.ts`](node-util.ts) stands on the `util` package, and corrects it.** **AI
+recommendation, not owner-reviewed.** Rule 6: `format`, `inspect` and the `types` predicates are
+the parts of `util` most costly to get right by hand, and the package already has them,
+approved and installed. The cost is its dependency tree (about thirty small, pure-JS packages
+from the `is-*`/`get-intrinsic` family) in any bundle that imports `util`, which includes every
+bundle using `stream`: readable-stream reads `util.debuglog` and `util.inspect`. Its
+`util.js` also reads `process.env.NODE_DEBUG` at load, so it needs the `process` global the
+preload installs. Four members are this file's own: `promisify` (the package keys its custom
+form on a private `Symbol`, so a library marking one with
+`Symbol.for('nodejs.util.promisify.custom')` goes unseen), `inherits` (the package's replaces
+`ctor.prototype`, dropping methods already on it; Node's uses `setPrototypeOf`),
+`isDeepStrictEqual` (newer than the package; [`node-deep-equal.ts`](node-deep-equal.ts), shared
+with `assert`) and `TextEncoder`/`TextDecoder` (the platform's own).
+
+**One virtual root: `/orivon/app` ([`virtual-root.ts`](virtual-root.ts)).** **AI recommendation,
+not owner-reviewed.** Node code builds paths from `process.cwd()`, `os.homedir()`, `os.tmpdir()`,
+`$HOME`/`$APPDATA` and, in an Electron port, `app.getPath('userData')`, then hands them to `fs`.
+All of them name `/orivon/app` (the tmpdir is `/orivon/app/tmp`), and
+[`node-fs-path.ts`](node-fs-path.ts)'s `confine` strips that prefix before any `orivon.fs` call,
+so `path.join(os.homedir(), 'settings.json')` lands in the app's own files. `orivon.fs` itself
+still takes only relative paths: the broker rejects every absolute one
+([`src/broker/policy/paths.ts`](../broker/policy/paths.ts)), and the mapping lives here, one layer
+up, where the Node-shaped paths are. A relative path passes through exactly as written. A path
+outside the root, absolute or by `..`, fails `EACCES` in the shim without reaching the broker:
+the errno Node gives for a directory the process may not enter, where the broker would only say
+`'denied'`. The tmpdir is created with one `mkdir -p` the first time a path inside it is used,
+since Node's always exists and the app's files start empty. The value is not a real host path
+and is not meant to look like one: a library branching on it cannot mistake it for a platform
+directory it knows.
+
 **A path resolving to the app's own ROOT is answered locally, never sent to orivon.fs.**
 **AI recommendation, not owner-reviewed.** The broker's own confinement policy
 (`src/broker/policy/paths.ts`) refuses ANY requested path that resolves to the root itself
@@ -195,15 +277,21 @@ confines every call to somewhere STRICTLY INSIDE the root. But the root always e
 creates it), exactly the way a process's cwd always exists in real Node, and a ported dependency
 routinely asks for it: `@seald-io/nedb`'s `lib/storage.js` computes `path.dirname('settings.db')`
 (`'.'`) for its parent-directory `mkdir`, and fsyncs that same `'.'` after every crash-safe
-rename. Both calls failed outright before this fix -- FreeTube never mounted a database.
-`node-fs-root.ts` now answers both ENTIRELY IN THE SHIM, never calling `orivon.fs`:
-`fs.mkdir(root, {recursive:true})` is a no-op success (the broker already created it);
-without `recursive` it fails `EEXIST`, matching Node for any other already-existing directory.
-`fs.open(root, 'r')` returns a local directory handle whose `sync()`/`datasync()`/`close()`
-succeed and whose `read()`/`write()`/`truncate()` fail `EISDIR`/`EBADF`/`EINVAL` respectively --
-checked against real Node on Linux, not assumed (`stat()` on that handle SUCCEEDS, which a naive
-"directories refuse everything" guess would have gotten wrong). Any other open flag on the root
-fails `EISDIR` immediately, matching Node's own refusal to open a directory for writing.
+rename. [`node-fs-root.ts`](node-fs-root.ts) answers every call on the root in the shim:
+`stat`/`access` succeed with a directory (size and mtime 0: the broker has no metadata to give
+for the one path it refuses); `mkdir(root, {recursive:true})` is a no-op success and fails
+`EEXIST` without it; `readFile`/`writeFile`/`appendFile` fail `EISDIR`; `rm`/`unlink`/`rename`
+fail `EACCES`, since nothing may remove or move the app's files. `fs.open(root, 'r')` returns a
+local directory handle whose `sync()`/`datasync()`/`close()` succeed and whose
+`read()`/`write()`/`truncate()` fail `EISDIR`/`EBADF`/`EINVAL` respectively -- checked against
+real Node on Linux, not assumed (`stat()` on that handle SUCCEEDS). Any other open flag on the
+root fails `EISDIR`, matching Node's own refusal to open a directory for writing.
+
+**`readdir` of the root is the one root call the shim cannot answer.** Listing it needs the
+broker, which refuses the root itself, and the shim has no listing of its own. It fails `EACCES`
+with a message naming the gap rather than returning a fabricated empty list. Closing it is a
+broker policy change (a read-only listing of the root), not a shim one. A folder inside the root
+lists normally.
 
 **A directory fsync of the root is therefore a NO-OP, not a real fsync of anything.**
 `orivon.fs` exposes no handle on the root at all, so there is nothing this shim can actually ask
@@ -213,14 +301,3 @@ in `persistence.js`) already tolerates a platform where opening a directory for 
 outright (its own EISDIR handling), so this no-op costs it nothing further than that platform
 already costs it; nothing here promises a stronger durability guarantee than the broker's rename
 itself provides.
-
-**`fs.stat('.')` and `fs.readdir('.')` are deliberately left passing through to the broker's
-ordinary `'denied'` refusal, not special-cased.** nedb needs neither on the root -- its `existsAsync`
-reads `fs.constants.F_OK` via `access()`, which itself only ever targets a real datafile path, and
-its `readdir` reach is `readdir(dirname(filename))`'s NON-root case (an app that stores files in a
-subdirectory) that this fix does not touch. Special-casing every root-targeting call, not only the
-two a confirmed caller needs, would mean guessing at Node semantics with nothing to check them
-against -- `mkdir`/`open`+`sync`+`close` are the two this branch could actually verify against real
-Node and a real caller. **Still open:** whether a future caller needs `stat('.')`/`readdir('.')`
-answered locally too, and if so, with what synthetic content -- this file has no real metadata for
-the root beyond "it is a directory" without asking the broker for the one path it always refuses.

@@ -1,27 +1,22 @@
-// The app's own files-directory ROOT -- Node's cwd equivalent here -- is a
-// path the broker's own confinement policy always refuses
-// (src/broker/policy/paths.ts's `deny('is-root')`, deliberately, whenever a
-// requested path resolves to the root itself: `docs/open-questions.md`
-// around confinePath's own design notes). @seald-io/nedb's storage.js asks
-// for it directly, twice: `path.dirname('settings.db')` is `'.'` for
-// `fs.promises.mkdir(dir, {recursive: true})`, and `flushToStorageAsync`
-// opens that same `'.'` with flags 'r' to fsync the datafile's parent
-// directory after every crash-safe rename.
+// The app's own files-directory ROOT -- Node's cwd equivalent, reached as
+// '.' or as the virtual root (node-fs-path.ts maps the second onto the
+// first) -- is a path the broker's confinement policy always refuses
+// (src/broker/policy/paths.ts's `deny('is-root')`, deliberately: every call
+// orivon.fs accepts is confined to a path STRICTLY INSIDE the root).
 //
 // THE ANSWER LIVES HERE, NOT IN A BROKER POLICY CHANGE. The root always
 // exists -- the broker creates it -- exactly the way a process's cwd always
-// exists in real Node; `orivon.fs` simply has no operation that targets it
-// (every call it accepts is confined to a path STRICTLY INSIDE the root).
-// This module answers the handful of root-targeting calls a ported
-// dependency's OWN Node semantics require, entirely locally, and lets every
-// other call (stat, readdir, readFile, ...) keep reaching the broker and
-// getting its ordinary, uniform 'denied' -- see node-fs-core.ts's `doMkdir`
-// and node-fs-handle.ts's `NodeFileHandle.open` for the two call sites this
-// intercepts, and README.md's Design notes for which calls were
-// deliberately left alone and why.
+// exists in real Node, so the calls a ported dependency makes on it are
+// answered locally: stat/access succeed, `mkdir -p` is a no-op, open('r')
+// gives a directory fd whose fsync succeeds (@seald-io/nedb fsyncs its
+// parent directory, '.', after every crash-safe rename), and a read or write
+// of it as a file is EISDIR. readdir is the one it cannot answer: listing
+// the root needs the broker, which refuses it. README.md's Design notes has
+// the detail.
 
 import { normalize } from 'path'
 import type { FileHandle, FileStat } from '../contracts/handles.js'
+import { fsError } from './node-fs-path.js'
 
 /** `.`, `./`, `a/..`, `./a/..`, ... -- any relative path whose POSIX-normalised form names the current directory itself. Never true for an absolute path or a real traversal outside it (`../x` normalises to `../x`, not `.`). */
 export function isRootPath (path: string): boolean {
@@ -29,8 +24,22 @@ export function isRootPath (path: string): boolean {
   return normalized === '.' || normalized === './'
 }
 
-function nodeError (syscall: string, code: string, message: string): Error & { code: string } {
-  return Object.assign(new Error(`orivon-node-shim: ${code}: ${message}, ${syscall}`), { code })
+/** Synthetic, not a lie about the KIND: the root is a directory. The broker refuses the root itself, so there is no real size or mtime to report. */
+const ROOT_STAT: FileStat = { size: 0, isFile: false, isDirectory: true, mtimeMs: 0 }
+
+export function rootStat (): FileStat { return ROOT_STAT }
+
+/** readFile/writeFile/appendFile/readFileSync on the root: a directory is not a file, as in Node. */
+export function rootIsDirectoryError (syscall: string): never { throw fsError('EISDIR', 'illegal operation on a directory', syscall) }
+
+/** The one root call with no local answer: listing it needs the broker, which refuses the root. */
+export function rootReaddirError (): never {
+  throw fsError('EACCES', "permission denied (orivon.fs cannot list the app's root directory itself; list a folder inside it)", 'scandir')
+}
+
+/** rm/unlink/rename of the root: it is where the app's files live, and nothing may remove or move it. */
+export function rootNotRemovableError (syscall: string): never {
+  throw fsError('EACCES', "permission denied (the app's root directory cannot be removed or moved)", syscall)
 }
 
 /**
@@ -47,9 +56,9 @@ function nodeError (syscall: string, code: string, message: string): Error & { c
  * 'internal'. `rootDirectoryHandle()`'s own read/write/truncate below reuse
  * the exact same three functions, so the two never drift.
  */
-export function rootReadError (): never { throw nodeError('read', 'EISDIR', 'illegal operation on a directory') }
-export function rootWriteError (): never { throw nodeError('write', 'EBADF', 'bad file descriptor') }
-export function rootTruncateError (): never { throw nodeError('truncate', 'EINVAL', 'invalid argument') }
+export function rootReadError (): never { throw fsError('EISDIR', 'illegal operation on a directory', 'read') }
+export function rootWriteError (): never { throw fsError('EBADF', 'bad file descriptor', 'write') }
+export function rootTruncateError (): never { throw fsError('EINVAL', 'invalid argument', 'ftruncate') }
 
 /**
  * A directory fd opened read-only over the root. `stat`/`sync`/`close` all
@@ -69,13 +78,7 @@ export function rootDirectoryHandle (): FileHandle {
     write: async () => rootWriteError(),
     readable: () => rootReadError(),
     writable: () => rootWriteError(),
-    // Synthetic, not a lie about the KIND: isDirectory is genuinely true.
-    // orivon.fs.stat('.') is never called to fill this in -- the broker
-    // refuses that path unconditionally (README.md's Design notes explains
-    // why stat('.') is deliberately left refusing rather than answered
-    // here), so there is no real size/mtimeMs this shim could ask for
-    // without contradicting that choice.
-    stat: async (): Promise<FileStat> => ({ size: 0, isFile: false, isDirectory: true, mtimeMs: 0 }),
+    stat: async (): Promise<FileStat> => ROOT_STAT,
     truncate: async () => rootTruncateError(),
     sync: async () => {}
   }
@@ -90,7 +93,7 @@ export function rootDirectoryHandle (): FileHandle {
  * assumed.
  */
 export function assertRootOpenAllowed (flags: string): void {
-  if (flags !== 'r') throw nodeError('open', 'EISDIR', 'illegal operation on a directory')
+  if (flags !== 'r') throw fsError('EISDIR', 'illegal operation on a directory', 'open')
 }
 
 /**
@@ -101,5 +104,5 @@ export function assertRootOpenAllowed (flags: string): void {
  */
 export function assertRootMkdirAllowed (opts: { recursive?: boolean } | undefined): void {
   if (opts?.recursive === true) return
-  throw nodeError('mkdir', 'EEXIST', 'file already exists')
+  throw fsError('EEXIST', 'file already exists', 'mkdir')
 }

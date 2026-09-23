@@ -167,18 +167,33 @@ describe('fs.promises.open(root, ...) -- a local directory handle, never orivon.
   })
 })
 
-describe('stat(\'.\')/readdir(\'.\') -- deliberately still pass through to the broker\'s refusal', () => {
-  it('stat', async () => {
+describe('stat(\'.\')/readdir(\'.\') -- answered locally, never the broker\'s refusal', () => {
+  it('stat is a directory', async () => {
     installRootRefusingOrivon()
     const { promises } = await import('../node-fs-promises.js')
-    await expect(promises.stat('.')).rejects.toMatchObject({ code: 'denied' })
+    const stat = await promises.stat('.')
+    expect(stat.isDirectory()).toBe(true)
   })
 
-  it('readdir', async () => {
+  it('readdir fails EACCES, naming what the broker cannot list', async () => {
     (globalThis as GlobalWithOrivon).orivon = {
       fs: { readdir: async (path: string) => { if (isRootPath(path)) throw deniedIsRoot(); return [] } }
     } as unknown as Orivon
     const { promises } = await import('../node-fs-promises.js')
-    await expect(promises.readdir('.')).rejects.toMatchObject({ code: 'denied' })
+    await expect(promises.readdir('.')).rejects.toMatchObject({ code: 'EACCES', syscall: 'scandir' })
+  })
+
+  it('readFile is EISDIR, as Node gives for a directory', async () => {
+    installRootRefusingOrivon()
+    const { promises } = await import('../node-fs-promises.js')
+    await expect(promises.readFile('.')).rejects.toMatchObject({ code: 'EISDIR' })
+  })
+
+  it('rm, unlink and rename of the root fail EACCES', async () => {
+    installRootRefusingOrivon()
+    const { promises } = await import('../node-fs-promises.js')
+    await expect(promises.rm('.', { recursive: true })).rejects.toMatchObject({ code: 'EACCES', syscall: 'rm' })
+    await expect(promises.unlink('.')).rejects.toMatchObject({ code: 'EACCES', syscall: 'unlink' })
+    await expect(promises.rename('.', 'x')).rejects.toMatchObject({ code: 'EACCES', syscall: 'rename' })
   })
 })

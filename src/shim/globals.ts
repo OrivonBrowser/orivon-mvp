@@ -1,269 +1,226 @@
 // The Node globals a renderer-hosted Node library reads straight off the
-// global object rather than importing: `process`, and the two free
-// functions `setImmediate`/`clearImmediate`. Node exposes all three as
-// ambient globals, never as values a module imports -- so this file's job is
-// to build a global-shaped object, not to export values for something else
-// to `import`.
+// global object rather than importing: `process`, `global`, and the free
+// functions `setImmediate`/`clearImmediate`. Installed onto a TARGET the
+// caller passes in, never onto the real globalThis by itself, which is what
+// makes this unit testable: a test installs onto a throwaway object.
 //
-// Installed onto a TARGET the caller passes in, never onto the real
-// globalThis -- see installGlobals below. That is the whole reason this file
-// is unit testable: a test installs onto a throwaway object and inspects it,
-// instead of mutating (and having to clean up after) the one real global
-// environment an entire test run shares.
-//
-// Read src/shim/README.md's five binding requirements before changing this
-// file. This file exists for requirement 2.
+// installGlobals is handed to contextBridge.executeInMainWorld, which
+// serialises it with Function.prototype.toString() and re-evaluates it alone
+// in the page: it may not name anything outside its own body, which is why
+// every helper below is nested inside it. Read src/shim/README.md's five
+// binding requirements before changing this file; it exists for requirement 2.
+
+import type {
+  EmitWarningOptions, GlobalsErrorOrigin, GlobalsTarget, ImmediateHandle, InstallGlobalsOptions, ProcessListener,
+  ShimProcess, ShimStdio
+} from './globals-types.js'
+
+export type {
+  EmitWarningOptions, GlobalsErrorOrigin, GlobalsErrorReporter, GlobalsTarget, ImmediateHandle, InstallGlobalsOptions,
+  ShimPlatform, ShimProcess
+} from './globals-types.js'
+export { VIRTUAL_ROOT, VIRTUAL_TMPDIR } from './virtual-root.js'
 
 /**
- * Which installed primitive produced a report. 'warning' covers
- * process.emitWarning below -- not itself a timing primitive, but held to
- * the same "louder, not quieter" standard as the two that are.
- */
-export type GlobalsErrorOrigin = 'nextTick' | 'setImmediate' | 'warning'
-
-/**
- * Where an exception that would otherwise crash a real Node process goes
- * instead. Required on InstallGlobalsOptions below, not optional with a
- * silent default: Node's own process.nextTick has no "off switch" for this,
- * and a shim that let a caller omit a reporter would make silence the
- * default again -- reintroducing, by a different route, the exact bug this
- * file exists to fix.
- */
-export type GlobalsErrorReporter = (error: unknown, origin: GlobalsErrorOrigin) => void
-
-export interface InstallGlobalsOptions {
-  readonly reportError: GlobalsErrorReporter
-}
-
-/**
- * Node's own process.platform is a closed union of real OS names, and
- * deliberately does not include this value. This file has no `electron`
- * import and no ambient Node `process` to read the real one from --
- * src/shim/README.md bans the former, and a sandboxed renderer has none of
- * the latter -- so the honest answer is "unknown", not a guess. 'browser'
- * can never equal a real platform name, so an exact check such as
- * `platform === 'win32'` safely falls through to its generic branch instead
- * of firing on a wrong one.
- */
-export type ShimPlatform = NodeJS.Platform | 'browser'
-
-export interface ShimProcess {
-  readonly platform: ShimPlatform
-
-  /**
-   * Starts empty on every install and is never seeded from any ambient
-   * process.env. This process runs code for one app under one capability
-   * grant; inheriting the host's real environment variables would be a
-   * disclosure bug wearing an API-shape improvement as a disguise.
-   */
-  readonly env: Record<string, string | undefined>
-
-  /**
-   * Empty string, not a fabricated Node version -- the same choice the
-   * standard browser polyfill for this field makes (npm's `process`
-   * package, `browser.js`: `process.version = ''`), and for the same
-   * reason: a library that branches on a real-looking version string may
-   * take a code path this shim cannot actually back, where '' reads as
-   * "unknown" and is far more likely to land on a defended default.
-   */
-  readonly version: string
-
-  /**
-   * Always true, and NOT optional -- a dependency that reads this must get
-   * an answer, never `undefined`.
-   *
-   * Found by grepping the spike's shipped bundles (per src/shim/README.md
-   * requirement 1) rather than by anticipating a surface. Real readers:
-   * `bittorrent-tracker` (`if (!process.browser && !opts.port) throw`, in
-   * both Client and Server), `crypto-browserify`'s `checkNative()` and
-   * default-encoding selection, and webtorrent's `FILESYSTEM_CONCURRENCY`.
-   *
-   * Leaving it off does not raise anything. It makes every one of those
-   * quietly take the Node branch -- installing a partial `process` turns a
-   * loud ReferenceError into a silent wrong answer, which is precisely the
-   * failure mode the rest of this file exists to prevent.
-   */
-  readonly browser: true
-
-  readonly nextTick: <Args extends readonly unknown[]>(callback: (...args: Args) => void, ...args: Args) => void
-  readonly emitWarning: (warning: string | Error, typeOrOptions?: string | EmitWarningOptions, code?: string) => void
-
-  /**
-   * Always '/', never a real filesystem path -- there is no ambient Node
-   * process to read one from (same reasoning as `platform` above), and
-   * ADR-0003's storage model gives an app exactly one root, not a tree of
-   * directories it navigates between. `orivon.fs`'s own confinement
-   * (`policy/paths.ts`'s `confinePath`) rejects an ABSOLUTE path outright --
-   * "always rejected, never re-rooted" -- so every path an app is meant to
-   * pass `orivon.fs.*` is relative already, and this value exists only so
-   * `path.resolve()` (see below) has something to prefix instead of
-   * throwing. Chosen over a fabricated app-specific string for the same
-   * reason `version` above is '': a value that looks meaningful invites a
-   * library to branch on it in a way this shim cannot actually back.
-   */
-  readonly cwd: () => string
-}
-
-/**
- * The options-object form of process.emitWarning's second argument. Every
- * field is `| undefined` on purpose: the callers are untyped JavaScript
- * libraries, and under `exactOptionalPropertyTypes` a plain `type?: string`
- * would reject the entirely ordinary `{ type: undefined }`.
- */
-export interface EmitWarningOptions {
-  readonly type?: string | undefined
-  readonly code?: string | undefined
-  readonly detail?: string | undefined
-}
-
-/**
- * What setImmediate returns and clearImmediate consumes, treated as opaque.
- *
- * Deliberately a union rather than `ReturnType<typeof setTimeout>`: this
- * repo sets `"types": ["node"]` globally, so that alias resolves to
- * NodeJS.Timeout -- an OBJECT with .ref()/.unref(). In the sandboxed
- * renderer this shim actually runs in, setTimeout returns a NUMBER, which
- * has neither. The alias therefore type-checks `setImmediate(fn).unref()`
- * clean and throws at runtime. The union has no members in common, so the
- * handle stays opaque and the mistake is caught at `npm run typecheck`.
- */
-export type ImmediateHandle = ReturnType<typeof setTimeout> | number
-
-/**
- * The shape installGlobals writes onto. Every field is optional and
- * otherwise unconstrained, on purpose: the production caller passes
- * globalThis (a huge, unrelated type), a test passes `{}`. Requiring more
- * here would make one of those two calls fight the type checker for no
- * safety gained -- installGlobals only ever WRITES these three properties,
- * never reads them back.
- */
-export interface GlobalsTarget {
-  process?: ShimProcess
-  setImmediate?: <Args extends readonly unknown[]>(callback: (...args: Args) => void, ...args: Args) => ImmediateHandle
-  clearImmediate?: (handle: ImmediateHandle) => void
-}
-
-/**
- * Installs process/setImmediate/clearImmediate onto `target`.
- *
- * Never touches the real globalThis itself by default -- the caller
- * decides what "global" means (a test: a disposable object; production:
- * omit `target` and the default below applies). `target` is the TRAILING,
- * defaulted parameter -- not the leading one this file used before A151 --
- * so a caller reachable only via `contextBridge.executeInMainWorld`'s
- * serialised `func`/`args` (../preload/expose-shim-globals.ts) can supply
- * `options` and let `target` default to that call's own real main-world
- * `window`, the identical pattern ../preload/main-world-socket.ts's
- * `installOrivon` already uses for its own trailing `target` parameter.
+ * Installs process, global, setImmediate and clearImmediate onto `target`.
+ * `target` is the trailing, defaulted parameter so the preload can pass only
+ * `options` and let it default to the page's own `window`.
  */
 export function installGlobals (
   options: InstallGlobalsOptions,
   target: GlobalsTarget = typeof window === 'undefined' ? {} : window as unknown as GlobalsTarget
 ): void {
-  const { reportError } = options
+  const { root, tmpdir } = options
+  const listeners = new Map<string, Array<{ listener: ProcessListener, once: boolean }>>()
 
-  // THE RULE THIS FILE EXISTS FOR. Node's real process.nextTick surfaces an
-  // exception escaping its callback to the process, loudly. A bare
-  // `queueMicrotask(() => fn(...args))` does not reproduce that -- but Node
-  // itself treats an uncaught queueMicrotask exception as fatal too (exit
-  // code 1), same as a bare setTimeout callback. So the failure this guards
-  // against is not "Node silently drops it" -- Node doesn't, anywhere. It is that a
-  // browser renderer's ambient handling of the identical throw is quiet by
-  // comparison: logged to a devtools console nobody is watching in a
-  // packaged app, never reaching whatever this project's operator actually
-  // monitors. Relying on ambient behaviour is exactly the bug, whether that
-  // behaviour happens to be fatal (Node) or quiet (renderer) -- the fix has
-  // to be an explicit, environment-independent report either way.
-  //
-  // KNOWN, ACCEPTED DIFFERENCE FROM REAL NODE -- ordering. Node keeps a
-  // dedicated nextTick queue that is drained to exhaustion BEFORE any
-  // promise continuation runs. queueMicrotask puts these callbacks in the
-  // same microtask queue as promises, so nextTick and .then() callbacks
-  // interleave here in FIFO order where Node would run every nextTick
-  // first. Checked against the real graph before accepting it:
-  // `process-nextick-args`, the package most sensitive to this, branches on
-  // `!process.version` and takes its own fallback path under this shim (see
-  // `version` above), so nothing in the spike's graph depends on the
-  // stricter ordering. Revisit if a dependency ever does -- the fix is a
-  // real queue drained from one queueMicrotask, not a second polyfill.
+  // THE RULE THIS FILE EXISTS FOR. An exception escaping a nextTick or
+  // setImmediate callback crashes a real Node process loudly; in a renderer
+  // the same throw is quiet by comparison, logged where nobody watches. So
+  // every such exception is reported explicitly: to a process
+  // 'uncaughtException' listener if the app installed one, as Node does, and
+  // otherwise to the page's own reportError, which fires window 'error'
+  // exactly as an uncaught exception would. Never to the preload's isolated
+  // console, which the page's own error handling cannot see.
+  function report (error: unknown, origin: GlobalsErrorOrigin): void {
+    if (origin !== 'warning' && emit('uncaughtException', error, 'uncaughtException')) return
+    if (origin === 'warning' && emit('warning', error)) return
+    if (options.reportError !== undefined) { options.reportError(error, origin); return }
+    if (origin === 'warning') { console.warn(error); return }
+    if (typeof target.reportError === 'function') target.reportError(error)
+    else setTimeout(() => { throw error })
+  }
+
+  function add (event: string, listener: ProcessListener, once: boolean): ShimProcess {
+    const list = listeners.get(event) ?? []
+    list.push({ listener, once })
+    listeners.set(event, list)
+    return process
+  }
+
+  function remove (event: string, listener: ProcessListener): ShimProcess {
+    const list = listeners.get(event) ?? []
+    const at = list.findIndex((entry) => entry.listener === listener)
+    if (at !== -1) list.splice(at, 1)
+    return process
+  }
+
+  function emit (event: string, ...args: unknown[]): boolean {
+    const list = listeners.get(event)
+    if (list === undefined || list.length === 0) return false
+    for (const entry of [...list]) {
+      if (entry.once) remove(event, entry.listener)
+      entry.listener.apply(process, args)
+    }
+    return true
+  }
+
+  // KNOWN, ACCEPTED DIFFERENCE FROM REAL NODE -- ordering. Node drains its
+  // nextTick queue before any promise continuation; queueMicrotask
+  // interleaves the two FIFO. `process-nextick-args`, the package most
+  // sensitive to it, branches on `!process.version` and takes its own
+  // fallback here, so nothing in the known graph depends on the stricter order.
   function nextTick<Args extends readonly unknown[]> (callback: (...args: Args) => void, ...args: Args): void {
     queueMicrotask(() => {
       try {
         callback(...args)
       } catch (error) {
-        reportError(error, 'nextTick')
+        report(error, 'nextTick')
       }
     })
   }
 
-  // Same rule, same fix, different primitive -- setImmediate gets the
-  // identical explicit try/catch, so a fix proven on nextTick cannot regress
-  // here just because the bug happened to be found on nextTick first
-  // (handle-contracts.md's "What the shim must do" section, rule 2: "any polyfilled
-  // Node timing primitive", not just the one that failed once).
-  //
-  // setTimeout(fn, 0) rather than a MessageChannel-based scheduler: Node
-  // does not promise a library that setImmediate runs in any particular
-  // phase relative to I/O, only that it runs soon and asynchronously, which
-  // setTimeout(0) already provides.
+  // A MessageChannel task, not setTimeout(0): timers are clamped to 4 ms once
+  // nested and to 1 s in a hidden tab, and schedulers that adopt
+  // setImmediate when present (React's among them) would inherit both.
+  const immediates = new Map<number, () => void>()
+  let nextImmediate = 1
+  const channel = new MessageChannel()
+  channel.port1.onmessage = (event: MessageEvent<number>) => {
+    const run = immediates.get(event.data)
+    immediates.delete(event.data)
+    run?.()
+  }
+  // Node's MessagePort holds its event loop open once listened to; a
+  // browser's has no unref and needs none.
+  ;(channel.port1 as { unref?: () => void }).unref?.()
+
   function shimSetImmediate<Args extends readonly unknown[]> (callback: (...args: Args) => void, ...args: Args): ImmediateHandle {
-    return setTimeout(() => {
+    const handle = nextImmediate++
+    immediates.set(handle, () => {
       try {
         callback(...args)
       } catch (error) {
-        reportError(error, 'setImmediate')
+        report(error, 'setImmediate')
       }
-    }, 0)
+    })
+    channel.port2.postMessage(handle)
+    return handle
   }
 
   function shimClearImmediate (handle: ImmediateHandle): void {
-    clearTimeout(handle)
+    immediates.delete(handle)
   }
 
-  // Not a timing primitive, but held to the same "louder, not quieter"
-  // standard: Node's default for an unhandled 'warning' event is to print
-  // it, not drop it, so an emitWarning that went nowhere would be a
-  // regression by the same measure nextTick/setImmediate are held to above.
-  // Covers BOTH of Node's documented shapes, not just the positional one:
-  //   emitWarning(warning[, type[, code]][, ctor])
-  //   emitWarning(warning[, options])              options: {type, code, detail}
-  // Handling only the first assigned the whole options object to
-  // `error.name`, which stringifies to '[object Object]' -- a warning that
-  // arrives unreadable rather than not at all. Same quiet-failure class as
-  // the swallowed exception above, so it gets the same treatment.
+  // Both of Node's forms: emitWarning(warning[, type[, code]]) and
+  // emitWarning(warning[, { type, code, detail }]). An Error is emitted as
+  // is; a string is wrapped and named, 'Warning' by default.
   function emitWarning (warning: string | Error, typeOrOptions?: string | EmitWarningOptions, code?: string): void {
-    // Matches real Node: an Error is emitted as-is (a `type` argument
-    // alongside one is ignored); a string is wrapped and named, defaulting
-    // to 'Warning' the same way Node's own unnamed warnings print as
-    // "Warning: ..." rather than the generic Error's "Error: ...".
-    if (warning instanceof Error) {
-      reportError(warning, 'warning')
-      return
-    }
-
-    const options: EmitWarningOptions = typeof typeOrOptions === 'string'
-      ? { type: typeOrOptions, code }
-      : typeOrOptions ?? {}
-
+    if (warning instanceof Error) { report(warning, 'warning'); return }
+    const opts: EmitWarningOptions = typeof typeOrOptions === 'string' ? { type: typeOrOptions, code } : typeOrOptions ?? {}
     const error: Error & { code?: string, detail?: string } = new Error(warning)
-    error.name = options.type ?? 'Warning'
-    // Attached only when present, so a consumer can distinguish "no code"
-    // from "code explicitly undefined" -- Node does the same.
-    if (options.code !== undefined) error.code = options.code
-    if (options.detail !== undefined) error.detail = options.detail
-
-    reportError(error, 'warning')
+    error.name = opts.type ?? 'Warning'
+    if (opts.code !== undefined) error.code = opts.code
+    if (opts.detail !== undefined) error.detail = opts.detail
+    report(error, 'warning')
   }
 
-  target.process = {
+  // Monotonic, from the page's own clock origin.
+  function hrtime (previous?: readonly [number, number]): [number, number] {
+    const now = performance.now()
+    let seconds = Math.floor(now / 1000)
+    let nanos = Math.floor((now % 1000) * 1e6)
+    if (previous !== undefined) {
+      seconds -= previous[0]
+      nanos -= previous[1]
+      if (nanos < 0) { seconds -= 1; nanos += 1e9 }
+    }
+    return [seconds, nanos]
+  }
+  hrtime.bigint = (): bigint => BigInt(Math.floor(performance.now() * 1e6))
+
+  function memoryUsage (): Record<'rss' | 'heapTotal' | 'heapUsed' | 'external' | 'arrayBuffers', number> {
+    const heap = (performance as { memory?: { usedJSHeapSize: number, totalJSHeapSize: number } }).memory
+    return { rss: heap?.totalJSHeapSize ?? 0, heapTotal: heap?.totalJSHeapSize ?? 0, heapUsed: heap?.usedJSHeapSize ?? 0, external: 0, arrayBuffers: 0 }
+  }
+  memoryUsage.rss = (): number => memoryUsage().rss
+
+  let mask = 0o022
+  function umask (next?: number): number {
+    const previous = mask
+    if (next !== undefined) mask = next
+    return previous
+  }
+
+  function exit (code?: number): never {
+    if (code !== undefined) process.exitCode = code
+    emit('exit', process.exitCode ?? 0)
+    const error = new Error(`process.exit(${String(process.exitCode ?? 0)}) was called, but an app tab cannot end its own process.`)
+    throw Object.assign(error, { name: 'OrivonShimError', api: 'process.exit', reason: 'not-applicable', code: 'ERR_ORIVON_PROCESS_EXIT' })
+  }
+
+  // Minimal stdout/stderr: each write is one line on the page console.
+  function stdio (fd: number, print: (text: string) => void): ShimStdio {
+    return {
+      fd,
+      isTTY: false,
+      write (chunk, encodingOrCallback, callback) {
+        print(String(chunk).replace(/\n$/, ''))
+        const done = typeof encodingOrCallback === 'function' ? encodingOrCallback as () => void : callback
+        if (done !== undefined) queueMicrotask(done)
+        return true
+      }
+    }
+  }
+
+  const process: ShimProcess = {
     platform: 'browser',
-    env: {},
+    env: { HOME: root, USERPROFILE: root, APPDATA: root, TMPDIR: tmpdir, TMP: tmpdir, TEMP: tmpdir },
     version: '',
+    versions: {},
     browser: true,
+    argv: [],
+    execArgv: [],
+    pid: 1,
+    ppid: 0,
+    title: 'browser',
+    arch: 'javascript',
+    release: { name: 'browser' },
+    exitCode: undefined,
+    stdout: stdio(1, (text) => { console.log(text) }),
+    stderr: stdio(2, (text) => { console.error(text) }),
     nextTick,
     emitWarning,
-    cwd: () => '/'
+    cwd: () => root,
+    hrtime,
+    uptime: () => performance.now() / 1000,
+    memoryUsage,
+    umask,
+    exit,
+    on: (event, listener) => add(event, listener, false),
+    addListener: (event, listener) => add(event, listener, false),
+    once: (event, listener) => add(event, listener, true),
+    off: remove,
+    removeListener: remove,
+    removeAllListeners: (event) => { if (event === undefined) listeners.clear(); else listeners.delete(event); return process },
+    emit,
+    listeners: (event) => (listeners.get(event) ?? []).map((entry) => entry.listener),
+    listenerCount: (event) => listeners.get(event)?.length ?? 0
   }
+
+  // Plain assignments, never a locked defineProperty: ADR-0021, an app may
+  // shadow or replace any of these (README.md's Design notes).
+  target.process = process
+  target.global = target
   target.setImmediate = shimSetImmediate
   target.clearImmediate = shimClearImmediate
 }
