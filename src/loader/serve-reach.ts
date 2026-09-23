@@ -76,21 +76,10 @@ const HOP_BY_HOP_RESPONSE_HEADERS = new Set([
 ])
 
 /**
- * Matches `src/preload/fetch-route.ts`'s own `ROUTED_FETCH_MAX_BODY_BYTES`
- * (16 MiB) -- the repo already decided this number once, for the identical
- * "an unbounded page-supplied body must not be buffered whole" problem on
- * the OTHER side of this same fetch (a routed `fetch()` call reaches this
- * file, via `net.connectSecure`, only for the response half; a request BODY
- * takes the ordinary `orivon.net.connect`/`connectSecure` socket path on
- * its way out of the renderer -- so this file, not that one, is where a
- * page's own bytes actually land as a `Request` this main process must
- * buffer before dialling). Not imported: `src/loader/` and `src/preload/`
- * sit on opposite sides of a trust boundary neither may import across
- * (README.md's "what it must never import"), so this is a second literal
- * copy by the same rule this file already uses above for `isNullBodyStatus`
- * (Rule 3) -- the honest cost of one idea living on both sides, not a
- * missed extraction. Exported so a test builds the boundary case against
- * this exact value instead of a third, silently drifting copy.
+ * A page-supplied request body (a worker's or XHR's POST to a granted host
+ * through this handler) is buffered whole in the main process before the
+ * dial, so it must be bounded. Exported so a test builds the boundary case
+ * against this exact value.
  */
 export const REACH_MAX_REQUEST_BODY_BYTES = 16 * 1024 * 1024
 

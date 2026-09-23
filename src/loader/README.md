@@ -72,7 +72,7 @@ AI-recommended and uncalibrated (A15).
 **An install writes only what changed, one atomic rename per file, and a crash heals itself.**
 [`install.ts`](install.ts) compares each staged leaf with a streaming hash of the file already in
 `code/` at that path and commits (renames) only those that differ; an unchanged bundle writes
-nothing at all and keeps its pin record, so a repeat visit no longer rewrites the cache. Every
+nothing at all and keeps its pin record, so a repeat visit leaves the cache untouched. Every
 write is a rename from staging (`node-storage.ts`'s `writeAtomically`, `commitStaged`), so a
 reader sees the old file or the new one, never a partial one (A62's second half). Comparing
 against the bytes on disk, not the old pin's leaf, is what lets a damaged cache heal: a file that
@@ -322,8 +322,8 @@ per-item-failure stance `runAfterReady` (`main/registry.ts`) already takes for s
 
 **When the cached bundle fails verification, nothing is served, and the next visit reinstalls
 it.** A pin whose files no longer hash to it (a crash part-way through an install, a damaged
-disk, a hand edit) used to get a handler that denied every request, forever: the app's page
-could never load, so its hint never fired and nothing could ever repair the cache. Now
+disk, a hand edit) must not get a handler that denies every request: the app's page could never
+load, so its hint would never fire and nothing could repair the cache. So
 `electron-serve.ts`'s `registerServingFor` registers nothing for such an origin at startup and
 hydrates nothing, so it loads as an ordinary website, with no grants live and no app-tab flag.
 Its hint then runs `load()` as usual: the pin still names the bundle, the fetched bundle is
@@ -335,8 +335,8 @@ carries authority and must never fall through to whatever the network serves nex
 
 **A declined capability is asked about once, not on every visit.** `decideUpdate()` compares the
 new manifest with what the origin holds; a capability the person declined at install, or revoked
-since, is never held, so every visit used to read as "the app wants more" and raise the capability
-prompt again. `index.ts` now also passes the pinned manifest's own declared set
+since, is never held, so comparing against held grants alone would read every visit as "the app
+wants more" and raise the capability prompt again. `index.ts` therefore also passes the pinned manifest's own declared set
 (`previouslyDeclaredPatterns`), read back only when its bytes still hash to the pin's manifest
 leaf: authority the person was already asked about counts as covered. That grants nothing -- the
 declined capability stays ungranted -- and a request outside both sets still prompts.

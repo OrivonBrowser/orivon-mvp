@@ -44,7 +44,7 @@ network path's files belong to `broker` (build step 2); `shell.ts` and
 | `settings.ts` | **only** the permissions panel's own view (`src/main/permissions/permissions-panel.ts`) | `orivonSettings`: list each app's grants and revoke one, after checking `location.href` against its expected URL; `src/main/ipc/settings-ipc.ts` re-verifies the sender on every call |
 | `newtab.ts` | **only** a genuinely fresh tab (`src/main/shell/tabs.ts`'s `createTab()`, no `url` argument) | Read-only bookmark access, navigate-this-tab-only, but only after checking `location.href` against its own expected URL first, since (unlike the chrome view) a dashboard tab is ordinary and navigable; falls back to the SAME `exposeOrivon()` `app.ts` uses otherwise, not a second copy |
 | `fetch-route.ts`, `xhr-route.ts`, `eventsource-route.ts`, `websocket-route.ts` (the routed network path) | `app.ts` and `newtab.ts`'s fallback branch, via `expose-fetch-route.ts`'s `exposeFetchRoute()` | ADR-0017: `window.fetch`, `XMLHttpRequest`, `EventSource` and `WebSocket` reach a registered app's GRANTED cross-origin hosts through `orivon.net`, when the tab's `--orivon-app-tab` flag says so (`src/main/shell/tab-view.ts`'s `appTabArgsFor`). Every other request -- same-origin, another scheme, or to a host the app was not granted -- takes the page's native API, CORS and CSP and all. A plain website keeps all four native, untouched |
-| `expose-shim-globals.ts` | `app.ts` and `newtab.ts`'s fallback branch, via `exposeShimGlobals()` | A151: installs `src/shim/globals.ts`'s `process`/`setImmediate`/`clearImmediate`, and `page-buffer.ts`'s `Buffer`, into the main world, gated on the SAME `--orivon-app-tab` flag `expose-fetch-route.ts` reads; an ordinary tab never receives shimmed Node globals just because it loaded before this preload ran |
+| `expose-shim-globals.ts` | `app.ts` and `newtab.ts`'s fallback branch, via `exposeShimGlobals()` | A151: installs `src/shim/globals.ts`'s `process`/`global`/`setImmediate`/`clearImmediate`, passing no reporter so an uncaught callback error reaches the page's own `reportError`, and `page-buffer.ts`'s `Buffer`, into the main world, gated on the SAME `--orivon-app-tab` flag `expose-fetch-route.ts` reads; an ordinary tab never receives shimmed Node globals just because it loaded before this preload ran |
 
 **Preload builds are isolated per entry (`electron.vite.config.ts`'s `isolatedEntries: true`).**
 When two preloads share a local import (`shell.ts` and `newtab.ts` both import `./channels.js`),
@@ -168,8 +168,8 @@ version is that a locked global cannot be shadowed in strict mode, so a bundle t
 dies while its module graph is still evaluating, naming no cause. So the routed `fetch` is
 installed `writable`, `configurable` and `enumerable` (an operation's descriptor), the routed
 `XMLHttpRequest`, `EventSource` and `WebSocket` `writable` and `configurable` but not `enumerable`
-(an interface object's), [`../shim/globals.ts`](../shim/globals.ts)'s `process`, `setImmediate` and
-`clearImmediate` are plain assignments, and [`page-buffer.ts`](page-buffer.ts)'s `Buffer` is
+(an interface object's), [`../shim/globals.ts`](../shim/globals.ts)'s `process`, `global`,
+`setImmediate` and `clearImmediate` are plain assignments, and [`page-buffer.ts`](page-buffer.ts)'s `Buffer` is
 `writable` and `configurable` but not `enumerable`, as Node defines its own.
 `npm run check:page-globals` fails the build on a locked one, and reads an omitted `writable` as
 the lock it actually is.
@@ -324,10 +324,9 @@ host, whether an `<img>`, `<link>`, or `<video>` `src`/`href`, never reaches it 
 intercepted at the `protocol.handle` layer instead, inside the app's own partition
 ([`src/loader/serve.ts`](../loader/serve.ts)'s `fetchThirdParty`, dialled by
 [`src/loader/serve-reach.ts`](../loader/serve-reach.ts)'s `nodeReachDial`, Node's own `https`
-module). Unlike the routed path, it never follows a redirect: a 3xx response from the granted
-host comes back exactly as received, so a redirecting URL used as an `<img src>` or `<video src>`
-on a granted host renders as a broken load rather than following through, which is surprising since the
-page wrote no network code of its own to suspect. See `src/loader/README.md`'s Design notes for
+module). A 3xx from the granted host goes back to the page's own loader, which follows it through
+the same handler, so every hop is authorised afresh; a chain is capped at 20 hops
+([`src/loader/serve-reach-redirects.ts`](../loader/serve-reach-redirects.ts)). See `src/loader/README.md`'s Design notes for
 the full mechanism; this file's own list above covers only the routed path.
 
 **`init.signal` (`AbortController`) IS supported**, matching real `fetch()`: an already-aborted
