@@ -94,13 +94,16 @@ once nested and to 1 s in a hidden tab, and a scheduler that adopts `setImmediat
 (React's does) would inherit both. A message task has neither clamp, and keeps Node's ordering:
 one callback per task, in the order queued.
 
-**No `Buffer` page global yet.** `global` is `globalThis` and costs nothing, but `Buffer` is the
-`buffer` package, and `installGlobals` may not name anything outside its own body, so it cannot
-import one. Putting it on the page needs the package's source in the main world: a build step
-that bundles it into a function the preload can serialise, or an owner decision to inject it
-with `webFrame.executeJavaScript`, whose timing before the page's own scripts is unverified here.
-Until then a bundle referring to a bare `Buffer` needs its bundler to provide it (webpack's
-`ProvidePlugin`, for one).
+**An app tab's `Buffer` global is the `buffer` package, and [`node-buffer.ts`](node-buffer.ts)
+adopts it.** `installGlobals` may not name anything outside its own body, so it cannot import the
+package; the preload installs it instead ([`../preload/page-buffer.ts`](../preload/page-buffer.ts),
+and [`../preload/README.md`](../preload/README.md)'s Design notes say how the package gets there).
+An app's bundle still carries its own copy of the package behind `buffer`, and two copies are two
+classes, so `node-buffer.ts` exports the page's global instead of its own when the global is the
+package's class (it has `TYPED_ARRAY_SUPPORT`; Node's own Buffer, which a unit test runs under,
+does not), with `SlowBuffer` rebuilt over it. `require('buffer').Buffer === Buffer` then holds and
+`instanceof` agrees either way. A realm without the global (a worker, a subframe, an ordinary tab)
+keeps the package's own class.
 
 
 **Polyfill-grade vs Orivon-grade primitives, and why the gap is documented rather than closed

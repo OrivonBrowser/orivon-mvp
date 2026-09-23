@@ -43,7 +43,7 @@ network path's files belong to `broker` (build step 2); `shell.ts` and
 | `settings.ts` | **only** the permissions panel's own view (`src/main/permissions/permissions-panel.ts`) | `orivonSettings`: list each app's grants and revoke one, after checking `location.href` against its expected URL; `src/main/ipc/settings-ipc.ts` re-verifies the sender on every call |
 | `newtab.ts` | **only** a genuinely fresh tab (`src/main/shell/tabs.ts`'s `createTab()`, no `url` argument) | Read-only bookmark access, navigate-this-tab-only, but only after checking `location.href` against its own expected URL first, since (unlike the chrome view) a dashboard tab is ordinary and navigable; falls back to the SAME `exposeOrivon()` `app.ts` uses otherwise, not a second copy |
 | `fetch-route.ts`, `xhr-route.ts`, `eventsource-route.ts` (the routed network path) | `app.ts` and `newtab.ts`'s fallback branch, via `expose-fetch-route.ts`'s `exposeFetchRoute()` | ADR-0017: `window.fetch`, `XMLHttpRequest` and `EventSource` reach a registered app's GRANTED cross-origin hosts through `orivon.net`, when the tab's `--orivon-app-tab` flag says so (`src/main/shell/tab-view.ts`'s `appTabArgsFor`). Every other request -- same-origin, non-http(s), or to a host the app was not granted -- takes the page's native API, CORS and all. A plain website keeps all three native, untouched |
-| `expose-shim-globals.ts` | `app.ts` and `newtab.ts`'s fallback branch, via `exposeShimGlobals()` | A151: installs `src/shim/globals.ts`'s `process`/`setImmediate`/`clearImmediate` into the main world, gated on the SAME `--orivon-app-tab` flag `expose-fetch-route.ts` reads; an ordinary tab never receives shimmed Node globals just because it loaded before this preload ran |
+| `expose-shim-globals.ts` | `app.ts` and `newtab.ts`'s fallback branch, via `exposeShimGlobals()` | A151: installs `src/shim/globals.ts`'s `process`/`setImmediate`/`clearImmediate`, and `page-buffer.ts`'s `Buffer`, into the main world, gated on the SAME `--orivon-app-tab` flag `expose-fetch-route.ts` reads; an ordinary tab never receives shimmed Node globals just because it loaded before this preload ran |
 
 **Preload builds are isolated per entry (`electron.vite.config.ts`'s `isolatedEntries: true`).**
 When two preloads share a local import (`shell.ts` and `newtab.ts` both import `./channels.js`),
@@ -167,9 +167,35 @@ version is that a locked global cannot be shadowed in strict mode, so a bundle t
 dies while its module graph is still evaluating, naming no cause. So the routed `fetch` is
 installed `writable`, `configurable` and `enumerable` (an operation's descriptor), the routed
 `XMLHttpRequest` and `EventSource` `writable` and `configurable` but not `enumerable` (an interface
-object's), and [`../shim/globals.ts`](../shim/globals.ts)'s `process`, `setImmediate` and
-`clearImmediate` are plain assignments. `npm run check:page-globals` fails the build on a locked
-one, and reads an omitted `writable` as the lock it actually is.
+object's), [`../shim/globals.ts`](../shim/globals.ts)'s `process`, `setImmediate` and
+`clearImmediate` are plain assignments, and [`page-buffer.ts`](page-buffer.ts)'s `Buffer` is
+`writable` and `configurable` but not `enumerable`, as Node defines its own.
+`npm run check:page-globals` fails the build on a locked one, and reads an omitted `writable` as
+the lock it actually is.
+
+**Why `Buffer` reaches the page inlined into [`page-buffer.ts`](page-buffer.ts)'s installer.**
+`contextBridge.executeInMainWorld` serialises a function alone, so the installer cannot import
+the `buffer` package. `electron.vite.config.ts`'s `pageBufferPackage` plugin bundles the package
+(resolved from [`../shim/node-buffer.ts`](../shim/node-buffer.ts), so the one the shim wraps) and
+writes it into the installer's body at build time, and fails the build if the placeholder it
+replaces is not there exactly once. Measured in a headless Electron 44 tab against five page CSPs (none; the served
+bundle's own; `script-src 'self' 'unsafe-inline'`; nonce-only; nonce plus Trusted Types), this
+defines `Buffer` before the page's first inline `<head>` script under all five, and the page can
+still assign over, shadow and delete it. Two other routes were measured beside it:
+
+- **Evaluating the package source with the `Function` constructor in the main world** fails,
+  silently, under every policy without `'unsafe-eval'`. An app tab can carry one: developer mode
+  appends Orivon's policy to the dev server's own rather than replacing it, so the stricter of
+  the two applies.
+- **`webFrame.executeJavaScript`** passed all five too, but that it runs before the page's own
+  scripts is observed behaviour of a call that returns a promise, not a documented property.
+  `executeInMainWorld` runs synchronously by contract, and a failure throws where it can be
+  logged.
+
+The bundler drops a nested `'use strict'`, so the package runs sloppy in the page, as
+`installGlobals` does; `tests/page-buffer.test.ts` and `test/e2e-page-buffer.test.ts` both run
+it that way. [`../shim/node-buffer.ts`](../shim/node-buffer.ts) adopts this global when it finds
+it, which is what keeps `require('buffer').Buffer` and `Buffer` one class.
 
 **Why [`main-world-socket.ts`](main-world-socket.ts) still locks `window.orivon` when the rest is
 not locked.** `orivon` is Orivon's own surface rather than a borrowed one: nothing tries to shadow
@@ -258,8 +284,8 @@ is a trap":
   `'document'` response is parsed with `DOMParser`.
 - **Workers and iframes get neither routing nor the shim's globals.** A preload runs only in a
   tab's top-level frame, so a dedicated or shared worker, a service worker, and any subframe keep
-  their native `fetch`/`XMLHttpRequest`/`EventSource`, CORS-bound, and have no `orivon`, `process`
-  or `setImmediate`. An app that moves its network calls into a worker loses routing there.
+  their native `fetch`/`XMLHttpRequest`/`EventSource`, CORS-bound, and have no `orivon`, `process`,
+  `setImmediate` or `Buffer`. An app that moves its network calls into a worker loses routing there.
 
 **A second, independent mechanism diverges the same way, for a different class of request.**
 The routed network path above only intercepts the page's own JS-level `fetch()`, XHR and
