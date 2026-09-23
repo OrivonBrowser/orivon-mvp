@@ -125,7 +125,9 @@ export function installWebSocketRoute (
   function detail (error: unknown): string {
     const cause = error instanceof Error ? error.cause : undefined
     if (cause instanceof Error) return cause.message
-    return error instanceof Error ? error.message : String(error)
+    // A protocol error from the frame parser is a plain `{ closeCode, message }`.
+    const message = typeof error === 'object' && error !== null ? (error as { message?: unknown }).message : undefined
+    return typeof message === 'string' ? message : String(error)
   }
 
   function closeEvent (code: number, reason: string, wasClean: boolean): Event {

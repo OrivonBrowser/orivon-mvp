@@ -94,6 +94,7 @@ describe('routed WebSocket -- receiving', () => {
       expect(seen).toEqual(['error', { close: 1006, reason: '', wasClean: false }])
       expect(closeCodeOf(peer.frames().find((f) => f.opcode === OP.close))).toBe(code)
       expect([ws.readyState, peer.socket.closed]).toEqual([3, true])
+      expect(String(vi.mocked(console.error).mock.calls.at(-1)?.[0])).toMatch(/^WebSocket connection to 'wss:\/\/feed\.example\/live' failed: [A-Z]/)
     })
   }
 
