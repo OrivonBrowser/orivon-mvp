@@ -290,6 +290,18 @@ export interface PermissionsController {
   revokePickedPath: (origin: string, pickId: string) => Promise<void>
 }
 
+/**
+ * A revoke here is the person's "no" to `capability`, recorded the way a
+ * declined install-consent row is, so that dialog does not ask for it again
+ * on the next launch. `app.requestGrant` never consults the record, so the
+ * app can still ask, and an accepted request retires it.
+ */
+async function rememberRevoked (broker: Broker, origin: string, capability: CapabilityKind): Promise<void> {
+  const declined = await broker.declinedCapabilitiesFor(origin) ?? []
+  if (declined.includes(capability)) return
+  await broker.recordDeclinedConsent(origin, [...declined, capability])
+}
+
 /** The one way to build a `PermissionsController`, closing over `ctx`
  * (never a captured `Broker`) so it always reads whichever broker is
  * currently published -- `ctx.broker` is a live getter (registry.ts), and
@@ -311,7 +323,9 @@ export function createPermissionsController (ctx: SubsystemContext): Permissions
     async revoke (origin, grantId) {
       const broker = ctx.broker
       if (broker === undefined) return
+      const revoked = (await broker.app.grants(origin)).find((grant) => grant.id === grantId)
       await broker.revoke(origin, grantId)
+      if (revoked !== undefined) await rememberRevoked(broker, origin, revoked.capability)
     },
 
     /** The persisted-app path: `(origin, capability)` rather than an id. Goes
@@ -321,6 +335,7 @@ export function createPermissionsController (ctx: SubsystemContext): Permissions
       const broker = ctx.broker
       if (broker === undefined) return
       await broker.revokePersisted(origin, capability)
+      await rememberRevoked(broker, origin, capability)
     },
 
     async revokePickedPath (origin, pickId) {

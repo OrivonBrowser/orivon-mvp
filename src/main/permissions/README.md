@@ -2,7 +2,10 @@
 
 **What lives here.** `permissions.ts`: the grant list, with revocation (d-0027, owner decision
 9 — a grant lasts until revoked, and is visible in a list the user can revoke from). Revoke
-only; there is no "forget this app entirely" here, that is `GrantLedger.forgetOrigin`.
+only; there is no "forget this app entirely" here, that is `GrantLedger.forgetOrigin`. A revoke
+also records the capability as declined (`Broker.recordDeclinedConsent`), so the install-consent
+dialog does not ask for it again at the next launch; `app.requestGrant` still can, and an
+accepted request clears that record.
 `permissions-panel.ts`: queue item 4.4's in-window panel hanging off the toolbar's permission
 key.
 
