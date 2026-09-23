@@ -38,45 +38,68 @@ export interface WindowNotice {
 }
 
 export function createWindowNotice (contentView: View, windowWidth: () => number): WindowNotice {
-  let view: WebContentsView | undefined
-  let loaded: NoticeText | undefined
-  let shown = false
+  // One view per message, each loaded while detached and attached only once
+  // loaded: a view that navigates while attached takes focus from the page
+  // under it (measured), ending a pointer lock the moment it begins.
+  const views = new Map<NoticeText, { view: WebContentsView, loaded: boolean }>()
+  let wanted: NoticeText | undefined
+  let attached: WebContentsView | undefined
   let timer: ReturnType<typeof setTimeout> | undefined
 
   function layout (): void {
-    if (view === undefined || !shown) return
+    if (attached === undefined) return
     const x = Math.max(0, Math.round((windowWidth() - NOTICE_WIDTH) / 2))
-    view.setBounds({ x, y: NOTICE_TOP, width: NOTICE_WIDTH, height: NOTICE_HEIGHT })
+    attached.setBounds({ x, y: NOTICE_TOP, width: NOTICE_WIDTH, height: NOTICE_HEIGHT })
+  }
+
+  function attach (view: WebContentsView): void {
+    if (attached !== view) {
+      if (attached !== undefined) contentView.removeChildView(attached)
+      // Added last, so it sits above the tab view that just filled the window.
+      contentView.addChildView(view)
+      attached = view
+    }
+    layout()
+  }
+
+  function viewFor (text: NoticeText): { view: WebContentsView, loaded: boolean } {
+    const existing = views.get(text)
+    if (existing !== undefined) return existing
+    const entry = {
+      view: new WebContentsView({ webPreferences: { javascript: false, sandbox: true, contextIsolation: true, nodeIntegration: false } }),
+      loaded: false
+    }
+    views.set(text, entry)
+    entry.view.setBackgroundColor('#00000000')
+    entry.view.webContents.once('did-finish-load', () => {
+      entry.loaded = true
+      if (wanted === text) attach(entry.view)
+    })
+    void entry.view.webContents.loadURL(noticeUrl(text))
+    return entry
   }
 
   function hide (): void {
     clearTimeout(timer)
-    if (view !== undefined && shown) contentView.removeChildView(view)
-    shown = false
+    wanted = undefined
+    if (attached !== undefined) contentView.removeChildView(attached)
+    attached = undefined
   }
 
   function show (text: NoticeText): void {
-    if (view === undefined) {
-      view = new WebContentsView({ webPreferences: { javascript: false, sandbox: true, contextIsolation: true, nodeIntegration: false } })
-      view.setBackgroundColor('#00000000')
-    }
-    if (loaded !== text) {
-      loaded = text
-      void view.webContents.loadURL(noticeUrl(text))
-    }
-    // Added last, so it sits above the tab view that just filled the window.
-    if (!shown) contentView.addChildView(view)
-    shown = true
-    layout()
+    wanted = text
+    const entry = viewFor(text)
+    if (entry.loaded) attach(entry.view)
     clearTimeout(timer)
     timer = setTimeout(hide, NOTICE_MS)
   }
 
   function dispose (): void {
     hide()
-    if (view !== undefined && !view.webContents.isDestroyed()) view.webContents.close()
-    view = undefined
-    loaded = undefined
+    for (const { view } of views.values()) {
+      if (!view.webContents.isDestroyed()) view.webContents.close()
+    }
+    views.clear()
   }
 
   return { show, hide, layout, dispose }
