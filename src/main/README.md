@@ -27,7 +27,7 @@ to no single job, and `registry.ts`/`channels.ts` are the seam other packages
 | [`consent/`](consent/) | **Ask**: decide what to ask, say it in words, show the dialog | no | the `-prompt` files only |
 | [`permissions/`](permissions/) | **Review**: the grant list a person can revoke from | no | `permissions-panel.ts` only |
 | [`install/`](install/) | **Install**: a hinted manifest becomes a registered, consented app | per-origin queue | the `-subsystem` file only |
-| [`sessions/`](sessions/) | **Confine**: what an Electron `Session` is allowed to do | no | yes, both |
+| [`sessions/`](sessions/) | **Confine**: what an Electron `Session` is allowed to do | yes, each site's notification answer on disk | `permission-gate.ts` and `web-context-host.ts` only |
 | [`self-update/`](self-update/) | **Update itself**: check, notify, never install | last-check timestamp | `-runner` only |
 | [`dev/`](dev/) | **Dev only**: inert or compiled out of an ordinary build | no | `eth-resolver.ts` only |
 
