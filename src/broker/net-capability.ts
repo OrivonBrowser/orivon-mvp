@@ -13,6 +13,7 @@ import { checkBind } from './policy/bind.js'
 import { checkConnect, connectStillAuthorised } from './policy/connect.js'
 import { checkLookup } from './policy/lookup.js'
 import { createConnectSecure } from './net-connect-secure.js'
+import { assertSocketRoom } from './socket-room.js'
 import { isPublicUnicast } from './policy/address.js'
 import type { BoundUdpSocket, Broker, CreateBrokerOptions, DialedSocket, ListenedServer, SendOutcome } from './broker-contracts.js'
 import type { CapabilityKind, Datagram, LookupAddress } from '../contracts/index.js'
@@ -107,6 +108,7 @@ export function createNetCapability ({ deps, handleTable, ledger, canonical, soc
         // INJECTED dial implementation independently honouring an
         // already-aborted signal rather than on the broker itself.
         if (signal.aborted) throw fail('revoked', 'the grant authorising this connection was withdrawn')
+        assertSocketRoom(handleTable, key, socketAllowance(key))
         dialed = await deps.dial(decision.addresses, opts.port, signal)
       } catch (error) {
         throw mapIoError(error, 'net')

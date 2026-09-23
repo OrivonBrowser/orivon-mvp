@@ -151,6 +151,18 @@ describe('installFetchRoute -- routing decisions', () => {
   })
 })
 
+describe('installFetchRoute -- a request that cannot be written never keeps its socket', () => {
+  // A header value with a raw CR or LF cannot be put on the wire. The request
+  // fails, and the socket it dialled is closed rather than held against the
+  // origin's socket allowance.
+  it('closes the dialled socket when the request head cannot be built', async () => {
+    const { target, socket } = secureTarget()
+    const error = await target.fetch!('https://api.example/x', { headers: [['X-Split', 'a\r\nb']] }).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(TypeError)
+    if (socket() !== undefined) expect(socket().closed).toBe(true)
+  })
+})
+
 describe('installFetchRoute -- header freedom and no ambient credentials', () => {
   it('sends an app-chosen Origin header the browser would normally forbid, verbatim on the wire', async () => {
     const { target, socket } = secureTarget()

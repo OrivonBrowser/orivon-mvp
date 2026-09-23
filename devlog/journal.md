@@ -35,6 +35,7 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Five ASGARDEX chains need API keys upstream bakes in from CI secrets; a port must bring its own.
 - Platform-fidelity sweep fixed most of 86 audited gaps; XHR, EventSource and WebSocket now routed, installed apps survive restarts and updates.
 - Owner allowed unsafe-eval and fullscreen, let '*' https grants reach any CDN, raised bundle caps to 64/512 MiB, and gave dev origins installed CSP.
+- Routed `fetch` now waits for a socket past the app's allowance instead of failing: FreeTube's 100-subscription refresh went from 286 errors to none.
 
 ### In my head
 

@@ -14,6 +14,7 @@ import type {
 } from './broker-contracts.js'
 import { fail } from './errors.js'
 import { mapTlsError } from './io-errors.js'
+import { assertSocketRoom } from './socket-room.js'
 import { checkConnect, connectStillAuthorised } from './policy/connect.js'
 import { checkConnectSecure } from './policy/connect-secure.js'
 import { normalizeHost } from './policy/canonical-host.js'
@@ -77,6 +78,7 @@ export function createConnectSecure ({ deps, handleTable, ledger, canonical, soc
         // handshake completing would still let `deps.dialSecure` run to
         // completion for a capability the app no longer holds.
         if (signal.aborted) throw fail('revoked', 'the grant authorising this connection was withdrawn')
+        assertSocketRoom(handleTable, key, socketAllowance(key))
         dialed = await deps.dialSecure(target, options, signal)
       } catch (error) {
         // mapTlsError, NOT mapIoError: a failed handshake or a certificate/

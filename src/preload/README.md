@@ -251,7 +251,13 @@ exported constant the tests hold it to.
   routed socket from this page has been released by the broker or after the back-off, since the
   allowance is per origin and other tabs or the app's own `orivon.net` sockets hold it too. A
   browser queues past its connection limit and never fails a request for it; the bounded wait is
-  the one divergence, and a request that exhausts it fails like a network error.
+  the one divergence, and a request that exhausts it fails like a network error. The broker looks
+  at the origin's socket count before it dials (`src/broker/socket-room.ts`), so a refused dial
+  costs the remote host no connection or TLS handshake. There is no per-host cap: a browser opens
+  six HTTP/1.1 connections to a host but reaches most busy hosts over HTTP/2, while a routed
+  request is one HTTP/1.1 exchange per socket, so six per host would slow a burst badly
+  (FreeTube refreshing a hundred subscriptions measured 19.5 s against 5.7 s). The allowance the
+  person granted is the bound.
 - `ROUTED_IDLE_TIMEOUT_MS` (300 s), `routed-core.ts`. With no caller signal (fetch) or `timeout`
   (XHR), a request that receives nothing for this long, while it is waiting on the peer, fails like
   a network error and frees its socket. It is a hang detector: long-polls and quiet event streams
