@@ -191,11 +191,15 @@ describe('routed WebSocket -- the opening handshake', () => {
     const target = wsTarget({ peers: [peer] })
     const ws = new target.WebSocket('wss://feed.example/')
     const seen = recordEvents(ws)
+    const viaHandlers: string[] = []
+    ws.onerror = () => { viaHandlers.push('onerror') }
+    ws.onclose = (e: CloseEvent) => { viaHandlers.push(`onclose ${e.code}`) }
     await settle()
     ws.close()
     expect(ws.readyState).toBe(2)
     await settle()
     expect(seen).toEqual(['error', { close: 1006, reason: '', wasClean: false }])
+    expect(viaHandlers).toEqual(['onerror', 'onclose 1006'])
     expect([ws.readyState, peer.socket.closed]).toEqual([3, true])
   })
 
