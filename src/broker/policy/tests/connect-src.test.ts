@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { appCspHeaderValue, appReachCspHeaderValue, connectSrcFor } from '../connect-src.js'
+import { connectSrcFor, reachSourcesFor } from '../connect-src.js'
 import { checkConnect } from '../connect.js'
 import { hostSpecKind } from '../connect-patterns.js'
 import { PUBLIC_A, PUBLIC_B, noResolution, resolverFor } from './connect.test-helpers.js'
@@ -59,10 +59,6 @@ describe('connectSrcFor -- base cases', () => {
     const result = connectSrcFor(exactly256)
     expect(result.omitted.every((o) => o.reason !== 'too-many-patterns')).toBe(true)
     expect(result.omitted.some((o) => o.reason === 'over-budget')).toBe(true)
-  })
-
-  it('appCspHeaderValue formats the header value for an empty grant', () => {
-    expect(appCspHeaderValue([])).toBe("connect-src 'self'")
   })
 
   it('\'self\' is always first, even with real grants', () => {
@@ -536,19 +532,45 @@ describe('connectSrcFor -- agrees with checkConnect (the invariant, executable)'
   })
 })
 
-describe('appReachCspHeaderValue -- A143\'s img-src/font-src/media-src, sourced from https.connect', () => {
-  it('is self-only for an empty grant, same as connect-src', () => {
-    expect(appReachCspHeaderValue([])).toBe("img-src 'self'; font-src 'self'; media-src 'self'")
+describe('reachSourcesFor -- what an https.connect grant contributes to the reach directives', () => {
+  it('contributes nothing for an empty grant: \'self\' is the caller\'s to add, not this list\'s', () => {
+    expect(reachSourcesFor([])).toEqual({ sources: [], omitted: [] })
   })
 
-  it('widens all three directives identically to one granted host:port', () => {
-    expect(appReachCspHeaderValue(['cdn.example.com:443'])).toBe(
-      "img-src 'self' cdn.example.com:443; font-src 'self' cdn.example.com:443; media-src 'self' cdn.example.com:443"
-    )
+  it('scheme-qualifies every source as https://, the only scheme the reach handler ever serves', () => {
+    expect(reachSourcesFor(['cdn.example.com:443', 'api.example.com:8443']).sources).toEqual([
+      'https://cdn.example.com:443',
+      'https://api.example.com:8443'
+    ])
   })
 
-  it('reuses connectSrcFor\'s own omission rules -- an unrepresentable pattern is dropped from all three, not approximated', () => {
-    expect(appReachCspHeaderValue(['*:*'])).toBe("img-src 'self'; font-src 'self'; media-src 'self'")
+  it('never emits a ws: or wss: source, and never a bare host:port a WebSocket could also match', () => {
+    const emitted = reachSourcesFor(['cdn.example.com:443', 'a.example:6881-6889', 'b.example:*']).sources
+    expect(emitted.length).toBeGreaterThan(0)
+    for (const source of emitted) expect(source.startsWith('https://')).toBe(true)
+  })
+
+  it('reuses connectSrcFor\'s own translation and omission rules -- an unrepresentable pattern is reported, not approximated', () => {
+    const result = reachSourcesFor(['[2001:db8::1]:443', 'a.example:1-1000', 'ok.example:443'])
+    expect(result.sources).toEqual(['https://ok.example:443'])
+    expect(result.omitted.map((o) => o.reason)).toEqual(['host-ipv6-literal', 'port-range-too-wide'])
+  })
+
+  it('a `*` host emits the https: scheme source alone, and nothing that source covers is still reported as omitted', () => {
+    const result = reachSourcesFor(['*:443', 'cdn.example.com:443', '[2001:db8::1]:443', '*.bad.example:443'])
+    expect(result.sources).toEqual(['https:'])
+    // A sub-glob authorises nothing in the grant itself, so https: does not
+    // make the header wider than the grant for it -- it stays reported.
+    expect(result.omitted).toEqual([{ pattern: '*.bad.example:443', reason: 'host-authorises-nothing' }])
+  })
+
+  it('a `*` host whose port authorises nothing emits nothing', () => {
+    expect(reachSourcesFor(['*:0443', '*:0']).sources).toEqual([])
+  })
+
+  it('a grant checkConnectSecure refuses outright (too many patterns) emits nothing, `*` included', () => {
+    const many = ['*:443', ...Array.from({ length: 300 }, (_, i) => `host${i}.example:443`)]
+    expect(reachSourcesFor(many)).toEqual({ sources: [], omitted: [{ reason: 'too-many-patterns' }] })
   })
 })
 

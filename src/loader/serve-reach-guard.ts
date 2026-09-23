@@ -21,19 +21,18 @@ import type { ConnectSecureDecision } from '../broker/policy/connect-secure.js'
 export const REACH_REVOCATION_POLL_MS = 200
 
 /**
- * A200: tries to reserve one of this origin's socket-allowance slots for a
- * reach request about to start. `false` means none are free right now --
- * the caller must refuse the request, never queue it (T11b's own rule,
- * applied here to a budget this file did not invent:
- * `GrantLedger.socketAllowance`, reached via `Broker.app.socketAllowanceSync`
- * -- see electron-serve.ts's own `reachSlotsFor`).
+ * A200: reserves one of this origin's socket-allowance slots for a reach
+ * request about to start. `true` (possibly after a bounded wait in a FIFO
+ * queue, serve-reach-slots.ts) means the slot is held; `false` means none
+ * came free in time, and the caller refuses the request. `signal` lets a
+ * cancelled request leave the queue.
  *
- * MUST check-and-reserve as one synchronous step, the same discipline
- * `GrantLedger.reserveFsBytes`'s own doc names: two reach requests racing
- * this function must not both read the same pre-reservation count and both
- * pass.
+ * A free slot MUST be checked-and-reserved as one synchronous step, the
+ * discipline `GrantLedger.reserveFsBytes`'s own doc names: two reach
+ * requests racing this function must not both read the same
+ * pre-reservation count and both pass.
  */
-export type ReserveReachSlot = () => boolean
+export type ReserveReachSlot = (signal?: AbortSignal) => boolean | Promise<boolean>
 
 /**
  * Releases a slot `ReserveReachSlot` reserved. `guardReachResponse` below
