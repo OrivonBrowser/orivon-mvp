@@ -15,7 +15,7 @@ import type { PortLike } from './socket-port.js'
 import { createServerPort } from './server-port.js'
 import type { AcceptedConnection } from './server-port.js'
 import type { MainWorldServerBridge, MainWorldSocketBridge, MainWorldUdpBridge } from './main-world-socket.js'
-import type { LookupAddress } from '../contracts/index.js'
+import type { LookupAddress, SecureConnectOptions, SecureHandshake } from '../contracts/index.js'
 
 /**
  * What `net.connect`'s CONTROL_CHANNEL reply actually carries -- deliberately
@@ -30,6 +30,8 @@ interface SocketDescriptor {
   readonly remotePort: number
   readonly localAddress: string
   readonly localPort: number
+  /** net.connectSecure's reply only. */
+  readonly tls?: SecureHandshake
 }
 
 /** `net.udpBind`'s reply. Repeated at this trust boundary for the same reason SocketDescriptor is. */
@@ -76,12 +78,14 @@ export async function netConnectBridge (opts: { host: string, port: number }): P
 /**
  * net.connectSecure's own bridge closure -- a SIBLING of netConnectBridge
  * above, not a second implementation: the CONTROL_CHANNEL method name is
- * the only difference. `net.connectSecure` resolves to the exact same
- * SocketDescriptor shape net.connect does (../broker/transport/dispatch-net.ts's
- * deliverTcpSocket is shared by both on the broker side), so buildBridgeResult
- * below is reused unchanged rather than copied (code-guidelines.md Rule 3).
+ * the only difference, and `opts` carries the TLS options through as the
+ * page gave them. `net.connectSecure` resolves to net.connect's
+ * SocketDescriptor plus `tls` (../broker/transport/dispatch-net.ts's
+ * deliverTcpSocket is shared by both on the broker side), so
+ * buildBridgeResult below is reused rather than copied (code-guidelines.md
+ * Rule 3).
  */
-export async function netConnectSecureBridge (opts: { host: string, port: number }): Promise<MainWorldSocketBridge> {
+export async function netConnectSecureBridge (opts: SecureConnectOptions): Promise<MainWorldSocketBridge> {
   const descriptor = await call<SocketDescriptor>('net.connectSecure', opts, TIMEOUT_MS.net)
   try {
     return buildBridgeResult(descriptor, await socketBridge.waitForPort(descriptor.id))
@@ -102,6 +106,7 @@ function buildBridgeResult (descriptor: SocketDescriptor, port: PortLike): MainW
     remotePort: descriptor.remotePort,
     localAddress: descriptor.localAddress,
     localPort: descriptor.localPort,
+    ...(descriptor.tls === undefined ? {} : { tls: descriptor.tls }),
     onData: socketPort.onData,
     onReadEnd: socketPort.onReadEnd,
     reportConsumed: socketPort.reportConsumed,

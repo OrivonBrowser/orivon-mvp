@@ -17,7 +17,7 @@
 
 import type { OrivonErrorCode } from '../contracts/errors.js'
 import type { SendRefusal, UdpSocket } from '../contracts/handles.js'
-import type { CapabilityRequest } from '../contracts/capability-api.js'
+import type { CapabilityRequest, SecureConnectOptions } from '../contracts/capability-api.js'
 import type {
   MainWorldBridge, MainWorldDatagram, MainWorldDirectoryBridge, MainWorldFileBridge, MainWorldServerBridge,
   MainWorldSocketBridge, MainWorldUdpBridge, MainWorldWebContextBridge, OrivonLimits
@@ -98,6 +98,17 @@ export function installOrivon (
     return revived
   }
 
+  /** A secure socket's handshake facts as plain page properties. The certificate is frozen but its `raw`/`pubkey` bytes cannot be: a non-empty typed array refuses `Object.freeze`. */
+  function handshakeFields (tls: NonNullable<MainWorldSocketBridge['tls']>): Record<string, unknown> {
+    const cert = tls.peerCertificate
+    return {
+      authorized: tls.authorized,
+      ...(tls.authorizationError === undefined ? {} : { authorizationError: tls.authorizationError }),
+      alpnProtocol: tls.alpnProtocol,
+      peerCertificate: cert === null ? null : Object.freeze({ ...cert, subject: Object.freeze({ ...cert.subject }), issuer: Object.freeze({ ...cert.issuer }) })
+    }
+  }
+
   function buildSocket (s: Awaited<ReturnType<typeof bridge.netConnect>>): unknown {
     let totalEnqueued = 0
     let consumedTotal = 0
@@ -168,6 +179,7 @@ export function installOrivon (
       remotePort: s.remotePort,
       localAddress: s.localAddress,
       localPort: s.localPort,
+      ...(s.tls === undefined ? {} : handshakeFields(s.tls)),
       readable,
       writable,
       closed: pageClosed(s.closed),
@@ -444,7 +456,7 @@ export function installOrivon (
     }),
     net: Object.freeze({
       connect: async (opts: { host: string, port: number }) => buildSocket(await callRevived(bridge.netConnect(opts))),
-      connectSecure: async (opts: { host: string, port: number }) => buildSocket(await callRevived(bridge.netConnectSecure(opts))),
+      connectSecure: async (opts: SecureConnectOptions) => buildSocket(await callRevived(bridge.netConnectSecure(opts))),
       udpBind: async (opts: { port: number }) => buildUdpSocket(await callRevived(bridge.netUdpBind(opts))),
       listen: async (opts: { port: number }) => buildServer(await callRevived(bridge.netListen(opts))),
       lookup: async (opts: { hostname: string }) => await callRevived(bridge.netLookup(opts))

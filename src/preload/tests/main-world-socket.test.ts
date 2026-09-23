@@ -245,6 +245,34 @@ describe('installOrivon', () => {
     expect(typeof socket.close).toBe('function')
   })
 
+  it('a net.connectSecure socket carries its handshake facts; a net.connect socket carries none', async () => {
+    const target: Record<string, unknown> = {}
+    const raw = new Uint8Array([48, 3])
+    const secureResult = Object.assign(fakeSocketBridgeResult(), {
+      tls: {
+        authorized: false,
+        authorizationError: 'DEPTH_ZERO_SELF_SIGNED_CERT',
+        alpnProtocol: 'h2' as const,
+        peerCertificate: {
+          subject: { CN: 'node.lan' }, issuer: { CN: 'node.lan' }, valid_from: 'a', valid_to: 'b',
+          serialNumber: '01', fingerprint: 'AA', fingerprint256: 'BB', raw
+        }
+      }
+    })
+    installOrivon(fakeBridge(fakeSocketBridgeResult(), undefined, undefined, secureResult), LIMITS, target)
+    const orivon = target.orivon as { net: Record<string, (opts: unknown) => Promise<Record<string, unknown>>> }
+
+    const secure = await orivon.net.connectSecure!({ host: 'node.lan', port: 50002, rejectUnauthorized: false })
+    const plain = await orivon.net.connect!({ host: 'node.lan', port: 50001 })
+
+    expect(secure).toMatchObject({ authorized: false, authorizationError: 'DEPTH_ZERO_SELF_SIGNED_CERT', alpnProtocol: 'h2' })
+    const cert = secure.peerCertificate as { subject: Record<string, string>, raw: Uint8Array }
+    expect(cert.subject).toEqual({ CN: 'node.lan' })
+    expect(cert.raw).toEqual(raw)
+    expect(Object.isFrozen(cert) && Object.isFrozen(cert.subject)).toBe(true)
+    expect('authorized' in plain).toBe(false)
+  })
+
   it('runs the exact fixture-app sequence: write, writer.close(), then read to completion', async () => {
     const result = fakeSocketBridgeResult()
     const target: Record<string, unknown> = {}

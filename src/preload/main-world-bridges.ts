@@ -18,8 +18,8 @@
 // ever reaches the main world; only installOrivon's own compiled body does.
 
 import type { OrivonErrorCode } from '../contracts/errors.js'
-import type { FileStat, LookupAddress, SendRefusal } from '../contracts/handles.js'
-import type { CapabilityRequest } from '../contracts/capability-api.js'
+import type { FileStat, LookupAddress, SecureHandshake, SendRefusal } from '../contracts/handles.js'
+import type { CapabilityRequest, SecureConnectOptions } from '../contracts/capability-api.js'
 import type { ResponseEnvelope } from '../contracts/ipc.js'
 
 /**
@@ -169,6 +169,8 @@ export interface MainWorldSocketBridge {
   readonly close: () => Promise<void>
   readonly setNoDelay: (on: boolean) => Promise<void>
   readonly setKeepAlive: (on: boolean, initialDelayMs?: number) => Promise<void>
+  /** A `net.connectSecure` socket's handshake facts, plain data from the broker's reply; absent on every other socket. */
+  readonly tls?: SecureHandshake
 }
 
 /**
@@ -223,8 +225,8 @@ export interface MainWorldBridge {
   /** ADR-0019 -- resolves a `MainWorldWebContextBridge`, `fsOpen`'s own shape of counterpart (a plain object of MORE proxied closures, no native stream). `./main-world-socket.ts`'s own `buildWebContext` wraps it the same way `buildFile` wraps `fsOpen`'s. Takes `origin` folded into `opts`, unlike the public `openContext(origin, options?)` two-argument shape `installOrivon` builds, which merges them back in before calling this. */
   webOpenContext: (opts: { origin: string, width?: number, height?: number }) => Promise<MainWorldWebContextBridge>
   netConnect: (opts: { host: string, port: number }) => Promise<MainWorldSocketBridge>
-  /** net.connectSecure's own closure -- resolves to the identical bridge shape netConnect does; `./main-world-socket.ts`'s own `buildSocket` is shared by both (Rule 3). */
-  netConnectSecure: (opts: { host: string, port: number }) => Promise<MainWorldSocketBridge>
+  /** net.connectSecure's own closure -- resolves to netConnect's bridge shape plus `tls`; `./main-world-socket.ts`'s own `buildSocket` is shared by both (Rule 3). The options pass through untouched: the broker validates them. */
+  netConnectSecure: (opts: SecureConnectOptions) => Promise<MainWorldSocketBridge>
   netUdpBind: (opts: { port: number }) => Promise<MainWorldUdpBridge>
   netListen: (opts: { port: number }) => Promise<MainWorldServerBridge>
   /** `net.lookup` (d-0030) -- plain data, not a bridge: no per-socket state to wrap, unlike every other `net*` entry above. */
