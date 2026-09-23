@@ -2,9 +2,10 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { COMMAND_CHANNEL, STATE_CHANNEL } from '../main/channels.js'
 import type { ShellCommand } from '../main/ipc/ipc.js'
 import type { ShellState } from '../main/shell/tabs.js'
-import type { AppPermissions } from '../main/permissions/permissions.js'
+import type { SiteSummary } from '../main/permissions/site-info-controller.js'
 import type { DeliveryProvenance } from '../main/browsing/delivery-provenance.js'
 import type { PanelAnchor } from '../main/permissions/permissions-panel.js'
+import type { SiteInfoPage } from '../main/permissions/site-info-panel.js'
 
 // Loaded ONLY by the chrome view (src/main/window.ts) -- the tab strip and
 // toolbar UI. Privileged: this is the one preload that may issue tab
@@ -37,24 +38,30 @@ contextBridge.exposeInMainWorld('orivonShell', {
   removeBookmark: (url: string) => { send({ type: 'removeBookmark', url }) },
   openBookmark: (url: string) => { send({ type: 'openBookmark', url }) },
 
-  // Queue item 4.4: the address-bar icon's own at-a-glance state (a round
-  // trip, via `request` above -- see ShellCommand's own doc on
-  // 'appPermissionsFor' for why listing/revoking are NOT here), and opening
-  // the settings window (fire-and-forget, like every other command above).
-  appPermissionsFor: async (url: string) => await request<AppPermissions | null>({ type: 'appPermissionsFor', url }),
-  // S4-6, ADR-0007: the address-bar dot's own truthful delivery-provenance
-  // query -- same round-trip shape as appPermissionsFor above, deliberately
-  // a separate command (see ShellCommand's own doc on 'deliveryProvenanceFor')
-  // rather than folded into the permissions payload, which answers a
-  // different question (what can this app do, not where did its bytes
-  // come from).
+  // The toolbar key's own at-a-glance state (a round trip, via `request`
+  // above -- see ShellCommand's own doc on 'siteSummaryFor' for why
+  // listing/revoking, and the full per-capability list, are NOT here), and
+  // opening the all-sites and site-info popups (fire-and-forget, like
+  // every other command above).
+  siteSummaryFor: async (url: string) => await request<SiteSummary>({ type: 'siteSummaryFor', url }),
+  // S4-6, ADR-0007: the address-bar shield's own truthful
+  // delivery-provenance query -- same round-trip shape as siteSummaryFor
+  // above, deliberately a separate command (see ShellCommand's own doc on
+  // 'deliveryProvenanceFor') rather than folded into the permissions
+  // payload, which answers a different question (what can this app do,
+  // not where did its bytes come from).
   deliveryProvenanceFor: async (url: string) => await request<DeliveryProvenance>({ type: 'deliveryProvenanceFor', url }),
-  // `anchor` is the permission key's own rect, read by the chrome view --
-  // main has no way to know where the toolbar put that button. Passed
-  // through verbatim; permissions-panel.ts clamps it to the window rather
-  // than trusting it as a bounds.
+  // `anchor` is the tune icon's own rect, read by the chrome view -- main
+  // has no way to know where the toolbar put that button. Passed through
+  // verbatim; permissions-panel.ts clamps it to the window rather than
+  // trusting it as a bounds.
   openSettings: (anchor: PanelAnchor, url?: string) => {
     send(url === undefined ? { type: 'openSettings', anchor } : { type: 'openSettings', url, anchor })
+  },
+  // Same anchor contract as openSettings, for the shield or key that opens
+  // the per-site popup instead -- `page` says which icon was clicked.
+  openSiteInfo: (anchor: PanelAnchor, page: SiteInfoPage, url?: string) => {
+    send(url === undefined ? { type: 'openSiteInfo', anchor, page } : { type: 'openSiteInfo', url, anchor, page })
   },
 
   /** Subscribes to shell state pushes from main. Returns an unsubscribe

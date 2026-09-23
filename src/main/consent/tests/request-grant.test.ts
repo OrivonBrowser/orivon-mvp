@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { requestGrant } from '../request-grant.js'
+import { addDeclinedCapability, clearDeclinedCapability, requestGrant } from '../request-grant.js'
 import { APP, stubBroker } from '../../../broker/transport/tests/ipc.test-helpers.js'
 import type { BrokerCall } from '../../../broker/transport/tests/ipc.test-helpers.js'
 import { createBroker } from '../../../broker/index.js'
@@ -239,5 +239,56 @@ describe('requestGrant (real broker) -- proves a real, persisted grant', () => {
 
     const grants = await broker.app.grants(APP)
     expect(grants).toHaveLength(0)
+  })
+})
+
+// The site-info popover's own turn-on/turn-off primitives
+// (../permissions/site-switches.js). `broker.recordDeclinedConsent`
+// REPLACES the whole decline set, so both helpers below have to read
+// before they write -- proven here against a real ledger, not a stub that
+// could hide the overwrite.
+describe('addDeclinedCapability / clearDeclinedCapability (real broker)', () => {
+  function realBroker (): Broker {
+    return createBroker(baseDeps())
+  }
+
+  it('addDeclinedCapability adds to an empty record', async () => {
+    const broker = realBroker()
+    await addDeclinedCapability(broker, APP, 'tcp.connect')
+    expect(await broker.declinedCapabilitiesFor(APP)).toEqual(['tcp.connect'])
+  })
+
+  it('addDeclinedCapability unions with an existing record, never overwrites it', async () => {
+    const broker = realBroker()
+    await broker.recordDeclinedConsent(APP, ['fs'])
+    await addDeclinedCapability(broker, APP, 'tcp.connect')
+    expect(await broker.declinedCapabilitiesFor(APP)).toEqual(['fs', 'tcp.connect'])
+  })
+
+  it('addDeclinedCapability is a no-op when the capability is already declined', async () => {
+    const broker = realBroker()
+    await broker.recordDeclinedConsent(APP, ['fs', 'tcp.connect'])
+    await addDeclinedCapability(broker, APP, 'tcp.connect')
+    expect(await broker.declinedCapabilitiesFor(APP)).toEqual(['fs', 'tcp.connect'])
+  })
+
+  it('clearDeclinedCapability drops only the named capability, keeping the rest', async () => {
+    const broker = realBroker()
+    await broker.recordDeclinedConsent(APP, ['fs', 'tcp.connect'])
+    await clearDeclinedCapability(broker, APP, 'tcp.connect')
+    expect(await broker.declinedCapabilitiesFor(APP)).toEqual(['fs'])
+  })
+
+  it('clearDeclinedCapability clears the whole record once nothing remains', async () => {
+    const broker = realBroker()
+    await broker.recordDeclinedConsent(APP, ['tcp.connect'])
+    await clearDeclinedCapability(broker, APP, 'tcp.connect')
+    expect(await broker.declinedCapabilitiesFor(APP)).toBeUndefined()
+  })
+
+  it('clearDeclinedCapability on an origin never declined is a no-op', async () => {
+    const broker = realBroker()
+    await expect(clearDeclinedCapability(broker, APP, 'tcp.connect')).resolves.toBeUndefined()
+    expect(await broker.declinedCapabilitiesFor(APP)).toBeUndefined()
   })
 })

@@ -17,9 +17,10 @@ import { ipcMain, type IpcMainInvokeEvent, type WebContents } from 'electron'
 import type { BookmarkStore } from '../browsing/bookmarks.js'
 import { COMMAND_CHANNEL } from '../channels.js'
 import type { TabManager } from '../shell/tabs.js'
-import type { AppPermissions, PermissionsController } from '../permissions/permissions.js'
+import type { SiteInfoController, SiteSummary } from '../permissions/site-info-controller.js'
 import type { DeliveryProvenance } from '../browsing/delivery-provenance.js'
 import type { PanelAnchor } from '../permissions/permissions-panel.js'
+import type { SiteInfoPage } from '../permissions/site-info-panel.js'
 
 export type ShellCommand =
   | { type: 'newTab'; url?: string }
@@ -38,28 +39,36 @@ export type ShellCommand =
   | { type: 'addBookmark'; url: string; title: string; tabId: string }
   | { type: 'removeBookmark'; url: string }
   | { type: 'openBookmark'; url: string }
-  /** Queue item 4.4: the address-bar icon's own state, from the active
-   * tab's url -- what it can do, at a glance. Listing every app and
-   * revoking both happen in the settings window instead (its own
-   * SETTINGS_COMMAND_CHANNEL, ./settings-ipc.ts), not here: this channel
-   * is chrome-only, and the chrome view itself never needs the full list. */
-  | { type: 'appPermissionsFor'; url: string }
+  /** The toolbar key's own visibility and tint, from the active tab's url
+   * -- whether the site has asked for anything at all, and whether any
+   * asked-for row carries a warning. The full per-capability list, and the
+   * every-app list, both live behind their own popovers instead (this
+   * channel is chrome-only, and the chrome view itself never needs either
+   * in full). */
+  | { type: 'siteSummaryFor'; url: string }
   /** S4-6, ADR-0007: whether the active tab's URL is currently being
-   * answered from Orivon's own pinned local cache -- the address-bar dot's
-   * one truthful provenance signal, queried the same lagging, per-active-tab
-   * way `appPermissionsFor` already is (see ./delivery-provenance.ts). */
+   * answered from Orivon's own pinned local cache -- the address-bar
+   * shield's one truthful provenance signal, queried the same lagging,
+   * per-active-tab way `siteSummaryFor` already is (see
+   * ./delivery-provenance.ts). */
   | { type: 'deliveryProvenanceFor'; url: string }
-  /** Opens, or closes, the permissions panel under the toolbar's permission
-   * key -- see ./permissions-panel.ts. `url` is the active TAB's url, not
-   * yet an origin (window.ts derives one via originFromUrl on the way), and
-   * says which app's card to scroll to; it is absent when no tab has one.
+  /** Opens, or closes, the all-sites permissions popup under the
+   * toolbar cluster's tune icon -- see ./permissions-panel.ts. `url` is
+   * the active TAB's url, not yet an origin (window.ts derives one via
+   * originFromUrl on the way), and says which app's card to scroll to; it
+   * is absent when no tab has one.
    *
-   * `anchor` is the key's own rect, measured by the chrome view. Main
+   * `anchor` is the icon's own rect, measured by the chrome view. Main
    * cannot derive it: where that button sits depends on the toolbar's CSS
    * and the window width, both of which live in the renderer. It is only a
    * position -- treated as a hint and clamped to the window in
    * panelBounds(), never trusted as a bounds to set directly. */
   | { type: 'openSettings'; url?: string; anchor: PanelAnchor }
+  /** Opens, or closes, the site-info popup under the address pill's shield
+   * or key -- see ./site-info-panel.ts. Same `anchor`/`url` shape as
+   * `openSettings`; `page` is which icon was clicked (the shield opens
+   * straight to the Web3 Score page, the key to the main page). */
+  | { type: 'openSiteInfo'; url?: string; anchor: PanelAnchor; page: SiteInfoPage }
 
 function isFromChrome (event: IpcMainInvokeEvent, chromeWebContents: WebContents): boolean {
   return event.senderFrame !== null &&
@@ -70,16 +79,17 @@ export function registerShellIpc (
   chromeWebContents: WebContents,
   tabs: TabManager,
   bookmarks: BookmarkStore,
-  permissions: PermissionsController,
+  siteInfo: SiteInfoController,
   openSettings: (anchor: PanelAnchor, url?: string) => void,
-  /** Injected, matching `permissions` above -- ipc.test.ts stubs this rather
+  openSiteInfo: (anchor: PanelAnchor, page: SiteInfoPage, url?: string) => void,
+  /** Injected, matching `siteInfo` above -- ipc.test.ts stubs this rather
    * than reaching through to a real Electron `session`, the same reason
-   * `permissions` is a `PermissionsController` object rather than an
-   * imported broker call. Defaults to `deliveryProvenanceFor` in
-   * window.ts's real construction. */
+   * `siteInfo` is a `SiteInfoController` object rather than an imported
+   * broker call. Defaults to `deliveryProvenanceFor` in window.ts's real
+   * construction. */
   deliveryProvenance: (url: string) => Promise<DeliveryProvenance> = async () => ({ servedFromPinnedCache: false })
 ): void {
-  ipcMain.handle(COMMAND_CHANNEL, (event: IpcMainInvokeEvent, command: ShellCommand): void | Promise<void | AppPermissions | DeliveryProvenance | null> => {
+  ipcMain.handle(COMMAND_CHANNEL, (event: IpcMainInvokeEvent, command: ShellCommand): void | Promise<void | SiteSummary | DeliveryProvenance | null> => {
     if (!isFromChrome(event, chromeWebContents)) {
       // Not the chrome view's top frame -- refuse silently rather than
       // throwing a message back that confirms the channel exists.
@@ -129,12 +139,15 @@ export function registerShellIpc (
         }
         return
       }
-      case 'appPermissionsFor':
-        return permissions.forUrl(command.url)
+      case 'siteSummaryFor':
+        return siteInfo.siteSummaryFor(command.url)
       case 'deliveryProvenanceFor':
         return deliveryProvenance(command.url)
       case 'openSettings':
         openSettings(command.anchor, command.url)
+        return
+      case 'openSiteInfo':
+        openSiteInfo(command.anchor, command.page, command.url)
         return
     }
   })
