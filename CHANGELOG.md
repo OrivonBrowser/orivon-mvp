@@ -47,6 +47,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
   accessors; errors carry Node's `errno`, `syscall` and codes; `dns.lookup` answers literals and
   `localhost` itself; `dgram` validates sends as Node does.
 - **`web.context`'s `evaluate` takes a per-call timeout**, which can only shorten the platform's.
+- **Ported apps can reach self-signed and private-CA TLS servers.** `tls.connect` and `https`
+  honour `rejectUnauthorized: false`, `ca`, client certificates (`cert`/`key`/`pfx`),
+  `servername`, ALPN and a custom `checkServerIdentity`, and a TLS socket reports `authorized`,
+  `authorizationError`, `alpnProtocol` and `getPeerCertificate()` as in Node. Turning
+  verification off never widens what an app's grant reaches.
 - **A manifest with extra fields installs.** An unknown top-level field (`$schema`,
   `description`, `icons`, `homepage`) is ignored with a warning; an unknown field inside
   `capabilities` still refuses the manifest.
