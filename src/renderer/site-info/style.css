@@ -65,6 +65,11 @@ button:focus-visible {
   padding: 12px 14px 16px;
 }
 
+/* [hidden] must win over the flex display below, or the browser's own
+   default `[hidden] { display: none }` UA rule loses to this class
+   selector and every page renders stacked at once -- caught by an actual
+   screenshot, not by reasoning about specificity. */
+.screen[hidden] { display: none; }
 .screen { display: flex; flex-direction: column; gap: 10px; }
 
 hr {

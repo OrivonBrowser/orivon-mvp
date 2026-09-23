@@ -160,7 +160,10 @@ async function clearBrowserData (): Promise<void> {
 async function init (): Promise<void> {
   info = await bridge.get()
   renderCurrent()
-  if (page === 'web3') await ensureTrust()
+  // Always fetched, not only when opening the Web3 page: the main page's
+  // own connection row needs the real secure/insecure/cached state too,
+  // never the "Web3 Score" placeholder past the very first paint.
+  await ensureTrust()
   renderCurrent()
 }
 
