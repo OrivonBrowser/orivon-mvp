@@ -30,6 +30,7 @@ import type { CapabilityKind, Pattern } from '../contracts/index.js'
 import { createPinCoverageTracker } from './pin-coverage.js'
 import type { PinCoverageSnapshot } from './pin-coverage.js'
 import { createAppRequestHandler, fetchThirdParty, verifiedManifestFor } from './serve.js'
+import { saveCheckRecord } from './update-check.js'
 import type { AppRequestHandler, AuthoriseReach } from './serve.js'
 import { cspHeaderValue } from './serve-csp.js'
 import { nodeReachDial } from './serve-reach.js'
@@ -300,6 +301,9 @@ export function reachOnlyHandlerFor (broker: Broker, opener: string): (request: 
  */
 export async function registerServingFor (storage: LoaderStorage, origin: string, broker?: Broker): Promise<void> {
   const pinnedManifest = await verifiedManifestFor(storage, origin)
+  // A damaged cache must not wait out the update-check interval, or answer a
+  // 304 for a manifest it no longer holds intact: the next visit checks in full.
+  if (pinnedManifest === undefined) await saveCheckRecord(storage, origin, undefined)
   if (pinnedManifest === undefined && !carriesLiveAuthority(origin, broker)) {
     // README.md, "When the cached bundle fails verification": serve nothing,
     // so the origin loads as an ordinary website and its hint reinstalls it.

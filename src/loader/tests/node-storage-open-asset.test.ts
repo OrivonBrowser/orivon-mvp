@@ -1,4 +1,4 @@
-import { mkdtemp, truncate } from 'node:fs/promises'
+import { mkdtemp, readFile, truncate, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -84,5 +84,29 @@ describe('nodeLoaderStorage.openAsset', () => {
     await truncate(join(codeDir, 'app.js'), 4)
     await expect(collect(asset!.read(0, 9))).rejects.toThrow()
     await asset!.close()
+  })
+})
+
+describe('nodeLoaderStorage update-check record', () => {
+  it('round-trips beside pin.json, never inside code/, and deletes on undefined', async () => {
+    const { storage, codeDir } = await freshStorage()
+    expect(await storage.readUpdateCheck(ORIGIN)).toBeUndefined()
+
+    await storage.writeUpdateCheck(ORIGIN, { checkedAt: 42, validators: { etag: '"a"' }, manifestLeaf: `sha256:${'b'.repeat(64)}` })
+    expect(await storage.readUpdateCheck(ORIGIN)).toEqual({ checkedAt: 42, validators: { etag: '"a"' }, manifestLeaf: `sha256:${'b'.repeat(64)}` })
+    expect(await readFile(join(codeDir, '..', 'update-check.json'), 'utf8')).toContain('"checkedAt":42')
+    await storage.pruneAssets(ORIGIN, [])
+    expect(await storage.readUpdateCheck(ORIGIN)).toBeDefined()
+
+    await storage.writeUpdateCheck(ORIGIN, undefined)
+    expect(await storage.readUpdateCheck(ORIGIN)).toBeUndefined()
+    await storage.writeUpdateCheck(ORIGIN, undefined)
+  })
+
+  it('reads a corrupt record as none', async () => {
+    const { storage, codeDir } = await freshStorage()
+    await storage.writeAsset(ORIGIN, '/x.js', utf8('x'))
+    await writeFile(join(codeDir, '..', 'update-check.json'), '{not json')
+    expect(await storage.readUpdateCheck(ORIGIN)).toBeUndefined()
   })
 })

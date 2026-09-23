@@ -35,6 +35,7 @@ import { originFromUrl } from '../broker/policy/origin.js'
 import { MANIFEST_PATH } from '../broker/policy/canonical-path.js'
 import { leafOf } from './leaf-hash.js'
 import { parseManifest } from './manifest.js'
+import { checkRecord, checkedRecently, loadCheckRecord, pinnedManifestLeaf, saveCheckRecord, validatorsForPin } from './update-check.js'
 
 export type { Fetch, FetchResponse } from './fetch-bundle.js'
 export type { LoaderStorage } from './storage.js'
@@ -73,17 +74,18 @@ export interface CreateLoaderOptions {
   /**
    * When set, `load()` answers `'up-to-date'` without fetching anything for
    * an origin whose last completed check (any outcome but `'rejected'`) was
-   * less than this many milliseconds ago -- so an app's every page load
-   * does not re-download its whole bundle. Unset means every call checks.
+   * less than this many milliseconds ago, a record kept in `storage` so it
+   * survives a restart; and a later check asks for the manifest
+   * conditionally, answering `'up-to-date'` on a 304 without downloading
+   * the bundle. Unset means every call checks in full.
    */
   readonly updateCheckIntervalMs?: number
 }
 
 /**
  * The interval `subsystem.ts` passes as `updateCheckIntervalMs`: an app is
- * checked for an update at most once an hour, and on its first visit after
- * each start (the record is in memory only). AI-recommended; the owner
- * confirms the number.
+ * checked for an update at most once an hour, restarts included.
+ * AI-recommended; the owner confirms the number.
  */
 export const UPDATE_CHECK_INTERVAL_MS = 60 * 60_000
 
@@ -212,7 +214,7 @@ export interface LoadRejected {
   readonly reason: string
 }
 
-/** This origin was checked less than `updateCheckIntervalMs` ago; nothing was fetched and nothing changed. */
+/** This origin was checked less than `updateCheckIntervalMs` ago, or its host answered the conditional manifest request with 304; no bundle was fetched and nothing changed. */
 export interface LoadUpToDate {
   readonly outcome: 'up-to-date'
   readonly canonicalOrigin: string
@@ -371,20 +373,36 @@ async function decideAndRoute (
 }
 
 export function createLoader (options: CreateLoaderOptions): Loader {
-  const lastChecked = new Map<string, number>()
-
   async function load (hintedUrl: string, context: LoadContext): Promise<LoadResult> {
+    const interval = options.updateCheckIntervalMs
     const origin = originFromUrl(hintedUrl)
-    const checkedAt = origin === null ? undefined : lastChecked.get(origin)
-    if (origin !== null && checkedAt !== undefined && options.updateCheckIntervalMs !== undefined &&
-        options.now() - checkedAt < options.updateCheckIntervalMs) {
+    if (interval === undefined || origin === null) return await checkInFull(hintedUrl, context)
+
+    const previous = await loadCheckRecord(options.storage, origin)
+    if (previous !== undefined && checkedRecently(previous.checkedAt, options.now(), interval)) {
       return { outcome: 'up-to-date', canonicalOrigin: origin }
     }
-    const fetched = await fetchBundle(options.fetch, hintedUrl, options.resolve, options.storage)
+    const validators = await validatorsForPin(options.storage, origin, previous)
+    const fetched = await fetchBundle(options.fetch, hintedUrl, options.resolve, options.storage, undefined, validators)
+    if ('notModified' in fetched) {
+      await saveCheckRecord(options.storage, origin, checkRecord(options.now(), validators, previous?.manifestLeaf))
+      return { outcome: 'up-to-date', canonicalOrigin: origin }
+    }
     if (!fetched.ok) return { outcome: 'rejected', reason: fetched.reason }
     const result = await decideAndRoute(options, fetched.canonicalOrigin, fetched.manifest, fetched.tree, fetched.entries, context)
-    if (result.outcome !== 'rejected') lastChecked.set(fetched.canonicalOrigin, options.now())
+    if (result.outcome === 'installed') {
+      await saveCheckRecord(options.storage, origin, checkRecord(options.now(), fetched.validators, await pinnedManifestLeaf(options.storage, origin)))
+    } else if (result.outcome !== 'rejected') {
+      // Nothing was installed, so the pin, and the validators that describe it, are unchanged.
+      await saveCheckRecord(options.storage, origin, checkRecord(options.now(), validators, previous?.manifestLeaf))
+    }
     return result
+  }
+
+  async function checkInFull (hintedUrl: string, context: LoadContext): Promise<LoadResult> {
+    const fetched = await fetchBundle(options.fetch, hintedUrl, options.resolve, options.storage)
+    if (!fetched.ok) return { outcome: 'rejected', reason: fetched.reason }
+    return await decideAndRoute(options, fetched.canonicalOrigin, fetched.manifest, fetched.tree, fetched.entries, context)
   }
 
   async function reconsider (

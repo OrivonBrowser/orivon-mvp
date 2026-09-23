@@ -61,6 +61,18 @@ describe('netFetch', () => {
     expect(requestMock).toHaveBeenCalledExactlyOnceWith({ url: 'https://x.example/a.js', method: 'GET', credentials: 'omit', useSessionCookies: false, redirect: 'manual' })
   })
 
+  it('sends the extra request headers it is given, and none otherwise', async () => {
+    const conditional = Object.assign(fakeRequest([]), { setHeader: vi.fn() })
+    requestMock.mockReturnValue(conditional as never)
+    await netFetch('https://x.example/.well-known/orivon.json', new AbortController().signal, { 'if-none-match': '"v1"' })
+    expect(conditional.setHeader).toHaveBeenCalledExactlyOnceWith('if-none-match', '"v1"')
+
+    const plain = Object.assign(fakeRequest([]), { setHeader: vi.fn() })
+    requestMock.mockReturnValue(plain as never)
+    await netFetch('https://x.example/a.js', new AbortController().signal)
+    expect(plain.setHeader).not.toHaveBeenCalled()
+  })
+
   it('follows a same-origin redirect (a static host\'s /index.html -> /) and returns the final body under the requested url', async () => {
     const request = fakeRequest(['https://x.example/'], '<h1>hi</h1>')
     requestMock.mockReturnValue(request as never)

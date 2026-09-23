@@ -15,6 +15,7 @@
 // rather than exposing it to callers.
 
 import type { PinRecord } from '../broker/policy/pin.js'
+import type { UpdateCheckRecord } from './update-check.js'
 
 /** A readable file: its byte length, and its bytes as a stream of chunks -- never the whole file in one buffer. */
 export interface AssetStream {
@@ -128,6 +129,15 @@ export interface LoaderStorage {
   readAssetStream(origin: string, path: string): Promise<AssetStream | undefined>
   /** Opens an asset for serving a byte range of it; same never-throws, undefined-on-anything contract. */
   openAsset(origin: string, path: string): Promise<OpenedAsset | undefined>
+  /**
+   * The raw value last passed to `writeUpdateCheck` for `origin`, or
+   * undefined when there is none or it cannot be read. Never throws; the
+   * caller parses it (`update-check.ts`), since the file is as untrusted as
+   * any other on disk.
+   */
+  readUpdateCheck(origin: string): Promise<unknown>
+  /** Persists `origin`'s last update check, outside `code/`; `undefined` deletes it. */
+  writeUpdateCheck(origin: string, record: UpdateCheckRecord | undefined): Promise<void>
 }
 
 /**

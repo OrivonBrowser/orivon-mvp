@@ -338,12 +338,23 @@ prompt again. `index.ts` now also passes the pinned manifest's own declared set
 leaf: authority the person was already asked about counts as covered. That grants nothing -- the
 declined capability stays ungranted -- and a request outside both sets still prompts.
 
-**An app is checked for an update at most once an hour.** Every page load of an app reports its
-hint, and each used to re-download the whole bundle. `createLoader`'s `updateCheckIntervalMs`
-(`UPDATE_CHECK_INTERVAL_MS`, one hour, AI-recommended) answers `'up-to-date'` without fetching
-while the last completed check for that origin is younger than that. The record is in memory, so
-the first visit after every start still checks; a rejected check is not recorded, so a failure
-is retried on the next visit.
+**An installed app is checked for an update at most once an interval, and an unchanged app costs
+one small request.** Every page load of an app reports its hint. `createLoader`'s
+`updateCheckIntervalMs` (`UPDATE_CHECK_INTERVAL_MS`, one hour, AI-recommended) answers
+`'up-to-date'` without any request while the last check for that origin is younger than that.
+The time is kept in the origin's storage ([`update-check.ts`](update-check.ts),
+`apps/<origin-hash>/update-check.json`, beside `pin.json` and never inside `code/`), so a restart
+does not reset it; a rejected check is not recorded, so a failure is retried on the next visit,
+and a time in the future (the clock went back) counts as stale. Once the interval has passed, the
+manifest is requested with `If-None-Match`/`If-Modified-Since` from the manifest response that
+was last pinned, and a 304 answers `'up-to-date'` before any asset is requested. Those validators
+are stored with the pinned manifest's leaf and sent only while the pin still holds that leaf, so
+a 304 always means "the manifest you have pinned"; an accepted prompt that pins a new manifest
+makes the next check a full one, which re-learns them. **What this assumes of a publisher:** an
+update is noticed when the manifest changes, so every release must change the manifest (its
+`version` at least). A bundle whose files change under a byte-identical manifest is not picked
+up until the manifest changes. A cache that fails verification at start forgets its record
+(`registerServingFor`), so the next visit checks, and heals, in full.
 
 **A restored app is a registered app from startup.** Serving alone is not enough: the app-tab
 flag (`src/main/shell/tab-view.ts`'s `appTabArgsFor`) and `orivon.app.manifest()` both ask

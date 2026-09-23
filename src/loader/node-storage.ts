@@ -27,6 +27,10 @@ function pinPath (userDataPath: string, origin: string): string {
   return join(appRoot(userDataPath, origin), 'pin.json')
 }
 
+function updateCheckPath (userDataPath: string, origin: string): string {
+  return join(appRoot(userDataPath, origin), 'update-check.json')
+}
+
 /**
  * Refuses a directory Orivon did not create. `lstatSync`, NEVER `statSync`:
  * statSync follows a symlink and reports the target, so it answers "is there
@@ -289,6 +293,22 @@ export function nodeLoaderStorage (userDataPath: string): LoaderStorage {
     },
     writePin: async (origin: string, record: PinRecord) => {
       await writeAtomically(userDataPath, origin, pinPath(userDataPath, origin), new TextEncoder().encode(JSON.stringify(record)))
+    },
+    readUpdateCheck: async (origin) => {
+      try {
+        return JSON.parse(await readFile(updateCheckPath(userDataPath, origin), 'utf8')) as unknown
+      } catch {
+        return undefined
+      }
+    },
+    writeUpdateCheck: async (origin, record) => {
+      const path = updateCheckPath(userDataPath, origin)
+      if (record !== undefined) {
+        await writeAtomically(userDataPath, origin, path, new TextEncoder().encode(JSON.stringify(record)))
+        return
+      }
+      requireRealDirectory(appRoot(userDataPath, origin))
+      await rm(path, { force: true })
     },
     writeAsset: async (origin, path, content) => {
       const resolved = resolveAssetPath(codeRoot(userDataPath, origin), path)

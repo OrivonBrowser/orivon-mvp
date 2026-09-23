@@ -183,6 +183,7 @@ export function memoryStorage (): MemoryStorage {
   const identities = new WeakMap<Uint8Array, string>()
   let nextIdentity = 0
   const pins = new Map<string, unknown>()
+  const updateChecks = new Map<string, unknown>()
   const assets = new Map<string, Map<string, Uint8Array>>()
   const staged = new Map<string, Uint8Array>()
   let nextId = 0
@@ -229,6 +230,11 @@ export function memoryStorage (): MemoryStorage {
       return openedAssetOf(bytes, identity)
     }),
     readPin: vi.fn(async (origin: string) => pins.get(origin)),
+    readUpdateCheck: vi.fn(async (origin: string) => updateChecks.get(origin)),
+    writeUpdateCheck: vi.fn(async (origin: string, record: unknown) => {
+      if (record === undefined) updateChecks.delete(origin)
+      else updateChecks.set(origin, record)
+    }),
     writePin: vi.fn(async (origin: string, record: PinRecord) => { pins.set(origin, record) }),
     writeAsset: vi.fn(async (origin: string, path: string, content: Uint8Array) => { writeAsset(origin, path, content) }),
     pruneAssets: vi.fn(async (origin: string, keep: readonly string[]) => {

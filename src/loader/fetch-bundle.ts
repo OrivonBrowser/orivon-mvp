@@ -20,11 +20,13 @@ import { ensurePublicUnicastOrigin } from './install-origin.js'
 import type { InstallOriginResult } from './install-origin.js'
 import { isOrivonErrorLike } from '../broker/errors.js'
 import { MAX_MANIFEST_BYTES, describeValue, parseManifest } from './manifest.js'
-import { BUNDLE_TIMEOUT_MS, ByteBudget, fetchWithBudget, raceAbort, rejected } from './fetch-budget.js'
+import { BUNDLE_TIMEOUT_MS, ByteBudget, NOT_MODIFIED, fetchWithBudget, raceAbort, rejected } from './fetch-budget.js'
 import type { Fetch, FetchBundleRejected } from './fetch-budget.js'
 import { FETCH_CONCURRENCY, fetchAssetToStaging, forEachBounded, resolveUrl, stageBytes } from './fetch-asset.js'
 import type { StagedAsset } from './fetch-asset.js'
 import type { LoaderStorage } from './storage.js'
+import { conditionalHeaders, validatorsFrom } from './update-check.js'
+import type { ManifestValidators } from './update-check.js'
 
 export type { Fetch, FetchResponse } from './fetch-budget.js'
 export type { StagedAsset } from './fetch-asset.js'
@@ -37,10 +39,23 @@ export interface FetchBundleOk {
   readonly tree: BundleTree
   /** Every leaf, manifest included, waiting in the origin's staging area -- see StagedAsset. */
   readonly entries: readonly StagedAsset[]
+  /** The manifest response's validators, for the next check to be conditional on. */
+  readonly validators?: ManifestValidators
+}
+
+/**
+ * The host answered a conditional manifest request with 304: nothing was
+ * downloaded. `ok: false`, so a caller that does not look for
+ * `notModified` treats it as a failed fetch, never as a bundle.
+ */
+export interface FetchBundleNotModified {
+  readonly ok: false
+  readonly notModified: true
+  readonly reason: string
 }
 
 export type { FetchBundleRejected } from './fetch-budget.js'
-export type FetchBundleResult = FetchBundleOk | FetchBundleRejected
+export type FetchBundleResult = FetchBundleOk | FetchBundleRejected | FetchBundleNotModified
 
 /** The byte caps one fetch enforces. Injectable only so a test can exercise them without hundreds of MiB of fixture. */
 export interface FetchLimits {
@@ -74,16 +89,20 @@ async function fetchManifest (
   pinnedAddresses: readonly string[],
   storage: LoaderStorage,
   budget: ByteBudget,
-  bundleSignal: AbortSignal
-): Promise<{ readonly manifest: Manifest, readonly staged: StagedAsset } | FetchBundleRejected> {
+  bundleSignal: AbortSignal,
+  validators: ManifestValidators | undefined
+): Promise<{ readonly manifest: Manifest, readonly staged: StagedAsset, readonly validators: ManifestValidators | undefined } | FetchBundleRejected | FetchBundleNotModified> {
   // Always exactly `<origin>${MANIFEST_PATH}` (capability-api.md "How a URL
   // becomes an app"), never a path component of `hintedUrl`: bundleTree()
   // rejects any bundle with no leaf at that literal path anyway.
   const manifestUrl = `${canonicalOrigin}${MANIFEST_PATH}`
   const chunks: Uint8Array[] = []
   const fetched = await fetchWithBudget(fetchFn, manifestUrl, pinnedAddresses, MAX_MANIFEST_BYTES, budget, 'manifest', bundleSignal,
-    async (chunk) => { chunks.push(chunk) })
+    async (chunk) => { chunks.push(chunk) }, validators === undefined ? undefined : conditionalHeaders(validators))
   if ('ok' in fetched) return fetched
+  if (validators !== undefined && fetched.response.status === NOT_MODIFIED) {
+    return { ok: false, notModified: true, reason: `the manifest for ${canonicalOrigin} is unchanged since the last check` }
+  }
 
   const bytes = new Uint8Array(fetched.byteLength)
   let offset = 0
@@ -93,7 +112,8 @@ async function fetchManifest (
   if (!parsed.ok) return rejected(parsed.reason)
   warnIgnoredFields(canonicalOrigin, parsed.ignoredFields)
   try {
-    return { manifest: parsed.manifest, staged: await stageBytes(storage, canonicalOrigin, MANIFEST_PATH, bytes) }
+    const staged = await stageBytes(storage, canonicalOrigin, MANIFEST_PATH, bytes)
+    return { manifest: parsed.manifest, staged, validators: validatorsFrom(fetched.response) }
   } catch (error) {
     console.error('[loader] could not stage the manifest', canonicalOrigin, error)
     return rejected(`the manifest for ${canonicalOrigin} could not be written to local storage`)
@@ -117,13 +137,17 @@ function warnIgnoredFields (canonicalOrigin: string, ignored: readonly string[])
  * Empties `origin`'s staging area first; on success the staged entries are
  * the caller's (index.ts installs or discards them), on any rejection they
  * are cleared again here.
+ *
+ * `validators` (update-check.ts) makes the manifest request conditional; a
+ * 304 then ends the fetch as `notModified`, before any asset is requested.
  */
 export async function fetchBundle (
   fetchFn: Fetch,
   hintedUrl: string,
   resolveFn: Resolver,
   storage: LoaderStorage,
-  limits: FetchLimits = DEFAULT_LIMITS
+  limits: FetchLimits = DEFAULT_LIMITS,
+  validators?: ManifestValidators
 ): Promise<FetchBundleResult> {
   const canonicalOrigin = originFromUrl(hintedUrl)
   if (canonicalOrigin === null) return rejected(`hintedUrl is not a valid app origin: ${hintedUrl}`)
@@ -137,7 +161,7 @@ export async function fetchBundle (
   const bundleTimer = setTimeout(() => { bundleController.abort() }, BUNDLE_TIMEOUT_MS)
   let result: FetchBundleResult | undefined
   try {
-    result = await fetchStaged(fetchFn, canonicalOrigin, resolveFn, storage, limits, bundleController)
+    result = await fetchStaged(fetchFn, canonicalOrigin, resolveFn, storage, limits, bundleController, validators)
     return result
   } finally {
     clearTimeout(bundleTimer)
@@ -155,7 +179,8 @@ async function fetchStaged (
   resolveFn: Resolver,
   storage: LoaderStorage,
   limits: FetchLimits,
-  bundleController: AbortController
+  bundleController: AbortController,
+  validators: ManifestValidators | undefined
 ): Promise<FetchBundleResult> {
   // T12/A46, install-origin.ts -- checked before any network request below.
   // raceAbort gives up waiting once the deadline fires; it cannot force an
@@ -183,7 +208,7 @@ async function fetchStaged (
   // SAME validated literals, never a fresh, unguarded re-resolution.
   const pinnedAddresses = originResult.addresses
   const budget = new ByteBudget(limits.bundleBytes)
-  const fetchedManifest = await fetchManifest(fetchFn, canonicalOrigin, pinnedAddresses, storage, budget, bundleController.signal)
+  const fetchedManifest = await fetchManifest(fetchFn, canonicalOrigin, pinnedAddresses, storage, budget, bundleController.signal, validators)
   if ('ok' in fetchedManifest) return fetchedManifest
   const { manifest } = fetchedManifest
 
@@ -213,5 +238,5 @@ async function fetchStaged (
     return rejected(`bundle has no leaf at the manifest's declared entry point: ${manifest.entry}`)
   }
 
-  return { ok: true, canonicalOrigin, manifest, tree, entries }
+  return { ok: true, canonicalOrigin, manifest, tree, entries, ...(fetchedManifest.validators !== undefined && { validators: fetchedManifest.validators }) }
 }

@@ -4,10 +4,11 @@
 import { Readable } from 'node:stream'
 import type { IncomingMessage } from 'electron'
 import type { Fetch, FetchResponse } from './fetch-bundle.js'
+import type { RequestHeaders } from './fetch-budget.js'
 import { originFromUrl } from '../broker/policy/origin.js'
 import { classifyAddress, isPublicUnicast } from '../broker/policy/address.js'
 
-export const electronFetch: Fetch = async (url, pinnedAddresses, signal) => {
+export const electronFetch: Fetch = async (url, pinnedAddresses, signal, headers) => {
   // Dynamically imported: outside a real Electron process (i.e. under
   // vitest), `electron`'s entry point is a path STRING, and a top-level
   // import would silently bind `undefined` rather than throw -- same
@@ -72,7 +73,7 @@ export const electronFetch: Fetch = async (url, pinnedAddresses, signal) => {
     throw new Error(`install origin's host is not a public address literal: ${hostname}`)
   }
 
-  return await netFetch(url, signal)
+  return await netFetch(url, signal, headers)
 }
 
 /** Redirect hops one asset fetch may follow. A static host needs one or two (`/index.html` -> `/`, `/app` -> `/app/`). */
@@ -131,10 +132,11 @@ function toFetchResponse (url: string, response: IncomingMessage): FetchResponse
  * before it has any session relationship. No `session` option: Electron's
  * default session (AI recommendation, not an owner decision).
  */
-export async function netFetch (url: string, signal: AbortSignal): Promise<FetchResponse> {
+export async function netFetch (url: string, signal: AbortSignal, headers?: RequestHeaders): Promise<FetchResponse> {
   const { net } = await import('electron')
   return await new Promise<FetchResponse>((resolve, reject) => {
     const request = net.request({ url, method: 'GET', credentials: 'omit', useSessionCookies: false, redirect: 'manual' })
+    for (const [name, value] of Object.entries(headers ?? {})) request.setHeader(name, value)
     let hops = 0
     let settled = false
     const fail = (error: Error): void => {

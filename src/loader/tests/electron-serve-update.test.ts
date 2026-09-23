@@ -61,6 +61,26 @@ describe('an update while the app is open', () => {
   })
 })
 
+describe('a cached bundle that fails verification', () => {
+  it('forgets its last update check, so the next visit downloads it in full and heals it', async () => {
+    const origin = 'https://heal-after-damage.example'
+    const storage = nodeLoaderStorage(await mkdtemp(join(tmpdir(), 'orivon-heal-')))
+    await pinFiles(storage, origin, { '/index.html': 'v1' })
+    await storage.writeUpdateCheck(origin, { checkedAt: Date.now() })
+    await storage.writeAsset(origin, '/index.html', utf8('damaged'))
+
+    const session = fakeSession()
+    vi.doMock('electron', () => ({ session: { fromPartition: () => session } }))
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { registerServingFor } = await import('../electron-serve.js')
+    await registerServingFor(storage, origin)
+
+    expect(await storage.readUpdateCheck(origin)).toBeUndefined()
+    vi.doUnmock('electron')
+    vi.restoreAllMocks()
+  })
+})
+
 describe('restorePinnedServing at the next start', () => {
   it('prunes the files the pin no longer declares, and clears leftover staging', async () => {
     const origin = 'https://prune-at-start.example'
