@@ -100,6 +100,67 @@ export interface TcpSocket extends Handle {
 }
 
 /**
+ * The server's certificate as a secure connection's handshake received it:
+ * plain data, captured once when the handshake completed (rule 3 above). The
+ * field names and formats are Node's own `tlsSocket.getPeerCertificate()`
+ * ones, so a ported app's pinning or identity-checking code reads them
+ * unchanged. Public data the server sent; no key material is ever here.
+ */
+export interface PeerCertificate {
+  /** Distinguished-name fields (`CN`, `O`, `OU`, ...). A field the certificate repeats is an array. */
+  readonly subject: Readonly<Record<string, string | readonly string[]>>
+  readonly issuer: Readonly<Record<string, string | readonly string[]>>
+  /** Node's own rendering, e.g. `'DNS:example.com, IP Address:192.0.2.1'`. Absent when the certificate carries no subjectAltName. */
+  readonly subjectaltname?: string
+  /** The validity bounds as Node prints them, e.g. `'Sep 23 00:00:00 2026 GMT'`. */
+  readonly valid_from: string
+  readonly valid_to: string
+  /** Uppercase hex, as Node reports it. */
+  readonly serialNumber: string
+  /** SHA-1 of the DER encoding, colon-separated uppercase hex. */
+  readonly fingerprint: string
+  /** SHA-256 of the DER encoding, colon-separated uppercase hex. */
+  readonly fingerprint256: string
+  /** The certificate itself, DER-encoded. */
+  readonly raw: Uint8Array
+  /** The public key as DER-encoded SubjectPublicKeyInfo: what public-key pinning hashes. Absent for a key type the runtime cannot export. */
+  readonly pubkey?: Uint8Array
+}
+
+/**
+ * What a secure connection's handshake established, captured when it
+ * completed and never updated afterwards (rule 3 above).
+ */
+export interface SecureHandshake {
+  /**
+   * True when the certificate chained to a trusted root and named the host
+   * it was verified against. A connection made with the default
+   * `rejectUnauthorized` is never false here: failing verification refuses
+   * it instead. False only when the app itself asked to proceed regardless
+   * (`SecureConnectOptions.rejectUnauthorized`, ./capability-api.js).
+   */
+  readonly authorized: boolean
+  /**
+   * Why verification failed, as the runtime's own code for it
+   * (`'DEPTH_ZERO_SELF_SIGNED_CERT'`, `'CERT_HAS_EXPIRED'`,
+   * `'ERR_TLS_CERT_ALTNAME_INVALID'`, ...) -- the string Node puts in
+   * `tlsSocket.authorizationError`. Absent whenever `authorized` is true.
+   */
+  readonly authorizationError?: string
+  /** The protocol ALPN settled on, or false when none was offered or none agreed. */
+  readonly alpnProtocol: string | false
+  /** The server's certificate, or null when it presented none. */
+  readonly peerCertificate: PeerCertificate | null
+}
+
+/**
+ * What `orivon.net.connectSecure` returns: a `TcpSocket` carrying the
+ * connection's plaintext, exactly as `connect()`'s does, plus what its
+ * handshake established.
+ */
+export interface SecureTcpSocket extends TcpSocket, SecureHandshake {}
+
+/**
  * A listening TCP server.
  *
  * Incoming connections arrive as a STREAM, not an event. This is the clearest

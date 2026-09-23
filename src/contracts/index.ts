@@ -21,6 +21,9 @@ export type { OrivonErrorCode, OrivonError } from './errors.js'
 export type {
   Handle,
   TcpSocket,
+  SecureTcpSocket,
+  SecureHandshake,
+  PeerCertificate,
   TcpServer,
   UdpSocket,
   Datagram,
@@ -58,7 +61,8 @@ export type {
   OrivonId,
   OrivonWeb,
   WebContextOptions,
-  CapabilityRequest
+  CapabilityRequest,
+  SecureConnectOptions
 } from './capability-api.js'
 
 export type { Limits } from './limits.js'

@@ -208,9 +208,9 @@ export interface UdpCapability {
  * TLS terminated on the trusted side (ADR-0017): the broker performs the
  * handshake, certificate chain validation and hostname verification, using
  * the encryption stack already in the shipped runtime -- no new dependency
- * (Rule 8 unaffected). `net.connectSecure` hands the app back the same
- * `TcpSocket` shape `net.connect` does, carrying plaintext bytes; nothing
- * about the connection being TLS is visible on the handle itself.
+ * (Rule 8 unaffected). `net.connectSecure` hands the app back a
+ * `SecureTcpSocket`: `net.connect`'s `TcpSocket` shape, carrying plaintext
+ * bytes, plus what the handshake established (./handles.js).
  *
  * A SEPARATE GRANT FROM `TcpCapability`, deliberately -- `net.tcp.connect`'s
  * raw path is unaffected by this capability's existence. Two apps that both
