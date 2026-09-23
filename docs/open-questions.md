@@ -8894,3 +8894,52 @@ so the package is proven to work sloppy. Nothing else is inlined this way today.
 **What would settle it:** nothing, unless a later package is inlined through the same mechanism
 and depends on strict-mode semantics (a `this` of `undefined` in a plain call, a throw on
 assignment to a read-only property). Whoever inlines one should check this first. Not blocking.
+
+### A235 -- the conditional update check notices a release only when the manifest's bytes change **[NEEDS OWNER CONFIRMATION]**
+
+Filed 2026-09-22 with the persisted, conditional update check (`d-0087`). Once the hourly interval
+has passed, the loader asks for the manifest with `If-None-Match`/`If-Modified-Since` from the
+manifest last pinned, and a 304 ends the check before any asset is requested. So a release is
+noticed only when its manifest changes: a publisher who ships new files under a byte-identical
+manifest is never picked up. The bundle-hash rules already expect every release to change the
+manifest (its `version` at least), so a publisher following them is unaffected.
+
+**What would settle it:** the owner confirming that "bump `version` on every release" is a
+requirement publishers carry, or a periodic unconditional check (say, daily) as a backstop.
+
+### A236 -- accepting an all-or-nothing install prompt after a widening re-grants everything, including capabilities the person revoked **[NEEDS OWNER DECISION]**
+
+Filed 2026-09-22 with `d-0086`. A revoke in the permissions panel is now recorded as a declined
+capability, so the install-consent dialog does not ask for it again. When an update widens the
+manifest and the app declares `consentGranularity: 'all-or-nothing'`, the dialog shows the full
+declared set as one choice, so accepting it clears every decline, the revoked ones included, and
+grants them again. The person is shown the full set, so nothing is granted unseen; but a
+capability they deliberately took away comes back as part of a yes to something else.
+
+**What would settle it:** the owner saying whether that is intended, or whether a revoked
+capability should stay out of an all-or-nothing re-prompt (which would give the app less than it
+declared, the state `'all-or-nothing'` exists to prevent).
+
+### A237 -- inside the persisted interval, a first visit after a restart skips the install finish entirely **[AI-REC]**
+
+Filed 2026-09-22 with `d-0087`. With the check time persisted, the first visit after a restart
+can answer `'up-to-date'` without any request, and that answer skips everything a completed check
+would do after it: `registerApp` is not re-run from a fresh manifest, and an install consent that
+was never answered (the prompt threw, say) is not asked again, until the next real check. The app
+runs meanwhile on what `hydrateFromPinnedManifest` registered at startup from the verified pinned
+manifest.
+
+**What would settle it:** re-asking an unanswered consent from the startup path rather than from
+the update check. **Needed by:** a report of an app stuck without a consent it never answered.
+
+### A238 -- Chromium's HTTP cache may answer the conditional manifest request itself **[RESEARCH]**
+
+Filed 2026-09-22 with `d-0087`. The manifest request goes through Electron's network stack, whose
+HTTP cache may answer it from its own copy while that copy is fresh under the host's
+`Cache-Control: max-age`, without asking the host. A host that serves its manifest with a long
+`max-age` can therefore delay when an update is noticed by as much as that age, on top of the
+hourly interval.
+
+**What would settle it:** measuring whether `net.request` in Electron 44 serves a fresh cached
+manifest without revalidating, and if it does, sending the check with a cache mode that always
+revalidates.
