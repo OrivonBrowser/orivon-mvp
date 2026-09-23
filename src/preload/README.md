@@ -1,8 +1,9 @@
 # `src/preload/`: the privilege boundary
 
-**What lives here.** Four preload scripts at four different privilege levels (`app.ts`,
-`shell.ts`, `newtab.ts` for the new-tab dashboard, and `settings.ts` for the permissions panel),
-plus `orivon-surface.ts`, which is not a preload entry itself but the `orivon.*` exposure both `app.ts` and `newtab.ts`'s fallback
+**What lives here.** Five preload scripts at five different privilege levels (`app.ts`,
+`shell.ts`, `newtab.ts` for the new-tab dashboard, `settings.ts` for the all-sites popup, and
+`site-info.ts` for the per-site popup), plus `orivon-surface.ts`, which is not a preload entry
+itself but the `orivon.*` exposure both `app.ts` and `newtab.ts`'s fallback
 branch share (build step 2's IPC task; §The rule that governs this directory still applies to
 it), its two Rule 2 splits `control-call.ts` (the shared `CONTROL_CHANNEL` call/timeout
 machinery) and `net-surface.ts` (the `net.*` bridge closures; see Design notes for why these
@@ -38,7 +39,8 @@ neutral place a channel name shared across this trust boundary can live; `shell.
 |---|---|---|
 | `app.ts` | **every ordinary tab** | `orivon-surface.ts`'s `exposeOrivon()`: `orivon.version`, `orivon.app.manifest`/`grants`, `orivon.fs.readFile`/`writeFile`/`readFileSync` (the last one ADR-0016's synchronous exception; see `orivon-surface.ts`'s own `fsReadFileSync`), `orivon.id.publicKey`/`sign`, `orivon.net.connect` (a real `TcpSocket`) and `orivon.net.udpBind` (a real `UdpSocket`), both built in the main world by `main-world-socket.ts` |
 | `shell.ts` | **only** the chrome view | Tab commands |
-| `settings.ts` | **only** the permissions panel's own view (`src/main/permissions/permissions-panel.ts`) | `orivonSettings`: list each app's grants and revoke one, after checking `location.href` against its expected URL; `src/main/ipc/settings-ipc.ts` re-verifies the sender on every call |
+| `settings.ts` | **only** the all-sites popup's own view (`src/main/permissions/permissions-panel.ts`) | `orivonSettings`: list each app's grants and revoke one, after checking `location.href` against its expected URL; `src/main/ipc/settings-ipc.ts` re-verifies the sender on every call |
+| `site-info.ts` | **only** the site-info popup's own view (`src/main/permissions/site-info-panel.ts`) | `orivonSiteInfo`: this site's info/trust/data, apply a staged set of switches, revoke a picked path, clear browser data, reload, open the all-sites popup — same `location.href` check as `settings.ts`; `src/main/ipc/site-info-ipc.ts` re-verifies the sender and fixes the origin, never trusting one from the page |
 | `newtab.ts` | **only** a genuinely fresh tab (`src/main/shell/tabs.ts`'s `createTab()`, no `url` argument) | Read-only bookmark access, navigate-this-tab-only, but only after checking `location.href` against its own expected URL first, since (unlike the chrome view) a dashboard tab is ordinary and navigable; falls back to the SAME `exposeOrivon()` `app.ts` uses otherwise, not a second copy |
 | `fetch-route.ts` | `app.ts` and `newtab.ts`'s fallback branch, via `exposeFetchRoute()` | ADR-0017: routes `window.fetch` through `orivon.net` for a registered app's granted hosts, when the tab's `--orivon-app-tab` flag says so (`src/main/shell/tab-view.ts`'s `appTabArgsFor`); a plain website keeps native `fetch`, untouched |
 | `expose-shim-globals.ts` | `app.ts` and `newtab.ts`'s fallback branch, via `exposeShimGlobals()` | A151: installs `src/shim/globals.ts`'s `process`/`setImmediate`/`clearImmediate` into the main world, gated on the SAME `--orivon-app-tab` flag `fetch-route.ts` reads; an ordinary tab never receives shimmed Node globals just because it loaded before this preload ran |

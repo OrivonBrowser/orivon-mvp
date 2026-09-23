@@ -5380,6 +5380,16 @@ neither of those claims and borrowing either colour would overclaim or under-cla
 say more about delivery provenance than a tooltip can hold -- this entry's answers should inform
 that design rather than be silently superseded by it.
 
+**2026-09-23 update, still not a resolution of point 1.** The dot is now the Web3 Score
+shield (`src/renderer/main.ts`'s `updateWeb3ScoreShield`), which carries these same three
+states and the same literal tooltip text, hover-only exactly as before. Point 1's own
+anticipated trigger -- "once build step 6's trust indicator gives cached delivery a permanent,
+always-visible home" -- has arrived in a different shape than that point pictured: the site-info
+popup's Web3 Score page (`src/main/browsing/site-trust.ts`) shows the delivery evidence with
+visible text, but only once a person clicks through to it, not on the shield itself. Whether
+that satisfies "the UI must say so" or the shield still needs its own visible text is still the
+owner's call.
+
 ### A148 -- `script-src 'unsafe-inline'` on the served bundle gives up CSP's XSS role, and the reasoning for it only covers static markup **[REFRAMED 2026-09-15 -- owner decision; residual open]**
 
 **Raised 2026-09-13**, conductor review of PR #172 (S4-6), which set the served bundle's CSP to
@@ -7028,7 +7038,12 @@ the constraint 'true'.` -- plus a second, expected error at the test's own runti
 field on its own tracker's return value (a side effect of the deliberately-broken fixture, not
 part of the binding). The field was then removed and `npm run typecheck` was re-run clean;
 `git diff --stat src/loader/pin-coverage.ts` showed no changes, confirming a clean revert.
-### A181 -- pin coverage is measured but nothing reads it yet **[NOTED -- deferred by design, not a defect]**
+### A181 -- pin coverage is measured but nothing reads it yet **[RESOLVED 2026-09-23]**
+
+**Resolution.** `src/main/browsing/site-trust.ts`'s `buildSiteTrust` is now the first production
+caller of `deliveryLadder`, and its caller (`src/main/permissions/site-info-controller.ts`)
+supplies `pinCoverageFor`'s result as `DeliveryHistoryInput.pinCoverage`, on the site-info
+popup's own Web3 Score page. Both claims below are now false; left in place for the record.
 
 **Raised 2026-09-15**, docs-correction lane FIX-6, while checking `A166`'s claims against the
 tree.
@@ -8392,3 +8407,32 @@ still the intent, versus the wiring having simply been missed.
 neither `ctx.broker` nor `ctx.loader` and has no ordering constraint of its own), or confirm the
 feature is intentionally unwired for now and say why (e.g. waiting on a real release to check
 against).
+
+### A205 -- the site-info popover's Cookies and site data page cannot delete an app's own private files yet **[NEEDS OWNER DECISION]**
+
+**Raised 2026-09-23**, queue item 4.4's site-info popover (`d-0037`). `ADR-0003:66-69` calls for
+"a visible per-app disk usage view and a way to delete data," and the popup's Cookies and site
+data page (`src/main/permissions/site-data-runner.ts`, `src/renderer/site-info/data-view.ts`)
+ships the first half -- private-files size, declared quota, pinned-code size and version -- but
+not a delete button. `session.clearData` covers the site's ordinary browser storage; nothing
+plays the same role for `orivon.fs`'s own private files.
+
+**Why it was cut rather than built into this same change:**
+- `broker-contracts.ts` is at exactly 500 lines (`code-guidelines.md` Rule 2); a new `Broker`
+  method needs that file split first.
+- The handle table's `file` kind covers both private files and picked paths with no way to
+  close only one origin's private-file handles without also touching its picks.
+- `src/broker/` may not import `src/loader/`, so a broker-side delete could not reuse the
+  loader's own directory walker.
+- A real delete needs an ordering the pieces above do not yet support: revoke live handles
+  (cancelling in-flight writes), delete the directory, reset the session `fsBytesWritten`
+  counter (A29, still unimplemented), then lift the revocation marker -- and a file still open
+  on Windows cannot be deleted at all, which the UI would need to say plainly rather than fail
+  silently.
+
+**What would settle it:** a `Broker` method (once `broker-contracts.ts` is split) that performs
+the ordering above, and an owner call on what the popup says when a delete cannot complete
+(Windows' open-file case) rather than merely failing.
+
+**Needed by:** whenever ADR-0003's "a way to delete data" is picked up as its own piece of work;
+not blocking the popover itself, which shows the figures this would act on.

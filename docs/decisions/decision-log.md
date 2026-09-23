@@ -37,6 +37,7 @@ guessed. Rows with no ID were lifted out of the prose of the documents named bes
 | `d-0034` | 2026-09-17 | A PR body scales to several changes; a bare "None" is not an answer; `ux:` gains `dev` | `../development/pr-blueprint.md` |
 | `d-0035` | 2026-09-22 | The routed `fetch` carries the platform's own property descriptor; a page may replace it, and detection reads the function, not the descriptor | `../../src/preload/README.md`, `ADR-0017` |
 | `d-0036` | 2026-09-22 | Dev-mode `.eth` names are declared secure origins, so a `.eth` tab keeps the APIs the loopback URL has | `../development/setup.md`, `../planning/compatibility-matrix.md` |
+| `d-0037` | 2026-09-23 | The address pill leads with the Web3 Score shield (replacing the trust dot), then a key hidden until the site has asked for a permission; the cluster's key becomes a tune icon for the all-sites list; the shield opens the site-info popup's Web3 Score page, the key its main page | `../../src/renderer/README.md`, `../../src/main/permissions/README.md` |
 
 ## Directives
 
