@@ -10,7 +10,8 @@ import { shouldClearFavicon } from '../browsing/favicon.js'
 import type { Bounds, TabRecord } from './tab-types.js'
 import { isOriginServedFromCacheSync } from '../../loader/electron-serve.js'
 import type { Broker } from '../../broker/broker-contracts.js'
-import { developerMode, showContextMenu } from './context-menu.js'
+import { showContextMenu } from './context-menu.js'
+import { devModeEnabled } from '../dev/dev-mode.js'
 import { confirmLeavePage } from './leave-page-prompt.js'
 import { windowOpenHandler } from './popups.js'
 
@@ -276,7 +277,7 @@ export function wireView (host: TabViewHost, id: string, record: TabRecord): voi
   })
   wc.on('context-menu', (_event, params) => {
     if (host.window === undefined) return
-    showContextMenu(wc, params, { window: host.window, openInNewTab: host.openTab, developerMode: developerMode() })
+    showContextMenu(wc, params, { window: host.window, openInNewTab: host.openTab, developerMode: devModeEnabled() })
   })
 
   // T18: never a real OS popup window. A popup the page can talk to becomes

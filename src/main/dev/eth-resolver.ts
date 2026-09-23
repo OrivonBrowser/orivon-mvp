@@ -19,6 +19,7 @@
 import { readFileSync } from 'node:fs'
 import { app } from 'electron'
 import type { Subsystem } from '../registry.js'
+import { devModeEnabled } from './dev-mode.js'
 
 /** One lowercase label plus `.eth` -- the same shape orivon-ports' recipe.ts validates. Re-checked here because this file reads a name from OUTSIDE this process and is about to splice it into a command-line switch; that file's own validation is not a guarantee this one may skip. */
 const ETH_NAME = /^[a-z0-9][a-z0-9-]*\.eth$/
@@ -72,11 +73,6 @@ export function buildHostResolverRules (names: Readonly<Record<string, unknown>>
  */
 export function buildSecureOriginList (names: Readonly<Record<string, unknown>>): string {
   return validEntries(names).map(([name]) => `http://${name}`).join(',')
-}
-
-/** Same flag dev-app-origin.ts reads -- one switch turns on both halves of the fake-name path: resolution here, the grant there. Read per call, not at module scope, so a test can set it per case. */
-function devModeEnabled (): boolean {
-  return process.env['ORIVON_DEV_ORIGINS'] === '1'
 }
 
 /**

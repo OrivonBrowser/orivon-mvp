@@ -56,10 +56,6 @@ export function contextMenuTemplate (params: MenuParams, actions: ContextMenuAct
     .flatMap((group, i): MenuItemConstructorOptions[] => i === 0 ? group : [{ type: 'separator' }, ...group])
 }
 
-/** `npm run dev`'s developer mode: the switch dev-app-origin.ts reads. */
-export function developerMode (): boolean {
-  return process.env['ORIVON_DEV_ORIGINS'] === '1'
-}
 
 export interface ContextMenuHost {
   readonly window: BaseWindow

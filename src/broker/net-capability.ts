@@ -47,10 +47,12 @@ export interface NetCapabilityOptions {
   readonly ledger: GrantLedger
   /** Origin normalisation plus the malformed-origin 'internal' throw -- ./index.ts's own `canonical`, shared rather than redefined here. */
   readonly canonical: (origin: string) => string
+  /** The origin's socket allowance. A restored app answers from its pinned manifest until it re-registers, which the ledger alone cannot see; defaults to `ledger.socketAllowance`. */
+  readonly socketAllowance?: (origin: string) => number
 }
 
 /** Builds `Broker['net']` -- see this file's header for why it takes the broker's own state rather than owning any of it. */
-export function createNetCapability ({ deps, handleTable, ledger, canonical }: NetCapabilityOptions): Broker['net'] {
+export function createNetCapability ({ deps, handleTable, ledger, canonical, socketAllowance = (origin) => ledger.socketAllowance(origin) }: NetCapabilityOptions): Broker['net'] {
   /**
    * Builds a `FailableTcpSocket` over an already-registered handle entry --
    * shared by `connect`'s own direct acquisition and `listen`'s
@@ -129,7 +131,7 @@ export function createNetCapability ({ deps, handleTable, ledger, canonical }: N
         kind: 'tcpSocket',
         authorisedBy: { by: 'grant', grantId: current.id },
         destroy,
-        socketLimit: ledger.socketAllowance(key),
+        socketLimit: socketAllowance(key),
         stillCovered: (patterns) => connectStillAuthorised(patterns, opts.host, socketFields.remoteAddress, opts.port)
       })
 
@@ -194,7 +196,7 @@ export function createNetCapability ({ deps, handleTable, ledger, canonical }: N
         kind: 'tcpSocket',
         authorisedBy: { by: 'grant', grantId: current.id },
         destroy,
-        socketLimit: ledger.socketAllowance(key),
+        socketLimit: socketAllowance(key),
         stillCovered: (patterns) => checkConnectSecure(patterns, opts.host, opts.port).allowed
       })
 
@@ -290,7 +292,7 @@ export function createNetCapability ({ deps, handleTable, ledger, canonical }: N
         kind: 'udpSocket',
         authorisedBy: { by: 'grant', grantId: current.id },
         destroy: bound.destroy,
-        socketLimit: ledger.socketAllowance(key),
+        socketLimit: socketAllowance(key),
         stillCovered: (patterns) => checkBind(patterns, bound.localPort).allowed
       })
 
@@ -351,7 +353,7 @@ export function createNetCapability ({ deps, handleTable, ledger, canonical }: N
         kind: 'tcpServer',
         authorisedBy: { by: 'grant', grantId: current.id },
         destroy: listened.destroy,
-        socketLimit: ledger.socketAllowance(key),
+        socketLimit: socketAllowance(key),
         stillCovered: (patterns) => checkBind(patterns, listened.localPort).allowed
       })
 
@@ -386,7 +388,7 @@ export function createNetCapability ({ deps, handleTable, ledger, canonical }: N
               kind: 'tcpSocket',
               parentId: entry.id,
               destroy,
-              socketLimit: ledger.socketAllowance(key)
+              socketLimit: socketAllowance(key)
             })
             controller.enqueue(toFailableSocket(key, childEntry, socketFields))
           } catch {

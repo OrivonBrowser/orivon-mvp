@@ -371,7 +371,7 @@ export function installOrivon (
   function buildWebContext (w: Awaited<ReturnType<typeof bridge.webOpenContext>>): MainWorldWebContextBridge {
     return Object.freeze({
       id: w.id, origin: w.origin, closed: pageClosed(w.closed),
-      evaluate: async (script: string) => await callRevived(w.evaluate(script)),
+      evaluate: async (script: string, options?: { timeoutMs?: number }) => await callRevived(w.evaluate(script, options)),
       close: async () => { await callRevived(w.close()) }
     })
   }

@@ -8,7 +8,8 @@ the discovery trigger — a loopback origin gets its capabilities granted withou
 no bundle is fetched, hashed, pinned or served from cache. `dev-csp.ts`: gives a dev-granted
 origin's documents the Content-Security-Policy an installed app is served with. `eth-resolver.ts`: developer-mode DNS
 override for `orivon-ports`' fake `.eth` names, inert unless both `ORIVON_ETH_NAMES_FILE` and
-`ORIVON_DEV_ORIGINS=1` are set.
+`ORIVON_DEV_ORIGINS=1` are set. `dev-mode.ts`: the one reader of `ORIVON_DEV_ORIGINS=1`, which
+every developer-mode path above and the shell's Inspect Element share.
 
 **What it depends on.** `electron` (`eth-resolver.ts` and `dev-csp.ts` only), `node:fs`,
 [`../../contracts/`](../../contracts/), [`../../broker/`](../../broker/) (`broker-contracts.ts`

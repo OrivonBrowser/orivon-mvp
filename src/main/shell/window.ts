@@ -28,7 +28,8 @@ import { registerShellIpc } from '../ipc/ipc.js'
 import { createPermissionsPanel } from '../permissions/permissions-panel.js'
 import { HtmlFullscreen } from './fullscreen.js'
 import { createFullscreenNotice } from './fullscreen-notice.js'
-import { developerMode, showContextMenu } from './context-menu.js'
+import { showContextMenu } from './context-menu.js'
+import { devModeEnabled } from '../dev/dev-mode.js'
 
 // Chrome restyle, 2026-08-28 (owner: match a reference screenshot that
 // turned out to be the prior prototype's chrome pixel-for-pixel --
@@ -305,7 +306,7 @@ export function createShellWindow (ctx: SubsystemContext): BaseWindow {
   chrome.webContents.on('did-finish-load', pushState)
   // The address bar's Cut/Copy/Paste: the same menu a tab gets.
   chrome.webContents.on('context-menu', (_event, params) => {
-    showContextMenu(chrome.webContents, params, { window: win, openInNewTab: (url) => { tabs.createTab(url) }, developerMode: developerMode() })
+    showContextMenu(chrome.webContents, params, { window: win, openInNewTab: (url) => { tabs.createTab(url) }, developerMode: devModeEnabled() })
   })
 
   // Queue item 4.4's permissions surface, now a panel inside this window

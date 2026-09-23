@@ -59,4 +59,20 @@ describe('createBroker -- a pinned manifest registers the app from startup', () 
 
     expect(broker.app.socketAllowanceSync(APP)).toBe(declared)
   })
+
+  it('a restored app\'s sockets are counted against its pinned declaration, not the platform default', async () => {
+    const storage = memoryLedgerStorage()
+    const pattern = '93.184.216.34:443'
+    const declared = manifestWith({ net: { tcp: { connect: [pattern] }, concurrentSockets: 1 } })
+    const before = createBroker(baseDeps({ ledgerStorage: storage }))
+    await before.registerApp(APP, declared)
+    await before.grant(APP, 'tcp.connect', [pattern])
+
+    const restored = createBroker(baseDeps({ ledgerStorage: storage }))
+    await restored.app.hydrateFromPinnedManifest(APP, declared)
+    const first = await restored.net.connect(APP, { host: '93.184.216.34', port: 443 })
+
+    await expect(restored.net.connect(APP, { host: '93.184.216.34', port: 443 })).rejects.toMatchObject({ code: 'limit' })
+    await first.close()
+  })
 })

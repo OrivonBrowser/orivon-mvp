@@ -15,7 +15,8 @@ shows "Press Esc to exit full screen"; `leave-page-prompt.ts` asks the question 
 **What it depends on.** `electron`; [`../../broker/`](../../broker/) (`policy/origin.ts`,
 `grants/origin-hash.ts`, `broker-contracts.ts` types); [`../../loader/electron-serve.ts`](../../loader/electron-serve.ts)
 (type only); and, inside `src/main/`, [`../browsing/`](../browsing/) (bookmarks, favicon,
-omnibox, delivery-provenance), [`../ipc/`](../ipc/), [`../permissions/`](../permissions/), plus
+omnibox, delivery-provenance), [`../ipc/`](../ipc/), [`../permissions/`](../permissions/),
+[`../dev/dev-mode.ts`](../dev/dev-mode.ts) (the developer-mode flag, for Inspect Element), plus
 the top-level `channels.ts` and `registry.ts`.
 
 **What it must never import.** [`../../renderer/`](../../renderer/) code (the repo-wide rule).

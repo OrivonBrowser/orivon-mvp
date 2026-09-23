@@ -59,7 +59,7 @@ export interface MainWorldWebContextBridge {
   readonly id: string
   readonly origin: string
   readonly closed: Promise<void>
-  evaluate: (script: string) => Promise<unknown>
+  evaluate: (script: string, options?: { readonly timeoutMs?: number }) => Promise<unknown>
   close: () => Promise<void>
 }
 
@@ -116,7 +116,7 @@ export interface MainWorldUdpBridge {
   readonly localAddress: string
   readonly localPort: number
   readonly onDatagram: (cb: (datagram: MainWorldDatagram) => void) => void
-  readonly onReadEnd: (cb: (code: OrivonErrorCode | undefined) => void) => void
+  readonly onReadEnd: (cb: (code: OrivonErrorCode | undefined, platformCode?: string) => void) => void
   readonly onDropped: (cb: (inbound: number, outbound: number) => void) => void
   /** Fires once per refused outbound datagram (A87), feeding buildUdpSocket's `refusals` stream. */
   readonly onRefusal: (cb: (refusal: SendRefusal) => void) => void
@@ -143,7 +143,7 @@ export interface MainWorldServerBridge {
   readonly localAddress: string
   readonly localPort: number
   readonly onConnection: (cb: (socket: MainWorldSocketBridge) => void) => void
-  readonly onReadEnd: (cb: (code: OrivonErrorCode | undefined) => void) => void
+  readonly onReadEnd: (cb: (code: OrivonErrorCode | undefined, platformCode?: string) => void) => void
   /** One unit of accept demand -- called ONLY from ./main-world-socket.ts's own buildServer `pull()`; see that file's header and open-questions.md A185. */
   readonly reportAccepted: () => void
   readonly closed: Promise<void>
@@ -158,7 +158,7 @@ export interface MainWorldSocketBridge {
   readonly localAddress: string
   readonly localPort: number
   readonly onData: (cb: (chunk: Uint8Array) => void) => void
-  readonly onReadEnd: (cb: (code: OrivonErrorCode | undefined) => void) => void
+  readonly onReadEnd: (cb: (code: OrivonErrorCode | undefined, platformCode?: string) => void) => void
   readonly reportConsumed: (bytesConsumed: number) => void
   readonly write: (chunk: Uint8Array) => Promise<void>
   readonly endWrite: () => Promise<void>

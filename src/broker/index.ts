@@ -88,7 +88,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
   // orivon.net's three entry points. Lifted to ./net-capability.ts once
   // `listen` pushed this file past Rule 2's 500 lines -- see that file's own
   // header, and README.md's design notes, for why the split lands here.
-  const net = createNetCapability({ deps, handleTable, ledger, canonical })
+  const net = createNetCapability({ deps, handleTable, ledger, canonical, socketAllowance: socketAllowanceSync })
 
   // orivon.id's two entry points (publicKey, sign) -- built alongside
   // net-capability.ts from the start rather than inlined here first, for
