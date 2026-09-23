@@ -25,6 +25,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
   https grant reaches any public https host. Developer-mode origins run under the same policy.
 - **A page can go fullscreen from a click**, and Escape always gives the window back, with an
   on-screen notice saying so (ADR-0025).
+- **Games can capture the mouse, and in fullscreen the keyboard** (ADR-0026). Escape brings the
+  cursor back, holding Escape leaves a fullscreen page that holds the keyboard, and a notice says
+  which.
+- **External links open after the person allows it.** A `mailto:`, `magnet:` or payment link asks
+  every time, naming the site and the URL, and only then goes to the computer's default app
+  (ADR-0027).
+- **Sites can ask to show notifications.** The person is asked once per site, and Allow or Block
+  is remembered (ADR-0028).
 - **`window.open()` returns a real window.** Sign-in popups can talk back through
   `window.opener`, and a `blob:` link the page made opens.
 - **A page guarding unsaved work asks Leave or Stay** instead of silently refusing to navigate.
