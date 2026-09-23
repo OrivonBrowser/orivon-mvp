@@ -7,7 +7,7 @@
 
 import type { SenderFrameLike } from '../policy/origin.js'
 import type { PortRegistry } from './port-registry.js'
-import type { BrokerToRendererMessage } from '../../contracts/index.js'
+import type { BrokerToRendererMessage, SecureHandshake } from '../../contracts/index.js'
 
 /**
  * What `orivon.net.connect` resolves to over CONTROL_CHANNEL. Deliberately
@@ -21,6 +21,8 @@ export interface SocketDescriptor {
   readonly remotePort: number
   readonly localAddress: string
   readonly localPort: number
+  /** `net.connectSecure` only: what the handshake established, already plain data (the peer certificate's bytes clone as a Uint8Array). */
+  readonly tls?: SecureHandshake
 }
 
 /**

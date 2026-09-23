@@ -102,13 +102,12 @@ export interface WebOpenContextParams { readonly origin: string, readonly width?
 export interface WebEvaluateParams { readonly id: string, readonly script: string, readonly timeoutMs?: number }
 /** Shared by web.close and web.awaitClose -- both take exactly `{ id }` (code-guidelines.md Rule 3: same shape, same reason, `NetConnectParams`'s own precedent). Structurally identical to `NetCloseParams`/`FsHandleIdParams` too, but kept as its own name -- one name per surface even where payload shapes happen to coincide. */
 export interface WebCloseParams { readonly id: string }
-/** Shared by net.connect and net.connectSecure -- both take exactly { host, port }, and isNetConnectParams below validates either call's payload (code-guidelines.md Rule 3: same shape, same reason). */
+/** net.connect's payload. net.connectSecure's adds TLS options and has its own validator, ./secure-connect-params.ts. */
 export interface NetConnectParams { readonly host: string, readonly port: number }
 /**
  * Shared by net.udpBind and net.listen -- both take exactly `{ port }`, and
  * `isNetUdpBindParams` below validates either call's payload
- * (code-guidelines.md Rule 3: same shape, same reason -- matching
- * `NetConnectParams`' own precedent above for net.connect/net.connectSecure).
+ * (code-guidelines.md Rule 3: same shape, same reason).
  *
  * `port` of 0 is LEGAL here and means "any free port" -- the one place in this
  * file where zero is not a shape error. policy/bind.ts decides what it is

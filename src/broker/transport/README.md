@@ -122,3 +122,13 @@ else shares the pool slab. No shared helper: the copy is `new Uint8Array(x)`, a 
 call, and the two sites live in different layers of the trust boundary (`transport/` depends on
 `adapters/`, never the reverse): a named wrapper for one expression would be indirection without
 reducing what either call site has to get right.
+
+**[`secure-connect-params.ts`](secure-connect-params.ts) validates `net.connectSecure`'s payload
+apart from [`ipc-validation.ts`](ipc-validation.ts).** The TLS options are one job with rules of
+their own. An unknown key is refused, not dropped, because an option an app believes it set must
+never be silently ignored. Every PEM string, the CA bundle, the PKCS#12 bytes, the passphrase and
+the ALPN list are bounded, because the broker loads them synchronously on the main thread when the
+handshake starts. A refusal names the option and the rule it broke, never the value, so key
+material cannot reach a log line or the page. The reply is the ordinary socket descriptor plus
+`tls`, the handshake facts, picked field by field from the broker's socket rather than spread,
+since that object also holds streams and functions that cannot clone.

@@ -310,7 +310,14 @@ describe('net.connectSecure (a sibling of net.connect, over deliverTcpSocket)', 
     expect(response).toEqual({
       id: 'req-1',
       ok: true,
-      result: { id: 'handle-1', remoteAddress: '93.184.216.34', remotePort: 443, localAddress: '10.0.0.5', localPort: 54321 }
+      result: {
+        id: 'handle-1',
+        remoteAddress: '93.184.216.34',
+        remotePort: 443,
+        localAddress: '10.0.0.5',
+        localPort: 54321,
+        tls: { authorized: true, alpnProtocol: false, peerCertificate: null }
+      }
     })
     expect(calls).toEqual([{ method: 'net.connectSecure', origin: APP, args: { host: 'x.example', port: 443 } }])
   })
