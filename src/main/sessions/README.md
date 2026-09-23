@@ -126,15 +126,15 @@ refuses without asking for the browser's own schemes, for `file:`, `data:`, `blo
 never be launched from a page. A tab that is not on screen is never asked for: the question
 would appear over a page it did not come from.
 
-**`notifications`: Electron's check handler can only say yes or no.** `Notification.permission`
-and the Permissions API read `granted` for a site the person allowed and `denied` for every
-other, including a site nobody has asked about yet: Electron has no way to report "not decided".
-A page that calls `Notification.requestPermission()` still reaches the request handler, which
-asks; Electron documents that "most web APIs do a permission check and then make a permission
-request if the check is denied". A page that reads `Notification.permission` first and gives up
-on `denied` never asks. *Provisional:* neither half has been measured against a real page here,
-because no test may run notification code until the headless runner isolates the session bus
-(`test/e2e-site-permissions.test.ts` has the checks, and refuses to run them before that).
+**`notifications`: Electron's check handler can only say yes or no.** Measured against a real
+page: for a site nobody has answered, `Notification.permission` and the Permissions API both read
+`denied`, since Electron has no way to report "not decided"; once the person allows, both read
+`granted`, and they still do after a restart. `Notification.requestPermission()` reaches the
+request handler all the same, so a page that asks is asked about, and "Not now" resolves it as
+`denied`. A page that reads `Notification.permission` first and gives up on `denied` never asks.
+The measurement is the last phase of `test/e2e-site-permissions.test.ts`, which reads permission
+state only and runs only on a private session bus:
+`ORIVON_PRIVATE_BUS=1 node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/e2e-site-permissions.test.ts`.
 Dismissing the question ("Not now", Escape, closing it) decides nothing and remembers nothing;
 that page load is not asked again. A frame is never asked for, and only a frame of the page's own
 site gets the page's remembered answer. [`notification-decisions.ts`](notification-decisions.ts)

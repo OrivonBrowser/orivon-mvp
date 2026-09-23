@@ -15,11 +15,12 @@
 // that records its argument and launches nothing.
 //
 // NOTIFICATIONS RUN ONLY ON A PRIVATE SESSION BUS. A notification this page
-// never shows would still reach the desktop over D-Bus if one were shown,
-// and scripts/run-headless.mjs does not isolate the bus. That phase is
-// skipped unless the runner says the bus is private (ORIVON_E2E_PRIVATE_BUS=1
-// with a session bus that is not this user's own), and it never constructs a
-// Notification: it reads permission state only.
+// never shows would still reach the desktop over D-Bus if one were shown, so
+// that phase is skipped unless the runner says the bus is private
+// (ORIVON_E2E_PRIVATE_BUS=1 with a session bus that is not this user's own):
+//   ORIVON_PRIVATE_BUS=1 node scripts/run-headless.mjs npx vitest run \
+//     --config test/vitest.e2e.config.ts test/e2e-site-permissions.test.ts
+// It never constructs a Notification: it reads permission state only.
 //
 // THE CLICKS ARE THE POINT: pointer lock and the second external link each
 // need the person to have acted in the page, and Playwright's `evaluate`
@@ -98,6 +99,11 @@ async function stubDialogs (app: ElectronApplication): Promise<void> {
 
 async function asked (app: ElectronApplication): Promise<Asked[]> {
   return await app.evaluate(() => (globalThis as unknown as { __asked: Asked[] }).__asked)
+}
+
+/** The notification questions only: the page's load-time external links ask too. */
+async function askedAboutNotifications (app: ElectronApplication): Promise<Asked[]> {
+  return (await asked(app)).filter((question) => question.message.endsWith('wants to show notifications'))
 }
 
 async function answer (app: ElectronApplication, question: 'external' | 'notifications', button: number): Promise<void> {
@@ -304,25 +310,25 @@ it.skipIf(!sessionBusIsPrivate())('asks a site once about notifications, remembe
       try {
         await stubDialogs(first)
         const view = await navigateToFixture(first, PAGE_URL, TITLE)
-        const before = await evaluateRetrying(view, () => Notification.permission)
-        check(`a site nobody has answered for does not read as granted (got ${before})`, before !== 'granted')
+        const before = await evaluateRetrying(view, async () => [Notification.permission, (await navigator.permissions.query({ name: 'notifications' })).state])
+        check(`a site nobody has answered for does not read as granted (Notification.permission, Permissions API: ${before.join(', ')})`, !before.includes('granted'))
 
         await view.click('#notify')
         await waitFor(async () => (await pageState(view)).notify !== undefined)
-        const notNow = await asked(first)
+        const notNow = await askedAboutNotifications(first)
         check('the site is asked, and named first', notNow.length === 1 && notNow[0]?.message === `${ORIGIN} wants to show notifications` &&
           JSON.stringify(notNow[0]?.buttons) === '["Allow","Block","Not now"]', JSON.stringify(notNow))
         check(`"Not now" grants nothing (got ${String((await pageState(view)).notify)})`, (await pageState(view)).notify !== 'granted')
         await evaluateRetrying(view, () => { delete (window as unknown as { __r: PageState }).__r.notify })
         await view.click('#notify')
         await waitFor(async () => (await pageState(view)).notify !== undefined)
-        check('the same page load is not asked twice', (await asked(first)).length === 1)
+        check('the same page load is not asked twice', (await askedAboutNotifications(first)).length === 1)
 
         await view.reload()
         await answer(first, 'notifications', 0)
         await view.click('#notify')
         const granted = await waitFor(async () => (await pageState(view)).notify === 'granted')
-        check('after a reload the site is asked again, and Allow grants', granted && (await asked(first)).length === 2)
+        check('after a reload the site is asked again, and Allow grants', granted && (await askedAboutNotifications(first)).length === 2)
         const state = await evaluateRetrying(view, async () => [Notification.permission, (await navigator.permissions.query({ name: 'notifications' })).state])
         check(`Notification.permission and the Permissions API agree (got ${state.join(', ')})`, state[0] === 'granted' && state[1] === 'granted')
 
@@ -345,7 +351,7 @@ it.skipIf(!sessionBusIsPrivate())('asks a site once about notifications, remembe
         check('after a restart the site reads as granted', await evaluateRetrying(view, () => Notification.permission) === 'granted')
         await view.click('#notify')
         await waitFor(async () => (await pageState(view)).notify !== undefined)
-        check('and is not asked again', (await pageState(view)).notify === 'granted' && (await asked(second)).length === 0)
+        check('and is not asked again', (await pageState(view)).notify === 'granted' && (await askedAboutNotifications(second)).length === 0)
       } finally {
         await closeElectronApp(second)
       }
