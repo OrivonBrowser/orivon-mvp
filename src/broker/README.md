@@ -68,6 +68,12 @@ Eight files stay at the top level because they belong to no single directory:
   types pushed that file past 500 lines, re-exported from there, so no existing import site
   had to change. The `net`/`fs` split here mirrors `net-capability.ts`'s own move out of
   `index.ts`: by SUBSYSTEM, not by "is this a type or a function"
+- [`net-connect-secure.ts`](net-connect-secure.ts): `orivon.net.connectSecure`, split out of
+  `net-capability.ts` by the same Rule 2 seam and built from that file's state and socket
+  wrapper. Its design note below says when it adds the address check
+- [`secure-dial-contracts.ts`](secure-dial-contracts.ts): `DialSecure` and the rest of
+  `connectSecure`'s vocabulary, split out of `broker-contracts.ts` and re-exported from there,
+  as `fs-contracts.ts` is
 
 The decomposition and the import boundaries are recorded in
 [`ADR-0015`](../../docs/decisions/ADR-0015-the-broker-is-organised-by-job.md), including the two
@@ -329,6 +335,26 @@ extraction, not a redesign.
 `writeFile` and `id` has nothing at all; whoever builds either should check this file's line
 count before adding inline rather than assuming there is room, the same way `net.listen`'s
 author had to.
+
+### `net-connect-secure.ts`: an option that unbinds the name adds the address check
+
+`connectSecure` matches the grant against the hostname the app named, never a resolved address
+(`policy/connect-secure.ts`), because default verification of a certificate for that name
+against the runtime's built-in roots is what binds the name to whoever answered. Three of the
+app's TLS options remove that binding: `rejectUnauthorized: false` (nothing is verified), its
+own `ca` (a root the app chose can vouch for any name), and a `servername` other than the host
+(the certificate answers for a different name). Each is honoured, as Node honours it, and each
+sends the call through `checkConnect` as well: resolve once, require every answer to pass the
+same `https.connect` grant under `connect()`'s rule, and dial only the checked literal, with
+SNI and certificate verification still on the name (`secure-dial-contracts.ts`'s
+`SecureDialTarget.addresses`). Without it, `rejectUnauthorized: false` under a `*:443` grant
+would turn a name the app controls, rebound to `127.0.0.1` or `192.168.1.1`, into a full
+unauthenticated session with a loopback or LAN service, where default verification refuses the
+handshake. Both checks apply, so an option only ever narrows what a grant reaches. The cost: a
+LAN node with a self-signed certificate is reached through a grant naming its address (or
+`localhost:<port>`), never through a hostname that resolves privately, exactly as for plain TCP.
+A replacement grant re-checks such a socket by the address it reached
+(`connectStillAuthorised`), as it does a plain one.
 
 ### `net-capability.ts`: the accept-queue bound is not the specification's backpressure
 
