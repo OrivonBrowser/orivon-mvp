@@ -10,16 +10,11 @@
 // set -- including ones a page normally cannot (`Origin`, `Cookie`, ...).
 // No cookie jar, no ambient credential: every byte comes from the app.
 //
-// GATED ON `isAppTab`, decided SYNCHRONOUSLY in main before this ever runs
-// -- see this directory's README.md's Design notes for why, and why it is
-// not enough that `orivon.net` merely exists (it does, on every ordinary
-// tab, registered app or not).
-//
-// Known divergences from a real browser's fetch() -- redirects unfollowed,
-// a response body capped -- are catalogued in README.md's Design notes
-// (ADR-0017: "a silent divergence in a web platform API is a trap").
+// README.md's Design notes has why this is gated on `isAppTab`, how a request
+// waits for a connection (./fetch-gate.ts), and every known divergence from a
+// real browser's fetch() (ADR-0017: "a silent divergence ... is a trap").
 import { contextBridge } from 'electron'
-import type { FetchRouteSocket, FetchRouteTarget } from './fetch-route-types.js'
+import type { FetchRouteGate, FetchRouteSocket, FetchRouteTarget, RoutedFetchInit, RoutedFetchRequestLike } from './fetch-route-types.js'
 
 // Re-exported so no import site changes -- ./fetch-route-types.ts's own
 // header has why splitting these out is safe despite the serialisation
@@ -39,6 +34,7 @@ export const ROUTED_FETCH_MAX_BODY_BYTES = 16 * 1024 * 1024
 
 export function installFetchRoute (
   isAppTab: boolean,
+  gate: FetchRouteGate,
   target: FetchRouteTarget = typeof window === 'undefined' ? {} : window as unknown as FetchRouteTarget
 ): void {
   if (!isAppTab) return
@@ -57,10 +53,7 @@ export function installFetchRoute (
   // head bytes seen so far, not the whole buffer (that sibling's own bug).
   const MAX_HEAD_BYTES = 32 * 1024
 
-  // A conservative PLACEHOLDER, not an owner decision -- README.md's
-  // Design notes. Closes the unbounded-buffering hole now; whether this
-  // should instead be a manifest-declared, user-visible limit (A80's
-  // pattern) is an open question, not settled here.
+  // A placeholder, not a settled limit: README.md's Design notes.
   const MAX_BODY_BYTES = 16 * 1024 * 1024
 
   function concatBytes (a: Uint8Array, b: Uint8Array): Uint8Array {
@@ -365,8 +358,8 @@ export function installFetchRoute (
     return { status, statusText, headerPairs, body: await readAllCapped(reader, 'response body', rest) }
   }
 
-  async function routedFetch (input: unknown, init?: { method?: string, headers?: unknown, body?: unknown, signal?: AbortSignal }): Promise<Response> {
-    const requestLike = input as { url?: string, method?: string, headers?: unknown }
+  async function routedFetch (input: unknown, init?: RoutedFetchInit): Promise<Response> {
+    const requestLike = input as RoutedFetchRequestLike | null | undefined
     // WHATWG fetch takes `Request | USVString`, and ANYTHING that is not a
     // Request is converted with ToString -- which is why `fetch(new URL(...))`
     // works in every browser. Reading `.url` alone (a Request's own property,
@@ -388,7 +381,8 @@ export function installFetchRoute (
       throw new TypeError(`orivon: fetch routing cannot reach ${url.origin} (no native fetch fallback available)`)
     }
 
-    const signal = init?.signal
+    // As in real fetch(): init overrides the Request's own, and null is no signal.
+    const signal = (init?.signal !== undefined ? init.signal : requestLike?.signal) ?? undefined
     // A plain `signal?.aborted === true` re-check further down narrows to a
     // stale `false` across the awaits below (TS treats AbortSignal.aborted,
     // a readonly getter, as immutable) -- routed through a function call so
@@ -398,35 +392,48 @@ export function installFetchRoute (
 
     const method = (init?.method ?? (typeof requestLike?.method === 'string' ? requestLike.method : 'GET')).toUpperCase()
     const headerPairs = headerPairsFrom(init?.headers ?? requestLike?.headers)
-    const { bytes: requestBodyBytes, contentType } = await extractBody(init?.body)
+    const readRequestBody = init?.body === undefined && requestLike?.body !== null && requestLike?.body !== undefined ? requestLike.arrayBuffer : undefined
+    const { bytes: requestBodyBytes, contentType } = await extractBody(readRequestBody === undefined ? init?.body : new Uint8Array(await readRequestBody.call(requestLike)))
 
     const defaultPort = url.protocol === 'https:' ? 443 : 80
     const port = url.port !== '' ? Number(url.port) : defaultPort
     const dial = url.protocol === 'https:' ? net.connectSecure : net.connect
+    // Built before dialling: it throws on a raw CR or LF, and a throw after the dial leaks the socket.
+    const head = buildRequestHead(method, `${url.pathname}${url.search}`, url.hostname, port, defaultPort, headerPairs, requestBodyBytes.length, contentType)
 
     // Closes whichever socket is actually live the moment `signal` fires --
     // the dialled socket once it exists, or (dial still in flight) the one
     // it eventually produces -- so an abort can never leak a connection.
+    // The gate's slot is released only once that socket is closed.
     let currentSocket: FetchRouteSocket | undefined
     let dialPromise: Promise<FetchRouteSocket> | undefined
+    let abortedDial: Promise<void> = Promise.resolve()
     const onAbort = (): void => {
       if (currentSocket !== undefined) { currentSocket.close().catch(() => {}); return }
-      dialPromise?.then((socket) => { socket.close().catch(() => {}) }, () => {})
+      if (dialPromise !== undefined) abortedDial = dialPromise.then(async (socket) => { await socket.close().catch(() => {}) }, () => {})
     }
     if (signal !== undefined) signal.addEventListener('abort', onAbort, { once: true })
 
+    const ticket = gate.enqueue()
     try {
-      dialPromise = dial({ host: url.hostname, port })
-      try {
-        currentSocket = await raceAbort(dialPromise, signal)
-      } catch (error) {
-        if (isAborted()) throw abortReason(signal)
-        const message = error instanceof Error ? error.message : String(error)
-        throw new TypeError(`orivon: fetch to ${url.host} refused (${message})`)
+      await raceAbort(gate.admitted(ticket), signal)
+      for (;;) {
+        dialPromise = dial({ host: url.hostname, port })
+        try {
+          currentSocket = await raceAbort(dialPromise, signal)
+          break
+        } catch (error) {
+          if (isAborted()) throw abortReason(signal)
+          // Past the origin's socket allowance a browser's fetch() waits for a connection; so does this one.
+          if ((error as { code?: unknown } | null)?.code === 'limit' && await raceAbort(gate.afterLimit(ticket), signal)) continue
+          const message = error instanceof Error ? error.message : String(error)
+          const platformCode = (error as { platformCode?: unknown } | null)?.platformCode
+          const reason = typeof platformCode === 'string' ? `${platformCode}: ${message}` : message
+          throw new TypeError(`orivon: fetch to ${url.host} failed (${reason})`)
+        }
       }
       const socket = currentSocket
 
-      const head = buildRequestHead(method, `${url.pathname}${url.search}`, url.hostname, port, defaultPort, headerPairs, requestBodyBytes.length, contentType)
       const writer = socket.writable.getWriter()
       try {
         await raceAbort(writer.write(head), signal)
@@ -479,18 +486,13 @@ export function installFetchRoute (
       } catch { /* not fatal -- response.url just reads "", as an ordinary constructed Response's already does */ }
       return response
     } finally {
+      void abortedDial.then(() => { gate.release(ticket) })
       if (signal !== undefined) signal.removeEventListener('abort', onAbort)
     }
   }
 
-  // SYNCHRONOUS, no round trip -- `isAppTab` was already decided in main
-  // before this function ever ran (this file's own header). A page script
-  // that runs immediately cannot outrun this the way it could outrun the
-  // async `orivon.app.manifest()` check this replaced.
-  //
-  // The descriptor is the platform's own, deliberately -- a page can replace
-  // this binding exactly as it can in a browser (ADR-0021, which governs
-  // every global installed here). README.md's Design notes has the short
-  // version, and why `window.orivon` is locked where this is not.
+  // SYNCHRONOUS: `isAppTab` was decided in main before this ran, so no page
+  // script can outrun it. The descriptor is the platform's own, so a page can
+  // replace this binding as it can in a browser (ADR-0021, README.md's Design notes).
   Object.defineProperty(target, 'fetch', { value: routedFetch, writable: true, configurable: true, enumerable: true })
 }

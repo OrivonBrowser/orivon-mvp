@@ -190,6 +190,52 @@ describe('isSafeFaviconUrl -- loopback, for a page that is itself on loopback', 
   })
 })
 
+// An app origin that is neither a localhost name nor public unicast -- the
+// session-scoped plain-http host a dev grant steers at 127.0.0.1 by a fake
+// `.eth` name -- would otherwise never show its own icon: the classification
+// below the carve-out is about cross-origin reaches, and a same-origin
+// nomination invents none.
+describe('isSafeFaviconUrl -- same origin with the page that declared it', () => {
+  const APP_PAGE = 'http://bisq.eth:8885/index.html'
+
+  it('accepts a candidate on the app page\'s own origin, without ever resolving', async () => {
+    await expect(isSafeFaviconUrl('http://bisq.eth:8885/bisq.ico', APP_PAGE, unreachableResolver))
+      .resolves.toBe(true)
+  })
+
+  it('accepts a same-origin candidate on a subpath too', async () => {
+    await expect(isSafeFaviconUrl('http://bisq.eth:8885/img/icon.ico', APP_PAGE, unreachableResolver))
+      .resolves.toBe(true)
+  })
+
+  it('accepts a same-origin candidate for a public https page the same way', async () => {
+    await expect(isSafeFaviconUrl('https://example.com/favicon.ico', PUBLIC_PAGE, unreachableResolver))
+      .resolves.toBe(true)
+  })
+
+  it('refuses a cross-origin candidate on a DIFFERENT port -- the carve-out is per origin', async () => {
+    await expect(isSafeFaviconUrl('http://bisq.eth:9999/icon.png', APP_PAGE, unreachableResolver))
+      .resolves.toBe(false)
+  })
+
+  it('refuses an https candidate for an http page -- different origin, not a mixed-content bypass', async () => {
+    await expect(isSafeFaviconUrl('http://example.com/icon.png', 'https://example.com/page', unreachableResolver))
+      .resolves.toBe(false)
+    await expect(isSafeFaviconUrl('https://example.com/icon.png', 'http://example.com/page', unreachableResolver))
+      .resolves.toBe(false)
+  })
+
+  it('does not match two opaque origins -- a file: candidate cannot ride a file: page', async () => {
+    await expect(isSafeFaviconUrl('file:///etc/passwd', 'file:///tmp/evil.html', unreachableResolver))
+      .resolves.toBe(false)
+  })
+
+  it('does not treat an unparseable page URL as same origin', async () => {
+    await expect(isSafeFaviconUrl('http://127.0.0.1:8080/icon.png', '', unreachableResolver))
+      .resolves.toBe(false)
+  })
+})
+
 describe('fetchFaviconDataUrl', () => {
   // Every literal case is denied inside isSafeFaviconUrl before this
   // function ever reaches its `import('electron')` line, so these run

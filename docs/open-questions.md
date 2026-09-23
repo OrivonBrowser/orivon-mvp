@@ -8353,6 +8353,12 @@ table does not name it.
 **Needed by:** whenever a second permission is proposed for the allowlist, or an app asks to
 read the clipboard. Not blocking.
 
+**Applied a second time, 2026-09-22 (`ADR-0024`).** `fileSystem` joined, for one file the person
+chose and never a directory, argued against both clauses above: the pickers require transient
+activation and a native dialog the page cannot fill in, and `<input type="file">` plus a
+download already reach a file the person picks. The rule itself is still owner-unconfirmed; what
+ADR-0024 could not fit inside it is A205.
+
 ### A203 -- `src/broker/transport/` imports `src/main/`, contradicting the stated rule that `src/broker/` never does
 
 **Raised 2026-09-22**, found by ADR-0023's own reference sweep, the same way the broker's own
@@ -8407,6 +8413,34 @@ still the intent, versus the wiring having simply been missed.
 neither `ctx.broker` nor `ctx.loader` and has no ordering constraint of its own), or confirm the
 feature is intentionally unwired for now and say why (e.g. waiting on a real release to check
 against).
+
+### A205 -- File System Access: should writing back to an opened file, reusing a stored handle, or opening a folder ever get a prompt? **[AI-REC]**
+
+Filed 2026-09-22 alongside `ADR-0024`, which lets the permission gate allow `fileSystem` for one
+file the person chose.
+
+Electron 44 decides every File System Access operation in the session's synchronous permission
+check handler; measured against a real page, the request handler is never called. The gate can
+answer yes or no but cannot ask, so the ADR allows a single file and refuses directories, and
+that leaves three places where it differs from Chrome:
+
+- A page can write back to a file the person opened or dropped for reading. Chrome asks first
+  whether to save changes to it.
+- A handle the page stored in IndexedDB keeps read and write access in a later session. Chrome
+  asks again on the next visit.
+- Folders are refused outright, where Chrome asks. A site built around opening a folder cannot
+  work here.
+
+**AI recommendation:** leave all three as they are for this build. Each of the first two is
+bounded to a file the person handed over, and nothing in `mvp-scope.md`'s IN table needs a
+folder; FreeTube needs one file. An app written for Orivon that needs a folder already has
+`fs.userSelected`'s folder shape.
+
+**What would settle it:** Electron routing File System Access through the asynchronous request
+handler, which would make a real prompt possible; a ported app that needs a folder; or a report
+of a page misusing a stored handle.
+
+**Needed by:** any of those three. Not blocking.
 
 ### A206 -- the site-info popover's Cookies and site data page cannot delete an app's own private files yet **[NEEDS OWNER DECISION]**
 

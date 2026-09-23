@@ -1,8 +1,9 @@
 # `src/main/sessions/`: what an Electron `Session` is allowed to do
 
 **What lives here.** `permission-gate.ts`: denies every Chromium permission (camera, clipboard
-reads, notifications, …) on every session a tab can reach. `clipboard-sanitized-write` is the
-one allowed name (`ADR-0022`). `web-context-host.ts`: ADR-0019's
+reads, notifications, …) on every session a tab can reach. Two pass: `clipboard-sanitized-write`
+(`ADR-0022`), and `fileSystem` for a single file the person chose, never a directory
+(`ADR-0024`). `web-context-host.ts`: ADR-0019's
 Electron half of the isolated `WebContext` — the real `WebContextHost`
 [`../../broker/web-capability.ts`](../../broker/web-capability.ts) calls through
 `CreateBrokerOptions.webContextHost`: the partition, the sandboxed/isolated `WebContentsView`,
@@ -36,8 +37,13 @@ startup would still miss a partition a tab opens after that point, which is most
 listed first in `subsystems.ts`, ahead of everything else, so its `beforeReady` attaches the
 listener before any other subsystem's own `beforeReady` gets a chance to create a session.
 
-**What the gate allows, and why exactly one name.** `clipboard-sanitized-write` is granted on
-every ordinary session; every other permission Chromium can ask for is refused. The web
+**What the gate allows, and the rule a name must meet.** Two permissions pass on every ordinary
+session and every other one Chromium can ask for is refused. A name passes only when the web
+platform already gates it on an action by the person that the shell can neither fake nor
+suppress, and a legacy path already grants the same power, so refusing it would cost real pages
+without closing anything.
+
+`clipboard-sanitized-write` is granted outright. The web
 platform gates clipboard writing on transient user activation and a focused document, so the
 page cannot reach the clipboard unless the person just acted in it, and Chromium sanitizes what
 lands there. Refusing it protected nothing, because `document.execCommand('copy')` reaches the
@@ -45,11 +51,29 @@ same clipboard from the same pages and no Electron API can close that path -- an
 covers the default session, so the refusal broke copy buttons on ordinary websites, not only in
 apps. Reading stays denied in both forms. `ADR-0022` carries the argument in full.
 
+`fileSystem` is granted for one file, to read or to write, and refused for a directory. A page
+cannot name a path: it holds a handle to a file on disk only because the person picked it in an
+OS dialog, or dropped or pasted it. `<input type="file">` and a download already reach a file the
+person picks. A directory handle would reach every file beneath it, and a child's handle needs
+the directory's read grant first, so refusing directories closes the whole tree. `ADR-0024`
+carries the argument, including the two cases where this allows without asking what Chrome
+would ask about first.
+
+**Electron decides File System Access through the CHECK handler alone.** Measured against a real
+page: `getFile()`, `createWritable()`, `queryPermission()`, `requestPermission()` and listing a
+directory each reach `setPermissionCheckHandler` with `filePath`, `isDirectory` and
+`fileAccessType` in its details, and never reach the request handler. The request handler applies
+the same predicate anyway, so that routing a call through it in a later Electron cannot open what
+the check handler refuses. Because that handler is synchronous, the gate can say yes or no but
+cannot ask the person, which is why the rule rests on the person's choice of file, not on a
+prompt.
+
 Two consequences worth knowing before touching either file. `web-context-host.ts` reinstalls
 deny-everything handlers on `ADR-0019` isolated-context sessions, and that is now the only thing
-holding clipboard write away from a document running another site's script -- it looks like
-duplication and is not. And the grant ledger is untouched by any of this: it governs `orivon.*`
-capabilities, not Chromium's own, so no app gained a power a plain website does not have.
+holding clipboard write and file access away from a document running another site's script --
+it looks like duplication and is not. And the grant ledger is untouched by any of this: it
+governs `orivon.*` capabilities, not Chromium's own, so no app gained a power a plain website
+does not have.
 
 **[`web-context-host.ts`](web-context-host.ts)'s two WebRTC belts, and why a proxy pointed at the
 discard port does not also break the context's own `fetch()`.** ADR-0019 promises an isolated

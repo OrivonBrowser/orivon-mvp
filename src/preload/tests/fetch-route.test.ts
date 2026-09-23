@@ -16,6 +16,7 @@
 // `target.fetch` before any such promise could have settled, and fails.
 import { deflateSync, gzipSync } from 'node:zlib'
 import { describe, expect, it } from 'vitest'
+import { createFetchGate } from '../fetch-gate.js'
 import { installFetchRoute, ROUTED_FETCH_MAX_BODY_BYTES, ROUTED_FETCH_MAX_HEAD_BYTES } from '../fetch-route.js'
 import type { FetchRouteSocket, FetchRouteTarget } from '../fetch-route.js'
 
@@ -100,7 +101,7 @@ function fakeTarget (opts: {
 describe('installFetchRoute -- gating on isAppTab, synchronously', () => {
   it('installs the routed fetch IMMEDIATELY when isAppTab is true -- observable with no await at all', () => {
     const target = fakeTarget({})
-    installFetchRoute(true, target)
+    installFetchRoute(true, createFetchGate(), target)
     expect(typeof target.fetch).toBe('function')
   })
 
@@ -110,13 +111,13 @@ describe('installFetchRoute -- gating on isAppTab, synchronously', () => {
       orivon: { net: { connect: async () => fakeSocket([]), connectSecure: async () => fakeSocket([]) } },
       fetch: nativeFetch
     }
-    installFetchRoute(false, target)
+    installFetchRoute(false, createFetchGate(), target)
     expect(target.fetch).toBe(nativeFetch)
   })
 
   it('installs the routed fetch under the descriptor the platform itself uses, so a page can replace it', () => {
     const target = fakeTarget({ connect: async () => fakeSocket(CANNED_RESPONSE_CHUNKS()) })
-    installFetchRoute(true, target)
+    installFetchRoute(true, createFetchGate(), target)
     const descriptor = Object.getOwnPropertyDescriptor(target, 'fetch')
     expect(descriptor?.writable).toBe(true)
     expect(descriptor?.configurable).toBe(true)
@@ -132,7 +133,7 @@ describe('installFetchRoute -- gating on isAppTab, synchronously', () => {
   // `fetch` kills such a bundle while its module graph is still evaluating.
   it('lets a page shadow the routed fetch on a surrogate global, as cross-fetch does', () => {
     const target = fakeTarget({ connect: async () => fakeSocket(CANNED_RESPONSE_CHUNKS()) })
-    installFetchRoute(true, target)
+    installFetchRoute(true, createFetchGate(), target)
     function Surrogate (this: { fetch: unknown }): void { this.fetch = false }
     Surrogate.prototype = target
     expect(() => new (Surrogate as unknown as new () => unknown)()).not.toThrow()
@@ -140,7 +141,7 @@ describe('installFetchRoute -- gating on isAppTab, synchronously', () => {
 
   it('does nothing when isAppTab is true but orivon.net is absent (no capability surface to route through)', () => {
     const target: FetchRouteTarget = {}
-    expect(() => { installFetchRoute(true, target) }).not.toThrow()
+    expect(() => { installFetchRoute(true, createFetchGate(), target) }).not.toThrow()
     expect(target.fetch).toBeUndefined()
   })
 })
@@ -153,7 +154,7 @@ describe('installFetchRoute -- routing decisions', () => {
       location: { origin: 'https://app.example', href: 'https://app.example/index.html' },
       nativeFetch: async () => new Response('same-origin bundle asset')
     })
-    installFetchRoute(true, target)
+    installFetchRoute(true, createFetchGate(), target)
     const response = await target.fetch!('https://app.example/manifest.json')
     expect(await response.text()).toBe('same-origin bundle asset')
     expect(netCalled).toBe(false)
@@ -167,7 +168,7 @@ describe('installFetchRoute -- routing decisions', () => {
       connectSecure: async () => { usedConnectSecure = true; return fakeSocket(CANNED_RESPONSE_CHUNKS()) },
       location: { origin: 'https://app.example', href: 'https://app.example/' }
     })
-    installFetchRoute(true, target)
+    installFetchRoute(true, createFetchGate(), target)
     await target.fetch!('http://api.example/x')
     expect(usedConnect).toBe(true)
     expect(usedConnectSecure).toBe(false)
@@ -182,7 +183,7 @@ describe('installFetchRoute -- header freedom and no ambient credentials', () =>
     const target = fakeTarget({
       connectSecure: async () => { socket = fakeSocket(CANNED_RESPONSE_CHUNKS()); return socket }
     })
-    installFetchRoute(true, target)
+    installFetchRoute(true, createFetchGate(), target)
     await target.fetch!('https://api.example/x', { headers: { Origin: 'https://impersonated.example' } })
     expect(writtenHead(socket!)).toContain('Origin: https://impersonated.example')
   })
@@ -190,13 +191,13 @@ describe('installFetchRoute -- header freedom and no ambient credentials', () =>
   it('never attaches a Cookie header on its own, but sends one verbatim when the app sets it', async () => {
     let socketA: ReturnType<typeof fakeSocket> | undefined
     const targetA = fakeTarget({ connectSecure: async () => { socketA = fakeSocket(CANNED_RESPONSE_CHUNKS()); return socketA } })
-    installFetchRoute(true, targetA)
+    installFetchRoute(true, createFetchGate(), targetA)
     await targetA.fetch!('https://api.example/x')
     expect(writtenHead(socketA!).toLowerCase()).not.toContain('cookie:')
 
     let socketB: ReturnType<typeof fakeSocket> | undefined
     const targetB = fakeTarget({ connectSecure: async () => { socketB = fakeSocket(CANNED_RESPONSE_CHUNKS()); return socketB } })
-    installFetchRoute(true, targetB)
+    installFetchRoute(true, createFetchGate(), targetB)
     await targetB.fetch!('https://api.example/x', { headers: { Cookie: 'session=app-managed-value' } })
     expect(writtenHead(socketB!)).toContain('Cookie: session=app-managed-value')
   })
@@ -210,7 +211,7 @@ describe('installFetchRoute -- header freedom and no ambient credentials', () =>
         return fakeSocket(CANNED_RESPONSE_CHUNKS())
       }
     })
-    installFetchRoute(true, target)
+    installFetchRoute(true, createFetchGate(), target)
 
     const first = await target.fetch!('https://api.example/login')
     expect(first.headers.get('set-cookie')).toBe('sid=abc123')
@@ -227,9 +228,29 @@ describe('installFetchRoute -- header freedom and no ambient credentials', () =>
     const target = fakeTarget({
       connectSecure: async () => { dialAttempts++; throw Object.assign(new Error('denied'), { code: 'denied' }) }
     })
-    installFetchRoute(true, target)
+    installFetchRoute(true, createFetchGate(), target)
     await expect(target.fetch!('https://not-granted.example/')).rejects.toBeInstanceOf(TypeError)
     expect(dialAttempts).toBe(1)
+  })
+
+  // The message is all a page's console shows, so it has to carry the true
+  // reason: a dead host named by its errno, not a generic refusal.
+  it('names the platformCode of a failed dial in the TypeError, and adds nothing when there is none', async () => {
+    const unreachable = fakeTarget({
+      connectSecure: async () => { throw Object.assign(new Error('the network operation failed'), { code: 'unreachable', platformCode: 'EHOSTUNREACH' }) }
+    })
+    installFetchRoute(true, createFetchGate(), unreachable)
+    await expect(unreachable.fetch!('https://dead.example/api')).rejects.toThrow(
+      'orivon: fetch to dead.example failed (EHOSTUNREACH: the network operation failed)'
+    )
+
+    const denied = fakeTarget({
+      connectSecure: async () => { throw Object.assign(new Error('https.connect is not granted to this origin'), { code: 'denied' }) }
+    })
+    installFetchRoute(true, createFetchGate(), denied)
+    await expect(denied.fetch!('https://not-granted.example/')).rejects.toThrow(
+      'orivon: fetch to not-granted.example failed (https.connect is not granted to this origin)'
+    )
   })
 })
 
@@ -239,7 +260,7 @@ describe('installFetchRoute -- header input shapes', () => {
     async function fetchWith (headers: unknown): Promise<void> {
       let socket: ReturnType<typeof fakeSocket> | undefined
       const target = fakeTarget({ connectSecure: async () => { socket = fakeSocket(CANNED_RESPONSE_CHUNKS()); return socket } })
-      installFetchRoute(true, target)
+      installFetchRoute(true, createFetchGate(), target)
       await target.fetch!('https://api.example/x', { headers })
       seen.push(writtenHead(socket!))
     }
@@ -261,7 +282,7 @@ describe('installFetchRoute -- request input shapes', () => {
     async function fetchWith (input: unknown): Promise<void> {
       let socket: ReturnType<typeof fakeSocket> | undefined
       const target = fakeTarget({ connectSecure: async () => { socket = fakeSocket(CANNED_RESPONSE_CHUNKS()); return socket } })
-      installFetchRoute(true, target)
+      installFetchRoute(true, createFetchGate(), target)
       await target.fetch!(input)
       heads.push(writtenHead(socket!))
     }
@@ -273,9 +294,20 @@ describe('installFetchRoute -- request input shapes', () => {
     expect(new Set(heads).size).toBe(1)
   })
 
+  it('sends a Request object\'s own method and body when no init overrides them', async () => {
+    let socket: ReturnType<typeof fakeSocket> | undefined
+    const target = fakeTarget({ connectSecure: async () => { socket = fakeSocket(CANNED_RESPONSE_CHUNKS()); return socket } })
+    installFetchRoute(true, createFetchGate(), target)
+    await target.fetch!(new Request('https://api.example/x', { method: 'POST', body: 'abcde' }))
+    const head = writtenHead(socket!)
+    expect(head).toContain('POST /x HTTP/1.1')
+    expect(head).toContain('Content-Length: 5')
+    expect(new TextDecoder().decode(socket!.written[1])).toBe('abcde')
+  })
+
   it('rejects an input that names no URL at all, rather than inventing one', async () => {
     const target = fakeTarget({ connectSecure: async () => fakeSocket(CANNED_RESPONSE_CHUNKS()) })
-    installFetchRoute(true, target)
+    installFetchRoute(true, createFetchGate(), target)
     for (const input of [null, undefined]) {
       await expect(target.fetch!(input)).rejects.toThrow(/requires a URL/)
     }
@@ -286,7 +318,7 @@ describe('installFetchRoute -- response body framing', () => {
   it('decodes a chunked-transfer response body correctly', async () => {
     const chunked = bytes('HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n6\r\n world\r\n0\r\n\r\n')
     const target = fakeTarget({ connectSecure: async () => fakeSocket([chunked]) })
-    installFetchRoute(true, target)
+    installFetchRoute(true, createFetchGate(), target)
     const response = await target.fetch!('https://api.example/x')
     expect(await response.text()).toBe('hello world')
   })
@@ -296,7 +328,7 @@ describe('installFetchRoute -- response body framing', () => {
     const part1 = bytes('hello')
     const part2 = bytes(' world')
     const target = fakeTarget({ connectSecure: async () => fakeSocket([head, part1, part2]) })
-    installFetchRoute(true, target)
+    installFetchRoute(true, createFetchGate(), target)
     const response = await target.fetch!('https://api.example/x')
     expect(response.status).toBe(201)
     expect(await response.text()).toBe('hello world')
@@ -305,7 +337,7 @@ describe('installFetchRoute -- response body framing', () => {
   it('reports a POST body with an automatic Content-Length', async () => {
     let socket: ReturnType<typeof fakeSocket> | undefined
     const target = fakeTarget({ connectSecure: async () => { socket = fakeSocket(CANNED_RESPONSE_CHUNKS()); return socket } })
-    installFetchRoute(true, target)
+    installFetchRoute(true, createFetchGate(), target)
     await target.fetch!('https://api.example/x', { method: 'POST', body: 'abcde' })
     const head = writtenHead(socket!)
     expect(head).toContain('POST /x HTTP/1.1')
@@ -317,7 +349,7 @@ describe('installFetchRoute -- response header cap (R3-01)', () => {
   it('refuses response headers that never terminate, once they exceed MAX_HEAD_BYTES', async () => {
     const junk = new Uint8Array(ROUTED_FETCH_MAX_HEAD_BYTES + 8 * 1024).fill(65) // no CRLFCRLF anywhere
     const target = fakeTarget({ connectSecure: async () => fakeSocket([junk]) })
-    installFetchRoute(true, target)
+    installFetchRoute(true, createFetchGate(), target)
     await expect(target.fetch!('https://api.example/x')).rejects.toThrow(/MAX_HEAD_BYTES/)
   })
 
@@ -326,7 +358,7 @@ describe('installFetchRoute -- response header cap (R3-01)', () => {
     const head = bytes(`HTTP/1.1 200 OK\r\nContent-Length: ${String(bodyLength)}\r\n\r\n`)
     const body = new Uint8Array(bodyLength).fill(97)
     const target = fakeTarget({ connectSecure: async () => fakeSocket([concatUint8(head, body)]) })
-    installFetchRoute(true, target)
+    installFetchRoute(true, createFetchGate(), target)
     const response = await target.fetch!('https://api.example/x')
     expect(response.status).toBe(200)
     expect((await response.arrayBuffer()).byteLength).toBe(bodyLength)
@@ -337,7 +369,7 @@ describe('installFetchRoute -- response body cap (R3-01)', () => {
   it('fails closed on a Content-Length larger than the cap, before ever reading a body byte', async () => {
     const head = bytes(`HTTP/1.1 200 OK\r\nContent-Length: ${String(ROUTED_FETCH_MAX_BODY_BYTES + 1)}\r\n\r\n`)
     const target = fakeTarget({ connectSecure: async () => fakeSocket([head]) })
-    installFetchRoute(true, target)
+    installFetchRoute(true, createFetchGate(), target)
     await expect(target.fetch!('https://api.example/x')).rejects.toThrow(/MAX_BODY_BYTES/)
   })
 
@@ -347,7 +379,7 @@ describe('installFetchRoute -- response body cap (R3-01)', () => {
     // size, before fill() would wait for bytes that never come.
     const head = bytes(`HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n${massiveChunkSizeHex}\r\n`)
     const target = fakeTarget({ connectSecure: async () => fakeSocket([head]) })
-    installFetchRoute(true, target)
+    installFetchRoute(true, createFetchGate(), target)
     await expect(target.fetch!('https://api.example/x')).rejects.toThrow(/MAX_BODY_BYTES/)
   })
 
@@ -355,7 +387,7 @@ describe('installFetchRoute -- response body cap (R3-01)', () => {
     const head = bytes('HTTP/1.1 200 OK\r\n\r\n')
     const big = new Uint8Array(ROUTED_FETCH_MAX_BODY_BYTES + 1)
     const target = fakeTarget({ connectSecure: async () => fakeSocket([head, big]) })
-    installFetchRoute(true, target)
+    installFetchRoute(true, createFetchGate(), target)
     await expect(target.fetch!('https://api.example/x')).rejects.toThrow(/MAX_BODY_BYTES/)
   }, 15000)
 })
@@ -392,7 +424,7 @@ describe('installFetchRoute -- half-close (the request writable must outlive the
     const target = fakeTarget({
       connectSecure: async () => { socket = orderTrackingSocket(CANNED_RESPONSE_CHUNKS()); return socket }
     })
-    installFetchRoute(true, target)
+    installFetchRoute(true, createFetchGate(), target)
     const promise = target.fetch!('https://api.example/x')
     // Give the write phase every chance to run (and, on the pre-fix code, an
     // eager writer.close() to fire) before the response is ever unlocked --
@@ -410,17 +442,34 @@ describe('installFetchRoute -- init.signal / AbortController (R3-01)', () => {
   it('rejects immediately when the signal is already aborted before the call, and never dials', async () => {
     let dialAttempts = 0
     const target = fakeTarget({ connectSecure: async () => { dialAttempts++; return fakeSocket(CANNED_RESPONSE_CHUNKS()) } })
-    installFetchRoute(true, target)
+    installFetchRoute(true, createFetchGate(), target)
     const controller = new AbortController()
     controller.abort()
     await expect(target.fetch!('https://api.example/x', { signal: controller.signal })).rejects.toMatchObject({ name: 'AbortError' })
     expect(dialAttempts).toBe(0)
   })
 
+  it('treats `signal: null` as no signal, as real fetch() does', async () => {
+    const target = fakeTarget({ connectSecure: async () => fakeSocket(CANNED_RESPONSE_CHUNKS()) })
+    installFetchRoute(true, createFetchGate(), target)
+    const response = await target.fetch!('https://api.example/x', { signal: null })
+    expect(await response.text()).toBe('hello')
+  })
+
+  it('honours a Request object\'s own signal when init carries none', async () => {
+    let dialAttempts = 0
+    const target = fakeTarget({ connectSecure: async () => { dialAttempts++; return fakeSocket(CANNED_RESPONSE_CHUNKS()) } })
+    installFetchRoute(true, createFetchGate(), target)
+    const controller = new AbortController()
+    controller.abort()
+    await expect(target.fetch!(new Request('https://api.example/x', { signal: controller.signal }))).rejects.toMatchObject({ name: 'AbortError' })
+    expect(dialAttempts).toBe(0)
+  })
+
   it('aborting mid-response rejects the fetch promise AND closes the socket', async () => {
     let socket: ReturnType<typeof stallingSocket> | undefined
     const target = fakeTarget({ connectSecure: async () => { socket = stallingSocket(); return socket } })
-    installFetchRoute(true, target)
+    installFetchRoute(true, createFetchGate(), target)
     const controller = new AbortController()
     const promise = target.fetch!('https://api.example/x', { signal: controller.signal })
     // Let the dial/write side actually run so the abort lands mid-read, not mid-dial.
@@ -434,7 +483,7 @@ describe('installFetchRoute -- init.signal / AbortController (R3-01)', () => {
 
   it('rejects with the app\'s own custom abort reason when one was supplied to controller.abort()', async () => {
     const target = fakeTarget({ connectSecure: async () => stallingSocket() })
-    installFetchRoute(true, target)
+    installFetchRoute(true, createFetchGate(), target)
     const controller = new AbortController()
     const promise = target.fetch!('https://api.example/x', { signal: controller.signal })
     await new Promise((resolve) => setTimeout(resolve, 0))
@@ -474,7 +523,7 @@ describe('installFetchRoute -- Content-Encoding decompression (R3-02)', () => {
     const compressed = new Uint8Array(gzipSync(Buffer.from(payload)))
     const head = bytes(`HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Length: ${String(compressed.length)}\r\n\r\n`)
     const target = fakeTarget({ connectSecure: async () => fakeSocket([concatUint8(head, compressed)]) })
-    installFetchRoute(true, target)
+    installFetchRoute(true, createFetchGate(), target)
     const response = await target.fetch!('https://api.example/x')
     expect(response.headers.get('content-encoding')).toBe('gzip')
     await expect(response.json()).resolves.toEqual({ hello: 'world' })
@@ -494,7 +543,7 @@ describe('installFetchRoute -- Content-Encoding decompression (R3-02)', () => {
 
     const head = bytes(`HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Length: ${String(compressed.length)}\r\n\r\n`)
     const target = fakeTarget({ connectSecure: async () => fakeSocket([concatUint8(head, compressed)]) })
-    installFetchRoute(true, target)
+    installFetchRoute(true, createFetchGate(), target)
     await expect(target.fetch!('https://api.example/x')).rejects.toThrow(/decompressed past the/)
   })
 
@@ -503,7 +552,7 @@ describe('installFetchRoute -- Content-Encoding decompression (R3-02)', () => {
     const compressed = new Uint8Array(gzipSync(Buffer.from(raw)))
     const head = bytes(`HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Length: ${String(compressed.length)}\r\n\r\n`)
     const target = fakeTarget({ connectSecure: async () => fakeSocket([concatUint8(head, compressed)]) })
-    installFetchRoute(true, target)
+    installFetchRoute(true, createFetchGate(), target)
     const response = await target.fetch!('https://api.example/x')
     expect((await response.arrayBuffer()).byteLength).toBe(1024)
   })
@@ -513,7 +562,7 @@ describe('installFetchRoute -- Content-Encoding decompression (R3-02)', () => {
     const compressed = new Uint8Array(deflateSync(Buffer.from(payload)))
     const head = bytes(`HTTP/1.1 200 OK\r\nContent-Encoding: deflate\r\nContent-Length: ${String(compressed.length)}\r\n\r\n`)
     const target = fakeTarget({ connectSecure: async () => fakeSocket([concatUint8(head, compressed)]) })
-    installFetchRoute(true, target)
+    installFetchRoute(true, createFetchGate(), target)
     const response = await target.fetch!('https://api.example/x')
     await expect(response.json()).resolves.toEqual({ ok: true })
   })
@@ -522,15 +571,159 @@ describe('installFetchRoute -- Content-Encoding decompression (R3-02)', () => {
     const fakeBrotliBytes = new Uint8Array([1, 2, 3, 4])
     const head = bytes(`HTTP/1.1 200 OK\r\nContent-Encoding: br\r\nContent-Length: ${String(fakeBrotliBytes.length)}\r\n\r\n`)
     const target = fakeTarget({ connectSecure: async () => fakeSocket([concatUint8(head, fakeBrotliBytes)]) })
-    installFetchRoute(true, target)
+    installFetchRoute(true, createFetchGate(), target)
     await expect(target.fetch!('https://api.example/x')).rejects.toThrow(/brotli/i)
   })
 
   it('leaves an ordinary uncompressed response completely unaffected', async () => {
     const target = fakeTarget({ connectSecure: async () => fakeSocket(CANNED_RESPONSE_CHUNKS()) })
-    installFetchRoute(true, target)
+    installFetchRoute(true, createFetchGate(), target)
     const response = await target.fetch!('https://api.example/x')
     expect(response.headers.get('content-encoding')).toBeNull()
     expect(await response.text()).toBe('hello')
+  })
+})
+
+/** An `orivon.net` whose origin may hold `allowance` sockets at once, refusing past it with 'limit' as the broker does. */
+function limitedTarget (allowance: number, socketFor: (host: string) => FetchRouteSocket = () => fakeSocket(CANNED_RESPONSE_CHUNKS()), heldElsewhere = { count: 0 }): {
+  target: FetchRouteTarget
+  stats: { dials: number, refused: number, open: number, maxOpen: number, maxOpenToOneHost: number }
+} {
+  const stats = { dials: 0, refused: 0, open: 0, maxOpen: 0, maxOpenToOneHost: 0 }
+  const openByHost = new Map<string, number>()
+  async function dial ({ host }: { host: string, port: number }): Promise<FetchRouteSocket> {
+    stats.dials++
+    await Promise.resolve()
+    if (stats.open + heldElsewhere.count >= allowance) {
+      stats.refused++
+      throw Object.assign(new Error(`origin holds ${String(allowance)} sockets`), { code: 'limit' })
+    }
+    stats.open++
+    stats.maxOpen = Math.max(stats.maxOpen, stats.open)
+    openByHost.set(host, (openByHost.get(host) ?? 0) + 1)
+    stats.maxOpenToOneHost = Math.max(stats.maxOpenToOneHost, openByHost.get(host)!)
+    const socket = socketFor(host)
+    let closed = false
+    return {
+      readable: socket.readable,
+      writable: socket.writable,
+      close: async () => {
+        if (closed) return
+        closed = true
+        stats.open--
+        openByHost.set(host, openByHost.get(host)! - 1)
+      }
+    }
+  }
+  return { target: { orivon: { net: { connect: dial, connectSecure: dial } } }, stats }
+}
+
+describe('installFetchRoute -- past the socket allowance a request waits, as a browser\'s does, rather than fails', () => {
+  it('completes 100 simultaneous requests against a 32-socket allowance, using all 32', async () => {
+    const { target, stats } = limitedTarget(32)
+    installFetchRoute(true, createFetchGate(), target)
+    const responses = await Promise.all(Array.from({ length: 100 }, async (_, i) => await target.fetch!(`https://www.youtube.com/feeds/videos.xml?channel_id=${String(i)}`)))
+    expect(await Promise.all(responses.map(async (r) => await r.text()))).toEqual(Array(100).fill('hello'))
+    expect(stats.maxOpen).toBe(32)
+    expect(stats.open).toBe(0)
+  })
+
+  it('stops dialling past the allowance once it has been refused, instead of paying for a refused dial per request', async () => {
+    const { target, stats } = limitedTarget(4, () => stallingSocket())
+    installFetchRoute(true, createFetchGate(), target)
+    const controllers = Array.from({ length: 6 }, () => new AbortController())
+    const burst = controllers.map(async (c) => await target.fetch!('https://www.youtube.com/', { signal: c.signal }).catch(() => 'aborted'))
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    const later = new AbortController()
+    const queued = target.fetch!('https://www.youtube.com/', { signal: later.signal }).catch(() => 'aborted')
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(stats.refused).toBe(2)
+    expect(stats.dials).toBe(6)
+
+    later.abort()
+    for (const c of controllers) c.abort()
+    await Promise.all([...burst, queued])
+    expect(stats.dials).toBe(6)
+    expect(stats.open).toBe(0)
+  })
+
+  it('retries a dial refused for the socket limit once another routed request finishes', async () => {
+    const { target, stats } = limitedTarget(2)
+    installFetchRoute(true, createFetchGate(), target)
+    const hosts = ['a.example', 'b.example', 'c.example', 'd.example', 'e.example']
+    const bodies = await Promise.all(hosts.map(async (host) => await (await target.fetch!(`https://${host}/`)).text()))
+    expect(bodies).toEqual(Array(5).fill('hello'))
+    expect(stats.refused).toBeGreaterThan(0)
+    expect(stats.maxOpen).toBe(2)
+  })
+
+  it('reports the limit when nothing routed is live to free a socket -- the allowance is held by the app\'s own sockets', async () => {
+    const { target } = limitedTarget(0)
+    installFetchRoute(true, createFetchGate(), target)
+    await expect(target.fetch!('https://www.youtube.com/')).rejects.toThrow('orivon: fetch to www.youtube.com failed (origin holds 0 sockets)')
+  })
+
+  it('rejects a request aborted while it waits for a socket, and gives its place back', async () => {
+    const { target, stats } = limitedTarget(1, () => stallingSocket())
+    installFetchRoute(true, createFetchGate(), target)
+    const first = new AbortController()
+    const held = target.fetch!('https://www.youtube.com/', { signal: first.signal }).catch(() => 'aborted')
+    const waiting = new AbortController()
+    const refused = target.fetch!('https://www.youtube.com/', { signal: waiting.signal })
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(stats.refused).toBe(1)
+
+    waiting.abort()
+    await expect(refused).rejects.toMatchObject({ name: 'AbortError' })
+    first.abort()
+    await held
+    expect(stats.dials).toBe(2)
+    expect(stats.open).toBe(0)
+  })
+
+  it('retries once a socket frees where no routed request of this tab could free it, while its own request hangs', async () => {
+    const elsewhere = { count: 1 }
+    const { target, stats } = limitedTarget(2, (host) => host === 'hung.example' ? stallingSocket() : fakeSocket(CANNED_RESPONSE_CHUNKS()), elsewhere)
+    installFetchRoute(true, createFetchGate(20), target)
+    const hung = new AbortController()
+    const held = target.fetch!('https://hung.example/', { signal: hung.signal }).catch(() => 'aborted')
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    const refused = target.fetch!('https://www.youtube.com/')
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(stats.refused).toBe(1)
+
+    elsewhere.count = 0
+    expect(await (await refused).text()).toBe('hello')
+    hung.abort()
+    await held
+  })
+
+  it('holds its place until a dial aborted in flight has had its socket closed', async () => {
+    const events: string[] = []
+    let finishDial!: (socket: FetchRouteSocket) => void
+    const slowDial = async (): Promise<FetchRouteSocket> => await new Promise<FetchRouteSocket>((resolve) => { finishDial = resolve })
+    const target: FetchRouteTarget = { orivon: { net: { connect: slowDial, connectSecure: slowDial } } }
+    const inner = createFetchGate()
+    installFetchRoute(true, { ...inner, release: (ticket) => { events.push('release'); inner.release(ticket) } }, target)
+    const controller = new AbortController()
+    const pending = target.fetch!('https://www.youtube.com/', { signal: controller.signal })
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    controller.abort()
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    expect(events).toEqual([])
+
+    const socket = fakeSocket([])
+    finishDial({ readable: socket.readable, writable: socket.writable, close: async () => { events.push('close') } })
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    expect(events).toEqual(['close', 'release'])
+  })
+
+  it('dials nothing for a request whose head carries a raw CR or LF, so no socket is left open', async () => {
+    const { target, stats } = limitedTarget(32)
+    installFetchRoute(true, createFetchGate(), target)
+    await expect(target.fetch!('https://www.youtube.com/', { headers: { 'X-A': 'a\nb' } })).rejects.toBeInstanceOf(TypeError)
+    expect(stats.dials).toBe(0)
+    expect(stats.open).toBe(0)
   })
 })

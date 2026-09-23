@@ -161,6 +161,16 @@ function isLoopbackPage (pageUrl: string): boolean {
  * the one net.fetch itself will consult) rather than a second
  * implementation of either (code-guidelines.md Rule 3).
  *
+ * **Same origin with the page that declared it is safe without further
+ * qualification.** The classification below exists to stop a page reaching
+ * across origins -- a public page nominating loopback, or any page nominating
+ * a host nothing vouched for. A candidate on the page's own origin invents no
+ * such reach: its scripts, css and subresources load from that origin already,
+ * and this fetch is credential-less. An app origin that is neither a localhost
+ * name nor public unicast -- the session-scoped plain-http hosts a dev grant
+ * steers at 127.0.0.1 by a name like `bisq.eth` -- would otherwise never show
+ * its own icon.
+ *
  * **Loopback is allowed, for a page that is itself on loopback** -- owner's
  * decision, 2026-09-16, replacing the blanket refusal this had before. A
  * local dev server is a real thing to browse here, and refusing its icon
@@ -194,6 +204,17 @@ export async function isSafeFaviconUrl (url: string, pageUrl: string, resolveHos
     parsed = new URL(url)
   } catch {
     return false
+  }
+
+  // Two opaque origins are distinct per the URL spec even for identical
+  // URLs, so the literal "null" must never compare equal to itself here --
+  // a file: candidate must not ride a file: page's opaque origin through.
+  // An unparseable pageUrl cannot vouch for anything either, so both fall
+  // through to the origin-blind gates below.
+  try {
+    if (parsed.origin !== 'null' && parsed.origin === new URL(pageUrl).origin) return true
+  } catch {
+    // fall through
   }
 
   const host = parsed.hostname

@@ -8,6 +8,7 @@
 // two near-misses while the decompression cap was being fixed.
 
 import { contextBridge } from 'electron'
+import { createFetchGate } from './fetch-gate.js'
 import { installFetchRoute } from './fetch-route.js'
 
 /** The literal `webPreferences.additionalArguments` flag `src/main/
@@ -26,16 +27,16 @@ const APP_TAB_FLAG = '--orivon-app-tab'
  * `installFetchRoute` itself, which runs in the main world and has no
  * `process` -- so it crosses as a plain boolean argument instead.
  *
- * `args` carries ONLY `isAppTab` -- `installFetchRoute`'s `target` parameter
- * is deliberately left OMITTED, not passed as an explicit `undefined`, so
- * its own default (the real main-world `window`) applies -- the exact
- * pattern `orivon-surface.ts`'s own `exposeOrivon()` already uses for
- * `installOrivon`'s trailing `target` parameter.
+ * `args` carries `isAppTab` and this tab's gate -- `installFetchRoute`'s
+ * `target` parameter is deliberately left OMITTED, not passed as an explicit
+ * `undefined`, so its own default (the real main-world `window`) applies --
+ * the exact pattern `orivon-surface.ts`'s own `exposeOrivon()` already uses
+ * for `installOrivon`'s trailing `target` parameter.
  */
 export function exposeFetchRoute (): void {
   const isAppTab = process.argv.includes(APP_TAB_FLAG)
   try {
-    contextBridge.executeInMainWorld({ func: installFetchRoute, args: [isAppTab] })
+    contextBridge.executeInMainWorld({ func: installFetchRoute, args: [isAppTab, createFetchGate()] })
   } catch (error) {
     console.error('[orivon] fetch routing not installed', error)
   }

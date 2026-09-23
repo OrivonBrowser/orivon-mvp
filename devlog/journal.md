@@ -30,6 +30,10 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - `src/main/` reorganised into nine job-named directories (ADR-0023), matching `src/broker/`'s own convention; tests and behaviour unchanged.
 - Copy was broken on every website, not just apps: the gate now allows clipboard write, and dev `.eth` tabs are secure contexts.
 - Page globals must now carry the platform's descriptor, guarded by a check; an app tab that dies on load finally says so.
+- Headless ASGARDEX sweep, every screen: routed `fetch` crashed on `signal: null`, breaking SUI; fixed.
+- ASGARDEX's SOL→RUNE "enable Thorchain" error is a live THORChain SOL halt, not Orivon: upstream's message misleads.
+- Five ASGARDEX chains need API keys upstream bakes in from CI secrets; a port must bring its own.
+- Routed `fetch` now waits for a socket past the app's allowance instead of failing: FreeTube's 100-subscription refresh went from 286 errors to none.
 
 ### In my head
 
