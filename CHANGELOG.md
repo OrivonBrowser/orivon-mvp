@@ -12,6 +12,37 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Added
 
+- **App tabs route `XMLHttpRequest` and `EventSource` to granted hosts, as they route
+  `fetch()`.** A routed request follows redirects, streams its response, accepts `Blob`,
+  `FormData` and stream bodies, and waits for a free connection at the app's socket limit instead
+  of failing. A host the app was not granted gets the page's own API, as on any website.
+- **An app's WebSocket reaches the hosts it was granted.** `new WebSocket('wss://...')` to a host
+  the app holds an https grant for (or `ws://` with a TCP grant) runs over `orivon.net` like the
+  routed `fetch`, under the broker's grant and local-network checks; every other socket stays the
+  page's own, under its CSP.
+- **Installed apps can compile WebAssembly and use `eval`**, load `data:` and `blob:` images,
+  fonts, media, workers and frames, and reach granted https hosts from workers and XHR. A `*`
+  https grant reaches any public https host. Developer-mode origins run under the same policy.
+- **A page can go fullscreen from a click**, and Escape always gives the window back, with an
+  on-screen notice saying so (ADR-0025).
+- **`window.open()` returns a real window.** Sign-in popups can talk back through
+  `window.opener`, and a `blob:` link the page made opens.
+- **A page guarding unsaved work asks Leave or Stay** instead of silently refusing to navigate.
+  Right-click works in tabs and the address bar, and tabs identify as Chrome.
+- **App tabs have a `Buffer` global**, so Node code using a bare `Buffer` runs without bundler
+  injection.
+- **The Node shim covers much more of Node.** `url`, `querystring`, `string_decoder`, `timers`,
+  `assert`, `util` and `tls`; `node:`-prefixed and subpath imports; one virtual root for the
+  working directory, home, temp and `userData`; `fs` streams that close and release their handle;
+  `readFileSync` errnos and `existsSync`. The http client gains timeouts, abort signals, `upgrade`
+  and 1xx events, and `Agent`; `net.Socket` gains Node's constructor, an idle timeout and state
+  accessors; errors carry Node's `errno`, `syscall` and codes; `dns.lookup` answers literals and
+  `localhost` itself; `dgram` validates sends as Node does.
+- **`web.context`'s `evaluate` takes a per-call timeout**, which can only shorten the platform's.
+- **A manifest with extra fields installs.** An unknown top-level field (`$schema`,
+  `description`, `icons`, `homepage`) is ignored with a warning; an unknown field inside
+  `capabilities` still refuses the manifest.
+
 - **A global Orivon installs on an app's window can be replaced by the app**, as it can in a
   browser, and `npm run check:page-globals` fails the build on one that cannot (ADR-0021). A
   locked global kills any bundle that ponyfills it, so this is what stops one app's blank page
@@ -75,6 +106,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
   the clone-and-run path this project treats as a supported platform strategy.
 
 ### Fixed
+
+- **An installed app keeps its app-tab setup after a restart**, and the tab that installs an app
+  reloads once so it runs as the app.
+- **Bundles up to 512 MiB install, and assets up to 64 MiB are served, without being held in
+  memory**: streamed to and from disk, Range requests included.
+- **Real static hosts work.** An update no longer breaks an open single-page app's lazily loaded
+  chunks, reloading a client-side route works, a corrupted cache recovers instead of locking the
+  app out, and hosts that redirect the root document (Cloudflare Pages, GitHub Pages) install.
+- **A capability the person declined, or revoked in Settings, is not asked for again at every
+  launch**, and the app can still request it.
+- **An unchanged installed app costs one conditional (304) manifest request an hour**, and the
+  interval survives a restart.
+- **Chunked file I/O no longer hits the control channel's rate limit**, which broke nedb past a
+  few hundred documents. The fs quota measures disk usage; a socket closed cleanly on both sides
+  frees its slot; a wider `requestGrant` no longer resets live sockets; `localhost:<port>` grants
+  work; the file picker waits 120 s; a malformed UDP send is refused instead of killing the
+  socket; an operation on a closed handle gives `EBADF`; a peer reset reaches the page as
+  `ECONNRESET`; an operation past the in-flight cap waits briefly instead of failing.
+- **Subresources from granted hosts behave like a browser's.** Over-limit requests queue instead
+  of failing, redirect chains are capped at 20, a request is dropped after five minutes without a
+  byte rather than 30 s, and audio, subtitle, streaming-manifest and web-manifest files are served
+  with their real types.
 
 - **A page can open and save a file through the File System Access API.** One file the person
   picks or drops can be read and written; folders stay refused (ADR-0024). Without this,
