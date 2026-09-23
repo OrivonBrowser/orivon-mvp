@@ -75,7 +75,7 @@ guessed. Rows with no ID were lifted out of the prose of the documents named bes
 | `d-0072` | 2026-09-22 | Every Node-shaped path the shim presents (cwd, homedir, userData, `$HOME`, `$APPDATA`, `$TMPDIR`) is rooted at one virtual `/orivon/app`, tmpdir `/orivon/app/tmp`; the fs shim strips it and refuses a path outside it with `EACCES`. AI; provisional value | `../../src/shim/README.md` |
 | `d-0073` | 2026-09-22 | The shim's `util` is the `util` package plus Node-exact `promisify`, `inherits`, `isDeepStrictEqual` and `TextEncoder`/`TextDecoder`, accepting about thirty small transitive packages. AI | `../../src/shim/README.md`, `../planning/shim-dependency-review.md` |
 | `d-0074` | 2026-09-22 | The shim hand-writes `url`, `querystring`, `string_decoder`, `timers`, `timers/promises` and `assert`, and resolves `node:`-prefixed and subpath specifiers. AI | `../../src/shim/module-map.ts` |
-| `d-0075` | 2026-09-22 | The shim's `tls` runs over `connectSecure`; options that change who is trusted refuse by name; `rejectUnauthorized: false` is accepted with verification left on. AI; the owner decided on 2026-09-23 to honour the option instead (A226) | A226, `../../src/shim/README.md` |
+| `d-0075` | 2026-09-22 | The shim's `tls` runs over `connectSecure`; options that change who is trusted refuse by name; `rejectUnauthorized: false` is accepted with verification left on. AI; superseded on 2026-09-23 by the owner's `d-0096` (A226) | A226, `../../src/shim/README.md` |
 | `d-0076` | 2026-09-22 | `net.Server` refuses a loopback-only listen host rather than widening it to every interface. AI | A224, `../../src/shim/README.md` |
 | `d-0077` | 2026-09-22 | An errno the shim synthesises uses Linux numbering. AI | `../../src/shim/README.md` |
 | `d-0078` | 2026-09-22 | `process` reports `versions` `{}`, `version` `''`, `argv` `[]`, `pid` 1, `arch` `'javascript'` and `release.name` `'browser'`; `nextTick`/`setImmediate` errors reach the page's `reportError`; `setImmediate` is a `MessageChannel` task. AI; the values provisional | A222, `../../src/shim/README.md` |
@@ -96,6 +96,10 @@ guessed. Rows with no ID were lifted out of the prose of the documents named bes
 | `d-0093` | 2026-09-22 | A site shows notifications only after the person allows it; Allow and Block are remembered per origin, Not now is not. Owner | ADR-0028, A242 |
 | `d-0094` | 2026-09-22 | A Chromium permission passes the gate on one of two grounds: platform gating plus a legacy path or a shell-drawn affordance, or a real prompt the person answers. Owner | A202, `../../src/main/sessions/README.md` |
 | `d-0095` | 2026-09-23 | A popup an app opens onto the open web keeps the app's session until its opener closes, so a sign-in provider's cookies land in the app partition; accepted as an `ADR-0018` residual. Owner | A229, `../../src/main/shell/README.md` |
+| `d-0096` | 2026-09-23 | `connectSecure` honours `rejectUnauthorized`, `ca`, `cert`/`key`/`pfx`/`passphrase`, `servername` and ALPN, and reports the handshake; `rejectUnauthorized: false` really skips verification. The owner's words: "Select the option that ensures most compatibility with Electron apps." Supersedes `d-0075`. Owner | ADR-0017, A223, A226, A228 |
+| `d-0097` | 2026-09-23 | A TLS option that unbinds the certificate from the granted name (`rejectUnauthorized: false`, the app's own `ca`, another `servername`) adds `checkConnect`'s resolve-once address check, and only the checked literal is dialled. AI; awaits owner confirmation | ADR-0017, `../architecture/security-model.md` T12, `../../src/broker/README.md` |
+| `d-0098` | 2026-09-23 | A custom `checkServerIdentity` runs in the shim, in Node's order, and its connection is address-checked; SNI defaults to the host; `https` sends the Host header's name as SNI, as Node's agent does. AI | `../../src/shim/README.md` |
+| `d-0099` | 2026-09-23 | STARTTLS (`tls.connect({ socket })`) stays refused by name. AI | A225 |
 
 ## Directives
 
