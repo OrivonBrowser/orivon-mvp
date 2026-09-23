@@ -360,16 +360,9 @@ export async function createAppRequestHandler (
       return denyResponse(servable.reason)
     }
 
-    let connectPatterns: readonly Pattern[]
-    let securePatterns: readonly Pattern[]
-    try {
-      connectPatterns = grantedConnectPatterns === undefined ? [] : await grantedConnectPatterns()
-      securePatterns = grantedSecurePatterns === undefined ? [] : await grantedSecurePatterns()
-    } catch (error) {
-      await servable.asset.close()
-      throw error
-    }
-    const response = await buildResponse(servable.asset, resolved.canonicalPath, request.headers.get('range'), connectPatterns, securePatterns)
+    const connectPatterns = grantedConnectPatterns === undefined ? [] : await grantedConnectPatterns()
+    const securePatterns = grantedSecurePatterns === undefined ? [] : await grantedSecurePatterns()
+    const response = buildResponse(servable.file, request, connectPatterns, securePatterns)
     // A175: record what was actually SENT -- a Range request serves only a
     // slice, and a 416 serves no body at all, a KNOWN zero rather than a size
     // that could not be measured (pin-coverage.ts's `bytesIncomplete`).

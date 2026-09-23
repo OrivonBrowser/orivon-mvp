@@ -111,6 +111,33 @@ describe('serving a pinned asset', () => {
   })
 })
 
+describe('a response whose body is not read', () => {
+  it('holds no file open, so an abandoned or HEAD response leaks nothing', async () => {
+    const m = await installed()
+    const handler = await handlerFor(m, await retainedOldJs())
+
+    const unread = await handler(new Request(`${ORIGIN}/app.js`))
+    expect(unread.status).toBe(200)
+    await handler(new Request(`${ORIGIN}/old.js`))
+    expect(m.open()).toBe(0)
+
+    const head = await handler(new Request(`${ORIGIN}/app.js`, { method: 'HEAD' }))
+    expect(head.headers.get('content-length')).toBe(String(APP_JS.length))
+    expect(head.body).toBeNull()
+    expect(m.open()).toBe(0)
+  })
+
+  it('fails the body, rather than sending other bytes, when the file changed after the headers were built', async () => {
+    const m = await installed()
+    const handler = await handlerFor(m)
+    const response = await handler(new Request(`${ORIGIN}/app.js`))
+    await m.storage.writeAsset(ORIGIN, '/app.js', utf8(APP_JS.toUpperCase()))
+
+    await expect(response.text()).rejects.toThrow()
+    expect(m.open()).toBe(0)
+  })
+})
+
 describe('serving a previous version\'s retained file', () => {
   it('hashes it on the first request only, while the file is unchanged', async () => {
     const m = await installed()

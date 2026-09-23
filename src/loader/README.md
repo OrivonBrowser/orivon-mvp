@@ -208,12 +208,15 @@ new bytes exist; that is the entry document and any unhashed file, which the rel
 `restorePinnedServing` prunes to the verified pin, and clears any staging a crash left, at the
 next start, before any page can still need the old files.
 
-**A served asset streams from disk; a request costs the bytes it sends.** The handler opens the
-asset ([`storage.ts`](storage.ts)'s `openAsset`) and [`serve-asset.ts`](serve-asset.ts) streams
-the requested range off that handle in 64 KiB chunks, closing it when the body ends or is
-cancelled, so neither a 64 MiB asset nor a Range request into one is ever held whole. Reading
-through one handle also means a file replaced mid-response keeps serving the bytes it started
-with; a file cut short under it fails the body rather than ending it early.
+**A served asset streams from disk; a request costs the bytes it sends.** The handler checks the
+asset ([`storage.ts`](storage.ts)'s `openAsset`) for its size and identity, and
+[`serve-asset.ts`](serve-asset.ts) streams the requested range in 64 KiB chunks, so neither a
+64 MiB asset nor a Range request into one is ever held whole. The body opens the file only when
+first read and closes it when it ends, fails or is cancelled, so a response nobody reads (or a
+HEAD) holds no file open. If the file's identity changed after the headers were built, or it is
+cut short while being read, the body fails rather than sending bytes the headers do not
+describe; one open handle serves the whole body, so a file replaced mid-response keeps serving
+the bytes it started with.
 
 **Re-verification cost: whole-tree, once, at handler creation, not one leaf hash per request.**
 [`ADR-0007`](../../docs/decisions/ADR-0007-cached-bundles-served-at-their-own-origin.md) requires
