@@ -49,6 +49,36 @@ export const BUNDLE_HASH_PATTERN = /^sha256:[0-9a-f]{64}$/
 /** One entry in the pinned asset set. Same shape as bundle-hash.ts's PathLeaf. */
 export type PinnedAsset = PathLeaf
 
+/** A CIDv1 in its default base32 string form. */
+const CID_PATTERN = /^b[a-z2-7]{20,200}$/
+const CONTENT_VIA: ReadonlySet<string> = new Set(['ipfs', 'ipns-key', 'dnslink'])
+
+/**
+ * Where a bundle fetched from IPFS came from: the CID every one of its files
+ * was verified against, which is also the identifier a Web3 Score provider
+ * assesses, and how the name led there.
+ */
+export interface ContentAddress {
+  readonly cid: string
+  /** What the name's contenthash named: the CID itself, a signed IPNS key, or a DNSLink domain. */
+  readonly via: 'ipfs' | 'ipns-key' | 'dnslink'
+  /** The finalized block the name was proven at; absent for a test build's fixture name. */
+  readonly block?: number
+  /** Whether every pointer from the name to the CID was verified: false through a DNSLink. */
+  readonly pointersVerified: boolean
+}
+
+function parseContentAddress (raw: unknown): ContentAddress | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const cid = ownProperty(raw, 'cid', isString)
+  const via = ownProperty(raw, 'via', isString)
+  const pointersVerified = ownProperty(raw, 'pointersVerified', (v): v is boolean => typeof v === 'boolean')
+  if (cid === undefined || !CID_PATTERN.test(cid) || via === undefined || !CONTENT_VIA.has(via) || pointersVerified === undefined) return null
+  const block = ownProperty(raw, 'block', isFiniteNumber)
+  if (Object.hasOwn(raw, 'block') && (block === undefined || !Number.isSafeInteger(block) || block < 0)) return null
+  return { cid, via: via as ContentAddress['via'], pointersVerified, ...(block === undefined ? {} : { block }) }
+}
+
 /**
  * What the broker persists once a bundle is accepted (TOFU or a re-consented
  * update). Deliberately does NOT carry `versionFloor`: that value survives a
@@ -81,6 +111,8 @@ export interface PinRecord {
   readonly version: string
   /** When this pin was written, epoch milliseconds. */
   readonly pinnedAt: number
+  /** Present only for a bundle fetched from IPFS through a `.eth` name. Optional, so schema 1 still reads every older pin. */
+  readonly content?: ContentAddress
 }
 
 /**
@@ -114,7 +146,10 @@ export function parsePinRecord (raw: unknown): PinRecord | null {
   const assets = parseAssets(raw)
   if (assets === null) return null
 
-  return { schema: 1, origin, bundleHash, assets, version, pinnedAt }
+  if (!Object.hasOwn(raw, 'content')) return { schema: 1, origin, bundleHash, assets, version, pinnedAt }
+  const content = parseContentAddress((raw as { content?: unknown }).content)
+  if (content === null) return null
+  return { schema: 1, origin, bundleHash, assets, version, pinnedAt, content }
 }
 
 /**
@@ -192,7 +227,8 @@ export function fromBundleTree (
   bundleHash: string,
   assets: readonly PinnedAsset[],
   version: string,
-  pinnedAt: number
+  pinnedAt: number,
+  content?: ContentAddress
 ): PinRecord {
   if (!isCanonicalOrigin(origin)) throw fail('invalid', `not a canonical origin: ${describePath(origin)}`)
   if (!BUNDLE_HASH_PATTERN.test(bundleHash)) throw fail('invalid', `not a bundle hash: ${bundleHash}`)
@@ -239,5 +275,9 @@ export function fromBundleTree (
   // caller's array by reference means every check above can be undone after
   // this returns, and what it would be undone on is T21's allowlist.
   // parsePinRecord already builds a fresh array; this path did not.
-  return { schema: 1, origin, bundleHash, assets: assets.map((a) => ({ ...a })), version, pinnedAt }
+  const copied = assets.map((a) => ({ ...a }))
+  if (content === undefined) return { schema: 1, origin, bundleHash, assets: copied, version, pinnedAt }
+  const checked = parseContentAddress(content)
+  if (checked === null) throw fail('invalid', `not a content address: ${JSON.stringify(content)}`)
+  return { schema: 1, origin, bundleHash, assets: copied, version, pinnedAt, content: checked }
 }
