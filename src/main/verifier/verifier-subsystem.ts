@@ -10,7 +10,7 @@ import type { Session } from 'electron'
 import type { Subsystem } from '../registry.js'
 import { devEthNames } from '../dev/eth-resolver.js'
 import type { HostConfig, LightClientState, SiteProvenance } from '../../verifier-host/protocol.js'
-import type { ContentAddress } from '../../broker/policy/pin.js'
+import type { ContentAddress, PinRecord } from '../../broker/policy/pin.js'
 import { servedByVerifier } from '../../loader/eth-origin.js'
 import { ethCertificateVerdict } from './certificate-check.js'
 import { contentAddressOf } from './content-address.js'
@@ -23,6 +23,8 @@ import shippedCheckpoint from './mainnet-checkpoint.json'
 import { composeResolverRules } from './resolver-rules.js'
 import { ethTestSeam, noteVerifierListening } from './test-seam.js'
 import { VerifierStore } from './verifier-store.js'
+import { chooseNameEvidence } from './name-evidence.js'
+import type { NameEvidence } from './name-evidence.js'
 import { lightClientView } from './status-view.js'
 import type { LightClientView } from './status-view.js'
 
@@ -88,6 +90,13 @@ export async function siteProvenance (host: string): Promise<SiteProvenance | nu
   } catch {
     return null
   }
+}
+
+/** How a `.eth` name led to the content this tab shows, for the site-info popover; undefined for any other origin. */
+export async function ethNameEvidence (origin: string, pin: PinRecord | null, servedFromCache: boolean): Promise<NameEvidence | undefined> {
+  if (!servedByVerifier(origin)) return undefined
+  const live = await siteProvenance(new URL(origin).hostname)
+  return chooseNameEvidence(pin?.content, servedFromCache, live, verifierView().summary, Date.now())
 }
 
 /**

@@ -4,11 +4,12 @@
 is the bookmarks bar's data model and disk persistence. `favicon.ts` fetches a tab's icon to a
 `data:` URL. `delivery-provenance.ts` answers ADR-0007's one truthful address-bar signal: is the
 active tab served from Orivon's own pinned cache. `site-trust.ts` is the site-info popup's Web3
-Score page: `buildSiteTrust`, the first production caller of `../../trust/delivery-ladder.ts`'s
-`deliveryLadder` (A181, docs/open-questions.md). Pure — the caller (`../permissions/
-site-info-controller.ts`) supplies the pin, the cached-or-not flag and pin coverage rather than
-this file reaching for `electron-serve.ts` itself, matching `../../trust/`'s own "never import
-another stream's internals" one layer further out.
+Score page: `buildSiteTrust` computes the Website level (`../../trust/website-level.ts`) and the
+delivery ladder (`../../trust/delivery-ladder.ts`). Pure — the caller (`../permissions/
+site-info-controller.ts`) supplies the pin, the cached-or-not flag, pin coverage and a `.eth`
+name's evidence (`../verifier/name-evidence.ts`) rather than this file reaching for
+`electron-serve.ts` or the verifier itself, matching `../../trust/`'s own "never import another
+stream's internals" one layer further out.
 
 **What it depends on.** [`../../broker/policy/`](../../broker/policy/) (`address.ts`,
 `connect.ts` types, `origin.ts`, `pin.ts`'s `PinRecord` type),

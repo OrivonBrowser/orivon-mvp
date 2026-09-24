@@ -22,7 +22,7 @@ export interface VerifierFacts {
   readonly endpoints: { readonly executionRpcs: readonly string[], readonly consensusRpc: string, readonly gateways: readonly string[] }
 }
 
-function ago (ms: number): string {
+export function ago (ms: number): string {
   const minutes = Math.round(ms / 60_000)
   if (minutes < 1) return 'just now'
   if (minutes < 90) return `${String(minutes)} minute${minutes === 1 ? '' : 's'} ago`

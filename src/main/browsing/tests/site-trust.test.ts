@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { buildSiteTrust } from '../site-trust.js'
 import type { PinRecord } from '../../../broker/policy/pin.js'
+import type { NameEvidence } from '../../verifier/name-evidence.js'
 
 // The site-info popover's Web3 Score page. Pure -- no `electron`, no
 // `loader`/`electron-serve` import -- the caller (site-info-ipc.js)
@@ -45,7 +46,7 @@ describe('buildSiteTrust -- delivery evidence, never overclaiming what was not o
     expect(trust.pin).toBeUndefined()
   })
 
-  it('pinned and served from cache: D2 met, D3/D4 not (no content-addressing or trustless resolution exists yet)', () => {
+  it('pinned and served from cache: D2 met, D3/D4 not (an ordinary origin is not content-addressed)', () => {
     const trust = buildSiteTrust(ORIGIN, pin({ pinnedAt: 1_000 }), true, undefined, undefined, 2_000)
 
     expect(trust.delivery.rungs).toEqual([
@@ -77,7 +78,7 @@ describe('buildSiteTrust -- delivery evidence, never overclaiming what was not o
     expect(trust.delivery.evidence.pinCoverage).toEqual(coverage)
   })
 
-  it('no address-addressing or trustless resolution today -- D3/D4 never met, regardless of pin state', () => {
+  it('an ordinary origin never meets D3/D4, regardless of pin state', () => {
     const trust = buildSiteTrust(ORIGIN, pin(), true, undefined, undefined, 2_000)
     expect(trust.delivery.rungs.find((r) => r.rung === 'D3')?.met).toBe(false)
     expect(trust.delivery.rungs.find((r) => r.rung === 'D4')?.met).toBe(false)
@@ -98,5 +99,37 @@ describe('buildSiteTrust -- DDOC', () => {
 
   it('not published when the site published nothing', () => {
     expect(buildSiteTrust(ORIGIN, pin(tree), true, undefined, undefined, 2_000).ddoc).toEqual({ status: 'not-published' })
+  })
+})
+
+describe('buildSiteTrust -- the Website level and a .eth name', () => {
+  const CID = 'bafybeiczdb3ssfsyyhhgvxwrkkqndv45umiz6vov46l4hvxukyolejbcgi'
+  const proven: NameEvidence = { content: { source: 'live', cid: CID, ddoc: 'met' }, nameProven: true, line: 'Name verified', rows: [{ term: 'Name', value: 'Proven' }] }
+
+  it('an ordinary site is Level 1, and names its bundle hash only when pinned', () => {
+    expect(buildSiteTrust(ORIGIN, null, false, undefined, undefined, 2_000).level).toMatchObject({ level: 1, assessable: undefined })
+    expect(buildSiteTrust(ORIGIN, pin(), true, undefined, undefined, 2_000).level).toMatchObject({ level: 1, assessable: { kind: 'bundle-hash', value: 'a'.repeat(64) } })
+    expect(buildSiteTrust(ORIGIN, null, false, undefined, undefined, 2_000).name).toBeUndefined()
+  })
+
+  it('a verified .eth page is Level 2, meets D3 and D4, and carries its name rows', () => {
+    const trust = buildSiteTrust('https://site.eth', null, false, undefined, undefined, 2_000, proven)
+    expect(trust.level).toMatchObject({ level: 2, assessable: { kind: 'cid', value: CID } })
+    expect(trust.delivery.rungs.filter((r) => r.met).map((r) => r.rung)).toEqual(['D1', 'D3', 'D4'])
+    expect(trust.name).toEqual({ line: 'Name verified', rows: [{ term: 'Name', value: 'Proven' }] })
+  })
+
+  it('a .eth name through DNSLink is content-addressed but not trustlessly named: D3 without D4, Level 1', () => {
+    const viaDns: NameEvidence = { ...proven, content: { source: 'live', cid: CID, ddoc: 'not-met', reason: 'via DNS: app.example' }, nameProven: false }
+    const trust = buildSiteTrust('https://site.eth', null, false, undefined, undefined, 2_000, viaDns)
+    expect(trust.level.level).toBe(1)
+    expect(trust.delivery.rungs.filter((r) => r.met).map((r) => r.rung)).toEqual(['D1', 'D3'])
+  })
+
+  it('a .eth name the verifier could not answer for claims nothing beyond D1', () => {
+    const unknown: NameEvidence = { content: undefined, nameProven: false, line: 'Name not verified.', rows: [] }
+    const trust = buildSiteTrust('https://site.eth', null, false, undefined, undefined, 2_000, unknown)
+    expect(trust.level.level).toBe(1)
+    expect(trust.delivery.rungs.filter((r) => r.met).map((r) => r.rung)).toEqual(['D1'])
   })
 })

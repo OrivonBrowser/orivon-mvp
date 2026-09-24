@@ -4,7 +4,8 @@
 send every `.eth` host to the verifier's loopback port, the certificate check each session applies,
 starting and restarting the verifier host ([`../../verifier-host/`](../../verifier-host/)), choosing
 the light client's checkpoint, keeping what the host verified between runs, and saying in words
-what the light client is doing.
+what the light client is doing and how a `.eth` name led to the page a tab shows
+([`name-evidence.ts`](name-evidence.ts), for the site-info popover).
 
 **Tied to Electron.** Disposable. [`verifier-subsystem.ts`](verifier-subsystem.ts) is the one file
 that imports `electron`; the rest are decisions, unit-tested under plain vitest, on this
@@ -12,7 +13,8 @@ directory's `<name>.ts` / `<name>-subsystem.ts` convention ([`../README.md`](../
 
 **What it depends on.** [`../../verifier-host/protocol.ts`](../../verifier-host/protocol.ts) for the
 messages it exchanges with the host, [`../dev/eth-resolver.ts`](../dev/eth-resolver.ts) for this
-run's developer names, and the broker's atomic file write.
+run's developer names, the broker's atomic file write, and the pointer-chain verdict and Website
+level types ([`../../resolution/`](../../resolution/), [`../../trust/`](../../trust/)).
 
 **What it must never import.** The verifier host's code, as opposed to its protocol types: it runs
 in another process, and only [`host-supervisor.ts`](host-supervisor.ts) talks to it.

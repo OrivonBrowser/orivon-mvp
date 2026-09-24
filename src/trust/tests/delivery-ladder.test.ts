@@ -107,7 +107,7 @@ describe('deliveryLadder -- D3, content-addressed', () => {
   })
 })
 
-describe('deliveryLadder -- D4, deferred in the MVP', () => {
+describe('deliveryLadder -- D4', () => {
   it('D4 is met only when nameResolvedTrustlessly AND addressIsContentAddressed are both true', () => {
     const result = deliveryLadder(input({
       addressIsContentAddressed: true,
@@ -121,7 +121,7 @@ describe('deliveryLadder -- D4, deferred in the MVP', () => {
     expect(metRungs(result)).not.toContain('D4')
   })
 
-  it('D4 is never met by any input this MVP can actually produce today (no trustless resolver exists) -- the field exists so a later lane can wire it without a type change', () => {
+  it('D4 is not met by an ordinary origin, which arrives with neither input set', () => {
     const result = deliveryLadder(input())
     expect(result.rungs.find((r) => r.rung === 'D4')?.met).toBe(false)
   })

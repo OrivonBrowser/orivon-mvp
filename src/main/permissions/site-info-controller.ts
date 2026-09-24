@@ -15,6 +15,8 @@ import type { TurnOnResult } from './site-switches.js'
 import { buildSiteTrust } from '../browsing/site-trust.js'
 import type { SiteTrust } from '../browsing/site-trust.js'
 import type { PinCoverageEvidence } from '../../trust/delivery-ladder.js'
+import type { PinRecord } from '../../broker/policy/pin.js'
+import type { NameEvidence } from '../verifier/name-evidence.js'
 
 export interface SiteSummary {
   /** Whether the site has asked for at least one Orivon capability or
@@ -36,6 +38,8 @@ const EMPTY_SITE_INFO = (origin: string): SiteInfo => ({
 export interface SiteTrustSources {
   readonly isOriginServedFromCacheSync: (origin: string) => boolean
   readonly pinCoverageFor: (origin: string) => PinCoverageEvidence | undefined
+  /** How a `.eth` name led to this origin's content; undefined for any other origin. */
+  readonly nameEvidenceFor: (origin: string, pin: PinRecord | null, servedFromCache: boolean) => Promise<NameEvidence | undefined>
 }
 
 export interface StorageDeclaration {
@@ -93,7 +97,9 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
       const origin = originFromUrl(url)
       if (loader === undefined || origin === null) return null
       const [pin, published] = await Promise.all([loader.pinFor(origin), loader.ddocFor(origin)])
-      return buildSiteTrust(origin, pin, trustSources.isOriginServedFromCacheSync(origin), trustSources.pinCoverageFor(origin), published, Date.now())
+      const servedFromCache = trustSources.isOriginServedFromCacheSync(origin)
+      const name = await trustSources.nameEvidenceFor(origin, pin, servedFromCache)
+      return buildSiteTrust(origin, pin, servedFromCache, trustSources.pinCoverageFor(origin), published, Date.now(), name)
     },
 
     async storageDeclarationFor (url) {

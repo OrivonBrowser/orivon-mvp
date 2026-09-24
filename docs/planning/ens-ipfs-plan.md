@@ -1,9 +1,9 @@
 # ENS names and IPFS delivery: the plan
 
 > **In progress.** Written 2026-09-24 against `main` at `e218ca4`, after the owner's decisions of
-> the same day (§Decisions taken). EI-1 to EI-9 and EI-11's Settings section are built on
-> `stream/ens-ipfs`; [§Where it stands](#where-it-stands) says what is left, and where the build
-> departed from the text below.
+> the same day (§Decisions taken). EI-1 to EI-11 are built on `stream/ens-ipfs`;
+> [§Where it stands](#where-it-stands) says what is left, and where the build departed from the
+> text below.
 
 **What this is.** The work queue for making `name.eth` load in this build as `https://name.eth`,
 with every byte checked locally against what the Ethereum chain says the name points to. External
@@ -548,8 +548,8 @@ Updated 2026-09-24. Built on `stream/ens-ipfs`, each item to its exit criterion 
 | EI-5, EI-7 | Done. `test/e2e-eth-verified.test.ts`: a fixture name loads verified, a tampered block is refused, and the Local Network Access canary holds |
 | EI-8 | Done. An opt-in live test resolves the five names through Helios and refuses a tampered proof; the real shell loads `vitalik.eth` from mainnet |
 | EI-9 | Done. `test/e2e-eth-install.test.ts` installs a `.eth` app through the real hint; its pin carries the CID and it opens from cache with the gateway gone |
-| EI-10 | **Not started.** Waits on A254 (does a same-host DDOC tree make Level 2?) and on the roadmap change, which edits `site-trust.ts` and `delivery-ladder.ts` |
-| EI-11 | Settings section done (`test/e2e-eth-light-client-status.test.ts`). The popover row on `.eth` pages goes with EI-10 |
+| EI-10 | Done. `test/e2e-eth-website-level.test.ts`: an `ipfs` fixture name is Level 2 with its CID, a DNSLink fixture is Level 1 naming the domain, an ordinary page is Level 1, and none shows Level 3 or above. A same-host hash tree stays Level 1 until A254 is settled |
+| EI-11 | Done. Settings section: `test/e2e-eth-light-client-status.test.ts`. The popover's `.eth` row is unit-tested (`src/main/verifier/tests/name-evidence.test.ts`) |
 | EI-12 | **Partly.** A README for each new directory. The rest edits the same pages as the roadmap change |
 
 **Where the build departed from the text above, and why:**
@@ -570,4 +570,13 @@ Updated 2026-09-24. Built on `stream/ens-ipfs`, each item to its exit criterion 
 - **`uniswap.eth`'s DNSLink no longer exists**, so a fixture stands in for the live Level 1 example.
 - **The fixture seam and a readiness flag** share one global, `__orivonDevEthFixtures`, which joins
   `check-dev-grant-absent.mjs`'s markers.
+- **The ordinary site in EI-10's e2e is plain HTTP on loopback**, not HTTPS: the level does not
+  depend on the scheme, and the suite has no HTTPS fixture server.
+- **The same-host hash tree row is labelled "Hash tree", not "DDOC"**, and is left out for a `.eth`
+  name, whose DDOC anchor is its contenthash (A255). Showing "DDOC: verified" beside Level 1 would
+  contradict the level's own meaning.
+- **The scores page is named, not linked, in the popover**: the popover has no path that opens a
+  tab.
+- **Killing the verifier host mid-load shows Chromium's connection-refused page**, not "Cannot
+  verify": the socket is gone. Nothing hangs, and the next load after the restart is served.
 
