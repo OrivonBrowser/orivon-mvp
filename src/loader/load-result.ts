@@ -17,7 +17,7 @@ export interface LoadInstalled {
   /**
    * True only when this install is a below-floor version the user has
    * already chosen, at least once, to accept from this origin
-   * (decideUpdate()'s `rollback-notice`, 2026-09-04). Absent for every other
+   * (decideUpdate()'s `rollback-notice`). Absent for every other
    * install -- the caller uses this to show an ongoing, passive,
    * non-blocking notice, never a prompt (the owner's own "warn every time,
    * but never require a click" framing). Never present alongside a TOFU or
@@ -26,9 +26,7 @@ export interface LoadInstalled {
    * A caller that ignores this field still gets a SAFE install --
    * decideUpdate() only reaches `rollback-notice` once it has confirmed the
    * update neither widens authority nor changes the bundle in a way that
-   * would need reconsent (fixed 2026-09-05, `ADR-0013`'s own amendment: it
-   * used to skip those checks entirely for an acknowledged rollback, which is
-   * why this field existing was not enough on its own). What a caller loses by ignoring it is purely
+   * would need reconsent (`ADR-0013`). What a caller loses by ignoring it is purely
    * the ongoing visibility the owner asked for -- the user never being told
    * they are still running an origin's below-floor version -- which is the
    * entire reason this outcome is distinguished from an ordinary `installed`
@@ -72,10 +70,9 @@ export interface LoadNeedsCapabilityPrompt {
 }
 
 /**
- * 2026-09-04, T19 policy reversal: a below-floor version used to be a
- * silent, no-prompt `rejected`. It is now a warned CHOICE the first time for
- * a given origin -- proceed with this older version, or keep what's cached
- * -- never a hard block. Carries `tree`/`entries`/`manifest` for the same
+ * T19: a below-floor version is a warned CHOICE the first time for a given
+ * origin -- proceed with this older version, or keep what's cached -- never
+ * a hard block. Carries `tree`/`entries`/`manifest` for the same
  * reason `LoadNeedsReconsent`/`LoadNeedsCapabilityPrompt` carry them --
  * so a caller doesn't have to re-fetch to act on the choice.
  *
@@ -84,7 +81,7 @@ export interface LoadNeedsCapabilityPrompt {
  * already ran, so persisting the result on approval is safe. Here they have
  * NOT run yet -- `decideUpdate` returns `rollback-choice` before either
  * check, so this manifest could also widen capabilities. Approving must
- * record the acknowledgement and let `decideUpdate` run again (now correctly
+ * record the acknowledgement and let `decideUpdate` run again (this time
  * reaching `ordinaryEscalation`), never persist this result directly.
  */
 export interface LoadNeedsRollbackChoice {
@@ -106,8 +103,8 @@ export interface LoadRejected {
    * and, additionally, never a host filesystem path. Every other rejection
    * here is a string this module wrote about the fetch or the manifest; the
    * storage one is the only place a raw node:fs message could reach this
-   * field, and installOrReject below logs that message rather than returning
-   * it.
+   * field, and installAndNotify (./install.ts) logs that message rather
+   * than returning it.
    */
   readonly reason: string
 }

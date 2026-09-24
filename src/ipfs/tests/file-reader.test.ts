@@ -43,4 +43,10 @@ describe('readFileRange', () => {
 
     expect(Buffer.concat(chunks)).toEqual(Buffer.concat([Buffer.alloc(10, 0xaa), Buffer.alloc(10, 0xbb)]))
   })
+
+  it('reads a published symlink as unsupported, never as tampering', async () => {
+    const link = dagPb.decode(dagPb.encode(dagPb.prepare({ Data: new UnixFS({ type: 'symlink', data: new TextEncoder().encode('/elsewhere') }).marshal(), Links: [] })))
+    const read = async (): Promise<void> => { for await (const chunk of readFileRange(link, get, 0, 9, { maxDagDepth: 8 })) void chunk }
+    await expect(read()).rejects.toMatchObject({ failure: 'unsupported' })
+  })
 })

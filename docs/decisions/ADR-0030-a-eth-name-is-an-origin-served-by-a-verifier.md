@@ -20,14 +20,17 @@ and served from its pin exactly as an HTTPS app is (`ADR-0005`, `ADR-0007`, `ADR
   record is checked against its key and never accepted below the highest sequence already seen. A
   DNSLink is followed, and marked as unverified.
 - **Failure is closed.** Nothing unverified is ever served in place of what could not be checked:
-  the tab gets one of four error pages instead.
+  the tab gets an error page naming what failed instead. If the verifier host itself dies
+  mid-load, its socket is gone and Chromium shows its own connection error.
 - **Both halves sit behind the canonical provider shapes** (`src/resolution/`): a name resolver per
   top-level domain and an ordered list of data gatherers, each with the canonical fallback to the
   next. Each list has one built-in entry in this build.
 - **Serving.** Every `.eth` host resolves, through one `--host-resolver-rules` value, to a TLS
   server on loopback inside the verifier host, a utility process. Its certificate is created per
   run, and each session's verify proc accepts a `.eth` host only with that certificate's
-  fingerprint. Chromium keeps its own CORS, cookie and WebSocket handling for everything else.
+  fingerprint. It answers a name on port 443 only, so a name is one origin, and every response
+  carries `treat-as-public-address`. Chromium keeps its own CORS, cookie and WebSocket handling
+  for everything else.
 - **One bundle, one root.** An install names the root CID it began with on every request, and the
   server refuses a request once the name points elsewhere. The pin records the content address:
   the CID, what the contenthash named, the block, and whether every pointer was verified. The
@@ -43,8 +46,8 @@ Two parts are *provisional*:
   one. Public RPCs serve storage proofs only for recent blocks, and finality lags the head by about
   80 blocks, so calls at the finalized block failed whenever that lag passed an RPC's proof window.
   An RPC with a longer window would settle it the other way.
-- **DDOC's off-host anchor for a `.eth` name is its contenthash** (`ADR-0029`'s amendment leaves
-  the choice of record to this step). The CID commits to every file, the published hash tree at
+- **DDOC's off-host anchor for a `.eth` name is its contenthash.** The CID commits to every file,
+  the published hash tree at
   `/.well-known/orivon-ddoc.json` included, so the tree is anchored off the host with no second
   record. The owner's confirmation would settle it.
 
@@ -91,10 +94,16 @@ own content.
   reach it. It can fetch public content, time responses to learn what is cached, and use Orivon as
   a resolver. It cannot inject content, because the certificate is pinned by fingerprint. The
   socket serves nothing user-specific. `security-model.md` carries its own row.
+- **Any web page can time a request to a `.eth` URL.** A name opened in the last two minutes
+  answers from the verifier's memory, in milliseconds; one that was not needs a proof, in seconds.
+  So a page can learn which names were opened recently, across sites (`open-questions.md` A256).
+- **Any web page can make the verifier look names up**, as many as it likes. Each lookup is bounded:
+  eight offchain queries per name, four names proven at once, 64 kept.
 - **Local Network Access is not enforced in Electron 44**, so any page, `.eth` or not, can reach
   loopback services today. An end-to-end canary fails if that changes (`open-questions.md` A252).
 - **Every launch contacts the light client's RPC and beacon API**, about 20 MB an hour of beacon
-  traffic, and gateways learn the CIDs a person opens. The Settings panel names every server.
+  traffic, and gateways learn the CIDs a person opens. The Settings panel names every server Orivon
+  chooses; a name's resolver contract may send its offchain lookup to a server of its own.
 - **A resolver that answers wrongly about DNS for a gateway name** (one consumer ISP does)
   makes every `.eth` load on that line fail closed (`open-questions.md` A251).
 - **ENS's Universal Resolver is an upgradable proxy**, so ENS's proxy admin is part of what a

@@ -28,7 +28,8 @@ export interface GatheredFile {
 }
 
 /**
- * What the site's own bytes have shown so far this navigation. `met`: every
+ * What the site's own bytes have shown so far, for as long as it stays
+ * mounted: every tab showing it, and the loader, add to one report. `met`: every
  * pointer from the name to the root was verified, and every byte served
  * was. `not-met`: a pointer could not be verified (DNSLink), though the
  * bytes still were, against the root that pointer named. `failed`: a

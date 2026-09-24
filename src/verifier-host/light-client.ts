@@ -2,7 +2,7 @@
 // resolver reads through. Before Helios loads, this process's global fetch
 // becomes the light client's allowlisted one, and WebSocket is removed:
 // Helios reaches the network only through globals, and nothing else here
-// uses them. README.md's Design notes cover the two shims it needs.
+// uses them. README.md's Design notes cover the four wrappers it needs.
 
 import { ResolutionError } from '../resolution/records.js'
 import type { WebFetch } from './egress.js'

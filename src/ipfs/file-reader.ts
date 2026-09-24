@@ -44,6 +44,8 @@ export async function * readFileRange (node: PBNode, get: (cid: CID) => Promise<
   if (depth > limits.maxDagDepth) throw new ResolutionError('unverifiable', `file DAG deeper than ${String(limits.maxDagDepth)} levels`)
   if (node.Data === undefined) throw malformed('a node with no UnixFS data')
   const unixfs = UnixFS.unmarshal(node.Data)
+  // A symlink is published content this build does not follow, not a sign of tampering.
+  if (unixfs.type === 'symlink' && depth === 0) throw new ResolutionError('unsupported', 'a UnixFS symlink, which this version of Orivon does not follow')
   if (unixfs.type !== 'file' && unixfs.type !== 'raw') throw malformed(`a ${unixfs.type} node inside a file`)
   if (node.Links.length !== unixfs.blockSizes.length) throw malformed('links and block sizes disagree')
   const own = unixfs.data ?? new Uint8Array()

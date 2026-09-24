@@ -9260,3 +9260,18 @@ publish. A text record carrying the bundle root would only matter for a `.eth` n
 HTTPS, which this build does not do.
 
 **Needs:** the owner's confirmation.
+
+### A256 -- any web page can learn which `.eth` names were opened recently, by timing **[NEEDS OWNER]**
+
+Filed 2026-09-24 from the security review of `stream/ens-ipfs`. The verifier keeps a mounted name
+for two minutes and its blocks in a cache shared by every tab. A page on any site can request
+`https://<name>.eth/` (an image will do) and time the answer: milliseconds if the name was opened
+recently, seconds if it needs a proof. Browsers partitioned their HTTP caches to close exactly this
+channel. The verifier cannot partition by the page that asked: the request reaches it from
+Chromium's network stack, with at most a `Sec-Fetch-Site` header to go on.
+
+**Options:** accept it and say so in `security-model.md`; refuse cross-site subresource requests
+to a `.eth` name that is not already open in a tab, which breaks embedding a `.eth` resource on
+another site; or pad every answer to a fixed floor, which slows every `.eth` load.
+
+**Needs:** the owner's choice. `ADR-0030` names the channel meanwhile.

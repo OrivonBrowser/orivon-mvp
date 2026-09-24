@@ -570,6 +570,11 @@ Updated 2026-09-24. Built on `stream/ens-ipfs`, each item to its exit criterion 
 - **`uniswap.eth`'s DNSLink no longer exists**, so a fixture stands in for the live Level 1 example.
 - **The fixture seam and a readiness flag** share one global, `__orivonDevEthFixtures`, which joins
   `check-dev-grant-absent.mjs`'s markers.
+- **An open has no total-time limit** (EI-3). The per-block timeout, the per-open block and byte
+  limits, the mount deadline, and cancelling an open when its client leaves bound it instead; a
+  total-time cap would cut off a long video that is streaming correctly.
+- **EI-9's "zero gateway requests" is unit-tested** (`src/loader/tests/index-content.test.ts`), not
+  counted on the fixture gateway: the end-to-end run never reaches the next update check.
 - **The ordinary site in EI-10's e2e is plain HTTP on loopback**, not HTTPS: the level does not
   depend on the scheme, and the suite has no HTTPS fixture server.
 - **The same-host hash tree row is labelled "Hash tree", not "DDOC"**, and is left out for a `.eth`

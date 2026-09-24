@@ -1,4 +1,4 @@
-// The verifier host's utility-process entry: every untrusted parser (CAR,
+// The verifier host's utility-process entry: every untrusted parser (UnixFS,
 // dag-pb, IPNS protobuf, the light client's WASM, CCIP answers) runs here,
 // never in the main process. It reaches the network only through Electron's
 // net, so a configured proxy applies, and it is started and restarted by

@@ -41,7 +41,6 @@
   },
   "dependencies": {
     "@a16z/helios": "0.11.1",
-    "@ipld/car": "^5.4.7",
     "@ipld/dag-pb": "^4.2.0",
     "browserify-zlib": "^0.2.0",
     "buffer": "^6.0.3",
