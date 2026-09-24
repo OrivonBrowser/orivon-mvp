@@ -64,7 +64,10 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
     // Its RPC calls arrive as Request objects: method, headers and body live on the Request, not in init.
     const body = request.method === 'GET' || request.method === 'HEAD' ? undefined : await request.arrayBuffer()
     const forwarded: RequestInit = { method: request.method, headers: Object.fromEntries(request.headers), ...(body === undefined ? {} : { body }), signal: request.signal }
-    return request.url === primary || request.url === `${primary}/` ? await execution(request.url, forwarded) : await fetch(request.url, forwarded)
+    const response = request.url === primary || request.url === `${primary}/` ? await execution(request.url, forwarded) : await fetch(request.url, forwarded)
+    // Electron's net.fetch leaves url empty; Helios parses it, and throws from inside its WASM, ending the process.
+    if (response.url === '') Object.defineProperty(response, 'url', { value: request.url })
+    return response
   }) as typeof globalThis.fetch
   Object.defineProperty(globalThis, 'WebSocket', { value: undefined, configurable: true, writable: true })
 
