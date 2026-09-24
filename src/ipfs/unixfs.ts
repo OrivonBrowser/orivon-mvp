@@ -52,9 +52,13 @@ export async function openPath (source: BlockSource, root: CID, pathname: string
   if (segments === undefined) throw new ResolutionError('not-found', `${pathname} is not a path this site can hold`)
   const store = blockstoreFor(source, { blocks: 0, bytes: 0 }, signal, onRefusal)
   let entry: UnixFSEntry
+  let served = segments
   try {
     entry = await entryAt(root, segments, store, signal)
-    if (entry.type === 'directory') entry = await entryAt(root, [...segments, INDEX], store, signal)
+    if (entry.type === 'directory') {
+      served = [...segments, INDEX]
+      entry = await entryAt(root, served, store, signal)
+    }
   } catch (error) {
     throw failureOf(error, pathname)
   }
@@ -64,6 +68,7 @@ export async function openPath (source: BlockSource, root: CID, pathname: string
   const length = range === undefined ? undefined : range.end - range.start + 1
   const content = entry.content({ offset, ...(length === undefined ? {} : { length }), signal })
   return {
+    servedPath: `/${served.join('/')}`,
     size,
     body: (async function * () {
       try {

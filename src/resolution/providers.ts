@@ -19,6 +19,8 @@ export interface GatherRange {
 }
 
 export interface GatheredFile {
+  /** The file actually served, decoded: `/docs/index.html` for a request of `/docs`. */
+  readonly servedPath: string
   /** The whole file's size, whatever range was asked for. */
   readonly size: number
   /** Only bytes that were checked against their hash before being yielded. */

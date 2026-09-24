@@ -47,9 +47,12 @@ describe('openPath', () => {
     expect(await text(source().s, '/')).toBe('<h1>home</h1>')
   })
 
-  it('serves a directory as its index.html, with or without the trailing slash', async () => {
+  it('serves a directory as its index.html, with or without the trailing slash, and says so', async () => {
     expect(await text(source().s, '/docs/')).toBe('<h1>docs</h1>')
     expect(await text(source().s, '/docs')).toBe('<h1>docs</h1>')
+    expect((await openPath(source().s, dag.root, '/docs', undefined, signal, () => {})).servedPath).toBe('/docs/index.html')
+    expect((await openPath(source().s, dag.root, '/', undefined, signal, () => {})).servedPath).toBe('/index.html')
+    expect((await openPath(source().s, dag.root, '/docs/a%20b.txt', undefined, signal, () => {})).servedPath).toBe('/docs/a b.txt')
   })
 
   it('percent-decodes a path segment', async () => {

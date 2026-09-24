@@ -86,6 +86,7 @@ export function createIpfsGatherer (options: IpfsGathererOptions): DataGatherer 
           }
           const body = file.body
           return {
+            servedPath: file.servedPath,
             size: file.size,
             body: (async function * () {
               try {
