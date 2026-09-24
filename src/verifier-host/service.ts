@@ -16,9 +16,10 @@ import { dohTxtResolver } from './doh.js'
 import { allowlisted, guardedCcipRequest } from './egress.js'
 import type { WebFetch } from './egress.js'
 import { createFixtureResolver } from './fixture-resolver.js'
-import type { FromHost, HostConfig, HostReplies, HostRequest, LightClientConfig, LightClientState } from './protocol.js'
+import type { FromHost, HostConfig, HostReplies, HostRequest, LightClientConfig, LightClientState, SiteProvenance } from './protocol.js'
 import { createEthServer } from './server.js'
 import { Sites } from './sites.js'
+import type { SiteRecord } from './sites.js'
 
 export interface LightClient {
   /** Throws a ResolutionError `not-synced` while the client cannot yet prove anything. */
@@ -98,14 +99,16 @@ export async function startHost (config: HostConfig, deps: HostDeps): Promise<Ru
     })
   })
 
+  const provenanceOf = (host: string, { site, resolver, mountedAt }: SiteRecord): SiteProvenance =>
+    ({ host, resolver, root: site.root, pointers: site.pointers, ddoc: site.ddoc(), mountedAt })
+
   const answer = async (request: HostRequest): Promise<HostReplies[HostRequest['kind']]> => {
     switch (request.kind) {
       case 'status': return lightClient?.status() ?? { state: 'off' }
+      case 'mount': return provenanceOf(request.host, await sites.get(request.host))
       case 'provenance': {
         const current = await sites.current(request.host)
-        if (current === undefined) return null
-        const { site, resolver, mountedAt } = current
-        return { host: request.host, resolver, root: site.root, pointers: site.pointers, ddoc: site.ddoc(), mountedAt }
+        return current === undefined ? null : provenanceOf(request.host, current)
       }
     }
   }

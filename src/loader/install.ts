@@ -7,7 +7,7 @@
 import type { Manifest } from '../contracts/index.js'
 import type { BundleTree } from '../broker/policy/bundle-hash.js'
 import { fromBundleTree } from '../broker/policy/pin.js'
-import type { PinRecord } from '../broker/policy/pin.js'
+import type { ContentAddress, PinRecord } from '../broker/policy/pin.js'
 import type { StagedAsset } from './fetch-asset.js'
 import type { DdocDeclaration } from './ddoc-declaration.js'
 import type { CreateLoaderOptions, LoadInstalled, LoadRejected } from './index.js'
@@ -54,6 +54,7 @@ async function install (
   tree: BundleTree,
   entries: readonly StagedAsset[],
   declaration: DdocDeclaration | undefined,
+  content: ContentAddress | undefined,
   now: number,
   existingPin: PinRecord | null | undefined
 ): Promise<{ readonly pin: PinRecord, readonly changed: boolean }> {
@@ -64,7 +65,7 @@ async function install (
     changed = true
   }
   const unchanged = existingPin !== null && existingPin !== undefined && existingPin.bundleHash === tree.root
-  const pin = unchanged ? existingPin : fromBundleTree(canonicalOrigin, tree.root, tree.assets, manifest.version, now)
+  const pin = unchanged ? existingPin : fromBundleTree(canonicalOrigin, tree.root, tree.assets, manifest.version, now, content)
   if (!unchanged) {
     // Removed first, so a crash before the new one is written reads as "not
     // published" against the new pin, never as the old pin's tree failing.
@@ -95,11 +96,12 @@ export async function installAndNotify (
   tree: BundleTree,
   entries: readonly StagedAsset[],
   declaration: DdocDeclaration | undefined,
+  content: ContentAddress | undefined,
   existingPin: PinRecord | null | undefined
 ): Promise<LoadInstalled | LoadRejected> {
   let installed: { readonly pin: PinRecord, readonly changed: boolean }
   try {
-    installed = await install(options.storage, canonicalOrigin, manifest, tree, entries, declaration, options.now(), existingPin)
+    installed = await install(options.storage, canonicalOrigin, manifest, tree, entries, declaration, content, options.now(), existingPin)
   } catch (error) {
     // The raw message is a node:fs one and carries the absolute host path it
     // failed on. policy/paths.ts's CONFINEMENT_ERROR_CODE states the rule:

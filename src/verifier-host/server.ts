@@ -10,6 +10,7 @@ import { ResolutionError } from '../resolution/records.js'
 import type { GatheredFile } from '../resolution/providers.js'
 import { contentTypeFor } from '../loader/serve-content-type.js'
 import { parseRange } from '../loader/serve-range.js'
+import { CONTENT_ROOT_HEADER } from '../loader/content-root.js'
 import type { RunCertificate } from './certificate.js'
 import { ERROR_PAGE_CSP, pageFor, renderErrorPage } from './error-pages.js'
 import type { Sites } from './sites.js'
@@ -83,12 +84,23 @@ async function handle (sites: Sites, req: IncomingMessage, res: ServerResponse):
   try {
     const { site } = await sites.get(host)
     root = site.root.cid
+    const etag = `"${root}"`
+    // One install reads one root: a request naming another means the name moved on mid-load.
+    const expected = req.headers[CONTENT_ROOT_HEADER]
+    if (typeof expected === 'string' && expected !== root) {
+      res.writeHead(409, { 'content-type': 'text/plain', 'cache-control': 'no-store' }).end(`${host} now points to ${root}, not ${expected}`)
+      return
+    }
+    // Before any file is opened: an unchanged root answers with no gateway asked.
+    if (req.headers['if-none-match'] === etag) {
+      res.writeHead(304, { etag, 'cache-control': 'no-cache' }).end()
+      return
+    }
     file = await site.open(url.pathname)
     if (!url.pathname.endsWith('/') && file.servedPath.endsWith('/index.html') && !url.pathname.endsWith('/index.html')) {
       res.writeHead(301, { location: `${url.pathname}/${url.search}`, 'cache-control': 'no-cache' }).end()
       return
     }
-    const etag = `"${root}"`
     const common: Record<string, string> = {
       'content-type': contentTypeFor(file.servedPath),
       'x-content-type-options': 'nosniff',
@@ -96,10 +108,6 @@ async function handle (sites: Sites, req: IncomingMessage, res: ServerResponse):
       // Revalidated every time: a name can point elsewhere tomorrow, and the root CID says whether it has.
       'cache-control': 'no-cache',
       etag
-    }
-    if (req.headers['if-none-match'] === etag) {
-      res.writeHead(304, common).end()
-      return
     }
     const range = parseRange(req.headers.range ?? null, file.size)
     if (range.kind === 'unsatisfiable') {

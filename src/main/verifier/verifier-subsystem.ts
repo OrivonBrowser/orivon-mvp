@@ -10,7 +10,10 @@ import type { Session } from 'electron'
 import type { Subsystem } from '../registry.js'
 import { readDevEthNames } from '../dev/eth-resolver.js'
 import type { HostConfig, LightClientState, SiteProvenance } from '../../verifier-host/protocol.js'
+import type { ContentAddress } from '../../broker/policy/pin.js'
+import { servedByVerifier } from '../../loader/eth-origin.js'
 import { ethCertificateVerdict } from './certificate-check.js'
+import { contentAddressOf } from './content-address.js'
 import { chooseCheckpoint, slotTimestamp } from './checkpoint.js'
 import type { CheckpointChoice } from './checkpoint.js'
 import { DEFAULT_ENDPOINTS } from './endpoints.js'
@@ -23,6 +26,8 @@ import { VerifierStore } from './verifier-store.js'
 
 /** Started this long after ready at the latest, if no page has finished loading by then. */
 const START_FALLBACK_MS = 3_000
+/** Mounting may wait for the light client to sync, then resolve a name and follow its pointers. */
+const MOUNT_TIMEOUT_MS = 30_000
 
 let fingerprint: string | undefined
 let supervisor: HostSupervisor | undefined
@@ -76,6 +81,17 @@ export async function siteProvenance (host: string): Promise<SiteProvenance | nu
   } catch {
     return null
   }
+}
+
+/**
+ * Where an origin's bundle is served from, for the loader: undefined for
+ * any origin that is not a `.eth` name, and a throw when the name cannot be
+ * verified now.
+ */
+export async function ethContentAddress (origin: string): Promise<ContentAddress | undefined> {
+  if (!servedByVerifier(origin)) return undefined
+  if (supervisor === undefined) throw new Error('the .eth verifier has not started')
+  return contentAddressOf(await supervisor.request({ kind: 'mount', host: new URL(origin).hostname }, MOUNT_TIMEOUT_MS))
 }
 
 export interface VerifierStatus {

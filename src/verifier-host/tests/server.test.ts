@@ -41,7 +41,8 @@ function open (path: string, range?: { start: number, end: number }): GatheredFi
   }
 }
 
-const site: MountedSite = { gatherer: 'stub', root: { kind: 'ipfs', cid: ROOT }, pointers: [], open: async (p, r) => open(p, r), ddoc: () => ({ status: 'met', refusals: [] }) }
+const opened: string[] = []
+const site: MountedSite = { gatherer: 'stub', root: { kind: 'ipfs', cid: ROOT }, pointers: [], open: async (p, r) => { opened.push(p); return open(p, r) }, ddoc: () => ({ status: 'met', refusals: [] }) }
 const record: NameRecord = { type: 'contenthash', pointer: { kind: 'ipfs', cid: ROOT }, provenance: { via: 'fixture' } }
 const resolver: NameResolver = {
   id: 'stub',
@@ -93,8 +94,17 @@ describe('the .eth loopback server', () => {
     expect(reply.headers['x-content-type-options']).toBe('nosniff')
   })
 
-  it('answers a matching validator with 304', async () => {
+  it('answers a matching validator with 304 before opening anything', async () => {
+    opened.length = 0
     expect((await get('/app.js', { headers: { 'if-none-match': `"${ROOT}"` } })).status).toBe(304)
+    expect(opened).toEqual([])
+  })
+
+  it('serves a request pinned to the current root, and refuses one pinned to another', async () => {
+    expect((await get('/app.js', { headers: { 'x-orivon-content-root': ROOT } })).status).toBe(200)
+    const moved = await get('/app.js', { headers: { 'x-orivon-content-root': 'bafkqaaa' } })
+    expect(moved.status).toBe(409)
+    expect(moved.body.toString()).toContain(`now points to ${ROOT}`)
   })
 
   it('redirects a directory without its slash, as a gateway does', async () => {
