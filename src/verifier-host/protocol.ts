@@ -18,6 +18,8 @@ export interface HostConfig {
   /** Undefined when the light client is switched off: every `.eth` name then fails closed. */
   readonly lightClient: LightClientConfig | undefined
   readonly gateways: readonly string[]
+  /** w3name-style services asked for an IPNS record after the gateways. */
+  readonly ipnsNameServices: readonly string[]
   readonly dnsOverHttps: readonly string[]
   /** Highest IPNS sequence seen per key, as decimal strings, from earlier runs. */
   readonly ipnsSequences: Readonly<Record<string, string>>

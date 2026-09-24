@@ -30,7 +30,7 @@ export interface HostDeps {
   readonly fetch: WebFetch
   readonly resolveHost: (host: string) => Promise<readonly string[]>
   readonly post: (message: FromHost) => void
-  readonly startLightClient: (config: LightClientConfig, fetch: WebFetch) => LightClient
+  readonly startLightClient: (config: LightClientConfig, fetch: WebFetch, report: (message: FromHost) => void) => LightClient
   /** True only in a test build; fixture names are refused otherwise, whatever the config says. */
   readonly fixturesAllowed: boolean
 }
@@ -65,10 +65,11 @@ const offResolver: NameResolver = {
 }
 
 export async function startHost (config: HostConfig, deps: HostDeps): Promise<RunningHost> {
-  const gatewayFetch = allowlisted(config.gateways, deps.fetch, 'the IPFS gatherer')
+  const gatewayFetch = allowlisted([...config.gateways, ...config.ipnsNameServices], deps.fetch, 'the IPFS gatherer')
   const gatherer = createIpfsGatherer({
     fetch: async (url, init) => await gatewayFetch(url, init),
     gateways: config.gateways,
+    ipnsNameServices: config.ipnsNameServices,
     resolveTxt: dohTxtResolver(config.dnsOverHttps, allowlisted(config.dnsOverHttps, deps.fetch, 'DNSLink')),
     ipnsSequences: sequenceStore(config.ipnsSequences, deps.post)
   })
@@ -79,7 +80,7 @@ export async function startHost (config: HostConfig, deps: HostDeps): Promise<Ru
   if (config.lightClient === undefined) {
     resolvers.push(offResolver)
   } else {
-    lightClient = deps.startLightClient(config.lightClient, allowlisted([config.lightClient.executionRpc, config.lightClient.consensusRpc], deps.fetch, 'the light client'))
+    lightClient = deps.startLightClient(config.lightClient, allowlisted([config.lightClient.executionRpc, config.lightClient.consensusRpc], deps.fetch, 'the light client'), deps.post)
     resolvers.push(createEnsResolver({
       provider: lightClient.provider,
       ccipRequest: async (parameters) => await guardedCcipRequest(parameters, { fetch: deps.fetch, resolveHost: deps.resolveHost })
