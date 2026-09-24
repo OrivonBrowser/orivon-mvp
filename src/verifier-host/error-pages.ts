@@ -1,43 +1,44 @@
-// The four pages a `.eth` tab shows instead of content. Static text only:
-// each is served with `default-src 'none'`, so nothing on it can run or load.
+// The pages a `.eth` tab shows instead of content, one per kind of failure.
+// Each lead says only what that kind of failure establishes, and the detail
+// line beneath it says the rest. Static text only: each is served with
+// `default-src 'none'`, so nothing on it can run or load.
 
 import type { ResolutionFailure } from '../resolution/records.js'
 
-export type ErrorPage = 'cannot-verify-yet' | 'cannot-verify' | 'not-found' | 'unsupported'
+export type ErrorPage = ResolutionFailure
 
 export const ERROR_PAGE_CSP = "default-src 'none'; style-src 'unsafe-inline'"
 
 const PAGES: Readonly<Record<ErrorPage, { status: number, title: string, lead: string }>> = {
-  'cannot-verify-yet': {
+  'not-synced': {
     status: 503,
     title: 'Cannot verify this name yet',
-    lead: "Orivon's Ethereum light client is still catching up with the chain, so it cannot yet prove what this name points to. Nothing unverified is shown in the meantime. Reload in a moment."
+    lead: "Orivon's Ethereum light client is not following the chain yet, so it cannot prove what this name points to. Nothing unverified is shown in the meantime."
   },
-  'cannot-verify': {
+  unverifiable: {
     status: 502,
     title: 'Cannot verify this site',
-    lead: "Orivon could not check this site against what the Ethereum chain says the name points to, so nothing from it is shown. The servers that answered may be down, or one may have sent data that failed its check."
+    lead: 'Something Orivon received for this site could not be verified against what the Ethereum chain says the name points to, so nothing from it is shown. Someone may be tampering with it.'
+  },
+  unavailable: {
+    status: 502,
+    title: 'Cannot check this site right now',
+    lead: 'Orivon could not get what it needs to check this site, so nothing from it is shown.'
   },
   'not-found': {
     status: 404,
     title: 'Nothing here',
-    lead: 'The chain says this name points to no content, or the content has no file at this address.'
+    lead: 'This name points to no content, or its content has no file at this address.'
+  },
+  'invalid-name': {
+    status: 400,
+    title: 'Not a name Orivon can look up',
+    lead: 'This name is not in the normalised form ENS uses, or is written in a form this version of Orivon refuses. Nothing was looked up.'
   },
   unsupported: {
     status: 501,
     title: 'This kind of site is not supported',
     lead: 'This name points to content this version of Orivon cannot load and verify.'
-  }
-}
-
-export function pageFor (failure: ResolutionFailure): ErrorPage {
-  switch (failure) {
-    case 'not-synced': return 'cannot-verify-yet'
-    case 'unverifiable':
-    case 'unavailable': return 'cannot-verify'
-    case 'not-found':
-    case 'invalid-name': return 'not-found'
-    case 'unsupported': return 'unsupported'
   }
 }
 

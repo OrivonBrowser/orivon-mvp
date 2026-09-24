@@ -4,7 +4,8 @@
 
 import { ResolutionError } from '../resolution/records.js'
 
-const REVERT = /execution reverted:?\s*(?:0x)?([0-9a-f]*)\s*$/i
+/** Anchored at both ends: Helios quotes RPC error text inside other messages, and that text must never read as revert data. */
+const REVERT = /^(?:Error: )?execution reverted:?\s*(?:0x)?([0-9a-f]*)\s*$/i
 const FAILED_PROOF = /invalid (?:storage |account |code )?proof|proof (?:mismatch|verification failed)|invalid (?:block|header|state root)/i
 const OUT_OF_SYNC = /out of sync/i
 

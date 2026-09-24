@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { CID } from 'multiformats/cid'
 import { identity } from 'multiformats/hashes/identity'
 import { sha512 } from 'multiformats/hashes/sha2'
+import * as Digest from 'multiformats/hashes/digest'
 import * as dagPb from '@ipld/dag-pb'
 import type { Refusal } from '../../resolution/providers.js'
 import { BlockSource, blockstoreFor } from '../blockstore.js'
@@ -87,6 +88,14 @@ describe('BlockSource.get', () => {
     const cid = CID.createV1(0x55, await sha512.digest(new Uint8Array([1])))
     await expect(s.get(cid, signal, () => {})).rejects.toMatchObject({ failure: 'unsupported' })
     expect(gateways.requests).toEqual([])
+  })
+
+  it('refuses a truncated sha2-256 digest before asking anyone, so no honest gateway is blamed', async () => {
+    const { source: s, gateways, pool } = source()
+    const cid = CID.createV1(0x55, Digest.create(0x12, leaf.multihash.digest.subarray(0, 20)))
+    await expect(s.get(cid, signal, () => {})).rejects.toMatchObject({ failure: 'unsupported' })
+    expect(gateways.requests).toEqual([])
+    expect(pool.usable()).toEqual([A, B])
   })
 
   it('refuses a codec other than dag-pb or raw before asking anyone', async () => {

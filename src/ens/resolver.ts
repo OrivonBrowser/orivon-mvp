@@ -59,7 +59,14 @@ export interface CcipRequestParameters {
 }
 
 /** Fetches one CCIP-Read answer; the resolver contract then checks it inside a proven call. */
-export type CcipRequest = (parameters: CcipRequestParameters) => Promise<Hex>
+export type CcipRequest = (parameters: CcipRequestParameters, signal: AbortSignal) => Promise<Hex>
+
+/**
+ * Offchain queries one resolution may make. A batch gateway answer can name
+ * any number, and each would otherwise be a request to a host the resolver
+ * contract chose, sent from every browser that loads the name.
+ */
+export const MAX_CCIP_QUERIES = 8
 
 export interface EnsResolverOptions {
   readonly provider: Eip1193Provider
@@ -109,10 +116,11 @@ async function provenBlock (provider: Eip1193Provider): Promise<bigint> {
  * a gateway's answer would be checked against different state from the
  * block the record claims.
  */
-function pinnedTo (provider: Eip1193Provider, block: bigint): Eip1193Provider {
+function pinnedTo (provider: Eip1193Provider, block: bigint, signal: AbortSignal): Eip1193Provider {
   const tag = toHex(block)
   return {
     request: async ({ method, params }) => {
+      signal.throwIfAborted()
       if (method !== 'eth_call' || !Array.isArray(params)) return await provider.request({ method, params })
       return await provider.request({ method, params: [params[0], tag, ...params.slice(2)] })
     }
@@ -124,19 +132,23 @@ export function createEnsResolver (options: EnsResolverOptions): NameResolver {
   return {
     id: 'ens',
     topLevelDomains: ['eth'],
-    async resolve (host) {
+    async resolve (host, signal = new AbortController().signal) {
       const name = ensNameFromHost(host)
       let offchain = false
+      let queries = 0
       try {
+        signal.throwIfAborted()
         const block = await provenBlock(options.provider)
         const client = createPublicClient({
           // The provider is local; it retries its own upstream requests, and a
           // retry here would only delay a revert viem cannot tell from a fault.
-          transport: custom(pinnedTo(options.provider, block), { retryCount: 0 }),
+          transport: custom(pinnedTo(options.provider, block, signal), { retryCount: 0 }),
           ccipRead: {
             request: async (parameters) => {
               offchain = true
-              return await options.ccipRequest(parameters)
+              signal.throwIfAborted()
+              if (++queries > MAX_CCIP_QUERIES) throw new Error(`more than ${String(MAX_CCIP_QUERIES)} offchain queries for one name`)
+              return await options.ccipRequest(parameters, signal)
             }
           }
         })

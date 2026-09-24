@@ -64,10 +64,11 @@ async function urlRefusal (raw: string, deps: CcipDeps): Promise<string | null> 
   return private_ === undefined ? null : `${host} resolves to ${private_}, which is not a public address`
 }
 
-async function requestOne (template: string, parameters: CcipRequestParameters, deps: CcipDeps, limits: CcipLimits): Promise<Hex> {
+async function requestOne (template: string, parameters: CcipRequestParameters, deps: CcipDeps, limits: CcipLimits, cancelled: AbortSignal | undefined): Promise<Hex> {
   const first = template.replace('{sender}', parameters.sender.toLowerCase()).replace('{data}', parameters.data)
   const post = !template.includes('{data}')
-  const signal = AbortSignal.timeout(limits.timeoutMs)
+  const timeout = AbortSignal.timeout(limits.timeoutMs)
+  const signal = cancelled === undefined ? timeout : AbortSignal.any([timeout, cancelled])
   let url = first
   for (let hops = 0; ; hops++) {
     const refusal = await urlRefusal(url, deps)
@@ -103,11 +104,12 @@ async function requestOne (template: string, parameters: CcipRequestParameters, 
  * inside a proven call, so this guards where the request goes, not what it
  * returns.
  */
-export async function guardedCcipRequest (parameters: CcipRequestParameters, deps: CcipDeps, limits: CcipLimits = DEFAULT_CCIP_LIMITS): Promise<Hex> {
+export async function guardedCcipRequest (parameters: CcipRequestParameters, deps: CcipDeps, limits: CcipLimits = DEFAULT_CCIP_LIMITS, signal?: AbortSignal): Promise<Hex> {
   const errors: string[] = []
   for (const template of parameters.urls.slice(0, MAX_URLS)) {
+    signal?.throwIfAborted()
     try {
-      return await requestOne(template, parameters, deps, limits)
+      return await requestOne(template, parameters, deps, limits, signal)
     } catch (error) {
       errors.push(error instanceof Error ? error.message : String(error))
     }

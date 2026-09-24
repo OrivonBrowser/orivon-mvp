@@ -5,7 +5,7 @@ import { namehash } from 'viem/ens'
 import { CID } from 'multiformats/cid'
 import { sha256 } from 'multiformats/hashes/sha2'
 import { ResolutionError } from '../../resolution/records.js'
-import { UNIVERSAL_RESOLVER, createEnsResolver } from '../resolver.js'
+import { MAX_CCIP_QUERIES, UNIVERSAL_RESOLVER, createEnsResolver } from '../resolver.js'
 import type { CcipRequestParameters, Eip1193Provider } from '../resolver.js'
 
 const universalResolverAbi = parseAbi([
@@ -132,6 +132,28 @@ describe('the ENS resolver', () => {
     expect(p.calls.map((c) => c.block)).toEqual([toHex(PROVEN), toHex(PROVEN)])
     const [response] = decodeAbiParameters([{ type: 'bytes' }, { type: 'bytes' }], `0x${p.calls[1]!.data.slice(10)}`)
     expect(response).toContain('feed')
+  })
+
+  it('makes at most its budget of offchain queries, however many a batch names', async () => {
+    const queries = Array.from({ length: 40 }, (_, i) => ({ sender: RESOLVER_ADDRESS, urls: [`https://g${String(i)}.example/{data}`], data: '0xab' } as const))
+    const callData = encodeFunctionData({ abi: batchGatewayAbi, functionName: 'query', args: [queries] })
+    const offchain = revert(encodeErrorResult({ abi: universalResolverAbi, errorName: 'OffchainLookup', args: [UNIVERSAL_RESOLVER, ['x-batch-gateway:true'], callData, '0x12345678', '0x99'] }))
+    const final = answering(IPFS_CONTENTHASH)
+    const p = provider((call) => {
+      if (call.data.startsWith('0x12345678')) return final(call)
+      throw offchain
+    })
+    let asked = 0
+    await createEnsResolver({ provider: p, ccipRequest: async () => { asked++; return '0xfeed' } }).resolve('many.offchain.eth').catch(() => [])
+    expect(asked).toBe(MAX_CCIP_QUERIES)
+  })
+
+  it('asks nothing once its resolution is cancelled', async () => {
+    const p = provider(answering(IPFS_CONTENTHASH))
+    const cancelled = new AbortController()
+    cancelled.abort()
+    await expect(createEnsResolver({ provider: p, ccipRequest: noCcip }).resolve('vitalik.eth', cancelled.signal)).rejects.toMatchObject({ failure: 'unavailable' })
+    expect(p.methods).toEqual([])
   })
 
   it('keeps whatever kind the contenthash names', async () => {

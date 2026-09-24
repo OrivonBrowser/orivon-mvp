@@ -99,6 +99,17 @@ describe('HostSupervisor', () => {
     expect(timers.at(-1)?.ms).toBe(1000)
   })
 
+  it('kills a host that could not serve, keeps its reason, and restarts it', () => {
+    const { supervisor, hosts, timers, log } = harness()
+    supervisor.start()
+    hosts[0]?.answer({ type: 'failed', stage: 'listen', message: 'EADDRINUSE' })
+    expect(hosts[0]?.killed).toBe(true)
+    hosts[0]?.crash(0)
+    expect(log.at(-1)).toBe('down the verifier host could not listen on its port: EADDRINUSE')
+    timers.at(-1)?.run()
+    expect(hosts).toHaveLength(2)
+  })
+
   it('does not restart once stopped', () => {
     const { supervisor, hosts, timers } = harness()
     supervisor.start()

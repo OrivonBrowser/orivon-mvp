@@ -48,6 +48,12 @@ describe('parseContentPath', () => {
     expect(parseContentPath('/ipns/App.Uniswap.org')).toEqual({ kind: 'dnslink', domain: 'app.uniswap.org' })
   })
 
+  it('gives a CIDv0 back as CIDv1', () => {
+    const v0 = CID.createV0(dag.root.multihash as Parameters<typeof CID.createV0>[0]).toString()
+    const target = parseContentPath(`/ipfs/${v0}`)
+    expect(target?.kind === 'ipfs' && target.cid.version === 1 && target.cid.equals(dag.root)).toBe(true)
+  })
+
   it('refuses a path inside the target, another namespace, or garbage', () => {
     for (const value of [`/ipfs/${dag.root.toString()}/sub`, '/ipld/x', '/ipfs/notacid', '/ipns/localhost', 'ipfs/x']) {
       expect(parseContentPath(value)).toBeUndefined()
@@ -154,6 +160,12 @@ describe('followPointer', () => {
     const result = await followPointer({ kind: 'ipfs', cid: dag.root.toString() }, resolvers(fakeGateways(new Map())), signal, () => {})
     expect(result.root.equals(dag.root)).toBe(true)
     expect(result.steps).toEqual([])
+  })
+
+  it('ends at a CIDv1 root when a DNSLink names a CIDv0', async () => {
+    const v0 = CID.createV0(dag.root.multihash as Parameters<typeof CID.createV0>[0]).toString()
+    const result = await followPointer({ kind: 'dnslink', domain: 'app.example' }, resolvers(fakeGateways(new Map()), { '_dnslink.app.example': `/ipfs/${v0}` }), signal, () => {})
+    expect(result.root.toString()).toBe(dag.root.toString())
   })
 
   it('follows a DNSLink to an IPNS key to a CID, recording each hop', async () => {

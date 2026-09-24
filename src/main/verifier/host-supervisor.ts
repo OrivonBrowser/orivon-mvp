@@ -44,6 +44,8 @@ export class HostSupervisor {
   private backoff = FIRST_BACKOFF_MS
   private startedAt = 0
   private stopped = false
+  /** Why the running host said it could not serve, kept as the reason for its exit. */
+  private failure: string | undefined
   private readonly setTimer: (callback: () => void, ms: number) => unknown
   private readonly now: () => number
 
@@ -85,7 +87,12 @@ export class HostSupervisor {
     const { events } = this.deps
     switch (message.type) {
       case 'listening': events.listening(message.fingerprint); break
-      case 'failed': events.down(`the verifier host could not ${message.stage === 'listen' ? 'listen on its port' : 'start'}: ${message.message}`); break
+      case 'failed':
+        // A host that cannot serve would otherwise live on, syncing a light client nothing can use.
+        this.failure = `the verifier host could not ${message.stage === 'listen' ? 'listen on its port' : 'start'}: ${message.message}`
+        events.down(this.failure)
+        this.child?.kill()
+        break
       case 'status': events.status(message.status); break
       case 'checkpoint': events.checkpoint(message.root, message.timestamp); break
       case 'ipns-sequence': events.ipnsSequence(message.key, message.sequence); break
@@ -99,9 +106,11 @@ export class HostSupervisor {
     }
   }
 
-  private exited (child: HostProcess, reason: string): void {
+  private exited (child: HostProcess, exit: string): void {
     if (this.child !== child) return
     this.child = undefined
+    const reason = this.failure ?? exit
+    this.failure = undefined
     for (const [id, pending] of this.pending) {
       this.pending.delete(id)
       pending.reject(new Error(reason))

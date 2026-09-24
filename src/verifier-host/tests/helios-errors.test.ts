@@ -9,6 +9,15 @@ describe('heliosError', () => {
     expect(mapped.data).toBe('0x556f1830000000000000000000000000eeee')
   })
 
+  it('reads the revert as Helios words it, with its own "Error: " prefix', () => {
+    expect((heliosError(new Error('Error: execution reverted: 0xabcd')) as { data?: string }).data).toBe('0xabcd')
+  })
+
+  it('never reads revert data out of RPC error text quoted inside another message', () => {
+    const quoted = new Error('rpc error on method: eth_call, message: execution reverted: abcd')
+    expect(heliosError(quoted)).toBe(quoted)
+  })
+
   it('turns a revert with no data into empty revert data', () => {
     expect((heliosError(new Error('execution reverted: ')) as { data?: string }).data).toBe('0x')
   })

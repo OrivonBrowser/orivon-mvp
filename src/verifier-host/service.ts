@@ -13,7 +13,7 @@ import { createIpfsGatherer } from '../ipfs/gatherer.js'
 import type { SequenceStore } from '../ipfs/ipns.js'
 import { createRunCertificate } from './certificate.js'
 import { dohTxtResolver } from './doh.js'
-import { allowlisted, guardedCcipRequest } from './egress.js'
+import { allowlisted, DEFAULT_CCIP_LIMITS, guardedCcipRequest } from './egress.js'
 import type { WebFetch } from './egress.js'
 import { createFixtureResolver } from './fixture-resolver.js'
 import type { FromHost, HostConfig, HostReplies, HostRequest, LightClientConfig, LightClientState, SiteProvenance } from './protocol.js'
@@ -84,7 +84,7 @@ export async function startHost (config: HostConfig, deps: HostDeps): Promise<Ru
     lightClient = deps.startLightClient(config.lightClient, allowlisted([...config.lightClient.executionRpcs, config.lightClient.consensusRpc], deps.fetch, 'the light client'), deps.post)
     resolvers.push(createEnsResolver({
       provider: lightClient.provider,
-      ccipRequest: async (parameters) => await guardedCcipRequest(parameters, { fetch: deps.fetch, resolveHost: deps.resolveHost })
+      ccipRequest: async (parameters, signal) => await guardedCcipRequest(parameters, { fetch: deps.fetch, resolveHost: deps.resolveHost }, DEFAULT_CCIP_LIMITS, signal)
     }))
   }
 

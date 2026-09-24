@@ -1,15 +1,17 @@
 // Trustless gateways, tried in order. They are trusted for availability
 // only: every byte they send is checked by the caller before use.
 
+import { Slots } from '../resolution/slots.js'
+
 export type Fetch = (url: string, init: { readonly headers: Readonly<Record<string, string>>, readonly signal: AbortSignal }) => Promise<Response>
 
 export class GatewayPool {
   private readonly dropped = new Set<string>()
-  private active = 0
-  private readonly waiting: Array<() => void> = []
+  private readonly slots: Slots
 
-  constructor (private readonly gateways: readonly string[], private readonly concurrency: number) {
+  constructor (private readonly gateways: readonly string[], concurrency: number) {
     if (gateways.length === 0) throw new Error('no IPFS gateway configured')
+    this.slots = new Slots(concurrency)
   }
 
   /** Gateways still in use, in order of preference. */
@@ -24,14 +26,7 @@ export class GatewayPool {
 
   /** Runs `task` once fewer than `concurrency` requests are in flight. */
   async withSlot<T> (task: () => Promise<T>): Promise<T> {
-    if (this.active >= this.concurrency) await new Promise<void>((resolve) => { this.waiting.push(resolve) })
-    this.active++
-    try {
-      return await task()
-    } finally {
-      this.active--
-      this.waiting.shift()?.()
-    }
+    return await this.slots.run(task)
   }
 }
 

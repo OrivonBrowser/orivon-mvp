@@ -6,6 +6,7 @@ import { sha256 } from 'multiformats/hashes/sha2'
 export const DAG_PB = 0x70
 export const RAW = 0x55
 const SHA2_256 = 0x12
+const SHA2_256_BYTES = 32
 const IDENTITY = 0x00
 
 /** Why a block's bytes were not used. `mismatch` means the source lied; the others, that this build does not take the risk. */
@@ -23,6 +24,8 @@ export function checkCidAccepted (cid: CID): void {
   if (cid.code !== DAG_PB && cid.code !== RAW) throw new BlockRefused('codec', cid.toString(), `codec 0x${cid.code.toString(16)} is not dag-pb or raw`)
   const hash = cid.multihash.code
   if (hash !== SHA2_256 && hash !== IDENTITY) throw new BlockRefused('hash-function', cid.toString(), `hash function 0x${hash.toString(16)} is not sha2-256`)
+  // A truncated digest would make honest bytes read as a lie, and the gateway that sent them be dropped.
+  if (hash === SHA2_256 && cid.multihash.size !== SHA2_256_BYTES) throw new BlockRefused('hash-function', cid.toString(), `a sha2-256 digest of ${String(cid.multihash.size)} bytes, not ${String(SHA2_256_BYTES)}`)
 }
 
 /** An identity CID carries its block inside itself, so it never touches the network. */

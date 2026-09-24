@@ -22,6 +22,8 @@ function describe (error: unknown): string {
 }
 
 function main (): void {
+  // A rejection nothing observed would end this process, and every `.eth` page with it; each request's own handler catches what it expects.
+  process.on('unhandledRejection', (reason) => { console.error('[verifier] unhandled rejection:', reason) })
   let host: Promise<RunningHost> | undefined
   process.parentPort.on('message', (event) => {
     const message = event.data as ToHost

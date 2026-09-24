@@ -41,8 +41,35 @@ function open (path: string, range?: { start: number, end: number }): GatheredFi
   }
 }
 
+/** A large file whose body notes when its generator is released, and the signal its open was given. */
+const STREAM_BYTES = 64 * 1024 * 1024
+const stream = { released: false, signal: undefined as AbortSignal | undefined }
+function streamed (signal: AbortSignal | undefined): GatheredFile {
+  stream.signal = signal
+  return {
+    servedPath: '/stream.bin',
+    size: STREAM_BYTES,
+    body: (async function * () {
+      try {
+        for (let at = 0; at < STREAM_BYTES; at += 64 * 1024) yield Buffer.alloc(64 * 1024, 1)
+      } finally {
+        stream.released = true
+      }
+    })()
+  }
+}
+
 const opened: string[] = []
-const site: MountedSite = { gatherer: 'stub', root: { kind: 'ipfs', cid: ROOT }, pointers: [], open: async (p, r) => { opened.push(p); return open(p, r) }, ddoc: () => ({ status: 'met', refusals: [] }) }
+const site: MountedSite = {
+  gatherer: 'stub',
+  root: { kind: 'ipfs', cid: ROOT },
+  pointers: [],
+  open: async (p, r, signal) => {
+    opened.push(p)
+    return p === '/stream.bin' ? streamed(signal) : open(p, r)
+  },
+  ddoc: () => ({ status: 'met', refusals: [] })
+}
 const record: NameRecord = { type: 'contenthash', pointer: { kind: 'ipfs', cid: ROOT }, provenance: { via: 'fixture' } }
 const resolver: NameResolver = {
   id: 'stub',
@@ -92,6 +119,7 @@ describe('the .eth loopback server', () => {
     expect(reply.headers.etag).toBe(`"${ROOT}"`)
     expect(reply.headers['cache-control']).toBe('no-cache')
     expect(reply.headers['x-content-type-options']).toBe('nosniff')
+    expect(reply.headers['content-security-policy']).toBe('treat-as-public-address')
   })
 
   it('answers a matching validator with 304 before opening anything', async () => {
@@ -134,6 +162,31 @@ describe('the .eth loopback server', () => {
     expect((await get('/', { host: 'site.eth', servername: 'other.eth' })).status).toBe(421)
   })
 
+  it('serves a name on its default port only, since each other port would be another origin', async () => {
+    expect((await get('/', { host: 'site.eth:443', servername: 'site.eth' })).status).toBe(200)
+    expect((await get('/', { host: 'site.eth:8443', servername: 'site.eth' })).status).toBe(421)
+  })
+
+  it('refuses a request target that would read as an authority, and keeps serving', async () => {
+    expect((await get('//a%20b/')).status).toBe(400)
+    expect((await get('//site.eth/app.js')).status).toBe(400)
+    expect((await get('/app.js')).status).toBe(200)
+  })
+
+  it('stops a large response when its client leaves, releasing the body and aborting its open', async () => {
+    await new Promise<void>((resolve) => {
+      const req = request({ host: '127.0.0.1', port, path: '/stream.bin', servername: 'site.eth', rejectUnauthorized: false, headers: { host: 'site.eth' } }, (res) => {
+        res.once('data', () => { req.destroy(); resolve() })
+      })
+      req.on('error', () => {})
+      req.end()
+    })
+    const deadline = Date.now() + 3_000
+    while (!stream.released && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(stream.released).toBe(true)
+    expect(stream.signal?.aborted).toBe(true)
+  })
+
   it('refuses any method but GET and HEAD', async () => {
     expect((await get('/', { method: 'POST' })).status).toBe(405)
   })
@@ -141,7 +194,7 @@ describe('the .eth loopback server', () => {
   it('shows the not-found page, which can run and load nothing, for a missing path or name', async () => {
     for (const reply of [await get('/missing.js'), await get('/', { host: 'nobody.eth' })]) {
       expect(reply.status).toBe(404)
-      expect(reply.headers['content-security-policy']).toBe("default-src 'none'; style-src 'unsafe-inline'")
+      expect(reply.headers['content-security-policy']).toBe("default-src 'none'; style-src 'unsafe-inline'; treat-as-public-address")
       expect(reply.body.toString()).toContain('Nothing here')
     }
   })

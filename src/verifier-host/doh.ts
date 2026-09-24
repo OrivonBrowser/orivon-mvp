@@ -3,6 +3,7 @@
 // DNSLink hop is never a verified one, whoever answers it.
 
 import type { ResolveTxt } from '../ipfs/dnslink.js'
+import { readCapped } from '../ipfs/gateways.js'
 import type { WebFetch } from './egress.js'
 
 const TXT = 16
@@ -31,8 +32,7 @@ export function dohTxtResolver (endpoints: readonly string[], fetch: WebFetch, t
         url.searchParams.set('type', 'TXT')
         const response = await fetch(url.toString(), { headers: { accept: 'application/dns-json' }, signal: AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) })
         if (!response.ok) throw new Error(`${url.host} answered ${String(response.status)}`)
-        const text = await response.text()
-        if (text.length > MAX_ANSWER_BYTES) throw new Error(`${url.host} sent an oversized answer`)
+        const text = new TextDecoder().decode(await readCapped(response, MAX_ANSWER_BYTES))
         const body = JSON.parse(text) as { Status?: unknown, Answer?: Array<{ type?: unknown, data?: unknown }> }
         if (body.Status === NXDOMAIN) return []
         if (body.Status !== 0) throw new Error(`${url.host} answered DNS status ${String(body.Status)}`)
