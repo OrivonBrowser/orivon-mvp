@@ -38,6 +38,8 @@ export interface FakeGateway {
   failing: Set<string>
   /** Answer requests for this CID with a body of this many bytes. */
   oversize: (cid: string, bytes: number) => void
+  /** Signed IPNS records by key, served for `?format=ipns-record`, per gateway when `only` is given. */
+  ipns: (key: string, record: Uint8Array, only?: readonly string[]) => void
 }
 
 /** Trustless gateways over `blocks`, speaking `?format=raw`. */
@@ -46,12 +48,18 @@ export function fakeGateways (blocks: ReadonlyMap<string, Uint8Array>): FakeGate
   const tampered = new Map<string, readonly string[] | undefined>()
   const oversized = new Map<string, number>()
   const failing = new Set<string>()
+  const records = new Map<string, Array<{ record: Uint8Array, only: readonly string[] | undefined }>>()
   const fetch: Fetch = async (url, init) => {
     requests.push(url)
     if (init.signal.aborted) throw new Error('aborted')
     const parsed = new URL(url)
     const gateway = parsed.origin
     if (failing.has(gateway)) return new Response('down', { status: 500 })
+    const ipns = /^\/ipns\/([^/?]+)$/.exec(parsed.pathname)
+    if (ipns !== null && parsed.searchParams.get('format') === 'ipns-record') {
+      const served = (records.get(ipns[1]!) ?? []).find((r) => r.only === undefined || r.only.includes(gateway))
+      return served === undefined ? new Response('not found', { status: 404 }) : new Response(served.record.slice(), { headers: { 'content-type': 'application/vnd.ipfs.ipns-record' } })
+    }
     const match = /^\/ipfs\/([^/?]+)$/.exec(parsed.pathname)
     if (match === null || parsed.searchParams.get('format') !== 'raw') return new Response('bad request', { status: 400 })
     const key = CID.parse(match[1]!).toString()
@@ -69,6 +77,7 @@ export function fakeGateways (blocks: ReadonlyMap<string, Uint8Array>): FakeGate
     requests,
     failing,
     tamper: (cid, gateways) => { tampered.set(cid, gateways) },
-    oversize: (cid, bytes) => { oversized.set(cid, bytes) }
+    oversize: (cid, bytes) => { oversized.set(cid, bytes) },
+    ipns: (key, record, only) => { records.set(key, [...(records.get(key) ?? []), { record, only }]) }
   }
 }
