@@ -33,13 +33,13 @@ function connectionLabel (connection: SiteTrust['connection']): string {
   }
 }
 
-/** One short line naming the strongest thing observed -- never a number or
- * letter (ADR-0006, ARCHITECTURE.md: evidence, never a grade). */
+/** One short line naming the observed Website level and the strongest
+ * delivery rung; connections are never observed, so they stay `?`. */
 function trustGlance (trust: SiteTrust | null): string {
   if (trust === null) return 'Web3 Score'
   const met = trust.delivery.rungs.filter((r) => r.met).map((r) => r.rung)
   const delivery = met.length > 0 ? met[met.length - 1] : 'D1'
-  return `Web3 Score · Delivery ${delivery} · Connections ?`
+  return `Web3 Score · Website L${String(trust.level.level)} · Delivery ${delivery} · Connections ?`
 }
 
 function row (message: string, warning: boolean, control: HTMLElement): HTMLElement {
@@ -94,6 +94,13 @@ export function renderMainPage (
   connectionRow.append(connectionText, chevronIcon())
   connectionRow.addEventListener('click', callbacks.onOpenWeb3)
   container.append(connectionRow)
+
+  if (trust?.name !== undefined) {
+    const nameLine = document.createElement('p')
+    nameLine.className = 'name-line'
+    nameLine.textContent = trust.name.line
+    container.append(nameLine)
+  }
 
   container.append(document.createElement('hr'))
 

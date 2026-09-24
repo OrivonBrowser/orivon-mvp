@@ -152,7 +152,7 @@ sets the second for you.
 | Variable | What it turns on |
 |---|---|
 | `ORIVON_DEV_ORIGINS=1` | An origin may be granted capabilities **without being installed** (`src/main/dev-app-origin.ts`), so a page served from your own static server can hold real grants. Loopback literals and `.eth` names only, `http:` only. It is also the master switch for the row below |
-| `ORIVON_ETH_NAMES_FILE=<path>` | A JSON file of `{"name.eth": port}` that `src/main/eth-resolver.ts` turns into Chromium DNS overrides, so `http://name.eth` reaches `127.0.0.1:<port>`. Ignored unless `ORIVON_DEV_ORIGINS=1` is also set. `orivon-ports`' `orivon-port names` writes this file, and its `serve` and `run` rewrite it from every recipe on each start; nothing points the shell at it for you, and the shell reads it once, at its own startup |
+| `ORIVON_ETH_NAMES_FILE=<path>` | A JSON file of `{"name.eth": port}` that `src/main/dev/eth-resolver.ts` reads and `src/main/verifier/` turns into Chromium DNS overrides, ahead of every other `.eth` name, so `http://name.eth` reaches `127.0.0.1:<port>`; typing such a name in the address bar opens it over `http:`. Ignored unless `ORIVON_DEV_ORIGINS=1` is also set. `orivon-ports`' `orivon-port names` writes this file, and its `serve` and `run` rewrite it from every recipe on each start; nothing points the shell at it for you, and the shell reads it once, at its own startup |
 
 A name in that file is also declared a **secure context**, which is not cosmetic. Its origin is
 plain `http:` on a non-loopback host, and Chromium judges trustworthiness by the origin, not by
@@ -163,6 +163,26 @@ also mapped are declared, so a malformed entry is dropped from both.
 
 This is a development convenience layered over the capability boundary, never part of it. An
 installed app needs none of it: its origin is really `https:` (`ADR-0007`).
+
+---
+
+## `.eth` names and the light client
+
+Every other `.eth` name is served by the verifier (`ADR-0030`): a utility process that proves the
+name with an Ethereum light client and checks every IPFS block it serves. The light client starts
+once the first page has loaded and contacts the servers `src/main/verifier/endpoints.ts` lists;
+Settings shows what it is doing.
+
+| Variable | What it does |
+|---|---|
+| `ORIVON_ETH_LIGHT_CLIENT=off` | Keeps the light client from starting, so the run contacts no Ethereum server and every real `.eth` name fails closed. `test/launch-electron.mjs` sets it for every smoke and e2e launch unless a test asks otherwise |
+| `ORIVON_LIVE_ETH=1` | Runs `src/verifier-host/tests/live-ens.test.ts`, which resolves real names through the light client against mainnet. Skipped otherwise |
+| `ORIVON_TEST_ETH_FIXTURES`, `ORIVON_TEST_IPFS_GATEWAYS`, `ORIVON_TEST_DOH` | Test builds only (`npm run test:e2e` builds one): `.eth` names mapped to content with no light client, and the gateway and DNS-over-HTTPS endpoints to fetch it from. An ordinary build contains none of this (`npm run check:dev-grant-absent`) |
+
+Each release ships a checkpoint for the light client, refreshed with
+`node scripts/refresh-eth-checkpoint.mjs --write` before tagging: it refuses unless two beacon APIs
+agree. An install keeps a newer one of its own after every sync, and refuses any checkpoint older
+than 14 days.
 
 ---
 

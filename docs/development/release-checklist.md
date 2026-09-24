@@ -142,6 +142,9 @@ forgotten.
 ## Before tagging a release
 
 - [ ] Every item above passes.
+- [ ] **The `.eth` light client's checkpoint refreshed and committed**:
+      `node scripts/refresh-eth-checkpoint.mjs --write`. A release whose checkpoint is over 14 days
+      old verifies no `.eth` name until the person installs a newer one.
 - [ ] `npm run typecheck && npm test && npm run check:natives && npm run check:contracts` green.
 - [ ] CI green on `main`.
 - [ ] [`CHANGELOG.md`](../../CHANGELOG.md) updated.

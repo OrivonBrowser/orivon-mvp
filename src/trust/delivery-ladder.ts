@@ -7,17 +7,11 @@
 //   D1 fetched from a host on every load (an ordinary website)      -- trust cost: continuous
 //   D2 fetched once, cached, HASH-PINNED (TOFU on the bundle)       -- trust cost: once
 //   D3 content-addressed (infohash / CID) -- the address IS the proof -- trust cost: none
-//   D4 D3 AND the name is resolved trustlessly (ENS)                -- trust cost: none, deferred
+//   D4 D3 AND the name is resolved trustlessly (ENS)                -- trust cost: none
 //
-// D4 IS UNREACHABLE BY EVERY INPUT THIS MVP CAN ACTUALLY PRODUCE TODAY, ON
-// PURPOSE. ADR-0006 states plainly that trustless name resolution is
-// deferred -- no such mechanism exists in this repository, so
-// `nameResolvedTrustlessly` will only ever arrive `false` from any real
-// caller right now. The field stays in the input type anyway: ADR-0006's own
-// framing is that a later capability "adds cleanly" without invalidating
-// anything already shipped, and a type that already has the field means the
-// loader lane that eventually adds trustless resolution does not have to
-// touch this file to make D4 reachable.
+// D3 and D4 are reached only by a `.eth` name: the caller derives both from
+// what the verifier proved (`src/main/verifier/name-evidence.ts`). Every
+// other origin arrives with both `false`.
 
 export type DeliveryRung = 'D1' | 'D2' | 'D3' | 'D4'
 
@@ -73,7 +67,7 @@ export interface DeliveryHistoryInput {
   readonly pinHasChanged: boolean
   /** Whether the app's own address is itself content-addressed (infohash/CID) rather than a DNS host -- D3/D4. */
   readonly addressIsContentAddressed: boolean
-  /** Whether the human-readable name resolving to that address was itself resolved trustlessly (e.g. ENS) -- D4. See this file's header: unreachable today. */
+  /** Whether the human-readable name resolving to that address was itself resolved trustlessly (e.g. ENS) -- D4. */
   readonly nameResolvedTrustlessly: boolean
   /** This app's pin-coverage for the current session, or `undefined` when the caller has none to report (no request observed yet, or nothing wired it up). Passed through into `DeliveryEvidence.pinCoverage` unchanged -- see `PinCoverageEvidence`'s own doc. */
   readonly pinCoverage?: PinCoverageEvidence
@@ -125,7 +119,7 @@ function metRung (rung: DeliveryRung, evidence: DeliveryEvidence, input: Deliver
   }
 }
 
-/** The delivery ladder for one app's fetch/pin history. See this file's header for D4's deliberate unreachability today. */
+/** The delivery ladder for one app's fetch/pin history. */
 export function deliveryLadder (input: DeliveryHistoryInput): DeliveryLadderResult {
   const pinMismatch = input.everPinned && input.currentFetchMatchesPin === false
 

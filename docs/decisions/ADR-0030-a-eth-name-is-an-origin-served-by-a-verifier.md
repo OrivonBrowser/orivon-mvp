@@ -1,0 +1,124 @@
+# ADR-0030: A `.eth` name is an origin, served by a verifier that checks every byte
+
+- **Status:** accepted. Two parts are *provisional*, named in the Decision.
+- **Date:** 2026-09-24
+- **Type:** architecture / security
+- **Decided by:** owner, for what a `.eth` name loads as and how its trust is shown
+  (`ens-ipfs-plan.md` §Decisions taken). AI recommendation, for the serving mechanism, the block a
+  name is proven at, and which ENS record anchors DDOC.
+
+## Decision
+
+A `.eth` name loads at `https://<name>.eth`, an origin like any other: it is consented, installed
+and served from its pin exactly as an HTTPS app is (`ADR-0005`, `ADR-0007`, `ADR-0018`).
+
+- **The name is proven, not looked up.** A light client (`ADR-0031`), started at launch, proves the
+  name's contenthash through ENS's Universal Resolver, CCIP-Read included, at the newest block it
+  has verified. The contenthash is decoded here (ENSIP-7).
+- **The content is checked, not trusted.** IPFS content comes from trustless gateways, raw block by
+  raw block, and each block is hashed against its CID before any of it is used. A signed IPNS
+  record is checked against its key and never accepted below the highest sequence already seen. A
+  DNSLink is followed, and marked as unverified.
+- **Failure is closed.** Nothing unverified is ever served in place of what could not be checked:
+  the tab gets an error page naming what failed instead. If the verifier host itself dies
+  mid-load, its socket is gone and Chromium shows its own connection error.
+- **Both halves sit behind the canonical provider shapes** (`src/resolution/`): a name resolver per
+  top-level domain and an ordered list of data gatherers, each with the canonical fallback to the
+  next. Each list has one built-in entry in this build.
+- **Serving.** Every `.eth` host resolves, through one `--host-resolver-rules` value, to a TLS
+  server on loopback inside the verifier host, a utility process. Its certificate is created per
+  run, and each session's verify proc accepts a `.eth` host only with that certificate's
+  fingerprint. It answers a name on port 443 only, so a name is one origin, and every response
+  carries `treat-as-public-address`. Chromium keeps its own CORS, cookie and WebSocket handling
+  for everything else.
+- **One bundle, one root.** An install names the root CID it began with on every request, and the
+  server refuses a request once the name points elsewhere. The pin records the content address:
+  the CID, what the contenthash named, the block, and whether every pointer was verified. The
+  bundle hash is unchanged (`ADR-0009`); the CID is provenance, and the identifier a Web3 Score
+  provider would assess.
+- **Website level.** A name whose every pointer and every byte was verified meets DDOC, Level 2. A
+  DNSLink's last hop is a DNS TXT record, forgeable on ICANN domains, so a DNSLink name is Level 1
+  though its bytes are still checked.
+
+Two parts are *provisional*:
+
+- **The block a name is proven at** is the newest the light client has verified, not the finalized
+  one. Public RPCs serve storage proofs only for recent blocks, and finality lags the head by about
+  80 blocks, so calls at the finalized block failed whenever that lag passed an RPC's proof window.
+  An RPC with a longer window would settle it the other way.
+- **DDOC's off-host anchor for a `.eth` name is its contenthash.** The CID commits to every file,
+  the published hash tree at
+  `/.well-known/orivon-ddoc.json` included, so the tree is anchored off the host with no second
+  record. The owner's confirmation would settle it.
+
+## Context
+
+`ens-ipfs-plan.md` is the work queue this ADR records the shape of, and its §Decisions taken are the
+owner's. `docs/planning/spike-results/ens-ipfs.md` has the measurements the mechanism rests on:
+the loopback design passed all four of its gates in Electron 44, with one caveat on the third.
+
+## Alternatives considered
+
+**One partition per `.eth` origin, served by `protocol.handle('https')`.** The measured fallback.
+Every other host would have to pass through the handler, and on a handled response Electron 44
+enforces no CORS, drops `Set-Cookie`, and sends no `Origin` upstream. Re-implementing those is a
+larger attack surface than one loopback socket.
+
+**A custom scheme, or a synthetic subdomain of a gateway.** `ADR-0007` refused both: the origin
+would not be the name, and the page would not be a secure context without further exceptions.
+
+**Helia or `@helia/verified-fetch`.** Both pull in `node-datachannel`, a native module (Rule 8).
+The gatherer is built on the primitives beneath them instead (`src/ipfs/README.md`).
+
+**A public HTTP gateway's rendered responses, or eth.limo.** Fast, and nothing checked: the
+gateway, or the name service, would decide what the page is.
+
+**Finalized blocks only.** See the provisional part above.
+
+**A text record carrying the bundle root, as DDOC's anchor.** It would let a `.eth` name anchor an
+app hosted on HTTPS, which needs a way to load a `.eth` name from HTTPS at all. This build loads
+`.eth` names from IPFS only, where the contenthash already anchors everything.
+
+## Reasoning
+
+The one thing this build sets out to show about names is that a server can withhold, delay and
+observe, but cannot make Orivon use a byte it changed. Every choice above keeps that true with the
+least new machinery: the name is proven by a light client rather than read from an RPC, every
+block is hashed before use, the page runs at an ordinary origin so the permission model applies
+unchanged, and Chromium's own network stack stays in charge of everything that is not the page's
+own content.
+
+## Consequences
+
+- **A loopback socket, which `security-model.md` T15 otherwise forbids.** Every local process can
+  reach it. It can fetch public content, time responses to learn what is cached, and use Orivon as
+  a resolver. It cannot inject content, because the certificate is pinned by fingerprint. The
+  socket serves nothing user-specific. `security-model.md` carries its own row.
+- **Any web page can time a request to a `.eth` URL.** A name opened in the last two minutes
+  answers from the verifier's memory, in milliseconds; one that was not needs a proof, in seconds.
+  So a page can learn which names were opened recently, across sites (`open-questions.md` A256).
+- **Any web page can make the verifier look names up**, as many as it likes. Each lookup is bounded:
+  eight offchain queries per name, four names proven at once, 64 kept.
+- **Local Network Access is not enforced in Electron 44**, so any page, `.eth` or not, can reach
+  loopback services today. An end-to-end canary fails if that changes (`open-questions.md` A252).
+- **Every launch contacts the light client's RPC and beacon API**, about 20 MB an hour of beacon
+  traffic, and gateways learn the CIDs a person opens. The Settings panel names every server Orivon
+  chooses; a name's resolver contract may send its offchain lookup to a server of its own.
+- **A resolver that answers wrongly about DNS for gateway names** (one consumer ISP does, for two of
+  the three defaults) leaves `.eth` loads on that line to the gateways it spares, and fails them
+  closed if it spares none (`open-questions.md` A251).
+- **ENS's Universal Resolver is an upgradable proxy**, so ENS's proxy admin is part of what a
+  resolution trusts.
+- **Internationalised `.eth` names do not resolve**: a punycode host is refused until IDNA and
+  ENSIP-15 are checked against each other.
+- **A developer-mode name from `orivon-ports`' names file** skips all of this and stays plain HTTP
+  on loopback; its resolver clauses come first.
+
+## Reversibility
+
+- **Cost to reverse:** moderate. The origin rule (`https://<name>.eth`) is visible to every
+  installed `.eth` app and its grants; the serving mechanism behind it is internal and could be
+  swapped for the partition design without changing any origin.
+- **What would make us revisit:** Electron enforcing Local Network Access in a way the canary
+  flags; a measured need to serve `.eth` names from something other than IPFS; or the owner
+  choosing a different DDOC anchor.

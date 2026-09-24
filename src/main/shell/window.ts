@@ -17,6 +17,7 @@ import { app, BaseWindow, ipcMain, nativeTheme, WebContentsView, screen } from '
 import { join } from 'node:path'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { isOriginServedFromCacheSync, pinCoverageFor } from '../../loader/electron-serve.js'
+import { ethNameEvidence } from '../verifier/verifier-subsystem.js'
 import { BookmarkStore } from '../browsing/bookmarks.js'
 import { COMMAND_CHANNEL, NEWTAB_COMMAND_CHANNEL, STATE_CHANNEL } from '../channels.js'
 import { registerNewTabIpc } from '../ipc/newtab-ipc.js'
@@ -242,11 +243,11 @@ export function createShellWindow (ctx: SubsystemContext): BaseWindow {
 
   // The site-info popup's own door, sibling to `permissions` above
   // (site-info-controller.ts's own header on why it is not folded into
-  // that one). `isOriginServedFromCacheSync`/`pinCoverageFor` are the real
-  // implementations `SiteTrustSources` asks for -- injected here rather
-  // than imported by the controller itself, so it stays testable against
-  // a fake session (that file's own doc).
-  const siteInfo = createSiteInfoController(ctx, { isOriginServedFromCacheSync, pinCoverageFor })
+  // that one). `isOriginServedFromCacheSync`/`pinCoverageFor`/`ethNameEvidence`
+  // are the real implementations `SiteTrustSources` asks for -- injected here
+  // rather than imported by the controller itself, so it stays testable
+  // against a fake session (that file's own doc).
+  const siteInfo = createSiteInfoController(ctx, { isOriginServedFromCacheSync, pinCoverageFor, nameEvidenceFor: ethNameEvidence })
 
   /** Previous push's active tab, so pushState() can tell a genuine tab
    * SWITCH from the many other reasons state is pushed (a title, a favicon,

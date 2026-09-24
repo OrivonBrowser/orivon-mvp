@@ -9196,3 +9196,84 @@ service. The cost is that a LAN node with a self-signed certificate must be gran
 or as `localhost:<port>`, not by a hostname that resolves privately.
 
 **Needs:** the owner's confirmation of that cost (`src/broker/README.md` has the argument).
+
+### A251 -- a resolver that answers wrongly for gateway names leaves `.eth` loads to the gateways it spares **[AI-REC]**
+
+Filed 2026-09-24 with `ADR-0030`. The ENS and IPFS spike ran on a line whose ISP resolver answers
+`ipfs.io`, `trustless-gateway.link` and the orbitor gateways with block or landing pages; their real
+addresses, looked up elsewhere, connect fine. Nothing unverified is ever used, since every block is
+hashed against its CID, but where no configured gateway resolves honestly every `.eth` page shows
+"cannot verify". Measured in the shell on the same line, with the default gateways: during a live
+`vitalik.eth` load, `trustless-gateway.link` failed TLS with a certificate for another name and
+`ipfs.orbitor.dev` reset the connection, and the page loaded through `ipfs.filebase.io` in 2 s. One
+spared gateway is enough; a line that spares none gets no `.eth` page at all.
+
+**What would settle it:** measuring the shell on a line that blocks gateways, and if it bites,
+resolving gateway names over DNS-over-HTTPS in the verifier host, or asking Chromium to use secure
+DNS for the whole browser. **Needed by:** the first report of a `.eth` name that loads elsewhere and
+not here.
+
+### A252 -- Electron 44 does not enforce Local Network Access, so any web page reaches loopback services **[NEEDS OWNER]**
+
+Filed 2026-09-24 with `ADR-0030`. Electron 44 lists Chromium's `LocalNetworkAccessChecks` among the
+features it disables, and `--enable-features` cannot turn it back on. So a fetch from any page,
+public or `.eth`, to `http://127.0.0.1:<port>/` succeeds with no prompt; the permission gate never
+sees it. That is a gap in `security-model.md` T12 for ordinary browsing, which T12's text covers only
+for `orivon.*` sockets. A `.eth` page is served from loopback itself, and would be exempt from those
+checks once enforced unless its address space is overridden; `test/e2e-eth-verified.test.ts` is the
+canary that fails when that changes.
+
+**What would settle it:** the owner deciding whether ordinary pages reaching loopback is acceptable
+for this build, or blocking it in the shell (a `webRequest` filter on private destinations from
+public documents, say). **Needed by:** packaging (build step 10).
+
+### A253 -- the light client has one keyless HTTPS beacon API, and costs about 20 MB an hour from launch **[NEEDS OWNER]**
+
+Filed 2026-09-24 with `ADR-0031`. Of the beacon APIs tried, only `ethereum-beacon-api.publicnode.com`
+serves Helios over HTTPS with no key; Nimbus's pass over plain HTTP only. The execution side fails
+over across three RPCs, the consensus side cannot. And because the light client starts at launch
+(the owner's decision), it pulls every new beacon block, about 20 MB an hour, and holds about 150 to
+200 MB of memory, whether or not a `.eth` name is ever opened.
+
+**What would settle it:** the owner choosing between starting the client at launch and starting it
+on the first `.eth` navigation (a few seconds' sync from a fresh checkpoint), and a second HTTPS
+beacon API, or plain-HTTP Nimbus as a fallback, since the light client verifies what it receives.
+**Needed by:** packaging (build step 10).
+
+### A254 -- does a verified same-host DDOC tree make an HTTPS site Website Level 2? **[NEEDS OWNER]**
+
+Filed 2026-09-24. `ens-ipfs-plan.md` decision 1 makes Level 2 "DDOC met", and was written before
+`ADR-0029` shipped DDOC with a tree anchored on the site's own host. That tree cannot catch a host
+compromised well enough to rewrite both its files and its tree, which is the reason a DNSLink name
+is Level 1: its last hop is forgeable. On that reasoning a same-host tree stays evidence under Level
+1, and Level 2 means an off-host anchor verified it, which today is a `.eth` name's contenthash. The
+other reading: the canonical Level 2 is "the site supports DDOC", and the vision's own DNS anchor is
+forgeable too (C1).
+
+**What would settle it:** the owner choosing. **Needed by:** the Website level on the Web3 Score page
+(`ens-ipfs-plan.md` EI-10).
+
+### A255 -- DDOC's off-host anchor for a `.eth` name is its contenthash **[NEEDS OWNER CONFIRMATION]**
+
+Filed 2026-09-24 with `ADR-0030`. `ADR-0029`'s amendment puts the anchor in the name's ENS record
+and leaves which record to build step 6. `ADR-0030` takes the contenthash: its CID commits to every
+file, the published hash tree included, so the tree is anchored off the host with nothing new to
+publish. A text record carrying the bundle root would only matter for a `.eth` name that loads from
+HTTPS, which this build does not do.
+
+**Needs:** the owner's confirmation.
+
+### A256 -- any web page can learn which `.eth` names were opened recently, by timing **[NEEDS OWNER]**
+
+Filed 2026-09-24 from the security review of `stream/ens-ipfs`. The verifier keeps a mounted name
+for two minutes and its blocks in a cache shared by every tab. A page on any site can request
+`https://<name>.eth/` (an image will do) and time the answer: milliseconds if the name was opened
+recently, seconds if it needs a proof. Browsers partitioned their HTTP caches to close exactly this
+channel. The verifier cannot partition by the page that asked: the request reaches it from
+Chromium's network stack, with at most a `Sec-Fetch-Site` header to go on.
+
+**Options:** accept it and say so in `security-model.md`; refuse cross-site subresource requests
+to a `.eth` name that is not already open in a tab, which breaks embedding a `.eth` resource on
+another site; or pad every answer to a fixed floor, which slows every `.eth` load.
+
+**Needs:** the owner's choice. `ADR-0030` names the channel meanwhile.
