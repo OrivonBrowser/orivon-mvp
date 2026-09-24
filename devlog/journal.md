@@ -39,9 +39,12 @@ Mark anything that must not leave the team draft as `(Keep private)`.
 - Third port, AirGap Vault: zero preload, zero bridge -- but camera and clipboard read are denied everywhere, so it cannot receive anything to sign.
 - Fourth port, Element Desktop: real login, pickle key and Rust crypto verified live against a local Synapse; OS-keyring secrets stay an orivon-mvp gap.
 - Fixed OIDC logins losing state: a tab leaving an app now parks its view, so sessionStorage and history survive the provider round trip.
+- DDOC ships as evidence: sites publish their bundle hash tree, the Web3 Score page shows verified, failed, or not published.
+- orivon-ports now generates every port's assets list and hash tree; all five ports verify byte-for-byte against the shell.
 
 ### In my head
 
 - Built the harness but not the bridge generator: with one port done it is tooling for a sample of one.
+- Corrected: DDOC never needed trustless resolution; that belongs to the connection axis. Its same-host anchor stays provisional.
 
 ### Non-repo
