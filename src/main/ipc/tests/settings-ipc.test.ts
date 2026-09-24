@@ -110,3 +110,34 @@ describe('registerSettingsIpc', () => {
     expect(await dispatch({ type: 'listSiteNotifications' })).toEqual([])
   })
 })
+
+describe('registerSettingsIpc: the light client section', () => {
+  const VIEW = { state: 'synced' as const, summary: 'Following the chain.', checkpoint: 'Checkpoint 3 hours old.', endpoints: [] }
+
+  it('answers lightClient with the current view, and null when there is no source', async () => {
+    registerSettingsIpc(settingsWebContents, fakePermissions(), () => {}, undefined, { view: () => VIEW, subscribe: () => () => {} })
+    expect(await dispatch({ type: 'lightClient' })).toEqual(VIEW)
+    registerSettingsIpc(settingsWebContents, fakePermissions())
+    expect(await dispatch({ type: 'lightClient' })).toBeNull()
+  })
+
+  it('pushes each change while open, and stops once the returned cleanup runs', async () => {
+    const send = vi.fn()
+    const contents = { mainFrame: SETTINGS_FRAME, isDestroyed: () => false, send } as unknown as import('electron').WebContents
+    let listener: (() => void) | undefined
+    const cleanup = registerSettingsIpc(contents, fakePermissions(), () => {}, undefined, {
+      view: () => VIEW,
+      subscribe: (l) => { listener = l; return () => { listener = undefined } }
+    })
+    listener?.()
+    const { LIGHT_CLIENT_STATUS_CHANNEL } = await import('../../channels.js')
+    expect(send).toHaveBeenCalledExactlyOnceWith(LIGHT_CLIENT_STATUS_CHANNEL, VIEW)
+    cleanup()
+    expect(listener).toBeUndefined()
+  })
+
+  it('refuses the command from any other frame', async () => {
+    registerSettingsIpc(settingsWebContents, fakePermissions(), () => {}, undefined, { view: () => VIEW, subscribe: () => () => {} })
+    expect(await dispatch({ type: 'lightClient' }, OTHER_FRAME)).toBeUndefined()
+  })
+})

@@ -13,6 +13,7 @@ import { SETTINGS_COMMAND_CHANNEL } from '../channels.js'
 import type { PermissionsController, SiteNotificationsController } from './permissions.js'
 import { registerSettingsIpc } from '../ipc/settings-ipc.js'
 import { createPopoverView } from './popover-view.js'
+import { onVerifierChange, verifierView } from '../verifier/verifier-subsystem.js'
 import type { PopoverAnchor } from './popover-view.js'
 
 export type { PopoverAnchor as PanelAnchor } from './popover-view.js'
@@ -40,8 +41,11 @@ export function createPermissionsPanel (
     urlArgName: 'orivon-settings-url',
     align: 'right',
     registerIpc: (webContents, onContentHeight) => {
-      registerSettingsIpc(webContents, permissions, onContentHeight, sites)
-      return () => { ipcMain.removeHandler(SETTINGS_COMMAND_CHANNEL) }
+      const unsubscribe = registerSettingsIpc(webContents, permissions, onContentHeight, sites, { view: verifierView, subscribe: onVerifierChange })
+      return () => {
+        unsubscribe()
+        ipcMain.removeHandler(SETTINGS_COMMAND_CHANNEL)
+      }
     }
   })
 

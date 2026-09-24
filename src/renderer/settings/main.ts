@@ -1,6 +1,8 @@
 import type { AppPermissions, PermissionRow, PickedPathRow, SiteNotificationRow } from '../../main/permissions/permissions.js'
 import type { CapabilityKind, GrantId } from '../../contracts/index.js'
 import { createPermissionsListView } from './permissions-view.js'
+import { renderLightClient } from './light-client-view.js'
+import type { LightClientView } from '../../main/verifier/status-view.js'
 
 // The settings window's whole job: fetch the list, render it, revoke on
 // click, re-fetch. No live push channel exists for this yet (unlike the
@@ -20,6 +22,8 @@ interface OrivonSettings {
   listSiteNotifications: () => Promise<readonly SiteNotificationRow[]>
   /** Forgets a site's notification answer; it is asked again next time. */
   resetSiteNotifications: (origin: string) => Promise<void>
+  lightClient: () => Promise<LightClientView | null>
+  onLightClient: (listener: (view: LightClientView) => void) => void
   reportHeight: (height: number) => void
   focusOrigin: string | null
 }
@@ -43,6 +47,7 @@ const settings = must(window.orivonSettings, 'orivonSettings not exposed -- prel
 
 const list = must(document.querySelector<HTMLDivElement>('#apps-list'), '#apps-list missing')
 const emptyState = must(document.querySelector<HTMLElement>('#empty-state'), '#empty-state missing')
+const lightClientSection = must(document.querySelector<HTMLElement>('#light-client'), '#light-client missing')
 
 const view = createPermissionsListView(
   list,
@@ -86,8 +91,9 @@ function reportContentHeight (): void {
 }
 
 async function refresh (): Promise<void> {
-  const [apps, sites] = await Promise.all([settings.list(), settings.listSiteNotifications()])
+  const [apps, sites, lightClient] = await Promise.all([settings.list(), settings.listSiteNotifications(), settings.lightClient()])
   view.render(apps, sites)
+  renderLightClient(lightClientSection, lightClient)
   scrollToFocusOriginOnce()
   reportContentHeight()
 }
@@ -119,5 +125,10 @@ async function resetSiteAndRefresh (row: SiteNotificationRow): Promise<void> {
   await settings.resetSiteNotifications(row.origin)
   await refresh()
 }
+
+settings.onLightClient((lightClient) => {
+  renderLightClient(lightClientSection, lightClient)
+  reportContentHeight()
+})
 
 void refresh()

@@ -23,6 +23,8 @@ import shippedCheckpoint from './mainnet-checkpoint.json'
 import { composeResolverRules } from './resolver-rules.js'
 import { ethTestSeam, noteVerifierListening } from './test-seam.js'
 import { VerifierStore } from './verifier-store.js'
+import { lightClientView } from './status-view.js'
+import type { LightClientView } from './status-view.js'
 
 /** Started this long after ready at the latest, if no page has finished loading by then. */
 const START_FALLBACK_MS = 3_000
@@ -35,6 +37,11 @@ let store: VerifierStore | undefined
 let lightClient: LightClientState = { state: 'off' }
 let checkpoint: CheckpointChoice | undefined
 let hostDown: string | undefined = 'not started yet'
+const listeners = new Set<() => void>()
+
+function changed (): void {
+  for (const listener of listeners) listener()
+}
 
 function installCertificateCheck (target: Session): void {
   target.setCertificateVerifyProc((request, callback) => {
@@ -94,14 +101,21 @@ export async function ethContentAddress (origin: string): Promise<ContentAddress
   return contentAddressOf(await supervisor.request({ kind: 'mount', host: new URL(origin).hostname }, MOUNT_TIMEOUT_MS))
 }
 
-export interface VerifierStatus {
-  readonly lightClient: LightClientState
-  readonly checkpoint: CheckpointChoice | undefined
-  readonly hostDown: string | undefined
+/** The light client's state in words, for the Settings section and the site-info popover. */
+export function verifierView (): LightClientView {
+  return lightClientView({
+    lightClient,
+    checkpoint,
+    hostDown,
+    switchedOff: process.env['ORIVON_ETH_LIGHT_CLIENT'] === 'off',
+    endpoints: { executionRpcs: DEFAULT_ENDPOINTS.executionRpcs, consensusRpc: DEFAULT_ENDPOINTS.consensusRpc, gateways: DEFAULT_ENDPOINTS.gateways }
+  }, Date.now())
 }
 
-export function verifierStatus (): VerifierStatus {
-  return { lightClient, checkpoint, hostDown }
+/** Called whenever what verifierView() says may have changed; returns the unsubscribe. */
+export function onVerifierChange (listener: () => void): () => void {
+  listeners.add(listener)
+  return () => { listeners.delete(listener) }
 }
 
 export const verifierSubsystem: Subsystem = {
@@ -123,14 +137,19 @@ export const verifierSubsystem: Subsystem = {
           fingerprint = value
           hostDown = undefined
           noteVerifierListening(true)
+          changed()
         },
         down: (reason) => {
           fingerprint = undefined
           hostDown = reason
           noteVerifierListening(false)
           console.error(`[verifier] ${reason}`)
+          changed()
         },
-        status: (value) => { lightClient = value },
+        status: (value) => {
+          lightClient = value
+          changed()
+        },
         checkpoint: (root, timestamp) => { store?.saveCheckpoint({ root, timestamp }) },
         ipnsSequence: (key, sequence) => { store?.saveIpnsSequence(key, sequence) }
       }
