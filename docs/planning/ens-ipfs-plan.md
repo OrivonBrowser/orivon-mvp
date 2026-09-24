@@ -542,7 +542,7 @@ Updated 2026-09-24. Built on `stream/ens-ipfs`, each item to its exit criterion 
 
 | Item | State |
 |---|---|
-| EI-0 | **Partly.** `ADR-0030` and `ADR-0031` are written, and open questions A251 to A255 filed. The amendments (scope, `ADR-0005`, `ADR-0006`, `ADR-0029`, the hookify rule, the decision log) wait for the roadmap change, which edits the same lines and is not yet on `main` |
+| EI-0 | **Partly.** `ADR-0030` and `ADR-0031` are written, and open questions A251 to A256 filed. The amendments (scope, `ADR-0005`, `ADR-0006`, `ADR-0029`, the hookify rule, the decision log) wait for the roadmap change, which edits the same lines and is not yet on `main` |
 | EI-1 | Done: [`spike-results/ens-ipfs.md`](spike-results/ens-ipfs.md). GO for the loopback design |
 | EI-2, EI-3, EI-4, EI-6 | Done, with unit tests |
 | EI-5, EI-7 | Done. `test/e2e-eth-verified.test.ts`: a fixture name loads verified, a tampered block is refused, and the Local Network Access canary holds |

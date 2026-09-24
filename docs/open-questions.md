@@ -9197,14 +9197,16 @@ or as `localhost:<port>`, not by a hostname that resolves privately.
 
 **Needs:** the owner's confirmation of that cost (`src/broker/README.md` has the argument).
 
-### A251 -- a resolver that answers wrongly for a gateway's name makes every `.eth` load fail closed **[AI-REC]**
+### A251 -- a resolver that answers wrongly for gateway names leaves `.eth` loads to the gateways it spares **[AI-REC]**
 
 Filed 2026-09-24 with `ADR-0030`. The ENS and IPFS spike ran on a line whose ISP resolver answers
 `ipfs.io`, `trustless-gateway.link` and the orbitor gateways with block or landing pages; their real
 addresses, looked up elsewhere, connect fine. Nothing unverified is ever used, since every block is
 hashed against its CID, but where no configured gateway resolves honestly every `.eth` page shows
-"cannot verify". Inside the shell, Chromium's resolver answered correctly on the same line, so the
-exposure is narrower than the spike's plain-Node run suggested, and not measured further.
+"cannot verify". Measured in the shell on the same line, with the default gateways: during a live
+`vitalik.eth` load, `trustless-gateway.link` failed TLS with a certificate for another name and
+`ipfs.orbitor.dev` reset the connection, and the page loaded through `ipfs.filebase.io` in 2 s. One
+spared gateway is enough; a line that spares none gets no `.eth` page at all.
 
 **What would settle it:** measuring the shell on a line that blocks gateways, and if it bites,
 resolving gateway names over DNS-over-HTTPS in the verifier host, or asking Chromium to use secure

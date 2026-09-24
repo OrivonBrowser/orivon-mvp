@@ -104,8 +104,9 @@ own content.
 - **Every launch contacts the light client's RPC and beacon API**, about 20 MB an hour of beacon
   traffic, and gateways learn the CIDs a person opens. The Settings panel names every server Orivon
   chooses; a name's resolver contract may send its offchain lookup to a server of its own.
-- **A resolver that answers wrongly about DNS for a gateway name** (one consumer ISP does)
-  makes every `.eth` load on that line fail closed (`open-questions.md` A251).
+- **A resolver that answers wrongly about DNS for gateway names** (one consumer ISP does, for two of
+  the three defaults) leaves `.eth` loads on that line to the gateways it spares, and fails them
+  closed if it spares none (`open-questions.md` A251).
 - **ENS's Universal Resolver is an upgradable proxy**, so ENS's proxy admin is part of what a
   resolution trusts.
 - **Internationalised `.eth` names do not resolve**: a punycode host is refused until IDNA and
