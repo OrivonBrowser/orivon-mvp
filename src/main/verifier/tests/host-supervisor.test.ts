@@ -4,7 +4,7 @@ import type { HostConfig } from '../../../verifier-host/protocol.js'
 import { HostSupervisor } from '../host-supervisor.js'
 import type { HostProcess, SupervisorEvents } from '../host-supervisor.js'
 
-const CONFIG: HostConfig = { port: 1, lightClient: undefined, gateways: ['https://g.example'], dnsOverHttps: [], ipnsSequences: {} }
+const CONFIG: HostConfig = { port: 1, lightClient: undefined, gateways: ['https://g.example'], ipnsNameServices: [], dnsOverHttps: [], ipnsSequences: {} }
 
 class FakeHost extends EventEmitter implements HostProcess {
   readonly sent: unknown[] = []

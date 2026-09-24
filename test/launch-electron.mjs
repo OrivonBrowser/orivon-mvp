@@ -159,6 +159,10 @@ export async function launchElectron ({
   // someone who runs them without xvfb-run, on a platform with no virtual
   // display at all (docs/development/setup.md).
   if (env['ORIVON_WINDOW_NO_FOCUS'] === undefined) env['ORIVON_WINDOW_NO_FOCUS'] = '1'
+  // The same for the Ethereum light client: off unless a caller turns it on,
+  // so no test run contacts a mainnet RPC or beacon API. Every real `.eth`
+  // name then fails closed; fixture names still load in a test build.
+  if (env['ORIVON_ETH_LIGHT_CLIENT'] === undefined) env['ORIVON_ETH_LIGHT_CLIENT'] = 'off'
 
   // BUG (found 2026-09-01, real regression): with no --user-data-dir, Electron
   // defaults to this machine's actual `orivon` profile directory

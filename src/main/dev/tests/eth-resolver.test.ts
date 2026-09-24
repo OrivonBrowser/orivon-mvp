@@ -1,15 +1,8 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-
-const appendSwitch = vi.fn()
-
-vi.mock('electron', () => ({
-  app: { commandLine: { appendSwitch } }
-}))
-
-const { buildHostResolverRules, buildSecureOriginList, ethResolverSubsystem } = await import('../eth-resolver.js')
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { buildHostResolverRules, buildSecureOriginList, readDevEthNames } from '../eth-resolver.js'
 
 describe('buildHostResolverRules', () => {
   it('builds one MAP clause per name, to its own port', () => {
@@ -74,13 +67,13 @@ describe('buildSecureOriginList', () => {
   })
 })
 
-describe('ethResolverSubsystem', () => {
+describe('readDevEthNames', () => {
   let dir: string
   const ORIGINAL_ENV = { ...process.env }
+  const NONE = { rules: '', secureOrigins: '' }
 
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'orivon-eth-resolver-'))
-    appendSwitch.mockClear()
   })
   afterEach(() => {
     rmSync(dir, { recursive: true, force: true })
@@ -93,77 +86,58 @@ describe('ethResolverSubsystem', () => {
     return path
   }
 
-  it('does nothing when ORIVON_DEV_ORIGINS is not set, even with a valid file', () => {
+  it('reads nothing when ORIVON_DEV_ORIGINS is not set, even with a valid file', () => {
     delete process.env['ORIVON_DEV_ORIGINS']
     process.env['ORIVON_ETH_NAMES_FILE'] = namesFile('{"freetube.eth": 8875}')
-    ethResolverSubsystem.beforeReady?.()
-    expect(appendSwitch).not.toHaveBeenCalled()
+    expect(readDevEthNames()).toEqual(NONE)
   })
 
-  it('does nothing when ORIVON_ETH_NAMES_FILE is not set, even in dev mode', () => {
+  it('reads nothing when ORIVON_ETH_NAMES_FILE is not set, even in dev mode', () => {
     process.env['ORIVON_DEV_ORIGINS'] = '1'
     delete process.env['ORIVON_ETH_NAMES_FILE']
-    ethResolverSubsystem.beforeReady?.()
-    expect(appendSwitch).not.toHaveBeenCalled()
+    expect(readDevEthNames()).toEqual(NONE)
   })
 
-  it('appends host-resolver-rules from a valid file, both flags set', () => {
-    process.env['ORIVON_DEV_ORIGINS'] = '1'
-    process.env['ORIVON_ETH_NAMES_FILE'] = namesFile('{"freetube.eth": 8875, "asgardex.eth": 8876}')
-    ethResolverSubsystem.beforeReady?.()
-    expect(appendSwitch).toHaveBeenCalledWith(
-      'host-resolver-rules',
-      'MAP freetube.eth 127.0.0.1:8875,MAP asgardex.eth 127.0.0.1:8876'
-    )
-  })
-
-  // Without this switch the mapped name is plain http: on a non-loopback
-  // host, so the page loses navigator.clipboard, crypto.subtle,
+  // Without the secure-origin list the mapped name is plain http: on a
+  // non-loopback host, so the page loses navigator.clipboard, crypto.subtle,
   // crypto.randomUUID and service workers -- a different app from the same
   // bundle opened at 127.0.0.1.
-  it('declares the same names a secure context, alongside the resolver rules', () => {
+  it('turns a valid file into resolver clauses and the same names as secure origins', () => {
     process.env['ORIVON_DEV_ORIGINS'] = '1'
     process.env['ORIVON_ETH_NAMES_FILE'] = namesFile('{"freetube.eth": 8875, "asgardex.eth": 8876}')
-    ethResolverSubsystem.beforeReady?.()
-    expect(appendSwitch).toHaveBeenCalledWith(
-      'unsafely-treat-insecure-origin-as-secure',
-      'http://freetube.eth,http://asgardex.eth'
-    )
+    expect(readDevEthNames()).toEqual({
+      rules: 'MAP freetube.eth 127.0.0.1:8875,MAP asgardex.eth 127.0.0.1:8876',
+      secureOrigins: 'http://freetube.eth,http://asgardex.eth'
+    })
   })
 
-  // Both switches or neither, at the subsystem level: an entry dropped
-  // from the MAP clauses must not still be called trustworthy.
+  // Both values or neither: an entry dropped from the MAP clauses must not
+  // still be called trustworthy.
   it('never declares an origin it did not also map to loopback', () => {
     process.env['ORIVON_DEV_ORIGINS'] = '1'
     process.env['ORIVON_ETH_NAMES_FILE'] = namesFile('{"freetube.eth": 8875, "Bad.eth": 1}')
-    ethResolverSubsystem.beforeReady?.()
-    expect(appendSwitch).toHaveBeenCalledWith('host-resolver-rules', 'MAP freetube.eth 127.0.0.1:8875')
-    expect(appendSwitch).toHaveBeenCalledWith('unsafely-treat-insecure-origin-as-secure', 'http://freetube.eth')
+    expect(readDevEthNames()).toEqual({ rules: 'MAP freetube.eth 127.0.0.1:8875', secureOrigins: 'http://freetube.eth' })
   })
 
-  it('does not append anything for an empty names file', () => {
+  it('reads nothing from an empty names file', () => {
     process.env['ORIVON_DEV_ORIGINS'] = '1'
     process.env['ORIVON_ETH_NAMES_FILE'] = namesFile('{}')
-    ethResolverSubsystem.beforeReady?.()
-    expect(appendSwitch).not.toHaveBeenCalled()
+    expect(readDevEthNames()).toEqual(NONE)
   })
 
   // A missing or malformed file is a dev mistake, not a reason to crash the
-  // shell -- console.error is enough, and this proves that path does not
-  // throw out of beforeReady.
-  it('does not throw on a missing file, and appends nothing', () => {
+  // shell -- console.error is enough, and this proves that path does not throw.
+  it('does not throw on a missing file, and reads nothing', () => {
     process.env['ORIVON_DEV_ORIGINS'] = '1'
     process.env['ORIVON_ETH_NAMES_FILE'] = join(dir, 'does-not-exist.json')
-    expect(() => ethResolverSubsystem.beforeReady?.()).not.toThrow()
-    expect(appendSwitch).not.toHaveBeenCalled()
+    expect(readDevEthNames()).toEqual(NONE)
   })
 
   it('does not throw on malformed JSON, or JSON that is not an object map', () => {
     process.env['ORIVON_DEV_ORIGINS'] = '1'
     for (const content of ['not json', '[1, 2, 3]', '"a string"', 'null']) {
       process.env['ORIVON_ETH_NAMES_FILE'] = namesFile(content)
-      expect(() => ethResolverSubsystem.beforeReady?.()).not.toThrow()
+      expect(readDevEthNames()).toEqual(NONE)
     }
-    expect(appendSwitch).not.toHaveBeenCalled()
   })
 })

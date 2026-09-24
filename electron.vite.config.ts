@@ -93,7 +93,15 @@ export default defineConfig({
       __ORIVON_DEV_GRANT_ENABLED__: JSON.stringify(process.env.ORIVON_ENABLE_DEV_GRANT === '1')
     },
     build: {
-      rollupOptions: { input: resolve(root, 'src/main/index.ts') }
+      // Two processes: the shell, and the verifier host it forks as a
+      // utility process (src/verifier-host/). Keys are the output names in
+      // out/main/, which src/main/verifier/ forks by name.
+      rollupOptions: {
+        input: {
+          index: resolve(root, 'src/main/index.ts'),
+          'verifier-host': resolve(root, 'src/verifier-host/entry.ts')
+        }
+      }
     }
   },
   preload: {

@@ -1,11 +1,10 @@
-// Developer-mode DNS override for orivon-ports' fake `.eth` names (that
-// repository's docs/recipe-format.md `eth` field -- never real ENS, no
-// trustless resolution exists yet, README.md's own "No ENS, no IPFS" line).
-// This process has no other connection to orivon-ports: it is told where
-// that repository's `orivon-port names` wrote its name->port map through
-// ORIVON_ETH_NAMES_FILE, and does nothing at all if that variable, or
-// ORIVON_DEV_ORIGINS=1, is unset -- which is every run that is not
-// demonstrating this one feature.
+// Developer-mode `.eth` names for orivon-ports' ported apps, served over
+// plain http from loopback (that repository's docs/recipe-format.md `eth`
+// field). A name here skips ENS resolution and verification entirely, so
+// the file is read only in developer mode, from ORIVON_ETH_NAMES_FILE, and
+// its clauses come before every other `.eth` name in the resolver rules
+// ../verifier/ composes. This process has no other connection to
+// orivon-ports.
 //
 // --host-resolver-rules, not --proxy-pac-url: verified against a real
 // Electron 44 window before this file was written. Both the default session
@@ -17,8 +16,6 @@
 // available for whatever future consumer needs one -- this shell is not it.
 
 import { readFileSync } from 'node:fs'
-import { app } from 'electron'
-import type { Subsystem } from '../registry.js'
 import { devModeEnabled } from './dev-mode.js'
 
 /** One lowercase label plus `.eth` -- the same shape orivon-ports' recipe.ts validates. Re-checked here because this file reads a name from OUTSIDE this process and is about to splice it into a command-line switch; that file's own validation is not a guarantee this one may skip. */
@@ -75,39 +72,38 @@ export function buildSecureOriginList (names: Readonly<Record<string, unknown>>)
   return validEntries(names).map(([name]) => `http://${name}`).join(',')
 }
 
+export interface DevEthNames {
+  /** `MAP name.eth 127.0.0.1:port` clauses, or empty. */
+  readonly rules: string
+  /** The same names as secure origins, or empty. */
+  readonly secureOrigins: string
+}
+
+const NONE: DevEthNames = { rules: '', secureOrigins: '' }
+
 /**
- * Registered UNCONDITIONALLY in subsystems.ts, the same as `dev-grant.ts`'s
- * own subsystem -- the conditional lives here. Never `critical`: this is a
- * dev convenience layered on top of the capability boundary, not the
- * boundary itself, so a broken or missing names file is reported once,
- * loudly, and changes nothing else about how the shell starts.
+ * The names file's entries, read once and turned into both switch values in
+ * one pass, so a name is never declared trustworthy without also being
+ * mapped to loopback. Empty unless ORIVON_DEV_ORIGINS=1 and
+ * ORIVON_ETH_NAMES_FILE are both set, which is every run that is not
+ * demonstrating this one feature. A broken or missing file is reported
+ * once, loudly, and changes nothing else about how the shell starts.
  */
-export const ethResolverSubsystem: Subsystem = {
-  name: 'eth-resolver',
-  beforeReady: () => {
-    if (!devModeEnabled()) return
-    const path = process.env['ORIVON_ETH_NAMES_FILE']
-    if (path === undefined) return
-
-    let rules: string
-    let secureOrigins: string
-    try {
-      const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'))
-      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-        throw new Error('expected a JSON object of "name.eth": port')
-      }
-      rules = buildHostResolverRules(parsed as Record<string, unknown>)
-      secureOrigins = buildSecureOriginList(parsed as Record<string, unknown>)
-    } catch (error) {
-      console.error(`[orivon] ORIVON_ETH_NAMES_FILE (${path}) could not be read as a names map:`, error)
-      return
+export function readDevEthNames (): DevEthNames {
+  if (!devModeEnabled()) return NONE
+  const path = process.env['ORIVON_ETH_NAMES_FILE']
+  if (path === undefined) return NONE
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'))
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      throw new Error('expected a JSON object of "name.eth": port')
     }
-
-    if (rules === '') return
-    app.commandLine.appendSwitch('host-resolver-rules', rules)
-    // Both switches, or neither: a name dropped from the MAP clauses is not
-    // declared trustworthy either, which is why both read the same pass.
-    app.commandLine.appendSwitch('unsafely-treat-insecure-origin-as-secure', secureOrigins)
-    console.error(`[orivon] fake .eth names active (ORIVON_DEV_ORIGINS=1): ${rules}`)
+    const names = parsed as Record<string, unknown>
+    const rules = buildHostResolverRules(names)
+    if (rules !== '') console.error(`[orivon] fake .eth names active (ORIVON_DEV_ORIGINS=1): ${rules}`)
+    return { rules, secureOrigins: buildSecureOriginList(names) }
+  } catch (error) {
+    console.error(`[orivon] ORIVON_ETH_NAMES_FILE (${path}) could not be read as a names map:`, error)
+    return NONE
   }
 }
