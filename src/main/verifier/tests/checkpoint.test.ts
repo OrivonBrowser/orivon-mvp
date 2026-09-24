@@ -20,10 +20,12 @@ describe('chooseCheckpoint', () => {
     expect(chooseCheckpoint(checkpoint(2, 'a'), checkpoint(20, 'b'), NOW, MAX)).toMatchObject({ ok: true, source: 'release', ageSeconds: 2 * DAY })
   })
 
-  it('refuses when both are past the limit, and says what would fix it', () => {
-    const choice = chooseCheckpoint(checkpoint(40, 'a'), checkpoint(20, 'b'), NOW, MAX)
-    expect(choice.ok).toBe(false)
-    expect(choice.ok === false && choice.reason).toMatch(/last verified on this install.*20\.0 days old.*14\.0 days limit.*newer release/)
+  it('refuses when both are past the limit, naming the newer one and its age', () => {
+    expect(chooseCheckpoint(checkpoint(40, 'a'), checkpoint(20, 'b'), NOW, MAX)).toEqual({ ok: false, problem: 'too-old', source: 'this-install', ageSeconds: 20 * DAY })
+  })
+
+  it('refuses when the clock is behind every checkpoint', () => {
+    expect(chooseCheckpoint({ root: root('a'), timestamp: NOW + DAY }, undefined, NOW, MAX)).toEqual({ ok: false, problem: 'clock-behind' })
   })
 
   it("uses the release's when nothing is stored", () => {
@@ -37,11 +39,6 @@ describe('chooseCheckpoint', () => {
   it('ignores a stored checkpoint from the future', () => {
     const future = { root: root('b'), timestamp: NOW + DAY }
     expect(chooseCheckpoint(checkpoint(3, 'a'), future, NOW, MAX)).toMatchObject({ ok: true, source: 'release' })
-  })
-
-  it('refuses, naming the clock, when every checkpoint is from the future', () => {
-    const choice = chooseCheckpoint({ root: root('a'), timestamp: NOW + DAY }, undefined, NOW, MAX)
-    expect(choice).toEqual({ ok: false, reason: expect.stringMatching(/system clock/) })
   })
 
   it('accepts a checkpoint exactly at the limit', () => {

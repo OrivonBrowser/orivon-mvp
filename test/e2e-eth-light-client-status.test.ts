@@ -5,6 +5,8 @@
 // Hermetic: HERMETIC_RESOLVER makes every mainnet name unresolvable, which is
 // what forces the failure without contacting anything.
 import { afterAll, expect, it } from 'vitest'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { assertNoElectronSurvivors, launchElectron } from './launch-electron.mjs'
 import { evaluateRetrying, findChrome, HERMETIC_RESOLVER, waitFor } from './smoke-helpers.mjs'
 import { APP_CLOSE_RACE_MS, closeElectronApp, runPhase, waitForAddressBarStable } from './e2e-helpers.js'
@@ -60,9 +62,19 @@ it('shows the light client off, down when its process dies, and back once it res
   })
 }, 120_000)
 
+/**
+ * A checkpoint an hour old in the test's own profile, so the light client
+ * starts, and fails, however long ago the release's checkpoint was taken.
+ * Its root is never checked against anything: no beacon API is reachable.
+ */
+async function seedFreshCheckpoint (profile: string): Promise<void> {
+  await mkdir(join(profile, 'verifier'), { recursive: true })
+  await writeFile(join(profile, 'verifier', 'checkpoint.json'), JSON.stringify({ root: `0x${'1'.repeat(64)}`, timestamp: Math.floor(Date.now() / 1000) - 3600 }))
+}
+
 it('shows the light client failed, and why, when no beacon API can be reached', async () => {
   await runPhase('light-client-failed', async (check) => {
-    const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER], env: { ORIVON_ETH_LIGHT_CLIENT: 'on' } })
+    const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER], env: { ORIVON_ETH_LIGHT_CLIENT: 'on' }, seedProfile: seedFreshCheckpoint })
     try {
       const panel = await openSettings(app)
       const failed = await waitFor(async () => (await lightClient(panel)).state === 'Failed', 45_000)

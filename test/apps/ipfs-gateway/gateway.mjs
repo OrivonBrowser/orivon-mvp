@@ -62,6 +62,12 @@ export async function startFixtureGateway (sites, options = {}) {
     url: `http://${HOST}:${String(port)}`,
     roots,
     requests,
+    /** The CID of the block holding this site's file, which is what a refusal of it names. */
+    blockOf: (site, path) => {
+      const cid = files.get(`${site}/${path}`)
+      if (cid === undefined) throw new Error(`no file ${path} in ${site}`)
+      return cid
+    },
     /** Serve this site's file with one byte flipped from now on. */
     tamper: (site, path) => {
       const cid = files.get(`${site}/${path}`)

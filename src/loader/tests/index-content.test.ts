@@ -61,6 +61,20 @@ describe('createLoader: a bundle from a content-addressed origin', () => {
     expect(next.seen.every((request) => request.root === NEXT_CID)).toBe(true)
   })
 
+  it('moves the pin to a new root that holds the same bundle, so the next check asks for nothing', async () => {
+    const storage = memoryStorage()
+    await loader(storage, recording('<!doctype html>v1').fetch, async () => CONTENT).load(ORIGIN, NO_GRANTS)
+    const pinnedAt = (await loader(storage, recording('').fetch, async () => CONTENT).pinFor(ORIGIN))?.pinnedAt
+    const moved = { ...CONTENT, cid: NEXT_CID, block: 20_000_100 }
+    await loader(storage, recording('<!doctype html>v1').fetch, async () => moved).load(ORIGIN, NO_GRANTS)
+    const pin = await loader(storage, recording('').fetch, async () => moved).pinFor(ORIGIN)
+    expect(pin?.content).toEqual(moved)
+    expect(pin?.pinnedAt).toBe(pinnedAt)
+    const third = recording('<!doctype html>v1')
+    expect(await loader(storage, third.fetch, async () => moved).load(ORIGIN, NO_GRANTS)).toEqual({ outcome: 'up-to-date', canonicalOrigin: ORIGIN })
+    expect(third.seen).toEqual([])
+  })
+
   it('is rejected, before any request, when the name cannot be verified', async () => {
     const { fetch, seen } = recording('<!doctype html>v1')
     const result = await loader(memoryStorage(), fetch, async () => { throw new Error('the light client is still syncing') }).load(ORIGIN, NO_GRANTS)

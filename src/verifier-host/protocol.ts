@@ -6,6 +6,9 @@
 import type { ContentRoot, PointerStep } from '../resolution/records.js'
 import type { DdocReport } from '../resolution/providers.js'
 
+/** A beacon block root, as a checkpoint must be: Helios, handed anything else, silently uses one compiled into it, about a year old. */
+export const BLOCK_ROOT_PATTERN = /^0x[0-9a-f]{64}$/
+
 export interface LightClientConfig {
   /** Asked in order: a request that fails or errors goes to the next. */
   readonly executionRpcs: readonly string[]
@@ -16,8 +19,10 @@ export interface LightClientConfig {
 
 export interface HostConfig {
   readonly port: number
-  /** Undefined when the light client is switched off: every `.eth` name then fails closed. */
+  /** Undefined when the light client does not run: every `.eth` name then fails closed. */
   readonly lightClient: LightClientConfig | undefined
+  /** Why it does not run, in words for the error page. */
+  readonly lightClientOff?: string
   readonly gateways: readonly string[]
   /** w3name-style services asked for an IPNS record after the gateways. */
   readonly ipnsNameServices: readonly string[]
@@ -32,6 +37,7 @@ export type LightClientState =
   | { readonly state: 'off' }
   | { readonly state: 'starting' }
   | { readonly state: 'syncing', readonly since: number }
+  /** `at`: when the newest verified block was produced, in ms, so a head that stopped advancing shows its age. */
   | { readonly state: 'synced', readonly block: number, readonly at: number }
   | { readonly state: 'failed', readonly reason: string, readonly retryAt: number | undefined }
 

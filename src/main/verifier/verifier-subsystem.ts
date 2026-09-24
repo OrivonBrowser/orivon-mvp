@@ -25,7 +25,7 @@ import { ethTestSeam, noteVerifierListening } from './test-seam.js'
 import { VerifierStore } from './verifier-store.js'
 import { chooseNameEvidence } from './name-evidence.js'
 import type { NameEvidence } from './name-evidence.js'
-import { lightClientView } from './status-view.js'
+import { checkpointProblem, lightClientView } from './status-view.js'
 import type { LightClientView } from './status-view.js'
 
 /** Started this long after ready at the latest, if no page has finished loading by then. */
@@ -51,18 +51,34 @@ function installCertificateCheck (target: Session): void {
   })
 }
 
+const SHIPPED_CHECKPOINT = { root: shippedCheckpoint.root, timestamp: slotTimestamp(shippedCheckpoint.slot) }
+
+function verifierStore (): VerifierStore {
+  store ??= new VerifierStore(join(app.getPath('userData'), 'verifier'))
+  return store
+}
+
+/** Chooses again from the shipped and stored checkpoints, so Settings shows the one a restart would use. */
+function chooseNow (): CheckpointChoice {
+  checkpoint = chooseCheckpoint(SHIPPED_CHECKPOINT, verifierStore().checkpoint(), Math.floor(Date.now() / 1000))
+  return checkpoint
+}
+
 function hostConfig (): HostConfig {
   const seam = ethTestSeam()
-  const stored = store ?? new VerifierStore(join(app.getPath('userData'), 'verifier'))
-  store = stored
-  let lightClientConfig: HostConfig['lightClient']
-  if (process.env['ORIVON_ETH_LIGHT_CLIENT'] !== 'off') {
-    checkpoint = chooseCheckpoint({ root: shippedCheckpoint.root, timestamp: slotTimestamp(shippedCheckpoint.slot) }, stored.checkpoint(), Math.floor(Date.now() / 1000))
-    if (checkpoint.ok) lightClientConfig = { executionRpcs: DEFAULT_ENDPOINTS.executionRpcs, consensusRpc: DEFAULT_ENDPOINTS.consensusRpc, checkpoint: checkpoint.checkpoint.root }
+  const stored = verifierStore()
+  let lightClient: Pick<HostConfig, 'lightClient' | 'lightClientOff'>
+  if (process.env['ORIVON_ETH_LIGHT_CLIENT'] === 'off') {
+    lightClient = { lightClient: undefined, lightClientOff: 'the Ethereum light client is switched off for this run, so no .eth name can be verified' }
+  } else {
+    const choice = chooseNow()
+    lightClient = choice.ok
+      ? { lightClient: { executionRpcs: DEFAULT_ENDPOINTS.executionRpcs, consensusRpc: DEFAULT_ENDPOINTS.consensusRpc, checkpoint: choice.checkpoint.root } }
+      : { lightClient: undefined, lightClientOff: `the Ethereum light client cannot start: ${checkpointProblem(choice)}` }
   }
   return {
     port: loopbackPort(),
-    lightClient: lightClientConfig,
+    ...lightClient,
     gateways: seam?.gateways ?? DEFAULT_ENDPOINTS.gateways,
     ipnsNameServices: seam === undefined ? DEFAULT_ENDPOINTS.ipnsNameServices : [],
     dnsOverHttps: seam?.dnsOverHttps ?? DEFAULT_ENDPOINTS.dnsOverHttps,
@@ -117,7 +133,7 @@ export function verifierView (): LightClientView {
     checkpoint,
     hostDown,
     switchedOff: process.env['ORIVON_ETH_LIGHT_CLIENT'] === 'off',
-    endpoints: { executionRpcs: DEFAULT_ENDPOINTS.executionRpcs, consensusRpc: DEFAULT_ENDPOINTS.consensusRpc, gateways: DEFAULT_ENDPOINTS.gateways }
+    endpoints: DEFAULT_ENDPOINTS
   }, Date.now())
 }
 
@@ -159,8 +175,12 @@ export const verifierSubsystem: Subsystem = {
           lightClient = value
           changed()
         },
-        checkpoint: (root, timestamp) => { store?.saveCheckpoint({ root, timestamp }) },
-        ipnsSequence: (key, sequence) => { store?.saveIpnsSequence(key, sequence) }
+        checkpoint: (root, timestamp) => {
+          verifierStore().saveCheckpoint({ root, timestamp }, Math.floor(Date.now() / 1000))
+          chooseNow()
+          changed()
+        },
+        ipnsSequence: (key, sequence) => { verifierStore().saveIpnsSequence(key, sequence) }
       }
     })
     supervisor = host

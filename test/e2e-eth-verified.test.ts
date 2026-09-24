@@ -57,19 +57,23 @@ async function listen (handler: Parameters<typeof createServer>[1]): Promise<{ s
 
 it('loads a .eth name from verified IPFS content, refuses a tampered block, and grants the page no loopback privilege', async () => {
   await runPhase('eth-verified', async (check) => {
-    const gateway = await startFixtureGateway({ site: SITE, broken: BROKEN, script: SCRIPTED })
+    // Two gateways, each the only source of its sites: the one that lies about
+    // script.eth is dropped for the session, and broken.eth's refusal must
+    // still come from its own tampered block, on the other.
+    const gateway = await startFixtureGateway({ site: SITE, script: SCRIPTED })
+    const brokenGateway = await startFixtureGateway({ broken: BROKEN })
     const loopback = await listen((_req, res) => { res.writeHead(200, { 'access-control-allow-origin': '*', 'content-type': 'text/plain' }).end('loopback service') })
     const publicPage = await listen((_req, res) => { res.writeHead(200, { 'content-type': 'text/html' }).end('<!doctype html><title>public page</title><body>public</body>') })
     let app: Awaited<ReturnType<typeof launchElectron>> | undefined
     try {
-      gateway.tamper('broken', 'index.html')
+      brokenGateway.tamper('broken', 'index.html')
       gateway.tamper('script', 'app.js')
       app = await launchElectron({
         appPath: '.',
         args: [HERMETIC_RESOLVER, `--ip-address-space-overrides=${HOST}:${String(publicPage.port)}=public`],
         env: {
-          ORIVON_TEST_ETH_FIXTURES: JSON.stringify({ 'fixture.eth': `ipfs://${gateway.roots['site']!}`, 'broken.eth': `ipfs://${gateway.roots['broken']!}`, 'script.eth': `ipfs://${gateway.roots['script']!}` }),
-          ORIVON_TEST_IPFS_GATEWAYS: gateway.url
+          ORIVON_TEST_ETH_FIXTURES: JSON.stringify({ 'fixture.eth': `ipfs://${gateway.roots['site']!}`, 'broken.eth': `ipfs://${brokenGateway.roots['broken']!}`, 'script.eth': `ipfs://${gateway.roots['script']!}` }),
+          ORIVON_TEST_IPFS_GATEWAYS: `${gateway.url},${brokenGateway.url}`
         }
       })
       const running = app
@@ -88,21 +92,23 @@ it('loads a .eth name from verified IPFS content, refuses a tampered block, and 
       const fromPublic = await fetchFrom(publicView, `http://${HOST}:${String(loopback.port)}/`)
       check(`a .eth page reaches a loopback service exactly as a public page does (.eth: ${fromEth}; public: ${fromPublic})`, fromEth === fromPublic)
 
-      // Last, because a gateway that sends one bad block is dropped for the
-      // session, and this run has only the one.
       const scripted = await navigateToFixture(app, 'https://script.eth/', 'scripted fixture')
       const tamperedScript = await evaluateRetrying(scripted, async () => ({ ran: document.body.dataset['app'] ?? null, fetched: await fetch('/app.js').then((r) => r.status, () => 0) }))
       check(`a script whose block was tampered is refused: it never ran, and fetching it fails (${JSON.stringify(tamperedScript)})`, tamperedScript.ran === null && tamperedScript.fetched !== 200)
 
-      await navigateToFixture(app, 'https://broken.eth/', 'Cannot verify this site')
-      check('a page whose own block was tampered shows the error page, and nothing of it', true)
+      const brokenView = await navigateToFixture(app, 'https://broken.eth/', 'Cannot verify this site')
+      const brokenPage = await evaluateRetrying(brokenView, () => document.body.innerText)
+      const brokenBlock = brokenGateway.blockOf('broken', 'index.html')
+      check(`a page whose own block was tampered shows the error page naming that block, and nothing of it (${brokenPage.replace(/\s+/g, ' ').slice(0, 300)})`, brokenPage.includes(brokenBlock) && !brokenPage.includes('tampered fixture'))
 
       expect(page).toEqual({ secure: true, subtle: 'object', ran: 'ran' })
       expect(tamperedScript.ran).toBeNull()
       expect(fromEth).toBe(fromPublic)
+      expect(brokenPage).toContain(brokenBlock)
     } finally {
       if (app !== undefined) await closeElectronApp(app)
       await gateway.close()
+      await brokenGateway.close()
       loopback.server.close()
       publicPage.server.close()
     }

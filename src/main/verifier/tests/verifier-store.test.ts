@@ -13,6 +13,7 @@ function store (): { store: VerifierStore, dir: string } {
 afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }) })
 
 const root = (c: string): string => '0x' + c.repeat(64)
+const NOW = 1_850_000_000
 
 describe('VerifierStore', () => {
   it('reads nothing before anything is saved', () => {
@@ -23,16 +24,17 @@ describe('VerifierStore', () => {
 
   it('keeps a checkpoint across instances, and only ever a newer one', () => {
     const { store: s, dir } = store()
-    s.saveCheckpoint({ root: root('a'), timestamp: 1_700_000_000 })
-    s.saveCheckpoint({ root: root('b'), timestamp: 1_600_000_000 })
+    s.saveCheckpoint({ root: root('a'), timestamp: 1_700_000_000 }, NOW)
+    s.saveCheckpoint({ root: root('b'), timestamp: 1_600_000_000 }, NOW)
     expect(new VerifierStore(dir).checkpoint()).toEqual({ root: root('a'), timestamp: 1_700_000_000 })
-    s.saveCheckpoint({ root: root('c'), timestamp: 1_800_000_000 })
+    s.saveCheckpoint({ root: root('c'), timestamp: 1_800_000_000 }, NOW)
     expect(s.checkpoint()?.root).toBe(root('c'))
   })
 
-  it('refuses to save a malformed checkpoint', () => {
+  it('refuses to save a malformed checkpoint, or one dated in the future', () => {
     const { store: s } = store()
-    s.saveCheckpoint({ root: 'nope', timestamp: 1_700_000_000 })
+    s.saveCheckpoint({ root: 'nope', timestamp: 1_700_000_000 }, NOW)
+    s.saveCheckpoint({ root: root('d'), timestamp: NOW + 24 * 3600 }, NOW)
     expect(s.checkpoint()).toBeUndefined()
   })
 

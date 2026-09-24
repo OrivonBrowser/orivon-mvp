@@ -65,6 +65,14 @@ async function install (
     changed = true
   }
   const unchanged = existingPin !== null && existingPin !== undefined && existingPin.bundleHash === tree.root
+  if (unchanged && content !== undefined && !sameContent(existingPin.content, content)) {
+    // The same bundle under another CID: the pin must name the new one, or every update check fetches the bundle again.
+    const moved = fromBundleTree(canonicalOrigin, existingPin.bundleHash, existingPin.assets, existingPin.version, existingPin.pinnedAt, content)
+    await storage.writePin(canonicalOrigin, moved)
+    await storeDdoc(storage, canonicalOrigin, declaration)
+    await storage.clearStaging(canonicalOrigin)
+    return { pin: moved, changed }
+  }
   const pin = unchanged ? existingPin : fromBundleTree(canonicalOrigin, tree.root, tree.assets, manifest.version, now, content)
   if (!unchanged) {
     // Removed first, so a crash before the new one is written reads as "not
@@ -77,6 +85,10 @@ async function install (
   await storeDdoc(storage, canonicalOrigin, declaration)
   await storage.clearStaging(canonicalOrigin)
   return { pin, changed }
+}
+
+function sameContent (a: ContentAddress | undefined, b: ContentAddress): boolean {
+  return a !== undefined && a.cid === b.cid && a.via === b.via && a.block === b.block && a.pointersVerified === b.pointersVerified
 }
 
 /**

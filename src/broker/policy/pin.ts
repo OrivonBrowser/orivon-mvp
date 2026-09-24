@@ -62,7 +62,7 @@ export interface ContentAddress {
   readonly cid: string
   /** What the name's contenthash named: the CID itself, a signed IPNS key, or a DNSLink domain. */
   readonly via: 'ipfs' | 'ipns-key' | 'dnslink'
-  /** The finalized block the name was proven at; absent for a test build's fixture name. */
+  /** The block the name was proven at, the newest the light client had verified; absent for a test build's fixture name. */
   readonly block?: number
   /** Whether every pointer from the name to the CID was verified: false through a DNSLink. */
   readonly pointersVerified: boolean

@@ -53,13 +53,17 @@ describe('startHost', () => {
     running.push(host)
     const reply = await get(host.port, 'fixture.eth')
     expect(reply.status).toBe(502)
-    expect(reply.body).toContain('switched off')
+    expect(reply.body).toContain('the Ethereum light client is not running')
   })
 
-  it('fails every real name closed while the light client is switched off, and says so', async () => {
-    const host = await startHost(config(), deps())
+  it('fails every real name closed while the light client does not run, and says why on the page', async () => {
+    const host = await startHost({ ...config(), lightClientOff: 'the Ethereum light client cannot start: the newest checkpoint is 20 days old' }, deps())
     running.push(host)
-    expect((await get(host.port, 'vitalik.eth')).status).toBe(502)
+    const reply = await get(host.port, 'vitalik.eth')
+    expect(reply.status).toBe(502)
+    expect(reply.body).toContain('Cannot check this site right now')
+    expect(reply.body).toContain('the newest checkpoint is 20 days old')
+    expect(reply.body).not.toContain('switched off')
     expect(await host.answer({ kind: 'status' })).toEqual({ state: 'off' })
   })
 

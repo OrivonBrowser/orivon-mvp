@@ -30,7 +30,7 @@ export function renderLightClient (section: HTMLElement, view: LightClientView |
     heading,
     element('p', 'light-client-summary', view.summary),
     element('p', 'light-client-detail', view.checkpoint),
-    element('p', 'light-client-detail', 'It proves what a .eth name points to before the page loads. These servers are asked while it runs; they learn which names and content you look up, and nothing they send is used unchecked.')
+    element('p', 'light-client-detail', view.about)
   )
   const list = element('dl', 'light-client-endpoints')
   for (const { label, urls } of view.endpoints) {

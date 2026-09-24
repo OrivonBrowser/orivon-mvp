@@ -3,7 +3,7 @@ import { lightClientView } from '../status-view.js'
 import type { VerifierFacts } from '../status-view.js'
 
 const NOW = 1_790_000_000_000
-const ENDPOINTS = { executionRpcs: ['https://a.rpc', 'https://b.rpc'], consensusRpc: 'https://beacon', gateways: ['https://gw'] }
+const ENDPOINTS = { executionRpcs: ['https://a.rpc', 'https://b.rpc'], consensusRpc: 'https://beacon', gateways: ['https://gw'], ipnsNameServices: ['https://names'], dnsOverHttps: ['https://doh'] }
 const ROOT = '0x' + 'a'.repeat(64)
 
 function facts (overrides: Partial<VerifierFacts>): VerifierFacts {
@@ -11,11 +11,16 @@ function facts (overrides: Partial<VerifierFacts>): VerifierFacts {
 }
 
 describe('lightClientView', () => {
-  it('says the block it follows and when it last checked', () => {
+  it('says the block it follows and when that block was produced', () => {
     const view = lightClientView(facts({ lightClient: { state: 'synced', block: 26_047_527, at: NOW - 2 * 60_000 } }), NOW)
     expect(view.state).toBe('synced')
-    expect(view.summary).toBe('Following the chain: block 26,047,527, checked 2 minutes ago.')
+    expect(view.summary).toBe('Following the chain: block 26,047,527, produced 2 minutes ago.')
     expect(view.checkpoint).toBe('Checkpoint 3 hours old, last verified on this computer.')
+  })
+
+  it('stops saying synced once its newest block is old, whatever it last reported', () => {
+    const view = lightClientView(facts({ lightClient: { state: 'synced', block: 26_047_527, at: NOW - 12 * 60_000 } }), NOW)
+    expect(view).toMatchObject({ state: 'syncing', summary: 'Behind the chain: the newest block it has verified, 26,047,527, was produced 12 minutes ago.' })
   })
 
   it('says why it failed and when it tries again', () => {
@@ -35,16 +40,24 @@ describe('lightClientView', () => {
   })
 
   it('names a stale checkpoint and what fixes it', () => {
-    const view = lightClientView(facts({ checkpoint: { ok: false, reason: 'the newest checkpoint is 20.0 days old' } }), NOW)
+    const view = lightClientView(facts({ checkpoint: { ok: false, problem: 'too-old', source: 'release', ageSeconds: 20 * 86_400 } }), NOW)
     expect(view.state).toBe('failed')
-    expect(view.checkpoint).toBe('No usable checkpoint: the newest checkpoint is 20.0 days old.')
+    expect(view.checkpoint).toMatch(/^No usable checkpoint: the newest checkpoint \(shipped with this release\) is 20 days old, past the 14 days a checkpoint may be\. Installing a newer release/)
+  })
+
+  it('points at the clock, not a release, when the clock is behind the checkpoint', () => {
+    const view = lightClientView(facts({ checkpoint: { ok: false, problem: 'clock-behind' } }), NOW)
+    expect(view.checkpoint).toMatch(/clock is behind.*Setting the clock right/)
+    expect(view.checkpoint).not.toMatch(/newer release/)
   })
 
   it('lists every endpoint it contacts, by what each is for', () => {
     expect(lightClientView(facts({}), NOW).endpoints).toEqual([
       { label: 'Ethereum RPCs', urls: ['https://a.rpc', 'https://b.rpc'] },
       { label: 'Beacon API', urls: ['https://beacon'] },
-      { label: 'IPFS gateways', urls: ['https://gw'] }
+      { label: 'IPFS gateways', urls: ['https://gw'] },
+      { label: 'IPNS name services', urls: ['https://names'] },
+      { label: 'DNS-over-HTTPS, for DNSLink', urls: ['https://doh'] }
     ])
   })
 })

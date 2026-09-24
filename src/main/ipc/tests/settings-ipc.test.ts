@@ -112,7 +112,7 @@ describe('registerSettingsIpc', () => {
 })
 
 describe('registerSettingsIpc: the light client section', () => {
-  const VIEW = { state: 'synced' as const, summary: 'Following the chain.', checkpoint: 'Checkpoint 3 hours old.', endpoints: [] }
+  const VIEW = { state: 'synced' as const, summary: 'Following the chain.', checkpoint: 'Checkpoint 3 hours old.', about: 'It proves names.', endpoints: [] }
 
   it('answers lightClient with the current view, and null when there is no source', async () => {
     registerSettingsIpc(settingsWebContents, fakePermissions(), () => {}, undefined, { view: () => VIEW, subscribe: () => () => {} })

@@ -59,10 +59,12 @@ function sequenceStore (initial: Readonly<Record<string, string>>, post: HostDep
   }
 }
 
-const offResolver: NameResolver = {
-  id: 'ens',
-  topLevelDomains: ['eth'],
-  resolve: async () => { throw new ResolutionError('unavailable', 'the Ethereum light client is switched off, so no .eth name can be verified') }
+function offResolver (reason: string): NameResolver {
+  return {
+    id: 'ens',
+    topLevelDomains: ['eth'],
+    resolve: async () => { throw new ResolutionError('unavailable', reason) }
+  }
 }
 
 export async function startHost (config: HostConfig, deps: HostDeps): Promise<RunningHost> {
@@ -79,7 +81,7 @@ export async function startHost (config: HostConfig, deps: HostDeps): Promise<Ru
   const resolvers: NameResolver[] = []
   if (config.fixtures !== undefined && deps.fixturesAllowed) resolvers.push(createFixtureResolver(config.fixtures))
   if (config.lightClient === undefined) {
-    resolvers.push(offResolver)
+    resolvers.push(offResolver(config.lightClientOff ?? 'the Ethereum light client is not running, so no .eth name can be verified'))
   } else {
     lightClient = deps.startLightClient(config.lightClient, allowlisted([...config.lightClient.executionRpcs, config.lightClient.consensusRpc], deps.fetch, 'the light client'), deps.post)
     resolvers.push(createEnsResolver({

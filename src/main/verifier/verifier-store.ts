@@ -5,7 +5,7 @@
 import { mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { writeFileAtomic } from '../../broker/grants/node-ledger-storage.js'
-import { parseCheckpoint } from './checkpoint.js'
+import { FUTURE_TOLERANCE_SECONDS, parseCheckpoint } from './checkpoint.js'
 import type { Checkpoint } from './checkpoint.js'
 
 const DECIMAL = /^\d{1,20}$/
@@ -31,9 +31,13 @@ export class VerifierStore {
     return parseCheckpoint(readJson(this.checkpointPath))
   }
 
-  /** Keeps only a newer one: a host reporting an older checkpoint must not age the install. */
-  saveCheckpoint (checkpoint: Checkpoint): void {
-    if (parseCheckpoint(checkpoint) === undefined) return
+  /**
+   * Keeps only a newer one: a host reporting an older checkpoint must not
+   * age the install. One dated after `nowSeconds` is refused, since it would
+   * block every later save and then age out with nothing to replace it.
+   */
+  saveCheckpoint (checkpoint: Checkpoint, nowSeconds: number): void {
+    if (parseCheckpoint(checkpoint) === undefined || checkpoint.timestamp > nowSeconds + FUTURE_TOLERANCE_SECONDS) return
     const current = this.checkpoint()
     if (current !== undefined && current.timestamp >= checkpoint.timestamp) return
     this.write(this.checkpointPath, checkpoint)
