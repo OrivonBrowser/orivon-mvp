@@ -29,7 +29,8 @@ export function createFixtureResolver (names: Readonly<Record<string, string>>):
     topLevelDomains: ['eth'],
     async resolve (name) {
       const record = records.get(name)
-      if (record === undefined) throw new ResolutionError('not-found', `${name} is not a fixture name`)
+      // Not holding a name proves nothing about it, so this must not outrank another resolver's answer.
+      if (record === undefined) throw new ResolutionError('unavailable', `${name} is not a fixture name`)
       return [record]
     }
   }
