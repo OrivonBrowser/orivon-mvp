@@ -32,11 +32,18 @@ ENSIP-15 revision. A punycode (`xn--`) host is refused in this build. Chromium m
 Unicode host through IDNA before Orivon sees it, and that mapping has not been checked against
 ENSIP-15, so no internationalised `.eth` name resolves yet.
 
-**[`resolver.ts`](resolver.ts) reads the contenthash at the finalized block, and pins every call
-of one resolution to it.** The record carries that block number as its evidence. viem runs a
-CCIP-Read callback at `latest`, whatever block the first call named, so the resolver wraps the
-provider and rewrites each `eth_call` it forwards. An offchain answer is then checked by the
-resolver contract against the same state the record names.
+**[`resolver.ts`](resolver.ts) reads the contenthash at the newest block the light client has
+verified, and pins every call of one resolution to it.** The record carries that block number as
+its evidence. It is not the finalized block: finality lags the head by about 80 blocks, and a
+public RPC serves storage proofs only for recent blocks, so a call at the finalized block failed
+whenever the lag passed the RPC's proof window. The light client verifies the newest block with
+the same sync-committee signatures as a finalized one; what is given up is resistance to a reorg
+of the last few blocks, which could only matter for a name whose record changed in them.
+*Provisional*: an RPC with a longer proof window would allow the finalized block again.
+
+viem runs a CCIP-Read callback at `latest`, whatever block the first call named, so the resolver
+wraps the provider and rewrites each `eth_call` it forwards. An offchain answer is then checked by
+the resolver contract against the same state the record names.
 
 **A Universal Resolver revert is not always a proven absence.** `ResolverNotFound` and its kin
 mean the chain says there is nothing to load, which is `not-found`. `HttpError` and `ResolverError`

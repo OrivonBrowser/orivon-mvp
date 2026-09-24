@@ -83,15 +83,23 @@ function failureOf (error: unknown): ResolutionError {
       const errorName = revert.data?.errorName ?? 'an unknown revert'
       return new ResolutionError(REVERT_FAILURES[errorName] ?? 'unavailable', `the Universal Resolver reverted with ${errorName}`)
     }
-    return new ResolutionError('unavailable', error.shortMessage)
+    // viem's own message ("An unknown RPC error occurred") names nothing; the deepest cause says what failed.
+    const cause = error.walk()
+    return new ResolutionError('unavailable', cause instanceof Error && cause !== error ? cause.message : error.shortMessage)
   }
   return new ResolutionError('unavailable', error instanceof Error ? error.message : String(error))
 }
 
-async function finalizedBlock (provider: Eip1193Provider): Promise<bigint> {
-  const block = await provider.request({ method: 'eth_getBlockByNumber', params: ['finalized', false] })
+/**
+ * The newest block the light client has verified. Not `finalized`: that
+ * lags the head by about 80 blocks, and public RPCs serve proofs only for
+ * recent blocks, so a call there fails whenever finality lags past the
+ * RPC's proof window. README.md's Design notes say what that trades away.
+ */
+async function provenBlock (provider: Eip1193Provider): Promise<bigint> {
+  const block = await provider.request({ method: 'eth_getBlockByNumber', params: ['latest', false] })
   const number = (block as { number?: unknown } | null)?.number
-  if (typeof number !== 'string' || !/^0x[0-9a-f]+$/i.test(number)) throw new ResolutionError('unavailable', 'the provider returned no finalized block')
+  if (typeof number !== 'string' || !/^0x[0-9a-f]+$/i.test(number)) throw new ResolutionError('unavailable', 'the provider returned no verified block')
   return BigInt(number)
 }
 
@@ -120,7 +128,7 @@ export function createEnsResolver (options: EnsResolverOptions): NameResolver {
       const name = ensNameFromHost(host)
       let offchain = false
       try {
-        const block = await finalizedBlock(options.provider)
+        const block = await provenBlock(options.provider)
         const client = createPublicClient({
           // The provider is local; it retries its own upstream requests, and a
           // retry here would only delay a revert viem cannot tell from a fault.

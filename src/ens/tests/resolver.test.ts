@@ -20,7 +20,7 @@ const contenthashAbi = parseAbi(['function contenthash(bytes32 node) view return
 const batchGatewayAbi = parseAbi(['function query((address sender, string[] urls, bytes data)[]) returns (bool[] failures, bytes[] responses)'])
 
 const RESOLVER_ADDRESS = '0x231b0ee14048e9dccd1d247744d114a4eb5e8e63'
-const FINALIZED = 20_000_000n
+const PROVEN = 20_000_000n
 const cid = CID.createV1(0x70, await sha256.digest(new TextEncoder().encode('site')))
 const IPFS_CONTENTHASH = toHex(new Uint8Array([0xe3, 0x01, ...cid.bytes]))
 
@@ -39,7 +39,10 @@ function provider (answer: (call: Call) => Hex): Eip1193Provider & { calls: Call
     methods,
     async request ({ method, params }) {
       methods.push(method)
-      if (method === 'eth_getBlockByNumber') return { number: toHex(FINALIZED), hash: '0x' + '1'.repeat(64) }
+      if (method === 'eth_getBlockByNumber') {
+        if ((params as unknown[])[0] !== 'latest') throw new Error('only the newest verified block is asked for')
+        return { number: toHex(PROVEN), hash: '0x' + '1'.repeat(64) }
+      }
       if (method === 'eth_call') {
         const [tx, block] = params as [{ to: string, data: Hex }, unknown]
         const call = { to: tx.to, data: tx.data, block }
@@ -59,13 +62,13 @@ function answering (contenthash: Hex): (call: Call) => Hex {
 const noCcip = async (): Promise<Hex> => { throw new Error('no offchain lookup expected') }
 
 describe('the ENS resolver', () => {
-  it('asks the Universal Resolver for the contenthash at the finalized block, and decodes it', async () => {
+  it('asks the Universal Resolver for the contenthash at the newest verified block, and decodes it', async () => {
     const p = provider(answering(IPFS_CONTENTHASH))
     const records = await createEnsResolver({ provider: p, ccipRequest: noCcip }).resolve('vitalik.eth')
     expect(records).toEqual([{ type: 'contenthash', pointer: { kind: 'ipfs', cid: cid.toString() }, provenance: { via: 'chain', block: 20_000_000, offchain: false } }])
     expect(p.calls).toHaveLength(1)
     expect(p.calls[0]?.to.toLowerCase()).toBe(UNIVERSAL_RESOLVER)
-    expect(p.calls[0]?.block).toBe(toHex(FINALIZED))
+    expect(p.calls[0]?.block).toBe(toHex(PROVEN))
     const { args } = decodeFunctionData({ abi: universalResolverAbi, data: p.calls[0]!.data })
     const inner = decodeFunctionData({ abi: contenthashAbi, data: args[1] as Hex })
     expect(inner.args[0]).toBe(namehash('vitalik.eth'))
@@ -126,7 +129,7 @@ describe('the ENS resolver', () => {
     expect(asked[0]?.urls).toEqual([gateway])
     expect(asked[0]?.data).toBe('0xabcdef')
     // The gateway's answer goes back through a call at the same block, so the resolver contract checks it on proven state.
-    expect(p.calls.map((c) => c.block)).toEqual([toHex(FINALIZED), toHex(FINALIZED)])
+    expect(p.calls.map((c) => c.block)).toEqual([toHex(PROVEN), toHex(PROVEN)])
     const [response] = decodeAbiParameters([{ type: 'bytes' }, { type: 'bytes' }], `0x${p.calls[1]!.data.slice(10)}`)
     expect(response).toContain('feed')
   })
