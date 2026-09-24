@@ -1,6 +1,7 @@
 // Mounted `.eth` sites by host, kept a short while so one page's many
 // requests read one root without resolving the name for each.
 
+import { ResolutionError } from '../resolution/records.js'
 import type { MountedSite } from '../resolution/providers.js'
 import type { ResolutionRegistry } from '../resolution/registry.js'
 
@@ -8,6 +9,8 @@ import type { ResolutionRegistry } from '../resolution/registry.js'
 export const SITE_TTL_MS = 2 * 60_000
 /** A failure is remembered briefly, so a page's burst of requests fails once rather than once each. */
 export const FAILURE_TTL_MS = 5_000
+/** A light client fed a lie it keeps rejecting retries for over a minute; a tab gets its answer sooner. */
+export const MOUNT_TIMEOUT_MS = 25_000
 
 export interface SiteRecord {
   readonly site: MountedSite
@@ -23,7 +26,11 @@ interface Entry {
 export class Sites {
   private readonly entries = new Map<string, Entry>()
 
-  constructor (private readonly registry: ResolutionRegistry, private readonly now: () => number = Date.now) {}
+  constructor (
+    private readonly registry: ResolutionRegistry,
+    private readonly now: () => number = Date.now,
+    private readonly timeoutMs = MOUNT_TIMEOUT_MS
+  ) {}
 
   /** Throws a ResolutionError. */
   async get (host: string): Promise<SiteRecord> {
@@ -54,8 +61,22 @@ export class Sites {
   }
 
   private async mount (host: string): Promise<SiteRecord> {
-    const resolved = await this.registry.resolve(host)
-    const site = await this.registry.mount(resolved.name, resolved.records)
-    return { site, resolver: resolved.resolver, mountedAt: this.now() }
+    const controller = new AbortController()
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const deadline = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => {
+        controller.abort()
+        reject(new ResolutionError('unavailable', `${host} could not be verified within ${String(this.timeoutMs / 1000)} s`))
+      }, this.timeoutMs)
+    })
+    try {
+      return await Promise.race([deadline, (async () => {
+        const resolved = await this.registry.resolve(host, controller.signal)
+        const site = await this.registry.mount(resolved.name, resolved.records, controller.signal)
+        return { site, resolver: resolved.resolver, mountedAt: this.now() }
+      })()])
+    } finally {
+      clearTimeout(timer)
+    }
   }
 }

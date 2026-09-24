@@ -49,7 +49,7 @@ function hostConfig (): HostConfig {
   let lightClientConfig: HostConfig['lightClient']
   if (process.env['ORIVON_ETH_LIGHT_CLIENT'] !== 'off') {
     checkpoint = chooseCheckpoint({ root: shippedCheckpoint.root, timestamp: slotTimestamp(shippedCheckpoint.slot) }, stored.checkpoint(), Math.floor(Date.now() / 1000))
-    if (checkpoint.ok) lightClientConfig = { executionRpc: DEFAULT_ENDPOINTS.executionRpc, consensusRpc: DEFAULT_ENDPOINTS.consensusRpc, checkpoint: checkpoint.checkpoint.root }
+    if (checkpoint.ok) lightClientConfig = { executionRpcs: DEFAULT_ENDPOINTS.executionRpcs, consensusRpc: DEFAULT_ENDPOINTS.consensusRpc, checkpoint: checkpoint.checkpoint.root }
   }
   return {
     port: loopbackPort(),

@@ -7,7 +7,8 @@ import type { ContentRoot, PointerStep } from '../resolution/records.js'
 import type { DdocReport } from '../resolution/providers.js'
 
 export interface LightClientConfig {
-  readonly executionRpc: string
+  /** Asked in order: a request that fails or errors goes to the next. */
+  readonly executionRpcs: readonly string[]
   readonly consensusRpc: string
   /** A finalized beacon block root, chosen by the shell. */
   readonly checkpoint: string

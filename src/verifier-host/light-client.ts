@@ -2,10 +2,12 @@
 // resolver reads through. Before Helios loads, this process's global fetch
 // becomes the light client's allowlisted one, and WebSocket is removed:
 // Helios reaches the network only through globals, and nothing else here
-// uses them.
+// uses them. README.md's Design notes cover the two shims it needs.
 
 import { ResolutionError } from '../resolution/records.js'
 import type { WebFetch } from './egress.js'
+import { heliosError } from './helios-errors.js'
+import { failoverRpc } from './rpc-failover.js'
 import type { FromHost, LightClientConfig, LightClientState } from './protocol.js'
 import type { LightClient } from './service.js'
 
@@ -15,6 +17,8 @@ const SYNC_TIMEOUT_MS = 5 * 60_000
 const FIRST_RETRY_MS = 5_000
 const MAX_RETRY_MS = 5 * 60_000
 const REFRESH_MS = 60_000
+/** Helios falls back to a checkpoint compiled into it, about a year old, when handed a malformed one. */
+const CHECKPOINT = /^0x[0-9a-f]{64}$/
 
 interface Helios {
   request: (args: { method: string, params?: unknown }) => Promise<unknown>
@@ -35,8 +39,33 @@ async function finalizedTimestamp (helios: Helios): Promise<number | undefined> 
   return typeof block?.timestamp === 'string' ? Number(BigInt(block.timestamp)) : undefined
 }
 
+/**
+ * Helios's WASM timer panics, taking the whole client down, the first time
+ * a consensus request fails, unless it finds a worker-like global scope.
+ */
+function installTimerScope (): void {
+  const scope = class WorkerGlobalScope {
+    static [Symbol.hasInstance] (value: unknown): boolean { return value === globalThis }
+  }
+  Object.defineProperty(globalThis, 'WorkerGlobalScope', { value: scope, configurable: true, writable: true })
+}
+
 export function startHeliosLightClient (config: LightClientConfig, fetch: WebFetch, report: (message: FromHost) => void): LightClient {
-  globalThis.fetch = fetch as typeof globalThis.fetch
+  if (!CHECKPOINT.test(config.checkpoint)) throw new Error(`not a checkpoint: ${config.checkpoint}`)
+  const primary = config.executionRpcs[0]
+  if (primary === undefined) throw new Error('no execution RPC configured')
+  installTimerScope()
+  const nodeFetch = globalThis.fetch
+  const execution = failoverRpc(config.executionRpcs, fetch)
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    // Helios loads its own WASM from a data: URL through fetch; that never touches the network.
+    const request = new Request(input, init)
+    if (request.url.startsWith('data:application/wasm')) return await nodeFetch(request)
+    // Its RPC calls arrive as Request objects: method, headers and body live on the Request, not in init.
+    const body = request.method === 'GET' || request.method === 'HEAD' ? undefined : await request.arrayBuffer()
+    const forwarded: RequestInit = { method: request.method, headers: Object.fromEntries(request.headers), ...(body === undefined ? {} : { body }), signal: request.signal }
+    return request.url === primary || request.url === `${primary}/` ? await execution(request.url, forwarded) : await fetch(request.url, forwarded)
+  }) as typeof globalThis.fetch
   Object.defineProperty(globalThis, 'WebSocket', { value: undefined, configurable: true, writable: true })
 
   let state: LightClientState = { state: 'starting' }
@@ -65,7 +94,7 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
     setState({ state: 'syncing', since: Date.now() })
     try {
       const { createHeliosProvider } = await import('@a16z/helios')
-      const client = await createHeliosProvider({ executionRpc: config.executionRpc, consensusRpc: config.consensusRpc, checkpoint: config.checkpoint, network: 'mainnet', dbType: 'config' }, 'ethereum') as unknown as Helios
+      const client = await createHeliosProvider({ executionRpc: primary, consensusRpc: config.consensusRpc, checkpoint: config.checkpoint, network: 'mainnet', dbType: 'config' }, 'ethereum') as unknown as Helios
       helios = client
       await withTimeout(client.waitSynced(), SYNC_TIMEOUT_MS, 'syncing')
       await refresh(client)
@@ -95,7 +124,11 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
         if (client === undefined || state.state !== 'synced') {
           throw new ResolutionError('not-synced', state.state === 'failed' ? `the light client failed: ${state.reason}` : 'the light client is still syncing')
         }
-        return await client.request(args)
+        try {
+          return await client.request(args)
+        } catch (error) {
+          throw heliosError(error)
+        }
       }
     }
   }

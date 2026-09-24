@@ -81,7 +81,7 @@ export async function startHost (config: HostConfig, deps: HostDeps): Promise<Ru
   if (config.lightClient === undefined) {
     resolvers.push(offResolver)
   } else {
-    lightClient = deps.startLightClient(config.lightClient, allowlisted([config.lightClient.executionRpc, config.lightClient.consensusRpc], deps.fetch, 'the light client'), deps.post)
+    lightClient = deps.startLightClient(config.lightClient, allowlisted([...config.lightClient.executionRpcs, config.lightClient.consensusRpc], deps.fetch, 'the light client'), deps.post)
     resolvers.push(createEnsResolver({
       provider: lightClient.provider,
       ccipRequest: async (parameters) => await guardedCcipRequest(parameters, { fetch: deps.fetch, resolveHost: deps.resolveHost })
