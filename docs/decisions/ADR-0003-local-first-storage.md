@@ -1,6 +1,7 @@
 # ADR-0003: Local-first storage with per-app isolation
 
-- **Status:** accepted
+- **Status:** accepted; **amended 2026-09-24 (`ADR-0031`)** to let an app hold one
+  keyring-backed secret of its own, derived from and never equal to the identity seed
 - **Date:** 2026-08-18
 - **Type:** architecture
 - **Decided by:** AI recommendation, accepted by owner
@@ -8,7 +9,7 @@
 ## Decision
 All application data is stored **on the user's machine**. Orivon operates **no server for
 application data**, in the MVP or after it. Each app receives an isolated storage domain
-keyed by its origin, and identity secrets live outside every app's reach.
+keyed by its origin, and the identity seed lives outside every app's reach.
 
 Five storage tiers, deliberately distinct:
 
@@ -17,7 +18,7 @@ Five storage tiers, deliberately distinct:
 | **App code cache** | manifest + frontend assets fetched per ADR-0005 | `<userData>/apps/<origin>/code/` | broker only; apps cannot write here |
 | **App files** | app-managed data: torrent payloads, caches, resume state | `<userData>/apps/<origin>/files/` | that app, via `orivon.fs` |
 | **App web storage** | localStorage, IndexedDB, cookies, cache | a dedicated Electron `session` partition per origin | that app's renderer only |
-| **Browser secrets** | identity seed, grant ledger, settings | `<userData>/`, encrypted via Electron `safeStorage` (OS keychain) | **no app, ever** |
+| **Browser secrets** | the identity seed, grant ledger, settings | `<userData>/`, encrypted via Electron `safeStorage` (OS keychain) | **the seed itself: no app, ever.** An app may hold a *derived*, origin-bound secret of its own with a `secrets` grant (`ADR-0031`) -- ciphertext an app can never turn back into the seed, the same relationship `orivon.id`'s app keys already have to it |
 | **Browser state** | ordinary shell state that is neither secret nor app-owned, and bookmarks are the first thing in this tier | `<userData>/bookmarks.json`, plain JSON, no `safeStorage` | the shell only, never an app. **Added 2026-08-28.** The four original tiers had no row for this, and bookmarks were the first thing to fall into the gap. Not encrypted: a bookmark list is not a secret, and encrypting it would buy nothing while making the file harder to inspect or hand-edit |
 
 ## Context
@@ -34,6 +35,12 @@ trustlessness, and remote storage is by definition a party the user must trust.
   another app's data, breaking the permission model before it starts.
 - **Storing identity keys inside the app sandbox.** Rejected: apps must never hold key
   material. They receive per-origin *derived* keys and signatures, never the seed.
+- **Letting an app derive directly from the identity seed for its own secrets (`ADR-0031`'s own
+  question).** Rejected in favour of a dedicated salt and derivation path unrelated to `ADR-0010`'s
+  frozen one: signing is safe to expose because a signature cannot be inverted back into the seed,
+  but an app holding `decrypt` for a key derived straight from the seed would make "give this app
+  its own storage" a standing side-channel against the one secret this ADR exists to keep
+  untouchable.
 - **Letting apps write to their own code cache.** Rejected: an app that can rewrite its own
   code can escape the manifest the user granted capabilities against. Code is broker-managed
   and read-only to the app.

@@ -42,6 +42,14 @@ export type OrivonErrorCode =
   | 'exists'
   /** A broker fault. Should never be observed by an app, and is always logged. */
   | 'internal'
+  /**
+   * The operation was permitted but the resource it needs is not there right
+   * now -- `orivon.secrets`, when the identity seed it derives from has no OS
+   * keyring to persist in (ADR-0031). Distinct from `'denied'`: the app HOLDS
+   * the grant, and the same call may succeed later on a machine where a
+   * keyring becomes reachable.
+   */
+  | 'unavailable'
 
 export interface OrivonError extends Error {
   readonly code: OrivonErrorCode

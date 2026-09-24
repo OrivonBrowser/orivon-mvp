@@ -134,7 +134,16 @@ export const LIMITS = {
   /** The largest script `WebContext.evaluate` accepts, in UTF-8 bytes. */
   webContextScriptBytes: 4 * 1024 * 1024,
   /** The largest result `WebContext.evaluate` returns, measured as JSON text. */
-  webContextResultBytes: 1024 * 1024
+  webContextResultBytes: 1024 * 1024,
+  /**
+   * The largest plaintext `orivon.secrets.encrypt` accepts, in bytes
+   * (ADR-0031). PROVISIONAL: AI-chosen, awaiting owner confirmation --
+   * `docs/decisions/decision-log.md`. Sized for a wallet's seed material,
+   * session tokens or a small keystore file, not a bulk store: an app
+   * holding real bulk data wants `orivon.fs`, whose quota is declared and
+   * shown at grant time, not a byte ceiling fixed for every app alike.
+   */
+  secretBytes: 64 * 1024
 } as const
 
 export type Limits = typeof LIMITS
