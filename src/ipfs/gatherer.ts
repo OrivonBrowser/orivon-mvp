@@ -20,6 +20,8 @@ import { checkCidAccepted } from './verify-block.js'
 export interface IpfsGathererOptions {
   readonly fetch: Fetch
   readonly gateways: readonly string[]
+  /** w3name-style services, asked for an IPNS record after the gateways. */
+  readonly ipnsNameServices?: readonly string[]
   readonly resolveTxt: ResolveTxt
   readonly ipnsSequences: SequenceStore
   readonly limits?: Partial<IpfsLimits>
@@ -44,7 +46,7 @@ export function createIpfsGatherer (options: IpfsGathererOptions): DataGatherer 
   const source = new BlockSource(options.fetch, pool, limits)
   const resolvers = {
     ipns: async (key: string, signal: AbortSignal, onRefusal: (refusal: Refusal) => void) =>
-      await resolveIpnsKey(key, options.fetch, pool, options.ipnsSequences, limits.blockTimeoutMs, signal, onRefusal),
+      await resolveIpnsKey(key, options.fetch, { pool, nameServices: options.ipnsNameServices ?? [] }, options.ipnsSequences, limits.blockTimeoutMs, signal, onRefusal),
     resolveTxt: options.resolveTxt,
     maxHops: limits.maxPointerHops
   }

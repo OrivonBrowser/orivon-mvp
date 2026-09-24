@@ -9,7 +9,7 @@ every pointer and every byte was verified.
 **Not tied to Electron.** Durable. It runs over an injected `fetch` and an injected TXT resolver.
 
 **What it depends on.** [`../resolution/`](../resolution/); `multiformats`, `@ipld/dag-pb`,
-`ipfs-unixfs-exporter` (path resolution and file reads, HAMT directories included) and `ipns`
+`ipfs-unixfs` and `ipfs-unixfs-exporter` (path resolution, HAMT directories included), and `ipns`
 (record parsing and signature checks). Helia and `@helia/verified-fetch` are out: they pull in
 `node-datachannel`, a native module (Rule 8).
 
@@ -61,5 +61,20 @@ record is not treated as a lie, because it was genuinely signed.
 would make a site's root a subdirectory of another DAG. That is legal IPFS, but nothing in this
 build needs it, and refusing it keeps one root per site.
 
-**Raw blocks, not CARs, are what this build fetches.** One verified block per request is the
-simplest stream to bound and to fail over between gateways.
+**Raw blocks, not CARs, are what this build fetches.** Measured against three public gateways,
+raw blocks at 8 to 16 in flight fetched a 30 MB file in 4 to 7 seconds in every condition, while
+one CAR per file took 5 to 70 seconds, streamed with no failover partway through. Raw also gives
+failover per block, bounded work per request, and byte ranges without asking the gateway for them.
+
+**A file's bytes are read by [`file-reader.ts`](file-reader.ts), not by the exporter.** The
+exporter's own file reader raises a block failing two or more levels down a second time, as an
+unhandled rejection, and an unhandled rejection ends the process running it. One bad block from a
+hostile gateway would then take down the verifier host. The reader here walks the same UnixFS
+nodes, starts at most eight fetches ahead with every failure observed, checks each child against
+the size its parent declared, and refuses a DAG deeper than `maxDagDepth`. The exporter still
+resolves paths, which is where HAMT directories need it.
+
+**An IPNS record may come from a name service as well as a gateway**
+([`ipns.ts`](ipns.ts)). Some names publish their record only to a service such as w3name, where
+no gateway's routing finds it. A record from either is checked the same way, and a forged one is
+refused and named as a refusal.

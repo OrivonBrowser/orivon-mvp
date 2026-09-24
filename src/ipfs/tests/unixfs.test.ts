@@ -7,6 +7,11 @@ import { DEFAULT_LIMITS } from '../limits.js'
 import type { IpfsLimits } from '../limits.js'
 import { openPath, pathSegments } from '../unixfs.js'
 import { buildDag, fakeGateways } from './dag.test-helpers.js'
+import { fixedSize } from 'ipfs-unixfs-importer/chunker'
+import { balanced } from 'ipfs-unixfs-importer/layout'
+import * as dagPb from '@ipld/dag-pb'
+import { UnixFS } from 'ipfs-unixfs'
+import { sha256 } from 'multiformats/hashes/sha2'
 
 const BIG = new Uint8Array(700_000).map((_, i) => (i * 31) % 251)
 const dag = await buildDag({
@@ -103,6 +108,56 @@ describe('openPath', () => {
   it('stops a walk that needs more blocks than one request may use', async () => {
     const { s } = source({ maxBlocksPerOpen: 2 })
     await expect(bytes(s, '/big.bin')).rejects.toMatchObject({ failure: 'unverifiable' })
+  })
+})
+
+describe('a file several levels deep', async () => {
+  const DEEP = new Uint8Array(40_000).map((_, i) => (i * 7) % 251)
+  const deep = await buildDag({ 'deep.bin': DEEP }, { chunker: fixedSize({ chunkSize: 100 }), layout: balanced({ maxChildrenPerNode: 4 }) })
+  const deepSource = (limits: Partial<IpfsLimits> = {}): { s: BlockSource, gw: ReturnType<typeof fakeGateways> } => {
+    const gw = fakeGateways(deep.blocks)
+    return { s: new BlockSource(gw.fetch, new GatewayPool(['https://a.gateway'], 4), { ...DEFAULT_LIMITS, ...limits }), gw }
+  }
+  const read = async (s: BlockSource, range?: { start: number, end: number }): Promise<Buffer> => {
+    const file = await openPath(s, deep.root, '/deep.bin', range, signal, () => {})
+    const parts: Uint8Array[] = []
+    for await (const chunk of file.body) parts.push(chunk)
+    return Buffer.concat(parts)
+  }
+
+  it('reads whole, and by any range, across every level', async () => {
+    expect(same(await read(deepSource().s), DEEP)).toBe(true)
+    for (const range of [{ start: 0, end: 0 }, { start: 99, end: 100 }, { start: 12_345, end: 23_456 }, { start: 39_999, end: 39_999 }]) {
+      expect(same(await read(deepSource().s, range), DEEP.slice(range.start, range.end + 1))).toBe(true)
+    }
+  })
+
+  it('fails a tampered leaf deep in the DAG as unverifiable, and nothing escapes unhandled', async () => {
+    const { s, gw } = deepSource()
+    for (const key of deep.blocks.keys()) if (CID.parse(key).code === 0x55) gw.tamper(key)
+    await expect(read(s)).rejects.toMatchObject({ failure: 'unverifiable' })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+  })
+
+  it('refuses a DAG deeper than the limit', async () => {
+    await expect(read(deepSource({ maxDagDepth: 2 }).s)).rejects.toMatchObject({ failure: 'unverifiable', message: expect.stringMatching(/deeper than 2/) })
+  })
+})
+
+describe('a file whose sizes lie', () => {
+  it('fails rather than shift or pad the bytes it serves', async () => {
+    const blocks = new Map<string, Uint8Array>()
+    const put = async (code: number, bytes: Uint8Array): Promise<CID> => {
+      const cid = CID.createV1(code, await sha256.digest(bytes))
+      blocks.set(cid.toString(), bytes)
+      return cid
+    }
+    const leaf = await put(0x55, new TextEncoder().encode('abc'))
+    const file = await put(0x70, dagPb.encode({ Data: new UnixFS({ type: 'file', blockSizes: [5n] }).marshal(), Links: [{ Hash: leaf, Tsize: 3 }] }))
+    const root = await put(0x70, dagPb.encode({ Data: new UnixFS({ type: 'directory' }).marshal(), Links: [{ Hash: file, Name: 'x', Tsize: 10 }] }))
+    const s = new BlockSource(fakeGateways(blocks).fetch, new GatewayPool(['https://a.gateway'], 4), DEFAULT_LIMITS)
+    const opened = await openPath(s, root, '/x', undefined, signal, () => {})
+    await expect((async () => { for await (const _ of opened.body) { void _ } })()).rejects.toMatchObject({ failure: 'unverifiable', message: expect.stringMatching(/malformed/) })
   })
 })
 

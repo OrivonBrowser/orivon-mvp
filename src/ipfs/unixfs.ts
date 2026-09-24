@@ -9,6 +9,7 @@ import { ResolutionError } from '../resolution/records.js'
 import type { GatherRange, GatheredFile, Refusal } from '../resolution/providers.js'
 import { blockstoreFor } from './blockstore.js'
 import type { BlockSource } from './blockstore.js'
+import { readFileRange } from './file-reader.js'
 
 const INDEX = 'index.html'
 
@@ -64,9 +65,17 @@ export async function openPath (source: BlockSource, root: CID, pathname: string
   }
   if (entry.type !== 'file' && entry.type !== 'raw' && entry.type !== 'identity') throw new ResolutionError('not-found', `${pathname} is not a file`)
   const size = Number(entry.size)
-  const offset = range?.start ?? 0
-  const length = range === undefined ? undefined : range.end - range.start + 1
-  const content = entry.content({ offset, ...(length === undefined ? {} : { length }), signal })
+  const start = range?.start ?? 0
+  const end = range?.end ?? size - 1
+  const node = entry.node
+  // blockstoreFor yields each verified block whole, as one chunk.
+  const get = async (cid: CID): Promise<Uint8Array> => {
+    for await (const block of store.get(cid)) return block
+    throw new ResolutionError('unavailable', `block ${cid.toString()} came back empty`)
+  }
+  const content = entry.type === 'file'
+    ? readFileRange(node as Parameters<typeof readFileRange>[0], get, start, end, source.limits)
+    : (async function * () { if (size > 0) yield (node as Uint8Array).subarray(start, end + 1) })()
   return {
     servedPath: `/${served.join('/')}`,
     size,
