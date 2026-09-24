@@ -69,7 +69,7 @@ throw anything away.
 | [`src/broker/`](src/broker/) | Grants, prompts, session partitions, handle tables | Partly: the decisions are portable, the OS plumbing relies on Electron |
 | [`src/main/`](src/main/) | Window, tabs, consent dialogs, permissions, app install, subsystem registry | **Entirely. Knowingly disposable** |
 | [`src/preload/`](src/preload/) | The privilege boundary | **Entirely.** "preload" is an Electron concept |
-| [`src/loader/`](src/loader/) | Manifest discovery, fetch, cache, hash-pinning, the update decision | Partly: the update decision is pure policy; fetching and serving the cache are Electron-specific machinery |
+| [`src/loader/`](src/loader/) | Manifest discovery, fetch, cache, hash-pinning, the site's published hash tree, the update decision | Partly: the update decision is pure policy; fetching and serving the cache are Electron-specific machinery |
 | [`src/shim/`](src/shim/) | Node's `net`/`dgram`/`fs` over `orivon.*` | **Entirely.** A compatibility layer, by design temporary |
 | [`src/renderer/`](src/renderer/) | Browser chrome UI | **Entirely** |
 | [`test/apps/`](test/apps/) | The apps this repository's own test suite serves: the e2e fixture and an Orivon-native demo. Ported third-party apps live in `orivon-ports` | **No.** They touch only `orivon.*`, exactly like a third-party app |
@@ -153,7 +153,9 @@ was simply overlooked.
 
 - **App signing, cut from v0.** With one publisher it is capability-identical to no signing,
   nothing specified the mechanism, and it would have put a red UNSIGNED badge next to
-  *"connect to any computer on the internet"* in the launch clip. Integrity is hash-pinning.
+  *"connect to any computer on the internet"* in the launch clip. Integrity is hash-pinning,
+  and a site can publish its bundle hash tree, which the Web3 Score page compares with the pin
+  (DDOC, `ADR-0029`).
 - **MKV playback, cut.** There is no fallback path, only a remuxer, and that is post-launch
   work. v0 plays MP4/H.264, and
   [`README.md`](README.md#known-limitations-of-v0) carries the user-facing statement of it.

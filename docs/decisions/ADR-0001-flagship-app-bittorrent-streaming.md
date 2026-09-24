@@ -70,7 +70,9 @@ Seven properties, and torrent streaming is the only candidate with all of them:
 the infohash *is* the trust root: self-verifying, requiring zero DNS trust and zero human
 judge. Fetching from a swarm has no single trusted party. So the honest, locally-verifiable
 trust indicator (ADR-0003) has a perfect showcase on day one, *without* the trustless
-resolution layer that the DDOC / site-level ladder would have required.
+resolution layer that the DDOC / site-level ladder would have required. *(Amended 2026-09-24:
+DDOC never required trustless resolution; see `ADR-0006`'s amendment of that date and
+`ADR-0029`.)*
 
 ## Consequences
 - Commits the MVP to real TCP/UDP sockets and a listening socket in month 1, precisely the

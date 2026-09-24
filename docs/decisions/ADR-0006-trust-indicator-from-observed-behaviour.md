@@ -16,7 +16,8 @@ from two sources that are **automatic and require no judge and no DNS**:
 
 Defer only what genuinely cannot be decided automatically: **source-code honesty** (needs a
 judge) and **DDOC** (needs trustless DNS). Build the **hook** that lets judged scores attach
-later, via bundle-hash pinning, without building a judge.
+later, via bundle-hash pinning, without building a judge. *(Amended 2026-09-24, below: DDOC
+does not need trustless DNS, and ships as evidence.)*
 
 ## Context
 An earlier draft of `mvp-scope.md` cut the indicator down to content-addressing only. The
@@ -151,7 +152,8 @@ No provider exists yet, so no judged level is ever displayed in month 1.
 
 ## Which of the existing published levels this delivers
 - **Site L1** ("standard website, no DDOC"): automatic ✅
-- **Site L2** ("supports DDOC"): deferred, needs trustless DNS ❌
+- **Site L2** ("supports DDOC"): deferred, needs trustless DNS ❌ *(amended 2026-09-24: DDOC
+  ships as evidence, below)*
 - **Site L3** ("full stack runs entirely locally"): automatic ✅ *(reinstated)*
 - **Site L4**. The *"executes no external code without consent"* half is automatic via the
   broker ✅; the *"open source"* half needs a judge ❌
@@ -207,6 +209,18 @@ the Reasoning section or the ladder table above; both remain correct about *how*
 graded. What is missing is a further axis, *how much* of the running app that grading
 actually reaches, and the full reasoning for it, deliberately not resolved here, is recorded
 as `open-questions.md` A166 for whoever builds the real measurement.
+
+## Amendment, 2026-09-24: DDOC is automatic, and does not need trustless DNS
+
+DDOC is the website axis of Trustlessity. Whether a DNS answer can be trusted is a question for
+the connection axis, which this ADR already scores separately, so DDOC never depended on
+trustless resolution; the Decision's "needs trustless DNS" and the Site L2 line above are
+withdrawn. `ADR-0029` delivers DDOC automatically, the way this ADR delivers everything else:
+the site publishes its bundle hash tree, and the Web3 Score page shows whether the pinned bundle
+matches it (verified, failed with the differing files named, not published, or not checked). It
+is shown as evidence and never as a grade, and it blocks nothing. Its anchor in this build is
+the site's own host; a record held off the host is left out for scope, not for any dependency on
+trustless resolution. The D-ladder is unchanged, and trustless resolution landing adds D4 only.
 
 ## Reversibility
 - **Cost to reverse:** cheap to extend, expensive to retract. Levels shown once become claims

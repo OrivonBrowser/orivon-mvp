@@ -142,7 +142,8 @@ pinned asset set never covered (T21). The signed bundle is never touched.
 amendment solved prompt fatigue that cannot yet occur.
 
 **What v0 ships instead:**
-- **Hash-pinning (TOFU on the bundle)** as the sole integrity mechanism.
+- **Hash-pinning (TOFU on the bundle)** as the sole integrity mechanism. *(Amended 2026-09-24,
+  below: the site also publishes its hash tree, shown as evidence.)*
 - Re-consent on hash change, on **capability-pattern widening** (a subset check, not a
   kind comparison, `capability-api.md` open item 2), or on a **version rollback**.
 - Cached assets served at the app's own origin with a **fail-closed** rule: a same-origin
@@ -153,6 +154,16 @@ amendment solved prompt fatigue that cannot yet occur.
 
 Signing returns when a second publisher exists, which is also when its stated justification
 first applies.
+
+## Amendment, 2026-09-24: the site publishes its hash tree (`ADR-0029`)
+
+Hash-pinning is no longer the only integrity fact. A site publishes the hash tree of its bundle
+at `/.well-known/orivon-ddoc.json`, and the Web3 Score page shows whether the pinned bundle
+matches it (DDOC). This is the DDOC use the Consequences above anticipate for cached app code.
+It is evidence, not a gate: the pin, the re-consent rules and the fail-closed serving rule above
+are unchanged, and a missing or mismatched tree never stops an install. Its anchor is the site's
+own host, which a compromised host can rewrite along with the files; `ADR-0029` states what it
+does and does not catch.
 
 ## Reversibility
 - **Cost to reverse:** cheap. Nothing prevents bundling an app later if there is a reason.

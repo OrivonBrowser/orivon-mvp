@@ -80,6 +80,7 @@ regardless of the others.
 | **Capability broker**: manifest, grants, per-origin enforcement | This *is* the product. `ADR-0002` |
 | **`orivon-node-shim`** | Load-bearing: without it the flagship cannot be a URL-delivered app. `ADR-0005` |
 | URL-addressed app fetch + cache + integrity check | The "apps are URLs" claim. `ADR-0005` |
+| **DDOC**: a site publishes its bundle hash tree, and the Web3 Score page shows whether the pinned bundle matches it | The publisher's own statement of which bundle it ships, which a Web3 Score provider can attest to; the evidence behind site L2. Automatic, shown as evidence, and never blocking a load. Anchored on the site's own host in this build, *provisional* until an off-host record carries the root. `ADR-0029` |
 | **UDP sockets** (`net.udpBind`) | The flagship's DHT and peer exchange need real UDP, not just TCP. `ADR-0001`'s own Consequences section names this directly: choosing the flagship "commits the MVP to real TCP/UDP sockets and a listening socket in month 1" |
 | **Torrent app with streaming** | The flagship and the only tier-4 app. `ADR-0001` |
 | Nostr via injected NIP-07 over `orivon.id` | ~1 day, proves the identity model, zero frontend written |
@@ -101,8 +102,8 @@ Real parts of Orivon, deliberately not in month 1.
 | Item | Why deferred |
 |---|---|
 | **Judged** score levels (site L4 "open source", L5) | No provider exists yet. The MVP ships bundle-hash pinning so attestations can attach later without rework. `ADR-0006` |
-| DDOC, and site L2 | Blocked on trustless resolution: its DNS anchor is forgeable on ICANN domains. A4b |
-| Trustless resolution (ENS and friends) | Real work; also a **prerequisite for DDOC and site-level scores** |
+| DDOC's off-host anchor: a DNS or ENS record carrying the bundle root | Scope. It is what catches a host compromised well enough to rewrite both its files and its tree; the same-host tree already gives providers the publisher's statement. `ADR-0029` |
+| Trustless resolution (ENS and friends) | Real work, on the connection axis; it adds the delivery ladder's D4 rung |
 | IPFS / Arweave data gathering | Second delivery path; HTTPS suffices to prove the model |
 | App store | Needs apps first. Developer mode covers month 1 |
 | Dashboard **widget/extension platform**: installed apps placing their own widgets, an App Store, Wallet and Network widgets | Pure surface area; zero contribution to the metric. (The new-tab page itself, a grid with real bookmarks and two inert app shortcuts, shipped 2026-08-28 as an IN-table item above; this row is the pluggable platform underneath it, not the page) |

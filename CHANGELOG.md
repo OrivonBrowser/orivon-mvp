@@ -12,6 +12,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Added
 
+- **A site can publish its bundle hash tree, and the Web3 Score page shows whether it matches
+  (DDOC).** The site puts `/.well-known/orivon-ddoc.json` beside its manifest: the bundle hash and
+  every file's leaf. The loader fetches it with the bundle and stores it beside the pin. The site
+  info's Web3 Score page then reads verified, failed (naming the files that differ), not
+  published, or not checked. Nothing about it blocks an install. `docs/architecture/bundle-hash.md`
+  specifies the file and how a tool writes one from a static folder.
+
 - **App tabs route `XMLHttpRequest` and `EventSource` to granted hosts, as they route
   `fetch()`.** A routed request follows redirects, streams its response, accepts `Blob`,
   `FormData` and stream bodies, and waits for a free connection at the app's socket limit instead

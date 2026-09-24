@@ -101,6 +101,8 @@ guessed. Rows with no ID were lifted out of the prose of the documents named bes
 | `d-0098` | 2026-09-23 | A TLS option that unbinds the certificate from the granted name (`rejectUnauthorized: false`, the app's own `ca`, another `servername`) adds `checkConnect`'s resolve-once address check, and only the checked literal is dialled. AI; awaits owner confirmation | A248, ADR-0017, `../architecture/security-model.md` T12, `../../src/broker/README.md` |
 | `d-0099` | 2026-09-23 | A custom `checkServerIdentity` runs in the shim, in Node's order, and its connection is address-checked; SNI defaults to the host; `https` sends the Host header's name as SNI, as Node's agent does. AI | `../../src/shim/README.md` |
 | `d-0100` | 2026-09-23 | STARTTLS (`tls.connect({ socket })`) stays refused by name. AI | A226 |
+| `d-0101` | 2026-09-24 | A site publishes its bundle hash tree at `/.well-known/orivon-ddoc.json`, root and every leaf; the Web3 Score page shows DDOC as verified, failed (naming the files), not published or not checked; none of them blocks a load, since acting on a failure is the Web3 Score's job. Owner | ADR-0029, `../architecture/bundle-hash.md` |
+| `d-0102` | 2026-09-24 | DDOC does not depend on trustless resolution: it is the website axis, and trust in a DNS answer is the connection axis's question. DDOC's anchor in this build is the site's own host, *provisional*. Reverses A4b's premise. Owner | ADR-0029, ADR-0006, A4b, `../mvp-scope.md` |
 
 ## Directives
 

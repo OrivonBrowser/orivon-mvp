@@ -84,9 +84,11 @@ about where Orivon is going. The difference matters, so it is spelled out:
   cannot send or receive. The wallet is a long-term goal rather than a rejected idea: the design
   has three layers (Accounts, Crypto, Address book), and this MVP ships only the first. The
   other two need a meaningfully different security model and come later.
-- **No ENS, no IPFS, no DDOC yet.** All three are real parts of the plan. Trustless name
-  resolution in particular is substantial work, and much of the rest depends on it landing
-  first.
+- **No ENS or IPFS yet, and DDOC only against the site's own host.** Both are real parts of the
+  plan. Trustless name resolution in particular is substantial work. DDOC ships in this build as
+  evidence on the Web3 Score page: a site publishes its bundle hash tree, and the page shows
+  whether the pinned bundle matches it. A record held off the host, which would catch a host
+  compromised well enough to rewrite both, is not built.
 - **No token, chain, DAO or governance *in the product*.** Orivon does have a
   [DAO plan](https://github.com/OrivonBrowser/orivon-docs): treasury, merit-tracked
   contribution, the lot. It is organisational rather than a browser feature, so it lives outside
@@ -120,7 +122,7 @@ Strictly dependency-ordered; each step needs the one before it.
 
 **Deliberately deferred.** These are choices, not oversights, and every one of them is still on
 the long-term plan ([`docs/mvp-scope.md`](docs/mvp-scope.md)): trustless name resolution (ENS
-and friends) · DDOC · IPFS and Arweave as a second delivery path · an app store · the wallet's
+and friends) · DDOC's off-host anchor · IPFS and Arweave as a second delivery path · an app store · the wallet's
 Crypto and Address-book layers · identity export and backup · `subprocess` and `hid`
 capabilities · signed Windows and macOS installers.
 

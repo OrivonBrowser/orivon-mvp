@@ -56,7 +56,8 @@ build step that percent-encodes more aggressively than the WHATWG URL Standard p
 that is refused outright and can never be pinned. `new URL(...).pathname` leaves `@`, `~`, `(`,
 `)`, `,`, `=`, `+`, `$`, `&` and `'` **unencoded**, so `/img/logo@2x.png` is canonical and
 `/img/logo%402x.png` is not, even though a server would serve either. Derive asset paths by
-running the fetch URL through a URL parser, never by encoding a filename yourself.
+running the fetch URL through a URL parser. A tool that starts from filenames follows
+§Writing one from a static folder, below, which says exactly which characters to escape first.
 
 **Only `https:` and `http:` URLs yield a canonical path.** Every other scheme returns nothing.
 A `file:` URL parses perfectly well and has a `pathname` that reads exactly like an asset path,
@@ -381,6 +382,63 @@ Two further properties, learned the hard way here:
 - **Copy the asset list; do not alias it.** A constructor that validates a caller's array and then
   stores it by reference can have every check undone afterwards. In TypeScript, `readonly` is a
   compile-time claim and buys nothing at runtime.
+
+## Where a publisher declares it
+
+A site publishes its own tree (DDOC, `ADR-0029`) at `/.well-known/orivon-ddoc.json`, beside the
+manifest. **The file is not a leaf**: a root cannot describe the file that holds it, and a
+manifest whose `assets` names it is refused.
+
+```json
+{
+  "bundleHash": "sha256:<64 lowercase hex>",
+  "leaves": {
+    "/.well-known/orivon.json": "sha256:<64 lowercase hex>",
+    "/index.html": "sha256:<64 lowercase hex>"
+  }
+}
+```
+
+- `bundleHash` is the root, encoded as §Encoding the root as a string says.
+- `leaves` has one key per leaf, including the manifest and the entry. The key is the canonical
+  path and the value is that leaf's digest, in the same encoding.
+- **It is read strictly.** Each field must be an own property of the right type. A digest must be
+  exactly `sha256:` plus 64 lowercase hex digits, never repaired. Every key must be a valid
+  canonical path. There must be at least one key and at most 4096. The file may be at most
+  656,384 bytes: 4096 lines of 160 bytes, plus 1 KiB.
+- **A file that fails any of these reads as "not published"**, never as an error, and it never
+  stops a load.
+- A browser compares the file with what it pinned. It shows DDOC as verified only when the root
+  and every leaf match.
+
+### Writing one from a static folder
+
+The rules in §Canonical path reject and never repair. A tool that starts from filenames must
+therefore derive each path the way a request would carry it:
+
+1. **Split** the file's path, relative to the folder, into segments.
+2. **Escape three characters** in each segment: `%` as `%25`, `?` as `%3F` and `#` as `%23`.
+   Nothing else. `encodeURIComponent` over-encodes `@`, `(` and the rest, and its output is
+   refused.
+3. **Parse** with `new URL('/' + segments.join('/'), 'https://x.invalid/').pathname`.
+4. **Check the round trip:** decoding the result must give back `'/' + segments.join('/')`. The URL
+   parser silently drops tabs and newlines, trims a trailing space and turns `\` into `/`. A file
+   whose name makes it do any of that has no canonical path. Refuse it, rather than publish a
+   path that serves a different file.
+
+Then apply §Rejection table and §Collision key.
+
+The manifest's `assets` lists every file except the manifest, the tree and the entry, each as its
+canonical path without the leading `/`. It follows these rules:
+
+- Leave the `assets` key out when there are no such files, because an empty array is refused.
+- The manifest may be at most 278,400 bytes (`MAX_MANIFEST_BYTES`).
+- `assets` may hold at most 4094 entries, because the manifest and the entry take two of the
+  4096 slots.
+- Write the manifest before hashing, because its bytes are a leaf.
+
+`orivon-ports` implements this recipe as `orivon-port hash <dir>`, and runs it on every tree it
+prepares.
 
 ## What this document does not define
 

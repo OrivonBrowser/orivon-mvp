@@ -20,9 +20,10 @@ Canonical everywhere. Three expansions are still in circulation:
 *Confirmation* is what is already published, so the live docs need no correction, and it is the
 honest word: *Certification* implies an authority issuing a certificate, which is not what the
 mechanism does. It verifies that received data matches what the domain owner published, on the
-owner's own say-so. That distinction matters here specifically: `open-questions.md` C1 records
-that the DNS trust root is forgeable on ICANN domains without DNSSEC, so *Certification* would
-oversell precisely the weakest link.
+owner's own say-so. That distinction matters here specifically: in this build the published tree
+sits on the site's own host (`ADR-0029`), and `open-questions.md` C1 records that the vision's DNS
+trust root is forgeable on ICANN domains without DNSSEC, so *Certification* would oversell
+precisely the weakest link.
 
 **Action outstanding:** correct the other two documents (`Posts/Technical Specifications`,
 `Old-Private-Plan/Glossario`) to match. Not blocking the MVP.

@@ -104,7 +104,8 @@ field is ignored, and the loader logs a warning naming it. An unknown field anyw
   "entry": "index.html",
   "assets": ["style.css", "app.js"],  // every other frontend file; omit if entry is the whole app
   // NOTE: "publisherKey" is CUT from v0. See "Signing is not in
-  // v0" below. Every month-1 app is unsigned; integrity rests on hash-pinning alone.
+  // v0" below. Every month-1 app is unsigned; integrity rests on hash-pinning, with
+  // the site's published hash tree (/.well-known/orivon-ddoc.json) shown as DDOC evidence.
 
   "capabilities": {
     "net": {
@@ -425,6 +426,8 @@ justification, first becomes possible.
 
 A normal page stays a normal page. An origin becomes an app when a manifest is found at
 `https://<origin>/.well-known/orivon.json`, which runs the ADR-0005 flow (fetch → cache → pin).
+The site's published hash tree, `/.well-known/orivon-ddoc.json`, is fetched beside the manifest
+and kept with the pin as DDOC evidence; it decides nothing about the install (`ADR-0029`).
 Consent is then asked once, before the app's own code runs, for the app's whole declared
 capability set (`ADR-0012`).
 

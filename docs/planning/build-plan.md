@@ -178,7 +178,8 @@ the corpus and needs a live `context7` check before writing the wiring.
 > set (`ADR-0012`). See `docs/planning/compatibility-matrix.md` for the cell-by-cell detail.
 
 > **There is no publisher key to pin.** Publisher signing is cut from v0 entirely (`ADR-0005`).
-> What v0 ships is hash-pinning alone, fully specified by `ADR-0009` and `bundle-hash.md`.
+> What v0 ships is hash-pinning, fully specified by `ADR-0009` and `bundle-hash.md`, and the
+> site's own published hash tree shown as DDOC evidence (`ADR-0029`).
 
 **5. Torrent app.** `webtorrent` via the shim, player UI, magnet input, file list, resume.
 Ships as a pre-built app asset (see Platform policy).

@@ -122,7 +122,9 @@ runtime-observed (files a page actually loads, via headless Chromium); this cons
 static (files in the cached bundle). DDOC's trust anchor is DNS, forgeable on ICANN domains
 (`open-questions.md` A4b); this construction's is TOFU at install. And `open-questions.md` C2
 already records DDOC's unlisted-file rule as unsound, and the fail-closed pinned-asset set this ADR
-enables is the strict-mode rule that gap needs, should DDOC ever return.
+enables is the strict-mode rule that gap needs, should DDOC ever return. *(Amended 2026-09-24:
+DDOC ships over this construction, and it never depended on trustless resolution; see the last
+§Amendment.)*
 
 ## Consequences
 
@@ -291,3 +293,14 @@ briefly whole in memory" is no longer true of the loader, and the memory the loa
 asset is one chunk. Serving streams from disk too (`src/loader/README.md`), so neither side of a
 cached bundle holds an asset whole.
 
+## Amendment, 2026-09-24: DDOC ships over this construction (`ADR-0029`)
+
+A site publishes this construction's root, and the leaf of every file, at
+`/.well-known/orivon-ddoc.json`, and the Web3 Score page shows whether the pinned bundle matches
+it. The construction, the vectors and the caps are unchanged: the published tree is a second
+statement of the same root, and it is not itself a leaf. The comparison with DDOC above still
+holds on membership: this set is static and declared, never runtime-observed. Two parts of it
+are withdrawn. The anchor is the site's own host in this build, not DNS. And DDOC never waited on
+trustless resolution, which is a question for the connection axis (`ADR-0006`'s amendment of the
+same date). The Reversibility trigger "DDOC … landing" is therefore met without a new
+construction.
