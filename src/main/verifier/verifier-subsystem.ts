@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import { app, session, utilityProcess } from 'electron'
 import type { Session } from 'electron'
 import type { Subsystem } from '../registry.js'
-import { readDevEthNames } from '../dev/eth-resolver.js'
+import { devEthNames } from '../dev/eth-resolver.js'
 import type { HostConfig, LightClientState, SiteProvenance } from '../../verifier-host/protocol.js'
 import type { ContentAddress } from '../../broker/policy/pin.js'
 import { servedByVerifier } from '../../loader/eth-origin.js'
@@ -121,7 +121,7 @@ export function onVerifierChange (listener: () => void): () => void {
 export const verifierSubsystem: Subsystem = {
   name: 'verifier',
   beforeReady: () => {
-    const dev = readDevEthNames()
+    const dev = devEthNames()
     const existing = app.commandLine.getSwitchValue('host-resolver-rules')
     app.commandLine.appendSwitch('host-resolver-rules', composeResolverRules({ devClauses: dev.rules, port: loopbackPort(), existing }))
     if (dev.secureOrigins !== '') app.commandLine.appendSwitch('unsafely-treat-insecure-origin-as-secure', dev.secureOrigins)

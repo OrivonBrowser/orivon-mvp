@@ -73,13 +73,15 @@ export function buildSecureOriginList (names: Readonly<Record<string, unknown>>)
 }
 
 export interface DevEthNames {
+  /** The names themselves, lowercase. */
+  readonly names: readonly string[]
   /** `MAP name.eth 127.0.0.1:port` clauses, or empty. */
   readonly rules: string
   /** The same names as secure origins, or empty. */
   readonly secureOrigins: string
 }
 
-const NONE: DevEthNames = { rules: '', secureOrigins: '' }
+const NONE: DevEthNames = { names: [], rules: '', secureOrigins: '' }
 
 /**
  * The names file's entries, read once and turned into both switch values in
@@ -101,9 +103,22 @@ export function readDevEthNames (): DevEthNames {
     const names = parsed as Record<string, unknown>
     const rules = buildHostResolverRules(names)
     if (rules !== '') console.error(`[orivon] fake .eth names active (ORIVON_DEV_ORIGINS=1): ${rules}`)
-    return { rules, secureOrigins: buildSecureOriginList(names) }
+    return { names: validEntries(names).map(([name]) => name), rules, secureOrigins: buildSecureOriginList(names) }
   } catch (error) {
     console.error(`[orivon] ORIVON_ETH_NAMES_FILE (${path}) could not be read as a names map:`, error)
     return NONE
   }
+}
+
+let cached: DevEthNames | undefined
+
+/** readDevEthNames(), read once per run: the file is read at startup and never again. */
+export function devEthNames (): DevEthNames {
+  cached ??= readDevEthNames()
+  return cached
+}
+
+/** Whether a host is one of this run's developer-mode names, served over plain http. */
+export function isDevEthName (host: string): boolean {
+  return devEthNames().names.includes(host.toLowerCase())
 }

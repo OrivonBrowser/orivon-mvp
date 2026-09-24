@@ -70,7 +70,7 @@ describe('buildSecureOriginList', () => {
 describe('readDevEthNames', () => {
   let dir: string
   const ORIGINAL_ENV = { ...process.env }
-  const NONE = { rules: '', secureOrigins: '' }
+  const NONE = { names: [], rules: '', secureOrigins: '' }
 
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'orivon-eth-resolver-'))
@@ -106,6 +106,7 @@ describe('readDevEthNames', () => {
     process.env['ORIVON_DEV_ORIGINS'] = '1'
     process.env['ORIVON_ETH_NAMES_FILE'] = namesFile('{"freetube.eth": 8875, "asgardex.eth": 8876}')
     expect(readDevEthNames()).toEqual({
+      names: ['freetube.eth', 'asgardex.eth'],
       rules: 'MAP freetube.eth 127.0.0.1:8875,MAP asgardex.eth 127.0.0.1:8876',
       secureOrigins: 'http://freetube.eth,http://asgardex.eth'
     })
@@ -116,7 +117,7 @@ describe('readDevEthNames', () => {
   it('never declares an origin it did not also map to loopback', () => {
     process.env['ORIVON_DEV_ORIGINS'] = '1'
     process.env['ORIVON_ETH_NAMES_FILE'] = namesFile('{"freetube.eth": 8875, "Bad.eth": 1}')
-    expect(readDevEthNames()).toEqual({ rules: 'MAP freetube.eth 127.0.0.1:8875', secureOrigins: 'http://freetube.eth' })
+    expect(readDevEthNames()).toEqual({ names: ['freetube.eth'], rules: 'MAP freetube.eth 127.0.0.1:8875', secureOrigins: 'http://freetube.eth' })
   })
 
   it('reads nothing from an empty names file', () => {
