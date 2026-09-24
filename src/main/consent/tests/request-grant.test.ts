@@ -240,6 +240,28 @@ describe('requestGrant (real broker) -- proves a real, persisted grant', () => {
     const grants = await broker.app.grants(APP)
     expect(grants).toHaveLength(0)
   })
+
+  // The full production shape for `id`, end to end through THIS function --
+  // not `broker.grant()` called directly the way every id-capability.test.ts
+  // case does, and not the dev-only grant hook. `manifest-patterns.ts` maps
+  // a declared `id` capability to `patterns: []` (presence alone is the
+  // ask), so this is the exact call `decideGrantRequest` produces for a real
+  // consent-made grant. Regression coverage for the id-capability.ts fix:
+  // before it, this exact sequence left every real `orivon.id` call denied.
+  it('an accepted id grant carries empty patterns, and the origin can still use every curve its manifest declared', async () => {
+    const seed = Uint8Array.from({ length: 32 }, (_, i) => i)
+    const broker = createBroker(baseDeps({ keychain: { getSeed: async () => seed } }))
+    await broker.registerApp(APP, manifestWith({ id: { curves: ['P-256'] } }))
+    const consent = vi.fn(async () => true)
+
+    const result = await requestGrant(broker, consent, APP, { capability: 'id' })
+    expect(result).toBe(true)
+
+    const grants = await broker.app.grants(APP)
+    expect(grants).toMatchObject([{ origin: APP, capability: 'id', patterns: [] }])
+
+    await expect(broker.id.publicKey(APP, { curve: 'P-256' })).resolves.toBeInstanceOf(Uint8Array)
+  })
 })
 
 // The site-info popover's own turn-on/turn-off primitives

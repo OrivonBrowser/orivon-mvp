@@ -8531,27 +8531,31 @@ stated as absolute in two places: `src/broker/policy/update.ts`'s own comment on
 never import `src/main/`").
 
 Neither is true of `src/broker/transport/`. `ipc.ts` imports `publishBroker` and
-`SubsystemContext`/`Subsystem` (types) from `../../main/registry.js`, and `createWebContextHost`
-from `../../main/sessions/web-context-host.js`, both as real values; `deliver-port.ts` imports
-`PORT_CHANNEL` from `../../main/channels.js`. All three predate this ADR and were not introduced
-by the directory move -- the sweep only found them because it went looking.
+`SubsystemContext`/`Subsystem` (types) from `../../main/registry.js`, `createWebContextHost`
+from `../../main/sessions/web-context-host.js`, and (ADR-0031) `createElectronKeychain` from
+`../../main/keyring/electron-keychain.js`, all as real values; `deliver-port.ts` imports
+`PORT_CHANNEL` from `../../main/channels.js`. The first three predate this ADR and were not
+introduced by the directory move -- the sweep only found them because it went looking;
+`createElectronKeychain` is a new, fourth instance of the identical shape, added knowingly rather
+than found.
 
 The rule as stated is true of `src/broker/policy/` (verified: nothing there imports `src/main/`,
 matching that directory's own README) but false of `src/broker/transport/`, whose whole job --
 "speak": reaching the page, moving the bytes -- is to be Electron's own IPC surface, and
 `registry.ts`/`channels.ts` are exactly the seam `src/main/README.md` says other packages import
-as values. `web-context-host.ts`'s presence is less obviously load-bearing the same way: ADR-0019
-put it in `src/main/` because it needs a real `WebContentsView`, but `transport/ipc.ts` only
-needs it as a factory function, which does not obviously require crossing into `src/main/` to
-obtain versus `web-context-host.ts` being handed in some other way.
+as values. `web-context-host.ts` and `electron-keychain.ts` share the same reason and the same
+looseness: ADR-0019 put the first in `src/main/` because it needs a real `WebContentsView`,
+ADR-0031 put the second there because it needs real `safeStorage`, but `transport/ipc.ts` only
+needs either as a factory function, which does not obviously require crossing into `src/main/` to
+obtain versus either being handed in some other way.
 
 **What would settle it:** either narrow the stated rule to `src/broker/policy/` specifically (the
 two comments above would need rewording, and every other `src/broker/` README would need
-checking for the same overclaim), or treat `transport/`'s three imports as a boundary violation
-to fix -- which for `registry.ts`/`channels.ts` likely means nothing changes at all
-(`src/main/README.md` already calls them the intentional seam), but for `web-context-host.ts`
-would mean threading it into `CreateBrokerOptions` from `src/main/` instead of `transport/ipc.ts`
-importing it directly.
+checking for the same overclaim), or treat `transport/`'s four imports as a boundary violation to
+fix -- which for `registry.ts`/`channels.ts` likely means nothing changes at all
+(`src/main/README.md` already calls them the intentional seam), but for `web-context-host.ts` and
+`electron-keychain.ts` would mean threading each into `CreateBrokerOptions` from `src/main/`
+instead of `transport/ipc.ts` importing them directly.
 
 ### A204 -- `update-check-runner.ts`'s `updateCheckSubsystem` has no caller anywhere in the repo
 

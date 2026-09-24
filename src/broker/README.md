@@ -34,7 +34,7 @@ Five directories, one per job. The name of the directory is the question it answ
 | [`adapters/`](adapters/) | **Do**: dial the address, open the file | no | **this is the only place** |
 | [`transport/`](transport/) | **Speak**: reach the page, move the bytes | connection registry | Electron IPC and ports |
 
-Eight files stay at the top level because they belong to no single directory:
+Several files stay at the top level because they belong to no single directory:
 
 - [`index.ts`](index.ts): `createBroker` and the capability entry points that consult all five
 - [`broker-contracts.ts`](broker-contracts.ts): the `Broker` interface and its fixed dependency shape
@@ -56,6 +56,14 @@ Eight files stay at the top level because they belong to no single directory:
   has no `Broker` entry point yet, see the file's own header), built alongside
   `net-capability.ts` from the start rather than inlined into `index.ts` first, same reason:
   `index.ts` was already 264 lines before `id`
+- [`secrets-capability.ts`](secrets-capability.ts): `orivon.secrets`'s three entry points
+  (`available`, `encrypt`, `decrypt`, [`ADR-0031`](../../docs/decisions/ADR-0031-an-app-may-hold-an-origin-bound-secret-in-the-os-keyring.md)),
+  built the same shape as `id-capability.ts` alongside it, over the same seed
+  `deps.keychain` provides but a distinct derivation path
+  ([`policy/secret-seal.ts`](policy/secret-seal.ts))
+- [`secrets-contracts.ts`](secrets-contracts.ts): the extended `Keychain` (`getSeed` plus the new
+  optional `isPersistent`) and `BrokerSecretsMethods`, split out of `broker-contracts.ts` and
+  re-exported from there, as `fs-contracts.ts` and `web-context-contracts.ts` already are
 - [`fs-capability.ts`](fs-capability.ts): `orivon.fs`'s nine entry points (`readFile`,
   `writeFile`, `confineSync` plus queue item 2.1's `mkdir`/`readdir`/`stat`/`rm`/`rename`, plus
   `open`, A184), lifted out of `index.ts` on 2026-09-10 under the same Rule 2 seam

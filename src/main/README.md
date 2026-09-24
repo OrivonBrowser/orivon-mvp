@@ -1,7 +1,7 @@
 # `src/main/`: the Electron main process
 
 **What lives here.** The browser shell: the window, tab management, the omnibox, shell IPC, and
-the subsystem registry every other stream plugs into. Nine directories, each named for the job
+the subsystem registry every other stream plugs into. Ten directories, each named for the job
 it does; `## The directories` below is the index.
 
 **What it depends on.** `electron`, [`src/contracts/`](../contracts/).
@@ -28,6 +28,7 @@ to no single job, and `registry.ts`/`channels.ts` are the seam other packages
 | [`permissions/`](permissions/) | **Review**: the grant list a person can revoke from | no | `permissions-panel.ts` only |
 | [`install/`](install/) | **Install**: a hinted manifest becomes a registered, consented app | per-origin queue | the `-subsystem` file only |
 | [`sessions/`](sessions/) | **Confine**: what an Electron `Session` is allowed to do | yes, each site's notification answer on disk | `permission-gate.ts` and `web-context-host.ts` only |
+| [`keyring/`](keyring/) | **Persist**: the identity seed, OS-keyring-backed or session-only | yes, the encrypted seed file | `electron-keychain.ts` only |
 | [`self-update/`](self-update/) | **Update itself**: check, notify, never install | last-check timestamp | `-runner` only |
 | [`dev/`](dev/) | **Dev only**: inert or compiled out of an ordinary build | no | `eth-resolver.ts` only |
 

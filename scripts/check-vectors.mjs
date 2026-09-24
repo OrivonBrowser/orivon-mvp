@@ -30,6 +30,12 @@ import { fileURLToPath } from 'node:url'
 
 const TABLE = new URL('../src/broker/policy/derive-vectors.json', import.meta.url)
 const DERIVE_TS = new URL('../src/broker/policy/derive.ts', import.meta.url)
+// ADR-0031's own frozen table -- a SECOND, independent construction over
+// the same seed (secret-seal.ts's HKDF, no scalar reduction), checked the
+// same way and by the same independence rules as the derive.ts table
+// above.
+const SECRETS_TABLE = new URL('../src/broker/policy/secrets-vectors.json', import.meta.url)
+const SECRET_SEAL_TS = new URL('../src/broker/policy/secret-seal.ts', import.meta.url)
 
 /**
  * Coverage floor. Every row of the table is checked below, but "every row" is
@@ -106,6 +112,58 @@ function derivePublicKey(request) {
   const priv = createPrivateKey({ key: der, format: 'der', type: 'pkcs8' })
   // The last 65 bytes of the SPKI encoding are the uncompressed SEC1 point.
   return createPublicKey(priv).export({ format: 'der', type: 'spki' }).subarray(-65).toString('hex')
+}
+
+/** ADR-0031's minimum floor: distinct origins, never lowered, same reasoning as MINIMUM above. */
+const SECRETS_MINIMUM = { vectors: 4 }
+
+/** salt = "orivon-secrets-v1", the whole reason this is a SEPARATE table
+ * from derive-vectors.json's 'orivon-kdf-v1' rather than a shared one. */
+const SECRETS_SALT = Buffer.from('orivon-secrets-v1', 'utf8')
+const SECRETS_KEY_BYTES = 32
+
+function deriveSecretKey(seed, origin) {
+  const info = Buffer.concat([encodeField('secrets'), encodeField(origin)])
+  return Buffer.from(hkdfSync('sha256', seed, SECRETS_SALT, info, SECRETS_KEY_BYTES)).toString('hex')
+}
+
+/**
+ * The same shape as `main()`'s own derive-vectors.json checks, over the
+ * separate secrets-vectors.json table -- kept as its own function rather
+ * than folded into `main()`'s body, which is already the busiest function
+ * here.
+ */
+function checkSecretsVectors() {
+  const table = JSON.parse(readFileSync(SECRETS_TABLE, 'utf8'))
+  const seed = Buffer.from(table.seed, 'hex')
+  const failures = []
+
+  const origins = new Set(table.vectors.map((v) => v.origin))
+  if (origins.size !== table.vectors.length) {
+    failures.push(`the secrets table has ${table.vectors.length} rows but only ${origins.size} distinct origins`)
+  }
+  if (origins.size < SECRETS_MINIMUM.vectors) {
+    failures.push(`the secrets table has ${origins.size} distinct origins, below the floor of ${SECRETS_MINIMUM.vectors}`)
+  }
+
+  // The salt text itself, read from the SOURCE rather than duplicated only
+  // in this script -- the same "check the implementation's own constant"
+  // rule main()'s CURVE_ORDER check applies to derive.ts, applied here to
+  // secret-seal.ts's salt string.
+  const sealSource = readFileSync(SECRET_SEAL_TS, 'utf8')
+  const saltHits = [...sealSource.matchAll(/orivon-secrets-v1/g)]
+  if (saltHits.length === 0) {
+    failures.push("secret-seal.ts does not contain the literal salt string 'orivon-secrets-v1'")
+  }
+
+  for (const vector of table.vectors) {
+    const key = deriveSecretKey(seed, vector.origin)
+    if (key !== vector.key) {
+      failures.push(`origin ${JSON.stringify(vector.origin)}\n    key expected   ${vector.key}\n    key recomputed ${key}`)
+    }
+  }
+
+  return { failures, count: origins.size }
 }
 
 function main() {
@@ -237,13 +295,16 @@ function main() {
     failures.push('check-vectors.mjs imports from src/broker/policy/, so it is no longer an independent check')
   }
 
+  const secrets = checkSecretsVectors()
+  failures.push(...secrets.failures)
+
   if (failures.length > 0) {
     console.error('Golden vectors do NOT match the independent reference implementation:\n')
     for (const failure of failures) console.error(`  ${failure}\n`)
     console.error(
-      'A mismatch means the frozen KDF changed, or this reference drifted from ADR-0010.\n' +
-        'Do NOT edit derive-vectors.json to make this pass. See the header of\n' +
-        'src/broker/policy/tests/derive.test.ts and ADR-0010.'
+      'A mismatch means a frozen derivation changed, or this reference drifted from its ADR.\n' +
+        'Do NOT edit either vector table to make this pass. See the header of\n' +
+        'derive.test.ts / secret-seal.test.ts and ADR-0010 / ADR-0031.'
     )
     process.exit(1)
   }
@@ -251,7 +312,8 @@ function main() {
   console.log(
     `Golden vectors match an independent node:crypto implementation: ` +
       `${table.vectors.length} scalars, ${points} public keys, ` +
-      `${multiByte} multi-byte scopes, 2 curve orders (checked in derive.ts too).`
+      `${multiByte} multi-byte scopes, 2 curve orders (checked in derive.ts too); ` +
+      `${secrets.count} secrets keys (checked in secret-seal.ts too).`
   )
 }
 

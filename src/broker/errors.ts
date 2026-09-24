@@ -35,10 +35,18 @@ export function fail (code: OrivonErrorCode, message: string, handleId?: string,
   return new BrokerError(code, message, handleId, platformCode)
 }
 
-/** Every value OrivonErrorCode actually has -- see contracts/errors.ts. */
-const ORIVON_ERROR_CODES: ReadonlySet<OrivonErrorCode> = new Set<OrivonErrorCode>([
-  'denied', 'revoked', 'unreachable', 'timeout', 'reset', 'closed', 'limit', 'invalid', 'notFound', 'exists', 'internal'
-])
+/**
+ * Every value OrivonErrorCode actually has -- see contracts/errors.ts. Built
+ * from a `Record` rather than typed as a bare list, so a code
+ * contracts/errors.ts adds and this file forgets is a TYPE ERROR
+ * (`Object.keys` below would silently drop it otherwise, and `isOrivonErrorLike`
+ * would then misclassify a real, correctly-coded error as foreign).
+ */
+const ORIVON_ERROR_CODE_RECORD: Readonly<Record<OrivonErrorCode, true>> = {
+  denied: true, revoked: true, unreachable: true, timeout: true, reset: true, closed: true,
+  limit: true, invalid: true, notFound: true, exists: true, internal: true, unavailable: true
+}
+const ORIVON_ERROR_CODES: ReadonlySet<OrivonErrorCode> = new Set(Object.keys(ORIVON_ERROR_CODE_RECORD) as OrivonErrorCode[])
 
 /**
  * Recognises an error this broker (or an adapter constructing one the same

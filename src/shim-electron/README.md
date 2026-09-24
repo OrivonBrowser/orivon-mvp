@@ -1,8 +1,8 @@
 # `src/shim-electron/`: the `electron` module compatibility package
 
-**What lives here.** Electron's `app`, `dialog`, `ipcRenderer`/`ipcMain`, `BrowserWindow`,
-`Menu` and `Tray`, reconstructed (or explicitly refused) on top of `orivon.*`, so that
-`require('electron')` / `import ... from 'electron'`, a tier-2 app's guaranteed first import,
+**What lives here.** Electron's `app`, `dialog`, `safeStorage`, `ipcRenderer`/`ipcMain`,
+`BrowserWindow`, `Menu` and `Tray`, reconstructed (or explicitly refused) on top of `orivon.*`, so
+that `require('electron')` / `import ... from 'electron'`, a tier-2 app's guaranteed first import,
 resolves to something instead of failing to load at all
 ([`compatibility-matrix.md`](../../docs/planning/compatibility-matrix.md) Table 2, family 2,
 A95).
@@ -22,6 +22,10 @@ happen and must not (§What it must never import, below).
 | `app.getPath(anything else)` | nothing; ambient FS is excluded by design | refuses, named `'ambient-fs'` |
 | `dialog.showOpenDialog` | `orivon.fs.userSelected` | `dialog.ts`: **the broker does not implement this yet**; every call refuses, named `'not-built'` |
 | `dialog.showMessageBox` / `showSaveDialog` / `showErrorBox` / anything else on `dialog` | nothing, never considered | `dialog.ts`, refuses, named `'unimplemented'` |
+| `safeStorage.isAsyncEncryptionAvailable` / `encryptStringAsync` / `decryptStringAsync` | `orivon.secrets` (ADR-0031) | `safe-storage.ts` |
+| `safeStorage.isEncryptionAvailable` (sync) | nothing; always `false`, so a ported app takes its own non-keyring fallback | `safe-storage.ts` |
+| `safeStorage.encryptString` / `decryptString` (sync) | nothing; `orivon.secrets` is async-only | `safe-storage.ts`, refuses, named `'not-built'` |
+| `safeStorage.getSelectedStorageBackend` / `setUsePlainTextEncryption` / anything else on `safeStorage` | nothing, never considered | `safe-storage.ts`, refuses, named `'unimplemented'` |
 | `ipcRenderer.invoke` / `ipcMain.handle`, `.on`/`.send` | a local in-sandbox message bus, no capability, no broker | `ipc.ts` |
 | `BrowserWindow`, `Menu`, `Tray` | nothing; desktop-shell surface, out of scope | `desktop-shell.ts`, where every entry point refuses, named `'desktop-shell'` |
 | `shell`, `clipboard`, `session`, `protocol`, `webContents`, `nativeImage`, `screen`, `contextBridge`, `crashReporter`, `powerMonitor`, `systemPreferences`, `globalShortcut`, `nativeTheme`, `webFrame`, `desktopCapturer` | nothing, never considered in either direction | `unimplemented.ts`, where every property access refuses, named `'unimplemented'` |
@@ -82,6 +86,17 @@ resolves to a `FileHandle`, not a host OS path, so `OpenDialogReturnValue.filePa
 ported app can honestly do with the result. Wiring a call through today would be building ahead
 of both the broker and that decision; refusing now and revisiting when `fs.userSelected` lands
 is the smaller, reversible choice.
+
+**Why `safeStorage` backs the async trio but the sync trio refuses.** `orivon.secrets`
+(ADR-0031) is async-only, the same design rule `net`/`fs` already follow
+(`capability-api.ts`'s rule 2): every call crosses to the broker and back. Real Electron's
+`isEncryptionAvailable`/`encryptString`/`decryptString` are synchronous and this package has no
+mechanism to block the renderer on an IPC round trip the way `fs.readFileSync`'s own narrow
+ADR-0016 exception does -- and unlike that exception, nothing here forces a startup path through
+the sync form, so there is no equivalent pressure to build one. `isEncryptionAvailable()`
+answering `false` unconditionally is not a placeholder: it is the exact signal Element Desktop's
+and AirGap Vault's own documented non-keyring fallbacks already check for, so a ported app that
+calls it before reaching for the async trio still ends up somewhere that works.
 
 **Why `ipcRenderer`/`ipcMain` share one bus with no broker call anywhere in `ipc.ts`.**
 `ADR-0005` dissolved the app backend: all app code is renderer JavaScript, so a ported app's

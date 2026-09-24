@@ -17,6 +17,7 @@ import type {
   IdCapability,
   NetCapability,
   Pattern,
+  SecretsCapability,
   TcpCapability,
   UdpCapability,
   WebCapability
@@ -43,7 +44,7 @@ const MAX_CURVES = 8
 /** capability-api.md's open item A9, point 1: privileged ports denied outright, at every tier. */
 const MIN_UNPRIVILEGED_PORT = 1024
 
-const CAPABILITIES_KEYS = ['net', 'fs', 'id', 'web', 'protocols']
+const CAPABILITIES_KEYS = ['net', 'fs', 'id', 'web', 'secrets', 'protocols']
 const NET_KEYS = ['tcp', 'udp', 'https', 'concurrentSockets']
 const TCP_KEYS = ['connect', 'listen']
 const UDP_KEYS = ['bind', 'send']
@@ -51,6 +52,8 @@ const HTTPS_KEYS = ['connect']
 const FS_KEYS = ['quotaBytes']
 const ID_CAPABILITY_KEYS = ['curves']
 const WEB_CAPABILITY_KEYS = ['contexts']
+/** ADR-0031: `SecretsCapability` declares no fields in v0 -- presence alone is the ask. */
+const SECRETS_CAPABILITY_KEYS: string[] = []
 
 const SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*$/
 const PORT_RANGE_PATTERN = /^([1-9][0-9]{0,4})(?:-([1-9][0-9]{0,4}))?$/
@@ -391,6 +394,15 @@ function readIdCapability (raw: unknown, path: string): IdCapability {
   return curves === undefined ? {} : { curves }
 }
 
+/** ADR-0031: presence alone is the declaration -- no field to read, only the
+ * shape (an object, nothing unrecognised inside it) to check. */
+function readSecrets (raw: unknown, path: string): SecretsCapability {
+  if (!isRecord(raw)) reject(`${path} must be an object, got ${describeValue(raw)}`)
+  const extra = extraKey(raw, SECRETS_CAPABILITY_KEYS)
+  if (extra !== null) reject(`${path} has an unrecognised field: ${describeValue(extra)}`)
+  return {}
+}
+
 /** Reads and validates the `capabilities` sub-tree. Called from manifest.ts's readManifest. */
 export function readCapabilities (raw: unknown, path: string): Capabilities {
   if (!isRecord(raw)) reject(`${path} must be an object, got ${describeValue(raw)}`)
@@ -401,15 +413,17 @@ export function readCapabilities (raw: unknown, path: string): Capabilities {
   const fsRaw = ownProperty(raw, 'fs', isAny)
   const idRaw = ownProperty(raw, 'id', isAny)
   const webRaw = ownProperty(raw, 'web', isAny)
+  const secretsRaw = ownProperty(raw, 'secrets', isAny)
   const protocols = optionalStringArray(raw, path, 'protocols', MAX_PROTOCOLS, (scheme, i) => {
     validateSchemeName(scheme, `${path}.protocols[${i}]`)
   })
 
-  const result: { net?: NetCapability, fs?: FsCapability, id?: IdCapability, web?: WebCapability, protocols?: readonly string[] } = {}
+  const result: { net?: NetCapability, fs?: FsCapability, id?: IdCapability, web?: WebCapability, secrets?: SecretsCapability, protocols?: readonly string[] } = {}
   if (netRaw !== undefined) result.net = readNet(netRaw, `${path}.net`)
   if (fsRaw !== undefined) result.fs = readFs(fsRaw, `${path}.fs`)
   if (idRaw !== undefined) result.id = readIdCapability(idRaw, `${path}.id`)
   if (webRaw !== undefined) result.web = readWeb(webRaw, `${path}.web`)
+  if (secretsRaw !== undefined) result.secrets = readSecrets(secretsRaw, `${path}.secrets`)
   if (protocols !== undefined) result.protocols = protocols
   return result
 }

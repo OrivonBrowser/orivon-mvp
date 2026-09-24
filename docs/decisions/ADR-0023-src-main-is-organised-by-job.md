@@ -1,19 +1,22 @@
-# ADR-0023: `src/main/` is organised into nine job-named directories
+# ADR-0023: `src/main/` is organised into job-named directories
 
-- **Status:** accepted
+- **Status:** accepted; the directory list is extended in place as a new job earns one, most
+  recently `keyring/` ([`ADR-0031`](ADR-0031-an-app-may-hold-an-origin-bound-secret-in-the-os-keyring.md))
 - **Date:** 2026-09-22
 - **Type:** architecture
 - **Decided by:** owner
 
 ## Decision
 
-`src/main/` is organised into nine directories named for the **job** each does, on the same
-naming convention ADR-0015 established for `src/broker/`: `shell/` (compose the window and its
-views), `browsing/` (what the address bar and tab strip are made of), `ipc/` (the chrome→main
-channels), `consent/` (decide what to ask, say it, show it), `permissions/` (the revocable grant
-list), `install/` (a hinted manifest becomes a registered, consented app), `sessions/` (what an
-Electron `Session` is allowed to do), `self-update/` (check, notify, never install), `dev/`
-(inert or compiled out of an ordinary build).
+`src/main/` is organised into directories named for the **job** each does, on the same naming
+convention ADR-0015 established for `src/broker/`: `shell/` (compose the window and its views),
+`browsing/` (what the address bar and tab strip are made of), `ipc/` (the chrome→main channels),
+`consent/` (decide what to ask, say it, show it), `permissions/` (the revocable grant list),
+`install/` (a hinted manifest becomes a registered, consented app), `sessions/` (what an Electron
+`Session` is allowed to do), `keyring/` (the identity seed, OS-keyring-backed or session-only),
+`self-update/` (check, notify, never install), `dev/` (inert or compiled out of an ordinary
+build). Nine at the time this ADR was accepted; the count is not the decision, and grows as a new
+job earns its own directory rather than being folded into an existing one.
 
 `index.ts`, `registry.ts`, `subsystems.ts` and `channels.ts` stay at the top level because they
 belong to no single job, and `registry.ts`/`channels.ts` are the seam other packages
@@ -107,8 +110,8 @@ prose, enforced by nothing" admission — the gap has the same name here it has 
 
 ## Consequences
 
-**Committed to:** nine directories whose names are a claim about what the code does, and nine
-README files that must stay true, plus a suffix vocabulary now written down once rather than
+**Committed to:** a directory per job, each name a claim about what the code does, and a README
+per directory that must stay true, plus a suffix vocabulary now written down once rather than
 re-derived per file. A file whose job changes has to move, and a boundary that stops holding has
 to be corrected in the README rather than quietly violated.
 
