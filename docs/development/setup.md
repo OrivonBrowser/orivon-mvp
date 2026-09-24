@@ -152,7 +152,7 @@ sets the second for you.
 | Variable | What it turns on |
 |---|---|
 | `ORIVON_DEV_ORIGINS=1` | An origin may be granted capabilities **without being installed** (`src/main/dev-app-origin.ts`), so a page served from your own static server can hold real grants. Loopback literals and `.eth` names only, `http:` only. It is also the master switch for the row below |
-| `ORIVON_ETH_NAMES_FILE=<path>` | A JSON file of `{"name.eth": port}` that `src/main/eth-resolver.ts` turns into Chromium DNS overrides, so `http://name.eth` reaches `127.0.0.1:<port>`. Ignored unless `ORIVON_DEV_ORIGINS=1` is also set. `orivon-ports`' `orivon-port names` writes this file; nothing points the shell at it for you |
+| `ORIVON_ETH_NAMES_FILE=<path>` | A JSON file of `{"name.eth": port}` that `src/main/eth-resolver.ts` turns into Chromium DNS overrides, so `http://name.eth` reaches `127.0.0.1:<port>`. Ignored unless `ORIVON_DEV_ORIGINS=1` is also set. `orivon-ports`' `orivon-port names` writes this file, and its `serve` and `run` rewrite it from every recipe on each start; nothing points the shell at it for you, and the shell reads it once, at its own startup |
 
 A name in that file is also declared a **secure context**, which is not cosmetic. Its origin is
 plain `http:` on a non-loopback host, and Chromium judges trustworthiness by the origin, not by
